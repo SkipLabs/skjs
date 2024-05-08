@@ -1,0 +1,10 @@
+[package]
+name = "skjs"
+version = "0.1.0"
+
+[dependencies]
+std = { "path" = "../skdb/prelude/" }
+
+[[bin]]
+name = "skjs"
+main = "SKJS.main"
