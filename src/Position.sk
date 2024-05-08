@@ -1,0 +1,65 @@
+/*****************************************************************************/
+/* Positions in the source code. */
+/*****************************************************************************/
+
+module SKJS;
+
+/*****************************************************************************/
+/* Position types. */
+/*****************************************************************************/
+
+value class RelPos(fileName: String, line: Int, col: Int) uses Show {
+  fun toString(): String {
+    fileName = this.fileName.replace("\"", "\\\"");
+    `File "${fileName}", line ${this.line}, character ${this.col}:`
+  }
+}
+value class RelPosRange(start: RelPos, end: RelPos) {
+  fun toString(): String {
+    invariant(this.start.fileName == this.end.fileName);
+    if (this.start.line != this.end.line) {
+      return this.start.toString();
+    };
+    fileName = this.start.fileName.replace("\"", "\\\"");
+    `File "${fileName}", line ${this.start.line}, character ${this.start.col}-${
+      this.end.col
+    }:`
+  }
+}
+
+value class Pos(value: Int) uses Hashable, Orderable {
+  const none: this = Pos(-1);
+}
+
+value class PosRange(
+  fileName: String,
+  start: Pos,
+  end: Pos,
+) uses Hashable, Orderable {
+  const none: this = PosRange("", Pos::none, Pos::none);
+}
+
+/*****************************************************************************/
+/* Position resolver. */
+/*****************************************************************************/
+
+class PositionResolver{fileName: String = "", newLines: Array<Int> = Array[]} {
+  fun relPosRange(pos: PosRange): RelPosRange {
+    RelPosRange(this.relPos(pos.start), this.relPos(pos.end))
+  }
+
+  fun relPos(pos: Pos): RelPos {
+    idx = SKStore.binSearch(
+      i ~> this.newLines[i],
+      pos.value,
+      0,
+      this.newLines.size() - 1,
+    );
+    if (idx <= 0 || idx >= this.newLines[idx]) {
+      return RelPos(this.fileName, 1, pos.value + 1)
+    };
+    RelPos(this.fileName, idx + 1, pos.value - this.newLines[idx - 1])
+  }
+}
+
+module end;
