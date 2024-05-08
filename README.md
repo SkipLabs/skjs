@@ -1,2 +1,2 @@
 # skjs
-Reactive dialect of Javascript
+Reactive dialect of JavaScript
