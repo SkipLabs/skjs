@@ -1,0 +1,255 @@
+/*****************************************************************************/
+/* Module handling all the errors. */
+/*****************************************************************************/
+
+module SKJS;
+
+/*****************************************************************************/
+/* The function that is called whenever there is a user-visible error. */
+/*****************************************************************************/
+
+fun error<T>(err: Error): T {
+  throw ErrorExn(err)
+}
+
+/*****************************************************************************/
+/* The exception that is thrown whenever there is an error. */
+/*****************************************************************************/
+
+class ErrorExn(error: Error) extends Exception
+
+/*****************************************************************************/
+/* The class for all the errors. */
+/*****************************************************************************/
+
+class Error(pos: ErrorPos, errorKind: ErrorKind)
+
+/*****************************************************************************/
+/* There are two types of positions:
+ * - PosRanges: when an error has a beginning and an end
+ * - Pos: when an error points at somewhere in the code (for example a lexing
+ *   error)
+ */
+/*****************************************************************************/
+
+base class ErrorPos {
+  children =
+  | EPRange(PosRange)
+  | EPChar(String, Pos)
+
+  fun fileName(): String
+  | EPRange(p) -> p.fileName
+  | EPChar(fileName, _) -> fileName
+
+  fun toString(resolver: PositionResolver): String
+  | EPRange(p) -> resolver.relPosRange(p).toString()
+  | EPChar(_, p) -> resolver.relPos(p).toString()
+}
+
+/*****************************************************************************/
+/* Error kinds (description of the error) */
+/*****************************************************************************/
+
+base class ErrorKind {
+  fun toString(): String;
+}
+base class ParsingError extends ErrorKind
+base class LexingError extends ErrorKind
+
+class UnknownCharacter(char: Char) extends LexingError {
+  fun toString(): String {
+    `Unknown character: ${this.char} (${this.char.code()})`
+  }
+}
+class UnknownOperator(str: String) extends LexingError {
+  fun toString(): String {
+    `Unknown operator: ${this.str}`
+  }
+}
+class UnterminatedString() extends LexingError {
+  fun toString(): String {
+    `Unterminated string`
+  }
+}
+class NewLineInString() extends LexingError {
+  fun toString(): String {
+    `New line in string`
+  }
+}
+class UnterminatedComment() extends LexingError {
+  fun toString(): String {
+    `Unterminated comment`
+  }
+}
+
+/*****************************************************************************/
+/* Parsing errors */
+/*****************************************************************************/
+
+class UnterminatedFunDef() extends ParsingError {
+  fun toString(): String {
+    `Unterminated function definion`
+  }
+}
+class UnterminatedStmt() extends ParsingError {
+  fun toString(): String {
+    `Unterminated statement`
+  }
+}
+class UnterminatedDef() extends ParsingError {
+  fun toString(): String {
+    `Unterminated definion`
+  }
+}
+class UnexpectedToken() extends ParsingError {
+  fun toString(): String {
+    `Unexpected token`
+  }
+}
+class UnterminatedImport() extends ParsingError {
+  fun toString(): String {
+    `Unterminated import`
+  }
+}
+class UnterminatedBlock() extends ParsingError {
+  fun toString(): String {
+    `Unterminated block`
+  }
+}
+class UnterminatedExpr() extends ParsingError {
+  fun toString(): String {
+    `Unterminated expr`
+  }
+}
+class UnterminatedNamespace() extends ParsingError {
+  fun toString(): String {
+    `Unterminated namespace`
+  }
+}
+class UnterminatedExportList() extends ParsingError {
+  fun toString(): String {
+    `Unterminated export`
+  }
+}
+class ExpectedDefinition() extends ParsingError {
+  fun toString(): String {
+    `Expected a definition`
+  }
+}
+class UnterminatedType() extends ParsingError {
+  fun toString(): String {
+    `Unterminated type`
+  }
+}
+class ExpectedToken(tokenKind: TokenKind) extends ParsingError {
+  fun toString(): String {
+    `Expected token ${this.tokenKind}`
+  }
+}
+
+class ExpectedString() extends ParsingError {
+  fun toString(): String {
+    `Expected a string`
+  }
+}
+class ExpectedDeclaration() extends ParsingError {
+  fun toString(): String {
+    `Expected a string`
+  }
+}
+class ExpectedStringNot(str: String) extends ParsingError {
+  fun toString(): String {
+    `Expected a string, not '${this.str}`
+  }
+}
+class ExpectedTokenNot(tokenKind: TokenKind) extends ParsingError {
+  fun toString(): String {
+    `Expected ${this.tokenKind}`
+  }
+}
+class ExpectedStrNot(str: String) extends ParsingError {
+  fun toString(): String {
+    `Expected ${this.str}`
+  }
+}
+class ExpectedVarName() extends ParsingError {
+  fun toString(): String {
+    `Expected a variable name`
+  }
+}
+class InvalidClosure() extends ParsingError {
+  fun toString(): String {
+    `Invalid closure`
+  }
+}
+class ExpectedParams() extends ParsingError {
+  fun toString(): String {
+    `Expected params`
+  }
+}
+class DuplicateFieldNames(pos2: RelPos) extends ParsingError {
+  fun toString(): String {
+    `Duplicate field name` +
+      "\n" +
+      this.pos2.toString() +
+      "\n" +
+      "Previous one found here"
+  }
+}
+class TooManyTags(pos2: RelPos) extends ParsingError {
+  fun toString(): String {
+    `Duplicate tags` +
+      "\n" +
+      this.pos2.toString() +
+      "\n" +
+      "Previous one found here"
+  }
+}
+
+class DontUseEquality() extends ParsingError {
+  fun toString(): String {
+    "Don't use ==, use === instead"
+  }
+}
+
+class DontUseInequality() extends ParsingError {
+  fun toString(): String {
+    "Don't use !=, use !== instead"
+  }
+}
+
+class NonAssociative(op: String) extends ParsingError {
+  fun toString(): String {
+    "The operator " + this.op + " is not associative"
+  }
+}
+
+class FunctionInExpr() extends ParsingError {
+  fun toString(): String {
+    "Function inside expressions are not supported, use closures instead"
+  }
+}
+
+class ExpectedStmt() extends ParsingError {
+  fun toString(): String {
+    "Expected a statement"
+  }
+}
+
+class MissingReturnType() extends ParsingError {
+  fun toString(): String {
+    "Missing return type"
+  }
+}
+
+/*****************************************************************************/
+/* Name resolution error */
+/*****************************************************************************/
+
+class NotFound() extends ParsingError {
+  fun toString(): String {
+    "Type not found"
+  }
+}
+
+module end;
