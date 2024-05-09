@@ -1,0 +1,613 @@
+/*****************************************************************************/
+// The abstract syntax tree.
+
+// This abstract syntax tree contains constructions that we don't want
+// to support (such as namespaces). But we identifying those
+// construction could still be useful to provide a good error message.
+/*****************************************************************************/
+
+module SKJS;
+
+/*****************************************************************************/
+// <name> ::= <string>
+/*****************************************************************************/
+
+value class Name(posRange: PosRange, value: String) uses Hashable, Orderable
+
+/*****************************************************************************/
+// <def> ::=
+//   | <expr>
+//   | type <name> [ <type-param>* ] <type>
+//   | class
+//   | enum <name> { (<name> = <expr>?)* }
+//   | namespace <name> { <def>* }
+//   | module <name> { <def>* }
+//   | export (type? <module-names> from <expr>?)
+//   | export (type? default?) <def>
+//   | export default (type?) <expr>
+//   | export = <expr>
+//   | export as <name>
+//   | export import <name> = <expr>
+//   | global { <def>* }
+//   | import (type?) <module-names> <import-name> (from <import-kind>)
+//   | import <name>
+//   | declare <def>
+//   | <var-def-kind> { <var-def>* }
+/*****************************************************************************/
+
+class Def(pos: PosRange, value: Def_)
+
+base class Def_ {
+  children =
+  | ToplevelExpr(Expr)
+  | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
+  | Class{
+    kind: ClassKind,
+    name: Name,
+    extends_: Array<Type>,
+    implements: Array<Type>,
+    tparams: Array<TypeParam>,
+    fields: Array<FieldType>,
+  }
+  | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
+  | Namespace(name: Name, Array<Def>)
+  | Module(name: Name, ?Array<Def>)
+  | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Expr)
+  | Export(isType: ?PosRange, default: ?PosRange, def: Def_)
+  | ExportDefault(isType: ?PosRange, name: Expr)
+  | ExportEq(e: Expr)
+  | ExportAs(name: Name)
+  | ExportImport(name: Name, expr: Expr)
+  | Global(Array<Def>)
+  | Import(
+    kind: ImportKind,
+    isType: ?PosRange,
+    ModuleNames,
+    importFrom: ImportName,
+  )
+  | ImportExpr(Name)
+  | Declare(Def)
+  | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
+}
+
+base class ImportName {
+  children =
+  | INPath(Name)
+  | INName(Name)
+}
+
+/*****************************************************************************/
+// <var-def> ::= <pattern> (: <type>)? (= <expr>)?
+/*****************************************************************************/
+
+class VarDef(pat: Pattern, type: ?Type, value: ?Expr)
+
+/*****************************************************************************/
+// <pattern> ::=
+//   | <name>
+//   | <pattern> ::= [ <pattern>* ]
+//   | <pattern> ::= { (<name> : <pattern>)* }
+/*****************************************************************************/
+
+class Pattern(pos: PosRange, value: Pattern_)
+
+base class Pattern_ {
+  children =
+  | PVar(Name)
+  | PArray(Array<Pattern>)
+  | PObject(Array<(Name, Pattern)>)
+}
+
+/*****************************************************************************/
+// <fun-def> ::=
+//   (async?) <modifiers>? (get | set?)
+//     <symbol>? [ < <type-param>* > ]? ( <param>* )
+//       (: <type>?)
+//     <fun-def-body>
+/*****************************************************************************/
+
+class FunDef{
+  pos: PosRange,
+  isAsync: ?PosRange,
+  modifiers: Modifiers,
+  isGetSet: ?FieldGetSet,
+  name: ?Symbol,
+  optional: ?PosRange,
+  tparams: Array<TypeParam>,
+  params: Array<Param>,
+  retType: (PosRange, ?(Type)),
+  body: FunDefBody,
+} extends Def_, FieldType, Field
+
+base class FunDefBody {
+  children =
+  | FDBNone(PosRange)
+  | FDBSome(Array<Stmt>)
+}
+
+/*****************************************************************************/
+// <module-names> ::=
+//   | * (as <name>)?
+//   | { <module-def-name>* }
+//   | <name>, { <module-def-name>* }
+/*****************************************************************************/
+
+base class ModuleNames {
+  children =
+  | MStar(?Name)
+  | MCurly(Array<ModuleDefName>)
+  | MName(Name, Array<ModuleDefName>)
+}
+
+/*****************************************************************************/
+// <module-def-name> ::= (type?) <name> (as <name>)?
+/*****************************************************************************/
+
+class ModuleDefName(isType: ?PosRange, name: Name, asName: ?Name)
+
+/*****************************************************************************/
+// <type-param> ::= <name> (: <type>)? (= <type>)?
+/*****************************************************************************/
+
+class TypeParam(id: Int, name: Name, constraint: ?Type, default: ?Type)
+
+/*****************************************************************************/
+// <param> ::= <modifiers> <param-names> ("?"?) (: <type>)? (= <expr>)?
+/*****************************************************************************/
+
+class Param(
+  pos: PosRange,
+  modifiers: Modifiers,
+  name: ParamNames,
+  optional: ?PosRange,
+  type: ?Type,
+  default: ?Expr,
+)
+
+/*****************************************************************************/
+// <param-names> ::=
+//   | ... <name>
+//   | <name> (: <type>)?
+//   | [ <param-names>* ]
+//   | { <param-names>* }
+/*****************************************************************************/
+
+base class ParamNames {
+  children =
+  | PNDDD(name: Name)
+  | PNName(name: Name, type: ?Type)
+  | PNSquare(Array<ParamNames>)
+  | PNCurly(Array<ParamNames>)
+}
+
+/*****************************************************************************/
+// <stmt_> ::=
+//   | ;
+//   | <expr>
+//   | return <expr>?
+//   | throw <expr>
+//   | if ( <expr> ) <stmt>* (else <stmt>*)?
+//   | for ( <stmt> in <expr> ) <stmt>*
+//   | for ( <stmt> of <expr> ) <stmt>*
+//   | for ( <stmt> ; <expr> ; <expr> ) <stmt>*
+//   | while ( <expr> ) <stmt>*
+//   | let <binding>*
+//   | var <binding>*
+//   | const <binding>*
+//   | switch ( <expr> ) { <switch-branch>* }
+//   | { <stmt>* }
+/*****************************************************************************/
+
+class Stmt(pos: PosRange, value: Stmt_)
+base class Stmt_ {
+  children =
+  | StmtEmpty()
+  | StmtExpr(Expr)
+  | Return(PosRange, ?Expr)
+  | Throw(Expr)
+  | If(Expr, Array<Stmt>, ?Array<Stmt>)
+  | ForIn(Stmt, Expr, Array<Stmt>)
+  | ForOf(Stmt, Expr, Array<Stmt>)
+  | For(Stmt, Expr, Expr, Array<Stmt>)
+  | While(Expr, Array<Stmt>)
+  | Bind(BindKind, Array<Binding>)
+  | Switch(Expr, Array<SwitchBranch>)
+  | Block(Array<Stmt>)
+}
+
+/*****************************************************************************/
+// <binding> ::= <pattern> (: <type>)? (= <expr>)?
+/*****************************************************************************/
+
+class Binding(pat: Pattern, type: ?Type, value: ?Expr)
+
+base class BindKind {
+  children =
+  | BKLet()
+  | BKConst()
+  | BKVar()
+}
+
+/*****************************************************************************/
+// <switch-branch> ::=
+//   | case <expr> : <stmt>*
+//   | default : <stmt>*
+/*****************************************************************************/
+
+base class SwitchBranch {
+  children =
+  | Case(Expr, Array<Stmt>)
+  | Default(Array<Stmt>)
+}
+
+/*****************************************************************************/
+// <expr> ::=
+//   | <string-number>
+//   | <name>
+//   | ... <name>
+//   | <string-kind> <string>
+//   | typeof <expr>
+//   | keyof <type>
+//   | await <expr>
+//   | <expr> [ <expr> ]
+//   | new <name> ( <type>* ) ( <expr>* )
+//   | <unop> <expr>
+//   | <expr> <post-op>
+//   | <expr> <binop> <expr>
+//   | <expr> ( <type>* ) ( <expr>* )
+//   | ( (<name> (: <type>)?)* )
+//   | { <field>* }
+//   | function ( (<name> (: <type>)?)* ) (: <type>)? <closure-body>
+//   | [ <expr>* ]
+//   | <expr> ? <expr> : <expr>
+//   | <expr> instanceof <expr>
+//   | <expr> as <type>
+//   | /<regexp>/
+//   | async <expr>
+/*****************************************************************************/
+
+class Expr(posRange: PosRange, value: Expr_)
+base class Expr_ {
+  children =
+  | Number(String)
+  | Var(Name)
+  | Spread(Name)
+  | EString(StringKind, String)
+  | TypeOf(Expr)
+  | KeyOf(Type)
+  | Await(Expr)
+  | Get(Expr, Expr)
+  | New(Name, Array<Type>, Array<Expr>)
+  | Unop(UnaryOperator, Expr)
+  | PostOp(PostOperator, Expr)
+  | Binop(BinaryOperator, Expr, Expr)
+  | Call(Expr, Array<Type>, Array<Expr>)
+  | Params(Array<(Name, ?Type)>)
+  | Object(Array<Field>)
+  | Closure(Array<(Name, ?Type)>, ?Type, ClosureBody)
+  | EArray(Array<Expr>)
+  | EIf(Expr, Expr, Expr)
+  | InstanceOf(Expr, Expr)
+  | As(Expr, Type)
+  | Regexp(String)
+  | Async(Expr)
+}
+
+base class ClosureBody {
+  children =
+  | CBExpr(Expr)
+  | CBBlock(Array<Stmt>)
+}
+
+/*****************************************************************************/
+// <field> ::= <name> : <expr> | ... <expr>
+/*****************************************************************************/
+base class Field {
+  children =
+  | FDNormal(Name, Expr)
+  | FDSpread(Expr)
+}
+
+/*****************************************************************************/
+// <post-op> ::= -- | ++ | !
+/*****************************************************************************/
+base class PostOperator {
+  children =
+  | PODecr()
+  | POIncr()
+  | POExcl()
+}
+
+/*****************************************************************************/
+// <symbol> ::=
+//   | <name>
+//   | <name>
+//   | <name> in <type> (? <type>)? (<fn-op>)?
+//   | <name> : <type>
+/*****************************************************************************/
+base class Symbol uses Hashable, Orderable {
+  children =
+  | FNNormal(Name)
+  | FNSymbol(Name)
+  | FNIn(Name, Type, ?Type, ?FNOp)
+  | FNColon(Name, Type)
+
+  fun getName(): String
+  | FNNormal(n) -> n.value
+  | FNSymbol(n) -> n.value
+  | FNIn(n, _, _, _) -> n.value
+  | FNColon(n, _) -> n.value
+
+  fun compare(other: Symbol): Order {
+    this.getName().compare(other.getName())
+  }
+
+  fun hash(): Int {
+    this.getName().hash()
+  }
+}
+
+class FieldGetSet(kind: FieldGetSetKind, pos: PosRange)
+
+/*****************************************************************************/
+// <field-type-value> ::=
+//    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
+/*****************************************************************************/
+base class FieldType
+class FieldTypeValue(
+  pos: PosRange,
+  setGet: ?FieldGetSet,
+  modifiers: Modifiers,
+  name: Symbol,
+  optional: ?PosRange,
+  type: ?Type,
+  value: ?Expr,
+) extends FieldType
+
+/*****************************************************************************/
+// <type_> ::=
+//   | " <string> "
+//   | ' <string> '
+//   | ` <string> `
+//   | true | false
+//   | <number>
+//   | <bigint>
+//   | <prim-kind>
+//   | typeof <type>
+//   | <type> []
+//   | { <field-type>* }
+//   | <name> < <type>* >
+//   | <type> | <type>
+//   | <type> & <type>
+//   | [ <tuple-elt-type>* ]
+//   | function ( <ta-fun-param>* ) : <type>
+//   | <type> [ <type> ]
+//   | <type> extends <type> ? <type> : <type>
+//   | <type> extends <type>
+//   | readonly <type>
+//   | import ( <expr> , <name>? , <type>* )
+//   | infer <name>
+//   | []
+//   | keyof <type>
+//   | new <type>
+//   | abstract <type>
+//   | <type> is <type>
+//   | asserts <name>
+//   | <name> asserts <type>
+//   | unique symbol
+/*****************************************************************************/
+
+class Type(posRange: PosRange, value: Type_)
+base class Type_ {
+  children =
+  | TAStringLiteral(String)
+  | TATemplate(String)
+  | TABoolLiteral(String)
+  | TANumLiteral(String)
+  | TABigIntLiteral(String)
+  | TAPrim(TPrimKind)
+  | TATypeOf(Type)
+  | TAArray(Type)
+  | TAObject(Array<FieldType>)
+  | TAInst(Name, Array<Type>)
+  | TAUnion(Type, Type)
+  | TAInter(Type, Type)
+  | TATuple(Array<TupleEltType>)
+  | TAFun(Bool, Array<TypeParam>, Array<TAFunParam>, Type)
+  | TAGet(Type, Type)
+  | TAExtendsQuestion(Type, Type, Type, Type)
+  | TAExtends(Type, Type)
+  | TAReadonly(Type)
+  | TAImport(Expr, ?Name, ?Array<Type>)
+  | TAInfer(Name)
+  | TAEmptyArray()
+  | TAKeyOf(Type)
+  | TANew(Type)
+  | TAAbstract(Type)
+  | TAIs(Type, Type)
+  | TAAsserts(Name)
+  | TAAssertIs(Name, Type)
+  | TAUniqueSymbol()
+}
+
+/*****************************************************************************/
+// <tuple-elt-type> ::= <name>? "?"? <type> | ... <name> <type>
+/*****************************************************************************/
+
+base class TupleEltType {
+  children =
+  | TEType(name: ?Name, optional: ?PosRange, Type)
+  | TESpread(name: ?Name, Type)
+}
+
+/*****************************************************************************/
+// <ta-fun-param> ::= <ta-param-names> "?"? : <type>
+/*****************************************************************************/
+
+class TAFunParam(name: ?TAParamNames, optional: ?PosRange, type: Type)
+
+/*****************************************************************************/
+// <ta-param-names> ::=
+//   | <name>
+//   | ... <name>
+//   | { <curly-name>* } (as <name>)?
+/*****************************************************************************/
+
+base class TAParamNames {
+  children =
+  | TAParamName(Name)
+  | TAParamSpread(Name)
+  | TACurlyNames(Array<CurlyName>, ?Name)
+}
+
+/*****************************************************************************/
+// <curly-name> ::= <name> (: <type>)?
+/*****************************************************************************/
+
+class CurlyName(name: Name, type: ?Type)
+
+/*****************************************************************************/
+// Modifiers
+//
+// TODO: introduce an ADT for the modifiers that we actually want to support
+/*****************************************************************************/
+
+class Modifiers(isRemove: ?PosRange, modifiers: Array<Name>) {
+  static fun empty(): this {
+    Modifiers(None(), Array[])
+  }
+}
+
+/*****************************************************************************/
+/* Enums */
+/*****************************************************************************/
+
+base class VarDefKind {
+  children =
+  | VDKConst()
+  | VDKVar()
+  | VDKLet()
+}
+
+base class TPrimKind {
+  children =
+  | TPKNull()
+  | TPKBool()
+  | TPKNum()
+  | TPKString()
+}
+
+base class FieldGetSetKind {
+  children =
+  | FGet()
+  | FSet()
+}
+
+base class ImportKind {
+  children =
+  | IKFrom()
+  | IKEq()
+}
+
+base class ClassKind {
+  children =
+  | CKInterface()
+  | CKClass()
+  | CKAbstract()
+}
+
+base class StringKind {
+  children =
+  | SKQuote()
+  | SKDoubleQuote()
+  | SKBackTick()
+}
+
+base class FNOp {
+  children =
+  | FNQuestion(PosRange)
+  | FNRemove(PosRange)
+  | FNAdd(PosRange)
+}
+
+base class UnaryOperator {
+  children =
+  | UOExclamationMark()
+  | UOTild()
+  | UOMinus()
+}
+
+base class BinaryOperator {
+  children =
+  | BODot()
+  | BOMultiplication()
+  | BODivision()
+  | BORemainder()
+  | BOAddition()
+  | BOSubtraction()
+  | BOLeftShift()
+  | BOSignedRightShift()
+  | BOZeroFilledRightShift()
+  | BOLessThan()
+  | BOLessThanOrEqual()
+  | BOGreaterThan()
+  | BOGreaterThanOrEqual()
+  | BOStrictEquality()
+  | BOStrictInequality()
+  | BOBitwiseAnd()
+  | BOBitwiseXor()
+  | BOBitwiseOr()
+  | BOLogicalAnd()
+  | BOLogicalOr()
+  | BONullishCoalescing()
+  | BOAs()
+  | BOAssignment()
+  | BOMultiplicationAssignment()
+  | BODivisionAssignment()
+  | BORemainderAssignment()
+  | BOAdditionAssignment()
+  | BOSubtractionAssignment()
+  | BOLeftShiftAssignment()
+  | BOSignedRightShiftAssignment()
+  | BOZeroFilledRightShiftAssignment()
+  | BOBitwiseAndAssignment()
+  | BOBitwiseXorAssignment()
+  | BOBitwiseOrAssignment()
+  | BOLogicalAndAssignment()
+  | BOLogicalOrAssignment()
+  | BONullishCoalescingAssignment()
+}
+
+/*****************************************************************************/
+/* Helpers */
+/*****************************************************************************/
+
+extension class Expr {
+  fun isAssign(): Bool {
+    this.value match {
+    | Binop(bop, _, _) ->
+      bop match {
+      | BOAssignment()
+      | BOMultiplicationAssignment()
+      | BODivisionAssignment()
+      | BORemainderAssignment()
+      | BOAdditionAssignment()
+      | BOSubtractionAssignment()
+      | BOLeftShiftAssignment()
+      | BOSignedRightShiftAssignment()
+      | BOZeroFilledRightShiftAssignment()
+      | BOBitwiseAndAssignment()
+      | BOBitwiseXorAssignment()
+      | BOBitwiseOrAssignment()
+      | BOLogicalAndAssignment()
+      | BOLogicalOrAssignment()
+      | BONullishCoalescingAssignment() ->
+        true
+      | _ -> false
+      }
+    | _ -> false
+    }
+  }
+}
+
+module end;
