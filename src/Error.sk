@@ -189,20 +189,12 @@ class ExpectedParams() extends ParsingError {
 }
 class DuplicateFieldNames(pos2: RelPos) extends ParsingError {
   fun toString(): String {
-    `Duplicate field name` +
-      "\n" +
-      this.pos2.toString() +
-      "\n" +
-      "Previous one found here"
+    `Duplicate field name\n${this.pos2.toString()}\nPrevious one found here`
   }
 }
 class TooManyTags(pos2: RelPos) extends ParsingError {
   fun toString(): String {
-    `Duplicate tags` +
-      "\n" +
-      this.pos2.toString() +
-      "\n" +
-      "Previous one found here"
+    `Duplicate tags\n${this.pos2.toString()}\nPrevious one found here`
   }
 }
 
@@ -220,7 +212,7 @@ class DontUseInequality() extends ParsingError {
 
 class NonAssociative(op: String) extends ParsingError {
   fun toString(): String {
-    "The operator " + this.op + " is not associative"
+    `The operator ${this.op} is not associative`
   }
 }
 
