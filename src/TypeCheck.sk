@@ -1,0 +1,2172 @@
+/*****************************************************************************/
+/* Type-checker for SKJS */
+/*****************************************************************************/
+
+module SKJS;
+
+/*****************************************************************************/
+/* The local environment. */
+/*****************************************************************************/
+
+value class LocalRef(type: TType, isInitialized: Bool)
+
+mutable class Scope{
+  id: Int,
+  isLoop: Bool,
+  up: ?mutable Scope = None(),
+  mutable locals: SortedMap<String, Name> = SortedMap[],
+  mutable refs: SortedMap<String, LocalRef> = SortedMap[],
+} {
+  readonly fun clone(): Scope {
+    Scope{
+      id => this.id,
+      isLoop => this.isLoop,
+      up => this.up.map(x -> x.clone()),
+      locals => this.locals,
+      refs => this.refs,
+    }
+  }
+
+  static fun fromSaved(saved: Scope): mutable Scope {
+    mutable Scope{
+      id => saved.id,
+      isLoop => saved.isLoop,
+      up => saved.up.map(x -> static::fromSaved(x)),
+      locals => saved.locals,
+      refs => saved.refs,
+    }
+  }
+
+  readonly private fun maybeGetLocal(name: Name): ?Name {
+    this.locals.maybeGet(name.value) match {
+    | None() ->
+      this.up match {
+      | None() -> None()
+      | Some(up) -> up.maybeGetLocal(name)
+      }
+    | Some(x) -> Some(x)
+    }
+  }
+
+  readonly private fun getLocal(name: Name): Name {
+    this.maybeGetLocal(name) match {
+    | None() -> typingError(Array[(name.posRange, "Unbound name")])
+    | Some(x) -> x
+    }
+  }
+
+  readonly private fun maybeGetRefHelper(
+    throughLoop: Bool,
+    name: String,
+  ): ?(Bool, LocalRef) {
+    !throughLoop = this.isLoop || throughLoop;
+    this.refs.maybeGet(name) match {
+    | None() ->
+      this.up match {
+      | None() -> None()
+      | Some(up) -> up.maybeGetRefHelper(throughLoop, name)
+      }
+    | Some(x) -> Some((throughLoop, x))
+    }
+  }
+
+  readonly private fun maybeGetRef(name: String): ?(Bool, LocalRef) {
+    this.maybeGetRefHelper(false, name)
+  }
+
+  mutable fun bind(name: Name, ty: TType, isInitialized: Bool): void {
+    this.maybeGetLocal(name) match {
+    | None() ->
+      this.!locals[name.value] = name;
+      this.!refs[name.value] = LocalRef(ty, isInitialized)
+    | Some(otherDef) ->
+      typingError(
+        Array[
+          (name.posRange, name.value + " is already defined"),
+          (otherDef.posRange, "Previous definition was here"),
+        ],
+      )
+    }
+  }
+
+  readonly fun isThroughLoop(name: Name): Bool {
+    this.maybeGetRef(name.value) match {
+    | None() -> false
+    | Some((isThroughLoop, _)) -> isThroughLoop
+    }
+  }
+
+  readonly fun maybeGet(name: Name): ?TType {
+    this.maybeGetRef(name.value) match {
+    | None() -> None()
+    | Some((_, ref)) ->
+      if (!ref.isInitialized) {
+        typingError(
+          Array[(name.posRange, "This local is not fully initialized")],
+        )
+      } else {
+        Some(ref.type)
+      }
+    }
+  }
+
+  readonly fun get(name: Name): TType {
+    this.maybeGet(name) match {
+    | None() -> typingError(Array[(name.posRange, "Unbound name")])
+    | Some(x) -> x
+    }
+  }
+
+  mutable fun set(
+    name: Name,
+    ty: TType,
+    isSubType: (TType, TType) -> void,
+  ): void {
+    (throughLoop, upRef) = this.maybeGetRef(name.value) match {
+    | None() ->
+      typingError(Array[(name.posRange, "Unbound name: " + name.value)])
+    | Some(x) -> x
+    };
+    if (throughLoop) {
+      isSubType(ty, upRef.type);
+      this.!refs[name.value] = LocalRef(ty, true);
+    } else {
+      this.!refs[name.value] = LocalRef(ty, true)
+    }
+  }
+
+  readonly fun escapingRefs(): mutable Iterator<(String, LocalRef)> {
+    this.refs.items().filter(x -> !this.locals.containsKey(x.i0))
+  }
+
+  mutable fun merge(
+    subst: mutable Subst,
+    tenv: TEnv,
+    scope1: readonly Scope,
+    scope2: readonly Scope,
+  ): void {
+    invariant(scope1.up.map(x -> x.id) == Some(this.id));
+    invariant(scope2.up.map(x -> x.id) == Some(this.id));
+    _ = mapUnion(
+      scope1.escapingRefs(),
+      scope2.escapingRefs(),
+      x ~> x.i0,
+      (nameRef) -> {
+        (name, ref) = nameRef;
+        (_, upRef) = this.maybeGetRef(name).fromSome();
+        this.!refs[name] = LocalRef(
+          unionType(subst, tenv, upRef.type, ref.type),
+          upRef.isInitialized,
+        );
+        nameRef
+      },
+      (nameRef1, nameRef2) -> {
+        (name1, ref1) = nameRef1;
+        (name2, ref2) = nameRef2;
+        invariant(name1 == name2);
+        this.!refs[name1] = LocalRef(
+          unionType(subst, tenv, ref1.type, ref2.type),
+          ref1.isInitialized && ref2.isInitialized,
+        );
+        nameRef1
+      },
+    );
+  }
+}
+
+/*****************************************************************************/
+/* The mutable environment used by the type-checker. */
+/*****************************************************************************/
+
+mutable class TCEnv(
+  context: mutable SKStore.Context,
+  subst: mutable Subst,
+  mutable scope: mutable Scope,
+  mutable localObjects: mutable Map<String, ?TType> = mutable Map[],
+  mutable usedObjects: mutable Map<String, PosRange> = mutable Map[],
+  mutable counter: Int = 0,
+) {
+  mutable fun next(): Int {
+    this.!counter = this.counter + 1;
+    this.counter
+  }
+
+  mutable fun mergeScope(
+    subst: mutable Subst,
+    tenv: TEnv,
+    scope1: readonly Scope,
+    scope2: readonly Scope,
+  ): void {
+    this.scope.merge(subst, tenv, scope1, scope2);
+  }
+
+  mutable fun popScope(
+    subst: mutable Subst,
+    tenv: TEnv,
+    scope: readonly Scope,
+  ): void {
+    invariant(scope.up.fromSome().id == this.scope.id);
+    this.scope.merge(
+      subst,
+      tenv,
+      scope,
+      mutable Scope{id => this.next(), isLoop => false, up => Some(this.scope)},
+    );
+  }
+
+  mutable fun popScopeReplace(scope: readonly Scope): void {
+    invariant(scope.up.fromSome().id == this.scope.id);
+    for (nameRef in scope.escapingRefs()) {
+      (name, ref) = nameRef;
+      this.scope.!refs[name] = ref;
+    }
+  }
+}
+
+/*****************************************************************************/
+/* Type-checker */
+/*****************************************************************************/
+
+class TypeChecker{
+  newLinesMap: NewLinesMap,
+  backtrace: Bool,
+  defMap: DefMap,
+  tenv: TEnv,
+  super: ?TType = None(),
+  isAsync: Bool = false,
+  retType: ?TType = None(),
+} {
+  fun check(context: mutable SKStore.Context, defs: Array<Def>): Array<String> {
+    errors = mutable Vector[];
+    for (def in defs) {
+      if (this.backtrace) this.checkDef(context, def) else {
+        try {
+          this.checkDef(context, def)
+        } catch {
+        | ErrorExn(err) -> errors.push(err.toString(context, this.newLinesMap))
+        | err @ TypingError _ ->
+          errors.push(err.toString(context, this.newLinesMap))
+        | exn -> throw exn
+        }
+      }
+    };
+    errors.toArray()
+  }
+
+  fun checkDef(context: mutable SKStore.Context, def: Def): void {
+    def.value match {
+    | ExportImport _ -> throw notSupported(def.pos)
+    | ImportExpr _ -> void
+    | Global _ -> throw notSupported(def.pos)
+    | ExportAs _ -> throw notSupported(def.pos)
+    | ExportEq _ -> throw notSupported(def.pos)
+    | Module _ -> throw notSupported(def.pos)
+    | ToplevelExpr _ -> throw notSupported(def.pos)
+    | fd @ FunDef _ -> this.funDef(context, None(), fd)
+    | Declare _ -> void
+    | Namespace _ -> throw notSupported(def.pos)
+    | Export(_, _, d) -> this.checkDef(context, Def(def.pos, d))
+    | ExportDefault _ -> throw notSupported(def.pos)
+    | ExportNames _ -> void
+    | Import _ -> void
+    | c @ Class _ -> this.class_(context, c)
+    | Enum _ -> throw notSupported(def.pos)
+    | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs)
+    | TypeDef _ -> void
+    }
+  }
+
+  fun varDefs(
+    context: mutable SKStore.Context,
+    kind: VarDefKind,
+    varDefs: Array<VarDef>,
+  ): void {
+    for (varDef in varDefs) {
+      kind match {
+      | VDKConst() -> void
+      | VDKLet() ->
+        typingError(Array[(varDef.pat.pos, "Toplevel let not supported")])
+      | VDKVar() ->
+        typingError(Array[(varDef.pat.pos, "Toplevel var not supported")])
+      };
+      type = varDef.type match {
+      | None() ->
+        typingError(Array[(varDef.pat.pos, "Missing type annotation")])
+      | Some(x) -> this.tenv.normalize(context, x)
+      };
+      varDef.pat.value match {
+      | PVar _ -> void
+      | PArray _ /* (Array<Pattern>) */
+      | PObject _ /* (Array<(Name, Pattern)>) */ ->
+        invariant_violation("TODO pattern varDef")
+      };
+      e = varDef.value match {
+      | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
+      | Some(x) -> x
+      };
+      subst = mutable Subst{context};
+      scope = mutable Scope{id => 0, isLoop => false};
+      env = mutable TCEnv(context, subst, scope);
+      this.checkSubType(
+        env,
+        varDef.pat.pos,
+        "Invalid definition",
+        type,
+        this.expr(env, e),
+      )
+    }
+  }
+
+  fun class_(context: mutable SKStore.Context, c: Class): void {
+    targs = TArgs(
+      c.tparams.map(tparam -> {
+        ty = TType::bottom(tparam.name.posRange);
+        ttypeParam = TParam(
+          tparam.name.value,
+          tparam.name.posRange.fileName,
+          tparam.id,
+          tparam.constraint.map(c -> this.tenv.normalize(context, c)),
+        );
+        ty with {tparams => TTypeParams(Array[Array[ttypeParam]])}
+      }),
+    );
+    !this.tenv = this.tenv.addTParams(context, c.tparams);
+    subst = mutable Subst{context};
+    cstr = TType::create(
+      c.name.posRange,
+      STypes::empty(),
+      TInsts(Array[TSInst(c.name, targs)]),
+      TTypeParams::empty(),
+    );
+    thisType = TType::create(
+      c.name.posRange,
+      STypes::empty(),
+      TInsts::empty(),
+      TTypeParams(
+        Array[Array[TParam("this", c.name.posRange.fileName, -1, Some(cstr))]],
+      ),
+    );
+    if (c.extends_.size() != 0) {
+      if (c.extends_.size() > 1) {
+        typingError(
+          Array[(c.name.posRange, "Cannot extend more than one class")],
+        )
+      };
+      c.extends_[0].value match {
+      | TAInst(parentName, parentTArgs) ->
+        super = this.tenv.new(
+          context,
+          parentName,
+          parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+        );
+        !this.super = Some(super);
+        scope = mutable Scope{id => 0, isLoop => false};
+        env = mutable TCEnv(context, subst, scope);
+        this.checkSubType(
+          env,
+          parentName.posRange,
+          "Invalid extends",
+          thisType,
+          super,
+        )
+      | _ -> typingError(Array[(c.name.posRange, "Invalid extend")])
+      }
+    };
+    for (interface in c.implements) {
+      interface.value match {
+      | TAInst(parentName, parentTArgs) ->
+        super = this.tenv.new(
+          context,
+          parentName,
+          parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+        );
+        scope = mutable Scope{id => 0, isLoop => false};
+        env = mutable TCEnv(context, subst, scope);
+        this.checkSubType(
+          env,
+          parentName.posRange,
+          "Invalid implements",
+          thisType,
+          super,
+        )
+      | _ -> typingError(Array[(c.name.posRange, "Invalid implements")])
+      }
+    };
+    hasConstructor = false;
+    for (fieldType in c.fields) {
+      fieldType match {
+      | field @ FieldTypeValue _ ->
+        field.setGet match {
+        | None() -> void
+        | Some(FieldGetSet(_, pos)) -> notSupported(pos)
+        };
+        for (modifier in field.modifiers.modifiers) {
+          typingError(Array[(modifier.posRange, "TODO: field modifier")])
+        };
+        type = field.type match {
+        | None() -> typingError(Array[(field.pos, "Missing type annotation")])
+        | Some(ty) -> this.tenv.normalize(context, ty)
+        };
+        field.value match {
+        | None() -> void
+        | Some(e) ->
+          scope = mutable Scope{id => 0, isLoop => false};
+          env = mutable TCEnv(context, subst, scope);
+          this.checkSubType(
+            env,
+            e.posRange,
+            "Invalid assignment",
+            type,
+            this.expr(env, e),
+          )
+        }
+      | fd @ FunDef _ ->
+        if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
+          !hasConstructor = true;
+          partialThisType = this.tenv.new(
+            context,
+            c.name,
+            targs.targs,
+            fieldType ~> {
+              fieldType match {
+              | ftv @ FieldTypeValue _ -> ftv.value is Some _
+              | _ -> false
+              }
+            },
+          );
+          _ = this.constructor(context, thisType, partialThisType, fd)
+        } else {
+          _ = this.funDef(context, Some((c.kind, thisType)), fd)
+        }
+      }
+    };
+    if (!hasConstructor) {
+      for (fieldType in c.fields) {
+        fieldType match {
+        | field @ FieldTypeValue _ ->
+          field.value match {
+          | None() ->
+            if (field.optional is None()) {
+              typingError(Array[(field.pos, "Uninitialized field")])
+            }
+          | Some(_) -> void
+          }
+        | FunDef _ -> void
+        }
+      }
+    }
+  }
+
+  static fun uninitializedThisType(pos: PosRange): TType {
+    TType::create(
+      pos,
+      STypes(Array[TObject(TFields::create(Array[]), pos)]),
+      TInsts::empty(),
+      TTypeParams::empty(),
+    );
+  }
+
+  fun funDefSetup(
+    context: mutable SKStore.Context,
+    thisTypeOpt: ?TType,
+    fd: FunDef,
+  ): (this, mutable TCEnv) {
+    subst = mutable Subst{context};
+    scope = mutable Scope{id => 0, isLoop => false};
+    env = mutable TCEnv(context, subst, scope);
+    thisTypeOpt match {
+    | None() -> void
+    | Some(thisType) ->
+      !this.tenv.subst["this"] = (false, thisType);
+      scope.bind(Name(fd.pos, "this"), thisType, true)
+    };
+    !this.tenv = this.tenv.addTParams(context, fd.tparams);
+    for (param in fd.params) {
+      (paramName, tyOpt) = param.name match {
+      | PNName(n, ty) -> (n, ty)
+      | _ ->
+        typingError(
+          Array[
+            (param.pos, "TODO: support for patterns in function parameters"),
+          ],
+        )
+      };
+      paramType = tyOpt match {
+      | None() ->
+        param.type match {
+        | None() -> typingError(Array[(param.pos, "Missing type annotation")])
+        | Some(ty) -> ty
+        }
+      | Some(x) -> x
+      };
+      scope.bind(paramName, this.tenv.normalize(context, paramType), true)
+    };
+    !this.retType = fd.retType.i1.map(rty -> this.tenv.normalize(context, rty));
+    (this, env)
+  }
+
+  fun funDef(
+    context: mutable SKStore.Context,
+    thisTypeOpt: ?(ClassKind, TType),
+    fd: FunDef,
+  ): void {
+    if (!fd.modifiers.modifiers.isEmpty()) {
+      typingError(
+        Array[
+          (
+            fd.modifiers.modifiers[0].posRange,
+            "TODO: support for method modifiers",
+          ),
+        ],
+      );
+    };
+    (!this, env) = this.funDefSetup(context, thisTypeOpt.map(x -> x.i1), fd);
+    if (this.retType is None()) {
+      typingError(Array[(fd.retType.i0, "Missing return type")])
+    };
+    retType = this.retType.fromSome();
+    fd.isAsync match {
+    | None() -> void
+    | Some(asyncPos) ->
+      !this.isAsync = true;
+      tvar = env.subst.gen(asyncPos);
+      type = TType::create(
+        asyncPos,
+        STypes::empty(),
+        TInsts(Array[tvar]),
+        TTypeParams::empty(),
+      );
+      this.checkSubType(
+        env,
+        asyncPos,
+        "Async functions must return an object of type Promise<_>",
+        retType,
+        TType::single(asyncPos, TPromise(type, asyncPos)),
+      )
+    };
+    fd.body match {
+    | FDBNone(pos) ->
+      if (thisTypeOpt is Some((CKClass(), _))) {
+        typingError(Array[(pos, "Missing definition")])
+      }
+    | FDBSome(body) ->
+      if (thisTypeOpt is Some((CKInterface(), _))) {
+        typingError(Array[(fd.pos, "An interface cannot implement a method")])
+      };
+      _ = this.block(env, body);
+      if (isTerminalBlock(false, body)) return void;
+      if (this.isVoid(env, retType)) return void;
+      typingError(
+        Array[(fd.pos, "This function does not always return a value")],
+      )
+    };
+  }
+
+  fun isVoid(env: mutable TCEnv, ty: TType): Bool {
+    (stypes, tparams) = ty.expand(env.subst, this.tenv);
+    if (tparams.tparams.size() == 0 && stypes.stypes.size() != 1) return false;
+    stypes.stypes[0] match {
+    | TVoid _ -> true
+    | _ -> false
+    }
+  }
+
+  fun constructor(
+    context: mutable SKStore.Context,
+    thisType: TType,
+    partialThisType: TType,
+    fd: FunDef,
+  ): void {
+    if (fd.retType.i1 is Some _) {
+      typingError(
+        Array[(fd.retType.i0, "Constructors don't have return types")],
+      );
+    };
+    if (!fd.modifiers.modifiers.isEmpty()) {
+      typingError(
+        Array[
+          (
+            fd.modifiers.modifiers[0].posRange,
+            "Constructors cannot have modifiers",
+          ),
+        ],
+      );
+    };
+    (!this, env) = this.funDefSetup(context, Some(partialThisType), fd);
+    env.localObjects!["this"] = Some(thisType);
+    fd.isAsync match {
+    | None() -> void
+    | Some(asyncPos) ->
+      typingError(Array[(asyncPos, "Constructors cannot be async")])
+    };
+    fd.body match {
+    | FDBNone(pos) -> typingError(Array[(pos, "Missing definition")])
+    | FDBSome(body) ->
+      blockScope = this.block(env, body);
+      objType = filterMethods(
+        env.subst,
+        this.tenv,
+        blockScope.get(Name(fd.pos, "this")),
+      );
+      fullType = filterMethods(env.subst, this.tenv, thisType);
+      this.checkSubType(
+        env,
+        fd.pos,
+        "Invalid initialization",
+        objType,
+        fullType,
+      )
+    };
+  }
+
+  fun block(
+    env: mutable TCEnv,
+    stmts: Array<Stmt>,
+    cond: ?(Expr, Bool) = None(),
+  ): mutable Scope {
+    scopeCopy = env.scope;
+    scope = mutable Scope{
+      id => env.next(),
+      isLoop => false,
+      up => Some(env.scope),
+    };
+    env.!scope = scope;
+    cond match {
+    | None() -> void
+    | Some((c, target)) -> this.evalCond(env, c, target)
+    };
+    for (st in stmts) {
+      this.stmt(env, st)
+    };
+    env.!scope = scopeCopy;
+    scope
+  }
+
+  fun checkSubType(
+    env: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty1: TType,
+    ty2: TType,
+  ): void {
+    isSubType(env.subst, this.tenv, ty1, ty2) match {
+    | STOk() -> void
+    | STError(SRec(reason, pos1, subTy2)) ->
+      typingError(
+        Array[
+          (pos, msg),
+          (
+            pos1,
+            reason.toString(
+              env.subst,
+              this.tenv,
+              expandTVars(env.subst, this.tenv, ty1),
+            ),
+          ),
+          (
+            subTy2.pos,
+            "It is incompatible with: " +
+              expandTVars(env.subst, this.tenv, subTy2).toString(),
+          ),
+        ],
+      )
+    | status ->
+      typingError(Array[(pos, status.toString(env.subst, this.tenv, ty1))])
+    }
+  }
+
+  fun bind(
+    env: mutable TCEnv,
+    kind: BindKind,
+    pat: Pattern,
+    type: TType,
+    isInitialized: Bool,
+    isLocalObject: Bool,
+  ): void {
+    pos = pat.pos;
+    pat.value match {
+    | PVar(local) ->
+      if (
+        isLocalObject &&
+        !env.scope.isThroughLoop(local) &&
+        !env.localObjects.containsKey(local.value)
+      ) {
+        env.localObjects![local.value] = None()
+      };
+      env.scope.bind(local, type, isInitialized)
+    | PArray(arrPat) ->
+      stypes = type.getSTypes(env.subst, this.tenv);
+      for (stype in stypes.stypes) {
+        stype match {
+        | TTuple(tyl, _) ->
+          if (arrPat.size() != tyl.size()) {
+            typingError(
+              Array[
+                (
+                  pos,
+                  "Invalid tuple pattern size, it is of size " + arrPat.size(),
+                ),
+                (
+                  type.pos,
+                  "It is incompatible with a tuple of size " + tyl.size(),
+                ),
+              ],
+            )
+          };
+          for (i in Range(0, arrPat.size())) {
+            this.bind(env, kind, arrPat[i], tyl[i], isInitialized, false)
+          }
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Invalid tuple pattern"),
+              (type.pos, "This is not a tuple, it is " + type.toString()),
+            ],
+          )
+        }
+      }
+
+    | PObject(objectFields) ->
+      stypes = type.getSTypes(env.subst, this.tenv);
+      for (stype in stypes.stypes) {
+        branches = stype match {
+        | TObject(fields, _) -> Array[fields]
+        | a @ TAlgebraic _ -> a.branches.map(x -> x.fields)
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Invalid object pattern"),
+              (type.pos, "This is " + type.toString()),
+            ],
+          )
+        };
+        for (field in objectFields) {
+          (fieldName, fieldPat) = field;
+          for (fields in branches) {
+            fields.maybeGet(fieldName.value) match {
+            | None() ->
+              typingError(
+                Array[
+                  (
+                    fieldName.posRange,
+                    "The field " + fieldName.value + " is missing",
+                  ),
+                  (type.pos, "Out of " + type.toString()),
+                ],
+              )
+            | Some(tfield) ->
+              this.bind(env, kind, fieldPat, tfield.type, isInitialized, false)
+            }
+          }
+        }
+      }
+    }
+  }
+
+  fun bindType(
+    posRange: PosRange,
+    env: mutable TCEnv,
+    kind: BindKind,
+    type: ?Type,
+    value: ?Expr,
+  ): (TType, Bool) {
+    value match {
+    | None() ->
+      if (kind is BKConst()) {
+        typingError(Array[(posRange, "Const must be bound to a value")]);
+      };
+      type match {
+      | None() ->
+        typingError(Array[(posRange, "Was expecting a type or a value")])
+      | Some(annotAst) ->
+        ty = this.tenv.normalize(env.context, annotAst);
+        (ty, false)
+      }
+    | Some(e) ->
+      ty = this.expr(env, e);
+      type match {
+      | None() -> (ty, true)
+      | Some(annotAst) ->
+        annot = this.tenv.normalize(env.context, annotAst);
+        this.checkSubType(
+          env,
+          annotAst.posRange,
+          "Invalid annotation",
+          ty,
+          annot,
+        );
+        (annot, true)
+      }
+    }
+  }
+
+  fun stmt(env: mutable TCEnv, st: Stmt): void {
+    st.value match {
+    | StmtEmpty() -> void
+    | StmtExpr(e) ->
+      ty = this.expr(env, e);
+      if (!e.isAssign()) {
+        this.checkSubType(
+          env,
+          e.posRange,
+          "This expression was expected to be of type void.\n" +
+            "If that's what you wanted, you can add '_ =' to make it explicit",
+          ty,
+          TType::single(e.posRange, TVoid(e.posRange)),
+        );
+      }
+    | Return(pos, eOpt) ->
+      retType = this.retType match {
+      | None() ->
+        TType::single(st.pos, TVoid(st.pos)) // constructor
+      | Some(x) -> x
+      };
+      (epos, etype) = eOpt match {
+      | None() -> (pos, TType::single(pos, TVoid(pos)))
+      | Some(e) -> (e.posRange, this.expr(env, e))
+      };
+      rtype = if (this.isAsync) {
+        TType::single(epos, TPromise(etype, epos))
+      } else {
+        etype
+      };
+      this.checkSubType(env, epos, "Invalid return type", rtype, retType)
+
+    | Bind(BKVar(), vars) ->
+      invariant(vars.size() != 0);
+      typingError(
+        Array[(vars[0].pat.pos, "Don't use var, use let or const instead")],
+      )
+
+    | Bind(bkind, bindings) ->
+      for (binding in bindings) {
+        (ty, isInitialized) = this.bindType(
+          binding.pat.pos,
+          env,
+          bkind,
+          binding.type,
+          binding.value,
+        );
+        this.bind(
+          env,
+          bkind,
+          binding.pat,
+          ty,
+          isInitialized,
+          binding.value is Some(Expr(_, Object _)),
+        )
+      }
+
+    | If(e, block1, block2) ->
+      this.checkBool(env, e);
+      scope1 = this.block(env, block1, Some((e, true)));
+      scope2 = block2 match {
+      | None() ->
+        mutable Scope{id => env.next(), isLoop => false, up => Some(env.scope)}
+      | Some(b) -> this.block(env, b, Some((e, false)))
+      };
+      env.mergeScope(env.subst, this.tenv, scope1, scope2);
+      if (isTerminalBlock(false, block1)) {
+        this.evalCond(env, e, false);
+      }
+
+    | For(initStmt, cond, incr, block) ->
+      initScope = mutable Scope{
+        id => env.next(),
+        isLoop => false,
+        up => Some(env.scope),
+      };
+      env.!scope = initScope;
+      this.stmt(env, initStmt);
+      loopScope = mutable Scope{
+        id => env.next(),
+        isLoop => true,
+        up => Some(env.scope),
+      };
+      env.!scope = loopScope;
+      this.checkBool(env, cond);
+      loopBody = this.block(env, block);
+      env.popScopeReplace(loopBody);
+      _ = this.expr(env, incr);
+      env.!scope = env.scope.up.fromSome();
+      env.popScope(env.subst, this.tenv, loopScope);
+      env.!scope = env.scope.up.fromSome();
+      env.popScopeReplace(initScope)
+    | Block(stmts) ->
+      for (stmt in stmts) {
+        this.stmt(env, stmt)
+      }
+    | ForIn _ ->
+      typingError(
+        Array[
+          (
+            st.pos,
+            "TODO: for ... in not implemented, you can use a normal for (for now)",
+          ),
+        ],
+      )
+    | ForOf _ ->
+      typingError(
+        Array[
+          (
+            st.pos,
+            "TODO: for ... of not implemented, you can use a normal for (for now)",
+          ),
+        ],
+      )
+    | Throw(e) -> _ = this.expr(env, e)
+    | While(cond, block) ->
+      loopScope = mutable Scope{
+        id => env.next(),
+        isLoop => true,
+        up => Some(env.scope),
+      };
+      env.!scope = loopScope;
+      this.checkBool(env, cond);
+      loopBody = this.block(env, block, Some((cond, true)));
+      env.popScopeReplace(loopBody);
+      env.!scope = env.scope.up.fromSome();
+      env.popScope(env.subst, this.tenv, loopScope)
+    | Switch _ -> typingError(Array[(st.pos, "TODO switch")])
+    }
+  }
+
+  fun checkBool(env: mutable TCEnv, e: Expr): void {
+    this.checkSubType(
+      env,
+      e.posRange,
+      "A condition is expected to be of type boolean, not: ",
+      this.expr(env, e),
+      TType::single(e.posRange, TBool(e.posRange)),
+    );
+  }
+
+  fun dot(
+    env: mutable TCEnv,
+    pos: PosRange,
+    objType: TType,
+    fieldName: Name,
+    isContra: Bool,
+  ): TType {
+    if (fieldName.value == "constructor") {
+      typingError(
+        Array[(fieldName.posRange, "Cannot access field 'constructor'")],
+      );
+    };
+    stypes = objType.getSTypes(env.subst, this.tenv, isContra);
+    if (stypes.stypes.isEmpty()) {
+      typingError(
+        Array[
+          (pos, "Invalid '.' for type: " + prettyPrintType(false, objType)),
+        ],
+      )
+    };
+    result = TType::bottom(pos);
+    for (stype in stypes.stypes) {
+      stype match {
+      | TObject(fields, _) ->
+        if (stypes.stypes.size() == 1) return fields.getType(fieldName);
+        !result = unionType(
+          env.subst,
+          this.tenv,
+          result,
+          fields.getType(fieldName),
+        )
+      | TAlgebraic(branches, _) ->
+        for (branch in branches) {
+          if (stypes.stypes.size() == 1 && branches.size() == 1) {
+            return branch.fields.getType(fieldName)
+          };
+          !result = unionType(
+            env.subst,
+            this.tenv,
+            result,
+            branch.fields.getType(fieldName),
+          )
+        }
+      | _ ->
+        typingError(
+          Array[
+            (pos, "Invalid '.'"),
+            (
+              stype.pos,
+              "For type: " +
+                prettyPrintType(false, TType::single(stype.pos, stype)),
+            ),
+          ],
+        )
+      }
+    };
+    result
+  }
+
+  fun expr(env: mutable TCEnv, e: Expr): TType {
+    pos = e.posRange;
+    e.value match {
+    | Number(_) -> TType::single(pos, TNum(pos))
+    | EString(SKQuote(), x) ->
+      TType::single(pos, TStaticString(ArrayValues[(pos, x)], pos))
+    | EString(SKDoubleQuote(), _) -> TType::single(pos, TString(pos))
+    | EString(SKBackTick(), _) ->
+      typingError(Array[(pos, "TODO: support for backtick strings")])
+    | Var(Name(_, "true")) -> TType::single(pos, TBool(pos))
+    | Var(Name(_, "false")) -> TType::single(pos, TBool(pos))
+    | Var(Name(_, "null")) ->
+      this.makeBoundTVar(env, TType::single(pos, TNull(pos)))
+    | Var(Name(_, "undefined")) ->
+      this.makeBoundTVar(env, TType::single(pos, TUndefined(pos)))
+    | Var(local) ->
+      if (env.localObjects.containsKey(local.value)) {
+        env.usedObjects![local.value] = local.posRange
+      };
+      env.scope.maybeGet(local) match {
+      | None() ->
+        for (def in this.defMap.get(
+          env.context,
+          FileName::create(local.posRange.fileName),
+          local,
+        )) {
+          def.value match {
+          | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
+          | _ -> void
+          }
+        } else {
+          typingError(Array[(pos, "Unbound name")])
+        }
+      | Some(localDef) -> localDef
+      }
+    | Object(efields) ->
+      fields = mutable Vector[];
+      for (efield in efields) {
+        (name, ty) = efield match {
+        | FDNormal(x, y) -> (x, this.expr(env, y))
+        | FDSpread _ -> invariant_violation("TODO spread")
+        | fd @ FunDef _ -> this.tenv.funDecl(env.context, true, fd)
+        };
+        fields.push(TField(name.posRange, name.value, false, ty))
+      };
+      obj = createObject(pos, TFields::create(fields.toArray()));
+      for (efield in efields) {
+        efield match {
+        | fd @ FunDef _ ->
+          if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
+            this.constructor(
+              env.context,
+              obj,
+              static::uninitializedThisType(pos),
+              fd,
+            )
+          } else {
+            this.funDef(env.context, Some((CKClass(), obj)), fd)
+          }
+        | _ -> void
+        }
+      };
+      obj
+    | Call(Expr(_, Var(Name(superPos, "super"))), targs, args) ->
+      this.super match {
+      | None() -> typingError(Array[(superPos, "'super' is not defined")])
+      | Some(super) ->
+        if (targs.size() != 0) {
+          typingError(
+            Array[(pos, "super cannot be called with type arguments")],
+          );
+        };
+        this.callConstructor(env, pos, super, args.map(x -> this.expr(env, x)));
+        thisName = Name(pos, "this");
+        thisType = interType(
+          env.subst,
+          this.tenv,
+          env.scope.get(thisName),
+          super,
+        );
+        env.scope.set(thisName, thisType, (x, y) -> {
+          this.checkSubType(env, pos, "Invalid super call", x, y)
+        })
+      };
+      TType::single(pos, TVoid(pos))
+
+    | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
+      (stypes, tparams) = this.expr(env, args[0]).expand(env.subst, this.tenv);
+      print_error(
+        prettyPrintType(
+          false,
+          TType::create(PosRange::none, stypes, TInsts::empty(), tparams),
+        ),
+      );
+      TType::single(pos, TVoid(pos))
+    | Call(f, targs, args) ->
+      this.call(
+        env,
+        pos,
+        this.expr(env, f),
+        targs.map(ty -> this.tenv.normalize(env.context, ty)),
+        args.map(x -> this.expr(env, x)),
+      )
+    | New(Name(namePos, "Array"), targsAst, args) ->
+      arrPos = PosRange(
+        namePos.fileName,
+        namePos.end,
+        Pos(namePos.end.value + 1),
+      );
+      eltType = if (targsAst.size() == 0) {
+        this.newTVar(env, arrPos)
+      } else {
+        if (targsAst.size() > 1) {
+          typingError(Array[(pos, "Too many type arguments")]);
+        };
+        this.tenv.normalize(env.context, targsAst[0])
+      };
+      for (arg in args) {
+        argTy = this.expr(env, arg);
+        this.checkSubType(
+          env,
+          arg.posRange,
+          "Invalid argument",
+          argTy,
+          eltType,
+        );
+      };
+      TType::single(pos, TArray(eltType, pos))
+    | New(className, targsAst, argsAst) ->
+      targs = if (targsAst.size() == 0) {
+        this.tenv.makeTArgs(env.context, env.subst, className)
+      } else {
+        targsAst.map(targ -> this.tenv.normalize(env.context, targ))
+      };
+      obj = this.tenv.new(env.context, className, targs);
+      this.callConstructor(env, pos, obj, argsAst.map(e -> this.expr(env, e)));
+      obj
+    | Get(arr, _) ->
+      stypes = this.expr(env, arr).getSTypes(env.subst, this.tenv);
+      result = stypes.stypes[0].get(pos);
+      for (stype in stypes.stypes) {
+        !result = unionType(env.subst, this.tenv, result, stype.get(pos));
+      };
+      result
+    | EArray(arr) ->
+      TType::single(pos, TTuple(arr.map(x -> this.expr(env, x)), pos))
+
+    | Unop(uop, subExpr) ->
+      uop match {
+      | UOExclamationMark() ->
+        bool = TType::single(pos, TBool(pos));
+        this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
+        bool
+      | _ -> typingError(Array[(pos, "TODO: unary operator")])
+      }
+
+    | Binop(op, e1, e2) ->
+      op match {
+      | BOAddition() ->
+        stypes1 = this.expr(env, e1).getSTypes(env.subst, this.tenv);
+        ty1 = TType::fromSTypes(e1.posRange, stypes1);
+        for (stype in stypes1.stypes) {
+          stype match {
+          | TNum _
+          | TStaticString _
+          | TString _ ->
+            void
+          | sty ->
+            typingError(
+              Array[(pos, "Invalid + operation"), (sty.pos, "For this object")],
+            )
+          }
+        };
+        if (stypes1.stypes.size() == 0) {
+          typingError(
+            Array[(pos, "Invalid + operation"), (pos, "For this object")],
+          )
+        };
+        if (stypes1.stypes.size() > 1) {
+          typingError(
+            Array[
+              (pos, "Invalid + operation"),
+              (pos, "For an object of type: " + ty1.toString()),
+            ],
+          )
+        };
+        ty2 = this.expr(env, e2);
+        for (stype in stypes1.stypes) {
+          stype match {
+          | TNum _
+          | TString _ ->
+            this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1)
+          | TStaticString _ ->
+            this.checkSubType(
+              env,
+              e2.posRange,
+              "Invalid + operand",
+              ty2,
+              TType::single(e1.posRange, TString(e1.posRange)),
+            )
+          | _ -> invariant_violation("Internal error: unexpected type for +")
+          }
+        };
+        ty1
+      | BOAssignment() -> this.assign(env, pos, e1, e2)
+      | BOStrictInequality()
+      | BOStrictEquality() ->
+        ty1 = this.expr(env, e1);
+        ty2 = this.expr(env, e2);
+        if (ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
+          isSubType(env.subst, this.tenv, ty1, ty2) match {
+          | STOk() -> void
+          | _ ->
+            isSubType(env.subst, this.tenv, ty2, ty1) match {
+            | STOk() -> void
+            | _ ->
+              alwaysResult = op match {
+              | BOStrictEquality() -> "false"
+              | BOStrictInequality() -> "true"
+              | _ -> invariant_violation("Internal error: unexpected operator")
+              };
+              typingError(
+                Array[(pos, "This is equality is always " + alwaysResult)],
+              )
+            }
+          }
+        };
+        TType::single(pos, TBool(pos))
+
+      | BOLogicalAnd() ->
+        ty1 = this.expr(env, e1);
+        this.checkSubType(
+          env,
+          pos,
+          "Invalid &&",
+          ty1,
+          TType::single(e1.posRange, TBool(e1.posRange)),
+        );
+        this.evalCond(env, e1, true);
+        ty2 = this.expr(env, e2);
+        this.checkSubType(
+          env,
+          pos,
+          "Invalid &&",
+          ty2,
+          TType::single(e2.posRange, TBool(e2.posRange)),
+        );
+        TType::single(pos, TBool(pos))
+      | BOLogicalOr() ->
+        ty1 = this.expr(env, e1);
+        this.checkSubType(
+          env,
+          pos,
+          "Invalid ||",
+          ty1,
+          TType::single(e1.posRange, TBool(e1.posRange)),
+        );
+        this.evalCond(env, e1, false);
+        ty2 = this.expr(env, e2);
+        this.checkSubType(
+          env,
+          pos,
+          "Invalid ||",
+          ty2,
+          TType::single(e2.posRange, TBool(e2.posRange)),
+        );
+        TType::single(pos, TBool(pos))
+
+      | BODot() ->
+        e2.value match {
+        | Var(fieldName) ->
+          this.dot(env, e1.posRange, this.expr(env, e1), fieldName, false)
+        | _ -> typingError(Array[(e2.posRange, "Invalid '.'")])
+        }
+
+      | BOLessThan()
+      | BOLessThanOrEqual()
+      | BOGreaterThan()
+      | BOGreaterThanOrEqual() ->
+        ty1 = this.expr(env, e1);
+        ty2 = this.expr(env, e2);
+        stypes1 = ty1.getSTypes(env.subst, this.tenv);
+        stypes2 = ty2.getSTypes(env.subst, this.tenv);
+        error = () -> {
+          typeStr = prettyPrintSTypes(stypes1);
+          msg = "You can only compare strings and numbers not: " + typeStr;
+          typingError(Array[(e1.posRange, msg)]);
+        };
+        if (stypes1.stypes.size() != 1) {
+          error()
+        };
+        if (!stypes1.isStringOrNum()) {
+          typingError(
+            Array[
+              (pos, "Invalid comparison"),
+              (ty1.pos, "This is neither a string nor a number"),
+            ],
+          );
+        };
+        if (!stypes2.isStringOrNum()) {
+          typingError(
+            Array[
+              (pos, "Invalid comparison"),
+              (ty2.pos, "This is neither a string nor a number"),
+            ],
+          );
+        };
+        TType::single(pos, TBool(pos))
+
+      | BOMultiplicationAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(
+              BOAssignment(),
+              e1,
+              Expr(pos, Binop(BOMultiplication(), e1, e2)),
+            ),
+          ),
+        )
+      | BODivisionAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BODivision(), e1, e2))),
+          ),
+        )
+      | BORemainderAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BORemainder(), e1, e2))),
+          ),
+        )
+      | BOAdditionAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BOAddition(), e1, e2))),
+          ),
+        )
+      | BOSubtractionAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(
+              BOAssignment(),
+              e1,
+              Expr(pos, Binop(BOSubtraction(), e1, e2)),
+            ),
+          ),
+        )
+      | BOLeftShiftAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BOLeftShift(), e1, e2))),
+          ),
+        )
+      | BOSignedRightShiftAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(
+              BOAssignment(),
+              e1,
+              Expr(pos, Binop(BOSignedRightShift(), e1, e2)),
+            ),
+          ),
+        )
+      | BOZeroFilledRightShiftAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(
+              BOAssignment(),
+              e1,
+              Expr(pos, Binop(BOZeroFilledRightShift(), e1, e2)),
+            ),
+          ),
+        )
+      | BOBitwiseAndAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BOBitwiseAnd(), e1, e2))),
+          ),
+        )
+      | BOBitwiseXorAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BOBitwiseXor(), e1, e2))),
+          ),
+        )
+      | BOBitwiseOrAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BOBitwiseOr(), e1, e2))),
+          ),
+        )
+      | BOLogicalAndAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BOLogicalAnd(), e1, e2))),
+          ),
+        )
+      | BOLogicalOrAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(BOAssignment(), e1, Expr(pos, Binop(BOLogicalOr(), e1, e2))),
+          ),
+        )
+      | BONullishCoalescingAssignment() ->
+        this.expr(
+          env,
+          Expr(
+            pos,
+            Binop(
+              BOAssignment(),
+              e1,
+              Expr(pos, Binop(BONullishCoalescing(), e1, e2)),
+            ),
+          ),
+        )
+
+      | SKJS.BOAs() -> notSupported(pos)
+      | BOMultiplication()
+      | BODivision()
+      | BORemainder()
+      | BOSubtraction()
+      | SKJS.BOBitwiseAnd()
+      | SKJS.BOBitwiseOr()
+      | SKJS.BOBitwiseXor()
+      | BOLeftShift()
+      | BOSignedRightShift()
+      | BOZeroFilledRightShift() ->
+        ty1 = this.expr(env, e1);
+        stypes = ty1.getSTypes(env.subst, this.tenv);
+        for (stype in stypes) {
+          stype match {
+          | TNum _ ->
+            ty2 = this.expr(env, e2);
+            this.checkSubType(env, pos, "Invalid operation", ty1, ty2)
+          | _ ->
+            typingError(
+              Array[
+                (pos, "Invalid operation"),
+                (stype.pos, "This is not a number"),
+              ],
+            )
+          }
+        };
+        ty1
+
+      | BONullishCoalescing() ->
+        ty1 = this.expr(env, e1);
+        ty2 = this.expr(env, e2);
+        stypes = ty1.getSTypes(env.subst, this.tenv);
+        hasNullOrUndefined = false;
+        for (stype in stypes) {
+          stype match {
+          | TNull _
+          | TUndefined _ ->
+            !hasNullOrUndefined = true;
+            break void
+          | _ -> void
+          }
+        };
+        if (!hasNullOrUndefined) {
+          typingError(
+            Array[
+              (pos, "This operator is useless"),
+              (e1.posRange, "This construction is never null or undefined"),
+            ],
+          );
+        };
+        unionType(env.subst, this.tenv, ty1, ty2)
+      }
+
+    | InstanceOf(e1, Expr(_, Var(className))) ->
+      _ = this.expr(env, e1);
+      _ = this.tenv.getClass(env.context, className);
+      TType::single(pos, TBool(pos))
+    | InstanceOf(_, e2) ->
+      typingError(Array[(e2.posRange, "Unexpected instanceof")])
+    | TypeOf(subExpr) ->
+      _ = this.expr(env, subExpr);
+      TType::single(pos, TString(pos))
+
+    | PostOp(pop, subExpr) ->
+      pop match {
+      | PODecr()
+      | POIncr() ->
+        num = TType::single(pos, TNum(pos));
+        ty = this.expr(env, subExpr);
+        this.checkSubType(env, pos, "Expected integer", ty, num);
+        TType::single(pos, TVoid(pos))
+      | POExcl() -> notSupported(pos)
+      }
+
+    | Closure(params, retTypeAstOpt, body) ->
+      paramTypes = mutable Vector[];
+      noAnnot: ?PosRange = None();
+      for (param in params) {
+        paramType = param.i1 match {
+        | None() ->
+          if (noAnnot is None()) {
+            !noAnnot = Some(param.i0.posRange)
+          };
+          this.newTVar(env, param.i0.posRange)
+        | Some(ty) -> this.tenv.normalize(env.context, ty)
+        };
+        paramTypes.push((param.i0, paramType));
+      };
+      retType = retTypeAstOpt match {
+      | None() -> this.newTVar(env, pos)
+      | Some(retTypeAst) -> this.tenv.normalize(env.context, retTypeAst)
+      };
+      savedScope = env.scope.clone();
+      lambdas = if (noAnnot is None()) {
+        this.closure(
+          env.subst,
+          savedScope,
+          paramTypes.toArray(),
+          retType,
+          body,
+        );
+        Array[]
+      } else {
+        Array[
+          Lambda(pos, (subst, argsTypes, retType) ~> {
+            args = mutable Vector[];
+            for (i => p in params) {
+              args.push((p.i0, argsTypes[i]));
+            };
+            this.closure(subst, savedScope, args.toArray(), retType, body)
+          }),
+        ]
+      };
+      TType::single(
+        pos,
+        TFuns(
+          Array[
+            TFun(
+              Array[],
+              paramTypes.map(x -> x.i1).toArray(),
+              Array[],
+              pos,
+              lambdas,
+              retType,
+            ),
+          ],
+          Array[],
+          pos,
+        ),
+      )
+
+    | SKJS.As _ -> notSupported(pos)
+    | SKJS.Async _ -> typingError(Array[(pos, "TODO: async closures")])
+    | SKJS.Await(ae) ->
+      aeType = this.expr(env, ae);
+      stypes = aeType.getSTypes(env.subst, this.tenv);
+      result: ?TType = None();
+      for (stype in stypes.stypes) {
+        stype match {
+        | TPromise(ty, _) -> !result = Some(ty)
+        | _ ->
+          typingError(
+            Array[(pos, "Invalid await"), (stype.pos, "This is not a promise")],
+          )
+        }
+      };
+      result match {
+      | None() ->
+        typingError(
+          Array[(pos, "Invalid await"), (aeType.pos, "This is not a promise")],
+        )
+      | Some(ty) -> ty
+      }
+    | SKJS.EIf _ -> typingError(Array[(pos, "TODO: expr ? expr: expr")])
+    | SKJS.KeyOf _ -> notSupported(pos)
+    | SKJS.Params _ ->
+      invariant_violation("Internal error: Params should not be an expression")
+    | SKJS.Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
+    | SKJS.Spread _ -> typingError(Array[(pos, "TODO: ...")])
+    }
+  }
+
+  fun closure(
+    subst: mutable Subst,
+    scope: Scope,
+    params: Array<(Name, TType)>,
+    retType: TType,
+    body: ClosureBody,
+  ): void {
+    env = mutable TCEnv(subst.context, subst, Scope::fromSaved(scope));
+    for (param in params) {
+      env.scope.bind(param.i0, param.i1, true)
+    };
+    body match {
+    | CBExpr(e) ->
+      this.checkSubType(
+        env,
+        e.posRange,
+        "Invalid callback return",
+        this.expr(env, e),
+        retType,
+      )
+    | CBBlock(bl) ->
+      !this.retType = Some(retType);
+      _ = this.block(env, bl)
+    }
+  }
+
+  fun callConstructor(
+    env: mutable TCEnv,
+    pos: PosRange,
+    obj: TType,
+    args: Array<TType>,
+  ): void {
+    for (stype in obj.stypes.stypes) {
+      stype match {
+      | TObject(fields, _) ->
+        fields.maybeGet("constructor") match {
+        | None() ->
+          if (args.size() == 0) return void;
+          typingError(
+            Array[(pos, "Invalid new: constructor expects no arguments")],
+          )
+        | Some(cstr) -> _ = this.call(env, pos, cstr.type, Array[], args)
+        }
+      | _ -> invariant_violation("Internal error: unexpected constructor call")
+      }
+    }
+  }
+
+  fun assign(env: mutable TCEnv, pos: PosRange, e1: Expr, e2: Expr): TType {
+    this.checkLValue(e1);
+    e1.value match {
+    | Var(n) ->
+      ty2 = this.expr(env, e2);
+      env.scope.set(n, ty2, (x, y) ->
+        this.checkSubType(env, pos, "Invalid assignment", x, y)
+      );
+      ty2
+    | Binop(
+      BODot(),
+      Expr(_, Var(local)),
+      Expr(_, Var(fieldName)),
+    ) if (env.localObjects.containsKey(local.value)) ->
+      fieldType = this.expr(env, e2);
+      env.localObjects[local.value] match {
+      | None() -> void
+      | Some(objectType) ->
+        this.checkSubType(
+          env,
+          e2.posRange,
+          "Invalid assignment",
+          fieldType,
+          this.dot(env, e1.posRange, objectType, fieldName, false),
+        )
+      };
+      this.assignLocalObject(env, pos, local, fieldName, fieldType)
+    | _ ->
+      ty1 = this.expr(env, e1);
+      ty2 = this.expr(env, e2);
+      this.checkSubType(env, e2.posRange, "Invalid assignment", ty2, ty1);
+      ty1
+    }
+  }
+
+  fun assignLocalObject(
+    env: mutable TCEnv,
+    pos: PosRange,
+    local: Name,
+    fieldName: Name,
+    fieldType: TType,
+  ): TType {
+    stypes = env.scope.get(local).getSTypes(env.subst, this.tenv);
+    invariant(stypes.stypes.size() == 1);
+    invariant(stypes.stypes[0] is TObject _);
+    for (stype in stypes.stypes) {
+      objField = stype match {
+      | TObject(fields, objPos) ->
+        fields.maybeGet(fieldName.value) match {
+        | None() ->
+          env.usedObjects.maybeGet(local.value) match {
+          | None() -> void
+          | Some(usedPos) ->
+            typingError(
+              Array[
+                (pos, "You are trying to add a field to this object"),
+                (
+                  usedPos,
+                  "But this object has been already been used for something else",
+                ),
+              ],
+            )
+          };
+          if (env.scope.isThroughLoop(local)) {
+            typingError(
+              Array[
+                (
+                  local.posRange,
+                  "You cannot add a field to an object in a loop",
+                ),
+              ],
+            )
+          };
+          env.scope.set(
+            local,
+            TType::single(
+              objPos,
+              TObject(
+                interTFields(
+                  env.subst,
+                  this.tenv,
+                  fields,
+                  TFields::create(
+                    Array[
+                      TField(fieldType.pos, fieldName.value, false, fieldType),
+                    ],
+                  ),
+                ),
+                objPos,
+              ),
+            ),
+            (x, y) -> {
+              this.checkSubType(env, fieldType.pos, "Invalid assignment", x, y)
+            },
+          );
+          fieldType
+        | Some(fd) -> fd.type
+        }
+      | _ ->
+        invariant_violation("Internal error: local object is not an object")
+      };
+      this.checkSubType(
+        env,
+        fieldType.pos,
+        "Invalid assignment",
+        fieldType,
+        objField,
+      )
+    };
+    fieldType
+  }
+
+  fun call(
+    env: mutable TCEnv,
+    pos: PosRange,
+    fty: TType,
+    targs: Array<TType>,
+    args: Array<TType>,
+  ): TType {
+    stypes = fty.getSTypes(env.subst, this.tenv);
+    result: ?TType = None();
+    for (sty in stypes) {
+      sty match {
+      | TFuns(funs, methods, _) ->
+        for (tfun in funs.concat(methods)) {
+          if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
+            typingError(
+              Array[
+                (
+                  pos,
+                  "Incompatible number of type arguments: " +
+                    targs.size() +
+                    " passed",
+                ),
+                (fty.pos, "Expected: " + tfun.tparams.size()),
+              ],
+            )
+          };
+          map = mutable Map[];
+          for (i => tparamDecl in tfun.tparams) {
+            tparam = tparamDecl;
+            map![tparam.id] = if (targs.isEmpty()) this.newTVar(env, pos) else {
+              targs[i]
+            };
+          };
+          !tfun = Instantiate().fun_(
+            (env.subst, this.tenv, map.chill()),
+            tfun with {tparams => Array[]},
+          );
+          version = env.subst.version;
+          loop {
+            for (i in Range(0, tfun.params.size())) {
+              if (i >= args.size()) {
+                typingError(
+                  Array[
+                    (pos, "Invalid call"),
+                    (
+                      fty.pos,
+                      "This function has " + tfun.params.size() + " parameters",
+                    ),
+                  ],
+                )
+              };
+              this.checkSubType(
+                env,
+                pos,
+                "Invalid call",
+                args[i],
+                tfun.params[i],
+              )
+            };
+            for (j in Range(0, tfun.optionalParams.size())) {
+              i = tfun.params.size() + j;
+              if (i >= args.size()) break void;
+              this.checkSubType(
+                env,
+                pos,
+                "Invalid call",
+                args[i],
+                tfun.optionalParams[j],
+              )
+            };
+            if (env.subst.version == version) break void;
+            !version = env.subst.version;
+          };
+          totalSize = tfun.params.size() + tfun.optionalParams.size();
+          if (totalSize < args.size()) {
+            typingError(
+              Array[
+                (pos, "Too many arguments"),
+                (tfun.minSizeWitness, "For this function"),
+              ],
+            );
+          };
+          for (lambda in tfun.lambdas) {
+            invariant(tfun.optionalParams.size() == 0);
+            lambda.compute(env.subst, args, tfun.retType)
+          };
+          !result = result match {
+          | None() -> Some(tfun.retType)
+          | Some(r) -> Some(unionType(env.subst, this.tenv, r, tfun.retType))
+          };
+        }
+      | _ ->
+        typingError(
+          Array[(pos, "Invalid call"), (fty.pos, "This is not a function")],
+        )
+      }
+    };
+    result match {
+    | None() ->
+      typingError(
+        Array[(pos, "Invalid call"), (fty.pos, "This is not a function")],
+      )
+    | Some(x) -> x
+    }
+  }
+
+  fun makeBoundTVar(env: mutable TCEnv, ty: TType): TType {
+    tvar = env.subst.gen(ty.pos);
+    env.subst.grow(this.tenv, tvar, ty, true);
+    TType::create(
+      ty.pos,
+      STypes::empty(),
+      TInsts(Array[tvar]),
+      TTypeParams::empty(),
+    )
+  }
+
+  fun newTVar(env: mutable TCEnv, pos: PosRange): TType {
+    tvar = env.subst.gen(pos);
+    TType::create(
+      pos,
+      STypes::empty(),
+      TInsts(Array[tvar]),
+      TTypeParams::empty(),
+    )
+  }
+
+  fun checkLValue(e: Expr): void {
+    e.value match {
+    | Var(Name(_, "super")) ->
+      typingError(Array[(e.posRange, "Invalid lvalue")])
+    | Var _ -> void
+    | Get _ -> void
+    | EArray _ -> void
+    | Binop(BODot(), e1, Expr(_, Var(_))) -> this.checkLValue(e1)
+    | _ -> typingError(Array[(e.posRange, "Invalid lvalue")])
+    }
+  }
+
+  fun evalCond(env: mutable TCEnv, e: Expr, target: Bool): void {
+    e.value match {
+    | Binop(
+      BOStrictEquality(),
+      Expr(_, EString(SKQuote(), tag)),
+      Expr(
+        _,
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, "kind")))),
+      ),
+    )
+    | Binop(
+      BOStrictEquality(),
+      Expr(
+        _,
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, "kind")))),
+      ),
+      Expr(_, EString(SKQuote(), tag)),
+    ) ->
+      if (target) {
+        this.filterType(
+          env,
+          e.posRange,
+          "Invalid tag check",
+          local,
+          _ ~> true,
+          stype ~>
+            stype match {
+            | TAlgebraic(branches, aPos) ->
+              TAlgebraic(
+                branches.filter(branch -> {
+                  stypes = branch.fields
+                    .maybeGet("kind")
+                    .fromSome().type.stypes;
+                  stypes.stypes[0] match {
+                  | TStaticString(s, _) -> s.values[0].i1 == tag
+                  | _ ->
+                    invariant_violation(
+                      "Internal error: invalid algebraic data type",
+                    )
+                  }
+                }),
+                aPos,
+              )
+            | x -> x
+            }
+          ,
+        )
+      }
+
+    | Binop(
+      BOStrictEquality(),
+      Expr(_, TypeOf(Expr(_, Var(local)))),
+      Expr(typePos, EString(_, typeStr)),
+    )
+    | Binop(
+      BOStrictEquality(),
+      Expr(typePos, EString(_, typeStr)),
+      Expr(_, TypeOf(Expr(_, Var(local)))),
+    ) ->
+      filter = typeStr match {
+      | "string" -> x ~> x is TString(_)
+      | "number" -> x ~> x is TNum(_)
+      | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
+      | "boolean" -> x ~> x is TBool(_)
+      | "symbol" -> return void
+      | "undefined" -> x ~> x is TUndefined(_)
+      | "object" -> x ~> x is TObject _ || x is TAlgebraic _ || x is TNull _
+      | "function" -> x ~> x is TFuns _
+      | _ -> return void
+      };
+      this.filterType(
+        env,
+        e.posRange,
+        "Invalid typeof check",
+        local,
+        if (target) filter else x ~> !filter(x),
+      )
+
+    | Binop(
+      BOStrictInequality(),
+      Expr(_, TypeOf(Expr(_, Var(local)))),
+      Expr(typePos, EString(_, typeStr)),
+    )
+    | Binop(
+      BOStrictInequality(),
+      Expr(typePos, EString(_, typeStr)),
+      Expr(_, TypeOf(Expr(_, Var(local)))),
+    ) ->
+      filter = typeStr match {
+      | "string" -> x ~> x is TString(_)
+      | "number" -> x ~> x is TNum(_)
+      | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
+      | "boolean" -> x ~> x is TBool(_)
+      | "symbol" -> return void
+      | "undefined" -> x ~> x is TUndefined(_)
+      | "object" -> x ~> x is TObject _ || x is TAlgebraic _ || x is TNull _
+      | "function" -> x ~> x is TFuns _
+      | _ -> return void
+      };
+      this.filterType(
+        env,
+        e.posRange,
+        "Invalid typeof check",
+        local,
+        if (target) x ~> !filter(x) else filter,
+      )
+
+    | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
+      env.scope.set(
+        local,
+        this.tenv.new(
+          env.context,
+          className,
+          this.tenv.makeTArgs(env.context, env.subst, className),
+        ),
+        (x, y) ->
+          this.checkSubType(env, e.posRange, "Invalid instanceof", x, y)
+        ,
+      )
+    | Binop(
+      BOStrictEquality(),
+      Expr(_, Var(local)),
+      Expr(_, Var(Name(_, "null"))),
+    )
+    | Binop(
+      BOStrictEquality(),
+      Expr(_, Var(Name(_, "null"))),
+      Expr(_, Var(local)),
+    ) ->
+      if (!target) {
+        this.filterType(env, e.posRange, "Invalid null check", local, x ~>
+          !(x is TNull _)
+        )
+      }
+
+    | Binop(
+      BOStrictInequality(),
+      Expr(_, Var(local)),
+      Expr(_, Var(Name(_, "null"))),
+    )
+    | Binop(
+      BOStrictInequality(),
+      Expr(_, Var(Name(_, "null"))),
+      Expr(_, Var(local)),
+    ) ->
+      if (target) {
+        this.filterType(env, e.posRange, "Invalid null check", local, x ~>
+          !(x is TNull _)
+        )
+      }
+
+    | Binop(
+      BOStrictEquality(),
+      Expr(_, Var(local)),
+      Expr(_, Var(Name(_, "undefined"))),
+    )
+    | Binop(
+      BOStrictEquality(),
+      Expr(_, Var(Name(_, "undefined"))),
+      Expr(_, Var(local)),
+    ) ->
+      if (!target) {
+        this.filterType(env, e.posRange, "Invalid undefined check", local, x ~>
+          !(x is TUndefined _)
+        )
+      }
+
+    | Binop(
+      BOStrictInequality(),
+      Expr(_, Var(local)),
+      Expr(_, Var(Name(_, "undefined"))),
+    )
+    | Binop(
+      BOStrictInequality(),
+      Expr(_, Var(Name(_, "undefined"))),
+      Expr(_, Var(local)),
+    ) ->
+      if (target) {
+        this.filterType(env, e.posRange, "Invalid undefined check", local, x ~>
+          !(x is TUndefined _)
+        )
+      }
+
+    | Binop(BOLogicalAnd(), e1, e2) if (target) ->
+      this.evalCond(env, e1, true);
+      this.evalCond(env, e2, true)
+
+    | Binop(BOLogicalOr(), e1, e2) if (!target) ->
+      this.evalCond(env, e1, false);
+      this.evalCond(env, e2, false)
+
+    | _ -> void
+    }
+  }
+
+  fun filterType(
+    env: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    local: Name,
+    filter: SType ~> Bool,
+    map: SType ~> SType = x ~> x,
+  ): void {
+    ty = env.scope.get(local);
+    (stypes, tparams) = ty.expand(env.subst, this.tenv);
+    !stypes.stypes = stypes.stypes.filter(filter).map(map);
+    !tparams.tparams = tparams.tparams.map(inter ->
+      inter.map(tparam -> {
+        tparam.cstr match {
+        | None() -> void
+        | Some(c) ->
+          !c.stypes = STypes(c.stypes.stypes.filter(filter).map(map));
+          !tparam.cstr = Some(c)
+        };
+        tparam
+      })
+    );
+    env.scope.set(
+      local,
+      TType::create(ty.pos, stypes, TInsts::empty(), tparams),
+      (x, y) -> this.checkSubType(env, pos, msg, x, y),
+    )
+  }
+}
+
+/*****************************************************************************/
+/* Returns true if a statement always is "terminal", meaning if
+/* evaluating this statements terminates the function. */
+/*****************************************************************************/
+
+fun isTerminal(inTry: Bool, st: Stmt): Bool {
+  st.value match {
+  | ForOf _
+  | For _
+  | While _
+  | Bind _
+  | StmtEmpty _
+  | ForIn _
+  | StmtExpr _ ->
+    false
+  | Return _ -> true
+  | Throw _ -> !inTry
+  | If(_, bl1, Some(bl2)) ->
+    isTerminalBlock(inTry, bl1) && isTerminalBlock(inTry, bl2)
+  | If(_, _, _) -> false
+  | Block(bl) -> isTerminalBlock(inTry, bl)
+  | Switch(_, branches) ->
+    for (branch in branches) {
+      branch match {
+      | Case(_, bl) -> if (!isTerminalBlock(inTry, bl)) return false
+      | Default(bl) -> if (!isTerminalBlock(inTry, bl)) return false
+      }
+    };
+    true
+  }
+}
+
+fun isTerminalBlock(inTry: Bool, bl: Array<Stmt>): Bool {
+  if (bl.size() == 0) return false;
+  for (st in bl) {
+    if (isTerminal(inTry, st)) return true;
+  };
+  false
+}
+
+module end;
