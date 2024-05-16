@@ -1,0 +1,105 @@
+/*****************************************************************************/
+/* Module loading all the files we need in memory. */
+/*****************************************************************************/
+
+module alias S = SKStore;
+
+module SKJS;
+
+class DefFile(defs: Array<Def>) extends SKStore.File
+
+base class ParsedResult {
+  children =
+  | PROk(Array<Def>)
+  | PRError(String)
+}
+
+class ParsedResultFile(value: ParsedResult) extends SKStore.File
+const parseErrorKey: SKStore.SID = SKStore.SID("");
+
+class Files(
+  isInit: Bool,
+  rootDirName: DirName,
+  nodeModuleFiles: Array<String>,
+  srcFiles: Array<String>,
+  filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
+) {
+  static fun create(context: mutable SKStore.Context, root: String): Files {
+    invariant(root.startsWith("/") && root.endsWith("/"));
+    filesDirName = SKStore.DirName::create("/skjs/files/");
+    isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
+    fileDir = context.mkdir(
+      SKStore.SID::keyType,
+      SKStore.StringFile::type,
+      filesDirName,
+    );
+    nodeModuleFiles = if (FileSystem.exists(root + "node_modules/")) {
+      FileSystem.readFilesRecursive(root + "node_modules/", fileName ->
+        fileName.endsWith(".ts") || fileName.endsWith(".tsx")
+      ).toArray()
+    } else {
+      Array[]
+    };
+    for (fileName in nodeModuleFiles) {
+      fileDir.writeArray(
+        context,
+        SKStore.SID(fileName),
+        Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
+      );
+    };
+    if (!FileSystem.exists(root + "src/")) {
+      print_error("Could not find src/ dir in: " + root);
+      skipExit(2);
+    };
+    srcFiles = FileSystem.readFilesRecursive(root + "src/", fileName ->
+      fileName.endsWith(".ts") || fileName.endsWith(".tsx")
+    );
+    for (fileName in srcFiles) {
+      fileDir.writeArray(
+        context,
+        SKStore.SID(fileName),
+        Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
+      );
+    };
+    Files(
+      isInit,
+      DirName::create(root),
+      nodeModuleFiles,
+      srcFiles.toArray(),
+      fileDir,
+    )
+  }
+
+  fun parse(
+    context: mutable SKStore.Context,
+    newLinesMap: NewLinesMap,
+    src: String,
+  ): SKStore.LHandle<SKStore.SID, ParsedResultFile> {
+    SKStore.LHandle::create(
+      SKStore.SID::keyType,
+      ParsedResultFile::type,
+      context,
+      SKStore.DirName::create("/skjs/parsed/"),
+      (context, _self, key) ~> {
+        fileName = key.value;
+        if (!fileName.startsWith(src) && !fileName.endsWith(".d.ts")) {
+          return Array[]
+        };
+        contentArr = this.filesContent.getArray(context, key);
+        if (contentArr.size() == 0) return Array[];
+        content = contentArr[0].value;
+        lexer = Lexer::mcreate(fileName, content);
+        parser = mutable Parser(lexer);
+        try {
+          Array[ParsedResultFile(PROk(parser.toplevelDefs()))]
+        } catch {
+        | ErrorExn(err) ->
+          Array[ParsedResultFile(PRError(err.toString(context, newLinesMap)))]
+        | exn -> throw exn
+        }
+      },
+    )
+  }
+}
+
+module end;
