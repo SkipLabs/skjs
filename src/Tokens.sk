@@ -1,0 +1,332 @@
+/*****************************************************************************/
+/* Tokens recognized by the Lexer. */
+/*****************************************************************************/
+
+module SKJS;
+
+value class Token(kind: TokenKind, posRange: PosRange)
+
+base class TokenKind uses Equality, Hashable {
+  children =
+  | TKAddQM()
+  | TKAddition()
+  | TKAdditionAssignment()
+  | TKAs()
+  | TKAssignment()
+  | TKBackTick()
+  | TKBigInt()
+  | TKBitwiseAnd()
+  | TKBitwiseAndAssignment()
+  | TKBitwiseOr()
+  | TKBitwiseOrAssignment()
+  | TKBitwiseXor()
+  | TKBitwiseXorAssignment()
+  | TKCloseCurly()
+  | TKCloseParen()
+  | TKCloseSquare()
+  | TKClosure()
+  | TKColon()
+  | TKComma()
+  | TKDecr()
+  | TKDivision()
+  | TKDivisionAssignment()
+  | TKDot()
+  | TKDotDotDot()
+  | TKDoubleQuote()
+  | TKEquality()
+  | TKExclamationMark()
+  | TKExclamationMarkDot()
+  | TKGreaterThan()
+  | TKGreaterThanOrEqual()
+  | TKIncr()
+  | TKInequality()
+  | TKLeftShift()
+  | TKLeftShiftAssignment()
+  | TKLessThan()
+  | TKLessThanOrEqual()
+  | TKLogicalAnd()
+  | TKLogicalAndAssignment()
+  | TKLogicalOr()
+  | TKLogicalOrAssignment()
+  | TKMultiplication()
+  | TKMultiplicationAssignment()
+  | TKNullishCoalescing()
+  | TKNullishCoalescingAssignment()
+  | TKNumber()
+  | TKOpenCurly()
+  | TKOpenParen()
+  | TKOpenSquare()
+  | TKQuestionMark()
+  | TKQuestionMarkDot()
+  | TKQuote()
+  | TKRemainder()
+  | TKRemainderAssignment()
+  | TKRemoveQM()
+  | TKSemi()
+  | TKSignedRightShift()
+  | TKSignedRightShiftAssignment()
+  | TKStrictEquality()
+  | TKStrictInequality()
+  | TKSubtraction()
+  | TKSubtractionAssignment()
+  | TKTild()
+  | TKVar()
+  | TKZeroFilledRightShift()
+  | TKZeroFilledRightShiftAssignment()
+
+  fun toString(): String
+  | TKAddQM() -> "+?"
+  | TKAddition() -> "+"
+  | TKAdditionAssignment() -> "+="
+  | TKAs() -> "as"
+  | TKAssignment() -> "="
+  | TKBackTick() -> "`"
+  | TKBigInt() -> "a bigint"
+  | TKBitwiseAnd() -> "&"
+  | TKBitwiseAndAssignment() -> "&="
+  | TKBitwiseOr() -> "|"
+  | TKBitwiseOrAssignment() -> "|="
+  | TKBitwiseXor() -> "^"
+  | TKBitwiseXorAssignment() -> "^="
+  | TKCloseCurly() -> "}"
+  | TKCloseParen() -> ")"
+  | TKCloseSquare() -> "]"
+  | TKClosure() -> "=>"
+  | TKColon() -> ":"
+  | TKComma() -> ","
+  | TKDecr() -> "--"
+  | TKDivision() -> "/"
+  | TKDivisionAssignment() -> "/="
+  | TKDot() -> "."
+  | TKDotDotDot() -> "..."
+  | TKDoubleQuote() -> "\""
+  | TKEquality() -> "=="
+  | TKExclamationMark() -> "!"
+  | TKExclamationMarkDot() -> "!."
+  | TKGreaterThan() -> ">"
+  | TKGreaterThanOrEqual() -> ">="
+  | TKIncr() -> "++"
+  | TKInequality() -> "!="
+  | TKLeftShift() -> "<<"
+  | TKLeftShiftAssignment() -> "<<="
+  | TKLessThan() -> "<"
+  | TKLessThanOrEqual() -> "<="
+  | TKLogicalAnd() -> "&&"
+  | TKLogicalAndAssignment() -> "&&="
+  | TKLogicalOr() -> "||"
+  | TKLogicalOrAssignment() -> "||="
+  | TKMultiplication() -> "*"
+  | TKMultiplicationAssignment() -> "*="
+  | TKNullishCoalescing() -> "??"
+  | TKNullishCoalescingAssignment() -> "??="
+  | TKNumber() -> "a number"
+  | TKOpenCurly() -> "{"
+  | TKOpenParen() -> "("
+  | TKOpenSquare() -> "["
+  | TKQuestionMark() -> "?"
+  | TKQuestionMarkDot() -> "?."
+  | TKQuote() -> "'"
+  | TKRemainder() -> "%"
+  | TKRemainderAssignment() -> "%="
+  | TKRemoveQM() -> "-?"
+  | TKSemi() -> ";"
+  | TKSignedRightShift() -> ">>"
+  | TKSignedRightShiftAssignment() -> ">>="
+  | TKStrictEquality() -> "==="
+  | TKStrictInequality() -> "!=="
+  | TKSubtraction() -> "-"
+  | TKSubtractionAssignment() -> "-="
+  | TKTild() -> "~"
+  | TKVar() -> "a variable name"
+  | TKZeroFilledRightShift() -> ">>>"
+  | TKZeroFilledRightShiftAssignment() -> ">>>="
+
+  fun toBinop(): ?BinaryOperator {
+    this match {
+    | TKDot() -> Some(BODot())
+    | TKMultiplication() -> Some(BOMultiplication())
+    | TKDivision() -> Some(BODivision())
+    | TKRemainder() -> Some(BORemainder())
+    | TKAddition() -> Some(BOAddition())
+    | TKSubtraction() -> Some(BOSubtraction())
+    | TKLeftShift() -> Some(BOLeftShift())
+    | TKSignedRightShift() -> Some(BOSignedRightShift())
+    | TKZeroFilledRightShift() -> Some(BOZeroFilledRightShift())
+    | TKLessThan() -> Some(BOLessThan())
+    | TKLessThanOrEqual() -> Some(BOLessThanOrEqual())
+    | TKGreaterThan() -> Some(BOGreaterThan())
+    | TKGreaterThanOrEqual() -> Some(BOGreaterThanOrEqual())
+    | TKStrictEquality() -> Some(BOStrictEquality())
+    | TKStrictInequality() -> Some(BOStrictInequality())
+    | TKBitwiseAnd() -> Some(BOBitwiseAnd())
+    | TKBitwiseXor() -> Some(BOBitwiseXor())
+    | TKBitwiseOr() -> Some(BOBitwiseOr())
+    | TKLogicalAnd() -> Some(BOLogicalAnd())
+    | TKLogicalOr() -> Some(BOLogicalOr())
+    | TKNullishCoalescing() -> Some(BONullishCoalescing())
+    | TKAs() -> Some(BOAs())
+    | TKAssignment() -> Some(BOAssignment())
+    | TKMultiplicationAssignment() -> Some(BOMultiplicationAssignment())
+    | TKDivisionAssignment() -> Some(BODivisionAssignment())
+    | TKRemainderAssignment() -> Some(BORemainderAssignment())
+    | TKAdditionAssignment() -> Some(BOAdditionAssignment())
+    | TKSubtractionAssignment() -> Some(BOSubtractionAssignment())
+    | TKLeftShiftAssignment() -> Some(BOLeftShiftAssignment())
+    | TKSignedRightShiftAssignment() -> Some(BOSignedRightShiftAssignment())
+    | TKZeroFilledRightShiftAssignment() ->
+      Some(BOZeroFilledRightShiftAssignment())
+    | TKBitwiseAndAssignment() -> Some(BOBitwiseAndAssignment())
+    | TKBitwiseXorAssignment() -> Some(BOBitwiseXorAssignment())
+    | TKBitwiseOrAssignment() -> Some(BOBitwiseOrAssignment())
+    | TKLogicalAndAssignment() -> Some(BOLogicalAndAssignment())
+    | TKLogicalOrAssignment() -> Some(BOLogicalOrAssignment())
+    | TKNullishCoalescingAssignment() -> Some(BONullishCoalescingAssignment())
+
+    | _ -> None()
+    }
+  }
+}
+
+/*****************************************************************************/
+// A special character is a character than can represent an operator
+// with multiple characters. So for example, '.' can be "...", + can
+// be "+=" etc ...
+/*****************************************************************************/
+
+const specialChars: Set<Char> = Set[
+  '.',
+  '*',
+  '/',
+  '%',
+  '+',
+  '-',
+  '<',
+  '>',
+  '=',
+  '!',
+  '&',
+  '^',
+  '|',
+  '?',
+];
+
+/*****************************************************************************/
+// Table that associates an operator to a string.
+/*****************************************************************************/
+
+const operators: Map<String, TokenKind> = Map[
+  "++" => TKIncr(),
+  "--" => TKDecr(),
+  "-?" => TKRemoveQM(),
+  "+?" => TKAddQM(),
+  "*" => TKMultiplication(),
+  "/" => TKDivision(),
+  "%" => TKRemainder(),
+  "+" => TKAddition(),
+  "-" => TKSubtraction(),
+  "<<" => TKLeftShift(),
+  ">>" => TKSignedRightShift(),
+  ">>>" => TKZeroFilledRightShift(),
+  "<" => TKLessThan(),
+  "<=" => TKLessThanOrEqual(),
+  ">" => TKGreaterThan(),
+  ">=" => TKGreaterThanOrEqual(),
+  "==" => TKEquality(),
+  "!=" => TKInequality(),
+  "===" => TKStrictEquality(),
+  "!==" => TKStrictInequality(),
+  "&" => TKBitwiseAnd(),
+  "^" => TKBitwiseXor(),
+  "|" => TKBitwiseOr(),
+  "&&" => TKLogicalAnd(),
+  "||" => TKLogicalOr(),
+  "??" => TKNullishCoalescing(),
+  "=" => TKAssignment(),
+  "*=" => TKMultiplicationAssignment(),
+  "/=" => TKDivisionAssignment(),
+  "%=" => TKRemainderAssignment(),
+  "+=" => TKAdditionAssignment(),
+  "-=" => TKSubtractionAssignment(),
+  "<<=" => TKLeftShiftAssignment(),
+  ">>=" => TKSignedRightShiftAssignment(),
+  ">>>=" => TKZeroFilledRightShiftAssignment(),
+  "&=" => TKBitwiseAndAssignment(),
+  "^=" => TKBitwiseXorAssignment(),
+  "|=" => TKBitwiseOrAssignment(),
+  "&&=" => TKLogicalAndAssignment(),
+  "||=" => TKLogicalOrAssignment(),
+  "??=" => TKNullishCoalescingAssignment(),
+  "=>" => TKClosure(),
+  "?." => TKQuestionMarkDot(),
+  "!." => TKExclamationMarkDot(),
+];
+
+/*****************************************************************************/
+// Type to represent operators associativity.
+/*****************************************************************************/
+
+base class Associativity {
+  children =
+  | ALeft()
+  | ARight()
+  | ANonAssoc()
+}
+
+/*****************************************************************************/
+// Operators associativity and precedence.
+/*****************************************************************************/
+
+const instanceofPrec: (Associativity, Int) = (ANonAssoc(), 12);
+const callPrec: Int = 18;
+const typeOfPrec: Int = 13;
+
+const precedence: Map<TokenKind, (Associativity, Int)> = Map[
+  TKDot() => (ALeft(), 20),
+  TKQuestionMarkDot() => (ALeft(), 20),
+  TKExclamationMarkDot() => (ALeft(), 20),
+  TKExclamationMark() => (ANonAssoc(), 19),
+  TKIncr() => (ANonAssoc(), 18),
+  TKDecr() => (ANonAssoc(), 18),
+  TKTild() => (ANonAssoc(), 17),
+  TKAs() => (ALeft(), 17),
+  TKMultiplication() => (ALeft(), 15),
+  TKDivision() => (ALeft(), 15),
+  TKRemainder() => (ALeft(), 15),
+  TKAddition() => (ALeft(), 14),
+  TKSubtraction() => (ALeft(), 14),
+  TKLeftShift() => (ALeft(), 13),
+  TKSignedRightShift() => (ALeft(), 13),
+  TKZeroFilledRightShift() => (ALeft(), 13),
+  TKLessThan() => (ALeft(), 12),
+  TKLessThanOrEqual() => (ALeft(), 12),
+  TKGreaterThan() => (ALeft(), 12),
+  TKGreaterThanOrEqual() => (ALeft(), 12),
+  TKEquality() => (ALeft(), 11),
+  TKInequality() => (ALeft(), 11),
+  TKStrictEquality() => (ALeft(), 11),
+  TKStrictInequality() => (ALeft(), 11),
+  TKBitwiseAnd() => (ALeft(), 10),
+  TKBitwiseXor() => (ALeft(), 9),
+  TKBitwiseOr() => (ALeft(), 8),
+  TKLogicalAnd() => (ALeft(), 7),
+  TKLogicalOr() => (ALeft(), 6),
+  TKNullishCoalescing() => (ARight(), 5),
+  TKQuestionMark() => (ARight(), 4),
+  TKAssignment() => (ARight(), 3),
+  TKMultiplicationAssignment() => (ARight(), 3),
+  TKDivisionAssignment() => (ARight(), 3),
+  TKRemainderAssignment() => (ARight(), 3),
+  TKAdditionAssignment() => (ARight(), 3),
+  TKSubtractionAssignment() => (ARight(), 3),
+  TKLeftShiftAssignment() => (ARight(), 3),
+  TKSignedRightShiftAssignment() => (ARight(), 3),
+  TKZeroFilledRightShiftAssignment() => (ARight(), 3),
+  TKBitwiseAndAssignment() => (ARight(), 3),
+  TKBitwiseXorAssignment() => (ARight(), 3),
+  TKBitwiseOrAssignment() => (ARight(), 3),
+  TKLogicalAndAssignment() => (ARight(), 3),
+  TKLogicalOrAssignment() => (ARight(), 3),
+  TKNullishCoalescingAssignment() => (ARight(), 3),
+];
+
+module end;
