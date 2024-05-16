@@ -1,0 +1,68 @@
+/*****************************************************************************/
+// Module resolving NewLines.
+/*****************************************************************************/
+
+module SKJS;
+
+/*****************************************************************************/
+/* Newlines directory. */
+/*****************************************************************************/
+
+class NewLinesFile(newLines: Array<Int>) extends SKStore.File
+
+fun makeNewLinesDir(
+  context: mutable SKStore.Context,
+  files: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
+): SKStore.LHandle<SKStore.SID, NewLinesFile> {
+  SKStore.LHandle::create(
+    SKStore.SID::keyType,
+    NewLinesFile::type,
+    context,
+    SKStore.DirName::create("/skjs/newlines/"),
+    (context, _self, key) ~> {
+      contentArr = files.getArray(context, key);
+      invariant(contentArr.size() == 1);
+      content = contentArr[0].value;
+      newLines = mutable Vector[];
+      i = 0;
+      for (c in content) {
+        if (c == '\n') newLines.push(i);
+        !i = i + 1;
+      };
+      Array[NewLinesFile(newLines.toArray())]
+    },
+  )
+}
+
+/*****************************************************************************/
+/* Newlines map (associates Newlines to a filename) */
+/*****************************************************************************/
+
+class NewLinesMap{dir: SKStore.LHandle<SKStore.SID, NewLinesFile>} {
+  static fun create(context: mutable SKStore.Context, files: Files): this {
+    static{dir => makeNewLinesDir(context, files.filesContent)}
+  }
+  fun get(context: mutable SKStore.Context, fileName: String): Array<Int> {
+    arr = this.dir.getArray(context, SKStore.SID(fileName));
+    invariant(arr.size() == 1);
+    arr[0].newLines
+  }
+}
+
+/*****************************************************************************/
+/* The logic that resolves the position of an error. */
+/*****************************************************************************/
+
+extension class Error {
+  fun toString(
+    context: mutable SKStore.Context,
+    newLinesMap: NewLinesMap,
+  ): String {
+    fileName = this.pos.fileName();
+    newLines = newLinesMap.get(context, fileName);
+    resolver = PositionResolver{fileName, newLines};
+    this.pos.toString(resolver) + "\n" + this.errorKind.toString()
+  }
+}
+
+module end;
