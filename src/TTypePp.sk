@@ -1,0 +1,475 @@
+module SKJS;
+
+class MaxSizeReached() extends Exception {
+  fun getMessage(): String {
+    "Internal error: column max size reached"
+  }
+}
+
+value class Margin(size: Int = 0, str: String = "")
+
+mutable class TypePp{
+  compact: Bool,
+  mutable cols: Int = 0,
+  mutable buffer: List<String> = List[],
+} {
+  const MAX_COLS: Int = 80;
+
+  readonly fun chill(): this {
+    static{compact => this.compact, cols => this.cols, buffer => this.buffer}
+  }
+
+  static fun fromSaved(saved: TypePp): mutable this {
+    mutable static{
+      compact => saved.compact,
+      cols => saved.cols,
+      buffer => saved.buffer,
+    }
+  }
+
+  mutable fun replace(saved: readonly TypePp): void {
+    this.!cols = saved.cols;
+    this.!buffer = saved.buffer;
+  }
+
+  mutable fun out(level: Int, margin: Margin, str: String): void {
+    // The string does not contain special characters
+    for (c in str) {
+      invariant(c != '\n' && c != '\r' && c != '\t', "unexpected character");
+    };
+    if (this.cols < margin.size) {
+      // The string does not start with a space
+      for (c in str) {
+        invariant(c != ' ', "unexpected white space: " + str);
+        break void;
+      };
+      this.!cols = margin.size;
+      this.!buffer = List.Cons(margin.str, this.buffer);
+    };
+    this.!cols = this.cols + str.length();
+    if (level != 0 && this.cols > static::MAX_COLS) {
+      throw MaxSizeReached()
+    };
+    this.!buffer = List.Cons(str, this.buffer);
+  }
+
+  mutable fun newLine(): void {
+    this.!cols = 0;
+    this.!buffer = List.Cons("\n", this.buffer);
+  }
+
+  mutable fun branch(
+    level: Int,
+    margin: Margin,
+    f1: (mutable this, Int, Margin) ~> void,
+    f2: (mutable this, Int, Margin, Margin) -> void,
+  ): void {
+    if (this.compact || level > 0) {
+      f1(this, level, margin);
+      return void
+    };
+    saved = this.chill();
+    try {
+      f1(this, level + 1, margin)
+    } catch {
+    | MaxSizeReached() ->
+      this.replace(saved);
+      prevMargin = margin;
+      !margin.size = margin.size + 2;
+      !margin.str = margin.str + "  ";
+      f2(this, level, prevMargin, margin)
+    | exn -> throw (exn)
+    }
+  }
+
+  mutable fun stype(level: Int, margin: Margin, sty: SType): void {
+    sty match {
+    | TUndefined _ -> this.out(level, margin, "undefined")
+    | TNull _ -> this.out(level, margin, "null")
+    | TArray(ty, _) ->
+      this.out(level, margin, "Array<");
+      this.type(level, margin, ty);
+      this.out(level, margin, ">")
+    | TObject(fields, _) -> this.object(level, margin, fields)
+    | TPromise(ty, _) ->
+      this.branch(
+        level,
+        margin,
+        (pp, level, margin) ~> {
+          pp.out(level, margin, "Promise<");
+          pp.type(level, margin, ty);
+          pp.out(level, margin, ">");
+        },
+        (pp, level, prevMargin, margin) -> {
+          pp.out(level, margin, "Promise<");
+          pp.newLine();
+          pp.type(level, margin, ty);
+          pp.newLine();
+          pp.out(level, prevMargin, ">");
+          pp.newLine();
+        },
+      )
+    | TVoid _ -> this.out(level, margin, "void")
+    | TBool(_) -> this.out(level, margin, "boolean")
+    | TNum(_) -> this.out(level, margin, "number")
+    | TString(_) -> this.out(level, margin, "string")
+    | TStaticString(arr, _) ->
+      this.out(level, margin, arr.values.map(x -> "'" + x.i1 + "'").join(" | "))
+
+    | TAlgebraic(branches, _) ->
+      this.branch(
+        level,
+        margin,
+        (pp, level, margin) ~> {
+          for (i => branch in branches) {
+            if (i != 0) pp.out(level, margin, " | ");
+            pp.object(level, margin, branch.fields)
+          }
+        },
+        (pp, level, _prevMargin, margin) ~> {
+          pp.newLine();
+          for (branch in branches) {
+            pp.out(level, margin, "| ");
+            pp.object(level, margin, branch.fields);
+            pp.newLine()
+          }
+        },
+      )
+    | TTuple(arr, _) -> this.tuple(level, margin, arr)
+    | TFuns(tfuns, tmethods, _) ->
+      this.tfuns(
+        level,
+        margin,
+        tfuns.map(x -> (false, x)).concat(tmethods.map(x -> (true, x))),
+      )
+    }
+  }
+
+  mutable fun tfuns(
+    level: Int,
+    margin: Margin,
+    tfuns: Array<(Bool, TFun)>,
+  ): void {
+    this.branch(
+      level,
+      margin,
+      (pp, level, margin) ~> {
+        for (i => tfun in tfuns) {
+          if (i != 0) pp.out(level, margin, " | ");
+          pp.tfun(level, margin, tfun);
+        }
+      },
+      (pp, level, _, margin) ~> {
+        pp.newLine();
+        for (tfun in tfuns) {
+          pp.out(level, margin, "| ");
+          pp.tfun(level, margin, tfun);
+          pp.newLine()
+        }
+      },
+    )
+  }
+
+  mutable fun tfun(level: Int, margin: Margin, arg: (Bool, TFun)): void {
+    (isMethod, tfun) = arg;
+    this.branch(
+      level,
+      margin,
+      (pp, level, margin) ~> {
+        if (tfun.tparams.size() != 0) {
+          pp.out(level, margin, "<");
+          for (i => tparam in tfun.tparams) {
+            if (i != 0) pp.out(level, margin, ", ");
+            pp.out(level, margin, tparam.name);
+            tparam.cstr match {
+            | None() -> void
+            | Some(x) ->
+              pp.out(level, margin, " extends ");
+              pp.type(level, margin, x)
+            }
+          };
+          pp.out(level, margin, ">");
+        };
+        pp.out(level, margin, "(");
+        for (i => param in tfun.params) {
+          if (i != 0) pp.out(level, margin, ", ");
+          pp.type(level, margin, param)
+        };
+        for (i => param in tfun.optionalParams) {
+          if (tfun.params.size() != 0 || i != 0) pp.out(level, margin, ", ");
+          pp.out(level, margin, "_?:");
+          pp.type(level, margin, param)
+        };
+        if (isMethod) {
+          pp.out(level, margin, "): ");
+        } else {
+          pp.out(level, margin, ") => ");
+        };
+        pp.type(level, margin, tfun.retType);
+      },
+      (pp, level, prevMargin, margin) ~> {
+        if (tfun.tparams.size() != 0) {
+          pp.out(level, margin, "<");
+          for (i => tparam in tfun.tparams) {
+            if (i != 0) pp.out(level, margin, ", ");
+            pp.out(level, margin, tparam.name);
+            tparam.cstr match {
+            | None() -> void
+            | Some(x) ->
+              pp.out(level, margin, " extends ");
+              pp.type(level, margin, x)
+            }
+          };
+          pp.out(level, margin, ">");
+        };
+        pp.out(level, margin, "(");
+        pp.newLine();
+        for (param in tfun.params) {
+          pp.type(level, margin, param);
+          pp.out(level, margin, ",");
+          pp.newLine();
+        };
+        for (param in tfun.optionalParams) {
+          pp.out(level, margin, "_?:");
+          pp.type(level, margin, param);
+          pp.out(level, margin, ",");
+          pp.newLine();
+        };
+        if (isMethod) {
+          pp.out(level, prevMargin, "): ");
+        } else {
+          pp.out(level, prevMargin, ") => ");
+        };
+        pp.type(level, margin, tfun.retType);
+      },
+    )
+  }
+
+  mutable fun tuple(level: Int, margin: Margin, values: Array<TType>): void {
+    this.out(level, margin, "[");
+    this.branch(
+      level,
+      margin,
+      (pp, level, margin) ~> {
+        for (i => ty in values) {
+          if (i != 0) {
+            pp.out(level, margin, ", ");
+          };
+          pp.type(level, margin, ty);
+        };
+        pp.out(level, margin, "]");
+      },
+      (pp, level, prevMargin, margin) -> {
+        pp.newLine();
+        for (ty in values) {
+          pp.type(level, margin, ty);
+          pp.out(level, margin, ",");
+          pp.newLine();
+        };
+        pp.newLine();
+        pp.out(level, prevMargin, "]");
+        pp.newLine();
+      },
+    )
+  }
+
+  mutable fun object(level: Int, margin: Margin, fields: TFields): void {
+    this.out(level, margin, "{");
+    this.branch(
+      level,
+      margin,
+      (pp, level, margin) ~> {
+        pp.out(level, margin, " ");
+        pp.fields(level, margin, fields, false);
+        pp.out(level, margin, " }");
+      },
+      (pp, level, prevMargin, margin) -> {
+        pp.newLine();
+        pp.fields(level, margin, fields, true);
+        pp.newLine();
+        pp.out(level, prevMargin, "}");
+        pp.newLine();
+      },
+    )
+  }
+
+  mutable fun fields(
+    level: Int,
+    margin: Margin,
+    fields: TFields,
+    multiLine: Bool,
+  ): void {
+    fieldArray = fields.fields;
+    for (i => field in fieldArray) {
+      fieldName = field.name;
+      fieldType = field.type;
+      this.out(level, margin, static::escapeName(fieldName));
+      if (field.isOptional) {
+        this.out(level, margin, "?")
+      };
+      if (!fieldType.isMethod()) {
+        this.out(level, margin, ": ");
+      };
+      this.type(level, margin, fieldType);
+      if (i != fieldArray.size() - 1) {
+        this.out(level, margin, ",");
+        if (multiLine) this.newLine() else {
+          this.out(level, margin, " ")
+        };
+      }
+    }
+  }
+
+  static fun escapeName(name: String): String {
+    chars = mutable Vector[];
+    for (c in name) {
+      if (c == '"') chars.push('\\');
+      chars.push(c)
+    };
+    String::fromChars(chars.toArray())
+  }
+
+  mutable fun type(level: Int, margin: Margin, ty: TType): void {
+    if (ty.isTop) {
+      this.out(level, margin, "top");
+      return void;
+    };
+    if (
+      ty.stypes.isEmpty() &&
+      ty.insts.insts.isEmpty() &&
+      ty.tparams.tparams.isEmpty()
+    ) {
+      this.out(level, margin, "never");
+      return void;
+    };
+    if (!ty.tparams.tparams.isEmpty()) {
+      for (i => tparams in ty.tparams.tparams) {
+        if (i != 0) {
+          this.out(level, margin, " | ");
+        };
+        for (j => tparam in tparams) {
+          if (j != 0) {
+            this.out(level, margin, " & ");
+          };
+          this.out(level, margin, tparam.name);
+          tparam.cstr match {
+          | None() -> void
+          | Some(cstr) ->
+            this.out(level, margin, " extends ");
+            this.type(level, margin, cstr)
+          }
+        }
+      };
+      if (!ty.stypes.isEmpty() || !ty.insts.insts.isEmpty()) {
+        this.out(level, margin, " extends ")
+      }
+    };
+    this.branch(
+      level,
+      margin,
+      (pp, level, margin) ~> {
+        for (i => sty in ty.stypes.stypes) {
+          if (i != 0) {
+            pp.out(level, margin, " | ");
+          };
+          pp.stype(level, margin, sty);
+        };
+        for (i => inst in ty.insts.insts) {
+          inst match {
+          | TSInst(x, targs) ->
+            if (i != 0) pp.out(level, margin, " | ");
+            pp.out(level, margin, x.value);
+            if (targs.targs.size() != 0) {
+              pp.out(level, margin, "<");
+              for (j => targ in targs.targs) {
+                if (j != 0) pp.out(level, margin, ", ");
+                pp.type(level, margin, targ);
+              };
+              pp.out(level, margin, ">");
+            }
+          | TInter(ty1, ty2) ->
+            pp.out(level, margin, "(");
+            pp.type(level, margin, ty1);
+            pp.out(level, margin, ")");
+            pp.out(level, margin, " & ");
+            pp.out(level, margin, "(");
+            pp.type(level, margin, ty2);
+            pp.out(level, margin, ")")
+          | TVar(_, id) -> pp.out(level, margin, "'" + id)
+          }
+        }
+      },
+      (pp, level, prevMargin, margin) ~> {
+        for (i => sty in ty.stypes.stypes) {
+          pp.buffer match {
+          | List.Nil()
+          | List.Cons("\n", _) ->
+            void
+          | _ -> pp.newLine()
+          };
+          if (i != 0) pp.out(level, prevMargin, "| ");
+          pp.stype(level, margin, sty);
+          pp.newLine();
+        };
+        for (inst in ty.insts.insts) {
+          pp.buffer match {
+          | List.Nil()
+          | List.Cons("\n", _) ->
+            void
+          | _ -> pp.newLine()
+          };
+          if (ty.stypes.stypes.size() != 0) pp.out(level, prevMargin, "| ");
+          inst match {
+          | TSInst(x, targs) ->
+            pp.out(level, margin, x.value);
+            if (targs.targs.size() != 0) {
+              pp.out(level, margin, "<");
+              for (i => targ in targs.targs) {
+                if (i != 0) pp.out(level, margin, ", ");
+                pp.type(level, margin, targ);
+              };
+              pp.out(level, margin, ">");
+            }
+          | TInter(ty1, ty2) ->
+            pp.type(level, margin, ty1);
+            pp.out(level, margin, " & ");
+            pp.type(level, margin, ty2)
+          | TVar(_, id) -> pp.out(level, margin, "'" + id)
+          }
+        }
+      },
+    );
+  }
+}
+
+fun prettyPrintType(compact: Bool, ty: TType): String {
+  pp = mutable TypePp{compact};
+  pp.type(0, Margin(), ty);
+  strings = pp.buffer.reversed();
+  if (compact) {
+    !strings = strings.map(str ~> {
+      String::fromChars(
+        str
+          .getIter()
+          .filter(c ~> c != '\t' && c != '\n' && c != ' ')
+          .collect(Array),
+      )
+    })
+  };
+  result = "".join(strings);
+  result
+}
+
+fun prettyPrintSTypes(stypes: STypes): String {
+  prettyPrintType(
+    false,
+    TType::create(
+      PosRange::none,
+      stypes,
+      TInsts::empty(),
+      TTypeParams::empty(),
+    ),
+  )
+}
+
+module end;

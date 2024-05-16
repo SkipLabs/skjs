@@ -1,0 +1,126 @@
+/*****************************************************************************/
+/* Generic operations on sorted set represented with sorted arrays. */
+/*****************************************************************************/
+
+module SKJS;
+
+fun mapUnion<T, Key: Orderable>(
+  iter1: mutable Iterator<T>,
+  iter2: mutable Iterator<T>,
+  proj: T ~> Key,
+  missing: T -> T,
+  union: (T, T) -> T,
+): Array<T> {
+  result = mutable Vector[];
+  head1 = iter1.next();
+  head2 = iter2.next();
+  loop {
+    (head1, head2) match {
+    | (None(), None()) -> break void
+    | (None(), Some(y)) ->
+      result.push(missing(y));
+      !head2 = iter2.next()
+    | (Some(x), None()) ->
+      result.push(missing(x));
+      !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) < proj(y)) ->
+      result.push(missing(x));
+      !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) > proj(y)) ->
+      result.push(missing(y));
+      !head2 = iter2.next()
+    | (Some(x), Some(y)) ->
+      result.push(union(x, y));
+      !head1 = iter1.next();
+      !head2 = iter2.next()
+    }
+  };
+  result.toArray()
+}
+
+fun mapInter<T, Key: Orderable>(
+  iter1: mutable Iterator<T>,
+  iter2: mutable Iterator<T>,
+  proj: T ~> Key,
+  inter: (T, T) -> T,
+): (Array<T>, Array<T>, Array<T>) {
+  noMatch1 = mutable Vector[];
+  noMatch2 = mutable Vector[];
+  present = mutable Vector[];
+  head1 = iter1.next();
+  head2 = iter2.next();
+  loop {
+    (head1, head2) match {
+    | (None(), None()) -> break void
+    | (None(), Some(y)) ->
+      noMatch2.push(y);
+      !head2 = iter2.next()
+    | (Some(x), None()) ->
+      noMatch1.push(x);
+      !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) < proj(y)) ->
+      noMatch1.push(x);
+      !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) > proj(y)) ->
+      noMatch2.push(y);
+      !head2 = iter2.next()
+    | (Some(x), Some(y)) ->
+      present.push(inter(x, y));
+      !head1 = iter1.next();
+      !head2 = iter2.next()
+    }
+  };
+  (noMatch1.toArray(), noMatch2.toArray(), present.toArray())
+}
+
+class ArrayValues(
+  values: Array<(PosRange, String)>,
+) uses Hashable, Orderable, Show {
+  static fun createFromItems(items: Array<(PosRange, String)>): this {
+    !items = items.sortedBy(x ~> x.i1);
+    static(items)
+  }
+
+  fun union(other: ArrayValues): ArrayValues {
+    ArrayValues(
+      mapUnion(
+        this.values.iterator(),
+        other.values.iterator(),
+        x ~> x.i1,
+        x ~> x,
+        (x, _) ~> x,
+      ),
+    )
+  }
+
+  fun inter(other: ArrayValues): ArrayValues {
+    (_noMatches1, _notMatches2, result) = mapInter(
+      this.values.iterator(),
+      other.values.iterator(),
+      x ~> x.i1,
+      (x, _) ~> x,
+    );
+    ArrayValues(result)
+  }
+
+  fun toStringList(): String {
+    this.values.map(x -> x.i1).join(" | ")
+  }
+
+  fun toString(): String {
+    inspect(this).toString()
+  }
+
+  fun contains(x: String): Bool {
+    idx = SKStore.binSearch(
+      i ~> this.values[i].i1,
+      x,
+      0,
+      this.values.size() - 1,
+    );
+    if (idx < 0 || idx >= this.values.size()) return false;
+    this.values[idx].i1 == x
+  }
+}
+
+module end;
