@@ -1,0 +1,419 @@
+/*****************************************************************************/
+/* Module performing the module name resolution for SKJS. */
+/*****************************************************************************/
+
+module alias S = SKStore;
+
+module SKJS;
+
+/*****************************************************************************/
+// Primitives used to manipulate file names, directory names etc ...
+/*****************************************************************************/
+
+fun splitPath(dirNameStr: String): Array<String> {
+  result = mutable Vector<String>[];
+  for (elt in dirNameStr.split("/").filter(x -> x != "")) {
+    if (elt == ".") continue;
+    result.push(elt)
+  };
+  result.toArray()
+}
+
+fun removeDotDot(path: Array<String>): Array<String> {
+  result = mutable Vector<String>[];
+  for (elt in path) {
+    if (elt == "..") {
+      result.maybePop() match {
+      | None() -> invariant_violation("Invalid path: " + path)
+      | Some(_) -> continue
+      }
+    };
+    result.push(elt)
+  };
+  result.toArray();
+}
+
+base class DirName(path: Array<String>) uses Orderable, Show {
+  children =
+  | DRelative()
+  | DAbsolute()
+
+  fun +(other: FileName): FileName {
+    !other.dirName = this / other.dirName;
+    other
+  }
+
+  fun /(other: DirName): DirName {
+    (this, other) match {
+    | (DRelative(d1), DRelative(d2)) -> DRelative(d1.concat(d2))
+    | (DRelative _, DAbsolute _) ->
+      invariant_violation(
+        "Internal error: cannot add an absolute path to a relative one",
+      )
+    | (DAbsolute(d1), DRelative(d2)) -> DAbsolute(removeDotDot(d1.concat(d2)))
+    | (DAbsolute _, DAbsolute _) ->
+      invariant_violation(
+        "Internal error: cannot add an absolute path to another absolute path",
+      )
+    }
+  }
+
+  fun toString(): String {
+    if (this.path.size() == 0) return "/";
+    "/" + this.path.join("/") + "/"
+  }
+
+  fun endsWith(str: String): Bool {
+    invariant(str != "");
+    this.path.size() > 0 && this.path[this.path.size() - 1] == str
+  }
+
+  static fun create(dirNameStr: String): DirName {
+    path = splitPath(dirNameStr);
+    if (dirNameStr.startsWith("/")) DAbsolute(removeDotDot(path)) else {
+      DRelative(path)
+    }
+  }
+
+  fun allAncestors(): mutable Iterator<DirName> {
+    this match {
+    | DRelative(_) ->
+      invariant_violation(
+        "Internal error: cannot call allAncestors on a relative path",
+      )
+    | DAbsolute(path) ->
+      for (i in Range(0, path.size())) {
+        yield (DAbsolute(this.path.slice(0, this.path.size() - i)))
+      }
+    }
+  }
+
+  fun exists(): Bool {
+    FileSystem.exists(this.toString())
+  }
+}
+
+class FileName(dirName: DirName, baseName: String) {
+  static fun create(fileName: String): this {
+    invariant(!fileName.endsWith("/"));
+    vec = splitPath(fileName);
+    path = vec.slice(0, vec.size() - 1);
+    dirName = if (fileName.startsWith("/")) {
+      DAbsolute(path)
+    } else {
+      DRelative(path)
+    };
+    baseName = vec[vec.size() - 1];
+    static(dirName, baseName)
+  }
+
+  fun toString(): String {
+    this.dirName.toString() + this.baseName
+  }
+
+  fun exists(): Bool {
+    FileSystem.exists(this.toString())
+  }
+}
+
+/*****************************************************************************/
+/* Class to help lookup file names quickly. */
+/*****************************************************************************/
+
+class FileNameEntry(
+  invertedName: String,
+  name: String,
+) extends S.File uses Orderable {
+  static fun create(fileName: String): this {
+    inv = mutable Vector[];
+    chars = fileName.chars();
+    for (i in Range(0, chars.size())) {
+      inv.push(chars[chars.size() - i - 1]);
+    };
+    static(String::fromChars(inv.toArray()), fileName)
+  }
+
+  fun compare(other: FileNameEntry): Order {
+    this.invertedName.compare(other.invertedName)
+  }
+}
+
+class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
+  fun lookup(fileName: FileName): ?FileName {
+    fileNameStr = fileName.toString();
+    invariant(!fileNameStr.contains(".."));
+    entry = FileNameEntry::create(fileNameStr);
+    idx = SKStore.binSearch(
+      i ~> this.entries[i].invertedName,
+      entry.invertedName,
+      0,
+      this.entries.size() - 1,
+    );
+    if (idx < 0 || idx >= this.entries.size()) return None();
+    if (this.entries[idx].invertedName.startsWith(entry.invertedName)) {
+      return Some(FileName::create(this.entries[idx].name))
+    };
+    None();
+  }
+}
+
+class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
+  static fun create(
+    context: mutable S.Context,
+    fileNames: S.EHandle<S.SID, S.StringFile>,
+  ): this {
+    static(
+      fileNames
+        .map(
+          S.SID::keyType,
+          FileNameEntry::type,
+          context,
+          S.DirName::create("/skjs/file/index/"),
+          (_context, writer, key, _valueIter) ~> {
+            fileName = key.value;
+            (for (ancestor in FileName::create(
+              fileName,
+            ).dirName.allAncestors()) {
+              if (ancestor.endsWith("node_modules")) {
+                break Some(ancestor.toString())
+              }
+            } else {
+              None()
+            }) match {
+            | None() -> void
+            | Some(modulePath) ->
+              writer.set(S.SID(modulePath), FileNameEntry::create(fileName))
+            }
+          },
+        )
+        .map(
+          S.SID::keyType,
+          NodeModuleDir::type,
+          context,
+          S.DirName::create("/skjs/node_modules/index/"),
+          (_context, writer, key, valueIter) ~> {
+            writer.set(key, NodeModuleDir(valueIter.collect(Array).sorted()))
+          },
+        ),
+    )
+  }
+
+  fun lookup(
+    context: mutable S.Context,
+    path: DirName,
+    file: FileName,
+  ): ?FileName {
+    invariant(path is DAbsolute _);
+    for (ancestor in path.allAncestors()) {
+      this.modules.maybeGet(
+        context,
+        S.SID((ancestor / DirName::create("node_modules/")).toString()),
+      ) match {
+      | None() -> continue
+      | Some(mod) ->
+        mod.lookup(file) match {
+        | None() -> void
+        | x @ Some(_) -> return x
+        }
+      }
+    };
+    None()
+  }
+}
+
+/*****************************************************************************/
+// Given an import statement in a TypeScript file: 1. Determine the
+// import path from the import statement.  2. Resolve the module
+// according to the following steps:
+
+//     a. If the import path is a relative path (starts with "./" or
+//         "../"): i. Try appending ".ts", ".tsx", ".d.ts" to the path
+//         and check if the file exists.  ii. If the file does not exist,
+//         try treating the path as a directory and look for an
+//         "index.ts", "index.tsx", or "index.d.ts" file in that
+//         directory.
+
+//     b. If the import path is a non-relative module name: i. Look in
+//         the nearest node_modules directory.  ii. Travel up the
+//         directory tree and look into each node_modules directory until
+//         the root of the file system is reached.  iii. In each
+//         node_modules directory, attempt to find the module. For a
+//         module named "Example", look for
+//         "Example.d.ts". If not found, it then looks for a package.json
+//         file in the "Example" directory, and reads the "typings" or
+//         "types" field to determine the path to the declaration file.
+//         iv. If the package.json does not specify a "typings" or
+//         "types" field, try to find an "index.d.ts" file
+//         in the module's root directory.
+/*****************************************************************************/
+
+fun resolveName(
+  context: mutable S.Context,
+  index: FileNameIndex,
+  root: DirName,
+  cwd: DirName,
+  moduleName: String,
+): ?FileName {
+  if (moduleName.endsWith("-js")) {
+    !moduleName = moduleName.stripSuffix("-js");
+  };
+  if (moduleName.startsWith("/") || moduleName.startsWith(".")) {
+    if (moduleName == "." || moduleName == "./") {
+      print_error("Could not resolve module '.'");
+      return None();
+    };
+    pathRoot = if (moduleName.startsWith(".")) cwd else root;
+    fullName = if (moduleName.startsWith("/")) {
+      FileName::create(moduleName)
+    } else {
+      pathRoot + FileName::create(moduleName)
+    };
+    endsWithTS = fullName.baseName.endsWith(".ts");
+    endsWithTSX = fullName.baseName.endsWith(".tsx");
+    if ((endsWithTS || endsWithTSX) && fullName.exists()) {
+      return Some(fullName);
+    };
+    endsWithJS = fullName.baseName.endsWith(".js");
+    endsWithMJS = fullName.baseName.endsWith(".mjs");
+    if (endsWithJS || endsWithMJS) {
+      suffix = if (endsWithJS) ".js" else {
+        invariant(endsWithMJS);
+        ".mjs";
+      };
+      tsName = fullName with {
+        baseName => fullName.baseName.stripSuffix(suffix) + ".ts",
+      };
+      if (tsName.exists()) {
+        return Some(tsName);
+      };
+      tsxName = fullName with {
+        baseName => fullName.baseName.stripSuffix(suffix) + ".tsx",
+      };
+      if (tsxName.exists()) {
+        return Some(tsxName);
+      };
+      dtsName = fullName with {
+        baseName => fullName.baseName.stripSuffix(suffix) + ".d.ts",
+      };
+      if (dtsName.exists()) {
+        return Some(dtsName);
+      };
+      print_error("Could not find file: " + fullName.toString());
+      print_error("From: " + cwd.toString());
+      return None();
+    };
+    pathFile = pathRoot + FileName::create(moduleName + ".d.ts");
+    if (pathFile.exists()) return Some(pathFile);
+    pathIndex = pathRoot + FileName::create(moduleName + "/index.d.ts");
+    if (pathIndex.exists()) return Some(pathIndex);
+    pathCjs = pathRoot + FileName::create(moduleName + "/index.cjs");
+    if (pathCjs.exists()) return Some(pathCjs);
+    print_error("Could not find module[3]: " + moduleName);
+    print_error("From: " + cwd.toString());
+    return None();
+  };
+
+  index.lookup(
+    context,
+    root,
+    FileName::create("./@types/" + moduleName + "/index.d.ts"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+
+  index.lookup(
+    context,
+    root,
+    FileName::create("./@types/node/" + moduleName + ".d.ts"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+
+  if (moduleName.contains(":")) {
+    requireTypesPath =
+      root +
+      FileName::create(
+        "./node_modules/@types/" + moduleName.split(":").join("/") + ".d.ts",
+      );
+    debug(requireTypesPath.toString());
+    index.lookup(context, cwd, requireTypesPath) match {
+    | x @ Some _ -> return x
+    | _ ->
+      print_error("Could not find module[2]: " + moduleName);
+      print_error("From: " + cwd.toString())
+    };
+    return None();
+  };
+
+  index.lookup(
+    context,
+    cwd,
+    FileName::create(moduleName + "/index.d.ts"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+  index.lookup(
+    context,
+    cwd,
+    FileName::create(moduleName + "/dist/index.d.ts"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+  index.lookup(
+    context,
+    cwd,
+    FileName::create(moduleName + "/dist/types/types.d.ts"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+  index.lookup(
+    context,
+    cwd,
+    FileName::create(moduleName + "/types/index.d.ts"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+  index.lookup(
+    context,
+    cwd,
+    FileName::create(moduleName + "/typing/index.d.ts"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+
+  index.lookup(
+    context,
+    cwd,
+    FileName::create(moduleName.replace("/", ".").replace("@", "") + ".d.ts"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+
+  //  if (moduleName.contains("/")) {
+  index.lookup(context, cwd, FileName::create(moduleName + ".d.ts")) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+  index.lookup(
+    context,
+    cwd,
+    FileName::create(moduleName + "/index.cjs"),
+  ) match {
+  | None() -> void
+  | x @ Some _ -> return x
+  };
+  //  };
+
+  debug("Could not find module[1]: " + moduleName);
+  None()
+}
+
+module end;
