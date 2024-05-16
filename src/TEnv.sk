@@ -1,0 +1,580 @@
+/*****************************************************************************/
+// The typing environment.
+//
+// The typing environment retrieves the abstract syntax tree
+// corresponding to a type definition and turns it into a type.
+/*****************************************************************************/
+
+module SKJS;
+
+class TEnv{
+  // The defMap associates an AST to a type name.
+  private defMap: IDefMap,
+
+  // The type-parameters that are currently in scope. So if we see a
+  // type definition with a matching name, we know we are dealing with
+  // a universally quantified type variable.
+  tparams: SortedMap<String, TParam> = SortedMap[],
+
+  // The type substitution, which is different than the one used for
+  // existentials during the inference. This one is used to
+  // instantiate a type with parameters with type arguments. So when
+  // you write new mytype<number>, it's this substitution that will
+  // take care of replacing the instances of type-parameter in the
+  // definition of mytype. However, if you introduce an existential
+  // (like you would with a parametric new construct without explicit
+  // type arguments), a different substitution is used (cf TVar).
+  subst: SortedMap<String, (Bool, TType)> = SortedMap[],
+
+  // When expanding a type definition, we don't want to recursively
+  // get all the type instances of a type, we only want to go one
+  // level deep. Conretely, consider the following type:
+  //
+  // type foo = { field1: null | foo, field2: number };
+  //
+  // When we expand foo, we want to get:
+  //   { field1: null | foo, field2: number };
+  //
+  // We don't want the instance of foo to be expanded (because that
+  // could be infinite). Instead, the second instance of foo will only
+  // be expanded if that turns out to be necessary for the inference.
+  // The field "seenInstantiate" enforces the fact that we only expand one
+  // level deep by keeping track of the types that we are in the
+  // process of expanding.
+  seenInstantiate: SortedSet<String> = SortedSet[],
+
+  // This field keeps track of type names that, if used, would define
+  // a cyclic type definition.
+  forbiddenInsts: SortedSet<String> = SortedSet[],
+
+  // This field keeps track of the intersections that we are in the
+  // process of computing. If a cycle occurs, the type TInter(t1, t2)
+  // will be returned.
+  seenInter: SortedSet<(TType, TType)> = SortedSet[],
+
+  // This field keeps track of the subtyping relations that we are in
+  // the process of checking. If a cycle occurs, the subtyping
+  // relation is considered correct (by co-induction).
+  seenSub: SortedSet<(Int, TType, TType)> = SortedSet[],
+} {
+  static fun fromSortedMap(typeDefs: SortedMap<String, TypeDef>): this {
+    static{defMap => SortedDefMap{map => typeDefs}}
+  }
+
+  // Given a type name and type arguments, first retrieves the type
+  // definition (using the defMap) and then produces a type where the
+  // type parameters have been replaced with the corresponding type
+  // arguments (as expected).
+  fun instantiate(
+    context: mutable SKStore.Context,
+    name: Name,
+    targs: TArgs,
+  ): TType {
+    // We are dealing with a recursive instance, if we keep on
+    // unfolding, we will end up in an infinite loop. Instead, we
+    // produce a type that can be later lazily unfolded if need be.
+    if (this.seenInstantiate.contains(name.value)) {
+      return TType::inst(name, targs);
+    };
+    !this.seenInstantiate = this.seenInstantiate.set(name.value);
+
+    tdef = this.defMap.getType(context, name);
+    tparams = tdef match {
+    | TDType(ta) ->
+      if (ta.tdefParams.size() != targs.targs.size()) {
+        typingError(Array[(name.posRange, "Invalid number of type arguments")])
+      };
+      ta.tdefParams
+    | TDClass(ca) ->
+      if (ca.tparams.size() != targs.targs.size()) {
+        typingError(Array[(name.posRange, "Invalid number of type arguments")])
+      };
+      ca.tparams
+    };
+
+    subst = this.subst;
+    for (i => targ in targs.targs) {
+      tparam = tparams[i];
+      tparam.constraint match {
+      | None() -> void
+      | Some(cstr) ->
+        cstrTy = this.normalize(context, cstr);
+        isSubType(mutable Subst{context}, this, targ, cstrTy) match {
+        | STOk() -> void
+        | _ ->
+          typingError(
+            Array[
+              (name.posRange, "Constraint not satisfied"),
+              (targ.pos, "This is of type: " + targ.toString()),
+              (cstr.posRange, "It does not implement: " + cstrTy.toString()),
+            ],
+          )
+        }
+      };
+      if (tparam.default is Some _) {
+        invariant_violation("TODO default type param");
+      };
+      !subst[tparam.name.value] = (true, targ);
+    };
+    !this.subst = subst;
+
+    tdef match {
+    | TDType(ta) -> this.normalize(context, ta.body)
+    | TDClass(_) -> this.new(context, name, targs.targs)
+    }
+  }
+
+  fun getClass(context: mutable SKStore.Context, className: Name): Class {
+    tdef = this.defMap.getType(context, className);
+    tdef match {
+    | TDType(_) ->
+      typingError(Array[(className.posRange, "Expected a class name")])
+    | TDClass(ca) -> ca
+    };
+  }
+
+  fun makeTArgs(
+    context: mutable SKStore.Context,
+    subst: mutable Subst,
+    className: Name,
+  ): Array<TType> {
+    result = this.getClass(context, className).tparams.map(tparam -> {
+      tvar = subst.gen(className.posRange);
+      ty = TType::create(
+        className.posRange,
+        STypes::empty(),
+        TInsts(Array[tvar]),
+        TTypeParams::empty(),
+      );
+      tparam.constraint match {
+      | None() -> ty
+      | Some(cstr) -> unionType(subst, this, this.normalize(context, cstr), ty)
+      }
+    });
+    result
+  }
+
+  fun new(
+    context: mutable SKStore.Context,
+    className: Name,
+    targs: Array<TType>,
+    filter: FieldType ~> Bool = _ ~> true,
+    transform: FieldType ~> FieldType = x ~> x,
+  ): TType {
+    c = this.getClass(context, className);
+    if (c.tparams.size() != targs.size()) {
+      typingError(
+        Array[
+          (className.posRange, "Expected " + c.tparams.size() + " parameters"),
+        ],
+      )
+    };
+    visitedClasses = mutable Set[];
+    fields = mutable Map[];
+    thisType = TType::create(
+      className.posRange,
+      STypes::empty(),
+      TInsts(Array[TSInst(className, TArgs(targs))]),
+      TTypeParams::empty(),
+    );
+    !this.subst["this"] = (false, thisType);
+    this.addFields(
+      context,
+      fields,
+      visitedClasses,
+      className,
+      targs,
+      filter,
+      transform,
+    );
+    TType::single(
+      className.posRange,
+      TObject(
+        TFields::create(
+          fields.items().collect(Array).sortedBy(x ~> x.i0).map(x -> x.i1),
+        ),
+        className.posRange,
+      ),
+    )
+  }
+
+  fun addTParams(
+    context: mutable SKStore.Context,
+    tparams: Array<TypeParam>,
+  ): this {
+    for (tparam in tparams) {
+      !this.subst[tparam.name.value] = (
+        false,
+        TType::create(
+          tparam.name.posRange,
+          STypes::empty(),
+          TInsts::empty(),
+          TTypeParams(
+            Array[
+              Array[
+                TParam(
+                  tparam.name.value,
+                  tparam.name.posRange.fileName,
+                  tparam.id,
+                  tparam.constraint.map(cstr -> this.normalize(context, cstr)),
+                ),
+              ],
+            ],
+          ),
+        ),
+      )
+    };
+    this
+  }
+
+  fun addFields(
+    context: mutable SKStore.Context,
+    acc: mutable Map<String, TField>,
+    visitedClasses: mutable Set<String>,
+    className: Name,
+    targs: Array<TType>,
+    filter: FieldType ~> Bool,
+    transform: FieldType ~> FieldType,
+  ): void {
+    if (visitedClasses.contains(className.value)) {
+      typingError(Array[(className.posRange, "Cyclic class definition")]);
+    };
+    visitedClasses.insert(className.value);
+    c = for (def in this.defMap.get(
+      context,
+      FileName::create(className.posRange.fileName),
+      className,
+    )) {
+      def.value match {
+      | c @ Class _ -> break c
+      | _ -> void
+      }
+    } else {
+      typingError(Array[(className.posRange, "Unbound class")])
+    };
+    if (targs.size() != 0 && targs.size() != c.tparams.size()) {
+      typingError(
+        Array[
+          (className.posRange, "Invalid number of type arguments"),
+          (c.name.posRange, "Class declaration is here"),
+        ],
+      )
+    };
+    for (i => tparam in c.tparams) {
+      !this.subst[tparam.name.value] = (false, targs[i])
+    };
+    for (extend in c.extends_) {
+      extend.value match {
+      | TAInst(parentName, paramTArgs) ->
+        this.addFields(
+          context,
+          acc,
+          visitedClasses,
+          parentName,
+          paramTArgs.map(targ -> this.normalize(context, targ)),
+          filter,
+          transform,
+        )
+      | _ -> typingError(Array[(extend.posRange, "Unexpected extend")])
+      }
+    };
+    for (fieldType in c.fields) {
+      if (!filter(fieldType)) continue;
+      transform(fieldType) match {
+      | field @ FieldTypeValue _ ->
+        field.setGet match {
+        | None() -> void
+        | Some(FieldGetSet(_, pos)) -> notSupported(pos)
+        };
+        for (modifier in field.modifiers.modifiers) {
+          typingError(Array[(modifier.posRange, "TODO: field modifier")])
+        };
+        type = field.type match {
+        | None() -> typingError(Array[(field.pos, "Missing type annotation")])
+        | Some(ty) -> this.normalize(context, ty)
+        };
+        fieldName = field.name match {
+        | FNNormal(x) -> x.value
+        | _ -> typingError(Array[(field.pos, "Unsupported field name")])
+        };
+        acc![fieldName] = TField(
+          field.pos,
+          fieldName,
+          field.optional is Some _,
+          type,
+        )
+      | fd @ FunDef _ ->
+        (metName, metType) = this.funDecl(context, true, fd);
+        acc![metName.value] = TField(fd.pos, metName.value, false, metType)
+      }
+    }
+  }
+
+  fun funDecl(
+    context: mutable SKStore.Context,
+    isMethod: Bool,
+    fd: FunDef,
+  ): (Name, TType) {
+    name = fd.name match {
+    | Some(FNNormal(x)) -> x
+    | _ -> notSupported(fd.pos)
+    };
+    fty = this.normalize(
+      context,
+      Type(
+        fd.pos,
+        TAFun(
+          isMethod,
+          fd.tparams,
+          fd.params.map(param -> {
+            ty = param.name match {
+            | PNName(n, tyOpt) ->
+              tyOpt match {
+              | None() ->
+                param.type match {
+                | None() ->
+                  typingError(Array[(n.posRange, "Missing type annotation")])
+                | Some(x) -> x
+                }
+              | Some(ty) -> ty
+              }
+            | _ ->
+              typingError(
+                Array[
+                  (param.pos, "TODO: support for param pattern in typeDecl"),
+                ],
+              )
+            };
+            TAFunParam(None(), param.optional, ty)
+          }),
+          fd.retType.i1 match {
+          | None() -> // constructor
+            Type(fd.retType.i0, TAInst(Name(fd.retType.i0, "void"), Array[]))
+          | Some(x) -> x
+          },
+        ),
+      ),
+    );
+    (name, fty)
+  }
+
+  fun normalize(context: mutable SKStore.Context, typeAst: Type): TType {
+    subst = mutable Subst{context};
+    pos = typeAst.posRange;
+    typeAst.value match {
+    | TABigIntLiteral _ -> invariant_violation("TODO BigIntLiteral ")
+    | TAAssertIs _ -> invariant_violation("TODO assertIs ")
+    | TAAbstract _ -> invariant_violation("TODO abstract ")
+    | TAUniqueSymbol() -> invariant_violation("TODO uniqueSymbol ")
+    | TAAsserts _ -> invariant_violation("TODO asserts ")
+    | TAIs _ -> invariant_violation("TODO is ")
+    | TANew _ -> invariant_violation("TODO new ")
+    | TAKeyOf _ -> invariant_violation("TODO keyof ")
+    | TAEmptyArray _ -> invariant_violation("TODO emptyArray ")
+    | TAInfer _ -> invariant_violation("TODO infer ")
+    | TATemplate _ -> invariant_violation("TODO template ")
+    | TAImport _ -> invariant_violation("TODO import ")
+    | TAReadonly _ -> invariant_violation("TODO readonly ")
+    | TAExtends _ -> invariant_violation("TODO extends ")
+    | TAExtendsQuestion _ -> invariant_violation("TODO extendsQuestion ")
+    | TAStringLiteral(x) ->
+      TType::single(
+        pos,
+        TStaticString(ArrayValues[(typeAst.posRange, x)], typeAst.posRange),
+      )
+    | TABoolLiteral(_) -> notSupported(typeAst.posRange)
+    | TANumLiteral(_) -> notSupported(typeAst.posRange)
+    | TATypeOf _ -> invariant_violation("TODO typeof")
+    | TAPrim(kind) ->
+      TType::single(
+        pos,
+        kind match {
+        | TPKNull() -> TNull(typeAst.posRange)
+        | TPKBool() -> TBool(typeAst.posRange)
+        | TPKNum() -> TNum(typeAst.posRange)
+        | TPKString() -> TString(typeAst.posRange)
+        },
+      )
+    | TAObject(fields) ->
+      createObject(typeAst.posRange, this.createTFields(context, fields))
+    | TAArray(ty) ->
+      TType::single(pos, TArray(this.normalize(context, ty), typeAst.posRange))
+    | TAInst(n @ Name(p, "void"), targs) ->
+      if (targs.size() != 0) {
+        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+      };
+      TType::single(p, TVoid(p))
+    | TAInst(n @ Name(p, "undefined"), targs) ->
+      if (targs.size() != 0) {
+        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+      };
+      TType::single(p, TUndefined(p))
+    | TAInst(n @ Name(_, "Promise"), targs) ->
+      if (targs.size() != 1) {
+        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+      };
+      TType::single(
+        pos,
+        TPromise(this.normalize(context, targs[0]), typeAst.posRange),
+      )
+    | TAInst(n, targs) ->
+      if (this.tparams.containsKey(n.value)) {
+        if (targs.size() != 0) {
+          typingError(
+            Array[(n.posRange, "A type parameter cannot have type argument")],
+          )
+        };
+        tparam = this.tparams[n.value];
+        TType::create(
+          pos,
+          STypes::empty(),
+          TInsts::empty(),
+          TTypeParams(Array[Array[tparam]]),
+        )
+      } else if (this.subst.containsKey(n.value)) {
+        if (targs.size() != 0) {
+          typingError(
+            Array[(n.posRange, "A type parameter cannot have type argument")],
+          )
+        };
+        (keepPos, ty) = this.subst[n.value];
+        if (keepPos) ty else TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+      } else if (this.forbiddenInsts.contains(n.value)) {
+        typingError(Array[(n.posRange, "Cyclic definition")])
+      } else {
+        TType::create(
+          pos,
+          STypes::empty(),
+          TInsts::single(
+            TSInst(
+              n,
+              TArgs(
+                targs.map(x ->
+                  (this with {
+                    forbiddenInsts => this.seenInstantiate,
+                  }).normalize(context, x)
+                ),
+              ),
+            ),
+          ),
+          TTypeParams::empty(),
+        )
+      }
+    | TAUnion(ty1, ty2) ->
+      ty = unionType(
+        subst,
+        this,
+        this.normalize(context, ty1),
+        this.normalize(context, ty2),
+      );
+      TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+    | TAInter(ty1, ty2) ->
+      ty = interType(
+        subst,
+        this,
+        this.normalize(context, ty1),
+        this.normalize(context, ty2),
+      );
+      TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+    | TATuple(tupleElts) ->
+      typeVec = mutable Vector[];
+      for (ty in tupleElts) {
+        ty match {
+        | TEType(n, optional, x) ->
+          if (n is Some _) invariant_violation("TODO named tuple");
+          if (optional is Some _) {
+            invariant_violation("TODO optional element tuple")
+          };
+          typeVec.push(x)
+        | TESpread _ -> invariant_violation("TODO tuple spread")
+        }
+      };
+      types = typeVec.toArray();
+      TType::single(
+        pos,
+        TTuple(types.map(ty -> this.normalize(context, ty)), typeAst.posRange),
+      )
+    | TAFun(isMethod, tparams, params, retType) ->
+      funTParams = mutable Vector[];
+      for (tparam in tparams) {
+        funTParam = TParam(
+          tparam.name.value,
+          tparam.name.posRange.fileName,
+          tparam.id,
+          tparam.constraint.map(cstr -> this.normalize(context, cstr)),
+        );
+        funTParams.push(funTParam);
+        !this.tparams[tparam.name.value] = funTParam;
+      };
+      normalParams = mutable Vector[];
+      optionalParams = mutable Vector[];
+      optionalWitness: ?PosRange = None();
+      for (param in params) {
+        param.optional match {
+        | None() ->
+          optionalWitness match {
+          | None() -> normalParams.push(this.normalize(context, param.type))
+          | Some(wpos) ->
+            typingError(
+              Array[
+                (param.type.posRange, "This parameter is not optional"),
+                (wpos, "It appears after this parameter that is optional"),
+              ],
+            )
+          }
+        | Some(wpos) ->
+          !optionalWitness = Some(wpos);
+          optionalParams.push(this.normalize(context, param.type))
+        }
+      };
+      tfun = TFun(
+        funTParams.toArray(),
+        normalParams.toArray(),
+        optionalParams.toArray(),
+        pos,
+        Array[],
+        this.normalize(context, retType),
+      );
+      tfuns = if (isMethod) {
+        TFuns(Array[], Array[tfun], typeAst.posRange)
+      } else {
+        TFuns(Array[tfun], Array[], typeAst.posRange)
+      };
+      TType::single(pos, tfuns)
+    | TAGet _ -> invariant_violation("TODO TAGet")
+    }
+  }
+
+  fun createTFields(
+    context: mutable SKStore.Context,
+    fields: Array<FieldType>,
+  ): TFields {
+    TFields::create(
+      fields.map(elt -> {
+        elt match {
+        | fd @ FieldTypeValue _ ->
+          fd.type match {
+          | None() -> invariant_violation("TODO no type")
+          | Some(ty) ->
+            normalizedType = this.normalize(context, ty);
+            fd.name match {
+            | FNColon _ -> invariant_violation("TODO fnColon")
+            | FNIn _ -> invariant_violation("TODO fnIn")
+            | FNSymbol _ -> invariant_violation("TODO symbol")
+            | FNNormal(name) ->
+              TField(
+                name.posRange,
+                name.value,
+                fd.optional is Some _,
+                normalizedType,
+              )
+            }
+          }
+        | FunDef _ -> invariant_violation("TODO fundef")
+        }
+      }),
+    )
+  }
+}
+
+module end;

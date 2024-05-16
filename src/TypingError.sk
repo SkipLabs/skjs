@@ -1,0 +1,39 @@
+/*****************************************************************************/
+/* Typing Errors */
+/*****************************************************************************/
+
+module SKJS;
+
+class TypingError(messages: Array<(PosRange, String)>) extends Exception {
+  fun toString(
+    context: mutable SKStore.Context,
+    newLinesMap: NewLinesMap,
+  ): String {
+    result = mutable Vector[];
+    for (message in this.messages) {
+      pos = message.i0;
+      fileName = pos.fileName;
+      newLines = newLinesMap.get(context, fileName);
+      resolver = PositionResolver{fileName, newLines};
+      result.push(resolver.relPosRange(message.i0).toString());
+      result.push(message.i1);
+    };
+    result.join("\n")
+  }
+}
+
+fun typingError<T>(messages: Array<(PosRange, String)>): T {
+  throw TypingError(messages)
+}
+
+fun notSupported<T>(pos: PosRange): T {
+  typingError(Array[(pos, "Construction not supported")])
+}
+
+fun expectedStringOrNumError<T>(pos: PosRange, type: TType): T {
+  typingError(
+    Array[(pos, "Expected a string or a number, not: " + type.toString())],
+  )
+}
+
+module end;
