@@ -1,0 +1,1734 @@
+/*****************************************************************************/
+// This file defines all the operation on types used during the
+// type-checking phase.
+//
+// All the class involved start with "T" for type, or "ST" for single
+// type. A class that starts with "T" is just a type, a type that
+// starts with "ST" means that it represents a single type out of a
+// larger union.
+//
+// For example: type type number | undefined is represented by a class
+// TType that contains a union of SType where the STypes are "number"
+// and "undefined".
+/*****************************************************************************/
+
+module SKJS;
+
+/*****************************************************************************/
+// The class representing all the types.
+//
+// The class has 3 important parts:
+//
+//   - the stypes (which represent concrete single types, like number,
+//   undefined, null etc ...)
+//
+//   - the instances (which represent type variables, unexpanded type
+//   instances and unexpanded intersections).
+//
+//   - the parameters (normalized under a disjonctive normal form).
+//
+// A few examples:
+//   number | void           ==> TType(stypes = void | number)
+//   Foo<number> | number    ==> TType(stypes = number, insts = Foo<number>)
+//   T2 extends A | T1       ==> TType(tparams = T1 | T2 extends A)
+//
+// Note that some operations will require a so-called "expansion", and
+// expansion consisting in getting rid of all the instances and turn
+// them into stypes + type params. Note that the expansion is only one
+// level deep, so if a type is defined recursively, the expansion will
+// not affect the instances defined inside the type.
+/*****************************************************************************/
+
+class TType(
+  // The hash, it's important because we need to quickly determine if
+  // two types are different.
+  h: Int,
+
+  // The position in the source-code that serves as a witness, when an
+  // error occurs involving this type, we will use that position in
+  // the error message.
+  pos: PosRange,
+
+  // This field is true if the type represents TOP (meaning, the type
+  // that contains all possible values). Note that TOP and BOTTOM have
+  // the same representation outside of this field. Why is that? We
+  // could have introduced an algebric data type of the form: TOP |
+  // BOTTOM | TTYPE. The reason is that outside of those 3 operations:
+  // sub-typing, intersection and union, we really want to treat TOP
+  // and BOTTOM the same way. For example, imagine you are writing x.y
+  // where the type of x is BOTTOM. Technically, that operation is
+  // correct. But do we really want to allow it? Why would anyone
+  // write an operation that we know is unreachable. From that
+  // perspective, x.y when x is bottom should do the same thing as
+  // when x is TOP, it should result in an error. And this
+  // representation makes it nice and easy.
+  isTop: Bool,
+
+  // The list of possible "single types" or "simple types".
+  // undefined | void | null | boolean | number | string | etc ...
+  stypes: STypes,
+
+  // The list of type instances which can be:
+  // - Type variables
+  // - Unexpanded type instances MyClass<number>
+  // - Unexpanded intersections TInter(t1, t2)
+  insts: TInsts,
+
+  // The type parameters (universally quantified type variables), in a
+  // sorted disjonctive normal form. So if you write: T1 & (T3 | T2)
+  // that will be turned into T1 & T2 | T1 & T3.
+  tparams: TTypeParams,
+) uses Hashable, Orderable {
+  // Returns the type that represents all possible values. Every other
+  // type is sub-type of top.
+  static fun top(pos: PosRange): TType {
+    stypes = STypes::empty();
+    insts = TInsts::empty();
+    tparams = TTypeParams::empty();
+    h = (pos, stypes, insts).hash();
+    static(h, pos, true, stypes, insts, tparams)
+  }
+
+  // Returns the type that is sub-type of all types. This type is
+  // impossible to construct, meaning, a value of this type is always
+  // unreachable code. However, that type can still be useful to
+  // represent some values (like exceptions).
+  static fun bottom(pos: PosRange): this {
+    static::create(pos, STypes::empty(), TInsts::empty(), TTypeParams::empty())
+  }
+
+  // Creates an unexpanded instance.
+  static fun inst(name: Name, targs: TArgs): this {
+    static::create(
+      name.posRange,
+      STypes::empty(),
+      TInsts(Array[TSInst(name, targs)]),
+      TTypeParams::empty(),
+    )
+  }
+
+  fun withPos(pos: PosRange): this {
+    TType::create(pos, this.stypes, this.insts, this.tparams)
+  }
+
+  fun toString(): String {
+    prettyPrintType(false, this)
+  }
+
+  static fun fromSTypes(pos: PosRange, stypes: STypes): this {
+    TType::create(pos, stypes, TInsts::empty(), TTypeParams::empty())
+  }
+
+  static fun fromTParams(pos: PosRange, tparams: TTypeParams): this {
+    TType::create(pos, STypes::empty(), TInsts::empty(), tparams)
+  }
+
+  static fun single(pos: PosRange, stype: SType): this {
+    TType::create(
+      pos,
+      STypes::single(stype),
+      TInsts::empty(),
+      TTypeParams::empty(),
+    )
+  }
+
+  static fun create(
+    pos: PosRange,
+    stypes: STypes,
+    insts: TInsts,
+    tparams: TTypeParams,
+  ): this {
+    h = (pos, stypes, insts, tparams).hash();
+    static(h, pos, false, stypes, insts, tparams);
+  }
+
+  fun hash(): Int {
+    this.h
+  }
+
+  fun getSTypes(
+    subst: mutable Subst,
+    env: TEnv,
+    isContravariant: Bool = false,
+  ): STypes {
+    ty = this;
+    loop {
+      (stypes, tparams) = ty.expand(subst, env, isContravariant);
+      if (tparams.tparams.isEmpty()) return stypes;
+      result = TType::create(
+        this.pos,
+        stypes,
+        TInsts::empty(),
+        TTypeParams::empty(),
+      );
+      for (inter in tparams.tparams) {
+        localResult: TType = static::top(ty.pos);
+        for (tparam in inter) {
+          tparam.cstr match {
+          | None() -> continue
+          | Some(c) -> !localResult = interType(subst, env, localResult, c)
+          }
+        };
+        !result = unionType(subst, env, result, localResult)
+      };
+      !ty = result;
+    }
+  }
+
+  fun expand(
+    subst: mutable Subst,
+    env: TEnv,
+    isContravariant: Bool = false,
+  ): (STypes, TTypeParams) {
+    tparams = this.tparams;
+    stypes = this.stypes;
+    insts = Vector::mcreateFromItems(this.insts.insts);
+    seen = mutable Set[];
+    for (inst in insts) {
+      seen.insert(inst);
+    };
+    loop {
+      if (insts.isEmpty()) return (stypes, tparams);
+      inst = insts.pop();
+      tyDef = inst match {
+      | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
+      | TInter(ty1, ty2) -> interType(subst, env, ty1, ty2)
+      | tvar @ TVar _ ->
+        if (isContravariant) subst.getContra(tvar) else subst.get(tvar)
+      };
+      !tparams = unionTTypeParams(tparams, tyDef.tparams);
+      !stypes = unionSTypes(subst, env, stypes, tyDef.stypes);
+      for (newInst in tyDef.insts) {
+        if (seen.contains(newInst)) continue;
+        seen.insert(newInst);
+        insts.push(newInst);
+      }
+    }
+  }
+
+  fun containsTVar(): Bool {
+    for (inst in this.insts) {
+      inst match {
+      | TVar _ -> return true
+      | _ -> void
+      };
+    };
+    false
+  }
+
+  fun isMethod(): Bool {
+    this.stypes.stypes.size() == 1 &&
+      this.stypes.stypes[0] match {
+      | TFuns(_, methods, _) -> methods.size() != 0
+      | _ -> false
+      }
+  }
+}
+
+/*****************************************************************************/
+/* Object types. */
+/*****************************************************************************/
+
+class TObject(fields: TFields) extends SType
+class TAlgebraic(branches: Array<TConstr>) extends SType
+class TConstr(fields: TFields) uses Hashable, Orderable {}
+
+fun isTag(ty: TType): Bool {
+  ty.insts.insts.size() == 0 &&
+    ty.stypes.stypes.size() == 1 &&
+    ty.stypes.stypes[0] match {
+    | TStaticString(s, _) -> s.values.size() == 1
+    | _ -> false
+    }
+}
+
+fun createObject(pos: PosRange, fields: TFields): TType {
+  seen = mutable Set<String>[];
+  for (field in fields) {
+    if (seen.contains(field.name)) {
+      typingError(Array[(field.pos, "Duplicate field")])
+    };
+    seen.insert(field.name);
+  };
+  if (seen.contains("kind") && isTag(fields.maybeGet("kind").fromSome().type)) {
+    TType::single(pos, TAlgebraic(Array[TConstr(fields)], pos))
+  } else {
+    TType::single(pos, TObject(fields, pos))
+  }
+}
+
+fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
+  stypes = ty.getSTypes(subst, env);
+  invariant(stypes.stypes.size() == 1);
+  !stypes.stypes = stypes.stypes.map(stype -> {
+    stype match {
+    | TObject(TFields(fields), pos) ->
+      TObject(
+        TFields::create(
+          fields.filter(field -> {
+            for (fieldSType in field.type.stypes.stypes) {
+              fieldSType match {
+              | TFuns(_, methods, _) if (!methods.isEmpty()) -> return false
+              | _ -> return true
+              }
+            };
+            return true
+          }),
+        ),
+        pos,
+      )
+    | _ -> invariant_violation("Internal error: new should produce an object")
+    }
+  });
+  TType::create(ty.pos, stypes, TInsts::empty(), TTypeParams::empty());
+}
+
+/*****************************************************************************/
+/* Tuples */
+/*****************************************************************************/
+
+class TTuple(tuple: Array<TType>) extends SType {
+  fun toArray(subst: mutable Subst, env: TEnv): TArray {
+    invariant(this.tuple.size() != 0);
+    elt = this.tuple[0];
+    for (i in Range(1, this.tuple.size())) {
+      !elt = unionType(subst, env, elt, this.tuple[i]);
+    };
+    TArray(elt, this.pos)
+  }
+  fun toString(): String {
+    invariant_violation("TODO1")
+  }
+}
+
+/*****************************************************************************/
+/* Funs */
+/*****************************************************************************/
+
+class TFuns(funs: Array<TFun>, methods: Array<TFun>) extends SType
+class TFun(
+  tparams: Array<TParam>,
+  params: Array<TType>,
+  optionalParams: Array<TType>,
+  minSizeWitness: PosRange,
+  lambdas: Array<Lambda>,
+  retType: TType,
+) uses Hashable, Orderable {
+  fun toString(): String {
+    invariant_violation("TODO2")
+  }
+}
+
+class Lambda(
+  pos: PosRange,
+  compute: (mutable Subst, Array<TType>, TType) ~> void,
+) uses Hashable, Orderable {
+  fun hash(): Int {
+    this.pos.hash()
+  }
+  fun compare(other: Lambda): Order {
+    this.pos.compare(other.pos)
+  }
+}
+
+/*****************************************************************************/
+/* Single types */
+/*****************************************************************************/
+
+base class SType(pos: PosRange) uses Hashable, Orderable {
+  children =
+  | TUndefined()
+  | TVoid()
+  | TNull()
+  | TBool()
+  | TNum()
+  | TString()
+  | TStaticString(ArrayValues)
+  | TArray(TType)
+  | TPromise(TType)
+
+  fun tag(): Int
+  // TUndefined must be smaller than all the others (cf TFields::getType)
+  | TUndefined _ -> -1
+  | TVoid _ -> 0
+  | TNull _ -> 1
+  | TBool _ -> 2
+  | TNum _ -> 3
+  | TString _ -> 4
+  | TStaticString _ -> 4
+  | TArray _ -> 6
+  | TTuple _ -> 7
+  | TPromise _ -> 8
+  | TObject _ -> 9
+  | TAlgebraic _ -> 10
+  | TFuns _ -> 11
+
+  fun get(pos: PosRange): TType {
+    this match {
+    | TArray(x, _) -> x
+    | _ ->
+      typingError(
+        Array[
+          (pos, "Expected an array"),
+          (
+            this.pos,
+            "Not: " +
+              prettyPrintType(false, TType::single(PosRange::none, this)),
+          ),
+        ],
+      )
+    }
+  }
+}
+
+class TField(
+  pos: PosRange,
+  name: String,
+  isOptional: Bool,
+  type: TType,
+) uses Hashable, Orderable {
+  fun withOptional(): this {
+    this with {isOptional => true}
+  }
+}
+
+class TFields private (fields: Array<TField>) uses Hashable, Orderable {
+  static fun empty(): this {
+    TFields(Array[])
+  }
+
+  static fun create(fields: Array<TField>): this {
+    !fields = fields.sortedBy(x ~> x.name);
+    TFields(fields)
+  }
+
+  fun values(): mutable Iterator<TField> {
+    this.fields.iterator()
+  }
+
+  fun maybeGet(fieldName: String): ?TField {
+    idx = SKStore.binSearch(
+      i ~> this.fields[i].name,
+      fieldName,
+      0,
+      this.fields.size() - 1,
+    );
+    if (idx < 0 || idx >= this.fields.size()) return None();
+    if (this.fields[idx].name != fieldName) return None();
+    Some(this.fields[idx])
+  }
+
+  fun getType(fieldName: Name): TType {
+    this.maybeGet(fieldName.value) match {
+    | None() ->
+      typingError(
+        Array[
+          (fieldName.posRange, "Unbound field: " + fieldName.value),
+          (
+            fieldName.posRange,
+            "Possible options are:\n" +
+              this.fields.filter(x -> x.name != "constructor")
+                .map(x -> x.name)
+                .join("\n"),
+          ),
+        ],
+      )
+    | Some(fd) ->
+      ty = fd.type;
+      if (fd.isOptional) {
+        hasUndefined = false;
+        for (stype in ty.stypes.stypes) {
+          stype match {
+          | TUndefined _ -> !hasUndefined = true
+          | _ -> void
+          }
+        };
+        if (!hasUndefined) {
+          !ty.stypes.stypes = Array[TUndefined(fieldName.posRange)].concat(
+            ty.stypes.stypes,
+          )
+        }
+      };
+      ty
+    }
+  }
+
+  fun getKind(): String {
+    this.maybeGet("kind").fromSome().type.stypes.stypes[0] match {
+    | TStaticString(s, _) ->
+      invariant(s.values.size() == 1);
+      s.values[0].i1
+    | _ -> invariant_violation("Internal error: getKind on non constructor")
+    }
+  }
+}
+
+class STypes(stypes: Array<SType>) uses Hashable, Orderable {
+  static fun empty(): this {
+    static(Array[])
+  }
+
+  static fun single(x: SType): this {
+    STypes(Array[x])
+  }
+
+  fun isEmpty(): Bool {
+    this.stypes.isEmpty()
+  }
+
+  fun values(): mutable Iterator<SType> {
+    this.stypes.values()
+  }
+
+  fun isStringOrNum(): Bool {
+    for (stype in this.stypes) {
+      stype match {
+      | TNum _ -> continue
+      | TString _ -> continue
+      | TStaticString _ -> continue
+      | _ -> return false
+      }
+    };
+    true
+  }
+
+  fun isString(): Bool {
+    for (stype in this.stypes) {
+      stype match {
+      | TString _ -> continue
+      | _ -> return false
+      }
+    };
+    true
+  }
+
+  fun isSingle(): Bool {
+    this.stypes.size() == 1;
+  }
+}
+
+class TVar(pos: PosRange, id: Int) extends TInst
+class TArgs(targs: Array<TType>) uses Hashable, Orderable
+class TSInst(name: Name, targs: TArgs) extends TInst
+class TInter(ty1: TType, ty2: TType) extends TInst
+
+base class TInst uses Hashable, Orderable
+
+class TInsts(insts: Array<TInst>) uses Hashable, Orderable {
+  static fun empty(): this {
+    static(Array[])
+  }
+
+  static fun single(inst: TInst): this {
+    TInsts(Array[inst])
+  }
+
+  fun isEmpty(): Bool {
+    this.insts.isEmpty()
+  }
+
+  fun values(): mutable Iterator<TInst> {
+    this.insts.values()
+  }
+
+  fun toArray(): Array<TInst> {
+    this.insts
+  }
+}
+
+class TParam(
+  name: String,
+  fileName: String,
+  id: Int,
+  cstr: ?TType,
+) uses Hashable, Orderable
+// The type parameters are in DNF
+class TTypeParams(tparams: Array<Array<TParam>>) uses Hashable, Orderable {
+  static fun empty(): this {
+    TTypeParams(Array[])
+  }
+}
+
+/*****************************************************************************/
+/* Sub-typing */
+/*****************************************************************************/
+
+base class SError {
+  children =
+  | SRec(STResult, PosRange, TType)
+}
+
+base class STResult {
+  children =
+  | STOk()
+  | STMissingField(String)
+  | STTooManySType(SType)
+  | STTooManyTConstr(TConstr)
+  | STTooManyTTuple(TTuple)
+  | STTooManyTFun(TFun)
+  | STInvalidTypeParam(String)
+  | STInvalidTypeParams(String)
+  | STTop()
+  | STError(SError)
+
+  fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
+    this match {
+    | STOk() ->
+      invariant_violation("Internal error: STResult should never go to String")
+    | STTop() -> "This is of type any"
+    | STMissingField(fieldName) ->
+      "The field '" +
+        fieldName +
+        "' is missing" +
+        "\n" +
+        "Out of the type: " +
+        expandTVars(subst, env, ty).toString()
+    | STTooManySType(sty) ->
+      sty match {
+      | TUndefined _ -> "This is of type undefined"
+      | TVoid _ -> "This is of type void"
+      | TNull _ -> "This is of type null"
+      | TBool(_) -> "This is a boolean"
+      | TNum(_) -> "This is a number"
+      | TString(_) -> "This is a string"
+      | TStaticString(x, _) ->
+        "This is a static string: " +
+          x.values.map(x -> "'" + x.i1 + "'").join(" | ")
+
+      | TArray _ -> "This is an array"
+      | TPromise _ -> "This is a Promise"
+      | SKJS.TAlgebraic _ ->
+        "This is a constructor (the field kind is a static string)"
+      | SKJS.TFuns _ ->
+        "This is a function of type: " +
+          prettyPrintType(false, TType::single(PosRange::none, sty))
+      | SKJS.TObject _ -> "This is an object"
+      | SKJS.TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
+      }
+    | STTooManyTConstr(_) -> "This is a constructor"
+    | STTooManyTTuple(tuple) -> "This is a tuple of size " + tuple.tuple.size()
+    | STTooManyTFun(f) ->
+      "This is a function: " +
+        prettyPrintType(
+          false,
+          TType::single(
+            PosRange::none,
+            TFuns(Array[f], Array[], PosRange::none),
+          ),
+        )
+    | STInvalidTypeParam(n) -> "This is of type " + n
+    | STInvalidTypeParams(n) -> "This is of type " + n
+    | STError(SRec(st, _, ty2)) -> st.toString(subst, env, ty2)
+    }
+  }
+}
+
+fun genericSubSmaller<T, K: Orderable>(
+  iter1: mutable Iterator<T>,
+  iter2: mutable Iterator<T>,
+  mkError: T ~> STResult,
+  proj: T ~> K,
+  sub: (T, T) -> STResult,
+): STResult {
+  head1 = iter1.next();
+  head2 = iter2.next();
+  loop {
+    (head1, head2) match {
+    | (None(), None()) -> break void
+    | (None(), Some(_)) -> break void
+    | (Some(x), None()) -> return mkError(x)
+    | (Some(x), Some(y)) if (proj(x) < proj(y)) -> return mkError(x)
+    | (Some(x), Some(y)) if (proj(x) > proj(y)) -> !head2 = iter2.next()
+    | (Some(x), Some(y)) ->
+      sub(x, y) match {
+      | STOk() ->
+        !head1 = iter1.next();
+        !head2 = iter2.next()
+      | err -> return err
+      }
+    }
+  };
+  STOk()
+}
+
+fun genericSubBigger<T, K: Orderable>(
+  iter1: mutable Iterator<T>,
+  iter2: mutable Iterator<T>,
+  mkError: T -> STResult,
+  proj: T ~> K,
+  sub: (T, T) -> STResult,
+): STResult {
+  head1 = iter1.next();
+  head2 = iter2.next();
+  loop {
+    (head1, head2) match {
+    | (None(), None()) -> break void
+    | (None(), Some(y)) -> return mkError(y)
+    | (Some(_), None()) -> return STOk()
+    | (Some(x), Some(y)) if (proj(x) < proj(y)) -> !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) > proj(y)) -> return mkError(y)
+    | (Some(x), Some(y)) ->
+      sub(x, y) match {
+      | STOk() ->
+        !head1 = iter1.next();
+        !head2 = iter2.next()
+      | err -> return err
+      }
+    }
+  };
+  STOk()
+}
+
+fun isSubTTypeParams(
+  subst: mutable Subst,
+  env: TEnv,
+  tparams1: TTypeParams,
+  tparams2: TTypeParams,
+  cstr: TType,
+): STResult {
+  for (inter1 in tparams1.tparams) {
+    for (inter2 in tparams2.tparams) {
+      genericSubBigger(
+        inter1.values(),
+        inter2.values(),
+        x ->
+          x.cstr match {
+          | None() -> STInvalidTypeParam(x.name)
+          | Some(c) -> isSubType(subst, env, c, cstr)
+          },
+        x ~> x,
+        (_, _) -> STOk(),
+      ) match {
+      | STOk() -> break void
+      | _ -> continue
+      }
+    } else {
+      for (tparam in inter1) {
+        tparam.cstr match {
+        | None() -> continue
+        | Some(c) ->
+          isSubType(subst, env, c, cstr) match {
+          | STOk() -> return STOk()
+          | _ -> continue
+          }
+        }
+      };
+      return STInvalidTypeParams(
+        tparams1.tparams
+          .map(inter -> inter.map(x -> x.name + ":" + x.id).join(" & "))
+          .join(" | "),
+      )
+    }
+  };
+  STOk()
+}
+
+fun isSubType(subst: mutable Subst, env: TEnv, u1: TType, u2: TType): STResult {
+  if (u1.isTop && u2.isTop) return STOk();
+  if (u1.isTop) return STTop();
+  if (u2.isTop) return STOk();
+  if (env.seenSub.contains((subst.version, u1, u2))) return STOk();
+  !env.seenSub = env.seenSub.set((subst.version, u1, u2));
+  savedSubst = subst.save();
+  for (inst in u1.insts) {
+    inst match {
+    | tvar @ TVar _ -> subst.grow(env, tvar, u2, false)
+    | _ -> void
+    }
+  };
+  for (inst in u2.insts) {
+    inst match {
+    | tvar @ TVar _ -> subst.grow(env, tvar, u1, true)
+    | _ -> void
+    }
+  };
+  (stypes1, tparams1) = u1.expand(subst, env, false);
+  (stypes2, tparams2) = u2.expand(subst, env, true);
+  cstr2 = TType::create(u2.pos, stypes2, TInsts::empty(), TTypeParams::empty());
+  isSubTTypeParams(subst, env, tparams1, tparams2, cstr2) match {
+  | STOk() -> void
+  | err ->
+    subst.restore(savedSubst);
+    pos = if (stypes1.stypes.size() == 1) stypes1.stypes[0].pos else u1.pos;
+    return STError(SRec(err, pos, u2))
+  };
+  status = isSubSTypes(subst, env, stypes1, stypes2);
+  status match {
+  | STOk() -> STOk()
+  | err @ STError _ ->
+    subst.restore(savedSubst);
+    err
+  | other @ STTooManySType(stype) ->
+    subst.restore(savedSubst);
+    STError(SRec(other, stype.pos, u2))
+  | other ->
+    subst.restore(savedSubst);
+    STError(SRec(other, u1.pos, u2))
+  }
+}
+
+fun isSubSTypes(
+  subst: mutable Subst,
+  env: TEnv,
+  stypes1: STypes,
+  stypes2: STypes,
+): STResult {
+  genericSubSmaller(
+    stypes1.values(),
+    stypes2.values(),
+    x ~> STTooManySType(x),
+    x ~> x.tag(),
+    (x, y) -> isSubSType(subst, env, x, y),
+  )
+}
+
+fun isSubSType(
+  subst: mutable Subst,
+  env: TEnv,
+  sty1: SType,
+  sty2: SType,
+): STResult {
+  (sty1, sty2) match {
+  | (TUndefined(_), TUndefined(_))
+  | (TVoid(_), TVoid(_))
+  | (TNull(_), TNull(_)) ->
+    STOk()
+
+  | (TBool(_), TBool(_)) -> STOk()
+  | (TNum(_), TNum(_)) -> STOk()
+
+  | (TString _, TString _) -> STOk()
+  | (TString _, TStaticString _) -> STTooManySType(sty1)
+  | (TStaticString _, TString(_)) -> STOk()
+
+  | (TStaticString(s1, _), TStaticString(s2, _)) ->
+    for (elt in s1.values) {
+      if (!s2.contains(elt.i1)) {
+        break STTooManySType(TStaticString(ArrayValues[elt], elt.i0))
+      }
+    } else {
+      STOk()
+    }
+
+  | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
+    isSubTTuple(subst, env, tuple1, tuple2)
+  | (TArray(ty1, _), TArray(ty2, _)) ->
+    // Array<T> are invariant because it exposes methods with T in
+    // both co and convravariant position (such as get/set).
+    isSubType(subst, env, ty1, ty2) match {
+    | STOk() -> isSubType(subst, env, ty2, ty1)
+    | err -> err
+    }
+
+  | (TTuple _, TArray _)
+  | (TArray _, TTuple _) ->
+    STTooManySType(sty1)
+
+  | (TPromise(ty1, _), TPromise(ty2, _)) -> isSubType(subst, env, ty1, ty2)
+  | (funs1 @ TFuns _, funs2 @ TFuns _) -> isSubTFuns(subst, env, funs1, funs2)
+  | (obj1 @ TObject _, obj2 @ TObject _) -> isSubTObject(subst, env, obj1, obj2)
+  | (TAlgebraic _, TObject _)
+  | (TObject _, TAlgebraic _) ->
+    STTooManySType(sty1)
+  | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
+    isSubTAlgebraic(subst, env, a1, a2)
+  | _ -> invariant_violation("Internal error")
+  }
+}
+
+fun isSubTTuple(
+  subst: mutable Subst,
+  env: TEnv,
+  tuple1: TTuple,
+  tuple2: TTuple,
+): STResult {
+  if (tuple1.tuple.size() < tuple2.tuple.size()) {
+    return STTooManySType(tuple1)
+  };
+  for (i in Range(0, tuple2.tuple.size())) {
+    isSubType(subst, env, tuple1.tuple[i], tuple2.tuple[i]) match {
+    | STOk() -> void
+    | err -> return err
+    }
+  };
+  STOk()
+}
+
+fun isSubTFuns(
+  subst: mutable Subst,
+  env: TEnv,
+  funs1: TFuns,
+  funs2: TFuns,
+): STResult {
+  {
+    iter1 = funs1.funs.iterator();
+    iter2 = funs2.funs.iterator();
+    genericSubSmaller(
+      iter1,
+      iter2,
+      x ~> STTooManyTFun(x),
+      x ~> (x.tparams.size(), x.params.size()),
+      (x, y) -> isSubTFun(subst, env, x, y),
+    )
+  } match {
+  | STOk() ->
+    iter1 = funs1.methods.iterator();
+    iter2 = funs2.methods.iterator();
+    genericSubSmaller(
+      iter1,
+      iter2,
+      x ~> STTooManyTFun(x),
+      x ~> (x.tparams.size(), x.params.size()),
+      (x, y) -> isSubTFun(subst, env, x, y),
+    )
+  | err -> err
+  }
+}
+
+fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
+  invariant(f1.tparams.size() == f2.tparams.size());
+  if (!f2.lambdas.isEmpty()) {
+    typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
+  };
+  tsubst = mutable Map[];
+  for (i in Range(0, f1.tparams.size())) {
+    tparam1 = f1.tparams[i];
+    tparam2 = f2.tparams[i];
+    tsubst![tparam2.id] = tparam1;
+  };
+  !f2 = RenameTParams().fun_(tsubst.chill(), f2);
+  params1 = f1.params;
+  params2 = f2.params;
+  for (i in Range(0, params1.size())) {
+    isSubType(subst, env, params2[i], params1[i]) match {
+    | STOk() -> void
+    | err -> return err
+    }
+  };
+  for (lambda in f1.lambdas) {
+    lambda.compute(subst, params2, f2.retType)
+  };
+  isSubType(subst, env, f1.retType, f2.retType)
+}
+
+fun isSubTObject(
+  subst: mutable Subst,
+  env: TEnv,
+  obj1: TObject,
+  obj2: TObject,
+): STResult {
+  isSubTFields(subst, env, obj1.fields, obj2.fields)
+}
+
+fun isSubTAlgebraic(
+  subst: mutable Subst,
+  env: TEnv,
+  a1: TAlgebraic,
+  a2: TAlgebraic,
+): STResult {
+  genericSubSmaller(
+    a1.branches.iterator(),
+    a2.branches.iterator(),
+    x ~> STTooManyTConstr(x),
+    x ~> x.fields.getKind(),
+    (x, y) -> isSubTFields(subst, env, x.fields, y.fields),
+  );
+}
+
+fun isSubBranch(
+  subst: mutable Subst,
+  env: TEnv,
+  b1: TConstr,
+  b2: TConstr,
+): STResult {
+  isSubTFields(subst, env, b1.fields, b2.fields)
+}
+
+fun isSubTFields(
+  subst: mutable Subst,
+  env: TEnv,
+  fields1: TFields,
+  fields2: TFields,
+): STResult {
+  genericSubBigger(
+    fields1.values(),
+    fields2.values(),
+    x ~> if (x.isOptional) STOk() else STMissingField(x.name),
+    x ~> x.name,
+    (x, y) -> {
+      if (x.isOptional && !y.isOptional) {
+        return STMissingField(x.name);
+      };
+      isSubType(subst, env, x.type, y.type)
+    },
+  );
+}
+
+/*****************************************************************************/
+/* Unions. */
+/*****************************************************************************/
+
+fun unionTFields(
+  subst: mutable Subst,
+  env: TEnv,
+  fields1: TFields,
+  fields2: TFields,
+): TFields {
+  (noMatch1, noMatch2, fields) = mapInter(
+    fields1.values(),
+    fields2.values(),
+    x ~> x.name,
+    (x, y) -> {
+      invariant(x.name == y.name);
+      TField(
+        x.pos,
+        x.name,
+        x.isOptional || y.isOptional,
+        unionType(subst, env, x.type, y.type),
+      )
+    },
+  );
+  !fields = fields
+    .concat(noMatch1.map(x -> x.withOptional()))
+    .concat(noMatch2.map(x -> x.withOptional()))
+    .sortedBy(x ~> x.name);
+  TFields::create(fields)
+}
+
+fun unionTObject(
+  subst: mutable Subst,
+  env: TEnv,
+  obj1: TObject,
+  obj2: TObject,
+): TObject {
+  TObject(unionTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
+}
+
+fun unionTAlgebraic(
+  subst: mutable Subst,
+  env: TEnv,
+  a1: TAlgebraic,
+  a2: TAlgebraic,
+): TAlgebraic {
+  branches = mapUnion(
+    a1.branches.iterator(),
+    a2.branches.iterator(),
+    x ~> x.fields.getKind(),
+    x -> x,
+    (x, y) -> TConstr(unionTFields(subst, env, x.fields, y.fields)),
+  );
+  TAlgebraic(branches, a1.pos)
+}
+
+fun unionSTypes(
+  subst: mutable Subst,
+  env: TEnv,
+  stypes1: STypes,
+  stypes2: STypes,
+): STypes {
+  STypes(
+    mapUnion(
+      stypes1.values(),
+      stypes2.values(),
+      x ~> x.tag(),
+      x ~> x,
+      (x, y) -> unionSType(subst, env, x, y),
+    ),
+  )
+}
+
+fun unionSType(
+  subst: mutable Subst,
+  env: TEnv,
+  sty1: SType,
+  sty2: SType,
+): SType {
+  (sty1, sty2) match {
+  | (TUndefined(pos), TUndefined(_)) -> TUndefined(pos)
+  | (TVoid(pos), TVoid(_)) -> TVoid(pos)
+  | (TNull(pos), TNull(_)) -> TNull(pos)
+  | (TBool(pos), TBool(_)) -> TBool(pos)
+  | (TNum(pos), TNum(_)) -> TNum(pos)
+
+  | (TString(pos), TString(_)) -> TString(pos)
+  | (TString(pos), TStaticString _) -> TString(pos)
+  | (TStaticString _, TString(pos)) -> TString(pos)
+  | (TStaticString(s1, pos), TStaticString(s2, _)) ->
+    TStaticString(s1.union(s2), pos)
+
+  | (TArray(ty1, pos), TArray(ty2, _)) ->
+    TArray(unionType(subst, env, ty1, ty2), pos)
+  | (TPromise(ty1, pos), TPromise(ty2, _)) ->
+    TPromise(unionType(subst, env, ty1, ty2), pos)
+  | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
+    unionTTuple(subst, env, tuple1, tuple2)
+  | (obj1 @ TObject _, obj2 @ TObject _) -> unionTObject(subst, env, obj1, obj2)
+  | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
+    unionTAlgebraic(subst, env, a1, a2)
+  | (f1 @ TFuns _, f2 @ TFuns _) -> unionTFuns(subst, env, f1, f2)
+  | _ -> invariant_violation("Internal error")
+  }
+}
+
+fun unionTFuns(subst: mutable Subst, env: TEnv, f1: TFuns, f2: TFuns): TFuns {
+  TFuns(
+    mapUnion(
+      f1.funs.iterator(),
+      f2.funs.iterator(),
+      x ~> (x.tparams.size(), x.params.size()),
+      x -> x,
+      (f1, f2) -> unionTFun(subst, env, f1, f2),
+    ),
+    mapUnion(
+      f1.methods.iterator(),
+      f2.methods.iterator(),
+      x ~> (x.tparams.size(), x.params.size()),
+      x -> x,
+      (f1, f2) -> unionTFun(subst, env, f1, f2),
+    ),
+    f1.pos,
+  )
+}
+
+fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
+  invariant(f1.tparams.size() == f2.tparams.size());
+  if (!f1.lambdas.isEmpty()) {
+    typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
+  };
+  if (!f2.lambdas.isEmpty()) {
+    typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
+  };
+  tsubst = mutable Map[];
+  tparams = mutable Vector[];
+  for (i in Range(0, f1.tparams.size())) {
+    tparam1 = f1.tparams[i];
+    tparam2 = f2.tparams[i];
+    tsubst![tparam2.id] = tparam1;
+    cstr = (tparam1.cstr, tparam2.cstr) match {
+    | (None(), None()) -> None()
+    | (None(), Some(x)) -> Some(x)
+    | (Some(x), None()) -> Some(x)
+    | (Some(x), Some(y)) -> Some(interType(subst, env, x, y))
+    };
+    tparams.push(tparam1 with {cstr});
+  };
+  !f2 = RenameTParams().fun_(tsubst.chill(), f2);
+  params = mutable Vector[];
+  for (i in Range(0, f1.params.size())) {
+    params.push(interType(subst, env, f1.params[i], f2.params[i]));
+  };
+  optionalParams = mutable Vector[];
+  for (i in Range(0, min(f1.optionalParams.size(), f2.optionalParams.size()))) {
+    optionalParams.push(
+      interType(subst, env, f1.optionalParams[i], f2.optionalParams[i]),
+    );
+  };
+  retType = unionType(subst, env, f1.retType, f2.retType);
+  totalSize1 = f1.params.size() + f1.optionalParams.size();
+  totalSize2 = f2.params.size() + f2.optionalParams.size();
+  sizeWitness = if (totalSize1 <= totalSize2) f1.minSizeWitness else {
+    f2.minSizeWitness
+  };
+  TFun(
+    tparams.toArray(),
+    params.toArray(),
+    optionalParams.toArray(),
+    sizeWitness,
+    Array[],
+    retType,
+  )
+}
+
+fun unionTTuple(
+  subst: mutable Subst,
+  env: TEnv,
+  tuple1: TTuple,
+  tuple2: TTuple,
+): TTuple {
+  result = mutable Vector[];
+  for (i in Range(0, min(tuple1.tuple.size(), tuple2.tuple.size()))) {
+    result.push(unionType(subst, env, tuple1.tuple[i], tuple2.tuple[i]));
+  };
+  if (tuple1.tuple.size() < tuple2.tuple.size()) {
+    for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
+      posEnd = PosRange(tuple1.pos.fileName, tuple1.pos.end, tuple1.pos.end);
+      result.push(
+        unionType(
+          subst,
+          env,
+          TType::single(tuple1.pos, TUndefined(posEnd)),
+          tuple2.tuple[i],
+        ),
+      );
+    }
+  } else if (tuple2.tuple.size() < tuple1.tuple.size()) {
+    for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
+      posEnd = PosRange(tuple2.pos.fileName, tuple2.pos.end, tuple2.pos.end);
+      result.push(
+        unionType(
+          subst,
+          env,
+          tuple1.tuple[i],
+          TType::single(tuple2.pos, TUndefined(posEnd)),
+        ),
+      );
+    }
+  };
+  TTuple(result.toArray(), tuple1.pos)
+}
+
+fun unionTInsts(insts1: TInsts, insts2: TInsts): TInsts {
+  TInsts(
+    mapUnion(insts1.values(), insts2.values(), x ~> x, x ~> x, (x, _) ~> x),
+  )
+}
+
+fun unionTTypeParams(
+  tparams1: TTypeParams,
+  tparams2: TTypeParams,
+): TTypeParams {
+  TTypeParams(
+    mapUnion(
+      tparams1.tparams.values(),
+      tparams2.tparams.values(),
+      x ~> x,
+      x ~> x,
+      (x, y) ~> {
+        invariant(x == y);
+        x
+      },
+    ),
+  )
+}
+
+fun unionType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
+  if (ty1.isTop) return ty1;
+  if (ty2.isTop) return ty2;
+  stypes = unionSTypes(subst, env, ty1.stypes, ty2.stypes);
+  types = unionTInsts(ty1.insts, ty2.insts);
+  tparams = unionTTypeParams(ty1.tparams, ty2.tparams);
+  TType::create(ty1.pos, stypes, types, tparams)
+}
+
+/*****************************************************************************/
+/* Intersections */
+/*****************************************************************************/
+
+fun interTFields(
+  subst: mutable Subst,
+  env: TEnv,
+  fields1: TFields,
+  fields2: TFields,
+): TFields {
+  fields = mapUnion(
+    fields1.values(),
+    fields2.values(),
+    x ~> x.name,
+    x ~> x,
+    (x, y) -> {
+      invariant(x.name == y.name);
+      TField(
+        x.pos,
+        x.name,
+        x.isOptional && y.isOptional,
+        interType(subst, env, x.type, y.type),
+      )
+    },
+  );
+  TFields::create(fields)
+}
+
+fun interTObject(
+  subst: mutable Subst,
+  env: TEnv,
+  obj1: TObject,
+  obj2: TObject,
+): TObject {
+  TObject(interTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
+}
+
+fun interTAlgebraic(
+  subst: mutable Subst,
+  env: TEnv,
+  a1: TAlgebraic,
+  a2: TAlgebraic,
+): TAlgebraic {
+  (_noMatchBranches1, _noMatchBranches2, branches) = mapInter(
+    a1.branches.iterator(),
+    a2.branches.iterator(),
+    x ~> x.fields.getKind(),
+    (x, y) -> TConstr(interTFields(subst, env, x.fields, y.fields)),
+  );
+  TAlgebraic(branches, a1.pos)
+}
+
+fun interSType(
+  subst: mutable Subst,
+  env: TEnv,
+  sty1: SType,
+  sty2: SType,
+): SType {
+  (sty1, sty2) match {
+  | (TUndefined(pos), TUndefined(_)) -> TUndefined(pos)
+  | (TVoid(pos), TVoid(_)) -> TVoid(pos)
+  | (TNull(pos), TNull(_)) -> TNull(pos)
+  | (TBool(pos), TBool(_)) -> TBool(pos)
+  | (TNum(pos), TNum(_)) -> TNum(pos)
+
+  | (TString(pos), TString(_)) -> TString(pos)
+  | (TStaticString _, TString _) -> sty1
+  | (TString _, TStaticString _) -> sty2
+  | (TStaticString(s1, pos), TStaticString(s2, _)) ->
+    TStaticString(s1.inter(s2), pos)
+
+  | (TArray(ty1, pos1), TArray(ty2, _)) ->
+    TArray(interType(subst, env, ty1, ty2), pos1)
+
+  | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
+    interTTuple(subst, env, tuple1, tuple2)
+
+  | (TPromise(ty1, pos1), TPromise(ty2, _)) ->
+    TPromise(interType(subst, env, ty1, ty2), pos1)
+
+  | (obj1 @ TObject _, obj2 @ TObject _) -> interTObject(subst, env, obj1, obj2)
+  | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
+    interTAlgebraic(subst, env, a1, a2)
+
+  | (f1 @ TFuns _, f2 @ TFuns _) -> interTFuns(subst, env, f1, f2)
+  | _ -> invariant_violation("Internal error")
+  }
+}
+
+fun interTFuns(subst: mutable Subst, env: TEnv, f1: TFuns, f2: TFuns): TFuns {
+  TFuns(
+    mapInter(
+      f1.funs.iterator(),
+      f2.funs.iterator(),
+      x ~> (x.tparams.size(), x.params.size()),
+      (x, y) -> interTFun(subst, env, x, y),
+    ).i2,
+    mapInter(
+      f1.methods.iterator(),
+      f2.methods.iterator(),
+      x ~> (x.tparams.size(), x.params.size()),
+      (x, y) -> interTFun(subst, env, x, y),
+    ).i2,
+    f1.pos,
+  )
+}
+
+fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
+  invariant(f1.tparams.size() == f2.tparams.size());
+  tsubst = mutable Map[];
+  tparams = mutable Vector[];
+  for (i in Range(0, f1.tparams.size())) {
+    tparam1 = f1.tparams[i];
+    tparam2 = f2.tparams[i];
+    tsubst![tparam2.id] = tparam1;
+    cstr = (tparam1.cstr, tparam2.cstr) match {
+    | (None(), None()) -> None()
+    | (None(), Some(x)) -> Some(x)
+    | (Some(x), None()) -> Some(x)
+    | (Some(x), Some(y)) -> Some(unionType(subst, env, x, y))
+    };
+    tparams.push(tparam1 with {cstr});
+  };
+  !f2 = RenameTParams().fun_(tsubst.chill(), f2);
+  params = mutable Vector[];
+  for (i in Range(0, f1.params.size())) {
+    params.push(unionType(subst, env, f1.params[i], f2.params[i]));
+  };
+  optionalSize = min(f1.optionalParams.size(), f2.optionalParams.size());
+  optionalParams = mutable Vector[];
+  for (i in Range(0, optionalSize)) {
+    optionalParams.push(
+      unionType(subst, env, f1.optionalParams[i], f2.optionalParams[i]),
+    );
+  };
+  if (f1.optionalParams.size() < f2.optionalParams.size()) {
+    for (i in Range(f1.optionalParams.size(), f2.optionalParams.size())) {
+      optionalParams.push(f2.optionalParams[i]);
+    }
+  } else if (f2.optionalParams.size() < f1.optionalParams.size()) {
+    for (i in Range(f2.optionalParams.size(), f1.optionalParams.size())) {
+      optionalParams.push(f1.optionalParams[i]);
+    }
+  };
+  totalSize1 = f1.params.size() + f1.optionalParams.size();
+  totalSize2 = f2.params.size() + f2.optionalParams.size();
+  sizeWitness = if (totalSize1 >= totalSize2) f1.minSizeWitness else {
+    f2.minSizeWitness
+  };
+  retType = interType(subst, env, f1.retType, f2.retType);
+  if (f1.lambdas.size() != 0) {
+    typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
+  };
+  if (f2.lambdas.size() != 0) {
+    typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
+  };
+  TFun(
+    tparams.toArray(),
+    params.toArray(),
+    optionalParams.toArray(),
+    sizeWitness,
+    Array[],
+    retType,
+  )
+}
+
+fun interTTuple(
+  subst: mutable Subst,
+  env: TEnv,
+  tuple1: TTuple,
+  tuple2: TTuple,
+): TTuple {
+  result = mutable Vector[];
+  for (i in Range(0, min(tuple1.tuple.size(), tuple2.tuple.size()))) {
+    result.push(interType(subst, env, tuple1.tuple[i], tuple2.tuple[i]));
+  };
+  if (tuple1.tuple.size() < tuple2.tuple.size()) {
+    for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
+      result.push(tuple2.tuple[i]);
+    }
+  } else if (tuple2.tuple.size() < tuple1.tuple.size()) {
+    for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
+      result.push(tuple1.tuple[i]);
+    }
+  };
+  TTuple(result.toArray(), tuple1.pos)
+}
+
+fun interSTypes(
+  subst: mutable Subst,
+  env: TEnv,
+  stypes1: STypes,
+  stypes2: STypes,
+): STypes {
+  STypes(
+    mapInter(
+      stypes1.values(),
+      stypes2.values(),
+      x ~> x.tag(),
+      (x, y) -> interSType(subst, env, x, y),
+    ).i2,
+  )
+}
+
+fun interTTypeParams(
+  tparams1: TTypeParams,
+  tparams2: TTypeParams,
+): TTypeParams {
+  result = mutable Vector[];
+  for (inter1 in tparams1.tparams) {
+    for (inter2 in tparams2.tparams) {
+      result.push(
+        mapUnion(inter1.values(), inter2.values(), x ~> x, x ~> x, (x, _) -> x),
+      );
+    }
+  };
+  result.sort();
+  TTypeParams(result.toArray())
+}
+
+fun interType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
+  if (ty1.isTop) return ty2;
+  if (ty2.isTop) return ty1;
+  if (env.seenInter.contains((ty1, ty2))) {
+    return TType::create(
+      ty1.pos,
+      STypes::empty(),
+      TInsts::single(TInter(ty1, ty2)),
+      interTTypeParams(ty1.tparams, ty2.tparams),
+    );
+  };
+  !env.seenInter = env.seenInter.set((ty1, ty2));
+  (stypes1, tparams1) = ty1.expand(subst, env);
+  (stypes2, tparams2) = ty2.expand(subst, env);
+  stypes = interSTypes(subst, env, stypes1, stypes2);
+  tparams = interTTypeParams(tparams1, tparams2);
+  TType::create(
+    if (!ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
+      ty2.pos
+    } else {
+      ty1.pos
+    },
+    stypes,
+    TInsts::empty(),
+    tparams,
+  )
+}
+
+/*****************************************************************************/
+/* Type transformation class. */
+/*****************************************************************************/
+
+base class ApplyType {
+  type Env;
+
+  overridable deferred fun type(env: this::Env, ty: TType): TType {
+    TType::create(
+      ty.pos,
+      this.stypes(env, ty.stypes),
+      this.insts(env, ty.insts),
+      this.typeParams(env, ty.tparams),
+    )
+  }
+
+  overridable deferred fun typeParams(
+    env: this::Env,
+    tparams: TTypeParams,
+  ): TTypeParams {
+    TTypeParams(tparams.tparams.map(x -> x.map(y -> this.typeParam(env, y))))
+  }
+
+  overridable deferred fun typeParam(env: this::Env, tparam: TParam): TParam {
+    TParam(
+      tparam.name,
+      tparam.fileName,
+      tparam.id,
+      tparam.cstr.map(c -> this.type(env, c)),
+    )
+  }
+
+  overridable deferred fun stypes(env: this::Env, stypes: STypes): STypes {
+    STypes(stypes.stypes.map(stype -> this.stype(env, stype)))
+  }
+
+  overridable deferred fun stype(env: this::Env, stype: SType): SType {
+    stype match {
+    | x @ TUndefined _
+    | x @ TVoid _
+    | x @ TNull _
+    | x @ TBool _
+    | x @ TNum _
+    | x @ TStaticString _
+    | x @ TString _ ->
+      x
+    | TArray(ty, pos) -> TArray(this.type(env, ty), pos)
+    | TPromise(ty, pos) -> TPromise(this.type(env, ty), pos)
+    | algs @ TAlgebraic _ -> this.algebraic(env, algs)
+    | funs @ TFuns _ -> this.funs(env, funs)
+    | obj @ TObject _ -> this.object(env, obj)
+    | tuples @ TTuple _ -> this.tuple(env, tuples)
+    }
+  }
+
+  overridable deferred fun algebraic(
+    env: this::Env,
+    algebraic: TAlgebraic,
+  ): TAlgebraic {
+    TAlgebraic(algebraic.branches.map(x -> this.constr(env, x)), algebraic.pos)
+  }
+
+  overridable deferred fun constr(env: this::Env, constr: TConstr): TConstr {
+    TConstr(this.fields(env, constr.fields))
+  }
+
+  overridable deferred fun object(env: this::Env, object: TObject): TObject {
+    TObject(this.fields(env, object.fields), object.pos)
+  }
+
+  overridable deferred fun funs(env: this::Env, funs: TFuns): TFuns {
+    TFuns(
+      funs.funs.map(x -> this.fun_(env, x)),
+      funs.methods.map(x -> this.fun_(env, x)),
+      funs.pos,
+    )
+  }
+
+  overridable deferred fun fun_(env: this::Env, f: TFun): TFun {
+    TFun(
+      f.tparams.map(x -> this.typeParam(env, x)),
+      f.params.map(x -> this.type(env, x)),
+      f.optionalParams.map(x -> this.type(env, x)),
+      f.minSizeWitness,
+      f.lambdas,
+      this.type(env, f.retType),
+    )
+  }
+
+  overridable deferred fun fields(env: this::Env, fields: TFields): TFields {
+    TFields::create(fields.fields.map(x -> this.field(env, x)))
+  }
+
+  overridable deferred fun field(env: this::Env, field: TField): TField {
+    TField(field.pos, field.name, field.isOptional, this.type(env, field.type))
+  }
+
+  overridable deferred fun tuple(env: this::Env, tuple: TTuple): TTuple {
+    TTuple(tuple.tuple.map(x -> this.type(env, x)), tuple.pos)
+  }
+
+  overridable deferred fun insts(env: this::Env, insts: TInsts): TInsts {
+    TInsts(insts.insts.map(x -> this.inst(env, x)))
+  }
+
+  overridable deferred fun inst(env: this::Env, inst: TInst): TInst {
+    inst match {
+    | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
+    | TInter(ty1, ty2) -> TInter(this.type(env, ty1), this.type(env, ty2))
+    | tvar @ TVar _ -> tvar
+    }
+  }
+
+  overridable deferred fun targs(env: this::Env, targs: TArgs): TArgs {
+    TArgs(targs.targs.map(x -> this.type(env, x)))
+  }
+}
+
+class RenameTParams() extends ApplyType {
+  type Env = Map<Int, TParam>;
+  fun typeParam(subst: this::Env, tparam: TParam): TParam {
+    if (subst.containsKey(tparam.id)) {
+      subst[tparam.id]
+    } else {
+      tparam
+    }
+  }
+}
+
+class Instantiate() extends ApplyType {
+  type Env = (mutable Subst, TEnv, Map<Int, TType>);
+
+  fun type(env: this::Env, ty: TType): TType {
+    !ty = TType::create(
+      ty.pos,
+      this.stypes(env, ty.stypes),
+      this.insts(env, ty.insts),
+      this.typeParams(env, ty.tparams),
+    );
+    if (ty.tparams.tparams.isEmpty()) return ty;
+    (subst, tenv, map) = env;
+    result = ty with {tparams => TTypeParams::empty()};
+    for (tparams in ty.tparams.tparams) {
+      clauseOpt: ?TType = None();
+      for (tparam in tparams) {
+        if (!map.containsKey(tparam.id)) continue;
+        paramTy = map[tparam.id];
+        !clauseOpt = clauseOpt match {
+        | None() -> Some(paramTy)
+        | Some(clause) -> Some(interType(subst, tenv, clause, paramTy))
+        }
+      };
+      clauseOpt match {
+      | None() -> void
+      | Some(clause) -> !result = unionType(subst, tenv, result, clause)
+      };
+    };
+    result with {
+      tparams => TTypeParams(
+        ty.tparams.tparams
+          .map(tparams -> tparams.filter(tparam -> !map.containsKey(tparam.id)))
+          .filter(x -> !x.isEmpty()),
+      ),
+    }
+  }
+}
+
+class ExpandTVars() extends ApplyType {
+  type Env = (mutable Subst, TEnv);
+
+  fun type(env: this::Env, ty: TType): TType {
+    !ty = TType::create(
+      ty.pos,
+      this.stypes(env, ty.stypes),
+      this.insts(env, ty.insts),
+      this.typeParams(env, ty.tparams),
+    );
+    (subst, tenv) = env;
+    (stypes, tparams) = ty.expand(subst, tenv);
+    ty with {stypes, insts => TInsts::empty(), tparams}
+  }
+}
+
+fun expandTVars(subst: mutable Subst, tenv: TEnv, ty: TType): TType {
+  (ExpandTVars()).type((subst, tenv), ty)
+}
+
+/*****************************************************************************/
+/* Class that maintains the environment for type variables. */
+/*****************************************************************************/
+
+base class SubstValue {
+  children =
+  | SVOpen(TType)
+  | SVClosed(TType)
+}
+
+class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
+
+mutable class Subst{
+  context: mutable SKStore.Context,
+  mutable version: Int = 0,
+  mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+} {
+  readonly fun save(): SavedSubst {
+    SavedSubst{version => this.version, values => this.values}
+  }
+
+  mutable fun restore(saved: SavedSubst): void {
+    this.!version = saved.version;
+    this.!values = saved.values;
+  }
+
+  mutable fun grow(env: TEnv, tvar: TVar, ty: TType, isContra: Bool): void {
+    if (!this.values.containsKey(tvar.id)) {
+      this.!values[tvar.id] = if (isContra) SVOpen(ty) else SVClosed(ty);
+      return void;
+    };
+    this.values[tvar.id] match {
+    | SVOpen(ty2) ->
+      newTy = unionType(this, env, ty2, ty);
+      if (newTy == ty2) return void;
+      this.!version = this.version + 1;
+      this.!values[tvar.id] = if (isContra) SVOpen(newTy) else SVClosed(newTy)
+    | SVClosed(_) -> void
+    }
+  }
+
+  mutable fun setIfUndefined(tvar: TVar, ty: TType): void {
+    if (!this.values.containsKey(tvar.id)) {
+      this.!values[tvar.id] = SVClosed(ty);
+    }
+  }
+
+  mutable fun get(tvar: TVar): TType {
+    (if (!this.values.containsKey(tvar.id)) {
+      SVOpen(TType::bottom(tvar.pos));
+    } else {
+      this.values[tvar.id]
+    }) match {
+    | SVOpen(ty) ->
+      this.!values[tvar.id] = SVClosed(ty);
+      ty
+    | SVClosed(ty) -> ty
+    }
+  }
+
+  mutable fun getContra(tvar: TVar): TType {
+    if (!this.values.containsKey(tvar.id)) {
+      TType::bottom(tvar.pos)
+    } else {
+      this.values[tvar.id] match {
+      | SVOpen(ty)
+      | SVClosed(ty) ->
+        ty
+      }
+    }
+  }
+
+  mutable fun gen(pos: PosRange): TVar {
+    id = this.version;
+    this.!version = this.version + 1;
+    TVar(pos, id);
+  }
+
+  readonly fun isOpen(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) match {
+    | Some(SVOpen _) -> true
+    | _ -> false
+    }
+  }
+}
+
+module end;
