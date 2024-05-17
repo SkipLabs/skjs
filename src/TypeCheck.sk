@@ -357,29 +357,34 @@ class TypeChecker{
       ),
     );
     if (c.extends_.size() != 0) {
-      if (c.extends_.size() > 1) {
+      isInterface = c.kind is CKInterface();
+      if (c.extends_.size() > 1 && !isInterface) {
         typingError(
           Array[(c.name.posRange, "Cannot extend more than one class")],
         )
       };
-      c.extends_[0].value match {
-      | TAInst(parentName, parentTArgs) ->
-        super = this.tenv.new(
-          context,
-          parentName,
-          parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
-        );
-        !this.super = Some(super);
-        scope = mutable Scope{id => 0, isLoop => false};
-        env = mutable TCEnv(context, subst, scope);
-        this.checkSubType(
-          env,
-          parentName.posRange,
-          "Invalid extends",
-          thisType,
-          super,
-        )
-      | _ -> typingError(Array[(c.name.posRange, "Invalid extend")])
+      for (ext in c.extends_) {
+        ext.value match {
+        | TAInst(parentName, parentTArgs) ->
+          super = this.tenv.new(
+            context,
+            parentName,
+            parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+          );
+          if (!isInterface) {
+            !this.super = Some(super);
+          };
+          scope = mutable Scope{id => 0, isLoop => false};
+          env = mutable TCEnv(context, subst, scope);
+          this.checkSubType(
+            env,
+            parentName.posRange,
+            "Invalid extends",
+            thisType,
+            super,
+          )
+        | _ -> typingError(Array[(c.name.posRange, "Invalid extend")])
+        }
       }
     };
     for (interface in c.implements) {
@@ -450,6 +455,7 @@ class TypeChecker{
         }
       }
     };
+    if (c.kind is CKInterface() || c.kind is CKAbstract()) return void;
     if (!hasConstructor) {
       for (fieldType in c.fields) {
         fieldType match {
