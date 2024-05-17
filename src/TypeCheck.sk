@@ -1137,11 +1137,49 @@ class TypeChecker{
       obj = this.tenv.new(env.context, className, targs);
       this.callConstructor(env, pos, obj, argsAst.map(e -> this.expr(env, e)));
       obj
-    | Get(arr, _) ->
+    | Get(arr, idx) ->
       stypes = this.expr(env, arr).getSTypes(env.subst, this.tenv);
-      result = stypes.stypes[0].get(pos);
+      idxType = this.expr(env, idx);
+      result = TType::bottom(pos);
       for (stype in stypes.stypes) {
-        !result = unionType(env.subst, this.tenv, result, stype.get(pos));
+        ty = stype match {
+        | TArray(x, _) ->
+          this.checkSubType(
+            env,
+            pos,
+            "Invalid index",
+            idxType,
+            TType::single(idx.posRange, TNum(idx.posRange)),
+          );
+          x
+        | TTuple(tyArr, tuplePos) ->
+          n = idx.value match {
+          | Number(str) -> str.toIntOption()
+          | _ -> None()
+          } match {
+          | None() ->
+            typingError(
+              Array[
+                (idx.posRange, "Invalid index"),
+                (tuplePos, "A tuple expects a static index"),
+              ],
+            )
+          | Some(x) -> x
+          };
+          tyArr[n]
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Expected an array"),
+              (
+                pos,
+                "Not: " +
+                  prettyPrintType(false, TType::single(stype.pos, stype)),
+              ),
+            ],
+          )
+        };
+        !result = unionType(env.subst, this.tenv, result, ty);
       };
       result
     | EArray(arr) ->
