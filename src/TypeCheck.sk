@@ -1028,6 +1028,16 @@ class TypeChecker{
         )) {
           def.value match {
           | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
+          | VarDefs(kind, varDefArr) ->
+            invariant(varDefArr.size() == 1);
+            varDef = varDefArr[0];
+            invariant(kind is VDKConst _);
+            // TODO: support constants defined using a pattern
+            invariant(varDef.pat is Pattern(_, PVar _));
+            break varDef.type match {
+            | None() -> this.newTVar(env, pos)
+            | Some(ty) -> this.tenv.normalize(env.context, ty)
+            }
           | _ -> void
           }
         } else {
