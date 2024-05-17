@@ -138,8 +138,14 @@ class TType(
     insts: TInsts,
     tparams: TTypeParams,
   ): this {
-    h = (pos, stypes, insts, tparams).hash();
+    h = (stypes, insts, tparams).hash();
     static(h, pos, false, stypes, insts, tparams);
+  }
+
+  fun compare(other: TType): Order {
+    (this.h, this.stypes, this.insts, this.tparams).compare(
+      (this.h, other.stypes, other.insts, other.tparams),
+    )
   }
 
   fun hash(): Int {
