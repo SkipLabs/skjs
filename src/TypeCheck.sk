@@ -564,7 +564,7 @@ class TypeChecker{
 
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
     (stypes, tparams) = ty.expand(env.subst, this.tenv);
-    if (tparams.tparams.size() == 0 && stypes.stypes.size() != 1) return false;
+    if (tparams.tparams.size() != 0 || stypes.stypes.size() != 1) return false;
     stypes.stypes[0] match {
     | TVoid _ -> true
     | _ -> false
