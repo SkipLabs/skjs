@@ -1005,8 +1005,8 @@ class TypeChecker{
     e.value match {
     | Number(_) -> TType::single(pos, TNum(pos))
     | EString(SKQuote(), x) ->
-      TType::single(pos, TStaticString(ArrayValues[(pos, x)], pos))
-    | EString(SKDoubleQuote(), _) -> TType::single(pos, TString(pos))
+      TType::single(pos, TString(Some(ArrayValues[(pos, x)]), pos))
+    | EString(SKDoubleQuote(), _) -> TType::single(pos, TString(None(), pos))
     | EString(SKBackTick(), _) ->
       typingError(Array[(pos, "TODO: support for backtick strings")])
     | Var(Name(_, "true")) -> TType::single(pos, TBool(pos))
@@ -1202,7 +1202,6 @@ class TypeChecker{
         for (stype in stypes1.stypes) {
           stype match {
           | TNum _
-          | TStaticString _
           | TString _ ->
             void
           | sty ->
@@ -1228,15 +1227,15 @@ class TypeChecker{
         for (stype in stypes1.stypes) {
           stype match {
           | TNum _
-          | TString _ ->
+          | TString(None(), _) ->
             this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1)
-          | TStaticString _ ->
+          | TString(Some _, _) ->
             this.checkSubType(
               env,
               e2.posRange,
               "Invalid + operand",
               ty2,
-              TType::single(e1.posRange, TString(e1.posRange)),
+              TType::single(e1.posRange, TString(None(), e1.posRange)),
             )
           | _ -> invariant_violation("Internal error: unexpected type for +")
           }
@@ -1542,7 +1541,7 @@ class TypeChecker{
       typingError(Array[(e2.posRange, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
       _ = this.expr(env, subExpr);
-      TType::single(pos, TString(pos))
+      TType::single(pos, TString(None(), pos))
 
     | PostOp(pop, subExpr) ->
       pop match {
@@ -1976,7 +1975,7 @@ class TypeChecker{
                     .maybeGet("kind")
                     .fromSome().type.stypes;
                   stypes.stypes[0] match {
-                  | TStaticString(s, _) -> s.values[0].i1 == tag
+                  | TString(Some(s), _) -> s.values[0].i1 == tag
                   | _ ->
                     invariant_violation(
                       "Internal error: invalid algebraic data type",
@@ -2002,7 +2001,7 @@ class TypeChecker{
       Expr(_, TypeOf(Expr(_, Var(local)))),
     ) ->
       filter = typeStr match {
-      | "string" -> x ~> x is TString(_)
+      | "string" -> x ~> x is TString _
       | "number" -> x ~> x is TNum(_)
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
       | "boolean" -> x ~> x is TBool(_)
@@ -2031,7 +2030,7 @@ class TypeChecker{
       Expr(_, TypeOf(Expr(_, Var(local)))),
     ) ->
       filter = typeStr match {
-      | "string" -> x ~> x is TString(_)
+      | "string" -> x ~> x is TString _
       | "number" -> x ~> x is TNum(_)
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
       | "boolean" -> x ~> x is TBool(_)

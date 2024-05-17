@@ -380,7 +380,7 @@ class TEnv{
     | TAStringLiteral(x) ->
       TType::single(
         pos,
-        TStaticString(ArrayValues[(typeAst.posRange, x)], typeAst.posRange),
+        TString(Some(ArrayValues[(typeAst.posRange, x)]), typeAst.posRange),
       )
     | TABoolLiteral(_) -> notSupported(typeAst.posRange)
     | TANumLiteral(_) -> notSupported(typeAst.posRange)
@@ -392,7 +392,7 @@ class TEnv{
         | TPKNull() -> TNull(typeAst.posRange)
         | TPKBool() -> TBool(typeAst.posRange)
         | TPKNum() -> TNum(typeAst.posRange)
-        | TPKString() -> TString(typeAst.posRange)
+        | TPKString() -> TString(None(), typeAst.posRange)
         },
       )
     | TAObject(fields) ->

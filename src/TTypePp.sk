@@ -112,8 +112,8 @@ mutable class TypePp{
     | TVoid _ -> this.out(level, margin, "void")
     | TBool(_) -> this.out(level, margin, "boolean")
     | TNum(_) -> this.out(level, margin, "number")
-    | TString(_) -> this.out(level, margin, "string")
-    | TStaticString(arr, _) ->
+    | TString(None(), _) -> this.out(level, margin, "string")
+    | TString(Some(arr), _) ->
       this.out(level, margin, arr.values.map(x -> "'" + x.i1 + "'").join(" | "))
 
     | TAlgebraic(branches, _) ->

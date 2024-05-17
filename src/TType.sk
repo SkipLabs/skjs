@@ -237,7 +237,7 @@ fun isTag(ty: TType): Bool {
   ty.insts.insts.size() == 0 &&
     ty.stypes.stypes.size() == 1 &&
     ty.stypes.stypes[0] match {
-    | TStaticString(s, _) -> s.values.size() == 1
+    | TString(Some(s), _) -> s.values.size() == 1
     | _ -> false
     }
 }
@@ -342,8 +342,7 @@ base class SType(pos: PosRange) uses Hashable, Orderable {
   | TNull()
   | TBool()
   | TNum()
-  | TString()
-  | TStaticString(ArrayValues)
+  | TString(?ArrayValues)
   | TArray(TType)
   | TPromise(TType)
 
@@ -355,7 +354,6 @@ base class SType(pos: PosRange) uses Hashable, Orderable {
   | TBool _ -> 2
   | TNum _ -> 3
   | TString _ -> 4
-  | TStaticString _ -> 4
   | TArray _ -> 6
   | TTuple _ -> 7
   | TPromise _ -> 8
@@ -438,7 +436,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
 
   fun getKind(): String {
     this.maybeGet("kind").fromSome().type.stypes.stypes[0] match {
-    | TStaticString(s, _) ->
+    | TString(Some(s), _) ->
       invariant(s.values.size() == 1);
       s.values[0].i1
     | _ -> invariant_violation("Internal error: getKind on non constructor")
@@ -468,7 +466,6 @@ class STypes(stypes: Array<SType>) uses Hashable, Orderable {
       stype match {
       | TNum _ -> continue
       | TString _ -> continue
-      | TStaticString _ -> continue
       | _ -> return false
       }
     };
@@ -573,8 +570,8 @@ base class STResult {
       | TNull _ -> "This is of type null"
       | TBool(_) -> "This is a boolean"
       | TNum(_) -> "This is a number"
-      | TString(_) -> "This is a string"
-      | TStaticString(x, _) ->
+      | TString(None(), _) -> "This is a string"
+      | TString(Some(x), _) ->
         "This is a static string: " +
           x.values.map(x -> "'" + x.i1 + "'").join(" | ")
 
@@ -780,14 +777,14 @@ fun isSubSType(
   | (TBool(_), TBool(_)) -> STOk()
   | (TNum(_), TNum(_)) -> STOk()
 
-  | (TString _, TString _) -> STOk()
-  | (TString _, TStaticString _) -> STTooManySType(sty1)
-  | (TStaticString _, TString(_)) -> STOk()
+  | (TString(None(), _), TString(None(), _)) -> STOk()
+  | (TString(None(), _), TString(Some _, _)) -> STTooManySType(sty1)
+  | (TString(Some _, _), TString(None(), _)) -> STOk()
 
-  | (TStaticString(s1, _), TStaticString(s2, _)) ->
+  | (TString(Some(s1), _), TString(Some(s2), _)) ->
     for (elt in s1.values) {
       if (!s2.contains(elt.i1)) {
-        break STTooManySType(TStaticString(ArrayValues[elt], elt.i0))
+        break STTooManySType(TString(Some(ArrayValues[elt]), elt.i0))
       }
     } else {
       STOk()
@@ -1033,11 +1030,11 @@ fun unionSType(
   | (TBool(pos), TBool(_)) -> TBool(pos)
   | (TNum(pos), TNum(_)) -> TNum(pos)
 
-  | (TString(pos), TString(_)) -> TString(pos)
-  | (TString(pos), TStaticString _) -> TString(pos)
-  | (TStaticString _, TString(pos)) -> TString(pos)
-  | (TStaticString(s1, pos), TStaticString(s2, _)) ->
-    TStaticString(s1.union(s2), pos)
+  | (TString(None(), _), TString(None(), _)) -> sty1
+  | (TString(None(), _), TString(Some _, _)) -> sty1
+  | (TString(Some _, _), TString(None(), _)) -> sty2
+  | (TString(Some(s1), pos), TString(Some(s2), _)) ->
+    TString(Some(s1.union(s2)), pos)
 
   | (TArray(ty1, pos), TArray(ty2, _)) ->
     TArray(unionType(subst, env, ty1, ty2), pos)
@@ -1258,11 +1255,11 @@ fun interSType(
   | (TBool(pos), TBool(_)) -> TBool(pos)
   | (TNum(pos), TNum(_)) -> TNum(pos)
 
-  | (TString(pos), TString(_)) -> TString(pos)
-  | (TStaticString _, TString _) -> sty1
-  | (TString _, TStaticString _) -> sty2
-  | (TStaticString(s1, pos), TStaticString(s2, _)) ->
-    TStaticString(s1.inter(s2), pos)
+  | (TString(None(), _), TString(None(), _)) -> sty1
+  | (TString(Some _, _), TString(None(), _)) -> sty1
+  | (TString(None(), _), TString(Some _, _)) -> sty2
+  | (TString(Some(s1), pos), TString(Some(s2), _)) ->
+    TString(Some(s1.inter(s2)), pos)
 
   | (TArray(ty1, pos1), TArray(ty2, _)) ->
     TArray(interType(subst, env, ty1, ty2), pos1)
@@ -1484,7 +1481,6 @@ base class ApplyType {
     | x @ TNull _
     | x @ TBool _
     | x @ TNum _
-    | x @ TStaticString _
     | x @ TString _ ->
       x
     | TArray(ty, pos) -> TArray(this.type(env, ty), pos)
