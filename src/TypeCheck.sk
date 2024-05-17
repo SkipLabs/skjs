@@ -289,9 +289,16 @@ class TypeChecker{
       | VDKVar() ->
         typingError(Array[(varDef.pat.pos, "Toplevel var not supported")])
       };
+      literalType = varDef.value match {
+      | None() -> None()
+      | Some(x) -> this.makeLiteralType(x)
+      };
       type = varDef.type match {
       | None() ->
-        typingError(Array[(varDef.pat.pos, "Missing type annotation")])
+        literalType match {
+        | Some(ty) -> ty
+        | _ -> typingError(Array[(varDef.pat.pos, "Missing type annotation")])
+        }
       | Some(x) -> this.tenv.normalize(context, x)
       };
       varDef.pat.value match {
@@ -311,8 +318,11 @@ class TypeChecker{
         env,
         varDef.pat.pos,
         "Invalid definition",
+        literalType match {
+        | None() -> this.expr(env, e)
+        | Some(litType) -> litType
+        },
         type,
-        this.expr(env, e),
       )
     }
   }
@@ -566,7 +576,7 @@ class TypeChecker{
     (stypes, tparams) = ty.expand(env.subst, this.tenv);
     if (tparams.tparams.size() != 0 || stypes.stypes.size() != 1) return false;
     stypes.stypes[0] match {
-    | TVoid _ -> true
+    | TPrimVoid(TVoid(), _) -> true
     | _ -> false
     }
   }
@@ -812,17 +822,17 @@ class TypeChecker{
           "This expression was expected to be of type void.\n" +
             "If that's what you wanted, you can add '_ =' to make it explicit",
           ty,
-          TType::single(e.posRange, TVoid(e.posRange)),
+          TType::single(e.posRange, TPrimVoid(TVoid(), e.posRange)),
         );
       }
     | Return(pos, eOpt) ->
       retType = this.retType match {
       | None() ->
-        TType::single(st.pos, TVoid(st.pos)) // constructor
+        TType::single(st.pos, TPrimVoid(TVoid(), st.pos)) // constructor
       | Some(x) -> x
       };
       (epos, etype) = eOpt match {
-      | None() -> (pos, TType::single(pos, TVoid(pos)))
+      | None() -> (pos, TType::single(pos, TPrimVoid(TVoid(), pos)))
       | Some(e) -> (e.posRange, this.expr(env, e))
       };
       rtype = if (this.isAsync) {
@@ -937,7 +947,7 @@ class TypeChecker{
       e.posRange,
       "A condition is expected to be of type boolean, not: ",
       this.expr(env, e),
-      TType::single(e.posRange, TBool(e.posRange)),
+      TType::single(e.posRange, TPrimValue(TBool(), None(), e.posRange)),
     );
   }
 
@@ -1003,18 +1013,23 @@ class TypeChecker{
   fun expr(env: mutable TCEnv, e: Expr): TType {
     pos = e.posRange;
     e.value match {
-    | Number(_) -> TType::single(pos, TNum(pos))
+    | Number(_) -> TType::single(pos, TPrimValue(TNum(), None(), pos))
     | EString(SKQuote(), x) ->
-      TType::single(pos, TStaticString(ArrayValues[(pos, x)], pos))
-    | EString(SKDoubleQuote(), _) -> TType::single(pos, TString(pos))
+      TType::single(
+        pos,
+        TPrimValue(TString(), Some(ArrayValues[(pos, x)]), pos),
+      )
+    | EString(SKDoubleQuote(), _) ->
+      TType::single(pos, TPrimValue(TString(), None(), pos))
     | EString(SKBackTick(), _) ->
       typingError(Array[(pos, "TODO: support for backtick strings")])
-    | Var(Name(_, "true")) -> TType::single(pos, TBool(pos))
-    | Var(Name(_, "false")) -> TType::single(pos, TBool(pos))
+    | Var(Name(_, "true"))
+    | Var(Name(_, "false")) ->
+      TType::single(pos, TPrimValue(TBool(), None(), pos))
     | Var(Name(_, "null")) ->
-      this.makeBoundTVar(env, TType::single(pos, TNull(pos)))
+      this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
-      this.makeBoundTVar(env, TType::single(pos, TUndefined(pos)))
+      this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TUndefined(), pos)))
     | Var(local) ->
       if (env.localObjects.containsKey(local.value)) {
         env.usedObjects![local.value] = local.posRange
@@ -1028,6 +1043,23 @@ class TypeChecker{
         )) {
           def.value match {
           | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
+          | VarDefs(kind, varDefArr) ->
+            invariant(varDefArr.size() == 1);
+            varDef = varDefArr[0];
+            invariant(kind is VDKConst _);
+            // TODO: support constants defined using a pattern
+            invariant(varDef.pat is Pattern(_, PVar _));
+            break varDef.type match {
+            | None() ->
+              varDef.value match {
+              | None() -> None()
+              | Some(x) -> this.makeLiteralType(x)
+              } match {
+              | None() -> this.newTVar(env, pos)
+              | Some(ty) -> ty
+              }
+            | Some(ty) -> this.tenv.normalize(env.context, ty)
+            }
           | _ -> void
           }
         } else {
@@ -1084,7 +1116,7 @@ class TypeChecker{
           this.checkSubType(env, pos, "Invalid super call", x, y)
         })
       };
-      TType::single(pos, TVoid(pos))
+      TType::single(pos, TPrimVoid(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
       (stypes, tparams) = this.expr(env, args[0]).expand(env.subst, this.tenv);
@@ -1094,7 +1126,7 @@ class TypeChecker{
           TType::create(PosRange::none, stypes, TInsts::empty(), tparams),
         ),
       );
-      TType::single(pos, TVoid(pos))
+      TType::single(pos, TPrimVoid(TVoid(), pos))
     | Call(f, targs, args) ->
       this.call(
         env,
@@ -1149,7 +1181,10 @@ class TypeChecker{
             pos,
             "Invalid index",
             idxType,
-            TType::single(idx.posRange, TNum(idx.posRange)),
+            TType::single(
+              idx.posRange,
+              TPrimValue(TNum(), None(), idx.posRange),
+            ),
           );
           x
         | TTuple(tyArr, tuplePos) ->
@@ -1188,7 +1223,7 @@ class TypeChecker{
     | Unop(uop, subExpr) ->
       uop match {
       | UOExclamationMark() ->
-        bool = TType::single(pos, TBool(pos));
+        bool = TType::single(pos, TPrimValue(TBool(), None(), pos));
         this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
         bool
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
@@ -1201,9 +1236,8 @@ class TypeChecker{
         ty1 = TType::fromSTypes(e1.posRange, stypes1);
         for (stype in stypes1.stypes) {
           stype match {
-          | TNum _
-          | TStaticString _
-          | TString _ ->
+          | TPrimValue(TNum(), _, _)
+          | TPrimValue(TString(), _, _) ->
             void
           | sty ->
             typingError(
@@ -1227,21 +1261,17 @@ class TypeChecker{
         ty2 = this.expr(env, e2);
         for (stype in stypes1.stypes) {
           stype match {
-          | TNum _
-          | TString _ ->
+          | TPrimValue(TNum(), _, _)
+          | TPrimValue(TString(), _, _) ->
             this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1)
-          | TStaticString _ ->
-            this.checkSubType(
-              env,
-              e2.posRange,
-              "Invalid + operand",
-              ty2,
-              TType::single(e1.posRange, TString(e1.posRange)),
-            )
           | _ -> invariant_violation("Internal error: unexpected type for +")
           }
         };
-        ty1
+        stypes1.stypes[0] match {
+        | TPrimValue(k, _, primPos) ->
+          TType::single(pos, TPrimValue(k, None(), primPos))
+        | _ -> invariant_violation("Internal error")
+        }
       | BOAssignment() -> this.assign(env, pos, e1, e2)
       | BOStrictInequality()
       | BOStrictEquality() ->
@@ -1265,7 +1295,7 @@ class TypeChecker{
             }
           }
         };
-        TType::single(pos, TBool(pos))
+        TType::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BOLogicalAnd() ->
         ty1 = this.expr(env, e1);
@@ -1274,7 +1304,7 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty1,
-          TType::single(e1.posRange, TBool(e1.posRange)),
+          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
         );
         this.evalCond(env, e1, true);
         ty2 = this.expr(env, e2);
@@ -1283,9 +1313,9 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty2,
-          TType::single(e2.posRange, TBool(e2.posRange)),
+          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
         );
-        TType::single(pos, TBool(pos))
+        TType::single(pos, TPrimValue(TBool(), None(), pos))
       | BOLogicalOr() ->
         ty1 = this.expr(env, e1);
         this.checkSubType(
@@ -1293,7 +1323,7 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty1,
-          TType::single(e1.posRange, TBool(e1.posRange)),
+          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
         );
         this.evalCond(env, e1, false);
         ty2 = this.expr(env, e2);
@@ -1302,9 +1332,9 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty2,
-          TType::single(e2.posRange, TBool(e2.posRange)),
+          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
         );
-        TType::single(pos, TBool(pos))
+        TType::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BODot() ->
         e2.value match {
@@ -1345,7 +1375,7 @@ class TypeChecker{
             ],
           );
         };
-        TType::single(pos, TBool(pos))
+        TType::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BOMultiplicationAssignment() ->
         this.expr(
@@ -1495,7 +1525,7 @@ class TypeChecker{
         stypes = ty1.getSTypes(env.subst, this.tenv);
         for (stype in stypes) {
           stype match {
-          | TNum _ ->
+          | TPrimValue(TNum(), _, _) ->
             ty2 = this.expr(env, e2);
             this.checkSubType(env, pos, "Invalid operation", ty1, ty2)
           | _ ->
@@ -1516,8 +1546,8 @@ class TypeChecker{
         hasNullOrUndefined = false;
         for (stype in stypes) {
           stype match {
-          | TNull _
-          | TUndefined _ ->
+          | TPrimVoid(TNull(), _)
+          | TPrimVoid(TUndefined(), _) ->
             !hasNullOrUndefined = true;
             break void
           | _ -> void
@@ -1537,21 +1567,21 @@ class TypeChecker{
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(env, e1);
       _ = this.tenv.getClass(env.context, className);
-      TType::single(pos, TBool(pos))
+      TType::single(pos, TPrimValue(TBool(), None(), pos))
     | InstanceOf(_, e2) ->
       typingError(Array[(e2.posRange, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
       _ = this.expr(env, subExpr);
-      TType::single(pos, TString(pos))
+      TType::single(pos, TPrimValue(TString(), None(), pos))
 
     | PostOp(pop, subExpr) ->
       pop match {
       | PODecr()
       | POIncr() ->
-        num = TType::single(pos, TNum(pos));
+        num = TType::single(pos, TPrimValue(TNum(), None(), pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
-        TType::single(pos, TVoid(pos))
+        TType::single(pos, TPrimVoid(TVoid(), pos))
       | POExcl() -> notSupported(pos)
       }
 
@@ -1640,6 +1670,44 @@ class TypeChecker{
       invariant_violation("Internal error: Params should not be an expression")
     | SKJS.Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | SKJS.Spread _ -> typingError(Array[(pos, "TODO: ...")])
+    }
+  }
+
+  fun makeLiteralType(e: Expr): ?TType {
+    e match {
+    | Expr(valuePos, Var(Name(_, "null"))) ->
+      Some(TType::single(valuePos, TPrimVoid(TNull(), valuePos)))
+    | Expr(valuePos, Var(Name(_, "undefined"))) ->
+      Some(TType::single(valuePos, TPrimVoid(TUndefined(), valuePos)))
+    | Expr(valuePos, Number(n)) ->
+      Some(
+        TType::single(
+          valuePos,
+          TPrimValue(TNum(), Some(ArrayValues[(valuePos, n)]), valuePos),
+        ),
+      )
+    | Expr(valuePos, Var(Name(_, "true"))) ->
+      Some(
+        TType::single(
+          valuePos,
+          TPrimValue(TBool(), Some(ArrayValues[(valuePos, "true")]), valuePos),
+        ),
+      )
+    | Expr(valuePos, Var(Name(_, "false"))) ->
+      Some(
+        TType::single(
+          valuePos,
+          TPrimValue(TBool(), Some(ArrayValues[(valuePos, "false")]), valuePos),
+        ),
+      )
+    | Expr(valuePos, EString(_, n)) ->
+      Some(
+        TType::single(
+          valuePos,
+          TPrimValue(TString(), Some(ArrayValues[(valuePos, n)]), valuePos),
+        ),
+      )
+    | _ -> None()
     }
   }
 
@@ -1976,7 +2044,7 @@ class TypeChecker{
                     .maybeGet("kind")
                     .fromSome().type.stypes;
                   stypes.stypes[0] match {
-                  | TStaticString(s, _) -> s.values[0].i1 == tag
+                  | TPrimValue(TString(), Some(s), _) -> s.values[0].i1 == tag
                   | _ ->
                     invariant_violation(
                       "Internal error: invalid algebraic data type",
@@ -2002,13 +2070,14 @@ class TypeChecker{
       Expr(_, TypeOf(Expr(_, Var(local)))),
     ) ->
       filter = typeStr match {
-      | "string" -> x ~> x is TString(_)
-      | "number" -> x ~> x is TNum(_)
+      | "string" -> x ~> x is TPrimValue(TString(), _, _)
+      | "number" -> x ~> x is TPrimValue(TNum(), _, _)
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
-      | "boolean" -> x ~> x is TBool(_)
+      | "boolean" -> x ~> x is TPrimValue(TBool(), _, _)
       | "symbol" -> return void
-      | "undefined" -> x ~> x is TUndefined(_)
-      | "object" -> x ~> x is TObject _ || x is TAlgebraic _ || x is TNull _
+      | "undefined" -> x ~> x is TPrimVoid(TUndefined(), _)
+      | "object" ->
+        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)
       | "function" -> x ~> x is TFuns _
       | _ -> return void
       };
@@ -2031,13 +2100,14 @@ class TypeChecker{
       Expr(_, TypeOf(Expr(_, Var(local)))),
     ) ->
       filter = typeStr match {
-      | "string" -> x ~> x is TString(_)
-      | "number" -> x ~> x is TNum(_)
+      | "string" -> x ~> x is TPrimValue(TString(), _, _)
+      | "number" -> x ~> x is TPrimValue(TNum(), _, _)
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
-      | "boolean" -> x ~> x is TBool(_)
+      | "boolean" -> x ~> x is TPrimValue(TBool(), _, _)
       | "symbol" -> return void
-      | "undefined" -> x ~> x is TUndefined(_)
-      | "object" -> x ~> x is TObject _ || x is TAlgebraic _ || x is TNull _
+      | "undefined" -> x ~> x is TPrimVoid(TUndefined(), _)
+      | "object" ->
+        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)
       | "function" -> x ~> x is TFuns _
       | _ -> return void
       };
@@ -2073,7 +2143,7 @@ class TypeChecker{
     ) ->
       if (!target) {
         this.filterType(env, e.posRange, "Invalid null check", local, x ~>
-          !(x is TNull _)
+          !(x is TPrimVoid(TNull(), _))
         )
       }
 
@@ -2089,7 +2159,7 @@ class TypeChecker{
     ) ->
       if (target) {
         this.filterType(env, e.posRange, "Invalid null check", local, x ~>
-          !(x is TNull _)
+          !(x is TPrimVoid(TNull(), _))
         )
       }
 
@@ -2105,7 +2175,7 @@ class TypeChecker{
     ) ->
       if (!target) {
         this.filterType(env, e.posRange, "Invalid undefined check", local, x ~>
-          !(x is TUndefined _)
+          !(x is TPrimVoid(TUndefined _, _))
         )
       }
 
@@ -2121,7 +2191,7 @@ class TypeChecker{
     ) ->
       if (target) {
         this.filterType(env, e.posRange, "Invalid undefined check", local, x ~>
-          !(x is TUndefined _)
+          !(x is TPrimVoid(TUndefined _, _))
         )
       }
 

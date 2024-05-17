@@ -84,8 +84,6 @@ mutable class TypePp{
 
   mutable fun stype(level: Int, margin: Margin, sty: SType): void {
     sty match {
-    | TUndefined _ -> this.out(level, margin, "undefined")
-    | TNull _ -> this.out(level, margin, "null")
     | TArray(ty, _) ->
       this.out(level, margin, "Array<");
       this.type(level, margin, ty);
@@ -109,11 +107,9 @@ mutable class TypePp{
           pp.newLine();
         },
       )
-    | TVoid _ -> this.out(level, margin, "void")
-    | TBool(_) -> this.out(level, margin, "boolean")
-    | TNum(_) -> this.out(level, margin, "number")
-    | TString(_) -> this.out(level, margin, "string")
-    | TStaticString(arr, _) ->
+    | TPrimVoid(k, _) -> this.out(level, margin, k.toString())
+    | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
+    | TPrimValue(_, Some(arr), _) ->
       this.out(level, margin, arr.values.map(x -> "'" + x.i1 + "'").join(" | "))
 
     | TAlgebraic(branches, _) ->
