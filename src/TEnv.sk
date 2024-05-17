@@ -380,19 +380,30 @@ class TEnv{
     | TAStringLiteral(x) ->
       TType::single(
         pos,
-        TStaticString(ArrayValues[(typeAst.posRange, x)], typeAst.posRange),
+        TPrimValue(
+          TString(),
+          Some(ArrayValues[(typeAst.posRange, x)]),
+          typeAst.posRange,
+        ),
       )
-    | TABoolLiteral(_) -> notSupported(typeAst.posRange)
-    | TANumLiteral(_) -> notSupported(typeAst.posRange)
+    | TANumLiteral(x) ->
+      TType::single(
+        pos,
+        TPrimValue(
+          TNum(),
+          Some(ArrayValues[(typeAst.posRange, x)]),
+          typeAst.posRange,
+        ),
+      )
     | TATypeOf _ -> invariant_violation("TODO typeof")
     | TAPrim(kind) ->
       TType::single(
         pos,
         kind match {
-        | TPKNull() -> TNull(typeAst.posRange)
-        | TPKBool() -> TBool(typeAst.posRange)
-        | TPKNum() -> TNum(typeAst.posRange)
-        | TPKString() -> TString(typeAst.posRange)
+        | TPKNull() -> TPrimVoid(TNull(), typeAst.posRange)
+        | TPKBool() -> TPrimValue(TBool(), None(), typeAst.posRange)
+        | TPKNum() -> TPrimValue(TNum(), None(), typeAst.posRange)
+        | TPKString() -> TPrimValue(TString(), None(), typeAst.posRange)
         },
       )
     | TAObject(fields) ->
@@ -403,12 +414,12 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TVoid(p))
+      TType::single(p, TPrimVoid(TVoid(), p))
     | TAInst(n @ Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TUndefined(p))
+      TType::single(p, TPrimVoid(TUndefined(), p))
     | TAInst(n @ Name(_, "Promise"), targs) ->
       if (targs.size() != 1) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
@@ -416,6 +427,19 @@ class TEnv{
       TType::single(
         pos,
         TPromise(this.normalize(context, targs[0]), typeAst.posRange),
+      )
+    | TAInst(Name(_, x @ "true"), targs)
+    | TAInst(Name(_, x @ "false"), targs) ->
+      if (targs.size() != 0) {
+        typingError(Array[(pos, "Invalid number of type arguments")])
+      };
+      TType::single(
+        pos,
+        TPrimValue(
+          TBool(),
+          Some(ArrayValues[(typeAst.posRange, x)]),
+          typeAst.posRange,
+        ),
       )
     | TAInst(n, targs) ->
       if (this.tparams.containsKey(n.value)) {

@@ -402,7 +402,6 @@ base class Type_ {
   children =
   | TAStringLiteral(String)
   | TATemplate(String)
-  | TABoolLiteral(String)
   | TANumLiteral(String)
   | TABigIntLiteral(String)
   | TAPrim(TPrimKind)
