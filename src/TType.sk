@@ -362,23 +362,6 @@ base class SType(pos: PosRange) uses Hashable, Orderable {
   | TObject _ -> 9
   | TAlgebraic _ -> 10
   | TFuns _ -> 11
-
-  fun get(pos: PosRange): TType {
-    this match {
-    | TArray(x, _) -> x
-    | _ ->
-      typingError(
-        Array[
-          (pos, "Expected an array"),
-          (
-            this.pos,
-            "Not: " +
-              prettyPrintType(false, TType::single(PosRange::none, this)),
-          ),
-        ],
-      )
-    }
-  }
 }
 
 class TField(
