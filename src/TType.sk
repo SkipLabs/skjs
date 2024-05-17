@@ -496,6 +496,18 @@ class STypes(stypes: Array<SType>) uses Hashable, Orderable {
     this.stypes.values()
   }
 
+  fun staticValue(): ?String {
+    if (this.stypes.size() != 1) return None();
+    for (stype in this.stypes) {
+      stype match {
+      | TPrimValue(_, Some(values), _) if (values.values.size() == 1) ->
+        return Some(values.values[0].i1)
+      | _ -> return None()
+      }
+    };
+    None()
+  }
+
   fun isStringOrNum(): Bool {
     for (stype in this.stypes) {
       stype match {
