@@ -237,7 +237,7 @@ fun isTag(ty: TType): Bool {
   ty.insts.insts.size() == 0 &&
     ty.stypes.stypes.size() == 1 &&
     ty.stypes.stypes[0] match {
-    | TString(Some(s), _) -> s.values.size() == 1
+    | TPrimValue(TString(), Some(s), _) -> s.values.size() == 1
     | _ -> false
     }
 }
@@ -335,31 +335,60 @@ class Lambda(
 /* Single types */
 /*****************************************************************************/
 
-base class SType(pos: PosRange) uses Hashable, Orderable {
+base class TPrimVoidKind uses Hashable, Orderable {
   children =
   | TUndefined()
   | TVoid()
   | TNull()
-  | TBool()
+
+  fun toString(): String {
+    this match {
+    | TUndefined() -> "undefined"
+    | TVoid() -> "void"
+    | TNull() -> "null"
+    }
+  }
+}
+
+base class TPrimValueKind uses Hashable, Orderable {
+  children =
   | TNum()
-  | TString(?ArrayValues)
+  | TBool()
+  | TString()
+
+  fun toString(): String {
+    this match {
+    | TNum() -> "number"
+    | TBool() -> "boolean"
+    | TString() -> "string"
+    }
+  }
+}
+
+base class SType(pos: PosRange) uses Hashable, Orderable {
+  children =
+  | TPrimVoid(TPrimVoidKind)
+  | TPrimValue(TPrimValueKind, ?ArrayValues)
   | TArray(TType)
   | TPromise(TType)
 
-  fun tag(): Int
-  // TUndefined must be smaller than all the others (cf TFields::getType)
-  | TUndefined _ -> -1
-  | TVoid _ -> 0
-  | TNull _ -> 1
-  | TBool _ -> 2
-  | TNum _ -> 3
-  | TString _ -> 4
-  | TArray _ -> 6
-  | TTuple _ -> 7
-  | TPromise _ -> 8
-  | TObject _ -> 9
-  | TAlgebraic _ -> 10
-  | TFuns _ -> 11
+  fun tag(): Int {
+    this match {
+    // TUndefined must be smaller than all the others (cf TFields::getType)
+    | TPrimVoid(TUndefined _, _) -> -1
+    | TPrimVoid(TVoid _, _) -> 0
+    | TPrimVoid(TNull _, _) -> 1
+    | TPrimValue(TBool _, _, _) -> 2
+    | TPrimValue(TNum _, _, _) -> 3
+    | TPrimValue(TString _, _, _) -> 4
+    | TArray _ -> 6
+    | TTuple _ -> 7
+    | TPromise _ -> 8
+    | TObject _ -> 9
+    | TAlgebraic _ -> 10
+    | TFuns _ -> 11
+    }
+  }
 }
 
 class TField(
@@ -420,14 +449,14 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
         hasUndefined = false;
         for (stype in ty.stypes.stypes) {
           stype match {
-          | TUndefined _ -> !hasUndefined = true
+          | TPrimVoid(TUndefined _, _) -> !hasUndefined = true
           | _ -> void
           }
         };
         if (!hasUndefined) {
-          !ty.stypes.stypes = Array[TUndefined(fieldName.posRange)].concat(
-            ty.stypes.stypes,
-          )
+          !ty.stypes.stypes = Array[
+            TPrimVoid(TUndefined(), fieldName.posRange),
+          ].concat(ty.stypes.stypes)
         }
       };
       ty
@@ -436,7 +465,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
 
   fun getKind(): String {
     this.maybeGet("kind").fromSome().type.stypes.stypes[0] match {
-    | TString(Some(s), _) ->
+    | TPrimValue(TString(), Some(s), _) ->
       invariant(s.values.size() == 1);
       s.values[0].i1
     | _ -> invariant_violation("Internal error: getKind on non constructor")
@@ -464,8 +493,8 @@ class STypes(stypes: Array<SType>) uses Hashable, Orderable {
   fun isStringOrNum(): Bool {
     for (stype in this.stypes) {
       stype match {
-      | TNum _ -> continue
-      | TString _ -> continue
+      | TPrimValue(TNum _, _, _) -> continue
+      | TPrimValue(TString _, _, _) -> continue
       | _ -> return false
       }
     };
@@ -475,7 +504,7 @@ class STypes(stypes: Array<SType>) uses Hashable, Orderable {
   fun isString(): Bool {
     for (stype in this.stypes) {
       stype match {
-      | TString _ -> continue
+      | TPrimValue(TString _, _, _) -> continue
       | _ -> return false
       }
     };
@@ -565,14 +594,10 @@ base class STResult {
         expandTVars(subst, env, ty).toString()
     | STTooManySType(sty) ->
       sty match {
-      | TUndefined _ -> "This is of type undefined"
-      | TVoid _ -> "This is of type void"
-      | TNull _ -> "This is of type null"
-      | TBool(_) -> "This is a boolean"
-      | TNum(_) -> "This is a number"
-      | TString(None(), _) -> "This is a string"
-      | TString(Some(x), _) ->
-        "This is a static string: " +
+      | TPrimVoid(kind, _) -> "This is a " + kind.toString()
+      | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
+      | TPrimValue(kind, Some(x), _) ->
+        `This is a static ${kind.toString()}: ` +
           x.values.map(x -> "'" + x.i1 + "'").join(" | ")
 
       | TArray _ -> "This is an array"
@@ -769,22 +794,16 @@ fun isSubSType(
   sty2: SType,
 ): STResult {
   (sty1, sty2) match {
-  | (TUndefined(_), TUndefined(_))
-  | (TVoid(_), TVoid(_))
-  | (TNull(_), TNull(_)) ->
-    STOk()
+  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> STOk()
 
-  | (TBool(_), TBool(_)) -> STOk()
-  | (TNum(_), TNum(_)) -> STOk()
+  | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> STOk()
+  | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> STTooManySType(sty1)
+  | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> STOk()
 
-  | (TString(None(), _), TString(None(), _)) -> STOk()
-  | (TString(None(), _), TString(Some _, _)) -> STTooManySType(sty1)
-  | (TString(Some _, _), TString(None(), _)) -> STOk()
-
-  | (TString(Some(s1), _), TString(Some(s2), _)) ->
+  | (TPrimValue(k, Some(s1), _), TPrimValue(_, Some(s2), _)) ->
     for (elt in s1.values) {
       if (!s2.contains(elt.i1)) {
-        break STTooManySType(TString(Some(ArrayValues[elt]), elt.i0))
+        break STTooManySType(TPrimValue(k, Some(ArrayValues[elt]), elt.i0))
       }
     } else {
       STOk()
@@ -1024,17 +1043,13 @@ fun unionSType(
   sty2: SType,
 ): SType {
   (sty1, sty2) match {
-  | (TUndefined(pos), TUndefined(_)) -> TUndefined(pos)
-  | (TVoid(pos), TVoid(_)) -> TVoid(pos)
-  | (TNull(pos), TNull(_)) -> TNull(pos)
-  | (TBool(pos), TBool(_)) -> TBool(pos)
-  | (TNum(pos), TNum(_)) -> TNum(pos)
+  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> sty1
 
-  | (TString(None(), _), TString(None(), _)) -> sty1
-  | (TString(None(), _), TString(Some _, _)) -> sty1
-  | (TString(Some _, _), TString(None(), _)) -> sty2
-  | (TString(Some(s1), pos), TString(Some(s2), _)) ->
-    TString(Some(s1.union(s2)), pos)
+  | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> sty1
+  | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> sty1
+  | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> sty2
+  | (TPrimValue(k, Some(s1), pos), TPrimValue(_, Some(s2), _)) ->
+    TPrimValue(k, Some(s1.union(s2)), pos)
 
   | (TArray(ty1, pos), TArray(ty2, _)) ->
     TArray(unionType(subst, env, ty1, ty2), pos)
@@ -1136,7 +1151,7 @@ fun unionTTuple(
         unionType(
           subst,
           env,
-          TType::single(tuple1.pos, TUndefined(posEnd)),
+          TType::single(tuple1.pos, TPrimVoid(TUndefined(), posEnd)),
           tuple2.tuple[i],
         ),
       );
@@ -1149,7 +1164,7 @@ fun unionTTuple(
           subst,
           env,
           tuple1.tuple[i],
-          TType::single(tuple2.pos, TUndefined(posEnd)),
+          TType::single(tuple2.pos, TPrimVoid(TUndefined(), posEnd)),
         ),
       );
     }
@@ -1249,17 +1264,19 @@ fun interSType(
   sty2: SType,
 ): SType {
   (sty1, sty2) match {
-  | (TUndefined(pos), TUndefined(_)) -> TUndefined(pos)
-  | (TVoid(pos), TVoid(_)) -> TVoid(pos)
-  | (TNull(pos), TNull(_)) -> TNull(pos)
-  | (TBool(pos), TBool(_)) -> TBool(pos)
-  | (TNum(pos), TNum(_)) -> TNum(pos)
+  | (TPrimVoid(k1, _), TPrimVoid(k2, _)) ->
+    invariant(k1 == k2);
+    sty1
 
-  | (TString(None(), _), TString(None(), _)) -> sty1
-  | (TString(Some _, _), TString(None(), _)) -> sty1
-  | (TString(None(), _), TString(Some _, _)) -> sty2
-  | (TString(Some(s1), pos), TString(Some(s2), _)) ->
-    TString(Some(s1.inter(s2)), pos)
+  | (TPrimValue(k1, values1, pos), TPrimValue(k2, values2, _)) ->
+    invariant(k1 == k2);
+    values = (values1, values2) match {
+    | (None(), None()) -> None()
+    | (None(), Some _) -> values2
+    | (Some _, None()) -> values1
+    | (Some(s1), Some(s2)) -> Some(s1.inter(s2))
+    };
+    TPrimValue(k1, values, pos)
 
   | (TArray(ty1, pos1), TArray(ty2, _)) ->
     TArray(interType(subst, env, ty1, ty2), pos1)
@@ -1476,12 +1493,8 @@ base class ApplyType {
 
   overridable deferred fun stype(env: this::Env, stype: SType): SType {
     stype match {
-    | x @ TUndefined _
-    | x @ TVoid _
-    | x @ TNull _
-    | x @ TBool _
-    | x @ TNum _
-    | x @ TString _ ->
+    | x @ TPrimVoid _
+    | x @ TPrimValue _ ->
       x
     | TArray(ty, pos) -> TArray(this.type(env, ty), pos)
     | TPromise(ty, pos) -> TPromise(this.type(env, ty), pos)
