@@ -1670,7 +1670,18 @@ class TypeChecker{
         )
       | Some(ty) -> ty
       }
-    | SKJS.EIf _ -> typingError(Array[(pos, "TODO: expr ? expr: expr")])
+    | SKJS.EIf(e1, e2, e3) ->
+      cond = this.expr(env, e1);
+      left = this.expr(env, e2);
+      right = this.expr(env, e3);
+      this.checkSubType(
+        env,
+        e1.posRange,
+        "Invalid ? condition",
+        cond,
+        TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+      );
+      unionType(env.subst, this.tenv, left, right)
     | SKJS.KeyOf _ -> notSupported(pos)
     | SKJS.Params _ ->
       invariant_violation("Internal error: Params should not be an expression")
