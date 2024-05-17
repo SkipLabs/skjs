@@ -184,6 +184,7 @@ base class ParamNames {
 // <stmt_> ::=
 //   | ;
 //   | <expr>
+//   | break
 //   | return <expr>?
 //   | throw <expr>
 //   | if ( <expr> ) <stmt>* (else <stmt>*)?
@@ -203,6 +204,7 @@ base class Stmt_ {
   children =
   | StmtEmpty()
   | StmtExpr(Expr)
+  | Break()
   | Return(PosRange, ?Expr)
   | Throw(Expr)
   | If(Expr, Array<Stmt>, ?Array<Stmt>)
