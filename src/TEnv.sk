@@ -99,7 +99,7 @@ class TEnv{
       | None() -> void
       | Some(cstr) ->
         cstrTy = this.normalize(context, cstr);
-        isSubType(mutable Subst{context}, this, targ, cstrTy) match {
+        isSubTType(mutable Subst{context}, this, targ, cstrTy) match {
         | STOk() -> void
         | _ ->
           typingError(
@@ -148,7 +148,7 @@ class TEnv{
       );
       tparam.constraint match {
       | None() -> ty
-      | Some(cstr) -> unionType(subst, this, this.normalize(context, cstr), ty)
+      | Some(cstr) -> unionTType(subst, this, this.normalize(context, cstr), ty)
       }
     });
     result
@@ -490,7 +490,7 @@ class TEnv{
         )
       }
     | TAUnion(ty1, ty2) ->
-      ty = unionType(
+      ty = unionTType(
         subst,
         this,
         this.normalize(context, ty1),
@@ -498,7 +498,7 @@ class TEnv{
       );
       TType::create(pos, ty.stypes, ty.insts, ty.tparams)
     | TAInter(ty1, ty2) ->
-      ty = interType(
+      ty = interTType(
         subst,
         this,
         this.normalize(context, ty1),
