@@ -155,7 +155,7 @@ mutable class Scope{
         (name, ref) = nameRef;
         (_, upRef) = this.maybeGetRef(name).fromSome();
         this.!refs[name] = LocalRef(
-          unionType(subst, tenv, upRef.type, ref.type),
+          unionTType(subst, tenv, upRef.type, ref.type),
           upRef.isInitialized,
         );
         nameRef
@@ -165,7 +165,7 @@ mutable class Scope{
         (name2, ref2) = nameRef2;
         invariant(name1 == name2);
         this.!refs[name1] = LocalRef(
-          unionType(subst, tenv, ref1.type, ref2.type),
+          unionTType(subst, tenv, ref1.type, ref2.type),
           ref1.isInitialized && ref2.isInitialized,
         );
         nameRef1
@@ -665,7 +665,7 @@ class TypeChecker{
     ty1: TType,
     ty2: TType,
   ): void {
-    isSubType(env.subst, this.tenv, ty1, ty2) match {
+    isSubTType(env.subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
     | STError(SRec(reason, pos1, subTy2)) ->
       typingError(
@@ -982,7 +982,7 @@ class TypeChecker{
       stype match {
       | TObject(fields, _) ->
         if (stypes.stypes.size() == 1) return fields.getType(fieldName);
-        !result = unionType(
+        !result = unionTType(
           env.subst,
           this.tenv,
           result,
@@ -993,7 +993,7 @@ class TypeChecker{
           if (stypes.stypes.size() == 1 && branches.size() == 1) {
             return branch.fields.getType(fieldName)
           };
-          !result = unionType(
+          !result = unionTType(
             env.subst,
             this.tenv,
             result,
@@ -1112,7 +1112,7 @@ class TypeChecker{
         };
         this.callConstructor(env, pos, super, args.map(x -> this.expr(env, x)));
         thisName = Name(pos, "this");
-        thisType = interType(
+        thisType = interTType(
           env.subst,
           this.tenv,
           env.scope.get(thisName),
@@ -1220,7 +1220,7 @@ class TypeChecker{
             ],
           )
         };
-        !result = unionType(env.subst, this.tenv, result, ty);
+        !result = unionTType(env.subst, this.tenv, result, ty);
       };
       result
     | EArray(arr) ->
@@ -1284,10 +1284,10 @@ class TypeChecker{
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
         if (ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
-          isSubType(env.subst, this.tenv, ty1, ty2) match {
+          isSubTType(env.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
           | _ ->
-            isSubType(env.subst, this.tenv, ty2, ty1) match {
+            isSubTType(env.subst, this.tenv, ty2, ty1) match {
             | STOk() -> void
             | _ ->
               alwaysResult = op match {
@@ -1567,7 +1567,7 @@ class TypeChecker{
             ],
           );
         };
-        unionType(env.subst, this.tenv, ty1, ty2)
+        unionTType(env.subst, this.tenv, ty1, ty2)
       }
 
     | InstanceOf(e1, Expr(_, Var(className))) ->
@@ -1681,7 +1681,7 @@ class TypeChecker{
         cond,
         TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
       );
-      unionType(env.subst, this.tenv, left, right)
+      unionTType(env.subst, this.tenv, left, right)
     | SKJS.KeyOf _ -> notSupported(pos)
     | SKJS.Params _ ->
       invariant_violation("Internal error: Params should not be an expression")
@@ -1976,7 +1976,7 @@ class TypeChecker{
           };
           !result = result match {
           | None() -> Some(tfun.retType)
-          | Some(r) -> Some(unionType(env.subst, this.tenv, r, tfun.retType))
+          | Some(r) -> Some(unionTType(env.subst, this.tenv, r, tfun.retType))
           };
         }
       | _ ->
