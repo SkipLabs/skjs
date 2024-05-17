@@ -1704,7 +1704,7 @@ class TypeChecker{
       Some(
         TType::single(
           valuePos,
-          TPrimValue(TNum(), Some(ArrayValues[(valuePos, n)]), valuePos),
+          TPrimValue(TString(), Some(ArrayValues[(valuePos, n)]), valuePos),
         ),
       )
     | _ -> None()
