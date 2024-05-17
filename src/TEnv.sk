@@ -386,8 +386,24 @@ class TEnv{
           typeAst.posRange,
         ),
       )
-    | TABoolLiteral(_) -> notSupported(typeAst.posRange)
-    | TANumLiteral(_) -> notSupported(typeAst.posRange)
+    | TABoolLiteral(x) ->
+      TType::single(
+        pos,
+        TPrimValue(
+          TBool(),
+          Some(ArrayValues[(typeAst.posRange, x)]),
+          typeAst.posRange,
+        ),
+      )
+    | TANumLiteral(x) ->
+      TType::single(
+        pos,
+        TPrimValue(
+          TNum(),
+          Some(ArrayValues[(typeAst.posRange, x)]),
+          typeAst.posRange,
+        ),
+      )
     | TATypeOf _ -> invariant_violation("TODO typeof")
     | TAPrim(kind) ->
       TType::single(

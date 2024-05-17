@@ -289,9 +289,16 @@ class TypeChecker{
       | VDKVar() ->
         typingError(Array[(varDef.pat.pos, "Toplevel var not supported")])
       };
+      literalType = varDef.value match {
+      | None() -> None()
+      | Some(x) -> this.makeLiteralType(x)
+      };
       type = varDef.type match {
       | None() ->
-        typingError(Array[(varDef.pat.pos, "Missing type annotation")])
+        literalType match {
+        | Some(ty) -> ty
+        | _ -> typingError(Array[(varDef.pat.pos, "Missing type annotation")])
+        }
       | Some(x) -> this.tenv.normalize(context, x)
       };
       varDef.pat.value match {
@@ -311,8 +318,11 @@ class TypeChecker{
         env,
         varDef.pat.pos,
         "Invalid definition",
+        literalType match {
+        | None() -> this.expr(env, e)
+        | Some(litType) -> litType
+        },
         type,
-        this.expr(env, e),
       )
     }
   }
@@ -1040,7 +1050,14 @@ class TypeChecker{
             // TODO: support constants defined using a pattern
             invariant(varDef.pat is Pattern(_, PVar _));
             break varDef.type match {
-            | None() -> this.newTVar(env, pos)
+            | None() ->
+              varDef.value match {
+              | None() -> None()
+              | Some(x) -> this.makeLiteralType(x)
+              } match {
+              | None() -> this.newTVar(env, pos)
+              | Some(ty) -> ty
+              }
             | Some(ty) -> this.tenv.normalize(env.context, ty)
             }
           | _ -> void
@@ -1250,7 +1267,11 @@ class TypeChecker{
           | _ -> invariant_violation("Internal error: unexpected type for +")
           }
         };
-        ty1
+        stypes1.stypes[0] match {
+        | TPrimValue(k, _, primPos) ->
+          TType::single(pos, TPrimValue(k, None(), primPos))
+        | _ -> invariant_violation("Internal error")
+        }
       | BOAssignment() -> this.assign(env, pos, e1, e2)
       | BOStrictInequality()
       | BOStrictEquality() ->
@@ -1649,6 +1670,44 @@ class TypeChecker{
       invariant_violation("Internal error: Params should not be an expression")
     | SKJS.Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | SKJS.Spread _ -> typingError(Array[(pos, "TODO: ...")])
+    }
+  }
+
+  fun makeLiteralType(e: Expr): ?TType {
+    e match {
+    | Expr(valuePos, Var(Name(_, "null"))) ->
+      Some(TType::single(valuePos, TPrimVoid(TNull(), valuePos)))
+    | Expr(valuePos, Var(Name(_, "undefined"))) ->
+      Some(TType::single(valuePos, TPrimVoid(TUndefined(), valuePos)))
+    | Expr(valuePos, Number(n)) ->
+      Some(
+        TType::single(
+          valuePos,
+          TPrimValue(TNum(), Some(ArrayValues[(valuePos, n)]), valuePos),
+        ),
+      )
+    | Expr(valuePos, Var(Name(_, "true"))) ->
+      Some(
+        TType::single(
+          valuePos,
+          TPrimValue(TBool(), Some(ArrayValues[(valuePos, "true")]), valuePos),
+        ),
+      )
+    | Expr(valuePos, Var(Name(_, "false"))) ->
+      Some(
+        TType::single(
+          valuePos,
+          TPrimValue(TBool(), Some(ArrayValues[(valuePos, "false")]), valuePos),
+        ),
+      )
+    | Expr(valuePos, EString(_, n)) ->
+      Some(
+        TType::single(
+          valuePos,
+          TPrimValue(TNum(), Some(ArrayValues[(valuePos, n)]), valuePos),
+        ),
+      )
+    | _ -> None()
     }
   }
 
