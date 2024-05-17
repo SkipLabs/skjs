@@ -169,7 +169,7 @@ class TEnv{
         ],
       )
     };
-    visitedClasses = mutable Set[];
+    visitedClasses = SortedSet[];
     fields = mutable Map[];
     thisType = TType::create(
       className.posRange,
@@ -230,7 +230,7 @@ class TEnv{
   fun addFields(
     context: mutable SKStore.Context,
     acc: mutable Map<String, TField>,
-    visitedClasses: mutable Set<String>,
+    visitedClasses: SortedSet<String>,
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
@@ -239,7 +239,7 @@ class TEnv{
     if (visitedClasses.contains(className.value)) {
       typingError(Array[(className.posRange, "Cyclic class definition")]);
     };
-    visitedClasses.insert(className.value);
+    !visitedClasses = visitedClasses.set(className.value);
     c = for (def in this.defMap.get(
       context,
       FileName::create(className.posRange.fileName),
@@ -428,6 +428,11 @@ class TEnv{
         pos,
         TPromise(this.normalize(context, targs[0]), typeAst.posRange),
       )
+    | TAInst(Name(_, "never"), targs) ->
+      if (targs.size() != 0) {
+        typingError(Array[(pos, "Invalid number of type arguments")])
+      };
+      TType::bottom(pos)
     | TAInst(Name(_, x @ "true"), targs)
     | TAInst(Name(_, x @ "false"), targs) ->
       if (targs.size() != 0) {
