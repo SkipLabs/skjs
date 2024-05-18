@@ -599,7 +599,9 @@ class TEnv{
               )
             }
           }
-        | FunDef _ -> invariant_violation("TODO fundef")
+        | fd @ FunDef _ ->
+          (name, decl) = this.funDecl(context, true, fd);
+          TField(name.posRange, name.value, false, decl)
         }
       }),
     )

@@ -228,6 +228,8 @@ mutable class TCEnv(
 /*****************************************************************************/
 
 class TypeChecker{
+  builtins: Set<String> = Set["console"],
+  builtinsFileName: FileName,
   newLinesMap: NewLinesMap,
   backtrace: Bool,
   defMap: DefMap,
@@ -1123,11 +1125,16 @@ class TypeChecker{
       };
       env.scope.maybeGet(local) match {
       | None() ->
-        for (def in this.defMap.get(
-          env.context,
-          FileName::create(local.posRange.fileName),
-          local,
-        )) {
+        defs = if (this.builtins.contains(local.value)) {
+          this.defMap.get(env.context, this.builtinsFileName, local)
+        } else {
+          this.defMap.get(
+            env.context,
+            FileName::create(local.posRange.fileName),
+            local,
+          )
+        };
+        for (def in defs) {
           def.value match {
           | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
           | VarDefs(kind, varDefArr) ->

@@ -180,8 +180,13 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
   defMap = DefMap{root, index, fileDefsMap};
   tenv = TEnv{defMap};
-  checker = TypeChecker{backtrace, newLinesMap, defMap, tenv};
   status = 0;
+  builtinsFileName = root + FileName::create("./src/builtins.ts");
+  if (!builtinsFileName.exists()) {
+    print_error("Builtins not found: " + builtinsFileName.toString());
+    return 1;
+  };
+  checker = TypeChecker{backtrace, newLinesMap, defMap, tenv, builtinsFileName};
   for (fileName in files.srcFiles) {
     parsedFile = parsedFiles.getArray(context, SKStore.SID(fileName));
     if (parsedFile.size() == 0) invariant_violation("could not parse?");
