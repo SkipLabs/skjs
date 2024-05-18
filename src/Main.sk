@@ -128,7 +128,6 @@ fun run(): (Cli.Command, Cli.ParseResults ~> void) {
 fun execRun(args: Cli.ParseResults): void {
   status = execCheckWithStatus(args);
   if (status != 0) return void;
-  debug(status);
   fileName = args.maybeGetString("path") match {
   | Some(path) ->
     if (!path.startsWith("./")) {
