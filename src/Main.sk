@@ -107,7 +107,7 @@ fun main(): void {
 }
 
 /*****************************************************************************/
-/* Checks that JSON objects match a schema */
+/* Typechecks the files */
 /*****************************************************************************/
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
