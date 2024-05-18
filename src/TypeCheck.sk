@@ -263,7 +263,12 @@ class TypeChecker{
     | ExportAs _ -> throw notSupported(def.pos)
     | ExportEq _ -> throw notSupported(def.pos)
     | Module _ -> throw notSupported(def.pos)
-    | ToplevelExpr _ -> throw notSupported(def.pos)
+    | ToplevelExpr(e) ->
+      subst = mutable Subst{context};
+      scope = mutable Scope{id => 0, isLoop => false};
+      env = mutable TCEnv(context, subst, scope);
+      ty = this.expr(env, e);
+      this.checkIsVoid(env, ty)
     | fd @ FunDef _ -> this.funDef(context, None(), fd)
     | Declare _ -> void
     | Namespace _ -> throw notSupported(def.pos)
@@ -818,6 +823,16 @@ class TypeChecker{
     }
   }
 
+  fun checkIsVoid(env: mutable TCEnv, ty: TType): void {
+    this.checkSubType(
+      env,
+      ty.pos,
+      "This expression was expected to be of type void",
+      ty,
+      TType::single(ty.pos, TPrimVoid(TVoid(), ty.pos)),
+    );
+  }
+
   fun stmt(env: mutable TCEnv, st: Stmt): void {
     st.value match {
     | Break() -> void
@@ -825,14 +840,7 @@ class TypeChecker{
     | StmtExpr(e) ->
       ty = this.expr(env, e);
       if (!e.isAssign()) {
-        this.checkSubType(
-          env,
-          e.posRange,
-          "This expression was expected to be of type void.\n" +
-            "If that's what you wanted, you can add '_ =' to make it explicit",
-          ty,
-          TType::single(e.posRange, TPrimVoid(TVoid(), e.posRange)),
-        );
+        this.checkIsVoid(env, ty)
       }
     | Return(pos, eOpt) ->
       retType = this.retType match {
