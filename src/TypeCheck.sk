@@ -1020,6 +1020,11 @@ class TypeChecker{
         };
         cases.clear()
       }
+    };
+    if (!cases.isEmpty()) {
+      typingError(
+        Array[(e.posRange, "Missing branches:\n" + cases.join("\n"))],
+      );
     }
   }
 
