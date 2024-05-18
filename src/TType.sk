@@ -294,14 +294,6 @@ fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
 /*****************************************************************************/
 
 class TTuple(tuple: Array<TType>) extends SType {
-  fun toArray(subst: mutable Subst, env: TEnv): TArray {
-    invariant(this.tuple.size() != 0);
-    elt = this.tuple[0];
-    for (i in Range(1, this.tuple.size())) {
-      !elt = unionTType(subst, env, elt, this.tuple[i]);
-    };
-    TArray(elt, this.pos)
-  }
   fun toString(): String {
     invariant_violation("TODO1")
   }
