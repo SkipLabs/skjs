@@ -176,11 +176,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap, rootDirStr + "src/");
+  builtinsFileName = root + FileName::create("./src/builtins.ts");
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
-  defMap = DefMap{root, index, fileDefsMap};
+  defMap = DefMap{root, index, fileDefsMap, builtinsFileName};
   tenv = TEnv{defMap};
   status = 0;
-  builtinsFileName = root + FileName::create("./src/builtins.ts");
   if (!builtinsFileName.exists()) {
     print_error("Builtins not found: " + builtinsFileName.toString());
     return 1;

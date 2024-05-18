@@ -1054,8 +1054,9 @@ class TypeChecker{
     objType: TType,
     fieldName: Name,
     isContra: Bool,
+    checkConstructor: Bool = true,
   ): TType {
-    if (fieldName.value == "constructor") {
+    if (checkConstructor && fieldName.value == "constructor") {
       typingError(
         Array[(fieldName.posRange, "Cannot access field 'constructor'")],
       );
@@ -1237,31 +1238,6 @@ class TypeChecker{
         targs.map(ty -> this.tenv.normalize(env.context, ty)),
         args.map(x -> this.expr(env, x)),
       )
-    | New(Name(namePos, "Array"), targsAst, args) ->
-      arrPos = PosRange(
-        namePos.fileName,
-        namePos.end,
-        Pos(namePos.end.value + 1),
-      );
-      eltType = if (targsAst.size() == 0) {
-        this.newTVar(env, arrPos)
-      } else {
-        if (targsAst.size() > 1) {
-          typingError(Array[(pos, "Too many type arguments")]);
-        };
-        this.tenv.normalize(env.context, targsAst[0])
-      };
-      for (arg in args) {
-        argTy = this.expr(env, arg);
-        this.checkSubType(
-          env,
-          arg.posRange,
-          "Invalid argument",
-          argTy,
-          eltType,
-        );
-      };
-      TType::single(pos, TArray(eltType, pos))
     | New(className, targsAst, argsAst) ->
       targs = if (targsAst.size() == 0) {
         this.tenv.makeTArgs(env.context, env.subst, className)
@@ -1277,7 +1253,8 @@ class TypeChecker{
       result = TType::bottom(pos);
       for (stype in stypes.stypes) {
         ty = stype match {
-        | TArray(x, _) ->
+        | obj @ TObject _ ->
+          this.checkIsArray(env, obj);
           this.checkSubType(
             env,
             pos,
@@ -1288,7 +1265,7 @@ class TypeChecker{
               TPrimValue(TNum(), None(), idx.posRange),
             ),
           );
-          x
+          this.getArrayReturnType(env, obj)
         | TTuple(tyArr, tuplePos) ->
           n = idx.value match {
           | Number(str) -> str.toIntOption()
@@ -1784,6 +1761,56 @@ class TypeChecker{
     | SKJS.Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | SKJS.Spread _ -> typingError(Array[(pos, "TODO: ...")])
     }
+  }
+
+  fun getArrayReturnType(_env: mutable TCEnv, obj: TObject): TType {
+    obj.fields.maybeGet("find") match {
+    | None() ->
+      typingError(Array[(obj.pos, "Array should define a method find")])
+    | Some(fd) ->
+      for (stype in fd.type.stypes.stypes) {
+        stype match {
+        | TFuns(_, methods, _) ->
+          for (met in methods) {
+            retType = met.retType;
+            !retType.stypes.stypes = met.retType.stypes.stypes.filter(x ->
+              !(x is TPrimVoid _)
+            );
+            return retType;
+          }
+        | _ -> typingError(Array[(obj.pos, "Array.find should be a method")])
+        }
+      }
+    };
+    typingError(Array[(obj.pos, "Array.find should be a method")])
+  }
+
+  fun checkIsArray(env: mutable TCEnv, object: TObject): void {
+    pos = object.pos;
+    objectType = TType::single(pos, object);
+    msg = Array[
+      (pos, "Expected an array"),
+      (pos, "Not: " + prettyPrintType(false, objectType)),
+    ];
+    dot = (x, y) -> {
+      this.dot(env, pos, x, Name(pos, y), false, false)
+    };
+    className = try {
+      dot(dot(dot(objectType, "__proto__"), "constructor"), "name")
+    } catch {
+    | ErrorExn _ -> typingError(msg)
+    | exn -> throw (exn)
+    };
+    for (stype in className.getSTypes(env.subst, this.tenv)) {
+      stype match {
+      | TPrimValue(TString(), Some(values), _) ->
+        if (values.values.size() != 1) typingError(msg);
+        if (values.values[0].i1 == "Array") return void;
+        typingError(msg)
+      | _ -> typingError(msg)
+      }
+    };
+    typingError(msg)
   }
 
   fun makeLiteralType(e: Expr): ?TType {

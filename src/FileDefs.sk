@@ -498,6 +498,8 @@ class DefMap{
   index: FileNameIndex,
   root: DirName,
   fileDefsMap: FileDefsMap,
+  builtins: Set<String> = Set["Array"],
+  builtinsFileName: FileName,
 } extends IDefMap {
   fun getType(context: mutable S.Context, name: Name): DefMapType {
     for (def in this.get(
@@ -518,7 +520,12 @@ class DefMap{
     fileName: FileName,
     defName: Name,
   ): Array<Def> {
-    fileDefs = this.fileDefsMap.get(context, fileName);
+    fileDefs = this.fileDefsMap.get(
+      context,
+      if (this.builtins.contains(defName.value)) this.builtinsFileName else {
+        fileName
+      },
+    );
     this.getInDefs(context, fileName, fileDefs, defName)
   }
 

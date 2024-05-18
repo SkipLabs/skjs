@@ -84,10 +84,6 @@ mutable class TypePp{
 
   mutable fun stype(level: Int, margin: Margin, sty: SType): void {
     sty match {
-    | TArray(ty, _) ->
-      this.out(level, margin, "Array<");
-      this.type(level, margin, ty);
-      this.out(level, margin, ">")
     | TObject(fields, _) -> this.object(level, margin, fields)
     | TPromise(ty, _) ->
       this.branch(
@@ -357,7 +353,7 @@ mutable class TypePp{
         }
       };
       if (!ty.stypes.isEmpty() || !ty.insts.insts.isEmpty()) {
-        this.out(level, margin, " extends ")
+        this.out(level, margin, " | ")
       }
     };
     this.branch(
