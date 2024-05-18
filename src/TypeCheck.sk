@@ -504,9 +504,16 @@ class TypeChecker{
       scope.bind(Name(fd.pos, "this"), thisType, true)
     };
     !this.tenv = this.tenv.addTParams(context, fd.tparams);
-    for (param in fd.params) {
+    for (i => param in fd.params) {
       (paramName, tyOpt) = param.name match {
       | PNName(n, ty) -> (n, ty)
+      | PNDDD(name) ->
+        if (i != fd.params.size() - 1) {
+          typingError(
+            Array[(name.posRange, "... should be the last parameter")],
+          )
+        };
+        (name, None())
       | _ ->
         typingError(
           Array[
@@ -1711,6 +1718,7 @@ class TypeChecker{
               Array[],
               paramTypes.map(x -> x.i1).toArray(),
               Array[],
+              None(),
               pos,
               lambdas,
               retType,
@@ -2086,12 +2094,35 @@ class TypeChecker{
           };
           totalSize = tfun.params.size() + tfun.optionalParams.size();
           if (totalSize < args.size()) {
-            typingError(
-              Array[
-                (pos, "Too many arguments"),
-                (tfun.minSizeWitness, "For this function"),
-              ],
-            );
+            tfun.spreadParam match {
+            | None() ->
+              typingError(
+                Array[
+                  (pos, "Too many arguments"),
+                  (tfun.minSizeWitness, "For this function"),
+                ],
+              )
+            | Some(spreadType) ->
+              spreadType.insts.insts[0] match {
+              | TSInst(Name(_, "Array"), spreadTArgs) ->
+                for (i in Range(totalSize, args.size())) {
+                  this.checkSubType(
+                    env,
+                    pos,
+                    "Invalid argument",
+                    args[i],
+                    spreadTArgs.targs[0],
+                  );
+                }
+              | _ ->
+                typingError(
+                  Array[
+                    (pos, "Invalid call"),
+                    (spreadType.pos, "Unexpected type for ..."),
+                  ],
+                )
+              }
+            }
           };
           for (lambda in tfun.lambdas) {
             invariant(tfun.optionalParams.size() == 0);

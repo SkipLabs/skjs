@@ -321,6 +321,7 @@ class TFun(
   tparams: Array<TParam>,
   params: Array<TType>,
   optionalParams: Array<TType>,
+  spreadParam: ?TType,
   minSizeWitness: PosRange,
   lambdas: Array<Lambda>,
   retType: TType,
@@ -592,6 +593,7 @@ base class STResult {
   children =
   | STOk()
   | STMissingField(String)
+  | STMissingSpread()
   | STTooManySType(SType)
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
@@ -606,6 +608,7 @@ base class STResult {
     | STOk() ->
       invariant_violation("Internal error: STResult should never go to String")
     | STTop() -> "This is of type any"
+    | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
       "The field '" +
         fieldName +
@@ -921,6 +924,18 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
   for (lambda in f1.lambdas) {
     lambda.compute(subst, params2, f2.retType)
   };
+  f2.spreadParam match {
+  | None() -> void
+  | Some(spread2) ->
+    f1.spreadParam match {
+    | None() -> return STMissingSpread()
+    | Some(spread1) ->
+      isSubTType(subst, env, spread1, spread2) match {
+      | STOk() -> void
+      | err -> return err
+      }
+    }
+  };
   isSubTType(subst, env, f1.retType, f2.retType)
 }
 
@@ -1130,6 +1145,10 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
       interTType(subst, env, f1.optionalParams[i], f2.optionalParams[i]),
     );
   };
+  spreadParam = (f1.spreadParam, f2.spreadParam) match {
+  | (Some(ty1), Some(ty2)) -> Some(interTType(subst, env, ty1, ty2))
+  | _ -> None()
+  };
   retType = unionTType(subst, env, f1.retType, f2.retType);
   totalSize1 = f1.params.size() + f1.optionalParams.size();
   totalSize2 = f2.params.size() + f2.optionalParams.size();
@@ -1140,6 +1159,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     tparams.toArray(),
     params.toArray(),
     optionalParams.toArray(),
+    spreadParam,
     sizeWitness,
     Array[],
     retType,
@@ -1365,6 +1385,12 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   sizeWitness = if (totalSize1 >= totalSize2) f1.minSizeWitness else {
     f2.minSizeWitness
   };
+  spreadParam = (f1.spreadParam, f2.spreadParam) match {
+  | (None(), None()) -> None()
+  | (ty @ Some _, None()) -> ty
+  | (None(), ty @ Some _) -> ty
+  | (Some(ty1), Some(ty2)) -> Some(unionTType(subst, env, ty1, ty2))
+  };
   retType = interTType(subst, env, f1.retType, f2.retType);
   if (f1.lambdas.size() != 0) {
     typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
@@ -1376,6 +1402,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     tparams.toArray(),
     params.toArray(),
     optionalParams.toArray(),
+    spreadParam,
     sizeWitness,
     Array[],
     retType,
@@ -1541,6 +1568,7 @@ base class ApplyType {
       f.tparams.map(x -> this.typeParam(env, x)),
       f.params.map(x -> this.type(env, x)),
       f.optionalParams.map(x -> this.type(env, x)),
+      f.spreadParam.map(x -> this.type(env, x)),
       f.minSizeWitness,
       f.lambdas,
       this.type(env, f.retType),

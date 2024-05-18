@@ -327,16 +327,22 @@ class TEnv{
           isMethod,
           fd.tparams,
           fd.params.map(param -> {
-            ty = param.name match {
+            (paramName, ty) = param.name match {
             | PNName(n, tyOpt) ->
               tyOpt match {
               | None() ->
                 param.type match {
                 | None() ->
                   typingError(Array[(n.posRange, "Missing type annotation")])
-                | Some(x) -> x
+                | Some(ty) -> (TAParamName(n), ty)
                 }
-              | Some(ty) -> ty
+              | Some(ty) -> (TAParamName(n), ty)
+              }
+            | PNDDD(n) ->
+              param.type match {
+              | None() ->
+                typingError(Array[(n.posRange, "Missing type annotation")])
+              | Some(x) -> (TAParamSpread(n), x)
               }
             | _ ->
               typingError(
@@ -345,7 +351,7 @@ class TEnv{
                 ],
               )
             };
-            TAFunParam(None(), param.optional, ty)
+            TAFunParam(Some(paramName), param.optional, ty)
           }),
           fd.retType.i1 match {
           | None() -> // constructor
@@ -541,11 +547,26 @@ class TEnv{
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
       optionalWitness: ?PosRange = None();
-      for (param in params) {
+      spreadParam: ?TType = None();
+      for (i => param in params) {
+        paramType = this.normalize(context, param.type);
+        param.name match {
+        | Some(TAParamSpread(spreadName)) ->
+          if (i != params.size() - 1) {
+            typingError(
+              Array[
+                (spreadName.posRange, "... must always be the last parameter"),
+              ],
+            );
+          };
+          !spreadParam = Some(paramType);
+          continue
+        | _ -> void
+        };
         param.optional match {
         | None() ->
           optionalWitness match {
-          | None() -> normalParams.push(this.normalize(context, param.type))
+          | None() -> normalParams.push(paramType)
           | Some(wpos) ->
             typingError(
               Array[
@@ -556,13 +577,14 @@ class TEnv{
           }
         | Some(wpos) ->
           !optionalWitness = Some(wpos);
-          optionalParams.push(this.normalize(context, param.type))
+          optionalParams.push(paramType)
         }
       };
       tfun = TFun(
         funTParams.toArray(),
         normalParams.toArray(),
         optionalParams.toArray(),
+        spreadParam,
         pos,
         Array[],
         this.normalize(context, retType),
