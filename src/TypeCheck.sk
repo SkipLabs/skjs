@@ -1099,6 +1099,13 @@ class TypeChecker{
             branch.fields.getType(fieldName),
           )
         }
+      | TPrimValue(TString(), _, stringPos) ->
+        obj = this.tenv.newObject(
+          env.context,
+          Name(stringPos, "string"),
+          Array[],
+        );
+        return obj.fields.getType(fieldName)
       | _ ->
         typingError(
           Array[

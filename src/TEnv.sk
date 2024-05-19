@@ -161,6 +161,17 @@ class TEnv{
     filter: FieldType ~> Bool = _ ~> true,
     transform: FieldType ~> FieldType = x ~> x,
   ): TType {
+    obj = this.newObject(context, className, targs, filter, transform);
+    TType::single(className.posRange, obj)
+  }
+
+  fun newObject(
+    context: mutable SKStore.Context,
+    className: Name,
+    targs: Array<TType>,
+    filter: FieldType ~> Bool = _ ~> true,
+    transform: FieldType ~> FieldType = x ~> x,
+  ): TObject {
     c = this.getClass(context, className);
     if (c.tparams.size() != targs.size()) {
       typingError(
@@ -187,14 +198,11 @@ class TEnv{
       filter,
       transform,
     );
-    TType::single(
-      className.posRange,
-      TObject(
-        TFields::create(
-          fields.items().collect(Array).sortedBy(x ~> x.i0).map(x -> x.i1),
-        ),
-        className.posRange,
+    TObject(
+      TFields::create(
+        fields.items().collect(Array).sortedBy(x ~> x.i0).map(x -> x.i1),
       ),
+      className.posRange,
     )
   }
 
