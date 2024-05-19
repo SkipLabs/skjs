@@ -228,6 +228,8 @@ mutable class TCEnv(
 /*****************************************************************************/
 
 class TypeChecker{
+  builtins: Set<String> = Set["console", "Math"],
+  builtinsFileName: FileName,
   newLinesMap: NewLinesMap,
   backtrace: Bool,
   defMap: DefMap,
@@ -261,7 +263,12 @@ class TypeChecker{
     | ExportAs _ -> throw notSupported(def.pos)
     | ExportEq _ -> throw notSupported(def.pos)
     | Module _ -> throw notSupported(def.pos)
-    | ToplevelExpr _ -> throw notSupported(def.pos)
+    | ToplevelExpr(e) ->
+      subst = mutable Subst{context};
+      scope = mutable Scope{id => 0, isLoop => false};
+      env = mutable TCEnv(context, subst, scope);
+      ty = this.expr(env, e);
+      this.checkIsVoid(env, ty)
     | fd @ FunDef _ -> this.funDef(context, None(), fd)
     | Declare _ -> void
     | Namespace _ -> throw notSupported(def.pos)
@@ -497,9 +504,16 @@ class TypeChecker{
       scope.bind(Name(fd.pos, "this"), thisType, true)
     };
     !this.tenv = this.tenv.addTParams(context, fd.tparams);
-    for (param in fd.params) {
+    for (i => param in fd.params) {
       (paramName, tyOpt) = param.name match {
       | PNName(n, ty) -> (n, ty)
+      | PNDDD(name) ->
+        if (i != fd.params.size() - 1) {
+          typingError(
+            Array[(name.posRange, "... should be the last parameter")],
+          )
+        };
+        (name, None())
       | _ ->
         typingError(
           Array[
@@ -816,6 +830,16 @@ class TypeChecker{
     }
   }
 
+  fun checkIsVoid(env: mutable TCEnv, ty: TType): void {
+    this.checkSubType(
+      env,
+      ty.pos,
+      "This expression was expected to be of type void",
+      ty,
+      TType::single(ty.pos, TPrimVoid(TVoid(), ty.pos)),
+    );
+  }
+
   fun stmt(env: mutable TCEnv, st: Stmt): void {
     st.value match {
     | Break() -> void
@@ -823,14 +847,7 @@ class TypeChecker{
     | StmtExpr(e) ->
       ty = this.expr(env, e);
       if (!e.isAssign()) {
-        this.checkSubType(
-          env,
-          e.posRange,
-          "This expression was expected to be of type void.\n" +
-            "If that's what you wanted, you can add '_ =' to make it explicit",
-          ty,
-          TType::single(e.posRange, TPrimVoid(TVoid(), e.posRange)),
-        );
+        this.checkIsVoid(env, ty)
       }
     | Return(pos, eOpt) ->
       retType = this.retType match {
@@ -1044,8 +1061,9 @@ class TypeChecker{
     objType: TType,
     fieldName: Name,
     isContra: Bool,
+    checkConstructor: Bool = true,
   ): TType {
-    if (fieldName.value == "constructor") {
+    if (checkConstructor && fieldName.value == "constructor") {
       typingError(
         Array[(fieldName.posRange, "Cannot access field 'constructor'")],
       );
@@ -1081,6 +1099,20 @@ class TypeChecker{
             branch.fields.getType(fieldName),
           )
         }
+      | TArray(eltType, stringPos) ->
+        obj = this.tenv.newObject(
+          env.context,
+          Name(stringPos, "Array"),
+          Array[eltType],
+        );
+        return obj.fields.getType(fieldName)
+      | TPrimValue(TString(), _, stringPos) ->
+        obj = this.tenv.newObject(
+          env.context,
+          Name(stringPos, "string"),
+          Array[],
+        );
+        return obj.fields.getType(fieldName)
       | _ ->
         typingError(
           Array[
@@ -1123,11 +1155,16 @@ class TypeChecker{
       };
       env.scope.maybeGet(local) match {
       | None() ->
-        for (def in this.defMap.get(
-          env.context,
-          FileName::create(local.posRange.fileName),
-          local,
-        )) {
+        defs = if (this.builtins.contains(local.value)) {
+          this.defMap.get(env.context, this.builtinsFileName, local)
+        } else {
+          this.defMap.get(
+            env.context,
+            FileName::create(local.posRange.fileName),
+            local,
+          )
+        };
+        for (def in defs) {
           def.value match {
           | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
           | VarDefs(kind, varDefArr) ->
@@ -1215,38 +1252,23 @@ class TypeChecker{
       );
       TType::single(pos, TPrimVoid(TVoid(), pos))
     | Call(f, targs, args) ->
-      this.call(
+      rty = this.call(
         env,
         pos,
         this.expr(env, f),
         targs.map(ty -> this.tenv.normalize(env.context, ty)),
         args.map(x -> this.expr(env, x)),
-      )
-    | New(Name(namePos, "Array"), targsAst, args) ->
-      arrPos = PosRange(
-        namePos.fileName,
-        namePos.end,
-        Pos(namePos.end.value + 1),
       );
-      eltType = if (targsAst.size() == 0) {
-        this.newTVar(env, arrPos)
-      } else {
-        if (targsAst.size() > 1) {
-          typingError(Array[(pos, "Too many type arguments")]);
-        };
-        this.tenv.normalize(env.context, targsAst[0])
+      f.value match {
+      | Binop(
+        BODot(),
+        Expr(_, Var(Name(_, "console"))),
+        Expr(_, Var(Name(_, "assert"))),
+      ) if (args.size() >= 1) ->
+        this.evalCond(env, args[0], true)
+      | _ -> void
       };
-      for (arg in args) {
-        argTy = this.expr(env, arg);
-        this.checkSubType(
-          env,
-          arg.posRange,
-          "Invalid argument",
-          argTy,
-          eltType,
-        );
-      };
-      TType::single(pos, TArray(eltType, pos))
+      rty
     | New(className, targsAst, argsAst) ->
       targs = if (targsAst.size() == 0) {
         this.tenv.makeTArgs(env.context, env.subst, className)
@@ -1262,7 +1284,7 @@ class TypeChecker{
       result = TType::bottom(pos);
       for (stype in stypes.stypes) {
         ty = stype match {
-        | TArray(x, _) ->
+        | TArray(eltType, _) ->
           this.checkSubType(
             env,
             pos,
@@ -1273,7 +1295,7 @@ class TypeChecker{
               TPrimValue(TNum(), None(), idx.posRange),
             ),
           );
-          x
+          eltType
         | TTuple(tyArr, tuplePos) ->
           n = idx.value match {
           | Number(str) -> str.toIntOption()
@@ -1719,6 +1741,7 @@ class TypeChecker{
               Array[],
               paramTypes.map(x -> x.i1).toArray(),
               Array[],
+              None(),
               pos,
               lambdas,
               retType,
@@ -2044,12 +2067,36 @@ class TypeChecker{
           };
           totalSize = tfun.params.size() + tfun.optionalParams.size();
           if (totalSize < args.size()) {
-            typingError(
-              Array[
-                (pos, "Too many arguments"),
-                (tfun.minSizeWitness, "For this function"),
-              ],
-            );
+            tfun.spreadParam match {
+            | None() ->
+              typingError(
+                Array[
+                  (pos, "Too many arguments"),
+                  (tfun.minSizeWitness, "For this function"),
+                ],
+              )
+            | Some(spreadType) ->
+              msg = Array[
+                (pos, "Invalid call"),
+                (spreadType.pos, "Unexpected type for ..."),
+              ];
+              if (spreadType.stypes.stypes.size() != 1) {
+                typingError(msg);
+              };
+              spreadType.stypes.stypes[0] match {
+              | TArray(eltType, _) ->
+                for (i in Range(totalSize, args.size())) {
+                  this.checkSubType(
+                    env,
+                    pos,
+                    "Invalid argument",
+                    args[i],
+                    eltType,
+                  );
+                }
+              | _ -> typingError(msg)
+              }
+            }
           };
           for (lambda in tfun.lambdas) {
             invariant(tfun.optionalParams.size() == 0);

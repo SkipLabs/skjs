@@ -61,7 +61,7 @@ fun main(): void {
         .about("Use verbose output")
         .global(),
     );
-  suppliers = Array[check, help];
+  suppliers = Array[check, run, help];
   commands = mutable Map[];
   for (supplier in suppliers) {
     (subcommand, cmdFn) = supplier();
@@ -107,7 +107,46 @@ fun main(): void {
 }
 
 /*****************************************************************************/
-/* Checks that JSON objects match a schema */
+/* Runs a specific file */
+/*****************************************************************************/
+
+fun run(): (Cli.Command, Cli.ParseResults ~> void) {
+  (
+    Cli.Command("run")
+      .about("runs the file")
+      .arg(Cli.StringArg("path").positional().required().about("path to main"))
+      .arg(
+        Cli.BoolArg("backtrace")
+          .short("b")
+          .long("backtrace")
+          .about("Internal (debugging)"),
+      ),
+    execRun,
+  )
+}
+
+fun execRun(args: Cli.ParseResults): void {
+  status = execCheckWithStatus(args);
+  if (status != 0) return void;
+  fileName = args.maybeGetString("path") match {
+  | Some(path) ->
+    if (!path.startsWith("./")) {
+      print_error("File does not start with ./: " + path);
+      skipExit(2);
+    };
+    if (!FileSystem.exists(path)) {
+      print_error("File not found: " + path);
+      skipExit(2);
+    };
+    path
+  | None() ->
+    invariant_violation("Internal error: path was declared as required")
+  };
+  Posix.execvp(Array["bun", fileName])
+}
+
+/*****************************************************************************/
+/* Typechecks the files */
 /*****************************************************************************/
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -125,6 +164,10 @@ fun check(): (Cli.Command, Cli.ParseResults ~> void) {
 }
 
 fun execCheck(args: Cli.ParseResults): void {
+  _ = execCheckWithStatus(args);
+}
+
+fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
   context = mutable SKStore.Context{};
   rootDirStr = FileSystem.realpath(".") + "/";
@@ -133,33 +176,32 @@ fun execCheck(args: Cli.ParseResults): void {
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap, rootDirStr + "src/");
+  builtinsFileName = root + FileName::create("./src/builtins.ts");
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
-  defMap = DefMap{root, index, fileDefsMap};
+  defMap = DefMap{root, index, fileDefsMap, builtinsFileName};
   tenv = TEnv{defMap};
-  checker = TypeChecker{backtrace, newLinesMap, defMap, tenv};
-  doFile = fileName -> {
+  status = 0;
+  if (!builtinsFileName.exists()) {
+    print_error("Builtins not found: " + builtinsFileName.toString());
+    return 1;
+  };
+  checker = TypeChecker{backtrace, newLinesMap, defMap, tenv, builtinsFileName};
+  for (fileName in files.srcFiles) {
     parsedFile = parsedFiles.getArray(context, SKStore.SID(fileName));
     if (parsedFile.size() == 0) invariant_violation("could not parse?");
     parsedFile[0].value match {
     | PROk(defs) ->
       errors = checker.check(context, defs);
+      if (errors.size() != 0) !status = 2;
       for (error in errors) {
         print_string(error);
       }
-    | PRError(err) -> print_error(err.toString())
+    | PRError(err) ->
+      !status = 2;
+      print_error(err.toString())
     }
   };
-
-  for (fileName in files.srcFiles) {
-    if (backtrace) doFile(fileName) else {
-      try {
-        doFile(fileName)
-      } catch {
-      | ErrorExn(err) -> print_error(err.toString(context, newLinesMap))
-      | exn -> throw exn
-      }
-    }
-  };
+  status
 }
 
 module end;
