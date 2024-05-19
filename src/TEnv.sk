@@ -422,11 +422,15 @@ class TEnv{
       )
     | TAObject(fields) ->
       createObject(typeAst.posRange, this.createTFields(context, fields))
+    | TAInst(n @ Name(p, "Array"), targs) ->
+      if (targs.size() != 1) {
+        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+      };
+      TType::single(p, TArray(this.normalize(context, targs[0]), p))
+
     | TAArray(ty) ->
-      this.normalize(
-        context,
-        Type(ty.posRange, TAInst(Name(ty.posRange, "Array"), Array[ty])),
-      )
+      TType::single(pos, TArray(this.normalize(context, ty), pos))
+
     | TAInst(n @ Name(p, "void"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])

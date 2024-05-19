@@ -1099,6 +1099,13 @@ class TypeChecker{
             branch.fields.getType(fieldName),
           )
         }
+      | TArray(eltType, stringPos) ->
+        obj = this.tenv.newObject(
+          env.context,
+          Name(stringPos, "Array"),
+          Array[eltType],
+        );
+        return obj.fields.getType(fieldName)
       | TPrimValue(TString(), _, stringPos) ->
         obj = this.tenv.newObject(
           env.context,
@@ -1277,8 +1284,7 @@ class TypeChecker{
       result = TType::bottom(pos);
       for (stype in stypes.stypes) {
         ty = stype match {
-        | obj @ TObject _ ->
-          this.checkIsArray(env, obj);
+        | TArray(eltType, _) ->
           this.checkSubType(
             env,
             pos,
@@ -1289,7 +1295,7 @@ class TypeChecker{
               TPrimValue(TNum(), None(), idx.posRange),
             ),
           );
-          this.getArrayReturnType(env, obj)
+          eltType
         | TTuple(tyArr, tuplePos) ->
           n = idx.value match {
           | Number(str) -> str.toIntOption()
@@ -1788,56 +1794,6 @@ class TypeChecker{
     }
   }
 
-  fun getArrayReturnType(_env: mutable TCEnv, obj: TObject): TType {
-    obj.fields.maybeGet("find") match {
-    | None() ->
-      typingError(Array[(obj.pos, "Array should define a method find")])
-    | Some(fd) ->
-      for (stype in fd.type.stypes.stypes) {
-        stype match {
-        | TFuns(_, methods, _) ->
-          for (met in methods) {
-            retType = met.retType;
-            !retType.stypes.stypes = met.retType.stypes.stypes.filter(x ->
-              !(x is TPrimVoid _)
-            );
-            return retType;
-          }
-        | _ -> typingError(Array[(obj.pos, "Array.find should be a method")])
-        }
-      }
-    };
-    typingError(Array[(obj.pos, "Array.find should be a method")])
-  }
-
-  fun checkIsArray(env: mutable TCEnv, object: TObject): void {
-    pos = object.pos;
-    objectType = TType::single(pos, object);
-    msg = Array[
-      (pos, "Expected an array"),
-      (pos, "Not: " + prettyPrintType(false, objectType)),
-    ];
-    dot = (x, y) -> {
-      this.dot(env, pos, x, Name(pos, y), false, false)
-    };
-    className = try {
-      dot(dot(dot(objectType, "__proto__"), "constructor"), "name")
-    } catch {
-    | ErrorExn _ -> typingError(msg)
-    | exn -> throw (exn)
-    };
-    for (stype in className.getSTypes(env.subst, this.tenv)) {
-      stype match {
-      | TPrimValue(TString(), Some(values), _) ->
-        if (values.values.size() != 1) typingError(msg);
-        if (values.values[0].i1 == "Array") return void;
-        typingError(msg)
-      | _ -> typingError(msg)
-      }
-    };
-    typingError(msg)
-  }
-
   fun makeLiteralType(e: Expr): ?TType {
     e match {
     | Expr(valuePos, Var(Name(_, "null"))) ->
@@ -2120,24 +2076,25 @@ class TypeChecker{
                 ],
               )
             | Some(spreadType) ->
-              spreadType.insts.insts[0] match {
-              | TSInst(Name(_, "Array"), spreadTArgs) ->
+              msg = Array[
+                (pos, "Invalid call"),
+                (spreadType.pos, "Unexpected type for ..."),
+              ];
+              if (spreadType.stypes.stypes.size() != 1) {
+                typingError(msg);
+              };
+              spreadType.stypes.stypes[0] match {
+              | TArray(eltType, _) ->
                 for (i in Range(totalSize, args.size())) {
                   this.checkSubType(
                     env,
                     pos,
                     "Invalid argument",
                     args[i],
-                    spreadTArgs.targs[0],
+                    eltType,
                   );
                 }
-              | _ ->
-                typingError(
-                  Array[
-                    (pos, "Invalid call"),
-                    (spreadType.pos, "Unexpected type for ..."),
-                  ],
-                )
+              | _ -> typingError(msg)
               }
             }
           };
