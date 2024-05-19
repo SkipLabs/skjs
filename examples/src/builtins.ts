@@ -7,6 +7,7 @@ declare class Array<T> {
   length: number;
   find(filter: (T) => boolean): undefined | T;
   push(elt: T): void;
+  indexOf(x: T): number;
 }
 
 declare const Math: {
