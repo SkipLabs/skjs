@@ -228,7 +228,7 @@ mutable class TCEnv(
 /*****************************************************************************/
 
 class TypeChecker{
-  builtins: Set<String> = Set["console"],
+  builtins: Set<String> = Set["console", "Math"],
   builtinsFileName: FileName,
   newLinesMap: NewLinesMap,
   backtrace: Bool,
@@ -1238,13 +1238,23 @@ class TypeChecker{
       );
       TType::single(pos, TPrimVoid(TVoid(), pos))
     | Call(f, targs, args) ->
-      this.call(
+      rty = this.call(
         env,
         pos,
         this.expr(env, f),
         targs.map(ty -> this.tenv.normalize(env.context, ty)),
         args.map(x -> this.expr(env, x)),
-      )
+      );
+      f.value match {
+      | Binop(
+        BODot(),
+        Expr(_, Var(Name(_, "console"))),
+        Expr(_, Var(Name(_, "assert"))),
+      ) if (args.size() >= 1) ->
+        this.evalCond(env, args[0], true)
+      | _ -> void
+      };
+      rty
     | New(className, targsAst, argsAst) ->
       targs = if (targsAst.size() == 0) {
         this.tenv.makeTArgs(env.context, env.subst, className)
