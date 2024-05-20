@@ -14,7 +14,7 @@ fun help(): (Cli.Command, Cli.ParseResults ~> void) {
   (
     Cli.Command("help")
       .arg(
-        Cli.StringArg("command")
+        Cli.Arg::string("command")
           .positional()
           .about(
             "If specified, the subcommand for which help is to be displayed",
@@ -49,13 +49,13 @@ fun main(): void {
   cmd = Cli.Command("skjs")
     .about("SKJS skdb js development framework")
     .arg(
-      Cli.BoolArg("version")
+      Cli.Arg::bool("version")
         .short("V")
         .long("version")
         .about("Print version info and exit"),
     )
     .arg(
-      Cli.BoolArg("verbose")
+      Cli.Arg::bool("verbose")
         .short("v")
         .long("verbose")
         .about("Use verbose output")
@@ -154,7 +154,7 @@ fun check(): (Cli.Command, Cli.ParseResults ~> void) {
     Cli.Command("check")
       .about("Typechecks")
       .arg(
-        Cli.BoolArg("backtrace")
+        Cli.Arg::bool("backtrace")
           .short("b")
           .long("backtrace")
           .about("Internal (debugging)"),
