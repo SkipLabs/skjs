@@ -2176,8 +2176,6 @@ class TypeChecker{
       if (target) {
         this.setLocal(
           env,
-          e.posRange,
-          "Invalid tag check",
           local,
           None(),
           _ ~> true,
@@ -2246,8 +2244,6 @@ class TypeChecker{
       };
       this.setLocal(
         env,
-        e.posRange,
-        "Invalid typeof check",
         local,
         if (target) default else None(),
         if (target) filter else x ~> !filter(x),
@@ -2294,8 +2290,6 @@ class TypeChecker{
       };
       this.setLocal(
         env,
-        e.posRange,
-        "Invalid typeof check",
         local,
         if (target) None() else default,
         if (target) x ~> !filter(x) else filter,
@@ -2324,14 +2318,7 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (!target) {
-        this.setLocal(
-          env,
-          e.posRange,
-          "Invalid null check",
-          local,
-          None(),
-          x ~> !(x is TPrimVoid(TNull(), _)),
-        )
+        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
       }
 
     | Binop(
@@ -2345,14 +2332,7 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (target) {
-        this.setLocal(
-          env,
-          e.posRange,
-          "Invalid null check",
-          local,
-          None(),
-          x ~> !(x is TPrimVoid(TNull(), _)),
-        )
+        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
       }
 
     | Binop(
@@ -2366,13 +2346,8 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (!target) {
-        this.setLocal(
-          env,
-          e.posRange,
-          "Invalid undefined check",
-          local,
-          None(),
-          x ~> !(x is TPrimVoid(TUndefined _, _)),
+        this.setLocal(env, local, None(), x ~>
+          !(x is TPrimVoid(TUndefined _, _))
         )
       }
 
@@ -2387,13 +2362,8 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (target) {
-        this.setLocal(
-          env,
-          e.posRange,
-          "Invalid undefined check",
-          local,
-          None(),
-          x ~> !(x is TPrimVoid(TUndefined _, _)),
+        this.setLocal(env, local, None(), x ~>
+          !(x is TPrimVoid(TUndefined _, _))
         )
       }
 
@@ -2411,23 +2381,21 @@ class TypeChecker{
 
   fun setLocal(
     env: mutable TCEnv,
-    pos: PosRange,
-    msg: String,
     local: Name,
     default: ?SType,
     filter: SType ~> Bool,
     map: SType ~> SType = x ~> x,
   ): void {
     ty = env.scope.get(local);
-    stypes = ty.getSTypes(env.subst, this.tenv);
-    !stypes = FilterType().stypes((filter, map), stypes);
+    (stypes, tparams) = ty.expand(env.subst, this.tenv);
+    !ty = TType::create(ty.pos, stypes, TInsts::empty(), tparams);
+    !ty = FilterType().type((filter, map), ty);
+    isEmpty = ty.getSTypes(env.subst, this.tenv).stypes.isEmpty();
     localType = default match {
-    | Some(d) if (stypes.stypes.isEmpty()) -> TType::single(d.pos, d)
-    | _ -> TType::create(ty.pos, stypes, TInsts::empty(), TTypeParams::empty())
+    | Some(d) if (isEmpty) -> TType::single(d.pos, d)
+    | _ -> ty
     };
-    env.scope.set(local, localType, (x, y) ->
-      this.checkSubType(env, pos, msg, x, y)
-    )
+    env.scope.set(local, localType, (_, _) -> void)
   }
 }
 

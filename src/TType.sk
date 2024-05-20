@@ -1658,13 +1658,17 @@ class RenameTParams() extends ApplyType {
 class FilterType() extends ApplyType {
   type Env = (SType ~> Bool, SType ~> SType);
 
-  fun stypes(env: this::Env, stypes: STypes): STypes {
-    STypes(
-      stypes.stypes
-        .map(stype -> this.stype(env, stype))
-        .filter(env.i0)
-        .map(env.i1),
+  fun type(env: this::Env, ty: TType): TType {
+    TType::create(
+      ty.pos,
+      this.stypes(env, ty.stypes),
+      ty.insts,
+      this.typeParams(env, ty.tparams),
     )
+  }
+
+  fun stypes(env: this::Env, stypes: STypes): STypes {
+    STypes(stypes.stypes.filter(env.i0).map(env.i1))
   }
 }
 
