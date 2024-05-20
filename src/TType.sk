@@ -594,6 +594,7 @@ base class SError {
 base class STResult {
   children =
   | STOk()
+  | STNoConstraint()
   | STMissingField(String)
   | STMissingSpread()
   | STTooManySType(SType)
@@ -610,6 +611,7 @@ base class STResult {
     | STOk() ->
       invariant_violation("Internal error: STResult should never go to String")
     | STTop() -> "This is of type any"
+    | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
       "The field '" +
@@ -919,6 +921,16 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
   for (i in Range(0, f1.tparams.size())) {
     tparam1 = f1.tparams[i];
     tparam2 = f2.tparams[i];
+    (tparam1.cstr, tparam2.cstr) match {
+    | (None(), None()) -> void
+    | (Some _, None()) -> void
+    | (None(), Some _) -> return STNoConstraint()
+    | (Some(ty1), Some(ty2)) ->
+      isSubTType(subst, env, ty2, ty1) match {
+      | STOk() -> void
+      | err -> return err
+      }
+    };
     tsubst![tparam2.id] = tparam1;
   };
   !f2 = RenameTParams().fun_(tsubst.chill(), f2);
