@@ -114,9 +114,14 @@ fun run(): (Cli.Command, Cli.ParseResults ~> void) {
   (
     Cli.Command("run")
       .about("runs the file")
-      .arg(Cli.StringArg("path").positional().required().about("path to main"))
       .arg(
-        Cli.BoolArg("backtrace")
+        Cli.StringArg{name => "path"}
+          .positional()
+          .required()
+          .about("path to main"),
+      )
+      .arg(
+        Cli.BoolArg{name => "backtrace"}
           .short("b")
           .long("backtrace")
           .about("Internal (debugging)"),
