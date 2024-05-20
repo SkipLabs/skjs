@@ -1468,7 +1468,7 @@ class TypeChecker{
         if (stypes1.stypes.size() != 1) {
           error()
         };
-        if (!stypes1.isStringOrNum()) {
+        if (!stypes1.isStringOrNumOrBool()) {
           typingError(
             Array[
               (pos, "Invalid comparison"),
@@ -1476,7 +1476,7 @@ class TypeChecker{
             ],
           );
         };
-        if (!stypes2.isStringOrNum()) {
+        if (!stypes2.isStringOrNumOrBool()) {
           typingError(
             Array[
               (pos, "Invalid comparison"),
@@ -2174,11 +2174,12 @@ class TypeChecker{
       Expr(_, EString(SKQuote(), tag)),
     ) ->
       if (target) {
-        this.filterType(
+        this.setLocal(
           env,
           e.posRange,
           "Invalid tag check",
           local,
+          None(),
           _ ~> true,
           stype ~>
             stype match {
@@ -2214,23 +2215,41 @@ class TypeChecker{
       Expr(typePos, EString(_, typeStr)),
       Expr(_, TypeOf(Expr(_, Var(local)))),
     ) ->
-      filter = typeStr match {
-      | "string" -> x ~> x is TPrimValue(TString(), _, _)
-      | "number" -> x ~> x is TPrimValue(TNum(), _, _)
+      (filter, default) = typeStr match {
+      | "string" ->
+        (
+          (x ~> (x is TPrimValue(TString(), _, _))),
+          Some(TPrimValue(TString(), None(), typePos)),
+        )
+      | "number" ->
+        (
+          x ~> x is TPrimValue(TNum(), _, _),
+          Some(TPrimValue(TNum(), None(), typePos)),
+        )
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
-      | "boolean" -> x ~> x is TPrimValue(TBool(), _, _)
+      | "boolean" ->
+        (
+          x ~> x is TPrimValue(TBool(), _, _),
+          Some(TPrimValue(TBool(), None(), typePos)),
+        )
+
       | "symbol" -> return void
-      | "undefined" -> x ~> x is TPrimVoid(TUndefined(), _)
+      | "undefined" -> (x ~> x is TPrimVoid(TUndefined(), _), None())
       | "object" ->
-        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)
-      | "function" -> x ~> x is TFuns _
+        (
+          (x ~>
+            x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)),
+          None(),
+        )
+      | "function" -> (x ~> x is TFuns _, None())
       | _ -> return void
       };
-      this.filterType(
+      this.setLocal(
         env,
         e.posRange,
         "Invalid typeof check",
         local,
+        if (target) default else None(),
         if (target) filter else x ~> !filter(x),
       )
 
@@ -2244,23 +2263,41 @@ class TypeChecker{
       Expr(typePos, EString(_, typeStr)),
       Expr(_, TypeOf(Expr(_, Var(local)))),
     ) ->
-      filter = typeStr match {
-      | "string" -> x ~> x is TPrimValue(TString(), _, _)
-      | "number" -> x ~> x is TPrimValue(TNum(), _, _)
+      (filter, default) = typeStr match {
+      | "string" ->
+        (
+          (x ~> (x is TPrimValue(TString(), _, _))),
+          Some(TPrimValue(TString(), None(), typePos)),
+        )
+      | "number" ->
+        (
+          x ~> x is TPrimValue(TNum(), _, _),
+          Some(TPrimValue(TNum(), None(), typePos)),
+        )
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
-      | "boolean" -> x ~> x is TPrimValue(TBool(), _, _)
+      | "boolean" ->
+        (
+          x ~> x is TPrimValue(TBool(), _, _),
+          Some(TPrimValue(TBool(), None(), typePos)),
+        )
+
       | "symbol" -> return void
-      | "undefined" -> x ~> x is TPrimVoid(TUndefined(), _)
+      | "undefined" -> (x ~> x is TPrimVoid(TUndefined(), _), None())
       | "object" ->
-        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)
-      | "function" -> x ~> x is TFuns _
+        (
+          (x ~>
+            x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)),
+          None(),
+        )
+      | "function" -> (x ~> x is TFuns _, None())
       | _ -> return void
       };
-      this.filterType(
+      this.setLocal(
         env,
         e.posRange,
         "Invalid typeof check",
         local,
+        if (target) None() else default,
         if (target) x ~> !filter(x) else filter,
       )
 
@@ -2287,8 +2324,13 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (!target) {
-        this.filterType(env, e.posRange, "Invalid null check", local, x ~>
-          !(x is TPrimVoid(TNull(), _))
+        this.setLocal(
+          env,
+          e.posRange,
+          "Invalid null check",
+          local,
+          None(),
+          x ~> !(x is TPrimVoid(TNull(), _)),
         )
       }
 
@@ -2303,8 +2345,13 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (target) {
-        this.filterType(env, e.posRange, "Invalid null check", local, x ~>
-          !(x is TPrimVoid(TNull(), _))
+        this.setLocal(
+          env,
+          e.posRange,
+          "Invalid null check",
+          local,
+          None(),
+          x ~> !(x is TPrimVoid(TNull(), _)),
         )
       }
 
@@ -2319,8 +2366,13 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (!target) {
-        this.filterType(env, e.posRange, "Invalid undefined check", local, x ~>
-          !(x is TPrimVoid(TUndefined _, _))
+        this.setLocal(
+          env,
+          e.posRange,
+          "Invalid undefined check",
+          local,
+          None(),
+          x ~> !(x is TPrimVoid(TUndefined _, _)),
         )
       }
 
@@ -2335,8 +2387,13 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (target) {
-        this.filterType(env, e.posRange, "Invalid undefined check", local, x ~>
-          !(x is TPrimVoid(TUndefined _, _))
+        this.setLocal(
+          env,
+          e.posRange,
+          "Invalid undefined check",
+          local,
+          None(),
+          x ~> !(x is TPrimVoid(TUndefined _, _)),
         )
       }
 
@@ -2352,32 +2409,24 @@ class TypeChecker{
     }
   }
 
-  fun filterType(
+  fun setLocal(
     env: mutable TCEnv,
     pos: PosRange,
     msg: String,
     local: Name,
+    default: ?SType,
     filter: SType ~> Bool,
     map: SType ~> SType = x ~> x,
   ): void {
     ty = env.scope.get(local);
-    (stypes, tparams) = ty.expand(env.subst, this.tenv);
-    !stypes.stypes = stypes.stypes.filter(filter).map(map);
-    !tparams.tparams = tparams.tparams.map(inter ->
-      inter.map(tparam -> {
-        tparam.cstr match {
-        | None() -> void
-        | Some(c) ->
-          !c.stypes = STypes(c.stypes.stypes.filter(filter).map(map));
-          !tparam.cstr = Some(c)
-        };
-        tparam
-      })
-    );
-    env.scope.set(
-      local,
-      TType::create(ty.pos, stypes, TInsts::empty(), tparams),
-      (x, y) -> this.checkSubType(env, pos, msg, x, y),
+    stypes = ty.getSTypes(env.subst, this.tenv);
+    !stypes = FilterType().stypes((filter, map), stypes);
+    localType = default match {
+    | Some(d) if (stypes.stypes.isEmpty()) -> TType::single(d.pos, d)
+    | _ -> TType::create(ty.pos, stypes, TInsts::empty(), TTypeParams::empty())
+    };
+    env.scope.set(local, localType, (x, y) ->
+      this.checkSubType(env, pos, msg, x, y)
     )
   }
 }
