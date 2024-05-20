@@ -525,6 +525,18 @@ class STypes(stypes: Array<SType>) uses Hashable, Orderable {
     true
   }
 
+  fun isStringOrNumOrBool(): Bool {
+    for (stype in this.stypes) {
+      stype match {
+      | TPrimValue(TNum _, _, _) -> continue
+      | TPrimValue(TString _, _, _) -> continue
+      | TPrimValue(TBool _, _, _) -> continue
+      | _ -> return false
+      }
+    };
+    true
+  }
+
   fun isString(): Bool {
     for (stype in this.stypes) {
       stype match {
@@ -1640,6 +1652,19 @@ class RenameTParams() extends ApplyType {
     } else {
       tparam
     }
+  }
+}
+
+class FilterType() extends ApplyType {
+  type Env = (SType ~> Bool, SType ~> SType);
+
+  fun stypes(env: this::Env, stypes: STypes): STypes {
+    STypes(
+      stypes.stypes
+        .map(stype -> this.stype(env, stype))
+        .filter(env.i0)
+        .map(env.i1),
+    )
   }
 }
 
