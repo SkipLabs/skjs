@@ -256,32 +256,33 @@ class TEnv{
       typingError(Array[(className.posRange, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
-    c = for (def in this.defMap.get(
+    defs = this.defMap.get(
       context,
       FileName::create(className.posRange.fileName),
       className,
-    )) {
+    );
+    cls = for (def in defs) {
       def.value match {
-      | c @ Class _ -> break c
+      | cls @ Class _ -> break cls
       | _ -> void
       }
     } else {
       typingError(Array[(className.posRange, "Unbound class")])
     };
-    if (targs.size() != 0 && targs.size() != c.tparams.size()) {
+    if (targs.size() != 0 && targs.size() != cls.tparams.size()) {
       typingError(
         Array[
           (className.posRange, "Invalid number of type arguments"),
-          (c.name.posRange, "Class declaration is here"),
+          (cls.name.posRange, "Class declaration is here"),
         ],
       )
     };
     if (!isStatic) {
-      for (i => tparam in c.tparams) {
+      for (i => tparam in cls.tparams) {
         !this.subst[tparam.name.value] = (false, targs[i])
       };
     };
-    for (extend in c.extends_) {
+    for (extend in cls.extends_) {
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
         this.addFields(
@@ -298,7 +299,7 @@ class TEnv{
       | _ -> typingError(Array[(extend.posRange, "Unexpected extend")])
       }
     };
-    for (fieldType in c.fields) {
+    for (fieldType in cls.fields) {
       if (!filter(fieldType)) continue;
       fieldType match {
       | field @ FieldTypeValue _ ->
