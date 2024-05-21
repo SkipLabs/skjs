@@ -195,8 +195,40 @@ class TEnv{
       visitedClasses,
       className,
       targs,
-      filter,
+      fieldType ~> {
+        filter(fieldType) &&
+          !fieldType.modifiers.modifiers.containsKey("static")
+      },
       transform,
+    );
+    TObject(
+      TFields::create(
+        fields.items().collect(Array).sortedBy(x ~> x.i0).map(x -> x.i1),
+      ),
+      className.posRange,
+    )
+  }
+
+  fun newStatic(context: mutable SKStore.Context, className: Name): TType {
+    obj = this.newStaticObject(context, className);
+    TType::single(className.posRange, obj)
+  }
+
+  fun newStaticObject(
+    context: mutable SKStore.Context,
+    className: Name,
+  ): TObject {
+    targs = Array[];
+    visitedClasses = SortedSet[];
+    fields = mutable Map[];
+    this.addFields(
+      context,
+      fields,
+      visitedClasses,
+      className,
+      targs,
+      fieldType ~> fieldType.modifiers.modifiers.containsKey("static"),
+      x ~> x,
     );
     TObject(
       TFields::create(

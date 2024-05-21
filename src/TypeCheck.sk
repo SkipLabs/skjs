@@ -540,15 +540,25 @@ class TypeChecker{
     thisTypeOpt: ?(ClassKind, TType),
     fd: FunDef,
   ): void {
-    if (!fd.modifiers.modifiers.isEmpty()) {
+    modifiersMap = fd.modifiers.modifiers;
+    if (
+      modifiersMap.containsKey("protected") ||
+      modifiersMap.containsKey("private") ||
+      modifiersMap.containsKey("public") ||
+      modifiersMap.containsKey("abstract") ||
+      modifiersMap.containsKey("readonly")
+    ) {
       typingError(
         Array[
           (
-            fd.modifiers.modifiers[0].posRange,
+            fd.modifiers.modifiers.firstItem().i1.posRange,
             "TODO: support for method modifiers",
           ),
         ],
       );
+    };
+    if (modifiersMap.containsKey("static")) {
+      !thisTypeOpt = None();
     };
     (!this, env) = this.funDefSetup(context, thisTypeOpt.map(x -> x.i1), fd);
     if (this.retType is None()) {
@@ -616,7 +626,7 @@ class TypeChecker{
       typingError(
         Array[
           (
-            fd.modifiers.modifiers[0].posRange,
+            fd.modifiers.modifiers.firstItem().i1.posRange,
             "Constructors cannot have modifiers",
           ),
         ],
@@ -1167,6 +1177,7 @@ class TypeChecker{
         for (def in defs) {
           def.value match {
           | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
+          | c @ Class _ -> break this.tenv.newStatic(env.context, c.name)
           | VarDefs(kind, varDefArr) ->
             invariant(varDefArr.size() == 1);
             varDef = varDefArr[0];
