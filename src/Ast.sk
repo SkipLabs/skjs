@@ -109,7 +109,6 @@ base class Pattern_ {
 class FunDef{
   pos: PosRange,
   isAsync: ?PosRange,
-  modifiers: Modifiers,
   isGetSet: ?FieldGetSet,
   name: ?Symbol,
   optional: ?PosRange,
@@ -355,16 +354,15 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange)
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /*****************************************************************************/
-base class FieldType
-class FieldTypeValue(
+base class FieldType{modifiers: Modifiers}
+class FieldTypeValue{
   pos: PosRange,
   setGet: ?FieldGetSet,
-  modifiers: Modifiers,
   name: Symbol,
   optional: ?PosRange,
   type: ?Type,
   value: ?Expr,
-) extends FieldType
+} extends FieldType
 
 /*****************************************************************************/
 // <type_> ::=
@@ -473,9 +471,9 @@ class CurlyName(name: Name, type: ?Type)
 // TODO: introduce an ADT for the modifiers that we actually want to support
 /*****************************************************************************/
 
-class Modifiers(isRemove: ?PosRange, modifiers: Array<Name>) {
+class Modifiers(isRemove: ?PosRange, modifiers: Map<String, Name>) {
   static fun empty(): this {
-    Modifiers(None(), Array[])
+    Modifiers(None(), Map[])
   }
 }
 

@@ -794,7 +794,11 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
       | _ -> break void
       }
     };
-    Modifiers(isRemove, modifiers.toArray())
+    map = mutable Map[];
+    for (modifier in modifiers) {
+      map![modifier.value] = modifier;
+    };
+    Modifiers(isRemove, map.chill())
   }
 
   /***************************************************************************/
@@ -860,15 +864,15 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
       };
       !fieldValue = Some(this.expr(0));
     };
-    FieldTypeValue(
-      fieldPos,
-      fieldGetSet,
+    FieldTypeValue{
+      pos => fieldPos,
+      setGet => fieldGetSet,
       modifiers,
-      fieldName,
-      isOptional,
-      fieldType,
-      fieldValue,
-    )
+      name => fieldName,
+      optional => isOptional,
+      type => fieldType,
+      value => fieldValue,
+    }
   }
 
   mutable fun getFieldType(modifiers: Modifiers): FieldType {
