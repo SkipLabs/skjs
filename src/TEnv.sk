@@ -198,12 +198,7 @@ class TEnv{
           !fieldType.modifiers.modifiers.containsKey("static")
       },
     );
-    TObject(
-      TFields::create(
-        fields.items().collect(Array).sortedBy(x ~> x.i0).map(x -> x.i1),
-      ),
-      className.posRange,
-    )
+    TObject(TFields::create(fields.values().collect(Array)), className.posRange)
   }
 
   fun newStatic(context: mutable SKStore.Context, className: Name): TType {
@@ -226,12 +221,7 @@ class TEnv{
       targs,
       fieldType ~> fieldType.modifiers.modifiers.containsKey("static"),
     );
-    TObject(
-      TFields::create(
-        fields.items().collect(Array).sortedBy(x ~> x.i0).map(x -> x.i1),
-      ),
-      className.posRange,
-    )
+    TObject(TFields::create(fields.values().collect(Array)), className.posRange)
   }
 
   fun addTParams(
