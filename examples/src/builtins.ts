@@ -26,3 +26,9 @@ declare class string {
 declare class Object {
   static keys(obj: object): Array<string>;
 }
+
+declare class Map<K, V> {
+  constructor(elts: Array<[K, V]>);
+  get(key: K): V;
+  set(key: K, value: V): void;
+}
