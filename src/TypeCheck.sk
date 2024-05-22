@@ -228,7 +228,7 @@ mutable class TCEnv(
 /*****************************************************************************/
 
 class TypeChecker{
-  builtins: Set<String> = Set["console", "Math"],
+  builtins: Set<String>,
   builtinsFileName: FileName,
   newLinesMap: NewLinesMap,
   backtrace: Bool,
