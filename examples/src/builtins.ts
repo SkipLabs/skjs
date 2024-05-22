@@ -9,6 +9,7 @@ declare class Array<T> {
   push(elt: T): void;
   indexOf(x: T): number;
   sort(f?: (object, object) => number): Array<T>;
+  map<T2>(f: (T) => T2): Array<T2>;
   static isArray<T>(value: T): boolean;
 }
 
