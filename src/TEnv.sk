@@ -159,9 +159,8 @@ class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool = _ ~> true,
-    transform: FieldType ~> FieldType = x ~> x,
   ): TType {
-    obj = this.newObject(context, className, targs, filter, transform);
+    obj = this.newObject(context, className, targs, filter);
     TType::single(className.posRange, obj)
   }
 
@@ -170,7 +169,6 @@ class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool = _ ~> true,
-    transform: FieldType ~> FieldType = x ~> x,
   ): TObject {
     c = this.getClass(context, className);
     if (c.tparams.size() != targs.size()) {
@@ -199,14 +197,8 @@ class TEnv{
         filter(fieldType) &&
           !fieldType.modifiers.modifiers.containsKey("static")
       },
-      transform,
     );
-    TObject(
-      TFields::create(
-        fields.items().collect(Array).sortedBy(x ~> x.i0).map(x -> x.i1),
-      ),
-      className.posRange,
-    )
+    TObject(TFields::create(fields.values().collect(Array)), className.posRange)
   }
 
   fun newStatic(context: mutable SKStore.Context, className: Name): TType {
@@ -228,14 +220,8 @@ class TEnv{
       className,
       targs,
       fieldType ~> fieldType.modifiers.modifiers.containsKey("static"),
-      x ~> x,
     );
-    TObject(
-      TFields::create(
-        fields.items().collect(Array).sortedBy(x ~> x.i0).map(x -> x.i1),
-      ),
-      className.posRange,
-    )
+    TObject(TFields::create(fields.values().collect(Array)), className.posRange)
   }
 
   fun addTParams(
@@ -274,7 +260,6 @@ class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
-    transform: FieldType ~> FieldType,
   ): void {
     if (visitedClasses.contains(className.value)) {
       typingError(Array[(className.posRange, "Cyclic class definition")]);
@@ -313,14 +298,13 @@ class TEnv{
           parentName,
           paramTArgs.map(targ -> this.normalize(context, targ)),
           filter,
-          transform,
         )
       | _ -> typingError(Array[(extend.posRange, "Unexpected extend")])
       }
     };
     for (fieldType in c.fields) {
       if (!filter(fieldType)) continue;
-      transform(fieldType) match {
+      fieldType match {
       | field @ FieldTypeValue _ ->
         field.setGet match {
         | None() -> void
