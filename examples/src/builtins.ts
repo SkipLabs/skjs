@@ -9,6 +9,7 @@ declare class Array<T> {
   push(elt: T): void;
   indexOf(x: T): number;
   sort(f?: (object, object) => number): Array<T>;
+  map<T2>(f: (T) => T2): Array<T2>;
   static isArray<T>(value: T): boolean;
 }
 
@@ -25,4 +26,10 @@ declare class string {
 
 declare class Object {
   static keys(obj: object): Array<string>;
+}
+
+declare class Map<K, V> {
+  constructor(elts: Array<[K, V]>);
+  get(key: K): V;
+  set(key: K, value: V): void;
 }

@@ -1676,7 +1676,7 @@ class FilterType() extends ApplyType {
 }
 
 class Instantiate() extends ApplyType {
-  type Env = (mutable Subst, TEnv, Map<Int, TType>);
+  type Env = (mutable Subst, TEnv, Map<(String, Int), TType>);
 
   fun type(env: this::Env, ty: TType): TType {
     !ty = TType::create(
@@ -1691,8 +1691,8 @@ class Instantiate() extends ApplyType {
     for (tparams in ty.tparams.tparams) {
       clauseOpt: ?TType = None();
       for (tparam in tparams) {
-        if (!map.containsKey(tparam.id)) continue;
-        paramTy = map[tparam.id];
+        if (!map.containsKey((tparam.fileName, tparam.id))) continue;
+        paramTy = map[(tparam.fileName, tparam.id)];
         !clauseOpt = clauseOpt match {
         | None() -> Some(paramTy)
         | Some(clause) -> Some(interTType(subst, tenv, clause, paramTy))
@@ -1706,7 +1706,11 @@ class Instantiate() extends ApplyType {
     result with {
       tparams => TTypeParams(
         ty.tparams.tparams
-          .map(tparams -> tparams.filter(tparam -> !map.containsKey(tparam.id)))
+          .map(tparams ->
+            tparams.filter(tparam ->
+              !map.containsKey((tparam.fileName, tparam.id))
+            )
+          )
           .filter(x -> !x.isEmpty()),
       ),
     }

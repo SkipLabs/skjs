@@ -35,7 +35,7 @@ class Files(
     );
     nodeModuleFiles = if (FileSystem.exists(root + "node_modules/")) {
       FileSystem.readFilesRecursive(root + "node_modules/", fileName ->
-        fileName.endsWith(".ts") || fileName.endsWith(".tsx")
+        fileName.endsWith(".ts")
       ).toArray()
     } else {
       Array[]
@@ -52,7 +52,7 @@ class Files(
       skipExit(2);
     };
     srcFiles = FileSystem.readFilesRecursive(root + "src/", fileName ->
-      fileName.endsWith(".ts") || fileName.endsWith(".tsx")
+      fileName.endsWith(".ts")
     );
     for (fileName in srcFiles) {
       fileDir.writeArray(

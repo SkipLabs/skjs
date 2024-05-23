@@ -228,7 +228,7 @@ mutable class TCEnv(
 /*****************************************************************************/
 
 class TypeChecker{
-  builtins: Set<String> = Set["console", "Math"],
+  builtins: Set<String>,
   builtinsFileName: FileName,
   newLinesMap: NewLinesMap,
   backtrace: Bool,
@@ -268,7 +268,7 @@ class TypeChecker{
       scope = mutable Scope{id => 0, isLoop => false};
       env = mutable TCEnv(context, subst, scope);
       ty = this.expr(env, e);
-      this.checkIsVoid(env, ty)
+      this.checkIsVoid(env, e.posRange, ty)
     | fd @ FunDef _ -> this.funDef(context, None(), fd)
     | Declare _ -> void
     | Namespace _ -> throw notSupported(def.pos)
@@ -840,10 +840,10 @@ class TypeChecker{
     }
   }
 
-  fun checkIsVoid(env: mutable TCEnv, ty: TType): void {
+  fun checkIsVoid(env: mutable TCEnv, pos: PosRange, ty: TType): void {
     this.checkSubType(
       env,
-      ty.pos,
+      pos,
       "This expression was expected to be of type void",
       ty,
       TType::single(ty.pos, TPrimVoid(TVoid(), ty.pos)),
@@ -857,7 +857,7 @@ class TypeChecker{
     | StmtExpr(e) ->
       ty = this.expr(env, e);
       if (!e.isAssign()) {
-        this.checkIsVoid(env, ty)
+        this.checkIsVoid(env, e.posRange, ty)
       }
     | Return(pos, eOpt) ->
       retType = this.retType match {
@@ -2037,7 +2037,9 @@ class TypeChecker{
           map = mutable Map[];
           for (i => tparamDecl in tfun.tparams) {
             tparam = tparamDecl;
-            map![tparam.id] = if (targs.isEmpty()) this.newTVar(env, pos) else {
+            map![(tparam.fileName, tparam.id)] = if (targs.isEmpty()) {
+              this.newTVar(env, pos)
+            } else {
               targs[i]
             };
           };
