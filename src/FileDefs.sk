@@ -498,7 +498,7 @@ class DefMap{
   index: FileNameIndex,
   root: DirName,
   fileDefsMap: FileDefsMap,
-  builtins: Set<String> = Set["Array", "string"],
+  builtins: Set<String> = Set["Array", "Object", "string"],
   builtinsFileName: FileName,
 } extends IDefMap {
   fun getType(context: mutable S.Context, name: Name): DefMapType {

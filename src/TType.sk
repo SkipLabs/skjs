@@ -159,7 +159,8 @@ class TType(
   ): STypes {
     ty = this;
     loop {
-      (stypes, tparams) = ty.expand(subst, env, isContravariant);
+      (isTop, stypes, tparams) = ty.expand(subst, env, isContravariant);
+      if (isTop) return STypes::empty();
       if (tparams.tparams.isEmpty()) return stypes;
       result = TType::create(
         this.pos,
@@ -185,7 +186,8 @@ class TType(
     subst: mutable Subst,
     env: TEnv,
     isContravariant: Bool = false,
-  ): (STypes, TTypeParams) {
+  ): (Bool, STypes, TTypeParams) {
+    if (this.isTop) return (true, STypes::empty(), TTypeParams::empty());
     tparams = this.tparams;
     stypes = this.stypes;
     insts = Vector::mcreateFromItems(this.insts.insts);
@@ -194,7 +196,7 @@ class TType(
       seen.insert(inst);
     };
     loop {
-      if (insts.isEmpty()) return (stypes, tparams);
+      if (insts.isEmpty()) return (false, stypes, tparams);
       inst = insts.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
@@ -202,6 +204,7 @@ class TType(
       | tvar @ TVar _ ->
         if (isContravariant) subst.getContra(tvar) else subst.get(tvar)
       };
+      if (tyDef.isTop) return (true, STypes::empty(), TTypeParams::empty());
       !tparams = unionTTypeParams(tparams, tyDef.tparams);
       !stypes = unionSTypes(subst, env, stypes, tyDef.stypes);
       for (newInst in tyDef.insts) {
@@ -774,9 +777,6 @@ fun isSubTType(
   u1: TType,
   u2: TType,
 ): STResult {
-  if (u1.isTop && u2.isTop) return STOk();
-  if (u1.isTop) return STTop();
-  if (u2.isTop) return STOk();
   if (env.seenSub.contains((subst.version, u1, u2))) return STOk();
   !env.seenSub = env.seenSub.set((subst.version, u1, u2));
   savedSubst = subst.save();
@@ -792,8 +792,11 @@ fun isSubTType(
     | _ -> void
     }
   };
-  (stypes1, tparams1) = u1.expand(subst, env, false);
-  (stypes2, tparams2) = u2.expand(subst, env, true);
+  (isTop1, stypes1, tparams1) = u1.expand(subst, env, false);
+  (isTop2, stypes2, tparams2) = u2.expand(subst, env, true);
+  if (isTop1 && isTop2) return STOk();
+  if (isTop1) return STTop();
+  if (isTop2) return STOk();
   cstr2 = TType::create(u2.pos, stypes2, TInsts::empty(), TTypeParams::empty());
   isSubTTypeParams(subst, env, tparams1, tparams2, cstr2) match {
   | STOk() -> void
@@ -1514,8 +1517,8 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
-  (stypes1, tparams1) = ty1.expand(subst, env);
-  (stypes2, tparams2) = ty2.expand(subst, env);
+  (_, stypes1, tparams1) = ty1.expand(subst, env);
+  (_, stypes2, tparams2) = ty2.expand(subst, env);
   stypes = interSTypes(subst, env, stypes1, stypes2);
   tparams = interTTypeParams(tparams1, tparams2);
   TType::create(
@@ -1721,8 +1724,8 @@ class ExpandTVars() extends ApplyType {
       this.typeParams(env, ty.tparams),
     );
     (subst, tenv) = env;
-    (stypes, tparams) = ty.expand(subst, tenv);
-    ty with {stypes, insts => TInsts::empty(), tparams}
+    (isTop, stypes, tparams) = ty.expand(subst, tenv);
+    ty with {stypes, isTop, insts => TInsts::empty(), tparams}
   }
 }
 
