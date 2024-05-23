@@ -191,6 +191,7 @@ class TEnv{
       context,
       fields,
       visitedClasses,
+      false,
       className,
       targs,
       fieldType ~> {
@@ -217,6 +218,7 @@ class TEnv{
       context,
       fields,
       visitedClasses,
+      true,
       className,
       targs,
       fieldType ~> fieldType.modifiers.modifiers.containsKey("static"),
@@ -257,6 +259,7 @@ class TEnv{
     context: mutable SKStore.Context,
     acc: mutable Map<String, TField>,
     visitedClasses: SortedSet<String>,
+    isStatic: Bool,
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
@@ -285,8 +288,10 @@ class TEnv{
         ],
       )
     };
-    for (i => tparam in c.tparams) {
-      !this.subst[tparam.name.value] = (false, targs[i])
+    if (!isStatic) {
+      for (i => tparam in c.tparams) {
+        !this.subst[tparam.name.value] = (false, targs[i])
+      };
     };
     for (extend in c.extends_) {
       extend.value match {
@@ -295,8 +300,11 @@ class TEnv{
           context,
           acc,
           visitedClasses,
+          isStatic,
           parentName,
-          paramTArgs.map(targ -> this.normalize(context, targ)),
+          if (isStatic) Array[] else {
+            paramTArgs.map(targ -> this.normalize(context, targ))
+          },
           filter,
         )
       | _ -> typingError(Array[(extend.posRange, "Unexpected extend")])
@@ -311,7 +319,9 @@ class TEnv{
         | Some(FieldGetSet(_, pos)) -> notSupported(pos)
         };
         for (modifier in field.modifiers.modifiers) {
-          typingError(Array[(modifier.posRange, "TODO: field modifier")])
+          if (modifier.value != "static") {
+            typingError(Array[(modifier.posRange, "TODO: field modifier")])
+          }
         };
         type = field.type match {
         | None() -> typingError(Array[(field.pos, "Missing type annotation")])
@@ -438,6 +448,12 @@ class TEnv{
       )
     | TAObject(fields) ->
       createObject(typeAst.posRange, this.createTFields(context, fields))
+    | TAInst(n @ Name(p, "object"), targs) ->
+      if (targs.size() != 0) {
+        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+      };
+      TType::single(p, TObject(TFields::empty(), p))
+
     | TAInst(n @ Name(p, "Array"), targs) ->
       if (targs.size() != 1) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])

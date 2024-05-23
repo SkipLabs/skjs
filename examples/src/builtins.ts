@@ -8,6 +8,8 @@ declare class Array<T> {
   find(filter: (T) => boolean): undefined | T;
   push(elt: T): void;
   indexOf(x: T): number;
+  sort(f?: (object, object) => number): Array<T>;
+  static isArray<T>(value: T): boolean;
 }
 
 declare const Math: {
@@ -19,4 +21,8 @@ declare const Math: {
 declare class string {
   startsWith(prefix: string): boolean;
   endsWith(suffix: string): boolean;
+}
+
+declare class Object {
+  static keys(obj: object): Array<string>;
 }
