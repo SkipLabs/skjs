@@ -190,7 +190,7 @@ mutable class TypePp{
           pp.out(level, margin, "<");
           for (i => tparam in tfun.tparams) {
             if (i != 0) pp.out(level, margin, ", ");
-            pp.out(level, margin, tparam.name);
+            pp.out(level, margin, tparam.name + ":" + tparam.id);
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
@@ -222,7 +222,7 @@ mutable class TypePp{
           pp.out(level, margin, "<");
           for (i => tparam in tfun.tparams) {
             if (i != 0) pp.out(level, margin, ", ");
-            pp.out(level, margin, tparam.name);
+            pp.out(level, margin, tparam.name + ":" + tparam.id);
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
@@ -361,7 +361,7 @@ mutable class TypePp{
           if (j != 0) {
             this.out(level, margin, " & ");
           };
-          this.out(level, margin, tparam.name);
+          this.out(level, margin, tparam.name + ":" + tparam.id);
           tparam.cstr match {
           | None() -> void
           | Some(cstr) ->
