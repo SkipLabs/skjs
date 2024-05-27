@@ -180,7 +180,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   files = Files::create(context, rootDirStr);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
-  parsedFiles = files.parse(context, newLinesMap, rootDirStr + "src/");
+  parsedFiles = files.parse(context, newLinesMap);
   builtinsFileName = root + FileName::create("./src/builtins.ts");
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
   builtinDefs = fileDefsMap.get(context, builtinsFileName);
