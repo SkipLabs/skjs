@@ -163,6 +163,12 @@ fun check(): (Cli.Command, Cli.ParseResults ~> void) {
           .short("b")
           .long("backtrace")
           .about("Internal (debugging)"),
+      )
+      .arg(
+        Cli.Arg::string("builtins-file")
+          .value_name("FILENAME")
+          .default("./src/builtins.ts")
+          .about("Path to the file containing builtins declarations"),
       ),
     execCheck,
   )
@@ -174,13 +180,15 @@ fun execCheck(args: Cli.ParseResults): void {
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
+  builtinsArgFileName = args.getString("builtins-file");
+
   context = mutable SKStore.Context{};
   root = DirName::cwd();
   files = Files::create(context, root);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap, `${root}src/`);
-  builtinsFileName = root + FileName::create("./src/builtins.ts");
+  builtinsFileName = FileName::create(Path.resolve(builtinsArgFileName));
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
   builtinDefs = fileDefsMap.get(context, builtinsFileName);
   builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
