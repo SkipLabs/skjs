@@ -185,6 +185,10 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
     fileName.endsWith(".ts")
   );
+  if (srcFiles.isEmpty()) {
+    print_error("No source files!");
+    skipExit(2);
+  };
   files = Files::create(context, rootDirStr, srcFiles);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
