@@ -159,6 +159,12 @@ fun check(): (Cli.Command, Cli.ParseResults ~> void) {
     Cli.Command("check")
       .about("Typechecks")
       .arg(
+        Cli.Arg::string("src-file")
+          .positional()
+          .repeatable()
+          .about("Files to check (default: src/**/*.ts)"),
+      )
+      .arg(
         Cli.Arg::bool("backtrace")
           .short("b")
           .long("backtrace")
@@ -181,15 +187,18 @@ fun execCheck(args: Cli.ParseResults): void {
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
   builtinsArgFileName = args.getString("builtins-file");
+  srcFiles: Sequence<String> = args.getArray("src-file");
 
   context = mutable SKStore.Context{};
   root = DirName::cwd();
-  srcDir = root / DirName::create("src/");
-  if (!srcDir.exists()) {
-    print_error(`Could not find src/ dir in: ${root}`);
-    skipExit(2);
+  if (srcFiles.isEmpty()) {
+    srcDir = root / DirName::create("src/");
+    if (!srcDir.exists()) {
+      print_error(`Could not find src/ dir in: ${root}`);
+      skipExit(2);
+    };
+    !srcFiles = srcDir.readFilesRecursive(fileName -> fileName.endsWith(".ts"))
   };
-  srcFiles = srcDir.readFilesRecursive(fileName -> fileName.endsWith(".ts"));
   files = Files::create(context, root, srcFiles);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
