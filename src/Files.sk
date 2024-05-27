@@ -19,7 +19,6 @@ const parseErrorKey: SKStore.SID = SKStore.SID("");
 
 class Files(
   isInit: Bool,
-  rootDirName: DirName,
   nodeModuleFiles: Array<String>,
   srcFiles: Array<String>,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
@@ -61,13 +60,7 @@ class Files(
         Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
       );
     };
-    Files(
-      isInit,
-      DirName::create(root),
-      nodeModuleFiles,
-      srcFiles.toArray(),
-      fileDir,
-    )
+    Files(isInit, nodeModuleFiles, srcFiles.toArray(), fileDir)
   }
 
   fun parse(
