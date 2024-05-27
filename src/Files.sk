@@ -54,6 +54,10 @@ class Files(
     srcFiles = FileSystem.readFilesRecursive(root + "src/", fileName ->
       fileName.endsWith(".ts")
     );
+    if (srcFiles.isEmpty()) {
+      print_error(`Could not find .ts files in ${root}src/`);
+      skipExit(2);
+    };
     for (fileName in srcFiles) {
       fileDir.writeArray(
         context,
