@@ -187,7 +187,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   files = Files::create(context, root);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
-  parsedFiles = files.parse(context, newLinesMap, `${root}src/`);
+  parsedFiles = files.parse(context, newLinesMap);
   builtinsFileName = FileName::create(Path.resolve(builtinsArgFileName));
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
   builtinDefs = fileDefsMap.get(context, builtinsFileName);
