@@ -20,7 +20,7 @@ const parseErrorKey: SKStore.SID = SKStore.SID("");
 class Files(
   isInit: Bool,
   nodeModuleFiles: Array<String>,
-  srcFiles: Array<String>,
+  srcFiles: UnorderedSet<String>,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
 ) {
   static fun create(context: mutable SKStore.Context, root: String): Files {
@@ -60,13 +60,12 @@ class Files(
         Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
       );
     };
-    Files(isInit, nodeModuleFiles, srcFiles.toArray(), fileDir)
+    Files(isInit, nodeModuleFiles, srcFiles.collect(UnorderedSet), fileDir)
   }
 
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
-    src: String,
   ): SKStore.LHandle<SKStore.SID, ParsedResultFile> {
     SKStore.LHandle::create(
       SKStore.SID::keyType,
@@ -75,7 +74,7 @@ class Files(
       SKStore.DirName::create("/skjs/parsed/"),
       (context, _self, key) ~> {
         fileName = key.value;
-        if (!fileName.startsWith(src) && !fileName.endsWith(".d.ts")) {
+        if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
           return Array[]
         };
         contentArr = this.filesContent.getArray(context, key);
