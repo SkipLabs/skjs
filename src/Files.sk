@@ -23,14 +23,7 @@ class Files(
   srcFiles: Array<String>,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
 ) {
-  static fun create(
-    context: mutable SKStore.Context,
-    rootDirStr: String,
-  ): Files {
-    root = DirName::create(rootDirStr) match {
-    | d @ DAbsolute _ -> d
-    | DRelative _ -> invariant_violation("Expecting absolute dir")
-    };
+  static fun create(context: mutable SKStore.Context, root: DAbsolute): Files {
     filesDirName = SKStore.DirName::create("/skjs/files/");
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileDir = context.mkdir(

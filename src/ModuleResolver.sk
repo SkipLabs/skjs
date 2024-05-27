@@ -75,6 +75,10 @@ base class DirName(path: Array<String>) uses Orderable, Show {
     }
   }
 
+  static fun cwd(): DAbsolute {
+    DAbsolute(splitPath(FileSystem.realpath(".")))
+  }
+
   fun allAncestors(): mutable Iterator<DirName> {
     this match {
     | DRelative(_) ->

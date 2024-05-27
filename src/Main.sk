@@ -175,12 +175,11 @@ fun execCheck(args: Cli.ParseResults): void {
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
   context = mutable SKStore.Context{};
-  rootDirStr = FileSystem.realpath(".") + "/";
-  root = DirName::create(rootDirStr);
-  files = Files::create(context, rootDirStr);
+  root = DirName::cwd();
+  files = Files::create(context, root);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
-  parsedFiles = files.parse(context, newLinesMap, rootDirStr + "src/");
+  parsedFiles = files.parse(context, newLinesMap, `${root}src/`);
   builtinsFileName = root + FileName::create("./src/builtins.ts");
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
   builtinDefs = fileDefsMap.get(context, builtinsFileName);
