@@ -174,7 +174,7 @@ fun execCheck(args: Cli.ParseResults): void {
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
-  context = mutable SKStore.Context{};
+
   rootDirStr = FileSystem.realpath(".") + "/";
   root = DirName::create(rootDirStr);
   srcDir = rootDirStr + "src/";
@@ -189,21 +189,23 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     print_error("No source files!");
     skipExit(2);
   };
+  builtinsFileName = root + FileName::create("./src/builtins.ts");
+  if (!builtinsFileName.exists()) {
+    print_error("Builtins not found: " + builtinsFileName.toString());
+    return 1;
+  };
+
+  context = mutable SKStore.Context{};
   files = Files::create(context, rootDirStr, srcFiles);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap);
-  builtinsFileName = root + FileName::create("./src/builtins.ts");
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
   builtinDefs = fileDefsMap.get(context, builtinsFileName);
   builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
   defMap = DefMap{root, index, fileDefsMap, builtins, builtinsFileName};
   tenv = TEnv{defMap};
   status = 0;
-  if (!builtinsFileName.exists()) {
-    print_error("Builtins not found: " + builtinsFileName.toString());
-    return 1;
-  };
   checker = TypeChecker{
     builtins,
     backtrace,
