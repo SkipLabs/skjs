@@ -25,9 +25,13 @@ class Files(
 ) {
   static fun create(
     context: mutable SKStore.Context,
-    root: DAbsolute,
     srcFiles: Sequence<String>,
   ): Files {
+    if (srcFiles.isEmpty()) {
+      print_error(`No source files!`);
+      skipExit(2);
+    };
+
     filesDirName = SKStore.DirName::create("/skjs/files/");
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileDir = context.mkdir(
@@ -35,24 +39,37 @@ class Files(
       SKStore.StringFile::type,
       filesDirName,
     );
-    nodeModuleDir = root / DirName::create("node_modules/");
-    nodeModuleFiles = if (nodeModuleDir.exists()) {
-      nodeModuleDir
-        .readFilesRecursive(fileName -> fileName.endsWith(".ts"))
-        .toArray()
-    } else {
-      Array[]
+
+    // This adds the nearest node_modules/ dir for each source file
+    // Similar to FileSystem.findNearestFile but with a cache
+    searchedDirsForNodeModule = mutable UnorderedSet[];
+    nodeModuleDirs = mutable Vector[];
+    for (fileName in srcFiles) {
+      dirName = Path.dirname(fileName);
+      while (!searchedDirsForNodeModule.contains(dirName)) {
+        possibleNodeModuleDir = Path.join(dirName, "node_modules");
+        searchedDirsForNodeModule.add(dirName);
+        if (FileSystem.exists(possibleNodeModuleDir)) {
+          nodeModuleDirs.push(possibleNodeModuleDir);
+          break void;
+        };
+        if (Path.isRoot(dirName)) break void;
+        !dirName = Path.parentname(dirName);
+      }
     };
+    nodeModuleFiles = nodeModuleDirs
+      .flatMap(nodeModuleDir ->
+        FileSystem.readFilesRecursive(nodeModuleDir, fileName ~>
+          fileName.endsWith(".ts")
+        )
+      )
+      .toArray();
     for (fileName in nodeModuleFiles) {
       fileDir.writeArray(
         context,
         SKStore.SID(fileName),
         Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
       );
-    };
-    if (srcFiles.isEmpty()) {
-      print_error(`No source files!`);
-      skipExit(2);
     };
     for (fileName in srcFiles) {
       fileDir.writeArray(

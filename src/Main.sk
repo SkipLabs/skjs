@@ -199,7 +199,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     };
     !srcFiles = srcDir.readFilesRecursive(fileName -> fileName.endsWith(".ts"))
   };
-  files = Files::create(context, root, srcFiles);
+  files = Files::create(context, srcFiles);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap);
