@@ -159,6 +159,12 @@ fun check(): (Cli.Command, Cli.ParseResults ~> void) {
     Cli.Command("check")
       .about("Typechecks")
       .arg(
+        Cli.Arg::string("src-file")
+          .positional()
+          .repeatable()
+          .about("Files to check (default: src/**/*.ts)"),
+      )
+      .arg(
         Cli.Arg::bool("backtrace")
           .short("b")
           .long("backtrace")
@@ -174,18 +180,22 @@ fun execCheck(args: Cli.ParseResults): void {
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
+  srcFiles: Sequence<String> = args.getArray("src-file");
 
   rootDirStr = FileSystem.realpath(".") + "/";
   root = DirName::create(rootDirStr);
-  srcDir = rootDirStr + "src/";
-  if (!FileSystem.exists(srcDir)) {
-    print_error("Could not find src/ dir in: " + rootDirStr);
-    skipExit(2);
+  if (srcFiles.isEmpty()) {
+    srcDir = rootDirStr + "src/";
+    if (!FileSystem.exists(srcDir)) {
+      print_error("Could not find src/ dir in: " + rootDirStr);
+      skipExit(2);
+    };
+    !srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
+      fileName.endsWith(".ts")
+    );
+  } else {
+    !srcFiles = srcFiles.map(f -> Path.resolve(f));
   };
-  srcFiles: Sequence<String> = FileSystem.readFilesRecursive(
-    srcDir,
-    fileName -> fileName.endsWith(".ts"),
-  );
   if (srcFiles.isEmpty()) {
     print_error("No source files!");
     skipExit(2);
