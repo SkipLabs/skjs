@@ -25,10 +25,8 @@ class Files(
 ) {
   static fun create(
     context: mutable SKStore.Context,
-    root: String,
     srcFiles: Sequence<String>,
   ): Files {
-    invariant(root.startsWith("/") && root.endsWith("/"));
     filesDirName = SKStore.DirName::create("/skjs/files/");
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileDir = context.mkdir(
@@ -36,13 +34,31 @@ class Files(
       SKStore.StringFile::type,
       filesDirName,
     );
-    nodeModuleFiles = if (FileSystem.exists(root + "node_modules/")) {
-      FileSystem.readFilesRecursive(root + "node_modules/", fileName ->
-        fileName.endsWith(".ts")
-      ).toArray()
-    } else {
-      Array[]
+
+    // This adds the nearest node_modules/ dir for each source file
+    // Similar to FileSystem.findNearestFile but with a cache
+    searchedDirsForNodeModule = mutable UnorderedSet[];
+    nodeModuleDirs = mutable Vector[];
+    for (fileName in srcFiles) {
+      dirName = Path.dirname(fileName);
+      while (!searchedDirsForNodeModule.contains(dirName)) {
+        possibleNodeModuleDir = Path.join(dirName, "node_modules");
+        searchedDirsForNodeModule.add(dirName);
+        if (FileSystem.exists(possibleNodeModuleDir)) {
+          nodeModuleDirs.push(possibleNodeModuleDir);
+          break void;
+        };
+        if (Path.isRoot(dirName)) break void;
+        !dirName = Path.parentname(dirName);
+      }
     };
+    nodeModuleFiles = nodeModuleDirs
+      .flatMap(nodeModuleDir ->
+        FileSystem.readFilesRecursive(nodeModuleDir, fileName ~>
+          fileName.endsWith(".ts")
+        )
+      )
+      .toArray();
     for (fileName in nodeModuleFiles) {
       fileDir.writeArray(
         context,

@@ -208,7 +208,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   !srcFiles = Array[srcFiles, Array[builtinsFileName.toString()]].flatten();
 
   context = mutable SKStore.Context{};
-  files = Files::create(context, rootDirStr, srcFiles);
+  files = Files::create(context, srcFiles);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap);
