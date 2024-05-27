@@ -91,6 +91,13 @@ base class DirName(path: Array<String>) uses Orderable, Show {
   fun exists(): Bool {
     FileSystem.exists(this.toString())
   }
+
+  fun readFilesRecursive(
+    fileFilter: String -> Bool = _ ~> true,
+    directoryFilter: String -> Bool = _ ~> true,
+  ): Vector<String> {
+    FileSystem.readFilesRecursive(this.toString(), fileFilter, directoryFilter)
+  }
 }
 
 class FileName(dirName: DirName, baseName: String) {

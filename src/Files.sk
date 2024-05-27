@@ -23,8 +23,14 @@ class Files(
   srcFiles: Array<String>,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
 ) {
-  static fun create(context: mutable SKStore.Context, root: String): Files {
-    invariant(root.startsWith("/") && root.endsWith("/"));
+  static fun create(
+    context: mutable SKStore.Context,
+    rootDirStr: String,
+  ): Files {
+    root = DirName::create(rootDirStr) match {
+    | d @ DAbsolute _ -> d
+    | DRelative _ -> invariant_violation("Expecting absolute dir")
+    };
     filesDirName = SKStore.DirName::create("/skjs/files/");
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileDir = context.mkdir(
@@ -32,10 +38,11 @@ class Files(
       SKStore.StringFile::type,
       filesDirName,
     );
-    nodeModuleFiles = if (FileSystem.exists(root + "node_modules/")) {
-      FileSystem.readFilesRecursive(root + "node_modules/", fileName ->
-        fileName.endsWith(".ts")
-      ).toArray()
+    nodeModuleDir = root / DirName::create("node_modules/");
+    nodeModuleFiles = if (nodeModuleDir.exists()) {
+      nodeModuleDir
+        .readFilesRecursive(fileName -> fileName.endsWith(".ts"))
+        .toArray()
     } else {
       Array[]
     };
@@ -46,15 +53,14 @@ class Files(
         Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
       );
     };
-    if (!FileSystem.exists(root + "src/")) {
-      print_error("Could not find src/ dir in: " + root);
+    srcDir = root / DirName::create("src/");
+    if (!srcDir.exists()) {
+      print_error(`Could not find src/ dir in: ${root}`);
       skipExit(2);
     };
-    srcFiles = FileSystem.readFilesRecursive(root + "src/", fileName ->
-      fileName.endsWith(".ts")
-    );
+    srcFiles = srcDir.readFilesRecursive(fileName -> fileName.endsWith(".ts"));
     if (srcFiles.isEmpty()) {
-      print_error(`Could not find .ts files in ${root}src/`);
+      print_error(`Could not find .ts files in ${srcDir}`);
       skipExit(2);
     };
     for (fileName in srcFiles) {
