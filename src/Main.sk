@@ -169,6 +169,12 @@ fun check(): (Cli.Command, Cli.ParseResults ~> void) {
           .short("b")
           .long("backtrace")
           .about("Internal (debugging)"),
+      )
+      .arg(
+        Cli.Arg::string("builtins-file")
+          .value_name("FILENAME")
+          .default("./src/builtins.ts")
+          .about("Path to the file containing builtins declarations"),
       ),
     execCheck,
   )
@@ -180,6 +186,7 @@ fun execCheck(args: Cli.ParseResults): void {
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
+  builtinsArgFileName = args.getString("builtins-file");
   srcFiles: Sequence<String> = args.getArray("src-file");
 
   rootDirStr = FileSystem.realpath(".") + "/";
@@ -200,7 +207,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     print_error("No source files!");
     skipExit(2);
   };
-  builtinsFileName = root + FileName::create("./src/builtins.ts");
+  builtinsFileName = FileName::create(Path.resolve(builtinsArgFileName));
   if (!builtinsFileName.exists()) {
     print_error("Builtins not found: " + builtinsFileName.toString());
     return 1;
