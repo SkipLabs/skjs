@@ -177,7 +177,15 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   context = mutable SKStore.Context{};
   rootDirStr = FileSystem.realpath(".") + "/";
   root = DirName::create(rootDirStr);
-  files = Files::create(context, rootDirStr);
+  srcDir = rootDirStr + "src/";
+  if (!FileSystem.exists(srcDir)) {
+    print_error("Could not find src/ dir in: " + rootDirStr);
+    skipExit(2);
+  };
+  srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
+    fileName.endsWith(".ts")
+  );
+  files = Files::create(context, rootDirStr, srcFiles);
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap);
