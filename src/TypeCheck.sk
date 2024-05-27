@@ -2458,11 +2458,7 @@ fun isTerminal(inTry: Bool, st: Stmt): Bool {
 }
 
 fun isTerminalBlock(inTry: Bool, bl: Array<Stmt>): Bool {
-  if (bl.size() == 0) return false;
-  for (st in bl) {
-    if (isTerminal(inTry, st)) return true;
-  };
-  false
+  bl.any(st ~> isTerminal(inTry, st))
 }
 
 module end;
