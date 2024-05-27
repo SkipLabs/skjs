@@ -23,7 +23,11 @@ class Files(
   srcFiles: UnorderedSet<String>,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
 ) {
-  static fun create(context: mutable SKStore.Context, root: DAbsolute): Files {
+  static fun create(
+    context: mutable SKStore.Context,
+    root: DAbsolute,
+    srcFiles: Sequence<String>,
+  ): Files {
     filesDirName = SKStore.DirName::create("/skjs/files/");
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileDir = context.mkdir(
@@ -46,14 +50,8 @@ class Files(
         Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
       );
     };
-    srcDir = root / DirName::create("src/");
-    if (!srcDir.exists()) {
-      print_error(`Could not find src/ dir in: ${root}`);
-      skipExit(2);
-    };
-    srcFiles = srcDir.readFilesRecursive(fileName -> fileName.endsWith(".ts"));
     if (srcFiles.isEmpty()) {
-      print_error(`Could not find .ts files in ${srcDir}`);
+      print_error(`No source files!`);
       skipExit(2);
     };
     for (fileName in srcFiles) {
