@@ -215,7 +215,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   builtinsFileName = FileName::create(Path.resolve(builtinsArgFileName));
   if (!builtinsFileName.exists()) {
     print_error("Builtins not found: " + builtinsFileName.toString());
-    return 1;
+    skipExit(1);
   };
   !srcFiles = Array[srcFiles, Array[builtinsFileName.toString()]].flatten();
 
