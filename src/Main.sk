@@ -222,7 +222,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
   builtinDefs = fileDefsMap.get(context, builtinsFileName);
   builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
-  defMap = DefMap{root, index, fileDefsMap, builtins, builtinsFileName};
+  defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
   tenv = TEnv{defMap};
   status = 0;
   checker = TypeChecker{
