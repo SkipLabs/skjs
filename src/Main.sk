@@ -250,7 +250,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       }
     | PRError(err) ->
       !status = 2;
-      print_error(err.toString())
+      print_error(err)
     }
   };
   status
