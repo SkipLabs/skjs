@@ -154,35 +154,26 @@ fun execRun(args: Cli.ParseResults): void {
 /* Typechecks the files */
 /*****************************************************************************/
 
+const checkArgs: Array<Cli.Arg> = Array[
+  Cli.Arg::string("src-file")
+    .positional()
+    .repeatable()
+    .about("Files to check (default: src/**/*.ts)"),
+  Cli.Arg::bool("backtrace")
+    .short("b")
+    .long("backtrace")
+    .about("Internal (debugging)"),
+  Cli.Arg::string("baseUrl")
+    .value_name("PATH")
+    .about("Base directory from which to resolve modules"),
+  Cli.Arg::string("builtins-file")
+    .value_name("FILENAME")
+    .default("./src/builtins.ts")
+    .about("Path to the file containing builtins declarations"),
+];
+
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
-  (
-    Cli.Command("check")
-      .about("Typechecks")
-      .arg(
-        Cli.Arg::string("src-file")
-          .positional()
-          .repeatable()
-          .about("Files to check (default: src/**/*.ts)"),
-      )
-      .arg(
-        Cli.Arg::bool("backtrace")
-          .short("b")
-          .long("backtrace")
-          .about("Internal (debugging)"),
-      )
-      .arg(
-        Cli.Arg::string("baseUrl")
-          .value_name("PATH")
-          .about("Base directory from which to resolve modules"),
-      )
-      .arg(
-        Cli.Arg::string("builtins-file")
-          .value_name("FILENAME")
-          .default("./src/builtins.ts")
-          .about("Path to the file containing builtins declarations"),
-      ),
-    execCheck,
-  )
+  (Cli.Command("check").about("Typechecks").args(checkArgs), execCheck)
 }
 
 fun execCheck(args: Cli.ParseResults): void {
