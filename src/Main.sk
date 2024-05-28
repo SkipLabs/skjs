@@ -219,7 +219,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap);
-  fileDefsMap = FileDefsMap::create(context, index, root, parsedFiles);
+  fileDefsMap = FileDefsMap::create(context, index, Some(root), parsedFiles);
   builtinDefs = fileDefsMap.get(context, builtinsFileName);
   builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
   defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};

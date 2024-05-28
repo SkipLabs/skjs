@@ -20,7 +20,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
   static fun create(
     context: mutable S.Context,
     index: FileNameIndex,
-    root: DirName,
+    root: ?DirName,
     parsedFiles: SKStore.LHandle<SKStore.SID, ParsedResultFile>,
   ): this {
     static(
@@ -94,7 +94,7 @@ mutable class FileDefsState{
   mutable fun newDef(
     context: mutable S.Context,
     index: FileNameIndex,
-    root: DirName,
+    root: ?DirName,
     dirName: DirName,
     isDefault: ?PosRange,
     isExport: Bool,
@@ -211,7 +211,7 @@ class FileDefs{
   static fun create(
     context: mutable S.Context,
     index: FileNameIndex,
-    root: DirName,
+    root: ?DirName,
     dirName: DirName,
     parsedDefs: Array<Def>,
   ): FileDefs {

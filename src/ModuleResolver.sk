@@ -250,7 +250,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
 fun resolveName(
   context: mutable S.Context,
   index: FileNameIndex,
-  root: DirName,
+  rootOpt: ?DirName,
   cwd: DirName,
   moduleName: String,
 ): ?FileName {
@@ -313,6 +313,8 @@ fun resolveName(
     print_error("From: " + cwd.toString());
     return None();
   };
+
+  root = rootOpt.default(cwd);
 
   index.lookup(
     context,
