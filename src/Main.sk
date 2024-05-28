@@ -171,6 +171,11 @@ fun check(): (Cli.Command, Cli.ParseResults ~> void) {
           .about("Internal (debugging)"),
       )
       .arg(
+        Cli.Arg::string("baseUrl")
+          .value_name("PATH")
+          .about("Base directory from which to resolve modules"),
+      )
+      .arg(
         Cli.Arg::string("builtins-file")
           .value_name("FILENAME")
           .default("./src/builtins.ts")
@@ -186,22 +191,29 @@ fun execCheck(args: Cli.ParseResults): void {
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
+  baseUrlOpt = args.maybeGetString("baseUrl");
   builtinsArgFileName = args.getString("builtins-file");
   srcFiles: Sequence<String> = args.getArray("src-file");
 
   rootOpt: ?DirName = None();
+  baseUrlOpt match {
+  | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
+  | None() -> void
+  };
   if (srcFiles.isEmpty()) {
-    rootDirStr = FileSystem.realpath(".") + "/";
-    root = DirName::create(rootDirStr);
-    srcDir = rootDirStr + "src/";
+    root = rootOpt match {
+    | Some(root) -> root
+    | None() -> DirName::create(FileSystem.realpath("."))
+    };
+    !rootOpt = Some(root);
+    srcDir = `${root}src/`;
     if (!FileSystem.exists(srcDir)) {
-      print_error("Could not find src/ dir in: " + rootDirStr);
+      print_error(`Could not find src/ dir in: ${root}`);
       skipExit(2);
     };
     !srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
       fileName.endsWith(".ts")
     );
-    !rootOpt = Some(root)
   } else {
     !srcFiles = srcFiles.map(f -> Path.resolve(f));
   };
