@@ -189,9 +189,10 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   builtinsArgFileName = args.getString("builtins-file");
   srcFiles: Sequence<String> = args.getArray("src-file");
 
-  rootDirStr = FileSystem.realpath(".") + "/";
-  root = DirName::create(rootDirStr);
+  rootOpt: ?DirName = None();
   if (srcFiles.isEmpty()) {
+    rootDirStr = FileSystem.realpath(".") + "/";
+    root = DirName::create(rootDirStr);
     srcDir = rootDirStr + "src/";
     if (!FileSystem.exists(srcDir)) {
       print_error("Could not find src/ dir in: " + rootDirStr);
@@ -200,6 +201,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     !srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
       fileName.endsWith(".ts")
     );
+    !rootOpt = Some(root)
   } else {
     !srcFiles = srcFiles.map(f -> Path.resolve(f));
   };
@@ -219,7 +221,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   newLinesMap = NewLinesMap::create(context, files);
   index = FileNameIndex::create(context, files.filesContent);
   parsedFiles = files.parse(context, newLinesMap);
-  fileDefsMap = FileDefsMap::create(context, index, Some(root), parsedFiles);
+  fileDefsMap = FileDefsMap::create(context, index, rootOpt, parsedFiles);
   builtinDefs = fileDefsMap.get(context, builtinsFileName);
   builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
   defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
