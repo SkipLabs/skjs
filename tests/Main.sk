@@ -86,6 +86,26 @@ fun testFile(
   for (res in checker.checkFiles()) validateResult(checker, res);
 }
 
+fun testDirectory(
+  dirName: String,
+  validateResult: (
+    mutable SKJS.Checker,
+    SKJS.CheckResult,
+  ) ~> void = validateParseable,
+): void {
+  dir = Path.resolve(dirName);
+  srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
+    if (f.endsWith(".ts")) Some(Path.join(dir, f)) else None()
+  );
+  builtinsFileName = Path.resolve(builtinsArgFileName);
+  checker = SKJS.Checker::create{builtinsArgFileName, srcFiles};
+  for (res in checker.checkFiles()) {
+    if (res.i0 != builtinsFileName) {
+      validateResult(checker, res);
+    }
+  }
+}
+
 @test
 fun testUnit(): void {
   testFile("./tests/unit.ts");
@@ -99,6 +119,11 @@ fun testExamples(): void {
     srcFiles => Array[],
   };
   for (res in checker.checkFiles()) validateParseable(checker, res);
+}
+
+@test
+fun testExpectError(): void {
+  testDirectory("./tests/expect-error/")
 }
 
 module end;
