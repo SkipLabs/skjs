@@ -115,17 +115,13 @@ fun run(): (Cli.Command, Cli.ParseResults ~> void) {
     Cli.Command("run")
       .about("runs the file")
       .arg(
-        Cli.StringArg{name => "path"}
-          .positional()
-          .required()
-          .about("path to main"),
+        Cli.Arg::string("main")
+          .value_name("PATH")
+          .about(
+            "Path to main (defaults to first source file, required if none provided)",
+          ),
       )
-      .arg(
-        Cli.BoolArg{name => "backtrace"}
-          .short("b")
-          .long("backtrace")
-          .about("Internal (debugging)"),
-      ),
+      .args(checkArgs),
     execRun,
   )
 }
@@ -133,19 +129,23 @@ fun run(): (Cli.Command, Cli.ParseResults ~> void) {
 fun execRun(args: Cli.ParseResults): void {
   status = execCheckWithStatus(args);
   if (status != 0) return void;
-  fileName = args.maybeGetString("path") match {
-  | Some(path) ->
-    if (!path.startsWith("./")) {
-      print_error("File does not start with ./: " + path);
-      skipExit(2);
-    };
-    if (!FileSystem.exists(path)) {
-      print_error("File not found: " + path);
-      skipExit(2);
-    };
-    path
+  fileName = args.getArray("src-file").maybeFirst() match {
+  | Some(firstSrcFile) -> firstSrcFile
   | None() ->
-    invariant_violation("Internal error: path was declared as required")
+    args.maybeGetString("main") match {
+    | Some(mainSrcFile) -> mainSrcFile
+    | None() ->
+      print_error("--main is required when no source files are provided");
+      skipExit(2)
+    }
+  };
+  if (!fileName.startsWith("./")) {
+    print_error("File does not start with ./: " + fileName);
+    skipExit(2);
+  };
+  if (!FileSystem.exists(fileName)) {
+    print_error("File not found: " + fileName);
+    skipExit(2);
   };
   Posix.execvp(Array["bun", fileName])
 }
