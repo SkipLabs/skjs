@@ -186,6 +186,36 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   builtinsArgFileName = args.getString("builtins-file");
   srcFiles: Sequence<String> = args.getArray("src-file");
 
+  status = 0;
+  for (checkResult in checkFiles{
+    backtrace,
+    baseUrlOpt,
+    builtinsArgFileName,
+    srcFiles,
+  }) {
+    (_fileName, parseErrorOpt, typeErrors) = checkResult;
+    parseErrorOpt match {
+    | None() -> void
+    | Some(err) ->
+      !status = 2;
+      print_error(err)
+    };
+    if (!typeErrors.isEmpty()) !status = 2;
+    for (error in typeErrors) {
+      print_string(error);
+    }
+  };
+  status
+}
+
+type CheckResult = (String, ?String, Array<String>); // (filename, parse error, type errors)
+
+fun checkFiles{
+  backtrace: Bool = false,
+  baseUrlOpt: ?String = None(),
+  builtinsArgFileName: String,
+  srcFiles: Sequence<String>,
+}: mutable Iterator<CheckResult> {
   rootOpt: ?DirName = None();
   baseUrlOpt match {
   | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
@@ -229,7 +259,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
   defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
   tenv = TEnv{defMap};
-  status = 0;
   checker = TypeChecker{
     builtins,
     backtrace,
@@ -244,16 +273,10 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     parsedFile[0].value match {
     | PROk(defs) ->
       errors = checker.check(context, defs);
-      if (errors.size() != 0) !status = 2;
-      for (error in errors) {
-        print_string(error);
-      }
-    | PRError(err) ->
-      !status = 2;
-      print_error(err)
+      yield (fileName, None(), errors)
+    | PRError(err) -> yield (fileName, Some(err), Array[])
     }
   };
-  status
 }
 
 module end;
