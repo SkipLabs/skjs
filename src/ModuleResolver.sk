@@ -75,6 +75,12 @@ base class DirName(path: Array<String>) uses Orderable, Show {
     }
   }
 
+  static fun cwd(): DAbsolute {
+    path = FileSystem.realpath(".");
+    invariant(path.startsWith("/"));
+    DAbsolute(splitPath(path))
+  }
+
   fun allAncestors(): mutable Iterator<DirName> {
     this match {
     | DRelative(_) ->
@@ -200,10 +206,9 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
 
   fun lookup(
     context: mutable S.Context,
-    path: DirName,
+    path: DAbsolute,
     file: FileName,
   ): ?FileName {
-    invariant(path is DAbsolute _);
     for (ancestor in path.allAncestors()) {
       this.modules.maybeGet(
         context,
@@ -250,8 +255,8 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
 fun resolveName(
   context: mutable S.Context,
   index: FileNameIndex,
-  root: DirName,
-  cwd: DirName,
+  root: DAbsolute,
+  cwd: DAbsolute,
   moduleName: String,
 ): ?FileName {
   if (moduleName.endsWith("-js")) {

@@ -189,8 +189,8 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   builtinsArgFileName = args.getString("builtins-file");
   srcFiles: Sequence<String> = args.getArray("src-file");
 
-  rootDirStr = FileSystem.realpath(".") + "/";
-  root = DirName::create(rootDirStr);
+  root = DirName::cwd();
+  rootDirStr = root.toString();
   if (srcFiles.isEmpty()) {
     srcDir = rootDirStr + "src/";
     if (!FileSystem.exists(srcDir)) {
