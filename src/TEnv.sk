@@ -189,7 +189,7 @@ class TEnv{
     TType::single(className.posRange, obj)
   }
 
-  fun newStaticObject(
+  private fun newStaticObject(
     context: mutable SKStore.Context,
     className: Name,
   ): TObject {
@@ -234,7 +234,7 @@ class TEnv{
     this
   }
 
-  fun addFields(
+  private fun addFields(
     context: mutable SKStore.Context,
     acc: mutable Map<String, TField>,
     visitedClasses: SortedSet<String>,
@@ -709,7 +709,7 @@ class TEnv{
   /*
     The first element is the position and the type of the algebraic branch field if it is present.
    */
-  fun createTFields(
+  private fun createTFields(
     context: mutable SKStore.Context,
     fields: Array<FieldType>,
   ): (?(PosRange, TType), TFields) {
