@@ -2447,13 +2447,15 @@ fun isTerminal(inTry: Bool, st: Stmt): Bool {
   | If(_, _, _) -> false
   | Block(bl) -> isTerminalBlock(inTry, bl)
   | Switch(_, branches) ->
-    branches.all(branch ~>
-      branch match {
-      | Case(_, bl)
-      | Default(bl) ->
-        isTerminalBlock(inTry, bl)
-      }
-    )
+    switchIsExhaustive = branches.any(branch ~> branch is Default _); // Unless exhaustiveness is proven differently?
+    switchIsExhaustive &&
+      branches.all(branch ~>
+        branch match {
+        | Case(_, bl)
+        | Default(bl) ->
+          isTerminalBlock(inTry, bl)
+        }
+      )
   }
 }
 
