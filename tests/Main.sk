@@ -1,0 +1,42 @@
+module SKJSTests;
+
+// Expects no parse errors, type errors must be prefixed with @ts-expect-error
+fun validateParseable(checkResult: SKJS.CheckResult): void {
+  (fileName, parseErrorOpt, typeErrors) = checkResult;
+
+  SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
+
+  for (typeError in typeErrors) {
+    SKTest.fail(
+      `TODO: type errors not supported yet (${fileName}): ${typeError}`,
+    )
+  }
+}
+
+const builtinsArgFileName: String = "./examples/src/builtins.ts";
+
+fun testFile(
+  fileName: String,
+  validateResult: SKJS.CheckResult ~> void = validateParseable,
+): void {
+  for (res in SKJS.checkFiles{
+    builtinsArgFileName,
+    srcFiles => Array[fileName],
+  }) validateResult(res);
+}
+
+@test
+fun testUnit(): void {
+  testFile("./tests/unit.ts");
+}
+
+@test
+fun testExamples(): void {
+  for (res in SKJS.checkFiles{
+    baseUrlOpt => Some("./examples/"),
+    builtinsArgFileName,
+    srcFiles => Array[],
+  }) validateParseable(res);
+}
+
+module end;
