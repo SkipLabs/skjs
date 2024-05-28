@@ -107,10 +107,6 @@ class TType(
     )
   }
 
-  fun withPos(pos: PosRange): this {
-    TType::create(pos, this.stypes, this.insts, this.tparams)
-  }
-
   fun toString(): String {
     prettyPrintType(false, this)
   }
