@@ -262,11 +262,10 @@ fun resolveName(
       print_error("Could not resolve module '.'");
       return None();
     };
-    pathRoot = if (moduleName.startsWith(".")) cwd else root;
     fullName = if (moduleName.startsWith("/")) {
       FileName::create(moduleName)
     } else {
-      pathRoot + FileName::create(moduleName)
+      cwd + FileName::create(moduleName)
     };
     endsWithTS = fullName.baseName.endsWith(".ts");
     endsWithTSX = fullName.baseName.endsWith(".tsx");
@@ -302,12 +301,14 @@ fun resolveName(
       print_error("From: " + cwd.toString());
       return None();
     };
-    pathFile = pathRoot + FileName::create(moduleName + ".d.ts");
-    if (pathFile.exists()) return Some(pathFile);
-    pathIndex = pathRoot + FileName::create(moduleName + "/index.d.ts");
-    if (pathIndex.exists()) return Some(pathIndex);
-    pathCjs = pathRoot + FileName::create(moduleName + "/index.cjs");
-    if (pathCjs.exists()) return Some(pathCjs);
+    if (!moduleName.startsWith("/")) {
+      pathFile = cwd + FileName::create(moduleName + ".d.ts");
+      if (pathFile.exists()) return Some(pathFile);
+      pathIndex = cwd + FileName::create(moduleName + "/index.d.ts");
+      if (pathIndex.exists()) return Some(pathIndex);
+      pathCjs = cwd + FileName::create(moduleName + "/index.cjs");
+      if (pathCjs.exists()) return Some(pathCjs);
+    };
     print_error("Could not find module[3]: " + moduleName);
     print_error("From: " + cwd.toString());
     return None();
