@@ -496,7 +496,6 @@ base class DefMapType {
 
 class DefMap{
   index: FileNameIndex,
-  root: DirName,
   fileDefsMap: FileDefsMap,
   builtins: Set<String>,
   builtinsFileName: FileName,
