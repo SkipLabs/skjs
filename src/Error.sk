@@ -119,7 +119,7 @@ class UnterminatedComment() extends LexingKind {
 
 class UnterminatedFunDef() extends ParsingKind {
   fun toString(): String {
-    `Unterminated function definion`
+    `Unterminated function definition`
   }
 }
 class UnterminatedStmt() extends ParsingKind {
@@ -129,7 +129,7 @@ class UnterminatedStmt() extends ParsingKind {
 }
 class UnterminatedDef() extends ParsingKind {
   fun toString(): String {
-    `Unterminated definion`
+    `Unterminated definition`
   }
 }
 class UnexpectedToken() extends ParsingKind {

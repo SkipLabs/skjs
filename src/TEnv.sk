@@ -28,7 +28,7 @@ class TEnv{
 
   // When expanding a type definition, we don't want to recursively
   // get all the type instances of a type, we only want to go one
-  // level deep. Conretely, consider the following type:
+  // level deep. Concretely, consider the following type:
   //
   // type foo = { field1: null | foo, field2: number };
   //

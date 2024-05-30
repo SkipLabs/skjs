@@ -7,7 +7,7 @@
 // starts with "ST" means that it represents a single type out of a
 // larger union.
 //
-// For example: type type number | undefined is represented by a class
+// For example: the type number | undefined is represented by a class
 // TType that contains a union of SType where the STypes are "number"
 // and "undefined".
 /*****************************************************************************/
@@ -28,7 +28,7 @@ const kTopHash: Int = "Top".hash();
 //   - the instances (which represent type variables, unexpanded type
 //   instances and unexpanded intersections).
 //
-//   - the parameters (normalized under a disjonctive normal form).
+//   - the parameters (normalized under a disjunctive normal form).
 //
 // A few examples:
 //   number | void           ==> TType(stypes = void | number)
@@ -56,7 +56,7 @@ class TType private (
   // This field is true if the type represents TOP (meaning, the type
   // that contains all possible values). Note that TOP and BOTTOM have
   // the same representation outside of this field. Why is that? We
-  // could have introduced an algebric data type of the form: TOP |
+  // could have introduced an algebraic data type of the form: TOP |
   // BOTTOM | TTYPE. The reason is that outside of those 3 operations:
   // sub-typing, intersection and union, we really want to treat TOP
   // and BOTTOM the same way. For example, imagine you are writing x.y
@@ -79,7 +79,7 @@ class TType private (
   insts: TInsts,
 
   // The type parameters (universally quantified type variables), in a
-  // sorted disjonctive normal form. So if you write: T1 & (T3 | T2)
+  // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   tparams: TTypeParams,
 ) uses Hashable, Orderable {
