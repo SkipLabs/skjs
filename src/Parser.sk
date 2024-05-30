@@ -809,7 +809,7 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
   //
   // When you do that, it means that the method "myfield" will be
   // called every time the field "myfield" is accessed. So concretely,
-  // if you write obj.myfield, instead of accesing a field, you are
+  // if you write obj.myfield, instead of accessing a field, you are
   // really executing a method.
   /***************************************************************************/
 
