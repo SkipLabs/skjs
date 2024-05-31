@@ -471,11 +471,12 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
           }
         };
         if (!hasUndefined) {
-          !ty.stypes = STypes::create(
+          stypes = STypes::create(
             Array[TPrimVoid(TUndefined(), fieldName.posRange)].concat(
               ty.stypes.stypes,
             ),
-          )
+          );
+          return TType::create(ty.pos, stypes, ty.insts, ty.tparams)
         }
       };
       ty
