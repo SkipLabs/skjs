@@ -190,10 +190,7 @@ class TType private (
     tparams = this.tparams;
     stypes = this.stypes;
     insts = Vector::mcreateFromItems(this.insts.insts);
-    seen = mutable Set[];
-    for (inst in insts) {
-      seen.insert(inst);
-    };
+    seen = Set::mcreateFromItems(insts);
     loop {
       if (insts.isEmpty()) return (false, stypes, tparams);
       inst = insts.pop();
