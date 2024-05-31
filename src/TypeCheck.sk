@@ -334,14 +334,16 @@ class TypeChecker{
   fun class_(context: mutable SKStore.Context, c: Class): void {
     targs = TArgs(
       c.tparams.map(tparam -> {
-        ty = TType::bottom(tparam.name.posRange);
         ttypeParam = TParam(
           tparam.name.value,
           tparam.name.posRange.fileName,
           tparam.id,
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
-        ty with {tparams => TTypeParams(Array[Array[ttypeParam]])}
+        TType::fromTParams(
+          tparam.name.posRange,
+          TTypeParams(Array[Array[ttypeParam]]),
+        )
       }),
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
