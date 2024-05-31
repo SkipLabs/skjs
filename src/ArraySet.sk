@@ -120,6 +120,16 @@ fun mapInter<T, R, Key: Orderable>(
   right: mutable Iterator<T>,
   proj: T ~> Key,
   inter: (T, T) -> R,
+): Array<R> {
+  single = (_v) -> None();
+  mapSymmetricMerge(left, right, proj, single, inter)
+}
+
+fun diffMapInter<T, R, Key: Orderable>(
+  left: mutable Iterator<T>,
+  right: mutable Iterator<T>,
+  proj: T ~> Key,
+  inter: (T, T) -> R,
 ): (Array<T>, Array<T>, Array<R>) {
   inLeftOnly = mutable Vector[];
   inRightOnly = mutable Vector[];
@@ -191,7 +201,7 @@ class ArrayValues(
   }
 
   fun inter(other: ArrayValues): ArrayValues {
-    (_noMatches1, _notMatches2, result) = mapInter(
+    result = mapInter(
       this.values.iterator(),
       other.values.iterator(),
       x ~> x.i1,

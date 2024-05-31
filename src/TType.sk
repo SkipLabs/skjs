@@ -1017,7 +1017,7 @@ fun unionTFields(
   fields1: TFields,
   fields2: TFields,
 ): TFields {
-  (noMatch1, noMatch2, fields) = mapInter(
+  (noMatch1, noMatch2, fields) = diffMapInter(
     fields1.values(),
     fields2.values(),
     x ~> x.name,
@@ -1309,7 +1309,7 @@ fun interTAlgebraic(
   a1: TAlgebraic,
   a2: TAlgebraic,
 ): TAlgebraic {
-  (_noMatchBranches1, _noMatchBranches2, branches) = mapInter(
+  branches = mapInter(
     a1.branches.iterator(),
     a2.branches.iterator(),
     x ~> x.fields.getKind(),
@@ -1373,13 +1373,13 @@ fun interTFuns(subst: mutable Subst, env: TEnv, f1: TFuns, f2: TFuns): TFuns {
       f2.funs.iterator(),
       x ~> (x.tparams.size(), x.params.size()),
       (x, y) -> interTFun(subst, env, x, y),
-    ).i2,
+    ),
     mapInter(
       f1.methods.iterator(),
       f2.methods.iterator(),
       x ~> (x.tparams.size(), x.params.size()),
       (x, y) -> interTFun(subst, env, x, y),
-    ).i2,
+    ),
     f1.pos,
   )
 }
