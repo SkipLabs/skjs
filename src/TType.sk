@@ -39,10 +39,11 @@ module SKJS;
 // not affect the instances defined inside the type.
 /*****************************************************************************/
 
-class TType(
+class TType private (
   // The hash, it's important because we need to quickly determine if
-  // two types are different.
-  h: Int,
+  // two types are different. The hash is computed by smart constructors,
+  // that's why the default constructor is private
+  private h: Int,
 
   // The position in the source-code that serves as a witness, when an
   // error occurs involving this type, we will use that position in
