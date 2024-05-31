@@ -1766,7 +1766,9 @@ class ExpandTVars() extends ApplyType {
     );
     (subst, tenv) = env;
     (isTop, stypes, tparams) = ty.expand(subst, tenv);
-    ty with {stypes, isTop, insts => TInsts::empty(), tparams}
+    if (isTop) TType::top(ty.pos) else {
+      TType::create(ty.pos, stypes, TInsts::empty(), tparams)
+    }
   }
 }
 
