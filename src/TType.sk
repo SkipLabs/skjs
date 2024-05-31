@@ -14,6 +14,9 @@
 
 module SKJS;
 
+// Arbitrary hash for Top
+const kTopHash: Int = "Top".hash();
+
 /*****************************************************************************/
 // The class representing all the types.
 //
@@ -86,8 +89,7 @@ class TType private (
     stypes = STypes::empty();
     insts = TInsts::empty();
     tparams = TTypeParams::empty();
-    h = (pos, stypes, insts).hash();
-    static(h, pos, true, stypes, insts, tparams)
+    static(kTopHash, pos, true, stypes, insts, tparams)
   }
 
   // Returns the type that is sub-type of all types. This type is
@@ -141,7 +143,7 @@ class TType private (
 
   fun compare(other: TType): Order {
     (this.h, this.stypes, this.insts, this.tparams).compare(
-      (this.h, other.stypes, other.insts, other.tparams),
+      (other.h, other.stypes, other.insts, other.tparams),
     )
   }
 
