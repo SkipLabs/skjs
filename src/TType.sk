@@ -216,13 +216,7 @@ class TType private (
   }
 
   fun containsTVar(): Bool {
-    for (inst in this.insts) {
-      inst match {
-      | TVar _ -> return true
-      | _ -> void
-      };
-    };
-    false
+    this.insts.insts.any(inst ~> inst is TVar _)
   }
 }
 
