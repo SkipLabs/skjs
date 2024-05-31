@@ -13,7 +13,7 @@ value class LocalRef(type: TType, isInitialized: Bool)
 mutable class Scope{
   id: Int,
   isLoop: Bool,
-  up: ?mutable Scope = None(),
+  up: ?readonly Scope = None(),
   mutable locals: SortedMap<String, Name> = SortedMap[],
   mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
@@ -914,26 +914,27 @@ class TypeChecker{
       }
 
     | For(initStmt, cond, incr, block) ->
+      scopeCopy = env.scope;
       initScope = mutable Scope{
         id => env.next(),
         isLoop => false,
-        up => Some(env.scope),
+        up => Some(scopeCopy),
       };
       env.!scope = initScope;
       this.stmt(env, initStmt);
       loopScope = mutable Scope{
         id => env.next(),
         isLoop => true,
-        up => Some(env.scope),
+        up => Some(initScope),
       };
       env.!scope = loopScope;
       this.checkBool(env, cond);
       loopBody = this.block(env, block);
       env.popScopeReplace(loopBody);
       _ = this.expr(env, incr);
-      env.!scope = env.scope.up.fromSome();
+      env.!scope = initScope;
       env.popScope(env.subst, this.tenv, loopScope);
-      env.!scope = env.scope.up.fromSome();
+      env.!scope = scopeCopy;
       env.popScopeReplace(initScope)
     | Block(stmts) ->
       for (stmt in stmts) {
@@ -959,16 +960,17 @@ class TypeChecker{
       )
     | Throw(e) -> _ = this.expr(env, e)
     | While(cond, block) ->
+      scopeCopy = env.scope;
       loopScope = mutable Scope{
         id => env.next(),
         isLoop => true,
-        up => Some(env.scope),
+        up => Some(scopeCopy),
       };
       env.!scope = loopScope;
       this.checkBool(env, cond);
       loopBody = this.block(env, block, Some((cond, true)));
       env.popScopeReplace(loopBody);
-      env.!scope = env.scope.up.fromSome();
+      env.!scope = scopeCopy;
       env.popScope(env.subst, this.tenv, loopScope)
     | Switch(e, branches) ->
       this.switchCheckExhaustiveness(env, e, branches);
