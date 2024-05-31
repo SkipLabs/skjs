@@ -1724,7 +1724,7 @@ class Instantiate() extends ApplyType {
     );
     if (ty.tparams.tparams.isEmpty()) return ty;
     (subst, tenv, map) = env;
-    result = ty with {tparams => TTypeParams::empty()};
+    result = TType::create(ty.pos, ty.stypes, ty.insts, TTypeParams::empty());
     for (tparams in ty.tparams.tparams) {
       clauseOpt: ?TType = None();
       for (tparam in tparams) {
@@ -1740,17 +1740,16 @@ class Instantiate() extends ApplyType {
       | Some(clause) -> !result = unionTType(subst, tenv, result, clause)
       };
     };
-    result with {
-      tparams => TTypeParams(
-        ty.tparams.tparams
-          .map(tparams ->
-            tparams.filter(tparam ->
-              !map.containsKey((tparam.fileName, tparam.id))
-            )
+    tparams = TTypeParams(
+      ty.tparams.tparams
+        .map(tparams ->
+          tparams.filter(tparam ->
+            !map.containsKey((tparam.fileName, tparam.id))
           )
-          .filter(x -> !x.isEmpty()),
-      ),
-    }
+        )
+        .filter(x -> !x.isEmpty()),
+    );
+    TType::create(result.pos, result.stypes, result.insts, tparams)
   }
 }
 
