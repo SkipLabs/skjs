@@ -113,7 +113,7 @@ mutable class Lexer{
   }
 
   readonly fun error<T>(start: Int, errKind: LexingKind): T {
-    error(Error(EPChar(this.fileName, Pos(start)), errKind))
+    error(LexingError(EPChar(this.fileName, Pos(start)), errKind))
   }
 
   readonly fun posEnd(): ErrorPos {
