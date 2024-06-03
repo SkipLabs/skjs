@@ -187,7 +187,12 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   srcFiles: Sequence<String> = args.getArray("src-file");
 
   status = 0;
-  checker = Checker{backtrace, baseUrlOpt, builtinsArgFileName, srcFiles};
+  checker = Checker::create{
+    backtrace,
+    baseUrlOpt,
+    builtinsArgFileName,
+    srcFiles,
+  };
   for (checkResult in checker.checkFiles()) {
     (_fileName, parseErrorOpt, typeErrors) = checkResult;
     parseErrorOpt match {
@@ -206,12 +211,20 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
 type CheckResult = (String, ?String, Array<String>); // (filename, parse error, type errors)
 
-class Checker{
-  backtrace: Bool = false,
-  baseUrlOpt: ?String = None(),
+class Checker private {
+  backtrace: Bool,
+  baseUrlOpt: ?String,
   builtinsArgFileName: String,
   srcFiles: Sequence<String>,
 } {
+  static fun create{
+    backtrace: Bool = false,
+    baseUrlOpt: ?String = None(),
+    builtinsArgFileName: String,
+    srcFiles: Sequence<String>,
+  }: this {
+    Checker{backtrace, baseUrlOpt, builtinsArgFileName, srcFiles}
+  }
   fun checkFiles(): mutable Iterator<CheckResult> {
     rootOpt: ?DirName = None();
     this.baseUrlOpt match {
