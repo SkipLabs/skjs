@@ -49,20 +49,4 @@ class NewLinesMap{dir: SKStore.LHandle<SKStore.SID, NewLinesFile>} {
   }
 }
 
-/*****************************************************************************/
-/* The logic that resolves the position of an error. */
-/*****************************************************************************/
-
-extension class Error {
-  fun toString(
-    context: mutable SKStore.Context,
-    newLinesMap: NewLinesMap,
-  ): String {
-    fileName = this.pos.fileName();
-    newLines = newLinesMap.get(context, fileName);
-    resolver = PositionResolver{fileName, newLines};
-    this.pos.toString(resolver) + "\n" + this.errorKind.toString()
-  }
-}
-
 module end;
