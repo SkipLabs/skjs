@@ -10,7 +10,7 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
   /***************************************************************************/
 
   readonly fun error<T>(pos: ErrorPos, kind: ParsingKind): T {
-    error(Error(pos, kind))
+    error(ParsingError(pos, kind))
   }
 
   mutable fun expect(kind: TokenKind): void {

@@ -22,7 +22,21 @@ class ErrorExn(error: Error) extends Exception
 /* The class for all the errors. */
 /*****************************************************************************/
 
-class Error(pos: ErrorPos, errorKind: ErrorKind) {
+base class Error {
+  fun toString(
+    context: mutable SKStore.Context,
+    newLinesMap: NewLinesMap,
+  ): String;
+}
+
+/*****************************************************************************/
+/* Errors with a single position. */
+/*****************************************************************************/
+
+base class SinglePosError<K: ErrorKind>(
+  pos: ErrorPos,
+  errorKind: K,
+) extends Error {
   fun toString(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
@@ -33,6 +47,9 @@ class Error(pos: ErrorPos, errorKind: ErrorKind) {
     this.pos.toString(resolver) + "\n" + this.errorKind.toString()
   }
 }
+
+class ParsingError extends SinglePosError<ParsingKind>
+class LexingError extends SinglePosError<LexingKind>
 
 /*****************************************************************************/
 /* There are two types of positions:
