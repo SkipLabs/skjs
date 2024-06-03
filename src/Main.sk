@@ -187,12 +187,8 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   srcFiles: Sequence<String> = args.getArray("src-file");
 
   status = 0;
-  for (checkResult in checkFiles{
-    backtrace,
-    baseUrlOpt,
-    builtinsArgFileName,
-    srcFiles,
-  }) {
+  checker = Checker{backtrace, baseUrlOpt, builtinsArgFileName, srcFiles};
+  for (checkResult in checker.checkFiles()) {
     (_fileName, parseErrorOpt, typeErrors) = checkResult;
     parseErrorOpt match {
     | None() -> void
@@ -210,67 +206,71 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
 type CheckResult = (String, ?String, Array<String>); // (filename, parse error, type errors)
 
-fun checkFiles{
+class Checker{
   backtrace: Bool = false,
   baseUrlOpt: ?String = None(),
   builtinsArgFileName: String,
   srcFiles: Sequence<String>,
-}: mutable Iterator<CheckResult> {
-  rootOpt: ?DirName = None();
-  baseUrlOpt match {
-  | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
-  | None() -> void
-  };
-  if (srcFiles.isEmpty()) {
-    root = rootOpt match {
-    | Some(root) -> root
-    | None() -> DirName::create(FileSystem.realpath("."))
+} {
+  fun checkFiles(): mutable Iterator<CheckResult> {
+    rootOpt: ?DirName = None();
+    this.baseUrlOpt match {
+    | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
+    | None() -> void
     };
-    !rootOpt = Some(root);
-    srcDir = `${root}src/`;
-    if (!FileSystem.exists(srcDir)) {
-      print_error(`Could not find src/ dir in: ${root}`);
+    srcFiles = this.srcFiles;
+    if (srcFiles.isEmpty()) {
+      root = rootOpt match {
+      | Some(root) -> root
+      | None() -> DirName::create(FileSystem.realpath("."))
+      };
+      !rootOpt = Some(root);
+      srcDir = `${root}src/`;
+      if (!FileSystem.exists(srcDir)) {
+        print_error(`Could not find src/ dir in: ${root}`);
+        skipExit(2);
+      };
+      !srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
+        fileName.endsWith(".ts")
+      );
+    } else {
+      !srcFiles = srcFiles.map(f -> Path.resolve(f));
+    };
+    if (srcFiles.isEmpty()) {
+      print_error("No source files!");
       skipExit(2);
     };
-    !srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
-      fileName.endsWith(".ts")
-    );
-  } else {
-    !srcFiles = srcFiles.map(f -> Path.resolve(f));
-  };
-  if (srcFiles.isEmpty()) {
-    print_error("No source files!");
-    skipExit(2);
-  };
-  builtinsFileName = FileName::create(Path.resolve(builtinsArgFileName));
-  if (!builtinsFileName.exists()) {
-    print_error("Builtins not found: " + builtinsFileName.toString());
-    skipExit(1);
-  };
-  !srcFiles = Array[srcFiles, Array[builtinsFileName.toString()]].flatten();
+    builtinsFileName = FileName::create(Path.resolve(this.builtinsArgFileName));
+    if (!builtinsFileName.exists()) {
+      print_error("Builtins not found: " + builtinsFileName.toString());
+      skipExit(1);
+    };
+    !srcFiles = Array[srcFiles, Array[builtinsFileName.toString()]].flatten();
 
-  context = mutable SKStore.Context{};
-  files = Files::create(context, srcFiles);
-  newLinesMap = NewLinesMap::create(context, files);
-  index = FileNameIndex::create(context, files.filesContent);
-  parsedFiles = files.parse(context, newLinesMap);
-  fileDefsMap = FileDefsMap::create(context, index, rootOpt, parsedFiles);
-  builtinDefs = fileDefsMap.get(context, builtinsFileName);
-  builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
-  defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
-  tenv = TEnv{defMap};
-  checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
-  for (fileName in files.srcFiles) {
-    parsedFile = parsedFiles.getArray(context, SKStore.SID(fileName));
-    if (parsedFile.size() == 0) invariant_violation("could not parse?");
-    parsedFile[0].value match {
-    | PROk(defs) ->
-      errors = checker.check(context, defs);
-      strErrors = errors.map(err -> err.toString(context, newLinesMap));
-      yield (fileName, None(), strErrors)
-    | PRError(err) -> yield (fileName, Some(err), Array[])
-    }
-  };
+    context = mutable SKStore.Context{};
+    files = Files::create(context, srcFiles);
+    newLinesMap = NewLinesMap::create(context, files);
+    index = FileNameIndex::create(context, files.filesContent);
+    parsedFiles = files.parse(context, newLinesMap);
+    fileDefsMap = FileDefsMap::create(context, index, rootOpt, parsedFiles);
+    builtinDefs = fileDefsMap.get(context, builtinsFileName);
+    builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
+    defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
+    tenv = TEnv{defMap};
+    backtrace = this.backtrace;
+    checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
+    for (fileName in files.srcFiles) {
+      parsedFile = parsedFiles.getArray(context, SKStore.SID(fileName));
+      if (parsedFile.size() == 0) invariant_violation("could not parse?");
+      parsedFile[0].value match {
+      | PROk(defs) ->
+        errors = checker.check(context, defs);
+        strErrors = errors.map(err -> err.toString(context, newLinesMap));
+        yield (fileName, None(), strErrors)
+      | PRError(err) -> yield (fileName, Some(err), Array[])
+      }
+    };
+  }
 }
 
 module end;
