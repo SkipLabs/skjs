@@ -56,6 +56,10 @@ base class ErrorKind {
 base class ParsingError extends ErrorKind
 base class LexingError extends ErrorKind
 
+/*****************************************************************************/
+/* Lexing errors */
+/*****************************************************************************/
+
 class UnknownCharacter(char: Char) extends LexingError {
   fun toString(): String {
     `Unknown character: ${this.char} (${this.char.code()})`
