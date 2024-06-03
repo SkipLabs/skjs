@@ -280,13 +280,14 @@ mutable class Checker private {
       parsedFile[0].value match {
       | PROk(defs) ->
         errors = this.checker.check(this.context, defs);
-        strErrors = errors.map(err ->
-          err.toString(this.context, this.newLinesMap)
-        );
+        strErrors = errors.map(this.errorToString);
         yield (fileName, None(), strErrors)
       | PRError(err) -> yield (fileName, Some(err), Array[])
       }
     };
+  }
+  mutable fun errorToString(err: Error): String {
+    err.toString(this.context, this.newLinesMap)
   }
 }
 
