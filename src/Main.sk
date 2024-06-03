@@ -203,13 +203,13 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     };
     if (!typeErrors.isEmpty()) !status = 2;
     for (error in typeErrors) {
-      print_string(error);
+      print_string(checker.errorToString(error));
     }
   };
   status
 }
 
-type CheckResult = (String, ?String, Array<String>); // (filename, parse error, type errors)
+type CheckResult = (String, ?String, Array<Error>); // (filename, parse error, type errors)
 
 mutable class Checker private {
   files: Files,
@@ -280,8 +280,7 @@ mutable class Checker private {
       parsedFile[0].value match {
       | PROk(defs) ->
         errors = this.checker.check(this.context, defs);
-        strErrors = errors.map(this.errorToString);
-        yield (fileName, None(), strErrors)
+        yield (fileName, None(), errors)
       | PRError(err) -> yield (fileName, Some(err), Array[])
       }
     };
