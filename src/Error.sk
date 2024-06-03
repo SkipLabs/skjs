@@ -22,7 +22,17 @@ class ErrorExn(error: Error) extends Exception
 /* The class for all the errors. */
 /*****************************************************************************/
 
-class Error(pos: ErrorPos, errorKind: ErrorKind)
+class Error(pos: ErrorPos, errorKind: ErrorKind) {
+  fun toString(
+    context: mutable SKStore.Context,
+    newLinesMap: NewLinesMap,
+  ): String {
+    fileName = this.pos.fileName();
+    newLines = newLinesMap.get(context, fileName);
+    resolver = PositionResolver{fileName, newLines};
+    this.pos.toString(resolver) + "\n" + this.errorKind.toString()
+  }
+}
 
 /*****************************************************************************/
 /* There are two types of positions:
