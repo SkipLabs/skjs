@@ -230,7 +230,6 @@ mutable class TCEnv(
 class TypeChecker{
   builtins: Set<String>,
   builtinsFileName: FileName,
-  newLinesMap: NewLinesMap,
   backtrace: Bool,
   defMap: DefMap,
   tenv: TEnv,

@@ -259,14 +259,7 @@ fun checkFiles{
   builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
   defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
   tenv = TEnv{defMap};
-  checker = TypeChecker{
-    builtins,
-    backtrace,
-    newLinesMap,
-    defMap,
-    tenv,
-    builtinsFileName,
-  };
+  checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
   for (fileName in files.srcFiles) {
     parsedFile = parsedFiles.getArray(context, SKStore.SID(fileName));
     if (parsedFile.size() == 0) invariant_violation("could not parse?");
