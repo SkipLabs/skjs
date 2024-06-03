@@ -4,7 +4,7 @@
 
 module SKJS;
 
-class TypingError(messages: Array<(PosRange, String)>) extends Exception {
+class TypingError(messages: Array<(PosRange, String)>) extends Error {
   fun toString(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
@@ -23,7 +23,7 @@ class TypingError(messages: Array<(PosRange, String)>) extends Exception {
 }
 
 fun typingError<T>(messages: Array<(PosRange, String)>): T {
-  throw TypingError(messages)
+  throw ErrorExn(TypingError(messages))
 }
 
 fun notSupported<T>(pos: PosRange): T {
