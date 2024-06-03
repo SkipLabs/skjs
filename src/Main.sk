@@ -273,7 +273,8 @@ fun checkFiles{
     parsedFile[0].value match {
     | PROk(defs) ->
       errors = checker.check(context, defs);
-      yield (fileName, None(), errors)
+      strErrors = errors.map(err -> err.toString(context, newLinesMap));
+      yield (fileName, None(), strErrors)
     | PRError(err) -> yield (fileName, Some(err), Array[])
     }
   };
