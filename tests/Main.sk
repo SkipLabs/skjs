@@ -6,10 +6,8 @@ fun validateParseable(checkResult: SKJS.CheckResult): void {
 
   SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
 
-  for (typeError in typeErrors) {
-    SKTest.fail(
-      `TODO: type errors not supported yet (${fileName}): ${typeError}`,
-    )
+  for (_typeError in typeErrors) {
+    SKTest.fail(`TODO: type errors not supported yet (${fileName})`)
   }
 }
 
@@ -19,10 +17,11 @@ fun testFile(
   fileName: String,
   validateResult: SKJS.CheckResult ~> void = validateParseable,
 ): void {
-  for (res in SKJS.checkFiles{
+  checker = SKJS.Checker::create{
     builtinsArgFileName,
     srcFiles => Array[fileName],
-  }) validateResult(res);
+  };
+  for (res in checker.checkFiles()) validateResult(res);
 }
 
 @test
@@ -32,11 +31,12 @@ fun testUnit(): void {
 
 @test
 fun testExamples(): void {
-  for (res in SKJS.checkFiles{
+  checker = SKJS.Checker::create{
     baseUrlOpt => Some("./examples/"),
     builtinsArgFileName,
     srcFiles => Array[],
-  }) validateParseable(res);
+  };
+  for (res in checker.checkFiles()) validateParseable(res);
 }
 
 module end;
