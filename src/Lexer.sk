@@ -112,7 +112,7 @@ mutable class Lexer{
     this.peek().map(x -> this.getStrTok(x))
   }
 
-  readonly fun error<T>(start: Int, errKind: ErrorKind): T {
+  readonly fun error<T>(start: Int, errKind: LexingKind): T {
     error(Error(EPChar(this.fileName, Pos(start)), errKind))
   }
 

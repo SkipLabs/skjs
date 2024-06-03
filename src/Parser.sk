@@ -9,7 +9,7 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
   // Helpers
   /***************************************************************************/
 
-  readonly fun error<T>(pos: ErrorPos, kind: ErrorKind): T {
+  readonly fun error<T>(pos: ErrorPos, kind: ParsingKind): T {
     error(Error(pos, kind))
   }
 
