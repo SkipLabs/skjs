@@ -246,8 +246,6 @@ class TypeChecker{
           this.checkDef(context, def)
         } catch {
         | ErrorExn(err) -> errors.push(err.toString(context, this.newLinesMap))
-        | err @ TypingError _ ->
-          errors.push(err.toString(context, this.newLinesMap))
         | exn -> throw exn
         }
       }
