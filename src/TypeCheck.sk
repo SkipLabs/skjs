@@ -238,14 +238,14 @@ class TypeChecker{
   isAsync: Bool = false,
   retType: ?TType = None(),
 } {
-  fun check(context: mutable SKStore.Context, defs: Array<Def>): Array<String> {
+  fun check(context: mutable SKStore.Context, defs: Array<Def>): Array<Error> {
     errors = mutable Vector[];
     for (def in defs) {
       if (this.backtrace) this.checkDef(context, def) else {
         try {
           this.checkDef(context, def)
         } catch {
-        | ErrorExn(err) -> errors.push(err.toString(context, this.newLinesMap))
+        | ErrorExn(err) -> errors.push(err)
         | exn -> throw exn
         }
       }
