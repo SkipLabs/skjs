@@ -211,27 +211,24 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
 type CheckResult = (String, ?String, Array<String>); // (filename, parse error, type errors)
 
-class Checker private {
-  backtrace: Bool,
-  baseUrlOpt: ?String,
-  builtinsArgFileName: String,
-  srcFiles: Sequence<String>,
+mutable class Checker private {
+  files: Files,
+  parsedFiles: SKStore.LHandle<SKStore.SID, ParsedResultFile>,
+  context: mutable SKStore.Context,
+  checker: TypeChecker,
+  newLinesMap: NewLinesMap,
 } {
   static fun create{
     backtrace: Bool = false,
     baseUrlOpt: ?String = None(),
     builtinsArgFileName: String,
     srcFiles: Sequence<String>,
-  }: this {
-    Checker{backtrace, baseUrlOpt, builtinsArgFileName, srcFiles}
-  }
-  fun checkFiles(): mutable Iterator<CheckResult> {
+  }: mutable this {
     rootOpt: ?DirName = None();
-    this.baseUrlOpt match {
+    baseUrlOpt match {
     | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
     | None() -> void
     };
-    srcFiles = this.srcFiles;
     if (srcFiles.isEmpty()) {
       root = rootOpt match {
       | Some(root) -> root
@@ -253,7 +250,7 @@ class Checker private {
       print_error("No source files!");
       skipExit(2);
     };
-    builtinsFileName = FileName::create(Path.resolve(this.builtinsArgFileName));
+    builtinsFileName = FileName::create(Path.resolve(builtinsArgFileName));
     if (!builtinsFileName.exists()) {
       print_error("Builtins not found: " + builtinsFileName.toString());
       skipExit(1);
@@ -270,15 +267,22 @@ class Checker private {
     builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
     defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
     tenv = TEnv{defMap};
-    backtrace = this.backtrace;
     checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
-    for (fileName in files.srcFiles) {
-      parsedFile = parsedFiles.getArray(context, SKStore.SID(fileName));
+    mutable static{files, parsedFiles, context, checker, newLinesMap}
+  }
+  mutable fun checkFiles(): mutable Iterator<CheckResult> {
+    for (fileName in this.files.srcFiles) {
+      parsedFile = this.parsedFiles.getArray(
+        this.context,
+        SKStore.SID(fileName),
+      );
       if (parsedFile.size() == 0) invariant_violation("could not parse?");
       parsedFile[0].value match {
       | PROk(defs) ->
-        errors = checker.check(context, defs);
-        strErrors = errors.map(err -> err.toString(context, newLinesMap));
+        errors = this.checker.check(this.context, defs);
+        strErrors = errors.map(err ->
+          err.toString(this.context, this.newLinesMap)
+        );
         yield (fileName, None(), strErrors)
       | PRError(err) -> yield (fileName, Some(err), Array[])
       }
