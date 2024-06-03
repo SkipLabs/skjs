@@ -985,12 +985,8 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
   /***************************************************************************/
 
   mutable fun def(): Def {
-    loop {
-      if (this.lex.peekKind() is Some(TKSemi())) {
-        _ = this.lex.next();
-        continue;
-      };
-      break void;
+    while (this.lex.peekKind() is Some(TKSemi())) {
+      _ = this.lex.next();
     };
     this.defHelper()
   }
@@ -1030,14 +1026,10 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
   }
 
   mutable fun maybeDef(): ?Def {
-    loop {
-      if (this.lex.peekKind() is Some(TKSemi())) {
-        _ = this.lex.next();
-        continue;
-      };
-      if (this.lex.peekKind() is None()) return None();
-      break void;
+    while (this.lex.peekKind() is Some(TKSemi())) {
+      _ = this.lex.next();
     };
+    if (this.lex.peekKind() is None()) return None();
     Some(this.def())
   }
 
