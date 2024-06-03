@@ -4,7 +4,7 @@
 
 module SKJS;
 
-mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
+mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
   /***************************************************************************/
   // Helpers
   /***************************************************************************/
