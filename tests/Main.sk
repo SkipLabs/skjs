@@ -1,13 +1,72 @@
 module SKJSTests;
 
 // Expects no parse errors, type errors must be prefixed with @ts-expect-error
-fun validateParseable(checkResult: SKJS.CheckResult): void {
+fun validateParseable(
+  checker: mutable SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+): void {
   (fileName, parseErrorOpt, typeErrors) = checkResult;
 
   SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
 
-  for (_typeError in typeErrors) {
-    SKTest.fail(`TODO: type errors not supported yet (${fileName})`)
+  newLines = checker.newLinesMap.get(checker.context, fileName);
+  resolver = SKJS.PositionResolver{fileName, newLines};
+
+  linedTypeErrors = typeErrors
+    .map(err ->
+      err match {
+      | e @ SKJS.TypingError(messages) ->
+        invariant(!messages.isEmpty(), "Empty typing error");
+        pos = messages[0].i0;
+        if (pos.fileName != fileName) {
+          errStr = checker.errorToString(e);
+          SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
+        };
+        line = resolver.relPos(pos.start).line;
+        (line, e)
+      | e ->
+        errStr = checker.errorToString(e);
+        throw SKTest.ExpectationError(
+          "Unexpected non-typing error",
+          "nothing or typing errors",
+          errStr,
+        )
+      }
+    )
+    .sortedBy(line_err ~> line_err.i0);
+
+  fileContents = checker.files.filesContent.get(
+    checker.context,
+    SKStore.SID(fileName),
+  );
+  tsExpectErrors = findTSExpectErrors(fileContents.value);
+  tsExpectError = tsExpectErrors.next();
+
+  for (linedTypeError in linedTypeErrors) {
+    (line, typeError) = linedTypeError;
+    tsExpectError match {
+    | Some((expectedLine, _restOfExpectComment)) if (line == expectedLine) ->
+      !tsExpectError = tsExpectErrors.next()
+    | Some((expectedLine, _restOfExpectComment)) if (line > expectedLine) ->
+      break void
+    | _ ->
+      errStr = checker.errorToString(typeError);
+      throw SKTest.ExpectationError(
+        "Unexpected typing error",
+        "no errors",
+        errStr,
+      )
+    };
+  };
+
+  tsExpectError match {
+  | None() -> void
+  | Some((expectedLine, restOfExpectComment)) ->
+    throw SKTest.ExpectationError(
+      "Expected error",
+      `${fileName}:${expectedLine} ${restOfExpectComment}`,
+      "no errors",
+    )
   }
 }
 
@@ -15,13 +74,16 @@ const builtinsArgFileName: String = "./examples/src/builtins.ts";
 
 fun testFile(
   fileName: String,
-  validateResult: SKJS.CheckResult ~> void = validateParseable,
+  validateResult: (
+    mutable SKJS.Checker,
+    SKJS.CheckResult,
+  ) ~> void = validateParseable,
 ): void {
   checker = SKJS.Checker::create{
     builtinsArgFileName,
     srcFiles => Array[fileName],
   };
-  for (res in checker.checkFiles()) validateResult(res);
+  for (res in checker.checkFiles()) validateResult(checker, res);
 }
 
 @test
@@ -36,7 +98,7 @@ fun testExamples(): void {
     builtinsArgFileName,
     srcFiles => Array[],
   };
-  for (res in checker.checkFiles()) validateParseable(res);
+  for (res in checker.checkFiles()) validateParseable(checker, res);
 }
 
 module end;
