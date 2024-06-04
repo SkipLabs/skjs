@@ -269,26 +269,28 @@ fun createObject(pos: PosRange, fields: TFields): TType {
 fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
   stypes = ty.getSTypes(subst, env);
   invariant(stypes.stypes.size() == 1);
-  !stypes.stypes = stypes.stypes.map(stype -> {
-    stype match {
-    | TObject(TFields(fields), pos) ->
-      TObject(
-        TFields::create(
-          fields.filter(field -> {
-            for (fieldSType in field.type.stypes.stypes) {
-              fieldSType match {
-              | TFuns(_, methods, _) if (!methods.isEmpty()) -> return false
-              | _ -> return true
-              }
-            };
-            return true
-          }),
-        ),
-        pos,
-      )
-    | _ -> invariant_violation("Internal error: new should produce an object")
-    }
-  });
+  !stypes = STypes::create(
+    stypes.stypes.map(stype -> {
+      stype match {
+      | TObject(TFields(fields), pos) ->
+        TObject(
+          TFields::create(
+            fields.filter(field -> {
+              for (fieldSType in field.type.stypes.stypes) {
+                fieldSType match {
+                | TFuns(_, methods, _) if (!methods.isEmpty()) -> return false
+                | _ -> return true
+                }
+              };
+              return true
+            }),
+          ),
+          pos,
+        )
+      | _ -> invariant_violation("Internal error: new should produce an object")
+      }
+    }),
+  );
   TType::create(ty.pos, stypes, TInsts::empty(), TTypeParams::empty());
 }
 
@@ -305,7 +307,7 @@ class TTuple(tuple: Array<TType>) extends SType {
     };
     TType::create(
       this.pos,
-      STypes(Array[TArray(elt, this.pos)]),
+      STypes::create(Array[TArray(elt, this.pos)]),
       TInsts::empty(),
       TTypeParams::empty(),
     )
@@ -469,9 +471,11 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
           }
         };
         if (!hasUndefined) {
-          !ty.stypes.stypes = Array[
-            TPrimVoid(TUndefined(), fieldName.posRange),
-          ].concat(ty.stypes.stypes)
+          !ty.stypes = STypes::create(
+            Array[TPrimVoid(TUndefined(), fieldName.posRange)].concat(
+              ty.stypes.stypes,
+            ),
+          )
         }
       };
       ty
@@ -488,7 +492,11 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
   }
 }
 
-class STypes(stypes: Array<SType>) uses Hashable, Orderable {
+class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
+  static fun create(stypes: Array<SType>): this {
+    STypes(stypes)
+  }
+
   static fun empty(): this {
     static(Array[])
   }
@@ -1090,7 +1098,7 @@ fun unionSTypes(
   stypes1: STypes,
   stypes2: STypes,
 ): STypes {
-  STypes(
+  STypes::create(
     mapUnion(
       stypes1.values(),
       stypes2.values(),
@@ -1479,7 +1487,7 @@ fun interSTypes(
   stypes1: STypes,
   stypes2: STypes,
 ): STypes {
-  STypes(
+  STypes::create(
     mapInter(
       stypes1.values(),
       stypes2.values(),
@@ -1566,7 +1574,7 @@ base class ApplyType {
   }
 
   overridable deferred fun stypes(env: this::Env, stypes: STypes): STypes {
-    STypes(stypes.stypes.map(stype -> this.stype(env, stype)))
+    STypes::create(stypes.stypes.map(stype -> this.stype(env, stype)))
   }
 
   overridable deferred fun stype(env: this::Env, stype: SType): SType {
@@ -1671,7 +1679,7 @@ class FilterType() extends ApplyType {
   }
 
   fun stypes(env: this::Env, stypes: STypes): STypes {
-    STypes(stypes.stypes.filter(env.i0).map(env.i1))
+    STypes::create(stypes.stypes.filter(env.i0).map(env.i1))
   }
 }
 
