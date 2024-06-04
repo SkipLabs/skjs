@@ -45,7 +45,14 @@ fun validateParseable(
   for (linedTypeError in linedTypeErrors) {
     (line, typeError) = linedTypeError;
     tsExpectError match {
-    | Some((expectedLine, _restOfExpectComment)) if (line == expectedLine) ->
+    | Some((expectedLine, restOfExpectComment)) if (line == expectedLine) ->
+      if (restOfExpectComment.length() > 0) {
+        SKTest.expectEq(
+          typeError.messages[0].i1,
+          restOfExpectComment,
+          `${fileName}:${expectedLine} Wrong error message`,
+        );
+      };
       !tsExpectError = tsExpectErrors.next()
     | Some((expectedLine, _restOfExpectComment)) if (line > expectedLine) ->
       break void
