@@ -72,6 +72,20 @@ fun validateParseable(
 
 const builtinsArgFileName: String = "./examples/src/builtins.ts";
 
+fun expectCheckerSuccess(
+  checkerCreateResult: Result<mutable SKJS.Checker, String>,
+): mutable SKJS.Checker {
+  checkerCreateResult match {
+  | Failure(err) ->
+    throw SKTest.ExpectationError(
+      "Unexpected failure",
+      "Success on Checker creation",
+      err,
+    )
+  | Success(checker) -> checker
+  }
+}
+
 fun testFile(
   fileName: String,
   validateResult: (
@@ -79,10 +93,9 @@ fun testFile(
     SKJS.CheckResult,
   ) ~> void = validateParseable,
 ): void {
-  checker = SKJS.Checker::create{
-    builtinsArgFileName,
-    srcFiles => Array[fileName],
-  };
+  checker =
+    SKJS.Checker::create{builtinsArgFileName, srcFiles => Array[fileName]} |>
+    expectCheckerSuccess;
   for (res in checker.checkFiles()) validateResult(checker, res);
 }
 
@@ -98,7 +111,8 @@ fun testDirectory(
     if (f.endsWith(".ts")) Some(Path.join(dir, f)) else None()
   );
   builtinsFileName = Path.resolve(builtinsArgFileName);
-  checker = SKJS.Checker::create{builtinsArgFileName, srcFiles};
+  checker =
+    SKJS.Checker::create{builtinsArgFileName, srcFiles} |> expectCheckerSuccess;
   for (res in checker.checkFiles()) {
     if (res.i0 != builtinsFileName) {
       validateResult(checker, res);
@@ -113,11 +127,12 @@ fun testUnit(): void {
 
 @test
 fun testExamples(): void {
-  checker = SKJS.Checker::create{
-    baseUrlOpt => Some("./examples/"),
-    builtinsArgFileName,
-    srcFiles => Array[],
-  };
+  checker =
+    SKJS.Checker::create{
+      baseUrlOpt => Some("./examples/"),
+      builtinsArgFileName,
+      srcFiles => Array[],
+    } |> expectCheckerSuccess;
   for (res in checker.checkFiles()) validateParseable(checker, res);
 }
 
