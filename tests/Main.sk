@@ -127,13 +127,7 @@ fun testUnit(): void {
 
 @test
 fun testExamples(): void {
-  checker =
-    SKJS.Checker::create{
-      baseUrlOpt => Some("./examples/"),
-      builtinsArgFileName,
-      srcFiles => Array[],
-    } |> expectCheckerSuccess;
-  for (res in checker.checkFiles()) validateParseable(checker, res);
+  testDirectory("./examples/src/");
 }
 
 @test
