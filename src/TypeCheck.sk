@@ -480,7 +480,7 @@ class TypeChecker{
   static fun uninitializedThisType(pos: PosRange): TType {
     TType::create(
       pos,
-      STypes(Array[TObject(TFields::create(Array[]), pos)]),
+      STypes::create(Array[TObject(TFields::create(Array[]), pos)]),
       TInsts::empty(),
       TTypeParams::empty(),
     );
