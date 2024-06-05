@@ -1116,10 +1116,7 @@ fun unionSTypes(
     x ~> x.tag(),
     x ~> x,
     (x, y) -> unionSType(subst, env, x, y),
-  ) match {
-  | Some(u) -> Some(STypes::create(u))
-  | None() -> None()
-  }
+  ).map(STypes::create)
 }
 
 // unionSType returns None when the least upper bound of the args is top
@@ -1527,10 +1524,7 @@ fun interSTypes(
     stypes2.values(),
     x ~> x.tag(),
     (x, y) -> interSType(subst, env, x, y),
-  ) match {
-  | Some((_, _, i)) -> Some(STypes::create(i))
-  | None() -> None()
-  }
+  ).map(i -> STypes::create(i.i2))
 }
 
 fun interTTypeParams(
