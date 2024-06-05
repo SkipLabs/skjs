@@ -38,6 +38,44 @@ fun mapUnion<T, Key: Orderable>(
   result.toArray()
 }
 
+// variant of mapUnion that runs in the Option monad
+fun mapUnionOption<T, Key: Orderable>(
+  iter1: mutable Iterator<T>,
+  iter2: mutable Iterator<T>,
+  proj: T ~> Key,
+  missing: T -> T,
+  union: (T, T) -> ?T,
+): ?Array<T> {
+  result = mutable Vector[];
+  head1 = iter1.next();
+  head2 = iter2.next();
+  loop {
+    (head1, head2) match {
+    | (None(), None()) -> break void
+    | (None(), Some(y)) ->
+      result.push(missing(y));
+      !head2 = iter2.next()
+    | (Some(x), None()) ->
+      result.push(missing(x));
+      !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) < proj(y)) ->
+      result.push(missing(x));
+      !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) > proj(y)) ->
+      result.push(missing(y));
+      !head2 = iter2.next()
+    | (Some(x), Some(y)) ->
+      union(x, y) match {
+      | None() -> return None()
+      | Some(u) -> result.push(u)
+      };
+      !head1 = iter1.next();
+      !head2 = iter2.next()
+    }
+  };
+  Some(result.toArray())
+}
+
 fun mapInter<T, Key: Orderable>(
   iter1: mutable Iterator<T>,
   iter2: mutable Iterator<T>,
@@ -71,6 +109,45 @@ fun mapInter<T, Key: Orderable>(
     }
   };
   (noMatch1.toArray(), noMatch2.toArray(), present.toArray())
+}
+
+// variant of mapInter that runs in the Option monad
+fun mapInterOption<T, Key: Orderable>(
+  iter1: mutable Iterator<T>,
+  iter2: mutable Iterator<T>,
+  proj: T ~> Key,
+  inter: (T, T) -> ?T,
+): ?(Array<T>, Array<T>, Array<T>) {
+  noMatch1 = mutable Vector[];
+  noMatch2 = mutable Vector[];
+  present = mutable Vector[];
+  head1 = iter1.next();
+  head2 = iter2.next();
+  loop {
+    (head1, head2) match {
+    | (None(), None()) -> break void
+    | (None(), Some(y)) ->
+      noMatch2.push(y);
+      !head2 = iter2.next()
+    | (Some(x), None()) ->
+      noMatch1.push(x);
+      !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) < proj(y)) ->
+      noMatch1.push(x);
+      !head1 = iter1.next()
+    | (Some(x), Some(y)) if (proj(x) > proj(y)) ->
+      noMatch2.push(y);
+      !head2 = iter2.next()
+    | (Some(x), Some(y)) ->
+      inter(x, y) match {
+      | None() -> return None()
+      | Some(i) -> present.push(i)
+      };
+      !head1 = iter1.next();
+      !head2 = iter2.next()
+    }
+  };
+  Some((noMatch1.toArray(), noMatch2.toArray(), present.toArray()))
 }
 
 class ArrayValues(
