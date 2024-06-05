@@ -1110,7 +1110,7 @@ fun unionSTypes(
   stypes1: STypes,
   stypes2: STypes,
 ): ?STypes {
-  forallMapUnion(
+  mapUnionOption(
     stypes1.values(),
     stypes2.values(),
     x ~> x.tag(),
@@ -1519,7 +1519,7 @@ fun interSTypes(
   stypes1: STypes,
   stypes2: STypes,
 ): ?STypes {
-  forallMapInter(
+  mapInterOption(
     stypes1.values(),
     stypes2.values(),
     x ~> x.tag(),

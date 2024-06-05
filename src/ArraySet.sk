@@ -38,7 +38,8 @@ fun mapUnion<T, Key: Orderable>(
   result.toArray()
 }
 
-fun forallMapUnion<T, Key: Orderable>(
+// variant of mapUnion that runs in the Option monad
+fun mapUnionOption<T, Key: Orderable>(
   iter1: mutable Iterator<T>,
   iter2: mutable Iterator<T>,
   proj: T ~> Key,
@@ -110,7 +111,8 @@ fun mapInter<T, Key: Orderable>(
   (noMatch1.toArray(), noMatch2.toArray(), present.toArray())
 }
 
-fun forallMapInter<T, Key: Orderable>(
+// variant of mapInter that runs in the Option monad
+fun mapInterOption<T, Key: Orderable>(
   iter1: mutable Iterator<T>,
   iter2: mutable Iterator<T>,
   proj: T ~> Key,
