@@ -77,6 +77,45 @@ fun validateParseable(
   }
 }
 
+// Expects no parse errors, type errors should correspond to the reference ones
+fun validateTSConformance(
+  checker: mutable SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+): void {
+  (fileName, parseErrorOpt, typeErrors) = checkResult;
+
+  SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
+
+  (dir, base) = Path.split(fileName);
+  while (Path.basename(dir) != "cases") {
+    !dir = Path.parentname(dir);
+    if (dir == "/") {
+      return void; // non ts-conformance file, e.g. builtins
+    };
+  };
+  errorsFile = Path.join(
+    dir,
+    `../reference/${base.stripSuffix(".ts")}.errors.txt`,
+  );
+  if (FileSystem.exists(errorsFile)) {
+    SKTest.fail(`TODO: support reference errors: ${errorsFile}`);
+  };
+
+  fileContents = checker.files.filesContent.get(
+    checker.context,
+    SKStore.SID(fileName),
+  ).value;
+  if (fileContents.startsWith("// @")) {
+    throw SKTest.ExpectationError(
+      "Comment-based config is not supported yet (TODO?)",
+      "no comment-based config",
+      fileContents.take(50) + "...",
+    );
+  };
+
+  SKTest.expectEq(typeErrors.size(), 0, "expected no type errors")
+}
+
 const builtinsArgFileName: String = "./examples/src/builtins.ts";
 
 fun expectCheckerSuccess(
@@ -145,6 +184,15 @@ fun testExamples(): void {
 @test
 fun testExpectError(): void {
   testDirectory("./tests/expect-error/")
+}
+
+@test
+fun testTypeScriptConformance(): void {
+  dir = Path.resolve("./tests/ts-conformance/cases/");
+  cases = FileSystem.readFilesRecursive(dir);
+  for (case in cases) {
+    testFile(case, validateTSConformance);
+  }
 }
 
 module end;
