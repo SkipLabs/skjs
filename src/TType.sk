@@ -14,6 +14,9 @@
 
 module SKJS;
 
+// Arbitrary hash for Top
+const kTopHash: Int = "Top".hash();
+
 /*****************************************************************************/
 // The class representing all the types.
 //
@@ -39,10 +42,11 @@ module SKJS;
 // not affect the instances defined inside the type.
 /*****************************************************************************/
 
-class TType(
+class TType private (
   // The hash, it's important because we need to quickly determine if
-  // two types are different.
-  h: Int,
+  // two types are different. The hash is computed by smart constructors,
+  // that's why the default constructor is private
+  private h: Int,
 
   // The position in the source-code that serves as a witness, when an
   // error occurs involving this type, we will use that position in
@@ -85,8 +89,7 @@ class TType(
     stypes = STypes::empty();
     insts = TInsts::empty();
     tparams = TTypeParams::empty();
-    h = (pos, stypes, insts).hash();
-    static(h, pos, true, stypes, insts, tparams)
+    static(kTopHash, pos, true, stypes, insts, tparams)
   }
 
   // Returns the type that is sub-type of all types. This type is
@@ -105,10 +108,6 @@ class TType(
       TInsts(Array[TSInst(name, targs)]),
       TTypeParams::empty(),
     )
-  }
-
-  fun withPos(pos: PosRange): this {
-    TType::create(pos, this.stypes, this.insts, this.tparams)
   }
 
   fun toString(): String {
@@ -144,7 +143,7 @@ class TType(
 
   fun compare(other: TType): Order {
     (this.h, this.stypes, this.insts, this.tparams).compare(
-      (this.h, other.stypes, other.insts, other.tparams),
+      (other.h, other.stypes, other.insts, other.tparams),
     )
   }
 
@@ -475,11 +474,12 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
           }
         };
         if (!hasUndefined) {
-          !ty.stypes = STypes::create(
+          stypes = STypes::create(
             Array[TPrimVoid(TUndefined(), fieldName.posRange)].concat(
               ty.stypes.stypes,
             ),
-          )
+          );
+          return TType::create(ty.pos, stypes, ty.insts, ty.tparams)
         }
       };
       ty
@@ -1728,7 +1728,7 @@ class Instantiate() extends ApplyType {
     );
     if (ty.tparams.tparams.isEmpty()) return ty;
     (subst, tenv, map) = env;
-    result = ty with {tparams => TTypeParams::empty()};
+    result = TType::create(ty.pos, ty.stypes, ty.insts, TTypeParams::empty());
     for (tparams in ty.tparams.tparams) {
       clauseOpt: ?TType = None();
       for (tparam in tparams) {
@@ -1744,17 +1744,16 @@ class Instantiate() extends ApplyType {
       | Some(clause) -> !result = unionTType(subst, tenv, result, clause)
       };
     };
-    result with {
-      tparams => TTypeParams(
-        ty.tparams.tparams
-          .map(tparams ->
-            tparams.filter(tparam ->
-              !map.containsKey((tparam.fileName, tparam.id))
-            )
+    tparams = TTypeParams(
+      ty.tparams.tparams
+        .map(tparams ->
+          tparams.filter(tparam ->
+            !map.containsKey((tparam.fileName, tparam.id))
           )
-          .filter(x -> !x.isEmpty()),
-      ),
-    }
+        )
+        .filter(x -> !x.isEmpty()),
+    );
+    TType::create(result.pos, result.stypes, result.insts, tparams)
   }
 }
 
@@ -1770,7 +1769,9 @@ class ExpandTVars() extends ApplyType {
     );
     (subst, tenv) = env;
     (isTop, stypes, tparams) = ty.expand(subst, tenv);
-    ty with {stypes, isTop, insts => TInsts::empty(), tparams}
+    if (isTop) TType::top(ty.pos) else {
+      TType::create(ty.pos, stypes, TInsts::empty(), tparams)
+    }
   }
 }
 
