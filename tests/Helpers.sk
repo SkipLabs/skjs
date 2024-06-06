@@ -11,6 +11,14 @@ const kTS_EXPECT_ERROR: Vector<Char> = kTS_EXPECT_ERROR_str.chars();
  *
  * Throws if the annotation is found somewhere else. */
 fun findTSExpectErrors(contents: String): mutable Iterator<(Int, String)> {
+  /*
+    Correctness is based on the fact that these are all disjoint sets:
+    - '\n'
+    - ' ', '\t'
+    - '/'
+    - '@'
+    - characters in kTS_EXPECT_ERROR
+   */
   chars = contents.chars().toArray();
   pos = 0;
   // Do not trust the lexer's newLinesMap, as a way to double-check it
