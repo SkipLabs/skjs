@@ -44,7 +44,7 @@ fun execHelp(args: Cli.ParseResults): void {
 // Main entry point
 /*****************************************************************************/
 
-fun main(): void {
+fun main_no_exit(): void {
   saved = SKStore.newObstack();
   cmd = Cli.Command("skjs")
     .about("SKJS skdb js development framework")
@@ -73,13 +73,13 @@ fun main(): void {
   if (args.getBool("version")) {
     print_string(Environ.args().next().default("skjs") + " " + kVersion);
     SKStore.destroyObstack(saved);
-    skipExit(0);
+    throw Exit(0);
   } else {
     args.maybeGetSubcommand() match {
     | Some(subcmd) ->
       commands.maybeGet(subcmd) match {
       | Some(handler) ->
-        skipExit(
+        throw Exit(
           if (args.getBool("backtrace")) {
             handler(args);
             SKStore.destroyObstack(saved);
@@ -101,9 +101,20 @@ fun main(): void {
     | None() ->
       print_string(Cli.usage(args.cmd, true));
       SKStore.destroyObstack(saved);
-      skipExit(0)
+      throw Exit(0)
     }
   };
+}
+
+class Exit(code: Int) extends Exception
+
+fun main(): void {
+  try {
+    main_no_exit()
+  } catch {
+  | Exit(code) -> skipExit(code)
+  | e -> throw e
+  }
 }
 
 /*****************************************************************************/
@@ -136,16 +147,16 @@ fun execRun(args: Cli.ParseResults): void {
     | Some(mainSrcFile) -> mainSrcFile
     | None() ->
       print_error("--main is required when no source files are provided");
-      skipExit(2)
+      throw Exit(2)
     }
   };
   if (!fileName.startsWith("./")) {
     print_error("File does not start with ./: " + fileName);
-    skipExit(2);
+    throw Exit(2);
   };
   if (!FileSystem.exists(fileName)) {
     print_error("File not found: " + fileName);
-    skipExit(2);
+    throw Exit(2);
   };
   Posix.execvp(Array["bun", fileName])
 }
@@ -192,6 +203,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     baseUrlOpt,
     builtinsArgFileName,
     srcFiles,
+  } match {
+  | Failure(err) ->
+    print_error(err);
+    throw Exit(2)
+  | Success(checker) -> checker
   };
   for (checkResult in checker.checkFiles()) {
     (_fileName, parseErrorOpt, typeErrors) = checkResult;
@@ -223,7 +239,7 @@ mutable class Checker private {
     baseUrlOpt: ?String = None(),
     builtinsArgFileName: String,
     srcFiles: Sequence<String>,
-  }: mutable this {
+  }: Result<mutable this, String> {
     rootOpt: ?DirName = None();
     baseUrlOpt match {
     | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
@@ -237,8 +253,7 @@ mutable class Checker private {
       !rootOpt = Some(root);
       srcDir = `${root}src/`;
       if (!FileSystem.exists(srcDir)) {
-        print_error(`Could not find src/ dir in: ${root}`);
-        skipExit(2);
+        return Failure(`Could not find src/ dir in: ${root}`);
       };
       !srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
         fileName.endsWith(".ts")
@@ -247,13 +262,11 @@ mutable class Checker private {
       !srcFiles = srcFiles.map(f -> Path.resolve(f));
     };
     if (srcFiles.isEmpty()) {
-      print_error("No source files!");
-      skipExit(2);
+      return Failure("No source files!");
     };
     builtinsFileName = FileName::create(Path.resolve(builtinsArgFileName));
     if (!builtinsFileName.exists()) {
-      print_error("Builtins not found: " + builtinsFileName.toString());
-      skipExit(1);
+      return Failure(`Builtins not found: ${builtinsFileName}`);
     };
     !srcFiles = Array[srcFiles, Array[builtinsFileName.toString()]].flatten();
 
@@ -268,7 +281,7 @@ mutable class Checker private {
     defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
     tenv = TEnv{defMap};
     checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
-    mutable static{files, parsedFiles, context, checker, newLinesMap}
+    Success(mutable static{files, parsedFiles, context, checker, newLinesMap})
   }
   mutable fun checkFiles(): mutable Iterator<CheckResult> {
     for (fileName in this.files.srcFiles) {

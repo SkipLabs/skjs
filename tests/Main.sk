@@ -45,7 +45,14 @@ fun validateParseable(
   for (linedTypeError in linedTypeErrors) {
     (line, typeError) = linedTypeError;
     tsExpectError match {
-    | Some((expectedLine, _restOfExpectComment)) if (line == expectedLine) ->
+    | Some((expectedLine, restOfExpectComment)) if (line == expectedLine) ->
+      if (restOfExpectComment.length() > 0) {
+        SKTest.expectEq(
+          typeError.messages[0].i1,
+          restOfExpectComment,
+          `${fileName}:${expectedLine} Wrong error message`,
+        );
+      };
       !tsExpectError = tsExpectErrors.next()
     | Some((expectedLine, _restOfExpectComment)) if (line > expectedLine) ->
       break void
@@ -72,6 +79,20 @@ fun validateParseable(
 
 const builtinsArgFileName: String = "./examples/src/builtins.ts";
 
+fun expectCheckerSuccess(
+  checkerCreateResult: Result<mutable SKJS.Checker, String>,
+): mutable SKJS.Checker {
+  checkerCreateResult match {
+  | Failure(err) ->
+    throw SKTest.ExpectationError(
+      "Unexpected failure",
+      "Success on Checker creation",
+      err,
+    )
+  | Success(checker) -> checker
+  }
+}
+
 fun testFile(
   fileName: String,
   validateResult: (
@@ -79,10 +100,9 @@ fun testFile(
     SKJS.CheckResult,
   ) ~> void = validateParseable,
 ): void {
-  checker = SKJS.Checker::create{
-    builtinsArgFileName,
-    srcFiles => Array[fileName],
-  };
+  checker =
+    SKJS.Checker::create{builtinsArgFileName, srcFiles => Array[fileName]} |>
+    expectCheckerSuccess;
   for (res in checker.checkFiles()) validateResult(checker, res);
 }
 
@@ -98,7 +118,8 @@ fun testDirectory(
     if (f.endsWith(".ts")) Some(Path.join(dir, f)) else None()
   );
   builtinsFileName = Path.resolve(builtinsArgFileName);
-  checker = SKJS.Checker::create{builtinsArgFileName, srcFiles};
+  checker =
+    SKJS.Checker::create{builtinsArgFileName, srcFiles} |> expectCheckerSuccess;
   for (res in checker.checkFiles()) {
     if (res.i0 != builtinsFileName) {
       validateResult(checker, res);
@@ -113,12 +134,7 @@ fun testUnit(): void {
 
 @test
 fun testExamples(): void {
-  checker = SKJS.Checker::create{
-    baseUrlOpt => Some("./examples/"),
-    builtinsArgFileName,
-    srcFiles => Array[],
-  };
-  for (res in checker.checkFiles()) validateParseable(checker, res);
+  testDirectory("./examples/src/");
 }
 
 @test
