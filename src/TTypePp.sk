@@ -317,7 +317,13 @@ mutable class TypePp{
       if (field.isOptional) {
         this.out(level, margin, "?")
       };
-      if (!fieldType.isMethod()) {
+      if (
+        fieldType.stypes.stypes.size() != 1 ||
+        fieldType.stypes.stypes[0] match {
+        | TFuns(_, methods, _) -> methods.size() == 0
+        | _ -> true
+        }
+      ) {
         this.out(level, margin, ": ");
       };
       this.type(level, margin, fieldType);
