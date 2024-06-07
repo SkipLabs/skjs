@@ -227,14 +227,6 @@ class TType private (
     };
     false
   }
-
-  fun isMethod(): Bool {
-    this.stypes.stypes.size() == 1 &&
-      this.stypes.stypes[0] match {
-      | TFuns(_, methods, _) -> methods.size() != 0
-      | _ -> false
-      }
-  }
 }
 
 /*****************************************************************************/
