@@ -92,7 +92,6 @@ class TEnv{
       ca.tparams
     };
 
-    subst = this.subst;
     for (i => targ in targs.targs) {
       tparam = tparams[i];
       tparam.constraint match {
@@ -114,9 +113,8 @@ class TEnv{
       if (tparam.default is Some _) {
         invariant_violation("TODO default type param");
       };
-      !subst[tparam.name.value] = (true, targ);
+      !this.subst[tparam.name.value] = (true, targ);
     };
-    !this.subst = subst;
 
     tdef match {
     | TDType(ta) -> this.normalize(context, ta.body)
