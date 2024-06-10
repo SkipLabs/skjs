@@ -1,3 +1,5 @@
-var x: void;
-x = undefined;
-x = null;
+function _(): void {
+    let x: void;
+    x = undefined;
+    x = null;
+}
