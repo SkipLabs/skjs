@@ -1112,10 +1112,11 @@ class TypeChecker{
           Array[eltType],
         );
         return obj.fields.getType(fieldName)
-      | TPrimValue(TString(), _, stringPos) ->
+      | TPrimValue(primKind, _, stringPos) ->
+        objName = primKind.toString();
         obj = this.tenv.newObject(
           env.context,
-          Name(stringPos, "string"),
+          Name(stringPos, objName),
           Array[],
         );
         return obj.fields.getType(fieldName)
