@@ -100,21 +100,6 @@ fun validateTSConformance(
 
   SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
 
-  (dir, base) = Path.split(fileName);
-  while (Path.basename(dir) != "cases") {
-    !dir = Path.parentname(dir);
-    if (dir == "/") {
-      return void; // non ts-conformance file, e.g. builtins
-    };
-  };
-  errorsFile = Path.join(
-    dir,
-    `../reference/${base.stripSuffix(".ts")}.errors.txt`,
-  );
-  if (FileSystem.exists(errorsFile)) {
-    SKTest.fail(`TODO: support reference errors: ${errorsFile}`);
-  };
-
   fileContents = checker.files.filesContent.get(
     checker.context,
     SKStore.SID(fileName),
@@ -127,7 +112,24 @@ fun validateTSConformance(
     );
   };
 
-  SKTest.expectEq(typeErrors.size(), 0, "expected no type errors")
+  (dir, base) = Path.split(fileName);
+  while (Path.basename(dir) != "cases") {
+    !dir = Path.parentname(dir);
+    if (dir == "/") {
+      return void; // non ts-conformance file, e.g. builtins
+    };
+  };
+  errorsFile = Path.join(
+    dir,
+    `../reference/${base.stripSuffix(".ts")}.errors.txt`,
+  );
+  referenceErrors = if (FileSystem.exists(errorsFile)) {
+    parseTSConformanceReferenceErrors(errorsFile);
+  } else {
+    Array[].iterator()
+  };
+
+  validateReferenceErrors(checker, fileName, typeErrors, referenceErrors)
 }
 
 // Expects at least an error, either parsing or typing
