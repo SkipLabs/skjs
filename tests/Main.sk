@@ -116,6 +116,22 @@ fun validateTSConformance(
   SKTest.expectEq(typeErrors.size(), 0, "expected no type errors")
 }
 
+// Expects at least an error, either parsing or typing
+fun validateNotSupported(
+  _checker: mutable SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+): void {
+  (fileName, parseErrorOpt, typeErrors) = checkResult;
+
+  if (parseErrorOpt is None() && typeErrors.isEmpty()) {
+    throw SKTest.ExpectationError(
+      `Not-supported test ${fileName} should produce at least an error`,
+      "an error",
+      "no errors",
+    );
+  }
+}
+
 const builtinsArgFileName: String = "./examples/src/builtins.ts";
 
 fun expectCheckerSuccess(
@@ -192,6 +208,20 @@ fun testTypeScriptConformance(): void {
   cases = FileSystem.readFilesRecursive(dir);
   for (case in cases) {
     testFile(case, validateTSConformance);
+  }
+}
+
+@test
+fun testNotSupportedTypeScriptConformance(): void {
+  dir = Path.resolve("./tests/ts-conformance/not-supported/");
+  files = FileSystem.readFilesRecursive(dir);
+  for (file in files) {
+    try {
+      testFile(file, validateNotSupported)
+    } catch {
+    | InvariantViolation(_) -> void
+    | e -> throw e
+    }
   }
 }
 
