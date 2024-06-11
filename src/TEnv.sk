@@ -433,7 +433,17 @@ class TEnv{
           typeAst.posRange,
         ),
       )
-    | TATypeOf _ -> invariant_violation("TODO typeof")
+    | TATypeOf(expr) ->
+      expr.value match {
+      | Var(name) ->
+        name.value match {
+        | "undefined" ->
+          TType::single(pos, TPrimVoid(TUndefined(), name.posRange))
+        | _ -> invariant_violation(`TODO typeof ${name.value}`)
+        }
+      | Binop(BODot(), _, Expr(_, Var(_))) -> invariant_violation("TODO typeof")
+      | _ -> typingError(Array[(expr.posRange, "Invalid typeof expression")])
+      }
     | TAPrim(kind) ->
       TType::single(
         pos,
