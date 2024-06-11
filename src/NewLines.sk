@@ -29,6 +29,7 @@ fun makeNewLinesDir(
         if (c == '\n') newLines.push(i);
         !i = i + 1;
       };
+      newLines.push(i);
       Array[NewLinesFile(newLines.toArray())]
     },
   )
