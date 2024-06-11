@@ -1,2 +1,4 @@
-var x: typeof undefined;
-x = undefined;
+function _(): void {
+    let x: typeof undefined;
+    x = undefined;
+}
