@@ -405,7 +405,7 @@ base class Type_ {
   | TANumLiteral(String)
   | TABigIntLiteral(String)
   | TAPrim(TPrimKind)
-  | TATypeOf(Type)
+  | TATypeOf(Expr)
   | TAArray(Type)
   | TAObject(Array<FieldType>)
   | TAInst(Name, Array<Type>)
