@@ -32,37 +32,25 @@ fun getLinedTypeErrors(
     .sortedBy(line_err ~> line_err.i0);
 }
 
-// Expects no parse errors, type errors must be prefixed with @ts-expect-error
-fun validateParseable(
+fun validateReferenceErrors<R: ReferenceError>(
   checker: mutable SKJS.Checker,
-  checkResult: SKJS.CheckResult,
+  fileName: String,
+  typeErrors: Array<SKJS.Error>,
+  referenceErrors: mutable Iterator<R>,
 ): void {
-  (fileName, parseErrorOpt, typeErrors) = checkResult;
-
-  SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
+  referenceError = referenceErrors.next();
 
   linedTypeErrors = getLinedTypeErrors(checker, fileName, typeErrors);
 
-  fileContents = checker.files.filesContent.get(
-    checker.context,
-    SKStore.SID(fileName),
-  );
-  tsExpectErrors = findTSExpectErrors(fileContents.value);
-  tsExpectError = tsExpectErrors.next();
-
   for (linedTypeError in linedTypeErrors) {
     (line, typeError) = linedTypeError;
-    tsExpectError match {
-    | Some((expectedLine, restOfExpectComment)) if (line == expectedLine) ->
-      if (restOfExpectComment.length() > 0) {
-        SKTest.expectEq(
-          typeError.messages[0].i1,
-          restOfExpectComment,
-          `${fileName}:${expectedLine} Wrong error message`,
-        );
-      };
-      !tsExpectError = tsExpectErrors.next()
-    | Some((expectedLine, _restOfExpectComment)) if (line > expectedLine) ->
+    referenceError match {
+    | Some(
+      ref @ ReferenceError{line => expectedLine},
+    ) if (line == expectedLine) ->
+      ref.validate(fileName, typeError);
+      !referenceError = referenceErrors.next()
+    | Some(ReferenceError{line => expectedLine}) if (line > expectedLine) ->
       break void
     | _ ->
       errStr = checker.errorToString(typeError);
@@ -74,15 +62,33 @@ fun validateParseable(
     };
   };
 
-  tsExpectError match {
+  referenceError match {
   | None() -> void
-  | Some((expectedLine, restOfExpectComment)) ->
+  | Some(ref @ ReferenceError{line}) ->
     throw SKTest.ExpectationError(
       "Expected error",
-      `${fileName}:${expectedLine} ${restOfExpectComment}`,
+      `${fileName}:${line} ${ref.getMessage()}`,
       "no errors",
     )
   }
+}
+
+// Expects no parse errors, type errors must be prefixed with @ts-expect-error
+fun validateParseable(
+  checker: mutable SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+): void {
+  (fileName, parseErrorOpt, typeErrors) = checkResult;
+
+  SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
+
+  fileContents = checker.files.filesContent.get(
+    checker.context,
+    SKStore.SID(fileName),
+  );
+  tsExpectErrors = findTSExpectErrors(fileContents.value);
+
+  validateReferenceErrors(checker, fileName, typeErrors, tsExpectErrors);
 }
 
 // Expects no parse errors, type errors should correspond to the reference ones
