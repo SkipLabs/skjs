@@ -1,18 +1,14 @@
 module SKJSTests;
 
-// Expects no parse errors, type errors must be prefixed with @ts-expect-error
-fun validateParseable(
+fun getLinedTypeErrors(
   checker: mutable SKJS.Checker,
-  checkResult: SKJS.CheckResult,
-): void {
-  (fileName, parseErrorOpt, typeErrors) = checkResult;
-
-  SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
-
+  fileName: String,
+  typeErrors: Array<SKJS.Error>,
+): Array<(Int, SKJS.TypingError)> {
   newLines = checker.newLinesMap.get(checker.context, fileName);
   resolver = SKJS.PositionResolver{fileName, newLines};
 
-  linedTypeErrors = typeErrors
+  typeErrors
     .map(err ->
       err match {
       | e @ SKJS.TypingError(messages) ->
@@ -34,6 +30,18 @@ fun validateParseable(
       }
     )
     .sortedBy(line_err ~> line_err.i0);
+}
+
+// Expects no parse errors, type errors must be prefixed with @ts-expect-error
+fun validateParseable(
+  checker: mutable SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+): void {
+  (fileName, parseErrorOpt, typeErrors) = checkResult;
+
+  SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
+
+  linedTypeErrors = getLinedTypeErrors(checker, fileName, typeErrors);
 
   fileContents = checker.files.filesContent.get(
     checker.context,
