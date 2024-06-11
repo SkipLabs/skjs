@@ -216,7 +216,7 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
   //   | <number>
   //   | <bigint>
   //   | <prim-kind>
-  //   | typeof <type>
+  //   | typeof <expr>
   //   | <type> []
   //   | { <field-type>* }
   //   | <name> < <type>* >
@@ -364,7 +364,7 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
     | TKOpenCurly() -> TAObject(this.objectFields())
     | TKVar() ->
       this.lex.getStrTok(tok) match {
-      | "typeof" -> TATypeOf(this.type(typeOfPrec))
+      | "typeof" -> TATypeOf(this.expr(typeOfPrec))
       | "import" ->
         this.expect(TKOpenParen());
         e = this.expr(0);
