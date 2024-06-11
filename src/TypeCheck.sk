@@ -1324,6 +1324,36 @@ class TypeChecker{
           tyArr[n]
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
+        | TPrimValue(primKind, _, primPos) ->
+          idxSTypes = idxType.getSTypes(env.subst, this.tenv);
+          ty = TType::bottom(pos);
+          for (idxSType in idxSTypes) {
+            idxSType match {
+            | TPrimValue(
+              TString(),
+              Some(stringValues),
+              _,
+            ) if (!stringValues.values.isEmpty()) ->
+              objName = primKind.toString();
+              obj = this.tenv.newObject(
+                env.context,
+                Name(primPos, objName),
+                Array[],
+              );
+              for (stringValue in stringValues.values) {
+                t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
+                !ty = unionTType(env.subst, this.tenv, ty, t);
+              }
+            | _ ->
+              typingError(
+                Array[
+                  (pos, "Invalid index"),
+                  (primPos, "A primitive type expects a static string index"),
+                ],
+              )
+            }
+          };
+          ty
         | _ ->
           typingError(
             Array[
