@@ -91,6 +91,20 @@ fun validateParseable(
   validateReferenceErrors(checker, fileName, typeErrors, tsExpectErrors);
 }
 
+const allowedConfig: Map<String, Set<String>> = Map[
+  "lib" => Set["es2015"], // TODO: how do we handle the 'lib' config?
+  "target" => Set[],
+  "strict" => Set["true"], // Enables noImplicitAny, noImplicitThis, strictBindCallApply, strictFunctionTypes, structNullChecks, strictPropertyInitialization, useUnknownInCatchVariables
+  "alwaysStrict" => Set["true"], // We support only ES strict mode
+  "noImplicitAny" => Set["true"],
+  "noImplicitThis" => Set["true"],
+  "strictBindCallApply" => Set["true"],
+  "strictFunctionTypes" => Set["true"],
+  "strictNullChecks" => Set["true"],
+  "strictPropertyInitialization" => Set["true"],
+  "useUnknownInCatchVariables" => Set["true"],
+];
+
 // Expects no parse errors, type errors should correspond to the reference ones
 fun validateTSConformance(
   checker: mutable SKJS.Checker,
@@ -104,13 +118,8 @@ fun validateTSConformance(
     checker.context,
     SKStore.SID(fileName),
   ).value;
-  if (fileContents.startsWith("// @")) {
-    throw SKTest.ExpectationError(
-      "Comment-based config is not supported yet (TODO?)",
-      "no comment-based config",
-      fileContents.take(50) + "...",
-    );
-  };
+  config = parseConfigComments(fileContents).collect(Array);
+  checkConfig(config, allowedConfig);
 
   (dir, base) = Path.split(fileName);
   while (Path.basename(dir) != "cases") {

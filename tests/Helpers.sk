@@ -116,8 +116,12 @@ fun isDigit(c: Char): Bool {
   c >= '0' && c <= '9'
 }
 
+fun isAlNum(c: Char): Bool {
+  c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || isDigit(c)
+}
+
 fun isFileNameChar(c: Char): Bool {
-  c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || isDigit(c) || c == '.'
+  isAlNum(c) || c == '.'
 }
 
 fun isNotEOL(c: Char): Bool {
@@ -290,6 +294,87 @@ fun parseTSConformanceReferenceErrors(
   fileName: String,
 ): mutable Iterator<TSConformanceReferenceError> {
   TSConformanceReferenceErrorsParser::parse(fileName)
+}
+
+/* Parse first lines looking like // @param: value */
+fun parseConfigComments(contents: String): mutable Iterator<(String, String)> {
+  chars = contents.chars().toArray();
+  pos = 0;
+  lineNumber = 1;
+
+  while (pos + 4 < chars.size()) {
+    if (
+      chars[pos] != '/' ||
+      chars[pos + 1] != '/' ||
+      chars[pos + 2] != ' ' ||
+      chars[pos + 3] != '@'
+    ) {
+      break void;
+    };
+    !pos = pos + 4;
+    nameStart = pos;
+    while (pos < chars.size() && isAlNum(chars[pos])) {
+      !pos = pos + 1;
+    };
+    invariant(
+      pos > nameStart,
+      `Line ${lineNumber}: expected parameter name to be non-empty`,
+    );
+    name = String::fromChars(chars.slice(nameStart, pos));
+    invariant(
+      pos + 1 < chars.size() && chars[pos] == ':' && chars[pos + 1] == ' ',
+      `Line ${lineNumber}: expected parameter name to be followed by colon and space`,
+    );
+    !pos = pos + 2;
+    valueStart = pos;
+    while (pos < chars.size() && isAlNum(chars[pos])) {
+      !pos = pos + 1;
+    };
+    invariant(
+      pos > valueStart,
+      `Line ${lineNumber}: expected parameter value to be non-empty`,
+    );
+    value = String::fromChars(chars.slice(valueStart, pos));
+    invariant(
+      pos < chars.size(),
+      `Line ${lineNumber}: unexpected EOF after parameter value`,
+    );
+    if (chars[pos] == '\r') {
+      !pos = pos + 1;
+      invariant(
+        pos < chars.size(),
+        `Line ${lineNumber}: unexpected EOF after \\r after parameter value`,
+      );
+    };
+    invariant(
+      chars[pos] == '\n',
+      `Line ${lineNumber}: expected EOL after parameter value`,
+    );
+    !lineNumber = lineNumber + 1;
+    !pos = pos + 1;
+    yield ((name, value));
+  }
+}
+
+/* Checks that for any (n, v) in actual there is n in allowed and v in allowed[n] */
+fun checkConfig<N: Hashable & Equality & Show, V: Hashable & Equality & Show>(
+  actual: Array<(N, V)>,
+  allowed: Map<N, Set<V>>,
+): void {
+  for (c in actual) {
+    (name, value) = c;
+    allowed.maybeGet(name) match {
+    | None() -> invariant_violation(`Config parameter ${name} not allowed`)
+    | Some(allowedValues) ->
+      if (!allowedValues.isEmpty() && !allowedValues.contains(value)) {
+        invariant_violation(
+          `Value ${value} for config parameter ${name} not allowed. Possible values: ${allowedValues.join(
+            ", ",
+          )}`,
+        )
+      }
+    }
+  }
 }
 
 module end;
