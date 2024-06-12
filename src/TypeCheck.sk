@@ -2131,14 +2131,23 @@ class TypeChecker{
         }
       | _ ->
         typingError(
-          Array[(pos, "Invalid call"), (fty.pos, "This is not a function")],
+          Array[
+            (pos, "Invalid call"),
+            (fty.pos, `Type ${prettyPrintSType(sty, true)} is not a function`),
+          ],
         )
       }
     };
     result match {
     | None() ->
       typingError(
-        Array[(pos, "Invalid call"), (fty.pos, "This is not a function")],
+        Array[
+          (pos, "Invalid call"),
+          (
+            fty.pos,
+            `Type ${prettyPrintSTypes(stypes, true)} is not a function`,
+          ),
+        ],
       )
     | Some(x) -> x
     }

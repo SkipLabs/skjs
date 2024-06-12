@@ -476,9 +476,13 @@ fun prettyPrintType(compact: Bool, ty: TType): String {
   result
 }
 
-fun prettyPrintSTypes(stypes: STypes): String {
+fun prettyPrintSType(stype: SType, compact: Bool = false): String {
+  prettyPrintSTypes(STypes::create(Array[stype]), compact)
+}
+
+fun prettyPrintSTypes(stypes: STypes, compact: Bool = false): String {
   prettyPrintType(
-    false,
+    compact,
     TType::create(
       PosRange::none,
       stypes,
