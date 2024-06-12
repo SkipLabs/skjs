@@ -349,7 +349,8 @@ class TEnv{
   ): (Name, TType) {
     name = fd.name match {
     | Some(FNNormal(x)) -> x
-    | _ -> notSupported(fd.pos)
+    | None() -> notSupported(fd.pos, "anonymous function")
+    | _ -> notSupported(fd.pos, "non-normal function name")
     };
     fty = this.normalize(
       context,

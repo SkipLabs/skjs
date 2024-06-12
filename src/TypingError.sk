@@ -26,8 +26,11 @@ fun typingError<T>(messages: Array<(PosRange, String)>): T {
   throw ErrorExn(TypingError(messages))
 }
 
-fun notSupported<T>(pos: PosRange): T {
-  typingError(Array[(pos, "Construction not supported")])
+fun notSupported<T>(pos: PosRange, what: String = ""): T {
+  message = if (what == "") "Construction not supported" else {
+    `Construction not supported: ${what}`
+  };
+  typingError(Array[(pos, message)])
 }
 
 fun expectedStringOrNumError<T>(pos: PosRange, type: TType): T {
