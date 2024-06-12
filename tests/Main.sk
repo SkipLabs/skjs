@@ -158,6 +158,7 @@ fun validateNotSupported(
 }
 
 const builtinsArgFileName: String = "./examples/src/builtins.ts";
+const skjsLibRelativeFileName: String = "./examples/src/skjs.ts";
 
 fun expectCheckerSuccess(
   checkerCreateResult: Result<mutable SKJS.Checker, String>,
@@ -178,11 +179,13 @@ type Validator = (mutable SKJS.Checker, SKJS.CheckResult) ~> void;
 fun testFiles(srcFiles: Array<String>, validateResult: Validator): void {
   print_string(`Testing ${srcFiles.join(", ")}`);
   builtinsFileName = Path.resolve(builtinsArgFileName);
+  skjsLibFileName = Path.resolve(skjsLibRelativeFileName);
+  !srcFiles = srcFiles.concat(Array[skjsLibFileName]);
   checker =
     SKJS.Checker::create{builtinsArgFileName, srcFiles} |> expectCheckerSuccess;
   for (res in checker.checkFiles()) {
     print_string(`  Validating ${res.i0}`);
-    if (res.i0 == builtinsFileName) {
+    if (res.i0 == builtinsFileName || res.i0 == skjsLibFileName) {
       validateParseable(checker, res);
     } else {
       validateResult(checker, res);
