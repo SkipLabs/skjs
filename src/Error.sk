@@ -269,9 +269,9 @@ class MissingReturnType() extends ParsingKind {
 /* Name resolution error */
 /*****************************************************************************/
 
-class NotFound() extends ParsingKind {
+class NotFound(name: String) extends ParsingKind {
   fun toString(): String {
-    "Type not found"
+    `Type ${this.name} not found`
   }
 }
 
