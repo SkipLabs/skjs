@@ -501,7 +501,7 @@ class DefMap{
   builtinsFileName: FileName,
 } extends IDefMap {
   fun notFound<T>(defName: Name): T {
-    error(ParsingError(EPRange(defName.posRange), NotFound()))
+    error(ParsingError(EPRange(defName.posRange), NotFound(defName.value)))
   }
 
   fun getType(context: mutable S.Context, name: Name): DefMapType {
