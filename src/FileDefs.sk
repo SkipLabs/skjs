@@ -31,10 +31,8 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
         S.DirName::create("/skjs/fileDefs/"),
         (context, _self, key) ~> {
           fileName = FileName::create(key.value);
-          arr = parsedFiles.getArray(context, key);
-          if (arr.size() == 0) return Array[];
-          invariant(arr.size() == 1);
-          arr[0].value match {
+          parsedFile = parsedFiles.get(context, key);
+          parsedFile.value match {
           | PROk(defs) ->
             Array[
               FileDefs::create(context, index, root, fileName.dirName, defs),
@@ -47,12 +45,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
   }
 
   fun get(context: mutable S.Context, fileName: FileName): FileDefs {
-    arr = this.fileDefsDir.getArray(context, S.SID(fileName.toString()));
-    if (arr.size() == 0) {
-      invariant_violation("TODOX: could not find " + fileName.toString())
-    };
-    invariant(arr.size() == 1);
-    arr[0]
+    this.fileDefsDir.get(context, S.SID(fileName.toString()))
   }
 }
 

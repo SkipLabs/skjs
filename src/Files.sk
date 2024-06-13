@@ -90,9 +90,7 @@ class Files(
         if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
           return Array[]
         };
-        contentArr = this.filesContent.getArray(context, key);
-        if (contentArr.size() == 0) return Array[];
-        content = contentArr[0].value;
+        content = this.filesContent.get(context, key).value;
         lexer = Lexer::mcreate(fileName, content);
         parser = mutable Parser(lexer);
         try {

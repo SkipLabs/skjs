@@ -20,9 +20,7 @@ fun makeNewLinesDir(
     context,
     SKStore.DirName::create("/skjs/newlines/"),
     (context, _self, key) ~> {
-      contentArr = files.getArray(context, key);
-      invariant(contentArr.size() == 1);
-      content = contentArr[0].value;
+      content = files.get(context, key).value;
       newLines = mutable Vector[];
       i = 0;
       for (c in content) {
@@ -44,9 +42,7 @@ class NewLinesMap{dir: SKStore.LHandle<SKStore.SID, NewLinesFile>} {
     static{dir => makeNewLinesDir(context, files.filesContent)}
   }
   fun get(context: mutable SKStore.Context, fileName: String): Array<Int> {
-    arr = this.dir.getArray(context, SKStore.SID(fileName));
-    invariant(arr.size() == 1);
-    arr[0].newLines
+    this.dir.get(context, SKStore.SID(fileName)).newLines
   }
 }
 
