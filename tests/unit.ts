@@ -1251,3 +1251,15 @@ function checkMultipleConstrainedGenericFunctionWithOptionalParamStringArray(inp
 function checkMultipleConstrainedGenericFunctionWithOptionalParamObjectArray(input1: { length: number }, input2: { size: number }, arg1?: { length: number }, arg2?: { size: number }): [number | undefined, number | undefined] {
   return checkMultipleConstrainedGenericFunctionWithOptionalParam<{ length: number }, { size: number }>(input1, input2, arg1, arg2);
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Builtin types
+///////////////////////////////////////////////////////////////////////////////
+
+function checkFieldOfString(s: string): boolean {
+  return s.startsWith('foo');
+}
+
+function checkSubscriptionOf(): string {
+  return 2024['toString']();
+}
