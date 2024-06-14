@@ -1355,43 +1355,27 @@ class TypeChecker{
       | BOAddition() ->
         stypes1 = this.expr(env, e1).getSTypes(env.subst, this.tenv);
         ty1 = TType::fromSTypes(e1.posRange, stypes1);
-        for (stype in stypes1.stypes) {
-          stype match {
-          | TPrimValue(TNum(), _, _)
-          | TPrimValue(TString(), _, _) ->
-            void
-          | sty ->
-            typingError(
-              Array[(pos, "Invalid + operation"), (sty.pos, "For this object")],
-            )
-          }
-        };
-        if (stypes1.stypes.size() == 0) {
-          typingError(
-            Array[(pos, "Invalid + operation"), (pos, "For this object")],
-          )
-        };
-        if (stypes1.stypes.size() > 1) {
+        if (stypes1.stypes.size() != 1) {
           typingError(
             Array[
               (pos, "Invalid + operation"),
-              (pos, "For an object of type: " + ty1.toString()),
+              (pos, `For an object of type: ${ty1}`),
             ],
           )
         };
-        ty2 = this.expr(env, e2);
-        for (stype in stypes1.stypes) {
-          stype match {
-          | TPrimValue(TNum(), _, _)
-          | TPrimValue(TString(), _, _) ->
-            this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1)
-          | _ -> invariant_violation("Internal error: unexpected type for +")
-          }
-        };
         stypes1.stypes[0] match {
-        | TPrimValue(k, _, primPos) ->
+        | TPrimValue(k @ TNum(), _, primPos)
+        | TPrimValue(k @ TString(), _, primPos) ->
+          ty2 = this.expr(env, e2);
+          this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1);
           TType::single(pos, TPrimValue(k, None(), primPos))
-        | _ -> invariant_violation("Internal error")
+        | sty ->
+          typingError(
+            Array[
+              (pos, "Invalid + operation"),
+              (sty.pos, `For an object of type ${ty1}`),
+            ],
+          )
         }
       | BOAssignment() -> this.assign(env, pos, e1, e2)
       | BOStrictInequality()
