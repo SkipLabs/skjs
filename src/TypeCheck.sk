@@ -1648,16 +1648,14 @@ class TypeChecker{
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
         stypes = ty1.getSTypes(env.subst, this.tenv);
-        hasNullOrUndefined = false;
-        for (stype in stypes) {
+        hasNullOrUndefined = stypes.stypes.any(stype ~>
           stype match {
           | TPrimVoid(TNull(), _)
           | TPrimVoid(TUndefined(), _) ->
-            !hasNullOrUndefined = true;
-            break void
-          | _ -> void
+            true
+          | _ -> false
           }
-        };
+        );
         if (!hasNullOrUndefined) {
           typingError(
             Array[
