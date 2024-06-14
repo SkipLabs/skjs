@@ -1719,11 +1719,8 @@ class TypeChecker{
       } else {
         Array[
           Lambda(pos, (subst, argsTypes, retType) ~> {
-            args = mutable Vector[];
-            for (i => p in params) {
-              args.push((p.i0, argsTypes[i]));
-            };
-            this.closure(subst, savedScope, args.toArray(), retType, body)
+            args = params.mapWithIndex((i, p) ~> (p.i0, argsTypes[i]));
+            this.closure(subst, savedScope, args, retType, body)
           }),
         ]
       };
