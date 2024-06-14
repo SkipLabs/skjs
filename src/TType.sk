@@ -518,33 +518,12 @@ class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
     None()
   }
 
-  fun isStringOrNum(): Bool {
-    for (stype in this.stypes) {
-      stype match {
-      | TPrimValue(TNum _, _, _) -> continue
-      | TPrimValue(TString _, _, _) -> continue
-      | _ -> return false
-      }
-    };
-    true
-  }
-
   fun isStringOrNumOrBool(): Bool {
     for (stype in this.stypes) {
       stype match {
       | TPrimValue(TNum _, _, _) -> continue
       | TPrimValue(TString _, _, _) -> continue
       | TPrimValue(TBool _, _, _) -> continue
-      | _ -> return false
-      }
-    };
-    true
-  }
-
-  fun isString(): Bool {
-    for (stype in this.stypes) {
-      stype match {
-      | TPrimValue(TString _, _, _) -> continue
       | _ -> return false
       }
     };
