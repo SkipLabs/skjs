@@ -42,7 +42,7 @@ const kTopHash: Int = "Top".hash();
 // not affect the instances defined inside the type.
 /*****************************************************************************/
 
-class TType private (
+class TType private {
   // The hash, it's important because we need to quickly determine if
   // two types are different. The hash is computed by smart constructors,
   // that's why the default constructor is private
@@ -82,14 +82,14 @@ class TType private (
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   tparams: TTypeParams,
-) uses Hashable, Orderable {
+} uses Hashable, Orderable {
   // Returns the type that represents all possible values. Every other
   // type is sub-type of top.
   static fun top(pos: PosRange): this {
     stypes = STypes::empty();
     insts = TInsts::empty();
     tparams = TTypeParams::empty();
-    static(kTopHash, pos, true, stypes, insts, tparams)
+    static{h => kTopHash, pos, isTop => true, stypes, insts, tparams}
   }
 
   // Returns the type that is sub-type of all types. This type is
@@ -138,7 +138,7 @@ class TType private (
     tparams: TTypeParams,
   ): this {
     h = (stypes, insts, tparams).hash();
-    static(h, pos, false, stypes, insts, tparams);
+    static{h, pos, isTop => false, stypes, insts, tparams};
   }
 
   fun withSTypes(stypes: STypes): this {
