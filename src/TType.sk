@@ -1704,6 +1704,7 @@ class Instantiate() extends ApplyType {
   type Env = (mutable Subst, TEnv, Map<(String, Int), TType>);
 
   fun type(env: this::Env, ty: TType): TType {
+    if (ty.isTop) return ty;
     !ty = TType::create(
       ty.pos,
       this.stypes(env, ty.stypes),
