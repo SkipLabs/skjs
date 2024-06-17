@@ -85,7 +85,7 @@ class TType private (
 ) uses Hashable, Orderable {
   // Returns the type that represents all possible values. Every other
   // type is sub-type of top.
-  static fun top(pos: PosRange): TType {
+  static fun top(pos: PosRange): this {
     stypes = STypes::empty();
     insts = TInsts::empty();
     tparams = TTypeParams::empty();
@@ -115,15 +115,15 @@ class TType private (
   }
 
   static fun fromSTypes(pos: PosRange, stypes: STypes): this {
-    TType::create(pos, stypes, TInsts::empty(), TTypeParams::empty())
+    static::create(pos, stypes, TInsts::empty(), TTypeParams::empty())
   }
 
   static fun fromTParams(pos: PosRange, tparams: TTypeParams): this {
-    TType::create(pos, STypes::empty(), TInsts::empty(), tparams)
+    static::create(pos, STypes::empty(), TInsts::empty(), tparams)
   }
 
   static fun single(pos: PosRange, stype: SType): this {
-    TType::create(
+    static::create(
       pos,
       STypes::single(stype),
       TInsts::empty(),
@@ -150,7 +150,7 @@ class TType private (
     }
   }
 
-  fun compare(other: TType): Order {
+  fun compare(other: this): Order {
     (this.h, this.stypes, this.insts, this.tparams).compare(
       (other.h, other.stypes, other.insts, other.tparams),
     )
@@ -177,14 +177,14 @@ class TType private (
       (isTop, stypes, tparams) = ty.expand(subst, env, isContravariant);
       if (isTop) return STypes::empty();
       if (tparams.tparams.isEmpty()) return stypes;
-      result = TType::create(
+      result = static::create(
         this.pos,
         stypes,
         TInsts::empty(),
         TTypeParams::empty(),
       );
       for (inter in tparams.tparams) {
-        localResult: TType = static::top(ty.pos);
+        localResult: this = static::top(ty.pos);
         for (tparam in inter) {
           tparam.cstr match {
           | None() -> continue
