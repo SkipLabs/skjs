@@ -231,10 +231,6 @@ class TType private {
     }
   }
 
-  fun containsTVar(): Bool {
-    this.insts.insts.any(inst ~> inst is TVar _)
-  }
-
   fun getTag(): ?String {
     if (this.insts.insts.size() > 0 || this.stypes.stypes.size() != 1) {
       None()
