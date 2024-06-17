@@ -42,3 +42,13 @@ declare class Map<K, V> {
   get(key: K): V;
   set(key: K, value: V): void;
 }
+
+declare class Error {
+  name: string;
+  message: string;
+  stack?: string;
+  constructor(message?: string);
+  toString(): string;
+}
+
+declare function Error(message?: string): Error;
