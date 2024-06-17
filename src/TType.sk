@@ -254,6 +254,16 @@ class TType private {
   fun isTag(): Bool {
     this.getTag().isSome()
   }
+
+  fun containsUndefined(): Bool {
+    this.isTop ||
+      this.stypes.stypes.any(stype ~>
+        stype match {
+        | TPrimVoid(TUndefined _, _) -> true
+        | _ -> false
+        }
+      )
+  }
 }
 
 /*****************************************************************************/
@@ -483,13 +493,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
     | Some(fd) ->
       ty = fd.type;
       if (fd.isOptional) {
-        hasUndefined = ty.stypes.stypes.any(stype ~>
-          stype match {
-          | TPrimVoid(TUndefined _, _) -> true
-          | _ -> false
-          }
-        );
-        if (!hasUndefined) {
+        if (!ty.containsUndefined()) {
           stypes = STypes::create(
             Array[TPrimVoid(TUndefined(), fieldName.posRange)].concat(
               ty.stypes.stypes,
