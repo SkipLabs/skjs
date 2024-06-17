@@ -1665,7 +1665,15 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
 base class ApplyType {
   type Env;
 
-  overridable deferred fun type(env: this::Env, ty: TType): TType {
+  deferred fun type(env: this::Env, ty: TType): TType {
+    if (ty.isTop) this.top(env, ty) else this.nonTop(env, ty)
+  }
+
+  overridable deferred fun top(_env: this::Env, top: TType): TType {
+    top
+  }
+
+  overridable deferred fun nonTop(env: this::Env, ty: TType): TType {
     ty.rawMap(
       (stypes) -> this.stypes(env, stypes),
       (insts) -> this.insts(env, insts),
@@ -1797,7 +1805,7 @@ class FilterType() extends ApplyType {
 class Instantiate() extends ApplyType {
   type Env = (mutable Subst, TEnv, Map<(String, Int), TType>);
 
-  fun type(env: this::Env, ty: TType): TType {
+  fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (stypes) -> this.stypes(env, stypes),
       (insts) -> this.insts(env, insts),
@@ -1837,7 +1845,7 @@ class Instantiate() extends ApplyType {
 class ExpandTVars() extends ApplyType {
   type Env = (mutable Subst, TEnv);
 
-  fun type(env: this::Env, ty: TType): TType {
+  fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (stypes) -> this.stypes(env, stypes),
       (insts) -> this.insts(env, insts),
