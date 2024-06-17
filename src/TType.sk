@@ -537,7 +537,14 @@ class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
 class TVar(pos: PosRange, id: Int) extends TInst
 class TArgs(targs: Array<TType>) uses Hashable, Orderable
 class TSInst(name: Name, targs: TArgs) extends TInst
-class TInter(ty1: TType, ty2: TType) extends TInst
+class TInter private (ty1: TType, ty2: TType) extends TInst {
+  // Returns Failure in case the result is not an intersection
+  static fun create(ty1: TType, ty2: TType): Result<TInst, TType> {
+    if (ty1.isTop) Failure(ty2) else if (ty2.isTop) Failure(ty1) else {
+      Success(TInter(ty1, ty2))
+    }
+  }
+}
 
 base class TInst uses Hashable, Orderable
 
@@ -1507,12 +1514,16 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   if (ty1.isTop) return ty2;
   if (ty2.isTop) return ty1;
   if (env.seenInter.contains((ty1, ty2))) {
-    return TType::create(
-      ty1.pos,
-      STypes::empty(),
-      TInsts::single(TInter(ty1, ty2)),
-      interTTypeParams(ty1.tparams, ty2.tparams),
-    );
+    return TInter::create(ty1, ty2) match {
+    | Failure(ty) -> ty
+    | Success(inter) ->
+      TType::create(
+        ty1.pos,
+        STypes::empty(),
+        TInsts::single(inter),
+        interTTypeParams(ty1.tparams, ty2.tparams),
+      )
+    };
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
   (_, stypes1, tparams1) = ty1.expand(subst, env);
