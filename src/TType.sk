@@ -187,36 +187,38 @@ class TType private {
   ): STypes {
     ty = this;
     loop {
-      (isTop, stypes, tparams) = ty.expand(subst, env, isContravariant);
-      if (isTop) return STypes::empty();
-      if (tparams.tparams.isEmpty()) return stypes;
-      result = static::fromSTypes(this.pos, stypes);
-      for (inter in tparams.tparams) {
-        localResult: this = static::top(ty.pos);
-        for (tparam in inter) {
-          tparam.cstr match {
-          | None() -> continue
-          | Some(c) -> !localResult = interTType(subst, env, localResult, c)
-          }
-        };
-        !result = unionTType(subst, env, result, localResult)
-      };
-      !ty = result;
+      ty.expand(subst, env, isContravariant) match {
+      | None() -> return STypes::empty()
+      | Some((stypes, tparams)) ->
+        if (tparams.tparams.isEmpty()) return stypes;
+        result = static::fromSTypes(this.pos, stypes);
+        for (inter in tparams.tparams) {
+          localResult: this = static::top(ty.pos);
+          for (tparam in inter) {
+            tparam.cstr match {
+            | None() -> continue
+            | Some(c) -> !localResult = interTType(subst, env, localResult, c)
+            }
+          };
+          !ty = result
+        }
+      }
     }
   }
 
+  // Returns None() if the result is Top
   fun expand(
     subst: mutable Subst,
     env: TEnv,
     isContravariant: Bool = false,
-  ): (Bool, STypes, TTypeParams) {
-    if (this.isTop) return (true, STypes::empty(), TTypeParams::empty());
+  ): ?(STypes, TTypeParams) {
+    if (this.isTop) return None();
     tparams = this.tparams;
     stypes = this.stypes;
     insts = Vector::mcreateFromItems(this.insts.insts);
     seen = Set::mcreateFromItems(insts);
     loop {
-      if (insts.isEmpty()) return (false, stypes, tparams);
+      if (insts.isEmpty()) return Some((stypes, tparams));
       inst = insts.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
@@ -224,10 +226,10 @@ class TType private {
       | tvar @ TVar _ ->
         if (isContravariant) subst.getContra(tvar) else subst.get(tvar)
       };
-      if (tyDef.isTop) return (true, STypes::empty(), TTypeParams::empty());
+      if (tyDef.isTop) return None();
       !tparams = unionTTypeParams(tparams, tyDef.tparams);
       unionSTypes(subst, env, stypes, tyDef.stypes) match {
-      | None() -> return (true, STypes::empty(), TTypeParams::empty())
+      | None() -> return None()
       | Some(u) ->
         !stypes = u;
         for (newInst in tyDef.insts) {
@@ -813,11 +815,14 @@ fun isSubTType(
     | _ -> void
     }
   };
-  (isTop1, stypes1, tparams1) = u1.expand(subst, env, false);
-  (isTop2, stypes2, tparams2) = u2.expand(subst, env, true);
-  if (isTop1 && isTop2) return STOk();
-  if (isTop1) return STTop();
-  if (isTop2) return STOk();
+  u1expanded = u1.expand(subst, env, false);
+  u2expanded = u2.expand(subst, env, true);
+  (stypes1, tparams1, stypes2, tparams2) = (u1expanded, u2expanded) match {
+  | (_, None()) -> return STOk()
+  | (None(), Some(_)) -> return STTop()
+  | (Some((stypes1, tparams1)), Some((stypes2, tparams2))) ->
+    (stypes1, tparams1, stypes2, tparams2)
+  };
   cstr2 = TType::fromSTypes(u2.pos, stypes2);
   isSubTTypeParams(subst, env, tparams1, tparams2, cstr2) match {
   | STOk() -> void
@@ -1557,8 +1562,12 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
-  (_, stypes1, tparams1) = ty1.expand(subst, env);
-  (_, stypes2, tparams2) = ty2.expand(subst, env);
+  (stypes1, tparams1) = ty1
+    .expand(subst, env)
+    .default((STypes::empty(), TTypeParams::empty()));
+  (stypes2, tparams2) = ty2
+    .expand(subst, env)
+    .default((STypes::empty(), TTypeParams::empty()));
   interSTypes(subst, env, stypes1, stypes2) match {
   | None() -> TType::bottom(ty1.pos)
   | Some(stypes) ->
@@ -1769,8 +1778,9 @@ class ExpandTVars() extends ApplyType {
       this.typeParams(env, ty.tparams),
     );
     (subst, tenv) = env;
-    (isTop, stypes, tparams) = ty.expand(subst, tenv);
-    if (isTop) TType::top(ty.pos) else {
+    ty.expand(subst, tenv) match {
+    | None() -> TType::top(ty.pos)
+    | Some((stypes, tparams)) ->
       TType::create(ty.pos, stypes, TInsts::empty(), tparams)
     }
   }
