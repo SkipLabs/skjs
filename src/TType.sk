@@ -501,12 +501,10 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
   }
 
   fun getKind(): String {
-    this.maybeGet("kind").fromSome().type.stypes.stypes[0] match {
-    | TPrimValue(TString(), Some(s), _) ->
-      invariant(s.values.size() == 1);
-      s.values[0].i1
-    | _ -> invariant_violation("Internal error: getKind on non constructor")
-    }
+    this.maybeGet("kind")
+      .fromSome()
+      .type.getTag()
+      .fromSome("Internal error: getKind on non constructor")
   }
 }
 
