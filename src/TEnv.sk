@@ -512,7 +512,7 @@ class TEnv{
           )
         };
         (keepPos, ty) = this.subst[n.value];
-        if (keepPos) ty else TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+        if (keepPos) ty else ty.withPos(pos)
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.posRange, "Cyclic definition")])
       } else {
@@ -538,7 +538,7 @@ class TEnv{
         this.normalize(context, ty1),
         this.normalize(context, ty2),
       );
-      TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+      ty.withPos(pos)
     | TAInter(ty1, ty2) ->
       ty = interTType(
         subst,
@@ -546,7 +546,7 @@ class TEnv{
         this.normalize(context, ty1),
         this.normalize(context, ty2),
       );
-      TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+      ty.withPos(pos)
     | TATuple(tupleElts) ->
       typeVec = mutable Vector[];
       for (ty in tupleElts) {
