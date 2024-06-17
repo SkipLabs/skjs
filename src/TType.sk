@@ -158,6 +158,11 @@ class TType private {
     }
   }
 
+  fun withPos(pos: PosRange): this {
+    // pos is not part of the hash
+    this with {pos}
+  }
+
   fun compare(other: this): Order {
     (this.h, this.stypes, this.insts, this.tparams).compare(
       (other.h, other.stypes, other.insts, other.tparams),
