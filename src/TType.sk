@@ -234,6 +234,15 @@ class TType private {
   fun containsTVar(): Bool {
     this.insts.insts.any(inst ~> inst is TVar _)
   }
+
+  fun isTag(): Bool {
+    this.insts.insts.size() == 0 &&
+      this.stypes.stypes.size() == 1 &&
+      this.stypes.stypes[0] match {
+      | TPrimValue(TString(), Some(s), _) -> s.values.size() == 1
+      | _ -> false
+      }
+  }
 }
 
 /*****************************************************************************/
@@ -244,15 +253,6 @@ class TObject(fields: TFields) extends SType
 class TAlgebraic(branches: Array<TConstr>) extends SType
 class TConstr(fields: TFields) uses Hashable, Orderable {}
 
-fun isTag(ty: TType): Bool {
-  ty.insts.insts.size() == 0 &&
-    ty.stypes.stypes.size() == 1 &&
-    ty.stypes.stypes[0] match {
-    | TPrimValue(TString(), Some(s), _) -> s.values.size() == 1
-    | _ -> false
-    }
-}
-
 fun createObject(pos: PosRange, fields: TFields): TType {
   seen = mutable Set<String>[];
   for (field in fields) {
@@ -261,7 +261,10 @@ fun createObject(pos: PosRange, fields: TFields): TType {
     };
     seen.insert(field.name);
   };
-  if (seen.contains("kind") && isTag(fields.maybeGet("kind").fromSome().type)) {
+  if (
+    seen.contains("kind") &&
+    fields.maybeGet("kind").fromSome().type.isTag()
+  ) {
     TType::single(pos, TAlgebraic(Array[TConstr(fields)], pos))
   } else {
     TType::single(pos, TObject(fields, pos))
