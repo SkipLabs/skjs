@@ -1571,6 +1571,14 @@ base class ApplyType {
   type Env;
 
   overridable deferred fun type(env: this::Env, ty: TType): TType {
+    if (ty.isTop) this.top(env, ty) else this.nonTop(env, ty)
+  }
+
+  overridable deferred fun top(_env: this::Env, top: TType): TType {
+    top
+  }
+
+  overridable deferred fun nonTop(env: this::Env, ty: TType): TType {
     TType::create(
       ty.pos,
       this.stypes(env, ty.stypes),
@@ -1703,8 +1711,7 @@ class FilterType() extends ApplyType {
 class Instantiate() extends ApplyType {
   type Env = (mutable Subst, TEnv, Map<(String, Int), TType>);
 
-  fun type(env: this::Env, ty: TType): TType {
-    if (ty.isTop) return ty;
+  fun nonTop(env: this::Env, ty: TType): TType {
     !ty = TType::create(
       ty.pos,
       this.stypes(env, ty.stypes),
@@ -1745,7 +1752,7 @@ class Instantiate() extends ApplyType {
 class ExpandTVars() extends ApplyType {
   type Env = (mutable Subst, TEnv);
 
-  fun type(env: this::Env, ty: TType): TType {
+  fun nonTop(env: this::Env, ty: TType): TType {
     !ty = TType::create(
       ty.pos,
       this.stypes(env, ty.stypes),
