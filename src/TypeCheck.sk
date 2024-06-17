@@ -2042,8 +2042,7 @@ class TypeChecker{
           };
           map = mutable Map[];
           for (i => tparamDecl in tfun.tparams) {
-            tparam = tparamDecl;
-            map![(tparam.fileName, tparam.id)] = if (targs.isEmpty()) {
+            map![(tparamDecl.fileName, tparamDecl.id)] = if (targs.isEmpty()) {
               this.newTVar(env, pos)
             } else {
               targs[i]
