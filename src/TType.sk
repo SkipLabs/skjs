@@ -127,12 +127,7 @@ class TType private {
   }
 
   static fun single(pos: PosRange, stype: SType): this {
-    static::create(
-      pos,
-      STypes::single(stype),
-      TInsts::empty(),
-      TTypeParams::empty(),
-    )
+    static::fromSTypes(pos, STypes::single(stype))
   }
 
   static fun create(
@@ -151,6 +146,15 @@ class TType private {
       this
     } else {
       static::create(this.pos, stypes, this.insts, this.tparams)
+    }
+  }
+
+  fun withTParams(tparams: TTypeParams): this {
+    if (this.isTop) {
+      invariant(tparams.isEmpty());
+      this
+    } else {
+      static::create(this.pos, this.stypes, this.insts, tparams)
     }
   }
 
@@ -181,12 +185,7 @@ class TType private {
       (isTop, stypes, tparams) = ty.expand(subst, env, isContravariant);
       if (isTop) return STypes::empty();
       if (tparams.tparams.isEmpty()) return stypes;
-      result = static::create(
-        this.pos,
-        stypes,
-        TInsts::empty(),
-        TTypeParams::empty(),
-      );
+      result = static::fromSTypes(this.pos, stypes);
       for (inter in tparams.tparams) {
         localResult: this = static::top(ty.pos);
         for (tparam in inter) {
@@ -326,12 +325,7 @@ class TTuple(tuple: Array<TType>) extends SType {
     for (i in Range(1, this.tuple.size())) {
       !elt = unionTType(subst, env, elt, this.tuple[i]);
     };
-    TType::create(
-      this.pos,
-      STypes::create(Array[TArray(elt, this.pos)]),
-      TInsts::empty(),
-      TTypeParams::empty(),
-    )
+    TType::single(this.pos, TArray(elt, this.pos))
   }
   fun toString(): String {
     invariant_violation("TODO1")
@@ -496,7 +490,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
               ty.stypes.stypes,
             ),
           );
-          return TType::create(ty.pos, stypes, ty.insts, ty.tparams)
+          return ty.withSTypes(stypes)
         }
       };
       ty
@@ -818,7 +812,7 @@ fun isSubTType(
   if (isTop1 && isTop2) return STOk();
   if (isTop1) return STTop();
   if (isTop2) return STOk();
-  cstr2 = TType::create(u2.pos, stypes2, TInsts::empty(), TTypeParams::empty());
+  cstr2 = TType::fromSTypes(u2.pos, stypes2);
   isSubTTypeParams(subst, env, tparams1, tparams2, cstr2) match {
   | STOk() -> void
   | err ->
@@ -1563,16 +1557,12 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   | None() -> TType::bottom(ty1.pos)
   | Some(stypes) ->
     tparams = interTTypeParams(tparams1, tparams2);
-    TType::create(
-      if (!ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
-        ty2.pos
-      } else {
-        ty1.pos
-      },
-      stypes,
-      TInsts::empty(),
-      tparams,
-    )
+    pos = if (!ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
+      ty2.pos
+    } else {
+      ty1.pos
+    };
+    TType::create(pos, stypes, TInsts::empty(), tparams)
   }
 }
 
@@ -1725,7 +1715,7 @@ class Instantiate() extends ApplyType {
     );
     if (ty.tparams.tparams.isEmpty()) return ty;
     (subst, tenv, map) = env;
-    result = TType::create(ty.pos, ty.stypes, ty.insts, TTypeParams::empty());
+    result = ty.withTParams(TTypeParams::empty());
     for (tparams in ty.tparams.tparams) {
       clauseOpt: ?TType = None();
       for (tparam in tparams) {
@@ -1750,7 +1740,7 @@ class Instantiate() extends ApplyType {
         )
         .filter(x -> !x.isEmpty()),
     );
-    TType::create(result.pos, result.stypes, result.insts, tparams)
+    result.withTParams(tparams)
   }
 }
 
