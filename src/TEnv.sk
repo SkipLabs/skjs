@@ -138,12 +138,7 @@ class TEnv{
   ): Array<TType> {
     result = this.getClass(context, className).tparams.map(tparam -> {
       tvar = subst.gen(className.posRange);
-      ty = TType::create(
-        className.posRange,
-        STypes::empty(),
-        TInsts(Array[tvar]),
-        TTypeParams::empty(),
-      );
+      ty = TType::fromTInst(className.posRange, tvar);
       tparam.constraint match {
       | None() -> ty
       | Some(cstr) -> unionTType(subst, this, this.normalize(context, cstr), ty)
