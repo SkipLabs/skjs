@@ -318,9 +318,12 @@ mutable class TypePp{
         this.out(level, margin, "?")
       };
       if (
-        fieldType.stypes.stypes.size() != 1 ||
-        fieldType.stypes.stypes[0] match {
-        | TFuns(_, methods, _) -> methods.size() == 0
+        fieldType match {
+        | TNonTop{stypes} if (stypes.stypes.size() == 1) ->
+          stypes.stypes[0] match {
+          | TFuns(_, methods, _) -> methods.size() == 0
+          | _ -> true
+          }
         | _ -> true
         }
       ) {
@@ -346,10 +349,17 @@ mutable class TypePp{
   }
 
   mutable fun type(level: Int, margin: Margin, ty: TType): void {
-    if (ty.isTop) {
-      this.out(level, margin, "top");
-      return void;
-    };
+    ty match {
+    | TTop _ -> this.top(level, margin)
+    | t @ TNonTop _ -> this.nonTop(level, margin, t)
+    }
+  }
+
+  mutable fun top(level: Int, margin: Margin): void {
+    this.out(level, margin, "top");
+  }
+
+  mutable fun nonTop(level: Int, margin: Margin, ty: TNonTop): void {
     if (
       ty.stypes.isEmpty() &&
       ty.insts.insts.isEmpty() &&

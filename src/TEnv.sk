@@ -50,12 +50,12 @@ class TEnv{
   // This field keeps track of the intersections that we are in the
   // process of computing. If a cycle occurs, the type TInter(t1, t2)
   // will be returned.
-  seenInter: SortedSet<(TType, TType)> = SortedSet[],
+  seenInter: SortedSet<(TNonTop, TNonTop)> = SortedSet[],
 
   // This field keeps track of the subtyping relations that we are in
   // the process of checking. If a cycle occurs, the subtyping
   // relation is considered correct (by co-induction).
-  seenSub: SortedSet<(Int, TType, TType)> = SortedSet[],
+  seenSub: SortedSet<(Int, TType, TNonTop)> = SortedSet[],
 } {
   static fun fromSortedMap(typeDefs: SortedMap<String, TypeDef>): this {
     static{defMap => SortedDefMap{map => typeDefs}}
@@ -152,7 +152,7 @@ class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool = _ ~> true,
-  ): TType {
+  ): TNonTop {
     obj = this.newObject(context, className, targs, filter);
     TNonTop::single(className.posRange, obj)
   }
