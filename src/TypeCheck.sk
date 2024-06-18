@@ -340,7 +340,7 @@ class TypeChecker{
           tparam.id,
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
-        TType::fromTParams(
+        TNonTop::fromTParams(
           tparam.name.posRange,
           TTypeParams(Array[Array[ttypeParam]]),
         )
@@ -348,8 +348,8 @@ class TypeChecker{
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
     subst = mutable Subst{context};
-    cstr = TType::inst(c.name, targs);
-    thisType = TType::fromTParams(
+    cstr = TNonTop::inst(c.name, targs);
+    thisType = TNonTop::fromTParams(
       c.name.posRange,
       TTypeParams(
         Array[Array[TParam("this", c.name.posRange.fileName, -1, Some(cstr))]],
@@ -468,7 +468,7 @@ class TypeChecker{
   }
 
   static fun uninitializedThisType(pos: PosRange): TType {
-    TType::single(pos, TObject(TFields::create(Array[]), pos));
+    TNonTop::single(pos, TObject(TFields::create(Array[]), pos));
   }
 
   fun funDefSetup(
@@ -552,13 +552,13 @@ class TypeChecker{
     | Some(asyncPos) ->
       !this.isAsync = true;
       tvar = env.subst.gen(asyncPos);
-      type = TType::fromTInst(asyncPos, tvar);
+      type = TNonTop::fromTInst(asyncPos, tvar);
       this.checkSubType(
         env,
         asyncPos,
         "Async functions must return an object of type Promise<_>",
         retType,
-        TType::single(asyncPos, TPromise(type, asyncPos)),
+        TNonTop::single(asyncPos, TPromise(type, asyncPos)),
       )
     };
     fd.body match {
@@ -827,7 +827,7 @@ class TypeChecker{
       pos,
       "This expression was expected to be of type void",
       ty,
-      TType::single(ty.pos, TPrimVoid(TVoid(), ty.pos)),
+      TNonTop::single(ty.pos, TPrimVoid(TVoid(), ty.pos)),
     );
   }
 
@@ -843,15 +843,15 @@ class TypeChecker{
     | Return(pos, eOpt) ->
       retType = this.retType match {
       | None() ->
-        TType::single(st.pos, TPrimVoid(TVoid(), st.pos)) // constructor
+        TNonTop::single(st.pos, TPrimVoid(TVoid(), st.pos)) // constructor
       | Some(x) -> x
       };
       (epos, etype) = eOpt match {
-      | None() -> (pos, TType::single(pos, TPrimVoid(TVoid(), pos)))
+      | None() -> (pos, TNonTop::single(pos, TPrimVoid(TVoid(), pos)))
       | Some(e) -> (e.posRange, this.expr(env, e))
       };
       rtype = if (this.isAsync) {
-        TType::single(epos, TPromise(etype, epos))
+        TNonTop::single(epos, TPromise(etype, epos))
       } else {
         etype
       };
@@ -1044,7 +1044,7 @@ class TypeChecker{
       e.posRange,
       "A condition is expected to be of type boolean, not: ",
       this.expr(env, e),
-      TType::single(e.posRange, TPrimValue(TBool(), None(), e.posRange)),
+      TNonTop::single(e.posRange, TPrimValue(TBool(), None(), e.posRange)),
     );
   }
 
@@ -1069,7 +1069,7 @@ class TypeChecker{
         ],
       )
     };
-    result = TType::bottom(pos);
+    result = TNonTop::bottom(pos);
     for (stype in stypes.stypes) {
       stype match {
       | TObject(fields, _) ->
@@ -1114,7 +1114,7 @@ class TypeChecker{
             (
               stype.pos,
               "For type: " +
-                prettyPrintType(false, TType::single(stype.pos, stype)),
+                prettyPrintType(false, TNonTop::single(stype.pos, stype)),
             ),
           ],
         )
@@ -1126,23 +1126,26 @@ class TypeChecker{
   fun expr(env: mutable TCEnv, e: Expr): TType {
     pos = e.posRange;
     e.value match {
-    | Number(_) -> TType::single(pos, TPrimValue(TNum(), None(), pos))
+    | Number(_) -> TNonTop::single(pos, TPrimValue(TNum(), None(), pos))
     | EString(SKQuote(), x) ->
-      TType::single(
+      TNonTop::single(
         pos,
         TPrimValue(TString(), Some(ArrayValues[(pos, x)]), pos),
       )
     | EString(SKDoubleQuote(), _) ->
-      TType::single(pos, TPrimValue(TString(), None(), pos))
+      TNonTop::single(pos, TPrimValue(TString(), None(), pos))
     | EString(SKBackTick(), _) ->
       typingError(Array[(pos, "TODO: support for backtick strings")])
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
-      TType::single(pos, TPrimValue(TBool(), None(), pos))
+      TNonTop::single(pos, TPrimValue(TBool(), None(), pos))
     | Var(Name(_, "null")) ->
-      this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TNull(), pos)))
+      this.makeBoundTVar(env, TNonTop::single(pos, TPrimVoid(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
-      this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TUndefined(), pos)))
+      this.makeBoundTVar(
+        env,
+        TNonTop::single(pos, TPrimVoid(TUndefined(), pos)),
+      )
     | Var(local) ->
       if (env.localObjects.containsKey(local.value)) {
         env.usedObjects![local.value] = local.posRange
@@ -1235,7 +1238,7 @@ class TypeChecker{
           this.checkSubType(env, pos, "Invalid super call", x, y)
         })
       };
-      TType::single(pos, TPrimVoid(TVoid(), pos))
+      TNonTop::single(pos, TPrimVoid(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
       (stypes, tparams) = this.expr(env, args[0])
@@ -1244,10 +1247,10 @@ class TypeChecker{
       print_error(
         prettyPrintType(
           false,
-          TType::create(PosRange::none, stypes, TInsts::empty(), tparams),
+          TNonTop::create(PosRange::none, stypes, TInsts::empty(), tparams),
         ),
       );
-      TType::single(pos, TPrimVoid(TVoid(), pos))
+      TNonTop::single(pos, TPrimVoid(TVoid(), pos))
     | Call(f, targs, args) ->
       rty = this.call(
         env,
@@ -1278,7 +1281,7 @@ class TypeChecker{
     | Get(arr, idx) ->
       stypes = this.expr(env, arr).getSTypes(env.subst, this.tenv);
       idxType = this.expr(env, idx);
-      result = TType::bottom(pos);
+      result = TNonTop::bottom(pos);
       for (stype in stypes.stypes) {
         ty = stype match {
         | TArray(eltType, _) ->
@@ -1287,7 +1290,7 @@ class TypeChecker{
             pos,
             "Invalid index",
             idxType,
-            TType::single(
+            TNonTop::single(
               idx.posRange,
               TPrimValue(TNum(), None(), idx.posRange),
             ),
@@ -1309,10 +1312,10 @@ class TypeChecker{
           };
           tyArr[n]
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
-          TType::top(objectPos)
+          TTop::create(objectPos)
         | TPrimValue(primKind, _, primPos) ->
           idxSTypes = idxType.getSTypes(env.subst, this.tenv);
-          ty = TType::bottom(pos);
+          ty = TNonTop::bottom(pos);
           for (idxSType in idxSTypes) {
             idxSType match {
             | TPrimValue(
@@ -1347,7 +1350,7 @@ class TypeChecker{
               (
                 pos,
                 "Not: " +
-                  prettyPrintType(false, TType::single(stype.pos, stype)),
+                  prettyPrintType(false, TNonTop::single(stype.pos, stype)),
               ),
             ],
           )
@@ -1356,12 +1359,12 @@ class TypeChecker{
       };
       result
     | EArray(arr) ->
-      TType::single(pos, TTuple(arr.map(x -> this.expr(env, x)), pos))
+      TNonTop::single(pos, TTuple(arr.map(x -> this.expr(env, x)), pos))
 
     | Unop(uop, subExpr) ->
       uop match {
       | UOExclamationMark() ->
-        bool = TType::single(pos, TPrimValue(TBool(), None(), pos));
+        bool = TNonTop::single(pos, TPrimValue(TBool(), None(), pos));
         this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
         bool
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
@@ -1371,7 +1374,7 @@ class TypeChecker{
       op match {
       | BOAddition() ->
         stypes1 = this.expr(env, e1).getSTypes(env.subst, this.tenv);
-        ty1 = TType::fromSTypes(e1.posRange, stypes1);
+        ty1 = TNonTop::fromSTypes(e1.posRange, stypes1);
         if (stypes1.stypes.size() != 1) {
           typingError(
             Array[
@@ -1385,7 +1388,7 @@ class TypeChecker{
         | TPrimValue(k @ TString(), _, primPos) ->
           ty2 = this.expr(env, e2);
           this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1);
-          TType::single(pos, TPrimValue(k, None(), primPos))
+          TNonTop::single(pos, TPrimValue(k, None(), primPos))
         | sty ->
           typingError(
             Array[
@@ -1417,7 +1420,7 @@ class TypeChecker{
             }
           }
         };
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TNonTop::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BOLogicalAnd() ->
         ty1 = this.expr(env, e1);
@@ -1426,7 +1429,10 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty1,
-          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+          TNonTop::single(
+            e1.posRange,
+            TPrimValue(TBool(), None(), e1.posRange),
+          ),
         );
         this.evalCond(env, e1, true);
         ty2 = this.expr(env, e2);
@@ -1435,9 +1441,12 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty2,
-          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
+          TNonTop::single(
+            e2.posRange,
+            TPrimValue(TBool(), None(), e2.posRange),
+          ),
         );
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TNonTop::single(pos, TPrimValue(TBool(), None(), pos))
       | BOLogicalOr() ->
         ty1 = this.expr(env, e1);
         this.checkSubType(
@@ -1445,7 +1454,10 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty1,
-          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+          TNonTop::single(
+            e1.posRange,
+            TPrimValue(TBool(), None(), e1.posRange),
+          ),
         );
         this.evalCond(env, e1, false);
         ty2 = this.expr(env, e2);
@@ -1454,9 +1466,12 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty2,
-          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
+          TNonTop::single(
+            e2.posRange,
+            TPrimValue(TBool(), None(), e2.posRange),
+          ),
         );
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TNonTop::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BODot() ->
         e2.value match {
@@ -1497,7 +1512,7 @@ class TypeChecker{
             ],
           );
         };
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TNonTop::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BOMultiplicationAssignment() ->
         this.expr(
@@ -1687,21 +1702,21 @@ class TypeChecker{
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(env, e1);
       _ = this.tenv.getClass(env.context, className);
-      TType::single(pos, TPrimValue(TBool(), None(), pos))
+      TNonTop::single(pos, TPrimValue(TBool(), None(), pos))
     | InstanceOf(_, e2) ->
       typingError(Array[(e2.posRange, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
       _ = this.expr(env, subExpr);
-      TType::single(pos, TPrimValue(TString(), None(), pos))
+      TNonTop::single(pos, TPrimValue(TString(), None(), pos))
 
     | PostOp(pop, subExpr) ->
       pop match {
       | PODecr()
       | POIncr() ->
-        num = TType::single(pos, TPrimValue(TNum(), None(), pos));
+        num = TNonTop::single(pos, TPrimValue(TNum(), None(), pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
-        TType::single(pos, TPrimVoid(TVoid(), pos))
+        TNonTop::single(pos, TPrimVoid(TVoid(), pos))
       | POExcl() -> notSupported(pos)
       }
 
@@ -1741,7 +1756,7 @@ class TypeChecker{
           }),
         ]
       };
-      TType::single(
+      TNonTop::single(
         pos,
         TFuns(
           Array[
@@ -1791,7 +1806,7 @@ class TypeChecker{
         e1.posRange,
         "Invalid ? condition",
         cond,
-        TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+        TNonTop::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
       );
       unionTType(env.subst, this.tenv, left, right)
     | SKJS.KeyOf _ -> notSupported(pos)
@@ -1805,33 +1820,33 @@ class TypeChecker{
   fun makeLiteralType(e: Expr): ?TType {
     e match {
     | Expr(valuePos, Var(Name(_, "null"))) ->
-      Some(TType::single(valuePos, TPrimVoid(TNull(), valuePos)))
+      Some(TNonTop::single(valuePos, TPrimVoid(TNull(), valuePos)))
     | Expr(valuePos, Var(Name(_, "undefined"))) ->
-      Some(TType::single(valuePos, TPrimVoid(TUndefined(), valuePos)))
+      Some(TNonTop::single(valuePos, TPrimVoid(TUndefined(), valuePos)))
     | Expr(valuePos, Number(n)) ->
       Some(
-        TType::single(
+        TNonTop::single(
           valuePos,
           TPrimValue(TNum(), Some(ArrayValues[(valuePos, n)]), valuePos),
         ),
       )
     | Expr(valuePos, Var(Name(_, "true"))) ->
       Some(
-        TType::single(
+        TNonTop::single(
           valuePos,
           TPrimValue(TBool(), Some(ArrayValues[(valuePos, "true")]), valuePos),
         ),
       )
     | Expr(valuePos, Var(Name(_, "false"))) ->
       Some(
-        TType::single(
+        TNonTop::single(
           valuePos,
           TPrimValue(TBool(), Some(ArrayValues[(valuePos, "false")]), valuePos),
         ),
       )
     | Expr(valuePos, EString(_, n)) ->
       Some(
-        TType::single(
+        TNonTop::single(
           valuePos,
           TPrimValue(TString(), Some(ArrayValues[(valuePos, n)]), valuePos),
         ),
@@ -1963,7 +1978,7 @@ class TypeChecker{
           };
           env.scope.set(
             local,
-            TType::single(
+            TNonTop::single(
               objPos,
               TObject(
                 interTFields(
@@ -2134,12 +2149,12 @@ class TypeChecker{
   fun makeBoundTVar(env: mutable TCEnv, ty: TType): TType {
     tvar = env.subst.gen(ty.pos);
     env.subst.grow(this.tenv, tvar, ty, true);
-    TType::fromTInst(ty.pos, tvar)
+    TNonTop::fromTInst(ty.pos, tvar)
   }
 
   fun newTVar(env: mutable TCEnv, pos: PosRange): TType {
     tvar = env.subst.gen(pos);
-    TType::fromTInst(pos, tvar)
+    TNonTop::fromTInst(pos, tvar)
   }
 
   fun checkLValue(e: Expr): void {
@@ -2300,7 +2315,7 @@ class TypeChecker{
     ) if (target) ->
       env.scope.set(
         local,
-        TType::single(posArray, TArray(TType::top(posArray), posArray)),
+        TNonTop::single(posArray, TArray(TTop::create(posArray), posArray)),
         (_, _) -> void,
       )
 
@@ -2397,15 +2412,15 @@ class TypeChecker{
   ): void {
     ty = env.scope.get(local);
     (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv) match {
-    | None() -> (TType::top(ty.pos), true)
+    | None() -> (TTop::create(ty.pos), true)
     | Some((stypes, tparams)) ->
-      t = TType::create(ty.pos, stypes, TInsts::empty(), tparams);
+      t = TNonTop::create(ty.pos, stypes, TInsts::empty(), tparams);
       !t = FilterType().type((filter, map), t);
       isEmpty = t.getSTypes(env.subst, this.tenv).stypes.isEmpty();
       (t, isEmpty)
     };
     localType = default match {
-    | Some(d) if (isTopOrEmpty) -> TType::single(d.pos, d)
+    | Some(d) if (isTopOrEmpty) -> TNonTop::single(d.pos, d)
     | _ -> ty
     };
     env.scope.set(local, localType, (_, _) -> void)

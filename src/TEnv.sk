@@ -74,7 +74,7 @@ class TEnv{
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
     if (this.seenInstantiate.contains(name.value)) {
-      return TType::inst(name, targs);
+      return TNonTop::inst(name, targs);
     };
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
 
@@ -138,7 +138,7 @@ class TEnv{
   ): Array<TType> {
     result = this.getClass(context, className).tparams.map(tparam -> {
       tvar = subst.gen(className.posRange);
-      ty = TType::fromTInst(className.posRange, tvar);
+      ty = TNonTop::fromTInst(className.posRange, tvar);
       tparam.constraint match {
       | None() -> ty
       | Some(cstr) -> unionTType(subst, this, this.normalize(context, cstr), ty)
@@ -154,7 +154,7 @@ class TEnv{
     filter: FieldType ~> Bool = _ ~> true,
   ): TType {
     obj = this.newObject(context, className, targs, filter);
-    TType::single(className.posRange, obj)
+    TNonTop::single(className.posRange, obj)
   }
 
   fun newObject(
@@ -173,7 +173,7 @@ class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    thisType = TType::inst(className, TArgs(targs));
+    thisType = TNonTop::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
     this.addFields(
       context,
@@ -192,7 +192,7 @@ class TEnv{
 
   fun newStatic(context: mutable SKStore.Context, className: Name): TType {
     obj = this.newStaticObject(context, className);
-    TType::single(className.posRange, obj)
+    TNonTop::single(className.posRange, obj)
   }
 
   fun newStaticObject(
@@ -221,7 +221,7 @@ class TEnv{
     for (tparam in tparams) {
       !this.subst[tparam.name.value] = (
         false,
-        TType::fromTParams(
+        TNonTop::fromTParams(
           tparam.name.posRange,
           TTypeParams(
             Array[
@@ -404,7 +404,7 @@ class TEnv{
     | TAExtends _ -> invariant_violation("TODO extends ")
     | TAExtendsQuestion _ -> invariant_violation("TODO extendsQuestion ")
     | TAStringLiteral(x) ->
-      TType::single(
+      TNonTop::single(
         pos,
         TPrimValue(
           TString(),
@@ -413,7 +413,7 @@ class TEnv{
         ),
       )
     | TANumLiteral(x) ->
-      TType::single(
+      TNonTop::single(
         pos,
         TPrimValue(
           TNum(),
@@ -426,14 +426,14 @@ class TEnv{
       | Var(name) ->
         name.value match {
         | "undefined" ->
-          TType::single(pos, TPrimVoid(TUndefined(), name.posRange))
+          TNonTop::single(pos, TPrimVoid(TUndefined(), name.posRange))
         | _ -> invariant_violation(`TODO typeof ${name.value}`)
         }
       | Binop(BODot(), _, Expr(_, Var(_))) -> invariant_violation("TODO typeof")
       | _ -> typingError(Array[(expr.posRange, "Invalid typeof expression")])
       }
     | TAPrim(kind) ->
-      TType::single(
+      TNonTop::single(
         pos,
         kind match {
         | TPKNull() -> TPrimVoid(TNull(), typeAst.posRange)
@@ -448,32 +448,32 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TObject(TFields::empty(), p))
+      TNonTop::single(p, TObject(TFields::empty(), p))
 
     | TAInst(n @ Name(p, "Array"), targs) ->
       if (targs.size() != 1) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TArray(this.normalize(context, targs[0]), p))
+      TNonTop::single(p, TArray(this.normalize(context, targs[0]), p))
 
     | TAArray(ty) ->
-      TType::single(pos, TArray(this.normalize(context, ty), pos))
+      TNonTop::single(pos, TArray(this.normalize(context, ty), pos))
 
     | TAInst(n @ Name(p, "void"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TPrimVoid(TVoid(), p))
+      TNonTop::single(p, TPrimVoid(TVoid(), p))
     | TAInst(n @ Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TPrimVoid(TUndefined(), p))
+      TNonTop::single(p, TPrimVoid(TUndefined(), p))
     | TAInst(n @ Name(_, "Promise"), targs) ->
       if (targs.size() != 1) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(
+      TNonTop::single(
         pos,
         TPromise(this.normalize(context, targs[0]), typeAst.posRange),
       )
@@ -481,13 +481,13 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(pos, "Invalid number of type arguments")])
       };
-      TType::bottom(pos)
+      TNonTop::bottom(pos)
     | TAInst(Name(_, x @ "true"), targs)
     | TAInst(Name(_, x @ "false"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(pos, "Invalid number of type arguments")])
       };
-      TType::single(
+      TNonTop::single(
         pos,
         TPrimValue(
           TBool(),
@@ -503,7 +503,7 @@ class TEnv{
           )
         };
         tparam = this.tparams[n.value];
-        TType::fromTParams(pos, TTypeParams(Array[Array[tparam]]))
+        TNonTop::fromTParams(pos, TTypeParams(Array[Array[tparam]]))
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
@@ -515,7 +515,7 @@ class TEnv{
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.posRange, "Cyclic definition")])
       } else {
-        TType::fromTInst(
+        TNonTop::fromTInst(
           pos,
           TSInst(
             n,
@@ -560,7 +560,7 @@ class TEnv{
         }
       };
       types = typeVec.toArray();
-      TType::single(
+      TNonTop::single(
         pos,
         TTuple(types.map(ty -> this.normalize(context, ty)), typeAst.posRange),
       )
@@ -626,7 +626,7 @@ class TEnv{
       } else {
         TFuns(Array[tfun], Array[], typeAst.posRange)
       };
-      TType::single(pos, tfuns)
+      TNonTop::single(pos, tfuns)
     | TAGet _ -> invariant_violation("TODO TAGet")
     }
   }

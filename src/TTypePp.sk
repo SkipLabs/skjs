@@ -477,7 +477,7 @@ fun prettyPrintType(compact: Bool, ty: TType): String {
 }
 
 fun prettyPrintSTypes(stypes: STypes): String {
-  prettyPrintType(false, TType::fromSTypes(PosRange::none, stypes))
+  prettyPrintType(false, TNonTop::fromSTypes(PosRange::none, stypes))
 }
 
 module end;
