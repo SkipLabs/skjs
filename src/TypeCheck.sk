@@ -1069,7 +1069,7 @@ class TypeChecker{
         ],
       )
     };
-    result = TNonTop::bottom(pos);
+    result: TType = TNonTop::bottom(pos);
     for (stype in stypes.stypes) {
       stype match {
       | TObject(fields, _) ->
@@ -1281,7 +1281,7 @@ class TypeChecker{
     | Get(arr, idx) ->
       stypes = this.expr(env, arr).getSTypes(env.subst, this.tenv);
       idxType = this.expr(env, idx);
-      result = TNonTop::bottom(pos);
+      result: TType = TNonTop::bottom(pos);
       for (stype in stypes.stypes) {
         ty = stype match {
         | TArray(eltType, _) ->
@@ -1315,7 +1315,7 @@ class TypeChecker{
           TTop::create(objectPos)
         | TPrimValue(primKind, _, primPos) ->
           idxSTypes = idxType.getSTypes(env.subst, this.tenv);
-          ty = TNonTop::bottom(pos);
+          ty: TType = TNonTop::bottom(pos);
           for (idxSType in idxSTypes) {
             idxSType match {
             | TPrimValue(
@@ -2414,7 +2414,7 @@ class TypeChecker{
     (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv) match {
     | None() -> (TTop::create(ty.pos), true)
     | Some((stypes, tparams)) ->
-      t = TNonTop::create(ty.pos, stypes, TInsts::empty(), tparams);
+      t: TType = TNonTop::create(ty.pos, stypes, TInsts::empty(), tparams);
       !t = FilterType().type((filter, map), t);
       isEmpty = t.getSTypes(env.subst, this.tenv).stypes.isEmpty();
       (t, isEmpty)

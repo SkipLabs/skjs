@@ -151,15 +151,15 @@ class TType private {
     env: TEnv,
     isContravariant: Bool = false,
   ): STypes {
-    ty = this;
+    ty: TType = this;
     loop {
       ty.expand(subst, env, isContravariant) match {
       | None() -> return STypes::empty()
       | Some((stypes, tparams)) ->
         if (tparams.tparams.isEmpty()) return stypes;
-        result = TNonTop::fromSTypes(this.pos, stypes);
+        result: TType = TNonTop::fromSTypes(this.pos, stypes);
         for (inter in tparams.tparams) {
-          localResult: this = TTop::create(ty.pos);
+          localResult: TType = TTop::create(ty.pos);
           for (tparam in inter) {
             tparam.cstr match {
             | None() -> continue
