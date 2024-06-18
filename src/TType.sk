@@ -678,10 +678,14 @@ fun genericSubSmaller<T, K: Orderable>(
   STOk()
 }
 
+// assuming the image-under-proj of iter1 and iter2 are strictly increasing,
+// check that for every y in iter2, either there is an equal-under-proj x in
+// iter1 and sub(x, y) is STOk, or there is no equal-under-proj x but
+// mayDrop(y) is STOk
 fun genericSubBigger<T, K: Orderable>(
   iter1: mutable Iterator<T>,
   iter2: mutable Iterator<T>,
-  mkError: T -> STResult,
+  mayDrop: T -> STResult,
   proj: T ~> K,
   sub: (T, T) -> STResult,
 ): STResult {
@@ -689,21 +693,22 @@ fun genericSubBigger<T, K: Orderable>(
   head2 = iter2.next();
   loop {
     (head1, head2) match {
-    | (None(), None()) -> break void
-    | (None(), Some(y)) -> return mkError(y)
-    | (Some(_), None()) -> return STOk()
+    | (_, None()) -> return STOk()
     | (Some(x), Some(y)) if (proj(x) < proj(y)) -> !head1 = iter1.next()
-    | (Some(x), Some(y)) if (proj(x) > proj(y)) -> return mkError(y)
-    | (Some(x), Some(y)) ->
+    | (Some(x), Some(y)) if (proj(x) == proj(y)) ->
       sub(x, y) match {
       | STOk() ->
         !head1 = iter1.next();
         !head2 = iter2.next()
       | err -> return err
       }
+    | (_, Some(y)) ->
+      mayDrop(y) match {
+      | STOk() -> !head2 = iter2.next()
+      | err -> return err
+      }
     }
   };
-  STOk()
 }
 
 fun isSubTTypeParams(
