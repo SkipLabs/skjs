@@ -348,16 +348,9 @@ class TypeChecker{
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
     subst = mutable Subst{context};
-    cstr = TType::create(
+    cstr = TType::inst(c.name, targs);
+    thisType = TType::fromTParams(
       c.name.posRange,
-      STypes::empty(),
-      TInsts(Array[TSInst(c.name, targs)]),
-      TTypeParams::empty(),
-    );
-    thisType = TType::create(
-      c.name.posRange,
-      STypes::empty(),
-      TInsts::empty(),
       TTypeParams(
         Array[Array[TParam("this", c.name.posRange.fileName, -1, Some(cstr))]],
       ),
@@ -475,12 +468,7 @@ class TypeChecker{
   }
 
   static fun uninitializedThisType(pos: PosRange): TType {
-    TType::create(
-      pos,
-      STypes::create(Array[TObject(TFields::create(Array[]), pos)]),
-      TInsts::empty(),
-      TTypeParams::empty(),
-    );
+    TType::single(pos, TObject(TFields::create(Array[]), pos));
   }
 
   fun funDefSetup(
@@ -564,12 +552,7 @@ class TypeChecker{
     | Some(asyncPos) ->
       !this.isAsync = true;
       tvar = env.subst.gen(asyncPos);
-      type = TType::create(
-        asyncPos,
-        STypes::empty(),
-        TInsts(Array[tvar]),
-        TTypeParams::empty(),
-      );
+      type = TType::fromTInst(asyncPos, tvar);
       this.checkSubType(
         env,
         asyncPos,
@@ -2148,22 +2131,12 @@ class TypeChecker{
   fun makeBoundTVar(env: mutable TCEnv, ty: TType): TType {
     tvar = env.subst.gen(ty.pos);
     env.subst.grow(this.tenv, tvar, ty, true);
-    TType::create(
-      ty.pos,
-      STypes::empty(),
-      TInsts(Array[tvar]),
-      TTypeParams::empty(),
-    )
+    TType::fromTInst(ty.pos, tvar)
   }
 
   fun newTVar(env: mutable TCEnv, pos: PosRange): TType {
     tvar = env.subst.gen(pos);
-    TType::create(
-      pos,
-      STypes::empty(),
-      TInsts(Array[tvar]),
-      TTypeParams::empty(),
-    )
+    TType::fromTInst(pos, tvar)
   }
 
   fun checkLValue(e: Expr): void {

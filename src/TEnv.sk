@@ -173,12 +173,7 @@ class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    thisType = TType::create(
-      className.posRange,
-      STypes::empty(),
-      TInsts(Array[TSInst(className, TArgs(targs))]),
-      TTypeParams::empty(),
-    );
+    thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
     this.addFields(
       context,
@@ -226,10 +221,8 @@ class TEnv{
     for (tparam in tparams) {
       !this.subst[tparam.name.value] = (
         false,
-        TType::create(
+        TType::fromTParams(
           tparam.name.posRange,
-          STypes::empty(),
-          TInsts::empty(),
           TTypeParams(
             Array[
               Array[
@@ -510,12 +503,7 @@ class TEnv{
           )
         };
         tparam = this.tparams[n.value];
-        TType::create(
-          pos,
-          STypes::empty(),
-          TInsts::empty(),
-          TTypeParams(Array[Array[tparam]]),
-        )
+        TType::fromTParams(pos, TTypeParams(Array[Array[tparam]]))
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
@@ -527,22 +515,19 @@ class TEnv{
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.posRange, "Cyclic definition")])
       } else {
-        TType::create(
+        TType::fromTInst(
           pos,
-          STypes::empty(),
-          TInsts::single(
-            TSInst(
-              n,
-              TArgs(
-                targs.map(x ->
-                  (this with {
-                    forbiddenInsts => this.seenInstantiate,
-                  }).normalize(context, x)
-                ),
+          TSInst(
+            n,
+            TArgs(
+              targs.map(x ->
+                (this with {forbiddenInsts => this.seenInstantiate}).normalize(
+                  context,
+                  x,
+                )
               ),
             ),
           ),
-          TTypeParams::empty(),
         )
       }
     | TAUnion(ty1, ty2) ->

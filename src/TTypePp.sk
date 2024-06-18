@@ -477,15 +477,7 @@ fun prettyPrintType(compact: Bool, ty: TType): String {
 }
 
 fun prettyPrintSTypes(stypes: STypes): String {
-  prettyPrintType(
-    false,
-    TType::create(
-      PosRange::none,
-      stypes,
-      TInsts::empty(),
-      TTypeParams::empty(),
-    ),
-  )
+  prettyPrintType(false, TType::fromSTypes(PosRange::none, stypes))
 }
 
 module end;
