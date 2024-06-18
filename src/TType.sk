@@ -480,7 +480,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
 
 class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
   static fun create(stypes: Array<SType>): this {
-    STypes(
+    static(
       stypes.filter(stype -> {
         stype match {
         | TPrimValue(_, Some(values), _) -> !values.values.isEmpty()
@@ -495,7 +495,7 @@ class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
   }
 
   static fun single(x: SType): this {
-    STypes(Array[x])
+    static::create(Array[x])
   }
 
   fun isEmpty(): Bool {
