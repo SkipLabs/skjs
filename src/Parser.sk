@@ -4,7 +4,7 @@
 
 module SKJS;
 
-mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
+mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
   /***************************************************************************/
   // Helpers
   /***************************************************************************/
@@ -809,7 +809,7 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
   //
   // When you do that, it means that the method "myfield" will be
   // called every time the field "myfield" is accessed. So concretely,
-  // if you write obj.myfield, instead of accesing a field, you are
+  // if you write obj.myfield, instead of accessing a field, you are
   // really executing a method.
   /***************************************************************************/
 
@@ -985,12 +985,8 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
   /***************************************************************************/
 
   mutable fun def(): Def {
-    loop {
-      if (this.lex.peekKind() is Some(TKSemi())) {
-        _ = this.lex.next();
-        continue;
-      };
-      break void;
+    while (this.lex.peekKind() is Some(TKSemi())) {
+      _ = this.lex.next();
     };
     this.defHelper()
   }
@@ -1030,14 +1026,10 @@ mutable class Parser(mutable lex: mutable Lexer, mutable id: Int = 1) {
   }
 
   mutable fun maybeDef(): ?Def {
-    loop {
-      if (this.lex.peekKind() is Some(TKSemi())) {
-        _ = this.lex.next();
-        continue;
-      };
-      if (this.lex.peekKind() is None()) return None();
-      break void;
+    while (this.lex.peekKind() is Some(TKSemi())) {
+      _ = this.lex.next();
     };
+    if (this.lex.peekKind() is None()) return None();
     Some(this.def())
   }
 

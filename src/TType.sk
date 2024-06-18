@@ -7,7 +7,7 @@
 // starts with "ST" means that it represents a single type out of a
 // larger union.
 //
-// For example: type type number | undefined is represented by a class
+// For example: the type number | undefined is represented by a class
 // TType that contains a union of SType where the STypes are "number"
 // and "undefined".
 /*****************************************************************************/
@@ -28,7 +28,7 @@ const kTopHash: Int = "Top".hash();
 //   - the instances (which represent type variables, unexpanded type
 //   instances and unexpanded intersections).
 //
-//   - the parameters (normalized under a disjonctive normal form).
+//   - the parameters (normalized under a disjunctive normal form).
 //
 // A few examples:
 //   number | void           ==> TType(stypes = void | number)
@@ -56,7 +56,7 @@ class TType private (
   // This field is true if the type represents TOP (meaning, the type
   // that contains all possible values). Note that TOP and BOTTOM have
   // the same representation outside of this field. Why is that? We
-  // could have introduced an algebric data type of the form: TOP |
+  // could have introduced an algebraic data type of the form: TOP |
   // BOTTOM | TTYPE. The reason is that outside of those 3 operations:
   // sub-typing, intersection and union, we really want to treat TOP
   // and BOTTOM the same way. For example, imagine you are writing x.y
@@ -79,7 +79,7 @@ class TType private (
   insts: TInsts,
 
   // The type parameters (universally quantified type variables), in a
-  // sorted disjonctive normal form. So if you write: T1 & (T3 | T2)
+  // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   tparams: TTypeParams,
 ) uses Hashable, Orderable {
@@ -190,10 +190,7 @@ class TType private (
     tparams = this.tparams;
     stypes = this.stypes;
     insts = Vector::mcreateFromItems(this.insts.insts);
-    seen = mutable Set[];
-    for (inst in insts) {
-      seen.insert(inst);
-    };
+    seen = Set::mcreateFromItems(insts);
     loop {
       if (insts.isEmpty()) return (false, stypes, tparams);
       inst = insts.pop();
@@ -219,13 +216,7 @@ class TType private (
   }
 
   fun containsTVar(): Bool {
-    for (inst in this.insts) {
-      inst match {
-      | TVar _ -> return true
-      | _ -> void
-      };
-    };
-    false
+    this.insts.insts.any(inst ~> inst is TVar _)
   }
 }
 
@@ -294,7 +285,7 @@ fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
 /*****************************************************************************/
 
 class TTuple(tuple: Array<TType>) extends SType {
-  fun toArray(subst: mutable Subst, env: TEnv): TType {
+  fun toArray_UNUSED(subst: mutable Subst, env: TEnv): TType {
     invariant(this.tuple.size() != 0);
     elt = this.tuple[0];
     for (i in Range(1, this.tuple.size())) {
@@ -458,13 +449,12 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
     | Some(fd) ->
       ty = fd.type;
       if (fd.isOptional) {
-        hasUndefined = false;
-        for (stype in ty.stypes.stypes) {
+        hasUndefined = ty.stypes.stypes.any(stype ~>
           stype match {
-          | TPrimVoid(TUndefined _, _) -> !hasUndefined = true
-          | _ -> void
+          | TPrimVoid(TUndefined _, _) -> true
+          | _ -> false
           }
-        };
+        );
         if (!hasUndefined) {
           stypes = STypes::create(
             Array[TPrimVoid(TUndefined(), fieldName.posRange)].concat(
@@ -528,37 +518,15 @@ class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
     None()
   }
 
-  fun isStringOrNum(): Bool {
-    for (stype in this.stypes) {
-      stype match {
-      | TPrimValue(TNum _, _, _) -> continue
-      | TPrimValue(TString _, _, _) -> continue
-      | _ -> return false
-      }
-    };
-    true
-  }
-
   fun isStringOrNumOrBool(): Bool {
-    for (stype in this.stypes) {
+    this.stypes.all(stype ~>
       stype match {
-      | TPrimValue(TNum _, _, _) -> continue
-      | TPrimValue(TString _, _, _) -> continue
-      | TPrimValue(TBool _, _, _) -> continue
-      | _ -> return false
+      | TPrimValue(TNum _, _, _) -> true
+      | TPrimValue(TString _, _, _) -> true
+      | TPrimValue(TBool _, _, _) -> true
+      | _ -> false
       }
-    };
-    true
-  }
-
-  fun isString(): Bool {
-    for (stype in this.stypes) {
-      stype match {
-      | TPrimValue(TString _, _, _) -> continue
-      | _ -> return false
-      }
-    };
-    true
+    )
   }
 
   fun isSingle(): Bool {

@@ -13,7 +13,7 @@ value class LocalRef(type: TType, isInitialized: Bool)
 mutable class Scope{
   id: Int,
   isLoop: Bool,
-  up: ?mutable Scope = None(),
+  up: ?readonly Scope = None(),
   mutable locals: SortedMap<String, Name> = SortedMap[],
   mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
@@ -448,12 +448,7 @@ class TypeChecker{
             context,
             c.name,
             targs.targs,
-            fieldType ~> {
-              fieldType match {
-              | ftv @ FieldTypeValue _ -> ftv.value is Some _
-              | _ -> false
-              }
-            },
+            fieldType ~> (fieldType is FieldTypeValue{value => Some _}),
           );
           _ = this.constructor(context, thisType, partialThisType, fd)
         } else {
@@ -914,26 +909,27 @@ class TypeChecker{
       }
 
     | For(initStmt, cond, incr, block) ->
+      scopeCopy = env.scope;
       initScope = mutable Scope{
         id => env.next(),
         isLoop => false,
-        up => Some(env.scope),
+        up => Some(scopeCopy),
       };
       env.!scope = initScope;
       this.stmt(env, initStmt);
       loopScope = mutable Scope{
         id => env.next(),
         isLoop => true,
-        up => Some(env.scope),
+        up => Some(initScope),
       };
       env.!scope = loopScope;
       this.checkBool(env, cond);
       loopBody = this.block(env, block);
       env.popScopeReplace(loopBody);
       _ = this.expr(env, incr);
-      env.!scope = env.scope.up.fromSome();
+      env.!scope = initScope;
       env.popScope(env.subst, this.tenv, loopScope);
-      env.!scope = env.scope.up.fromSome();
+      env.!scope = scopeCopy;
       env.popScopeReplace(initScope)
     | Block(stmts) ->
       for (stmt in stmts) {
@@ -959,16 +955,17 @@ class TypeChecker{
       )
     | Throw(e) -> _ = this.expr(env, e)
     | While(cond, block) ->
+      scopeCopy = env.scope;
       loopScope = mutable Scope{
         id => env.next(),
         isLoop => true,
-        up => Some(env.scope),
+        up => Some(scopeCopy),
       };
       env.!scope = loopScope;
       this.checkBool(env, cond);
       loopBody = this.block(env, block, Some((cond, true)));
       env.popScopeReplace(loopBody);
-      env.!scope = env.scope.up.fromSome();
+      env.!scope = scopeCopy;
       env.popScope(env.subst, this.tenv, loopScope)
     | Switch(e, branches) ->
       this.switchCheckExhaustiveness(env, e, branches);
@@ -1358,43 +1355,27 @@ class TypeChecker{
       | BOAddition() ->
         stypes1 = this.expr(env, e1).getSTypes(env.subst, this.tenv);
         ty1 = TType::fromSTypes(e1.posRange, stypes1);
-        for (stype in stypes1.stypes) {
-          stype match {
-          | TPrimValue(TNum(), _, _)
-          | TPrimValue(TString(), _, _) ->
-            void
-          | sty ->
-            typingError(
-              Array[(pos, "Invalid + operation"), (sty.pos, "For this object")],
-            )
-          }
-        };
-        if (stypes1.stypes.size() == 0) {
-          typingError(
-            Array[(pos, "Invalid + operation"), (pos, "For this object")],
-          )
-        };
-        if (stypes1.stypes.size() > 1) {
+        if (stypes1.stypes.size() != 1) {
           typingError(
             Array[
               (pos, "Invalid + operation"),
-              (pos, "For an object of type: " + ty1.toString()),
+              (pos, `For an object of type: ${ty1}`),
             ],
           )
         };
-        ty2 = this.expr(env, e2);
-        for (stype in stypes1.stypes) {
-          stype match {
-          | TPrimValue(TNum(), _, _)
-          | TPrimValue(TString(), _, _) ->
-            this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1)
-          | _ -> invariant_violation("Internal error: unexpected type for +")
-          }
-        };
         stypes1.stypes[0] match {
-        | TPrimValue(k, _, primPos) ->
+        | TPrimValue(k @ TNum(), _, primPos)
+        | TPrimValue(k @ TString(), _, primPos) ->
+          ty2 = this.expr(env, e2);
+          this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1);
           TType::single(pos, TPrimValue(k, None(), primPos))
-        | _ -> invariant_violation("Internal error")
+        | sty ->
+          typingError(
+            Array[
+              (pos, "Invalid + operation"),
+              (sty.pos, `For an object of type ${ty1}`),
+            ],
+          )
         }
       | BOAssignment() -> this.assign(env, pos, e1, e2)
       | BOStrictInequality()
@@ -1667,16 +1648,14 @@ class TypeChecker{
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
         stypes = ty1.getSTypes(env.subst, this.tenv);
-        hasNullOrUndefined = false;
-        for (stype in stypes) {
+        hasNullOrUndefined = stypes.stypes.any(stype ~>
           stype match {
           | TPrimVoid(TNull(), _)
           | TPrimVoid(TUndefined(), _) ->
-            !hasNullOrUndefined = true;
-            break void
-          | _ -> void
+            true
+          | _ -> false
           }
-        };
+        );
         if (!hasNullOrUndefined) {
           typingError(
             Array[
@@ -1740,11 +1719,8 @@ class TypeChecker{
       } else {
         Array[
           Lambda(pos, (subst, argsTypes, retType) ~> {
-            args = mutable Vector[];
-            for (i => p in params) {
-              args.push((p.i0, argsTypes[i]));
-            };
-            this.closure(subst, savedScope, args.toArray(), retType, body)
+            args = params.mapWithIndex((i, p) ~> (p.i0, argsTypes[i]));
+            this.closure(subst, savedScope, args, retType, body)
           }),
         ]
       };
