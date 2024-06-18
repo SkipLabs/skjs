@@ -141,6 +141,15 @@ class TType private (
     static(h, pos, false, stypes, insts, tparams);
   }
 
+  fun withSTypes(stypes: STypes): this {
+    if (this.isTop) {
+      invariant(stypes.isEmpty());
+      this
+    } else {
+      static::create(this.pos, stypes, this.insts, this.tparams)
+    }
+  }
+
   fun compare(other: TType): Order {
     (this.h, this.stypes, this.insts, this.tparams).compare(
       (other.h, other.stypes, other.insts, other.tparams),
@@ -149,6 +158,13 @@ class TType private (
 
   fun hash(): Int {
     this.h
+  }
+
+  fun isBottom(): Bool {
+    !this.isTop &&
+      this.stypes.isEmpty() &&
+      this.insts.isEmpty() &&
+      this.tparams.isEmpty()
   }
 
   fun getSTypes(
@@ -218,13 +234,31 @@ class TType private (
   fun containsTVar(): Bool {
     this.insts.insts.any(inst ~> inst is TVar _)
   }
+
+  fun removeMethods(): this {
+    this.withSTypes(this.stypes.removeMethods())
+  }
+
+  // Remove methods from the types of the fields of the type, which should be an object
+  // Also removes the fields if the remaining types are empty
+  fun removeMethodsFromObject(subst: mutable Subst, env: TEnv): this {
+    stypes = this.getSTypes(subst, env);
+    invariant(stypes.stypes.size() == 1);
+    !stypes = stypes.removeMethodsFromObject();
+    static::fromSTypes(this.pos, stypes);
+  }
 }
 
 /*****************************************************************************/
 /* Object types. */
 /*****************************************************************************/
 
-class TObject(fields: TFields) extends SType
+class TObject(fields: TFields) extends SType {
+  fun removeMethodsFromObject(): this {
+    fields = this.fields.removeMethods();
+    this with {fields}
+  }
+}
 class TAlgebraic(branches: Array<TConstr>) extends SType
 class TConstr(fields: TFields) uses Hashable, Orderable {}
 
@@ -250,34 +284,6 @@ fun createObject(pos: PosRange, fields: TFields): TType {
   } else {
     TType::single(pos, TObject(fields, pos))
   }
-}
-
-fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
-  stypes = ty.getSTypes(subst, env);
-  invariant(stypes.stypes.size() == 1);
-  !stypes = STypes::create(
-    stypes.stypes.map(stype -> {
-      stype match {
-      | TObject(TFields(fields), pos) ->
-        TObject(
-          TFields::create(
-            fields.filter(field -> {
-              for (fieldSType in field.type.stypes.stypes) {
-                fieldSType match {
-                | TFuns(_, methods, _) if (!methods.isEmpty()) -> return false
-                | _ -> return true
-                }
-              };
-              return true
-            }),
-          ),
-          pos,
-        )
-      | _ -> invariant_violation("Internal error: new should produce an object")
-      }
-    }),
-  );
-  TType::create(ty.pos, stypes, TInsts::empty(), TTypeParams::empty());
 }
 
 /*****************************************************************************/
@@ -392,6 +398,20 @@ base class SType(pos: PosRange) uses Hashable, Orderable {
     | TFuns _ -> 11
     }
   }
+
+  // Returns None() if the result is empty
+  fun removeMethods(): ?SType {
+    this match {
+    | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
+    | TFuns(funs, methods, pos) if (!methods.isEmpty()) ->
+      Some(TFuns(funs, Array[], pos))
+    | _ -> Some(this)
+    }
+  }
+
+  overridable fun removeMethodsFromObject(): this {
+    invariant_violation("Internal error: new should produce an object")
+  }
 }
 
 class TField(
@@ -402,6 +422,11 @@ class TField(
 ) uses Hashable, Orderable {
   fun withOptional(): this {
     this with {isOptional => true}
+  }
+
+  fun removeMethods(): ?this {
+    type = this.type.removeMethods();
+    if (type.isBottom()) None() else Some(this with {type})
   }
 }
 
@@ -476,6 +501,10 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
     | _ -> invariant_violation("Internal error: getKind on non constructor")
     }
   }
+
+  fun removeMethods(): this {
+    static(this.fields.filterMap(field ~> field.removeMethods()))
+  }
 }
 
 class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
@@ -532,6 +561,14 @@ class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
   fun isSingle(): Bool {
     this.stypes.size() == 1;
   }
+
+  fun removeMethods(): this {
+    static(this.stypes.filterMap(stype ~> stype.removeMethods()))
+  }
+
+  fun removeMethodsFromObject(): this {
+    static(this.stypes.map(stype ~> stype.removeMethodsFromObject()))
+  }
 }
 
 class TVar(pos: PosRange, id: Int) extends TInst
@@ -569,10 +606,15 @@ class TParam(
   id: Int,
   cstr: ?TType,
 ) uses Hashable, Orderable
+
 // The type parameters are in DNF
 class TTypeParams(tparams: Array<Array<TParam>>) uses Hashable, Orderable {
   static fun empty(): this {
     TTypeParams(Array[])
+  }
+
+  fun isEmpty(): Bool {
+    this.tparams.isEmpty()
   }
 }
 
