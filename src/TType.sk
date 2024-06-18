@@ -141,6 +141,15 @@ class TType private (
     static(h, pos, false, stypes, insts, tparams);
   }
 
+  fun withSTypes(stypes: STypes): this {
+    if (this.isTop) {
+      invariant(stypes.isEmpty());
+      this
+    } else {
+      static::create(this.pos, stypes, this.insts, this.tparams)
+    }
+  }
+
   fun compare(other: TType): Order {
     (this.h, this.stypes, this.insts, this.tparams).compare(
       (other.h, other.stypes, other.insts, other.tparams),
@@ -149,6 +158,13 @@ class TType private (
 
   fun hash(): Int {
     this.h
+  }
+
+  fun isBottom(): Bool {
+    !this.isTop &&
+      this.stypes.isEmpty() &&
+      this.insts.isEmpty() &&
+      this.tparams.isEmpty()
   }
 
   fun getSTypes(
@@ -261,14 +277,20 @@ fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
       | TObject(TFields(fields), pos) ->
         TObject(
           TFields::create(
-            fields.filter(field -> {
-              for (fieldSType in field.type.stypes.stypes) {
+            fields.filterMap(field ~> {
+              fieldType = field.type;
+              fieldSTypes = fieldType.stypes.stypes.filterMap(fieldSType ~>
                 fieldSType match {
-                | TFuns(_, methods, _) if (!methods.isEmpty()) -> return false
-                | _ -> return true
+                | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
+                | tfuns @ TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                  Some(tfuns with {methods => Array[]})
+                | _ -> Some(fieldSType)
                 }
-              };
-              return true
+              );
+              !fieldType = fieldType.withSTypes(STypes::create(fieldSTypes));
+              if (fieldType.isBottom()) None() else {
+                Some(field with {type => fieldType})
+              }
             }),
           ),
           pos,
@@ -573,6 +595,10 @@ class TParam(
 class TTypeParams(tparams: Array<Array<TParam>>) uses Hashable, Orderable {
   static fun empty(): this {
     TTypeParams(Array[])
+  }
+
+  fun isEmpty(): Bool {
+    this.tparams.isEmpty()
   }
 }
 
