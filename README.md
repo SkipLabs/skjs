@@ -4,6 +4,10 @@ Reactive dialect of JavaScript
 
 ## Getting started
 
-skargo build
+`skargo build`
 
-cd examples/ && ../target/host/dev/skjs run ./src/deck.ts
+`cd examples/ && ../target/host/dev/skjs run ./src/deck.ts`
+
+## Running tests
+
+`skargo test`
