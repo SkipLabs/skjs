@@ -199,6 +199,18 @@ class TType private {
       this.tparams.isEmpty()
   }
 
+  fun isVoid(subst: mutable Subst, env: TEnv): Bool {
+    this.expand(subst, env, Covariant()) match {
+    | None() -> false
+    | Some((stypes, tparams)) ->
+      tparams.isEmpty() &&
+        stypes.singleElt() match {
+        | Some(TPrimVoid(TVoid(), _)) -> true
+        | _ -> false
+        }
+    }
+  }
+
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): ?STypes {
     ty = this;

@@ -574,24 +574,12 @@ class TypeChecker{
       };
       _ = this.block(env, body);
       term = StmtTermination::block(body);
-      if (term.through && !this.isVoid(env, retType)) {
+      if (term.through && !retType.isVoid(env.subst, this.tenv)) {
         typingError(
           Array[(fd.pos, "This function does not always return a value")],
         )
       }
     };
-  }
-
-  fun isVoid(env: mutable TCEnv, ty: TType): Bool {
-    ty.expand(env.subst, this.tenv, Covariant()) match {
-    | None() -> false
-    | Some((stypes, tparams)) ->
-      tparams.tparams.size() == 0 &&
-        stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) -> true
-        | _ -> false
-        }
-    }
   }
 
   fun constructor(
