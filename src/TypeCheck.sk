@@ -574,10 +574,22 @@ class TypeChecker{
       };
       _ = this.block(env, body);
       term = StmtTermination::block(body);
-      if (term.through && !retType.isVoid(env.subst, this.tenv)) {
-        typingError(
-          Array[(fd.pos, "This function does not always return a value")],
-        )
+      if (term.through) {
+        if (retType.isBottom()) {
+          typingError(
+            Array[
+              (
+                fd.pos,
+                "This function is annotated with return type never but may terminate normally.",
+              ),
+            ],
+          )
+        };
+        if (!retType.isVoid(env.subst, this.tenv)) {
+          typingError(
+            Array[(fd.pos, "This function does not always return a value")],
+          )
+        }
       }
     };
   }
