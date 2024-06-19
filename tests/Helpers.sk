@@ -1,7 +1,28 @@
 module SKJSTests;
 
+base class ReferenceError{line: Int} {
+  fun validate(fileName: String, typeError: SKJS.TypingError): void;
+  fun getMessage(): String;
+}
+
 const kTS_EXPECT_ERROR_str: String = "ts-expect-error";
 const kTS_EXPECT_ERROR: Vector<Char> = kTS_EXPECT_ERROR_str.chars();
+
+class TSExpectError{restOfLine: String} extends ReferenceError {
+  fun validate(fileName: String, typeError: SKJS.TypingError): void {
+    if (this.restOfLine.length() > 0) {
+      SKTest.expectEq(
+        typeError.messages[0].i1,
+        this.restOfLine,
+        `${fileName}:${this.line} Wrong error message`,
+      );
+    }
+  }
+
+  fun getMessage(): String {
+    this.restOfLine
+  }
+}
 
 /* Returns an array of line numbers and rest-of-line for all lines
  * matching .*\/\/\s*(@ts-expect-error)\s+(?<rest-of-line>[^\n]*)
@@ -10,7 +31,15 @@ const kTS_EXPECT_ERROR: Vector<Char> = kTS_EXPECT_ERROR_str.chars();
  * returned line number is 2.
  *
  * Throws if the annotation is found somewhere else. */
-fun findTSExpectErrors(contents: String): mutable Iterator<(Int, String)> {
+fun findTSExpectErrors(contents: String): mutable Iterator<TSExpectError> {
+  /*
+    Correctness is based on the fact that these are all disjoint sets:
+    - '\n'
+    - ' ', '\t'
+    - '/'
+    - '@'
+    - characters in kTS_EXPECT_ERROR
+   */
   chars = contents.chars().toArray();
   pos = 0;
   // Do not trust the lexer's newLinesMap, as a way to double-check it
@@ -79,8 +108,188 @@ fun findTSExpectErrors(contents: String): mutable Iterator<(Int, String)> {
       !pos = pos + 1;
     };
     restOfLine = String::fromChars(chars.slice(restOfLineStart, pos));
-    yield (lineNumber + 1, restOfLine);
+    yield TSExpectError{line => lineNumber + 1, restOfLine};
   };
+}
+
+fun isDigit(c: Char): Bool {
+  c >= '0' && c <= '9'
+}
+
+fun isFileNameChar(c: Char): Bool {
+  c >= 'a' && c <= 'z' || c >= 'A' && c <= 'Z' || isDigit(c) || c == '.'
+}
+
+fun isNotEOL(c: Char): Bool {
+  c != '\n' && c != '\r'
+}
+
+class TSConformanceReferenceError{
+  fileName: String,
+  column: Int,
+  errorCode: Int,
+  message: String,
+  extraMessages: Array<String>,
+} extends ReferenceError {
+  fun validate(_fileName: String, _typeError: SKJS.TypingError): void {
+    // Error messages do not match anyway, let's assume it's the same error
+    void
+  }
+  fun getMessage(): String {
+    `TS${this.errorCode} ${this.message}`
+  }
+}
+
+/* Parses the first lines of a TypeScript conformance reference errors file and returns them */
+mutable class TSConformanceReferenceErrorsParser private {
+  private fileName: String,
+  private chars: Array<Char>,
+  private mutable pos: Int = 0,
+  private mutable lineNumber: Int = 1,
+  private mutable lineStart: Int = 0,
+} {
+  static fun parse(
+    fileName: String,
+  ): mutable Iterator<TSConformanceReferenceError> {
+    contents = FileSystem.readTextFile(fileName);
+    chars = contents.chars().toArray();
+    p = mutable static{fileName, chars};
+    p.file()
+  }
+
+  readonly fun currentPosition(): String {
+    c = this.pos - this.lineStart + 1;
+    `File ${this.fileName}, line ${this.lineNumber}, character ${c} (position ${
+      this.pos
+    })`
+  }
+
+  mutable fun file(): mutable Iterator<TSConformanceReferenceError> {
+    loop {
+      invariant(
+        this.pos < this.chars.size(),
+        `${this.currentPosition()}: Expected more error lines`,
+      );
+      this.possibleEatChar('\r');
+      if (this.chars[this.pos] == '\n') {
+        break void;
+      };
+      fileName = this.readString(isFileNameChar);
+      this.eatChar('(');
+      line = this.readInt();
+      this.eatChar(',');
+      column = this.readInt();
+      this.eatString("): error TS");
+      errorCode = this.readInt();
+      invariant(
+        errorCode >= 1000 && errorCode <= 9999,
+        `${this.currentPosition()}: Error code ${errorCode} is expected to be between 1000 and 9999`,
+      );
+      this.eatString(": ");
+      message = this.readString(isNotEOL);
+      this.possibleEatChar('\r');
+      this.eatChar('\n');
+      extraMessages = this.extra().collect(Array);
+      yield TSConformanceReferenceError{
+        fileName,
+        line,
+        column,
+        errorCode,
+        message,
+        extraMessages,
+      };
+    };
+    loop {
+      invariant(
+        this.pos < this.chars.size(),
+        `${this.currentPosition()}: Expected more lines after errors`,
+      );
+      if (this.chars[this.pos] == '=') {
+        this.eatString("==== ");
+        break void;
+      };
+      this.possibleEatChar('\r');
+      invariant(
+        this.chars[this.pos] == '\n',
+        `${this.currentPosition()}: Unexpected character ${this.chars[
+          this.pos,
+        ]} after errors`,
+      );
+      this.eatChar('\n');
+    }
+  }
+
+  mutable fun nextChar(): void {
+    if (this.chars[this.pos] == '\n') {
+      this.!lineNumber = this.lineNumber + 1;
+      this.!lineStart = this.pos + 1;
+    };
+    this.!pos = this.pos + 1;
+  }
+
+  mutable fun possibleEatChar(c: Char): void {
+    if (this.pos < this.chars.size() && this.chars[this.pos] == c) {
+      this.nextChar();
+    }
+  }
+
+  mutable fun eatChar(c: Char): void {
+    invariant(
+      this.pos < this.chars.size(),
+      `${this.currentPosition()}: Expected character ${c} but got end of file`,
+    );
+    invariant(
+      this.chars[this.pos] == c,
+      `${this.currentPosition()}: Expected character ${c} but got ${this.chars[
+        this.pos,
+      ]}`,
+    );
+    this.nextChar();
+  }
+
+  mutable fun eatString(s: String): void {
+    for (c in s.chars()) {
+      this.eatChar(c);
+    }
+  }
+
+  mutable fun readInt(): Int {
+    this.readString(isDigit).toInt()
+  }
+
+  mutable fun readString(validChar: Char -> Bool): String {
+    start = this.pos;
+    while (this.pos < this.chars.size() && validChar(this.chars[this.pos])) {
+      this.nextChar();
+    };
+    invariant(
+      this.pos > start,
+      `${this.currentPosition()}: Expected non-empty string`,
+    );
+    String::fromChars(this.chars.slice(start, this.pos))
+  }
+
+  mutable fun extra(): mutable Iterator<String> {
+    loop {
+      invariant(
+        this.pos < this.chars.size(),
+        `${this.currentPosition()}: Unexpected end of file while reading extra`,
+      );
+      if (this.chars[this.pos] != ' ') {
+        break void;
+      };
+      this.eatString("  ");
+      yield this.readString(isNotEOL);
+      this.possibleEatChar('\r');
+      this.eatChar('\n');
+    }
+  }
+}
+
+fun parseTSConformanceReferenceErrors(
+  fileName: String,
+): mutable Iterator<TSConformanceReferenceError> {
+  TSConformanceReferenceErrorsParser::parse(fileName)
 }
 
 module end;
