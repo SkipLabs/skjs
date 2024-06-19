@@ -19,7 +19,16 @@ declare const Math: {
   random: () => number;
 };
 
+declare class boolean {
+  toString(): string;
+}
+
+declare class number {
+  toString(): string;
+}
+
 declare class string {
+  charAt(pos: number): string;
   startsWith(prefix: string): boolean;
   endsWith(suffix: string): boolean;
 }
