@@ -166,21 +166,26 @@ fun expectCheckerSuccess(
 
 type Validator = (mutable SKJS.Checker, SKJS.CheckResult) ~> void;
 
-fun testFile(
-  fileName: String,
-  validateResult: Validator = validateParseable,
-): void {
+fun testFiles(srcFiles: Array<String>, validateResult: Validator): void {
+  print_string(`Testing ${srcFiles.join(", ")}`);
   builtinsFileName = Path.resolve(builtinsArgFileName);
   checker =
-    SKJS.Checker::create{builtinsArgFileName, srcFiles => Array[fileName]} |>
-    expectCheckerSuccess;
+    SKJS.Checker::create{builtinsArgFileName, srcFiles} |> expectCheckerSuccess;
   for (res in checker.checkFiles()) {
+    print_string(`  Validating ${res.i0}`);
     if (res.i0 == builtinsFileName) {
       validateParseable(checker, res);
     } else {
       validateResult(checker, res);
     }
   }
+}
+
+fun testFile(
+  fileName: String,
+  validateResult: Validator = validateParseable,
+): void {
+  testFiles(Array[fileName], validateResult)
 }
 
 fun testDirectory(
@@ -191,16 +196,7 @@ fun testDirectory(
   srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
     if (f.endsWith(".ts")) Some(Path.join(dir, f)) else None()
   );
-  builtinsFileName = Path.resolve(builtinsArgFileName);
-  checker =
-    SKJS.Checker::create{builtinsArgFileName, srcFiles} |> expectCheckerSuccess;
-  for (res in checker.checkFiles()) {
-    if (res.i0 == builtinsFileName) {
-      validateParseable(checker, res);
-    } else {
-      validateResult(checker, res);
-    }
-  }
+  testFiles(srcFiles, validateResult)
 }
 
 @test
