@@ -183,11 +183,11 @@ class TType private {
   fun getSTypes(
     subst: mutable Subst,
     env: TEnv,
-    isContravariant: Bool = false,
+    variance: Variance = Covariant(),
   ): STypes {
     ty = this;
     loop {
-      ty.expand(subst, env, isContravariant) match {
+      ty.expand(subst, env, variance) match {
       | None() ->
         return STypes::empty() // FIXME: this converts Top to Bottom
       | Some((stypes, tparams)) ->
@@ -212,7 +212,7 @@ class TType private {
   fun expand(
     subst: mutable Subst,
     env: TEnv,
-    isContravariant: Bool = false,
+    variance: Variance = Covariant(),
   ): ?(STypes, TTypeParams) {
     if (this.isTop) return None();
     tparams = this.tparams;
@@ -226,7 +226,10 @@ class TType private {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
       | TInter(ty1, ty2) -> interTType(subst, env, ty1, ty2)
       | tvar @ TVar _ ->
-        if (isContravariant) subst.getContra(tvar) else subst.get(tvar)
+        variance match {
+        | Covariant() -> subst.get(tvar)
+        | Contravariant() -> subst.getContra(tvar)
+        }
       };
       if (tyDef.isTop) return None();
       !tparams = unionTTypeParams(tparams, tyDef.tparams);
@@ -268,6 +271,12 @@ class TType private {
         }
       )
   }
+}
+
+base class Variance {
+  children =
+  | Covariant()
+  | Contravariant()
 }
 
 /*****************************************************************************/
@@ -820,8 +829,8 @@ fun isSubTType(
     | _ -> void
     }
   };
-  u1expanded = u1.expand(subst, env, false);
-  u2expanded = u2.expand(subst, env, true);
+  u1expanded = u1.expand(subst, env, Covariant());
+  u2expanded = u2.expand(subst, env, Contravariant());
   (stypes1, tparams1, stypes2, tparams2) = (u1expanded, u2expanded) match {
   | (_, None()) -> return STOk()
   | (None(), Some(_)) -> return STTop()
