@@ -180,11 +180,7 @@ class TType private {
       this.tparams.isEmpty()
   }
 
-  fun getSTypes(
-    subst: mutable Subst,
-    env: TEnv,
-    variance: Variance = Covariant(),
-  ): STypes {
+  fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): STypes {
     ty = this;
     loop {
       ty.expand(subst, env, variance) match {
@@ -212,7 +208,7 @@ class TType private {
   fun expand(
     subst: mutable Subst,
     env: TEnv,
-    variance: Variance = Covariant(),
+    variance: Variance,
   ): ?(STypes, TTypeParams) {
     if (this.isTop) return None();
     tparams = this.tparams;
@@ -306,7 +302,7 @@ fun createObject(pos: PosRange, fields: TFields): TType {
 }
 
 fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
-  stypes = ty.getSTypes(subst, env);
+  stypes = ty.getSTypes(subst, env, Covariant());
   invariant(stypes.stypes.size() == 1);
   !stypes = STypes::create(
     stypes.stypes.map(stype -> {
@@ -1576,11 +1572,11 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
-  (stypes1, tparams1) = ty1.expand(subst, env) match {
+  (stypes1, tparams1) = ty1.expand(subst, env, Covariant()) match {
   | None() -> return ty2
   | Some(stypes_tparams) -> stypes_tparams
   };
-  (stypes2, tparams2) = ty2.expand(subst, env) match {
+  (stypes2, tparams2) = ty2.expand(subst, env, Covariant()) match {
   | None() -> return ty1
   | Some(stypes_tparams) -> stypes_tparams
   };
@@ -1786,7 +1782,7 @@ class ExpandTVars() extends ApplyType {
       this.typeParams(env, ty.tparams),
     );
     (subst, tenv) = env;
-    ty.expand(subst, tenv) match {
+    ty.expand(subst, tenv, Covariant()) match {
     | None() -> TType::top(ty.pos)
     | Some((stypes, tparams)) ->
       TType::create(ty.pos, stypes, TInsts::empty(), tparams)

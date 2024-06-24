@@ -578,7 +578,7 @@ class TypeChecker{
   }
 
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
-    ty.expand(env.subst, this.tenv) match {
+    ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> false
     | Some((stypes, tparams)) ->
       tparams.tparams.size() == 0 &&
@@ -714,7 +714,7 @@ class TypeChecker{
       };
       env.scope.bind(local, type, isInitialized)
     | PArray(arrPat) ->
-      stypes = type.getSTypes(env.subst, this.tenv);
+      stypes = type.getSTypes(env.subst, this.tenv, Covariant());
       for (stype in stypes.stypes) {
         stype match {
         | TTuple(tyl, _) ->
@@ -746,7 +746,7 @@ class TypeChecker{
       }
 
     | PObject(objectFields) ->
-      stypes = type.getSTypes(env.subst, this.tenv);
+      stypes = type.getSTypes(env.subst, this.tenv, Covariant());
       for (stype in stypes.stypes) {
         branches = stype match {
         | TObject(fields, _) -> Array[fields]
@@ -1000,7 +1000,7 @@ class TypeChecker{
     branches: Array<SwitchBranch>,
   ): void {
     condType = this.expr(env, e);
-    stypes = condType.getSTypes(env.subst, this.tenv);
+    stypes = condType.getSTypes(env.subst, this.tenv, Covariant());
     if (stypes.stypes.size() != 1) return void;
     cases = stypes.stypes[0] match {
     | TPrimValue(_, Some(values), _) ->
@@ -1010,7 +1010,9 @@ class TypeChecker{
     for (branch in branches) {
       branch match {
       | Case(v, _) ->
-        this.expr(env, v).getSTypes(env.subst, this.tenv).staticValue() match {
+        this.expr(env, v)
+          .getSTypes(env.subst, this.tenv, Covariant())
+          .staticValue() match {
         | Some(staticValue) ->
           if (!cases.contains(staticValue)) {
             typingError(Array[(v.posRange, "Unused branch")])
@@ -1237,7 +1239,7 @@ class TypeChecker{
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
-      ty = exprTy.expand(env.subst, this.tenv) match {
+      ty = exprTy.expand(env.subst, this.tenv, Covariant()) match {
       | None() -> TType::top(exprTy.pos)
       | Some((stypes, tparams)) ->
         TType::create(exprTy.pos, stypes, TInsts::empty(), tparams)
@@ -1272,7 +1274,7 @@ class TypeChecker{
       this.callConstructor(env, pos, obj, argsAst.map(e -> this.expr(env, e)));
       obj
     | Get(arr, idx) ->
-      stypes = this.expr(env, arr).getSTypes(env.subst, this.tenv);
+      stypes = this.expr(env, arr).getSTypes(env.subst, this.tenv, Covariant());
       idxType = this.expr(env, idx);
       result = TType::bottom(pos);
       for (stype in stypes.stypes) {
@@ -1307,7 +1309,7 @@ class TypeChecker{
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
         | TPrimValue(primKind, _, primPos) ->
-          idxSTypes = idxType.getSTypes(env.subst, this.tenv);
+          idxSTypes = idxType.getSTypes(env.subst, this.tenv, Covariant());
           ty = TType::bottom(pos);
           for (idxSType in idxSTypes) {
             idxSType match {
@@ -1366,7 +1368,11 @@ class TypeChecker{
     | Binop(op, e1, e2) ->
       op match {
       | BOAddition() ->
-        stypes1 = this.expr(env, e1).getSTypes(env.subst, this.tenv);
+        stypes1 = this.expr(env, e1).getSTypes(
+          env.subst,
+          this.tenv,
+          Covariant(),
+        );
         ty1 = TType::fromSTypes(e1.posRange, stypes1);
         if (stypes1.stypes.size() != 1) {
           typingError(
@@ -1467,8 +1473,8 @@ class TypeChecker{
       | BOGreaterThanOrEqual() ->
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
-        stypes1 = ty1.getSTypes(env.subst, this.tenv);
-        stypes2 = ty2.getSTypes(env.subst, this.tenv);
+        stypes1 = ty1.getSTypes(env.subst, this.tenv, Covariant());
+        stypes2 = ty2.getSTypes(env.subst, this.tenv, Covariant());
         error = () -> {
           typeStr = prettyPrintSTypes(stypes1);
           msg = "You can only compare strings and numbers not: " + typeStr;
@@ -1640,7 +1646,7 @@ class TypeChecker{
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
         ty1 = this.expr(env, e1);
-        stypes = ty1.getSTypes(env.subst, this.tenv);
+        stypes = ty1.getSTypes(env.subst, this.tenv, Covariant());
         for (stype in stypes) {
           stype match {
           | TPrimValue(TNum(), _, _) ->
@@ -1660,7 +1666,7 @@ class TypeChecker{
       | BONullishCoalescing() ->
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
-        stypes = ty1.getSTypes(env.subst, this.tenv);
+        stypes = ty1.getSTypes(env.subst, this.tenv, Covariant());
         hasNullOrUndefined = stypes.stypes.any(stype ~>
           stype match {
           | TPrimVoid(TNull(), _)
@@ -1760,7 +1766,7 @@ class TypeChecker{
     | SKJS.Async _ -> typingError(Array[(pos, "TODO: async closures")])
     | SKJS.Await(ae) ->
       aeType = this.expr(env, ae);
-      stypes = aeType.getSTypes(env.subst, this.tenv);
+      stypes = aeType.getSTypes(env.subst, this.tenv, Covariant());
       result: ?TType = None();
       for (stype in stypes.stypes) {
         stype match {
@@ -1926,7 +1932,7 @@ class TypeChecker{
     fieldName: Name,
     fieldType: TType,
   ): TType {
-    stypes = env.scope.get(local).getSTypes(env.subst, this.tenv);
+    stypes = env.scope.get(local).getSTypes(env.subst, this.tenv, Covariant());
     invariant(stypes.stypes.size() == 1);
     invariant(stypes.stypes[0] is TObject _);
     for (stype in stypes.stypes) {
@@ -2003,7 +2009,7 @@ class TypeChecker{
     targs: Array<TType>,
     args: Array<TType>,
   ): TType {
-    stypes = fty.getSTypes(env.subst, this.tenv);
+    stypes = fty.getSTypes(env.subst, this.tenv, Covariant());
     result: ?TType = None();
     for (sty in stypes) {
       sty match {
@@ -2390,12 +2396,12 @@ class TypeChecker{
     map: SType ~> SType = x ~> x,
   ): void {
     ty = env.scope.get(local);
-    (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv) match {
+    (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> (TType::top(ty.pos), true)
     | Some((stypes, tparams)) ->
       t = TType::create(ty.pos, stypes, TInsts::empty(), tparams);
       !t = FilterType().type((filter, map), t);
-      isEmpty = t.getSTypes(env.subst, this.tenv).stypes.isEmpty();
+      isEmpty = t.getSTypes(env.subst, this.tenv, Covariant()).stypes.isEmpty();
       (t, isEmpty)
     };
     localType = default match {
