@@ -621,12 +621,9 @@ class TypeChecker{
     | FDBNone(pos) -> typingError(Array[(pos, "Missing definition")])
     | FDBSome(body) ->
       blockScope = this.block(env, body);
-      objType = filterMethods(
-        env.subst,
-        this.tenv,
-        blockScope.get(Name(fd.pos, "this")),
-      );
-      fullType = filterMethods(env.subst, this.tenv, thisType);
+      blockThisType = blockScope.get(Name(fd.pos, "this"));
+      objType = blockThisType.filterMethods(env.subst, this.tenv);
+      fullType = thisType.filterMethods(env.subst, this.tenv);
       this.checkSubType(
         env,
         fd.pos,
