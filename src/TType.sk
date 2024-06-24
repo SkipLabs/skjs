@@ -282,8 +282,11 @@ fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
               fieldSTypes = fieldType.stypes.stypes.filterMap(fieldSType ~>
                 fieldSType match {
                 | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
-                | tfuns @ TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                  Some(tfuns with {methods => Array[]})
+                | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                  invariant_violation(
+                    "TODO: encountered both non-empty funs and methods in filterMethod",
+                  )
+                //Some(tfuns with {methods => Array[]})
                 | _ -> Some(fieldSType)
                 }
               );
