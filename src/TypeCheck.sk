@@ -254,12 +254,12 @@ class TypeChecker{
 
   fun checkDef(context: mutable SKStore.Context, def: Def): void {
     def.value match {
-    | ExportImport _ -> throw notSupported(def.pos)
+    | ExportImport _ -> notSupported(def.pos)
     | ImportExpr _ -> void
-    | Global _ -> throw notSupported(def.pos)
-    | ExportAs _ -> throw notSupported(def.pos)
-    | ExportEq _ -> throw notSupported(def.pos)
-    | Module _ -> throw notSupported(def.pos)
+    | Global _ -> notSupported(def.pos)
+    | ExportAs _ -> notSupported(def.pos)
+    | ExportEq _ -> notSupported(def.pos)
+    | Module _ -> notSupported(def.pos)
     | ToplevelExpr(e) ->
       subst = mutable Subst{context};
       scope = mutable Scope{id => 0, isLoop => false};
@@ -268,13 +268,13 @@ class TypeChecker{
       this.checkIsVoid(env, e.posRange, ty)
     | fd @ FunDef _ -> this.funDef(context, None(), fd)
     | Declare _ -> void
-    | Namespace _ -> throw notSupported(def.pos)
+    | Namespace _ -> notSupported(def.pos)
     | Export(_, _, d) -> this.checkDef(context, Def(def.pos, d))
-    | ExportDefault _ -> throw notSupported(def.pos)
+    | ExportDefault _ -> notSupported(def.pos)
     | ExportNames _ -> void
     | Import _ -> void
     | c @ Class _ -> this.class_(context, c)
-    | Enum _ -> throw notSupported(def.pos)
+    | Enum _ -> notSupported(def.pos)
     | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs)
     | TypeDef _ -> void
     }
@@ -288,10 +288,8 @@ class TypeChecker{
     for (varDef in varDefs) {
       kind match {
       | VDKConst() -> void
-      | VDKLet() ->
-        typingError(Array[(varDef.pat.pos, "Toplevel let not supported")])
-      | VDKVar() ->
-        typingError(Array[(varDef.pat.pos, "Toplevel var not supported")])
+      | VDKLet() -> notSupported(varDef.pat.pos, "toplevel let")
+      | VDKVar() -> notSupported(varDef.pat.pos, "toplevel var")
       };
       literalType = varDef.value match {
       | None() -> None()
@@ -2133,14 +2131,23 @@ class TypeChecker{
         }
       | _ ->
         typingError(
-          Array[(pos, "Invalid call"), (fty.pos, "This is not a function")],
+          Array[
+            (pos, "Invalid call"),
+            (fty.pos, `Type ${prettyPrintSType(sty, true)} is not a function`),
+          ],
         )
       }
     };
     result match {
     | None() ->
       typingError(
-        Array[(pos, "Invalid call"), (fty.pos, "This is not a function")],
+        Array[
+          (pos, "Invalid call"),
+          (
+            fty.pos,
+            `Type ${prettyPrintSTypes(stypes, true)} is not a function`,
+          ),
+        ],
       )
     | Some(x) -> x
     }

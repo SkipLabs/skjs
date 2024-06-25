@@ -285,12 +285,8 @@ mutable class Checker private {
   }
   mutable fun checkFiles(): mutable Iterator<CheckResult> {
     for (fileName in this.files.srcFiles) {
-      parsedFile = this.parsedFiles.getArray(
-        this.context,
-        SKStore.SID(fileName),
-      );
-      if (parsedFile.size() == 0) invariant_violation("could not parse?");
-      parsedFile[0].value match {
+      parsedFile = this.parsedFiles.get(this.context, SKStore.SID(fileName));
+      parsedFile.value match {
       | PROk(defs) ->
         errors = this.checker.check(this.context, defs);
         yield (fileName, None(), errors)
