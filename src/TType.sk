@@ -1641,12 +1641,14 @@ base class ApplyType {
   type Env;
 
   overridable deferred fun type(env: this::Env, ty: TType): TType {
-    TType::create(
-      ty.pos,
-      this.stypes(env, ty.stypes),
-      this.insts(env, ty.insts),
-      this.typeParams(env, ty.tparams),
-    )
+    if (ty.isTop) ty else {
+      TType::create(
+        ty.pos,
+        this.stypes(env, ty.stypes),
+        this.insts(env, ty.insts),
+        this.typeParams(env, ty.tparams),
+      )
+    }
   }
 
   overridable deferred fun typeParams(
