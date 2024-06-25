@@ -138,12 +138,7 @@ class TEnv{
   ): Array<TType> {
     result = this.getClass(context, className).tparams.map(tparam -> {
       tvar = subst.gen(className.posRange);
-      ty = TType::create(
-        className.posRange,
-        STypes::empty(),
-        TInsts(Array[tvar]),
-        TTypeParams::empty(),
-      );
+      ty = TType::fromTInst(className.posRange, tvar);
       tparam.constraint match {
       | None() -> ty
       | Some(cstr) -> unionTType(subst, this, this.normalize(context, cstr), ty)
@@ -178,12 +173,7 @@ class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    thisType = TType::create(
-      className.posRange,
-      STypes::empty(),
-      TInsts(Array[TSInst(className, TArgs(targs))]),
-      TTypeParams::empty(),
-    );
+    thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
     this.addFields(
       context,
@@ -231,10 +221,8 @@ class TEnv{
     for (tparam in tparams) {
       !this.subst[tparam.name.value] = (
         false,
-        TType::create(
+        TType::fromTParams(
           tparam.name.posRange,
-          STypes::empty(),
-          TInsts::empty(),
           TTypeParams(
             Array[
               Array[
@@ -516,12 +504,7 @@ class TEnv{
           )
         };
         tparam = this.tparams[n.value];
-        TType::create(
-          pos,
-          STypes::empty(),
-          TInsts::empty(),
-          TTypeParams(Array[Array[tparam]]),
-        )
+        TType::fromTParams(pos, TTypeParams(Array[Array[tparam]]))
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
@@ -529,26 +512,23 @@ class TEnv{
           )
         };
         (keepPos, ty) = this.subst[n.value];
-        if (keepPos) ty else TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+        if (keepPos) ty else ty.withPos(pos)
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.posRange, "Cyclic definition")])
       } else {
-        TType::create(
+        TType::fromTInst(
           pos,
-          STypes::empty(),
-          TInsts::single(
-            TSInst(
-              n,
-              TArgs(
-                targs.map(x ->
-                  (this with {
-                    forbiddenInsts => this.seenInstantiate,
-                  }).normalize(context, x)
-                ),
+          TSInst(
+            n,
+            TArgs(
+              targs.map(x ->
+                (this with {forbiddenInsts => this.seenInstantiate}).normalize(
+                  context,
+                  x,
+                )
               ),
             ),
           ),
-          TTypeParams::empty(),
         )
       }
     | TAUnion(ty1, ty2) ->
@@ -558,7 +538,7 @@ class TEnv{
         this.normalize(context, ty1),
         this.normalize(context, ty2),
       );
-      TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+      ty.withPos(pos)
     | TAInter(ty1, ty2) ->
       ty = interTType(
         subst,
@@ -566,7 +546,7 @@ class TEnv{
         this.normalize(context, ty1),
         this.normalize(context, ty2),
       );
-      TType::create(pos, ty.stypes, ty.insts, ty.tparams)
+      ty.withPos(pos)
     | TATuple(tupleElts) ->
       typeVec = mutable Vector[];
       for (ty in tupleElts) {

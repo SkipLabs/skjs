@@ -42,16 +42,16 @@ const kTopHash: Int = "Top".hash();
 // not affect the instances defined inside the type.
 /*****************************************************************************/
 
-class TType private (
-  // The hash, it's important because we need to quickly determine if
-  // two types are different. The hash is computed by smart constructors,
-  // that's why the default constructor is private
-  private h: Int,
-
+class TType private {
   // The position in the source-code that serves as a witness, when an
   // error occurs involving this type, we will use that position in
   // the error message.
   pos: PosRange,
+
+  // The hash, it's important because we need to quickly determine if
+  // two types are different. The hash is computed by smart constructors,
+  // that's why the default constructor is private
+  private h: Int,
 
   // This field is true if the type represents TOP (meaning, the type
   // that contains all possible values). Note that TOP and BOTTOM have
@@ -82,14 +82,14 @@ class TType private (
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   tparams: TTypeParams,
-) uses Hashable, Orderable {
+} uses Hashable, Orderable {
   // Returns the type that represents all possible values. Every other
   // type is sub-type of top.
-  static fun top(pos: PosRange): TType {
+  static fun top(pos: PosRange): this {
     stypes = STypes::empty();
     insts = TInsts::empty();
     tparams = TTypeParams::empty();
-    static(kTopHash, pos, true, stypes, insts, tparams)
+    static{h => kTopHash, pos, isTop => true, stypes, insts, tparams}
   }
 
   // Returns the type that is sub-type of all types. This type is
@@ -102,12 +102,7 @@ class TType private (
 
   // Creates an unexpanded instance.
   static fun inst(name: Name, targs: TArgs): this {
-    static::create(
-      name.posRange,
-      STypes::empty(),
-      TInsts(Array[TSInst(name, targs)]),
-      TTypeParams::empty(),
-    )
+    static::fromTInst(name.posRange, TSInst(name, targs))
   }
 
   fun toString(): String {
@@ -115,20 +110,24 @@ class TType private (
   }
 
   static fun fromSTypes(pos: PosRange, stypes: STypes): this {
-    TType::create(pos, stypes, TInsts::empty(), TTypeParams::empty())
+    static::create(pos, stypes, TInsts::empty(), TTypeParams::empty())
+  }
+
+  static fun fromTInst(pos: PosRange, tinst: TInst): this {
+    static::create(
+      pos,
+      STypes::empty(),
+      TInsts::single(tinst),
+      TTypeParams::empty(),
+    )
   }
 
   static fun fromTParams(pos: PosRange, tparams: TTypeParams): this {
-    TType::create(pos, STypes::empty(), TInsts::empty(), tparams)
+    static::create(pos, STypes::empty(), TInsts::empty(), tparams)
   }
 
   static fun single(pos: PosRange, stype: SType): this {
-    TType::create(
-      pos,
-      STypes::single(stype),
-      TInsts::empty(),
-      TTypeParams::empty(),
-    )
+    static::fromSTypes(pos, STypes::single(stype))
   }
 
   static fun create(
@@ -138,7 +137,7 @@ class TType private (
     tparams: TTypeParams,
   ): this {
     h = (stypes, insts, tparams).hash();
-    static(h, pos, false, stypes, insts, tparams);
+    static{h, pos, isTop => false, stypes, insts, tparams};
   }
 
   fun withSTypes(stypes: STypes): this {
@@ -150,7 +149,21 @@ class TType private (
     }
   }
 
-  fun compare(other: TType): Order {
+  fun withTParams(tparams: TTypeParams): this {
+    if (this.isTop) {
+      invariant(tparams.isEmpty());
+      this
+    } else {
+      static::create(this.pos, this.stypes, this.insts, tparams)
+    }
+  }
+
+  fun withPos(pos: PosRange): this {
+    // pos is not part of the hash
+    this with {pos}
+  }
+
+  fun compare(other: this): Order {
     (this.h, this.stypes, this.insts, this.tparams).compare(
       (other.h, other.stypes, other.insts, other.tparams),
     )
@@ -177,14 +190,9 @@ class TType private (
       (isTop, stypes, tparams) = ty.expand(subst, env, isContravariant);
       if (isTop) return STypes::empty();
       if (tparams.tparams.isEmpty()) return stypes;
-      result = TType::create(
-        this.pos,
-        stypes,
-        TInsts::empty(),
-        TTypeParams::empty(),
-      );
+      result = static::fromSTypes(this.pos, stypes);
       for (inter in tparams.tparams) {
-        localResult: TType = static::top(ty.pos);
+        localResult: this = static::top(ty.pos);
         for (tparam in inter) {
           tparam.cstr match {
           | None() -> continue
@@ -231,8 +239,30 @@ class TType private (
     }
   }
 
-  fun containsTVar(): Bool {
-    this.insts.insts.any(inst ~> inst is TVar _)
+  fun getTag(): ?String {
+    if (this.insts.insts.size() > 0 || this.stypes.stypes.size() != 1) {
+      None()
+    } else {
+      this.stypes.stypes[0] match {
+      | TPrimValue(TString(), Some(s), _) ->
+        if (s.values.size() == 1) Some(s.values[0].i1) else None()
+      | _ -> None()
+      }
+    }
+  }
+
+  fun isTag(): Bool {
+    this.getTag().isSome()
+  }
+
+  fun containsUndefined(): Bool {
+    this.isTop ||
+      this.stypes.stypes.any(stype ~>
+        stype match {
+        | TPrimVoid(TUndefined _, _) -> true
+        | _ -> false
+        }
+      )
   }
 }
 
@@ -244,15 +274,6 @@ class TObject(fields: TFields) extends SType
 class TAlgebraic(branches: Array<TConstr>) extends SType
 class TConstr(fields: TFields) uses Hashable, Orderable {}
 
-fun isTag(ty: TType): Bool {
-  ty.insts.insts.size() == 0 &&
-    ty.stypes.stypes.size() == 1 &&
-    ty.stypes.stypes[0] match {
-    | TPrimValue(TString(), Some(s), _) -> s.values.size() == 1
-    | _ -> false
-    }
-}
-
 fun createObject(pos: PosRange, fields: TFields): TType {
   seen = mutable Set<String>[];
   for (field in fields) {
@@ -261,7 +282,10 @@ fun createObject(pos: PosRange, fields: TFields): TType {
     };
     seen.insert(field.name);
   };
-  if (seen.contains("kind") && isTag(fields.maybeGet("kind").fromSome().type)) {
+  if (
+    seen.contains("kind") &&
+    fields.maybeGet("kind").fromSome().type.isTag()
+  ) {
     TType::single(pos, TAlgebraic(Array[TConstr(fields)], pos))
   } else {
     TType::single(pos, TObject(fields, pos))
@@ -316,12 +340,7 @@ class TTuple(tuple: Array<TType>) extends SType {
     for (i in Range(1, this.tuple.size())) {
       !elt = unionTType(subst, env, elt, this.tuple[i]);
     };
-    TType::create(
-      this.pos,
-      STypes::create(Array[TArray(elt, this.pos)]),
-      TInsts::empty(),
-      TTypeParams::empty(),
-    )
+    TType::single(this.pos, TArray(elt, this.pos))
   }
   fun toString(): String {
     invariant_violation("TODO1")
@@ -474,19 +493,13 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
     | Some(fd) ->
       ty = fd.type;
       if (fd.isOptional) {
-        hasUndefined = ty.stypes.stypes.any(stype ~>
-          stype match {
-          | TPrimVoid(TUndefined _, _) -> true
-          | _ -> false
-          }
-        );
-        if (!hasUndefined) {
+        if (!ty.containsUndefined()) {
           stypes = STypes::create(
             Array[TPrimVoid(TUndefined(), fieldName.posRange)].concat(
               ty.stypes.stypes,
             ),
           );
-          return TType::create(ty.pos, stypes, ty.insts, ty.tparams)
+          return ty.withSTypes(stypes)
         }
       };
       ty
@@ -494,12 +507,10 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
   }
 
   fun getKind(): String {
-    this.maybeGet("kind").fromSome().type.stypes.stypes[0] match {
-    | TPrimValue(TString(), Some(s), _) ->
-      invariant(s.values.size() == 1);
-      s.values[0].i1
-    | _ -> invariant_violation("Internal error: getKind on non constructor")
-    }
+    this.maybeGet("kind")
+      .fromSome()
+      .type.getTag()
+      .fromSome("Internal error: getKind on non constructor")
   }
 }
 
@@ -810,7 +821,7 @@ fun isSubTType(
   if (isTop1 && isTop2) return STOk();
   if (isTop1) return STTop();
   if (isTop2) return STOk();
-  cstr2 = TType::create(u2.pos, stypes2, TInsts::empty(), TTypeParams::empty());
+  cstr2 = TType::fromSTypes(u2.pos, stypes2);
   isSubTTypeParams(subst, env, tparams1, tparams2, cstr2) match {
   | STOk() -> void
   | err ->
@@ -1555,16 +1566,12 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   | None() -> TType::bottom(ty1.pos)
   | Some(stypes) ->
     tparams = interTTypeParams(tparams1, tparams2);
-    TType::create(
-      if (!ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
-        ty2.pos
-      } else {
-        ty1.pos
-      },
-      stypes,
-      TInsts::empty(),
-      tparams,
-    )
+    pos = if (!ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
+      ty2.pos
+    } else {
+      ty1.pos
+    };
+    TType::create(pos, stypes, TInsts::empty(), tparams)
   }
 }
 
@@ -1696,13 +1703,8 @@ class RenameTParams() extends ApplyType {
 class FilterType() extends ApplyType {
   type Env = (SType ~> Bool, SType ~> SType);
 
-  fun type(env: this::Env, ty: TType): TType {
-    TType::create(
-      ty.pos,
-      this.stypes(env, ty.stypes),
-      ty.insts,
-      this.typeParams(env, ty.tparams),
-    )
+  fun insts(_env: this::Env, insts: TInsts): TInsts {
+    insts
   }
 
   fun stypes(env: this::Env, stypes: STypes): STypes {
@@ -1722,7 +1724,7 @@ class Instantiate() extends ApplyType {
     );
     if (ty.tparams.tparams.isEmpty()) return ty;
     (subst, tenv, map) = env;
-    result = TType::create(ty.pos, ty.stypes, ty.insts, TTypeParams::empty());
+    result = ty.withTParams(TTypeParams::empty());
     for (tparams in ty.tparams.tparams) {
       clauseOpt: ?TType = None();
       for (tparam in tparams) {
@@ -1747,7 +1749,7 @@ class Instantiate() extends ApplyType {
         )
         .filter(x -> !x.isEmpty()),
     );
-    TType::create(result.pos, result.stypes, result.insts, tparams)
+    result.withTParams(tparams)
   }
 }
 
