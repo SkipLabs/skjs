@@ -163,6 +163,21 @@ class TType private {
     this with {pos}
   }
 
+  fun rawMap(
+    stypes: (STypes) -> STypes,
+    insts: (TInsts) -> TInsts,
+    tparams: (TTypeParams) -> TTypeParams,
+  ): this {
+    if (this.isTop) this else {
+      static::create(
+        this.pos,
+        stypes(this.stypes),
+        insts(this.insts),
+        tparams(this.tparams),
+      )
+    }
+  }
+
   fun compare(other: this): Order {
     (this.h, this.stypes, this.insts, this.tparams).compare(
       (other.h, other.stypes, other.insts, other.tparams),
@@ -1641,14 +1656,11 @@ base class ApplyType {
   type Env;
 
   overridable deferred fun type(env: this::Env, ty: TType): TType {
-    if (ty.isTop) ty else {
-      TType::create(
-        ty.pos,
-        this.stypes(env, ty.stypes),
-        this.insts(env, ty.insts),
-        this.typeParams(env, ty.tparams),
-      )
-    }
+    ty.rawMap(
+      (stypes) -> this.stypes(env, stypes),
+      (insts) -> this.insts(env, insts),
+      (tparams) -> this.typeParams(env, tparams),
+    )
   }
 
   overridable deferred fun typeParams(
@@ -1776,11 +1788,10 @@ class Instantiate() extends ApplyType {
   type Env = (mutable Subst, TEnv, Map<(String, Int), TType>);
 
   fun type(env: this::Env, ty: TType): TType {
-    !ty = TType::create(
-      ty.pos,
-      this.stypes(env, ty.stypes),
-      this.insts(env, ty.insts),
-      this.typeParams(env, ty.tparams),
+    !ty = ty.rawMap(
+      (stypes) -> this.stypes(env, stypes),
+      (insts) -> this.insts(env, insts),
+      (tparams) -> this.typeParams(env, tparams),
     );
     if (ty.tparams.tparams.isEmpty()) return ty;
     (subst, tenv, map) = env;
@@ -1817,11 +1828,10 @@ class ExpandTVars() extends ApplyType {
   type Env = (mutable Subst, TEnv);
 
   fun type(env: this::Env, ty: TType): TType {
-    !ty = TType::create(
-      ty.pos,
-      this.stypes(env, ty.stypes),
-      this.insts(env, ty.insts),
-      this.typeParams(env, ty.tparams),
+    !ty = ty.rawMap(
+      (stypes) -> this.stypes(env, stypes),
+      (insts) -> this.insts(env, insts),
+      (tparams) -> this.typeParams(env, tparams),
     );
     (subst, tenv) = env;
     ty.expand(subst, tenv, Covariant()) match {
