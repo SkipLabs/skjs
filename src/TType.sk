@@ -277,6 +277,11 @@ class TType private {
     this.isTop || this.stypes.containsUndefined()
   }
 
+  fun withUndefined(undefinedPosRange: PosRange): this {
+    if (this.containsUndefined()) return this;
+    this.withSTypes(this.stypes.addUndefined(undefinedPosRange))
+  }
+
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
     stypes = this.getSTypes(subst, env, Covariant());
     invariant(stypes.size() == 1);
@@ -512,11 +517,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
       )
     | Some(fd) ->
       ty = fd.type;
-      if (fd.isOptional && !ty.containsUndefined()) {
-        ty.withSTypes(ty.stypes.addUndefined(fieldName.posRange))
-      } else {
-        ty
-      }
+      if (fd.isOptional) ty.withUndefined(fieldName.posRange) else ty
     }
   }
 
