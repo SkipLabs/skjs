@@ -1236,15 +1236,13 @@ class TypeChecker{
       TType::single(pos, TPrimVoid(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
-      (stypes, tparams) = this.expr(env, args[0])
-        .expand(env.subst, this.tenv)
-        .default((STypes::empty(), TTypeParams::empty()));
-      print_error(
-        prettyPrintType(
-          false,
-          TType::create(PosRange::none, stypes, TInsts::empty(), tparams),
-        ),
-      );
+      exprTy = this.expr(env, args[0]);
+      ty = exprTy.expand(env.subst, this.tenv) match {
+      | None() -> TType::top(exprTy.pos)
+      | Some((stypes, tparams)) ->
+        TType::create(exprTy.pos, stypes, TInsts::empty(), tparams)
+      };
+      print_error(prettyPrintType(false, ty));
       TType::single(pos, TPrimVoid(TVoid(), pos))
     | Call(f, targs, args) ->
       rty = this.call(
