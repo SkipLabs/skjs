@@ -188,7 +188,8 @@ class TType private {
     ty = this;
     loop {
       ty.expand(subst, env, isContravariant) match {
-      | None() -> return STypes::empty()
+      | None() ->
+        return STypes::empty() // FIXME: this converts Top to Bottom
       | Some((stypes, tparams)) ->
         if (tparams.tparams.isEmpty()) return stypes;
         result = static::fromSTypes(this.pos, stypes);
