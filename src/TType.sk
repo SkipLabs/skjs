@@ -1566,12 +1566,14 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
-  (stypes1, tparams1) = ty1
-    .expand(subst, env)
-    .default((STypes::empty(), TTypeParams::empty()));
-  (stypes2, tparams2) = ty2
-    .expand(subst, env)
-    .default((STypes::empty(), TTypeParams::empty()));
+  (stypes1, tparams1) = ty1.expand(subst, env) match {
+  | None() -> return ty2
+  | Some(stypes_tparams) -> stypes_tparams
+  };
+  (stypes2, tparams2) = ty2.expand(subst, env) match {
+  | None() -> return ty1
+  | Some(stypes_tparams) -> stypes_tparams
+  };
   interSTypes(subst, env, stypes1, stypes2) match {
   | None() -> TType::bottom(ty1.pos)
   | Some(stypes) ->
