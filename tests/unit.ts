@@ -26,27 +26,27 @@ function generic<T1, T2>(arg: T2): T1 | T2 {
 // Objects
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkObject(obj: {field1: number}): {} {
+function checkObject(obj: { field1: number }): {} {
   return obj;
 }
 
-function checkObject(obj: {field1: number}): {field1: number} {
-  return obj;
-}
-
-function checkObject(
-  obj: {field1: number} & {field2: number}
-): {field1: number, field2: number} {
-  return obj;
-}
-
-function checkObject(obj: {field1: number} | {field2: number}): {} {
+function checkObject(obj: { field1: number }): { field1: number } {
   return obj;
 }
 
 function checkObject(
-  obj: {field1: number} | {field1: number, field2: number}
-): {field1: number} {
+  obj: { field1: number } & { field2: number }
+): { field1: number, field2: number } {
+  return obj;
+}
+
+function checkObject(obj: { field1: number } | { field2: number }): {} {
+  return obj;
+}
+
+function checkObject(
+  obj: { field1: number } | { field1: number, field2: number }
+): { field1: number } {
   return obj;
 }
 
@@ -55,12 +55,12 @@ function checkObject(
 ///////////////////////////////////////////////////////////////////////////////
 
 type adt =
-| { kind: 'tag1', field1: boolean }
-| { kind: 'tag2', field2: number }
-;
+  | { kind: 'tag1', field1: boolean }
+  | { kind: 'tag2', field2: number }
+  ;
 
 function check(data: adt): boolean {
-  if(data.kind === 'tag1') return data.field1;
+  if (data.kind === 'tag1') return data.field1;
   return false;
 }
 
@@ -86,8 +86,8 @@ function check(t1: [number] | [boolean]): number | boolean {
 }
 
 function check(
-  t1: [{field1: number}] & [{field2: boolean}]
-): [{field1: number, field2: boolean}] {
+  t1: [{ field1: number }] & [{ field2: boolean }]
+): [{ field1: number, field2: boolean }] {
   return t1;
 }
 
@@ -123,7 +123,7 @@ function check(): 0 {
 const n2 = 1;
 
 function check(): 0 | 1 {
-  if(true) return n2;
+  if (true) return n2;
   return n;
 }
 
@@ -274,7 +274,7 @@ function checkUnionInterface(obj: SimpleInterface | AnotherInterface): SimpleInt
 ///////////////////////////////////////////////////////////////////////////////
 
 interface AliasWithInterface extends SimpleInterface {
- field5: string
+  field5: string
 }
 
 interface InterfaceWithAlias extends AliasWithInterface {
@@ -352,7 +352,7 @@ interface DerivedInterface2 extends BaseInterface {
   derivedField2: boolean;
 }
 
-interface CombinedDerivedInterface extends DerivedInterface1, DerivedInterface2 {}
+interface CombinedDerivedInterface extends DerivedInterface1, DerivedInterface2 { }
 
 function checkBaseInterface(obj: BaseInterface): BaseInterface {
   return obj;
@@ -524,7 +524,7 @@ interface InitDerivedInterface2 extends InitBaseInterface {
   derivedField2: boolean;
 }
 
-interface InitCombinedDerivedInterface extends InitDerivedInterface1, InitDerivedInterface2 {}
+interface InitCombinedDerivedInterface extends InitDerivedInterface1, InitDerivedInterface2 { }
 
 class ClassWithCombinedDerivedConstructor implements InitCombinedDerivedInterface {
   baseField: number;
@@ -701,7 +701,7 @@ interface OptionalDerivedInterface2 extends OptionalBaseInterface {
   optionalDerivedField2?: string;
 }
 
-interface OptionalCombinedDerivedInterface extends OptionalDerivedInterface1, OptionalDerivedInterface2 {}
+interface OptionalCombinedDerivedInterface extends OptionalDerivedInterface1, OptionalDerivedInterface2 { }
 
 class ClassWithOptionalCombinedDerivedConstructor implements OptionalCombinedDerivedInterface {
   baseField: number;
@@ -1224,7 +1224,7 @@ function checkGenericFunctionWithOptionalObjectParamString(input: ComplexObject<
 ///////////////////////////////////////////////////////////////////////////////
 
 function checkConstrainedGenericFunctionWithOptionalParam<T extends { length: number }>(input: T, arg?: T): number | undefined {
-  if(arg === undefined) return undefined;
+  if (arg === undefined) return undefined;
   return 0;
 }
 
@@ -1262,4 +1262,21 @@ function checkFieldOfString(s: string): boolean {
 
 function checkSubscriptionOf(): string {
   return 2024['toString']();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Intersection of Top
+///////////////////////////////////////////////////////////////////////////////
+
+// This currently gives Array<Top>
+type arrayNumberOrArrayString = Array<number> | Array<string>;
+
+// Involves an inst which is both an intersection and a named type
+// while destructing the array type
+function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {
+  return x[0];
+}
+
+function checkIntersectionWithTopIsNotBottom(): number {
+  return interWithTop(0) + 1; // ensure the result is a (subtype of a) number
 }

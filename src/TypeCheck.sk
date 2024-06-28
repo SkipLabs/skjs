@@ -578,11 +578,15 @@ class TypeChecker{
   }
 
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
-    (_, stypes, tparams) = ty.expand(env.subst, this.tenv);
-    if (tparams.tparams.size() != 0 || stypes.stypes.size() != 1) return false;
-    stypes.stypes[0] match {
-    | TPrimVoid(TVoid(), _) -> true
-    | _ -> false
+    ty.expand(env.subst, this.tenv) match {
+    | None() -> false
+    | Some((stypes, tparams)) ->
+      tparams.tparams.size() == 0 &&
+        stypes.stypes.size() == 1 &&
+        stypes.stypes[0] match {
+        | TPrimVoid(TVoid(), _) -> true
+        | _ -> false
+        }
     }
   }
 
@@ -1232,16 +1236,13 @@ class TypeChecker{
       TType::single(pos, TPrimVoid(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
-      (_, stypes, tparams) = this.expr(env, args[0]).expand(
-        env.subst,
-        this.tenv,
-      );
-      print_error(
-        prettyPrintType(
-          false,
-          TType::create(PosRange::none, stypes, TInsts::empty(), tparams),
-        ),
-      );
+      exprTy = this.expr(env, args[0]);
+      ty = exprTy.expand(env.subst, this.tenv) match {
+      | None() -> TType::top(exprTy.pos)
+      | Some((stypes, tparams)) ->
+        TType::create(exprTy.pos, stypes, TInsts::empty(), tparams)
+      };
+      print_error(prettyPrintType(false, ty));
       TType::single(pos, TPrimVoid(TVoid(), pos))
     | Call(f, targs, args) ->
       rty = this.call(
@@ -2389,12 +2390,16 @@ class TypeChecker{
     map: SType ~> SType = x ~> x,
   ): void {
     ty = env.scope.get(local);
-    (isTop, stypes, tparams) = ty.expand(env.subst, this.tenv);
-    !ty = TType::create(ty.pos, stypes, TInsts::empty(), tparams);
-    !ty = FilterType().type((filter, map), ty);
-    isEmpty = ty.getSTypes(env.subst, this.tenv).stypes.isEmpty();
+    (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv) match {
+    | None() -> (TType::top(ty.pos), true)
+    | Some((stypes, tparams)) ->
+      t = TType::create(ty.pos, stypes, TInsts::empty(), tparams);
+      !t = FilterType().type((filter, map), t);
+      isEmpty = t.getSTypes(env.subst, this.tenv).stypes.isEmpty();
+      (t, isEmpty)
+    };
     localType = default match {
-    | Some(d) if (isEmpty || isTop) -> TType::single(d.pos, d)
+    | Some(d) if (isTopOrEmpty) -> TType::single(d.pos, d)
     | _ -> ty
     };
     env.scope.set(local, localType, (_, _) -> void)
