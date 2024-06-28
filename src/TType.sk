@@ -424,7 +424,6 @@ base class TPrimValueKind uses Hashable, Orderable {
 base class SType(pos: PosRange) uses Hashable, Orderable {
   children =
   | TPrimVoid(TPrimVoidKind)
-  | TPrimValue(TPrimValueKind, ?ArrayValues)
   | TArray(TType)
   | TPromise(TType)
 
@@ -446,6 +445,8 @@ base class SType(pos: PosRange) uses Hashable, Orderable {
     }
   }
 }
+
+class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
 
 class TField(
   pos: PosRange,
