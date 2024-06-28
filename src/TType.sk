@@ -180,14 +180,10 @@ class TType private {
       this.tparams.isEmpty()
   }
 
-  fun getSTypes(
-    subst: mutable Subst,
-    env: TEnv,
-    isContravariant: Bool = false,
-  ): STypes {
+  fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): STypes {
     ty = this;
     loop {
-      ty.expand(subst, env, isContravariant) match {
+      ty.expand(subst, env, variance) match {
       | None() ->
         return STypes::empty() // FIXME: this converts Top to Bottom
       | Some((stypes, tparams)) ->
@@ -212,7 +208,7 @@ class TType private {
   fun expand(
     subst: mutable Subst,
     env: TEnv,
-    isContravariant: Bool = false,
+    variance: Variance,
   ): ?(STypes, TTypeParams) {
     if (this.isTop) return None();
     tparams = this.tparams;
@@ -226,7 +222,10 @@ class TType private {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
       | TInter(ty1, ty2) -> interTType(subst, env, ty1, ty2)
       | tvar @ TVar _ ->
-        if (isContravariant) subst.getContra(tvar) else subst.get(tvar)
+        variance match {
+        | Covariant() -> subst.get(tvar)
+        | Contravariant() -> subst.getContra(tvar)
+        }
       };
       if (tyDef.isTop) return None();
       !tparams = unionTTypeParams(tparams, tyDef.tparams);
@@ -270,6 +269,12 @@ class TType private {
   }
 }
 
+base class Variance {
+  children =
+  | Covariant()
+  | Contravariant()
+}
+
 /*****************************************************************************/
 /* Object types. */
 /*****************************************************************************/
@@ -297,7 +302,7 @@ fun createObject(pos: PosRange, fields: TFields): TType {
 }
 
 fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
-  stypes = ty.getSTypes(subst, env);
+  stypes = ty.getSTypes(subst, env, Covariant());
   invariant(stypes.stypes.size() == 1);
   !stypes = STypes::create(
     stypes.stypes.map(stype -> {
@@ -820,8 +825,8 @@ fun isSubTType(
     | _ -> void
     }
   };
-  u1expanded = u1.expand(subst, env, false);
-  u2expanded = u2.expand(subst, env, true);
+  u1expanded = u1.expand(subst, env, Covariant());
+  u2expanded = u2.expand(subst, env, Contravariant());
   (stypes1, tparams1, stypes2, tparams2) = (u1expanded, u2expanded) match {
   | (_, None()) -> return STOk()
   | (None(), Some(_)) -> return STTop()
@@ -1567,11 +1572,11 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
-  (stypes1, tparams1) = ty1.expand(subst, env) match {
+  (stypes1, tparams1) = ty1.expand(subst, env, Covariant()) match {
   | None() -> return ty2
   | Some(stypes_tparams) -> stypes_tparams
   };
-  (stypes2, tparams2) = ty2.expand(subst, env) match {
+  (stypes2, tparams2) = ty2.expand(subst, env, Covariant()) match {
   | None() -> return ty1
   | Some(stypes_tparams) -> stypes_tparams
   };
@@ -1777,7 +1782,7 @@ class ExpandTVars() extends ApplyType {
       this.typeParams(env, ty.tparams),
     );
     (subst, tenv) = env;
-    ty.expand(subst, tenv) match {
+    ty.expand(subst, tenv, Covariant()) match {
     | None() -> TType::top(ty.pos)
     | Some((stypes, tparams)) ->
       TType::create(ty.pos, stypes, TInsts::empty(), tparams)
