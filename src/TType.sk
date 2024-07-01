@@ -1149,6 +1149,8 @@ fun unionSType(
   | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> Some(sty1)
   | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> Some(sty1)
   | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> Some(sty2)
+  | (TPrimValue(k1, Some(_), _), TPrimValue(k2, Some(_), _)) if (k1 != k2) ->
+    None()
   | (TPrimValue(k, Some(s1), pos), TPrimValue(_, Some(s2), _)) ->
     Some(TPrimValue(k, Some(s1.union(s2)), pos))
 
