@@ -153,10 +153,7 @@ fun mapInterOption<T, Key: Orderable>(
 class ArrayValues private (
   values: Array<(PosRange, String)>,
 ) uses Hashable, Orderable, Show {
-  static fun createFromItems(items: Array<(PosRange, String)>): this {
-    !items = items.sortedBy(x ~> x.i1);
-    static(items)
-  }
+  // Invariant: values is not empty and is sorted by x ~> x.i1
 
   static fun single(elt: (PosRange, String)): this {
     static(Array[elt])
