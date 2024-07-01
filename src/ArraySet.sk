@@ -150,7 +150,7 @@ fun mapInterOption<T, Key: Orderable>(
   Some((noMatch1.toArray(), noMatch2.toArray(), present.toArray()))
 }
 
-class ArrayValues(
+class ArrayValues private (
   values: Array<(PosRange, String)>,
 ) uses Hashable, Orderable, Show {
   static fun createFromItems(items: Array<(PosRange, String)>): this {
