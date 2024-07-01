@@ -158,6 +158,10 @@ class ArrayValues private (
     static(items)
   }
 
+  static fun single(elt: (PosRange, String)): this {
+    static(Array[elt])
+  }
+
   fun union(other: ArrayValues): ArrayValues {
     ArrayValues(
       mapUnion(

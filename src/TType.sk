@@ -888,7 +888,9 @@ fun isSubSType(
   | (TPrimValue(k, Some(s1), _), TPrimValue(_, Some(s2), _)) ->
     for (elt in s1.values) {
       if (!s2.contains(elt.i1)) {
-        break STTooManySType(TPrimValue(k, Some(ArrayValues[elt]), elt.i0))
+        break STTooManySType(
+          TPrimValue(k, Some(ArrayValues::single(elt)), elt.i0),
+        )
       }
     } else {
       STOk()
