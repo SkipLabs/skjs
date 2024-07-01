@@ -407,8 +407,7 @@ class TEnv{
     | TAStringLiteral(x) ->
       TType::single(
         pos,
-        TPrimValue(
-          TString(),
+        TPrimString(
           Some(ArrayValues::single((typeAst.posRange, x))),
           typeAst.posRange,
         ),
@@ -416,8 +415,7 @@ class TEnv{
     | TANumLiteral(x) ->
       TType::single(
         pos,
-        TPrimValue(
-          TNum(),
+        TPrimNum(
           Some(ArrayValues::single((typeAst.posRange, x))),
           typeAst.posRange,
         ),
@@ -437,9 +435,9 @@ class TEnv{
         pos,
         kind match {
         | TPKNull() -> TPrimVoidNull(typeAst.posRange)
-        | TPKBool() -> TPrimValue(TBool(), None(), typeAst.posRange)
-        | TPKNum() -> TPrimValue(TNum(), None(), typeAst.posRange)
-        | TPKString() -> TPrimValue(TString(), None(), typeAst.posRange)
+        | TPKBool() -> TPrimBool(None(), typeAst.posRange)
+        | TPKNum() -> TPrimNum(None(), typeAst.posRange)
+        | TPKString() -> TPrimString(None(), typeAst.posRange)
         },
       )
     | TAObject(fields) ->
@@ -489,8 +487,7 @@ class TEnv{
       };
       TType::single(
         pos,
-        TPrimValue(
-          TBool(),
+        TPrimBool(
           Some(ArrayValues::single((typeAst.posRange, x))),
           typeAst.posRange,
         ),

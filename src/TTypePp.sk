@@ -123,9 +123,9 @@ mutable class TypePp{
       )
     | tPrimVoid @ TPrimVoid _ ->
       this.out(level, margin, tPrimVoid.getKind().toString())
-    | tPrimValue @ TPrimValue(_, None(), _) ->
+    | tPrimValue @ TPrimValue(None(), _) ->
       this.out(level, margin, tPrimValue.getKind().toString())
-    | TPrimValue(_, Some(arr), _) ->
+    | TPrimValue(Some(arr), _) ->
       this.out(level, margin, arr.values.map(x -> "'" + x.i1 + "'").join(" | "))
 
     | TAlgebraic(branches, _) ->

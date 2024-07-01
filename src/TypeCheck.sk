@@ -1001,7 +1001,7 @@ class TypeChecker{
     condType = this.expr(env, e);
     stypes = condType.getSTypes(env.subst, this.tenv, Covariant());
     cases = stypes.singleElt() match {
-    | Some(TPrimValue(_, Some(values), _)) ->
+    | Some(TPrimValue(Some(values), _)) ->
       Set::mcreateFromItems(values.values.map(x -> x.i1))
     | _ -> return void
     };
@@ -1042,7 +1042,7 @@ class TypeChecker{
       e.posRange,
       "A condition is expected to be of type boolean, not: ",
       this.expr(env, e),
-      TType::single(e.posRange, TPrimValue(TBool(), None(), e.posRange)),
+      TType::single(e.posRange, TPrimBool(None(), e.posRange)),
     );
   }
 
@@ -1097,7 +1097,7 @@ class TypeChecker{
           Array[eltType],
         );
         return obj.fields.getType(fieldName)
-      | tPrimValue @ TPrimValue(_, _, stringPos) ->
+      | tPrimValue @ TPrimValue(_, stringPos) ->
         objName = tPrimValue.getKind().toString();
         obj = this.tenv.newObject(
           env.context,
@@ -1124,19 +1124,16 @@ class TypeChecker{
   fun expr(env: mutable TCEnv, e: Expr): TType {
     pos = e.posRange;
     e.value match {
-    | Number(_) -> TType::single(pos, TPrimValue(TNum(), None(), pos))
+    | Number(_) -> TType::single(pos, TPrimNum(None(), pos))
     | EString(SKQuote(), x) ->
-      TType::single(
-        pos,
-        TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
-      )
+      TType::single(pos, TPrimString(Some(ArrayValues::single((pos, x))), pos))
     | EString(SKDoubleQuote(), _) ->
-      TType::single(pos, TPrimValue(TString(), None(), pos))
+      TType::single(pos, TPrimString(None(), pos))
     | EString(SKBackTick(), _) ->
       typingError(Array[(pos, "TODO: support for backtick strings")])
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
-      TType::single(pos, TPrimValue(TBool(), None(), pos))
+      TType::single(pos, TPrimBool(None(), pos))
     | Var(Name(_, "null")) ->
       this.makeBoundTVar(env, TType::single(pos, TPrimVoidNull(pos)))
     | Var(Name(_, "undefined")) ->
@@ -1283,10 +1280,7 @@ class TypeChecker{
             pos,
             "Invalid index",
             idxType,
-            TType::single(
-              idx.posRange,
-              TPrimValue(TNum(), None(), idx.posRange),
-            ),
+            TType::single(idx.posRange, TPrimNum(None(), idx.posRange)),
           );
           eltType
         | TTuple(tyArr, tuplePos) ->
@@ -1306,13 +1300,12 @@ class TypeChecker{
           tyArr[n]
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
-        | tPrimValue @ TPrimValue(_, _, primPos) ->
+        | tPrimValue @ TPrimValue(_, primPos) ->
           idxSTypes = idxType.getSTypes(env.subst, this.tenv, Covariant());
           ty = TType::bottom(pos);
           for (idxSType in idxSTypes) {
             idxSType match {
-            | TPrimValue(
-              TString(),
+            | TPrimString(
               Some(stringValues),
               _,
             ) if (!stringValues.values.isEmpty()) ->
@@ -1357,7 +1350,7 @@ class TypeChecker{
     | Unop(uop, subExpr) ->
       uop match {
       | UOExclamationMark() ->
-        bool = TType::single(pos, TPrimValue(TBool(), None(), pos));
+        bool = TType::single(pos, TPrimBool(None(), pos));
         this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
         bool
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
@@ -1373,8 +1366,12 @@ class TypeChecker{
         );
         ty1 = TType::fromSTypes(e1.posRange, stypes1);
         stypes1.singleElt() match {
-        | Some(tPrimValue @ TPrimValue(TNum(), _, _))
-        | Some(tPrimValue @ TPrimValue(TString(), _, _)) ->
+        | Some(
+          tPrimValue @ TPrimValue _,
+        )/* hack to get Skip infer tPrimValue: TPrimValue rather than SType */  if (
+          tPrimValue is TPrimNum _ ||
+          tPrimValue is TPrimString _
+        ) ->
           ty2 = this.expr(env, e2);
           this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1);
           TType::single(pos, tPrimValue with {values => None()})
@@ -1409,7 +1406,7 @@ class TypeChecker{
             }
           }
         };
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TType::single(pos, TPrimBool(None(), pos))
 
       | BOLogicalAnd() ->
         ty1 = this.expr(env, e1);
@@ -1418,7 +1415,7 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty1,
-          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+          TType::single(e1.posRange, TPrimBool(None(), e1.posRange)),
         );
         this.evalCond(env, e1, true);
         ty2 = this.expr(env, e2);
@@ -1427,9 +1424,9 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty2,
-          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
+          TType::single(e2.posRange, TPrimBool(None(), e2.posRange)),
         );
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TType::single(pos, TPrimBool(None(), pos))
       | BOLogicalOr() ->
         ty1 = this.expr(env, e1);
         this.checkSubType(
@@ -1437,7 +1434,7 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty1,
-          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+          TType::single(e1.posRange, TPrimBool(None(), e1.posRange)),
         );
         this.evalCond(env, e1, false);
         ty2 = this.expr(env, e2);
@@ -1446,9 +1443,9 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty2,
-          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
+          TType::single(e2.posRange, TPrimBool(None(), e2.posRange)),
         );
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TType::single(pos, TPrimBool(None(), pos))
 
       | BODot() ->
         e2.value match {
@@ -1489,7 +1486,7 @@ class TypeChecker{
             ],
           );
         };
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TType::single(pos, TPrimBool(None(), pos))
 
       | BOMultiplicationAssignment() ->
         this.expr(
@@ -1639,7 +1636,7 @@ class TypeChecker{
         stypes = ty1.getSTypes(env.subst, this.tenv, Covariant());
         for (stype in stypes) {
           stype match {
-          | TPrimValue(TNum(), _, _) ->
+          | TPrimNum(_, _) ->
             ty2 = this.expr(env, e2);
             this.checkSubType(env, pos, "Invalid operation", ty1, ty2)
           | _ ->
@@ -1679,18 +1676,18 @@ class TypeChecker{
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(env, e1);
       _ = this.tenv.getClass(env.context, className);
-      TType::single(pos, TPrimValue(TBool(), None(), pos))
+      TType::single(pos, TPrimBool(None(), pos))
     | InstanceOf(_, e2) ->
       typingError(Array[(e2.posRange, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
       _ = this.expr(env, subExpr);
-      TType::single(pos, TPrimValue(TString(), None(), pos))
+      TType::single(pos, TPrimString(None(), pos))
 
     | PostOp(pop, subExpr) ->
       pop match {
       | PODecr()
       | POIncr() ->
-        num = TType::single(pos, TPrimValue(TNum(), None(), pos));
+        num = TType::single(pos, TPrimNum(None(), pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
         TType::single(pos, TPrimVoidVoid(pos))
@@ -1783,7 +1780,7 @@ class TypeChecker{
         e1.posRange,
         "Invalid ? condition",
         cond,
-        TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+        TType::single(e1.posRange, TPrimBool(None(), e1.posRange)),
       );
       unionTType(env.subst, this.tenv, left, right)
     | SKJS.KeyOf _ -> notSupported(pos)
@@ -1804,44 +1801,28 @@ class TypeChecker{
       Some(
         TType::single(
           valuePos,
-          TPrimValue(
-            TNum(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
+          TPrimNum(Some(ArrayValues::single((valuePos, n))), valuePos),
         ),
       )
     | Expr(valuePos, Var(Name(_, "true"))) ->
       Some(
         TType::single(
           valuePos,
-          TPrimValue(
-            TBool(),
-            Some(ArrayValues::single((valuePos, "true"))),
-            valuePos,
-          ),
+          TPrimBool(Some(ArrayValues::single((valuePos, "true"))), valuePos),
         ),
       )
     | Expr(valuePos, Var(Name(_, "false"))) ->
       Some(
         TType::single(
           valuePos,
-          TPrimValue(
-            TBool(),
-            Some(ArrayValues::single((valuePos, "false"))),
-            valuePos,
-          ),
+          TPrimBool(Some(ArrayValues::single((valuePos, "false"))), valuePos),
         ),
       )
     | Expr(valuePos, EString(_, n)) ->
       Some(
         TType::single(
           valuePos,
-          TPrimValue(
-            TString(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
+          TPrimString(Some(ArrayValues::single((valuePos, n))), valuePos),
         ),
       )
     | _ -> None()
@@ -2217,21 +2198,11 @@ class TypeChecker{
     ) ->
       (filter, default) = typeStr match {
       | "string" ->
-        (
-          (x ~> (x is TPrimValue(TString(), _, _))),
-          Some(TPrimValue(TString(), None(), typePos)),
-        )
-      | "number" ->
-        (
-          x ~> x is TPrimValue(TNum(), _, _),
-          Some(TPrimValue(TNum(), None(), typePos)),
-        )
+        ((x ~> (x is TPrimString(_, _))), Some(TPrimString(None(), typePos)))
+      | "number" -> (x ~> x is TPrimNum(_, _), Some(TPrimNum(None(), typePos)))
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
       | "boolean" ->
-        (
-          x ~> x is TPrimValue(TBool(), _, _),
-          Some(TPrimValue(TBool(), None(), typePos)),
-        )
+        (x ~> x is TPrimBool(_, _), Some(TPrimBool(None(), typePos)))
 
       | "symbol" -> return void
       | "undefined" -> (x ~> x is TPrimVoidUndefined(_), None())
@@ -2262,21 +2233,11 @@ class TypeChecker{
     ) ->
       (filter, default) = typeStr match {
       | "string" ->
-        (
-          (x ~> (x is TPrimValue(TString(), _, _))),
-          Some(TPrimValue(TString(), None(), typePos)),
-        )
-      | "number" ->
-        (
-          x ~> x is TPrimValue(TNum(), _, _),
-          Some(TPrimValue(TNum(), None(), typePos)),
-        )
+        ((x ~> (x is TPrimString(_, _))), Some(TPrimString(None(), typePos)))
+      | "number" -> (x ~> x is TPrimNum(_, _), Some(TPrimNum(None(), typePos)))
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
       | "boolean" ->
-        (
-          x ~> x is TPrimValue(TBool(), _, _),
-          Some(TPrimValue(TBool(), None(), typePos)),
-        )
+        (x ~> x is TPrimBool(_, _), Some(TPrimBool(None(), typePos)))
 
       | "symbol" -> return void
       | "undefined" -> (x ~> x is TPrimVoidUndefined(_), None())
