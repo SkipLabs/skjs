@@ -581,11 +581,11 @@ class TypeChecker{
     ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> false
     | Some((stypes, tparams)) ->
-      if (tparams.tparams.size() != 0) return false;
-      stypes.singleElt() match {
-      | Some(TPrimVoid(TVoid(), _)) -> true
-      | _ -> false
-      }
+      tparams.tparams.size() == 0 &&
+        stypes.singleElt() match {
+        | Some(TPrimVoid(TVoid(), _)) -> true
+        | _ -> false
+        }
     }
   }
 

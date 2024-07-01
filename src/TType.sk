@@ -413,7 +413,7 @@ base class TPrimValueKind uses Hashable, Orderable {
   }
 }
 
-base class SType(pos: PosRange) uses Hashable, Orderable {
+base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
   children =
   | TPrimVoid(TPrimVoidKind)
   | TArray(TType)
@@ -434,6 +434,10 @@ base class SType(pos: PosRange) uses Hashable, Orderable {
     | TAlgebraic _ -> 10
     | TFuns _ -> 11
     }
+  }
+
+  fun project(): Int {
+    this.tag()
   }
 }
 
@@ -509,17 +513,15 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
   }
 }
 
-class STypes private (private stypes: Array<SType>) uses Hashable, Orderable {
-  private static fun create(stypes: Array<SType>): this {
-    static(stypes)
-  }
-
+class STypes private (
+  private stypes: InternalKeyedArrayMap<Int, SType>,
+) uses Hashable, Orderable {
   static fun empty(): this {
-    static(Array[])
+    static(InternalKeyedArrayMap::empty())
   }
 
   static fun single(x: SType): this {
-    static::create(Array[x])
+    static(InternalKeyedArrayMap::single(x))
   }
 
   // union returns None when the least upper bound of the args is top
@@ -529,13 +531,21 @@ class STypes private (private stypes: Array<SType>) uses Hashable, Orderable {
     stypes1: STypes,
     stypes2: STypes,
   ): ?STypes {
-    mapUnionOption(
-      stypes1.values(),
-      stypes2.values(),
-      x ~> x.tag(),
-      x ~> x,
-      (x, y) -> unionSType(subst, env, x, y),
-    ).map(STypes::create)
+    stypes1.stypes
+      .mergeOption(stypes2.stypes, (xo, yo) ->
+        (xo, yo) match {
+        | (Some(x), None())
+        | (None(), Some(x)) ->
+          InternalKeyedArrayMap.Elem(x)
+        | (Some(x), Some(y)) ->
+          unionSType(subst, env, x, y) match {
+          | Some(z) -> InternalKeyedArrayMap.Elem(z)
+          | None() -> InternalKeyedArrayMap.Zero()
+          }
+        | (None(), None()) -> InternalKeyedArrayMap.Unit()
+        }
+      )
+      .map(x -> static(x))
   }
 
   // inter returns None when the greatest lower bound of the args is bottom
@@ -545,20 +555,26 @@ class STypes private (private stypes: Array<SType>) uses Hashable, Orderable {
     stypes1: STypes,
     stypes2: STypes,
   ): ?STypes {
-    mapInterOption(
-      stypes1.values(),
-      stypes2.values(),
-      x ~> x.tag(),
-      (x, y) -> interSType(subst, env, x, y),
-    ).map(i -> STypes::create(i.i2))
+    stypes1.stypes
+      .mergeOption(stypes2.stypes, (xo, yo) ->
+        (xo, yo) match {
+        | (Some(x), Some(y)) ->
+          interSType(subst, env, x, y) match {
+          | Some(z) -> InternalKeyedArrayMap.Elem(z)
+          | None() -> InternalKeyedArrayMap.Zero()
+          }
+        | _ -> InternalKeyedArrayMap.Unit()
+        }
+      )
+      .map(x -> static(x))
   }
 
   fun map(f: SType -> SType): this {
-    STypes::create(this.stypes.map(f))
+    static(this.stypes.map(f))
   }
 
   fun filterMap(f: SType -> ?SType): this {
-    STypes::create(this.stypes.filterMap(f))
+    static(this.stypes.filterMap(f))
   }
 
   fun isEmpty(): Bool {
@@ -581,17 +597,12 @@ class STypes private (private stypes: Array<SType>) uses Hashable, Orderable {
     this.stypes.any(f)
   }
 
-  fun singleElt(): ?SType {
-    if (this.stypes.size() == 1) Some(this.stypes[0]) else None()
+  fun all(f: SType -> Bool): Bool {
+    this.stypes.all(f)
   }
 
-  fun minPrimValue(): ?SType {
-    this.stypes.find(stype ->
-      stype match {
-      | TPrimValue _ -> true
-      | _ -> false
-      }
-    )
+  fun singleElt(): ?SType {
+    if (this.stypes.size() == 1) this.stypes.minimum() else None()
   }
 
   fun containsUndefined(): Bool {
@@ -604,7 +615,9 @@ class STypes private (private stypes: Array<SType>) uses Hashable, Orderable {
   }
 
   fun addUndefined(pos: PosRange): this {
-    STypes::create(Array[TPrimVoid(TUndefined(), pos)].concat(this.stypes))
+    invariant(!this.containsUndefined());
+    undef: SType = TPrimVoid(TUndefined(), pos);
+    static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
 
   fun staticValue(): ?String {
@@ -622,15 +635,6 @@ class STypes private (private stypes: Array<SType>) uses Hashable, Orderable {
       | TPrimValue(TString(), _, _)
       | TPrimValue(TBool(), _, _) ->
         true
-      | _ -> false
-      }
-    )
-  }
-
-  fun isString(): Bool {
-    this.stypes.all(stype ->
-      stype match {
-      | TPrimValue(TString(), _, _) -> true
       | _ -> false
       }
     )
