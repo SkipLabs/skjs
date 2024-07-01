@@ -547,15 +547,82 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
   }
 }
 
-class STypes private (
-  private stypes: InternalKeyedArrayMap<Int, SType>,
-) uses Hashable, Orderable {
+class STypes private {
+  private undefined: ?TPrimVoidUndefined,
+  private void_: ?TPrimVoidVoid,
+  private null: ?TPrimVoidNull,
+  private bool: ?TPrimBool,
+  private num: ?TPrimNum,
+  private string: ?TPrimString,
+  private array: ?TArray,
+  private tuple: ?TTuple,
+  private promise: ?TPromise,
+  private object: ?TObject,
+  private algebraic: ?TAlgebraic,
+  private funs: ?TFuns,
+} uses Hashable, Orderable {
+  static fun create{
+    undefined: ?TPrimVoidUndefined = None(),
+    void_: ?TPrimVoidVoid = None(),
+    null: ?TPrimVoidNull = None(),
+    bool: ?TPrimBool = None(),
+    num: ?TPrimNum = None(),
+    string: ?TPrimString = None(),
+    array: ?TArray = None(),
+    tuple: ?TTuple = None(),
+    promise: ?TPromise = None(),
+    object: ?TObject = None(),
+    algebraic: ?TAlgebraic = None(),
+    funs: ?TFuns = None(),
+  }: this {
+    static{
+      undefined,
+      void_,
+      null,
+      bool,
+      num,
+      string,
+      array,
+      tuple,
+      promise,
+      object,
+      algebraic,
+      funs,
+    }
+  }
+
   static fun empty(): this {
-    static(InternalKeyedArrayMap::empty())
+    static{
+      undefined => None(),
+      void_ => None(),
+      null => None(),
+      bool => None(),
+      num => None(),
+      string => None(),
+      array => None(),
+      tuple => None(),
+      promise => None(),
+      object => None(),
+      algebraic => None(),
+      funs => None(),
+    }
   }
 
   static fun single(x: SType): this {
-    static(InternalKeyedArrayMap::single(x))
+    x match {
+    | undefined @ TUndefined _ -> static::create{undefined}
+    | void_ @ TPrimVoidVoid _ -> static::create{void_}
+    | null @ TPrimVoidNull _ -> static::create{null}
+    | bool @ TPrimBool _ -> static::create{bool}
+    | num @ TPrimNum _ -> static::create{num}
+    | string @ TPrimString _ -> static::create{string}
+    | array @ TArray _ -> static::create{array}
+    | tuple @ TTuple _ -> static::create{tuple}
+    | promise @ TPromise _ -> static::create{promise}
+    | object @ TObject _ -> static::create{object}
+    | algebraic @ TAlgebraic _ -> static::create{algebraic}
+    | funs @ TFuns _ -> static::create{funs}
+    }
   }
 
   // union returns None when the least upper bound of the args is top
