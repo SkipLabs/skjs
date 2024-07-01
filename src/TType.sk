@@ -247,8 +247,7 @@ class TType private {
       None()
     } else {
       this.stypes.stypes[0] match {
-      | TPrimValue(TString(), Some(s), _) ->
-        if (s.values.size() == 1) Some(s.values[0].i1) else None()
+      | TPrimValue(TString(), Some(s), _) -> s.singleElt().map(elt ~> elt.i1)
       | _ -> None()
       }
     }
@@ -556,8 +555,8 @@ class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
     if (this.stypes.size() != 1) return None();
     for (stype in this.stypes) {
       stype match {
-      | TPrimValue(_, Some(values), _) if (values.values.size() == 1) ->
-        return Some(values.values[0].i1)
+      | TPrimValue(_, Some(values), _) ->
+        return values.singleElt().map(elt ~> elt.i1)
       | _ -> return None()
       }
     };
