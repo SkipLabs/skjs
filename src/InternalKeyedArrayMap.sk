@@ -1,0 +1,195 @@
+//
+// Data structure for maps backed by arrays where the keys are internal to
+// the data and obtained using a projection function
+//
+
+trait Projectable<T> {
+  readonly fun project(): T;
+}
+
+module InternalKeyedArrayMap;
+
+// A type to classify the elements of a monoid with zero. For an operation
+// such as x * _, x * Unit = x, x * Zero = Zero, and x * Elem(v) = x * v.
+base class ZeroElemUnit<+T> {
+  children =
+  | Zero()
+  | Elem(v: T)
+  | Unit()
+}
+
+class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
+  private inner: Vector<T>,
+) uses Orderable[T: Orderable], Hashable[T: Hashable] {
+  // Create by allocating, initializing via calling push, and checking for
+  // collisions.
+  private static fun create(size: Int, init: (T -> void) -> void): this {
+    inner = Vector::mcreate(size);
+    init(inner.push);
+    // inner must be strictly increasing under project, which is expected to
+    // hold since every transformation of T, such as the argument of map,
+    // should preserve project
+    prev: ?T = None();
+    for (curr in inner) {
+      prev match {
+      | Some(p) ->
+        if (p.project() >= curr.project()) {
+          invariant_violation("InternalKeyedArrayMap::create")
+        }
+      | None() -> void
+      };
+      !prev = Some(curr);
+    };
+    static(unsafe_chill_trust_me(inner))
+  }
+
+  static fun empty(): this {
+    static(Vector[])
+  }
+
+  static fun single(x: T): this {
+    static(Vector[x])
+  }
+
+  fun isEmpty(): Bool {
+    this.inner.isEmpty()
+  }
+
+  fun size(): Int {
+    this.inner.size()
+  }
+
+  fun minimum(): ?T {
+    this.inner.maybeGet(0)
+  }
+
+  fun values(): mutable Iterator<T> {
+    this.inner.values()
+  }
+
+  fun items(): mutable Iterator<(Int, T)> {
+    this.inner.items()
+  }
+
+  fun any(f: T -> Bool): Bool {
+    this.inner.any(f)
+  }
+
+  fun all(f: T -> Bool): Bool {
+    this.inner.all(f)
+  }
+
+  fun find(f: T -> Bool): ?T {
+    this.inner.find(f)
+  }
+
+  fun filter(f: T -> Bool): this {
+    // don't need to call create since Vector.filter returns a subset and
+    // preserves order
+    static(this.inner.filter(f))
+  }
+
+  // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
+  fun map(f: T -> T): this {
+    static::create(this.inner.size(), push -> {
+      this.inner.each(v -> push(f(v)))
+    })
+  }
+
+  // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
+  fun filterMap(f: T -> ?T): this {
+    static::create(this.size(), push -> {
+      this.inner.each(v -> f(v).each(push));
+    })
+  }
+
+  // s.merge(t, f) is the set of elements v where Some(v) is returned by f
+  // from (Some(x), None) for every element in s but not t, (None, Some(y))
+  // for every y in t but not s, and (Some(x), Some(y)) for every pair of
+  // elements that are in both s and t. If f returns None, it indicates the
+  // unit of the merge operation and no corresponding element is included in
+  // the result.
+  //
+  // REQUIRES: f must preserve project:
+  // x.project() == f(Some(x),_).each(project) for any x and
+  // y.project() == f(_,Some(y)).each(project) for any y
+  fun merge(that: this, f: (?T, ?T) -> ?T): this {
+    static::create(0, push -> {
+      iter1 = this.inner.values();
+      iter2 = that.inner.values();
+      head1 = iter1.next();
+      head2 = iter2.next();
+      none: ?T = None();
+      go = (x, y) -> {
+        f(x, y).each(push);
+        if (x.isSome()) !head1 = iter1.next();
+        if (y.isSome()) !head2 = iter2.next();
+      };
+      loop {
+        (head1, head2) match {
+        | (None(), None()) -> break void
+        | (None(), Some(_)) -> go(None(), head2)
+        | (Some(_), None()) -> go(head1, None())
+        | (Some(x), Some(y)) ->
+          x.project().compare(y.project()) match {
+          | LT() -> go(head1, none)
+          | EQ() -> go(head1, head2)
+          | GT() -> go(none, head2)
+          }
+        }
+      };
+    })
+  }
+
+  // mergeOption is a generalization of merge where f may return Zero to
+  // indicate the zero of the merge operation, causing mergeOption to return
+  // None immediately.
+  //
+  // REQUIRES: f must preserve project:
+  // x.project() == f(Some(x),_).each(project) for any x and
+  // y.project() == f(_,Some(y)).each(project) for any y
+  fun mergeOption(that: this, f: (?T, ?T) -> ZeroElemUnit<T>): ?this {
+    zero = false;
+    result = static::create(0, push -> {
+      iter1 = this.inner.values();
+      iter2 = that.inner.values();
+      head1 = iter1.next();
+      head2 = iter2.next();
+      none: ?T = None();
+      go = (x, y) -> {
+        f(x, y) match {
+        | Zero() -> !zero = true
+        | Elem(v) -> push(v)
+        | Unit() -> void
+        };
+        if (x.isSome()) !head1 = iter1.next();
+        if (y.isSome()) !head2 = iter2.next();
+      };
+      while (!zero) {
+        (head1, head2) match {
+        | (None(), None()) -> break void
+        | (None(), Some(_)) -> go(None(), head2)
+        | (Some(_), None()) -> go(head1, None())
+        | (Some(x), Some(y)) ->
+          x.project().compare(y.project()) match {
+          | LT() -> go(head1, none)
+          | EQ() -> go(head1, head2)
+          | GT() -> go(none, head2)
+          }
+        }
+      };
+    });
+    if (zero) None() else Some(result)
+  }
+
+  fun union(that: this): this {
+    this.merge(that, (xo, yo) ~>
+      xo match {
+      | None() -> yo
+      | _ -> xo
+      }
+    )
+  }
+}
+
+module end;
