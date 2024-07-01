@@ -162,6 +162,10 @@ class ArrayValues private (
     static(Array[elt])
   }
 
+  fun singleElt(): ?(PosRange, String) {
+    if (this.values.size() == 1) Some(this.values[0]) else None()
+  }
+
   fun union(other: ArrayValues): ArrayValues {
     ArrayValues(
       mapUnion(
