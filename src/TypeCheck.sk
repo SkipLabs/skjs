@@ -1130,7 +1130,7 @@ class TypeChecker{
     | EString(SKQuote(), x) ->
       TType::single(
         pos,
-        TPrimValue(TString(), Some(ArrayValues[(pos, x)]), pos),
+        TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
       )
     | EString(SKDoubleQuote(), _) ->
       TType::single(pos, TPrimValue(TString(), None(), pos))
@@ -1814,28 +1814,44 @@ class TypeChecker{
       Some(
         TType::single(
           valuePos,
-          TPrimValue(TNum(), Some(ArrayValues[(valuePos, n)]), valuePos),
+          TPrimValue(
+            TNum(),
+            Some(ArrayValues::single((valuePos, n))),
+            valuePos,
+          ),
         ),
       )
     | Expr(valuePos, Var(Name(_, "true"))) ->
       Some(
         TType::single(
           valuePos,
-          TPrimValue(TBool(), Some(ArrayValues[(valuePos, "true")]), valuePos),
+          TPrimValue(
+            TBool(),
+            Some(ArrayValues::single((valuePos, "true"))),
+            valuePos,
+          ),
         ),
       )
     | Expr(valuePos, Var(Name(_, "false"))) ->
       Some(
         TType::single(
           valuePos,
-          TPrimValue(TBool(), Some(ArrayValues[(valuePos, "false")]), valuePos),
+          TPrimValue(
+            TBool(),
+            Some(ArrayValues::single((valuePos, "false"))),
+            valuePos,
+          ),
         ),
       )
     | Expr(valuePos, EString(_, n)) ->
       Some(
         TType::single(
           valuePos,
-          TPrimValue(TString(), Some(ArrayValues[(valuePos, n)]), valuePos),
+          TPrimValue(
+            TString(),
+            Some(ArrayValues::single((valuePos, n))),
+            valuePos,
+          ),
         ),
       )
     | _ -> None()

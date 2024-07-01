@@ -409,7 +409,7 @@ class TEnv{
         pos,
         TPrimValue(
           TString(),
-          Some(ArrayValues[(typeAst.posRange, x)]),
+          Some(ArrayValues::single((typeAst.posRange, x))),
           typeAst.posRange,
         ),
       )
@@ -418,7 +418,7 @@ class TEnv{
         pos,
         TPrimValue(
           TNum(),
-          Some(ArrayValues[(typeAst.posRange, x)]),
+          Some(ArrayValues::single((typeAst.posRange, x))),
           typeAst.posRange,
         ),
       )
@@ -492,7 +492,7 @@ class TEnv{
         pos,
         TPrimValue(
           TBool(),
-          Some(ArrayValues[(typeAst.posRange, x)]),
+          Some(ArrayValues::single((typeAst.posRange, x))),
           typeAst.posRange,
         ),
       )
