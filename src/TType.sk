@@ -582,25 +582,25 @@ class STypes private (
       .map(x -> static(x))
   }
 
-  // inter returns None when the greatest lower bound of the args is bottom
   static fun inter(
     subst: mutable Subst,
     env: TEnv,
     stypes1: STypes,
     stypes2: STypes,
-  ): ?STypes {
-    stypes1.stypes
-      .mergeOption(stypes2.stypes, (xo, yo) ->
-        (xo, yo) match {
-        | (Some(x), Some(y)) ->
-          interSType(subst, env, x, y) match {
-          | Some(z) -> InternalKeyedArrayMap.Elem(z)
-          | None() -> InternalKeyedArrayMap.Zero()
-          }
-        | _ -> InternalKeyedArrayMap.Unit()
+  ): STypes {
+    stypes1.stypes.mergeOption(stypes2.stypes, (xo, yo) ->
+      (xo, yo) match {
+      | (Some(x), Some(y)) ->
+        interSType(subst, env, x, y) match {
+        | Some(z) -> InternalKeyedArrayMap.Elem(z)
+        | None() -> InternalKeyedArrayMap.Zero()
         }
-      )
-      .map(x -> static(x))
+      | _ -> InternalKeyedArrayMap.Unit()
+      }
+    ) match {
+    | None() -> static::empty()
+    | Some(res) -> static(res)
+    }
   }
 
   fun map(f: SType -> SType): this {
@@ -1664,17 +1664,15 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   | None() -> return ty1
   | Some(stypes_tparams) -> stypes_tparams
   };
-  STypes::inter(subst, env, stypes1, stypes2) match {
-  | None() -> TType::bottom(ty1.pos)
-  | Some(stypes) ->
-    tparams = interTTypeParams(tparams1, tparams2);
-    pos = if (!ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
-      ty2.pos
-    } else {
-      ty1.pos
-    };
-    TType::create(pos, stypes, TInsts::empty(), tparams)
-  }
+  stypes = STypes::inter(subst, env, stypes1, stypes2);
+  if (stypes.isEmpty()) return TType::bottom(ty1.pos);
+  tparams = interTTypeParams(tparams1, tparams2);
+  pos = if (!ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
+    ty2.pos
+  } else {
+    ty1.pos
+  };
+  TType::create(pos, stypes, TInsts::empty(), tparams)
 }
 
 /*****************************************************************************/
