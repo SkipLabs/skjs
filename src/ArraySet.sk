@@ -178,14 +178,15 @@ class ArrayValues private (
     )
   }
 
-  fun inter(other: ArrayValues): ArrayValues {
+  // Returns None() if the intersection is empty
+  fun inter(other: this): ?this {
     (_noMatches1, _notMatches2, result) = mapInter(
       this.values.iterator(),
       other.values.iterator(),
       x ~> x.i1,
       (x, _) ~> x,
     );
-    ArrayValues(result)
+    if (result.isEmpty()) None() else Some(static(result))
   }
 
   fun toStringList(): String {

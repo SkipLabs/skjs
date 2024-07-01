@@ -1391,15 +1391,17 @@ fun interSType(
     invariant(k1 == k2);
     Some(sty1)
 
-  | (TPrimValue(k1, values1, pos), TPrimValue(k2, values2, _)) ->
+  | (
+    tPrimValue1 @ TPrimValue(k1, values1, _),
+    tPrimValue2 @ TPrimValue(k2, values2, _),
+  ) ->
     invariant(k1 == k2);
-    values = (values1, values2) match {
-    | (None(), None()) -> None()
-    | (None(), Some _) -> values2
-    | (Some _, None()) -> values1
-    | (Some(s1), Some(s2)) -> Some(s1.inter(s2))
-    };
-    Some(TPrimValue(k1, values, pos))
+    (values1, values2) match {
+    | (_, None()) -> Some(tPrimValue1)
+    | (None(), Some _) -> Some(tPrimValue2)
+    | (Some(s1), Some(s2)) ->
+      s1.inter(s2).map(values ~> tPrimValue1 with {values => Some(values)})
+    }
 
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
     Some(interTTuple(subst, env, tuple1, tuple2))
