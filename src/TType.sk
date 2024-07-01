@@ -247,8 +247,7 @@ class TType private {
       None()
     } else {
       this.stypes.stypes[0] match {
-      | TPrimValue(TString(), Some(s), _) ->
-        if (s.values.size() == 1) Some(s.values[0].i1) else None()
+      | TPrimValue(TString(), Some(s), _) -> s.singleElt().map(elt ~> elt.i1)
       | _ -> None()
       }
     }
@@ -424,7 +423,6 @@ base class TPrimValueKind uses Hashable, Orderable {
 base class SType(pos: PosRange) uses Hashable, Orderable {
   children =
   | TPrimVoid(TPrimVoidKind)
-  | TPrimValue(TPrimValueKind, ?ArrayValues)
   | TArray(TType)
   | TPromise(TType)
 
@@ -446,6 +444,8 @@ base class SType(pos: PosRange) uses Hashable, Orderable {
     }
   }
 }
+
+class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
 
 class TField(
   pos: PosRange,
@@ -525,14 +525,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
 
 class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
   static fun create(stypes: Array<SType>): this {
-    static(
-      stypes.filter(stype -> {
-        stype match {
-        | TPrimValue(_, Some(values), _) -> !values.values.isEmpty()
-        | _ -> true
-        }
-      }),
-    )
+    static(stypes)
   }
 
   static fun empty(): this {
@@ -555,8 +548,8 @@ class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
     if (this.stypes.size() != 1) return None();
     for (stype in this.stypes) {
       stype match {
-      | TPrimValue(_, Some(values), _) if (values.values.size() == 1) ->
-        return Some(values.values[0].i1)
+      | TPrimValue(_, Some(values), _) ->
+        return values.singleElt().map(elt ~> elt.i1)
       | _ -> return None()
       }
     };
@@ -887,7 +880,9 @@ fun isSubSType(
   | (TPrimValue(k, Some(s1), _), TPrimValue(_, Some(s2), _)) ->
     for (elt in s1.values) {
       if (!s2.contains(elt.i1)) {
-        break STTooManySType(TPrimValue(k, Some(ArrayValues[elt]), elt.i0))
+        break STTooManySType(
+          TPrimValue(k, Some(ArrayValues::single(elt)), elt.i0),
+        )
       }
     } else {
       STOk()
@@ -1389,15 +1384,17 @@ fun interSType(
     invariant(k1 == k2);
     Some(sty1)
 
-  | (TPrimValue(k1, values1, pos), TPrimValue(k2, values2, _)) ->
+  | (
+    tPrimValue1 @ TPrimValue(k1, values1, _),
+    tPrimValue2 @ TPrimValue(k2, values2, _),
+  ) ->
     invariant(k1 == k2);
-    values = (values1, values2) match {
-    | (None(), None()) -> None()
-    | (None(), Some _) -> values2
-    | (Some _, None()) -> values1
-    | (Some(s1), Some(s2)) -> Some(s1.inter(s2))
-    };
-    Some(TPrimValue(k1, values, pos))
+    (values1, values2) match {
+    | (_, None()) -> Some(tPrimValue1)
+    | (None(), Some _) -> Some(tPrimValue2)
+    | (Some(s1), Some(s2)) ->
+      s1.inter(s2).map(values ~> tPrimValue1 with {values => Some(values)})
+    }
 
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
     Some(interTTuple(subst, env, tuple1, tuple2))

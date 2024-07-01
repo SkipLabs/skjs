@@ -150,12 +150,17 @@ fun mapInterOption<T, Key: Orderable>(
   Some((noMatch1.toArray(), noMatch2.toArray(), present.toArray()))
 }
 
-class ArrayValues(
+class ArrayValues private (
   values: Array<(PosRange, String)>,
 ) uses Hashable, Orderable, Show {
-  static fun createFromItems(items: Array<(PosRange, String)>): this {
-    !items = items.sortedBy(x ~> x.i1);
-    static(items)
+  // Invariant: values is not empty and is sorted by x ~> x.i1
+
+  static fun single(elt: (PosRange, String)): this {
+    static(Array[elt])
+  }
+
+  fun singleElt(): ?(PosRange, String) {
+    if (this.values.size() == 1) Some(this.values[0]) else None()
   }
 
   fun union(other: ArrayValues): ArrayValues {
@@ -170,14 +175,15 @@ class ArrayValues(
     )
   }
 
-  fun inter(other: ArrayValues): ArrayValues {
+  // Returns None() if the intersection is empty
+  fun inter(other: this): ?this {
     (_noMatches1, _notMatches2, result) = mapInter(
       this.values.iterator(),
       other.values.iterator(),
       x ~> x.i1,
       (x, _) ~> x,
     );
-    ArrayValues(result)
+    if (result.isEmpty()) None() else Some(static(result))
   }
 
   fun toStringList(): String {
