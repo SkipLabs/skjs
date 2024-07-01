@@ -583,7 +583,7 @@ class TypeChecker{
     | Some((stypes, tparams)) ->
       tparams.tparams.size() == 0 &&
         stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) -> true
+        | Some(TPrimVoidVoid _) -> true
         | _ -> false
         }
     }
@@ -824,7 +824,7 @@ class TypeChecker{
       pos,
       "This expression was expected to be of type void",
       ty,
-      TType::single(ty.pos, TPrimVoid(TVoid(), ty.pos)),
+      TType::single(ty.pos, TPrimVoidVoid(ty.pos)),
     );
   }
 
@@ -840,11 +840,11 @@ class TypeChecker{
     | Return(pos, eOpt) ->
       retType = this.retType match {
       | None() ->
-        TType::single(st.pos, TPrimVoid(TVoid(), st.pos)) // constructor
+        TType::single(st.pos, TPrimVoidVoid(st.pos)) // constructor
       | Some(x) -> x
       };
       (epos, etype) = eOpt match {
-      | None() -> (pos, TType::single(pos, TPrimVoid(TVoid(), pos)))
+      | None() -> (pos, TType::single(pos, TPrimVoidVoid(pos)))
       | Some(e) -> (e.posRange, this.expr(env, e))
       };
       rtype = if (this.isAsync) {
@@ -1138,9 +1138,9 @@ class TypeChecker{
     | Var(Name(_, "false")) ->
       TType::single(pos, TPrimValue(TBool(), None(), pos))
     | Var(Name(_, "null")) ->
-      this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TNull(), pos)))
+      this.makeBoundTVar(env, TType::single(pos, TPrimVoidNull(pos)))
     | Var(Name(_, "undefined")) ->
-      this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TUndefined(), pos)))
+      this.makeBoundTVar(env, TType::single(pos, TPrimVoidUndefined(pos)))
     | Var(local) ->
       if (env.localObjects.containsKey(local.value)) {
         env.usedObjects![local.value] = local.posRange
@@ -1233,7 +1233,7 @@ class TypeChecker{
           this.checkSubType(env, pos, "Invalid super call", x, y)
         })
       };
-      TType::single(pos, TPrimVoid(TVoid(), pos))
+      TType::single(pos, TPrimVoidVoid(pos))
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
@@ -1243,7 +1243,7 @@ class TypeChecker{
         TType::create(exprTy.pos, stypes, TInsts::empty(), tparams)
       };
       print_error(prettyPrintType(false, ty));
-      TType::single(pos, TPrimVoid(TVoid(), pos))
+      TType::single(pos, TPrimVoidVoid(pos))
     | Call(f, targs, args) ->
       rty = this.call(
         env,
@@ -1659,8 +1659,8 @@ class TypeChecker{
         stypes = ty1.getSTypes(env.subst, this.tenv, Covariant());
         hasNullOrUndefined = stypes.any(stype ~>
           stype match {
-          | TPrimVoid(TNull(), _)
-          | TPrimVoid(TUndefined(), _) ->
+          | TPrimVoidNull(_)
+          | TPrimVoidUndefined(_) ->
             true
           | _ -> false
           }
@@ -1693,7 +1693,7 @@ class TypeChecker{
         num = TType::single(pos, TPrimValue(TNum(), None(), pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
-        TType::single(pos, TPrimVoid(TVoid(), pos))
+        TType::single(pos, TPrimVoidVoid(pos))
       | POExcl() -> notSupported(pos)
       }
 
@@ -1797,9 +1797,9 @@ class TypeChecker{
   fun makeLiteralType(e: Expr): ?TType {
     e match {
     | Expr(valuePos, Var(Name(_, "null"))) ->
-      Some(TType::single(valuePos, TPrimVoid(TNull(), valuePos)))
+      Some(TType::single(valuePos, TPrimVoidNull(valuePos)))
     | Expr(valuePos, Var(Name(_, "undefined"))) ->
-      Some(TType::single(valuePos, TPrimVoid(TUndefined(), valuePos)))
+      Some(TType::single(valuePos, TPrimVoidUndefined(valuePos)))
     | Expr(valuePos, Number(n)) ->
       Some(
         TType::single(
@@ -2234,11 +2234,10 @@ class TypeChecker{
         )
 
       | "symbol" -> return void
-      | "undefined" -> (x ~> x is TPrimVoid(TUndefined(), _), None())
+      | "undefined" -> (x ~> x is TPrimVoidUndefined(_), None())
       | "object" ->
         (
-          (x ~>
-            x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)),
+          (x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoidNull(_)),
           Some(TObject(TFields::empty(), typePos)),
         )
       | "function" -> (x ~> x is TFuns _, None())
@@ -2280,11 +2279,10 @@ class TypeChecker{
         )
 
       | "symbol" -> return void
-      | "undefined" -> (x ~> x is TPrimVoid(TUndefined(), _), None())
+      | "undefined" -> (x ~> x is TPrimVoidUndefined(_), None())
       | "object" ->
         (
-          (x ~>
-            x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)),
+          (x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoidNull(_)),
           Some(TObject(TFields::empty(), typePos)),
         )
       | "function" -> (x ~> x is TFuns _, None())
@@ -2330,7 +2328,7 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (!target) {
-        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
+        this.setLocal(env, local, None(), x ~> !(x is TPrimVoidNull(_)))
       }
 
     | Binop(
@@ -2344,7 +2342,7 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (target) {
-        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
+        this.setLocal(env, local, None(), x ~> !(x is TPrimVoidNull(_)))
       }
 
     | Binop(
@@ -2358,9 +2356,7 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (!target) {
-        this.setLocal(env, local, None(), x ~>
-          !(x is TPrimVoid(TUndefined _, _))
-        )
+        this.setLocal(env, local, None(), x ~> !(x is TPrimVoidUndefined(_)))
       }
 
     | Binop(
@@ -2374,9 +2370,7 @@ class TypeChecker{
       Expr(_, Var(local)),
     ) ->
       if (target) {
-        this.setLocal(env, local, None(), x ~>
-          !(x is TPrimVoid(TUndefined _, _))
-        )
+        this.setLocal(env, local, None(), x ~> !(x is TPrimVoidUndefined(_)))
       }
 
     | Binop(BOLogicalAnd(), e1, e2) if (target) ->

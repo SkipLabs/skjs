@@ -420,9 +420,9 @@ base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
 
   fun tag(): Int {
     this match {
-    | TPrimVoid(TUndefined _, _) -> 0
-    | TPrimVoid(TVoid _, _) -> 1
-    | TPrimVoid(TNull _, _) -> 2
+    | TPrimVoidUndefined(_) -> 0
+    | TPrimVoidVoid(_) -> 1
+    | TPrimVoidNull(_) -> 2
     | TPrimValue(TBool _, _, _) -> 3
     | TPrimValue(TNum _, _, _) -> 4
     | TPrimValue(TString _, _, _) -> 5
@@ -440,11 +440,25 @@ base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
   }
 }
 
-class TPrimVoid(kind: TPrimVoidKind) extends SType {
-  fun getKind(): TPrimVoidKind {
-    this.kind
+base class TPrimVoid<K: TPrimVoidKind>() extends SType {
+  fun getKind(): K;
+}
+class TPrimVoidUndefined extends TPrimVoid<TUndefined> {
+  fun getKind(): TUndefined {
+    TUndefined()
   }
 }
+class TPrimVoidVoid extends TPrimVoid<TVoid> {
+  fun getKind(): TVoid {
+    TVoid()
+  }
+}
+class TPrimVoidNull extends TPrimVoid<TNull> {
+  fun getKind(): TNull {
+    TNull()
+  }
+}
+
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
 
 class TField(
@@ -612,7 +626,7 @@ class STypes private (
   fun containsUndefined(): Bool {
     this.stypes.any(stype ->
       stype match {
-      | TPrimVoid(TUndefined(), _) -> true
+      | TPrimVoidUndefined(_) -> true
       | _ -> false
       }
     )
@@ -620,7 +634,7 @@ class STypes private (
 
   fun addUndefined(pos: PosRange): this {
     invariant(!this.containsUndefined());
-    undef: SType = TPrimVoid(TUndefined(), pos);
+    undef: SType = TPrimVoidUndefined(pos);
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
 
@@ -947,7 +961,7 @@ fun isSubSType(
   sty2: SType,
 ): STResult {
   (sty1, sty2) match {
-  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> STOk()
+  | (TPrimVoid(_), TPrimVoid(_)) -> STOk()
 
   | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> STOk()
   | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> STTooManySType(sty1)
@@ -1199,7 +1213,7 @@ fun unionSType(
   sty2: SType,
 ): ?SType {
   (sty1, sty2) match {
-  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> Some(sty1)
+  | (TPrimVoid(_), TPrimVoid(_)) -> Some(sty1)
 
   | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> Some(sty1)
   | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> Some(sty1)
@@ -1323,7 +1337,7 @@ fun unionTTuple(
         unionTType(
           subst,
           env,
-          TType::single(tuple1.pos, TPrimVoid(TUndefined(), posEnd)),
+          TType::single(tuple1.pos, TPrimVoidUndefined(posEnd)),
           tuple2.tuple[i],
         ),
       );
@@ -1336,7 +1350,7 @@ fun unionTTuple(
           subst,
           env,
           tuple1.tuple[i],
-          TType::single(tuple2.pos, TPrimVoid(TUndefined(), posEnd)),
+          TType::single(tuple2.pos, TPrimVoidUndefined(posEnd)),
         ),
       );
     }
@@ -1440,8 +1454,9 @@ fun interSType(
   sty2: SType,
 ): ?SType {
   (sty1, sty2) match {
-  | (TPrimVoid(k1, _), TPrimVoid(k2, _)) ->
-    invariant(k1 == k2);
+  | (TPrimVoidUndefined(_), TPrimVoidUndefined(_))
+  | (TPrimVoidVoid(_), TPrimVoidVoid(_))
+  | (TPrimVoidNull(_), TPrimVoidNull(_)) ->
     Some(sty1)
 
   | (
