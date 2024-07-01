@@ -229,7 +229,7 @@ class TType private {
       };
       if (tyDef.isTop) return None();
       !tparams = unionTTypeParams(tparams, tyDef.tparams);
-      unionSTypes(subst, env, stypes, tyDef.stypes) match {
+      STypes::union(subst, env, stypes, tyDef.stypes) match {
       | None() -> return None()
       | Some(u) ->
         !stypes = u;
@@ -243,11 +243,12 @@ class TType private {
   }
 
   fun getTag(): ?String {
-    if (this.insts.insts.size() > 0 || this.stypes.stypes.size() != 1) {
+    if (this.insts.insts.size() > 0 || this.stypes.size() != 1) {
       None()
     } else {
-      this.stypes.stypes[0] match {
-      | TPrimValue(TString(), Some(s), _) -> s.singleElt().map(elt ~> elt.i1)
+      this.stypes.singleElt() match {
+      | Some(TPrimValue(TString(), Some(s), _)) ->
+        s.singleElt().map(elt ~> elt.i1)
       | _ -> None()
       }
     }
@@ -258,13 +259,7 @@ class TType private {
   }
 
   fun containsUndefined(): Bool {
-    this.isTop ||
-      this.stypes.stypes.any(stype ~>
-        stype match {
-        | TPrimVoid(TUndefined _, _) -> true
-        | _ -> false
-        }
-      )
+    this.isTop || this.stypes.containsUndefined()
   }
 }
 
@@ -302,38 +297,36 @@ fun createObject(pos: PosRange, fields: TFields): TType {
 
 fun filterMethods(subst: mutable Subst, env: TEnv, ty: TType): TType {
   stypes = ty.getSTypes(subst, env, Covariant());
-  invariant(stypes.stypes.size() == 1);
-  !stypes = STypes::create(
-    stypes.stypes.map(stype -> {
-      stype match {
-      | TObject(TFields(fields), pos) ->
-        TObject(
-          TFields::create(
-            fields.filterMap(field ~> {
-              fieldType = field.type;
-              fieldSTypes = fieldType.stypes.stypes.filterMap(fieldSType ~>
-                fieldSType match {
-                | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
-                | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                  invariant_violation(
-                    "TODO: encountered both non-empty funs and methods in filterMethod",
-                  )
-                //Some(tfuns with {methods => Array[]})
-                | _ -> Some(fieldSType)
-                }
-              );
-              !fieldType = fieldType.withSTypes(STypes::create(fieldSTypes));
-              if (fieldType.isBottom()) None() else {
-                Some(field with {type => fieldType})
+  invariant(stypes.size() == 1);
+  !stypes = stypes.map(stype -> {
+    stype match {
+    | TObject(TFields(fields), pos) ->
+      TObject(
+        TFields::create(
+          fields.filterMap(field ~> {
+            fieldType = field.type;
+            fieldSTypes = fieldType.stypes.filterMap(fieldSType ~>
+              fieldSType match {
+              | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
+              | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                invariant_violation(
+                  "TODO: encountered both non-empty funs and methods in filterMethod",
+                )
+              //Some(tfuns with {methods => Array[]})
+              | _ -> Some(fieldSType)
               }
-            }),
-          ),
-          pos,
-        )
-      | _ -> invariant_violation("Internal error: new should produce an object")
-      }
-    }),
-  );
+            );
+            !fieldType = fieldType.withSTypes(fieldSTypes);
+            if (fieldType.isBottom()) None() else {
+              Some(field with {type => fieldType})
+            }
+          }),
+        ),
+        pos,
+      )
+    | _ -> invariant_violation("Internal error: new should produce an object")
+    }
+  });
   TType::create(ty.pos, stypes, TInsts::empty(), TTypeParams::empty());
 }
 
@@ -428,13 +421,12 @@ base class SType(pos: PosRange) uses Hashable, Orderable {
 
   fun tag(): Int {
     this match {
-    // TUndefined must be smaller than all the others (cf TFields::getType)
-    | TPrimVoid(TUndefined _, _) -> -1
-    | TPrimVoid(TVoid _, _) -> 0
-    | TPrimVoid(TNull _, _) -> 1
-    | TPrimValue(TBool _, _, _) -> 2
-    | TPrimValue(TNum _, _, _) -> 3
-    | TPrimValue(TString _, _, _) -> 4
+    | TPrimVoid(TUndefined _, _) -> 0
+    | TPrimVoid(TVoid _, _) -> 1
+    | TPrimVoid(TNull _, _) -> 2
+    | TPrimValue(TBool _, _, _) -> 3
+    | TPrimValue(TNum _, _, _) -> 4
+    | TPrimValue(TString _, _, _) -> 5
     | TArray _ -> 6
     | TTuple _ -> 7
     | TPromise _ -> 8
@@ -501,17 +493,11 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
       )
     | Some(fd) ->
       ty = fd.type;
-      if (fd.isOptional) {
-        if (!ty.containsUndefined()) {
-          stypes = STypes::create(
-            Array[TPrimVoid(TUndefined(), fieldName.posRange)].concat(
-              ty.stypes.stypes,
-            ),
-          );
-          return ty.withSTypes(stypes)
-        }
-      };
-      ty
+      if (fd.isOptional && !ty.containsUndefined()) {
+        ty.withSTypes(ty.stypes.addUndefined(fieldName.posRange))
+      } else {
+        ty
+      }
     }
   }
 
@@ -523,8 +509,8 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
   }
 }
 
-class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
-  static fun create(stypes: Array<SType>): this {
+class STypes private (private stypes: Array<SType>) uses Hashable, Orderable {
+  private static fun create(stypes: Array<SType>): this {
     static(stypes)
   }
 
@@ -536,39 +522,118 @@ class STypes private (stypes: Array<SType>) uses Hashable, Orderable {
     static::create(Array[x])
   }
 
+  // union returns None when the least upper bound of the args is top
+  static fun union(
+    subst: mutable Subst,
+    env: TEnv,
+    stypes1: STypes,
+    stypes2: STypes,
+  ): ?STypes {
+    mapUnionOption(
+      stypes1.values(),
+      stypes2.values(),
+      x ~> x.tag(),
+      x ~> x,
+      (x, y) -> unionSType(subst, env, x, y),
+    ).map(STypes::create)
+  }
+
+  // inter returns None when the greatest lower bound of the args is bottom
+  static fun inter(
+    subst: mutable Subst,
+    env: TEnv,
+    stypes1: STypes,
+    stypes2: STypes,
+  ): ?STypes {
+    mapInterOption(
+      stypes1.values(),
+      stypes2.values(),
+      x ~> x.tag(),
+      (x, y) -> interSType(subst, env, x, y),
+    ).map(i -> STypes::create(i.i2))
+  }
+
+  fun map(f: SType -> SType): this {
+    STypes::create(this.stypes.map(f))
+  }
+
+  fun filterMap(f: SType -> ?SType): this {
+    STypes::create(this.stypes.filterMap(f))
+  }
+
   fun isEmpty(): Bool {
     this.stypes.isEmpty()
+  }
+
+  fun size(): Int {
+    this.stypes.size()
+  }
+
+  fun items(): mutable Iterator<(Int, SType)> {
+    this.stypes.items()
   }
 
   fun values(): mutable Iterator<SType> {
     this.stypes.values()
   }
 
-  fun staticValue(): ?String {
-    if (this.stypes.size() != 1) return None();
-    for (stype in this.stypes) {
-      stype match {
-      | TPrimValue(_, Some(values), _) ->
-        return values.singleElt().map(elt ~> elt.i1)
-      | _ -> return None()
-      }
-    };
-    None()
+  fun any(f: SType -> Bool): Bool {
+    this.stypes.any(f)
   }
 
-  fun isStringOrNumOrBool(): Bool {
-    this.stypes.all(stype ~>
+  fun singleElt(): ?SType {
+    if (this.stypes.size() == 1) Some(this.stypes[0]) else None()
+  }
+
+  fun minPrimValue(): ?SType {
+    this.stypes.find(stype ->
       stype match {
-      | TPrimValue(TNum _, _, _) -> true
-      | TPrimValue(TString _, _, _) -> true
-      | TPrimValue(TBool _, _, _) -> true
+      | TPrimValue _ -> true
       | _ -> false
       }
     )
   }
 
-  fun isSingle(): Bool {
-    this.stypes.size() == 1;
+  fun containsUndefined(): Bool {
+    this.stypes.any(stype ->
+      stype match {
+      | TPrimVoid(TUndefined(), _) -> true
+      | _ -> false
+      }
+    )
+  }
+
+  fun addUndefined(pos: PosRange): this {
+    STypes::create(Array[TPrimVoid(TUndefined(), pos)].concat(this.stypes))
+  }
+
+  fun staticValue(): ?String {
+    this.singleElt() match {
+    | Some(TPrimValue(_, Some(values), _)) if (values.values.size() == 1) ->
+      Some(values.values[0].i1)
+    | _ -> None()
+    }
+  }
+
+  fun isStringOrNumOrBool(): Bool {
+    this.stypes.all(stype ~>
+      stype match {
+      | TPrimValue(TNum(), _, _)
+      | TPrimValue(TString(), _, _)
+      | TPrimValue(TBool(), _, _) ->
+        true
+      | _ -> false
+      }
+    )
+  }
+
+  fun isString(): Bool {
+    this.stypes.all(stype ->
+      stype match {
+      | TPrimValue(TString(), _, _) -> true
+      | _ -> false
+      }
+    )
   }
 }
 
@@ -831,7 +896,10 @@ fun isSubTType(
   | STOk() -> void
   | err ->
     subst.restore(savedSubst);
-    pos = if (stypes1.stypes.size() == 1) stypes1.stypes[0].pos else u1.pos;
+    pos = stypes1.singleElt() match {
+    | Some(t) -> t.pos
+    | None() -> u1.pos
+    };
     return STError(SRec(err, pos, u2))
   };
   status = isSubSTypes(subst, env, stypes1, stypes2);
@@ -1115,22 +1183,6 @@ fun unionTAlgebraic(
   TAlgebraic(branches, a1.pos)
 }
 
-// unionSTypes returns None when the least upper bound of the args is top
-fun unionSTypes(
-  subst: mutable Subst,
-  env: TEnv,
-  stypes1: STypes,
-  stypes2: STypes,
-): ?STypes {
-  mapUnionOption(
-    stypes1.values(),
-    stypes2.values(),
-    x ~> x.tag(),
-    x ~> x,
-    (x, y) -> unionSType(subst, env, x, y),
-  ).map(STypes::create)
-}
-
 // unionSType returns None when the least upper bound of the args is top
 fun unionSType(
   subst: mutable Subst,
@@ -1311,7 +1363,7 @@ fun unionTTypeParams(
 fun unionTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   if (ty1.isTop) return ty1;
   if (ty2.isTop) return ty2;
-  unionSTypes(subst, env, ty1.stypes, ty2.stypes) match {
+  STypes::union(subst, env, ty1.stypes, ty2.stypes) match {
   | None() -> TType::top(ty1.pos)
   | Some(stypes) ->
     types = unionTInsts(ty1.insts, ty2.insts);
@@ -1528,21 +1580,6 @@ fun interTTuple(
   TTuple(result.toArray(), tuple1.pos)
 }
 
-// interSTypes returns None when the greatest lower bound of the args is bottom
-fun interSTypes(
-  subst: mutable Subst,
-  env: TEnv,
-  stypes1: STypes,
-  stypes2: STypes,
-): ?STypes {
-  mapInterOption(
-    stypes1.values(),
-    stypes2.values(),
-    x ~> x.tag(),
-    (x, y) -> interSType(subst, env, x, y),
-  ).map(i -> STypes::create(i.i2))
-}
-
 fun interTTypeParams(
   tparams1: TTypeParams,
   tparams2: TTypeParams,
@@ -1579,7 +1616,7 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   | None() -> return ty1
   | Some(stypes_tparams) -> stypes_tparams
   };
-  interSTypes(subst, env, stypes1, stypes2) match {
+  STypes::inter(subst, env, stypes1, stypes2) match {
   | None() -> TType::bottom(ty1.pos)
   | Some(stypes) ->
     tparams = interTTypeParams(tparams1, tparams2);
@@ -1625,7 +1662,7 @@ base class ApplyType {
   }
 
   overridable deferred fun stypes(env: this::Env, stypes: STypes): STypes {
-    STypes::create(stypes.stypes.map(stype -> this.stype(env, stype)))
+    stypes.map(stype -> this.stype(env, stype))
   }
 
   overridable deferred fun stype(env: this::Env, stype: SType): SType {
@@ -1725,7 +1762,7 @@ class FilterType() extends ApplyType {
   }
 
   fun stypes(env: this::Env, stypes: STypes): STypes {
-    STypes::create(stypes.stypes.filter(env.i0).map(env.i1))
+    stypes.filterMap(x -> if (env.i0(x)) Some(env.i1(x)) else None())
   }
 }
 

@@ -318,9 +318,8 @@ mutable class TypePp{
         this.out(level, margin, "?")
       };
       if (
-        fieldType.stypes.stypes.size() != 1 ||
-        fieldType.stypes.stypes[0] match {
-        | TFuns(_, methods, _) -> methods.size() == 0
+        fieldType.stypes.singleElt() match {
+        | Some(TFuns(_, methods, _)) -> methods.size() == 0
         | _ -> true
         }
       ) {
@@ -384,7 +383,7 @@ mutable class TypePp{
       level,
       margin,
       (pp, level, margin) ~> {
-        for (i => sty in ty.stypes.stypes) {
+        for (i => sty in ty.stypes) {
           if (i != 0) {
             pp.out(level, margin, " | ");
           };
@@ -416,7 +415,7 @@ mutable class TypePp{
         }
       },
       (pp, level, prevMargin, margin) ~> {
-        for (i => sty in ty.stypes.stypes) {
+        for (i => sty in ty.stypes) {
           pp.buffer match {
           | List.Nil()
           | List.Cons("\n", _) ->
@@ -434,7 +433,7 @@ mutable class TypePp{
             void
           | _ -> pp.newLine()
           };
-          if (ty.stypes.stypes.size() != 0) pp.out(level, prevMargin, "| ");
+          if (ty.stypes.size() != 0) pp.out(level, prevMargin, "| ");
           inst match {
           | TSInst(x, targs) ->
             pp.out(level, margin, x.value);
@@ -477,7 +476,7 @@ fun prettyPrintType(compact: Bool, ty: TType): String {
 }
 
 fun prettyPrintSType(stype: SType, compact: Bool = false): String {
-  prettyPrintSTypes(STypes::create(Array[stype]), compact)
+  prettyPrintSTypes(STypes::single(stype), compact)
 }
 
 fun prettyPrintSTypes(stypes: STypes, compact: Bool = false): String {
