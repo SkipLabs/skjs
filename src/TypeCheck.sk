@@ -1097,8 +1097,8 @@ class TypeChecker{
           Array[eltType],
         );
         return obj.fields.getType(fieldName)
-      | TPrimValue(primKind, _, stringPos) ->
-        objName = primKind.toString();
+      | tPrimValue @ TPrimValue(_, _, stringPos) ->
+        objName = tPrimValue.getKind().toString();
         obj = this.tenv.newObject(
           env.context,
           Name(stringPos, objName),
@@ -1306,7 +1306,7 @@ class TypeChecker{
           tyArr[n]
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
-        | TPrimValue(primKind, _, primPos) ->
+        | tPrimValue @ TPrimValue(_, _, primPos) ->
           idxSTypes = idxType.getSTypes(env.subst, this.tenv, Covariant());
           ty = TType::bottom(pos);
           for (idxSType in idxSTypes) {
@@ -1316,7 +1316,7 @@ class TypeChecker{
               Some(stringValues),
               _,
             ) if (!stringValues.values.isEmpty()) ->
-              objName = primKind.toString();
+              objName = tPrimValue.getKind().toString();
               obj = this.tenv.newObject(
                 env.context,
                 Name(primPos, objName),
@@ -1373,11 +1373,11 @@ class TypeChecker{
         );
         ty1 = TType::fromSTypes(e1.posRange, stypes1);
         stypes1.singleElt() match {
-        | Some(TPrimValue(k @ TNum(), _, primPos))
-        | Some(TPrimValue(k @ TString(), _, primPos)) ->
+        | Some(tPrimValue @ TPrimValue(TNum(), _, _))
+        | Some(tPrimValue @ TPrimValue(TString(), _, _)) ->
           ty2 = this.expr(env, e2);
           this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1);
-          TType::single(pos, TPrimValue(k, None(), primPos))
+          TType::single(pos, tPrimValue with {values => None()})
         | _ ->
           typingError(
             Array[

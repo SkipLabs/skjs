@@ -459,7 +459,11 @@ class TPrimVoidNull extends TPrimVoid<TNull> {
   }
 }
 
-class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
+class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
+  fun getKind(): TPrimValueKind {
+    this.kind
+  }
+}
 
 class TField(
   pos: PosRange,
@@ -746,9 +750,10 @@ base class STResult {
     | STTooManySType(sty) ->
       sty match {
       | tPrimVoid @ TPrimVoid _ -> "This is a " + tPrimVoid.getKind().toString()
-      | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
-      | TPrimValue(kind, Some(x), _) ->
-        `This is a static ${kind.toString()}: ` +
+      | tPrimValue @ TPrimValue(_, None(), _) ->
+        "This is of type " + tPrimValue.getKind().toString()
+      | tPrimValue @ TPrimValue(_, Some(x), _) ->
+        `This is a static ${tPrimValue.getKind().toString()}: ` +
           x.values.map(x -> "'" + x.i1 + "'").join(" | ")
 
       | TArray _ -> "This is an array"
