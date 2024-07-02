@@ -349,11 +349,7 @@ mutable class TypePp{
       this.out(level, margin, "top");
       return void;
     };
-    if (
-      ty.stypes.isEmpty() &&
-      ty.insts.insts.isEmpty() &&
-      ty.tparams.tparams.isEmpty()
-    ) {
+    if (ty.isBottom()) {
       this.out(level, margin, "never");
       return void;
     };
