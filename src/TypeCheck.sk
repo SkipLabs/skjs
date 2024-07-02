@@ -1458,33 +1458,36 @@ class TypeChecker{
       | BOLessThanOrEqual()
       | BOGreaterThan()
       | BOGreaterThanOrEqual() ->
-        ty1 = this.expr(env, e1);
-        ty2 = this.expr(env, e2);
-        stypes1 = ty1.getSTypes(env.subst, this.tenv, Covariant());
-        stypes2 = ty2.getSTypes(env.subst, this.tenv, Covariant());
-        error = () -> {
-          typeStr = prettyPrintSTypes(stypes1);
-          msg = "You can only compare strings and numbers not: " + typeStr;
-          typingError(Array[(e1.posRange, msg)]);
+        getExprPrimKind = (e) -> {
+          ty = this.expr(env, e);
+          stypes = ty.getSTypes(env.subst, this.tenv, Covariant());
+          stypes.singleElt() match {
+          | Some(TPrimValue(k, _, _)) -> k
+          | _ ->
+            typingError(
+              Array[
+                (
+                  pos,
+                  "Invalid comparison. You can only compare strings, numbers, and booleans.",
+                ),
+                (e1.posRange, `This is a ${prettyPrintSTypes(stypes)}`),
+              ],
+            )
+          }
         };
-        if (stypes1.size() != 1) {
-          error()
-        };
-        if (!stypes1.isStringOrNumOrBool()) {
+        kind1 = getExprPrimKind(e1);
+        kind2 = getExprPrimKind(e2);
+        if (kind1 != kind2) {
           typingError(
             Array[
-              (pos, "Invalid comparison"),
-              (ty1.pos, "This is neither a string nor a number"),
+              (
+                pos,
+                "Invalid comparison. Both operands must have the same type.",
+              ),
+              (e1.posRange, `This is a ${kind1}`),
+              (e2.posRange, `This is a ${kind2}`),
             ],
-          );
-        };
-        if (!stypes2.isStringOrNumOrBool()) {
-          typingError(
-            Array[
-              (pos, "Invalid comparison"),
-              (ty2.pos, "This is neither a string nor a number"),
-            ],
-          );
+          )
         };
         TType::single(pos, TPrimValue(TBool(), None(), pos))
 
