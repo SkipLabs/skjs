@@ -141,7 +141,8 @@ class TEnv{
       ty = TType::fromTInst(className.posRange, tvar);
       tparam.constraint match {
       | None() -> ty
-      | Some(cstr) -> unionTType(subst, this, this.normalize(context, cstr), ty)
+      | Some(cstr) ->
+        TType::union(subst, this, this.normalize(context, cstr), ty)
       }
     });
     result
@@ -532,7 +533,7 @@ class TEnv{
         )
       }
     | TAUnion(ty1, ty2) ->
-      ty = unionTType(
+      ty = TType::union(
         subst,
         this,
         this.normalize(context, ty1),
