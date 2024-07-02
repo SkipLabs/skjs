@@ -4,15 +4,15 @@ function compare<T>(a: T, b: T): number {
   if (a === null || b === null) return a === null ? -1 : 1;
   if (typeof a !== typeof b) return typeof a < typeof b ? -1 : 1;
 
-  if (typeof a === 'number') {
+  if (typeof a === 'number' && typeof b === 'number') {
     return a < b ? -1 : 1;
   }
 
-  if (typeof a === 'boolean') {
+  if (typeof a === 'boolean' && typeof b === 'boolean') {
     return a < b ? -1 : 1;
   }
 
-  if(typeof a === 'string') {
+  if (typeof a === 'string' && typeof b === 'string') {
     return a < b ? -1 : 1;
   }
 
@@ -43,23 +43,23 @@ function compareObjects(a: object, b: object): number {
 
   let i = 0;
   let j = 0;
-  while(i < keysA.length && i < keysB.length) {
+  while (i < keysA.length && i < keysB.length) {
     const keyA = keysA[i];
     const keyB = keysB[j];
-    if(keyA < keyB) {
+    if (keyA < keyB) {
       return -1;
     }
-    if(keyA > keyB) {
+    if (keyA > keyB) {
       return 1;
     }
     const result = compare(a[keyA], b[keyB]);
-    if(result !== 0) return result;
+    if (result !== 0) return result;
     i++;
     j++;
   }
 
-  if(j < keysB.length) return -1;
-  if(i < keysA.length) return 1;
+  if (j < keysB.length) return -1;
+  if (i < keysA.length) return 1;
   return 0;
 }
 
@@ -67,9 +67,9 @@ function compareObjects(a: object, b: object): number {
 console.log(compare(1, 2)); // -1
 console.log(compare(2, 2)); // 0
 console.log(compare(3, 2)); // 1
-console.log(compare({a: 1}, {a: 2})); // -1
-console.log(compare({a: 2}, {a: 2})); // 0
-console.log(compare({a: 3}, {a: 2})); // 1
+console.log(compare({ a: 1 }, { a: 2 })); // -1
+console.log(compare({ a: 2 }, { a: 2 })); // 0
+console.log(compare({ a: 3 }, { a: 2 })); // 1
 console.log(compare([1, 2, 3], [1, 2, 4])); // -1
 console.log(compare([1, 2, 3], [1, 2, 3])); // 0
 console.log(compare([1, 2, 3], [1, 2, 2])); // 1
