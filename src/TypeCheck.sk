@@ -155,7 +155,7 @@ mutable class Scope{
         (name, ref) = nameRef;
         (_, upRef) = this.maybeGetRef(name).fromSome();
         this.!refs[name] = LocalRef(
-          unionTType(subst, tenv, upRef.type, ref.type),
+          TType::union(subst, tenv, upRef.type, ref.type),
           upRef.isInitialized,
         );
         nameRef
@@ -165,7 +165,7 @@ mutable class Scope{
         (name2, ref2) = nameRef2;
         invariant(name1 == name2);
         this.!refs[name1] = LocalRef(
-          unionTType(subst, tenv, ref1.type, ref2.type),
+          TType::union(subst, tenv, ref1.type, ref2.type),
           ref1.isInitialized && ref2.isInitialized,
         );
         nameRef1
@@ -621,12 +621,9 @@ class TypeChecker{
     | FDBNone(pos) -> typingError(Array[(pos, "Missing definition")])
     | FDBSome(body) ->
       blockScope = this.block(env, body);
-      objType = filterMethods(
-        env.subst,
-        this.tenv,
-        blockScope.get(Name(fd.pos, "this")),
-      );
-      fullType = filterMethods(env.subst, this.tenv, thisType);
+      blockThisType = blockScope.get(Name(fd.pos, "this"));
+      objType = blockThisType.filterMethods(env.subst, this.tenv);
+      fullType = thisType.filterMethods(env.subst, this.tenv);
       this.checkSubType(
         env,
         fd.pos,
@@ -1072,7 +1069,7 @@ class TypeChecker{
       stype match {
       | TObject(fields, _) ->
         if (stypes.size() == 1) return fields.getType(fieldName);
-        !result = unionTType(
+        !result = TType::union(
           env.subst,
           this.tenv,
           result,
@@ -1083,7 +1080,7 @@ class TypeChecker{
           if (stypes.size() == 1 && branches.size() == 1) {
             return branch.fields.getType(fieldName)
           };
-          !result = unionTType(
+          !result = TType::union(
             env.subst,
             this.tenv,
             result,
@@ -1324,7 +1321,7 @@ class TypeChecker{
               );
               for (stringValue in stringValues.values) {
                 t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
-                !ty = unionTType(env.subst, this.tenv, ty, t);
+                !ty = TType::union(env.subst, this.tenv, ty, t);
               }
             | _ ->
               typingError(
@@ -1348,7 +1345,7 @@ class TypeChecker{
             ],
           )
         };
-        !result = unionTType(env.subst, this.tenv, result, ty);
+        !result = TType::union(env.subst, this.tenv, result, ty);
       };
       result
     | EArray(arr) ->
@@ -1673,7 +1670,7 @@ class TypeChecker{
             ],
           );
         };
-        unionTType(env.subst, this.tenv, ty1, ty2)
+        TType::union(env.subst, this.tenv, ty1, ty2)
       }
 
     | InstanceOf(e1, Expr(_, Var(className))) ->
@@ -1785,7 +1782,7 @@ class TypeChecker{
         cond,
         TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
       );
-      unionTType(env.subst, this.tenv, left, right)
+      TType::union(env.subst, this.tenv, left, right)
     | SKJS.KeyOf _ -> notSupported(pos)
     | SKJS.Params _ ->
       invariant_violation("Internal error: Params should not be an expression")
@@ -1880,7 +1877,8 @@ class TypeChecker{
     obj: TType,
     args: Array<TType>,
   ): void {
-    for (stype in obj.stypes) {
+    stypes = obj.getSTypes(env.subst, this.tenv, Contravariant());
+    for (stype in stypes) {
       stype match {
       | TObject(fields, _) ->
         fields.maybeGet("constructor") match {
@@ -2092,7 +2090,9 @@ class TypeChecker{
                 ],
               )
             | Some(spreadType) ->
-              spreadType.stypes.singleElt() match {
+              spreadType
+                .getSTypes(env.subst, this.tenv, Contravariant())
+                .singleElt() match {
               | Some(TArray(eltType, _)) ->
                 for (i in Range(totalSize, args.size())) {
                   this.checkSubType(
@@ -2118,7 +2118,7 @@ class TypeChecker{
           };
           !result = result match {
           | None() -> Some(tfun.retType)
-          | Some(r) -> Some(unionTType(env.subst, this.tenv, r, tfun.retType))
+          | Some(r) -> Some(TType::union(env.subst, this.tenv, r, tfun.retType))
           };
         }
       | _ ->
