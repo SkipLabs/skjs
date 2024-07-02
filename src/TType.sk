@@ -287,11 +287,10 @@ class TType private {
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
-    stypes = this.getSTypes(subst, env, Covariant());
-    invariant(stypes.size() == 1);
-    !stypes = stypes.map(stype -> {
-      stype match {
-      | TObject(TFields(fields), pos) ->
+    this.getSTypes(subst, env, Covariant()).singleElt() match {
+    | Some(TObject(TFields(fields), pos)) ->
+      static::single(
+        this.pos,
         TObject(
           TFields::create(
             fields.filterMap(field ~> {
@@ -314,11 +313,10 @@ class TType private {
             }),
           ),
           pos,
-        )
-      | _ -> invariant_violation("Internal error: new should produce an object")
-      }
-    });
-    static::fromSTypes(this.pos, stypes);
+        ),
+      )
+    | _ -> invariant_violation("Internal error: new should produce an object")
+    }
   }
 
   static fun union(
