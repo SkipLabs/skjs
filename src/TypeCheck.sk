@@ -753,7 +753,7 @@ class TypeChecker{
         for (stype in stypes) {
           branches = stype match {
           | TObject(fields, _) -> Array[fields]
-          | a @ TAlgebraic _ -> a.branches.map(x -> x.fields)
+          | a @ TAlgebraic _ -> a.branches.toArray().map(x -> x.fields)
           | _ ->
             typingError(
               Array[
