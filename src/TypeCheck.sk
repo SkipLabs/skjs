@@ -2089,7 +2089,9 @@ class TypeChecker{
                 ],
               )
             | Some(spreadType) ->
-              spreadType.stypes.singleElt() match {
+              spreadType
+                .getSTypes(env.subst, this.tenv, Contravariant())
+                .singleElt() match {
               | Some(TArray(eltType, _)) ->
                 for (i in Range(totalSize, args.size())) {
                   this.checkSubType(
