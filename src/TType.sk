@@ -212,7 +212,7 @@ class TType private {
             | Some(c) -> !localResult = interTType(subst, env, localResult, c)
             }
           };
-          !result = unionTType(subst, env, result, localResult)
+          !result = static::union(subst, env, result, localResult)
         };
         !ty = result
       }
@@ -316,6 +316,23 @@ class TType private {
     });
     static::fromSTypes(this.pos, stypes);
   }
+
+  static fun union(
+    subst: mutable Subst,
+    env: TEnv,
+    ty1: this,
+    ty2: this,
+  ): this {
+    if (ty1.isTop) return ty1;
+    if (ty2.isTop) return ty2;
+    STypes::union(subst, env, ty1.stypes, ty2.stypes) match {
+    | None() -> static::top(ty1.pos)
+    | Some(stypes) ->
+      types = unionTInsts(ty1.insts, ty2.insts);
+      tparams = unionTTypeParams(ty1.tparams, ty2.tparams);
+      static::create(ty1.pos, stypes, types, tparams)
+    }
+  }
 }
 
 base class Variance {
@@ -359,7 +376,7 @@ class TTuple(tuple: Array<TType>) extends SType {
     invariant(this.tuple.size() != 0);
     elt = this.tuple[0];
     for (i in Range(1, this.tuple.size())) {
-      !elt = unionTType(subst, env, elt, this.tuple[i]);
+      !elt = TType::union(subst, env, elt, this.tuple[i]);
     };
     TType::single(this.pos, TArray(elt, this.pos))
   }
@@ -1167,7 +1184,7 @@ fun unionTFields(
         x.pos,
         x.name,
         x.isOptional || y.isOptional,
-        unionTType(subst, env, x.type, y.type),
+        TType::union(subst, env, x.type, y.type),
       )
     },
   );
@@ -1232,7 +1249,7 @@ fun unionSType(
     }
 
   | (TPromise(ty1, pos), TPromise(ty2, _)) ->
-    Some(TPromise(unionTType(subst, env, ty1, ty2), pos))
+    Some(TPromise(TType::union(subst, env, ty1, ty2), pos))
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
     Some(unionTTuple(subst, env, tuple1, tuple2))
   | (obj1 @ TObject _, obj2 @ TObject _) ->
@@ -1301,7 +1318,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   | (Some(ty1), Some(ty2)) -> Some(interTType(subst, env, ty1, ty2))
   | _ -> None()
   };
-  retType = unionTType(subst, env, f1.retType, f2.retType);
+  retType = TType::union(subst, env, f1.retType, f2.retType);
   totalSize1 = f1.params.size() + f1.optionalParams.size();
   totalSize2 = f2.params.size() + f2.optionalParams.size();
   sizeWitness = if (totalSize1 <= totalSize2) f1.minSizeWitness else {
@@ -1326,13 +1343,13 @@ fun unionTTuple(
 ): TTuple {
   result = mutable Vector[];
   for (i in Range(0, min(tuple1.tuple.size(), tuple2.tuple.size()))) {
-    result.push(unionTType(subst, env, tuple1.tuple[i], tuple2.tuple[i]));
+    result.push(TType::union(subst, env, tuple1.tuple[i], tuple2.tuple[i]));
   };
   if (tuple1.tuple.size() < tuple2.tuple.size()) {
     for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
       posEnd = PosRange(tuple1.pos.fileName, tuple1.pos.end, tuple1.pos.end);
       result.push(
-        unionTType(
+        TType::union(
           subst,
           env,
           TType::single(tuple1.pos, TPrimVoid(TUndefined(), posEnd)),
@@ -1344,7 +1361,7 @@ fun unionTTuple(
     for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
       posEnd = PosRange(tuple2.pos.fileName, tuple2.pos.end, tuple2.pos.end);
       result.push(
-        unionTType(
+        TType::union(
           subst,
           env,
           tuple1.tuple[i],
@@ -1378,18 +1395,6 @@ fun unionTTypeParams(
       },
     ),
   )
-}
-
-fun unionTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
-  if (ty1.isTop) return ty1;
-  if (ty2.isTop) return ty2;
-  STypes::union(subst, env, ty1.stypes, ty2.stypes) match {
-  | None() -> TType::top(ty1.pos)
-  | Some(stypes) ->
-    types = unionTInsts(ty1.insts, ty2.insts);
-    tparams = unionTTypeParams(ty1.tparams, ty2.tparams);
-    TType::create(ty1.pos, stypes, types, tparams)
-  }
 }
 
 /*****************************************************************************/
@@ -1524,20 +1529,20 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     | (None(), None()) -> None()
     | (None(), Some(x)) -> Some(x)
     | (Some(x), None()) -> Some(x)
-    | (Some(x), Some(y)) -> Some(unionTType(subst, env, x, y))
+    | (Some(x), Some(y)) -> Some(TType::union(subst, env, x, y))
     };
     tparams.push(tparam1 with {cstr});
   };
   !f2 = RenameTParams().fun_(tsubst.chill(), f2);
   params = mutable Vector[];
   for (i in Range(0, f1.params.size())) {
-    params.push(unionTType(subst, env, f1.params[i], f2.params[i]));
+    params.push(TType::union(subst, env, f1.params[i], f2.params[i]));
   };
   optionalSize = min(f1.optionalParams.size(), f2.optionalParams.size());
   optionalParams = mutable Vector[];
   for (i in Range(0, optionalSize)) {
     optionalParams.push(
-      unionTType(subst, env, f1.optionalParams[i], f2.optionalParams[i]),
+      TType::union(subst, env, f1.optionalParams[i], f2.optionalParams[i]),
     );
   };
   if (f1.optionalParams.size() < f2.optionalParams.size()) {
@@ -1558,7 +1563,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   | (None(), None()) -> None()
   | (ty @ Some _, None()) -> ty
   | (None(), ty @ Some _) -> ty
-  | (Some(ty1), Some(ty2)) -> Some(unionTType(subst, env, ty1, ty2))
+  | (Some(ty1), Some(ty2)) -> Some(TType::union(subst, env, ty1, ty2))
   };
   retType = interTType(subst, env, f1.retType, f2.retType);
   if (f1.lambdas.size() != 0) {
@@ -1809,7 +1814,7 @@ class Instantiate() extends ApplyType {
       };
       clauseOpt match {
       | None() -> void
-      | Some(clause) -> !result = unionTType(subst, tenv, result, clause)
+      | Some(clause) -> !result = TType::union(subst, tenv, result, clause)
       };
     };
     tparams = TTypeParams(
@@ -1880,7 +1885,7 @@ mutable class Subst{
     };
     this.values[tvar.id] match {
     | SVOpen(ty2) ->
-      newTy = unionTType(this, env, ty2, ty);
+      newTy = TType::union(this, env, ty2, ty);
       if (newTy == ty2) return void;
       this.!version = this.version + 1;
       this.!values[tvar.id] = if (isContra) SVOpen(newTy) else SVClosed(newTy)
