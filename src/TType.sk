@@ -294,7 +294,7 @@ class TType private {
       static::single(
         this.pos,
         TObject(
-          TFields::create(
+          TFields(
             fields.filterMap(field ~> {
               fieldType = field.type;
               fieldSTypes = fieldType.stypes.filterMap(fieldSType ~>
@@ -489,24 +489,33 @@ class TField(
   name: String,
   isOptional: Bool,
   type: TType,
-) uses Hashable, Orderable {
+) uses Hashable, Orderable, Projectable<String> {
   fun withOptional(): this {
     this with {isOptional => true}
   }
+
+  fun project(): String {
+    this.name
+  }
 }
 
-class TFields private (fields: Array<TField>) uses Hashable, Orderable {
+class TFields(
+  fields: InternalKeyedArrayMap<String, TField>,
+) uses Hashable, Orderable {
   static fun empty(): this {
-    TFields(Array[])
+    static(InternalKeyedArrayMap::empty())
   }
 
   static fun create(fields: Array<TField>): this {
-    !fields = fields.sortedBy(x ~> x.name);
-    TFields(fields)
+    static(
+      InternalKeyedArrayMap::createFromIterator(
+        fields.sortedBy(x ~> x.name).values(),
+      ),
+    )
   }
 
   fun values(): mutable Iterator<TField> {
-    this.fields.iterator()
+    this.fields.values()
   }
 
   fun maybeGet(fieldName: String): ?TField {
@@ -531,6 +540,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
             fieldName.posRange,
             "Possible options are:\n" +
               this.fields.filter(x -> x.name != "constructor")
+                .toArray()
                 .map(x -> x.name)
                 .join("\n"),
           ),
@@ -1719,7 +1729,7 @@ base class ApplyType {
   }
 
   overridable deferred fun fields(env: this::Env, fields: TFields): TFields {
-    TFields::create(fields.fields.map(x -> this.field(env, x)))
+    TFields(fields.fields.map(x -> this.field(env, x)))
   }
 
   overridable deferred fun field(env: this::Env, field: TField): TField {
