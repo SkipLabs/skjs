@@ -558,6 +558,36 @@ class TFields(
       .type.getTag()
       .fromSome("Internal error: getKind on non constructor")
   }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    fields1: TFields,
+    fields2: TFields,
+  ): STResult {
+    fields1.fields.geq(fields2.fields, (f1O, f2) ->
+      f1O match {
+      | None() ->
+        if (f2.isOptional) {
+          Success(void)
+        } else {
+          Failure(STMissingField(f2.name))
+        }
+      | Some(f1) ->
+        if (f1.isOptional && !f2.isOptional) {
+          Failure(STMissingField(f1.name))
+        } else {
+          isSubTType(subst, env, f1.type, f2.type) match {
+          | STOk() -> Success(void)
+          | err -> Failure(err)
+          }
+        }
+      }
+    ) match {
+    | Success(void) -> STOk()
+    | Failure(err) -> err
+    }
+  }
 }
 
 class STypes private (
@@ -1099,7 +1129,7 @@ fun isSubTObject(
   obj1: TObject,
   obj2: TObject,
 ): STResult {
-  isSubTFields(subst, env, obj1.fields, obj2.fields)
+  TFields::isSub(subst, env, obj1.fields, obj2.fields)
 }
 
 fun isSubTAlgebraic(
@@ -1113,7 +1143,7 @@ fun isSubTAlgebraic(
     a2.branches.iterator(),
     x ~> STTooManyTConstr(x),
     x ~> x.fields.getKind(),
-    (x, y) -> isSubTFields(subst, env, x.fields, y.fields),
+    (x, y) -> TFields::isSub(subst, env, x.fields, y.fields),
   );
 }
 
@@ -1123,27 +1153,7 @@ fun isSubBranch(
   b1: TConstr,
   b2: TConstr,
 ): STResult {
-  isSubTFields(subst, env, b1.fields, b2.fields)
-}
-
-fun isSubTFields(
-  subst: mutable Subst,
-  env: TEnv,
-  fields1: TFields,
-  fields2: TFields,
-): STResult {
-  genericSubBigger(
-    fields1.values(),
-    fields2.values(),
-    x ~> if (x.isOptional) STOk() else STMissingField(x.name),
-    x ~> x.name,
-    (x, y) -> {
-      if (x.isOptional && !y.isOptional) {
-        return STMissingField(x.name);
-      };
-      isSubTType(subst, env, x.type, y.type)
-    },
-  );
+  TFields::isSub(subst, env, b1.fields, b2.fields)
 }
 
 /*****************************************************************************/
