@@ -1877,7 +1877,8 @@ class TypeChecker{
     obj: TType,
     args: Array<TType>,
   ): void {
-    for (stype in obj.stypes) {
+    stypes = obj.getSTypes(env.subst, this.tenv, Contravariant());
+    for (stype in stypes) {
       stype match {
       | TObject(fields, _) ->
         fields.maybeGet("constructor") match {
