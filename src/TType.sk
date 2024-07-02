@@ -385,6 +385,27 @@ class TAlgebraic(
       a1.pos,
     )
   }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    a1: TAlgebraic,
+    a2: TAlgebraic,
+  ): STResult {
+    a1.branches.leq(a2.branches, (b1, b2O) ->
+      b2O match {
+      | Some(b2) ->
+        TFields::isSub(subst, env, b1.fields, b2.fields) match {
+        | STOk() -> Success(void)
+        | err -> Failure(err)
+        }
+      | None() -> Failure(STTooManyTConstr(b1))
+      }
+    ) match {
+    | Success(void) -> STOk()
+    | Failure(err) -> err
+    }
+  }
 }
 
 class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
@@ -1135,7 +1156,7 @@ fun isSubSType(
   | (TObject _, TAlgebraic _) ->
     STTooManySType(sty1)
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    isSubTAlgebraic(subst, env, a1, a2)
+    TAlgebraic::isSub(subst, env, a1, a2)
   | _ -> invariant_violation("Internal error")
   }
 }
@@ -1213,21 +1234,6 @@ fun isSubTObject(
   obj2: TObject,
 ): STResult {
   TFields::isSub(subst, env, obj1.fields, obj2.fields)
-}
-
-fun isSubTAlgebraic(
-  subst: mutable Subst,
-  env: TEnv,
-  a1: TAlgebraic,
-  a2: TAlgebraic,
-): STResult {
-  genericSubSmaller(
-    a1.branches.values(),
-    a2.branches.values(),
-    x ~> STTooManyTConstr(x),
-    x ~> x.fields.getKind(),
-    (x, y) -> TFields::isSub(subst, env, x.fields, y.fields),
-  );
 }
 
 fun isSubBranch(
