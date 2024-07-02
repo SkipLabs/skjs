@@ -103,6 +103,38 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     })
   }
 
+  // s.iterDiffInterDiffUntil(t, f) applies f to (Some(x), None()) for every
+  // element in s but not t, (None(), Some(y)) for every y in t but not s,
+  // and (Some(x), Some(y)) for every pair of elements that are in both s
+  // and t. As soon as f returns Some(v), Some(v) is returned immediately.
+  fun iterDiffInterDiffUntil<U>(that: this, f: (?T, ?T) -> ?U): ?U {
+    iter1 = this.inner.values();
+    iter2 = that.inner.values();
+    head1 = iter1.next();
+    head2 = iter2.next();
+    none: ?T = None();
+    result: ?U = None();
+    go = (x, y) -> {
+      if (x.isSome()) !head1 = iter1.next();
+      if (y.isSome()) !head2 = iter2.next();
+      !result = f(x, y)
+    };
+    while (result.isNone()) {
+      (head1, head2) match {
+      | (None(), None()) -> break void
+      | (None(), Some(_)) -> go(None(), head2)
+      | (Some(_), None()) -> go(head1, None())
+      | (Some(x), Some(y)) ->
+        x.project().compare(y.project()) match {
+        | LT() -> go(head1, none)
+        | EQ() -> go(head1, head2)
+        | GT() -> go(none, head2)
+        }
+      }
+    };
+    result
+  }
+
   // s.merge(t, f) is the set of elements v where Some(v) is returned by f
   // from (Some(x), None) for every element in s but not t, (None, Some(y))
   // for every y in t but not s, and (Some(x), Some(y)) for every pair of
@@ -115,29 +147,10 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // y.project() == f(_,Some(y)).each(project) for any y
   fun merge(that: this, f: (?T, ?T) -> ?T): this {
     static::create(0, push -> {
-      iter1 = this.inner.values();
-      iter2 = that.inner.values();
-      head1 = iter1.next();
-      head2 = iter2.next();
-      none: ?T = None();
-      go = (x, y) -> {
-        f(x, y).each(push);
-        if (x.isSome()) !head1 = iter1.next();
-        if (y.isSome()) !head2 = iter2.next();
-      };
-      loop {
-        (head1, head2) match {
-        | (None(), None()) -> break void
-        | (None(), Some(_)) -> go(None(), head2)
-        | (Some(_), None()) -> go(head1, None())
-        | (Some(x), Some(y)) ->
-          x.project().compare(y.project()) match {
-          | LT() -> go(head1, none)
-          | EQ() -> go(head1, head2)
-          | GT() -> go(none, head2)
-          }
-        }
-      };
+      _ = this.iterDiffInterDiffUntil(that, (xo, yo) -> {
+        f(xo, yo).each(push);
+        None()
+      })
     })
   }
 
@@ -151,33 +164,17 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   fun mergeOption(that: this, f: (?T, ?T) -> ZeroElemUnit<T>): ?this {
     zero = false;
     result = static::create(0, push -> {
-      iter1 = this.inner.values();
-      iter2 = that.inner.values();
-      head1 = iter1.next();
-      head2 = iter2.next();
-      none: ?T = None();
-      go = (x, y) -> {
-        f(x, y) match {
-        | Zero() -> !zero = true
-        | Elem(v) -> push(v)
-        | Unit() -> void
-        };
-        if (x.isSome()) !head1 = iter1.next();
-        if (y.isSome()) !head2 = iter2.next();
-      };
-      while (!zero) {
-        (head1, head2) match {
-        | (None(), None()) -> break void
-        | (None(), Some(_)) -> go(None(), head2)
-        | (Some(_), None()) -> go(head1, None())
-        | (Some(x), Some(y)) ->
-          x.project().compare(y.project()) match {
-          | LT() -> go(head1, none)
-          | EQ() -> go(head1, head2)
-          | GT() -> go(none, head2)
-          }
+      _ = this.iterDiffInterDiffUntil(that, (xo, yo) -> {
+        f(xo, yo) match {
+        | Zero() ->
+          !zero = true;
+          Some(void)
+        | Elem(v) ->
+          push(v);
+          None()
+        | Unit() -> None()
         }
-      };
+      })
     });
     if (zero) None() else Some(result)
   }

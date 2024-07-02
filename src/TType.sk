@@ -606,6 +606,27 @@ class STypes private (
       .map(x -> static(x))
   }
 
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    stypes1: STypes,
+    stypes2: STypes,
+  ): STResult {
+    stypes1.stypes
+      .iterDiffInterDiffUntil(stypes2.stypes, (xo, yo) ->
+        (xo, yo) match {
+        | (None(), _) -> None()
+        | (Some(x), None()) -> Some(STTooManySType(x))
+        | (Some(x), Some(y)) ->
+          isSubSType(subst, env, x, y) match {
+          | STOk() -> None()
+          | err -> Some(err)
+          }
+        }
+      )
+      .default(STOk())
+  }
+
   fun map(f: SType -> SType): this {
     static(this.stypes.map(f))
   }
@@ -943,7 +964,7 @@ fun isSubTType(
     };
     return STError(SRec(err, pos, u2))
   };
-  status = isSubSTypes(subst, env, stypes1, stypes2);
+  status = STypes::isSub(subst, env, stypes1, stypes2);
   status match {
   | STOk() -> STOk()
   | err @ STError _ ->
@@ -956,21 +977,6 @@ fun isSubTType(
     subst.restore(savedSubst);
     STError(SRec(other, u1.pos, u2))
   }
-}
-
-fun isSubSTypes(
-  subst: mutable Subst,
-  env: TEnv,
-  stypes1: STypes,
-  stypes2: STypes,
-): STResult {
-  genericSubSmaller(
-    stypes1.values(),
-    stypes2.values(),
-    x ~> STTooManySType(x),
-    x ~> x.tag(),
-    (x, y) -> isSubSType(subst, env, x, y),
-  )
 }
 
 fun isSubSType(
