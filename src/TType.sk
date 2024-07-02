@@ -350,8 +350,48 @@ base class Variance {
 /*****************************************************************************/
 
 class TObject(fields: TFields) extends SType
-class TAlgebraic(branches: Array<TConstr>) extends SType
-class TConstr(fields: TFields) uses Hashable, Orderable {}
+
+class TAlgebraic(
+  branches: InternalKeyedArrayMap<String, TConstr>,
+) extends SType {
+  static fun single(x: TConstr, pos: PosRange): this {
+    static(InternalKeyedArrayMap::single(x), pos)
+  }
+
+  static fun inter(
+    subst: mutable Subst,
+    env: TEnv,
+    a1: TAlgebraic,
+    a2: TAlgebraic,
+  ): TAlgebraic {
+    static(
+      a1.branches.mapInter(a2.branches, (x, y) ->
+        TConstr(interTFields(subst, env, x.fields, y.fields))
+      ),
+      a1.pos,
+    )
+  }
+
+  static fun union(
+    subst: mutable Subst,
+    env: TEnv,
+    a1: TAlgebraic,
+    a2: TAlgebraic,
+  ): TAlgebraic {
+    static(
+      a1.branches.mapUnion(a2.branches, (x, y) ->
+        TConstr(unionTFields(subst, env, x.fields, y.fields))
+      ),
+      a1.pos,
+    )
+  }
+}
+
+class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
+  fun project(): String {
+    this.fields.getKind()
+  }
+}
 
 fun createObject(pos: PosRange, fields: TFields): TType {
   seen = mutable Set<String>[];
@@ -365,7 +405,7 @@ fun createObject(pos: PosRange, fields: TFields): TType {
     seen.contains("kind") &&
     fields.maybeGet("kind").fromSome().type.isTag()
   ) {
-    TType::single(pos, TAlgebraic(Array[TConstr(fields)], pos))
+    TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
   } else {
     TType::single(pos, TObject(fields, pos))
   }
@@ -1182,8 +1222,8 @@ fun isSubTAlgebraic(
   a2: TAlgebraic,
 ): STResult {
   genericSubSmaller(
-    a1.branches.iterator(),
-    a2.branches.iterator(),
+    a1.branches.values(),
+    a2.branches.values(),
     x ~> STTooManyTConstr(x),
     x ~> x.fields.getKind(),
     (x, y) -> TFields::isSub(subst, env, x.fields, y.fields),
@@ -1239,22 +1279,6 @@ fun unionTObject(
   TObject(unionTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
 }
 
-fun unionTAlgebraic(
-  subst: mutable Subst,
-  env: TEnv,
-  a1: TAlgebraic,
-  a2: TAlgebraic,
-): TAlgebraic {
-  branches = mapUnion(
-    a1.branches.iterator(),
-    a2.branches.iterator(),
-    x ~> x.fields.getKind(),
-    x -> x,
-    (x, y) -> TConstr(unionTFields(subst, env, x.fields, y.fields)),
-  );
-  TAlgebraic(branches, a1.pos)
-}
-
 // unionSType returns None when the least upper bound of the args is top
 fun unionSType(
   subst: mutable Subst,
@@ -1290,7 +1314,7 @@ fun unionSType(
   | (obj1 @ TObject _, obj2 @ TObject _) ->
     Some(unionTObject(subst, env, obj1, obj2))
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    Some(unionTAlgebraic(subst, env, a1, a2))
+    Some(TAlgebraic::union(subst, env, a1, a2))
   | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::union(subst, env, f1, f2))
   | _ -> invariant_violation("Internal error")
   }
@@ -1449,21 +1473,6 @@ fun interTObject(
   TObject(interTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
 }
 
-fun interTAlgebraic(
-  subst: mutable Subst,
-  env: TEnv,
-  a1: TAlgebraic,
-  a2: TAlgebraic,
-): TAlgebraic {
-  (_noMatchBranches1, _noMatchBranches2, branches) = mapInter(
-    a1.branches.iterator(),
-    a2.branches.iterator(),
-    x ~> x.fields.getKind(),
-    (x, y) -> TConstr(interTFields(subst, env, x.fields, y.fields)),
-  );
-  TAlgebraic(branches, a1.pos)
-}
-
 // interSType returns None when the greatest lower bound of the args is bottom
 fun interSType(
   subst: mutable Subst,
@@ -1507,7 +1516,7 @@ fun interSType(
   | (obj1 @ TObject _, obj2 @ TObject _) ->
     Some(interTObject(subst, env, obj1, obj2))
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    Some(interTAlgebraic(subst, env, a1, a2))
+    Some(TAlgebraic::inter(subst, env, a1, a2))
 
   | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::inter(subst, env, f1, f2))
   | _ -> invariant_violation("Internal error")
