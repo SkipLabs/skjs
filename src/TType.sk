@@ -438,6 +438,33 @@ class TFuns(
       f1.pos,
     )
   }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    funs1: TFuns,
+    funs2: TFuns,
+  ): STResult {
+    leq1 = (f1, f2O) ->
+      f2O match {
+      | Some(f2) ->
+        isSubTFun(subst, env, f1, f2) match {
+        | STOk() -> Success(void)
+        | err -> Failure(err)
+        }
+      | None() -> Failure(STTooManyTFun(f1))
+      };
+    funs1.funs.leq(funs2.funs, leq1) match {
+    | Failure(err) -> err
+    | Success(void) ->
+      funs1.methods.leq(funs2.methods, leq1) match {
+      | Failure(err) -> err
+      | Success(void) ->
+        ok: STResult = STOk();
+        ok
+      }
+    }
+  }
 }
 
 class TFun(
@@ -1062,7 +1089,7 @@ fun isSubSType(
     }
 
   | (TPromise(ty1, _), TPromise(ty2, _)) -> isSubTType(subst, env, ty1, ty2)
-  | (funs1 @ TFuns _, funs2 @ TFuns _) -> isSubTFuns(subst, env, funs1, funs2)
+  | (funs1 @ TFuns _, funs2 @ TFuns _) -> TFuns::isSub(subst, env, funs1, funs2)
   | (obj1 @ TObject _, obj2 @ TObject _) -> isSubTObject(subst, env, obj1, obj2)
   | (TAlgebraic _, TObject _)
   | (TObject _, TAlgebraic _) ->
@@ -1089,37 +1116,6 @@ fun isSubTTuple(
     }
   };
   STOk()
-}
-
-fun isSubTFuns(
-  subst: mutable Subst,
-  env: TEnv,
-  funs1: TFuns,
-  funs2: TFuns,
-): STResult {
-  {
-    iter1 = funs1.funs.values();
-    iter2 = funs2.funs.values();
-    genericSubSmaller(
-      iter1,
-      iter2,
-      x ~> STTooManyTFun(x),
-      x ~> (x.tparams.size(), x.params.size()),
-      (x, y) -> isSubTFun(subst, env, x, y),
-    )
-  } match {
-  | STOk() ->
-    iter1 = funs1.methods.values();
-    iter2 = funs2.methods.values();
-    genericSubSmaller(
-      iter1,
-      iter2,
-      x ~> STTooManyTFun(x),
-      x ~> (x.tparams.size(), x.params.size()),
-      (x, y) -> isSubTFun(subst, env, x, y),
-    )
-  | err -> err
-  }
 }
 
 fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
