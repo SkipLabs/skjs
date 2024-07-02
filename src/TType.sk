@@ -70,7 +70,7 @@ class TType private {
 
   // The list of possible "single types" or "simple types".
   // undefined | void | null | boolean | number | string | etc ...
-  stypes: STypes,
+  private stypes: STypes,
 
   // The list of type instances which can be:
   // - Type variables
