@@ -624,9 +624,9 @@ class TEnv{
         this.normalize(context, retType),
       );
       tfuns = if (isMethod) {
-        TFuns(Array[], Array[tfun], typeAst.posRange)
+        TFuns::singleMethod(tfun, typeAst.posRange)
       } else {
-        TFuns(Array[tfun], Array[], typeAst.posRange)
+        TFuns::singleFun(tfun, typeAst.posRange)
       };
       TType::single(pos, tfuns)
     | TAGet _ -> invariant_violation("TODO TAGet")
