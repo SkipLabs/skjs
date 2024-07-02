@@ -150,7 +150,10 @@ mutable class TypePp{
       this.tfuns(
         level,
         margin,
-        tfuns.map(x -> (false, x)).concat(tmethods.map(x -> (true, x))),
+        tfuns
+          .toArray()
+          .map(x -> (false, x))
+          .concat(tmethods.toArray().map(x -> (true, x))),
       )
     }
   }

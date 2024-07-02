@@ -393,7 +393,53 @@ class TTuple(tuple: Array<TType>) extends SType {
 /* Funs */
 /*****************************************************************************/
 
-class TFuns(funs: Array<TFun>, methods: Array<TFun>) extends SType
+class TFuns(
+  funs: InternalKeyedArrayMap<(Int, Int), TFun>,
+  methods: InternalKeyedArrayMap<(Int, Int), TFun>,
+) extends SType {
+  static fun singleFun(x: TFun, pos: PosRange): this {
+    static(
+      InternalKeyedArrayMap::single(x),
+      InternalKeyedArrayMap::empty(),
+      pos,
+    )
+  }
+
+  static fun singleMethod(x: TFun, pos: PosRange): this {
+    static(
+      InternalKeyedArrayMap::empty(),
+      InternalKeyedArrayMap::single(x),
+      pos,
+    )
+  }
+
+  static fun inter(
+    subst: mutable Subst,
+    env: TEnv,
+    f1: TFuns,
+    f2: TFuns,
+  ): TFuns {
+    static(
+      f1.funs.mapInter(f2.funs, (x, y) -> interTFun(subst, env, x, y)),
+      f1.methods.mapInter(f2.methods, (x, y) -> interTFun(subst, env, x, y)),
+      f1.pos,
+    )
+  }
+
+  static fun union(
+    subst: mutable Subst,
+    env: TEnv,
+    f1: TFuns,
+    f2: TFuns,
+  ): TFuns {
+    static(
+      f1.funs.mapUnion(f2.funs, (x, y) -> unionTFun(subst, env, x, y)),
+      f1.methods.mapUnion(f2.methods, (x, y) -> unionTFun(subst, env, x, y)),
+      f1.pos,
+    )
+  }
+}
+
 class TFun(
   tparams: Array<TParam>,
   params: Array<TType>,
@@ -402,9 +448,13 @@ class TFun(
   minSizeWitness: PosRange,
   lambdas: Array<Lambda>,
   retType: TType,
-) uses Hashable, Orderable {
+) uses Hashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
     invariant_violation("TODO2")
+  }
+
+  fun project(): (Int, Int) {
+    (this.tparams.size(), this.params.size())
   }
 }
 
@@ -809,10 +859,7 @@ base class STResult {
       "This is a function: " +
         prettyPrintType(
           false,
-          TType::single(
-            PosRange::none,
-            TFuns(Array[f], Array[], PosRange::none),
-          ),
+          TType::single(PosRange::none, TFuns::singleFun(f, PosRange::none)),
         )
     | STInvalidTypeParam(n) -> "This is of type " + n
     | STInvalidTypeParams(n) -> "This is of type " + n
@@ -1051,8 +1098,8 @@ fun isSubTFuns(
   funs2: TFuns,
 ): STResult {
   {
-    iter1 = funs1.funs.iterator();
-    iter2 = funs2.funs.iterator();
+    iter1 = funs1.funs.values();
+    iter2 = funs2.funs.values();
     genericSubSmaller(
       iter1,
       iter2,
@@ -1062,8 +1109,8 @@ fun isSubTFuns(
     )
   } match {
   | STOk() ->
-    iter1 = funs1.methods.iterator();
-    iter2 = funs2.methods.iterator();
+    iter1 = funs1.methods.values();
+    iter2 = funs2.methods.values();
     genericSubSmaller(
       iter1,
       iter2,
@@ -1248,29 +1295,9 @@ fun unionSType(
     Some(unionTObject(subst, env, obj1, obj2))
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
     Some(unionTAlgebraic(subst, env, a1, a2))
-  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(unionTFuns(subst, env, f1, f2))
+  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::union(subst, env, f1, f2))
   | _ -> invariant_violation("Internal error")
   }
-}
-
-fun unionTFuns(subst: mutable Subst, env: TEnv, f1: TFuns, f2: TFuns): TFuns {
-  TFuns(
-    mapUnion(
-      f1.funs.iterator(),
-      f2.funs.iterator(),
-      x ~> (x.tparams.size(), x.params.size()),
-      x -> x,
-      (f1, f2) -> unionTFun(subst, env, f1, f2),
-    ),
-    mapUnion(
-      f1.methods.iterator(),
-      f2.methods.iterator(),
-      x ~> (x.tparams.size(), x.params.size()),
-      x -> x,
-      (f1, f2) -> unionTFun(subst, env, f1, f2),
-    ),
-    f1.pos,
-  )
 }
 
 fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
@@ -1486,27 +1513,9 @@ fun interSType(
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
     Some(interTAlgebraic(subst, env, a1, a2))
 
-  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(interTFuns(subst, env, f1, f2))
+  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::inter(subst, env, f1, f2))
   | _ -> invariant_violation("Internal error")
   }
-}
-
-fun interTFuns(subst: mutable Subst, env: TEnv, f1: TFuns, f2: TFuns): TFuns {
-  TFuns(
-    mapInter(
-      f1.funs.iterator(),
-      f2.funs.iterator(),
-      x ~> (x.tparams.size(), x.params.size()),
-      (x, y) -> interTFun(subst, env, x, y),
-    ).i2,
-    mapInter(
-      f1.methods.iterator(),
-      f2.methods.iterator(),
-      x ~> (x.tparams.size(), x.params.size()),
-      (x, y) -> interTFun(subst, env, x, y),
-    ).i2,
-    f1.pos,
-  )
 }
 
 fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
