@@ -163,6 +163,10 @@ class TType private {
     this with {pos}
   }
 
+  fun rawSTypes(): STypes {
+    this.stypes
+  }
+
   fun rawMap(
     stypes: (STypes) -> STypes,
     insts: (TInsts) -> TInsts,

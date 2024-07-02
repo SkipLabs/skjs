@@ -318,7 +318,7 @@ mutable class TypePp{
         this.out(level, margin, "?")
       };
       if (
-        fieldType.stypes.singleElt() match {
+        fieldType.rawSTypes().singleElt() match {
         | Some(TFuns(_, methods, _)) -> methods.size() == 0
         | _ -> true
         }
@@ -353,6 +353,7 @@ mutable class TypePp{
       this.out(level, margin, "never");
       return void;
     };
+    stypes = ty.rawSTypes();
     if (!ty.tparams.tparams.isEmpty()) {
       for (i => tparams in ty.tparams.tparams) {
         if (i != 0) {
@@ -371,7 +372,7 @@ mutable class TypePp{
           }
         }
       };
-      if (!ty.stypes.isEmpty() || !ty.insts.insts.isEmpty()) {
+      if (!stypes.isEmpty() || !ty.insts.insts.isEmpty()) {
         this.out(level, margin, " | ")
       }
     };
@@ -379,7 +380,7 @@ mutable class TypePp{
       level,
       margin,
       (pp, level, margin) ~> {
-        for (i => sty in ty.stypes) {
+        for (i => sty in stypes) {
           if (i != 0) {
             pp.out(level, margin, " | ");
           };
@@ -411,7 +412,7 @@ mutable class TypePp{
         }
       },
       (pp, level, prevMargin, margin) ~> {
-        for (i => sty in ty.stypes) {
+        for (i => sty in stypes) {
           pp.buffer match {
           | List.Nil()
           | List.Cons("\n", _) ->
@@ -429,7 +430,7 @@ mutable class TypePp{
             void
           | _ -> pp.newLine()
           };
-          if (ty.stypes.size() != 0) pp.out(level, prevMargin, "| ");
+          if (stypes.size() != 0) pp.out(level, prevMargin, "| ");
           inst match {
           | TSInst(x, targs) ->
             pp.out(level, margin, x.value);
