@@ -2,6 +2,163 @@
 /* Generic operations on sorted set represented with sorted arrays. */
 /*****************************************************************************/
 
+module ArraySet;
+
+// see iterDiffInterDiff
+private mutable class DiffInterDiffIterator<T: Orderable> private (
+  private mutable head1: ?T,
+  private tail1: mutable Iterator<T>,
+  private mutable head2: ?T,
+  private tail2: mutable Iterator<T>,
+) extends Iterator<(?T, ?T)> {
+  static fun create(
+    iter1: mutable Iterator<T>,
+    iter2: mutable Iterator<T>,
+  ): mutable Iterator<(?T, ?T)> {
+    head1 = iter1.next();
+    head2 = iter2.next();
+    mutable static(head1, iter1, head2, iter2)
+  }
+
+  readonly fun sizeHint(): ?Int {
+    size1 = this.tail1.sizeHint().map((n) ->
+      if (this.head1.isSome()) n + 1 else n
+    );
+    size2 = this.tail2.sizeHint().map((n) ->
+      if (this.head2.isSome()) n + 1 else n
+    );
+    (size1, size2) match {
+    | (Some(m), Some(n)) ->
+      Some(m + n) // actual size will be between max and sum of sizes
+    | (Some(n), None())
+    | (None(), Some(n)) ->
+      Some(n)
+    | (None(), None()) -> None()
+    }
+  }
+
+  mutable fun next(): ?(?T, ?T) {
+    none: ?T = None();
+    go = (x, y) -> {
+      if (x.isSome()) this.!head1 = this.tail1.next();
+      if (y.isSome()) this.!head2 = this.tail2.next();
+      Some((x, y))
+    };
+    (this.head1, this.head2) match {
+    | (None(), None()) -> None()
+    | (None(), Some(_)) -> go(none, this.head2)
+    | (Some(_), None()) -> go(this.head1, none)
+    | (Some(x), Some(y)) ->
+      x.compare(y) match {
+      | LT() -> go(this.head1, none)
+      | EQ() -> go(this.head1, this.head2)
+      | GT() -> go(none, this.head2)
+      }
+    }
+  }
+}
+
+// A set of orderable elements backed by a sorted array.
+class .ArraySet<T: Orderable> private (
+  private inner: Vector<T>,
+) uses Orderable, Hashable[T: Hashable] {
+  private static fun create<T: Orderable>(
+    size: Int,
+    init: (T -> void) -> void,
+  ): ArraySet<T> {
+    // create by allocating, initializing via calling push, and checking
+    inner = Vector::mcreate(size);
+    init(inner.push);
+    // inner must be strictly increasing
+    assert(
+      {
+        prev: ?T = None();
+        for (curr in inner) {
+          prev match {
+          | Some(p) ->
+            if (p >= curr) {
+              invariant_violation("ArraySet::create")
+            }
+          | None() -> void
+          };
+          !prev = Some(curr);
+        };
+        true
+      },
+    );
+    ArraySet(unsafe_chill_trust_me(inner))
+  }
+
+  static fun createFromIterator<T: Orderable, I: mutable Iterator<T>>(
+    items: I,
+  ): ArraySet<T> {
+    static::create(items.sizeHint().default(0), items.each)
+  }
+
+  static fun single(x: T): this {
+    static(Vector[x])
+  }
+
+  fun isEmpty(): Bool {
+    this.inner.isEmpty()
+  }
+
+  fun toArray(): Array<T> {
+    this.inner.toArray()
+  }
+
+  fun values(): mutable Iterator<T> {
+    this.inner.values()
+  }
+
+  fun items(): mutable Iterator<(Int, T)> {
+    this.inner.items()
+  }
+
+  fun filter(f: T -> Bool): this {
+    static(this.inner.filter(f))
+  }
+
+  fun map<U: Orderable>(f: T -> U): ArraySet<U> {
+    // use a SortedSet to sort and dedup since callers of map do not
+    // guarantee that f is monotone
+    static::createFromIterator(this.values().map(f).collect(SortedSet).values())
+  }
+
+  // s.iterDiffInterDiff(t) contains (Some(x), None()) for every element in
+  // s but not t, (None(), Some(y)) for every y in t but not s, and
+  // (Some(x), Some(y)) for every pair of elements that are in both s and t.
+  fun iterDiffInterDiff(that: this): mutable Iterator<(?T, ?T)> {
+    DiffInterDiffIterator::create(this.inner.values(), that.inner.values())
+  }
+
+  fun iterDiff(that: this): mutable Iterator<T> {
+    this.iterDiffInterDiff(that).filterMap((xO_yO) ->
+      xO_yO match {
+      | (xO @ Some(_), None()) -> xO
+      | _ -> None()
+      }
+    )
+  }
+
+  fun iterUnion(that: this): mutable Iterator<T> {
+    this.iterDiffInterDiff(that).map((xO_yO) ->
+      xO_yO match {
+      | (Some(x), _)
+      | (None(), Some(x)) ->
+        x
+      | (None(), None()) -> invariant_violation("ArraySet.union")
+      }
+    )
+  }
+
+  fun union(that: this): this {
+    static::createFromIterator(this.iterUnion(that))
+  }
+}
+
+module end;
+
 module SKJS;
 
 fun mapUnion<T, Key: Orderable>(

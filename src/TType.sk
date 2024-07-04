@@ -879,14 +879,71 @@ class TParam(
   id: Int,
   cstr: ?TType,
 ) uses Hashable, Orderable
+
 // The type parameters are in DNF
-class TTypeParams(tparams: Array<Array<TParam>>) uses Hashable, Orderable {
+class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
   static fun empty(): this {
     TTypeParams(Array[])
   }
 
   fun isEmpty(): Bool {
     this.tparams.isEmpty()
+  }
+
+  static fun inter(tparams1: TTypeParams, tparams2: TTypeParams): TTypeParams {
+    result = mutable Vector[];
+    for (inter1 in tparams1.tparams) {
+      for (inter2 in tparams2.tparams) {
+        result.push(inter1.union(inter2));
+      }
+    };
+    result.sort();
+    TTypeParams(result.toArray())
+  }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    tparams1: TTypeParams,
+    tparams2: TTypeParams,
+    cstr: TType,
+  ): STResult {
+    for (inter1 in tparams1.tparams) {
+      for (inter2 in tparams2.tparams) {
+        inter2.iterDiff(inter1).findMap((tparam2) ->
+          tparam2.cstr match {
+          | Some(c) ->
+            isSubTType(subst, env, c, cstr) match {
+            | STOk() -> None()
+            | error -> Some(error)
+            }
+          | None() -> Some(STInvalidTypeParam(tparam2.name))
+          }
+        ) match {
+        | None() -> break void
+        | Some(_error) -> continue
+        }
+      } else {
+        for (tparam1 in inter1) {
+          tparam1.cstr match {
+          | Some(c) ->
+            isSubTType(subst, env, c, cstr) match {
+            | STOk() -> return STOk()
+            | _error -> continue
+            }
+          | None() -> continue
+          }
+        };
+        return STInvalidTypeParams(
+          tparams1.tparams
+            .map(inter ->
+              inter.toArray().map(x -> x.name + ":" + x.id).join(" & ")
+            )
+            .join(" | "),
+        )
+      }
+    };
+    STOk()
   }
 }
 
@@ -956,83 +1013,6 @@ base class STResult {
   }
 }
 
-// assuming the image-under-proj of iter1 and iter2 are strictly increasing,
-// check that for every y in iter2, either there is an equal-under-proj x in
-// iter1 and sub(x, y) is STOk, or there is no equal-under-proj x but
-// mayDrop(y) is STOk
-fun genericSubBigger<T, K: Orderable>(
-  iter1: mutable Iterator<T>,
-  iter2: mutable Iterator<T>,
-  mayDrop: T -> STResult,
-  proj: T ~> K,
-  sub: (T, T) -> STResult,
-): STResult {
-  head1 = iter1.next();
-  head2 = iter2.next();
-  loop {
-    (head1, head2) match {
-    | (_, None()) -> return STOk()
-    | (Some(x), Some(y)) if (proj(x) < proj(y)) -> !head1 = iter1.next()
-    | (Some(x), Some(y)) if (proj(x) == proj(y)) ->
-      sub(x, y) match {
-      | STOk() ->
-        !head1 = iter1.next();
-        !head2 = iter2.next()
-      | err -> return err
-      }
-    | (_, Some(y)) ->
-      mayDrop(y) match {
-      | STOk() -> !head2 = iter2.next()
-      | err -> return err
-      }
-    }
-  };
-}
-
-fun isSubTTypeParams(
-  subst: mutable Subst,
-  env: TEnv,
-  tparams1: TTypeParams,
-  tparams2: TTypeParams,
-  cstr: TType,
-): STResult {
-  for (inter1 in tparams1.tparams) {
-    for (inter2 in tparams2.tparams) {
-      genericSubBigger(
-        inter1.values(),
-        inter2.values(),
-        x ->
-          x.cstr match {
-          | None() -> STInvalidTypeParam(x.name)
-          | Some(c) -> isSubTType(subst, env, c, cstr)
-          },
-        x ~> x,
-        (_, _) -> STOk(),
-      ) match {
-      | STOk() -> break void
-      | _ -> continue
-      }
-    } else {
-      for (tparam in inter1) {
-        tparam.cstr match {
-        | None() -> continue
-        | Some(c) ->
-          isSubTType(subst, env, c, cstr) match {
-          | STOk() -> return STOk()
-          | _ -> continue
-          }
-        }
-      };
-      return STInvalidTypeParams(
-        tparams1.tparams
-          .map(inter -> inter.map(x -> x.name + ":" + x.id).join(" & "))
-          .join(" | "),
-      )
-    }
-  };
-  STOk()
-}
-
 fun isSubTType(
   subst: mutable Subst,
   env: TEnv,
@@ -1063,7 +1043,7 @@ fun isSubTType(
     (stypes1, tparams1, stypes2, tparams2)
   };
   cstr2 = TType::fromSTypes(u2.pos, stypes2);
-  isSubTTypeParams(subst, env, tparams1, tparams2, cstr2) match {
+  TTypeParams::isSub(subst, env, tparams1, tparams2, cstr2) match {
   | STOk() -> void
   | err ->
     subst.restore(savedSubst);
@@ -1589,22 +1569,6 @@ fun interTTuple(
   TTuple(result.toArray(), tuple1.pos)
 }
 
-fun interTTypeParams(
-  tparams1: TTypeParams,
-  tparams2: TTypeParams,
-): TTypeParams {
-  result = mutable Vector[];
-  for (inter1 in tparams1.tparams) {
-    for (inter2 in tparams2.tparams) {
-      result.push(
-        mapUnion(inter1.values(), inter2.values(), x ~> x, x ~> x, (x, _) -> x),
-      );
-    }
-  };
-  result.sort();
-  TTypeParams(result.toArray())
-}
-
 fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   if (ty1.isTop) return ty2;
   if (ty2.isTop) return ty1;
@@ -1613,7 +1577,7 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
       ty1.pos,
       STypes::empty(),
       TInsts::single(TInter(ty1, ty2)),
-      interTTypeParams(ty1.tparams, ty2.tparams),
+      TTypeParams::inter(ty1.tparams, ty2.tparams),
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
@@ -1628,7 +1592,7 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   STypes::inter(subst, env, stypes1, stypes2) match {
   | None() -> TType::bottom(ty1.pos)
   | Some(stypes) ->
-    tparams = interTTypeParams(tparams1, tparams2);
+    tparams = TTypeParams::inter(tparams1, tparams2);
     pos = if (!ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
       ty2.pos
     } else {

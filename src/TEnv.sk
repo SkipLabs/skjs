@@ -226,14 +226,14 @@ class TEnv{
           tparam.name.posRange,
           TTypeParams(
             Array[
-              Array[
+              ArraySet::single(
                 TParam(
                   tparam.name.value,
                   tparam.name.posRange.fileName,
                   tparam.id,
                   tparam.constraint.map(cstr -> this.normalize(context, cstr)),
                 ),
-              ],
+              ),
             ],
           ),
         ),
@@ -505,7 +505,7 @@ class TEnv{
           )
         };
         tparam = this.tparams[n.value];
-        TType::fromTParams(pos, TTypeParams(Array[Array[tparam]]))
+        TType::fromTParams(pos, TTypeParams(Array[ArraySet::single(tparam)]))
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
