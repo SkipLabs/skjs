@@ -1358,13 +1358,8 @@ class TypeChecker{
     | Binop(op, e1, e2) ->
       op match {
       | BOAddition() ->
-        stypes1 = this.expr(env, e1).getSTypes(
-          env.subst,
-          this.tenv,
-          Covariant(),
-        );
-        ty1 = TType::fromSTypes(e1.posRange, stypes1);
-        stypes1.singleElt() match {
+        ty1 = this.expr(env, e1);
+        ty1.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
         | Some(TPrimValue(k @ TNum(), _, primPos))
         | Some(TPrimValue(k @ TString(), _, primPos)) ->
           ty2 = this.expr(env, e2);
