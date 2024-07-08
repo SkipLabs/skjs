@@ -710,7 +710,9 @@ class TypeChecker{
       };
       env.scope.bind(local, type, isInitialized)
     | PArray(arrPat) ->
-      type.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
+      type.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+        stypes.singleElt()
+      ) match {
       | Some(TTuple(tyl, _)) ->
         if (arrPat.size() != tyl.size()) {
           typingError(
@@ -739,35 +741,51 @@ class TypeChecker{
       }
 
     | PObject(objectFields) ->
-      stypes = type.getSTypes(env.subst, this.tenv, Covariant());
-      for (stype in stypes) {
-        branches = stype match {
-        | TObject(fields, _) -> Array[fields]
-        | a @ TAlgebraic _ -> a.branches.map(x -> x.fields)
-        | _ ->
-          typingError(
-            Array[
-              (pos, "Invalid object pattern"),
-              (type.pos, "This is " + type.toString()),
-            ],
-          )
-        };
-        for (field in objectFields) {
-          (fieldName, fieldPat) = field;
-          for (fields in branches) {
-            fields.maybeGet(fieldName.value) match {
-            | None() ->
-              typingError(
-                Array[
-                  (
-                    fieldName.posRange,
-                    "The field " + fieldName.value + " is missing",
-                  ),
-                  (type.pos, "Out of " + type.toString()),
-                ],
-              )
-            | Some(tfield) ->
-              this.bind(env, kind, fieldPat, tfield.type, isInitialized, false)
+      type.getSTypes(env.subst, this.tenv, Covariant()) match {
+      | None() ->
+        typingError(
+          Array[
+            (pos, "Invalid object pattern"),
+            (type.pos, "This is " + type.toString()),
+          ],
+        )
+      | Some(stypes) ->
+        for (stype in stypes) {
+          branches = stype match {
+          | TObject(fields, _) -> Array[fields]
+          | a @ TAlgebraic _ -> a.branches.map(x -> x.fields)
+          | _ ->
+            typingError(
+              Array[
+                (pos, "Invalid object pattern"),
+                (type.pos, "This is " + type.toString()),
+              ],
+            )
+          };
+          for (field in objectFields) {
+            (fieldName, fieldPat) = field;
+            for (fields in branches) {
+              fields.maybeGet(fieldName.value) match {
+              | None() ->
+                typingError(
+                  Array[
+                    (
+                      fieldName.posRange,
+                      "The field " + fieldName.value + " is missing",
+                    ),
+                    (type.pos, "Out of " + type.toString()),
+                  ],
+                )
+              | Some(tfield) ->
+                this.bind(
+                  env,
+                  kind,
+                  fieldPat,
+                  tfield.type,
+                  isInitialized,
+                  false,
+                )
+              }
             }
           }
         }
@@ -993,8 +1011,9 @@ class TypeChecker{
     branches: Array<SwitchBranch>,
   ): void {
     condType = this.expr(env, e);
-    stypes = condType.getSTypes(env.subst, this.tenv, Covariant());
-    cases = stypes.singleElt() match {
+    cases = condType
+      .getSTypes(env.subst, this.tenv, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TPrimValue(_, Some(values), _)) ->
       Set::mcreateFromItems(values.values.map(x -> x.i1))
     | _ -> return void
@@ -1004,7 +1023,7 @@ class TypeChecker{
       | Case(v, _) ->
         this.expr(env, v)
           .getSTypes(env.subst, this.tenv, Covariant())
-          .staticValue() match {
+          .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.contains(staticValue)) {
             typingError(Array[(v.posRange, "Unused branch")])
@@ -1053,8 +1072,9 @@ class TypeChecker{
         Array[(fieldName.posRange, "Cannot access field 'constructor'")],
       );
     };
-    stypes = objType.getSTypes(env.subst, this.tenv, variance);
-    if (stypes.isEmpty()) {
+    stypes = objType.getSTypes(env.subst, this.tenv, variance) match {
+    | Some(stypes) if (!stypes.isEmpty()) -> stypes
+    | _ ->
       typingError(
         Array[
           (pos, "Invalid '.' for type: " + prettyPrintType(false, objType)),
@@ -1266,7 +1286,17 @@ class TypeChecker{
       this.callConstructor(env, pos, obj, argsAst.map(e -> this.expr(env, e)));
       obj
     | Get(arr, idx) ->
-      stypes = this.expr(env, arr).getSTypes(env.subst, this.tenv, Covariant());
+      arrType = this.expr(env, arr);
+      stypes = arrType.getSTypes(env.subst, this.tenv, Covariant()) match {
+      | None() ->
+        typingError(
+          Array[
+            (pos, "Expected an array"),
+            (pos, "Not: " + prettyPrintType(false, arrType)),
+          ],
+        )
+      | Some(stypes) -> stypes
+      };
       idxType = this.expr(env, idx);
       result = TType::bottom(pos);
       for (stype in stypes) {
@@ -1303,15 +1333,15 @@ class TypeChecker{
         | TPrimValue(primKind, _, primPos) ->
           idxType
             .getSTypes(env.subst, this.tenv, Covariant())
-            .singleElt() match {
+            .flatMap(stypes ~> stypes.singleElt()) match {
           | Some(TPrimValue(TString(), Some(stringValues), _)) ->
-            ty = TType::bottom(pos);
             objName = primKind.toString();
             obj = this.tenv.newObject(
               env.context,
               Name(primPos, objName),
               Array[],
             );
+            ty = TType::bottom(pos);
             for (stringValue in stringValues.values) {
               t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
               !ty = TType::union(env.subst, this.tenv, ty, t);
@@ -1356,7 +1386,9 @@ class TypeChecker{
       op match {
       | BOAddition() ->
         ty1 = this.expr(env, e1);
-        ty1.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
+        ty1.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+          stypes.singleElt()
+        ) match {
         | Some(TPrimValue(k @ TNum(), _, primPos))
         | Some(TPrimValue(k @ TString(), _, primPos)) ->
           ty2 = this.expr(env, e2);
@@ -1447,8 +1479,9 @@ class TypeChecker{
       | BOGreaterThanOrEqual() ->
         getExprPrimKind = (e) -> {
           ty = this.expr(env, e);
-          stypes = ty.getSTypes(env.subst, this.tenv, Covariant());
-          stypes.singleElt() match {
+          ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+            stypes.singleElt()
+          ) match {
           | Some(TPrimValue(k, _, _)) -> k
           | _ ->
             typingError(
@@ -1457,7 +1490,7 @@ class TypeChecker{
                   pos,
                   "Invalid comparison. You can only compare strings, numbers, and booleans.",
                 ),
-                (e1.posRange, `This is a ${prettyPrintSTypes(stypes)}`),
+                (e1.posRange, `This is a ${ty}`),
               ],
             )
           }
@@ -1623,7 +1656,9 @@ class TypeChecker{
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
         ty1 = this.expr(env, e1);
-        ty1.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
+        ty1.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+          stypes.singleElt()
+        ) match {
         | Some(TPrimValue(TNum(), _, _)) ->
           ty2 = this.expr(env, e2);
           this.checkSubType(env, pos, "Invalid operation", ty1, ty2)
@@ -1640,22 +1675,25 @@ class TypeChecker{
       | BONullishCoalescing() ->
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
-        stypes = ty1.getSTypes(env.subst, this.tenv, Covariant());
-        hasNullOrUndefined = stypes.any(stype ~>
-          stype match {
-          | TPrimVoid(TNull(), _)
-          | TPrimVoid(TUndefined(), _) ->
-            true
-          | _ -> false
-          }
-        );
-        if (!hasNullOrUndefined) {
-          typingError(
-            Array[
-              (pos, "This operator is useless"),
-              (e1.posRange, "This construction is never null or undefined"),
-            ],
+        ty1.getSTypes(env.subst, this.tenv, Covariant()) match {
+        | None() -> void
+        | Some(stypes) ->
+          hasNullOrUndefined = stypes.any(stype ~>
+            stype match {
+            | TPrimVoid(TNull(), _)
+            | TPrimVoid(TUndefined(), _) ->
+              true
+            | _ -> false
+            }
           );
+          if (!hasNullOrUndefined) {
+            typingError(
+              Array[
+                (pos, "This operator is useless"),
+                (e1.posRange, "This construction is never null or undefined"),
+              ],
+            );
+          }
         };
         TType::union(env.subst, this.tenv, ty1, ty2)
       }
@@ -1740,7 +1778,9 @@ class TypeChecker{
     | SKJS.Async _ -> typingError(Array[(pos, "TODO: async closures")])
     | SKJS.Await(ae) ->
       aeType = this.expr(env, ae);
-      aeType.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
+      aeType.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+        stypes.singleElt()
+      ) match {
       | Some(TPromise(ty, _)) -> ty
       | _ ->
         typingError(
@@ -1853,7 +1893,9 @@ class TypeChecker{
     obj: TType,
     args: Array<TType>,
   ): void {
-    obj.getSTypes(env.subst, this.tenv, Contravariant()).singleElt() match {
+    obj.getSTypes(env.subst, this.tenv, Contravariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
     | Some(TObject(fields, _)) ->
       fields.maybeGet("constructor") match {
       | None() ->
@@ -1912,7 +1954,7 @@ class TypeChecker{
     objField = env.scope
       .get(local)
       .getSTypes(env.subst, this.tenv, Covariant())
-      .singleElt() match {
+      .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
       fields.maybeGet(fieldName.value) match {
       | None() ->
@@ -1981,7 +2023,9 @@ class TypeChecker{
     args: Array<TType>,
   ): TType {
     result: ?TType = None();
-    fty.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
+    fty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
     | Some(TFuns(funs, methods, _)) ->
       for (tfun in funs.concat(methods)) {
         if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
@@ -2052,7 +2096,7 @@ class TypeChecker{
           | Some(spreadType) ->
             spreadType
               .getSTypes(env.subst, this.tenv, Contravariant())
-              .singleElt() match {
+              .flatMap(stypes ~> stypes.singleElt()) match {
             | Some(TArray(eltType, _)) ->
               for (i in Range(totalSize, args.size())) {
                 this.checkSubType(
@@ -2064,11 +2108,12 @@ class TypeChecker{
                 );
               }
             | _ ->
-              msg = Array[
-                (pos, "Invalid call"),
-                (spreadType.pos, "Unexpected type for ..."),
-              ];
-              typingError(msg)
+              typingError(
+                Array[
+                  (pos, "Invalid call"),
+                  (spreadType.pos, "Unexpected type for ..."),
+                ],
+              )
             }
           }
         };
@@ -2354,8 +2399,11 @@ class TypeChecker{
     | Some((stypes, tparams)) ->
       t = TType::create(ty.pos, stypes, TInsts::empty(), tparams);
       !t = FilterType().type((filter, map), t);
-      isEmpty = t.getSTypes(env.subst, this.tenv, Covariant()).isEmpty();
-      (t, isEmpty)
+      isTopOrEmpty = t.getSTypes(env.subst, this.tenv, Covariant()) match {
+      | None() -> true
+      | Some(stypes2) -> stypes2.isEmpty()
+      };
+      (t, isTopOrEmpty)
     };
     localType = default match {
     | Some(d) if (isTopOrEmpty) -> TType::single(d.pos, d)
