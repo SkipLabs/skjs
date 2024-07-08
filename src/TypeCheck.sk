@@ -710,35 +710,32 @@ class TypeChecker{
       };
       env.scope.bind(local, type, isInitialized)
     | PArray(arrPat) ->
-      stypes = type.getSTypes(env.subst, this.tenv, Covariant());
-      for (stype in stypes) {
-        stype match {
-        | TTuple(tyl, _) ->
-          if (arrPat.size() != tyl.size()) {
-            typingError(
-              Array[
-                (
-                  pos,
-                  "Invalid tuple pattern size, it is of size " + arrPat.size(),
-                ),
-                (
-                  type.pos,
-                  "It is incompatible with a tuple of size " + tyl.size(),
-                ),
-              ],
-            )
-          };
-          for (i in Range(0, arrPat.size())) {
-            this.bind(env, kind, arrPat[i], tyl[i], isInitialized, false)
-          }
-        | _ ->
+      type.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
+      | Some(TTuple(tyl, _)) ->
+        if (arrPat.size() != tyl.size()) {
           typingError(
             Array[
-              (pos, "Invalid tuple pattern"),
-              (type.pos, "This is not a tuple, it is " + type.toString()),
+              (
+                pos,
+                "Invalid tuple pattern size, it is of size " + arrPat.size(),
+              ),
+              (
+                type.pos,
+                "It is incompatible with a tuple of size " + tyl.size(),
+              ),
             ],
           )
+        };
+        for (i in Range(0, arrPat.size())) {
+          this.bind(env, kind, arrPat[i], tyl[i], isInitialized, false)
         }
+      | _ ->
+        typingError(
+          Array[
+            (pos, "Invalid tuple pattern"),
+            (type.pos, "This is not a tuple, it is " + type.toString()),
+          ],
+        )
       }
 
     | PObject(objectFields) ->
