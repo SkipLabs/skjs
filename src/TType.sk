@@ -82,6 +82,7 @@ class TType private {
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   tparams: TTypeParams,
+  // Type obtenu après généralisation
 } uses Hashable, Orderable {
   // Returns the type that represents all possible values. Every other
   // type is sub-type of top.
@@ -687,10 +688,21 @@ class STypes private (
   }
 }
 
-class TVar(pos: PosRange, id: Int) extends TInst
+// Existential type when you use a polymorphic function
+class TVar(
+  pos: PosRange,
+  id: Int,
+) extends
+  TInst, // on laisse le type grossir en position covariant mais pas contravariant, une fois lu -> scellé
+
 class TArgs(targs: Array<TType>) uses Hashable, Orderable
 class TSInst(name: Name, targs: TArgs) extends TInst
-class TInter(ty1: TType, ty2: TType) extends TInst
+class TInter(
+  ty1: TType,
+  ty2: TType,
+) extends
+  TInst, // témoin que tu introduis pour te rappeler que t'es en train de calculer une intersection
+
 
 base class TInst uses Hashable, Orderable
 
