@@ -685,18 +685,6 @@ class STypes private (
     | _ -> None()
     }
   }
-
-  fun isStringOrNumOrBool(): Bool {
-    this.stypes.all(stype ~>
-      stype match {
-      | TPrimValue(TNum(), _, _)
-      | TPrimValue(TString(), _, _)
-      | TPrimValue(TBool(), _, _) ->
-        true
-      | _ -> false
-      }
-    )
-  }
 }
 
 class TVar(pos: PosRange, id: Int) extends TInst
