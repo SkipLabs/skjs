@@ -737,11 +737,6 @@ class TTypeParams(tparams: Array<Array<TParam>>) uses Hashable, Orderable {
 /* Sub-typing */
 /*****************************************************************************/
 
-base class SError {
-  children =
-  | SRec(STResult, PosRange, TType)
-}
-
 base class STResult {
   children =
   | STOk()
@@ -755,7 +750,7 @@ base class STResult {
   | STInvalidTypeParam(String)
   | STInvalidTypeParams(String)
   | STTop()
-  | STError(SError)
+  | STRec(STResult, PosRange, TType)
 
   fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
     this match {
@@ -802,7 +797,7 @@ base class STResult {
         )
     | STInvalidTypeParam(n) -> "This is of type " + n
     | STInvalidTypeParams(n) -> "This is of type " + n
-    | STError(SRec(st, _, ty2)) -> st.toString(subst, env, ty2)
+    | STRec(st, _, ty2) -> st.toString(subst, env, ty2)
     }
   }
 }
@@ -950,20 +945,20 @@ fun isSubTType(
     | Some(t) -> t.pos
     | None() -> u1.pos
     };
-    return STError(SRec(err, pos, u2))
+    return STRec(err, pos, u2)
   };
   status = STypes::isSub(subst, env, stypes1, stypes2);
   status match {
   | STOk() -> STOk()
-  | err @ STError _ ->
+  | err @ STRec _ ->
     subst.restore(savedSubst);
     err
   | other @ STTooManySType(stype) ->
     subst.restore(savedSubst);
-    STError(SRec(other, stype.pos, u2))
+    STRec(other, stype.pos, u2)
   | other ->
     subst.restore(savedSubst);
-    STError(SRec(other, u1.pos, u2))
+    STRec(other, u1.pos, u2)
   }
 }
 
