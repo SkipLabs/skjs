@@ -1740,23 +1740,12 @@ class TypeChecker{
     | SKJS.Async _ -> typingError(Array[(pos, "TODO: async closures")])
     | SKJS.Await(ae) ->
       aeType = this.expr(env, ae);
-      stypes = aeType.getSTypes(env.subst, this.tenv, Covariant());
-      result: ?TType = None();
-      for (stype in stypes) {
-        stype match {
-        | TPromise(ty, _) -> !result = Some(ty)
-        | _ ->
-          typingError(
-            Array[(pos, "Invalid await"), (stype.pos, "This is not a promise")],
-          )
-        }
-      };
-      result match {
-      | None() ->
+      aeType.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
+      | Some(TPromise(ty, _)) -> ty
+      | _ ->
         typingError(
           Array[(pos, "Invalid await"), (aeType.pos, "This is not a promise")],
         )
-      | Some(ty) -> ty
       }
     | SKJS.EIf(e1, e2, e3) ->
       cond = this.expr(env, e1);
