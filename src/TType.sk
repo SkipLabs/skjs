@@ -294,7 +294,7 @@ class TType private {
       static::single(
         this.pos,
         TObject(
-          TFields::create(
+          TFields(
             fields.filterMap(field ~> {
               fieldType = field.type;
               fieldSTypes = fieldType.stypes.filterMap(fieldSType ~>
@@ -350,8 +350,69 @@ base class Variance {
 /*****************************************************************************/
 
 class TObject(fields: TFields) extends SType
-class TAlgebraic(branches: Array<TConstr>) extends SType
-class TConstr(fields: TFields) uses Hashable, Orderable {}
+
+class TAlgebraic(
+  branches: InternalKeyedArrayMap<String, TConstr>,
+) extends SType {
+  static fun single(x: TConstr, pos: PosRange): this {
+    static(InternalKeyedArrayMap::single(x), pos)
+  }
+
+  static fun inter(
+    subst: mutable Subst,
+    env: TEnv,
+    a1: TAlgebraic,
+    a2: TAlgebraic,
+  ): TAlgebraic {
+    static(
+      a1.branches.mapInter(a2.branches, (x, y) ->
+        TConstr(interTFields(subst, env, x.fields, y.fields))
+      ),
+      a1.pos,
+    )
+  }
+
+  static fun union(
+    subst: mutable Subst,
+    env: TEnv,
+    a1: TAlgebraic,
+    a2: TAlgebraic,
+  ): TAlgebraic {
+    static(
+      a1.branches.mapUnion(a2.branches, (x, y) ->
+        TConstr(unionTFields(subst, env, x.fields, y.fields))
+      ),
+      a1.pos,
+    )
+  }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    a1: TAlgebraic,
+    a2: TAlgebraic,
+  ): STResult {
+    a1.branches.leq(a2.branches, (b1, b2O) ->
+      b2O match {
+      | Some(b2) ->
+        TFields::isSub(subst, env, b1.fields, b2.fields) match {
+        | STOk() -> Success(void)
+        | err -> Failure(err)
+        }
+      | None() -> Failure(STTooManyTConstr(b1))
+      }
+    ) match {
+    | Success(void) -> STOk()
+    | Failure(err) -> err
+    }
+  }
+}
+
+class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
+  fun project(): String {
+    this.fields.getKind()
+  }
+}
 
 fun createObject(pos: PosRange, fields: TFields): TType {
   seen = mutable Set<String>[];
@@ -365,7 +426,7 @@ fun createObject(pos: PosRange, fields: TFields): TType {
     seen.contains("kind") &&
     fields.maybeGet("kind").fromSome().type.isTag()
   ) {
-    TType::single(pos, TAlgebraic(Array[TConstr(fields)], pos))
+    TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
   } else {
     TType::single(pos, TObject(fields, pos))
   }
@@ -393,7 +454,80 @@ class TTuple(tuple: Array<TType>) extends SType {
 /* Funs */
 /*****************************************************************************/
 
-class TFuns(funs: Array<TFun>, methods: Array<TFun>) extends SType
+class TFuns(
+  funs: InternalKeyedArrayMap<(Int, Int), TFun>,
+  methods: InternalKeyedArrayMap<(Int, Int), TFun>,
+) extends SType {
+  static fun singleFun(x: TFun, pos: PosRange): this {
+    static(
+      InternalKeyedArrayMap::single(x),
+      InternalKeyedArrayMap::empty(),
+      pos,
+    )
+  }
+
+  static fun singleMethod(x: TFun, pos: PosRange): this {
+    static(
+      InternalKeyedArrayMap::empty(),
+      InternalKeyedArrayMap::single(x),
+      pos,
+    )
+  }
+
+  static fun inter(
+    subst: mutable Subst,
+    env: TEnv,
+    f1: TFuns,
+    f2: TFuns,
+  ): TFuns {
+    static(
+      f1.funs.mapInter(f2.funs, (x, y) -> interTFun(subst, env, x, y)),
+      f1.methods.mapInter(f2.methods, (x, y) -> interTFun(subst, env, x, y)),
+      f1.pos,
+    )
+  }
+
+  static fun union(
+    subst: mutable Subst,
+    env: TEnv,
+    f1: TFuns,
+    f2: TFuns,
+  ): TFuns {
+    static(
+      f1.funs.mapUnion(f2.funs, (x, y) -> unionTFun(subst, env, x, y)),
+      f1.methods.mapUnion(f2.methods, (x, y) -> unionTFun(subst, env, x, y)),
+      f1.pos,
+    )
+  }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    funs1: TFuns,
+    funs2: TFuns,
+  ): STResult {
+    leq1 = (f1, f2O) ->
+      f2O match {
+      | Some(f2) ->
+        isSubTFun(subst, env, f1, f2) match {
+        | STOk() -> Success(void)
+        | err -> Failure(err)
+        }
+      | None() -> Failure(STTooManyTFun(f1))
+      };
+    funs1.funs.leq(funs2.funs, leq1) match {
+    | Failure(err) -> err
+    | Success(void) ->
+      funs1.methods.leq(funs2.methods, leq1) match {
+      | Failure(err) -> err
+      | Success(void) ->
+        ok: STResult = STOk();
+        ok
+      }
+    }
+  }
+}
+
 class TFun(
   tparams: Array<TParam>,
   params: Array<TType>,
@@ -402,9 +536,13 @@ class TFun(
   minSizeWitness: PosRange,
   lambdas: Array<Lambda>,
   retType: TType,
-) uses Hashable, Orderable {
+) uses Hashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
     invariant_violation("TODO2")
+  }
+
+  fun project(): (Int, Int) {
+    (this.tparams.size(), this.params.size())
   }
 }
 
@@ -489,24 +627,33 @@ class TField(
   name: String,
   isOptional: Bool,
   type: TType,
-) uses Hashable, Orderable {
+) uses Hashable, Orderable, Projectable<String> {
   fun withOptional(): this {
     this with {isOptional => true}
   }
+
+  fun project(): String {
+    this.name
+  }
 }
 
-class TFields private (fields: Array<TField>) uses Hashable, Orderable {
+class TFields(
+  fields: InternalKeyedArrayMap<String, TField>,
+) uses Hashable, Orderable {
   static fun empty(): this {
-    TFields(Array[])
+    static(InternalKeyedArrayMap::empty())
   }
 
   static fun create(fields: Array<TField>): this {
-    !fields = fields.sortedBy(x ~> x.name);
-    TFields(fields)
+    static(
+      InternalKeyedArrayMap::createFromIterator(
+        fields.sortedBy(x ~> x.name).values(),
+      ),
+    )
   }
 
   fun values(): mutable Iterator<TField> {
-    this.fields.iterator()
+    this.fields.values()
   }
 
   fun maybeGet(fieldName: String): ?TField {
@@ -531,6 +678,7 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
             fieldName.posRange,
             "Possible options are:\n" +
               this.fields.filter(x -> x.name != "constructor")
+                .toArray()
                 .map(x -> x.name)
                 .join("\n"),
           ),
@@ -547,6 +695,36 @@ class TFields private (fields: Array<TField>) uses Hashable, Orderable {
       .fromSome()
       .type.getTag()
       .fromSome("Internal error: getKind on non constructor")
+  }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    fields1: TFields,
+    fields2: TFields,
+  ): STResult {
+    fields1.fields.geq(fields2.fields, (f1O, f2) ->
+      f1O match {
+      | None() ->
+        if (f2.isOptional) {
+          Success(void)
+        } else {
+          Failure(STMissingField(f2.name))
+        }
+      | Some(f1) ->
+        if (f1.isOptional && !f2.isOptional) {
+          Failure(STMissingField(f1.name))
+        } else {
+          isSubTType(subst, env, f1.type, f2.type) match {
+          | STOk() -> Success(void)
+          | err -> Failure(err)
+          }
+        }
+      }
+    ) match {
+    | Success(void) -> STOk()
+    | Failure(err) -> err
+    }
   }
 }
 
@@ -569,19 +747,7 @@ class STypes private (
     stypes2: STypes,
   ): ?STypes {
     stypes1.stypes
-      .mergeOption(stypes2.stypes, (xo, yo) ->
-        (xo, yo) match {
-        | (Some(x), None())
-        | (None(), Some(x)) ->
-          InternalKeyedArrayMap.Elem(x)
-        | (Some(x), Some(y)) ->
-          unionSType(subst, env, x, y) match {
-          | Some(z) -> InternalKeyedArrayMap.Elem(z)
-          | None() -> InternalKeyedArrayMap.Zero()
-          }
-        | (None(), None()) -> InternalKeyedArrayMap.Unit()
-        }
-      )
+      .mapUnionOption(stypes2.stypes, (x, y) -> unionSType(subst, env, x, y))
       .map(x -> static(x))
   }
 
@@ -593,16 +759,7 @@ class STypes private (
     stypes2: STypes,
   ): ?STypes {
     stypes1.stypes
-      .mergeOption(stypes2.stypes, (xo, yo) ->
-        (xo, yo) match {
-        | (Some(x), Some(y)) ->
-          interSType(subst, env, x, y) match {
-          | Some(z) -> InternalKeyedArrayMap.Elem(z)
-          | None() -> InternalKeyedArrayMap.Zero()
-          }
-        | _ -> InternalKeyedArrayMap.Unit()
-        }
-      )
+      .mapInterOption(stypes2.stypes, (x, y) -> interSType(subst, env, x, y))
       .map(x -> static(x))
   }
 
@@ -612,19 +769,19 @@ class STypes private (
     stypes1: STypes,
     stypes2: STypes,
   ): STResult {
-    stypes1.stypes
-      .iterDiffInterDiffUntil(stypes2.stypes, (xo, yo) ->
-        (xo, yo) match {
-        | (None(), _) -> None()
-        | (Some(x), None()) -> Some(STTooManySType(x))
-        | (Some(x), Some(y)) ->
-          isSubSType(subst, env, x, y) match {
-          | STOk() -> None()
-          | err -> Some(err)
-          }
+    stypes1.stypes.leq(stypes2.stypes, (t1, t2O) ->
+      t2O match {
+      | Some(t2) ->
+        isSubSType(subst, env, t1, t2) match {
+        | STOk() -> Success(void)
+        | err -> Failure(err)
         }
-      )
-      .default(STOk())
+      | None() -> Failure(STTooManySType(t1))
+      }
+    ) match {
+    | Success(void) -> STOk()
+    | Failure(err) -> err
+    }
   }
 
   fun map(f: SType -> SType): this {
@@ -790,44 +947,13 @@ base class STResult {
       "This is a function: " +
         prettyPrintType(
           false,
-          TType::single(
-            PosRange::none,
-            TFuns(Array[f], Array[], PosRange::none),
-          ),
+          TType::single(PosRange::none, TFuns::singleFun(f, PosRange::none)),
         )
     | STInvalidTypeParam(n) -> "This is of type " + n
     | STInvalidTypeParams(n) -> "This is of type " + n
     | STRec(st, _, ty2) -> st.toString(subst, env, ty2)
     }
   }
-}
-
-fun genericSubSmaller<T, K: Orderable>(
-  iter1: mutable Iterator<T>,
-  iter2: mutable Iterator<T>,
-  mkError: T ~> STResult,
-  proj: T ~> K,
-  sub: (T, T) -> STResult,
-): STResult {
-  head1 = iter1.next();
-  head2 = iter2.next();
-  loop {
-    (head1, head2) match {
-    | (None(), None()) -> break void
-    | (None(), Some(_)) -> break void
-    | (Some(x), None()) -> return mkError(x)
-    | (Some(x), Some(y)) if (proj(x) < proj(y)) -> return mkError(x)
-    | (Some(x), Some(y)) if (proj(x) > proj(y)) -> !head2 = iter2.next()
-    | (Some(x), Some(y)) ->
-      sub(x, y) match {
-      | STOk() ->
-        !head1 = iter1.next();
-        !head2 = iter2.next()
-      | err -> return err
-      }
-    }
-  };
-  STOk()
 }
 
 // assuming the image-under-proj of iter1 and iter2 are strictly increasing,
@@ -996,13 +1122,13 @@ fun isSubSType(
     }
 
   | (TPromise(ty1, _), TPromise(ty2, _)) -> isSubTType(subst, env, ty1, ty2)
-  | (funs1 @ TFuns _, funs2 @ TFuns _) -> isSubTFuns(subst, env, funs1, funs2)
+  | (funs1 @ TFuns _, funs2 @ TFuns _) -> TFuns::isSub(subst, env, funs1, funs2)
   | (obj1 @ TObject _, obj2 @ TObject _) -> isSubTObject(subst, env, obj1, obj2)
   | (TAlgebraic _, TObject _)
   | (TObject _, TAlgebraic _) ->
     STTooManySType(sty1)
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    isSubTAlgebraic(subst, env, a1, a2)
+    TAlgebraic::isSub(subst, env, a1, a2)
   | _ -> invariant_violation("Internal error")
   }
 }
@@ -1023,37 +1149,6 @@ fun isSubTTuple(
     }
   };
   STOk()
-}
-
-fun isSubTFuns(
-  subst: mutable Subst,
-  env: TEnv,
-  funs1: TFuns,
-  funs2: TFuns,
-): STResult {
-  {
-    iter1 = funs1.funs.iterator();
-    iter2 = funs2.funs.iterator();
-    genericSubSmaller(
-      iter1,
-      iter2,
-      x ~> STTooManyTFun(x),
-      x ~> (x.tparams.size(), x.params.size()),
-      (x, y) -> isSubTFun(subst, env, x, y),
-    )
-  } match {
-  | STOk() ->
-    iter1 = funs1.methods.iterator();
-    iter2 = funs2.methods.iterator();
-    genericSubSmaller(
-      iter1,
-      iter2,
-      x ~> STTooManyTFun(x),
-      x ~> (x.tparams.size(), x.params.size()),
-      (x, y) -> isSubTFun(subst, env, x, y),
-    )
-  | err -> err
-  }
 }
 
 fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
@@ -1110,22 +1205,7 @@ fun isSubTObject(
   obj1: TObject,
   obj2: TObject,
 ): STResult {
-  isSubTFields(subst, env, obj1.fields, obj2.fields)
-}
-
-fun isSubTAlgebraic(
-  subst: mutable Subst,
-  env: TEnv,
-  a1: TAlgebraic,
-  a2: TAlgebraic,
-): STResult {
-  genericSubSmaller(
-    a1.branches.iterator(),
-    a2.branches.iterator(),
-    x ~> STTooManyTConstr(x),
-    x ~> x.fields.getKind(),
-    (x, y) -> isSubTFields(subst, env, x.fields, y.fields),
-  );
+  TFields::isSub(subst, env, obj1.fields, obj2.fields)
 }
 
 fun isSubBranch(
@@ -1134,27 +1214,7 @@ fun isSubBranch(
   b1: TConstr,
   b2: TConstr,
 ): STResult {
-  isSubTFields(subst, env, b1.fields, b2.fields)
-}
-
-fun isSubTFields(
-  subst: mutable Subst,
-  env: TEnv,
-  fields1: TFields,
-  fields2: TFields,
-): STResult {
-  genericSubBigger(
-    fields1.values(),
-    fields2.values(),
-    x ~> if (x.isOptional) STOk() else STMissingField(x.name),
-    x ~> x.name,
-    (x, y) -> {
-      if (x.isOptional && !y.isOptional) {
-        return STMissingField(x.name);
-      };
-      isSubTType(subst, env, x.type, y.type)
-    },
-  );
+  TFields::isSub(subst, env, b1.fields, b2.fields)
 }
 
 /*****************************************************************************/
@@ -1197,22 +1257,6 @@ fun unionTObject(
   TObject(unionTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
 }
 
-fun unionTAlgebraic(
-  subst: mutable Subst,
-  env: TEnv,
-  a1: TAlgebraic,
-  a2: TAlgebraic,
-): TAlgebraic {
-  branches = mapUnion(
-    a1.branches.iterator(),
-    a2.branches.iterator(),
-    x ~> x.fields.getKind(),
-    x -> x,
-    (x, y) -> TConstr(unionTFields(subst, env, x.fields, y.fields)),
-  );
-  TAlgebraic(branches, a1.pos)
-}
-
 // unionSType returns None when the least upper bound of the args is top
 fun unionSType(
   subst: mutable Subst,
@@ -1248,30 +1292,10 @@ fun unionSType(
   | (obj1 @ TObject _, obj2 @ TObject _) ->
     Some(unionTObject(subst, env, obj1, obj2))
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    Some(unionTAlgebraic(subst, env, a1, a2))
-  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(unionTFuns(subst, env, f1, f2))
+    Some(TAlgebraic::union(subst, env, a1, a2))
+  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::union(subst, env, f1, f2))
   | _ -> invariant_violation("Internal error")
   }
-}
-
-fun unionTFuns(subst: mutable Subst, env: TEnv, f1: TFuns, f2: TFuns): TFuns {
-  TFuns(
-    mapUnion(
-      f1.funs.iterator(),
-      f2.funs.iterator(),
-      x ~> (x.tparams.size(), x.params.size()),
-      x -> x,
-      (f1, f2) -> unionTFun(subst, env, f1, f2),
-    ),
-    mapUnion(
-      f1.methods.iterator(),
-      f2.methods.iterator(),
-      x ~> (x.tparams.size(), x.params.size()),
-      x -> x,
-      (f1, f2) -> unionTFun(subst, env, f1, f2),
-    ),
-    f1.pos,
-  )
 }
 
 fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
@@ -1427,21 +1451,6 @@ fun interTObject(
   TObject(interTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
 }
 
-fun interTAlgebraic(
-  subst: mutable Subst,
-  env: TEnv,
-  a1: TAlgebraic,
-  a2: TAlgebraic,
-): TAlgebraic {
-  (_noMatchBranches1, _noMatchBranches2, branches) = mapInter(
-    a1.branches.iterator(),
-    a2.branches.iterator(),
-    x ~> x.fields.getKind(),
-    (x, y) -> TConstr(interTFields(subst, env, x.fields, y.fields)),
-  );
-  TAlgebraic(branches, a1.pos)
-}
-
 // interSType returns None when the greatest lower bound of the args is bottom
 fun interSType(
   subst: mutable Subst,
@@ -1485,29 +1494,11 @@ fun interSType(
   | (obj1 @ TObject _, obj2 @ TObject _) ->
     Some(interTObject(subst, env, obj1, obj2))
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    Some(interTAlgebraic(subst, env, a1, a2))
+    Some(TAlgebraic::inter(subst, env, a1, a2))
 
-  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(interTFuns(subst, env, f1, f2))
+  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::inter(subst, env, f1, f2))
   | _ -> invariant_violation("Internal error")
   }
-}
-
-fun interTFuns(subst: mutable Subst, env: TEnv, f1: TFuns, f2: TFuns): TFuns {
-  TFuns(
-    mapInter(
-      f1.funs.iterator(),
-      f2.funs.iterator(),
-      x ~> (x.tparams.size(), x.params.size()),
-      (x, y) -> interTFun(subst, env, x, y),
-    ).i2,
-    mapInter(
-      f1.methods.iterator(),
-      f2.methods.iterator(),
-      x ~> (x.tparams.size(), x.params.size()),
-      (x, y) -> interTFun(subst, env, x, y),
-    ).i2,
-    f1.pos,
-  )
 }
 
 fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
@@ -1740,7 +1731,7 @@ base class ApplyType {
   }
 
   overridable deferred fun fields(env: this::Env, fields: TFields): TFields {
-    TFields::create(fields.fields.map(x -> this.field(env, x)))
+    TFields(fields.fields.map(x -> this.field(env, x)))
   }
 
   overridable deferred fun field(env: this::Env, field: TField): TField {

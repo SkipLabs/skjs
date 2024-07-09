@@ -753,7 +753,7 @@ class TypeChecker{
         for (stype in stypes) {
           branches = stype match {
           | TObject(fields, _) -> Array[fields]
-          | a @ TAlgebraic _ -> a.branches.map(x -> x.fields)
+          | a @ TAlgebraic _ -> a.branches.toArray().map(x -> x.fields)
           | _ ->
             typingError(
               Array[
@@ -1757,19 +1757,16 @@ class TypeChecker{
       };
       TType::single(
         pos,
-        TFuns(
-          Array[
-            TFun(
-              Array[],
-              paramTypes.map(x -> x.i1).toArray(),
-              Array[],
-              None(),
-              pos,
-              lambdas,
-              retType,
-            ),
-          ],
-          Array[],
+        TFuns::singleFun(
+          TFun(
+            Array[],
+            paramTypes.map(x -> x.i1).toArray(),
+            Array[],
+            None(),
+            pos,
+            lambdas,
+            retType,
+          ),
           pos,
         ),
       )
@@ -2027,7 +2024,7 @@ class TypeChecker{
       stypes.singleElt()
     ) match {
     | Some(TFuns(funs, methods, _)) ->
-      for (tfun in funs.concat(methods)) {
+      for (tfun in funs.values().concat(methods.values())) {
         if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
           typingError(
             Array[
