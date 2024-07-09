@@ -1623,20 +1623,17 @@ class TypeChecker{
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
         ty1 = this.expr(env, e1);
-        stypes = ty1.getSTypes(env.subst, this.tenv, Covariant());
-        for (stype in stypes) {
-          stype match {
-          | TPrimValue(TNum(), _, _) ->
-            ty2 = this.expr(env, e2);
-            this.checkSubType(env, pos, "Invalid operation", ty1, ty2)
-          | _ ->
-            typingError(
-              Array[
-                (pos, "Invalid operation"),
-                (stype.pos, "This is not a number"),
-              ],
-            )
-          }
+        ty1.getSTypes(env.subst, this.tenv, Covariant()).singleElt() match {
+        | Some(TPrimValue(TNum(), _, _)) ->
+          ty2 = this.expr(env, e2);
+          this.checkSubType(env, pos, "Invalid operation", ty1, ty2)
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Invalid operation"),
+              (ty1.pos, "This is not a number"),
+            ],
+          )
         };
         ty1
 
