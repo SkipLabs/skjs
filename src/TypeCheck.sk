@@ -666,7 +666,7 @@ class TypeChecker{
   ): void {
     isSubTType(env.subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
-    | STError(SRec(reason, pos1, subTy2)) ->
+    | STRec(reason, pos1, subTy2) ->
       typingError(
         Array[
           (pos, msg),
