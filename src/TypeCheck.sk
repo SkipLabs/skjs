@@ -1909,72 +1909,67 @@ class TypeChecker{
     fieldName: Name,
     fieldType: TType,
   ): TType {
-    stypes = env.scope.get(local).getSTypes(env.subst, this.tenv, Covariant());
-    invariant(stypes.singleElt() is Some(TObject _));
-    for (stype in stypes) {
-      objField = stype match {
-      | TObject(fields, objPos) ->
-        fields.maybeGet(fieldName.value) match {
-        | None() ->
-          env.usedObjects.maybeGet(local.value) match {
-          | None() -> void
-          | Some(usedPos) ->
-            typingError(
-              Array[
-                (pos, "You are trying to add a field to this object"),
-                (
-                  usedPos,
-                  "But this object has been already been used for something else",
-                ),
-              ],
-            )
-          };
-          if (env.scope.isThroughLoop(local)) {
-            typingError(
-              Array[
-                (
-                  local.posRange,
-                  "You cannot add a field to an object in a loop",
-                ),
-              ],
-            )
-          };
-          env.scope.set(
-            local,
-            TType::single(
-              objPos,
-              TObject(
-                interTFields(
-                  env.subst,
-                  this.tenv,
-                  fields,
-                  TFields::create(
-                    Array[
-                      TField(fieldType.pos, fieldName.value, false, fieldType),
-                    ],
-                  ),
-                ),
-                objPos,
+    objField = env.scope
+      .get(local)
+      .getSTypes(env.subst, this.tenv, Covariant())
+      .singleElt() match {
+    | Some(TObject(fields, objPos)) ->
+      fields.maybeGet(fieldName.value) match {
+      | None() ->
+        env.usedObjects.maybeGet(local.value) match {
+        | None() -> void
+        | Some(usedPos) ->
+          typingError(
+            Array[
+              (pos, "You are trying to add a field to this object"),
+              (
+                usedPos,
+                "But this object has been already been used for something else",
               ),
+            ],
+          )
+        };
+        if (env.scope.isThroughLoop(local)) {
+          typingError(
+            Array[
+              (local.posRange, "You cannot add a field to an object in a loop"),
+            ],
+          )
+        };
+        env.scope.set(
+          local,
+          TType::single(
+            objPos,
+            TObject(
+              interTFields(
+                env.subst,
+                this.tenv,
+                fields,
+                TFields::create(
+                  Array[
+                    TField(fieldType.pos, fieldName.value, false, fieldType),
+                  ],
+                ),
+              ),
+              objPos,
             ),
-            (x, y) -> {
-              this.checkSubType(env, fieldType.pos, "Invalid assignment", x, y)
-            },
-          );
-          fieldType
-        | Some(fd) -> fd.type
-        }
-      | _ ->
-        invariant_violation("Internal error: local object is not an object")
-      };
-      this.checkSubType(
-        env,
-        fieldType.pos,
-        "Invalid assignment",
-        fieldType,
-        objField,
-      )
+          ),
+          (x, y) -> {
+            this.checkSubType(env, fieldType.pos, "Invalid assignment", x, y)
+          },
+        );
+        fieldType
+      | Some(fd) -> fd.type
+      }
+    | _ -> invariant_violation("Internal error: local object is not an object")
     };
+    this.checkSubType(
+      env,
+      fieldType.pos,
+      "Invalid assignment",
+      fieldType,
+      objField,
+    );
     fieldType
   }
 
