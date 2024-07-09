@@ -199,14 +199,14 @@ class TType private {
       this.tparams.isEmpty()
   }
 
-  fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): STypes {
+  // Returns None() if the type eventually expands to Top
+  fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): ?STypes {
     ty = this;
     loop {
       ty.expand(subst, env, variance) match {
-      | None() ->
-        return STypes::empty() // FIXME: this converts Top to Bottom
+      | None() -> return None()
       | Some((stypes, tparams)) ->
-        if (tparams.tparams.isEmpty()) return stypes;
+        if (tparams.tparams.isEmpty()) return Some(stypes);
         result = static::fromSTypes(this.pos, stypes);
         for (inter in tparams.tparams) {
           localResult: this = static::top(ty.pos);
@@ -287,11 +287,12 @@ class TType private {
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
-    stypes = this.getSTypes(subst, env, Covariant());
-    invariant(stypes.size() == 1);
-    !stypes = stypes.map(stype -> {
-      stype match {
-      | TObject(TFields(fields), pos) ->
+    this.getSTypes(subst, env, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TObject(TFields(fields), pos)) ->
+      static::single(
+        this.pos,
         TObject(
           TFields::create(
             fields.filterMap(field ~> {
@@ -314,11 +315,10 @@ class TType private {
             }),
           ),
           pos,
-        )
-      | _ -> invariant_violation("Internal error: new should produce an object")
-      }
-    });
-    static::fromSTypes(this.pos, stypes);
+        ),
+      )
+    | _ -> invariant_violation("Internal error: new should produce an object")
+    }
   }
 
   static fun union(
