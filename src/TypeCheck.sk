@@ -1853,20 +1853,17 @@ class TypeChecker{
     obj: TType,
     args: Array<TType>,
   ): void {
-    stypes = obj.getSTypes(env.subst, this.tenv, Contravariant());
-    for (stype in stypes) {
-      stype match {
-      | TObject(fields, _) ->
-        fields.maybeGet("constructor") match {
-        | None() ->
-          if (args.size() == 0) return void;
-          typingError(
-            Array[(pos, "Invalid new: constructor expects no arguments")],
-          )
-        | Some(cstr) -> _ = this.call(env, pos, cstr.type, Array[], args)
-        }
-      | _ -> invariant_violation("Internal error: unexpected constructor call")
+    obj.getSTypes(env.subst, this.tenv, Contravariant()).singleElt() match {
+    | Some(TObject(fields, _)) ->
+      fields.maybeGet("constructor") match {
+      | None() ->
+        if (args.size() == 0) return void;
+        typingError(
+          Array[(pos, "Invalid new: constructor expects no arguments")],
+        )
+      | Some(cstr) -> _ = this.call(env, pos, cstr.type, Array[], args)
       }
+    | _ -> invariant_violation("Internal error: unexpected constructor call")
     }
   }
 
