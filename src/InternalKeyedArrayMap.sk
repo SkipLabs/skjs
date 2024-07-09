@@ -9,21 +9,69 @@ trait Projectable<T> {
 
 module InternalKeyedArrayMap;
 
-// A type to classify the elements of a monoid with zero. For an operation
-// such as x * _, x * Unit = x, x * Zero = Zero, and x * Elem(v) = x * v.
-base class ZeroElemUnit<+T> {
-  children =
-  | Zero()
-  | Elem(v: T)
-  | Unit()
+// see iterDiffInterDiff
+private mutable class DiffInterDiffIterator<
+  K: Orderable,
+  T: Projectable<K>,
+> private (
+  private mutable head1: ?T,
+  private tail1: mutable Iterator<T>,
+  private mutable head2: ?T,
+  private tail2: mutable Iterator<T>,
+) extends Iterator<(?T, ?T)> {
+  static fun create(
+    iter1: mutable Iterator<T>,
+    iter2: mutable Iterator<T>,
+  ): mutable Iterator<(?T, ?T)> {
+    head1 = iter1.next();
+    head2 = iter2.next();
+    mutable static(head1, iter1, head2, iter2)
+  }
+
+  readonly fun sizeHint(): ?Int {
+    size1 = this.tail1.sizeHint().map((n) ->
+      if (this.head1.isSome()) n + 1 else n
+    );
+    size2 = this.tail2.sizeHint().map((n) ->
+      if (this.head2.isSome()) n + 1 else n
+    );
+    (size1, size2) match {
+    | (Some(m), Some(n)) ->
+      Some(m + n) // actual size will be between max and sum of sizes
+    | (Some(n), None())
+    | (None(), Some(n)) ->
+      Some(n)
+    | (None(), None()) -> None()
+    }
+  }
+
+  mutable fun next(): ?(?T, ?T) {
+    none: ?T = None();
+    go = (x, y) -> {
+      if (x.isSome()) this.!head1 = this.tail1.next();
+      if (y.isSome()) this.!head2 = this.tail2.next();
+      Some((x, y))
+    };
+    (this.head1, this.head2) match {
+    | (None(), None()) -> None()
+    | (None(), Some(_)) -> go(none, this.head2)
+    | (Some(_), None()) -> go(this.head1, none)
+    | (Some(x), Some(y)) ->
+      x.project().compare(y.project()) match {
+      | LT() -> go(this.head1, none)
+      | EQ() -> go(this.head1, this.head2)
+      | GT() -> go(none, this.head2)
+      }
+    }
+  }
 }
 
+// A map where the keys are projected from the values, backed by a sorted array
 class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   private inner: Vector<T>,
 ) uses Orderable[T: Orderable], Hashable[T: Hashable] {
-  // Create by allocating, initializing via calling push, and checking for
-  // collisions.
   private static fun create(size: Int, init: (T -> void) -> void): this {
+    // create by allocating, initializing via push, and checking collisions
     inner = Vector::mcreate(size);
     init(inner.push);
     // inner must be strictly increasing under project, which is expected to
@@ -41,6 +89,10 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       !prev = Some(curr);
     };
     static(unsafe_chill_trust_me(inner))
+  }
+
+  static fun createFromIterator<I: mutable Iterator<T>>(items: I): this {
+    static::create(items.sizeHint().default(0), items.each)
   }
 
   static fun empty(): this {
@@ -61,6 +113,14 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
 
   fun minimum(): ?T {
     this.inner.maybeGet(0)
+  }
+
+  fun get(i: Int): T {
+    this.inner.get(i)
+  }
+
+  fun toArray(): Array<T> {
+    this.inner.toArray()
   }
 
   fun values(): mutable Iterator<T> {
@@ -91,48 +151,53 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
   fun map(f: T -> T): this {
-    static::create(this.inner.size(), push -> {
-      this.inner.each(v -> push(f(v)))
-    })
+    static::createFromIterator(this.inner.values().map(f))
   }
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
   fun filterMap(f: T -> ?T): this {
-    static::create(this.size(), push -> {
-      this.inner.each(v -> f(v).each(push));
-    })
+    static::createFromIterator(this.inner.values().filterMap(f))
   }
 
-  // s.iterDiffInterDiffUntil(t, f) applies f to (Some(x), None()) for every
-  // element in s but not t, (None(), Some(y)) for every y in t but not s,
-  // and (Some(x), Some(y)) for every pair of elements that are in both s
-  // and t. As soon as f returns Some(v), Some(v) is returned immediately.
-  fun iterDiffInterDiffUntil<U>(that: this, f: (?T, ?T) -> ?U): ?U {
-    iter1 = this.inner.values();
-    iter2 = that.inner.values();
-    head1 = iter1.next();
-    head2 = iter2.next();
-    none: ?T = None();
-    result: ?U = None();
-    go = (x, y) -> {
-      if (x.isSome()) !head1 = iter1.next();
-      if (y.isSome()) !head2 = iter2.next();
-      !result = f(x, y)
-    };
-    while (result.isNone()) {
-      (head1, head2) match {
-      | (None(), None()) -> break void
-      | (None(), Some(_)) -> go(None(), head2)
-      | (Some(_), None()) -> go(head1, None())
-      | (Some(x), Some(y)) ->
-        x.project().compare(y.project()) match {
-        | LT() -> go(head1, none)
-        | EQ() -> go(head1, head2)
-        | GT() -> go(none, head2)
+  // s.iterDiffInterDiff(t) contains (Some(x), None()) for every element in
+  // s but not t, (None(), Some(y)) for every y in t but not s, and
+  // (Some(x), Some(y)) for every pair of elements that are in both s and t.
+  fun iterDiffInterDiff(that: this): mutable Iterator<(?T, ?T)> {
+    DiffInterDiffIterator::create(this.inner.values(), that.inner.values())
+  }
+
+  fun iterDiff(that: this): mutable Iterator<(T, ?T)> {
+    this.iterDiffInterDiff(that).filterMap((xO_yO) ->
+      xO_yO match {
+      | (Some(x), yO) -> Some((x, yO))
+      | (None(), _) -> None()
+      }
+    )
+  }
+
+  // s.leq(t, leqT) is Success if leqT(x, t.maybeGet(x)) is Success for every
+  // x in s, otherwise the first Failure encountered is returned
+  // immediately. Note that any extra elements in t are ignored.
+  fun leq<E>(that: this, leqT: (T, ?T) -> Result<void, E>): Result<void, E> {
+    this.iterDiff(that).findMap((x_yO) ->
+      x_yO match {
+      | (x, yO) ->
+        leqT(x, yO) match {
+        | Success(void) -> None()
+        | Failure(err) -> Some(err)
         }
       }
-    };
-    result
+    ) match {
+    | None() -> Success(void)
+    | Some(err) -> Failure(err)
+    }
+  }
+
+  // s.geq(t, geqT) is Success if geqT(s.maybeGet(y), y) is Success for every
+  // y in t, otherwise the first Failure encountered is returned
+  // immediately. Note that any extra elements in s are ignored.
+  fun geq<E>(that: this, geqT: (?T, T) -> Result<void, E>): Result<void, E> {
+    that.leq(this, (y, xO) -> geqT(xO, y))
   }
 
   // s.merge(t, f) is the set of elements v where Some(v) is returned by f
@@ -146,44 +211,90 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // x.project() == f(Some(x),_).each(project) for any x and
   // y.project() == f(_,Some(y)).each(project) for any y
   fun merge(that: this, f: (?T, ?T) -> ?T): this {
-    static::create(0, push -> {
-      _ = this.iterDiffInterDiffUntil(that, (xo, yo) -> {
-        f(xo, yo).each(push);
-        None()
-      })
-    })
+    static::createFromIterator(
+      this.iterDiffInterDiff(that).filterMap((xO_yO) ->
+        xO_yO match {
+        | (xO, yO) -> f(xO, yO)
+        }
+      ),
+    )
   }
 
-  // mergeOption is a generalization of merge where f may return Zero to
+  // mergeOption is a generalization of merge where f may return None() to
   // indicate the zero of the merge operation, causing mergeOption to return
-  // None immediately.
+  // None() immediately, Some(None()) indicating the unit of the merge
+  // operation, and Some(Some(z)) indicating an element.
   //
   // REQUIRES: f must preserve project:
   // x.project() == f(Some(x),_).each(project) for any x and
   // y.project() == f(_,Some(y)).each(project) for any y
-  fun mergeOption(that: this, f: (?T, ?T) -> ZeroElemUnit<T>): ?this {
+  fun mergeOption(that: this, f: (?T, ?T) -> ??T): ?this {
     zero = false;
-    result = static::create(0, push -> {
-      _ = this.iterDiffInterDiffUntil(that, (xo, yo) -> {
-        f(xo, yo) match {
-        | Zero() ->
-          !zero = true;
-          Some(void)
-        | Elem(v) ->
-          push(v);
-          None()
-        | Unit() -> None()
-        }
-      })
+    result = this.iterDiffInterDiff(that).mapWhile((xO_yO) -> {
+      z = xO_yO match {
+      | (xO, yO) -> f(xO, yO)
+      };
+      if (z.isNone()) !zero = true;
+      z
     });
-    if (zero) None() else Some(result)
+    if (zero) None() else Some(static::createFromIterator(result.filterNone()))
   }
 
   fun union(that: this): this {
-    this.merge(that, (xo, yo) ~>
-      xo match {
-      | None() -> yo
-      | _ -> xo
+    this.merge(that, (xO, yO) ~>
+      xO match {
+      | None() -> yO
+      | _ -> xO
+      }
+    )
+  }
+
+  fun mapInter(that: this, f: (T, T) -> T): this {
+    this.merge(that, (xO, yO) ->
+      (xO, yO) match {
+      | (Some(x), Some(y)) -> Some(f(x, y))
+      | _ -> None()
+      }
+    )
+  }
+
+  fun mapUnion(that: this, f: (T, T) -> T): this {
+    this.merge(that, (xO, yO) ->
+      (xO, yO) match {
+      | (Some(z), None())
+      | (None(), Some(z)) ->
+        Some(z)
+      | (Some(x), Some(y)) -> Some(f(x, y))
+      | (None(), None()) -> None()
+      }
+    )
+  }
+
+  fun mapInterOption(that: this, f: (T, T) -> ?T): ?this {
+    this.mergeOption(that, (xO, yO) ->
+      (xO, yO) match {
+      | (Some(x), Some(y)) ->
+        f(x, y) match {
+        | None() -> None()
+        | sz -> Some(sz)
+        }
+      | _ -> Some(None())
+      }
+    )
+  }
+
+  fun mapUnionOption(that: this, f: (T, T) -> ?T): ?this {
+    this.mergeOption(that, (xO, yO) ->
+      (xO, yO) match {
+      | (Some(z), None())
+      | (None(), Some(z)) ->
+        Some(Some(z))
+      | (Some(x), Some(y)) ->
+        f(x, y) match {
+        | Some(z) -> Some(Some(z))
+        | None() -> None()
+        }
+      | (None(), None()) -> Some(None())
       }
     )
   }

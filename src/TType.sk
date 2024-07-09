@@ -569,19 +569,7 @@ class STypes private (
     stypes2: STypes,
   ): ?STypes {
     stypes1.stypes
-      .mergeOption(stypes2.stypes, (xo, yo) ->
-        (xo, yo) match {
-        | (Some(x), None())
-        | (None(), Some(x)) ->
-          InternalKeyedArrayMap.Elem(x)
-        | (Some(x), Some(y)) ->
-          unionSType(subst, env, x, y) match {
-          | Some(z) -> InternalKeyedArrayMap.Elem(z)
-          | None() -> InternalKeyedArrayMap.Zero()
-          }
-        | (None(), None()) -> InternalKeyedArrayMap.Unit()
-        }
-      )
+      .mapUnionOption(stypes2.stypes, (x, y) -> unionSType(subst, env, x, y))
       .map(x -> static(x))
   }
 
@@ -593,16 +581,7 @@ class STypes private (
     stypes2: STypes,
   ): ?STypes {
     stypes1.stypes
-      .mergeOption(stypes2.stypes, (xo, yo) ->
-        (xo, yo) match {
-        | (Some(x), Some(y)) ->
-          interSType(subst, env, x, y) match {
-          | Some(z) -> InternalKeyedArrayMap.Elem(z)
-          | None() -> InternalKeyedArrayMap.Zero()
-          }
-        | _ -> InternalKeyedArrayMap.Unit()
-        }
-      )
+      .mapInterOption(stypes2.stypes, (x, y) -> interSType(subst, env, x, y))
       .map(x -> static(x))
   }
 
@@ -612,19 +591,19 @@ class STypes private (
     stypes1: STypes,
     stypes2: STypes,
   ): STResult {
-    stypes1.stypes
-      .iterDiffInterDiffUntil(stypes2.stypes, (xo, yo) ->
-        (xo, yo) match {
-        | (None(), _) -> None()
-        | (Some(x), None()) -> Some(STTooManySType(x))
-        | (Some(x), Some(y)) ->
-          isSubSType(subst, env, x, y) match {
-          | STOk() -> None()
-          | err -> Some(err)
-          }
+    stypes1.stypes.leq(stypes2.stypes, (t1, t2O) ->
+      t2O match {
+      | Some(t2) ->
+        isSubSType(subst, env, t1, t2) match {
+        | STOk() -> Success(void)
+        | err -> Failure(err)
         }
-      )
-      .default(STOk())
+      | None() -> Failure(STTooManySType(t1))
+      }
+    ) match {
+    | Success(void) -> STOk()
+    | Failure(err) -> err
+    }
   }
 
   fun map(f: SType -> SType): this {
