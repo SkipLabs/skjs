@@ -2457,4 +2457,32 @@ fun isTerminalBlock(inTry: Bool, bl: Array<Stmt>): Bool {
   bl.any(st ~> isTerminal(inTry, st))
 }
 
+/*****************************************************************************/
+/* Returns true if a statement always returns never, i.e. either */
+/* - it explicitly returns a value of type never (currently not checked), */
+/* - it calls a function that returns never (currently not checked), */
+/* - it never terminates, or */
+/* - it throws an exception that is not caught. */
+/* Note that the function may return true or false if the statement
+/* explicitly returns a non-never value. Is is fine as it would result in a */
+/* type error somewhere else. */
+/*****************************************************************************/
+
+fun returnsNever(st: Stmt): Bool {
+  st.value match {
+  | Break _ -> invariant_violation("")
+  | ForOf _ -> false
+  | For(init, cond, _incr, block) ->
+    returnsNever(init) ||
+      isTautology(cond) && (returnsNever(block) || doesNotTerminate(block))
+  | While(cond, block) ->
+    isTautology(cond) && (returnsNever(block) || doesNotTerminate(block))
+  | Bind _ -> 
+  }
+}
+
+fun returnsNeverBlock(bl: Array<Stmt>): Bool {
+  bl.any(st)
+}
+
 module end;
