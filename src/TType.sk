@@ -882,6 +882,12 @@ class TParam(
 
 // The type parameters are in DNF
 class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
+  fun toString(): String {
+    this.tparams.map(inter ->
+      inter.toArray().map(x -> x.name + ":" + x.id).join(" & ")
+    ).join(" | ")
+  }
+
   static fun empty(): this {
     TTypeParams(Array[])
   }
@@ -934,13 +940,7 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
           | None() -> continue
           }
         };
-        return STInvalidTypeParams(
-          tparams1.tparams
-            .map(inter ->
-              inter.toArray().map(x -> x.name + ":" + x.id).join(" & ")
-            )
-            .join(" | "),
-        )
+        return STInvalidTypeParams(tparams1.toString())
       }
     };
     STOk()
