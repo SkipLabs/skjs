@@ -990,13 +990,12 @@ class TypeChecker{
       typingError(Array[(e.posRange, "Missing branch")])
     };
     checkBreak = block -> {
-      if (isTerminalBlock(false, block)) return void;
-      for (st in block) {
-        if (st.value is Break _) return void;
-      };
-      invariant(block.size() != 0);
-      last = block[block.size() - 1];
-      typingError(Array[(last.pos, "Missing break")]);
+      term = StmtTermination::block(block);
+      if (term.mayFallthrough) {
+        invariant(block.size() != 0);
+        last = block[block.size() - 1];
+        typingError(Array[(last.pos, "Missing break")])
+      }
     };
     scope = branches[0] match {
     | Case(v, block) ->
