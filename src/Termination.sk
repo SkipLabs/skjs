@@ -1,0 +1,260 @@
+module SKJS;
+
+/*****************************************************************************/
+/* Statement termination classification */
+/* A statement may terminate in 5 different ways: */
+/* - it returns */
+/* - it breaks */
+/* - it throws */
+/* - it loops forever */
+/* - it goes through */
+/*****************************************************************************/
+
+/*  A value of type StmtTermination must be interpreted as the union of the
+    representation of each field.
+    Field F means "the statement may F".
+    If only one field is set, then the statement will always F.
+    If no fields is set, then the statement is unreachable (should not happen).
+*/
+value class StmtTermination{
+  returns: Bool = false,
+  breaks: Bool = false,
+  throws: Bool = false,
+  loops: Bool = false,
+  through: Bool = false,
+} {
+  fun merge(that: this, mergeThrough: (Bool, Bool) ~> Bool): this {
+    returns = this.returns || that.returns;
+    breaks = this.breaks || that.breaks;
+    throws = this.throws || that.throws;
+    loops = this.loops || that.loops;
+    through = mergeThrough(this.through, that.through);
+    static{returns, breaks, throws, loops, through}
+  } /* Or: taking either branch */
+  fun /(that: this): this {
+    this.merge(that, (t1, t2) ~> t1 || t2)
+  }
+  /* Unordered-and: taking both branches in parallel, any non-through wins */
+  fun *(that: this): this {
+    this.merge(that, (t1, t2) ~> t1 && t2)
+  }
+  /* Maybe: taking either the branch or going through */
+  fun maybe(): this {
+    this with {through => true}
+  }
+  /* Then: taking this followed by the continuation */
+  fun then(kafter: () -> this): this {
+    if (!this.through) this else this.merge(kafter(), (_t1, t2) ~> t2)
+  }
+  fun mayNonThrough(): ?String {
+    if (this.returns) return Some("return");
+    if (this.breaks) return Some("break");
+    if (this.throws) return Some("throw");
+    if (this.loops) return Some("loop forever");
+    None()
+  }
+
+  static fun it<T>(it: mutable Iterator<T>, f: T ~> this): this {
+    it.next() match {
+    | None() -> static{through => true}
+    | Some(x) -> f(x).then(() -> static::it(it, f))
+    }
+  }
+  static fun seq<T>(s: Sequence<T>, f: T ~> this): this {
+    static::it(s.iterator(), f)
+  }
+  static fun or<T>(s: Sequence<T>, f: T ~> this, init: this): this {
+    s.reduce((acc, x) -> acc / f(x), init)
+  }
+  static fun and<T>(s: Sequence<T>, f: T ~> this): this {
+    s.reduce((acc, x) -> acc * f(x), static{through => true})
+  }
+
+  static fun stmt(st: Stmt): this {
+    st.value match {
+    | StmtEmpty() -> static{through => true}
+    | StmtExpr(e) -> static::expr(e)
+    | Break() -> static{breaks => true}
+    | Return(_pos, eo) ->
+      static::exprOpt(eo).then(() ~> static{returns => true})
+    | Throw(e) -> static::expr(e).then(() ~> static{throws => true})
+    | If(cond, bl1, bl2o) ->
+      static::cond(cond).if_(
+        () ~> static::block(bl1),
+        () ~> static::blockOpt(bl2o),
+      )
+    | ForIn(var, e, body)
+    | ForOf(var, e, body) ->
+      static::forVar(var);
+      static::expr(e).then(() ~> static::breakable(body).maybe())
+    | For(init, cond, incr, body) ->
+      static::stmt(init).then(() ~>
+        static::cond(cond).loop_(() ~>
+          static::breakable(body).then(() ~> static::expr(incr))
+        )
+      )
+    | While(cond, body) ->
+      static::cond(cond).loop_(() ~> static::breakable(body))
+    | Bind(_kind, bindings) -> static::and(bindings, static::binding)
+    | Switch(e, branches) ->
+      static::expr(e).then(() ~> {
+        switchIsExhaustive = branches.any(branch ~> branch is Default _); // Unless exhaustiveness is proven differently?
+        init = if (switchIsExhaustive) static{} else static{through => true};
+        static::or(branches, static::branch, init);
+      })
+    | Block(block) -> static::block(block)
+    }
+  }
+
+  static fun breakable(stmts: Sequence<Stmt>): this {
+    static::block(stmts) with {breaks => false}
+  }
+
+  static fun block(stmts: Sequence<Stmt>): this {
+    static::seq(stmts, static::stmt)
+  }
+
+  static fun blockOpt(so: ?Sequence<Stmt>): this {
+    so.maybe(static{through => true}, static::block)
+  }
+
+  static fun expr(expr: Expr): this {
+    /* We make no assumptions on the order of evaluation but
+       we assume that the existence of _name is checked in the typechecker. */
+    expr.value match {
+    | Number(_)
+    | Var(_name)
+    | Spread(_name)
+    | EString(_, _)
+    | KeyOf(_ty)
+    | Closure(_args, _retTy, _body)
+    | Regexp(_) ->
+      static{through => true}
+    | TypeOf(e)
+    | Await(e)
+    | As(e, _ty) ->
+      static::expr(e)
+    | Get(e1, e2)
+    | InstanceOf(e1, e2) ->
+      static::expr(e1) * static::expr(e2)
+    | New(_name, _targs, args) -> static::and(args, static::expr)
+    | Unop(_unop, e)
+    | PostOp(_postop, e) ->
+      static::expr(e).then(() ~>
+        static{through => true, throws => true} /* TODO: refine */
+      )
+    | Binop(_op, e1, e2) ->
+      (static::expr(e1) * static::expr(e2)).then(() ~>
+        static{through => true, throws => true} /* TODO: refine */
+      )
+    | Call(e, _targs, args) ->
+      (static::expr(e) * static::and(args, static::expr)).then(() ~>
+        static{throws => true, loops => true, through => true}
+      )
+    | Params(_) ->
+      invariant_violation("Internal error: Params should not be an expression")
+    | Object(fields) -> static::and(fields, static::field)
+    | EArray(exprs) -> static::and(exprs, static::expr)
+    | EIf(cond, e1, e2) ->
+      static::cond(cond).if_(() ~> static::expr(e1), () ~> static::expr(e2))
+    | Async(e) -> static::expr(e).maybe()
+    }
+  }
+
+  static fun exprOpt(eo: ?Expr): this {
+    eo.maybe(static{through => true}, static::expr)
+  }
+
+  static fun cond(cond: Expr): CondTermination {
+    CondTermination::expr(cond)
+  }
+
+  static fun field(field: Field): this {
+    field match {
+    | FDNormal(_name, e)
+    | FDSpread(e) ->
+      static::expr(e)
+    | FunDef _ -> static{through => true}
+    }
+  }
+
+  static fun branch(branch: SwitchBranch): this {
+    branch match {
+    | Case(e, block) ->
+      static::branchCase(e);
+      static::breakable(block)
+    | Default(block) -> static::breakable(block)
+    }
+  }
+
+  static fun branchCase(e: Expr): void {
+    static::expr(e).mayNonThrough().each(term ->
+      typingError(
+        Array[
+          (
+            e.posRange,
+            `Invalid switch branch case expression, it may ${term}.`,
+          ),
+        ],
+      )
+    )
+  }
+
+  static fun binding(binding: Binding): this {
+    static::exprOpt(binding.value)
+  }
+
+  static fun forVar(stmt: Stmt): void {
+    static::stmt(stmt).mayNonThrough().each(term ->
+      typingError(
+        Array[(stmt.pos, `Invalid for variable initializer, it may ${term}.`)],
+      )
+    )
+  }
+}
+
+value class CondTermination private (
+  exprTermination: StmtTermination,
+  tauto: TautologyCheck,
+) {
+  static fun expr(expr: Expr): this {
+    static(StmtTermination::expr(expr), TautologyCheck::expr(expr))
+  }
+
+  fun if_(
+    ktrue: () ~> StmtTermination,
+    kfalse: () ~> StmtTermination,
+  ): StmtTermination {
+    this.exprTermination.then(() ~>
+      this.tauto match {
+      | TCAlwaysTrue() -> ktrue()
+      | TCAlwaysFalse() -> kfalse()
+      | TCTop() -> ktrue() / kfalse()
+      }
+    )
+  }
+
+  fun loop_(kbody: () ~> StmtTermination): StmtTermination {
+    this.if_(
+      () ~> kbody().then(() ~> StmtTermination{loops => true}),
+      () ~> StmtTermination{through => true},
+    )
+  }
+}
+
+base class TautologyCheck private () {
+  children =
+  | TCAlwaysTrue()
+  | TCAlwaysFalse()
+  | TCTop()
+
+  static fun expr(expr: Expr): TautologyCheck {
+    expr.value match {
+    | Var(Name(_pos, "true")) -> TCAlwaysTrue()
+    | Var(Name(_pos, "false")) -> TCAlwaysFalse()
+    | _ -> TCTop()
+    }
+  }
+}
+
+module end;
