@@ -2111,8 +2111,8 @@ class TypeChecker{
             | _ ->
               typingError(
                 Array[
-                  (pos, "Invalid call"),
-                  (spreadType.pos, "Unexpected type for ..."),
+                  (pos, "Invalid call. Unexpected type for ..."),
+                  (spreadType.pos, `${spreadType} is not an array`),
                 ],
               )
             }
