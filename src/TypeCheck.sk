@@ -573,11 +573,12 @@ class TypeChecker{
         typingError(Array[(fd.pos, "An interface cannot implement a method")])
       };
       _ = this.block(env, body);
-      if (isTerminalBlock(false, body)) return void;
-      if (this.isVoid(env, retType)) return void;
-      typingError(
-        Array[(fd.pos, "This function does not always return a value")],
-      )
+      term = StmtTermination::block(body);
+      if (term.mayFallthrough && !this.isVoid(env, retType)) {
+        typingError(
+          Array[(fd.pos, "This function may not always return a value")],
+        )
+      }
     };
   }
 
