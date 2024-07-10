@@ -2353,38 +2353,9 @@ class TypeChecker{
 /* evaluating this statements terminates the function. */
 /*****************************************************************************/
 
-fun isTerminal(inTry: Bool, st: Stmt): Bool {
-  st.value match {
-  | Break _
-  | ForOf _
-  | For _
-  | While _
-  | Bind _
-  | StmtEmpty _
-  | ForIn _
-  | StmtExpr _ ->
-    false
-  | Return _ -> true
-  | Throw _ -> !inTry
-  | If(_, bl1, Some(bl2)) ->
-    isTerminalBlock(inTry, bl1) && isTerminalBlock(inTry, bl2)
-  | If(_, _, _) -> false
-  | Block(bl) -> isTerminalBlock(inTry, bl)
-  | Switch(_, branches) ->
-    switchIsExhaustive = branches.any(branch ~> branch is Default _); // Unless exhaustiveness is proven differently?
-    switchIsExhaustive &&
-      branches.all(branch ~>
-        branch match {
-        | Case(_, bl)
-        | Default(bl) ->
-          isTerminalBlock(inTry, bl)
-        }
-      )
-  }
-}
-
 fun isTerminalBlock(inTry: Bool, bl: Array<Stmt>): Bool {
-  bl.any(st ~> isTerminal(inTry, st))
+  term = StmtTermination::block(bl);
+  !term.mayFallthrough && (term.mayReturn || (!inTry && term.mayThrow))
 }
 
 module end;
