@@ -940,6 +940,10 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
       for (inter2 in tparams2.tparams) {
         // ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: ⋀ₗ(yₖₗ <: uₖₗ) if
         // ∀l. ∃j. (xᵢⱼ <: lᵢⱼ) = (yₖₗ <: uₖₗ)
+        //
+        // Josh: Why doesn't this use: xᵢⱼ = yₖₗ and lᵢⱼ <: uₖₗ instead of
+        // (xᵢⱼ <: lᵢⱼ) = (yₖₗ <: uₖₗ) ?  That is, why require lᵢⱼ = uₖₗ
+        // instead of lᵢⱼ <: uₖₗ ?
         if (inter2.subseteq(inter1)) break void else continue
       } else {
         for (tparam1 in inter1) {
