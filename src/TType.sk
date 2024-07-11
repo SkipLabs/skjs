@@ -935,7 +935,7 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
     cstr: TType, // the stypes that were conjoined to tparams2
   ): STResult {
     // ⋁ᵢ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋁ₖ⋀ₗ(yₖₗ <: uₖₗ) if
-    // (∃i,j. lᵢⱼ <: c) or (∀i. ∃k. ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋀ₗ(yₖₗ <: uₖₗ))
+    // ∀i. (∃j. lᵢⱼ <: c) or (∃k. ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋀ₗ(yₖₗ <: uₖₗ))
     for (inter1 in tparams1.tparams) {
       for (inter2 in tparams2.tparams) {
         // ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋀ₗ(yₖₗ <: uₖₗ) if
@@ -958,16 +958,18 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
           tparam1.cstr match {
           | Some(c) ->
             isSubTType(subst, env, c, cstr) match {
-            | STOk() -> return STOk()
+            | STOk() -> break void
             | _error -> continue
             }
           | None() -> continue
           }
-        };
-        return STInvalidTypeParams(tparams1.toString())
+        } else {
+          break STInvalidTypeParams(tparams1.toString())
+        }
       }
-    };
-    STOk()
+    } else {
+      STOk()
+    }
   }
 }
 
