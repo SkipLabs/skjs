@@ -42,6 +42,26 @@ const kTopHash: Int = "Top".hash();
 // not affect the instances defined inside the type.
 /*****************************************************************************/
 
+// The general form of a type in a types-as-propositions style is:
+//
+// X "type parameter names"              (TParam)
+// V "type variables"                    (TVar)
+// N "uninstantiated generic type names" (Name)
+// F "field names"                       (String)
+//
+// S "single types"
+//   ::= undefined | void | null | bool | num | string
+//     | array<T> | tuple<T₀,...,Tₙ> | promise<T> | object<F₀: T₀?,...,Fₙ: Tₙ?>
+//     | algebraic<_> | funs<_>
+//
+// T "types"
+//   ::= ⊤                       Top
+//     |   (⋁ᵢ⋀ⱼ (Xᵢⱼ <: Tᵢⱼ))  TTypeParams
+//       ∧ ( (⋁ₖ Sₖ)             STypes
+//         ∨ (⋁ₗ Vₗ)             TVar   ⎫
+//         ∨ (⋁ₘ Nₘ<T₀,...,Tₙ>)  TSInst ⎬ TInsts
+//         ∨ (⋁ₙ Tₙ₁ ∧ Tₙ₂))     TInter ⎭
+
 class TType private {
   // The position in the source-code that serves as a witness, when an
   // error occurs involving this type, we will use that position in
@@ -912,10 +932,14 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
     env: TEnv,
     tparams1: TTypeParams,
     tparams2: TTypeParams,
-    cstr: TType,
+    cstr: TType, // the stypes that were conjoined to tparams2
   ): STResult {
+    // ⋁ᵢ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋁ₖ⋀ₗ(yₖₗ <: uₖₗ) if
+    // (∃i,j. lᵢⱼ <: c) or (∀i. ∃k. ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋀ₗ(yₖₗ <: uₖₗ))
     for (inter1 in tparams1.tparams) {
       for (inter2 in tparams2.tparams) {
+        // ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋀ₗ(yₖₗ <: uₖₗ) if
+        // ∀l. uₖₗ <: c or ∃j. (xᵢⱼ <: lᵢⱼ) = (yₖₗ <: uₖₗ)
         inter2.iterDiff(inter1).findMap((tparam2) ->
           tparam2.cstr match {
           | Some(c) ->
