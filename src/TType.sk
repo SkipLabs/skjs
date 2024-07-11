@@ -935,24 +935,12 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
     cstr: TType, // the stypes that were conjoined to tparams2
   ): STResult {
     // ⋁ᵢ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋁ₖ⋀ₗ(yₖₗ <: uₖₗ) if
-    // ∀i. (∃j. lᵢⱼ <: c) or (∃k. ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋀ₗ(yₖₗ <: uₖₗ))
+    // ∀i. (∃j. lᵢⱼ <: c) or (∃k. ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: ⋀ₗ(yₖₗ <: uₖₗ))
     for (inter1 in tparams1.tparams) {
       for (inter2 in tparams2.tparams) {
-        // ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: c ∧ ⋀ₗ(yₖₗ <: uₖₗ) if
-        // ∀l. uₖₗ <: c or ∃j. (xᵢⱼ <: lᵢⱼ) = (yₖₗ <: uₖₗ)
-        inter2.iterDiff(inter1).findMap((tparam2) ->
-          tparam2.cstr match {
-          | Some(c) ->
-            isSubTType(subst, env, c, cstr) match {
-            | STOk() -> None()
-            | error -> Some(error)
-            }
-          | None() -> Some(STInvalidTypeParam(tparam2.name))
-          }
-        ) match {
-        | None() -> break void
-        | Some(_error) -> continue
-        }
+        // ⋀ⱼ(xᵢⱼ <: lᵢⱼ) <: ⋀ₗ(yₖₗ <: uₖₗ) if
+        // ∀l. ∃j. (xᵢⱼ <: lᵢⱼ) = (yₖₗ <: uₖₗ)
+        if (inter2.subseteq(inter1)) break void else continue
       } else {
         for (tparam1 in inter1) {
           tparam1.cstr match {

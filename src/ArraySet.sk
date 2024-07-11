@@ -132,6 +132,15 @@ class .ArraySet<T: Orderable> private (
     DiffInterDiffIterator::create(this.inner.values(), that.inner.values())
   }
 
+  fun subseteq(that: this): Bool {
+    this.iterDiffInterDiff(that).all((xO_yO) ->
+      xO_yO match {
+      | (Some(_), None()) -> false
+      | _ -> true
+      }
+    )
+  }
+
   fun iterDiff(that: this): mutable Iterator<T> {
     this.iterDiffInterDiff(that).filterMap((xO_yO) ->
       xO_yO match {
