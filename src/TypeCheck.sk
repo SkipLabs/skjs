@@ -978,34 +978,23 @@ class TypeChecker{
     if (branches.size() == 0) {
       typingError(Array[(e.posRange, "Missing branch")])
     };
-    checkBreak = block -> {
-      term = StmtTermination::block(block);
-      if (term.through) {
-        invariant(block.size() != 0);
-        last = block[block.size() - 1];
-        typingError(Array[(last.pos, "Missing break")])
+    checkBranch = branch -> {
+      branch match {
+      | Case(v, block) ->
+        term = StmtTermination::block(block);
+        if (term.through) {
+          invariant(block.size() != 0);
+          last = block[block.size() - 1];
+          typingError(Array[(last.pos, "Missing break")])
+        };
+        cond = Expr(e.posRange, (Binop(BOStrictEquality(), e, v)));
+        this.block(env, block, Some((cond, true)))
+      | Default(block) -> this.block(env, block)
       }
     };
-    scope = branches[0] match {
-    | Case(v, block) ->
-      checkBreak(block);
-      cond = Expr(e.posRange, (Binop(BOStrictEquality(), e, v)));
-      this.block(env, block, Some((cond, true)))
-    | Default(_) -> typingError(Array[(e.posRange, "Missing branch")])
-    };
+    scope = checkBranch(branches[0]);
     for (i in Range(1, branches.size())) {
-      env.mergeScope(
-        env.subst,
-        this.tenv,
-        scope,
-        branches[i] match {
-        | Case(v, block) ->
-          checkBreak(block);
-          cond = Expr(e.posRange, (Binop(BOStrictEquality(), e, v)));
-          this.block(env, block, Some((cond, true)))
-        | Default(stmts) -> this.block(env, stmts)
-        },
-      )
+      env.mergeScope(env.subst, this.tenv, scope, checkBranch(branches[i]))
     }
   }
 
