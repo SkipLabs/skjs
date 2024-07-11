@@ -565,20 +565,7 @@ base class BinaryOperator {
   | BOStrictInequality()
   | BOAs()
   | BOAssignment()
-  | BOMultiplicationAssignment()
-  | BODivisionAssignment()
-  | BORemainderAssignment()
-  | BOAdditionAssignment()
-  | BOSubtractionAssignment()
-  | BOLeftShiftAssignment()
-  | BOSignedRightShiftAssignment()
-  | BOZeroFilledRightShiftAssignment()
-  | BOBitwiseAndAssignment()
-  | BOBitwiseXorAssignment()
-  | BOBitwiseOrAssignment()
-  | BOLogicalAndAssignment()
-  | BOLogicalOrAssignment()
-  | BONullishCoalescingAssignment()
+  | BOOpAssignment(AssignableBinaryOperator)
 }
 
 /*****************************************************************************/
@@ -588,26 +575,9 @@ base class BinaryOperator {
 extension class Expr {
   fun isAssign(): Bool {
     this.value match {
-    | Binop(bop, _, _) ->
-      bop match {
-      | BOAssignment()
-      | BOMultiplicationAssignment()
-      | BODivisionAssignment()
-      | BORemainderAssignment()
-      | BOAdditionAssignment()
-      | BOSubtractionAssignment()
-      | BOLeftShiftAssignment()
-      | BOSignedRightShiftAssignment()
-      | BOZeroFilledRightShiftAssignment()
-      | BOBitwiseAndAssignment()
-      | BOBitwiseXorAssignment()
-      | BOBitwiseOrAssignment()
-      | BOLogicalAndAssignment()
-      | BOLogicalOrAssignment()
-      | BONullishCoalescingAssignment() ->
-        true
-      | _ -> false
-      }
+    | Binop(BOAssignment(), _, _)
+    | Binop(BOOpAssignment(_), _, _) ->
+      true
     | _ -> false
     }
   }
