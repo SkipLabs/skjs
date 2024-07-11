@@ -536,9 +536,8 @@ base class UnaryOperator {
   | UOMinus()
 }
 
-base class BinaryOperator {
+base class AssignableBinaryOperator extends BinaryOperator {
   children =
-  | BODot()
   | BOMultiplication()
   | BODivision()
   | BORemainder()
@@ -547,18 +546,23 @@ base class BinaryOperator {
   | BOLeftShift()
   | BOSignedRightShift()
   | BOZeroFilledRightShift()
-  | BOLessThan()
-  | BOLessThanOrEqual()
-  | BOGreaterThan()
-  | BOGreaterThanOrEqual()
-  | BOStrictEquality()
-  | BOStrictInequality()
   | BOBitwiseAnd()
   | BOBitwiseXor()
   | BOBitwiseOr()
   | BOLogicalAnd()
   | BOLogicalOr()
   | BONullishCoalescing()
+}
+
+base class BinaryOperator {
+  children =
+  | BODot()
+  | BOLessThan()
+  | BOLessThanOrEqual()
+  | BOGreaterThan()
+  | BOGreaterThanOrEqual()
+  | BOStrictEquality()
+  | BOStrictInequality()
   | BOAs()
   | BOAssignment()
   | BOMultiplicationAssignment()
