@@ -845,7 +845,12 @@ class TypeChecker{
   }
 
   static fun isPossiblyNonVoidExpressionAllowedAsStatement(e: Expr): Bool {
-    e.isAssign()
+    e.value match {
+    | Binop(BOAssignment(), _, _)
+    | Binop(BOOpAssignment(_), _, _) ->
+      true
+    | _ -> false
+    }
   }
 
   fun stmt(env: mutable TCEnv, st: Stmt): void {

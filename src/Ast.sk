@@ -568,19 +568,4 @@ base class BinaryOperator {
   | BOOpAssignment(AssignableBinaryOperator)
 }
 
-/*****************************************************************************/
-/* Helpers */
-/*****************************************************************************/
-
-extension class Expr {
-  fun isAssign(): Bool {
-    this.value match {
-    | Binop(BOAssignment(), _, _)
-    | Binop(BOOpAssignment(_), _, _) ->
-      true
-    | _ -> false
-    }
-  }
-}
-
 module end;
