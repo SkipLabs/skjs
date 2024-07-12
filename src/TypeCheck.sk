@@ -847,7 +847,9 @@ class TypeChecker{
   static fun isPossiblyNonVoidExpressionAllowedAsStatement(e: Expr): Bool {
     e.value match {
     | Binop(BOAssignment(), _, _)
-    | Binop(BOOpAssignment(_), _, _) ->
+    | Binop(BOOpAssignment(_), _, _)
+    | PostOp(PODecr(), _)
+    | PostOp(POIncr(), _) ->
       true
     | _ -> false
     }
