@@ -428,7 +428,10 @@ class TEnv{
       | Var(name) ->
         name.value match {
         | "undefined" ->
-          TType::single(pos, TPrimVoid(TUndefined(), name.posRange))
+          TType::single(
+            pos,
+            TPrimVoid(TUndefined{isVoid => false}, name.posRange),
+          )
         | _ -> invariant_violation(`TODO typeof ${name.value}`)
         }
       | Binop(BODot(), _, Expr(_, Var(_))) -> invariant_violation("TODO typeof")
@@ -465,12 +468,12 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TPrimVoid(TVoid(), p))
+      TType::single(p, TPrimVoid(TUndefined{isVoid => true}, p))
     | TAInst(n @ Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TPrimVoid(TUndefined(), p))
+      TType::single(p, TPrimVoid(TUndefined{isVoid => false}, p))
     | TAInst(n @ Name(_, "Promise"), targs) ->
       if (targs.size() != 1) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
