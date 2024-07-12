@@ -79,29 +79,48 @@ class Files(
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
-  ): SKStore.LHandle<SKStore.SID, ParsedResultFile> {
-    SKStore.LHandle::create(
+  ): SKStore.EHandle<SKStore.SID, ParsedResultFile> {
+    parsedFiles = this.filesContent.map(
       SKStore.SID::keyType,
       ParsedResultFile::type,
       context,
-      SKStore.DirName::create("/skjs/parsed/"),
-      (context, _self, key) ~> {
+      SKStore.DirName::create("/skjs/parsed_with_errors/"),
+      (context, writer, key, contentIter) ~> {
         fileName = key.value;
         if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
-          return Array[]
+          return void;
         };
-        content = this.filesContent.get(context, key).value;
+        content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content);
         parser = mutable Parser(lexer);
         try {
-          Array[ParsedResultFile(PROk(parser.toplevelDefs()))]
+          writer.setArray(
+            key,
+            Array[ParsedResultFile(PROk(parser.toplevelDefs()))],
+          )
         } catch {
         | ErrorExn(err) ->
-          Array[ParsedResultFile(PRError(err.toString(context, newLinesMap)))]
+          writer.setArray(
+            SKStore.SID(""),
+            Array[
+              ParsedResultFile(PRError(err.toString(context, newLinesMap))),
+            ],
+          )
         | exn -> throw exn
         }
       },
-    )
+    );
+    errors = parsedFiles.unsafeGetArray(context, SKStore.SID(""));
+    if (errors.size() != 0) {
+      for (error in errors) {
+        error.value match {
+        | PRError(err) -> print_error(err)
+        | _ -> invariant_violation("Unexpected parsing result")
+        }
+      };
+      throw Exit(2);
+    };
+    parsedFiles
   }
 }
 

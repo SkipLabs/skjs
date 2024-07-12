@@ -229,7 +229,7 @@ type CheckResult = (String, ?String, Array<Error>); // (filename, parse error, t
 
 mutable class Checker private {
   files: Files,
-  parsedFiles: SKStore.LHandle<SKStore.SID, ParsedResultFile>,
+  parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
   context: mutable SKStore.Context,
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
