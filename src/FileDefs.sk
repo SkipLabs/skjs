@@ -21,7 +21,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
     context: mutable S.Context,
     index: FileNameIndex,
     root: ?DirName,
-    parsedFiles: SKStore.LHandle<SKStore.SID, ParsedResultFile>,
+    parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
   ): this {
     static(
       S.LHandle::create(
