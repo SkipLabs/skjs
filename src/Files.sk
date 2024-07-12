@@ -118,7 +118,7 @@ class Files(
         | _ -> invariant_violation("Unexpected parsing result")
         }
       };
-      skipExit(2);
+      throw Exit(2);
     };
     parsedFiles
   }
