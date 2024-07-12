@@ -1603,7 +1603,7 @@ class TypeChecker{
         num = TType::single(pos, TPrimValue(TNum(), None(), pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
-        TType::single(pos, TPrimVoid(TVoid(), pos))
+        num
       | POExcl() -> notSupported(pos)
       }
 
