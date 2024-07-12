@@ -844,13 +844,17 @@ class TypeChecker{
     );
   }
 
+  static fun isPossiblyNonVoidExpressionAllowedAsStatement(e: Expr): Bool {
+    e.isAssign()
+  }
+
   fun stmt(env: mutable TCEnv, st: Stmt): void {
     st.value match {
     | Break() -> void
     | StmtEmpty() -> void
     | StmtExpr(e) ->
       ty = this.expr(env, e);
-      if (!e.isAssign()) {
+      if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
         this.checkIsVoid(env, e.posRange, ty)
       }
     | Return(pos, eOpt) ->
