@@ -230,13 +230,16 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // y.project() == f(_,Some(y)).each(project) for any y
   fun mergeOption(that: this, f: (?T, ?T) -> ??T): ?this {
     zero = false;
-    result = this.iterDiffInterDiff(that).mapWhile((xO_yO) -> {
-      z = xO_yO match {
-      | (xO, yO) -> f(xO, yO)
-      };
-      if (z.isNone()) !zero = true;
-      z
-    });
+    result = this.iterDiffInterDiff(that)
+      .map((xO_yO) -> {
+        zOO = xO_yO match {
+        | (xO, yO) -> f(xO, yO)
+        };
+        if (zOO.isNone()) !zero = true;
+        zOO
+      })
+      .takeWhile((zOO) -> zOO.isSome())
+      .map((zOO) -> zOO.fromSome());
     if (zero) None() else Some(static::createFromIterator(result.filterNone()))
   }
 
