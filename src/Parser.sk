@@ -2153,6 +2153,7 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
   //   | <expr> ? <expr> : <expr>
   //   | <expr> instanceof <expr>
   //   | <expr> as <type>
+  //   | < <type> > <expr>
   //   | /<regexp>/
   //   | async <expr>
   /***************************************************************************/
@@ -2381,6 +2382,19 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
       regexp = String::fromChars(this.lex.contents.slice(this.lex.pos, pos));
       this.lex.!pos = pos;
       Regexp(regexp)
+    | TKLessThan() ->
+      ty = this.type(0);
+      this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+      | Some(Token(TKGreaterThan(), _)) -> void
+      | Some(unexpectedTok) ->
+        this.error(
+          this.lex.posStart(unexpectedTok),
+          ExpectedTokenNot(TKGreaterThan()),
+        )
+      };
+      e = this.expr(prec);
+      return As(e, ty)
     | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
     };
 
