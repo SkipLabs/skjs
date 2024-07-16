@@ -536,9 +536,8 @@ base class UnaryOperator {
   | UOMinus()
 }
 
-base class BinaryOperator {
+base class AssignableBinaryOperator extends BinaryOperator {
   children =
-  | BODot()
   | BOMultiplication()
   | BODivision()
   | BORemainder()
@@ -547,34 +546,26 @@ base class BinaryOperator {
   | BOLeftShift()
   | BOSignedRightShift()
   | BOZeroFilledRightShift()
-  | BOLessThan()
-  | BOLessThanOrEqual()
-  | BOGreaterThan()
-  | BOGreaterThanOrEqual()
-  | BOStrictEquality()
-  | BOStrictInequality()
   | BOBitwiseAnd()
   | BOBitwiseXor()
   | BOBitwiseOr()
   | BOLogicalAnd()
   | BOLogicalOr()
   | BONullishCoalescing()
+}
+
+base class BinaryOperator {
+  children =
+  | BODot()
+  | BOLessThan()
+  | BOLessThanOrEqual()
+  | BOGreaterThan()
+  | BOGreaterThanOrEqual()
+  | BOStrictEquality()
+  | BOStrictInequality()
   | BOAs()
   | BOAssignment()
-  | BOMultiplicationAssignment()
-  | BODivisionAssignment()
-  | BORemainderAssignment()
-  | BOAdditionAssignment()
-  | BOSubtractionAssignment()
-  | BOLeftShiftAssignment()
-  | BOSignedRightShiftAssignment()
-  | BOZeroFilledRightShiftAssignment()
-  | BOBitwiseAndAssignment()
-  | BOBitwiseXorAssignment()
-  | BOBitwiseOrAssignment()
-  | BOLogicalAndAssignment()
-  | BOLogicalOrAssignment()
-  | BONullishCoalescingAssignment()
+  | BOOpAssignment(AssignableBinaryOperator)
 }
 
 /*****************************************************************************/
@@ -584,26 +575,9 @@ base class BinaryOperator {
 extension class Expr {
   fun isAssign(): Bool {
     this.value match {
-    | Binop(bop, _, _) ->
-      bop match {
-      | BOAssignment()
-      | BOMultiplicationAssignment()
-      | BODivisionAssignment()
-      | BORemainderAssignment()
-      | BOAdditionAssignment()
-      | BOSubtractionAssignment()
-      | BOLeftShiftAssignment()
-      | BOSignedRightShiftAssignment()
-      | BOZeroFilledRightShiftAssignment()
-      | BOBitwiseAndAssignment()
-      | BOBitwiseXorAssignment()
-      | BOBitwiseOrAssignment()
-      | BOLogicalAndAssignment()
-      | BOLogicalOrAssignment()
-      | BONullishCoalescingAssignment() ->
-        true
-      | _ -> false
-      }
+    | Binop(BOAssignment(), _, _)
+    | Binop(BOOpAssignment(_), _, _) ->
+      true
     | _ -> false
     }
   }
