@@ -3,9 +3,14 @@ version: 2.1
 jobs:
   build:
     docker:
-      -image: skiplabs/skdb-base:latest
+      - image: skiplabs/skdb-base:latest
     steps:
       - checkout
+      - run:
+          name: Clone SKDB
+          command: |
+            git clone --depth=1 https://github.com/SkipLabs/skdb ../skdb
+            cd ../skdb && git submodule update --init --recursive
       - run:
           name: Check
           command: |
@@ -19,7 +24,6 @@ jobs:
           path: ~/test-results/skjs.xml
 
 workflows:
-  version: 2
   build_and_test:
     jobs:
       - build
