@@ -619,7 +619,7 @@ class TypeChecker{
       | None() -> return false
       | Some(stypes) ->
         stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) -> void
+        | Some(TPrimUnit(TVoid(), _)) -> void
         | _ -> return false
         }
       }
@@ -870,7 +870,7 @@ class TypeChecker{
       pos,
       "This expression was expected to be of type void",
       ty,
-      TType::single(ty.pos, TPrimVoid(TVoid(), ty.pos)),
+      TType::single(ty.pos, TPrimUnit(TVoid(), ty.pos)),
     );
   }
 
@@ -897,11 +897,11 @@ class TypeChecker{
     | Return(pos, eOpt) ->
       retType = this.retType match {
       | None() ->
-        TType::single(st.pos, TPrimVoid(TVoid(), st.pos)) // constructor
+        TType::single(st.pos, TPrimUnit(TVoid(), st.pos)) // constructor
       | Some(x) -> x
       };
       (epos, etype) = eOpt match {
-      | None() -> (pos, TType::single(pos, TPrimVoid(TVoid(), pos)))
+      | None() -> (pos, TType::single(pos, TPrimUnit(TVoid(), pos)))
       | Some(e) -> (e.posRange, this.expr(env, e))
       };
       rtype = if (this.isAsync) {
@@ -1146,8 +1146,8 @@ class TypeChecker{
           result,
           obj.fields.getType(fieldName),
         )
-      | TPrimVoid(TUndefined(), undefPos)
-      | TPrimVoid(
+      | TPrimUnit(TUndefined(), undefPos)
+      | TPrimUnit(
         TNull(),
         undefPos,
       ) if (optionalChaining) ->
@@ -1206,9 +1206,9 @@ class TypeChecker{
     | Var(Name(_, "false")) ->
       TType::single(pos, TPrimValue(TBool(), None(), pos))
     | Var(Name(_, "null")) ->
-      this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TNull(), pos)))
+      this.makeBoundTVar(env, TType::single(pos, TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
-      this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TUndefined(), pos)))
+      this.makeBoundTVar(env, TType::single(pos, TPrimUnit(TUndefined(), pos)))
     | Var(local) ->
       if (env.localObjects.containsKey(local.value)) {
         env.usedObjects![local.value] = local.posRange
@@ -1329,14 +1329,14 @@ class TypeChecker{
           this.checkSubType(env, pos, "Invalid super call", x, y)
         })
       };
-      TType::single(pos, TPrimVoid(TVoid(), pos))
+      TType::single(pos, TPrimUnit(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
       clauses = exprTy.expand(env.subst, this.tenv, Covariant());
       ty = TType::fromClauses(exprTy.pos, clauses);
       print_error(prettyPrintType(false, ty));
-      TType::single(pos, TPrimVoid(TVoid(), pos))
+      TType::single(pos, TPrimUnit(TVoid(), pos))
     | Call(f, targs, args) ->
       rty = this.call(
         env,
@@ -1640,9 +1640,9 @@ class TypeChecker{
           hasOthers = false;
           for (stype in stypes) {
             stype match {
-            | TPrimVoid(TVoid(), _) -> !hasVoid = true
-            | TPrimVoid(TNull(), _)
-            | TPrimVoid(TUndefined(), _) ->
+            | TPrimUnit(TVoid(), _) -> !hasVoid = true
+            | TPrimUnit(TNull(), _)
+            | TPrimUnit(TUndefined(), _) ->
               !hasNullOrUndefined = true
             | _ -> !hasOthers = true
             }
@@ -1784,9 +1784,9 @@ class TypeChecker{
   fun makeLiteralType(e: Expr): ?TType {
     e match {
     | Expr(valuePos, Var(Name(_, "null"))) ->
-      Some(TType::single(valuePos, TPrimVoid(TNull(), valuePos)))
+      Some(TType::single(valuePos, TPrimUnit(TNull(), valuePos)))
     | Expr(valuePos, Var(Name(_, "undefined"))) ->
-      Some(TType::single(valuePos, TPrimVoid(TUndefined(), valuePos)))
+      Some(TType::single(valuePos, TPrimUnit(TUndefined(), valuePos)))
     | Expr(valuePos, Number(n)) ->
       Some(
         TType::single(
@@ -2223,11 +2223,11 @@ class TypeChecker{
         )
 
       | "symbol" -> return void
-      | "undefined" -> (x ~> x is TPrimVoid(TUndefined(), _), None())
+      | "undefined" -> (x ~> x is TPrimUnit(TUndefined(), _), None())
       | "object" ->
         (
           (x ~>
-            x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)),
+            x is TObject _ || x is TAlgebraic _ || x is TPrimUnit(TNull(), _)),
           Some(TObject(TFields::empty(), typePos)),
         )
       | "function" -> (x ~> x is TFuns _, None())
@@ -2243,14 +2243,14 @@ class TypeChecker{
     | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
     | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
       if (!target) {
-        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
+        this.setLocal(env, local, None(), x ~> !(x is TPrimUnit(TNull(), _)))
       }
 
     | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
     | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
       if (!target) {
         this.setLocal(env, local, None(), x ~>
-          !(x is TPrimVoid(TUndefined _, _))
+          !(x is TPrimUnit(TUndefined _, _))
         )
       }
 
