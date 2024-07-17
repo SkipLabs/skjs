@@ -62,19 +62,16 @@ const x8: string | undefined = returningVoid()?.toString();
 // @ts-expect-error Invalid '.'
 const x9: string | undefined = returningVoidOrNumber()?.toString();
 
-// TODO: change to forbidden on void
-// @ts-expect-error This operator is useless
+// @ts-expect-error Invalid operator on type void
 const x10: number | undefined = returningVoid() ?? 0;
 
-// TODO: change to forbidden on void
-// @ts-expect-error This operator is useless
+// @ts-expect-error Invalid operator on type void
 const x11: number | undefined = returningVoidOrNumber() ?? 0;
 
-// TODO: change to forbidden on void
-// @ts-expect-error Invalid definition
+// @ts-expect-error Invalid operator on type void
 const x12: number | undefined = returningVoidOrUndefined() ?? 0;
 
-// TODO: change to forbidden on void
+// @ts-expect-error Invalid operator on type void
 const x13: number | void | null = returningVoidOrNull() ?? 0;
 
 // @ts-expect-error Invalid ||
@@ -90,7 +87,7 @@ const x16: number | undefined = returningVoidOrUndefined() || 0;
 const x17: number | void | null = returningVoidOrNull() || 0;
 
 function unsafeInTypescript(b: boolean, returningVoid: () => void): string {
-  // @ts-expect-error Invalid return type
+  // @ts-expect-error Invalid operator on type void
   return (b ? null : returningVoid()) ?? "a";
 }
 // @ts-expect-error Invalid call
