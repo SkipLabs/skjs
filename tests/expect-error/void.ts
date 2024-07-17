@@ -43,6 +43,7 @@ const x5: undefined = returningVoid()["bla"];
 // @ts-expect-error Invalid comparison. You can only compare strings, numbers, and booleans.
 const x6: boolean = returningVoid() < returningVoid();
 
+// @ts-expect-error Invalid operation on type void
 const x7: boolean = returningVoid() === returningVoid();
 
 type t = void | undefined; // We may want an error here (see #76)
@@ -155,8 +156,8 @@ function invalidFunctionCall<T>(value: void | T): T {
   return value();
 }
 
-// TODO: should be invalid
 function validVoidUnionUsage<T>(value: void | T): boolean {
+  // @ts-expect-error Invalid operation on type void
   return value === value;
 }
 
@@ -182,3 +183,9 @@ const x18: boolean = typeof returningVoid() === "undefined";
 
 // @ts-expect-error Invalid operation on type void
 const x19: boolean = typeof returningVoidOrNull() === "undefined";
+
+// @ts-expect-error Invalid operation on type void
+const x20: boolean = returningVoid() === undefined;
+
+// @ts-expect-error Invalid operation on type void
+const x21: boolean = returningVoidOrNull() === null;

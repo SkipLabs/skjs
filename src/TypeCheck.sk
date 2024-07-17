@@ -1522,8 +1522,8 @@ class TypeChecker{
       | BOAssignment() -> this.assign(env, pos, e1, e2)
       | BOStrictInequality()
       | BOStrictEquality() ->
-        ty1 = this.expr(env, e1);
-        ty2 = this.expr(env, e2);
+        ty1 = this.nonVoidExpr(pos, env, e1);
+        ty2 = this.nonVoidExpr(pos, env, e2);
         if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
           isSubTType(env.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
