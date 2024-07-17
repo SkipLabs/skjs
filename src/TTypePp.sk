@@ -352,6 +352,10 @@ mutable class TypePp{
       this.out(level, margin, "top");
       return void;
     };
+    if (ty.isVoid()) {
+      this.out(level, margin, "void");
+      return void;
+    }
     if (ty.isBottom()) {
       this.out(level, margin, "never");
       return void;

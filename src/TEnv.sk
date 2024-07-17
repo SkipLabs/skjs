@@ -465,7 +465,7 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TPrimVoid(TVoid(), p))
+      TType::void_(p)
     | TAInst(n @ Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])

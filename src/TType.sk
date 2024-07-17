@@ -14,8 +14,9 @@
 
 module SKJS;
 
-// Arbitrary hash for Top
+// Arbitrary hash for Top and void
 const kTopHash: Int = "Top".hash();
+const kVoidHash: Int = "void".hash();
 
 /*****************************************************************************/
 // The class representing all the types.
@@ -68,6 +69,8 @@ class TType private {
   // representation makes it nice and easy.
   isTop: Bool,
 
+  private isVoid_: Bool,
+
   // The list of possible "single types" or "simple types".
   // undefined | void | null | boolean | number | string | etc ...
   private stypes: STypes,
@@ -89,7 +92,30 @@ class TType private {
     stypes = STypes::empty();
     insts = TInsts::empty();
     tparams = TTypeParams::empty();
-    static{h => kTopHash, pos, isTop => true, stypes, insts, tparams}
+    static{
+      h => kTopHash,
+      pos,
+      isTop => true,
+      isVoid_ => false,
+      stypes,
+      insts,
+      tparams,
+    }
+  }
+
+  static fun void_(pos: PosRange): this {
+    stypes = STypes::empty();
+    insts = TInsts::empty();
+    tparams = TTypeParams::empty();
+    static{
+      h => kVoidHash,
+      pos,
+      isTop => false,
+      isVoid_ => true,
+      stypes,
+      insts,
+      tparams,
+    }
   }
 
   // Returns the type that is sub-type of all types. This type is
@@ -137,11 +163,11 @@ class TType private {
     tparams: TTypeParams,
   ): this {
     h = (stypes, insts, tparams).hash();
-    static{h, pos, isTop => false, stypes, insts, tparams};
+    static{h, pos, isTop => false, isVoid_ => false, stypes, insts, tparams};
   }
 
   fun withSTypes(stypes: STypes): this {
-    if (this.isTop) {
+    if (this.isTop || this.isVoid_) {
       invariant(stypes.isEmpty());
       this
     } else {
@@ -150,7 +176,7 @@ class TType private {
   }
 
   fun withTParams(tparams: TTypeParams): this {
-    if (this.isTop) {
+    if (this.isTop || this.isVoid_) {
       invariant(tparams.isEmpty());
       this
     } else {
@@ -172,7 +198,7 @@ class TType private {
     insts: (TInsts) -> TInsts,
     tparams: (TTypeParams) -> TTypeParams,
   ): this {
-    if (this.isTop) this else {
+    if (this.isTop || this.isVoid_) this else {
       static::create(
         this.pos,
         stypes(this.stypes),
@@ -192,8 +218,13 @@ class TType private {
     this.h
   }
 
+  fun isVoid(): Bool {
+    this.isVoid_
+  }
+
   fun isBottom(): Bool {
     !this.isTop &&
+      !this.isVoid_ &&
       this.stypes.isEmpty() &&
       this.insts.isEmpty() &&
       this.tparams.isEmpty()
@@ -565,13 +596,11 @@ class Lambda(
 base class TPrimVoidKind uses Hashable, Orderable {
   children =
   | TUndefined()
-  | TVoid()
   | TNull()
 
   fun toString(): String {
     this match {
     | TUndefined() -> "undefined"
-    | TVoid() -> "void"
     | TNull() -> "null"
     }
   }
@@ -601,7 +630,6 @@ base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
   fun tag(): Int {
     this match {
     | TPrimVoid(TUndefined _, _) -> 0
-    | TPrimVoid(TVoid _, _) -> 1
     | TPrimVoid(TNull _, _) -> 2
     | TPrimValue(TBool _, _, _) -> 3
     | TPrimValue(TNum _, _, _) -> 4

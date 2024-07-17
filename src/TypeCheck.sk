@@ -574,23 +574,11 @@ class TypeChecker{
       };
       _ = this.block(env, body);
       if (isTerminalBlock(false, body)) return void;
-      if (this.isVoid(env, retType)) return void;
+      if (retType.isVoid()) return void;
       typingError(
         Array[(fd.pos, "This function does not always return a value")],
       )
     };
-  }
-
-  fun isVoid(env: mutable TCEnv, ty: TType): Bool {
-    ty.expand(env.subst, this.tenv, Covariant()) match {
-    | None() -> false
-    | Some((stypes, tparams)) ->
-      tparams.tparams.size() == 0 &&
-        stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) -> true
-        | _ -> false
-        }
-    }
   }
 
   fun constructor(
@@ -834,14 +822,15 @@ class TypeChecker{
     }
   }
 
-  fun checkIsVoid(env: mutable TCEnv, pos: PosRange, ty: TType): void {
-    this.checkSubType(
-      env,
-      pos,
-      "This expression was expected to be of type void",
-      ty,
-      TType::single(ty.pos, TPrimVoid(TVoid(), ty.pos)),
-    );
+  fun checkIsVoid(_env: mutable TCEnv, pos: PosRange, ty: TType): void {
+    if (!ty.isVoid()) {
+      typingError(
+        Array[
+          (pos, "This expression was expected to be of type void"),
+          (ty.pos, `It is incompatible with: ${ty}`),
+        ],
+      )
+    }
   }
 
   static fun isPossiblyNonVoidExpressionAllowedAsStatement(e: Expr): Bool {
@@ -867,11 +856,11 @@ class TypeChecker{
     | Return(pos, eOpt) ->
       retType = this.retType match {
       | None() ->
-        TType::single(st.pos, TPrimVoid(TVoid(), st.pos)) // constructor
+        TType::void_(st.pos) // constructor
       | Some(x) -> x
       };
       (epos, etype) = eOpt match {
-      | None() -> (pos, TType::single(pos, TPrimVoid(TVoid(), pos)))
+      | None() -> (pos, TType::void_(pos))
       | Some(e) -> (e.posRange, this.expr(env, e))
       };
       rtype = if (this.isAsync) {
@@ -1262,7 +1251,7 @@ class TypeChecker{
           this.checkSubType(env, pos, "Invalid super call", x, y)
         })
       };
-      TType::single(pos, TPrimVoid(TVoid(), pos))
+      TType::void_(pos)
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
@@ -1272,7 +1261,7 @@ class TypeChecker{
         TType::create(exprTy.pos, stypes, TInsts::empty(), tparams)
       };
       print_error(prettyPrintType(false, ty));
-      TType::single(pos, TPrimVoid(TVoid(), pos))
+      TType::void_(pos)
     | Call(f, targs, args) ->
       rty = this.call(
         env,
