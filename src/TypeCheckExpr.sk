@@ -767,7 +767,25 @@ extension class TypeChecker {
         ty1.getSTypes(env.subst, this.tenv, Covariant()) match {
         | None() -> void
         | Some(stypes) ->
-          hasNullOrUndefined = stypes.any(stype ~> stype is TPrimVoid _);
+          hasVoid = false;
+          hasNullOrUndefined = false;
+          for (stype in stypes) {
+            stype match {
+            | TPrimVoid(TVoid(), _) -> !hasVoid = true
+            | TPrimVoid(TNull(), _)
+            | TPrimVoid(TUndefined(), _) ->
+              !hasNullOrUndefined = true
+            | _ -> void
+            }
+          };
+          if (hasVoid) {
+            typingError(
+              Array[
+                (pos, "Invalid operation on type void"),
+                (e1.pos, `This expression has type ${ty1}`),
+              ],
+            )
+          };
           if (!hasNullOrUndefined) {
             typingError(
               Array[
