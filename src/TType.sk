@@ -562,6 +562,15 @@ class Lambda(
 /* Single types */
 /*****************************************************************************/
 
+/* Types with a single inhabitant:
+- undefined for types void and undefined
+- null for type null
+
+In SKJS, void is a subtype of undefined, unlike Typescript for which void is both
+bottom and a supertype of everything when used as a return type.
+
+So we must ensure that nothing non-undefined can be of type void,
+See https://github.com/SkipLabs/skjs/issues/75 for more discussion on void. */
 base class TPrimVoidKind uses Hashable, Orderable {
   children =
   | TUndefined{isVoid: Bool}
@@ -575,6 +584,7 @@ base class TPrimVoidKind uses Hashable, Orderable {
   }
 }
 
+/* Types with literal subtypes: booleans, numbers, and strings. */
 base class TPrimValueKind uses Hashable, Orderable {
   children =
   | TNum()
