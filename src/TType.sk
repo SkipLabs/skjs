@@ -601,7 +601,7 @@ base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
   fun tag(): Int {
     this match {
     | TPrimVoid(TUndefined _, _) -> 0
-    | TPrimVoid(TVoid _, _) -> 1
+    | TPrimVoid(TVoid _, _) -> 0
     | TPrimVoid(TNull _, _) -> 2
     | TPrimValue(TBool _, _, _) -> 3
     | TPrimValue(TNum _, _, _) -> 4
@@ -1075,6 +1075,7 @@ fun isSubSType(
   sty2: SType,
 ): STResult {
   (sty1, sty2) match {
+  | (TPrimVoid(TVoid(), _), TPrimVoid(TUndefined(), _)) -> STTooManySType(sty1)
   | (TPrimVoid(_, _), TPrimVoid(_, _)) -> STOk()
 
   | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> STOk()
@@ -1245,6 +1246,7 @@ fun unionSType(
   sty2: SType,
 ): ?SType {
   (sty1, sty2) match {
+  | (TPrimVoid(TUndefined(), _), TPrimVoid(TVoid(), _)) -> Some(sty2)
   | (TPrimVoid(_, _), TPrimVoid(_, _)) -> Some(sty1)
 
   | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> Some(sty1)
@@ -1439,9 +1441,8 @@ fun interSType(
   sty2: SType,
 ): ?SType {
   (sty1, sty2) match {
-  | (TPrimVoid(k1, _), TPrimVoid(k2, _)) ->
-    invariant(k1 == k2);
-    Some(sty1)
+  | (TPrimVoid(TVoid(), _), TPrimVoid(TUndefined(), _)) -> Some(sty2)
+  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> Some(sty1)
 
   | (
     tPrimValue1 @ TPrimValue(k1, values1, _),
