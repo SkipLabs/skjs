@@ -79,3 +79,9 @@ const x18: boolean = typeof returningVoid() === "undefined";
 
 // @ts-expect-error Invalid operation on type void
 const x19: boolean = typeof returningVoidOrNull() === "undefined";
+
+// @ts-expect-error Invalid operation on type void
+const x20: boolean = returningVoid() === undefined;
+
+// @ts-expect-error Invalid operation on type void
+const x21: boolean = returningVoidOrNull() === null;
