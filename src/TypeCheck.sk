@@ -1080,9 +1080,8 @@ class TypeChecker{
     objType: TType,
     fieldName: Name,
     variance: Variance,
-    checkConstructor: Bool = true,
   ): TType {
-    if (checkConstructor && fieldName.value == "constructor") {
+    if (fieldName.value == "constructor") {
       typingError(
         Array[(fieldName.posRange, "Cannot access field 'constructor'")],
       );
