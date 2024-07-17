@@ -424,6 +424,18 @@ class Lambda(
 /* Single types */
 /***************************************************************************/
 
+/* Types with a single inhabitant:
+- undefined for types void and undefined
+- null for type null
+
+In Typescript, void is both bottom and a supertype of everything when used as a
+return type.
+
+In SKJS, we decided (see https://github.com/SkipLabs/skjs/issues/75) that void
+would be a distinct type from undefined. It contains the value undefined but
+with no operations permitted on it.
+
+We should ensure that nothing non-undefined can be of type void. */
 base class TPrimVoidKind uses XXHashable, Orderable {
   children =
   | TUndefined()
@@ -439,6 +451,7 @@ base class TPrimVoidKind uses XXHashable, Orderable {
   }
 }
 
+/* Types with literal subtypes: booleans, numbers, strings, and bigints. */
 base class TPrimValueKind uses XXHashable, Orderable {
   children =
   | TNum()
