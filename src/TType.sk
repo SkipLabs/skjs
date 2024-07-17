@@ -571,7 +571,7 @@ bottom and a supertype of everything when used as a return type.
 
 So we must ensure that nothing non-undefined can be of type void,
 See https://github.com/SkipLabs/skjs/issues/75 for more discussion on void. */
-base class TPrimVoidKind uses Hashable, Orderable {
+base class TPrimUnitKind uses Hashable, Orderable {
   children =
   | TUndefined{isVoid: Bool}
   | TNull()
@@ -602,14 +602,14 @@ base class TPrimValueKind uses Hashable, Orderable {
 
 base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
   children =
-  | TPrimVoid(TPrimVoidKind)
+  | TPrimUnit(TPrimUnitKind)
   | TArray(TType)
   | TPromise(TType)
 
   fun tag(): Int {
     this match {
-    | TPrimVoid(TUndefined _, _) -> 0
-    | TPrimVoid(TNull _, _) -> 2
+    | TPrimUnit(TUndefined _, _) -> 0
+    | TPrimUnit(TNull _, _) -> 2
     | TPrimValue(TBool _, _, _) -> 3
     | TPrimValue(TNum _, _, _) -> 4
     | TPrimValue(TString _, _, _) -> 5
@@ -830,7 +830,7 @@ class STypes private (
   fun containsUndefined(): Bool {
     this.stypes.any(stype ->
       stype match {
-      | TPrimVoid(TUndefined{isVoid => false}, _) -> true
+      | TPrimUnit(TUndefined{isVoid => false}, _) -> true
       | _ -> false
       }
     )
@@ -838,7 +838,7 @@ class STypes private (
 
   fun addUndefined(pos: PosRange): this {
     invariant(!this.containsUndefined());
-    undef: SType = TPrimVoid(TUndefined{isVoid => false}, pos);
+    undef: SType = TPrimUnit(TUndefined{isVoid => false}, pos);
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
 
@@ -989,7 +989,7 @@ base class STResult {
         expandTVars(subst, env, ty).toString()
     | STTooManySType(sty) ->
       sty match {
-      | TPrimVoid(kind, _) -> "This is a " + kind.toString()
+      | TPrimUnit(kind, _) -> "This is a " + kind.toString()
       | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
       | TPrimValue(kind, Some(x), _) ->
         `This is a static ${kind.toString()}: ` +
@@ -1082,10 +1082,10 @@ fun isSubSType(
   sty2: SType,
 ): STResult {
   (sty1, sty2) match {
-  | (TPrimVoid(TNull(), _), TPrimVoid(TNull(), _)) -> STOk()
+  | (TPrimUnit(TNull(), _), TPrimUnit(TNull(), _)) -> STOk()
   | (
-    TPrimVoid(TUndefined{isVoid => v1}, _),
-    TPrimVoid(TUndefined{isVoid => v2}, _),
+    TPrimUnit(TUndefined{isVoid => v1}, _),
+    TPrimUnit(TUndefined{isVoid => v2}, _),
   ) ->
     if (v1 || !v2) STOk() else STTooManySType(sty1)
 
@@ -1257,13 +1257,13 @@ fun unionSType(
   sty2: SType,
 ): ?SType {
   (sty1, sty2) match {
-  | (TPrimVoid(TNull(), _), TPrimVoid(TNull(), _)) -> Some(sty1)
+  | (TPrimUnit(TNull(), _), TPrimUnit(TNull(), _)) -> Some(sty1)
   | (
-    TPrimVoid(TUndefined{isVoid => true}, _),
-    TPrimVoid(TUndefined{isVoid => false}, _),
+    TPrimUnit(TUndefined{isVoid => true}, _),
+    TPrimUnit(TUndefined{isVoid => false}, _),
   ) ->
     Some(sty2)
-  | (TPrimVoid(TUndefined _, _), TPrimVoid(TUndefined _, _)) -> Some(sty1)
+  | (TPrimUnit(TUndefined _, _), TPrimUnit(TUndefined _, _)) -> Some(sty1)
 
   | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> Some(sty1)
   | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> Some(sty1)
@@ -1369,7 +1369,7 @@ fun unionTTuple(
           env,
           TType::single(
             tuple1.pos,
-            TPrimVoid(TUndefined{isVoid => false}, posEnd),
+            TPrimUnit(TUndefined{isVoid => false}, posEnd),
           ),
           tuple2.tuple[i],
         ),
@@ -1385,7 +1385,7 @@ fun unionTTuple(
           tuple1.tuple[i],
           TType::single(
             tuple2.pos,
-            TPrimVoid(TUndefined{isVoid => false}, posEnd),
+            TPrimUnit(TUndefined{isVoid => false}, posEnd),
           ),
         ),
       );
@@ -1463,13 +1463,13 @@ fun interSType(
   sty2: SType,
 ): ?SType {
   (sty1, sty2) match {
-  | (TPrimVoid(TNull(), _), TPrimVoid(TNull(), _)) -> Some(sty1)
+  | (TPrimUnit(TNull(), _), TPrimUnit(TNull(), _)) -> Some(sty1)
   | (
-    TPrimVoid(TUndefined{isVoid => false}, _),
-    TPrimVoid(TUndefined{isVoid => true}, _),
+    TPrimUnit(TUndefined{isVoid => false}, _),
+    TPrimUnit(TUndefined{isVoid => true}, _),
   ) ->
     Some(sty2)
-  | (TPrimVoid(TUndefined _, _), TPrimVoid(TUndefined _, _)) -> Some(sty1)
+  | (TPrimUnit(TUndefined _, _), TPrimUnit(TUndefined _, _)) -> Some(sty1)
 
   | (
     tPrimValue1 @ TPrimValue(k1, values1, _),
@@ -1675,7 +1675,7 @@ base class ApplyType {
 
   overridable deferred fun stype(env: this::Env, stype: SType): SType {
     stype match {
-    | x @ TPrimVoid _
+    | x @ TPrimUnit _
     | x @ TPrimValue _ ->
       x
     | TArray(ty, pos) -> TArray(this.type(env, ty), pos)
