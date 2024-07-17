@@ -105,7 +105,7 @@ mutable class TypePp{
           pp.newLine();
         },
       )
-    | TPrimVoid(k, _) -> this.out(level, margin, k.toString())
+    | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
     | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
     | TPrimValue(_, Some(arr), _) ->
       this.out(level, margin, arr.values.map(x -> "'" + x.i1 + "'").join(" | "))

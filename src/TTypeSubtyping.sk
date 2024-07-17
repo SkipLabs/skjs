@@ -248,7 +248,7 @@ fun isSubSType(
   sty2: SType,
 ): STResult {
   (sty1, sty2) match {
-  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> STOk()
+  | (TPrimUnit(_, _), TPrimUnit(_, _)) -> STOk()
 
   | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> STOk()
   | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> STTooManySType(sty1)

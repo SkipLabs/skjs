@@ -307,8 +307,8 @@ extension class TypeChecker {
         obj = this.tenv.newObject(env.context, Name(primPos, objName), Array[]);
         stypes.push(obj)
 
-      | TPrimVoid(TUndefined(), undefPos)
-      | TPrimVoid(
+      | TPrimUnit(TUndefined(), undefPos)
+      | TPrimUnit(
         TNull(),
         undefPos,
       ) if (optionalChaining) ->
@@ -391,9 +391,9 @@ extension class TypeChecker {
     | Var(Name(_, "false")) ->
       TType::single(TPrimValue(TBool(), None(), pos))
     | Var(Name(_, "null")) ->
-      this.makeBoundTVar(env, TType::single(TPrimVoid(TNull(), pos)))
+      this.makeBoundTVar(env, TType::single(TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
-      this.makeBoundTVar(env, TType::single(TPrimVoid(TUndefined(), pos)))
+      this.makeBoundTVar(env, TType::single(TPrimUnit(TUndefined(), pos)))
     | Var(local) ->
       if (env.localObjects.containsKey(local.value)) {
         env.usedObjects![local.value] = local.pos
@@ -534,14 +534,14 @@ extension class TypeChecker {
           this.checkSubType(env, pos, "Invalid super call", x, y)
         })
       };
-      TType::single(TPrimVoid(TVoid(), pos))
+      TType::single(TPrimUnit(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
       clauses = exprTy.expand(env.subst, this.tenv, Covariant());
       ty = TType::fromClauses(exprTy.pos, clauses);
       print_error(prettyPrintType(false, ty));
-      TType::single(TPrimVoid(TVoid(), pos))
+      TType::single(TPrimUnit(TVoid(), pos))
     | Call(f, targs, args) ->
       rty = this.call(
         env,
@@ -770,9 +770,9 @@ extension class TypeChecker {
           hasOthers = false;
           for (stype in stypes) {
             stype match {
-            | TPrimVoid(TVoid(), _) -> !hasVoid = true
-            | TPrimVoid(TNull(), _)
-            | TPrimVoid(TUndefined(), _) ->
+            | TPrimUnit(TVoid(), _) -> !hasVoid = true
+            | TPrimUnit(TNull(), _)
+            | TPrimUnit(TUndefined(), _) ->
               !hasNullOrUndefined = true
             | _ -> !hasOthers = true
             }
@@ -977,9 +977,9 @@ extension class TypeChecker {
     e.value match {
     | AsConst(subExpr) ->
       typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
-    | Var(Name(_, "null")) -> Some(TType::single(TPrimVoid(TNull(), pos)))
+    | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
-      Some(TType::single(TPrimVoid(TUndefined(), pos)))
+      Some(TType::single(TPrimUnit(TUndefined(), pos)))
     | Number(n) ->
       Some(
         TType::single(

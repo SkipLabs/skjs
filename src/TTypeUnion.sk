@@ -12,7 +12,7 @@ extension class TType {
   }
 
   fun unionUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
-    undef = static::single(TPrimVoid(TUndefined(), pos));
+    undef = static::single(TPrimUnit(TUndefined(), pos));
     static::union(subst, tenv, this, undef)
   }
 
@@ -225,7 +225,7 @@ fun unionSType(
   sty2: SType,
 ): SType {
   (sty1, sty2) match {
-  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> sty1
+  | (TPrimUnit(_, _), TPrimUnit(_, _)) -> sty1
 
   | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::union(p1, p2)
 
@@ -316,7 +316,7 @@ fun unionTTuple(
         TType::union(
           subst,
           env,
-          TType::single(TPrimVoid(TUndefined(), posEnd)),
+          TType::single(TPrimUnit(TUndefined(), posEnd)),
           tuple2.tuple[i],
         ),
       );
@@ -329,7 +329,7 @@ fun unionTTuple(
           subst,
           env,
           tuple1.tuple[i],
-          TType::single(TPrimVoid(TUndefined(), posEnd)),
+          TType::single(TPrimUnit(TUndefined(), posEnd)),
         ),
       );
     }

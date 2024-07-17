@@ -187,7 +187,7 @@ class TType private {
     | Some(stypes) ->
       for (stype in stypes) {
         stype match {
-        | TPrimVoid _
+        | TPrimUnit _
         | TPrimValue _ ->
           continue
         | TTuple(tys, _) ->
@@ -466,14 +466,14 @@ base class SType private (
   pos: PosRange,
 ) uses XXHashable, Orderable, Projectable<Int> {
   children =
-  | TPrimVoid(TPrimVoidKind)
+  | TPrimUnit(TPrimVoidKind)
   | TPromise(TType)
 
   fun tag(): Int {
     this match {
-    | TPrimVoid(TUndefined(), _) -> 0
-    | TPrimVoid(TVoid(), _) -> 1
-    | TPrimVoid(TNull(), _) -> 2
+    | TPrimUnit(TUndefined(), _) -> 0
+    | TPrimUnit(TVoid(), _) -> 1
+    | TPrimUnit(TNull(), _) -> 2
     | TPrimValue(TBool(), _, _) -> 3
     | TPrimValue(TNum(), _, _) -> 4
     | TPrimValue(TString(), _, _) -> 5
@@ -602,8 +602,8 @@ class STypes private (
 
   static fun nullish(pos: PosRange): this {
     static(
-      InternalKeyedArrayMap::single((TPrimVoid(TNull(), pos) : SType)).union(
-        InternalKeyedArrayMap::single((TPrimVoid(TUndefined(), pos) : SType)),
+      InternalKeyedArrayMap::single((TPrimUnit(TNull(), pos) : SType)).union(
+        InternalKeyedArrayMap::single((TPrimUnit(TUndefined(), pos) : SType)),
       ),
     )
   }
@@ -829,7 +829,7 @@ class Clause private (
   static fun undefined(pos: PosRange): this {
     static(
       ArraySet::empty(),
-      Some(STypes::single(TPrimVoid(TUndefined(), pos))),
+      Some(STypes::single(TPrimUnit(TUndefined(), pos))),
     )
   }
 
@@ -1053,7 +1053,7 @@ base class STError extends STResult {
         `Out of the type: ${expandTVars(subst, env, ty)}`
     | STTooManySType(sty) ->
       sty match {
-      | TPrimVoid(kind, _) -> `This is a ${kind}`
+      | TPrimUnit(kind, _) -> `This is a ${kind}`
       | TPrimValue(TString(), None(), _) ->
         "This is of type string. " +
           "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."

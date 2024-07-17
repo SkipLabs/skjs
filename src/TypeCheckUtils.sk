@@ -8,7 +8,7 @@ extension class TypeChecker {
       | None() -> return false
       | Some(stypes) ->
         stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) if (!isAsync) -> void
+        | Some(TPrimUnit(TVoid(), _)) if (!isAsync) -> void
         | Some(TPromise(realType, _)) if (isAsync) ->
           if (!this.isVoid(env, false, realType)) {
             return false
@@ -25,7 +25,7 @@ extension class TypeChecker {
     clauses = ty.expand(env.subst, this.tenv, Covariant());
     for (clause in clauses.clauses) {
       clause.stypes match {
-      | Some(stypes) if (stypes.any(stype ~> stype is TPrimVoid(TVoid(), _))) ->
+      | Some(stypes) if (stypes.any(stype ~> stype is TPrimUnit(TVoid(), _))) ->
         return true
       | _ -> void
       }
@@ -113,7 +113,7 @@ extension class TypeChecker {
       pos,
       "This expression was expected to be of type void",
       ty,
-      TType::single(TPrimVoid(TVoid(), ty.pos)),
+      TType::single(TPrimUnit(TVoid(), ty.pos)),
     );
   }
 
@@ -149,9 +149,9 @@ extension class TypeChecker {
       | Some(TPrimValue(TNum(), _, _)) -> true
       | Some(TPrimValue(TBigInt(), _, _)) -> true
       | Some(TPrimValue(TBool(), _, _)) -> true
-      | Some(TPrimVoid(TNull(), _)) -> true
-      | Some(TPrimVoid(TUndefined(), _)) -> true
-      | Some(TPrimVoid(TVoid(), _)) -> true
+      | Some(TPrimUnit(TNull(), _)) -> true
+      | Some(TPrimUnit(TUndefined(), _)) -> true
+      | Some(TPrimUnit(TVoid(), _)) -> true
       | _ -> false
       }
     };
