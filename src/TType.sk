@@ -613,18 +613,19 @@ base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
 
   fun tag(): Int {
     this match {
-    | TPrimVoid(TUndefined _, _) -> 0
-    | TPrimVoid(TVoid _, _) -> 0
-    | TPrimVoid(TNull _, _) -> 2
-    | TPrimValue(TBool _, _, _) -> 3
-    | TPrimValue(TNum _, _, _) -> 4
-    | TPrimValue(TString _, _, _) -> 5
-    | TArray _ -> 6
-    | TTuple _ -> 7
-    | TPromise _ -> 8
-    | TObject _ -> 9
-    | TAlgebraic _ -> 10
-    | TFuns _ -> 11
+    | TPrimVoid(TUndefined _, _)
+    | TPrimVoid(TVoid _, _) ->
+      0
+    | TPrimVoid(TNull _, _) -> 1
+    | TPrimValue(TBool _, _, _) -> 2
+    | TPrimValue(TNum _, _, _) -> 3
+    | TPrimValue(TString _, _, _) -> 4
+    | TArray _ -> 5
+    | TTuple _ -> 6
+    | TPromise _ -> 7
+    | TObject _ -> 8
+    | TAlgebraic _ -> 9
+    | TFuns _ -> 10
     }
   }
 
