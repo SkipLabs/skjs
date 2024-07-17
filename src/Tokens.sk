@@ -144,6 +144,7 @@ base class TokenKind uses Equality, Hashable {
   fun toBinop(): ?BinaryOperator {
     this match {
     | TKDot() -> Some(BODot())
+    | TKQuestionMarkDot() -> Some(BOOptionalDot())
     | TKMultiplication() -> Some(BOMultiplication())
     | TKDivision() -> Some(BODivision())
     | TKRemainder() -> Some(BORemainder())
