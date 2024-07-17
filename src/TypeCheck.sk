@@ -1080,9 +1080,9 @@ class TypeChecker{
     objType: TType,
     fieldName: Name,
     variance: Variance,
-    checkConstructor: Bool = true,
+    optionalChaining: Bool = false,
   ): TType {
-    if (checkConstructor && fieldName.value == "constructor") {
+    if (fieldName.value == "constructor") {
       typingError(
         Array[(fieldName.posRange, "Cannot access field 'constructor'")],
       );
@@ -1097,10 +1097,12 @@ class TypeChecker{
       )
     };
     result = TType::bottom(pos);
+    optionalChainingIsUseless = optionalChaining;
+    optionalChainingIsAlwaysUndefined = optionalChaining;
     for (stype in stypes) {
+      optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
       | TObject(fields, _) ->
-        if (stypes.size() == 1) return fields.getType(fieldName);
         !result = TType::union(
           env.subst,
           this.tenv,
@@ -1109,9 +1111,6 @@ class TypeChecker{
         )
       | TAlgebraic(branches, _) ->
         for (branch in branches) {
-          if (stypes.size() == 1 && branches.size() == 1) {
-            return branch.fields.getType(fieldName)
-          };
           !result = TType::union(
             env.subst,
             this.tenv,
@@ -1125,7 +1124,12 @@ class TypeChecker{
           Name(stringPos, "Array"),
           Array[eltType],
         );
-        return obj.fields.getType(fieldName)
+        !result = TType::union(
+          env.subst,
+          this.tenv,
+          result,
+          obj.fields.getType(fieldName),
+        )
       | TPrimValue(primKind, _, stringPos) ->
         objName = primKind.toString();
         obj = this.tenv.newObject(
@@ -1133,7 +1137,20 @@ class TypeChecker{
           Name(stringPos, objName),
           Array[],
         );
-        return obj.fields.getType(fieldName)
+        !result = TType::union(
+          env.subst,
+          this.tenv,
+          result,
+          obj.fields.getType(fieldName),
+        )
+      | TPrimVoid(TUndefined(), undefPos)
+      | TPrimVoid(
+        TNull(),
+        undefPos,
+      ) if (optionalChaining) ->
+        !result = result.withUndefined(undefPos);
+        !optionalChainingIsUseless = false;
+        !optionalChainingIsAlwaysUndefinedForThisSType = true
       | _ ->
         typingError(
           Array[
@@ -1145,7 +1162,26 @@ class TypeChecker{
             ),
           ],
         )
-      }
+      };
+      !optionalChainingIsAlwaysUndefined =
+        optionalChainingIsAlwaysUndefined &&
+        optionalChainingIsAlwaysUndefinedForThisSType;
+    };
+    if (optionalChainingIsUseless) {
+      typingError(
+        Array[
+          (pos, "Useless '?.'. Use '.' instead"),
+          (objType.pos, `${objType} is never null nor undefined`),
+        ],
+      )
+    };
+    if (optionalChainingIsAlwaysUndefined) {
+      typingError(
+        Array[
+          (pos, "Result of optional chaining is always undefined"),
+          (objType.pos, `${objType} is always null or undefined`),
+        ],
+      )
     };
     result
   }
@@ -1486,6 +1522,20 @@ class TypeChecker{
         | Var(fieldName) ->
           this.dot(env, e1.posRange, this.expr(env, e1), fieldName, Covariant())
         | _ -> typingError(Array[(e2.posRange, "Invalid '.'")])
+        }
+
+      | BOOptionalDot() ->
+        e2.value match {
+        | Var(fieldName) ->
+          this.dot(
+            env,
+            e1.posRange,
+            this.expr(env, e1),
+            fieldName,
+            Covariant(),
+            true/* optionalChaining */ ,
+          )
+        | _ -> typingError(Array[(e2.posRange, "Invalid '?.'")])
         }
 
       | BOLessThan()
