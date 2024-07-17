@@ -1182,6 +1182,19 @@ class TypeChecker{
     result
   }
 
+  fun nonVoidExpr(pos: PosRange, env: mutable TCEnv, e: Expr): TType {
+    ty = this.expr(env, e);
+    if (this.containsVoid(env, ty)) {
+      typingError(
+        Array[
+          (pos, "Invalid operation on type void"),
+          (e.posRange, `This expression has type ${ty}`),
+        ],
+      )
+    };
+    ty
+  }
+
   fun expr(env: mutable TCEnv, e: Expr): TType {
     pos = e.posRange;
     e.value match {
@@ -1607,19 +1620,11 @@ class TypeChecker{
         ty1
 
       | BONullishCoalescing() ->
-        ty1 = this.expr(env, e1);
+        ty1 = this.nonVoidExpr(pos, env, e1);
         ty2 = this.expr(env, e2);
         ty1.getSTypes(env.subst, this.tenv, Covariant()) match {
         | None() -> void
         | Some(stypes) ->
-          if (stypes.any(stype ~> stype is TPrimVoid(TVoid _, _))) {
-            typingError(
-              Array[
-                (pos, "Invalid operator on type void"),
-                (e1.posRange, `This expression has type ${ty1}`),
-              ],
-            )
-          };
           hasNullOrUndefined = stypes.any(stype ~> stype is TPrimVoid _);
           if (!hasNullOrUndefined) {
             typingError(
