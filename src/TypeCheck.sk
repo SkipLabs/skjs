@@ -844,13 +844,24 @@ class TypeChecker{
     );
   }
 
+  static fun isPossiblyNonVoidExpressionAllowedAsStatement(e: Expr): Bool {
+    e.value match {
+    | Binop(BOAssignment(), _, _)
+    | Binop(BOOpAssignment(_), _, _)
+    | PostOp(PODecr(), _)
+    | PostOp(POIncr(), _) ->
+      true
+    | _ -> false
+    }
+  }
+
   fun stmt(env: mutable TCEnv, st: Stmt): void {
     st.value match {
     | Break() -> void
     | StmtEmpty() -> void
     | StmtExpr(e) ->
       ty = this.expr(env, e);
-      if (!e.isAssign()) {
+      if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
         this.checkIsVoid(env, e.posRange, ty)
       }
     | Return(pos, eOpt) ->
@@ -1592,7 +1603,7 @@ class TypeChecker{
         num = TType::single(pos, TPrimValue(TNum(), None(), pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
-        TType::single(pos, TPrimVoid(TVoid(), pos))
+        num
       | POExcl() -> notSupported(pos)
       }
 
