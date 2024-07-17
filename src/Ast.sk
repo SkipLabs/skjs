@@ -557,6 +557,7 @@ base class AssignableBinaryOperator extends BinaryOperator {
 base class BinaryOperator {
   children =
   | BODot()
+  | BOOptionalDot()
   | BOLessThan()
   | BOLessThanOrEqual()
   | BOGreaterThan()

@@ -1080,6 +1080,7 @@ class TypeChecker{
     objType: TType,
     fieldName: Name,
     variance: Variance,
+    optionalChaining: Bool = false,
   ): TType {
     if (fieldName.value == "constructor") {
       typingError(
@@ -1133,6 +1134,12 @@ class TypeChecker{
           Array[],
         );
         return obj.fields.getType(fieldName)
+      | TPrimVoid(TUndefined(), undefPos)
+      | TPrimVoid(
+        TNull(),
+        undefPos,
+      ) if (optionalChaining) ->
+        !result = result.withUndefined(undefPos)
       | _ ->
         typingError(
           Array[
@@ -1485,6 +1492,20 @@ class TypeChecker{
         | Var(fieldName) ->
           this.dot(env, e1.posRange, this.expr(env, e1), fieldName, Covariant())
         | _ -> typingError(Array[(e2.posRange, "Invalid '.'")])
+        }
+
+      | BOOptionalDot() ->
+        e2.value match {
+        | Var(fieldName) ->
+          this.dot(
+            env,
+            e1.posRange,
+            this.expr(env, e1),
+            fieldName,
+            Covariant(),
+            true/* optionalChaining */ ,
+          )
+        | _ -> typingError(Array[(e2.posRange, "Invalid '?.'")])
         }
 
       | BOLessThan()
