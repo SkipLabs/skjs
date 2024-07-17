@@ -1,0 +1,2 @@
+
+function returningVoidOrNumber(): void | number { }

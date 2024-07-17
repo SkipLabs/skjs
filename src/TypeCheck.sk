@@ -574,22 +574,18 @@ class TypeChecker{
       };
       _ = this.block(env, body);
       if (isTerminalBlock(false, body)) return void;
-      if (this.isVoid(env, retType)) return void;
+      if (this.containsVoid(env, retType)) return void;
       typingError(
         Array[(fd.pos, "This function does not always return a value")],
       )
     };
   }
 
-  fun isVoid(env: mutable TCEnv, ty: TType): Bool {
+  fun containsVoid(env: mutable TCEnv, ty: TType): Bool {
     ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> false
-    | Some((stypes, tparams)) ->
-      tparams.tparams.size() == 0 &&
-        stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) -> true
-        | _ -> false
-        }
+    | Some((stypes, _tparams)) ->
+      stypes.any(stype ~> stype is TPrimVoid(TVoid(), _))
     }
   }
 
