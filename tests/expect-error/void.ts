@@ -176,3 +176,9 @@ class VoidGenericClass<T> implements VoidGenericInterface<T> {
     return;
   }
 }
+
+// @ts-expect-error Invalid operation on type void
+const x18: boolean = typeof returningVoid() === "undefined";
+
+// @ts-expect-error Invalid operation on type void
+const x19: boolean = typeof returningVoidOrNull() === "undefined";

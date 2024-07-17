@@ -1702,7 +1702,7 @@ class TypeChecker{
     | InstanceOf(_, e2) ->
       typingError(Array[(e2.posRange, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
-      _ = this.expr(env, subExpr);
+      _ = this.nonVoidExpr(pos, env, subExpr);
       TType::single(pos, TPrimValue(TString(), None(), pos))
 
     | PostOp(pop, subExpr) ->
