@@ -1504,8 +1504,8 @@ class TypeChecker{
         }
       | BOAssignment() -> this.assign(env, pos, e1, e2)
       | op_ @ BOStrictComparison() ->
-        ty1 = this.expr(env, e1);
-        ty2 = this.expr(env, e2);
+        ty1 = this.nonVoidExpr(pos, env, e1);
+        ty2 = this.nonVoidExpr(pos, env, e2);
         st1 = isSubTType(env.subst, this.tenv, ty1, ty2);
         st2 = isSubTType(env.subst, this.tenv, ty2, ty1);
         (st1, st2) match {
