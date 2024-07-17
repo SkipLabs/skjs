@@ -627,6 +627,19 @@ class TypeChecker{
     true
   }
 
+  // Returns true if the type is not Top but contains void
+  fun nonTopContainsVoid(env: mutable TCEnv, ty: TType): Bool {
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | Some(stypes) if (stypes.any(stype ~> stype is TPrimUnit(TVoid(), _))) ->
+        return true
+      | _ -> void
+      }
+    };
+    false
+  }
+
   fun constructor(
     context: mutable SKStore.Context,
     thisType: TType,
@@ -1189,6 +1202,19 @@ class TypeChecker{
     result
   }
 
+  fun nonVoidExpr(pos: PosRange, env: mutable TCEnv, e: Expr): TType {
+    ty = this.expr(env, e);
+    if (this.nonTopContainsVoid(env, ty)) {
+      typingError(
+        Array[
+          (pos, "Invalid operator on type void"),
+          (e.posRange, `This expression has type ${ty}`),
+        ],
+      )
+    };
+    ty
+  }
+
   fun expr(env: mutable TCEnv, e: Expr): TType {
     pos = e.posRange;
     e.value match {
@@ -1691,7 +1717,7 @@ class TypeChecker{
     | InstanceOf(_, e2) ->
       typingError(Array[(e2.posRange, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
-      _ = this.expr(env, subExpr);
+      _ = this.nonVoidExpr(pos, env, subExpr);
       TType::single(pos, TPrimValue::string(pos))
 
     | PostOp(pop, subExpr) ->
