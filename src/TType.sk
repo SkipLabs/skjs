@@ -700,7 +700,7 @@ would be a distinct type from undefined. It contains the value undefined but
 with no operations permitted on it.
 
 We should ensure that nothing non-undefined can be of type void. */
-base class TPrimVoidKind uses XXHash64.Hashable, Orderable {
+base class TPrimUnitKind uses XXHash64.Hashable, Orderable {
   children =
   | TUndefined()
   | TVoid()
@@ -735,7 +735,7 @@ base class SType(
   pos: PosRange,
 ) uses XXHash64.Hashable, Orderable, Projectable<Int> {
   children =
-  | TPrimUnit(TPrimVoidKind)
+  | TPrimUnit(TPrimUnitKind)
   | TPromise(TType)
 
   fun tag(): Int {
