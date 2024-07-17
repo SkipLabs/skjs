@@ -73,3 +73,9 @@ function unsafeInTypescript(b: boolean, returningVoid: () => void): string {
 }
 // @ts-expect-error Invalid call
 unsafeInTypescript(false, returningVoidOrNumber);
+
+// @ts-expect-error Invalid operation on type void
+const x18: boolean = typeof returningVoid() === "undefined";
+
+// @ts-expect-error Invalid operation on type void
+const x19: boolean = typeof returningVoidOrNull() === "undefined";
