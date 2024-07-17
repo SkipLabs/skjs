@@ -1100,7 +1100,6 @@ class TypeChecker{
     for (stype in stypes) {
       stype match {
       | TObject(fields, _) ->
-        if (stypes.size() == 1) return fields.getType(fieldName);
         !result = TType::union(
           env.subst,
           this.tenv,
@@ -1109,9 +1108,6 @@ class TypeChecker{
         )
       | TAlgebraic(branches, _) ->
         for (branch in branches) {
-          if (stypes.size() == 1 && branches.size() == 1) {
-            return branch.fields.getType(fieldName)
-          };
           !result = TType::union(
             env.subst,
             this.tenv,
@@ -1125,7 +1121,12 @@ class TypeChecker{
           Name(stringPos, "Array"),
           Array[eltType],
         );
-        return obj.fields.getType(fieldName)
+        !result = TType::union(
+          env.subst,
+          this.tenv,
+          result,
+          obj.fields.getType(fieldName),
+        )
       | TPrimValue(primKind, _, stringPos) ->
         objName = primKind.toString();
         obj = this.tenv.newObject(
@@ -1133,7 +1134,12 @@ class TypeChecker{
           Name(stringPos, objName),
           Array[],
         );
-        return obj.fields.getType(fieldName)
+        !result = TType::union(
+          env.subst,
+          this.tenv,
+          result,
+          obj.fields.getType(fieldName),
+        )
       | TPrimVoid(TUndefined(), undefPos)
       | TPrimVoid(
         TNull(),
