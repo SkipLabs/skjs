@@ -13,12 +13,14 @@ const x1: number = obj?.f;
 // @ts-expect-error Useless '?.'. Use '.' instead
 const x2: number | undefined = obj2?.f;
 
+// @ts-expect-error Result of optional chaining is always undefined
 const x3: undefined = undefined?.f;
 
+// @ts-expect-error Result of optional chaining is always undefined
 const x4: undefined = null?.f;
 
 // @ts-expect-error Invalid definition
-const x5: null = null?.f;
+const x5: null = maybeObj()?.f;
 
 // @ts-expect-error Invalid '.'
 const x6: undefined = returningVoid()?.f;

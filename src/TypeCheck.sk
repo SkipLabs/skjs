@@ -1098,7 +1098,9 @@ class TypeChecker{
     };
     result = TType::bottom(pos);
     optionalChainingIsUseless = optionalChaining;
+    optionalChainingIsAlwaysUndefined = optionalChaining;
     for (stype in stypes) {
+      optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
       | TObject(fields, _) ->
         !result = TType::union(
@@ -1147,7 +1149,8 @@ class TypeChecker{
         undefPos,
       ) if (optionalChaining) ->
         !result = result.withUndefined(undefPos);
-        !optionalChainingIsUseless = false
+        !optionalChainingIsUseless = false;
+        !optionalChainingIsAlwaysUndefinedForThisSType = true
       | _ ->
         typingError(
           Array[
@@ -1159,13 +1162,24 @@ class TypeChecker{
             ),
           ],
         )
-      }
+      };
+      !optionalChainingIsAlwaysUndefined =
+        optionalChainingIsAlwaysUndefined &&
+        optionalChainingIsAlwaysUndefinedForThisSType;
     };
     if (optionalChainingIsUseless) {
       typingError(
         Array[
           (pos, "Useless '?.'. Use '.' instead"),
           (objType.pos, `${objType} is never null nor undefined`),
+        ],
+      )
+    };
+    if (optionalChainingIsAlwaysUndefined) {
+      typingError(
+        Array[
+          (pos, "Result of optional chaining is always undefined"),
+          (objType.pos, `${objType} is always null or undefined`),
         ],
       )
     };
