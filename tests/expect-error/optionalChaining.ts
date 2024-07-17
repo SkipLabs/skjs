@@ -7,8 +7,10 @@ function returningVoid(): void { };
 function maybeObj(): { f: number } | undefined { return undefined; }
 function maybeObj2(): { f?: number } | null { return {}; }
 
+// @ts-expect-error Useless '?.'. Use '.' instead
 const x1: number = obj?.f;
 
+// @ts-expect-error Useless '?.'. Use '.' instead
 const x2: number | undefined = obj2?.f;
 
 const x3: undefined = undefined?.f;

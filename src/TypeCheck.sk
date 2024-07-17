@@ -1097,6 +1097,7 @@ class TypeChecker{
       )
     };
     result = TType::bottom(pos);
+    optionalChainingIsUseless = optionalChaining;
     for (stype in stypes) {
       stype match {
       | TObject(fields, _) ->
@@ -1145,7 +1146,8 @@ class TypeChecker{
         TNull(),
         undefPos,
       ) if (optionalChaining) ->
-        !result = result.withUndefined(undefPos)
+        !result = result.withUndefined(undefPos);
+        !optionalChainingIsUseless = false
       | _ ->
         typingError(
           Array[
@@ -1158,6 +1160,14 @@ class TypeChecker{
           ],
         )
       }
+    };
+    if (optionalChainingIsUseless) {
+      typingError(
+        Array[
+          (pos, "Useless '?.'. Use '.' instead"),
+          (objType.pos, `${objType} is never null nor undefined`),
+        ],
+      )
     };
     result
   }
