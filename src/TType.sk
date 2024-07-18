@@ -1823,7 +1823,7 @@ class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
 mutable class Subst{
   context: mutable SKStore.Context,
   mutable version: Int = 0,
-  mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+  private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {
   readonly fun save(): SavedSubst {
     SavedSubst{version => this.version, values => this.values}
