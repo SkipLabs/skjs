@@ -13,6 +13,5 @@ function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {
 }
 
 function checkIntersectionWithTopIsNotBottom(): number {
-    // @ts-expect-error Invalid call. Unexpected type for ...
     return interWithTop(0) + 1; // ensure the result is a (subtype of a) number
 }
