@@ -2098,18 +2098,16 @@ class TypeChecker{
     }
   }
 
-  fun evalCond(env: mutable TCEnv, e: Expr, target: Bool): void {
-    e.value match {
-    | Binop(
-      BOStrictEquality(),
+  fun evalEquality(env: mutable TCEnv, e1: Expr, e2: Expr, target: Bool): void {
+    (e1, e2) match {
+    | (
       Expr(_, EString(SKQuote(), tag)),
       Expr(
         _,
         Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, "kind")))),
       ),
     )
-    | Binop(
-      BOStrictEquality(),
+    | (
       Expr(
         _,
         Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, "kind")))),
@@ -2135,13 +2133,8 @@ class TypeChecker{
         )
       }
 
-    | Binop(
-      BOStrictEquality(),
-      Expr(_, TypeOf(Expr(_, Var(local)))),
-      Expr(typePos, EString(_, typeStr)),
-    )
-    | Binop(
-      BOStrictEquality(),
+    | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(_, typeStr)))
+    | (
       Expr(typePos, EString(_, typeStr)),
       Expr(_, TypeOf(Expr(_, Var(local)))),
     ) ->
@@ -2181,51 +2174,31 @@ class TypeChecker{
         if (target) filter else x ~> !filter(x),
       )
 
-    | Binop(
-      BOStrictInequality(),
-      Expr(_, TypeOf(Expr(_, Var(local)))),
-      Expr(typePos, EString(_, typeStr)),
-    )
-    | Binop(
-      BOStrictInequality(),
-      Expr(typePos, EString(_, typeStr)),
-      Expr(_, TypeOf(Expr(_, Var(local)))),
-    ) ->
-      (filter, default) = typeStr match {
-      | "string" ->
-        (
-          (x ~> (x is TPrimValue(TString(), _, _))),
-          Some(TPrimValue(TString(), None(), typePos)),
-        )
-      | "number" ->
-        (
-          x ~> x is TPrimValue(TNum(), _, _),
-          Some(TPrimValue(TNum(), None(), typePos)),
-        )
-      | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
-      | "boolean" ->
-        (
-          x ~> x is TPrimValue(TBool(), _, _),
-          Some(TPrimValue(TBool(), None(), typePos)),
-        )
+    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
+    | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
+      if (!target) {
+        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
+      }
 
-      | "symbol" -> return void
-      | "undefined" -> (x ~> x is TPrimVoid(TUndefined(), _), None())
-      | "object" ->
-        (
-          (x ~>
-            x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)),
-          Some(TObject(TFields::empty(), typePos)),
+    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
+    | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
+      if (!target) {
+        this.setLocal(env, local, None(), x ~>
+          !(x is TPrimVoid(TUndefined _, _))
         )
-      | "function" -> (x ~> x is TFuns _, None())
-      | _ -> return void
-      };
-      this.setLocal(
-        env,
-        local,
-        if (target) None() else default,
-        if (target) x ~> !filter(x) else filter,
-      )
+      }
+
+    | _ -> void
+    }
+  }
+
+  fun evalCond(env: mutable TCEnv, e: Expr, target: Bool): void {
+    e.value match {
+    | Binop(BOStrictEquality(), e1, e2) ->
+      this.evalEquality(env, e1, e2, target)
+
+    | Binop(BOStrictInequality(), e1, e2) ->
+      this.evalEquality(env, e1, e2, !target)
 
     | InstanceOf(
       Expr(_, Var(local)),
@@ -2249,65 +2222,6 @@ class TypeChecker{
           this.checkSubType(env, e.posRange, "Invalid instanceof", x, y)
         ,
       )
-    | Binop(
-      BOStrictEquality(),
-      Expr(_, Var(local)),
-      Expr(_, Var(Name(_, "null"))),
-    )
-    | Binop(
-      BOStrictEquality(),
-      Expr(_, Var(Name(_, "null"))),
-      Expr(_, Var(local)),
-    ) ->
-      if (!target) {
-        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
-      }
-
-    | Binop(
-      BOStrictInequality(),
-      Expr(_, Var(local)),
-      Expr(_, Var(Name(_, "null"))),
-    )
-    | Binop(
-      BOStrictInequality(),
-      Expr(_, Var(Name(_, "null"))),
-      Expr(_, Var(local)),
-    ) ->
-      if (target) {
-        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
-      }
-
-    | Binop(
-      BOStrictEquality(),
-      Expr(_, Var(local)),
-      Expr(_, Var(Name(_, "undefined"))),
-    )
-    | Binop(
-      BOStrictEquality(),
-      Expr(_, Var(Name(_, "undefined"))),
-      Expr(_, Var(local)),
-    ) ->
-      if (!target) {
-        this.setLocal(env, local, None(), x ~>
-          !(x is TPrimVoid(TUndefined _, _))
-        )
-      }
-
-    | Binop(
-      BOStrictInequality(),
-      Expr(_, Var(local)),
-      Expr(_, Var(Name(_, "undefined"))),
-    )
-    | Binop(
-      BOStrictInequality(),
-      Expr(_, Var(Name(_, "undefined"))),
-      Expr(_, Var(local)),
-    ) ->
-      if (target) {
-        this.setLocal(env, local, None(), x ~>
-          !(x is TPrimVoid(TUndefined _, _))
-        )
-      }
 
     | Binop(BOLogicalAnd(), e1, e2) if (target) ->
       this.evalCond(env, e1, true);
