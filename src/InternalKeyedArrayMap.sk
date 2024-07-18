@@ -69,7 +69,7 @@ private mutable class DiffInterDiffIterator<
 // A map where the keys are projected from the values, backed by a sorted array
 class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   private inner: Vector<T>,
-) uses Orderable[T: Orderable], Hashable[T: Hashable] {
+) uses Orderable[T: Orderable], Hashable[T: Hashable], FromIterator<T> {
   private static fun create(size: Int, init: (T -> void) -> void): this {
     // create by allocating, initializing via push, and checking collisions
     inner = Vector::mcreate(size);
@@ -239,8 +239,10 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
         zOO
       })
       .takeWhile((zOO) -> zOO.isSome())
-      .map((zOO) -> zOO.fromSome());
-    if (zero) None() else Some(static::createFromIterator(result.filterNone()))
+      .map((zOO) -> zOO.fromSome())
+      .filterNone()
+      .collect(InternalKeyedArrayMap);
+    if (zero) None() else Some(result)
   }
 
   fun union(that: this): this {
