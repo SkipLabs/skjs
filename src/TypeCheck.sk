@@ -182,8 +182,8 @@ mutable class TCEnv(
   context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
-  mutable localObjects: mutable Map<String, ?TType> = mutable Map[],
-  mutable usedObjects: mutable Map<String, PosRange> = mutable Map[],
+  localObjects: mutable Map<String, ?TType> = mutable Map[],
+  usedObjects: mutable Map<String, PosRange> = mutable Map[],
   mutable counter: Int = 0,
 ) {
   mutable fun next(): Int {
