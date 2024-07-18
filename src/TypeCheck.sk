@@ -12,9 +12,9 @@ value class LocalRef(type: TType, isInitialized: Bool)
 
 mutable class Scope{
   id: Int,
-  isLoop: Bool,
+  private isLoop: Bool,
   up: ?readonly Scope = None(),
-  mutable locals: SortedMap<String, Name> = SortedMap[],
+  private mutable locals: SortedMap<String, Name> = SortedMap[],
   mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
   readonly fun clone(): Scope {
