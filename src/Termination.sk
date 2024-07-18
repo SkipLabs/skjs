@@ -63,9 +63,13 @@ value class StmtTermination private {
   fun then(kafter: () -> this): this {
     if (!this.mayFallthrough) this else this.merge(kafter(), (_t1, t2) ~> t2)
   }
-  /* To be used on a block that may break */
-  fun masksBreaks(): this {
-    this with {mayBreak => false}
+  /* Converts breaks to fallThroughs. To be used on a block that may break */
+  fun breakToFallthrough(): this {
+    if (this.mayBreak) {
+      this with {mayBreak => false, mayFallthrough => true}
+    } else {
+      this
+    }
   }
   fun mayNonThrough(): ?String {
     if (this.mayReturn) return Some("return");
@@ -107,15 +111,16 @@ value class StmtTermination private {
     | ForIn(var, e, body)
     | ForOf(var, e, body) ->
       static::forVar(var);
-      static::expr(e).then(() ~> static::block(body).masksBreaks().maybe())
+      static::expr(e).then(() ~>
+        CondTermination::any.loop_(() ~> static::block(body))
+      )
     | For(init, cond, incr, body) ->
       static::stmt(init).then(() ~>
         static::cond(cond).loop_(() ~>
-          static::block(body).masksBreaks().then(() ~> static::expr(incr))
+          static::block(body).then(() ~> static::expr(incr))
         )
       )
-    | While(cond, body) ->
-      static::cond(cond).loop_(() ~> static::block(body).masksBreaks())
+    | While(cond, body) -> static::cond(cond).loop_(() ~> static::block(body))
     | Bind(_kind, bindings) -> static::and(bindings, static::binding)
     | Switch(e, branches) ->
       static::expr(e).then(() ~> {
@@ -198,8 +203,8 @@ value class StmtTermination private {
     branch match {
     | Case(e, block) ->
       static::branchCase(e);
-      static::block(block).masksBreaks()
-    | Default(block) -> static::block(block).masksBreaks()
+      static::block(block).breakToFallthrough()
+    | Default(block) -> static::block(block).breakToFallthrough()
     }
   }
 
@@ -233,6 +238,8 @@ value class CondTermination private (
   exprTermination: StmtTermination,
   tauto: TautologyCheck,
 ) {
+  const any: CondTermination = CondTermination(StmtTermination::skip, TCTop());
+
   static fun expr(expr: Expr): this {
     static(StmtTermination::expr(expr), TautologyCheck::expr(expr))
   }
@@ -252,7 +259,7 @@ value class CondTermination private (
 
   fun loop_(kbody: () ~> StmtTermination): StmtTermination {
     this.if_(
-      () ~> kbody().then(() ~> StmtTermination::loop_),
+      () ~> kbody().then(() ~> StmtTermination::loop_).breakToFallthrough(),
       () ~> StmtTermination::skip,
     )
   }
