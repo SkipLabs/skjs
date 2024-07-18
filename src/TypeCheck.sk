@@ -643,7 +643,7 @@ class TypeChecker{
     env: mutable TCEnv,
     stmts: Array<Stmt>,
     cond: ?(Expr, Bool) = None(),
-  ): mutable Scope {
+  ): readonly Scope {
     scopeCopy = env.scope;
     scope = mutable Scope{
       id => env.next(),
