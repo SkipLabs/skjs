@@ -573,11 +573,12 @@ class TypeChecker{
         typingError(Array[(fd.pos, "An interface cannot implement a method")])
       };
       _ = this.block(env, body);
-      if (isTerminalBlock(false, body)) return void;
-      if (this.isVoid(env, retType)) return void;
-      typingError(
-        Array[(fd.pos, "This function does not always return a value")],
-      )
+      term = StmtTermination::block(body);
+      if (term.mayFallthrough && !this.isVoid(env, retType)) {
+        typingError(
+          Array[(fd.pos, "This function may not always return a value")],
+        )
+      }
     };
   }
 
@@ -989,13 +990,12 @@ class TypeChecker{
       typingError(Array[(e.posRange, "Missing branch")])
     };
     checkBreak = block -> {
-      if (isTerminalBlock(false, block)) return void;
-      for (st in block) {
-        if (st.value is Break _) return void;
-      };
-      invariant(block.size() != 0);
-      last = block[block.size() - 1];
-      typingError(Array[(last.pos, "Missing break")]);
+      term = StmtTermination::block(block);
+      if (term.mayFallthrough) {
+        invariant(block.size() != 0);
+        last = block[block.size() - 1];
+        typingError(Array[(last.pos, "Missing break")])
+      }
     };
     scope = branches[0] match {
     | Case(v, block) ->
@@ -2353,38 +2353,9 @@ class TypeChecker{
 /* evaluating this statements terminates the function. */
 /*****************************************************************************/
 
-fun isTerminal(inTry: Bool, st: Stmt): Bool {
-  st.value match {
-  | Break _
-  | ForOf _
-  | For _
-  | While _
-  | Bind _
-  | StmtEmpty _
-  | ForIn _
-  | StmtExpr _ ->
-    false
-  | Return _ -> true
-  | Throw _ -> !inTry
-  | If(_, bl1, Some(bl2)) ->
-    isTerminalBlock(inTry, bl1) && isTerminalBlock(inTry, bl2)
-  | If(_, _, _) -> false
-  | Block(bl) -> isTerminalBlock(inTry, bl)
-  | Switch(_, branches) ->
-    switchIsExhaustive = branches.any(branch ~> branch is Default _); // Unless exhaustiveness is proven differently?
-    switchIsExhaustive &&
-      branches.all(branch ~>
-        branch match {
-        | Case(_, bl)
-        | Default(bl) ->
-          isTerminalBlock(inTry, bl)
-        }
-      )
-  }
-}
-
 fun isTerminalBlock(inTry: Bool, bl: Array<Stmt>): Bool {
-  bl.any(st ~> isTerminal(inTry, st))
+  term = StmtTermination::block(bl);
+  !term.mayFallthrough && (term.mayReturn || (!inTry && term.mayThrow))
 }
 
 module end;
