@@ -261,7 +261,7 @@ class TypeChecker{
     | ExportEq _ -> notSupported(def.pos)
     | Module _ -> notSupported(def.pos)
     | ToplevelExpr(e) ->
-      subst = mutable Subst{context};
+      subst = Subst::mcreate{context};
       scope = mutable Scope{id => 0, isLoop => false};
       env = mutable TCEnv(context, subst, scope);
       ty = this.expr(env, e);
@@ -313,7 +313,7 @@ class TypeChecker{
       | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
       | Some(x) -> x
       };
-      subst = mutable Subst{context};
+      subst = Subst::mcreate{context};
       scope = mutable Scope{id => 0, isLoop => false};
       env = mutable TCEnv(context, subst, scope);
       this.checkSubType(
@@ -345,7 +345,7 @@ class TypeChecker{
       }),
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
-    subst = mutable Subst{context};
+    subst = Subst::mcreate{context};
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParams(
       c.name.posRange,
@@ -478,7 +478,7 @@ class TypeChecker{
     thisTypeOpt: ?TType,
     fd: FunDef,
   ): (this, mutable TCEnv) {
-    subst = mutable Subst{context};
+    subst = Subst::mcreate{context};
     scope = mutable Scope{id => 0, isLoop => false};
     env = mutable TCEnv(context, subst, scope);
     thisTypeOpt match {
