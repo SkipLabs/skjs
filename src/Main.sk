@@ -80,7 +80,7 @@ fun main_no_exit(): void {
       commands.maybeGet(subcmd) match {
       | Some(handler) ->
         throw Exit(
-          if (args.getBool("backtrace")) {
+          if (args.getBool("backtrace", Some(false))) {
             handler(args);
             SKStore.destroyObstack(saved);
             0
