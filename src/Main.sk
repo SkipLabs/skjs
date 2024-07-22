@@ -34,9 +34,8 @@ fun execHelp(args: Cli.ParseResults): void {
   | _ ->
     optSubcmd match {
     | Some(subcmd) -> print_error(`error: Invalid subcommand ${subcmd}.`)
-    | _ -> print_error("error: No subcommand specified.")
-    };
-    print_string(Cli.usage(args.cmd, true))
+    | _ -> print_string(Cli.usage(args.cmd, true))
+    }
   };
 }
 
