@@ -124,12 +124,12 @@ fun main(): void {
 fun run(): (Cli.Command, Cli.ParseResults ~> void) {
   (
     Cli.Command("run")
-      .about("runs the file")
+      .about("Typecheck, then run using Bun runtime")
       .arg(
         Cli.Arg::string("main")
           .value_name("PATH")
           .about(
-            "Path to main (defaults to first source file, required if none provided)",
+            "Path to main (defaults to first source file, required if none are provided at command line)",
           ),
       )
       .args(checkArgs),
@@ -169,7 +169,7 @@ const checkArgs: Array<Cli.Arg> = Array[
   Cli.Arg::string("src-file")
     .positional()
     .repeatable()
-    .about("Files to check (default: src/**/*.ts)"),
+    .about("Source files (default: src/**/*.ts)"),
   Cli.Arg::bool("backtrace")
     .short("b")
     .long("backtrace")
@@ -178,13 +178,18 @@ const checkArgs: Array<Cli.Arg> = Array[
     .value_name("PATH")
     .about("Base directory from which to resolve modules"),
   Cli.Arg::string("builtins-file")
-    .value_name("FILENAME")
+    .value_name("PATH")
     .default("./src/builtins.ts")
-    .about("Path to the file containing builtins declarations"),
+    .about(
+      "Path to the file containing type declarations for JavaScript builtins",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
-  (Cli.Command("check").about("Typechecks").args(checkArgs), execCheck)
+  (
+    Cli.Command("check").about("Typecheck some source file(s)").args(checkArgs),
+    execCheck,
+  )
 }
 
 fun execCheck(args: Cli.ParseResults): void {
