@@ -172,6 +172,14 @@ mutable class Scope{
       },
     );
   }
+
+  mutable fun popReplace(scope: readonly Scope): void {
+    invariant(scope.up.fromSome().id == this.id);
+    for (nameRef in scope.escapingRefs()) {
+      (name, ref) = nameRef;
+      this.!refs[name] = ref;
+    }
+  }
 }
 
 /*****************************************************************************/
@@ -215,11 +223,7 @@ mutable class TCEnv(
   }
 
   mutable fun popScopeReplace(scope: readonly Scope): void {
-    invariant(scope.up.fromSome().id == this.scope.id);
-    for (nameRef in scope.escapingRefs()) {
-      (name, ref) = nameRef;
-      this.scope.!refs[name] = ref;
-    }
+    this.scope.popReplace(scope);
   }
 }
 
