@@ -198,7 +198,7 @@ mutable class TCEnv(
   usedObjects: mutable Map<String, PosRange> = mutable Map[],
   private mutable counter: Int = 0,
 ) {
-  mutable fun next(): Int {
+  private mutable fun next(): Int {
     this.!counter = this.counter + 1;
     this.counter
   }
