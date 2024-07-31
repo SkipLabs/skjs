@@ -17,6 +17,10 @@ mutable class Scope{
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
+  static fun mcreateToplevel(): mutable this {
+    mutable static{id => 0, isLoop => false}
+  }
+
   readonly fun clone(): Scope {
     Scope{
       id => this.id,
@@ -266,7 +270,7 @@ class TypeChecker{
     | Module _ -> notSupported(def.pos)
     | ToplevelExpr(e) ->
       subst = Subst::mcreate{context};
-      scope = mutable Scope{id => 0, isLoop => false};
+      scope = Scope::mcreateToplevel();
       env = mutable TCEnv(context, subst, scope);
       ty = this.expr(env, e);
       this.checkIsVoid(env, e.posRange, ty)
@@ -318,7 +322,7 @@ class TypeChecker{
       | Some(x) -> x
       };
       subst = Subst::mcreate{context};
-      scope = mutable Scope{id => 0, isLoop => false};
+      scope = Scope::mcreateToplevel();
       env = mutable TCEnv(context, subst, scope);
       this.checkSubType(
         env,
@@ -379,7 +383,7 @@ class TypeChecker{
           if (!isInterface) {
             !this.super = Some(super);
           };
-          scope = mutable Scope{id => 0, isLoop => false};
+          scope = Scope::mcreateToplevel();
           env = mutable TCEnv(context, subst, scope);
           this.checkSubType(
             env,
@@ -400,7 +404,7 @@ class TypeChecker{
           parentName,
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
-        scope = mutable Scope{id => 0, isLoop => false};
+        scope = Scope::mcreateToplevel();
         env = mutable TCEnv(context, subst, scope);
         this.checkSubType(
           env,
@@ -430,7 +434,7 @@ class TypeChecker{
         field.value match {
         | None() -> void
         | Some(e) ->
-          scope = mutable Scope{id => 0, isLoop => false};
+          scope = Scope::mcreateToplevel();
           env = mutable TCEnv(context, subst, scope);
           this.checkSubType(
             env,
@@ -483,7 +487,7 @@ class TypeChecker{
     fd: FunDef,
   ): (this, mutable TCEnv) {
     subst = Subst::mcreate{context};
-    scope = mutable Scope{id => 0, isLoop => false};
+    scope = Scope::mcreateToplevel();
     env = mutable TCEnv(context, subst, scope);
     thisTypeOpt match {
     | None() -> void
