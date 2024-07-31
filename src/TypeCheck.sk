@@ -133,10 +133,8 @@ mutable class Scope{
     };
     if (throughLoop) {
       isSubType(ty, upRef.type);
-      this.!refs[name.value] = LocalRef(ty, true);
-    } else {
-      this.!refs[name.value] = LocalRef(ty, true)
-    }
+    };
+    this.!refs[name.value] = LocalRef(ty, true);
   }
 
   readonly fun escapingRefs(): mutable Iterator<(String, LocalRef)> {
