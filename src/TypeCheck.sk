@@ -218,16 +218,15 @@ mutable class TCEnv(
     scope: readonly Scope,
   ): void {
     invariant(scope.up.fromSome().id == this.scope.id);
-    this.scope.merge(
-      subst,
-      tenv,
-      scope,
-      mutable Scope{id => this.next(), isLoop => false, up => Some(this.scope)},
-    );
+    this.scope.merge(subst, tenv, scope, this.mcreateSubScope{isLoop => false});
   }
 
   mutable fun popScopeReplace(scope: readonly Scope): void {
     this.scope.popReplace(scope);
+  }
+
+  mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
+    mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
   }
 }
 
@@ -653,11 +652,7 @@ class TypeChecker{
     cond: ?(Expr, Bool) = None(),
   ): readonly Scope {
     scopeCopy = env.scope;
-    scope = mutable Scope{
-      id => env.next(),
-      isLoop => false,
-      up => Some(env.scope),
-    };
+    scope = env.mcreateSubScope{isLoop => false};
     env.!scope = scope;
     cond match {
     | None() -> void
@@ -919,8 +914,7 @@ class TypeChecker{
       this.checkBool(env, e);
       scope1 = this.block(env, block1, Some((e, true)));
       scope2 = block2 match {
-      | None() ->
-        mutable Scope{id => env.next(), isLoop => false, up => Some(env.scope)}
+      | None() -> env.mcreateSubScope{isLoop => false}
       | Some(b) -> this.block(env, b, Some((e, false)))
       };
       env.mergeScope(env.subst, this.tenv, scope1, scope2);
@@ -930,18 +924,10 @@ class TypeChecker{
 
     | For(initStmt, cond, incr, block) ->
       scopeCopy = env.scope;
-      initScope = mutable Scope{
-        id => env.next(),
-        isLoop => false,
-        up => Some(scopeCopy),
-      };
+      initScope = env.mcreateSubScope{isLoop => false};
       env.!scope = initScope;
       this.stmt(env, initStmt);
-      loopScope = mutable Scope{
-        id => env.next(),
-        isLoop => true,
-        up => Some(initScope),
-      };
+      loopScope = env.mcreateSubScope{isLoop => true};
       env.!scope = loopScope;
       this.checkBool(env, cond);
       loopBody = this.block(env, block);
@@ -976,11 +962,7 @@ class TypeChecker{
     | Throw(e) -> _ = this.expr(env, e)
     | While(cond, block) ->
       scopeCopy = env.scope;
-      loopScope = mutable Scope{
-        id => env.next(),
-        isLoop => true,
-        up => Some(scopeCopy),
-      };
+      loopScope = env.mcreateSubScope{isLoop => true};
       env.!scope = loopScope;
       this.checkBool(env, cond);
       loopBody = this.block(env, block, Some((cond, true)));
