@@ -15,7 +15,7 @@ mutable class Scope{
   private isLoop: Bool,
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
-  mutable refs: SortedMap<String, LocalRef> = SortedMap[],
+  private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
   readonly fun clone(): Scope {
     Scope{
