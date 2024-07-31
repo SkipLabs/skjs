@@ -156,6 +156,7 @@ mutable class Scope{
       (nameRef) -> {
         (name, ref) = nameRef;
         (_, upRef) = this.maybeGetRef(name).fromSome();
+        invariant(ref.isInitialized || !upRef.isInitialized);
         this.!refs[name] = LocalRef(
           TType::union(subst, tenv, upRef.type, ref.type),
           upRef.isInitialized,
