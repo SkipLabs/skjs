@@ -12,11 +12,15 @@ value class LocalRef(type: TType, isInitialized: Bool)
 
 mutable class Scope{
   id: Int,
-  isLoop: Bool,
+  private isLoop: Bool,
   up: ?readonly Scope = None(),
-  mutable locals: SortedMap<String, Name> = SortedMap[],
-  mutable refs: SortedMap<String, LocalRef> = SortedMap[],
+  private mutable locals: SortedMap<String, Name> = SortedMap[],
+  private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
+  static fun mcreateToplevel(): mutable this {
+    mutable static{id => 0, isLoop => false}
+  }
+
   readonly fun clone(): Scope {
     Scope{
       id => this.id,
@@ -129,10 +133,8 @@ mutable class Scope{
     };
     if (throughLoop) {
       isSubType(ty, upRef.type);
-      this.!refs[name.value] = LocalRef(ty, true);
-    } else {
-      this.!refs[name.value] = LocalRef(ty, true)
-    }
+    };
+    this.!refs[name.value] = LocalRef(ty, true);
   }
 
   readonly fun escapingRefs(): mutable Iterator<(String, LocalRef)> {
@@ -172,6 +174,14 @@ mutable class Scope{
       },
     );
   }
+
+  mutable fun popReplace(scope: readonly Scope): void {
+    invariant(scope.up.fromSome().id == this.id);
+    for (nameRef in scope.escapingRefs()) {
+      (name, ref) = nameRef;
+      this.!refs[name] = ref;
+    }
+  }
 }
 
 /*****************************************************************************/
@@ -182,11 +192,11 @@ mutable class TCEnv(
   context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
-  mutable localObjects: mutable Map<String, ?TType> = mutable Map[],
-  mutable usedObjects: mutable Map<String, PosRange> = mutable Map[],
-  mutable counter: Int = 0,
+  localObjects: mutable Map<String, ?TType> = mutable Map[],
+  usedObjects: mutable Map<String, PosRange> = mutable Map[],
+  private mutable counter: Int = 0,
 ) {
-  mutable fun next(): Int {
+  private mutable fun next(): Int {
     this.!counter = this.counter + 1;
     this.counter
   }
@@ -206,20 +216,15 @@ mutable class TCEnv(
     scope: readonly Scope,
   ): void {
     invariant(scope.up.fromSome().id == this.scope.id);
-    this.scope.merge(
-      subst,
-      tenv,
-      scope,
-      mutable Scope{id => this.next(), isLoop => false, up => Some(this.scope)},
-    );
+    this.scope.merge(subst, tenv, scope, this.mcreateSubScope{isLoop => false});
   }
 
   mutable fun popScopeReplace(scope: readonly Scope): void {
-    invariant(scope.up.fromSome().id == this.scope.id);
-    for (nameRef in scope.escapingRefs()) {
-      (name, ref) = nameRef;
-      this.scope.!refs[name] = ref;
-    }
+    this.scope.popReplace(scope);
+  }
+
+  mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
+    mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
   }
 }
 
@@ -261,8 +266,8 @@ class TypeChecker{
     | ExportEq _ -> notSupported(def.pos)
     | Module _ -> notSupported(def.pos)
     | ToplevelExpr(e) ->
-      subst = mutable Subst{context};
-      scope = mutable Scope{id => 0, isLoop => false};
+      subst = Subst::mcreate{context};
+      scope = Scope::mcreateToplevel();
       env = mutable TCEnv(context, subst, scope);
       ty = this.expr(env, e);
       this.checkIsVoid(env, e.posRange, ty)
@@ -313,8 +318,8 @@ class TypeChecker{
       | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
       | Some(x) -> x
       };
-      subst = mutable Subst{context};
-      scope = mutable Scope{id => 0, isLoop => false};
+      subst = Subst::mcreate{context};
+      scope = Scope::mcreateToplevel();
       env = mutable TCEnv(context, subst, scope);
       this.checkSubType(
         env,
@@ -345,7 +350,7 @@ class TypeChecker{
       }),
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
-    subst = mutable Subst{context};
+    subst = Subst::mcreate{context};
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParams(
       c.name.posRange,
@@ -375,7 +380,7 @@ class TypeChecker{
           if (!isInterface) {
             !this.super = Some(super);
           };
-          scope = mutable Scope{id => 0, isLoop => false};
+          scope = Scope::mcreateToplevel();
           env = mutable TCEnv(context, subst, scope);
           this.checkSubType(
             env,
@@ -396,7 +401,7 @@ class TypeChecker{
           parentName,
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
-        scope = mutable Scope{id => 0, isLoop => false};
+        scope = Scope::mcreateToplevel();
         env = mutable TCEnv(context, subst, scope);
         this.checkSubType(
           env,
@@ -426,7 +431,7 @@ class TypeChecker{
         field.value match {
         | None() -> void
         | Some(e) ->
-          scope = mutable Scope{id => 0, isLoop => false};
+          scope = Scope::mcreateToplevel();
           env = mutable TCEnv(context, subst, scope);
           this.checkSubType(
             env,
@@ -478,8 +483,8 @@ class TypeChecker{
     thisTypeOpt: ?TType,
     fd: FunDef,
   ): (this, mutable TCEnv) {
-    subst = mutable Subst{context};
-    scope = mutable Scope{id => 0, isLoop => false};
+    subst = Subst::mcreate{context};
+    scope = Scope::mcreateToplevel();
     env = mutable TCEnv(context, subst, scope);
     thisTypeOpt match {
     | None() -> void
@@ -643,13 +648,9 @@ class TypeChecker{
     env: mutable TCEnv,
     stmts: Array<Stmt>,
     cond: ?(Expr, Bool) = None(),
-  ): mutable Scope {
+  ): readonly Scope {
     scopeCopy = env.scope;
-    scope = mutable Scope{
-      id => env.next(),
-      isLoop => false,
-      up => Some(env.scope),
-    };
+    scope = env.mcreateSubScope{isLoop => false};
     env.!scope = scope;
     cond match {
     | None() -> void
@@ -911,8 +912,7 @@ class TypeChecker{
       this.checkBool(env, e);
       scope1 = this.block(env, block1, Some((e, true)));
       scope2 = block2 match {
-      | None() ->
-        mutable Scope{id => env.next(), isLoop => false, up => Some(env.scope)}
+      | None() -> env.mcreateSubScope{isLoop => false}
       | Some(b) -> this.block(env, b, Some((e, false)))
       };
       env.mergeScope(env.subst, this.tenv, scope1, scope2);
@@ -922,18 +922,10 @@ class TypeChecker{
 
     | For(initStmt, cond, incr, block) ->
       scopeCopy = env.scope;
-      initScope = mutable Scope{
-        id => env.next(),
-        isLoop => false,
-        up => Some(scopeCopy),
-      };
+      initScope = env.mcreateSubScope{isLoop => false};
       env.!scope = initScope;
       this.stmt(env, initStmt);
-      loopScope = mutable Scope{
-        id => env.next(),
-        isLoop => true,
-        up => Some(initScope),
-      };
+      loopScope = env.mcreateSubScope{isLoop => true};
       env.!scope = loopScope;
       this.checkBool(env, cond);
       loopBody = this.block(env, block);
@@ -968,11 +960,7 @@ class TypeChecker{
     | Throw(e) -> _ = this.expr(env, e)
     | While(cond, block) ->
       scopeCopy = env.scope;
-      loopScope = mutable Scope{
-        id => env.next(),
-        isLoop => true,
-        up => Some(scopeCopy),
-      };
+      loopScope = env.mcreateSubScope{isLoop => true};
       env.!scope = loopScope;
       this.checkBool(env, cond);
       loopBody = this.block(env, block, Some((cond, true)));

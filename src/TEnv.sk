@@ -98,7 +98,7 @@ class TEnv{
       | None() -> void
       | Some(cstr) ->
         cstrTy = this.normalize(context, cstr);
-        isSubTType(mutable Subst{context}, this, targ, cstrTy) match {
+        isSubTType(Subst::mcreate{context}, this, targ, cstrTy) match {
         | STOk() -> void
         | _ ->
           typingError(
@@ -387,7 +387,7 @@ class TEnv{
   }
 
   fun normalize(context: mutable SKStore.Context, typeAst: Type): TType {
-    subst = mutable Subst{context};
+    subst = Subst::mcreate{context};
     pos = typeAst.posRange;
     typeAst.value match {
     | TABigIntLiteral _ -> invariant_violation("TODO BigIntLiteral ")
