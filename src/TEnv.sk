@@ -237,6 +237,10 @@ class TEnv{
                     ),
                   ),
                 ),
+                tparam.constraint match {
+                | None() -> TType::top(tparam.name.posRange)
+                | Some(cstr) -> this.normalize(context, cstr)
+                },
               ),
             ],
           ),
@@ -511,7 +515,17 @@ class TEnv{
         tparam = this.tparams[n.value];
         TType::fromTParams(
           pos,
-          TTypeParams(Array[Clause(ArraySet::single(tparam))]),
+          TTypeParams(
+            Array[
+              Clause(
+                ArraySet::single(tparam),
+                tparam.cstr match {
+                | None() -> TType::top(pos)
+                | Some(cstr) -> cstr
+                },
+              ),
+            ],
+          ),
         )
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {

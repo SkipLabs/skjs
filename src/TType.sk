@@ -880,9 +880,12 @@ class TParam(
   cstr: ?TType,
 ) uses Hashable, Orderable
 
-class Clause(vars: ArraySet<TParam>) uses Hashable, Orderable {
-  fun union(other: Clause): Clause {
-    Clause(this.vars.union(other.vars))
+class Clause(vars: ArraySet<TParam>, type: TType) uses Hashable, Orderable {
+  fun inter(subst: mutable Subst, env: TEnv, other: Clause): Clause {
+    Clause(
+      this.vars.union(other.vars),
+      interTType(subst, env, this.type, other.type),
+    )
   }
   fun toString(): String {
     this.vars.toArray().map(x -> x.name + ":" + x.id).join(" & ")
@@ -899,11 +902,16 @@ class TTypeParams(clauses: Array<Clause>) uses Hashable, Orderable {
     this.clauses.isEmpty()
   }
 
-  static fun inter(tparams1: TTypeParams, tparams2: TTypeParams): TTypeParams {
+  static fun inter(
+    subst: mutable Subst,
+    env: TEnv,
+    tparams1: TTypeParams,
+    tparams2: TTypeParams,
+  ): TTypeParams {
     result = mutable Vector[];
     for (inter1 in tparams1.clauses) {
       for (inter2 in tparams2.clauses) {
-        result.push(inter1.union(inter2));
+        result.push(inter1.inter(subst, env, inter2));
       }
     };
     result.sort();
@@ -1582,7 +1590,7 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
       ty1.pos,
       STypes::empty(),
       TInsts::single(TInter(ty1, ty2)),
-      TTypeParams::inter(ty1.tparams, ty2.tparams),
+      TTypeParams::inter(subst, env, ty1.tparams, ty2.tparams),
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
@@ -1597,7 +1605,7 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   STypes::inter(subst, env, stypes1, stypes2) match {
   | None() -> TType::bottom(ty1.pos)
   | Some(stypes) ->
-    tparams = TTypeParams::inter(tparams1, tparams2);
+    tparams = TTypeParams::inter(subst, env, tparams1, tparams2);
     pos = if (!ty1.tparams.clauses.isEmpty() && ty2.tparams.clauses.isEmpty()) {
       ty2.pos
     } else {
@@ -1638,7 +1646,10 @@ base class ApplyType {
   }
 
   overridable deferred fun clause(env: this::Env, clause: Clause): Clause {
-    Clause(clause.vars.map(x -> this.typeParam(env, x)))
+    Clause(
+      clause.vars.map(x -> this.typeParam(env, x)),
+      this.type(env, clause.type),
+    )
   }
 
   overridable deferred fun typeParam(env: this::Env, tparam: TParam): TParam {
@@ -1789,6 +1800,7 @@ class Instantiate() extends ApplyType {
             tparams.vars.filter(tparam ->
               !map.containsKey((tparam.fileName, tparam.id))
             ),
+            tparams.type,
           )
         )
         .filter(x -> !x.vars.isEmpty()),
