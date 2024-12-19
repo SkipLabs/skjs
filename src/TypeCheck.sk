@@ -337,7 +337,7 @@ class TypeChecker{
   fun class_(context: mutable SKStore.Context, c: Class): void {
     targs = TArgs(
       c.tparams.map(tparam -> {
-        ttypeParam = TParam(
+        ttypeParam = TParamWithConstraint(
           tparam.name.value,
           tparam.name.posRange.fileName,
           tparam.id,
@@ -368,7 +368,12 @@ class TypeChecker{
         Array[
           Clause(
             ArraySet::single(
-              TParam("this", c.name.posRange.fileName, -1, Some(cstr)),
+              TParamWithConstraint(
+                "this",
+                c.name.posRange.fileName,
+                -1,
+                Some(cstr),
+              ),
             ),
             cstr,
           ),

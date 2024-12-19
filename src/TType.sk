@@ -529,7 +529,7 @@ class TFuns(
 }
 
 class TFun(
-  tparams: Array<TParam>,
+  tparams: Array<TParamWithConstraint>,
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?TType,
@@ -873,14 +873,17 @@ class TInsts(insts: Array<TInst>) uses Hashable, Orderable {
   }
 }
 
-class TParam(
+class TParamWithConstraint(
   name: String,
   fileName: String,
   id: Int,
   cstr: ?TType,
 ) uses Hashable, Orderable
 
-class Clause(vars: ArraySet<TParam>, type: TType) uses Hashable, Orderable {
+class Clause(
+  vars: ArraySet<TParamWithConstraint>,
+  type: TType,
+) uses Hashable, Orderable {
   fun inter(subst: mutable Subst, env: TEnv, other: Clause): Clause {
     Clause(
       this.vars.union(other.vars),
@@ -1652,8 +1655,11 @@ base class ApplyType {
     )
   }
 
-  overridable deferred fun typeParam(env: this::Env, tparam: TParam): TParam {
-    TParam(
+  overridable deferred fun typeParam(
+    env: this::Env,
+    tparam: TParamWithConstraint,
+  ): TParamWithConstraint {
+    TParamWithConstraint(
       tparam.name,
       tparam.fileName,
       tparam.id,
@@ -1744,8 +1750,11 @@ base class ApplyType {
 }
 
 class RenameTParams() extends ApplyType {
-  type Env = Map<Int, TParam>;
-  fun typeParam(subst: this::Env, tparam: TParam): TParam {
+  type Env = Map<Int, TParamWithConstraint>;
+  fun typeParam(
+    subst: this::Env,
+    tparam: TParamWithConstraint,
+  ): TParamWithConstraint {
     if (subst.containsKey(tparam.id)) {
       subst[tparam.id]
     } else {
