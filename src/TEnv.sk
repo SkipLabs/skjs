@@ -228,13 +228,10 @@ class TEnv{
             Array[
               Clause(
                 ArraySet::single(
-                  TParamWithConstraint(
+                  TParam(
                     tparam.name.value,
                     tparam.name.posRange.fileName,
                     tparam.id,
-                    tparam.constraint.map(cstr ->
-                      this.normalize(context, cstr)
-                    ),
                   ),
                 ),
                 tparam.constraint match {
@@ -518,7 +515,9 @@ class TEnv{
           TTypeParams(
             Array[
               Clause(
-                ArraySet::single(tparam),
+                ArraySet::single(
+                  TParam(tparam.name, tparam.fileName, tparam.id),
+                ),
                 tparam.cstr match {
                 | None() -> TType::top(pos)
                 | Some(cstr) -> cstr

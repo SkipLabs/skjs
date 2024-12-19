@@ -208,15 +208,8 @@ class TType private {
       | Some((stypes, tparams)) ->
         if (tparams.clauses.isEmpty()) return Some(stypes);
         result = static::fromSTypes(this.pos, stypes);
-        for (inter in tparams.clauses) {
-          localResult: this = static::top(ty.pos);
-          for (tparam in inter.vars) {
-            tparam.cstr match {
-            | None() -> continue
-            | Some(c) -> !localResult = interTType(subst, env, localResult, c)
-            }
-          };
-          !result = static::union(subst, env, result, localResult)
+        for (clause in tparams.clauses) {
+          !result = static::union(subst, env, result, clause.type)
         };
         !ty = result
       }
@@ -880,10 +873,9 @@ class TParamWithConstraint(
   cstr: ?TType,
 ) uses Hashable, Orderable
 
-class Clause(
-  vars: ArraySet<TParamWithConstraint>,
-  type: TType,
-) uses Hashable, Orderable {
+class TParam(name: String, fileName: String, id: Int) uses Hashable, Orderable
+
+class Clause(vars: ArraySet<TParam>, type: TType) uses Hashable, Orderable {
   fun inter(subst: mutable Subst, env: TEnv, other: Clause): Clause {
     Clause(
       this.vars.union(other.vars),
@@ -930,28 +922,26 @@ class TTypeParams(clauses: Array<Clause>) uses Hashable, Orderable {
   ): STResult {
     for (inter1 in tparams1.clauses) {
       for (inter2 in tparams2.clauses) {
-        inter2.vars.iterDiff(inter1.vars).findMap((tparam2) ->
-          tparam2.cstr match {
+        inter2.vars.iterDiff(inter1.vars).findMap((_tparam2) ->
+          Some(inter2.type) match {
           | Some(c) ->
             isSubTType(subst, env, c, cstr) match {
             | STOk() -> None()
             | error -> Some(error)
             }
-          | None() -> Some(STInvalidTypeParam(tparam2.name))
           }
         ) match {
         | None() -> break void
         | Some(_error) -> continue
         }
       } else {
-        for (tparam1 in inter1.vars) {
-          tparam1.cstr match {
+        for (_tparam1 in inter1.vars) {
+          Some(inter1.type) match {
           | Some(c) ->
             isSubTType(subst, env, c, cstr) match {
             | STOk() -> return STOk()
             | _error -> continue
             }
-          | None() -> continue
           }
         };
         return STInvalidTypeParams(
@@ -1655,7 +1645,7 @@ base class ApplyType {
     )
   }
 
-  overridable deferred fun typeParam(
+  overridable deferred fun typeParamWithConstraint(
     env: this::Env,
     tparam: TParamWithConstraint,
   ): TParamWithConstraint {
@@ -1665,6 +1655,10 @@ base class ApplyType {
       tparam.id,
       tparam.cstr.map(c -> this.type(env, c)),
     )
+  }
+
+  overridable deferred fun typeParam(_env: this::Env, tparam: TParam): TParam {
+    TParam(tparam.name, tparam.fileName, tparam.id)
   }
 
   overridable deferred fun stypes(env: this::Env, stypes: STypes): STypes {
@@ -1710,7 +1704,7 @@ base class ApplyType {
 
   overridable deferred fun fun_(env: this::Env, f: TFun): TFun {
     TFun(
-      f.tparams.map(x -> this.typeParam(env, x)),
+      f.tparams.map(x -> this.typeParamWithConstraint(env, x)),
       f.params.map(x -> this.type(env, x)),
       f.optionalParams.map(x -> this.type(env, x)),
       f.spreadParam.map(x -> this.type(env, x)),
@@ -1751,12 +1745,21 @@ base class ApplyType {
 
 class RenameTParams() extends ApplyType {
   type Env = Map<Int, TParamWithConstraint>;
-  fun typeParam(
+  fun typeParamWithConstraint(
     subst: this::Env,
     tparam: TParamWithConstraint,
   ): TParamWithConstraint {
     if (subst.containsKey(tparam.id)) {
       subst[tparam.id]
+    } else {
+      tparam
+    }
+  }
+
+  fun typeParam(subst: this::Env, tparam: TParam): TParam {
+    if (subst.containsKey(tparam.id)) {
+      newTParam = subst[tparam.id];
+      TParam(newTParam.name, newTParam.fileName, newTParam.id)
     } else {
       tparam
     }

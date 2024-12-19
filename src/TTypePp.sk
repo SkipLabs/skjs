@@ -367,8 +367,7 @@ mutable class TypePp{
             this.out(level, margin, " & ");
           };
           this.out(level, margin, tparam.name + ":" + tparam.id);
-          tparam.cstr match {
-          | None() -> void
+          Some(tparams.type) match {
           | Some(cstr) ->
             this.out(level, margin, " extends ");
             this.type(level, margin, cstr)
