@@ -593,7 +593,7 @@ class TypeChecker{
     ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> false
     | Some((stypes, tparams)) ->
-      tparams.tparams.size() == 0 &&
+      tparams.clauses.size() == 0 &&
         stypes.singleElt() match {
         | Some(TPrimVoid(TVoid(), _)) -> true
         | _ -> false
@@ -1448,7 +1448,7 @@ class TypeChecker{
       | BOStrictEquality() ->
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
-        if (ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
+        if (ty1.tparams.clauses.isEmpty() && ty2.tparams.clauses.isEmpty()) {
           isSubTType(env.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
           | _ ->

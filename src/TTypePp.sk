@@ -357,8 +357,8 @@ mutable class TypePp{
       return void;
     };
     stypes = ty.rawSTypes();
-    if (!ty.tparams.tparams.isEmpty()) {
-      for (i => tparams in ty.tparams.tparams) {
+    if (!ty.tparams.clauses.isEmpty()) {
+      for (i => tparams in ty.tparams.clauses) {
         if (i != 0) {
           this.out(level, margin, " | ");
         };
