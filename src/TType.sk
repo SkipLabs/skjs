@@ -210,7 +210,7 @@ class TType private {
         result = static::fromSTypes(this.pos, stypes);
         for (inter in tparams.tparams) {
           localResult: this = static::top(ty.pos);
-          for (tparam in inter) {
+          for (tparam in inter.vars) {
             tparam.cstr match {
             | None() -> continue
             | Some(c) -> !localResult = interTType(subst, env, localResult, c)
@@ -880,8 +880,17 @@ class TParam(
   cstr: ?TType,
 ) uses Hashable, Orderable
 
+class Clause(vars: ArraySet<TParam>) uses Hashable, Orderable {
+  fun union(other: Clause): Clause {
+    Clause(this.vars.union(other.vars))
+  }
+  fun toString(): String {
+    this.vars.toArray().map(x -> x.name + ":" + x.id).join(" & ")
+  }
+}
+
 // The type parameters are in DNF
-class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
+class TTypeParams(tparams: Array<Clause>) uses Hashable, Orderable {
   static fun empty(): this {
     TTypeParams(Array[])
   }
@@ -910,7 +919,7 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
   ): STResult {
     for (inter1 in tparams1.tparams) {
       for (inter2 in tparams2.tparams) {
-        inter2.iterDiff(inter1).findMap((tparam2) ->
+        inter2.vars.iterDiff(inter1.vars).findMap((tparam2) ->
           tparam2.cstr match {
           | Some(c) ->
             isSubTType(subst, env, c, cstr) match {
@@ -924,7 +933,7 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
         | Some(_error) -> continue
         }
       } else {
-        for (tparam1 in inter1) {
+        for (tparam1 in inter1.vars) {
           tparam1.cstr match {
           | Some(c) ->
             isSubTType(subst, env, c, cstr) match {
@@ -935,11 +944,7 @@ class TTypeParams(tparams: Array<ArraySet<TParam>>) uses Hashable, Orderable {
           }
         };
         return STInvalidTypeParams(
-          tparams1.tparams
-            .map(inter ->
-              inter.toArray().map(x -> x.name + ":" + x.id).join(" & ")
-            )
-            .join(" | "),
+          tparams1.tparams.map(inter -> inter.toString()).join(" | "),
         )
       }
     };
@@ -1629,7 +1634,11 @@ base class ApplyType {
     env: this::Env,
     tparams: TTypeParams,
   ): TTypeParams {
-    TTypeParams(tparams.tparams.map(x -> x.map(y -> this.typeParam(env, y))))
+    TTypeParams(tparams.tparams.map(x -> this.clause(env, x)).sorted())
+  }
+
+  overridable deferred fun clause(env: this::Env, clause: Clause): Clause {
+    Clause(clause.vars.map(x -> this.typeParam(env, x)))
   }
 
   overridable deferred fun typeParam(env: this::Env, tparam: TParam): TParam {
@@ -1760,7 +1769,7 @@ class Instantiate() extends ApplyType {
     result = ty.withTParams(TTypeParams::empty());
     for (tparams in ty.tparams.tparams) {
       clauseOpt: ?TType = None();
-      for (tparam in tparams) {
+      for (tparam in tparams.vars) {
         if (!map.containsKey((tparam.fileName, tparam.id))) continue;
         paramTy = map[(tparam.fileName, tparam.id)];
         !clauseOpt = clauseOpt match {
@@ -1776,11 +1785,13 @@ class Instantiate() extends ApplyType {
     tparams = TTypeParams(
       ty.tparams.tparams
         .map(tparams ->
-          tparams.filter(tparam ->
-            !map.containsKey((tparam.fileName, tparam.id))
+          Clause(
+            tparams.vars.filter(tparam ->
+              !map.containsKey((tparam.fileName, tparam.id))
+            ),
           )
         )
-        .filter(x -> !x.isEmpty()),
+        .filter(x -> !x.vars.isEmpty()),
     );
     result.withTParams(tparams)
   }

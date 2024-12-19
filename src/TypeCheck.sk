@@ -345,7 +345,7 @@ class TypeChecker{
         );
         TType::fromTParams(
           tparam.name.posRange,
-          TTypeParams(Array[ArraySet::single(ttypeParam)]),
+          TTypeParams(Array[Clause(ArraySet::single(ttypeParam))]),
         )
       }),
     );
@@ -356,8 +356,10 @@ class TypeChecker{
       c.name.posRange,
       TTypeParams(
         Array[
-          ArraySet::single(
-            TParam("this", c.name.posRange.fileName, -1, Some(cstr)),
+          Clause(
+            ArraySet::single(
+              TParam("this", c.name.posRange.fileName, -1, Some(cstr)),
+            ),
           ),
         ],
       ),
