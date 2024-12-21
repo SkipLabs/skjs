@@ -241,15 +241,12 @@ class TType private {
       };
       if (tyDef.isTop) return None();
       !tparams = TTypeParams::union(subst, env, tparams, tyDef.tparams);
-      STypes::union(subst, env, stypes, tyDef.stypes) match {
-      | None() -> return None()
-      | Some(u) ->
-        !stypes = u;
-        for (newInst in tyDef.insts) {
-          if (seen.contains(newInst)) continue;
-          seen.insert(newInst);
-          insts.push(newInst);
-        }
+      u = STypes::union(subst, env, stypes, tyDef.stypes);
+      !stypes = u;
+      for (newInst in tyDef.insts) {
+        if (seen.contains(newInst)) continue;
+        seen.insert(newInst);
+        insts.push(newInst);
       }
     }
   }
@@ -322,13 +319,10 @@ class TType private {
   ): this {
     if (ty1.isTop) return ty1;
     if (ty2.isTop) return ty2;
-    STypes::union(subst, env, ty1.stypes, ty2.stypes) match {
-    | None() -> static::top(ty1.pos)
-    | Some(stypes) ->
-      types = unionTInsts(ty1.insts, ty2.insts);
-      tparams = TTypeParams::union(subst, env, ty1.tparams, ty2.tparams);
-      static::create(ty1.pos, stypes, types, tparams)
-    }
+    stypes = STypes::union(subst, env, ty1.stypes, ty2.stypes);
+    types = unionTInsts(ty1.insts, ty2.insts);
+    tparams = TTypeParams::union(subst, env, ty1.tparams, ty2.tparams);
+    static::create(ty1.pos, stypes, types, tparams)
   }
 }
 
@@ -728,10 +722,12 @@ class STypes private (
     env: TEnv,
     stypes1: STypes,
     stypes2: STypes,
-  ): ?STypes {
-    stypes1.stypes
-      .mapUnionOption(stypes2.stypes, (x, y) -> unionSType(subst, env, x, y))
-      .map(x -> static(x))
+  ): STypes {
+    static(
+      stypes1.stypes.mapUnion(stypes2.stypes, (x, y) ->
+        unionSType(subst, env, x, y)
+      ),
+    )
   }
 
   // inter returns None when the greatest lower bound of the args is bottom
@@ -1324,27 +1320,25 @@ fun unionSType(
   env: TEnv,
   sty1: SType,
   sty2: SType,
-): ?SType {
+): SType {
   (sty1, sty2) match {
-  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> Some(sty1)
+  | (TPrimVoid(_, _), TPrimVoid(_, _)) -> sty1
 
-  | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> Some(sty1)
-  | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> Some(sty1)
-  | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> Some(sty2)
-  | (TPrimValue(k1, Some(_), _), TPrimValue(k2, Some(_), _)) if (k1 != k2) ->
-    None()
-  | (TPrimValue(k, Some(s1), pos), TPrimValue(_, Some(s2), _)) ->
-    Some(TPrimValue(k, Some(s1.union(s2)), pos))
+  | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> sty1
+  | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> sty1
+  | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> sty2
+  | (TPrimValue(k1, Some(s1), pos), TPrimValue(k2, Some(s2), _)) ->
+    invariant(k1 == k2);
+    TPrimValue(k1, Some(s1.union(s2)), pos)
 
   | (TPromise(ty1, pos), TPromise(ty2, _)) ->
-    Some(TPromise(TType::union(subst, env, ty1, ty2), pos))
+    TPromise(TType::union(subst, env, ty1, ty2), pos)
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
-    Some(unionTTuple(subst, env, tuple1, tuple2))
-  | (obj1 @ TObject _, obj2 @ TObject _) ->
-    Some(unionTObject(subst, env, obj1, obj2))
+    unionTTuple(subst, env, tuple1, tuple2)
+  | (obj1 @ TObject _, obj2 @ TObject _) -> unionTObject(subst, env, obj1, obj2)
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    Some(TAlgebraic::union(subst, env, a1, a2))
-  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::union(subst, env, f1, f2))
+    TAlgebraic::union(subst, env, a1, a2)
+  | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::union(subst, env, f1, f2)
   | _ -> invariant_violation("Internal error")
   }
 }
