@@ -224,22 +224,12 @@ class TEnv{
         false,
         TType::fromTParams(
           tparam.name.posRange,
-          TTypeParams(
-            Array[
-              Clause(
-                ArraySet::single(
-                  TParam(
-                    tparam.name.value,
-                    tparam.name.posRange.fileName,
-                    tparam.id,
-                  ),
-                ),
-                tparam.constraint match {
-                | None() -> TType::top(tparam.name.posRange)
-                | Some(cstr) -> this.normalize(context, cstr)
-                },
-              ),
-            ],
+          TTypeParams::fromTypeParam(
+            tparam,
+            tparam.constraint match {
+            | None() -> TType::top(tparam.name.posRange)
+            | Some(cstr) -> this.normalize(context, cstr)
+            },
           ),
         ),
       )
@@ -512,18 +502,12 @@ class TEnv{
         tparam = this.tparams[n.value];
         TType::fromTParams(
           pos,
-          TTypeParams(
-            Array[
-              Clause(
-                ArraySet::single(
-                  TParam(tparam.name, tparam.fileName, tparam.id),
-                ),
-                tparam.cstr match {
-                | None() -> TType::top(pos)
-                | Some(cstr) -> cstr
-                },
-              ),
-            ],
+          TTypeParams::fromTParamWithConstraint(
+            tparam,
+            tparam.cstr match {
+            | None() -> TType::top(pos)
+            | Some(cstr) -> cstr
+            },
           ),
         )
       } else if (this.subst.containsKey(n.value)) {

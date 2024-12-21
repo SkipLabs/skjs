@@ -240,7 +240,7 @@ class TType private {
         }
       };
       if (tyDef.isTop) return None();
-      !tparams = unionTTypeParams(tparams, tyDef.tparams);
+      !tparams = TTypeParams::union(subst, env, tparams, tyDef.tparams);
       STypes::union(subst, env, stypes, tyDef.stypes) match {
       | None() -> return None()
       | Some(u) ->
@@ -326,7 +326,7 @@ class TType private {
     | None() -> static::top(ty1.pos)
     | Some(stypes) ->
       types = unionTInsts(ty1.insts, ty2.insts);
-      tparams = unionTTypeParams(ty1.tparams, ty2.tparams);
+      tparams = TTypeParams::union(subst, env, ty1.tparams, ty2.tparams);
       static::create(ty1.pos, stypes, types, tparams)
     }
   }
@@ -875,26 +875,84 @@ class TParamWithConstraint(
 
 class TParam(name: String, fileName: String, id: Int) uses Hashable, Orderable
 
-class Clause(vars: ArraySet<TParam>, type: TType) uses Hashable, Orderable {
+class Clause(
+  vars: ArraySet<TParam>,
+  type: TType,
+) uses Hashable, Orderable, Projectable<ArraySet<TParam>> {
   fun inter(subst: mutable Subst, env: TEnv, other: Clause): Clause {
     Clause(
       this.vars.union(other.vars),
       interTType(subst, env, this.type, other.type),
     )
   }
+
+  fun union(subst: mutable Subst, env: TEnv, other: Clause): Clause {
+    invariant(this.vars == other.vars);
+    Clause(this.vars, TType::union(subst, env, this.type, other.type))
+  }
+
+  fun interSTypes(
+    pos: PosRange,
+    subst: mutable Subst,
+    env: TEnv,
+    stypes: STypes,
+  ): Clause {
+    Clause(
+      this.vars,
+      interTType(
+        subst,
+        env,
+        this.type,
+        TType::create(pos, stypes, TInsts::empty(), TTypeParams::empty()),
+      ),
+    )
+  }
+
   fun toString(): String {
     this.vars.toArray().map(x -> x.name + ":" + x.id).join(" & ")
+  }
+
+  fun project(): ArraySet<TParam> {
+    this.vars
   }
 }
 
 // The type parameters are in DNF
-class TTypeParams(clauses: Array<Clause>) uses Hashable, Orderable {
+class TTypeParams(
+  clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
+) uses Hashable, Orderable {
   static fun empty(): this {
-    TTypeParams(Array[])
+    TTypeParams(InternalKeyedArrayMap::empty())
   }
 
   fun isEmpty(): Bool {
     this.clauses.isEmpty()
+  }
+
+  static fun fromTypeParam(tparam: TypeParam, ttype: TType): this {
+    static(
+      InternalKeyedArrayMap::single(
+        Clause(
+          ArraySet::single(
+            TParam(tparam.name.value, tparam.name.posRange.fileName, tparam.id),
+          ),
+          ttype,
+        ),
+      ),
+    )
+  }
+  static fun fromTParamWithConstraint(
+    tparam: TParamWithConstraint,
+    ttype: TType,
+  ): this {
+    static(
+      InternalKeyedArrayMap::single(
+        Clause(
+          ArraySet::single(TParam(tparam.name, tparam.fileName, tparam.id)),
+          ttype,
+        ),
+      ),
+    )
   }
 
   static fun inter(
@@ -909,8 +967,34 @@ class TTypeParams(clauses: Array<Clause>) uses Hashable, Orderable {
         result.push(inter1.inter(subst, env, inter2));
       }
     };
-    result.sort();
-    TTypeParams(result.toArray())
+    TTypeParams(InternalKeyedArrayMap::createFromIterator(result.iterator()))
+  }
+
+  static fun union(
+    subst: mutable Subst,
+    env: TEnv,
+    tparams1: TTypeParams,
+    tparams2: TTypeParams,
+  ): TTypeParams {
+    TTypeParams(
+      tparams1.clauses.mapUnion(tparams2.clauses, (x, y) ->
+        x.union(subst, env, y)
+      ),
+    )
+  }
+
+  static fun interSTypes(
+    pos: PosRange,
+    subst: mutable Subst,
+    env: TEnv,
+    stypes: STypes,
+    tparams: TTypeParams,
+  ): TTypeParams {
+    result = mutable Vector[];
+    for (clause in tparams.clauses) {
+      result.push(clause.interSTypes(pos, subst, env, stypes));
+    };
+    TTypeParams(InternalKeyedArrayMap::createFromIterator(result.iterator()))
   }
 
   static fun isSub(
@@ -945,7 +1029,12 @@ class TTypeParams(clauses: Array<Clause>) uses Hashable, Orderable {
           }
         };
         return STInvalidTypeParams(
-          tparams1.clauses.map(inter -> inter.toString()).join(" | "),
+          tparams1.clauses
+            .items()
+            .collect(Array)
+            .map(x -> x.i1)
+            .map(inter -> inter.toString())
+            .join(" | "),
         )
       }
     };
@@ -1382,24 +1471,6 @@ fun unionTInsts(insts1: TInsts, insts2: TInsts): TInsts {
   )
 }
 
-fun unionTTypeParams(
-  tparams1: TTypeParams,
-  tparams2: TTypeParams,
-): TTypeParams {
-  TTypeParams(
-    mapUnion(
-      tparams1.clauses.values(),
-      tparams2.clauses.values(),
-      x ~> x,
-      x ~> x,
-      (x, y) ~> {
-        invariant(x == y);
-        x
-      },
-    ),
-  )
-}
-
 /*****************************************************************************/
 /* Intersections */
 /*****************************************************************************/
@@ -1575,6 +1646,10 @@ fun interTTuple(
   TTuple(result.toArray(), tuple1.pos)
 }
 
+// (stypes1 | tparams1) & (stypes2 | tparams2) =
+//     (stypes1 & stypes2) | (stypes1 & tparams2)
+//   | (stypes2 & tparams1) | (tparams1 & tparams2)
+
 fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   if (ty1.isTop) return ty2;
   if (ty2.isTop) return ty1;
@@ -1595,17 +1670,36 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   | None() -> return ty1
   | Some(stypes_tparams) -> stypes_tparams
   };
-  STypes::inter(subst, env, stypes1, stypes2) match {
-  | None() -> TType::bottom(ty1.pos)
-  | Some(stypes) ->
-    tparams = TTypeParams::inter(subst, env, tparams1, tparams2);
-    pos = if (!ty1.tparams.clauses.isEmpty() && ty2.tparams.clauses.isEmpty()) {
-      ty2.pos
-    } else {
-      ty1.pos
-    };
-    TType::create(pos, stypes, TInsts::empty(), tparams)
-  }
+  stypes1stypes2 = STypes::inter(subst, env, stypes1, stypes2) match {
+  | None() -> return TType::bottom(ty1.pos)
+  | Some(x) -> x
+  };
+  stypes1tparams2 = TTypeParams::interSTypes(
+    ty1.pos,
+    subst,
+    env,
+    stypes1,
+    tparams2,
+  );
+  stypes2tparams1 = TTypeParams::interSTypes(
+    ty2.pos,
+    subst,
+    env,
+    stypes2,
+    tparams1,
+  );
+  tparams1tparams2 = TTypeParams::inter(subst, env, tparams1, tparams2);
+  TType::create(
+    ty1.pos,
+    stypes1stypes2,
+    TInsts::empty(),
+    TTypeParams::union(
+      subst,
+      env,
+      stypes1tparams2,
+      TTypeParams::union(subst, env, stypes2tparams1, tparams1tparams2),
+    ),
+  );
 }
 
 /*****************************************************************************/
@@ -1635,7 +1729,7 @@ base class ApplyType {
     env: this::Env,
     tparams: TTypeParams,
   ): TTypeParams {
-    TTypeParams(tparams.clauses.map(x -> this.clause(env, x)).sorted())
+    TTypeParams(tparams.clauses.map(x -> this.clause(env, x)))
   }
 
   overridable deferred fun clause(env: this::Env, clause: Clause): Clause {

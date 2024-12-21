@@ -345,18 +345,12 @@ class TypeChecker{
         );
         TType::fromTParams(
           tparam.name.posRange,
-          TTypeParams(
-            Array[
-              Clause(
-                ArraySet::single(
-                  TParam(ttypeParam.name, ttypeParam.fileName, ttypeParam.id),
-                ),
-                ttypeParam.cstr match {
-                | None() -> TType::top(tparam.name.posRange)
-                | Some(cstr) -> cstr
-                },
-              ),
-            ],
+          TTypeParams::fromTParamWithConstraint(
+            ttypeParam,
+            ttypeParam.cstr match {
+            | None() -> TType::top(tparam.name.posRange)
+            | Some(cstr) -> cstr
+            },
           ),
         )
       }),
@@ -366,13 +360,9 @@ class TypeChecker{
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParams(
       c.name.posRange,
-      TTypeParams(
-        Array[
-          Clause(
-            ArraySet::single(TParam("this", c.name.posRange.fileName, -1)),
-            cstr,
-          ),
-        ],
+      TTypeParams::fromTParamWithConstraint(
+        TParamWithConstraint("this", c.name.posRange.fileName, -1, None()),
+        cstr,
       ),
     );
     if (c.extends_.size() != 0) {
