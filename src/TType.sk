@@ -992,7 +992,10 @@ class TTypeParams(
   ): TTypeParams {
     result = mutable Vector[];
     for (clause in tparams.clauses) {
-      result.push(clause.interSTypes(pos, subst, env, stypes));
+      inter = clause.interSTypes(pos, subst, env, stypes);
+      if (!inter.type.isBottom()) {
+        result.push(inter);
+      }
     };
     TTypeParams(InternalKeyedArrayMap::createFromIterator(result.iterator()))
   }

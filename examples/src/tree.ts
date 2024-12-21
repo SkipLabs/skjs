@@ -11,6 +11,13 @@ type tree = {
   leftRotate: (node) => node,
 };
 
+function foo<T1 extends { fd1: number }, T2 extends  {fd2: number}>(
+  v: T1,
+  x: T1 & T2
+): {fd1: number, fd2: number} {
+  return x;
+}
+
 // Create node
 function Node(item: number): node {
   let obj = {};
