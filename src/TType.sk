@@ -430,14 +430,6 @@ fun createObject(pos: PosRange, fields: TFields): TType {
 /*****************************************************************************/
 
 class TTuple(tuple: Array<TType>) extends SType {
-  fun toArray_UNUSED(subst: mutable Subst, env: TEnv): TType {
-    invariant(this.tuple.size() != 0);
-    elt = this.tuple[0];
-    for (i in Range(1, this.tuple.size())) {
-      !elt = TType::union(subst, env, elt, this.tuple[i]);
-    };
-    TType::single(this.pos, TArray(elt, this.pos))
-  }
   fun toString(): String {
     invariant_violation("TODO1")
   }
@@ -588,7 +580,6 @@ base class TPrimValueKind uses Hashable, Orderable {
 base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
   children =
   | TPrimVoid(TPrimVoidKind)
-  | TArray(TType)
   | TPromise(TType)
 
   fun tag(): Int {
@@ -599,7 +590,6 @@ base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
     | TPrimValue(TBool _, _, _) -> 3
     | TPrimValue(TNum _, _, _) -> 4
     | TPrimValue(TString _, _, _) -> 5
-    | TArray _ -> 6
     | TTuple _ -> 7
     | TPromise _ -> 8
     | TObject _ -> 9
@@ -1086,7 +1076,6 @@ base class STResult {
         `This is a static ${kind.toString()}: ` +
           x.values.map(x -> "'" + x.i1 + "'").join(" | ")
 
-      | TArray _ -> "This is an array"
       | TPromise _ -> "This is a Promise"
       | SKJS.TAlgebraic _ ->
         "This is a constructor (the field kind is a static string)"
@@ -1192,12 +1181,6 @@ fun isSubSType(
 
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
     isSubTTuple(subst, env, tuple1, tuple2)
-
-  | (TArray(ty1, _), TArray(ty2, _)) ->
-    isSubTType(subst, env, ty1, ty2) match {
-    | STOk() -> isSubTType(subst, env, ty2, ty1)
-    | err -> err
-    }
 
   | (TPromise(ty1, _), TPromise(ty2, _)) -> isSubTType(subst, env, ty1, ty2)
   | (funs1 @ TFuns _, funs2 @ TFuns _) -> TFuns::isSub(subst, env, funs1, funs2)
@@ -1352,16 +1335,6 @@ fun unionSType(
     None()
   | (TPrimValue(k, Some(s1), pos), TPrimValue(_, Some(s2), _)) ->
     Some(TPrimValue(k, Some(s1.union(s2)), pos))
-
-  | (TArray(ty1, _), TArray(ty2, _)) ->
-    isSubTType(subst, env, ty1, ty2) match {
-    | STOk() ->
-      isSubTType(subst, env, ty2, ty1) match {
-      | STOk() -> Some(sty1)
-      | _ -> None()
-      }
-    | _ -> None()
-    }
 
   | (TPromise(ty1, pos), TPromise(ty2, _)) ->
     Some(TPromise(TType::union(subst, env, ty1, ty2), pos))
@@ -1537,16 +1510,6 @@ fun interSType(
 
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
     Some(interTTuple(subst, env, tuple1, tuple2))
-
-  | (TArray(ty1, _), TArray(ty2, _)) ->
-    isSubTType(subst, env, ty1, ty2) match {
-    | STOk() ->
-      isSubTType(subst, env, ty2, ty1) match {
-      | STOk() -> Some(sty1)
-      | _ -> None()
-      }
-    | _ -> None()
-    }
 
   | (TPromise(ty1, pos1), TPromise(ty2, _)) ->
     Some(TPromise(interTType(subst, env, ty1, ty2), pos1))
@@ -1767,7 +1730,6 @@ base class ApplyType {
     | x @ TPrimVoid _
     | x @ TPrimValue _ ->
       x
-    | TArray(ty, pos) -> TArray(this.type(env, ty), pos)
     | TPromise(ty, pos) -> TPromise(this.type(env, ty), pos)
     | algs @ TAlgebraic _ -> this.algebraic(env, algs)
     | funs @ TFuns _ -> this.funs(env, funs)

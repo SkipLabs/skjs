@@ -1109,18 +1109,6 @@ class TypeChecker{
             branch.fields.getType(fieldName),
           )
         }
-      | TArray(eltType, stringPos) ->
-        obj = this.tenv.newObject(
-          env.context,
-          Name(stringPos, "Array"),
-          Array[eltType],
-        );
-        !result = TType::union(
-          env.subst,
-          this.tenv,
-          result,
-          obj.fields.getType(fieldName),
-        )
       | TPrimValue(primKind, _, stringPos) ->
         objName = primKind.toString();
         obj = this.tenv.newObject(
@@ -1343,18 +1331,6 @@ class TypeChecker{
       result = TType::bottom(pos);
       for (stype in stypes) {
         ty = stype match {
-        | TArray(eltType, _) ->
-          this.checkSubType(
-            env,
-            pos,
-            "Invalid index",
-            idxType,
-            TType::single(
-              idx.posRange,
-              TPrimValue(TNum(), None(), idx.posRange),
-            ),
-          );
-          eltType
         | TTuple(tyArr, tuplePos) ->
           n = idx.value match {
           | Number(str) -> str.toIntOption()
@@ -1372,6 +1348,18 @@ class TypeChecker{
           tyArr[n]
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
+        | obj @ TObject _ ->
+          this.checkSubType(
+            env,
+            pos,
+            "Invalid index",
+            idxType,
+            TType::single(
+              idx.posRange,
+              TPrimValue(TNum(), None(), idx.posRange),
+            ),
+          );
+          this.getArrayEltType(env, obj)
         | TPrimValue(primKind, _, primPos) ->
           idxType
             .getSTypes(env.subst, this.tenv, Covariant())
@@ -1941,6 +1929,26 @@ class TypeChecker{
     fieldType
   }
 
+  fun getArrayEltType(env: mutable TCEnv, object: TObject): TType {
+    object.fields.maybeGet("push") match {
+    | None() -> typingError(Array[(object.pos, "Expected an Array type")])
+    | Some(pushMethod) ->
+      pushF = pushMethod.type
+        .getSTypes(env.subst, this.tenv, Covariant())
+        .flatMap(stypes ~> stypes.singleElt())
+        .fromSome() match {
+      | TFuns(_, methods, _) ->
+        for (met in methods) {
+          break met
+        } else {
+          invariant_violation("Unexpected type for Array::push")
+        }
+      | _ -> invariant_violation("Unexpected push method type for Array")
+      };
+      pushF.params[0]
+    };
+  }
+
   fun call(
     env: mutable TCEnv,
     pos: PosRange,
@@ -2023,7 +2031,9 @@ class TypeChecker{
             spreadType
               .getSTypes(env.subst, this.tenv, Contravariant())
               .flatMap(stypes ~> stypes.singleElt()) match {
-            | Some(TArray(eltType, _)) ->
+            | Some(object @ TObject _) ->
+              eltType = this.getArrayEltType(env, object);
+
               for (i in Range(totalSize, args.size())) {
                 this.checkSubType(
                   env,
@@ -2197,7 +2207,10 @@ class TypeChecker{
     ) if (target) ->
       env.scope.set(
         local,
-        TType::single(posArray, TArray(TType::top(posArray), posArray)),
+        TType::fromTInst(
+          posArray,
+          TSInst(Name(posArray, "Array"), TArgs(Array[TType::top(posArray)])),
+        ),
         (_, _) -> void,
       )
 
