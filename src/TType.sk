@@ -201,18 +201,15 @@ class TType private {
 
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): ?STypes {
-    ty = this;
-    loop {
-      ty.expand(subst, env, variance) match {
-      | None() -> return None()
-      | Some((stypes, tparams)) ->
-        if (tparams.clauses.isEmpty()) return Some(stypes);
-        result = static::fromSTypes(this.pos, stypes);
-        for (clause in tparams.clauses) {
-          !result = static::union(subst, env, result, clause.type)
-        };
-        !ty = result
-      }
+    this.expand(subst, env, variance) match {
+    | None() -> None()
+    | Some((stypes, tparams)) ->
+      if (tparams.clauses.isEmpty()) return Some(stypes);
+      result = stypes;
+      for (clause in tparams.clauses) {
+        !result = STypes::union(subst, env, result, clause.stypes)
+      };
+      Some(result)
     }
   }
 
@@ -863,35 +860,38 @@ class TParam(name: String, fileName: String, id: Int) uses Hashable, Orderable
 
 class Clause(
   vars: ArraySet<TParam>,
-  type: TType,
+  stypes: STypes,
 ) uses Hashable, Orderable, Projectable<ArraySet<TParam>> {
-  fun inter(subst: mutable Subst, env: TEnv, other: Clause): Clause {
-    Clause(
-      this.vars.union(other.vars),
-      interTType(subst, env, this.type, other.type),
-    )
+  fun inter(subst: mutable Subst, env: TEnv, other: Clause): ?Clause {
+    empty1 = this.stypes.isEmpty();
+    empty2 = other.stypes.isEmpty();
+    vars = this.vars.union(other.vars);
+    if (empty1) {
+      Some(Clause(vars, other.stypes))
+    } else if (empty2) {
+      Some(Clause(vars, this.stypes))
+    } else {
+      STypes::inter(subst, env, this.stypes, other.stypes).map(stypes ->
+        Clause(vars, stypes)
+      )
+    }
   }
 
   fun union(subst: mutable Subst, env: TEnv, other: Clause): Clause {
     invariant(this.vars == other.vars);
-    Clause(this.vars, TType::union(subst, env, this.type, other.type))
+    Clause(this.vars, STypes::union(subst, env, this.stypes, other.stypes))
   }
 
-  fun interSTypes(
-    pos: PosRange,
-    subst: mutable Subst,
-    env: TEnv,
-    stypes: STypes,
-  ): Clause {
-    Clause(
-      this.vars,
-      interTType(
-        subst,
-        env,
-        this.type,
-        TType::create(pos, stypes, TInsts::empty(), TTypeParams::empty()),
-      ),
-    )
+  fun interSTypes(subst: mutable Subst, env: TEnv, stypes: STypes): ?Clause {
+    empty1 = this.stypes.isEmpty();
+    vars = this.vars;
+    if (empty1) {
+      Some(Clause(vars, stypes))
+    } else {
+      STypes::inter(subst, env, this.stypes, stypes).map(stypes ->
+        Clause(vars, stypes)
+      )
+    }
   }
 
   fun toString(): String {
@@ -915,27 +915,27 @@ class TTypeParams(
     this.clauses.isEmpty()
   }
 
-  static fun fromTypeParam(tparam: TypeParam, ttype: TType): this {
+  static fun fromTypeParam(tparam: TypeParam, stypes: STypes): this {
     static(
       InternalKeyedArrayMap::single(
         Clause(
           ArraySet::single(
             TParam(tparam.name.value, tparam.name.posRange.fileName, tparam.id),
           ),
-          ttype,
+          stypes,
         ),
       ),
     )
   }
   static fun fromTParamWithConstraint(
     tparam: TParamWithConstraint,
-    ttype: TType,
+    stypes: STypes,
   ): this {
     static(
       InternalKeyedArrayMap::single(
         Clause(
           ArraySet::single(TParam(tparam.name, tparam.fileName, tparam.id)),
-          ttype,
+          stypes,
         ),
       ),
     )
@@ -950,9 +950,9 @@ class TTypeParams(
     result = mutable Vector[];
     for (clause1 in tparams1.clauses) {
       for (clause2 in tparams2.clauses) {
-        inter = clause1.inter(subst, env, clause2);
-        if (!inter.type.isBottom()) {
-          result.push(inter);
+        clause1.inter(subst, env, clause2) match {
+        | None() -> void
+        | Some(inter) -> result.push(inter)
         }
       }
     };
@@ -973,7 +973,6 @@ class TTypeParams(
   }
 
   static fun interSTypes(
-    pos: PosRange,
     subst: mutable Subst,
     env: TEnv,
     stypes: STypes,
@@ -981,9 +980,9 @@ class TTypeParams(
   ): TTypeParams {
     result = mutable Vector[];
     for (clause in tparams.clauses) {
-      inter = clause.interSTypes(pos, subst, env, stypes);
-      if (!inter.type.isBottom()) {
-        result.push(inter);
+      clause.interSTypes(subst, env, stypes) match {
+      | None() -> void
+      | Some(inter) -> result.push(inter)
       }
     };
     TTypeParams(InternalKeyedArrayMap::createFromIterator(result.iterator()))
@@ -999,9 +998,9 @@ class TTypeParams(
     for (inter1 in tparams1.clauses) {
       for (inter2 in tparams2.clauses) {
         inter2.vars.iterDiff(inter1.vars).findMap((_tparam2) ->
-          Some(inter2.type) match {
+          Some(inter2.stypes) match {
           | Some(c) ->
-            isSubTType(subst, env, c, cstr) match {
+            isSubTType(subst, env, TType::fromSTypes(cstr.pos, c), cstr) match {
             | STOk() -> None()
             | error -> Some(error)
             }
@@ -1012,9 +1011,9 @@ class TTypeParams(
         }
       } else {
         for (_tparam1 in inter1.vars) {
-          Some(inter1.type) match {
+          Some(inter1.stypes) match {
           | Some(c) ->
-            isSubTType(subst, env, c, cstr) match {
+            isSubTType(subst, env, TType::fromSTypes(cstr.pos, c), cstr) match {
             | STOk() -> return STOk()
             | _error -> continue
             }
@@ -1637,20 +1636,8 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   | None() -> return TType::bottom(ty1.pos)
   | Some(x) -> x
   };
-  stypes1tparams2 = TTypeParams::interSTypes(
-    ty1.pos,
-    subst,
-    env,
-    stypes1,
-    tparams2,
-  );
-  stypes2tparams1 = TTypeParams::interSTypes(
-    ty2.pos,
-    subst,
-    env,
-    stypes2,
-    tparams1,
-  );
+  stypes1tparams2 = TTypeParams::interSTypes(subst, env, stypes1, tparams2);
+  stypes2tparams1 = TTypeParams::interSTypes(subst, env, stypes2, tparams1);
   tparams1tparams2 = TTypeParams::inter(subst, env, tparams1, tparams2);
   TType::create(
     ty1.pos,
@@ -1698,7 +1685,7 @@ base class ApplyType {
   overridable deferred fun clause(env: this::Env, clause: Clause): Clause {
     Clause(
       clause.vars.map(x -> this.typeParam(env, x)),
-      this.type(env, clause.type),
+      this.stypes(env, clause.stypes),
     )
   }
 
@@ -1868,7 +1855,7 @@ class Instantiate() extends ApplyType {
             tparams.vars.filter(tparam ->
               !map.containsKey((tparam.fileName, tparam.id))
             ),
-            tparams.type,
+            tparams.stypes,
           )
         )
         .filter(x -> !x.vars.isEmpty()),

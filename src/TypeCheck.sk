@@ -343,16 +343,14 @@ class TypeChecker{
           tparam.id,
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
-        TType::fromTParams(
+        ty = TType::fromTParams(
           tparam.name.posRange,
-          TTypeParams::fromTParamWithConstraint(
-            ttypeParam,
-            ttypeParam.cstr match {
-            | None() -> TType::top(tparam.name.posRange)
-            | Some(cstr) -> cstr
-            },
-          ),
-        )
+          TTypeParams::fromTParamWithConstraint(ttypeParam, STypes::empty()),
+        );
+        ttypeParam.cstr match {
+        | None() -> ty
+        | Some(cstr) -> interTType(Subst::mcreate{context}, this.tenv, ty, cstr)
+        }
       }),
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
@@ -362,7 +360,10 @@ class TypeChecker{
       c.name.posRange,
       TTypeParams::fromTParamWithConstraint(
         TParamWithConstraint("this", c.name.posRange.fileName, -1, None()),
-        cstr,
+        cstr.getSTypes(subst, this.tenv, Covariant()) match {
+        | None() -> STypes::empty()
+        | Some(stypes) -> stypes
+        },
       ),
     );
     if (c.extends_.size() != 0) {

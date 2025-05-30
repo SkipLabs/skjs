@@ -179,7 +179,7 @@ mutable class TypePp{
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
-              pp.out(level, margin, " extends ");
+              pp.out(level, margin, " extends1 ");
               pp.type(level, margin, x)
             }
           };
@@ -211,7 +211,7 @@ mutable class TypePp{
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
-              pp.out(level, margin, " extends ");
+              pp.out(level, margin, " extends2 ");
               pp.type(level, margin, x)
             }
           };
@@ -349,10 +349,15 @@ mutable class TypePp{
             this.out(level, margin, " & ");
           };
           this.out(level, margin, tparam.name + ":" + tparam.id);
-          Some(tparams.type) match {
+          Some(tparams.stypes) match {
           | Some(cstr) ->
-            this.out(level, margin, " extends ");
-            this.type(level, margin, cstr)
+            this.out(level, margin, " extends3 ");
+            for (k => sty in cstr) {
+              if (k != 0) {
+                this.out(level, margin, " | ");
+              };
+              this.stype(level, margin, sty);
+            }
           }
         }
       };

@@ -220,18 +220,22 @@ class TEnv{
     tparams: Array<TypeParam>,
   ): this {
     for (tparam in tparams) {
+      ty = TType::fromTParams(
+        tparam.name.posRange,
+        TTypeParams::fromTypeParam(tparam, STypes::empty()),
+      );
       !this.subst[tparam.name.value] = (
         false,
-        TType::fromTParams(
-          tparam.name.posRange,
-          TTypeParams::fromTypeParam(
-            tparam,
-            tparam.constraint match {
-            | None() -> TType::top(tparam.name.posRange)
-            | Some(cstr) -> this.normalize(context, cstr)
-            },
-          ),
-        ),
+        tparam.constraint match {
+        | None() -> ty
+        | Some(cstr) ->
+          interTType(
+            Subst::mcreate{context},
+            this,
+            ty,
+            this.normalize(context, cstr),
+          )
+        },
       )
     };
     this
@@ -509,16 +513,14 @@ class TEnv{
           )
         };
         tparam = this.tparams[n.value];
-        TType::fromTParams(
+        ty = TType::fromTParams(
           pos,
-          TTypeParams::fromTParamWithConstraint(
-            tparam,
-            tparam.cstr match {
-            | None() -> TType::top(pos)
-            | Some(cstr) -> cstr
-            },
-          ),
-        )
+          TTypeParams::fromTParamWithConstraint(tparam, STypes::empty()),
+        );
+        tparam.cstr match {
+        | None() -> ty
+        | Some(cstr) -> interTType(Subst::mcreate{context}, this, ty, cstr)
+        }
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
