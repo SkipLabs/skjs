@@ -207,6 +207,7 @@ class TType private {
       if (tparams.clauses.isEmpty()) return Some(stypes);
       result = stypes;
       for (clause in tparams.clauses) {
+        if (clause.stypes.isEmpty()) return None();
         !result = STypes::union(subst, env, result, clause.stypes)
       };
       Some(result)
