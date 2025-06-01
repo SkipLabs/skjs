@@ -352,11 +352,15 @@ mutable class TypePp{
           Some(tparams.stypes) match {
           | Some(cstr) ->
             this.out(level, margin, " extends3 ");
-            for (k => sty in cstr) {
-              if (k != 0) {
-                this.out(level, margin, " | ");
-              };
-              this.stype(level, margin, sty);
+            cstr match {
+            | None() -> void
+            | Some(c) ->
+              for (k => sty in c) {
+                if (k != 0) {
+                  this.out(level, margin, " | ");
+                };
+                this.stype(level, margin, sty);
+              }
             }
           }
         }

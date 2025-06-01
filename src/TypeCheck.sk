@@ -345,7 +345,7 @@ class TypeChecker{
         );
         ty = TType::fromTParams(
           tparam.name.posRange,
-          TTypeParams::fromTParamWithConstraint(ttypeParam, STypes::empty()),
+          TTypeParams::fromTParamWithConstraint(ttypeParam, None()),
         );
         ttypeParam.cstr match {
         | None() -> ty
@@ -360,10 +360,7 @@ class TypeChecker{
       c.name.posRange,
       TTypeParams::fromTParamWithConstraint(
         TParamWithConstraint("this", c.name.posRange.fileName, -1, None()),
-        cstr.getSTypes(subst, this.tenv, Covariant()) match {
-        | None() -> STypes::empty()
-        | Some(stypes) -> stypes
-        },
+        cstr.getSTypes(subst, this.tenv, Covariant()),
       ),
     );
     if (c.extends_.size() != 0) {

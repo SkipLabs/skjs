@@ -222,7 +222,7 @@ class TEnv{
     for (tparam in tparams) {
       ty = TType::fromTParams(
         tparam.name.posRange,
-        TTypeParams::fromTypeParam(tparam, STypes::empty()),
+        TTypeParams::fromTypeParam(tparam, None()),
       );
       !this.subst[tparam.name.value] = (
         false,
@@ -515,7 +515,7 @@ class TEnv{
         tparam = this.tparams[n.value];
         ty = TType::fromTParams(
           pos,
-          TTypeParams::fromTParamWithConstraint(tparam, STypes::empty()),
+          TTypeParams::fromTParamWithConstraint(tparam, None()),
         );
         tparam.cstr match {
         | None() -> ty

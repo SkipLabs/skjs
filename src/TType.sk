@@ -207,8 +207,11 @@ class TType private {
       if (tparams.clauses.isEmpty()) return Some(stypes);
       result = stypes;
       for (clause in tparams.clauses) {
-        if (clause.stypes.isEmpty()) return None();
-        !result = STypes::union(subst, env, result, clause.stypes)
+        clause.stypes match {
+        | None() -> return None()
+        | Some(clauseSTypes) ->
+          !result = STypes::union(subst, env, result, clauseSTypes)
+        }
       };
       Some(result)
     }
@@ -861,36 +864,40 @@ class TParam(name: String, fileName: String, id: Int) uses Hashable, Orderable
 
 class Clause(
   vars: ArraySet<TParam>,
-  stypes: STypes,
+  stypes: ?STypes,
 ) uses Hashable, Orderable, Projectable<ArraySet<TParam>> {
   fun inter(subst: mutable Subst, env: TEnv, other: Clause): ?Clause {
-    empty1 = this.stypes.isEmpty();
-    empty2 = other.stypes.isEmpty();
     vars = this.vars.union(other.vars);
-    if (empty1) {
-      Some(Clause(vars, other.stypes))
-    } else if (empty2) {
-      Some(Clause(vars, this.stypes))
-    } else {
-      STypes::inter(subst, env, this.stypes, other.stypes).map(stypes ->
-        Clause(vars, stypes)
+    (this.stypes, other.stypes) match {
+    | (None(), _) -> Some(Clause(vars, other.stypes))
+    | (_, None()) -> Some(Clause(vars, this.stypes))
+    | (Some(stypes1), Some(stypes2)) ->
+      STypes::inter(subst, env, stypes1, stypes2).map(stypes ->
+        Clause(vars, Some(stypes))
       )
     }
   }
 
   fun union(subst: mutable Subst, env: TEnv, other: Clause): Clause {
     invariant(this.vars == other.vars);
-    Clause(this.vars, STypes::union(subst, env, this.stypes, other.stypes))
+    stypesOpt = (this.stypes, other.stypes) match {
+    | (None(), None()) -> None()
+    | (x @ Some(_), None())
+    | (None(), x @ Some(_)) ->
+      x
+    | (Some(x), Some(y)) -> Some(STypes::union(subst, env, x, y))
+    };
+    Clause(this.vars, stypesOpt)
   }
 
   fun interSTypes(subst: mutable Subst, env: TEnv, stypes: STypes): ?Clause {
-    empty1 = this.stypes.isEmpty();
+    invariant(!stypes.isEmpty());
     vars = this.vars;
-    if (empty1) {
-      Some(Clause(vars, stypes))
-    } else {
-      STypes::inter(subst, env, this.stypes, stypes).map(stypes ->
-        Clause(vars, stypes)
+    this.stypes match {
+    | None() -> Some(Clause(vars, Some(stypes)))
+    | Some(thisSTypes) ->
+      STypes::inter(subst, env, thisSTypes, stypes).map(stypes ->
+        Clause(vars, Some(stypes))
       )
     }
   }
@@ -916,7 +923,7 @@ class TTypeParams(
     this.clauses.isEmpty()
   }
 
-  static fun fromTypeParam(tparam: TypeParam, stypes: STypes): this {
+  static fun fromTypeParam(tparam: TypeParam, stypes: ?STypes): this {
     static(
       InternalKeyedArrayMap::single(
         Clause(
@@ -930,7 +937,7 @@ class TTypeParams(
   }
   static fun fromTParamWithConstraint(
     tparam: TParamWithConstraint,
-    stypes: STypes,
+    stypes: ?STypes,
   ): this {
     static(
       InternalKeyedArrayMap::single(
@@ -999,7 +1006,8 @@ class TTypeParams(
     for (inter1 in tparams1.clauses) {
       for (inter2 in tparams2.clauses) {
         inter2.vars.iterDiff(inter1.vars).findMap((_tparam2) ->
-          Some(inter2.stypes) match {
+          inter2.stypes match {
+          | None() -> None()
           | Some(c) ->
             isSubTType(subst, env, TType::fromSTypes(cstr.pos, c), cstr) match {
             | STOk() -> None()
@@ -1012,7 +1020,8 @@ class TTypeParams(
         }
       } else {
         for (_tparam1 in inter1.vars) {
-          Some(inter1.stypes) match {
+          inter1.stypes match {
+          | None() -> return STOk()
           | Some(c) ->
             isSubTType(subst, env, TType::fromSTypes(cstr.pos, c), cstr) match {
             | STOk() -> return STOk()
@@ -1686,7 +1695,7 @@ base class ApplyType {
   overridable deferred fun clause(env: this::Env, clause: Clause): Clause {
     Clause(
       clause.vars.map(x -> this.typeParam(env, x)),
-      this.stypes(env, clause.stypes),
+      clause.stypes.map(x -> this.stypes(env, x)),
     )
   }
 
