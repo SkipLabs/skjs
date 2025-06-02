@@ -141,6 +141,10 @@ class .ArraySet<T: Orderable> private (
     )
   }
 
+  fun contains(that: this): Bool {
+    this.iterDiff(that).next() is None()
+  }
+
   fun iterUnion(that: this): mutable Iterator<T> {
     this.iterDiffInterDiff(that).map((xO_yO) ->
       xO_yO match {

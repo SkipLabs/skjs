@@ -591,12 +591,14 @@ class TypeChecker{
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
     ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> false
-    | Some((stypes, tparams)) ->
-      tparams.clauses.size() == 0 &&
-        stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) -> true
-        | _ -> false
-        }
+    | Some(_tparams) -> invariant_violation("TODO isVoid")
+    /*
+    tparams.clauses.size() == 0 &&
+    stypes.singleElt() match {
+    | Some(TPrimVoid(TVoid(), _)) -> true
+    | _ -> false
+    }
+    */
     }
   }
 
@@ -1281,8 +1283,7 @@ class TypeChecker{
       exprTy = this.expr(env, args[0]);
       ty = exprTy.expand(env.subst, this.tenv, Covariant()) match {
       | None() -> TType::top(exprTy.pos)
-      | Some((stypes, tparams)) ->
-        TType::create(exprTy.pos, stypes, TInsts::empty(), tparams)
+      | Some(tparams) -> TType::create(exprTy.pos, TInsts::empty(), tparams)
       };
       print_error(prettyPrintType(false, ty));
       TType::single(pos, TPrimVoid(TVoid(), pos))
@@ -2247,8 +2248,8 @@ class TypeChecker{
     ty = env.scope.get(local);
     (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> (TType::top(ty.pos), true)
-    | Some((stypes, tparams)) ->
-      t = TType::create(ty.pos, stypes, TInsts::empty(), tparams);
+    | Some(tparams) ->
+      t = TType::create(ty.pos, TInsts::empty(), tparams);
       !t = FilterType().type((filter, map), t);
       isTopOrEmpty = t.getSTypes(env.subst, this.tenv, Covariant()) match {
       | None() -> true
