@@ -116,6 +116,10 @@ class TType private {
     static::create(pos, TInsts::empty(), tparams)
   }
 
+  static fun fromTParam(pos: PosRange, tparam: TParam): this {
+    static::create(pos, TInsts::empty(), TTypeParams::single(tparam))
+  }
+
   static fun single(pos: PosRange, stype: SType): this {
     static::fromSTypes(pos, STypes::single(stype))
   }
@@ -123,15 +127,6 @@ class TType private {
   static fun create(pos: PosRange, insts: TInsts, tparams: TTypeParams): this {
     h = (insts, tparams).hash();
     static{h, pos, isTop => false, insts, tparams};
-  }
-
-  fun withSTypes(stypes: STypes): this {
-    if (this.isTop) {
-      invariant(stypes.isEmpty());
-      this
-    } else {
-      static::create(this.pos, this.insts, this.tparams)
-    }
   }
 
   fun withTParams(tparams: TTypeParams): this {
@@ -274,9 +269,9 @@ class TType private {
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
-    this.getSTypes(subst, env, Covariant()).flatMap(stypes ~>
+    this.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
       stypes.singleElt()
-    ) match {
+    }) match {
     | Some(TObject(TFields(fields), pos)) ->
       static::single(
         this.pos,
@@ -289,7 +284,7 @@ class TType private {
               | None() -> return None()
               | Some(x) -> x
               };
-              !fieldSTypes = fieldSTypes.filterMap(fieldSType ~>
+              !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
                 fieldSType match {
                 | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
                 | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
@@ -299,8 +294,8 @@ class TType private {
                 //Some(tfuns with {methods => Array[]})
                 | _ -> Some(fieldSType)
                 }
-              );
-              !fieldType = fieldType.withSTypes(fieldSTypes);
+              });
+              !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
               if (fieldType.isBottom()) None() else {
                 Some(field with {type => fieldType})
               }
@@ -923,6 +918,12 @@ class TTypeParams(
     this.clauses.isEmpty()
   }
 
+  static fun single(tparam: TParam): this {
+    TTypeParams(
+      InternalKeyedArrayMap::single(Clause(ArraySet::single(tparam), None())),
+    )
+  }
+
   static fun fromTypeParam(tparam: TypeParam, stypes: ?STypes): this {
     static(
       InternalKeyedArrayMap::single(
@@ -968,16 +969,29 @@ class TTypeParams(
     tparams1: TTypeParams,
     tparams2: TTypeParams,
   ): TTypeParams {
-    result = mutable Vector[];
+    result = SortedMap[];
     for (clause1 in tparams1.clauses) {
       for (clause2 in tparams2.clauses) {
         clause1.inter(subst, env, clause2) match {
         | None() -> void
-        | Some(inter) -> result.push(inter)
+        | Some(inter) ->
+          inter.stypes match {
+          | Some(x) if (x.isEmpty()) -> continue
+          | _ -> void
+          };
+          if (!result.containsKey(inter.vars)) {
+            !result[inter.vars] = inter;
+          } else {
+            !result[inter.vars] = result[inter.vars].union(subst, env, inter)
+          }
         }
       }
     };
-    TTypeParams(InternalKeyedArrayMap::createFromIterator(result.iterator()))
+    TTypeParams(
+      InternalKeyedArrayMap::createFromIterator(
+        result.items().map(x -> x.i1).iterator(),
+      ),
+    )
   }
 
   static fun union(
@@ -993,52 +1007,30 @@ class TTypeParams(
     )
   }
 
-  static fun interSTypes(
-    subst: mutable Subst,
-    env: TEnv,
-    stypes: STypes,
-    tparams: TTypeParams,
-  ): TTypeParams {
-    result = mutable Vector[];
-    for (clause in tparams.clauses) {
-      clause.interSTypes(subst, env, stypes) match {
-      | None() -> void
-      | Some(inter) -> result.push(inter)
-      }
-    };
-    TTypeParams(InternalKeyedArrayMap::createFromIterator(result.iterator()))
-  }
-
   static fun isSub(
     subst: mutable Subst,
     env: TEnv,
     tparams1: TTypeParams,
     tparams2: TTypeParams,
+    error: () -> STResult,
   ): STResult {
-    error = () ->
-      STInvalidTypeParams(
-        tparams1.clauses
-          .items()
-          .collect(Array)
-          .map(x -> x.i1)
-          .map(inter -> inter.toString())
-          .join(" | "),
-      );
     for (inter1 in tparams1.clauses) {
       for (inter2 in tparams2.clauses) {
-        if (!inter2.vars.contains(inter1.vars)) {
-          return error()
+        if (!inter1.vars.contains(inter2.vars)) {
+          continue;
         };
         (inter1.stypes, inter2.stypes) match {
-        | (None(), None()) -> void
-        | (Some _, None()) -> void
-        | (None(), Some _) -> return error()
+        | (None(), None()) -> break void
+        | (Some _, None()) -> break void
+        | (None(), Some _) -> continue
         | (Some(x1), Some(x2)) ->
           STypes::isSub(subst, env, x1, x2) match {
-          | STOk() -> void
-          | err -> return err
+          | STOk() -> break void
+          | _ -> continue
           }
         }
+      } else {
+        return error()
       }
     };
     STOk()
@@ -1116,6 +1108,7 @@ fun isSubTType(
   u1: TType,
   u2: TType,
 ): STResult {
+  if (u2.isTop) return STOk();
   if (env.seenSub.contains((subst.version, u1, u2))) return STOk();
   !env.seenSub = env.seenSub.set((subst.version, u1, u2));
   savedSubst = subst.save();
@@ -1138,7 +1131,10 @@ fun isSubTType(
   | (None(), Some(_)) -> return STTop()
   | (Some(tparams1), Some(tparams2)) -> (tparams1, tparams2)
   };
-  TTypeParams::isSub(subst, env, tparams1, tparams2) match {
+  TTypeParams::isSub(subst, env, tparams1, tparams2, () -> {
+    subst.restore(savedSubst);
+    STInvalidTypeParams(prettyPrintType(false, u1))
+  }) match {
   | STOk() -> STOk()
   | err @ STRec _ ->
     subst.restore(savedSubst);
@@ -1607,10 +1603,6 @@ fun interTTuple(
   TTuple(result.toArray(), tuple1.pos)
 }
 
-// (stypes1 | tparams1) & (stypes2 | tparams2) =
-//     (stypes1 & stypes2) | (stypes1 & tparams2)
-//   | (stypes2 & tparams1) | (tparams1 & tparams2)
-
 fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   if (ty1.isTop) return ty2;
   if (ty2.isTop) return ty1;
@@ -1812,35 +1804,36 @@ class Instantiate() extends ApplyType {
     );
     if (ty.tparams.clauses.isEmpty()) return ty;
     (subst, tenv, map) = env;
+    clauses = ty.tparams.clauses;
     result = ty.withTParams(TTypeParams::empty());
-    for (tparams in ty.tparams.clauses) {
-      clauseOpt: ?TType = None();
-      for (tparam in tparams.vars) {
-        if (!map.containsKey((tparam.fileName, tparam.id))) continue;
-        paramTy = map[(tparam.fileName, tparam.id)];
-        !clauseOpt = clauseOpt match {
-        | None() -> Some(paramTy)
-        | Some(clause) -> Some(interTType(subst, tenv, clause, paramTy))
+    for (clause in clauses) {
+      clauseTy = TType::top(ty.pos);
+      for (tparam in clause.vars) {
+        if (map.containsKey((tparam.fileName, tparam.id))) {
+          paramTy = map[(tparam.fileName, tparam.id)];
+          !clauseTy = interTType(subst, tenv, clauseTy, paramTy)
+        } else {
+          !clauseTy = interTType(
+            subst,
+            tenv,
+            clauseTy,
+            TType::fromTParam(ty.pos, tparam),
+          )
         }
       };
-      clauseOpt match {
+      clause.stypes match {
       | None() -> void
-      | Some(clause) -> !result = TType::union(subst, tenv, result, clause)
-      };
-    };
-    tparams = TTypeParams(
-      ty.tparams.clauses
-        .map(tparams ->
-          Clause(
-            tparams.vars.filter(tparam ->
-              !map.containsKey((tparam.fileName, tparam.id))
-            ),
-            tparams.stypes,
-          )
+      | Some(stypes) ->
+        !clauseTy = interTType(
+          subst,
+          tenv,
+          clauseTy,
+          TType::fromSTypes(ty.pos, stypes),
         )
-        .filter(x -> !x.vars.isEmpty()),
-    );
-    result.withTParams(tparams)
+      };
+      !result = TType::union(subst, tenv, result, clauseTy);
+    };
+    result
   }
 }
 

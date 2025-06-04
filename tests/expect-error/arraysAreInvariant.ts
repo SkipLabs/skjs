@@ -13,5 +13,5 @@ function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {
 }
 
 function checkIntersectionWithTopIsNotBottom(): number {
-    return interWithTop(0) + 1; // ensure the result is a (subtype of a) number
+    return interWithTop<number>(0) + 1; // ensure the result is a (subtype of a) number
 }

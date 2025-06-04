@@ -9,5 +9,5 @@ function interWithTop<T>(...x: T[] & arrayBooleanOrArrayString): T {
 
 // We should not be able to call interWithTop with T instantiated to number
 function checkIntersectionWithTopIsNotBottom(): number {
-  return interWithTop(0) + 1;
+  return interWithTop<number>(0) + 1;
 }

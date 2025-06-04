@@ -591,14 +591,18 @@ class TypeChecker{
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
     ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> false
-    | Some(_tparams) -> invariant_violation("TODO isVoid")
-    /*
-    tparams.clauses.size() == 0 &&
-    stypes.singleElt() match {
-    | Some(TPrimVoid(TVoid(), _)) -> true
-    | _ -> false
-    }
-    */
+    | Some(tparams) ->
+      for (clause in tparams.clauses) {
+        clause.stypes match {
+        | None() -> return false
+        | Some(stypes) ->
+          stypes.singleElt() match {
+          | Some(TPrimVoid(TVoid(), _)) -> void
+          | _ -> return false
+          }
+        }
+      };
+      true
     }
   }
 
@@ -2032,7 +2036,6 @@ class TypeChecker{
               .flatMap(stypes ~> stypes.singleElt()) match {
             | Some(object @ TObject _) ->
               eltType = this.getArrayEltType(env, object);
-
               for (i in Range(totalSize, args.size())) {
                 this.checkSubType(
                   env,
