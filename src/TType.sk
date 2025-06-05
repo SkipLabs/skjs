@@ -201,8 +201,8 @@ class TType private {
       | TInter(ty1, ty2) -> interTType(subst, env, ty1, ty2)
       | tvar @ TVar _ ->
         variance match {
-        | Covariant() -> subst.get(tvar)
-        | Contravariant() -> subst.getContra(tvar)
+        | Covariant() -> subst.get(env, tvar)
+        | Contravariant() -> subst.getContra(env, tvar)
         }
       };
       if (tyDef.isTop) return None();
@@ -819,7 +819,11 @@ class STypes private (
   }
 }
 
-class TVar(pos: PosRange, id: Int) extends TInst
+class TVar(
+  pos: PosRange,
+  id: Int,
+  constraints: SortedMap<Int, TType>,
+) extends TInst
 class TArgs(targs: Array<TType>) uses Hashable, Orderable
 class TSInst(name: Name, targs: TArgs) extends TInst
 class TInter(ty1: TType, ty2: TType) extends TInst
@@ -1114,13 +1118,25 @@ fun isSubTType(
   savedSubst = subst.save();
   for (inst in u1.insts) {
     inst match {
-    | tvar @ TVar _ -> subst.grow(env, tvar, u2, false)
+    | tvar @ TVar(_, _, constraints) ->
+      for (_ => cstr in constraints) {
+        status = isSubTType(subst, env, u2, cstr);
+        if (status is STOk()) continue;
+        return status;
+      };
+      subst.grow(env, tvar, u2, false)
     | _ -> void
     }
   };
   for (inst in u2.insts) {
     inst match {
-    | tvar @ TVar _ -> subst.grow(env, tvar, u1, true)
+    | tvar @ TVar(_, _, constraints) ->
+      for (_ => cstr in constraints) {
+        status = isSubTType(subst, env, u1, cstr);
+        if (status is STOk()) continue;
+        return status;
+      };
+      subst.grow(env, tvar, u1, true)
     | _ -> void
     }
   };
@@ -1614,6 +1630,30 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
+  if (
+    ty1.insts.insts.size() == 1 &&
+    ty1.insts.insts[0] is TVar _ &&
+    ty1.tparams.isEmpty()
+  ) {
+    ty1.insts.insts[0] match {
+    | TVar(pos, id, constraints) ->
+      !constraints[ty2.hash()] = ty2;
+      return TType::fromTInst(pos, TVar(pos, id, constraints))
+    | _ -> invariant_violation("Already checked it was a TVar")
+    }
+  };
+  if (
+    ty2.insts.insts.size() == 1 &&
+    ty2.insts.insts[0] is TVar _ &&
+    ty2.tparams.isEmpty()
+  ) {
+    ty2.insts.insts[0] match {
+    | TVar(pos, id, constraints) ->
+      !constraints[ty2.hash()] = ty1;
+      return TType::fromTInst(pos, TVar(pos, id, constraints))
+    | _ -> invariant_violation("Already checked it was a TVar")
+    }
+  };
   tparams1 = ty1.expand(subst, env, Covariant()) match {
   | None() -> return ty2
   | Some(x) -> x
@@ -1750,7 +1790,8 @@ base class ApplyType {
     inst match {
     | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
     | TInter(ty1, ty2) -> TInter(this.type(env, ty1), this.type(env, ty2))
-    | tvar @ TVar _ -> tvar
+    | TVar(pos, id, constraints) ->
+      TVar(pos, id, constraints.map((_, ty) -> this.type(env, ty)))
     }
   }
 
@@ -1902,14 +1943,8 @@ mutable class Subst private {
     }
   }
 
-  mutable fun setIfUndefined(tvar: TVar, ty: TType): void {
-    if (!this.values.containsKey(tvar.id)) {
-      this.!values[tvar.id] = SVClosed(ty);
-    }
-  }
-
-  mutable fun get(tvar: TVar): TType {
-    (if (!this.values.containsKey(tvar.id)) {
+  mutable fun get(env: TEnv, tvar: TVar): TType {
+    result = (if (!this.values.containsKey(tvar.id)) {
       SVOpen(TType::bottom(tvar.pos));
     } else {
       this.values[tvar.id]
@@ -1918,11 +1953,15 @@ mutable class Subst private {
       this.!values[tvar.id] = SVClosed(ty);
       ty
     | SVClosed(ty) -> ty
-    }
+    };
+    for (cstr in tvar.constraints) {
+      !result = interTType(this, env, result, cstr);
+    };
+    result
   }
 
-  mutable fun getContra(tvar: TVar): TType {
-    if (!this.values.containsKey(tvar.id)) {
+  mutable fun getContra(env: TEnv, tvar: TVar): TType {
+    result = if (!this.values.containsKey(tvar.id)) {
       TType::bottom(tvar.pos)
     } else {
       this.values[tvar.id] match {
@@ -1930,13 +1969,17 @@ mutable class Subst private {
       | SVClosed(ty) ->
         ty
       }
-    }
+    };
+    for (cstr in tvar.constraints) {
+      !result = interTType(this, env, result, cstr);
+    };
+    result
   }
 
   mutable fun gen(pos: PosRange): TVar {
     id = this.version;
     this.!version = this.version + 1;
-    TVar(pos, id);
+    TVar(pos, id, SortedMap[]);
   }
 
   readonly fun isOpen(tvar: TVar): Bool {

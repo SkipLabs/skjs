@@ -379,7 +379,7 @@ mutable class TypePp{
             pp.out(level, margin, "(");
             pp.type(level, margin, ty2);
             pp.out(level, margin, ")")
-          | TVar(_, id) -> pp.out(level, margin, "'" + id)
+          | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
           }
         }
       },
@@ -406,7 +406,7 @@ mutable class TypePp{
             pp.type(level, margin, ty1);
             pp.out(level, margin, " & ");
             pp.type(level, margin, ty2)
-          | TVar(_, id) -> pp.out(level, margin, "'" + id)
+          | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
           }
         }
       },
