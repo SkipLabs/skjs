@@ -1512,7 +1512,9 @@ fun interSType(
     | (_, None()) -> Some(tPrimValue1)
     | (None(), Some _) -> Some(tPrimValue2)
     | (Some(s1), Some(s2)) ->
-      s1.inter(s2).map(values ~> tPrimValue1 with {values => Some(values)})
+      Some(s1.inter(s2)).map(values ~>
+        tPrimValue1 with {values => Some(values)}
+      )
     }
 
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
