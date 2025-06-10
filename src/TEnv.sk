@@ -532,6 +532,18 @@ class TEnv{
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.posRange, "Cyclic definition")])
       } else {
+        tdef = this.defMap.getType(context, n);
+        tdef match {
+        | TDType(ta) ->
+          if (ta.tdefParams.size() != targs.size()) {
+            typingError(Array[(n.posRange, "Invalid number of type arguments")])
+          }
+        | TDClass(ca) ->
+          if (ca.tparams.size() != targs.size()) {
+            typingError(Array[(n.posRange, "Invalid number of type arguments")])
+          }
+        };
+
         TType::fromTInst(
           pos,
           TSInst(
