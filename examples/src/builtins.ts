@@ -28,6 +28,7 @@ declare class number {
 }
 
 declare class string {
+  length: number;
   charAt(pos: number): string;
   startsWith(prefix: string): boolean;
   endsWith(suffix: string): boolean;

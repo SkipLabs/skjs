@@ -129,6 +129,17 @@ class TType private {
     static{h, pos, isTop => false, insts, tparams};
   }
 
+  static fun expandPrim(pos: PosRange, kind: TPrimValueKind): TType {
+    kind match {
+    | TString _ ->
+      TType::fromTInst(pos, TSInst(Name(pos, "string"), TArgs(Array[])))
+    | TBool _ ->
+      TType::fromTInst(pos, TSInst(Name(pos, "boolean"), TArgs(Array[])))
+    | TNum _ ->
+      TType::fromTInst(pos, TSInst(Name(pos, "number"), TArgs(Array[])))
+    }
+  }
+
   fun withTParams(tparams: TTypeParams): this {
     if (this.isTop) {
       invariant(tparams.isEmpty());
@@ -257,14 +268,20 @@ class TType private {
 
   fun withUndefined(undefinedPosRange: PosRange): this {
     if (this.containsUndefined()) return this;
-    !this.tparams.clauses = this.tparams.clauses.map(clause -> {
-      clause.stypes match {
-      | None() -> clause
-      | Some(stypes) ->
-        !clause.stypes = Some(stypes.addUndefined(undefinedPosRange));
-        clause
-      }
-    });
+    if (this.tparams.clauses.size() == 0) {
+      !this.tparams = TTypeParams::fromSTypes(
+        STypes::empty().addUndefined(undefinedPosRange),
+      );
+    } else {
+      !this.tparams.clauses = this.tparams.clauses.map(clause -> {
+        clause.stypes match {
+        | None() -> clause
+        | Some(stypes) ->
+          !clause.stypes = Some(stypes.addUndefined(undefinedPosRange));
+          clause
+        }
+      });
+    };
     this
   }
 
@@ -1039,6 +1056,37 @@ class TTypeParams(
     };
     STOk()
   }
+
+  fun primKind(): ?TPrimValueKind {
+    cand: ?TPrimValueKind = None();
+    for (clause in this.clauses) {
+      clause.stypes match {
+      | None() -> return None()
+      | Some(stypes) ->
+        for (stype in stypes) {
+          stype match {
+          | TPrimValue(kind, _, _) if (cand is None()) -> !cand = Some(kind)
+          | TPrimValue(kind, _, _) -> if (cand != Some(kind)) return None()
+          | _ -> return None()
+          }
+        }
+      }
+    };
+    cand
+  }
+
+  fun getObject(): ?SType {
+    if (this.clauses.size() != 1) return None();
+    this.clauses[0].stypes match {
+    | None() -> None()
+    | Some(stypes) ->
+      if (stypes.size() != 1) return None();
+      stypes.singleElt() match {
+      | Some(obj @ TObject _) -> Some(obj)
+      | _ -> None()
+      }
+    }
+  }
 }
 
 /*****************************************************************************/
@@ -1663,6 +1711,32 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   tparams2 = ty2.expand(subst, env, Covariant()) match {
   | None() -> return ty1
   | Some(x) -> x
+  };
+  (tparams1.primKind(), tparams2.getObject()) match {
+  | (Some(primKind), Some(stype)) ->
+    isSubTType(
+      subst,
+      env,
+      TType::expandPrim(ty1.pos, primKind),
+      TType::single(ty2.pos, stype),
+    ) match {
+    | STOk() -> return ty1
+    | _ -> void
+    }
+  | _ -> void
+  };
+  (tparams2.primKind(), tparams1.getObject()) match {
+  | (Some(primKind), Some(stype)) ->
+    isSubTType(
+      subst,
+      env,
+      TType::expandPrim(ty2.pos, primKind),
+      TType::single(ty1.pos, stype),
+    ) match {
+    | STOk() -> return ty2
+    | _ -> void
+    }
+  | _ -> void
   };
   tparams = TTypeParams::inter(subst, env, tparams1, tparams2);
   TType::create(ty1.pos, TInsts::empty(), tparams);
