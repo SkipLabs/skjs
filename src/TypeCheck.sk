@@ -1351,18 +1351,17 @@ class TypeChecker{
           tyArr[n]
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
-        | obj @ TObject _ ->
-          this.checkSubType(
+        | TObject _ ->
+          this.call(
             env,
             pos,
-            "Invalid index",
-            idxType,
-            TType::single(
-              idx.posRange,
-              TPrimValue(TNum(), None(), idx.posRange),
+            this.expr(
+              env,
+              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "get"))))),
             ),
-          );
-          this.getArrayEltType(env, obj)
+            Array[],
+            Array[idxType],
+          )
         | TPrimValue(primKind, _, primPos) ->
           idxType
             .getSTypes(env.subst, this.tenv, Covariant())
@@ -1933,10 +1932,11 @@ class TypeChecker{
   }
 
   fun getArrayEltType(env: mutable TCEnv, object: TObject): TType {
-    object.fields.maybeGet("push") match {
-    | None() -> typingError(Array[(object.pos, "Expected an Array type")])
-    | Some(pushMethod) ->
-      pushF = pushMethod.type
+    object.fields.maybeGet("get") match {
+    | None() ->
+      typingError(Array[(object.pos, "Expected an Array or Record type")])
+    | Some(getMethod) ->
+      getF = getMethod.type
         .getSTypes(env.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt())
         .fromSome() match {
@@ -1944,11 +1944,11 @@ class TypeChecker{
         for (met in methods) {
           break met
         } else {
-          invariant_violation("Unexpected type for Array::push")
+          invariant_violation("Unexpected type for Array::get or Record::get")
         }
-      | _ -> invariant_violation("Unexpected push method type for Array")
+      | _ -> invariant_violation("Unexpected get method type for")
       };
-      pushF.params[0]
+      getF.params[0]
     };
   }
 
