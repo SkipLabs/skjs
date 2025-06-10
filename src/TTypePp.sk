@@ -171,9 +171,9 @@ mutable class TypePp{
       level,
       margin,
       (pp, level, margin) ~> {
-        if (tfun.tparams.size() != 0) {
+        if (tfun.clauses.size() != 0) {
           pp.out(level, margin, "<");
-          for (i => tparam in tfun.tparams) {
+          for (i => tparam in tfun.clauses) {
             if (i != 0) pp.out(level, margin, ", ");
             pp.out(level, margin, tparam.name + ":" + tparam.id);
             tparam.cstr match {
@@ -203,9 +203,9 @@ mutable class TypePp{
         pp.type(level, margin, tfun.retType);
       },
       (pp, level, prevMargin, margin) ~> {
-        if (tfun.tparams.size() != 0) {
+        if (tfun.clauses.size() != 0) {
           pp.out(level, margin, "<");
-          for (i => tparam in tfun.tparams) {
+          for (i => tparam in tfun.clauses) {
             if (i != 0) pp.out(level, margin, ", ");
             pp.out(level, margin, tparam.name + ":" + tparam.id);
             tparam.cstr match {
@@ -330,19 +330,19 @@ mutable class TypePp{
       this.out(level, margin, "never");
       return void;
     };
-    if (!ty.tparams.clauses.isEmpty()) {
-      for (i => tparams in ty.tparams.clauses) {
+    if (!ty.clauses.clauses.isEmpty()) {
+      for (i => clauses in ty.clauses.clauses) {
         if (i != 0) {
           this.out(level, margin, " | ");
         };
-        for (j => tparam in tparams.vars) {
+        for (j => tparam in clauses.vars) {
           if (j != 0) {
             this.out(level, margin, " & ");
           };
           this.out(level, margin, tparam.name + ":" + tparam.id);
         };
-        if (!tparams.vars.isEmpty()) this.out(level, margin, " extends ");
-        tparams.stypes match {
+        if (!clauses.vars.isEmpty()) this.out(level, margin, " extends ");
+        clauses.stypes match {
         | None() -> void
         | Some(c) ->
           for (k => sty in c) {

@@ -33,7 +33,7 @@ const kTopHash: Int = "Top".hash();
 // A few examples:
 //   number | void           ==> TType(stypes = void | number)
 //   Foo<number> | number    ==> TType(stypes = number, insts = Foo<number>)
-//   T2 extends A | T1       ==> TType(tparams = T1 | T2 extends A)
+//   T2 extends A | T1       ==> TType(clauses = T1 | T2 extends A)
 //
 // Note that some operations will require a so-called "expansion", and
 // expansion consisting in getting rid of all the instances and turn
@@ -77,14 +77,14 @@ class TType private {
   // The type parameters (universally quantified type variables), in a
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
-  tparams: TTypeParams,
+  clauses: Clauses,
 } uses Hashable, Orderable {
   // Returns the type that represents all possible values. Every other
   // type is sub-type of top.
   static fun top(pos: PosRange): this {
     insts = TInsts::empty();
-    tparams = TTypeParams::empty();
-    static{h => kTopHash, pos, isTop => true, insts, tparams}
+    clauses = Clauses::empty();
+    static{h => kTopHash, pos, isTop => true, insts, clauses}
   }
 
   // Returns the type that is sub-type of all types. This type is
@@ -92,7 +92,7 @@ class TType private {
   // unreachable code. However, that type can still be useful to
   // represent some values (like exceptions).
   static fun bottom(pos: PosRange): this {
-    static::create(pos, TInsts::empty(), TTypeParams::empty())
+    static::create(pos, TInsts::empty(), Clauses::empty())
   }
 
   // Creates an unexpanded instance.
@@ -105,28 +105,28 @@ class TType private {
   }
 
   static fun fromSTypes(pos: PosRange, stypes: STypes): this {
-    static::create(pos, TInsts::empty(), TTypeParams::fromSTypes(stypes))
+    static::create(pos, TInsts::empty(), Clauses::fromSTypes(stypes))
   }
 
   static fun fromTInst(pos: PosRange, tinst: TInst): this {
-    static::create(pos, TInsts::single(tinst), TTypeParams::empty())
+    static::create(pos, TInsts::single(tinst), Clauses::empty())
   }
 
-  static fun fromTParams(pos: PosRange, tparams: TTypeParams): this {
-    static::create(pos, TInsts::empty(), tparams)
+  static fun fromClauses(pos: PosRange, clauses: Clauses): this {
+    static::create(pos, TInsts::empty(), clauses)
   }
 
   static fun fromTParam(pos: PosRange, tparam: TParam): this {
-    static::create(pos, TInsts::empty(), TTypeParams::single(tparam))
+    static::create(pos, TInsts::empty(), Clauses::single(tparam))
   }
 
   static fun single(pos: PosRange, stype: SType): this {
     static::fromSTypes(pos, STypes::single(stype))
   }
 
-  static fun create(pos: PosRange, insts: TInsts, tparams: TTypeParams): this {
-    h = (insts, tparams).hash();
-    static{h, pos, isTop => false, insts, tparams};
+  static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
+    h = (insts, clauses).hash();
+    static{h, pos, isTop => false, insts, clauses};
   }
 
   static fun expandPrim(pos: PosRange, kind: TPrimValueKind): TType {
@@ -140,12 +140,12 @@ class TType private {
     }
   }
 
-  fun withTParams(tparams: TTypeParams): this {
+  fun withClauses(clauses: Clauses): this {
     if (this.isTop) {
-      invariant(tparams.isEmpty());
+      invariant(clauses.isEmpty());
       this
     } else {
-      static::create(this.pos, this.insts, tparams)
+      static::create(this.pos, this.insts, clauses)
     }
   }
 
@@ -154,18 +154,15 @@ class TType private {
     this with {pos}
   }
 
-  fun rawMap(
-    insts: (TInsts) -> TInsts,
-    tparams: (TTypeParams) -> TTypeParams,
-  ): this {
+  fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): this {
     if (this.isTop) this else {
-      static::create(this.pos, insts(this.insts), tparams(this.tparams))
+      static::create(this.pos, insts(this.insts), clauses(this.clauses))
     }
   }
 
   fun compare(other: this): Order {
-    (this.h, this.insts, this.tparams).compare(
-      (other.h, other.insts, other.tparams),
+    (this.h, this.insts, this.clauses).compare(
+      (other.h, other.insts, other.clauses),
     )
   }
 
@@ -174,16 +171,16 @@ class TType private {
   }
 
   fun isBottom(): Bool {
-    !this.isTop && this.insts.isEmpty() && this.tparams.isEmpty()
+    !this.isTop && this.insts.isEmpty() && this.clauses.isEmpty()
   }
 
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): ?STypes {
     this.expand(subst, env, variance) match {
     | None() -> None()
-    | Some(tparams) ->
+    | Some(clauses) ->
       result = STypes::empty();
-      for (clause in tparams.clauses) {
+      for (clause in clauses.clauses) {
         clause.stypes match {
         | None() -> return None()
         | Some(clauseSTypes) ->
@@ -195,17 +192,13 @@ class TType private {
   }
 
   // Returns None() if the result is Top
-  fun expand(
-    subst: mutable Subst,
-    env: TEnv,
-    variance: Variance,
-  ): ?TTypeParams {
+  fun expand(subst: mutable Subst, env: TEnv, variance: Variance): ?Clauses {
     if (this.isTop) return None();
-    tparams = this.tparams;
+    clauses = this.clauses;
     insts = Vector::mcreateFromItems(this.insts.insts);
     seen = Set::mcreateFromItems(insts);
     loop {
-      if (insts.isEmpty()) return Some(tparams);
+      if (insts.isEmpty()) return Some(clauses);
       inst = insts.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
@@ -217,7 +210,7 @@ class TType private {
         }
       };
       if (tyDef.isTop) return None();
-      !tparams = TTypeParams::union(subst, env, tparams, tyDef.tparams);
+      !clauses = Clauses::union(subst, env, clauses, tyDef.clauses);
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
         seen.insert(newInst);
@@ -231,7 +224,7 @@ class TType private {
       None()
     } else {
       cand: ?String = None();
-      for (clause in this.tparams.clauses) {
+      for (clause in this.clauses.clauses) {
         clause.stypes match {
         | None() -> return None()
         | Some(stypes) ->
@@ -257,7 +250,7 @@ class TType private {
 
   fun containsUndefined(): Bool {
     if (this.isTop) return true;
-    for (clause in this.tparams.clauses) {
+    for (clause in this.clauses.clauses) {
       clause.stypes match {
       | None() -> return true
       | Some(stypes) -> if (stypes.containsUndefined()) return true
@@ -268,12 +261,12 @@ class TType private {
 
   fun withUndefined(undefinedPosRange: PosRange): this {
     if (this.containsUndefined()) return this;
-    if (this.tparams.clauses.size() == 0) {
-      !this.tparams = TTypeParams::fromSTypes(
+    if (this.clauses.clauses.size() == 0) {
+      !this.clauses = Clauses::fromSTypes(
         STypes::empty().addUndefined(undefinedPosRange),
       );
     } else {
-      !this.tparams.clauses = this.tparams.clauses.map(clause -> {
+      !this.clauses.clauses = this.clauses.clauses.map(clause -> {
         clause.stypes match {
         | None() -> clause
         | Some(stypes) ->
@@ -334,8 +327,8 @@ class TType private {
     if (ty1.isTop) return ty1;
     if (ty2.isTop) return ty2;
     types = unionTInsts(ty1.insts, ty2.insts);
-    tparams = TTypeParams::union(subst, env, ty1.tparams, ty2.tparams);
-    static::create(ty1.pos, types, tparams)
+    clauses = Clauses::union(subst, env, ty1.clauses, ty2.clauses);
+    static::create(ty1.pos, types, clauses)
   }
 }
 
@@ -521,7 +514,7 @@ class TFuns(
 }
 
 class TFun(
-  tparams: Array<TParamWithConstraint>,
+  clauses: Array<TParamWithConstraint>,
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?TType,
@@ -534,7 +527,7 @@ class TFun(
   }
 
   fun project(): (Int, Int) {
-    (this.tparams.size(), this.params.size())
+    (this.clauses.size(), this.params.size())
   }
 }
 
@@ -928,11 +921,11 @@ class Clause(
 }
 
 // The type parameters are in DNF
-class TTypeParams(
+class Clauses(
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
 ) uses Hashable, Orderable {
   static fun empty(): this {
-    TTypeParams(InternalKeyedArrayMap::empty())
+    Clauses(InternalKeyedArrayMap::empty())
   }
 
   fun isEmpty(): Bool {
@@ -940,7 +933,7 @@ class TTypeParams(
   }
 
   static fun single(tparam: TParam): this {
-    TTypeParams(
+    Clauses(
       InternalKeyedArrayMap::single(Clause(ArraySet::single(tparam), None())),
     )
   }
@@ -987,12 +980,12 @@ class TTypeParams(
   static fun inter(
     subst: mutable Subst,
     env: TEnv,
-    tparams1: TTypeParams,
-    tparams2: TTypeParams,
-  ): TTypeParams {
+    clauses1: Clauses,
+    clauses2: Clauses,
+  ): Clauses {
     result = SortedMap[];
-    for (clause1 in tparams1.clauses) {
-      for (clause2 in tparams2.clauses) {
+    for (clause1 in clauses1.clauses) {
+      for (clause2 in clauses2.clauses) {
         clause1.inter(subst, env, clause2) match {
         | None() -> void
         | Some(inter) ->
@@ -1008,7 +1001,7 @@ class TTypeParams(
         }
       }
     };
-    TTypeParams(
+    Clauses(
       InternalKeyedArrayMap::createFromIterator(
         result.items().map(x -> x.i1).iterator(),
       ),
@@ -1018,11 +1011,11 @@ class TTypeParams(
   static fun union(
     subst: mutable Subst,
     env: TEnv,
-    tparams1: TTypeParams,
-    tparams2: TTypeParams,
-  ): TTypeParams {
-    TTypeParams(
-      tparams1.clauses.mapUnion(tparams2.clauses, (x, y) ->
+    clauses1: Clauses,
+    clauses2: Clauses,
+  ): Clauses {
+    Clauses(
+      clauses1.clauses.mapUnion(clauses2.clauses, (x, y) ->
         x.union(subst, env, y)
       ),
     )
@@ -1031,12 +1024,12 @@ class TTypeParams(
   static fun isSub(
     subst: mutable Subst,
     env: TEnv,
-    tparams1: TTypeParams,
-    tparams2: TTypeParams,
+    clauses1: Clauses,
+    clauses2: Clauses,
     error: () -> STResult,
   ): STResult {
-    for (inter1 in tparams1.clauses) {
-      for (inter2 in tparams2.clauses) {
+    for (inter1 in clauses1.clauses) {
+      for (inter2 in clauses2.clauses) {
         if (!inter1.vars.contains(inter2.vars)) {
           continue;
         };
@@ -1190,12 +1183,12 @@ fun isSubTType(
   };
   u1expanded = u1.expand(subst, env, Covariant());
   u2expanded = u2.expand(subst, env, Contravariant());
-  (tparams1, tparams2) = (u1expanded, u2expanded) match {
+  (clauses1, clauses2) = (u1expanded, u2expanded) match {
   | (_, None()) -> return STOk()
   | (None(), Some(_)) -> return STTop()
-  | (Some(tparams1), Some(tparams2)) -> (tparams1, tparams2)
+  | (Some(clauses1), Some(clauses2)) -> (clauses1, clauses2)
   };
-  TTypeParams::isSub(subst, env, tparams1, tparams2, () -> {
+  Clauses::isSub(subst, env, clauses1, clauses2, () -> {
     subst.restore(savedSubst);
     STInvalidTypeParams(prettyPrintType(false, u1))
   }) match {
@@ -1270,14 +1263,14 @@ fun isSubTTuple(
 }
 
 fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
-  invariant(f1.tparams.size() == f2.tparams.size());
+  invariant(f1.clauses.size() == f2.clauses.size());
   if (!f2.lambdas.isEmpty()) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
   tsubst = mutable Map[];
-  for (i in Range(0, f1.tparams.size())) {
-    tparam1 = f1.tparams[i];
-    tparam2 = f2.tparams[i];
+  for (i in Range(0, f1.clauses.size())) {
+    tparam1 = f1.clauses[i];
+    tparam2 = f2.clauses[i];
     (tparam1.cstr, tparam2.cstr) match {
     | (None(), None()) -> void
     | (Some _, None()) -> void
@@ -1290,7 +1283,7 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
     };
     tsubst![tparam2.id] = tparam1;
   };
-  !f2 = RenameTParams().fun_(tsubst.chill(), f2);
+  !f2 = RenameClauses().fun_(tsubst.chill(), f2);
   params1 = f1.params;
   params2 = f2.params;
   for (i in Range(0, params1.size())) {
@@ -1405,7 +1398,7 @@ fun unionSType(
 }
 
 fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
-  invariant(f1.tparams.size() == f2.tparams.size());
+  invariant(f1.clauses.size() == f2.clauses.size());
   if (!f1.lambdas.isEmpty()) {
     typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
   };
@@ -1413,10 +1406,10 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
   tsubst = mutable Map[];
-  tparams = mutable Vector[];
-  for (i in Range(0, f1.tparams.size())) {
-    tparam1 = f1.tparams[i];
-    tparam2 = f2.tparams[i];
+  clauses = mutable Vector[];
+  for (i in Range(0, f1.clauses.size())) {
+    tparam1 = f1.clauses[i];
+    tparam2 = f2.clauses[i];
     tsubst![tparam2.id] = tparam1;
     cstr = (tparam1.cstr, tparam2.cstr) match {
     | (None(), None()) -> None()
@@ -1424,9 +1417,9 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     | (Some(x), None()) -> Some(x)
     | (Some(x), Some(y)) -> Some(interTType(subst, env, x, y))
     };
-    tparams.push(tparam1 with {cstr});
+    clauses.push(tparam1 with {cstr});
   };
-  !f2 = RenameTParams().fun_(tsubst.chill(), f2);
+  !f2 = RenameClauses().fun_(tsubst.chill(), f2);
   params = mutable Vector[];
   for (i in Range(0, f1.params.size())) {
     params.push(interTType(subst, env, f1.params[i], f2.params[i]));
@@ -1448,7 +1441,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     f2.minSizeWitness
   };
   TFun(
-    tparams.toArray(),
+    clauses.toArray(),
     params.toArray(),
     optionalParams.toArray(),
     spreadParam,
@@ -1582,12 +1575,12 @@ fun interSType(
 }
 
 fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
-  invariant(f1.tparams.size() == f2.tparams.size());
+  invariant(f1.clauses.size() == f2.clauses.size());
   tsubst = mutable Map[];
-  tparams = mutable Vector[];
-  for (i in Range(0, f1.tparams.size())) {
-    tparam1 = f1.tparams[i];
-    tparam2 = f2.tparams[i];
+  clauses = mutable Vector[];
+  for (i in Range(0, f1.clauses.size())) {
+    tparam1 = f1.clauses[i];
+    tparam2 = f2.clauses[i];
     tsubst![tparam2.id] = tparam1;
     cstr = (tparam1.cstr, tparam2.cstr) match {
     | (None(), None()) -> None()
@@ -1595,9 +1588,9 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     | (Some(x), None()) -> Some(x)
     | (Some(x), Some(y)) -> Some(TType::union(subst, env, x, y))
     };
-    tparams.push(tparam1 with {cstr});
+    clauses.push(tparam1 with {cstr});
   };
-  !f2 = RenameTParams().fun_(tsubst.chill(), f2);
+  !f2 = RenameClauses().fun_(tsubst.chill(), f2);
   params = mutable Vector[];
   for (i in Range(0, f1.params.size())) {
     params.push(TType::union(subst, env, f1.params[i], f2.params[i]));
@@ -1637,7 +1630,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
   TFun(
-    tparams.toArray(),
+    clauses.toArray(),
     params.toArray(),
     optionalParams.toArray(),
     spreadParam,
@@ -1676,14 +1669,14 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     return TType::create(
       ty1.pos,
       TInsts::single(TInter(ty1, ty2)),
-      TTypeParams::inter(subst, env, ty1.tparams, ty2.tparams),
+      Clauses::inter(subst, env, ty1.clauses, ty2.clauses),
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
   if (
     ty1.insts.insts.size() == 1 &&
     ty1.insts.insts[0] is TVar _ &&
-    ty1.tparams.isEmpty()
+    ty1.clauses.isEmpty()
   ) {
     ty1.insts.insts[0] match {
     | TVar(pos, id, constraints) ->
@@ -1695,7 +1688,7 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   if (
     ty2.insts.insts.size() == 1 &&
     ty2.insts.insts[0] is TVar _ &&
-    ty2.tparams.isEmpty()
+    ty2.clauses.isEmpty()
   ) {
     ty2.insts.insts[0] match {
     | TVar(pos, id, constraints) ->
@@ -1704,15 +1697,15 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     | _ -> invariant_violation("Already checked it was a TVar")
     }
   };
-  tparams1 = ty1.expand(subst, env, Covariant()) match {
+  clauses1 = ty1.expand(subst, env, Covariant()) match {
   | None() -> return ty2
   | Some(x) -> x
   };
-  tparams2 = ty2.expand(subst, env, Covariant()) match {
+  clauses2 = ty2.expand(subst, env, Covariant()) match {
   | None() -> return ty1
   | Some(x) -> x
   };
-  (tparams1.primKind(), tparams2.getObject()) match {
+  (clauses1.primKind(), clauses2.getObject()) match {
   | (Some(primKind), Some(stype)) ->
     isSubTType(
       subst,
@@ -1725,7 +1718,7 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     }
   | _ -> void
   };
-  (tparams2.primKind(), tparams1.getObject()) match {
+  (clauses2.primKind(), clauses1.getObject()) match {
   | (Some(primKind), Some(stype)) ->
     isSubTType(
       subst,
@@ -1738,8 +1731,8 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     }
   | _ -> void
   };
-  tparams = TTypeParams::inter(subst, env, tparams1, tparams2);
-  TType::create(ty1.pos, TInsts::empty(), tparams);
+  clauses = Clauses::inter(subst, env, clauses1, clauses2);
+  TType::create(ty1.pos, TInsts::empty(), clauses);
 }
 
 /*****************************************************************************/
@@ -1760,15 +1753,15 @@ base class ApplyType {
   overridable deferred fun nonTop(env: this::Env, ty: TType): TType {
     ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (tparams) -> this.typeParams(env, tparams),
+      (clauses) -> this.typeParams(env, clauses),
     )
   }
 
   overridable deferred fun typeParams(
     env: this::Env,
-    tparams: TTypeParams,
-  ): TTypeParams {
-    TTypeParams(tparams.clauses.map(x -> this.clause(env, x)))
+    clauses: Clauses,
+  ): Clauses {
+    Clauses(clauses.clauses.map(x -> this.clause(env, x)))
   }
 
   overridable deferred fun clause(env: this::Env, clause: Clause): Clause {
@@ -1836,7 +1829,7 @@ base class ApplyType {
 
   overridable deferred fun fun_(env: this::Env, f: TFun): TFun {
     TFun(
-      f.tparams.map(x -> this.typeParamWithConstraint(env, x)),
+      f.clauses.map(x -> this.typeParamWithConstraint(env, x)),
       f.params.map(x -> this.type(env, x)),
       f.optionalParams.map(x -> this.type(env, x)),
       f.spreadParam.map(x -> this.type(env, x)),
@@ -1876,7 +1869,7 @@ base class ApplyType {
   }
 }
 
-class RenameTParams() extends ApplyType {
+class RenameClauses() extends ApplyType {
   type Env = Map<Int, TParamWithConstraint>;
   fun typeParamWithConstraint(
     subst: this::Env,
@@ -1917,12 +1910,12 @@ class Instantiate() extends ApplyType {
   fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (tparams) -> this.typeParams(env, tparams),
+      (clauses) -> this.typeParams(env, clauses),
     );
-    if (ty.tparams.clauses.isEmpty()) return ty;
+    if (ty.clauses.clauses.isEmpty()) return ty;
     (subst, tenv, map) = env;
-    clauses = ty.tparams.clauses;
-    result = ty.withTParams(TTypeParams::empty());
+    clauses = ty.clauses.clauses;
+    result = ty.withClauses(Clauses::empty());
     for (clause in clauses) {
       clauseTy = TType::top(ty.pos);
       for (tparam in clause.vars) {
@@ -1960,12 +1953,12 @@ class ExpandTVars() extends ApplyType {
   fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (tparams) -> this.typeParams(env, tparams),
+      (clauses) -> this.typeParams(env, clauses),
     );
     (subst, tenv) = env;
     ty.expand(subst, tenv, Covariant()) match {
     | None() -> TType::top(ty.pos)
-    | Some(tparams) -> TType::create(ty.pos, TInsts::empty(), tparams)
+    | Some(clauses) -> TType::create(ty.pos, TInsts::empty(), clauses)
     }
   }
 }

@@ -14,7 +14,7 @@ class TEnv{
   // The type-parameters that are currently in scope. So if we see a
   // type definition with a matching name, we know we are dealing with
   // a universally quantified type variable.
-  tparams: SortedMap<String, TParamWithConstraint> = SortedMap[],
+  clauses: SortedMap<String, TParamWithConstraint> = SortedMap[],
 
   // The type substitution, which is different than the one used for
   // existentials during the inference. This one is used to
@@ -79,7 +79,7 @@ class TEnv{
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
 
     tdef = this.defMap.getType(context, name);
-    tparams = tdef match {
+    clauses = tdef match {
     | TDType(ta) ->
       if (ta.tdefParams.size() != targs.targs.size()) {
         typingError(Array[(name.posRange, "Invalid number of type arguments")])
@@ -93,7 +93,7 @@ class TEnv{
     };
 
     for (i => targ in targs.targs) {
-      tparam = tparams[i];
+      tparam = clauses[i];
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
@@ -217,12 +217,12 @@ class TEnv{
 
   fun addTParams(
     context: mutable SKStore.Context,
-    tparams: Array<TypeParam>,
+    clauses: Array<TypeParam>,
   ): this {
-    for (tparam in tparams) {
-      ty = TType::fromTParams(
+    for (tparam in clauses) {
+      ty = TType::fromClauses(
         tparam.name.posRange,
-        TTypeParams::fromTypeParam(tparam, None()),
+        Clauses::fromTypeParam(tparam, None()),
       );
       !this.subst[tparam.name.value] = (
         false,
@@ -506,16 +506,16 @@ class TEnv{
         ),
       )
     | TAInst(n, targs) ->
-      if (this.tparams.containsKey(n.value)) {
+      if (this.clauses.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
             Array[(n.posRange, "A type parameter cannot have type argument")],
           )
         };
-        tparam = this.tparams[n.value];
-        ty = TType::fromTParams(
+        tparam = this.clauses[n.value];
+        ty = TType::fromClauses(
           pos,
-          TTypeParams::fromTParamWithConstraint(tparam, None()),
+          Clauses::fromTParamWithConstraint(tparam, None()),
         );
         tparam.cstr match {
         | None() -> ty
@@ -581,17 +581,17 @@ class TEnv{
         pos,
         TTuple(types.map(ty -> this.normalize(context, ty)), typeAst.posRange),
       )
-    | TAFun(isMethod, tparams, params, retType) ->
-      funTParams = mutable Vector[];
-      for (tparam in tparams) {
+    | TAFun(isMethod, clauses, params, retType) ->
+      funClauses = mutable Vector[];
+      for (tparam in clauses) {
         funTParam = TParamWithConstraint(
           tparam.name.value,
           tparam.name.posRange.fileName,
           tparam.id,
           tparam.constraint.map(cstr -> this.normalize(context, cstr)),
         );
-        funTParams.push(funTParam);
-        !this.tparams[tparam.name.value] = funTParam;
+        funClauses.push(funTParam);
+        !this.clauses[tparam.name.value] = funTParam;
       };
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
@@ -630,7 +630,7 @@ class TEnv{
         }
       };
       tfun = TFun(
-        funTParams.toArray(),
+        funClauses.toArray(),
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,

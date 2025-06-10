@@ -343,9 +343,9 @@ class TypeChecker{
           tparam.id,
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
-        ty = TType::fromTParams(
+        ty = TType::fromClauses(
           tparam.name.posRange,
-          TTypeParams::fromTParamWithConstraint(ttypeParam, None()),
+          Clauses::fromTParamWithConstraint(ttypeParam, None()),
         );
         ttypeParam.cstr match {
         | None() -> ty
@@ -356,9 +356,9 @@ class TypeChecker{
     !this.tenv = this.tenv.addTParams(context, c.tparams);
     subst = Subst::mcreate{context};
     cstr = TType::inst(c.name, targs);
-    thisType = TType::fromTParams(
+    thisType = TType::fromClauses(
       c.name.posRange,
-      TTypeParams::fromTParamWithConstraint(
+      Clauses::fromTParamWithConstraint(
         TParamWithConstraint("this", c.name.posRange.fileName, -1, None()),
         cstr.getSTypes(subst, this.tenv, Covariant()),
       ),
@@ -591,8 +591,8 @@ class TypeChecker{
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
     ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> false
-    | Some(tparams) ->
-      for (clause in tparams.clauses) {
+    | Some(clauses) ->
+      for (clause in clauses.clauses) {
         clause.stypes match {
         | None() -> return false
         | Some(stypes) ->
@@ -1287,7 +1287,7 @@ class TypeChecker{
       exprTy = this.expr(env, args[0]);
       ty = exprTy.expand(env.subst, this.tenv, Covariant()) match {
       | None() -> TType::top(exprTy.pos)
-      | Some(tparams) -> TType::create(exprTy.pos, TInsts::empty(), tparams)
+      | Some(clauses) -> TType::create(exprTy.pos, TInsts::empty(), clauses)
       };
       print_error(prettyPrintType(false, ty));
       TType::single(pos, TPrimVoid(TVoid(), pos))
@@ -1440,7 +1440,7 @@ class TypeChecker{
       | BOStrictEquality() ->
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
-        if (ty1.tparams.clauses.isEmpty() && ty2.tparams.clauses.isEmpty()) {
+        if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
           isSubTType(env.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
           | _ ->
@@ -1965,7 +1965,7 @@ class TypeChecker{
     ) match {
     | Some(TFuns(funs, methods, _)) ->
       for (tfun in funs.values().concat(methods.values())) {
-        if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
+        if (targs.size() != 0 && targs.size() != tfun.clauses.size()) {
           typingError(
             Array[
               (
@@ -1974,12 +1974,12 @@ class TypeChecker{
                   targs.size() +
                   " passed",
               ),
-              (fty.pos, "Expected: " + tfun.tparams.size()),
+              (fty.pos, "Expected: " + tfun.clauses.size()),
             ],
           )
         };
         map = mutable Map[];
-        for (i => tparamDecl in tfun.tparams) {
+        for (i => tparamDecl in tfun.clauses) {
           map![(tparamDecl.fileName, tparamDecl.id)] = if (targs.isEmpty()) {
             this.newTVar(env, pos)
           } else {
@@ -1988,7 +1988,7 @@ class TypeChecker{
         };
         !tfun = Instantiate().fun_(
           (env.subst, this.tenv, map.chill()),
-          tfun with {tparams => Array[]},
+          tfun with {clauses => Array[]},
         );
         version = env.subst.version;
         loop {
@@ -2251,8 +2251,8 @@ class TypeChecker{
     ty = env.scope.get(local);
     (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> (TType::top(ty.pos), true)
-    | Some(tparams) ->
-      t = TType::create(ty.pos, TInsts::empty(), tparams);
+    | Some(clauses) ->
+      t = TType::create(ty.pos, TInsts::empty(), clauses);
       !t = FilterType().type((filter, map), t);
       isTopOrEmpty = t.getSTypes(env.subst, this.tenv, Covariant()) match {
       | None() -> true
