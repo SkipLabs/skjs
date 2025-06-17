@@ -553,7 +553,12 @@ class TEnv{
       if (this.tparams.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
-            Array[(n.posRange, "A type parameter cannot have type argument")],
+            Array[
+              (
+                n.posRange,
+                "A bound occurrence of a type parameter cannot have type arguments",
+              ),
+            ],
           )
         };
         tparam = this.tparams[n.value];
@@ -568,7 +573,12 @@ class TEnv{
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
-            Array[(n.posRange, "A type parameter cannot have type argument")],
+            Array[
+              (
+                n.posRange,
+                "A bound occurrence of a type parameter cannot have type arguments",
+              ),
+            ],
           )
         };
         (keepPos, ty) = this.subst[n.value];
