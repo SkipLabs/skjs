@@ -109,8 +109,8 @@ class TEnv{
           typingError(
             Array[
               (name.posRange, "Constraint not satisfied"),
-              (targ.pos, "This is of type: " + targ.toString()),
-              (cstr.posRange, "It does not implement: " + cstrTy.toString()),
+              (targ.pos, `This is of type: ${targ.toString()}`),
+              (cstr.posRange, `It does not implement: ${cstrTy.toString()}`),
             ],
           )
         }
@@ -171,9 +171,7 @@ class TEnv{
     c = this.getClass(context, className);
     if (c.tparams.size() != targs.size()) {
       typingError(
-        Array[
-          (className.posRange, "Expected " + c.tparams.size() + " parameters"),
-        ],
+        Array[(className.posRange, `Expected ${c.tparams.size()} parameters`)],
       )
     };
     visitedClasses = SortedSet[];
