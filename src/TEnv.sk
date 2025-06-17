@@ -85,16 +85,11 @@ class TEnv{
 
     tdef = this.defMap.getType(context, name);
     clauses = tdef match {
-    | TDType(ta) ->
-      if (ta.tdefParams.size() != targs.targs.size()) {
-        typingError(Array[(name.posRange, "Invalid number of type arguments")])
-      };
-      ta.tdefParams
-    | TDClass(ca) ->
-      if (ca.tparams.size() != targs.targs.size()) {
-        typingError(Array[(name.posRange, "Invalid number of type arguments")])
-      };
-      ca.tparams
+    | TDType(ta) -> ta.tdefParams
+    | TDClass(ca) -> ca.tparams
+    };
+    if (clauses.size() != targs.targs.size()) {
+      typingError(Array[(name.posRange, "Invalid number of type arguments")])
     };
 
     for (i => targ in targs.targs) {
