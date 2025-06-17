@@ -2,8 +2,8 @@
 // The abstract syntax tree.
 
 // This abstract syntax tree contains constructions that we don't want
-// to support (such as namespaces). But we identifying those
-// construction could still be useful to provide a good error message.
+// to support (such as namespaces). But identifying those constructions
+// could still be useful to provide a good error messages.
 /*****************************************************************************/
 
 module SKJS;

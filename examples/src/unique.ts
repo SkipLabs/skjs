@@ -1,6 +1,6 @@
 import { array } from "./skjs.js";
 
-// program to remove duplicate value from an array
+// program to remove duplicate values from an array
 
 function getUnique<T>(arr: Array<T>): Array<T> {
   

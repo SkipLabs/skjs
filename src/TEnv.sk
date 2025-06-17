@@ -17,13 +17,13 @@ class TEnv{
   tparams: SortedMap<String, TParamWithConstraint> = SortedMap[],
 
   // The type substitution, which is different than the one used for
-  // existentials during the inference. This one is used to
-  // instantiate a type with parameters with type arguments. So when
-  // you write new mytype<number>, it's this substitution that will
-  // take care of replacing the instances of type-parameter in the
-  // definition of mytype. However, if you introduce an existential
-  // (like you would with a parametric new construct without explicit
-  // type arguments), a different substitution is used (cf TVar).
+  // existentials during inference. This one is used to instantiate a type
+  // with parameters with type arguments. So when you write new
+  // mytype<number>, it's this substitution that will take care of replacing
+  // the instances of type-parameter in the definition of mytype. However,
+  // if you introduce an existential (like you would with a parametric new
+  // construct without explicit type arguments), a different substitution is
+  // used (cf TVar).
   subst: SortedMap<String, (Bool, TType)> = SortedMap[],
 
   // When expanding a type definition, we don't want to recursively
