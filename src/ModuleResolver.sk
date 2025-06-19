@@ -1,14 +1,14 @@
-/*****************************************************************************/
+/***************************************************************************/
 /* Module performing the module name resolution for SKJS. */
-/*****************************************************************************/
+/***************************************************************************/
 
 module alias S = SKStore;
 
 module SKJS;
 
-/*****************************************************************************/
+/***************************************************************************/
 // Primitives used to manipulate file names, directory names etc ...
-/*****************************************************************************/
+/***************************************************************************/
 
 fun splitPath(dirNameStr: String): Array<String> {
   result = mutable Vector<String>[];
@@ -118,9 +118,9 @@ class FileName(dirName: DirName, baseName: String) {
   }
 }
 
-/*****************************************************************************/
+/***************************************************************************/
 /* Class to help lookup file names quickly. */
-/*****************************************************************************/
+/***************************************************************************/
 
 class FileNameEntry(
   invertedName: String,
@@ -227,7 +227,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
   }
 }
 
-/*****************************************************************************/
+/***************************************************************************/
 // Given an import statement in a TypeScript file: 1. Determine the
 // import path from the import statement.  2. Resolve the module
 // according to the following steps:
@@ -251,7 +251,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
 //         iv. If the package.json does not specify a "typings" or
 //         "types" field, try to find an "index.d.ts" file
 //         in the module's root directory.
-/*****************************************************************************/
+/***************************************************************************/
 
 fun resolveName(
   context: mutable S.Context,
