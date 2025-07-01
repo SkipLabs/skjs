@@ -1948,7 +1948,7 @@ class TypeChecker{
         }
       | _ -> invariant_violation("Unexpected get method type for")
       };
-      getF.params[0]
+      getF.retType
     };
   }
 
