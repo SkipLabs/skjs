@@ -274,7 +274,7 @@ mutable class Checker private {
     };
     !srcFiles = Array[srcFiles, Array[builtinsFileName.toString()]].flatten();
 
-    context = mutable SKStore.Context{};
+    context = SKStore.Context::mcreate{};
     files = Files::create(context, srcFiles);
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
