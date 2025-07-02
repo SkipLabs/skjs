@@ -7,10 +7,9 @@ jobs:
     steps:
       - checkout
       - run:
-          name: Clone SKDB
+          name: Clone Skip repository
           command: |
-            git clone --depth=1 https://github.com/SkipLabs/skdb ../skdb
-            cd ../skdb && git submodule update --init --recursive
+            git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
       - run:
           name: Check
           command: |
