@@ -14,7 +14,7 @@ class TEnv{
   // The type-parameters that are currently in scope. So if we see a
   // type definition with a matching name, we know we are dealing with
   // a universally quantified type variable.
-  tparams: SortedMap<String, TParam> = SortedMap[],
+  clauses: SortedMap<String, TParamWithConstraint> = SortedMap[],
 
   // The type substitution, which is different than the one used for
   // existentials during the inference. This one is used to
@@ -79,7 +79,7 @@ class TEnv{
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
 
     tdef = this.defMap.getType(context, name);
-    tparams = tdef match {
+    clauses = tdef match {
     | TDType(ta) ->
       if (ta.tdefParams.size() != targs.targs.size()) {
         typingError(Array[(name.posRange, "Invalid number of type arguments")])
@@ -93,7 +93,7 @@ class TEnv{
     };
 
     for (i => targ in targs.targs) {
-      tparam = tparams[i];
+      tparam = clauses[i];
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
@@ -217,26 +217,25 @@ class TEnv{
 
   fun addTParams(
     context: mutable SKStore.Context,
-    tparams: Array<TypeParam>,
+    clauses: Array<TypeParam>,
   ): this {
-    for (tparam in tparams) {
+    for (tparam in clauses) {
+      ty = TType::fromClauses(
+        tparam.name.posRange,
+        Clauses::fromTypeParam(tparam, None()),
+      );
       !this.subst[tparam.name.value] = (
         false,
-        TType::fromTParams(
-          tparam.name.posRange,
-          TTypeParams(
-            Array[
-              ArraySet::single(
-                TParam(
-                  tparam.name.value,
-                  tparam.name.posRange.fileName,
-                  tparam.id,
-                  tparam.constraint.map(cstr -> this.normalize(context, cstr)),
-                ),
-              ),
-            ],
-          ),
-        ),
+        tparam.constraint match {
+        | None() -> ty
+        | Some(cstr) ->
+          interTType(
+            Subst::mcreate{context},
+            this,
+            ty,
+            this.normalize(context, cstr),
+          )
+        },
       )
     };
     this
@@ -456,10 +455,19 @@ class TEnv{
       if (targs.size() != 1) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
       };
-      TType::single(p, TArray(this.normalize(context, targs[0]), p))
+      TType::fromTInst(
+        pos,
+        TSInst(
+          Name(p, "Array"),
+          TArgs(Array[this.normalize(context, targs[0])]),
+        ),
+      )
 
     | TAArray(ty) ->
-      TType::single(pos, TArray(this.normalize(context, ty), pos))
+      TType::fromTInst(
+        pos,
+        TSInst(Name(pos, "Array"), TArgs(Array[this.normalize(context, ty)])),
+      )
 
     | TAInst(n @ Name(p, "void"), targs) ->
       if (targs.size() != 0) {
@@ -498,14 +506,21 @@ class TEnv{
         ),
       )
     | TAInst(n, targs) ->
-      if (this.tparams.containsKey(n.value)) {
+      if (this.clauses.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
             Array[(n.posRange, "A type parameter cannot have type argument")],
           )
         };
-        tparam = this.tparams[n.value];
-        TType::fromTParams(pos, TTypeParams(Array[ArraySet::single(tparam)]))
+        tparam = this.clauses[n.value];
+        ty = TType::fromClauses(
+          pos,
+          Clauses::fromTParamWithConstraint(tparam, None()),
+        );
+        tparam.cstr match {
+        | None() -> ty
+        | Some(cstr) -> interTType(Subst::mcreate{context}, this, ty, cstr)
+        }
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
@@ -517,6 +532,18 @@ class TEnv{
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.posRange, "Cyclic definition")])
       } else {
+        tdef = this.defMap.getType(context, n);
+        tdef match {
+        | TDType(ta) ->
+          if (ta.tdefParams.size() != targs.size()) {
+            typingError(Array[(n.posRange, "Invalid number of type arguments")])
+          }
+        | TDClass(ca) ->
+          if (ca.tparams.size() != targs.size()) {
+            typingError(Array[(n.posRange, "Invalid number of type arguments")])
+          }
+        };
+
         TType::fromTInst(
           pos,
           TSInst(
@@ -566,17 +593,17 @@ class TEnv{
         pos,
         TTuple(types.map(ty -> this.normalize(context, ty)), typeAst.posRange),
       )
-    | TAFun(isMethod, tparams, params, retType) ->
-      funTParams = mutable Vector[];
-      for (tparam in tparams) {
-        funTParam = TParam(
+    | TAFun(isMethod, clauses, params, retType) ->
+      funClauses = mutable Vector[];
+      for (tparam in clauses) {
+        funTParam = TParamWithConstraint(
           tparam.name.value,
           tparam.name.posRange.fileName,
           tparam.id,
           tparam.constraint.map(cstr -> this.normalize(context, cstr)),
         );
-        funTParams.push(funTParam);
-        !this.tparams[tparam.name.value] = funTParam;
+        funClauses.push(funTParam);
+        !this.clauses[tparam.name.value] = funTParam;
       };
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
@@ -615,7 +642,7 @@ class TEnv{
         }
       };
       tfun = TFun(
-        funTParams.toArray(),
+        funClauses.toArray(),
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,
