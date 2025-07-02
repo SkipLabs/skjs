@@ -853,6 +853,11 @@ class TVar(
     !this.constraints[ty.hash()] = ty;
     this
   }
+
+  fun mapConstraints(f: TType -> TType): this {
+    !this.constraints = this.constraints.map((_id, ty) -> f(ty));
+    this
+  }
 }
 class TArgs(targs: Array<TType>) uses Hashable, Orderable
 class TSInst(name: Name, targs: TArgs) extends TInst
@@ -1885,8 +1890,7 @@ base class ApplyType {
     inst match {
     | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
     | TInter(ty1, ty2) -> TInter(this.type(env, ty1), this.type(env, ty2))
-    | TVar(pos, id, constraints) ->
-      TVar(pos, id, constraints.map((_, ty) -> this.type(env, ty)))
+    | tvar @ TVar _ -> tvar.mapConstraints(ty -> this.type(env, ty))
     }
   }
 
