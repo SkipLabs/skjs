@@ -18,3 +18,7 @@ fmt: fmt-sk
 check-fmt:
 	${MAKE} fmt
 	if ! git diff --quiet --exit-code; then echo "make fmt changed some files:"; git status --porcelain; exit 1; fi
+
+.PHONY: check-sh
+check-sh:
+	find . -name "*.sh" | xargs shellcheck
