@@ -3,7 +3,7 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: skiplabs/skdb-base:latest
+      - image: skiplabs/skiplang:latest
     steps:
       - checkout
       - run:
