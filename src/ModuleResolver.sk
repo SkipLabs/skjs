@@ -95,7 +95,11 @@ base class DirName(path: Array<String>) uses Orderable, Show {
 
 class FileName(dirName: DirName, baseName: String) {
   static fun create(fileName: String): this {
-    if (fileName.endsWith("/")) invariant_violation(`File name '${fileName}' is not expected to end with /`);
+    if (fileName.endsWith("/")) {
+      invariant_violation(
+        `File name '${fileName}' is not expected to end with /`,
+      )
+    };
     vec = splitPath(fileName);
     path = vec.slice(0, vec.size() - 1);
     dirName = if (fileName.startsWith("/")) {
@@ -141,7 +145,11 @@ class FileNameEntry(
 class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
   fun lookup(fileName: FileName): ?FileName {
     fileNameStr = fileName.toString();
-    if (fileNameStr.contains("..")) invariant_violation(`File name '${fileNameStr}' is not expected to contain '..'`);
+    if (fileNameStr.contains("..")) {
+      invariant_violation(
+        `File name '${fileNameStr}' is not expected to contain '..'`,
+      )
+    };
     entry = FileNameEntry::create(fileNameStr);
     idx = SKStore.binSearch(
       i ~> this.entries[i].invertedName,
@@ -276,7 +284,9 @@ fun resolveName(
     endsWithMJS = fullName.baseName.endsWith(".mjs");
     if (endsWithJS || endsWithMJS) {
       suffix = if (endsWithJS) ".js" else {
-        if (!endsWithMJS) invariant_violation("expected endsWithMJS to be true");
+        if (!endsWithMJS) {
+          invariant_violation("expected endsWithMJS to be true")
+        };
         ".mjs";
       };
       tsName = fullName with {

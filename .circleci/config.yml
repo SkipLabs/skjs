@@ -1,6 +1,20 @@
 version: 2.1
 
 jobs:
+  fast-checks:
+    docker:
+      - image: skiplabs/skip:latest
+    resource_class: small
+    steps:
+      - checkout
+      - run:
+          name: Check code is formatted
+          command: |
+            make check-fmt
+      - run:
+          name: Check shell scripts
+          command: |
+            make check-sh
   build:
     docker:
       - image: skiplabs/skiplang:latest

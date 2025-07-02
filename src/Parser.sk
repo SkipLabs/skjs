@@ -274,7 +274,9 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
       tparams = this.typeParams();
       this.type(0) match {
       | Type(_, TAFun(isMethod, emptyTParams, params, retType)) ->
-        if (emptyTParams.size() != 0) invariant_violation("emptyTParams should be empty");
+        if (emptyTParams.size() != 0) {
+          invariant_violation("emptyTParams should be empty")
+        };
         TAFun(isMethod, tparams, params, retType)
       | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
       }
@@ -574,7 +576,9 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
           };
           continue;
         };
-        if (bopPrec >= prec) invariant_violation("bopPrec should be less than prec");
+        if (bopPrec >= prec) {
+          invariant_violation("bopPrec should be less than prec")
+        };
         return left
       | _ -> return left
       }
@@ -708,7 +712,9 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
               TAFunParam(Some(TAParamName(paramName)), Some(qm.posRange), type),
             );
           } else {
-            if (!(this.lex.peekKind() is Some(TKColon()))) invariant_violation("expected TKColon");
+            if (!(this.lex.peekKind() is Some(TKColon()))) {
+              invariant_violation("expected TKColon")
+            };
             _ = this.lex.next();
             type = this.type(0);
             result.push(TAFunParam(Some(TAParamName(paramName)), None(), type));
@@ -2652,7 +2658,9 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
         !left = Binop(binop, Expr(leftPosRange, left), this.expr(bopPrec + 1));
         continue;
       };
-      if (bopPrec >= prec) invariant_violation("bopPrec should be less than prec");
+      if (bopPrec >= prec) {
+        invariant_violation("bopPrec should be less than prec")
+      };
       return left
     }
   }

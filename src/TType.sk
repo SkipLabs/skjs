@@ -142,7 +142,9 @@ class TType private {
 
   fun withClauses(clauses: Clauses): this {
     if (this.isTop) {
-      if (!clauses.isEmpty()) invariant_violation("clauses should be empty when isTop");
+      if (!clauses.isEmpty()) {
+        invariant_violation("clauses should be empty when isTop")
+      };
       this
     } else {
       static::create(this.pos, this.insts, clauses)
@@ -826,7 +828,9 @@ class STypes private (
   }
 
   fun addUndefined(pos: PosRange): this {
-    if (this.containsUndefined()) invariant_violation("type already contains undefined");
+    if (this.containsUndefined()) {
+      invariant_violation("type already contains undefined")
+    };
     undef: SType = TPrimVoid(TUndefined(), pos);
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
@@ -899,7 +903,9 @@ class Clause(
   }
 
   fun union(subst: mutable Subst, env: TEnv, other: Clause): Clause {
-    if (this.vars != other.vars) invariant_violation("clause vars must be equal for union");
+    if (this.vars != other.vars) {
+      invariant_violation("clause vars must be equal for union")
+    };
     stypesOpt = (this.stypes, other.stypes) match {
     | (None(), None()) -> None()
     | (x @ Some(_), None())
@@ -1274,7 +1280,9 @@ fun isSubTTuple(
 }
 
 fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
-  if (f1.clauses.size() != f2.clauses.size()) invariant_violation("function clause sizes must match");
+  if (f1.clauses.size() != f2.clauses.size()) {
+    invariant_violation("function clause sizes must match")
+  };
   if (!f2.lambdas.isEmpty()) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
@@ -1409,7 +1417,9 @@ fun unionSType(
 }
 
 fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
-  if (f1.clauses.size() != f2.clauses.size()) invariant_violation("function clause sizes must match");
+  if (f1.clauses.size() != f2.clauses.size()) {
+    invariant_violation("function clause sizes must match")
+  };
   if (!f1.lambdas.isEmpty()) {
     typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
   };
@@ -1586,7 +1596,9 @@ fun interSType(
 }
 
 fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
-  if (f1.clauses.size() != f2.clauses.size()) invariant_violation("function clause sizes must match");
+  if (f1.clauses.size() != f2.clauses.size()) {
+    invariant_violation("function clause sizes must match")
+  };
   tsubst = mutable Map[];
   clauses = mutable Vector[];
   for (i in Range(0, f1.clauses.size())) {
