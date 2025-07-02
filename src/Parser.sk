@@ -1576,10 +1576,11 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
         None()
       };
       this.!id = this.id + 1;
+      name = this.lex.getStrTok(tok);
       tdparams.push(
         TypeParam(
-          this.id,
-          Name(tok.posRange, this.lex.getStrTok(tok)),
+          Id(name + ":" + this.id + ":" + this.lex.fileName.hash()),
+          Name(tok.posRange, name),
           constr,
           default,
         ),
@@ -1622,7 +1623,14 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
         None()
       };
       this.!id = this.id + 1;
-      result.push(TypeParam(this.id, tparamName, tparamType, default));
+      result.push(
+        TypeParam(
+          Id(tparamName.value + ":" + this.id + ":" + this.lex.fileName.hash()),
+          tparamName,
+          tparamType,
+          default,
+        ),
+      );
       commaTok = this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
       | Some(x) -> x

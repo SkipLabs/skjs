@@ -891,14 +891,20 @@ class TInsts(insts: Array<TInst>) uses Hashable, Orderable {
   }
 }
 
+value class Id(id: String) uses Hashable, Orderable, Show {
+  fun toString(): String {
+    this.id
+  }
+}
+
 class TParamWithConstraint(
   name: String,
   fileName: String,
-  id: Int,
+  id: Id,
   cstr: ?TType,
 ) uses Hashable, Orderable
 
-class TParam(name: String, fileName: String, id: Int) uses Hashable, Orderable
+class TParam(name: String, fileName: String, id: Id) uses Hashable, Orderable
 
 class Clause(
   vars: ArraySet<TParam>,
@@ -1909,7 +1915,7 @@ base class ApplyType {
 }
 
 class RenameClauses() extends ApplyType {
-  type Env = Map<Int, TParamWithConstraint>;
+  type Env = Map<Id, TParamWithConstraint>;
   fun typeParamWithConstraint(
     subst: this::Env,
     tparam: TParamWithConstraint,
@@ -1944,7 +1950,7 @@ class FilterType() extends ApplyType {
 }
 
 class Instantiate() extends ApplyType {
-  type Env = (mutable Subst, TEnv, Map<(String, Int), TType>);
+  type Env = (mutable Subst, TEnv, Map<Id, TType>);
 
   fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
@@ -1958,8 +1964,8 @@ class Instantiate() extends ApplyType {
     for (clause in clauses) {
       clauseTy = TType::top(ty.pos);
       for (tparam in clause.vars) {
-        if (map.containsKey((tparam.fileName, tparam.id))) {
-          paramTy = map[(tparam.fileName, tparam.id)];
+        if (map.containsKey(tparam.id)) {
+          paramTy = map[tparam.id];
           !clauseTy = interTType(subst, tenv, clauseTy, paramTy)
         } else {
           !clauseTy = interTType(
