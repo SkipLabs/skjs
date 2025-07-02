@@ -3,14 +3,14 @@ version: 2.1
 jobs:
   build:
     docker:
-      - image: skiplabs/skdb-base:latest
+      - image: skiplabs/skiplang:latest
+    resource_class: medium
     steps:
       - checkout
       - run:
-          name: Clone SKDB
+          name: Clone Skip repository
           command: |
-            git clone --depth=1 https://github.com/SkipLabs/skdb ../skdb
-            cd ../skdb && git submodule update --init --recursive
+            git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
       - run:
           name: Check
           command: |
