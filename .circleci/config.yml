@@ -11,6 +11,10 @@ jobs:
           name: Check code is formatted
           command: |
             make check-fmt
+      - run:
+          name: Check shell scripts
+          command: |
+            make check-sh
   build:
     docker:
       - image: skiplabs/skiplang:latest
