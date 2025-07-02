@@ -4,6 +4,7 @@ jobs:
   build:
     docker:
       - image: skiplabs/skiplang:latest
+    resource_class: medium
     steps:
       - checkout
       - run:
