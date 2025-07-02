@@ -844,11 +844,15 @@ class STypes private (
   }
 }
 
-class TVar(
+class TVar private (
   pos: PosRange,
   id: Int,
   constraints: SortedMap<Int, TType>,
 ) extends TInst {
+  static fun create(pos: PosRange, id: Int): this {
+    static(pos, id, SortedMap[])
+  }
+
   fun addConstraint(ty: TType): this {
     !this.constraints[ty.hash()] = ty;
     this
@@ -2078,7 +2082,7 @@ mutable class Subst private {
   mutable fun gen(pos: PosRange): TVar {
     id = this.version;
     this.!version = this.version + 1;
-    TVar(pos, id, SortedMap[]);
+    TVar::create(pos, id)
   }
 
   readonly fun isOpen(tvar: TVar): Bool {
