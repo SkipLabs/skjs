@@ -1715,7 +1715,7 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
   ) {
     ty2.insts.insts[0] match {
     | TVar(pos, id, constraints) ->
-      !constraints[ty2.hash()] = ty1;
+      !constraints[ty1.hash()] = ty1;
       return TType::fromTInst(pos, TVar(pos, id, constraints))
     | _ -> invariant_violation("Already checked it was a TVar")
     }
