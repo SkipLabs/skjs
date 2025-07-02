@@ -35,12 +35,12 @@ mutable class TypePp{
   mutable fun out(level: Int, margin: Margin, str: String): void {
     // The string does not contain special characters
     for (c in str) {
-      invariant(c != '\n' && c != '\r' && c != '\t', "unexpected character");
+      if (c == '\n' || c == '\r' || c == '\t') invariant_violation("unexpected character");
     };
     if (this.cols < margin.size) {
       // The string does not start with a space
       for (c in str) {
-        invariant(c != ' ', "unexpected white space: " + str);
+        if (c == ' ') invariant_violation("unexpected white space: " + str);
         break void;
       };
       this.!cols = margin.size;
@@ -85,24 +85,6 @@ mutable class TypePp{
   mutable fun stype(level: Int, margin: Margin, sty: SType): void {
     sty match {
     | TObject(fields, _) -> this.object(level, margin, fields)
-    | TArray(ty, _) ->
-      this.branch(
-        level,
-        margin,
-        (pp, level, margin) ~> {
-          pp.out(level, margin, "Array<");
-          pp.type(level, margin, ty);
-          pp.out(level, margin, ">");
-        },
-        (pp, level, prevMargin, margin) -> {
-          pp.out(level, margin, "Array<");
-          pp.newLine();
-          pp.type(level, margin, ty);
-          pp.newLine();
-          pp.out(level, prevMargin, ">");
-          pp.newLine();
-        },
-      )
     | TPromise(ty, _) ->
       this.branch(
         level,
@@ -189,15 +171,15 @@ mutable class TypePp{
       level,
       margin,
       (pp, level, margin) ~> {
-        if (tfun.tparams.size() != 0) {
+        if (tfun.clauses.size() != 0) {
           pp.out(level, margin, "<");
-          for (i => tparam in tfun.tparams) {
+          for (i => tparam in tfun.clauses) {
             if (i != 0) pp.out(level, margin, ", ");
             pp.out(level, margin, tparam.name + ":" + tparam.id);
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
-              pp.out(level, margin, " extends ");
+              pp.out(level, margin, " extends1 ");
               pp.type(level, margin, x)
             }
           };
@@ -221,15 +203,15 @@ mutable class TypePp{
         pp.type(level, margin, tfun.retType);
       },
       (pp, level, prevMargin, margin) ~> {
-        if (tfun.tparams.size() != 0) {
+        if (tfun.clauses.size() != 0) {
           pp.out(level, margin, "<");
-          for (i => tparam in tfun.tparams) {
+          for (i => tparam in tfun.clauses) {
             if (i != 0) pp.out(level, margin, ", ");
             pp.out(level, margin, tparam.name + ":" + tparam.id);
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
-              pp.out(level, margin, " extends ");
+              pp.out(level, margin, " extends2 ");
               pp.type(level, margin, x)
             }
           };
@@ -320,14 +302,7 @@ mutable class TypePp{
       if (field.isOptional) {
         this.out(level, margin, "?")
       };
-      if (
-        fieldType.rawSTypes().singleElt() match {
-        | Some(TFuns(_, methods, _)) -> methods.size() == 0
-        | _ -> true
-        }
-      ) {
-        this.out(level, margin, ": ");
-      };
+      this.out(level, margin, ": ");
       this.type(level, margin, fieldType);
       if (i != fieldArray.size() - 1) {
         this.out(level, margin, ",");
@@ -349,46 +324,40 @@ mutable class TypePp{
 
   mutable fun type(level: Int, margin: Margin, ty: TType): void {
     if (ty.isTop) {
-      this.out(level, margin, "top");
       return void;
     };
     if (ty.isBottom()) {
       this.out(level, margin, "never");
       return void;
     };
-    stypes = ty.rawSTypes();
-    if (!ty.tparams.tparams.isEmpty()) {
-      for (i => tparams in ty.tparams.tparams) {
+    if (!ty.clauses.clauses.isEmpty()) {
+      for (i => clauses in ty.clauses.clauses) {
         if (i != 0) {
           this.out(level, margin, " | ");
         };
-        for (j => tparam in tparams) {
+        for (j => tparam in clauses.vars) {
           if (j != 0) {
             this.out(level, margin, " & ");
           };
           this.out(level, margin, tparam.name + ":" + tparam.id);
-          tparam.cstr match {
-          | None() -> void
-          | Some(cstr) ->
-            this.out(level, margin, " extends ");
-            this.type(level, margin, cstr)
+        };
+        if (!clauses.vars.isEmpty()) this.out(level, margin, " extends ");
+        clauses.stypes match {
+        | None() -> void
+        | Some(c) ->
+          for (k => sty in c) {
+            if (k != 0) {
+              this.out(level, margin, " | ");
+            };
+            this.stype(level, margin, sty);
           }
         }
       };
-      if (!stypes.isEmpty() || !ty.insts.insts.isEmpty()) {
-        this.out(level, margin, " | ")
-      }
     };
     this.branch(
       level,
       margin,
       (pp, level, margin) ~> {
-        for (i => sty in stypes) {
-          if (i != 0) {
-            pp.out(level, margin, " | ");
-          };
-          pp.stype(level, margin, sty);
-        };
         for (i => inst in ty.insts.insts) {
           inst match {
           | TSInst(x, targs) ->
@@ -410,22 +379,11 @@ mutable class TypePp{
             pp.out(level, margin, "(");
             pp.type(level, margin, ty2);
             pp.out(level, margin, ")")
-          | TVar(_, id) -> pp.out(level, margin, "'" + id)
+          | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
           }
         }
       },
-      (pp, level, prevMargin, margin) ~> {
-        for (i => sty in stypes) {
-          pp.buffer match {
-          | List.Nil()
-          | List.Cons("\n", _) ->
-            void
-          | _ -> pp.newLine()
-          };
-          if (i != 0) pp.out(level, prevMargin, "| ");
-          pp.stype(level, margin, sty);
-          pp.newLine();
-        };
+      (pp, level, _prevMargin, margin) ~> {
         for (inst in ty.insts.insts) {
           pp.buffer match {
           | List.Nil()
@@ -433,7 +391,6 @@ mutable class TypePp{
             void
           | _ -> pp.newLine()
           };
-          if (stypes.size() != 0) pp.out(level, prevMargin, "| ");
           inst match {
           | TSInst(x, targs) ->
             pp.out(level, margin, x.value);
@@ -449,7 +406,7 @@ mutable class TypePp{
             pp.type(level, margin, ty1);
             pp.out(level, margin, " & ");
             pp.type(level, margin, ty2)
-          | TVar(_, id) -> pp.out(level, margin, "'" + id)
+          | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
           }
         }
       },

@@ -147,8 +147,12 @@ mutable class Scope{
     scope1: readonly Scope,
     scope2: readonly Scope,
   ): void {
-    invariant(scope1.up.map(x -> x.id) == Some(this.id));
-    invariant(scope2.up.map(x -> x.id) == Some(this.id));
+    if (scope1.up.map(x -> x.id) != Some(this.id)) {
+      invariant_violation("scope1 up id mismatch")
+    };
+    if (scope2.up.map(x -> x.id) != Some(this.id)) {
+      invariant_violation("scope2 up id mismatch")
+    };
     _ = mapUnion(
       scope1.escapingRefs(),
       scope2.escapingRefs(),
@@ -165,7 +169,9 @@ mutable class Scope{
       (nameRef1, nameRef2) -> {
         (name1, ref1) = nameRef1;
         (name2, ref2) = nameRef2;
-        invariant(name1 == name2);
+        if (name1 != name2) {
+          invariant_violation("name refs must have same name")
+        };
         this.!refs[name1] = LocalRef(
           TType::union(subst, tenv, ref1.type, ref2.type),
           ref1.isInitialized && ref2.isInitialized,
@@ -176,7 +182,9 @@ mutable class Scope{
   }
 
   mutable fun popReplace(scope: readonly Scope): void {
-    invariant(scope.up.fromSome().id == this.id);
+    if (scope.up.fromSome().id != this.id) {
+      invariant_violation("scope up id mismatch")
+    };
     for (nameRef in scope.escapingRefs()) {
       (name, ref) = nameRef;
       this.!refs[name] = ref;
@@ -215,7 +223,9 @@ mutable class TCEnv(
     tenv: TEnv,
     scope: readonly Scope,
   ): void {
-    invariant(scope.up.fromSome().id == this.scope.id);
+    if (scope.up.fromSome().id != this.scope.id) {
+      invariant_violation("scope up id mismatch")
+    };
     this.scope.merge(subst, tenv, scope, this.mcreateSubScope{isLoop => false});
   }
 
@@ -337,29 +347,30 @@ class TypeChecker{
   fun class_(context: mutable SKStore.Context, c: Class): void {
     targs = TArgs(
       c.tparams.map(tparam -> {
-        ttypeParam = TParam(
+        ttypeParam = TParamWithConstraint(
           tparam.name.value,
           tparam.name.posRange.fileName,
           tparam.id,
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
-        TType::fromTParams(
+        ty = TType::fromClauses(
           tparam.name.posRange,
-          TTypeParams(Array[ArraySet::single(ttypeParam)]),
-        )
+          Clauses::fromTParamWithConstraint(ttypeParam, None()),
+        );
+        ttypeParam.cstr match {
+        | None() -> ty
+        | Some(cstr) -> interTType(Subst::mcreate{context}, this.tenv, ty, cstr)
+        }
       }),
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
     subst = Subst::mcreate{context};
     cstr = TType::inst(c.name, targs);
-    thisType = TType::fromTParams(
+    thisType = TType::fromClauses(
       c.name.posRange,
-      TTypeParams(
-        Array[
-          ArraySet::single(
-            TParam("this", c.name.posRange.fileName, -1, Some(cstr)),
-          ),
-        ],
+      Clauses::fromTParamWithConstraint(
+        TParamWithConstraint("this", c.name.posRange.fileName, -1, None()),
+        cstr.getSTypes(subst, this.tenv, Covariant()),
       ),
     );
     if (c.extends_.size() != 0) {
@@ -590,12 +601,18 @@ class TypeChecker{
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
     ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> false
-    | Some((stypes, tparams)) ->
-      tparams.tparams.size() == 0 &&
-        stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) -> true
-        | _ -> false
+    | Some(clauses) ->
+      for (clause in clauses.clauses) {
+        clause.stypes match {
+        | None() -> return false
+        | Some(stypes) ->
+          stypes.singleElt() match {
+          | Some(TPrimVoid(TVoid(), _)) -> void
+          | _ -> return false
+          }
         }
+      };
+      true
     }
   }
 
@@ -884,7 +901,7 @@ class TypeChecker{
       this.checkSubType(env, epos, "Invalid return type", rtype, retType)
 
     | Bind(BKVar(), vars) ->
-      invariant(vars.size() != 0);
+      if (vars.size() == 0) invariant_violation("vars size should not be 0");
       typingError(
         Array[(vars[0].pat.pos, "Don't use var, use let or const instead")],
       )
@@ -980,7 +997,9 @@ class TypeChecker{
     checkBreak = block -> {
       term = StmtTermination::block(block);
       if (term.mayFallthrough) {
-        invariant(block.size() != 0);
+        if (block.size() == 0) {
+          invariant_violation("block size should not be 0")
+        };
         last = block[block.size() - 1];
         typingError(Array[(last.pos, "Missing break")])
       }
@@ -1106,18 +1125,6 @@ class TypeChecker{
             branch.fields.getType(fieldName),
           )
         }
-      | TArray(eltType, stringPos) ->
-        obj = this.tenv.newObject(
-          env.context,
-          Name(stringPos, "Array"),
-          Array[eltType],
-        );
-        !result = TType::union(
-          env.subst,
-          this.tenv,
-          result,
-          obj.fields.getType(fieldName),
-        )
       | TPrimValue(primKind, _, stringPos) ->
         objName = primKind.toString();
         obj = this.tenv.newObject(
@@ -1214,11 +1221,20 @@ class TypeChecker{
           | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
           | c @ Class _ -> break this.tenv.newStatic(env.context, c.name)
           | VarDefs(kind, varDefArr) ->
-            invariant(varDefArr.size() == 1);
+            if (varDefArr.size() != 1) {
+              invariant_violation("varDefArr size should be 1")
+            };
             varDef = varDefArr[0];
-            invariant(kind is VDKConst _);
-            // TODO: support constants defined using a pattern
-            invariant(varDef.pat is Pattern(_, PVar _));
+            if (!(kind is VDKConst _)) {
+              typingError(
+                Array[(varDef.pat.pos, "Construction not supported")],
+              );
+            };
+            if (!(varDef.pat is Pattern(_, PVar _))) {
+              typingError(
+                Array[(varDef.pat.pos, "Construction not supported")],
+              );
+            };
             break varDef.type match {
             | None() ->
               varDef.value match {
@@ -1292,8 +1308,7 @@ class TypeChecker{
       exprTy = this.expr(env, args[0]);
       ty = exprTy.expand(env.subst, this.tenv, Covariant()) match {
       | None() -> TType::top(exprTy.pos)
-      | Some((stypes, tparams)) ->
-        TType::create(exprTy.pos, stypes, TInsts::empty(), tparams)
+      | Some(clauses) -> TType::create(exprTy.pos, TInsts::empty(), clauses)
       };
       print_error(prettyPrintType(false, ty));
       TType::single(pos, TPrimVoid(TVoid(), pos))
@@ -1340,18 +1355,6 @@ class TypeChecker{
       result = TType::bottom(pos);
       for (stype in stypes) {
         ty = stype match {
-        | TArray(eltType, _) ->
-          this.checkSubType(
-            env,
-            pos,
-            "Invalid index",
-            idxType,
-            TType::single(
-              idx.posRange,
-              TPrimValue(TNum(), None(), idx.posRange),
-            ),
-          );
-          eltType
         | TTuple(tyArr, tuplePos) ->
           n = idx.value match {
           | Number(str) -> str.toIntOption()
@@ -1369,6 +1372,17 @@ class TypeChecker{
           tyArr[n]
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
+        | TObject _ ->
+          this.call(
+            env,
+            pos,
+            this.expr(
+              env,
+              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "get"))))),
+            ),
+            Array[],
+            Array[idxType],
+          )
         | TPrimValue(primKind, _, primPos) ->
           idxType
             .getSTypes(env.subst, this.tenv, Covariant())
@@ -1446,7 +1460,7 @@ class TypeChecker{
       | BOStrictEquality() ->
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
-        if (ty1.tparams.tparams.isEmpty() && ty2.tparams.tparams.isEmpty()) {
+        if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
           isSubTType(env.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
           | _ ->
@@ -1938,6 +1952,27 @@ class TypeChecker{
     fieldType
   }
 
+  fun getArrayEltType(env: mutable TCEnv, object: TObject): TType {
+    object.fields.maybeGet("get") match {
+    | None() ->
+      typingError(Array[(object.pos, "Expected an Array or Record type")])
+    | Some(getMethod) ->
+      getF = getMethod.type
+        .getSTypes(env.subst, this.tenv, Covariant())
+        .flatMap(stypes ~> stypes.singleElt())
+        .fromSome() match {
+      | TFuns(_, methods, _) ->
+        for (met in methods) {
+          break met
+        } else {
+          invariant_violation("Unexpected type for Array::get or Record::get")
+        }
+      | _ -> invariant_violation("Unexpected get method type for")
+      };
+      getF.retType
+    };
+  }
+
   fun call(
     env: mutable TCEnv,
     pos: PosRange,
@@ -1951,7 +1986,7 @@ class TypeChecker{
     ) match {
     | Some(TFuns(funs, methods, _)) ->
       for (tfun in funs.values().concat(methods.values())) {
-        if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
+        if (targs.size() != 0 && targs.size() != tfun.clauses.size()) {
           typingError(
             Array[
               (
@@ -1960,12 +1995,12 @@ class TypeChecker{
                   targs.size() +
                   " passed",
               ),
-              (fty.pos, "Expected: " + tfun.tparams.size()),
+              (fty.pos, "Expected: " + tfun.clauses.size()),
             ],
           )
         };
         map = mutable Map[];
-        for (i => tparamDecl in tfun.tparams) {
+        for (i => tparamDecl in tfun.clauses) {
           map![(tparamDecl.fileName, tparamDecl.id)] = if (targs.isEmpty()) {
             this.newTVar(env, pos)
           } else {
@@ -1974,7 +2009,7 @@ class TypeChecker{
         };
         !tfun = Instantiate().fun_(
           (env.subst, this.tenv, map.chill()),
-          tfun with {tparams => Array[]},
+          tfun with {clauses => Array[]},
         );
         version = env.subst.version;
         loop {
@@ -2020,7 +2055,8 @@ class TypeChecker{
             spreadType
               .getSTypes(env.subst, this.tenv, Contravariant())
               .flatMap(stypes ~> stypes.singleElt()) match {
-            | Some(TArray(eltType, _)) ->
+            | Some(object @ TObject _) ->
+              eltType = this.getArrayEltType(env, object);
               for (i in Range(totalSize, args.size())) {
                 this.checkSubType(
                   env,
@@ -2041,7 +2077,9 @@ class TypeChecker{
           }
         };
         for (lambda in tfun.lambdas) {
-          invariant(tfun.optionalParams.size() == 0);
+          if (tfun.optionalParams.size() != 0) {
+            invariant_violation("tfun.optionalParams should be empty")
+          };
           lambda.compute(env.subst, args, tfun.retType)
         };
         !result = result match {
@@ -2194,7 +2232,10 @@ class TypeChecker{
     ) if (target) ->
       env.scope.set(
         local,
-        TType::single(posArray, TArray(TType::top(posArray), posArray)),
+        TType::fromTInst(
+          posArray,
+          TSInst(Name(posArray, "Array"), TArgs(Array[TType::top(posArray)])),
+        ),
         (_, _) -> void,
       )
 
@@ -2233,8 +2274,8 @@ class TypeChecker{
     ty = env.scope.get(local);
     (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> (TType::top(ty.pos), true)
-    | Some((stypes, tparams)) ->
-      t = TType::create(ty.pos, stypes, TInsts::empty(), tparams);
+    | Some(clauses) ->
+      t = TType::create(ty.pos, TInsts::empty(), clauses);
       !t = FilterType().type((filter, map), t);
       isTopOrEmpty = t.getSTypes(env.subst, this.tenv, Covariant()) match {
       | None() -> true

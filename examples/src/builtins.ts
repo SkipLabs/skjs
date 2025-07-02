@@ -11,6 +11,7 @@ declare class Array<T> {
   sort(f?: (object, object) => number): Array<T>;
   map<T2>(f: (T) => T2): Array<T2>;
   static isArray<T>(value: T): boolean;
+  get(idx: number): T;
 }
 
 declare const Math: {
@@ -28,6 +29,7 @@ declare class number {
 }
 
 declare class string {
+  length: number;
   charAt(pos: number): string;
   startsWith(prefix: string): boolean;
   endsWith(suffix: string): boolean;

@@ -1,3 +1,5 @@
+import { array } from "./skjs.js";
+
 type node = {
   item: number,
   height: number,
@@ -10,6 +12,16 @@ type tree = {
   rightRotate: (node) => node,
   leftRotate: (node) => node,
 };
+
+function foo<T1 extends { fd1: number }, T2 extends  {fd2: number}>(
+  v: T1,
+  x: T1 & T2
+): {fd1: number, fd2: number} {
+  return x;
+}
+function foo2(x: Array<number>): Array<number> {
+  return x;
+}
 
 // Create node
 function Node(item: number): node {
