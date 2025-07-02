@@ -35,7 +35,9 @@ mutable class TypePp{
   mutable fun out(level: Int, margin: Margin, str: String): void {
     // The string does not contain special characters
     for (c in str) {
-      if (c == '\n' || c == '\r' || c == '\t') invariant_violation("unexpected character");
+      if (c == '\n' || c == '\r' || c == '\t') {
+        invariant_violation("unexpected character")
+      };
     };
     if (this.cols < margin.size) {
       // The string does not start with a space
