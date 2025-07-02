@@ -1,10 +1,10 @@
 version: 2.1
 
 jobs:
-  fast-checks:
+  build:
     docker:
       - image: skiplabs/skip:latest
-    resource_class: small
+    resource_class: medium
     steps:
       - checkout
       - run:
@@ -15,12 +15,6 @@ jobs:
           name: Check shell scripts
           command: |
             make check-sh
-  build:
-    docker:
-      - image: skiplabs/skiplang:latest
-    resource_class: medium
-    steps:
-      - checkout
       - run:
           name: Clone Skip repository
           command: |
