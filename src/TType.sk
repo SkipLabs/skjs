@@ -2054,9 +2054,9 @@ mutable class Subst private {
   }
 
   mutable fun get(env: TEnv, tvar: TVar, variance: Variance): TType {
-    variance match {
+    result = variance match {
     | Covariant() ->
-      result = (if (!this.values.containsKey(tvar.id)) {
+      (if (!this.values.containsKey(tvar.id)) {
         SVOpen(TType::bottom(tvar.pos));
       } else {
         this.values[tvar.id]
@@ -2065,13 +2065,9 @@ mutable class Subst private {
         this.!values[tvar.id] = SVClosed(ty);
         ty
       | SVClosed(ty) -> ty
-      };
-      for (cstr in tvar.constraints) {
-        !result = interTType(this, env, result, cstr);
-      };
-      result
+      }
     | Contravariant() ->
-      result = if (!this.values.containsKey(tvar.id)) {
+      if (!this.values.containsKey(tvar.id)) {
         TType::bottom(tvar.pos)
       } else {
         this.values[tvar.id] match {
@@ -2079,12 +2075,12 @@ mutable class Subst private {
         | SVClosed(ty) ->
           ty
         }
-      };
-      for (cstr in tvar.constraints) {
-        !result = interTType(this, env, result, cstr);
-      };
-      result
-    }
+      }
+    };
+    for (cstr in tvar.constraints) {
+      !result = interTType(this, env, result, cstr);
+    };
+    result
   }
 
   mutable fun gen(pos: PosRange): TVar {
