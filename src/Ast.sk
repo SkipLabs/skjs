@@ -148,7 +148,7 @@ class ModuleDefName(isType: ?PosRange, name: Name, asName: ?Name)
 // <type-param> ::= <name> (: <type>)? (= <type>)?
 /*****************************************************************************/
 
-class TypeParam(id: Int, name: Name, constraint: ?Type, default: ?Type)
+class TypeParam(id: Id, name: Name, constraint: ?Type, default: ?Type)
 
 /*****************************************************************************/
 // <param> ::= <modifiers> <param-names> ("?"?) (: <type>)? (= <expr>)?

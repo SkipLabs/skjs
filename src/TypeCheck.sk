@@ -369,7 +369,12 @@ class TypeChecker{
     thisType = TType::fromClauses(
       c.name.posRange,
       Clauses::fromTParamWithConstraint(
-        TParamWithConstraint("this", c.name.posRange.fileName, -1, None()),
+        TParamWithConstraint(
+          "this",
+          c.name.posRange.fileName,
+          Id("this"),
+          None(),
+        ),
         cstr.getSTypes(subst, this.tenv, Covariant()),
       ),
     );
@@ -2001,7 +2006,7 @@ class TypeChecker{
         };
         map = mutable Map[];
         for (i => tparamDecl in tfun.clauses) {
-          map![(tparamDecl.fileName, tparamDecl.id)] = if (targs.isEmpty()) {
+          map![tparamDecl.id] = if (targs.isEmpty()) {
             this.newTVar(env, pos)
           } else {
             targs[i]
