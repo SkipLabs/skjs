@@ -485,25 +485,36 @@ class TFuns(
     )
   }
 
+  private static fun isSubTFun(
+    subst: mutable Subst,
+    env: TEnv,
+    f1: TFun,
+    f2O: ?TFun,
+  ): Result<void, STResult> {
+    f2O match {
+    | Some(f2) ->
+      isSubTFun(subst, env, f1, f2) match {
+      | STOk() -> Success(void)
+      | err -> Failure(err)
+      }
+    | None() -> Failure(STTooManyTFun(f1))
+    }
+  }
+
   static fun isSub(
     subst: mutable Subst,
     env: TEnv,
     funs1: TFuns,
     funs2: TFuns,
   ): STResult {
-    leq1 = (f1, f2O) ->
-      f2O match {
-      | Some(f2) ->
-        isSubTFun(subst, env, f1, f2) match {
-        | STOk() -> Success(void)
-        | err -> Failure(err)
-        }
-      | None() -> Failure(STTooManyTFun(f1))
-      };
-    funs1.funs.leq(funs2.funs, leq1) match {
+    funs1.funs.leq(funs2.funs, (x, y) ->
+      static::isSubTFun(subst, env, x, y)
+    ) match {
     | Failure(err) -> err
     | Success(void) ->
-      funs1.methods.leq(funs2.methods, leq1) match {
+      funs1.methods.leq(funs2.methods, (x, y) ->
+        static::isSubTFun(subst, env, x, y)
+      ) match {
       | Failure(err) -> err
       | Success(void) ->
         ok: STResult = STOk();
