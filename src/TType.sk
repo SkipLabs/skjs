@@ -142,7 +142,7 @@ class TType private {
 
   fun withClauses(clauses: Clauses): this {
     if (this.isTop) {
-      invariant(clauses.isEmpty());
+      if (!clauses.isEmpty()) invariant_violation("clauses should be empty when isTop");
       this
     } else {
       static::create(this.pos, this.insts, clauses)
@@ -826,7 +826,7 @@ class STypes private (
   }
 
   fun addUndefined(pos: PosRange): this {
-    invariant(!this.containsUndefined());
+    if (this.containsUndefined()) invariant_violation("type already contains undefined");
     undef: SType = TPrimVoid(TUndefined(), pos);
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
@@ -899,7 +899,7 @@ class Clause(
   }
 
   fun union(subst: mutable Subst, env: TEnv, other: Clause): Clause {
-    invariant(this.vars == other.vars);
+    if (this.vars != other.vars) invariant_violation("clause vars must be equal for union");
     stypesOpt = (this.stypes, other.stypes) match {
     | (None(), None()) -> None()
     | (x @ Some(_), None())
@@ -911,7 +911,7 @@ class Clause(
   }
 
   fun interSTypes(subst: mutable Subst, env: TEnv, stypes: STypes): ?Clause {
-    invariant(!stypes.isEmpty());
+    if (stypes.isEmpty()) invariant_violation("stypes should not be empty");
     vars = this.vars;
     this.stypes match {
     | None() -> Some(Clause(vars, Some(stypes)))
@@ -1274,7 +1274,7 @@ fun isSubTTuple(
 }
 
 fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
-  invariant(f1.clauses.size() == f2.clauses.size());
+  if (f1.clauses.size() != f2.clauses.size()) invariant_violation("function clause sizes must match");
   if (!f2.lambdas.isEmpty()) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
@@ -1354,7 +1354,7 @@ fun unionTFields(
     fields2.values(),
     x ~> x.name,
     (x, y) -> {
-      invariant(x.name == y.name);
+      if (x.name != y.name) invariant_violation("field names must match");
       TField(
         x.pos,
         x.name,
@@ -1393,7 +1393,7 @@ fun unionSType(
   | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> sty1
   | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> sty2
   | (TPrimValue(k1, Some(s1), pos), TPrimValue(k2, Some(s2), _)) ->
-    invariant(k1 == k2);
+    if (k1 != k2) invariant_violation("primitive value kinds must match");
     TPrimValue(k1, Some(s1.union(s2)), pos)
 
   | (TPromise(ty1, pos), TPromise(ty2, _)) ->
@@ -1409,7 +1409,7 @@ fun unionSType(
 }
 
 fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
-  invariant(f1.clauses.size() == f2.clauses.size());
+  if (f1.clauses.size() != f2.clauses.size()) invariant_violation("function clause sizes must match");
   if (!f1.lambdas.isEmpty()) {
     typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
   };
@@ -1522,7 +1522,7 @@ fun interTFields(
     x ~> x.name,
     x ~> x,
     (x, y) -> {
-      invariant(x.name == y.name);
+      if (x.name != y.name) invariant_violation("field names must match");
       TField(
         x.pos,
         x.name,
@@ -1552,14 +1552,14 @@ fun interSType(
 ): ?SType {
   (sty1, sty2) match {
   | (TPrimVoid(k1, _), TPrimVoid(k2, _)) ->
-    invariant(k1 == k2);
+    if (k1 != k2) invariant_violation("primitive void kinds must match");
     Some(sty1)
 
   | (
     tPrimValue1 @ TPrimValue(k1, values1, _),
     tPrimValue2 @ TPrimValue(k2, values2, _),
   ) ->
-    invariant(k1 == k2);
+    if (k1 != k2) invariant_violation("primitive value kinds must match");
     (values1, values2) match {
     | (_, None()) -> Some(tPrimValue1)
     | (None(), Some _) -> Some(tPrimValue2)
@@ -1586,7 +1586,7 @@ fun interSType(
 }
 
 fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
-  invariant(f1.clauses.size() == f2.clauses.size());
+  if (f1.clauses.size() != f2.clauses.size()) invariant_violation("function clause sizes must match");
   tsubst = mutable Map[];
   clauses = mutable Vector[];
   for (i in Range(0, f1.clauses.size())) {

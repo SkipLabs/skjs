@@ -35,12 +35,12 @@ mutable class TypePp{
   mutable fun out(level: Int, margin: Margin, str: String): void {
     // The string does not contain special characters
     for (c in str) {
-      invariant(c != '\n' && c != '\r' && c != '\t', "unexpected character");
+      if (c == '\n' || c == '\r' || c == '\t') invariant_violation("unexpected character");
     };
     if (this.cols < margin.size) {
       // The string does not start with a space
       for (c in str) {
-        invariant(c != ' ', "unexpected white space: " + str);
+        if (c == ' ') invariant_violation("unexpected white space: " + str);
         break void;
       };
       this.!cols = margin.size;

@@ -147,8 +147,12 @@ mutable class Scope{
     scope1: readonly Scope,
     scope2: readonly Scope,
   ): void {
-    invariant(scope1.up.map(x -> x.id) == Some(this.id));
-    invariant(scope2.up.map(x -> x.id) == Some(this.id));
+    if (scope1.up.map(x -> x.id) != Some(this.id)) {
+      invariant_violation("scope1 up id mismatch")
+    };
+    if (scope2.up.map(x -> x.id) != Some(this.id)) {
+      invariant_violation("scope2 up id mismatch")
+    };
     _ = mapUnion(
       scope1.escapingRefs(),
       scope2.escapingRefs(),
@@ -165,7 +169,9 @@ mutable class Scope{
       (nameRef1, nameRef2) -> {
         (name1, ref1) = nameRef1;
         (name2, ref2) = nameRef2;
-        invariant(name1 == name2);
+        if (name1 != name2) {
+          invariant_violation("name refs must have same name")
+        };
         this.!refs[name1] = LocalRef(
           TType::union(subst, tenv, ref1.type, ref2.type),
           ref1.isInitialized && ref2.isInitialized,
@@ -176,7 +182,9 @@ mutable class Scope{
   }
 
   mutable fun popReplace(scope: readonly Scope): void {
-    invariant(scope.up.fromSome().id == this.id);
+    if (scope.up.fromSome().id != this.id) {
+      invariant_violation("scope up id mismatch")
+    };
     for (nameRef in scope.escapingRefs()) {
       (name, ref) = nameRef;
       this.!refs[name] = ref;
@@ -215,7 +223,9 @@ mutable class TCEnv(
     tenv: TEnv,
     scope: readonly Scope,
   ): void {
-    invariant(scope.up.fromSome().id == this.scope.id);
+    if (scope.up.fromSome().id != this.scope.id) {
+      invariant_violation("scope up id mismatch")
+    };
     this.scope.merge(subst, tenv, scope, this.mcreateSubScope{isLoop => false});
   }
 
@@ -891,7 +901,7 @@ class TypeChecker{
       this.checkSubType(env, epos, "Invalid return type", rtype, retType)
 
     | Bind(BKVar(), vars) ->
-      invariant(vars.size() != 0);
+      if (vars.size() == 0) invariant_violation("vars size should not be 0");
       typingError(
         Array[(vars[0].pat.pos, "Don't use var, use let or const instead")],
       )
@@ -987,7 +997,9 @@ class TypeChecker{
     checkBreak = block -> {
       term = StmtTermination::block(block);
       if (term.mayFallthrough) {
-        invariant(block.size() != 0);
+        if (block.size() == 0) {
+          invariant_violation("block size should not be 0")
+        };
         last = block[block.size() - 1];
         typingError(Array[(last.pos, "Missing break")])
       }
@@ -1209,11 +1221,20 @@ class TypeChecker{
           | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
           | c @ Class _ -> break this.tenv.newStatic(env.context, c.name)
           | VarDefs(kind, varDefArr) ->
-            invariant(varDefArr.size() == 1);
+            if (varDefArr.size() != 1) {
+              invariant_violation("varDefArr size should be 1")
+            };
             varDef = varDefArr[0];
-            invariant(kind is VDKConst _);
-            // TODO: support constants defined using a pattern
-            invariant(varDef.pat is Pattern(_, PVar _));
+            if (!(kind is VDKConst _)) {
+              typingError(
+                Array[(varDef.pat.pos, "Construction not supported")],
+              );
+            };
+            if (!(varDef.pat is Pattern(_, PVar _))) {
+              typingError(
+                Array[(varDef.pat.pos, "Construction not supported")],
+              );
+            };
             break varDef.type match {
             | None() ->
               varDef.value match {
@@ -2056,7 +2077,9 @@ class TypeChecker{
           }
         };
         for (lambda in tfun.lambdas) {
-          invariant(tfun.optionalParams.size() == 0);
+          if (tfun.optionalParams.size() != 0) {
+            invariant_violation("tfun.optionalParams should be empty")
+          };
           lambda.compute(env.subst, args, tfun.retType)
         };
         !result = result match {
