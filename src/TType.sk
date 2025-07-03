@@ -844,11 +844,25 @@ class STypes private (
   }
 }
 
-class TVar(
+class TVar private (
   pos: PosRange,
   id: Int,
   constraints: SortedMap<Int, TType>,
-) extends TInst
+) extends TInst {
+  static fun create(pos: PosRange, id: Int): this {
+    static(pos, id, SortedMap[])
+  }
+
+  fun addConstraint(ty: TType): this {
+    !this.constraints[ty.hash()] = ty;
+    this
+  }
+
+  fun mapConstraints(f: TType -> TType): this {
+    !this.constraints = this.constraints.map((_id, ty) -> f(ty));
+    this
+  }
+}
 class TArgs(targs: Array<TType>) uses Hashable, Orderable
 class TSInst(name: Name, targs: TArgs) extends TInst
 class TInter(ty1: TType, ty2: TType) extends TInst
@@ -1702,9 +1716,8 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     ty1.clauses.isEmpty()
   ) {
     ty1.insts.insts[0] match {
-    | TVar(pos, id, constraints) ->
-      !constraints[ty2.hash()] = ty2;
-      return TType::fromTInst(pos, TVar(pos, id, constraints))
+    | tvar @ TVar(pos, _, _) ->
+      return TType::fromTInst(pos, tvar.addConstraint(ty2))
     | _ -> invariant_violation("Already checked it was a TVar")
     }
   };
@@ -1714,9 +1727,8 @@ fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
     ty2.clauses.isEmpty()
   ) {
     ty2.insts.insts[0] match {
-    | TVar(pos, id, constraints) ->
-      !constraints[ty2.hash()] = ty1;
-      return TType::fromTInst(pos, TVar(pos, id, constraints))
+    | tvar @ TVar(pos, _, _) ->
+      return TType::fromTInst(pos, tvar.addConstraint(ty1))
     | _ -> invariant_violation("Already checked it was a TVar")
     }
   };
@@ -1882,8 +1894,7 @@ base class ApplyType {
     inst match {
     | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
     | TInter(ty1, ty2) -> TInter(this.type(env, ty1), this.type(env, ty2))
-    | TVar(pos, id, constraints) ->
-      TVar(pos, id, constraints.map((_, ty) -> this.type(env, ty)))
+    | tvar @ TVar _ -> tvar.mapConstraints(ty -> this.type(env, ty))
     }
   }
 
@@ -2071,7 +2082,7 @@ mutable class Subst private {
   mutable fun gen(pos: PosRange): TVar {
     id = this.version;
     this.!version = this.version + 1;
-    TVar(pos, id, SortedMap[]);
+    TVar::create(pos, id)
   }
 
   readonly fun isOpen(tvar: TVar): Bool {
