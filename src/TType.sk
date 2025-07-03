@@ -731,7 +731,6 @@ class STypes private (
     static(InternalKeyedArrayMap::single(x))
   }
 
-  // union returns None when the least upper bound of the args is top
   static fun union(
     subst: mutable Subst,
     env: TEnv,
@@ -1408,7 +1407,6 @@ fun unionTObject(
   TObject(unionTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
 }
 
-// unionSType returns None when the least upper bound of the args is top
 fun unionSType(
   subst: mutable Subst,
   env: TEnv,
