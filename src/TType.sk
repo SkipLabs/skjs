@@ -118,16 +118,16 @@ class TType private {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
+  static fun fromTParam(pos: PosRange, tParam: TParam): this {
+    static::fromClauses(pos, Clauses::single(tParam))
+  }
+
   fun toString(): String {
     prettyPrintType(false, this)
   }
 
   static fun fromClauses(pos: PosRange, clauses: Clauses): this {
     static::create(pos, TInsts::empty(), clauses)
-  }
-
-  static fun fromTParam(pos: PosRange, tparam: TParam): this {
-    static::create(pos, TInsts::empty(), Clauses::single(tparam))
   }
 
   static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
