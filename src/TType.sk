@@ -140,19 +140,23 @@ class TType private {
     static::inst(Name(pos, name), TArgs(Array[]))
   }
 
-  fun toString(): String {
-    prettyPrintType(false, this)
-  }
-
-  fun withClauses(clauses: Clauses): this {
+  /* Returns None() if clauses are empty (Top included)
+     Returns Some((clauses, ty)) where ty = this with empty clauses otherwise */
+  fun resetClauses(): ?(Clauses, this) {
     if (this.isTop) {
-      if (!clauses.isEmpty()) {
+      if (!this.clauses.isEmpty()) {
         invariant_violation("clauses should be empty when isTop")
       };
-      this
+      None()
     } else {
-      static::create(this.pos, this.insts, clauses)
+      Some(
+        (this.clauses, static::create(this.pos, this.insts, Clauses::empty())),
+      )
     }
+  }
+
+  fun toString(): String {
+    prettyPrintType(false, this)
   }
 
   fun withPos(pos: PosRange): this {
@@ -1955,11 +1959,12 @@ class Instantiate() extends ApplyType {
       (insts) -> this.insts(env, insts),
       (clauses) -> this.typeParams(env, clauses),
     );
-    if (ty.clauses.clauses.isEmpty()) return ty;
+    (clauses, result) = ty.resetClauses() match {
+    | None() -> /* already empty */ return ty
+    | Some(r) -> r
+    };
     (subst, tenv, map) = env;
-    clauses = ty.clauses.clauses;
-    result = ty.withClauses(Clauses::empty());
-    for (clause in clauses) {
+    for (clause in clauses.clauses) {
       clauseTy = TType::top(ty.pos);
       for (tparam in clause.vars) {
         if (map.containsKey(tparam.id)) {
