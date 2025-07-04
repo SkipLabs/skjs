@@ -107,7 +107,11 @@ class TType private {
   }
 
   static fun fromTInst(pos: PosRange, tInst: TInst): this {
-    static::create(pos, TInsts::single(tInst), Clauses::empty())
+    static::fromTInsts(pos, TInsts::single(tInst))
+  }
+
+  static fun fromTInsts(pos: PosRange, tInsts: TInsts): this {
+    static::create(pos, tInsts, Clauses::empty())
   }
 
   fun toString(): String {
