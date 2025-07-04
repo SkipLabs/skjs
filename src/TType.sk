@@ -126,13 +126,13 @@ class TType private {
     static::create(pos, TInsts::empty(), clauses)
   }
 
-  fun toString(): String {
-    prettyPrintType(false, this)
-  }
-
   static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
     h = (insts, clauses).hash();
     static{h, pos, isTop => false, insts, clauses};
+  }
+
+  fun toString(): String {
+    prettyPrintType(false, this)
   }
 
   static fun expandPrim(pos: PosRange, kind: TPrimValueKind): TType {
