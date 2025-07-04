@@ -131,19 +131,17 @@ class TType private {
     static{h, pos, isTop => false, insts, clauses};
   }
 
-  fun toString(): String {
-    prettyPrintType(false, this)
+  static fun expandPrim(pos: PosRange, kind: TPrimValueKind): this {
+    name = kind match {
+    | TString _ -> "string"
+    | TBool _ -> "boolean"
+    | TNum _ -> "number"
+    };
+    static::inst(Name(pos, name), TArgs(Array[]))
   }
 
-  static fun expandPrim(pos: PosRange, kind: TPrimValueKind): TType {
-    kind match {
-    | TString _ ->
-      TType::fromTInst(pos, TSInst(Name(pos, "string"), TArgs(Array[])))
-    | TBool _ ->
-      TType::fromTInst(pos, TSInst(Name(pos, "boolean"), TArgs(Array[])))
-    | TNum _ ->
-      TType::fromTInst(pos, TSInst(Name(pos, "number"), TArgs(Array[])))
-    }
+  fun toString(): String {
+    prettyPrintType(false, this)
   }
 
   fun withClauses(clauses: Clauses): this {
