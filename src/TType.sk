@@ -106,16 +106,16 @@ class TType private {
     static::fromSTypes(pos, STypes::single(sType))
   }
 
+  static fun fromTInst(pos: PosRange, tInst: TInst): this {
+    static::create(pos, TInsts::single(tInst), Clauses::empty())
+  }
+
   fun toString(): String {
     prettyPrintType(false, this)
   }
 
   static fun fromSTypes(pos: PosRange, stypes: STypes): this {
     static::create(pos, TInsts::empty(), Clauses::fromSTypes(stypes))
-  }
-
-  static fun fromTInst(pos: PosRange, tinst: TInst): this {
-    static::create(pos, TInsts::single(tinst), Clauses::empty())
   }
 
   static fun fromClauses(pos: PosRange, clauses: Clauses): this {
