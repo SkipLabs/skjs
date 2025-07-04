@@ -102,6 +102,10 @@ class TType private {
     static::fromTInst(name.posRange, TSInst(name, targs))
   }
 
+  static fun single(pos: PosRange, sType: SType): this {
+    static::fromSTypes(pos, STypes::single(sType))
+  }
+
   fun toString(): String {
     prettyPrintType(false, this)
   }
@@ -120,10 +124,6 @@ class TType private {
 
   static fun fromTParam(pos: PosRange, tparam: TParam): this {
     static::create(pos, TInsts::empty(), Clauses::single(tparam))
-  }
-
-  static fun single(pos: PosRange, stype: SType): this {
-    static::fromSTypes(pos, STypes::single(stype))
   }
 
   static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
