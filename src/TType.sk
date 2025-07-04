@@ -79,13 +79,7 @@ class TType private {
   // that will be turned into T1 & T2 | T1 & T3.
   clauses: Clauses,
 } uses Hashable, Orderable {
-  // Returns the type that represents all possible values. Every other
-  // type is sub-type of top.
-  static fun top(pos: PosRange): this {
-    insts = TInsts::empty();
-    clauses = Clauses::empty();
-    static{h => kTopHash, pos, isTop => true, insts, clauses}
-  }
+  // CONSTRUCTORS
 
   // Returns the type that is sub-type of all types. This type is
   // impossible to construct, meaning, a value of this type is always
@@ -93,6 +87,14 @@ class TType private {
   // represent some values (like exceptions).
   static fun bottom(pos: PosRange): this {
     static::create(pos, TInsts::empty(), Clauses::empty())
+  }
+
+  // Returns the type that represents all possible values. Every other
+  // type is sub-type of top.
+  static fun top(pos: PosRange): this {
+    insts = TInsts::empty();
+    clauses = Clauses::empty();
+    static{h => kTopHash, pos, isTop => true, insts, clauses}
   }
 
   // Creates an unexpanded instance.
