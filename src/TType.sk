@@ -1854,6 +1854,22 @@ fun interTTuple(
 }
 
 fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
+  hash_pair = (ty1.hash(), ty2.hash());
+  subst.seenInter.maybeGet(hash_pair) match {
+  | None() ->
+    result = interTType_(subst, env, ty1, ty2);
+    subst.seenInter![hash_pair] = result;
+    result
+  | Some(ty) -> ty
+  }
+}
+
+fun interTType_(
+  subst: mutable Subst,
+  env: TEnv,
+  ty1: TType,
+  ty2: TType,
+): TType {
   if (ty1.isTop) return ty2;
   if (ty2.isTop) return ty1;
   if (env.seenInter.contains((ty1, ty2))) {
@@ -2171,6 +2187,7 @@ class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
 mutable class Subst private {
   context: mutable SKStore.Context,
   seenSub: mutable Set<(Int, Int)> = mutable Set[],
+  seenInter: mutable Map<(Int, Int), TType> = mutable Map[],
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {
