@@ -1958,14 +1958,11 @@ base class ApplyType {
   overridable deferred fun nonTop(env: this::Env, ty: TType): TType {
     ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (clauses) -> this.typeParams(env, clauses),
+      (clauses) -> this.clauses(env, clauses),
     )
   }
 
-  overridable deferred fun typeParams(
-    env: this::Env,
-    clauses: Clauses,
-  ): Clauses {
+  overridable deferred fun clauses(env: this::Env, clauses: Clauses): Clauses {
     Clauses(clauses.clauses.map(x -> this.clause(env, x)))
   }
 
@@ -2114,7 +2111,7 @@ class Instantiate() extends ApplyType {
   fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (clauses) -> this.typeParams(env, clauses),
+      (clauses) -> this.clauses(env, clauses),
     );
     (clauses, result) = ty.resetClauses() match {
     | None() -> /* already empty */ return ty
@@ -2158,7 +2155,7 @@ class ExpandTVars() extends ApplyType {
   fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (clauses) -> this.typeParams(env, clauses),
+      (clauses) -> this.clauses(env, clauses),
     );
     (subst, tenv) = env;
     ty.expand(subst, tenv, Covariant()) match {
