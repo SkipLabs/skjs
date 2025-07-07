@@ -1351,6 +1351,22 @@ fun isSubTType(
   u1: TType,
   u2: TType,
 ): STResult {
+  hash_pair = (u1.hash(), u2.hash());
+  if (subst.seenSub.contains(hash_pair)) return STOk();
+  isSubTType_(subst, env, u1, u2) match {
+  | STOk() ->
+    subst.seenSub.insert(hash_pair);
+    STOk()
+  | err -> err
+  }
+}
+
+fun isSubTType_(
+  subst: mutable Subst,
+  env: TEnv,
+  u1: TType,
+  u2: TType,
+): STResult {
   if (u2.isTop) return STOk();
   if (env.seenSub.contains((subst.version, u1, u2))) return STOk();
   !env.seenSub = env.seenSub.set((subst.version, u1, u2));
@@ -2154,6 +2170,7 @@ class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
 
 mutable class Subst private {
   context: mutable SKStore.Context,
+  seenSub: mutable Set<(Int, Int)> = mutable Set[],
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {
