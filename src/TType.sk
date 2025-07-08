@@ -255,6 +255,19 @@ class TType private {
     this.getTag().isSome()
   }
 
+  fun containsUndefined(): Bool {
+    if (this.isTop) return true;
+    for (clause in this.clauses.clauses) {
+      clause.stypes match {
+      | None() -> return true
+      | Some(stypes) -> if (stypes.containsUndefined()) return true
+      }
+    };
+    false
+  }
+
+  // OTHER PROPERTIES
+
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): ?STypes {
     this.expand(subst, env, variance) match {
@@ -319,17 +332,6 @@ class TType private {
       };
       cand
     }
-  }
-
-  fun containsUndefined(): Bool {
-    if (this.isTop) return true;
-    for (clause in this.clauses.clauses) {
-      clause.stypes match {
-      | None() -> return true
-      | Some(stypes) -> if (stypes.containsUndefined()) return true
-      }
-    };
-    false
   }
 }
 
