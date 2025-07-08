@@ -168,6 +168,26 @@ class TType private {
     }
   }
 
+  /* Returns this union undefined */
+  fun withUndefined(undefinedPosRange: PosRange): this {
+    if (this.containsUndefined()) return this;
+    if (this.clauses.clauses.size() == 0) {
+      !this.clauses = Clauses::fromSTypes(
+        STypes::empty().addUndefined(undefinedPosRange),
+      );
+    } else {
+      !this.clauses.clauses = this.clauses.clauses.map(clause -> {
+        clause.stypes match {
+        | None() -> clause
+        | Some(stypes) ->
+          !clause.stypes = Some(stypes.addUndefined(undefinedPosRange));
+          clause
+        }
+      });
+    };
+    this
+  }
+
   fun toString(): String {
     prettyPrintType(false, this)
   }
@@ -265,25 +285,6 @@ class TType private {
       }
     };
     false
-  }
-
-  fun withUndefined(undefinedPosRange: PosRange): this {
-    if (this.containsUndefined()) return this;
-    if (this.clauses.clauses.size() == 0) {
-      !this.clauses = Clauses::fromSTypes(
-        STypes::empty().addUndefined(undefinedPosRange),
-      );
-    } else {
-      !this.clauses.clauses = this.clauses.clauses.map(clause -> {
-        clause.stypes match {
-        | None() -> clause
-        | Some(stypes) ->
-          !clause.stypes = Some(stypes.addUndefined(undefinedPosRange));
-          clause
-        }
-      });
-    };
-    this
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
