@@ -162,14 +162,14 @@ class TType private {
     this with {pos}
   }
 
-  fun toString(): String {
-    prettyPrintType(false, this)
-  }
-
   fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): this {
     if (this.isTop) this else {
       static::create(this.pos, insts(this.insts), clauses(this.clauses))
     }
+  }
+
+  fun toString(): String {
+    prettyPrintType(false, this)
   }
 
   fun compare(other: this): Order {
