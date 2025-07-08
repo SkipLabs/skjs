@@ -176,6 +176,46 @@ class TType private {
     this
   }
 
+  fun filterMethods(subst: mutable Subst, env: TEnv): this {
+    this.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
+      stypes.singleElt()
+    }) match {
+    | Some(TObject(TFields(fields), pos)) ->
+      static::single(
+        this.pos,
+        TObject(
+          TFields(
+            fields.filterMap(field -> {
+              fieldType = field.type;
+              fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
+              fieldSTypes = fieldSTypesOpt match {
+              | None() -> return None()
+              | Some(x) -> x
+              };
+              !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
+                fieldSType match {
+                | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
+                | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                  invariant_violation(
+                    "TODO: encountered both non-empty funs and methods in filterMethod",
+                  )
+                //Some(tfuns with {methods => Array[]})
+                | _ -> Some(fieldSType)
+                }
+              });
+              !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
+              if (fieldType.isBottom()) None() else {
+                Some(field with {type => fieldType})
+              }
+            }),
+          ),
+          pos,
+        ),
+      )
+    | _ -> invariant_violation("Internal error: new should produce an object")
+    }
+  }
+
   fun toString(): String {
     prettyPrintType(false, this)
   }
@@ -273,46 +313,6 @@ class TType private {
       }
     };
     false
-  }
-
-  fun filterMethods(subst: mutable Subst, env: TEnv): this {
-    this.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
-      stypes.singleElt()
-    }) match {
-    | Some(TObject(TFields(fields), pos)) ->
-      static::single(
-        this.pos,
-        TObject(
-          TFields(
-            fields.filterMap(field -> {
-              fieldType = field.type;
-              fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
-              fieldSTypes = fieldSTypesOpt match {
-              | None() -> return None()
-              | Some(x) -> x
-              };
-              !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
-                fieldSType match {
-                | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
-                | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                  invariant_violation(
-                    "TODO: encountered both non-empty funs and methods in filterMethod",
-                  )
-                //Some(tfuns with {methods => Array[]})
-                | _ -> Some(fieldSType)
-                }
-              });
-              !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
-              if (fieldType.isBottom()) None() else {
-                Some(field with {type => fieldType})
-              }
-            }),
-          ),
-          pos,
-        ),
-      )
-    | _ -> invariant_violation("Internal error: new should produce an object")
-    }
   }
 
   static fun union(
