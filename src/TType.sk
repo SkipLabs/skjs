@@ -229,6 +229,8 @@ class TType private {
     static::create(ty1.pos, types, clauses)
   }
 
+  // UTILITIES
+
   fun toString(): String {
     prettyPrintType(false, this)
   }
@@ -243,8 +245,14 @@ class TType private {
     this.h
   }
 
+  // BOOLEAN PROPERTIES
+
   fun isBottom(): Bool {
     !this.isTop && this.insts.isEmpty() && this.clauses.isEmpty()
+  }
+
+  fun isTag(): Bool {
+    this.getTag().isSome()
   }
 
   // Returns None() if the type eventually expands to Top
@@ -311,10 +319,6 @@ class TType private {
       };
       cand
     }
-  }
-
-  fun isTag(): Bool {
-    this.getTag().isSome()
   }
 
   fun containsUndefined(): Bool {
