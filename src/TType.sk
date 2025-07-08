@@ -216,6 +216,19 @@ class TType private {
     }
   }
 
+  static fun union(
+    subst: mutable Subst,
+    env: TEnv,
+    ty1: this,
+    ty2: this,
+  ): this {
+    if (ty1.isTop) return ty1;
+    if (ty2.isTop) return ty2;
+    types = unionTInsts(ty1.insts, ty2.insts);
+    clauses = Clauses::union(subst, env, ty1.clauses, ty2.clauses);
+    static::create(ty1.pos, types, clauses)
+  }
+
   fun toString(): String {
     prettyPrintType(false, this)
   }
@@ -313,19 +326,6 @@ class TType private {
       }
     };
     false
-  }
-
-  static fun union(
-    subst: mutable Subst,
-    env: TEnv,
-    ty1: this,
-    ty2: this,
-  ): this {
-    if (ty1.isTop) return ty1;
-    if (ty2.isTop) return ty2;
-    types = unionTInsts(ty1.insts, ty2.insts);
-    clauses = Clauses::union(subst, env, ty1.clauses, ty2.clauses);
-    static::create(ty1.pos, types, clauses)
   }
 }
 
