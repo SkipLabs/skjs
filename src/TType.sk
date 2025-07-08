@@ -140,6 +140,8 @@ class TType private {
     static::inst(Name(pos, name), TArgs(Array[]))
   }
 
+  // TRANSFORMERS
+
   /* Returns None() if clauses are empty (Top included)
      Returns Some((clauses, ty)) where ty = this with empty clauses otherwise */
   fun resetClauses(): ?(Clauses, this) {
@@ -155,13 +157,13 @@ class TType private {
     }
   }
 
-  fun toString(): String {
-    prettyPrintType(false, this)
-  }
-
   fun withPos(pos: PosRange): this {
     // pos is not part of the hash
     this with {pos}
+  }
+
+  fun toString(): String {
+    prettyPrintType(false, this)
   }
 
   fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): this {
