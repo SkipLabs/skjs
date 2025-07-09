@@ -637,7 +637,7 @@ class TFields private (
 
   static fun create(fields: Array<TField>): this {
     static(
-      InternalKeyedArrayMap::createFromIterator(
+      InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
     )
@@ -1065,7 +1065,7 @@ class Clauses(
       }
     };
     Clauses(
-      InternalKeyedArrayMap::createFromIterator(
+      InternalKeyedArrayMap::createFromSortedIterator(
         result.items().map(x -> x.i1).iterator(),
       ),
     )
