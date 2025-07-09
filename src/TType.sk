@@ -372,6 +372,10 @@ class TAlgebraic(
     )
   }
 
+  fun filter(tag: String): this {
+    static(this.branches.filter(br -> br.tag == tag), this.pos)
+  }
+
   fun mapBranches(f: TConstr -> TConstr): this {
     static(this.branches.map(f), this.pos)
   }
