@@ -352,7 +352,7 @@ class TAlgebraic(
   ): TAlgebraic {
     static(
       a1.branches.mapInter(a2.branches, (x, y) ->
-        TConstr(interTFields(subst, env, x.fields, y.fields))
+        TConstr::inter(subst, env, x, y)
       ),
       a1.pos,
     )
@@ -395,6 +395,10 @@ class TAlgebraic(
 }
 
 class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
+  static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
+    static(interTFields(subst, env, x.fields, y.fields))
+  }
+
   fun project(): String {
     this.fields.getKind()
   }
