@@ -111,6 +111,10 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     this.inner.size()
   }
 
+  fun singleElt(): ?T {
+    if (this.inner.size() == 1) Some(this.inner[0]) else None()
+  }
+
   fun minimum(): ?T {
     this.inner.maybeGet(0)
   }

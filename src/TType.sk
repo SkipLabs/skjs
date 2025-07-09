@@ -304,28 +304,9 @@ class TType private {
     }
   }
 
-  fun getTag(): ?(PosRange, String) {
-    if (this.insts.insts.size() > 0) {
-      None()
-    } else {
-      cand: ?(PosRange, String) = None();
-      for (clause in this.clauses.clauses) {
-        clause.stypes match {
-        | None() -> return None()
-        | Some(stypes) ->
-          stypes.singleElt() match {
-          | Some(TPrimValue(TString(), Some(s), pos)) ->
-            (s.singleElt().map(elt ~> elt.i1), cand) match {
-            | (None(), _) -> return None()
-            | (Some(x), None()) -> !cand = Some((pos, x))
-            | (Some(x1), Some((_, x2))) if (x1 == x2) -> void
-            | _ -> return None()
-            }
-          | _ -> void
-          }
-        }
-      };
-      cand
+  fun getConstantString(): ?(PosRange, String) {
+    if (this.isTop || !this.insts.isEmpty()) None() else {
+      this.clauses.getConstantString()
     }
   }
 }
@@ -457,7 +438,7 @@ fun createObject(
   };
   algebraicBranchField match {
   | Some((algebraicBranchFieldPos, algebraicBranchFieldType)) ->
-    algebraicBranchFieldType.getTag() match {
+    algebraicBranchFieldType.getConstantString() match {
     | None() ->
       typingError(
         Array[
@@ -924,10 +905,16 @@ class STypes private (
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
 
+  fun getConstantString(): ?(PosRange, String) {
+    this.singleElt() match {
+    | Some(TPrimValue(TString(), Some(values), _)) -> values.singleElt()
+    | _ -> None()
+    }
+  }
+
   fun staticValue(): ?String {
     this.singleElt() match {
-    | Some(TPrimValue(_, Some(values), _)) if (values.values.size() == 1) ->
-      Some(values.values[0].i1)
+    | Some(TPrimValue(_, Some(values), _)) -> values.singleElt().map(v -> v.i1)
     | _ -> None()
     }
   }
@@ -1064,6 +1051,12 @@ class Clause(
     this.stypes match {
     | None() -> false
     | Some(stypes) -> stypes.containsUndefined()
+    }
+  }
+
+  fun getConstantString(): ?(PosRange, String) {
+    if (!this.vars.isEmpty()) None() else {
+      this.stypes.flatMap(sTypes -> sTypes.getConstantString())
     }
   }
 
@@ -1216,6 +1209,10 @@ class Clauses(
       clause.addUndefined(undefinedPosRange)
     );
     this
+  }
+
+  fun getConstantString(): ?(PosRange, String) {
+    this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
   }
 
   fun primKind(): ?TPrimValueKind {
