@@ -667,6 +667,16 @@ class TField(
     )
   }
 
+  static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
+    if (x.name != y.name) invariant_violation("field names must match");
+    static(
+      x.pos,
+      x.name,
+      x.isOptional || y.isOptional,
+      TType::union(subst, env, x.type, y.type),
+    )
+  }
+
   fun withOptional(): this {
     this with {isOptional => true}
   }
@@ -1465,15 +1475,7 @@ fun unionTFields(
     fields1.values(),
     fields2.values(),
     x ~> x.name,
-    (x, y) -> {
-      if (x.name != y.name) invariant_violation("field names must match");
-      TField(
-        x.pos,
-        x.name,
-        x.isOptional || y.isOptional,
-        TType::union(subst, env, x.type, y.type),
-      )
-    },
+    (x, y) -> TField::union(subst, env, x, y),
   );
   !fields = fields
     .concat(noMatch1.map(x -> x.withOptional()))
