@@ -102,6 +102,10 @@ class TType private {
     static::fromTInst(name.posRange, TSInst(name, targs))
   }
 
+  static fun constantString(pos: PosRange, str: String): this {
+    static::single(pos, TPrimValue(TString(), Some(str), pos))
+  }
+
   static fun single(pos: PosRange, sType: SType): this {
     static::fromSTypes(pos, STypes::single(sType))
   }
@@ -339,9 +343,11 @@ const kAlgebraicBranchFieldName: String = "kind";
 
 class TAlgebraic private (
   branches: InternalKeyedArrayMap<String, TConstr>,
+  tagType: TType,
 ) extends SType {
   static fun single(x: TConstr, pos: PosRange): this {
-    static(InternalKeyedArrayMap::single(x), pos)
+    tagType = TType::constantString(pos, x.tag);
+    static(InternalKeyedArrayMap::single(x), tagType, pos)
   }
 
   static fun inter(
@@ -354,6 +360,7 @@ class TAlgebraic private (
       a1.branches.mapInter(a2.branches, (x, y) ->
         TConstr::inter(subst, env, x, y)
       ),
+      interTType(subst, env, a1.tagType, a2.tagType),
       a1.pos,
     )
   }
@@ -368,16 +375,19 @@ class TAlgebraic private (
       a1.branches.mapUnion(a2.branches, (x, y) ->
         TConstr::union(subst, env, x, y)
       ),
+      TType::union(subst, env, a1.tagType, a2.tagType),
       a1.pos,
     )
   }
 
   fun filter(tag: String): this {
-    static(this.branches.filter(br -> br.tag == tag), this.pos)
+    // TODO: really filter this.tagType to keep the correct position
+    tagType = TType::constantString(this.pos, tag);
+    static(this.branches.filter(br -> br.tag == tag), tagType, this.pos)
   }
 
   fun mapBranches(f: TConstr -> TConstr): this {
-    static(this.branches.map(f), this.pos)
+    static(this.branches.map(f), this.tagType, this.pos)
   }
 
   static fun isSub(

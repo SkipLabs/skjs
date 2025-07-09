@@ -1116,7 +1116,7 @@ class TypeChecker{
           result,
           fields.getType(fieldName),
         )
-      | TAlgebraic(branches, _) ->
+      | TAlgebraic(branches, _, _) ->
         for (branch in branches) {
           !result = TType::union(
             env.subst,

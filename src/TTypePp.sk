@@ -110,7 +110,7 @@ mutable class TypePp{
     | TPrimValue(_, Some(arr), _) ->
       this.out(level, margin, arr.values.map(x -> "'" + x.i1 + "'").join(" | "))
 
-    | TAlgebraic(branches, _) ->
+    | TAlgebraic(branches, _, _) ->
       this.branch(
         level,
         margin,
