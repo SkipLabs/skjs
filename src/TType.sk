@@ -403,6 +403,10 @@ class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
     static(unionTFields(subst, env, x.fields, y.fields))
   }
 
+  fun map(f: TFields -> TFields): this {
+    static(f(this.fields))
+  }
+
   fun project(): String {
     this.fields.getKind()
   }
@@ -1902,7 +1906,7 @@ base class ApplyType {
   }
 
   overridable deferred fun constr(env: this::Env, constr: TConstr): TConstr {
-    TConstr(this.fields(env, constr.fields))
+    constr.map(fields -> this.fields(env, fields))
   }
 
   overridable deferred fun object(env: this::Env, object: TObject): TObject {
