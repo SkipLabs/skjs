@@ -394,21 +394,26 @@ class TAlgebraic(
   }
 }
 
-class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
+class TConstr(
+  tag: String,
+  fields: TFields,
+) uses Hashable, Orderable, Projectable<String> {
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
-    static(interTFields(subst, env, x.fields, y.fields))
+    invariant(x.tag == y.tag);
+    static(x.tag, interTFields(subst, env, x.fields, y.fields))
   }
 
   static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
-    static(unionTFields(subst, env, x.fields, y.fields))
+    invariant(x.tag == y.tag);
+    static(x.tag, unionTFields(subst, env, x.fields, y.fields))
   }
 
   fun map(f: TFields -> TFields): this {
-    static(f(this.fields))
+    static(this.tag, f(this.fields))
   }
 
   fun project(): String {
-    this.fields.getKind()
+    this.tag
   }
 }
 
@@ -423,7 +428,8 @@ fun createObject(pos: PosRange, fields: TFields): TType {
   fields.maybeGet(kAlgebraicBranchFieldName).flatMap(field ->
     field.type.getTag()
   ) match {
-  | Some(_tag) -> TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
+  | Some(tag) ->
+    TType::single(pos, TAlgebraic::single(TConstr(tag, fields), pos))
   | _ -> TType::single(pos, TObject(fields, pos))
   }
 }
