@@ -1031,9 +1031,7 @@ class Clauses(
 
   static fun fromSTypes(stypes: STypes): this {
     if (stypes.isEmpty()) {
-      return static(
-        InternalKeyedArrayMap::createFromIterator(Array[].iterator()),
-      )
+      return static(InternalKeyedArrayMap::empty())
     };
     static(
       InternalKeyedArrayMap::single(
