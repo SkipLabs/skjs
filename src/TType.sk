@@ -366,7 +366,7 @@ class TAlgebraic(
   ): TAlgebraic {
     static(
       a1.branches.mapUnion(a2.branches, (x, y) ->
-        TConstr(unionTFields(subst, env, x.fields, y.fields))
+        TConstr::union(subst, env, x, y)
       ),
       a1.pos,
     )
@@ -397,6 +397,10 @@ class TAlgebraic(
 class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
     static(interTFields(subst, env, x.fields, y.fields))
+  }
+
+  static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
+    static(unionTFields(subst, env, x.fields, y.fields))
   }
 
   fun project(): String {
