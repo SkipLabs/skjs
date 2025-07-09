@@ -2130,16 +2130,16 @@ class TypeChecker{
       Expr(_, EString(SKQuote(), tag)),
       Expr(
         _,
-        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, "kind")))),
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
       ),
     )
     | (
       Expr(
         _,
-        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, "kind")))),
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
       ),
       Expr(_, EString(SKQuote(), tag)),
-    ) ->
+    ) if (fieldName == kAlgebraicBranchFieldName) ->
       if (target) {
         this.setLocal(
           env,
