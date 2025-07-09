@@ -394,7 +394,10 @@ class TAlgebraic(
   }
 }
 
-class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
+class TConstr(
+  // TODO: make fields private so that we don't try to access "kind" from fields
+  fields: TFields,
+) uses Hashable, Orderable, Projectable<String> {
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
     static(interTFields(subst, env, x.fields, y.fields))
   }
@@ -405,6 +408,10 @@ class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
 
   fun map(f: TFields -> TFields): this {
     static(f(this.fields))
+  }
+
+  fun getType(fieldName: Name): TType {
+    this.fields.getType(fieldName)
   }
 
   fun project(): String {

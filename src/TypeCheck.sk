@@ -1122,7 +1122,7 @@ class TypeChecker{
             env.subst,
             this.tenv,
             result,
-            branch.fields.getType(fieldName),
+            branch.getType(fieldName),
           )
         }
       | TPrimValue(primKind, _, stringPos) ->
