@@ -545,25 +545,20 @@ class TypeChecker{
     thisTypeOpt: ?(ClassKind, TType),
     fd: FunDef,
   ): void {
-    modifiersMap = fd.modifiers.modifiers;
-    if (
-      modifiersMap.containsKey("protected") ||
-      modifiersMap.containsKey("private") ||
-      modifiersMap.containsKey("public") ||
-      modifiersMap.containsKey("abstract") ||
-      modifiersMap.containsKey("readonly")
-    ) {
-      typingError(
-        Array[
-          (
-            fd.modifiers.modifiers.firstItem().i1.posRange,
-            "TODO: support for method modifiers",
-          ),
-        ],
-      );
-    };
-    if (modifiersMap.containsKey("static")) {
-      !thisTypeOpt = None();
+    for (modifier in fd.modifiers.modifiers) {
+      modifier.value match {
+      | "static" -> !thisTypeOpt = None()
+      | unsupported ->
+        // TODO: protected, private, public, abstract, readonly
+        typingError(
+          Array[
+            (
+              modifier.posRange,
+              `TODO: support for method modifiers (encountered ${unsupported})`,
+            ),
+          ],
+        )
+      }
     };
     (!this, env) = this.funDefSetup(context, thisTypeOpt.map(x -> x.i1), fd);
     if (this.retType is None()) {

@@ -205,11 +205,7 @@ class TType private {
       tyDef = inst match {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
       | TInter(ty1, ty2) -> interTType(subst, env, ty1, ty2)
-      | tvar @ TVar _ ->
-        variance match {
-        | Covariant() -> subst.get(env, tvar)
-        | Contravariant() -> subst.getContra(env, tvar)
-        }
+      | tvar @ TVar _ -> subst.get(env, tvar, variance)
       };
       if (tyDef.isTop) return None();
       !clauses = Clauses::union(subst, env, clauses, tyDef.clauses);
@@ -735,7 +731,6 @@ class STypes private (
     static(InternalKeyedArrayMap::single(x))
   }
 
-  // union returns None when the least upper bound of the args is top
   static fun union(
     subst: mutable Subst,
     env: TEnv,
@@ -1412,7 +1407,6 @@ fun unionTObject(
   TObject(unionTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
 }
 
-// unionSType returns None when the least upper bound of the args is top
 fun unionSType(
   subst: mutable Subst,
   env: TEnv,
@@ -2057,31 +2051,28 @@ mutable class Subst private {
     }
   }
 
-  mutable fun get(env: TEnv, tvar: TVar): TType {
-    result = (if (!this.values.containsKey(tvar.id)) {
-      SVOpen(TType::bottom(tvar.pos));
-    } else {
-      this.values[tvar.id]
-    }) match {
-    | SVOpen(ty) ->
-      this.!values[tvar.id] = SVClosed(ty);
-      ty
-    | SVClosed(ty) -> ty
-    };
-    for (cstr in tvar.constraints) {
-      !result = interTType(this, env, result, cstr);
-    };
-    result
-  }
-
-  mutable fun getContra(env: TEnv, tvar: TVar): TType {
-    result = if (!this.values.containsKey(tvar.id)) {
-      TType::bottom(tvar.pos)
-    } else {
-      this.values[tvar.id] match {
-      | SVOpen(ty)
-      | SVClosed(ty) ->
+  mutable fun get(env: TEnv, tvar: TVar, variance: Variance): TType {
+    result = variance match {
+    | Covariant() ->
+      (if (!this.values.containsKey(tvar.id)) {
+        SVOpen(TType::bottom(tvar.pos));
+      } else {
+        this.values[tvar.id]
+      }) match {
+      | SVOpen(ty) ->
+        this.!values[tvar.id] = SVClosed(ty);
         ty
+      | SVClosed(ty) -> ty
+      }
+    | Contravariant() ->
+      if (!this.values.containsKey(tvar.id)) {
+        TType::bottom(tvar.pos)
+      } else {
+        this.values[tvar.id] match {
+        | SVOpen(ty)
+        | SVClosed(ty) ->
+          ty
+        }
       }
     };
     for (cstr in tvar.constraints) {

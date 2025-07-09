@@ -136,7 +136,7 @@ class TEnv{
     subst: mutable Subst,
     className: Name,
   ): Array<TType> {
-    result = this.getClass(context, className).tparams.map(tparam -> {
+    this.getClass(context, className).tparams.map(tparam -> {
       tvar = subst.gen(className.posRange);
       ty = TType::fromTInst(className.posRange, tvar);
       tparam.constraint match {
@@ -144,8 +144,7 @@ class TEnv{
       | Some(cstr) ->
         TType::union(subst, this, this.normalize(context, cstr), ty)
       }
-    });
-    result
+    })
   }
 
   fun new(
