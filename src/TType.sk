@@ -628,7 +628,7 @@ class TField(
   }
 }
 
-class TFields(
+class TFields private (
   fields: InternalKeyedArrayMap<String, TField>,
 ) uses Hashable, Orderable {
   static fun empty(): this {
