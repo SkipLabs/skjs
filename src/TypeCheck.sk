@@ -2149,10 +2149,7 @@ class TypeChecker{
           stype ~>
             stype match {
             | TAlgebraic(branches, aPos) ->
-              TAlgebraic(
-                branches.filter(branch -> branch.fields.getKind() == tag),
-                aPos,
-              )
+              TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
             | x -> x
             }
           ,

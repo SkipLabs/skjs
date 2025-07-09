@@ -727,13 +727,6 @@ class TFields private (
     }
   }
 
-  fun getKind(): String {
-    this.maybeGet(kAlgebraicBranchFieldName)
-      .fromSome()
-      .type.getTag()
-      .fromSome("Internal error: getKind on non constructor").i1
-  }
-
   static fun isSub(
     subst: mutable Subst,
     env: TEnv,
