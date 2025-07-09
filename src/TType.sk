@@ -304,21 +304,21 @@ class TType private {
     }
   }
 
-  fun getTag(): ?String {
+  fun getTag(): ?(PosRange, String) {
     if (this.insts.insts.size() > 0) {
       None()
     } else {
-      cand: ?String = None();
+      cand: ?(PosRange, String) = None();
       for (clause in this.clauses.clauses) {
         clause.stypes match {
         | None() -> return None()
         | Some(stypes) ->
           stypes.singleElt() match {
-          | Some(TPrimValue(TString(), Some(s), _)) ->
+          | Some(TPrimValue(TString(), Some(s), pos)) ->
             (s.singleElt().map(elt ~> elt.i1), cand) match {
             | (None(), _) -> return None()
-            | (x @ Some(_), None()) -> !cand = x
-            | (Some(x1), Some(x2)) if (x1 == x2) -> void
+            | (Some(x), None()) -> !cand = Some((pos, x))
+            | (Some(x1), Some((_, x2))) if (x1 == x2) -> void
             | _ -> return None()
             }
           | _ -> void
@@ -403,21 +403,22 @@ class TAlgebraic(
 
 class TConstr(
   tag: String,
+  tagPos: PosRange,
   // TODO: make fields private so that we don't try to access "kind" from fields
   fields: TFields,
 ) uses Hashable, Orderable, Projectable<String> {
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
     invariant(x.tag == y.tag);
-    static(x.tag, interTFields(subst, env, x.fields, y.fields))
+    static(x.tag, x.tagPos, interTFields(subst, env, x.fields, y.fields))
   }
 
   static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
     invariant(x.tag == y.tag);
-    static(x.tag, unionTFields(subst, env, x.fields, y.fields))
+    static(x.tag, x.tagPos, unionTFields(subst, env, x.fields, y.fields))
   }
 
   fun map(f: TFields -> TFields): this {
-    static(this.tag, f(this.fields))
+    static(this.tag, this.tagPos, f(this.fields))
   }
 
   static fun isSub(
@@ -431,7 +432,7 @@ class TConstr(
 
   fun getType(fieldName: Name): TType {
     if (fieldName.value == kAlgebraicBranchFieldName) {
-      TType::constantString(PosRange::none, this.tag)
+      TType::constantString(this.tagPos, this.tag)
     } else {
       this.fields.getType(fieldName)
     }
@@ -453,8 +454,8 @@ fun createObject(pos: PosRange, fields: TFields): TType {
   fields.maybeGet(kAlgebraicBranchFieldName).flatMap(field ->
     field.type.getTag()
   ) match {
-  | Some(tag) ->
-    TType::single(pos, TAlgebraic::single(TConstr(tag, fields), pos))
+  | Some((tagPos, tag)) ->
+    TType::single(pos, TAlgebraic::single(TConstr(tag, tagPos, fields), pos))
   | _ -> TType::single(pos, TObject(fields, pos))
   }
 }
@@ -730,7 +731,7 @@ class TFields private (
     this.maybeGet(kAlgebraicBranchFieldName)
       .fromSome()
       .type.getTag()
-      .fromSome("Internal error: getKind on non constructor")
+      .fromSome("Internal error: getKind on non constructor").i1
   }
 
   static fun isSub(
