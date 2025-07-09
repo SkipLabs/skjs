@@ -180,35 +180,33 @@ class TType private {
     this.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
       stypes.singleElt()
     }) match {
-    | Some(TObject(TFields(fields), pos)) ->
+    | Some(TObject(fields, pos)) ->
       static::single(
         this.pos,
         TObject(
-          TFields(
-            fields.filterMap(field -> {
-              fieldType = field.type;
-              fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
-              fieldSTypes = fieldSTypesOpt match {
-              | None() -> return None()
-              | Some(x) -> x
-              };
-              !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
-                fieldSType match {
-                | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
-                | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                  invariant_violation(
-                    "TODO: encountered both non-empty funs and methods in filterMethod",
-                  )
-                //Some(tfuns with {methods => Array[]})
-                | _ -> Some(fieldSType)
-                }
-              });
-              !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
-              if (fieldType.isBottom()) None() else {
-                Some(field with {type => fieldType})
+          fields.filterMap(field -> {
+            fieldType = field.type;
+            fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
+            fieldSTypes = fieldSTypesOpt match {
+            | None() -> return None()
+            | Some(x) -> x
+            };
+            !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
+              fieldSType match {
+              | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
+              | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                invariant_violation(
+                  "TODO: encountered both non-empty funs and methods in filterMethod",
+                )
+              //Some(tfuns with {methods => Array[]})
+              | _ -> Some(fieldSType)
               }
-            }),
-          ),
+            });
+            !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
+            if (fieldType.isBottom()) None() else {
+              Some(field with {type => fieldType})
+            }
+          }),
           pos,
         ),
       )
@@ -647,6 +645,10 @@ class TFields(
 
   fun map(f: TField -> TField): this {
     static(this.fields.map(f))
+  }
+
+  fun filterMap(f: TField -> ?TField): this {
+    static(this.fields.filterMap(f))
   }
 
   fun values(): mutable Iterator<TField> {
