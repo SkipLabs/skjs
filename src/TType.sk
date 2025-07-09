@@ -443,7 +443,11 @@ class TConstr(
   }
 }
 
-fun createObject(pos: PosRange, fields: TFields): TType {
+fun createObject(
+  pos: PosRange,
+  algebraicBranchField: ?(PosRange, TType),
+  fields: TFields,
+): TType {
   seen = mutable Set<String>[];
   for (field in fields) {
     if (seen.contains(field.name)) {
@@ -451,12 +455,29 @@ fun createObject(pos: PosRange, fields: TFields): TType {
     };
     seen.insert(field.name);
   };
-  fields.maybeGet(kAlgebraicBranchFieldName).flatMap(field ->
-    field.type.getTag()
-  ) match {
-  | Some((tagPos, tag)) ->
-    TType::single(pos, TAlgebraic::single(TConstr(tag, tagPos, fields), pos))
-  | _ -> TType::single(pos, TObject(fields, pos))
+  algebraicBranchField match {
+  | Some((algebraicBranchFieldPos, algebraicBranchFieldType)) ->
+    algebraicBranchFieldType.getTag() match {
+    | None() ->
+      typingError(
+        Array[
+          (
+            pos,
+            `Algebraic field ${kAlgebraicBranchFieldName} was expected to be a constant string`,
+          ),
+          (algebraicBranchFieldPos, `Got ${algebraicBranchFieldType} instead`),
+        ],
+      )
+    | Some((tagPos, tag)) ->
+      TType::single(
+        pos,
+        TAlgebraic::single(
+          TConstr(tag, tagPos, fields),
+          algebraicBranchFieldPos,
+        ),
+      )
+    }
+  | None() -> TType::single(pos, TObject(fields, pos))
   }
 }
 
@@ -653,7 +674,7 @@ class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
 
 class TField private (
   pos: PosRange,
-  name: String,
+  name: /* Invariant: name != kAlgebraicBranchFieldName */ String,
   isOptional: Bool,
   type: TType,
 ) uses Hashable, Orderable, Projectable<String> {
@@ -662,8 +683,10 @@ class TField private (
     name: String,
     isOptional: Bool,
     type: TType,
-  ): this {
-    static(pos, name, isOptional, type)
+  ): ?this {
+    if (name == kAlgebraicBranchFieldName) None() else {
+      Some(static(pos, name, isOptional, type))
+    }
   }
 
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
