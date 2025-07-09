@@ -657,6 +657,16 @@ class TField(
   isOptional: Bool,
   type: TType,
 ) uses Hashable, Orderable, Projectable<String> {
+  static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
+    if (x.name != y.name) invariant_violation("field names must match");
+    static(
+      x.pos,
+      x.name,
+      x.isOptional && y.isOptional,
+      interTType(subst, env, x.type, y.type),
+    )
+  }
+
   fun withOptional(): this {
     this with {isOptional => true}
   }
@@ -1624,15 +1634,7 @@ fun interTFields(
     fields2.values(),
     x ~> x.name,
     x ~> x,
-    (x, y) -> {
-      if (x.name != y.name) invariant_violation("field names must match");
-      TField(
-        x.pos,
-        x.name,
-        x.isOptional && y.isOptional,
-        interTType(subst, env, x.type, y.type),
-      )
-    },
+    (x, y) -> TField::inter(subst, env, x, y),
   );
   TFields::create(fields)
 }
