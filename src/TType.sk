@@ -102,6 +102,13 @@ class TType private {
     static::fromTInst(name.posRange, TSInst(name, targs))
   }
 
+  static fun constantString(pos: PosRange, s: String): this {
+    static::single(
+      pos,
+      TPrimValue(TString(), Some(ArrayValues::single((pos, s))), pos),
+    )
+  }
+
   static fun single(pos: PosRange, sType: SType): this {
     static::fromSTypes(pos, STypes::single(sType))
   }
@@ -395,27 +402,34 @@ class TAlgebraic(
 }
 
 class TConstr(
+  tag: String,
   // TODO: make fields private so that we don't try to access "kind" from fields
   fields: TFields,
 ) uses Hashable, Orderable, Projectable<String> {
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
-    static(interTFields(subst, env, x.fields, y.fields))
+    invariant(x.tag == y.tag);
+    static(x.tag, interTFields(subst, env, x.fields, y.fields))
   }
 
   static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
-    static(unionTFields(subst, env, x.fields, y.fields))
+    invariant(x.tag == y.tag);
+    static(x.tag, unionTFields(subst, env, x.fields, y.fields))
   }
 
   fun map(f: TFields -> TFields): this {
-    static(f(this.fields))
+    static(this.tag, f(this.fields))
   }
 
   fun getType(fieldName: Name): TType {
-    this.fields.getType(fieldName)
+    if (fieldName.value == kAlgebraicBranchFieldName) {
+      TType::constantString(PosRange::none, this.tag)
+    } else {
+      this.fields.getType(fieldName)
+    }
   }
 
   fun project(): String {
-    this.fields.getKind()
+    this.tag
   }
 }
 
@@ -430,7 +444,8 @@ fun createObject(pos: PosRange, fields: TFields): TType {
   fields.maybeGet(kAlgebraicBranchFieldName).flatMap(field ->
     field.type.getTag()
   ) match {
-  | Some(_tag) -> TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
+  | Some(tag) ->
+    TType::single(pos, TAlgebraic::single(TConstr(tag, fields), pos))
   | _ -> TType::single(pos, TObject(fields, pos))
   }
 }
