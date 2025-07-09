@@ -412,13 +412,11 @@ fun createObject(pos: PosRange, fields: TFields): TType {
     };
     seen.insert(field.name);
   };
-  if (
-    seen.contains(kAlgebraicBranchFieldName) &&
-    fields.maybeGet(kAlgebraicBranchFieldName).fromSome().type.isTag()
-  ) {
-    TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
-  } else {
-    TType::single(pos, TObject(fields, pos))
+  fields.maybeGet(kAlgebraicBranchFieldName).map(field ->
+    field.type.isTag()
+  ) match {
+  | Some(true) -> TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
+  | _ -> TType::single(pos, TObject(fields, pos))
   }
 }
 
