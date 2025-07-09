@@ -211,7 +211,7 @@ class TType private {
             });
             !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
             if (fieldType.isBottom()) None() else {
-              Some(field with {type => fieldType})
+              Some(field.mapType(_existingType -> fieldType))
             }
           }),
           pos,
@@ -659,6 +659,10 @@ class TField(
 ) uses Hashable, Orderable, Projectable<String> {
   fun withOptional(): this {
     this with {isOptional => true}
+  }
+
+  fun mapType(f: TType -> TType): this {
+    this with {type => f(this.type)}
   }
 
   fun project(): String {
@@ -1954,7 +1958,7 @@ base class ApplyType {
   }
 
   overridable deferred fun field(env: this::Env, field: TField): TField {
-    TField(field.pos, field.name, field.isOptional, this.type(env, field.type))
+    field.mapType(ty -> this.type(env, ty))
   }
 
   overridable deferred fun tuple(env: this::Env, tuple: TTuple): TTuple {
