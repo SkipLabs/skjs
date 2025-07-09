@@ -1079,26 +1079,38 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
         this.lex.peekKind() is Some(TKDoubleQuote()) ||
         this.lex.peekKind() is Some(TKQuote())
       ) {
-        nameTok = this.lex.next().fromSome();
-        ImportExpr(Name(nameTok.posRange, this.lex.getStrTok(nameTok)));
+        this.error(this.lex.posEnd(), InvalidImport())
+        /*
+                nameTok = this.lex.next().fromSome();
+                ImportExpr(Name(nameTok.posRange, this.lex.getStrTok(nameTok)));
+        */
       } else {
         importNames = this.moduleNames();
         if (this.lex.isEq("from")) {
           _ = this.lex.next();
           importFrom = this.getString();
+          if (
+            !importFrom.value.startsWith("./") ||
+            !importFrom.value.endsWith(".js")
+          ) {
+            this.error(this.lex.posEnd(), InvalidImport())
+          };
           Import(IKFrom(), isType, importNames, INPath(importFrom))
         } else {
-          this.expect(TKAssignment());
-          if (this.lex.peekStr() is Some("require")) {
-            this.expectStr("require");
-            this.expect(TKOpenParen());
-            name = this.getString();
-            this.expect(TKCloseParen());
-            Import(IKEq(), isType, importNames, INPath(name))
-          } else {
-            dotName = this.getName();
-            Import(IKEq(), isType, importNames, INName(dotName))
-          }
+          this.error(this.lex.posEnd(), InvalidImport())
+          /*
+                    this.expect(TKAssignment());
+                    if (this.lex.peekStr() is Some("require")) {
+                      this.expectStr("require");
+                      this.expect(TKOpenParen());
+                      name = this.getString();
+                      this.expect(TKCloseParen());
+                      Import(IKEq(), isType, importNames, INPath(name))
+                    } else {
+                      dotName = this.getName();
+                      Import(IKEq(), isType, importNames, INName(dotName))
+                    }
+          */
         }
       }
     | "export" ->

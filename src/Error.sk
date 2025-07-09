@@ -137,6 +137,12 @@ class UnexpectedToken() extends ParsingKind {
     `Unexpected token`
   }
 }
+class InvalidImport() extends ParsingKind {
+  fun toString(): String {
+    `Invalid import, all imports are expected to be of the form:
+import ... from './file_name.js';`
+  }
+}
 class UnterminatedImport() extends ParsingKind {
   fun toString(): String {
     `Unterminated import`
