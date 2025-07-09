@@ -388,7 +388,7 @@ class TAlgebraic(
     a1.branches.leq(a2.branches, (b1, b2O) ->
       b2O match {
       | Some(b2) ->
-        TFields::isSub(subst, env, b1.fields, b2.fields) match {
+        TConstr::isSub(subst, env, b1, b2) match {
         | STOk() -> Success(void)
         | err -> Failure(err)
         }
@@ -418,6 +418,15 @@ class TConstr(
 
   fun map(f: TFields -> TFields): this {
     static(this.tag, f(this.fields))
+  }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    x: this,
+    y: this,
+  ): STResult {
+    TFields::isSub(subst, env, x.fields, y.fields)
   }
 
   fun getType(fieldName: Name): TType {
@@ -1432,15 +1441,6 @@ fun isSubTObject(
   obj2: TObject,
 ): STResult {
   TFields::isSub(subst, env, obj1.fields, obj2.fields)
-}
-
-fun isSubBranch(
-  subst: mutable Subst,
-  env: TEnv,
-  b1: TConstr,
-  b2: TConstr,
-): STResult {
-  TFields::isSub(subst, env, b1.fields, b2.fields)
 }
 
 /*****************************************************************************/
