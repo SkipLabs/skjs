@@ -249,10 +249,6 @@ class TType private {
     !this.isTop && this.insts.isEmpty() && this.clauses.isEmpty()
   }
 
-  fun isTag(): Bool {
-    this.getTag().isSome()
-  }
-
   fun containsUndefined(): Bool {
     if (this.isTop) return true;
     this.clauses.containsUndefined()
@@ -412,10 +408,10 @@ fun createObject(pos: PosRange, fields: TFields): TType {
     };
     seen.insert(field.name);
   };
-  fields.maybeGet(kAlgebraicBranchFieldName).map(field ->
-    field.type.isTag()
+  fields.maybeGet(kAlgebraicBranchFieldName).flatMap(field ->
+    field.type.getTag()
   ) match {
-  | Some(true) -> TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
+  | Some(_tag) -> TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
   | _ -> TType::single(pos, TObject(fields, pos))
   }
 }
