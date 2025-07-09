@@ -372,6 +372,10 @@ class TAlgebraic(
     )
   }
 
+  fun mapBranches(f: TConstr -> TConstr): this {
+    static(this.branches.map(f), this.pos)
+  }
+
   static fun isSub(
     subst: mutable Subst,
     env: TEnv,
@@ -1901,7 +1905,7 @@ base class ApplyType {
     env: this::Env,
     algebraic: TAlgebraic,
   ): TAlgebraic {
-    TAlgebraic(algebraic.branches.map(x -> this.constr(env, x)), algebraic.pos)
+    algebraic.mapBranches(br -> this.constr(env, br))
   }
 
   overridable deferred fun constr(env: this::Env, constr: TConstr): TConstr {
