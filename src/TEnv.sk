@@ -316,7 +316,7 @@ class TEnv{
         | FNNormal(x) -> x.value
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         };
-        acc![fieldName] = TField(
+        acc![fieldName] = TField::create(
           field.pos,
           fieldName,
           field.optional is Some _,
@@ -324,7 +324,12 @@ class TEnv{
         )
       | fd @ FunDef _ ->
         (metName, metType) = this.funDecl(context, true, fd);
-        acc![metName.value] = TField(fd.pos, metName.value, false, metType)
+        acc![metName.value] = TField::create(
+          fd.pos,
+          metName.value,
+          false,
+          metType,
+        )
       }
     }
   }
@@ -676,7 +681,7 @@ class TEnv{
             | FNIn _ -> invariant_violation("TODO fnIn")
             | FNSymbol _ -> invariant_violation("TODO symbol")
             | FNNormal(name) ->
-              TField(
+              TField::create(
                 name.posRange,
                 name.value,
                 fd.optional is Some _,
@@ -686,7 +691,7 @@ class TEnv{
           }
         | fd @ FunDef _ ->
           (name, decl) = this.funDecl(context, true, fd);
-          TField(name.posRange, name.value, false, decl)
+          TField::create(name.posRange, name.value, false, decl)
         }
       }),
     )

@@ -1261,7 +1261,7 @@ class TypeChecker{
         | FDSpread _ -> invariant_violation("TODO spread")
         | fd @ FunDef _ -> this.tenv.funDecl(env.context, true, fd)
         };
-        fields.push(TField(name.posRange, name.value, false, ty))
+        fields.push(TField::create(name.posRange, name.value, false, ty))
       };
       obj = createObject(pos, TFields::create(fields.toArray()));
       for (efield in efields) {
@@ -1926,7 +1926,12 @@ class TypeChecker{
                 fields,
                 TFields::create(
                   Array[
-                    TField(fieldType.pos, fieldName.value, false, fieldType),
+                    TField::create(
+                      fieldType.pos,
+                      fieldName.value,
+                      false,
+                      fieldType,
+                    ),
                   ],
                 ),
               ),
