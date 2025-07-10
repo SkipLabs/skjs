@@ -1351,6 +1351,22 @@ fun isSubTType(
   u1: TType,
   u2: TType,
 ): STResult {
+  pair = (u1, u2);
+  if (subst.seenSub.contains(pair)) return STOk();
+  isSubTType_(subst, env, u1, u2) match {
+  | STOk() ->
+    subst.seenSub.insert(pair);
+    STOk()
+  | err -> err
+  }
+}
+
+fun isSubTType_(
+  subst: mutable Subst,
+  env: TEnv,
+  u1: TType,
+  u2: TType,
+): STResult {
   if (u2.isTop) return STOk();
   if (env.seenSub.contains((subst.version, u1, u2))) return STOk();
   !env.seenSub = env.seenSub.set((subst.version, u1, u2));
@@ -1838,6 +1854,22 @@ fun interTTuple(
 }
 
 fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
+  pair = (ty1, ty2);
+  subst.seenInter.maybeGet(pair) match {
+  | None() ->
+    result = interTType_(subst, env, ty1, ty2);
+    subst.seenInter![pair] = result;
+    result
+  | Some(ty) -> ty
+  }
+}
+
+fun interTType_(
+  subst: mutable Subst,
+  env: TEnv,
+  ty1: TType,
+  ty2: TType,
+): TType {
   if (ty1.isTop) return ty2;
   if (ty2.isTop) return ty1;
   if (env.seenInter.contains((ty1, ty2))) {
@@ -2154,6 +2186,8 @@ class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
 
 mutable class Subst private {
   context: mutable SKStore.Context,
+  seenSub: mutable Set<(TType, TType)> = mutable Set[],
+  seenInter: mutable Map<(TType, TType), TType> = mutable Map[],
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {
