@@ -1122,7 +1122,7 @@ class TypeChecker{
             env.subst,
             this.tenv,
             result,
-            branch.fields.getType(fieldName),
+            branch.getType(fieldName),
           )
         }
       | TPrimValue(primKind, _, stringPos) ->
@@ -1254,6 +1254,7 @@ class TypeChecker{
       | Some(localDef) -> localDef
       }
     | Object(efields) ->
+      algebraicBranchField: ?(PosRange, TType) = None();
       fields = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
@@ -1261,9 +1262,27 @@ class TypeChecker{
         | FDSpread _ -> invariant_violation("TODO spread")
         | fd @ FunDef _ -> this.tenv.funDecl(env.context, true, fd)
         };
-        fields.push(TField(name.posRange, name.value, false, ty))
+        TField::create(name.posRange, name.value, false, ty) match {
+        | None() ->
+          algebraicBranchField match {
+          | Some((existingPos, _existingType)) ->
+            typingError(
+              Array[
+                (name.posRange, `Duplicate field ${name.value}`),
+                (existingPos, "Previously declared here"),
+              ],
+            )
+          | None() -> void
+          };
+          !algebraicBranchField = Some((name.posRange, ty))
+        | Some(field) -> fields.push(field)
+        }
       };
-      obj = createObject(pos, TFields::create(fields.toArray()));
+      obj = createObject(
+        pos,
+        algebraicBranchField,
+        TFields::create(fields.toArray()),
+      );
       for (efield in efields) {
         efield match {
         | fd @ FunDef _ ->
@@ -1915,6 +1934,16 @@ class TypeChecker{
             ],
           )
         };
+        field = TField::create(
+          fieldType.pos,
+          fieldName.value,
+          false,
+          fieldType,
+        ) match {
+        | None() ->
+          invariant_violation("TODO: converting an object to an algebraic")
+        | Some(f) -> f
+        };
         env.scope.set(
           local,
           TType::single(
@@ -1924,11 +1953,7 @@ class TypeChecker{
                 env.subst,
                 this.tenv,
                 fields,
-                TFields::create(
-                  Array[
-                    TField(fieldType.pos, fieldName.value, false, fieldType),
-                  ],
-                ),
+                TFields::create(Array[field]),
               ),
               objPos,
             ),
@@ -2130,16 +2155,16 @@ class TypeChecker{
       Expr(_, EString(SKQuote(), tag)),
       Expr(
         _,
-        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, "kind")))),
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
       ),
     )
     | (
       Expr(
         _,
-        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, "kind")))),
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
       ),
       Expr(_, EString(SKQuote(), tag)),
-    ) ->
+    ) if (fieldName == kAlgebraicBranchFieldName) ->
       if (target) {
         this.setLocal(
           env,
@@ -2149,10 +2174,7 @@ class TypeChecker{
           stype ~>
             stype match {
             | TAlgebraic(branches, aPos) ->
-              TAlgebraic(
-                branches.filter(branch -> branch.fields.getKind() == tag),
-                aPos,
-              )
+              TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
             | x -> x
             }
           ,

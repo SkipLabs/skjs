@@ -62,6 +62,10 @@ private mutable class DiffInterDiffIterator<T: Orderable> private (
 class .ArraySet<T: Orderable> private (
   private inner: Vector<T>,
 ) uses Orderable, Hashable[T: Hashable] {
+  static fun empty(): this {
+    static(Vector[])
+  }
+
   private static fun create<T: Orderable>(
     size: Int,
     init: (T -> void) -> void,
