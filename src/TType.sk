@@ -102,6 +102,13 @@ class TType private {
     static::fromTInst(name.posRange, TSInst(name, targs))
   }
 
+  static fun constantString(pos: PosRange, s: String): this {
+    static::single(
+      pos,
+      TPrimValue(TString(), Some(ArrayValues::single((pos, s))), pos),
+    )
+  }
+
   static fun single(pos: PosRange, sType: SType): this {
     static::fromSTypes(pos, STypes::single(sType))
   }
@@ -180,35 +187,33 @@ class TType private {
     this.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
       stypes.singleElt()
     }) match {
-    | Some(TObject(TFields(fields), pos)) ->
+    | Some(TObject(fields, pos)) ->
       static::single(
         this.pos,
         TObject(
-          TFields(
-            fields.filterMap(field -> {
-              fieldType = field.type;
-              fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
-              fieldSTypes = fieldSTypesOpt match {
-              | None() -> return None()
-              | Some(x) -> x
-              };
-              !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
-                fieldSType match {
-                | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
-                | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                  invariant_violation(
-                    "TODO: encountered both non-empty funs and methods in filterMethod",
-                  )
-                //Some(tfuns with {methods => Array[]})
-                | _ -> Some(fieldSType)
-                }
-              });
-              !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
-              if (fieldType.isBottom()) None() else {
-                Some(field with {type => fieldType})
+          fields.filterMap(field -> {
+            fieldType = field.type;
+            fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
+            fieldSTypes = fieldSTypesOpt match {
+            | None() -> return None()
+            | Some(x) -> x
+            };
+            !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
+              fieldSType match {
+              | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
+              | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                invariant_violation(
+                  "TODO: encountered both non-empty funs and methods in filterMethod",
+                )
+              //Some(tfuns with {methods => Array[]})
+              | _ -> Some(fieldSType)
               }
-            }),
-          ),
+            });
+            !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
+            if (fieldType.isBottom()) None() else {
+              Some(field.mapType(_existingType -> fieldType))
+            }
+          }),
           pos,
         ),
       )
@@ -249,10 +254,6 @@ class TType private {
 
   fun isBottom(): Bool {
     !this.isTop && this.insts.isEmpty() && this.clauses.isEmpty()
-  }
-
-  fun isTag(): Bool {
-    this.getTag().isSome()
   }
 
   fun containsUndefined(): Bool {
@@ -303,28 +304,9 @@ class TType private {
     }
   }
 
-  fun getTag(): ?String {
-    if (this.insts.insts.size() > 0) {
-      None()
-    } else {
-      cand: ?String = None();
-      for (clause in this.clauses.clauses) {
-        clause.stypes match {
-        | None() -> return None()
-        | Some(stypes) ->
-          stypes.singleElt() match {
-          | Some(TPrimValue(TString(), Some(s), _)) ->
-            (s.singleElt().map(elt ~> elt.i1), cand) match {
-            | (None(), _) -> return None()
-            | (x @ Some(_), None()) -> !cand = x
-            | (Some(x1), Some(x2)) if (x1 == x2) -> void
-            | _ -> return None()
-            }
-          | _ -> void
-          }
-        }
-      };
-      cand
+  fun getConstantString(): ?(PosRange, String) {
+    if (this.isTop || !this.insts.isEmpty()) None() else {
+      this.clauses.getConstantString()
     }
   }
 }
@@ -341,6 +323,8 @@ base class Variance {
 
 class TObject(fields: TFields) extends SType
 
+const kAlgebraicBranchFieldName: String = "kind";
+
 class TAlgebraic(
   branches: InternalKeyedArrayMap<String, TConstr>,
 ) extends SType {
@@ -356,7 +340,7 @@ class TAlgebraic(
   ): TAlgebraic {
     static(
       a1.branches.mapInter(a2.branches, (x, y) ->
-        TConstr(interTFields(subst, env, x.fields, y.fields))
+        TConstr::inter(subst, env, x, y)
       ),
       a1.pos,
     )
@@ -370,7 +354,7 @@ class TAlgebraic(
   ): TAlgebraic {
     static(
       a1.branches.mapUnion(a2.branches, (x, y) ->
-        TConstr(unionTFields(subst, env, x.fields, y.fields))
+        TConstr::union(subst, env, x, y)
       ),
       a1.pos,
     )
@@ -385,7 +369,7 @@ class TAlgebraic(
     a1.branches.leq(a2.branches, (b1, b2O) ->
       b2O match {
       | Some(b2) ->
-        TFields::isSub(subst, env, b1.fields, b2.fields) match {
+        TConstr::isSub(subst, env, b1, b2) match {
         | STOk() -> Success(void)
         | err -> Failure(err)
         }
@@ -398,13 +382,53 @@ class TAlgebraic(
   }
 }
 
-class TConstr(fields: TFields) uses Hashable, Orderable, Projectable<String> {
+class TConstr(
+  tag: String,
+  tagPos: PosRange,
+  // TODO: make fields private so that we don't try to access "kind" from fields
+  fields: TFields,
+) uses Hashable, Orderable, Projectable<String> {
+  static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
+    invariant(x.tag == y.tag);
+    static(x.tag, x.tagPos, interTFields(subst, env, x.fields, y.fields))
+  }
+
+  static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
+    invariant(x.tag == y.tag);
+    static(x.tag, x.tagPos, unionTFields(subst, env, x.fields, y.fields))
+  }
+
+  fun map(f: TFields -> TFields): this {
+    static(this.tag, this.tagPos, f(this.fields))
+  }
+
+  static fun isSub(
+    subst: mutable Subst,
+    env: TEnv,
+    x: this,
+    y: this,
+  ): STResult {
+    TFields::isSub(subst, env, x.fields, y.fields)
+  }
+
+  fun getType(fieldName: Name): TType {
+    if (fieldName.value == kAlgebraicBranchFieldName) {
+      TType::constantString(this.tagPos, this.tag)
+    } else {
+      this.fields.getType(fieldName)
+    }
+  }
+
   fun project(): String {
-    this.fields.getKind()
+    this.tag
   }
 }
 
-fun createObject(pos: PosRange, fields: TFields): TType {
+fun createObject(
+  pos: PosRange,
+  algebraicBranchField: ?(PosRange, TType),
+  fields: TFields,
+): TType {
   seen = mutable Set<String>[];
   for (field in fields) {
     if (seen.contains(field.name)) {
@@ -412,13 +436,29 @@ fun createObject(pos: PosRange, fields: TFields): TType {
     };
     seen.insert(field.name);
   };
-  if (
-    seen.contains("kind") &&
-    fields.maybeGet("kind").fromSome().type.isTag()
-  ) {
-    TType::single(pos, TAlgebraic::single(TConstr(fields), pos))
-  } else {
-    TType::single(pos, TObject(fields, pos))
+  algebraicBranchField match {
+  | Some((algebraicBranchFieldPos, algebraicBranchFieldType)) ->
+    algebraicBranchFieldType.getConstantString() match {
+    | None() ->
+      typingError(
+        Array[
+          (
+            pos,
+            `Algebraic field ${kAlgebraicBranchFieldName} was expected to be a constant string`,
+          ),
+          (algebraicBranchFieldPos, `Got ${algebraicBranchFieldType} instead`),
+        ],
+      )
+    | Some((tagPos, tag)) ->
+      TType::single(
+        pos,
+        TAlgebraic::single(
+          TConstr(tag, tagPos, fields),
+          algebraicBranchFieldPos,
+        ),
+      )
+    }
+  | None() -> TType::single(pos, TObject(fields, pos))
   }
 }
 
@@ -613,14 +653,49 @@ base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
 
-class TField(
+class TField private (
   pos: PosRange,
-  name: String,
+  name: /* Invariant: name != kAlgebraicBranchFieldName */ String,
   isOptional: Bool,
   type: TType,
 ) uses Hashable, Orderable, Projectable<String> {
+  static fun create(
+    pos: PosRange,
+    name: String,
+    isOptional: Bool,
+    type: TType,
+  ): ?this {
+    if (name == kAlgebraicBranchFieldName) None() else {
+      Some(static(pos, name, isOptional, type))
+    }
+  }
+
+  static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
+    if (x.name != y.name) invariant_violation("field names must match");
+    static(
+      x.pos,
+      x.name,
+      x.isOptional && y.isOptional,
+      interTType(subst, env, x.type, y.type),
+    )
+  }
+
+  static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
+    if (x.name != y.name) invariant_violation("field names must match");
+    static(
+      x.pos,
+      x.name,
+      x.isOptional || y.isOptional,
+      TType::union(subst, env, x.type, y.type),
+    )
+  }
+
   fun withOptional(): this {
     this with {isOptional => true}
+  }
+
+  fun mapType(f: TType -> TType): this {
+    this with {type => f(this.type)}
   }
 
   fun project(): String {
@@ -628,7 +703,7 @@ class TField(
   }
 }
 
-class TFields(
+class TFields private (
   fields: InternalKeyedArrayMap<String, TField>,
 ) uses Hashable, Orderable {
   static fun empty(): this {
@@ -637,10 +712,18 @@ class TFields(
 
   static fun create(fields: Array<TField>): this {
     static(
-      InternalKeyedArrayMap::createFromIterator(
+      InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
     )
+  }
+
+  fun map(f: TField -> TField): this {
+    static(this.fields.map(f))
+  }
+
+  fun filterMap(f: TField -> ?TField): this {
+    static(this.fields.filterMap(f))
   }
 
   fun values(): mutable Iterator<TField> {
@@ -679,13 +762,6 @@ class TFields(
       ty = fd.type;
       if (fd.isOptional) ty.withUndefined(fieldName.posRange) else ty
     }
-  }
-
-  fun getKind(): String {
-    this.maybeGet("kind")
-      .fromSome()
-      .type.getTag()
-      .fromSome("Internal error: getKind on non constructor")
   }
 
   static fun isSub(
@@ -829,10 +905,16 @@ class STypes private (
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
 
+  fun getConstantString(): ?(PosRange, String) {
+    this.singleElt() match {
+    | Some(TPrimValue(TString(), Some(values), _)) -> values.singleElt()
+    | _ -> None()
+    }
+  }
+
   fun staticValue(): ?String {
     this.singleElt() match {
-    | Some(TPrimValue(_, Some(values), _)) if (values.values.size() == 1) ->
-      Some(values.values[0].i1)
+    | Some(TPrimValue(_, Some(values), _)) -> values.singleElt().map(v -> v.i1)
     | _ -> None()
     }
   }
@@ -972,6 +1054,12 @@ class Clause(
     }
   }
 
+  fun getConstantString(): ?(PosRange, String) {
+    if (!this.vars.isEmpty()) None() else {
+      this.stypes.flatMap(sTypes -> sTypes.getConstantString())
+    }
+  }
+
   fun project(): ArraySet<TParam> {
     this.vars
   }
@@ -1023,9 +1111,7 @@ class Clauses(
 
   static fun fromSTypes(stypes: STypes): this {
     if (stypes.isEmpty()) {
-      return static(
-        InternalKeyedArrayMap::createFromIterator(Array[].iterator()),
-      )
+      return static(InternalKeyedArrayMap::empty())
     };
     static(
       InternalKeyedArrayMap::single(
@@ -1059,7 +1145,7 @@ class Clauses(
       }
     };
     Clauses(
-      InternalKeyedArrayMap::createFromIterator(
+      InternalKeyedArrayMap::createFromSortedIterator(
         result.items().map(x -> x.i1).iterator(),
       ),
     )
@@ -1123,6 +1209,10 @@ class Clauses(
       clause.addUndefined(undefinedPosRange)
     );
     this
+  }
+
+  fun getConstantString(): ?(PosRange, String) {
+    this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
   }
 
   fun primKind(): ?TPrimValueKind {
@@ -1400,15 +1490,6 @@ fun isSubTObject(
   TFields::isSub(subst, env, obj1.fields, obj2.fields)
 }
 
-fun isSubBranch(
-  subst: mutable Subst,
-  env: TEnv,
-  b1: TConstr,
-  b2: TConstr,
-): STResult {
-  TFields::isSub(subst, env, b1.fields, b2.fields)
-}
-
 /*****************************************************************************/
 /* Unions. */
 /*****************************************************************************/
@@ -1423,15 +1504,7 @@ fun unionTFields(
     fields1.values(),
     fields2.values(),
     x ~> x.name,
-    (x, y) -> {
-      if (x.name != y.name) invariant_violation("field names must match");
-      TField(
-        x.pos,
-        x.name,
-        x.isOptional || y.isOptional,
-        TType::union(subst, env, x.type, y.type),
-      )
-    },
+    (x, y) -> TField::union(subst, env, x, y),
   );
   !fields = fields
     .concat(noMatch1.map(x -> x.withOptional()))
@@ -1592,15 +1665,7 @@ fun interTFields(
     fields2.values(),
     x ~> x.name,
     x ~> x,
-    (x, y) -> {
-      if (x.name != y.name) invariant_violation("field names must match");
-      TField(
-        x.pos,
-        x.name,
-        x.isOptional && y.isOptional,
-        interTType(subst, env, x.type, y.type),
-      )
-    },
+    (x, y) -> TField::inter(subst, env, x, y),
   );
   TFields::create(fields)
 }
@@ -1894,7 +1959,7 @@ base class ApplyType {
   }
 
   overridable deferred fun constr(env: this::Env, constr: TConstr): TConstr {
-    TConstr(this.fields(env, constr.fields))
+    constr.map(fields -> this.fields(env, fields))
   }
 
   overridable deferred fun object(env: this::Env, object: TObject): TObject {
@@ -1922,11 +1987,11 @@ base class ApplyType {
   }
 
   overridable deferred fun fields(env: this::Env, fields: TFields): TFields {
-    TFields(fields.fields.map(x -> this.field(env, x)))
+    fields.map(x -> this.field(env, x))
   }
 
   overridable deferred fun field(env: this::Env, field: TField): TField {
-    TField(field.pos, field.name, field.isOptional, this.type(env, field.type))
+    field.mapType(ty -> this.type(env, ty))
   }
 
   overridable deferred fun tuple(env: this::Env, tuple: TTuple): TTuple {

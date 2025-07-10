@@ -316,15 +316,29 @@ class TEnv{
         | FNNormal(x) -> x.value
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         };
-        acc![fieldName] = TField(
+        TField::create(
           field.pos,
           fieldName,
           field.optional is Some _,
           type,
-        )
+        ) match {
+        | None() ->
+          typingError(
+            Array[
+              (field.pos, `Forbidden field name '${fieldName}' in a class`),
+            ],
+          )
+        | Some(f) -> acc![fieldName] = f
+        }
       | fd @ FunDef _ ->
         (metName, metType) = this.funDecl(context, true, fd);
-        acc![metName.value] = TField(fd.pos, metName.value, false, metType)
+        TField::create(fd.pos, metName.value, false, metType) match {
+        | None() ->
+          typingError(
+            Array[(fd.pos, `Forbidden method name '${metName.value}'`)],
+          )
+        | Some(field) -> acc![metName.value] = field
+        }
       }
     }
   }
@@ -443,7 +457,8 @@ class TEnv{
         },
       )
     | TAObject(fields) ->
-      createObject(typeAst.posRange, this.createTFields(context, fields))
+      (algebraicBranchField, tFields) = this.createTFields(context, fields);
+      createObject(typeAst.posRange, algebraicBranchField, tFields)
     | TAInst(n @ Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.posRange, "Invalid number of type arguments")])
@@ -659,12 +674,16 @@ class TEnv{
     }
   }
 
+  /*
+    The first element is the position and the type of the algebraic branch field if it is present.
+   */
   fun createTFields(
     context: mutable SKStore.Context,
     fields: Array<FieldType>,
-  ): TFields {
-    TFields::create(
-      fields.map(elt -> {
+  ): (?(PosRange, TType), TFields) {
+    algebraicBranchField: ?(PosRange, TType) = None();
+    tFields = TFields::create(
+      fields.filterMap(elt -> {
         elt match {
         | fd @ FieldTypeValue _ ->
           fd.type match {
@@ -676,20 +695,50 @@ class TEnv{
             | FNIn _ -> invariant_violation("TODO fnIn")
             | FNSymbol _ -> invariant_violation("TODO symbol")
             | FNNormal(name) ->
-              TField(
+              optField = TField::create(
                 name.posRange,
                 name.value,
                 fd.optional is Some _,
                 normalizedType,
-              )
+              );
+              if (optField is None()) {
+                algebraicBranchField match {
+                | Some((existingPos, _existingType)) ->
+                  typingError(
+                    Array[
+                      (name.posRange, `Duplicate field ${name.value}`),
+                      (existingPos, "Previously declared here"),
+                    ],
+                  )
+                | None() -> void
+                };
+                fd.optional match {
+                | Some(optionalPos) ->
+                  typingError(
+                    Array[
+                      (optionalPos, `Field ${name.value} cannot be optional`),
+                    ],
+                  )
+                | None() -> void
+                };
+                !algebraicBranchField = Some((name.posRange, normalizedType))
+              };
+              optField
             }
           }
         | fd @ FunDef _ ->
           (name, decl) = this.funDecl(context, true, fd);
-          TField(name.posRange, name.value, false, decl)
+          optField = TField::create(name.posRange, name.value, false, decl);
+          if (optField is None()) {
+            typingError(
+              Array[(name.posRange, `Forbidden method name ${name.value}`)],
+            )
+          };
+          optField
         }
       }),
-    )
+    );
+    (algebraicBranchField, tFields)
   }
 }
 
