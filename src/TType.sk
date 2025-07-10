@@ -20,26 +20,29 @@ const kTopHash: Int = "Top".hash();
 /*****************************************************************************/
 // The class representing all the types.
 //
-// The class has 3 important parts:
+// The class has 2 important parts:
 //
-//   - the stypes (which represent concrete single types, like number,
-//   undefined, null etc ...)
+//   - the clauses which represent both parameters and concrete single types
+//   (number, undefined, null, ...) under a disjunctive normal form
 //
 //   - the instances (which represent type variables, unexpanded type
 //   instances and unexpanded intersections).
 //
-//   - the parameters (normalized under a disjunctive normal form).
-//
 // A few examples:
-//   number | void           ==> TType(stypes = void | number)
-//   Foo<number> | number    ==> TType(stypes = number, insts = Foo<number>)
+//   number | void           ==> TType(clauses = void | number)
+//   Foo<number> | number    ==> TType(clauses = number, insts = Foo<number>)
 //   T2 extends A | T1       ==> TType(clauses = T1 | T2 extends A)
 //
-// Note that some operations will require a so-called "expansion", and
+// Note that some operations will require a so-called "expansion", an
 // expansion consisting in getting rid of all the instances and turn
-// them into stypes + type params. Note that the expansion is only one
+// them into clauses. Note that the expansion is only one
 // level deep, so if a type is defined recursively, the expansion will
 // not affect the instances defined inside the type.
+//
+// Interpretation:
+// 〚 ttype 〛 = | Top                                  if ttype.isTop = true
+//             | 〚 ttype.insts 〛 ⨆ 〚 ttype.clauses 〛  otherwise
+//
 /*****************************************************************************/
 
 class TType private {
@@ -50,7 +53,7 @@ class TType private {
 
   // The hash, it's important because we need to quickly determine if
   // two types are different. The hash is computed by smart constructors,
-  // that's why the default constructor is private
+  // that's why the constructor is private
   private h: Int,
 
   // This field is true if the type represents TOP (meaning, the type
@@ -74,7 +77,7 @@ class TType private {
   // - Unexpanded intersections TInter(t1, t2)
   insts: TInsts,
 
-  // The type parameters (universally quantified type variables), in a
+  // Single types and type parameters (universally quantified type variables), in a
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   clauses: Clauses,
@@ -193,7 +196,7 @@ class TType private {
     }
   }
 
-  // Returns None() if the result is Top
+  // Returns None() if the result is Top after expansion
   fun expand(subst: mutable Subst, env: TEnv, variance: Variance): ?Clauses {
     if (this.isTop) return None();
     clauses = this.clauses;
@@ -340,6 +343,8 @@ base class Variance {
 /* Object types. */
 /*****************************************************************************/
 
+// Regular Typescript (open) object type
+// but disjoint from types in TAlgebraic
 class TObject(fields: TFields) extends SType
 
 class TAlgebraic(
@@ -744,7 +749,7 @@ class STypes private (
     )
   }
 
-  // inter returns None when the greatest lower bound of the args is bottom
+  // inter returns None when the intersection of the args is bottom
   static fun inter(
     subst: mutable Subst,
     env: TEnv,
@@ -839,6 +844,17 @@ class STypes private (
   }
 }
 
+/* Type variable */
+//
+// Introduced:
+// - for local variables
+// - when instantiating a generic type or a function
+//
+// Interpretation:
+// 〚 tvar 〛 = more or less* subst[tvar.id] ⨅ 〚 tvar.constraints 〛
+// 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
+//
+// *see Subst#get
 class TVar private (
   pos: PosRange,
   id: Int,
@@ -858,12 +874,22 @@ class TVar private (
     this
   }
 }
-class TArgs(targs: Array<TType>) uses Hashable, Orderable
+
+/* Unexpanded named type */
+// possibly with type arguments
 class TSInst(name: Name, targs: TArgs) extends TInst
+class TArgs(targs: Array<TType>) uses Hashable, Orderable
+
+/* Unexpanded intersection */
+//
+// Interpretation:
+// 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
 class TInter(ty1: TType, ty2: TType) extends TInst
 
 base class TInst uses Hashable, Orderable
 
+// Interpretation:
+// 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
 class TInsts(insts: Array<TInst>) uses Hashable, Orderable {
   static fun empty(): this {
     static(Array[])
@@ -1572,7 +1598,7 @@ fun interTObject(
   TObject(interTFields(subst, env, obj1.fields, obj2.fields), obj1.pos)
 }
 
-// interSType returns None when the greatest lower bound of the args is bottom
+// interSType returns None when the intersection of the args is bottom
 fun interSType(
   subst: mutable Subst,
   env: TEnv,
