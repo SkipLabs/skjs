@@ -1092,11 +1092,27 @@ class Clause(
 }
 
 // The type parameters are in DNF
-class Clauses(
+class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
 ) uses Hashable, Orderable {
   static fun empty(): this {
     Clauses(InternalKeyedArrayMap::empty())
+  }
+
+  static fun createFromItems(clauses: Array<Clause>): this {
+    static(
+      InternalKeyedArrayMap::createFromSortedIterator(
+        clauses
+          .filter(x ->
+            x.stypes match {
+            | None() -> true
+            | Some(stypes) -> !stypes.isEmpty()
+            }
+          )
+          .sorted()
+          .iterator(),
+      ),
+    )
   }
 
   fun isEmpty(): Bool {
@@ -1958,15 +1974,14 @@ base class ApplyType {
   overridable deferred fun nonTop(env: this::Env, ty: TType): TType {
     ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (clauses) -> this.typeParams(env, clauses),
+      (clauses) -> this.clauses(env, clauses),
     )
   }
 
-  overridable deferred fun typeParams(
-    env: this::Env,
-    clauses: Clauses,
-  ): Clauses {
-    Clauses(clauses.clauses.map(x -> this.clause(env, x)))
+  overridable deferred fun clauses(env: this::Env, clauses: Clauses): Clauses {
+    Clauses::createFromItems(
+      clauses.clauses.map(x -> this.clause(env, x)).toArray(),
+    )
   }
 
   overridable deferred fun clause(env: this::Env, clause: Clause): Clause {
@@ -2114,7 +2129,7 @@ class Instantiate() extends ApplyType {
   fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (clauses) -> this.typeParams(env, clauses),
+      (clauses) -> this.clauses(env, clauses),
     );
     (clauses, result) = ty.resetClauses() match {
     | None() -> /* already empty */ return ty
@@ -2158,7 +2173,7 @@ class ExpandTVars() extends ApplyType {
   fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
-      (clauses) -> this.typeParams(env, clauses),
+      (clauses) -> this.clauses(env, clauses),
     );
     (subst, tenv) = env;
     ty.expand(subst, tenv, Covariant()) match {
