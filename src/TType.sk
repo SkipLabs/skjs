@@ -1092,11 +1092,27 @@ class Clause(
 }
 
 // The type parameters are in DNF
-class Clauses(
+class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
 ) uses Hashable, Orderable {
   static fun empty(): this {
     Clauses(InternalKeyedArrayMap::empty())
+  }
+
+  static fun createFromItems(clauses: Array<Clause>): this {
+    static(
+      InternalKeyedArrayMap::createFromSortedIterator(
+        clauses
+          .filter(x ->
+            x.stypes match {
+            | None() -> true
+            | Some(stypes) -> !stypes.isEmpty()
+            }
+          )
+          .sorted()
+          .iterator(),
+      ),
+    )
   }
 
   fun isEmpty(): Bool {
@@ -1963,7 +1979,9 @@ base class ApplyType {
   }
 
   overridable deferred fun clauses(env: this::Env, clauses: Clauses): Clauses {
-    Clauses(clauses.clauses.map(x -> this.clause(env, x)))
+    Clauses::createFromItems(
+      clauses.clauses.map(x -> this.clause(env, x)).toArray(),
+    )
   }
 
   overridable deferred fun clause(env: this::Env, clause: Clause): Clause {
