@@ -2032,7 +2032,7 @@ class TypeChecker{
             targs[i]
           };
         };
-        !tfun = Instantiate().fun_(
+        !tfun = (mutable Instantiate()).fun_(
           (env.subst, this.tenv, map.chill()),
           tfun with {clauses => Array[]},
         );
@@ -2298,7 +2298,7 @@ class TypeChecker{
     | None() -> (TType::top(ty.pos), true)
     | Some(clauses) ->
       t = TType::create(ty.pos, TInsts::empty(), clauses);
-      !t = FilterType().type((filter, map), t);
+      !t = (mutable FilterType()).type((filter, map), t);
       isTopOrEmpty = t.getSTypes(env.subst, this.tenv, Covariant()) match {
       | None() -> true
       | Some(stypes2) -> stypes2.isEmpty()
