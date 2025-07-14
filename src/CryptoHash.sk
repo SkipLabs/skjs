@@ -1,0 +1,65 @@
+/*****************************************************************************/
+// XXHash64 implementation
+/*****************************************************************************/
+
+module XXHash64;
+
+trait Hashable extends .Hashable {
+  // The hash method should return a 64-bit hash value. The bits do not
+  // need to be scrambled, that is the responsibility of the user of this
+  // method.
+  overridable macro fun hash(): Int {
+    h = #thisClassName.hash();
+    #forEachField (#field) !h = xxHash64(h, this.#field.hash());
+    h
+  }
+}
+
+fun xxHash64(data: Int, seed: Int = 0): Int {
+  primes: (Int, Int, Int, Int, Int) = (
+    -7046029254386353131, // 0x9E3779B185EBCA87
+    -4417276706812531889, // 0xC2B2AE3D27D4EB4F
+    1609587929392839161, // 0x165667B19E3779F9
+    -8796714831421723037, // 0x85EBCA77C2B2AE63
+    2870177450012600261, // 0x27D4EB2F165667C5
+  );
+
+  prime1 = primes.i0;
+  prime2 = primes.i1;
+  prime3 = primes.i2;
+  prime4 = primes.i3;
+  prime5 = primes.i4;
+
+  // For a single Int (8 bytes), we don't have enough data for a full block
+  // So we use the simplified path for small inputs
+  length = 8;
+  hash = seed + prime5;
+  !hash = hash + length;
+
+  // Process the single 8-byte integer
+  !hash = hash.xor(round(0, data));
+  !hash = rotateLeft(hash, 27) * prime1 + prime4;
+
+  // Final mix
+  !hash = hash.xor(hash.ushr(33));
+  !hash = hash * prime2;
+  !hash = hash.xor(hash.ushr(29));
+  !hash = hash * prime3;
+  !hash = hash.xor(hash.ushr(32));
+
+  hash
+}
+
+// Helper functions for xxHash64
+fun rotateLeft(value: Int, bits: Int): Int {
+  (value.shl(bits)).or(value.ushr(64 - bits))
+}
+
+fun round(acc: Int, value: Int): Int {
+  acc2 = acc + value * -4417276706812531889; // prime2
+  acc3 = rotateLeft(acc2, 31);
+  acc3 *
+    -7046029254386353131 // prime1
+}
+
+module end;

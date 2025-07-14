@@ -318,6 +318,18 @@ class TypeChecker{
         }
       | Some(x) -> this.tenv.normalize(context, x)
       };
+      subst = Subst::mcreate{context};
+      if (!type.isPrimitiveType(subst, this.tenv)) {
+        typingError(
+          Array[
+            (
+              varDef.pat.pos,
+              "Invalid type for constant, " +
+                "only primitive types (not objects) are allowed",
+            ),
+          ],
+        );
+      };
       varDef.pat.value match {
       | PVar _ -> void
       | PArray _ /* (Array<Pattern>) */
@@ -328,16 +340,16 @@ class TypeChecker{
       | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
       | Some(x) -> x
       };
-      subst = Subst::mcreate{context};
       scope = Scope::mcreateToplevel();
       env = mutable TCEnv(context, subst, scope);
-      debug(("HH", prettyPrintType(true, this.expr(env, e))));
       this.checkSubType(
         env,
         varDef.pat.pos,
         "Invalid definition",
         literalType match {
-        | None() -> this.expr(env, e)
+        | None() ->
+          ty = this.expr(env, e);
+          ty
         | Some(litType) -> litType
         },
         type,
@@ -1111,12 +1123,9 @@ class TypeChecker{
       optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
       | TObject(fields, _) ->
-        !result = TType::union(
-          env.subst,
-          this.tenv,
-          result,
-          fields.getType(fieldName),
-        )
+        fieldType = fields.getType(fieldName);
+        !result = TType::union(env.subst, this.tenv, result, fieldType)
+
       | TAlgebraic(branches, _) ->
         for (branch in branches) {
           !result = TType::union(
@@ -1144,9 +1153,7 @@ class TypeChecker{
         TNull(),
         undefPos,
       ) if (optionalChaining) ->
-        debug(("xx", prettyPrintType(true, result)));
         !result = result.withUndefined(undefPos);
-        debug(("yy", prettyPrintType(true, result)));
         !optionalChainingIsUseless = false;
         !optionalChainingIsAlwaysUndefinedForThisSType = true
       | _ ->

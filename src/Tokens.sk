@@ -6,7 +6,7 @@ module SKJS;
 
 value class Token(kind: TokenKind, posRange: PosRange)
 
-base class TokenKind uses Equality, Hashable {
+base class TokenKind uses Equality, XXHash64.Hashable {
   children =
   | TKAddQM()
   | TKAddition()
