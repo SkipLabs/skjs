@@ -137,7 +137,7 @@ class TType private {
   }
 
   static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
-    h = (insts, clauses).hash();
+    h = hash((insts, clauses));
     static{h, pos, isTop => false, insts, clauses};
   }
 
@@ -230,8 +230,32 @@ class TType private {
     ty1: this,
     ty2: this,
   ): this {
+    subst.seenUnion.maybeGet((ty1, ty2)) match {
+    | None() ->
+      result = static::union_(subst, env, ty1, ty2);
+      subst.seenUnion![(ty1, ty2)] = result;
+      result
+    | Some(ty) -> ty
+    }
+  }
+
+  static fun union_(
+    subst: mutable Subst,
+    env: TEnv,
+    ty1: this,
+    ty2: this,
+  ): this {
     if (ty1.isTop) return ty1;
     if (ty2.isTop) return ty2;
+    if (env.seenUnion.contains((ty1, ty2))) {
+      return TType::create(
+        ty1.pos,
+        TInsts::single(TUnion(ty1, ty2)),
+        Clauses::empty(),
+      );
+    };
+    !env.seenUnion = env.seenUnion.set((ty1, ty2));
+
     types = unionTInsts(ty1.insts, ty2.insts);
     clauses = Clauses::union(subst, env, ty1.clauses, ty2.clauses);
     static::create(ty1.pos, types, clauses)
@@ -244,9 +268,7 @@ class TType private {
   }
 
   fun compare(other: this): Order {
-    (this.h, this.insts, this.clauses).compare(
-      (other.h, other.insts, other.clauses),
-    )
+    this.h.compare(other.h)
   }
 
   fun hash(): Int {
@@ -295,6 +317,7 @@ class TType private {
       tyDef = inst match {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
       | TInter(ty1, ty2) -> interTType(subst, env, ty1, ty2)
+      | TUnion(ty1, ty2) -> TType::union(subst, env, ty1, ty2)
       | tvar @ TVar _ -> subst.get(env, tvar, variance)
       };
       if (tyDef.isTop) return None();
@@ -967,6 +990,12 @@ class TArgs(targs: Array<TType>) uses Hashable, Orderable
 // 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
 class TInter(ty1: TType, ty2: TType) extends TInst
 
+/* Unexpanded union */
+//
+// Interpretation:
+// 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
+class TUnion(ty1: TType, ty2: TType) extends TInst
+
 base class TInst uses Hashable, Orderable
 
 // Interpretation:
@@ -1512,7 +1541,7 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
     };
     tsubst![tparam2.id] = tparam1;
   };
-  !f2 = RenameClauses().fun_(tsubst.chill(), f2);
+  !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
   params1 = f1.params;
   params2 = f2.params;
   for (i in Range(0, params1.size())) {
@@ -1632,7 +1661,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     };
     clauses.push(tparam1 with {cstr});
   };
-  !f2 = RenameClauses().fun_(tsubst.chill(), f2);
+  !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
   params = mutable Vector[];
   for (i in Range(0, f1.params.size())) {
     params.push(interTType(subst, env, f1.params[i], f2.params[i]));
@@ -1797,7 +1826,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     };
     clauses.push(tparam1 with {cstr});
   };
-  !f2 = RenameClauses().fun_(tsubst.chill(), f2);
+  !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
   params = mutable Vector[];
   for (i in Range(0, f1.params.size())) {
     params.push(TType::union(subst, env, f1.params[i], f2.params[i]));
@@ -1892,7 +1921,7 @@ fun interTType_(
     return TType::create(
       ty1.pos,
       TInsts::single(TInter(ty1, ty2)),
-      Clauses::inter(subst, env, ty1.clauses, ty2.clauses),
+      Clauses::empty(),
     );
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
@@ -1960,38 +1989,57 @@ fun interTType_(
 /* Type transformation class. */
 /*****************************************************************************/
 
-base class ApplyType {
+mutable base class ApplyType(
+  visiting: SortedSet<TType> = SortedSet[],
+  seen: mutable Map<TType, TType> = mutable Map[],
+) {
   type Env;
 
-  deferred fun type(env: this::Env, ty: TType): TType {
-    if (ty.isTop) this.top(env, ty) else this.nonTop(env, ty)
+  overridable deferred mutable fun type(env: this::Env, ty: TType): TType {
+    if (this.visiting.contains(ty)) {
+      invariant_violation("Found a Cyclic type in ApplyType");
+    };
+    this.seen.maybeGet(ty) match {
+    | None() ->
+      !this.visiting = this.visiting.set(ty);
+      result = if (ty.isTop) this.top(env, ty) else this.nonTop(env, ty);
+      this.seen![ty] = result;
+      result
+    | Some(x) -> x
+    }
   }
 
-  overridable deferred fun top(_env: this::Env, top: TType): TType {
+  overridable deferred mutable fun top(_env: this::Env, top: TType): TType {
     top
   }
 
-  overridable deferred fun nonTop(env: this::Env, ty: TType): TType {
+  overridable deferred mutable fun nonTop(env: this::Env, ty: TType): TType {
     ty.rawMap(
       (insts) -> this.insts(env, insts),
       (clauses) -> this.clauses(env, clauses),
     )
   }
 
-  overridable deferred fun clauses(env: this::Env, clauses: Clauses): Clauses {
+  overridable deferred mutable fun clauses(
+    env: this::Env,
+    clauses: Clauses,
+  ): Clauses {
     Clauses::createFromItems(
       clauses.clauses.map(x -> this.clause(env, x)).toArray(),
     )
   }
 
-  overridable deferred fun clause(env: this::Env, clause: Clause): Clause {
+  overridable deferred mutable fun clause(
+    env: this::Env,
+    clause: Clause,
+  ): Clause {
     Clause(
       clause.vars.map(x -> this.typeParam(env, x)),
       clause.stypes.map(x -> this.stypes(env, x)),
     )
   }
 
-  overridable deferred fun typeParamWithConstraint(
+  overridable deferred mutable fun typeParamWithConstraint(
     env: this::Env,
     tparam: TParamWithConstraint,
   ): TParamWithConstraint {
@@ -2003,15 +2051,21 @@ base class ApplyType {
     )
   }
 
-  overridable deferred fun typeParam(_env: this::Env, tparam: TParam): TParam {
+  overridable deferred mutable fun typeParam(
+    _env: this::Env,
+    tparam: TParam,
+  ): TParam {
     TParam(tparam.name, tparam.fileName, tparam.id)
   }
 
-  overridable deferred fun stypes(env: this::Env, stypes: STypes): STypes {
+  overridable deferred mutable fun stypes(
+    env: this::Env,
+    stypes: STypes,
+  ): STypes {
     stypes.map(stype -> this.stype(env, stype))
   }
 
-  overridable deferred fun stype(env: this::Env, stype: SType): SType {
+  overridable deferred mutable fun stype(env: this::Env, stype: SType): SType {
     stype match {
     | x @ TPrimVoid _
     | x @ TPrimValue _ ->
@@ -2024,22 +2078,28 @@ base class ApplyType {
     }
   }
 
-  overridable deferred fun algebraic(
+  overridable deferred mutable fun algebraic(
     env: this::Env,
     algebraic: TAlgebraic,
   ): TAlgebraic {
     TAlgebraic(algebraic.branches.map(x -> this.constr(env, x)), algebraic.pos)
   }
 
-  overridable deferred fun constr(env: this::Env, constr: TConstr): TConstr {
+  overridable deferred mutable fun constr(
+    env: this::Env,
+    constr: TConstr,
+  ): TConstr {
     constr.map(fields -> this.fields(env, fields))
   }
 
-  overridable deferred fun object(env: this::Env, object: TObject): TObject {
+  overridable deferred mutable fun object(
+    env: this::Env,
+    object: TObject,
+  ): TObject {
     TObject(this.fields(env, object.fields), object.pos)
   }
 
-  overridable deferred fun funs(env: this::Env, funs: TFuns): TFuns {
+  overridable deferred mutable fun funs(env: this::Env, funs: TFuns): TFuns {
     TFuns(
       funs.funs.map(x -> this.fun_(env, x)),
       funs.methods.map(x -> this.fun_(env, x)),
@@ -2047,7 +2107,7 @@ base class ApplyType {
     )
   }
 
-  overridable deferred fun fun_(env: this::Env, f: TFun): TFun {
+  overridable deferred mutable fun fun_(env: this::Env, f: TFun): TFun {
     TFun(
       f.clauses.map(x -> this.typeParamWithConstraint(env, x)),
       f.params.map(x -> this.type(env, x)),
@@ -2059,38 +2119,51 @@ base class ApplyType {
     )
   }
 
-  overridable deferred fun fields(env: this::Env, fields: TFields): TFields {
+  overridable deferred mutable fun fields(
+    env: this::Env,
+    fields: TFields,
+  ): TFields {
     fields.map(x -> this.field(env, x))
   }
 
-  overridable deferred fun field(env: this::Env, field: TField): TField {
+  overridable deferred mutable fun field(
+    env: this::Env,
+    field: TField,
+  ): TField {
     field.mapType(ty -> this.type(env, ty))
   }
 
-  overridable deferred fun tuple(env: this::Env, tuple: TTuple): TTuple {
+  overridable deferred mutable fun tuple(
+    env: this::Env,
+    tuple: TTuple,
+  ): TTuple {
     TTuple(tuple.tuple.map(x -> this.type(env, x)), tuple.pos)
   }
 
-  overridable deferred fun insts(env: this::Env, insts: TInsts): TInsts {
+  overridable deferred mutable fun insts(
+    env: this::Env,
+    insts: TInsts,
+  ): TInsts {
     TInsts(insts.insts.map(x -> this.inst(env, x)))
   }
 
-  overridable deferred fun inst(env: this::Env, inst: TInst): TInst {
+  overridable deferred mutable fun inst(env: this::Env, inst: TInst): TInst {
     inst match {
     | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
     | TInter(ty1, ty2) -> TInter(this.type(env, ty1), this.type(env, ty2))
+    | TUnion(ty1, ty2) -> TUnion(this.type(env, ty1), this.type(env, ty2))
     | tvar @ TVar _ -> tvar.mapConstraints(ty -> this.type(env, ty))
     }
   }
 
-  overridable deferred fun targs(env: this::Env, targs: TArgs): TArgs {
+  overridable deferred mutable fun targs(env: this::Env, targs: TArgs): TArgs {
     TArgs(targs.targs.map(x -> this.type(env, x)))
   }
 }
 
-class RenameClauses() extends ApplyType {
+mutable class RenameClauses() extends ApplyType {
   type Env = Map<Id, TParamWithConstraint>;
-  fun typeParamWithConstraint(
+  mutable fun typeParamWithConstraint(
     subst: this::Env,
     tparam: TParamWithConstraint,
   ): TParamWithConstraint {
@@ -2101,7 +2174,7 @@ class RenameClauses() extends ApplyType {
     }
   }
 
-  fun typeParam(subst: this::Env, tparam: TParam): TParam {
+  mutable fun typeParam(subst: this::Env, tparam: TParam): TParam {
     if (subst.containsKey(tparam.id)) {
       newTParam = subst[tparam.id];
       TParam(newTParam.name, newTParam.fileName, newTParam.id)
@@ -2111,22 +2184,22 @@ class RenameClauses() extends ApplyType {
   }
 }
 
-class FilterType() extends ApplyType {
+mutable class FilterType() extends ApplyType {
   type Env = (SType ~> Bool, SType ~> SType);
 
-  fun insts(_env: this::Env, insts: TInsts): TInsts {
+  mutable fun insts(_env: this::Env, insts: TInsts): TInsts {
     insts
   }
 
-  fun stypes(env: this::Env, stypes: STypes): STypes {
+  mutable fun stypes(env: this::Env, stypes: STypes): STypes {
     stypes.filterMap(x -> if (env.i0(x)) Some(env.i1(x)) else None())
   }
 }
 
-class Instantiate() extends ApplyType {
+mutable class Instantiate() extends ApplyType {
   type Env = (mutable Subst, TEnv, Map<Id, TType>);
 
-  fun nonTop(env: this::Env, ty: TType): TType {
+  mutable fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
       (clauses) -> this.clauses(env, clauses),
@@ -2167,10 +2240,10 @@ class Instantiate() extends ApplyType {
   }
 }
 
-class ExpandTVars() extends ApplyType {
+mutable class ExpandTVars() extends ApplyType {
   type Env = (mutable Subst, TEnv);
 
-  fun nonTop(env: this::Env, ty: TType): TType {
+  mutable fun nonTop(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
       (clauses) -> this.clauses(env, clauses),
@@ -2184,7 +2257,7 @@ class ExpandTVars() extends ApplyType {
 }
 
 fun expandTVars(subst: mutable Subst, tenv: TEnv, ty: TType): TType {
-  (ExpandTVars()).type((subst, tenv), ty)
+  (mutable ExpandTVars()).type((subst, tenv), ty)
 }
 
 /*****************************************************************************/
@@ -2203,6 +2276,7 @@ mutable class Subst private {
   context: mutable SKStore.Context,
   seenSub: mutable Set<(TType, TType)> = mutable Set[],
   seenInter: mutable Map<(TType, TType), TType> = mutable Map[],
+  seenUnion: mutable Map<(TType, TType), TType> = mutable Map[],
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {

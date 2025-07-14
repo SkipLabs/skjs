@@ -6,7 +6,7 @@ class MaxSizeReached() extends Exception {
   }
 }
 
-value class Margin(size: Int = 0, str: String = "")
+value class Margin(depth: Int = 0, size: Int = 0, str: String = "")
 
 mutable class TypePp{
   compact: Bool,
@@ -41,8 +41,8 @@ mutable class TypePp{
     };
     if (this.cols < margin.size) {
       // The string does not start with a space
-      for (c in str) {
-        if (c == ' ') invariant_violation("unexpected white space: " + str);
+      for (_c in str) {
+        //        if (c == ' ') invariant_violation("unexpected white space: " + str);
         break void;
       };
       this.!cols = margin.size;
@@ -325,6 +325,11 @@ mutable class TypePp{
   }
 
   mutable fun type(level: Int, margin: Margin, ty: TType): void {
+    !margin.depth = margin.depth + 1;
+    if (margin.depth >= 2) {
+      this.out(level, margin, "...");
+      return void;
+    };
     if (ty.isTop) {
       return void;
     };
@@ -381,6 +386,14 @@ mutable class TypePp{
             pp.out(level, margin, "(");
             pp.type(level, margin, ty2);
             pp.out(level, margin, ")")
+          | TUnion(ty1, ty2) ->
+            pp.out(level, margin, "(");
+            pp.type(level, margin, ty1);
+            pp.out(level, margin, ")");
+            pp.out(level, margin, " | ");
+            pp.out(level, margin, "(");
+            pp.type(level, margin, ty2);
+            pp.out(level, margin, ")")
           | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
           }
         }
@@ -407,6 +420,10 @@ mutable class TypePp{
           | TInter(ty1, ty2) ->
             pp.type(level, margin, ty1);
             pp.out(level, margin, " & ");
+            pp.type(level, margin, ty2)
+          | TUnion(ty1, ty2) ->
+            pp.type(level, margin, ty1);
+            pp.out(level, margin, " | ");
             pp.type(level, margin, ty2)
           | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
           }

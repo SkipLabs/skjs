@@ -1,4 +1,4 @@
-import { array } from "./skjs.ts";
+import { array } from "./skjs.js";
 
 // program to remove duplicate value from an array
 
