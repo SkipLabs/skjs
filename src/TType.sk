@@ -137,7 +137,7 @@ class TType private {
   }
 
   static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
-    h = (insts, clauses).hash();
+    h = hash((insts, clauses));
     static{h, pos, isTop => false, insts, clauses};
   }
 

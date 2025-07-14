@@ -1,4 +1,4 @@
-import { array } from "./skjs.ts";
+import { array } from "./skjs.js";
 
 type list<T> = null | { head: T, tail: list<T> };
 

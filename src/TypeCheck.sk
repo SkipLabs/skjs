@@ -331,6 +331,7 @@ class TypeChecker{
       subst = Subst::mcreate{context};
       scope = Scope::mcreateToplevel();
       env = mutable TCEnv(context, subst, scope);
+      debug(("HH", prettyPrintType(true, this.expr(env, e))));
       this.checkSubType(
         env,
         varDef.pat.pos,
@@ -1143,7 +1144,9 @@ class TypeChecker{
         TNull(),
         undefPos,
       ) if (optionalChaining) ->
+        debug(("xx", prettyPrintType(true, result)));
         !result = result.withUndefined(undefPos);
+        debug(("yy", prettyPrintType(true, result)));
         !optionalChainingIsUseless = false;
         !optionalChainingIsAlwaysUndefinedForThisSType = true
       | _ ->
