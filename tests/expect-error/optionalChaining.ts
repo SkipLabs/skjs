@@ -1,5 +1,7 @@
+// @ts-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const obj: { f: number } = { f: 1 };
 
+// @ts-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const obj2: { f?: number } = {};
 
 function returningVoid(): void { };

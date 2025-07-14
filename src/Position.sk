@@ -29,7 +29,7 @@ value class RelPosRange(start: RelPos, end: RelPos) {
   }
 }
 
-value class Pos(value: Int) uses Hashable, Orderable {
+value class Pos(value: Int) uses XXHash64.Hashable, Orderable {
   const none: this = Pos(-1);
 }
 
@@ -37,7 +37,7 @@ value class PosRange(
   fileName: String,
   start: Pos,
   end: Pos,
-) uses Hashable, Orderable {
+) uses XXHash64.Hashable, Orderable {
   const none: this = PosRange("", Pos::none, Pos::none);
 }
 

@@ -81,7 +81,7 @@ class TType private {
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   clauses: Clauses,
-} uses Hashable, Orderable {
+} uses XXHash64.Hashable, Orderable {
   // CONSTRUCTORS
 
   // Returns the type that is sub-type of all types. This type is
@@ -137,7 +137,7 @@ class TType private {
   }
 
   static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
-    h = hash((insts, clauses));
+    h = (insts, clauses).hash();
     static{h, pos, isTop => false, insts, clauses};
   }
 
@@ -148,6 +148,30 @@ class TType private {
     | TNum _ -> "number"
     };
     static::inst(Name(pos, name), TArgs(Array[]))
+  }
+
+  fun isPrimitiveType(subst: mutable Subst, env: TEnv): Bool {
+    this.getSTypes(subst, env, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      for (stype in stypes) {
+        stype match {
+        | SKJS.TPrimVoid _
+        | TPrimValue _ ->
+          continue
+        | TTuple(tys, _) ->
+          for (ty in tys) {
+            if (!ty.isPrimitiveType(subst, env)) return false
+          }
+        | SKJS.TAlgebraic _
+        | SKJS.TFuns _
+        | SKJS.TObject _
+        | SKJS.TPromise _ ->
+          return false
+        }
+      };
+      true
+    }
   }
 
   // TRANSFORMERS
@@ -183,7 +207,8 @@ class TType private {
     if (!this.containsUndefined()) {
       !this.clauses = this.clauses.withUndefined(undefinedPosRange);
     };
-    this
+    // We need this to make sure the hash is up-to-date
+    static::create(this.pos, this.insts, this.clauses)
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
@@ -415,7 +440,7 @@ class TConstr(
   tagPos: PosRange,
   // TODO: make fields private so that we don't try to access "kind" from fields
   fields: TFields,
-) uses Hashable, Orderable, Projectable<String> {
+) uses XXHash64.Hashable, Orderable, Projectable<String> {
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
     invariant(x.tag == y.tag);
     static(x.tag, x.tagPos, interTFields(subst, env, x.fields, y.fields))
@@ -597,7 +622,7 @@ class TFun(
   minSizeWitness: PosRange,
   lambdas: Array<Lambda>,
   retType: TType,
-) uses Hashable, Orderable, Projectable<(Int, Int)> {
+) uses XXHash64.Hashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
     invariant_violation("TODO TFun toString()")
   }
@@ -610,7 +635,7 @@ class TFun(
 class Lambda(
   pos: PosRange,
   compute: (mutable Subst, Array<TType>, TType) ~> void,
-) uses Hashable, Orderable {
+) uses XXHash64.Hashable, Orderable {
   fun hash(): Int {
     this.pos.hash()
   }
@@ -623,7 +648,7 @@ class Lambda(
 /* Single types */
 /*****************************************************************************/
 
-base class TPrimVoidKind uses Hashable, Orderable {
+base class TPrimVoidKind uses XXHash64.Hashable, Orderable {
   children =
   | TUndefined()
   | TVoid()
@@ -638,7 +663,7 @@ base class TPrimVoidKind uses Hashable, Orderable {
   }
 }
 
-base class TPrimValueKind uses Hashable, Orderable {
+base class TPrimValueKind uses XXHash64.Hashable, Orderable {
   children =
   | TNum()
   | TBool()
@@ -653,7 +678,9 @@ base class TPrimValueKind uses Hashable, Orderable {
   }
 }
 
-base class SType(pos: PosRange) uses Hashable, Orderable, Projectable<Int> {
+base class SType(
+  pos: PosRange,
+) uses XXHash64.Hashable, Orderable, Projectable<Int> {
   children =
   | TPrimVoid(TPrimVoidKind)
   | TPromise(TType)
@@ -686,7 +713,7 @@ class TField private (
   name: /* Invariant: name != kAlgebraicBranchFieldName */ String,
   isOptional: Bool,
   type: TType,
-) uses Hashable, Orderable, Projectable<String> {
+) uses XXHash64.Hashable, Orderable, Projectable<String> {
   static fun create(
     pos: PosRange,
     name: String,
@@ -733,7 +760,7 @@ class TField private (
 
 class TFields private (
   fields: InternalKeyedArrayMap<String, TField>,
-) uses Hashable, Orderable {
+) uses XXHash64.Hashable, Orderable {
   static fun empty(): this {
     static(InternalKeyedArrayMap::empty())
   }
@@ -825,7 +852,7 @@ class TFields private (
 
 class STypes private (
   private stypes: InternalKeyedArrayMap<Int, SType>,
-) uses Hashable, Orderable {
+) uses XXHash64.Hashable, Orderable {
   static fun empty(): this {
     static(InternalKeyedArrayMap::empty())
   }
@@ -982,7 +1009,7 @@ class TVar private (
 /* Unexpanded named type */
 // possibly with type arguments
 class TSInst(name: Name, targs: TArgs) extends TInst
-class TArgs(targs: Array<TType>) uses Hashable, Orderable
+class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
 
 /* Unexpanded intersection */
 //
@@ -996,11 +1023,11 @@ class TInter(ty1: TType, ty2: TType) extends TInst
 // 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
 class TUnion(ty1: TType, ty2: TType) extends TInst
 
-base class TInst uses Hashable, Orderable
+base class TInst uses XXHash64.Hashable, Orderable
 
 // Interpretation:
 // 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
-class TInsts(insts: Array<TInst>) uses Hashable, Orderable {
+class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
   static fun empty(): this {
     static(Array[])
   }
@@ -1022,7 +1049,7 @@ class TInsts(insts: Array<TInst>) uses Hashable, Orderable {
   }
 }
 
-value class Id(id: String) uses Hashable, Orderable, Show {
+value class Id(id: String) uses XXHash64.Hashable, Orderable, Show {
   fun toString(): String {
     this.id
   }
@@ -1033,14 +1060,18 @@ class TParamWithConstraint(
   fileName: String,
   id: Id,
   cstr: ?TType,
-) uses Hashable, Orderable
+) uses XXHash64.Hashable, Orderable
 
-class TParam(name: String, fileName: String, id: Id) uses Hashable, Orderable
+class TParam(
+  name: String,
+  fileName: String,
+  id: Id,
+) uses XXHash64.Hashable, Orderable
 
 class Clause(
   vars: ArraySet<TParam>,
   stypes: ?STypes,
-) uses Hashable, Orderable, Projectable<ArraySet<TParam>> {
+) uses XXHash64.Hashable, Orderable, Projectable<ArraySet<TParam>> {
   static fun undefined(undefinedPosRange: PosRange): this {
     static(
       ArraySet::empty(),
@@ -1123,7 +1154,7 @@ class Clause(
 // The type parameters are in DNF
 class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
-) uses Hashable, Orderable {
+) uses XXHash64.Hashable, Orderable {
   static fun empty(): this {
     Clauses(InternalKeyedArrayMap::empty())
   }
