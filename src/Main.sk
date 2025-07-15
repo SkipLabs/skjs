@@ -46,7 +46,7 @@ fun execHelp(args: Cli.ParseResults): void {
 fun main_no_exit(): void {
   saved = SKStore.newObstack();
   cmd = Cli.Command("skjs")
-    .about("SKJS skdb js development framework")
+    .about("SKJS SKIP development framework")
     .arg(
       Cli.Arg::bool("version")
         .short("V")
@@ -169,6 +169,8 @@ const checkArgs: Array<Cli.Arg> = Array[
     .positional()
     .repeatable()
     .about("Source files (default: src/**/*.ts)"),
+  Cli.Arg::string("init").about("Initializes persistent cache"),
+  Cli.Arg::string("data").about("Uses persistent cache"),
   Cli.Arg::bool("backtrace")
     .short("b")
     .long("backtrace")
@@ -195,111 +197,139 @@ fun execCheck(args: Cli.ParseResults): void {
   _ = execCheckWithStatus(args);
 }
 
+const sinkDirName: SKStore.DirName = SKStore.DirName::create("/sink/");
+
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
   baseUrlOpt = args.maybeGetString("baseUrl");
-  builtinsArgFileName = args.getString("builtins-file");
+  builtinsFileName = args.getString("builtins-file");
   srcFiles: Sequence<String> = args.getArray("src-file");
+  errorsDirName = SKStore.DirName::create("/check/errors/");
 
-  status = 0;
-  checker = Checker::create{
-    backtrace,
-    baseUrlOpt,
-    builtinsArgFileName,
-    srcFiles,
-  } match {
-  | Failure(err) ->
-    print_error(err);
-    throw Exit(2)
-  | Success(checker) -> checker
-  };
-  for (checkResult in checker.checkFiles()) {
-    (_fileName, parseErrorOpt, typeErrors) = checkResult;
-    parseErrorOpt match {
-    | None() -> void
-    | Some(err) ->
-      !status = 2;
-      print_error(err)
-    };
-    if (!typeErrors.isEmpty()) !status = 2;
-    for (error in typeErrors) {
-      print_string(checker.errorToString(error));
-    }
-  };
-  status
+  context = SKStore.runWithGcReturnContext(
+    SKStore.Context::create{},
+    (context) ~> {
+      files = Files::create(
+        context,
+        baseUrlOpt,
+        builtinsFileName,
+        srcFiles,
+      ) match {
+      | Failure(err) ->
+        print_error(err);
+        return SKStore.CStop(None())
+      | Success(checker) -> checker
+      };
+
+      _ = applyMap(
+        getInitDir(context),
+        SKStore.IID::keyType,
+        SKStore.IntFile::type,
+        context,
+        sinkDirName,
+        (context, _writer, _key, _values) ~> {
+          checker = Checker::create{context, backtrace, files};
+          _ = checker
+            .checkFiles(context)
+            .map(
+              SKStore.IID::keyType,
+              SKStore.IntFile::type,
+              context,
+              errorsDirName,
+              (context, writer, _key, valueIter) ~> {
+                (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
+                | None() ->
+                  invariant_violation(
+                    "Unexpected missing value in print-errors",
+                  )
+                | Some(CheckResult(_, x, y)) -> (x, y)
+                };
+                parseErrorOpt match {
+                | None() -> void
+                | Some(err) ->
+                  writer.set(SKStore.IID(2), SKStore.IntFile(1));
+                  print_error(err)
+                };
+                writer.set(SKStore.IID(2), SKStore.IntFile(1));
+
+                for (error in typeErrors) {
+                  print_string(checker.errorToString(context, error));
+                }
+              },
+            )
+        },
+      );
+
+      SKStore.CStop(None())
+    },
+  );
+  context.maybeGetEagerDir(errorsDirName) match {
+  | None() -> 2
+  | Some(dir) -> if (dir.getArrayRaw(SKStore.IID(2)).size() != 0) 2 else 0
+  }
 }
 
-type CheckResult = (String, ?String, Array<Error>); // (filename, parse error, type errors)
+class CheckResult(String, ?String, Array<Error>) extends SKStore.File
 
-mutable class Checker private {
+class Checker private {
   files: Files,
   parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
-  context: mutable SKStore.Context,
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
 } {
   static fun create{
+    context: mutable SKStore.Context,
     backtrace: Bool = false,
-    baseUrlOpt: ?String = None(),
-    builtinsArgFileName: String,
-    srcFiles: Sequence<String>,
-  }: Result<mutable this, String> {
-    rootOpt: ?DirName = None();
-    baseUrlOpt match {
-    | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
-    | None() -> void
-    };
-    if (srcFiles.isEmpty()) {
-      root = rootOpt match {
-      | Some(root) -> root
-      | None() -> DirName::create(FileSystem.realpath("."))
-      };
-      !rootOpt = Some(root);
-      srcDir = `${root}src/`;
-      if (!FileSystem.exists(srcDir)) {
-        return Failure(`Could not find src/ dir in: ${root}`);
-      };
-      !srcFiles = FileSystem.readFilesRecursive(srcDir, fileName ->
-        fileName.endsWith(".ts")
-      );
-    } else {
-      !srcFiles = srcFiles.map(f -> Path.resolve(f));
-    };
-    if (srcFiles.isEmpty()) {
-      return Failure("No source files!");
-    };
-    builtinsFileName = FileName::create(Path.resolve(builtinsArgFileName));
-    if (!builtinsFileName.exists()) {
-      return Failure(`Builtins not found: ${builtinsFileName}`);
-    };
-    !srcFiles = Array[srcFiles, Array[builtinsFileName.toString()]].flatten();
-
-    context = SKStore.Context::mcreate{};
-    files = Files::create(context, srcFiles);
+    files: Files,
+  }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
     parsedFiles = files.parse(context, newLinesMap);
-    fileDefsMap = FileDefsMap::create(context, index, rootOpt, parsedFiles);
-    builtinDefs = fileDefsMap.get(context, builtinsFileName);
+    fileDefsMap = FileDefsMap::create(
+      context,
+      index,
+      files.rootOpt,
+      parsedFiles,
+    );
+    builtinDefs = fileDefsMap.get(context, files.builtinsFileName);
     builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
+    builtinsFileName = files.builtinsFileName;
     defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
     tenv = TEnv{defMap};
     checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
-    Success(mutable static{files, parsedFiles, context, checker, newLinesMap})
+    static{files, parsedFiles, checker, newLinesMap}
   }
-  mutable fun checkFiles(): mutable Iterator<CheckResult> {
-    for (fileName in this.files.srcFiles) {
-      parsedFile = this.parsedFiles.get(this.context, SKStore.SID(fileName));
-      parsedFile.value match {
-      | PROk(defs) ->
-        errors = this.checker.check(this.context, defs);
-        yield (fileName, None(), errors)
-      | PRError(err) -> yield (fileName, Some(err), Array[])
-      }
-    };
+  fun checkFiles(
+    context: mutable SKStore.Context,
+  ): SKStore.EHandle<SKStore.SID, CheckResult> {
+    this.parsedFiles.map(
+      SKStore.SID::keyType,
+      CheckResult::type,
+      context,
+      SKStore.DirName::create("/check-results/"),
+      (context, writer, fileNameKey, valueIter) ~> {
+        parsedFile = valueIter.getUnique() match {
+        | None() -> invariant_violation("File not parsed")
+        | Some(x) -> x
+        };
+        parsedFile.value match {
+        | PROk(defs) ->
+          errors = this.checker.check(context, defs);
+          writer.set(
+            fileNameKey,
+            CheckResult(fileNameKey.value, None(), errors),
+          )
+        | PRError(err) ->
+          writer.set(
+            fileNameKey,
+            CheckResult(fileNameKey.value, Some(err), Array[]),
+          )
+        }
+      },
+    );
   }
-  mutable fun errorToString(err: Error): String {
-    err.toString(this.context, this.newLinesMap)
+  fun errorToString(context: mutable SKStore.Context, err: Error): String {
+    err.toString(context, this.newLinesMap)
   }
 }
 
