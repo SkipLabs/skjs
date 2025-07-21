@@ -21,7 +21,7 @@ check-fmt:
 
 .PHONY: check-sh
 check-sh:
-	find . -name "*.sh" -not -path "./hugo/*" | xargs shellcheck
+	git ls-files "*.sh" | xargs shellcheck
 
 .PHONY: clean
 clean:
