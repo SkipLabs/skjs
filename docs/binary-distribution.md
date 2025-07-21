@@ -1,15 +1,15 @@
 # SKJS Binary Distribution
 
-This document describes the binary distribution system for SKJS, which automatically builds and publishes pre-compiled binaries through GitHub Actions.
+This document describes the binary distribution system for SKJS, which automatically builds and publishes pre-compiled binaries through CircleCI.
 
 ## Overview
 
-SKJS provides pre-built binaries through GitHub Actions:
+SKJS provides pre-built binaries through CircleCI:
 
-- **GitHub Actions Artifacts** - 30-day retention with REST API access
-- **GitHub Releases** - Permanent storage for tagged versions
+- **CircleCI Artifacts** - 30-day retention with REST API access (requires authentication)
+- **Private access** - All binaries require CircleCI token for access
 
-This approach eliminates the need to commit binaries to the repository while providing reliable access to pre-built SKJS binaries.
+This approach eliminates the need to commit binaries to the repository while maintaining control over binary distribution through authentication.
 
 ## Binary Naming Convention
 
@@ -24,67 +24,58 @@ Examples:
 
 Each binary is accompanied by a metadata JSON file with the `.json` extension containing build information.
 
-## Distribution Methods
+## Distribution Method
 
-### 1. GitHub Actions Artifacts
+### CircleCI Artifacts
 
-**Access Method**: REST API (optional authentication)
+**Access Method**: REST API with required authentication
 **Retention**: 30 days
-**Best for**: Development and CI/CD workflows
+**Best for**: Controlled binary distribution
 
-The GitHub Actions workflow (`.github/workflows/build-and-test.yml`) automatically:
+The CircleCI configuration (`.circleci/config.yml`) automatically:
 - Builds release binaries on every push
 - Creates versioned artifacts with metadata
 - Stores them with 30-day retention
-- Provides API access for downloading
+- Provides authenticated API access for downloading
 
-#### Fetching from GitHub Actions
+#### Fetching from CircleCI
 
 Use the provided script:
 ```bash
-# Public repo (no token needed)
-./scripts/fetch-binary.sh
+# Fetch latest binary (token required)
+./scripts/fetch-binary.sh --token YOUR_CIRCLECI_TOKEN
 
-# With token (higher rate limits)
-./scripts/fetch-binary.sh --token YOUR_GITHUB_TOKEN
+# Fetch specific commit
+./scripts/fetch-binary.sh --commit abc123def --token YOUR_CIRCLECI_TOKEN
 ```
 
 Or manually via API:
 ```bash
-# Get workflow runs
-curl "https://api.github.com/repos/SkipLabs/skjs/actions/runs?branch=main&status=completed"
+# Get recent pipelines
+curl -H "Circle-Token: YOUR_TOKEN" \
+  "https://circleci.com/api/v2/project/github/SkipLabs/skjs/pipeline?branch=main"
 
 # Download artifacts (see script for full flow)
 ```
 
-### 2. GitHub Releases
-
-**Access Method**: Direct download (public)
-**Retention**: Permanent
-**Best for**: Stable releases, production use
-
-Releases are automatically created for git tags and include:
-- Versioned binaries for all platforms
-- Release notes
-- Public download links (no authentication required)
-
 ## CI/CD Configuration
 
-### GitHub Actions Setup
+### CircleCI Setup
 
-The `.github/workflows/build-and-test.yml` file contains three jobs:
+The `.circleci/config.yml` file contains two jobs:
 
-1. **test**: Runs tests and code quality checks
-2. **build-binaries**: Builds release binaries and stores as artifacts
-3. **create-release**: Creates GitHub releases for tagged versions
+1. **build_and_test**: Runs tests and code quality checks
+2. **build_binaries**: Builds release binaries and stores as artifacts
 
 Key features:
 - Builds only after tests pass
 - Creates artifacts with metadata
-- Matrix builds for multiple platforms (extensible)
-- Artifact uploads with 30-day retention
-- Automatic release creation for tagged versions
 - Uses proper versioning and tagging
+- Requires authentication for artifact access
+
+### GitHub Actions
+
+GitHub Actions (`.github/workflows/build-and-test.yml`) is used only for running tests on pull requests and pushes, without binary publishing.
 
 ## Local Development
 
@@ -124,43 +115,38 @@ skargo build --release
 Add the fetch script to your project and call it in your build process:
 
 ```dockerfile
-# In Dockerfile (public repo)
+# In Dockerfile
 COPY scripts/fetch-binary.sh /tmp/
-RUN /tmp/fetch-binary.sh --output /usr/local/bin/skjs
-
-# With GitHub token for higher rate limits
-RUN /tmp/fetch-binary.sh --token $GITHUB_TOKEN --output /usr/local/bin/skjs
+RUN /tmp/fetch-binary.sh --token $CIRCLECI_TOKEN --output /usr/local/bin/skjs
 ```
 
 ### Build Script Integration
 
 ```bash
-# In your build script (public repo)
-./scripts/fetch-binary.sh
-./skjs check src/*.ts
-
-# With token for higher rate limits
-./scripts/fetch-binary.sh --token $GITHUB_TOKEN
+# In your build script
+./scripts/fetch-binary.sh --token $CIRCLECI_TOKEN
 ./skjs check src/*.ts
 ```
 
-### Direct Release Download
+### Environment Variable Setup
 
 ```bash
-# Download from GitHub releases (no token needed)
-curl -L -o skjs https://github.com/SkipLabs/skjs/releases/latest/download/skjs_linux_amd64
-chmod +x skjs
+# Set CircleCI token in your environment
+export CIRCLECI_TOKEN="your-token-here"
+
+# Then fetch without specifying token
+./scripts/fetch-binary.sh
 ```
 
 ## Authentication and Security
 
 ### Required Tokens
 
-**GitHub Token** (Optional):
-- **Purpose**: Higher API rate limits, access to private repositories
-- **Scope**: `repo` (for private repos) or `public_repo` (for public repos)
-- **Set via**: Environment variable `GITHUB_TOKEN` or command-line `--token`
-- **Note**: Public repositories work without tokens (with lower rate limits)
+**CircleCI Token** (Required):
+- **Purpose**: Access to CircleCI artifacts
+- **Scope**: Read-only project access
+- **Set via**: Environment variable `CIRCLECI_TOKEN` or command-line `--token`
+- **Note**: All binary downloads require authentication
 
 ### Security Best Practices
 
@@ -196,47 +182,44 @@ To add a new platform, update the CI/CD matrix configuration and ensure the Skip
    - Check token permissions
 
 2. **"Binary download failed"**
-   - Check GitHub Actions build status
-   - Verify the branch/commit exists and has successful workflows
+   - Check CircleCI build status
+   - Verify the branch/commit exists and has successful builds
    - Ensure artifact retention hasn't expired (30 days)
 
-3. **"GitHub API error"**
-   - Check API rate limits (use token for higher limits)
-   - Verify token permissions if using private repository
-   - Ensure the repository name and workflow names are correct
-   - Check that jq and unzip are installed
+3. **"CircleCI API error"**
+   - Verify token is valid and has correct permissions
+   - Check if the project exists and builds are running
+   - Ensure jq is installed for script usage
 
 ### Debug Mode
 
 Enable verbose output in fetch script:
 ```bash
 set -x  # Add to script for debug output
-./scripts/fetch-binary.sh
+./scripts/fetch-binary.sh --token YOUR_TOKEN
 ```
 
 ### Fallback Options
 
 If automated fetching fails:
 1. Build locally using `./scripts/build-release.sh`
-2. Download artifacts manually from GitHub Actions web interface
-3. Download from GitHub releases (for tagged versions)
+2. Download artifacts manually from CircleCI web interface (requires login)
 
 ## Monitoring and Maintenance
 
 ### Build Status
 
 Monitor builds at:
-- GitHub Actions: Repository → Actions tab
-- Workflow status: https://github.com/SkipLabs/skjs/actions
+- CircleCI: https://circleci.com/gh/SkipLabs/skjs
+- GitHub Actions: Repository → Actions tab (tests only)
 
 ### Artifact Retention
 
-- GitHub Actions artifacts: 30 days (configurable)
-- GitHub release assets: Permanent
+- CircleCI artifacts: 30 days (configurable)
 
 ### Cleanup
 
-Old artifacts are automatically cleaned up based on GitHub's retention policies.
+Old artifacts are automatically cleaned up based on CircleCI's retention policies.
 
 ## Migration Guide
 
@@ -260,11 +243,8 @@ chmod +x skjs-binary
 
 After (automated):
 ```bash
-# Automated fetch (public repo)
-./scripts/fetch-binary.sh
-
-# Or from releases
-curl -L -o skjs https://github.com/SkipLabs/skjs/releases/latest/download/skjs_linux_amd64
+# Automated fetch (requires token)
+./scripts/fetch-binary.sh --token $CIRCLECI_TOKEN
 ```
 
 ## Contributing

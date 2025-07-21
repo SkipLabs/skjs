@@ -1,10 +1,14 @@
 version: 2.1
 
-jobs:
-  build:
+executors:
+  skip-executor:
     docker:
       - image: skiplabs/skip:latest
     resource_class: medium
+
+jobs:
+  build_and_test:
+    executor: skip-executor
     steps:
       - checkout
       - run:
@@ -31,7 +35,64 @@ jobs:
       - store_test_results:
           path: ~/test-results/skjs.xml
 
+  build_binaries:
+    executor: skip-executor
+    steps:
+      - checkout
+      - run:
+          name: Clone Skip repository
+          command: |
+            git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
+      - run:
+          name: Build release binary
+          command: |
+            skargo build --release
+      - run:
+          name: Create artifacts directory and prepare binaries
+          command: |
+            mkdir -p artifacts
+            
+            # Determine platform and architecture
+            PLATFORM="linux"
+            ARCH="amd64"
+            
+            # Create versioned binary name
+            BINARY_NAME="skjs_${CIRCLE_SHA1}_${PLATFORM}_${ARCH}"
+            
+            # Copy binary with versioned name
+            cp target/host/release/skjs "artifacts/${BINARY_NAME}"
+            
+            # Create metadata JSON
+            cat > "artifacts/${BINARY_NAME}.json" \<< EOF
+            {
+              "commit": "${CIRCLE_SHA1}",
+              "branch": "${CIRCLE_BRANCH}",
+              "build_num": "${CIRCLE_BUILD_NUM}",
+              "platform": "${PLATFORM}",
+              "architecture": "${ARCH}",
+              "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+              "version": "0.1.0",
+              "job_id": "${CIRCLE_WORKFLOW_JOB_ID}",
+              "build_url": "${CIRCLE_BUILD_URL}"
+            }
+            EOF
+            
+            # Create latest symlink for easy access
+            ln -sf "${BINARY_NAME}" "artifacts/skjs_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}_latest"
+            
+            # List artifacts for verification
+            ls -la artifacts/
+      - store_artifacts:
+          path: artifacts/
+          destination: binaries
+
 workflows:
   build_and_test:
     jobs:
-      - build
+      - build_and_test
+      - build_binaries:
+          requires:
+            - build_and_test
+          filters:
+            branches:
+              only: /.*/

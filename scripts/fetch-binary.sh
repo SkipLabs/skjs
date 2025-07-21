@@ -1,12 +1,12 @@
 #!/bin/bash
 
 # SKJS Binary Fetcher
-# Fetches pre-built SKJS binaries from GitHub Actions artifacts
+# Fetches pre-built SKJS binaries from CircleCI artifacts
 
 set -euo pipefail
 
 # Configuration
-GITHUB_REPO="SkipLabs/skjs"
+CIRCLECI_PROJECT="github/SkipLabs/skjs"
 DEFAULT_PLATFORM="linux"
 DEFAULT_ARCH="amd64"
 
@@ -39,32 +39,29 @@ usage() {
     cat << EOF
 Usage: $0 [OPTIONS]
 
-Fetch pre-built SKJS binaries from GitHub Actions artifacts.
+Fetch pre-built SKJS binaries from CircleCI artifacts.
 
 OPTIONS:
-    -b, --branch BRANCH     Branch to fetch from (default: main)  
+    -b, --branch BRANCH     Branch to fetch from (default: main)
     -c, --commit SHA        Specific commit SHA to fetch
     -p, --platform PLATFORM Platform (default: linux)
     -a, --arch ARCH         Architecture (default: amd64)
     -o, --output PATH       Output path for binary (default: ./skjs)
-    -t, --token TOKEN       GitHub token (optional for public repos)
+    -t, --token TOKEN       CircleCI API token (required)
     -h, --help              Show this help message
 
 EXAMPLES:
-    # Fetch latest binary from main branch (public repo)
-    $0
-
-    # Fetch with GitHub token (higher rate limits)
-    $0 --token YOUR_GITHUB_TOKEN
+    # Fetch latest binary from main branch
+    $0 --token YOUR_CIRCLECI_TOKEN
 
     # Fetch specific commit
-    $0 --commit abc123def
+    $0 --commit abc123def --token YOUR_CIRCLECI_TOKEN
 
     # Fetch to specific location
-    $0 --output /usr/local/bin/skjs
+    $0 --output /usr/local/bin/skjs --token YOUR_CIRCLECI_TOKEN
 
 ENVIRONMENT VARIABLES:
-    GITHUB_TOKEN            GitHub token (optional)
+    CIRCLECI_TOKEN          CircleCI API token
 EOF
 }
 
@@ -74,7 +71,7 @@ COMMIT=""
 PLATFORM="$DEFAULT_PLATFORM"
 ARCH="$DEFAULT_ARCH"
 OUTPUT_PATH="./skjs"
-GITHUB_TOKEN="${GITHUB_TOKEN:-}"
+CIRCLECI_TOKEN="${CIRCLECI_TOKEN:-}"
 
 # Parse command line arguments
 while [[ $# -gt 0 ]]; do
@@ -100,7 +97,7 @@ while [[ $# -gt 0 ]]; do
             shift 2
             ;;
         -t|--token)
-            GITHUB_TOKEN="$2"
+            CIRCLECI_TOKEN="$2"
             shift 2
             ;;
         -h|--help)
@@ -115,101 +112,69 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Function to fetch binary from GitHub Actions
-fetch_from_github() {
+# Function to fetch binary from CircleCI
+fetch_from_circleci() {
     local branch_or_commit="$1"
     
-    log "Fetching binary from GitHub Actions for branch/commit: $branch_or_commit"
-    
-    # Set up authentication headers
-    local auth_args=()
-    if [[ -n "$GITHUB_TOKEN" ]]; then
-        auth_args=(-H "Authorization: Bearer $GITHUB_TOKEN")
+    if [[ -z "$CIRCLECI_TOKEN" ]]; then
+        error "CircleCI token is required. Set CIRCLECI_TOKEN environment variable or use --token option."
+        return 1
     fi
     
-    # GitHub API base URL
-    local api_base="https://api.github.com/repos/${GITHUB_REPO}"
+    log "Fetching binary from CircleCI for branch/commit: $branch_or_commit"
+    
+    # Query CircleCI API for recent builds
+    local api_url="https://circleci.com/api/v2/project/${CIRCLECI_PROJECT}/pipeline"
+    local pipeline_response
     
     if [[ -n "$COMMIT" ]]; then
-        # Fetch specific commit - get workflow runs for that commit
-        log "Looking for workflow runs for commit: $COMMIT"
-        local runs_url="${api_base}/actions/runs?head_sha=${COMMIT}&status=completed&conclusion=success"
+        # Fetch specific commit
+        pipeline_response=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "${api_url}?branch=${BRANCH}" | \
+                           jq -r ".items[] | select(.vcs.revision == \"${COMMIT}\") | .id" | head -1)
     else
         # Fetch latest from branch
-        log "Looking for latest successful workflow runs on branch: $branch_or_commit"
-        local runs_url="${api_base}/actions/runs?branch=${branch_or_commit}&status=completed&conclusion=success"
+        pipeline_response=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "${api_url}?branch=${branch_or_commit}" | \
+                           jq -r '.items[0].id')
     fi
     
-    # Get recent successful workflow runs
-    local workflow_run_id
-    workflow_run_id=$(curl -s "${auth_args[@]}" "$runs_url" | \
-                      jq -r '.workflow_runs[] | select(.name == "Build and Test SKJS") | .id' | head -1)
-    
-    if [[ -z "$workflow_run_id" || "$workflow_run_id" == "null" ]]; then
-        error "No successful workflow runs found for branch/commit: $branch_or_commit"
-        warn "Make sure the workflow has completed successfully"
+    if [[ -z "$pipeline_response" || "$pipeline_response" == "null" ]]; then
+        error "No pipelines found for branch/commit: $branch_or_commit"
         return 1
     fi
     
-    log "Found workflow run ID: $workflow_run_id"
+    # Get workflows for the pipeline
+    local workflow_id
+    workflow_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+                  "https://circleci.com/api/v2/pipeline/${pipeline_response}/workflow" | \
+                  jq -r '.items[0].id')
     
-    # Get artifacts for the workflow run
-    local artifacts_url="${api_base}/actions/runs/${workflow_run_id}/artifacts"
-    local artifact_info
-    artifact_info=$(curl -s "${auth_args[@]}" "$artifacts_url" | \
-                    jq -r ".artifacts[] | select(.name | contains(\"skjs-${PLATFORM}-${ARCH}\")) | {id: .id, download_url: .archive_download_url}")
+    # Get jobs for the workflow
+    local job_id
+    job_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+             "https://circleci.com/api/v2/workflow/${workflow_id}/job" | \
+             jq -r '.items[] | select(.name == "build_binaries") | .job_number')
     
-    if [[ -z "$artifact_info" || "$artifact_info" == "null" ]]; then
-        error "No artifacts found for platform: ${PLATFORM}-${ARCH}"
+    if [[ -z "$job_id" || "$job_id" == "null" ]]; then
+        error "No build_binaries job found in the workflow"
         return 1
     fi
     
-    local artifact_id
-    local download_url
-    artifact_id=$(echo "$artifact_info" | jq -r '.id')
-    download_url=$(echo "$artifact_info" | jq -r '.download_url')
+    # Get artifacts for the job
+    local artifacts_url="https://circleci.com/api/v2/project/${CIRCLECI_PROJECT}/${job_id}/artifacts"
+    local binary_url
+    binary_url=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "$artifacts_url" | \
+                 jq -r ".items[] | select(.path | contains(\"skjs_\") and contains(\"${PLATFORM}_${ARCH}\") and (contains(\".json\") | not)) | .url")
     
-    log "Found artifact ID: $artifact_id"
-    log "Downloading artifact..."
-    
-    # Create temporary directory for extraction
-    local temp_dir
-    temp_dir=$(mktemp -d)
-    local zip_file="${temp_dir}/artifact.zip"
-    
-    # Download the artifact (it's a ZIP file)
-    if [[ -n "$GITHUB_TOKEN" ]]; then
-        curl -L -H "Authorization: Bearer $GITHUB_TOKEN" "$download_url" -o "$zip_file"
-    else
-        curl -L "$download_url" -o "$zip_file"
-    fi
-    
-    if [[ ! -f "$zip_file" ]]; then
-        error "Failed to download artifact"
-        rm -rf "$temp_dir"
+    if [[ -z "$binary_url" || "$binary_url" == "null" ]]; then
+        error "No binary found for platform: ${PLATFORM}_${ARCH}"
         return 1
     fi
     
-    # Extract the ZIP file
-    log "Extracting artifact..."
-    unzip -q "$zip_file" -d "$temp_dir"
+    log "Downloading binary from: $binary_url"
     
-    # Find the binary file (look for skjs_* pattern, not .json)
-    local binary_file
-    binary_file=$(find "$temp_dir" -name "skjs_*" -type f ! -name "*.json" | head -1)
-    
-    if [[ -z "$binary_file" ]]; then
-        error "No binary found in artifact"
-        rm -rf "$temp_dir"
-        return 1
-    fi
-    
-    # Copy binary to output location
-    cp "$binary_file" "$OUTPUT_PATH"
+    # Download the binary
+    curl -L -H "Circle-Token: $CIRCLECI_TOKEN" "$binary_url" -o "$OUTPUT_PATH"
     chmod +x "$OUTPUT_PATH"
-    
-    # Clean up
-    rm -rf "$temp_dir"
     
     success "Binary downloaded to: $OUTPUT_PATH"
     
@@ -228,7 +193,7 @@ main() {
     log "Platform: ${PLATFORM}_${ARCH}"
     log "Output: $OUTPUT_PATH"
     
-    # Use GitHub Actions method
+    # Use CircleCI method
     local target
     if [[ -n "$COMMIT" ]]; then
         target="$COMMIT"
@@ -236,8 +201,8 @@ main() {
         target="$BRANCH"
     fi
     
-    if ! fetch_from_github "$target"; then
-        error "Failed to fetch binary from GitHub Actions"
+    if ! fetch_from_circleci "$target"; then
+        error "Failed to fetch binary using CircleCI method"
         exit 1
     fi
     
@@ -252,11 +217,6 @@ fi
 
 if ! command -v jq &> /dev/null; then
     error "jq is required but not installed"
-    exit 1
-fi
-
-if ! command -v unzip &> /dev/null; then
-    error "unzip is required but not installed"
     exit 1
 fi
 
