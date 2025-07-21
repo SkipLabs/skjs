@@ -1613,14 +1613,14 @@ class TypeChecker{
           Expr(pos, Binop(BOAssignment(), e1, Expr(pos, Binop(assOp, e1, e2)))),
         )
 
-      | SKJS.BOAs() -> notSupported(pos)
+      | BOAs() -> notSupported(pos)
       | BOMultiplication()
       | BODivision()
       | BORemainder()
       | BOSubtraction()
-      | SKJS.BOBitwiseAnd()
-      | SKJS.BOBitwiseOr()
-      | SKJS.BOBitwiseXor()
+      | BOBitwiseAnd()
+      | BOBitwiseOr()
+      | BOBitwiseXor()
       | BOLeftShift()
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
@@ -1740,9 +1740,9 @@ class TypeChecker{
         ),
       )
 
-    | SKJS.As _ -> notSupported(pos)
-    | SKJS.Async _ -> typingError(Array[(pos, "TODO: async closures")])
-    | SKJS.Await(ae) ->
+    | As _ -> notSupported(pos)
+    | Async _ -> typingError(Array[(pos, "TODO: async closures")])
+    | Await(ae) ->
       aeType = this.expr(env, ae);
       aeType.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
@@ -1753,7 +1753,7 @@ class TypeChecker{
           Array[(pos, "Invalid await"), (aeType.pos, "This is not a promise")],
         )
       }
-    | SKJS.EIf(e1, e2, e3) ->
+    | EIf(e1, e2, e3) ->
       cond = this.expr(env, e1);
       left = this.expr(env, e2);
       right = this.expr(env, e3);
@@ -1765,11 +1765,11 @@ class TypeChecker{
         TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
       );
       TType::union(env.subst, this.tenv, left, right)
-    | SKJS.KeyOf _ -> notSupported(pos)
-    | SKJS.Params _ ->
+    | KeyOf _ -> notSupported(pos)
+    | Params _ ->
       invariant_violation("Internal error: Params should not be an expression")
-    | SKJS.Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
-    | SKJS.Spread _ -> typingError(Array[(pos, "TODO: ...")])
+    | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
+    | Spread _ -> typingError(Array[(pos, "TODO: ...")])
     }
   }
 
