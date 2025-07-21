@@ -269,7 +269,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   }
 }
 
-class CheckResult(String, ?String, Array<Error>) extends SKStore.File
+class CheckResult(
+  fileName: String,
+  parseError: ?String,
+  errors: Array<Error>,
+) extends SKStore.File
 
 class Checker private {
   files: Files,
