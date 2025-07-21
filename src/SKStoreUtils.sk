@@ -1,0 +1,58 @@
+module SKJS;
+
+const initDirName: SKStore.DirName = SKStore.DirName::create("/init/");
+
+fun getInitDir(
+  context: mutable SKStore.Context,
+): SKStore.EHandle<SKStore.IID, SKStore.IntFile> {
+  context.unsafeMaybeGetEagerDir(initDirName) match {
+  | None() ->
+    context.mkdir(
+      SKStore.IID::keyType,
+      SKStore.IntFile::type,
+      initDirName,
+      Array[(SKStore.IID(0), SKStore.IntFile(0))],
+    )
+  | Some _ ->
+    SKStore.EHandle(SKStore.IID::keyType, SKStore.IntFile::type, initDirName)
+  }
+}
+
+fun applyMap<
+  K: SKStore.Key,
+  V: SKStore.File,
+  K2: SKStore.Key,
+  V2: SKStore.File,
+>(
+  dir: SKStore.EHandle<K, V>,
+  keyType: SKStore.Key ~> K2,
+  type: SKStore.File ~> V2,
+  context: mutable SKStore.Context,
+  dirName: SKStore.DirName,
+  f: (
+    mutable SKStore.Context,
+    mutable SKStore.TWriter<K2, V2>,
+    K,
+    mutable SKStore.NonEmptyIterator<V>,
+  ) ~> void,
+): SKStore.EHandle<K2, V2> {
+  context.unsafeMaybeGetEagerDir(dirName) match {
+  | None() -> dir.map(keyType, type, context, dirName, f)
+  | Some _ -> SKStore.EHandle(keyType, type, dirName)
+  }
+}
+
+fun lazyDir<K: SKStore.Key, V: SKStore.File>(
+  keyType: SKStore.Key ~> K,
+  type: SKStore.File ~> V,
+  context: mutable SKStore.Context,
+  dirName: SKStore.DirName,
+  f: (mutable SKStore.Context, SKStore.LHandle<K, V>, K) ~> Array<V>,
+): SKStore.LHandle<K, V> {
+  context.maybeGetLazyDir(dirName) match {
+  | None() -> SKStore.LHandle::create(keyType, type, context, dirName, f)
+  | Some _ -> SKStore.LHandle(keyType, type, dirName)
+  }
+}
+
+module end;
