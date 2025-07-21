@@ -19,52 +19,63 @@ const parseErrorKey: SKStore.SID = SKStore.SID("");
 
 class Files(
   isInit: Bool,
-  nodeModuleFiles: Array<String>,
-  srcFiles: UnorderedSet<String>,
+  rootOpt: ?DirName,
+  builtinsFileName: FileName,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
 ) {
   static fun create(
     context: mutable SKStore.Context,
-    srcFiles: Sequence<String>,
-  ): Files {
+    baseUrlOpt: ?String,
+    builtinsFileNameStr: String,
+    srcFileSeq: Sequence<String>,
+  ): Result<Files, String> {
+    builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
+    rootOpt: ?DirName = None();
+    baseUrlOpt match {
+    | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
+    | None() -> void
+    };
+    if (srcFileSeq.isEmpty()) {
+      root = rootOpt match {
+      | Some(root) -> root
+      | None() -> DirName::create(FileSystem.realpath("."))
+      };
+      !rootOpt = Some(root);
+      srcDir = `${root}src/`;
+      if (!FileSystem.exists(srcDir)) {
+        return Failure(`Could not find src/ dir in: ${root}`);
+      };
+      !srcFileSeq = FileSystem.readFilesRecursive(srcDir, fileName ->
+        fileName.endsWith(".ts")
+      );
+    } else {
+      !srcFileSeq = srcFileSeq.map(f -> Path.resolve(f));
+    };
+    if (srcFileSeq.isEmpty()) {
+      return Failure("No source files!");
+    };
+    if (!builtinsFileName.exists()) {
+      return Failure(`Builtins not found: ${builtinsFileName}`);
+    };
+    srcFiles = Array[
+      srcFileSeq,
+      Array[builtinsFileName.toString()],
+    ].flatten().collect(SortedSet);
+
     filesDirName = SKStore.DirName::create("/skjs/files/");
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
-    fileDir = context.mkdir(
-      SKStore.SID::keyType,
-      SKStore.StringFile::type,
-      filesDirName,
-    );
-
-    // This adds the nearest node_modules/ dir for each source file
-    // Similar to FileSystem.findNearestFile but with a cache
-    searchedDirsForNodeModule = mutable UnorderedSet[];
-    nodeModuleDirs = mutable Vector[];
-    for (fileName in srcFiles) {
-      dirName = Path.dirname(fileName);
-      while (!searchedDirsForNodeModule.contains(dirName)) {
-        possibleNodeModuleDir = Path.join(dirName, "node_modules");
-        searchedDirsForNodeModule.add(dirName);
-        if (FileSystem.exists(possibleNodeModuleDir)) {
-          nodeModuleDirs.push(possibleNodeModuleDir);
-          break void;
-        };
-        if (Path.isRoot(dirName)) break void;
-        !dirName = Path.parentname(dirName);
-      }
-    };
-    nodeModuleFiles = nodeModuleDirs
-      .flatMap(nodeModuleDir ->
-        FileSystem.readFilesRecursive(nodeModuleDir, fileName ~>
-          fileName.endsWith(".ts")
-        )
+    fileDir = if (isInit) {
+      context.mkdir(
+        SKStore.SID::keyType,
+        SKStore.StringFile::type,
+        filesDirName,
       )
-      .toArray();
-    for (fileName in nodeModuleFiles) {
-      fileDir.writeArray(
-        context,
-        SKStore.SID(fileName),
-        Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
-      );
+    } else {
+      SKStore.EHandle(
+        SKStore.SID::keyType,
+        SKStore.StringFile::type,
+        filesDirName,
+      )
     };
     for (fileName in srcFiles) {
       fileDir.writeArray(
@@ -73,7 +84,13 @@ class Files(
         Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
       );
     };
-    Files(isInit, nodeModuleFiles, srcFiles.collect(UnorderedSet), fileDir)
+    for (kv in fileDir.items(context)) {
+      fileName = kv.i0.value;
+      if (!srcFiles.contains(fileName)) {
+        fileDir.writeArray(context, kv.i0, Array[]);
+      };
+    };
+    Success(Files(isInit, rootOpt, builtinsFileName, fileDir))
   }
 
   fun parse(
@@ -87,9 +104,9 @@ class Files(
       SKStore.DirName::create("/skjs/parsed_with_errors/"),
       (context, writer, key, contentIter) ~> {
         fileName = key.value;
-        if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
-          return void;
-        };
+        //        if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
+        //          return void;
+        //        };
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content);
         parser = mutable Parser(lexer);
