@@ -47,6 +47,8 @@ jobs:
           name: Build release binary
           command: |
             skargo build --release
+            echo "Checking if binary was created:"
+            ls -la target/host/release/
       - run:
           name: Create artifacts directory and prepare binaries
           command: |
@@ -89,10 +91,8 @@ jobs:
 workflows:
   build_and_test:
     jobs:
-      - build_and_test
+      - build_and_test:
+          name: build
       - build_binaries:
           requires:
-            - build_and_test
-          filters:
-            branches:
-              only: /.*/
+            - build
