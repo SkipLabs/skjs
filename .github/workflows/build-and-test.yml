@@ -1,0 +1,149 @@
+name: Build and Test SKJS
+
+on:
+  push:
+    branches: [ main, develop ]
+    tags: [ 'v*' ]
+  pull_request:
+    branches: [ main ]
+
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    container:
+      image: skiplabs/skip:latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Check code formatting
+        run: make check-fmt
+
+      - name: Check shell scripts
+        run: make check-sh
+
+      - name: Clone Skip repository
+        run: |
+          git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
+
+      - name: Run checks
+        run: skargo check
+
+      - name: Run tests
+        run: |
+          mkdir -p test-results
+          skargo test --jobs 8 --junitxml test-results/skjs.xml
+
+      - name: Upload test results
+        uses: actions/upload-artifact@v3
+        if: always()
+        with:
+          name: test-results
+          path: test-results/
+
+  build-binaries:
+    name: Build Binaries
+    needs: test
+    runs-on: ubuntu-latest
+    container:
+      image: skiplabs/skip:latest
+    permissions:
+      contents: read
+    strategy:
+      matrix:
+        platform: [linux]
+        arch: [amd64]
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Clone Skip repository
+        run: |
+          git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
+
+      - name: Build release binary
+        run: skargo build --release
+
+      - name: Prepare artifacts
+        run: |
+          mkdir -p artifacts
+          
+          # Get commit SHA and branch info
+          COMMIT_SHA="${GITHUB_SHA}"
+          BRANCH_NAME="${GITHUB_REF_NAME}"
+          
+          # Create versioned binary name
+          BINARY_NAME="skjs_${COMMIT_SHA}_${{ matrix.platform }}_${{ matrix.arch }}"
+          
+          # Copy binary with versioned name
+          cp target/host/release/skjs "artifacts/${BINARY_NAME}"
+          
+          # Create metadata JSON
+          cat > "artifacts/${BINARY_NAME}.json" << EOF
+          {
+            "commit": "${COMMIT_SHA}",
+            "branch": "${BRANCH_NAME}",
+            "build_num": "${GITHUB_RUN_NUMBER}",
+            "platform": "${{ matrix.platform }}",
+            "architecture": "${{ matrix.arch }}",
+            "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+            "version": "0.1.0",
+            "job_id": "${GITHUB_JOB}",
+            "build_url": "${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}",
+            "workflow": "${GITHUB_WORKFLOW}",
+            "actor": "${GITHUB_ACTOR}"
+          }
+          EOF
+          
+          # Create latest symlink for easy access
+          ln -sf "${BINARY_NAME}" "artifacts/skjs_${BRANCH_NAME}_${{ matrix.platform }}_${{ matrix.arch }}_latest"
+          
+          # List artifacts for verification
+          ls -la artifacts/
+          
+          # Set outputs for other jobs
+          echo "binary_name=${BINARY_NAME}" >> $GITHUB_OUTPUT
+          echo "commit_sha=${COMMIT_SHA}" >> $GITHUB_OUTPUT
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v3
+        with:
+          name: skjs-${{ matrix.platform }}-${{ matrix.arch }}
+          path: artifacts/
+          retention-days: 30
+
+  create-release:
+    name: Create Release
+    if: startsWith(github.ref, 'refs/tags/')
+    needs: build-binaries
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Download all artifacts
+        uses: actions/download-artifact@v3
+        with:
+          path: release-artifacts
+
+      - name: Prepare release assets
+        run: |
+          mkdir -p release-assets
+          find release-artifacts -name "skjs_*" -type f -not -name "*.json" -exec cp {} release-assets/ \;
+          ls -la release-assets/
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          files: release-assets/*
+          generate_release_notes: true
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
