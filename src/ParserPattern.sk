@@ -1,0 +1,106 @@
+/*****************************************************************************/
+/* Pattern parsing methods for the TypeScript parser. */
+/*****************************************************************************/
+
+module SKJS;
+
+extension class Parser {
+  /***************************************************************************/
+  // Pattern parsing
+  //
+  // <pattern> ::=
+  //   | <name>
+  //   | <pattern> ::= [ <pattern>* ]
+  //   | <pattern> ::= { (<name> : <pattern>)* }
+  /***************************************************************************/
+
+  // Parse a pattern (used in destructuring assignments and function parameters)
+  mutable fun pattern(): Pattern {
+    start = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+    | Some(x) -> x
+    };
+    pat_ = this.pattern_();
+    Pattern(
+      PosRange(
+        this.lex.fileName,
+        start.posRange.start,
+        this.lex.lastTok.fromSome().posRange.end,
+      ),
+      pat_,
+    )
+  }
+
+  // Internal pattern parsing implementation
+  mutable fun pattern_(): Pattern_ {
+    this.lex.peekKind() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+    | Some(TKOpenSquare()) ->
+      _ = this.lex.next();
+      if (this.lex.peekKind() is Some(TKCloseSquare())) {
+        _ = this.lex.next();
+        return PArray(Array[])
+      };
+      pats = mutable Vector[];
+      loop {
+        pats.push(this.pattern());
+        commaTok = this.lex.next() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+        | Some(x) -> x
+        };
+        commaTok.kind match {
+        | TKComma() ->
+          if (this.lex.peekKind() is Some(TKCloseSquare())) {
+            _ = this.lex.next();
+            break void;
+          }
+        | TKCloseSquare() -> break void
+        | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
+        }
+      };
+      PArray(pats.toArray())
+    | Some(TKOpenCurly()) ->
+      _ = this.lex.next();
+      if (this.lex.peekKind() is Some(TKCloseCurly())) {
+        _ = this.lex.next();
+        return PObject(Array[])
+      };
+      fields = mutable Vector[];
+      loop {
+        fieldName = this.getName();
+        fieldPat = if (this.lex.peekKind() is Some(TKColon())) {
+          _ = this.lex.next();
+          Some(this.pattern());
+        } else {
+          None()
+        };
+        fields.push(
+          (
+            fieldName,
+            fieldPat match {
+            | None() -> Pattern(fieldName.posRange, PVar(fieldName))
+            | Some(x) -> x
+            },
+          ),
+        );
+        commaTok = this.lex.next() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+        | Some(x) -> x
+        };
+        commaTok.kind match {
+        | TKComma() ->
+          if (this.lex.peekKind() is Some(TKCloseCurly())) {
+            _ = this.lex.next();
+            break void;
+          }
+        | TKCloseCurly() -> break void
+        | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
+        }
+      };
+      PObject(fields.toArray().sortedBy(x ~> x.i0.value))
+    | _ -> PVar(this.getName())
+    }
+  }
+}
+
+module end;

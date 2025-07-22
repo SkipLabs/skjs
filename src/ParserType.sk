@@ -1,0 +1,566 @@
+module SKJS;
+
+extension class Parser {
+  /***************************************************************************/
+  // <type_> ::=
+  //   | " <string> "
+  //   | ' <string> '
+  //   | ` <string> `
+  //   | true | false
+  //   | <number>
+  //   | <bigint>
+  //   | <prim-kind>
+  //   | typeof <expr>
+  //   | <type> []
+  //   | { <field-type>* }
+  //   | <name> < <type>* >
+  //   | <type> | <type>
+  //   | <type> & <type>
+  //   | [ <tuple-elt-type>* ]
+  //   | function ( <ta-fun-param>* ) : <type>
+  //   | <type> [ <type> ]
+  //   | <type> extends <type> ? <type> : <type>
+  //   | <type> extends <type>
+  //   | readonly <type>
+  //   | import ( <expr> , <name>? , <type>* )
+  //   | infer <name>
+  //   | []
+  //   | keyof <type>
+  //   | new <type>
+  //   | abstract <type>
+  //   | <type> is <type>
+  //   | asserts <name>
+  //   | <name> asserts <type>
+  //   | unique symbol
+  /***************************************************************************/
+
+  mutable fun type(prec: Int): Type {
+    inTypeCopy = this.lex.inType;
+    this.lex.!inType = true;
+    start = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+    | Some(tok) -> tok.posRange.start
+    };
+    if (
+      this.lex.peekKind() is Some(TKBitwiseOr()) ||
+      this.lex.peekKind() is Some(TKBitwiseAnd())
+    ) {
+      _ = this.lex.next();
+    };
+    type = this.type_(prec);
+    end = this.lex.lastTok.fromSome().posRange.end;
+    this.lex.!inType = inTypeCopy;
+    Type(PosRange(this.lex.fileName, start, end), type)
+  }
+
+  mutable fun type_(prec: Int): Type_ {
+    tok = this.lex.next() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+    | Some(x) -> x
+    };
+    left = tok.kind match {
+    | TKQuote() -> TAStringLiteral(this.lex.getStrTok(tok))
+    | TKDoubleQuote() -> TAStringLiteral(this.lex.getStrTok(tok))
+    | TKBackTick() -> TATemplate(this.lex.getStrTok(tok))
+    | TKBigInt() -> TABigIntLiteral(this.lex.getStrTok(tok))
+    | TKNumber() -> TANumLiteral(this.lex.getStrTok(tok))
+    | TKLessThan() ->
+      tparams = this.typeParams();
+      this.type(0) match {
+      | Type(_, TAFun(isMethod, emptyTParams, params, retType)) ->
+        if (emptyTParams.size() != 0) {
+          invariant_violation("emptyTParams should be empty")
+        };
+        TAFun(isMethod, tparams, params, retType)
+      | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
+      }
+    | TKOpenSquare() ->
+      if (this.lex.peekKind() is Some(TKCloseSquare())) {
+        _ = this.lex.next();
+        TAEmptyArray()
+      } else {
+        result = mutable Vector<TupleEltType>[];
+        loop {
+          if (this.lex.peekKind() is Some(TKDotDotDot())) {
+            _ = this.lex.next();
+            ty = this.type(0);
+            if (this.lex.peekKind() is Some(TKColon())) {
+              colonTok = this.lex.next().fromSome();
+              ty.value match {
+              | TAInst(n, targs) if (targs.size() == 0) ->
+                result.push(TESpread(Some(n), this.type(0)))
+              | _ -> this.error(this.lex.posStart(colonTok), UnexpectedToken())
+              }
+            } else {
+              result.push(TESpread(None(), ty))
+            };
+          } else if ( // Named elements in a tuple
+            this.lex.lookAhead(() -> {
+              this.lex.peekKind() is Some(TKVar()) &&
+                {
+                  _ = this.lex.next();
+                  this.lex.peekKind() is Some(TKColon()) ||
+                    this.lex.peekKind() is Some(TKQuestionMark()) &&
+                      {
+                        _ = this.lex.next();
+                        this.lex.peekKind() is Some(TKColon())
+                      }
+                }
+            })
+          ) {
+            name = this.getName();
+            optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+              Some(this.lex.next().fromSome().posRange)
+            } else {
+              None()
+            };
+            this.expect(TKColon());
+            type = this.type(0);
+            result.push(TEType(Some(name), optional, type));
+          } else {
+            type = this.type(0);
+            optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+              Some(this.lex.next().fromSome().posRange)
+            } else {
+              None()
+            };
+            result.push(TEType(None(), optional, type));
+          };
+          commaTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+          | Some(x) -> x
+          };
+          commaTok.kind match {
+          | TKCloseSquare() -> break void
+          | TKComma() ->
+            if (this.lex.peekKind() is Some(TKCloseSquare())) {
+              _ = this.lex.next();
+              break void
+            }
+          | _ ->
+            this.error(
+              this.lex.posStart(commaTok),
+              ExpectedTokenNot(TKCloseSquare()),
+            )
+          }
+        };
+        TATuple(result.toArray())
+      }
+    | TKOpenParen() ->
+      if (this.isTypeFunParams()) {
+        params = this.typeFunParams();
+        this.expect(TKClosure());
+        retType = this.type(0);
+        TAFun(false, Array[], params, retType)
+      } else {
+        res = this.type(0).value;
+        this.expect(TKCloseParen());
+        res
+      }
+    | TKOpenCurly() -> TAObject(this.objectFields())
+    | TKVar() ->
+      this.lex.getStrTok(tok) match {
+      | "typeof" -> TATypeOf(this.expr(typeOfPrec))
+      | "import" ->
+        this.expect(TKOpenParen());
+        e = this.expr(0);
+        this.expect(TKCloseParen());
+        if (this.lex.peekKind() is Some(TKDot())) {
+          this.expect(TKDot());
+          name = this.getName();
+          loop {
+            if (this.lex.peekKind() != Some(TKDot())) break void;
+            _ = this.lex.next();
+            dotName = this.getName();
+            !name = Name(
+              PosRange(
+                this.lex.fileName,
+                name.posRange.start,
+                dotName.posRange.end,
+              ),
+              name.value + "." + dotName.value,
+            );
+          };
+          targs = if (this.lex.peekKind() is Some(TKLessThan())) {
+            _ = this.lex.next();
+            this.typeList()
+          } else {
+            Array[]
+          };
+          TAImport(e, Some(name), Some(targs))
+        } else {
+          TAImport(e, None(), None())
+        }
+      | "asserts" ->
+        name = this.getName();
+        if (this.lex.peekStr() is Some("is")) {
+          _ = this.lex.next();
+          TAAssertIs(name, this.type(0))
+        } else {
+          TAAsserts(name)
+        }
+      | "unique" ->
+        this.expectStr("symbol");
+        TAUniqueSymbol()
+      | "null" -> TAPrim(TPKNull())
+      | "number" -> TAPrim(TPKNum())
+      | "boolean" -> TAPrim(TPKBool())
+      | "string" -> TAPrim(TPKString())
+      | "readonly" -> TAReadonly(this.type(prec))
+      | "infer" -> TAInfer(this.getName())
+      | "keyof" -> TAKeyOf(this.type(prec))
+      | "abstract" -> TANew(this.type(prec))
+      | "new" -> TANew(this.type(prec))
+      | className ->
+        name = Name(tok.posRange, className);
+        loop {
+          if (this.lex.peekKind() != Some(TKDot())) break void;
+          _ = this.lex.next();
+          dotName = this.getName();
+          !name = Name(
+            PosRange(
+              this.lex.fileName,
+              name.posRange.start,
+              dotName.posRange.end,
+            ),
+            name.value + "." + dotName.value,
+          );
+        };
+        targs = if (this.lex.peekKind() is Some(TKLessThan())) {
+          _ = this.lex.next();
+          this.typeList()
+        } else {
+          Array[]
+        };
+        TAInst(name, targs)
+      }
+    | TKSubtraction() ->
+      numTok = this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+      | Some(x) -> x
+      };
+      numTok.kind match {
+      | TKNumber() -> TANumLiteral("-" + this.lex.getStrTok(numTok))
+      | _ -> this.error(this.lex.posStart(numTok), ExpectedTokenNot(TKNumber()))
+      }
+    | TKAddition() ->
+      numTok = this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+      | Some(x) -> x
+      };
+      numTok.kind match {
+      | TKNumber() -> TANumLiteral(this.lex.getStrTok(numTok))
+      | _ -> this.error(this.lex.posStart(numTok), ExpectedTokenNot(TKNumber()))
+      }
+    | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
+    };
+
+    loop {
+      if (
+        this.lex.lookAhead(() -> {
+          pos = this.lex.pos;
+          this.lex.peekKind() is Some(TKOpenSquare()) &&
+            {
+              _ = this.lex.next();
+              if (this.lex.peekKind() is Some(TKCloseSquare())) return false;
+              for (i in Range(pos, this.lex.pos)) {
+                if (this.lex.contents[i] == '\n') return true;
+              };
+              false
+            }
+        })
+      ) {
+        break void;
+      };
+      if (this.lex.peekKind() is Some(TKOpenSquare())) {
+        _ = this.lex.next();
+        if (this.lex.peekKind() is Some(TKCloseSquare())) {
+          _ = this.lex.next();
+          leftRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          !left = TAArray(Type(leftRange, left));
+          continue;
+        };
+        ty = this.type(0);
+        leftRange = PosRange(
+          this.lex.fileName,
+          tok.posRange.start,
+          this.lex.getLastPos(),
+        );
+        this.expect(TKCloseSquare());
+        !left = TAGet(Type(leftRange, left), ty);
+      } else {
+        break void
+      }
+    };
+
+    loop {
+      this.lex.peekKind() match {
+      | Some(TKVar()) if (this.lex.peekStr() == Some("is")) ->
+        _ = this.lex.next();
+        leftRange = PosRange(
+          this.lex.fileName,
+          tok.posRange.start,
+          this.lex.getLastPos(),
+        );
+        !left = TAIs(Type(leftRange, left), this.type(0))
+      | Some(TKVar()) if (this.lex.peekStr() is Some("extends")) ->
+        (_assoc, assignPrec) = precedence[TKAssignment()];
+        ternaryCondPrec = assignPrec + 1;
+        if (prec >= ternaryCondPrec) return left;
+        _ = this.lex.next();
+        ty1 = this.type(ternaryCondPrec);
+        if (this.lex.peekKind() is Some(TKQuestionMark())) {
+          this.expect(TKQuestionMark());
+          ty2 = this.type(0);
+          this.expect(TKColon());
+          ty3 = this.type(assignPrec);
+          leftRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          !left = TAExtendsQuestion(Type(leftRange, left), ty1, ty2, ty3);
+        } else {
+          leftRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          !left = TAExtends(Type(leftRange, left), ty1);
+        };
+        continue
+      | Some(bop @ TKBitwiseOr())
+      | Some(bop @ TKBitwiseAnd()) ->
+        isType = bop match {
+        | TKBitwiseOr() -> true
+        | TKBitwiseAnd() -> false
+        | _ -> invariant_violation("Internal error")
+        };
+        (assoc, bopPrec) = precedence[bop];
+        if (!(assoc is ALeft())) invariant_violation("assoc should be ALeft");
+        if (bopPrec == prec) {
+          leftRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          _ = this.lex.next();
+          right = this.type(prec + 1);
+          !left = isType match {
+          | true -> TAUnion(Type(leftRange, left), right)
+          | false -> TAInter(Type(leftRange, left), right)
+          };
+          continue;
+        };
+        if (bopPrec > prec) {
+          leftRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          _ = this.lex.next();
+          right = this.type(bopPrec);
+          !left = isType match {
+          | true -> TAUnion(Type(leftRange, left), right)
+          | false -> TAInter(Type(leftRange, left), right)
+          };
+          continue;
+        };
+        if (bopPrec >= prec) {
+          invariant_violation("bopPrec should be less than prec")
+        };
+        return left
+      | _ -> return left
+      }
+    }
+  }
+
+  mutable fun isTypeFunParams(): Bool {
+    this.lex.lookAhead(() -> {
+      countParen = 1;
+      loop {
+        this.lex.next().map(x -> x.kind) match {
+        | None() -> return false
+        | Some(TKOpenParen()) -> !countParen = countParen + 1
+        | Some(TKCloseParen()) ->
+          !countParen = countParen - 1;
+          if (countParen == 0) {
+            return this.lex.peekKind() is Some(TKClosure())
+          }
+        | Some _ -> continue
+        }
+      }
+    })
+  }
+
+  mutable fun typeFunParams(): Array<TAFunParam> {
+    if (this.lex.peekKind() is Some(TKCloseParen())) {
+      _ = this.lex.next();
+      return Array[];
+    };
+    result = mutable Vector[];
+    loop {
+      tok = this.lex.peek() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+      | Some(x) -> x
+      };
+      tok.kind match {
+      | TKDotDotDot() ->
+        _ = this.lex.next();
+        !tok = this.lex.next() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+        | Some(x) -> x
+        };
+        if (this.lex.peekKind() is Some(TKQuestionMark())) {
+          qm = this.lex.next().fromSome();
+          this.expect(TKColon());
+          type = this.type(0);
+          result.push(
+            TAFunParam(
+              Some(TAParamSpread(Name(tok.posRange, this.lex.getStrTok(tok)))),
+              Some(qm.posRange),
+              type,
+            ),
+          );
+        } else if (this.lex.peekKind() is Some(TKColon())) {
+          _ = this.lex.next();
+          type = this.type(0);
+          result.push(
+            TAFunParam(
+              Some(TAParamSpread(Name(tok.posRange, this.lex.getStrTok(tok)))),
+              None(),
+              type,
+            ),
+          );
+        } else {
+          this.error(this.lex.posStart(tok), UnexpectedToken())
+        }
+      | TKOpenCurly() ->
+        _ = this.lex.next();
+        curlyNames = mutable Vector[];
+        spread: ?Name = None();
+        loop {
+          if (this.lex.peekKind() is Some(TKDotDotDot())) {
+            _ = this.lex.next();
+            !spread = Some(this.getName());
+            if (this.lex.peekKind() is Some(TKComma())) {
+              _ = this.lex.next();
+            };
+            this.expect(TKCloseCurly());
+            break void;
+          };
+          name = this.getName();
+          if (this.lex.peekKind() is Some(TKColon())) {
+            _ = this.lex.next();
+            type = this.type(0);
+            curlyNames.push(CurlyName(name, Some(type)))
+          } else {
+            curlyNames.push(CurlyName(name, None()))
+          };
+          commaTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+          | Some(x) -> x
+          };
+          commaTok.kind match {
+          | TKComma() ->
+            if (this.lex.peekKind() is Some(TKCloseCurly())) {
+              _ = this.lex.next();
+              break void
+            }
+          | TKCloseCurly() -> break void
+          | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
+          }
+        };
+        qm = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+          Some(this.lex.next().fromSome().posRange)
+        } else {
+          None()
+        };
+        this.expect(TKColon());
+        type = this.type(0);
+        result.push(
+          TAFunParam(
+            Some(TACurlyNames(curlyNames.toArray(), spread)),
+            qm,
+            type,
+          ),
+        )
+      | _ ->
+        if (
+          this.lex.lookAhead(() -> {
+            _ = this.lex.next();
+            this.lex.peekKind() is Some(TKQuestionMark()) ||
+              this.lex.peekKind() is Some(TKColon())
+          })
+        ) {
+          paramName = this.getName();
+          if (this.lex.peekKind() is Some(TKQuestionMark())) {
+            qm = this.lex.next().fromSome();
+            this.expect(TKColon());
+            type = this.type(0);
+            result.push(
+              TAFunParam(Some(TAParamName(paramName)), Some(qm.posRange), type),
+            );
+          } else {
+            if (!(this.lex.peekKind() is Some(TKColon()))) {
+              invariant_violation("expected TKColon")
+            };
+            _ = this.lex.next();
+            type = this.type(0);
+            result.push(TAFunParam(Some(TAParamName(paramName)), None(), type));
+          }
+        } else {
+          type = this.type(0);
+          result.push(TAFunParam(None(), None(), type))
+        }
+      };
+      tokComma = this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+      | Some(x) -> x
+      };
+      tokComma.kind match {
+      | TKComma() ->
+        if (this.lex.peekKind() is Some(TKCloseParen())) {
+          _ = this.lex.next();
+          return result.toArray()
+        }
+      | TKCloseParen() -> return result.toArray()
+      | _ ->
+        this.error(
+          this.lex.posStart(tokComma),
+          ExpectedTokenNot(TKCloseParen()),
+        )
+      }
+    }
+  }
+
+  mutable fun typeList(): Array<Type> {
+    result = mutable Vector[];
+    loop {
+      result.push(this.type(0));
+      commaTok = this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+      | Some(x) -> x
+      };
+      commaTok.kind match {
+      | TKGreaterThan() -> return result.toArray()
+      | TKComma() ->
+        if (this.lex.peekKind() is Some(TKGreaterThan())) {
+          _ = this.lex.next();
+          return result.toArray()
+        }
+      | _ ->
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokenNot(TKGreaterThan()),
+        )
+      }
+    }
+  }
+}
+
+module end;
