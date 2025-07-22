@@ -514,8 +514,7 @@ extension class Parser {
             result.push(TAFunParam(Some(TAParamName(paramName)), None(), type));
           }
         } else {
-          type = this.type(0);
-          result.push(TAFunParam(None(), None(), type))
+          this.error(this.lex.posStart(tok), MissingParameterName())
         }
       };
       tokComma = this.lex.next() match {

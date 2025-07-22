@@ -5,18 +5,18 @@ declare const console: {
 
 declare class Array<T> {
   length: number;
-  find(filter: (T) => boolean): undefined | T;
+  find(filter: (item: T) => boolean): undefined | T;
   push(elt: T): void;
   indexOf(x: T): number;
-  sort(f?: (object, object) => number): Array<T>;
-  map<T2>(f: (T) => T2): Array<T2>;
+  sort(f?: (a: object, b: object) => number): Array<T>;
+  map<T2>(f: (item: T) => T2): Array<T2>;
   static isArray<T>(value: T): boolean;
   get(idx: number): T;
 }
 
 declare const Math: {
-  max: (number, number) => number;
-  floor: (number) => number;
+  max: (a: number, b: number) => number;
+  floor: (x: number) => number;
   random: () => number;
 };
 
