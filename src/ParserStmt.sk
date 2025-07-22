@@ -1,0 +1,282 @@
+/*****************************************************************************/
+/* Statement parsing methods for the TypeScript parser. */
+/*****************************************************************************/
+
+module SKJS;
+
+extension class Parser {
+  /***************************************************************************/
+  // Statement parsing
+  //
+  // <stmt_> ::=
+  //   | ;
+  //   | <expr>
+  //   | return <expr>?
+  //   | throw <expr>
+  //   | if ( <expr> ) <stmt>* (else <stmt>*)?
+  //   | for ( <stmt> in <expr> ) <stmt>*
+  //   | for ( <stmt> of <expr> ) <stmt>*
+  //   | for ( <stmt> ; <expr> ; <expr> ) <stmt>*
+  //   | while ( <expr> ) <stmt>*
+  //   | let <binding>*
+  //   | var <binding>*
+  //   | const <binding>*
+  //   | switch ( <expr> ) { <switch-branch>* }
+  //   | { <stmt>* }
+  /***************************************************************************/
+
+  // Parse a block of statements
+  mutable fun block(): Array<Stmt> {
+    (this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedBlock())
+    | Some(x) -> x
+    }).kind match {
+    | TKOpenCurly() ->
+      _ = this.lex.next();
+      stmts = mutable Vector[];
+      loop {
+        this.stmt() match {
+        | None() ->
+          this.expect(TKCloseCurly());
+          return stmts.toArray()
+        | Some(st) -> stmts.push(st)
+        }
+      }
+    | _ ->
+      this.stmt() match {
+      | None() -> Array[]
+      | Some(x) -> Array[x]
+      }
+    }
+  }
+
+  // Parse a single statement
+  mutable fun stmt(): ?Stmt {
+    start = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+    | Some(tok) -> tok.posRange.start
+    };
+    result = this.stmt_();
+    end = this.lex.lastTok.fromSome().posRange.end;
+    result match {
+    | None() -> None()
+    | Some(x) -> Some(Stmt(PosRange(this.lex.fileName, start, end), x))
+    }
+  }
+
+  // Internal statement parsing implementation
+  mutable fun stmt_(): ?Stmt_ {
+    tok = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+    | Some(x) -> x
+    };
+    tok.kind match {
+    | TKCloseCurly() -> None()
+    | TKSemi() ->
+      _ = this.lex.next();
+      Some(StmtEmpty())
+    | TKOpenCurly() ->
+      _ = this.lex.next();
+      stmts = mutable Vector[];
+      loop {
+        this.stmt() match {
+        | None() -> break void
+        | Some(st) -> stmts.push(st)
+        }
+      };
+      this.expect(TKCloseCurly());
+      Some(Block(stmts.toArray()))
+    | TKVar() ->
+      keyword = this.lex.getStrTok(tok);
+      keyword match {
+      | "break" ->
+        _ = this.lex.next();
+        Some(Break())
+      | "switch" ->
+        _ = this.lex.next();
+        this.expect(TKOpenParen());
+        e = this.expr(0);
+        this.expect(TKCloseParen());
+        this.expect(TKOpenCurly());
+        cases = mutable Vector<SwitchBranch>[];
+        loop {
+          caseTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+          | Some(x) -> x
+          };
+          this.lex.getStrTok(caseTok) match {
+          | "case" ->
+            value = this.expr(0);
+            this.expect(TKColon());
+            stmts = mutable Vector[];
+            loop {
+              this.stmt() match {
+              | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+              | Some(st) -> stmts.push(st)
+              };
+              this.lex.peekStr() match {
+              | Some("case")
+              | Some("default")
+              | Some("}") ->
+                break void
+              | _ -> void
+              }
+            };
+            cases.push(Case(value, stmts.toArray()))
+          | "default" ->
+            this.expect(TKColon());
+            stmts = mutable Vector[];
+            loop {
+              this.stmt() match {
+              | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+              | Some(st) -> stmts.push(st)
+              };
+              this.lex.peekStr() match {
+              | Some("case")
+              | Some("default")
+              | Some("}") ->
+                break void
+              | _ -> void
+              }
+            };
+            cases.push(Default(stmts.toArray()))
+          | "}" -> break void
+          | _ -> this.error(this.lex.posStart(caseTok), UnexpectedToken())
+          }
+        };
+        Some(Switch(e, cases.toArray()))
+      | "if" ->
+        _ = this.lex.next();
+        this.expect(TKOpenParen());
+        e = this.expr(0);
+        this.expect(TKCloseParen());
+        ifBlock = this.block();
+        elseBlock = this.lex.peekStr() match {
+        | Some("else") ->
+          _ = this.lex.next();
+          Some(this.block())
+        | _ -> None()
+        };
+        Some(If(e, ifBlock, elseBlock))
+      | "return" ->
+        retTok = this.lex.next().fromSome();
+        if (
+          this.lex.peekKind() is Some(TKSemi()) ||
+          this.lex.peekKind() is Some(TKCloseCurly())
+        ) {
+          return Some(Return(retTok.posRange, None()));
+        };
+        Some(Return(retTok.posRange, Some(this.expr(0))))
+      | "throw" ->
+        _ = this.lex.next();
+        Some(Throw(this.expr(0)))
+      | "while" ->
+        _ = this.lex.next();
+        this.expect(TKOpenParen());
+        cond = this.expr(0);
+        this.expect(TKCloseParen());
+        if (this.lex.peekKind() is Some(TKOpenCurly())) {
+          _ = this.lex.next();
+          stmts = mutable Vector[];
+          loop {
+            this.stmt() match {
+            | None() -> break void
+            | Some(st) -> stmts.push(st)
+            };
+          };
+          this.expect(TKCloseCurly());
+          return Some(While(cond, stmts.toArray()));
+        };
+        this.stmt() match {
+        | None() -> this.error(this.lex.posEnd(), ExpectedStmt())
+        | Some(st) -> Some(While(cond, Array[st]))
+        }
+      | "for" ->
+        _ = this.lex.next();
+        this.expect(TKOpenParen());
+        st = this.stmt() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+        | Some(x) -> x
+        };
+        inTok = this.lex.next() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+        | Some(x) -> x
+        };
+        inTok.kind match {
+        | TKVar() if (this.lex.getStrTok(inTok) == "in") ->
+          e = this.expr(0);
+          this.expect(TKCloseParen());
+          block = this.blockOrStmt();
+          Some(ForIn(st, e, block))
+        | TKVar() if (this.lex.getStrTok(inTok) == "of") ->
+          e = this.expr(0);
+          this.expect(TKCloseParen());
+          block = this.blockOrStmt();
+          Some(ForOf(st, e, block))
+        | TKSemi() ->
+          cond = this.expr(0);
+          this.expect(TKSemi());
+          incr = this.expr(0);
+          this.expect(TKCloseParen());
+          block = this.blockOrStmt();
+          Some(For(st, cond, incr, block))
+        | _ -> this.error(this.lex.posStart(inTok), ExpectedTokenNot(TKSemi()))
+        }
+      | bk @ "let"
+      | bk @ "const"
+      | bk @ "var" ->
+        _ = this.lex.next();
+        bkind = bk match {
+        | "let" -> BKLet()
+        | "const" -> BKConst()
+        | "var" -> BKVar()
+        | _ -> invariant_violation("Internal error")
+        };
+        bindings = mutable Vector[];
+        loop {
+          pat = this.pattern();
+          type = if (this.lex.peekKind() is Some(TKColon())) {
+            _ = this.lex.next();
+            Some(this.type(0));
+          } else {
+            None()
+          };
+          e = if (this.lex.peekKind() is Some(TKAssignment())) {
+            this.expect(TKAssignment());
+            value = this.expr(0);
+            Some(value)
+          } else {
+            None()
+          };
+          bindings.push(Binding(pat, type, e));
+          if (this.lex.peekKind() is Some(TKComma())) {
+            _ = this.lex.next();
+          } else {
+            break void
+          }
+        };
+        Some(Bind(bkind, bindings.toArray()))
+
+      | _ ->
+        e = this.expr(0);
+        Some(StmtExpr(e))
+      }
+    | _ -> Some(StmtExpr(this.expr(0)))
+    }
+  }
+
+  // Parse either a block or a single statement
+  mutable fun blockOrStmt(): Array<Stmt> {
+    this.lex.peekKind() match {
+    | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKOpenCurly()))
+    | Some(TKOpenCurly()) -> this.block()
+    | _ ->
+      this.stmt() match {
+      | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKOpenCurly()))
+      | Some(x) -> Array[x]
+      }
+    }
+  }
+}
+
+module end;

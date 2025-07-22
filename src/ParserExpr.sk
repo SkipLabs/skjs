@@ -1,0 +1,648 @@
+/*****************************************************************************/
+/* Expression parsing methods for the TypeScript parser. */
+/*****************************************************************************/
+
+module SKJS;
+
+extension class Parser {
+  /***************************************************************************/
+  // Expression parsing
+  //
+  // <expr> ::=
+  //   | <string-number>
+  //   | <name>
+  //   | ... <name>
+  //   | <string-kind> <string>
+  //   | typeof <expr>
+  //   | keyof <type>
+  //   | await <expr>
+  //   | <expr> [ <expr> ]
+  //   | new <name> ( <type>* ) ( <expr>* )
+  //   | <unop> <expr>
+  //   | <expr> <post-op>
+  //   | <expr> <binop> <expr>
+  //   | <expr> ( <type>* ) ( <expr>* )
+  //   | ( (<name> (: <type>)?)* )
+  //   | { <field>* }
+  //   | function ( (<name> (: <type>)?)* ) (: <type>)? <closure-body>
+  //   | [ <expr>* ]
+  //   | <expr> ? <expr> : <expr>
+  //   | <expr> instanceof <expr>
+  //   | <expr> as <type>
+  //   | < <type> > <expr>
+  //   | /<regexp>/
+  //   | async <expr>
+  /***************************************************************************/
+
+  // Parse an expression with given precedence level
+  mutable fun expr(prec: Int): Expr {
+    inTypeCopy = this.lex.inType;
+    this.lex.!inType = false;
+    start = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+    | Some(tok) -> tok.posRange.start
+    };
+    e_ = this.expr_(prec);
+    end = this.lex.lastTok.fromSome().posRange.end;
+    this.lex.!inType = inTypeCopy;
+    Expr(PosRange(this.lex.fileName, start, end), e_)
+  }
+
+  // Internal expression parsing implementation
+  mutable fun expr_(prec: Int): Expr_ {
+    tok = this.lex.next() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+    | Some(x) -> x
+    };
+    left: Expr_ = tok.kind match {
+    | TKNumber() -> Number(this.lex.getStrTok(tok))
+    | TKTild() ->
+      (_assoc, tildPrec) = precedence[TKTild()];
+      Unop(UOTild(), this.expr(tildPrec))
+    | TKDotDotDot() -> Spread(this.getName())
+    | TKVar() ->
+      str = this.lex.getStrTok(tok);
+      str match {
+      | "function" -> this.error(this.lex.posStart(tok), FunctionInExpr())
+      | "new" ->
+        name = this.getName();
+        targs = if (this.lex.peekKind() is Some(TKLessThan())) {
+          _ = this.lex.next();
+          this.typeList()
+        } else {
+          Array[]
+        };
+        this.expect(TKOpenParen());
+        args = this.arguments();
+        New(name, targs, args)
+      | "async" -> Async(this.expr(0))
+      | "await" -> Await(this.expr(0))
+      | "typeof" -> TypeOf(this.expr(typeOfPrec))
+      | "keyof" -> KeyOf(this.type(prec))
+      | _ -> Var(Name(tok.posRange, str))
+      }
+    | TKQuote() -> EString(SKQuote(), this.lex.getStrTok(tok))
+    | TKDoubleQuote() -> EString(SKDoubleQuote(), this.lex.getStrTok(tok))
+    | TKBackTick() -> EString(SKBackTick(), this.lex.getStrTok(tok))
+    | TKOpenParen() ->
+      if (this.lex.peekKind() is Some(TKCloseParen())) {
+        _ = this.lex.next();
+        Params(Array[])
+      } else {
+        first = this.expr_(0);
+        firstTypeOpt = if (this.lex.peekKind() is Some(TKColon())) {
+          _ = this.lex.next();
+          Some(this.type(0))
+        } else {
+          None()
+        };
+        commaTok = this.lex.peek() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+        | Some(x) -> x
+        };
+        commaTok.kind match {
+        | TKCloseParen() ->
+          _ = this.lex.next();
+          firstTypeOpt match {
+          | None() -> first
+          | Some _ ->
+            firstName = first match {
+            | Var(x) -> x
+            | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
+            };
+            Params(Array[(firstName, firstTypeOpt)])
+          }
+        | TKComma() ->
+          _ = this.lex.next();
+          firstName = first match {
+          | Var(x) -> x
+          | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
+          };
+          params = mutable Vector[(firstName, firstTypeOpt)];
+          loop {
+            e = this.expr(0) match {
+            | Expr(_, Var(x)) -> x
+            | Expr(posRange, _) ->
+              this.error(
+                EPChar(this.lex.fileName, posRange.start),
+                ExpectedVarName(),
+              )
+            };
+            tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
+              _ = this.lex.next();
+              Some(this.type(0))
+            } else {
+              None()
+            };
+            params.push((e, tyOpt));
+            closeTok = this.lex.next() match {
+            | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+            | Some(x) -> x
+            };
+            closeTok.kind match {
+            | TKCloseParen() -> break void
+            | TKComma() ->
+              if (this.lex.peekKind() is Some(TKCloseParen())) {
+                _ = this.lex.next();
+                break void;
+              }
+            | _ ->
+              this.error(
+                this.lex.posStart(closeTok),
+                ExpectedTokenNot(TKCloseParen()),
+              )
+            }
+          };
+          Params(params.toArray())
+        | _ ->
+          this.error(
+            this.lex.posStart(commaTok),
+            ExpectedTokenNot(TKCloseParen()),
+          )
+        }
+      }
+    | TKOpenCurly() ->
+      if (this.lex.peekKind() is Some(TKCloseCurly())) {
+        _ = this.lex.next();
+        Object(Array[])
+      } else {
+        fields = mutable Vector[];
+        fields.push(this.field());
+        loop {
+          commaTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+          | Some(x) -> x
+          };
+          commaTok.kind match {
+          | TKCloseCurly() -> break Object(fields.toArray())
+          | TKSemi()
+          | TKComma() ->
+            if (this.lex.peekKind() is Some(TKCloseCurly())) {
+              _ = this.lex.next();
+              break Object(fields.toArray())
+            } else {
+              fields.push(this.field());
+            }
+          | _ ->
+            this.error(
+              this.lex.posStart(commaTok),
+              ExpectedTokenNot(TKCloseCurly()),
+            )
+          }
+        }
+      }
+    | TKOpenSquare() ->
+      if (this.lex.peekKind() is Some(TKCloseSquare())) {
+        _ = this.lex.next();
+        EArray(Array[])
+      } else {
+        values = mutable Vector[];
+        loop {
+          values.push(this.expr(0));
+          commaTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+          | Some(x) -> x
+          };
+          commaTok.kind match {
+          | TKCloseSquare() -> break EArray(values.toArray())
+          | TKComma() ->
+            if (this.lex.peekKind() is Some(TKCloseSquare())) {
+              _ = this.lex.next();
+              break EArray(values.toArray())
+            }
+          | _ ->
+            this.error(
+              this.lex.posStart(commaTok),
+              ExpectedTokenNot(TKCloseSquare()),
+            )
+          }
+        }
+      }
+    | subTok @ TKAddition()
+    | subTok @ TKSubtraction() ->
+      (_assoc, bopPrec) = precedence[subTok];
+      this.expr_(bopPrec)
+    | subTok @ TKExclamationMark() ->
+      (_, unopPrec) = precedence[subTok];
+      Unop(UOExclamationMark(), this.expr(unopPrec))
+    | TKDivision() ->
+      _ = this.lex.next();
+      pos = this.lex.pos;
+      loop {
+        if (pos >= this.lex.contents.size()) {
+          this.error(this.lex.posEnd(), UnterminatedExpr())
+        };
+        c = this.lex.contents[pos];
+        if (c == '\\') {
+          !pos = pos + 2;
+          continue;
+        };
+        !pos = pos + 1;
+        if (c == '/') break void;
+      };
+      loop {
+        if (pos >= this.lex.contents.size()) {
+          this.error(this.lex.posEnd(), UnterminatedExpr())
+        };
+        c = this.lex.contents[pos];
+        if (
+          c == 'g' ||
+          c == 'u' ||
+          c == 'm' ||
+          c == 's' ||
+          c == 'u' ||
+          c == 'y'
+        ) {
+          continue;
+        };
+        break void
+      };
+      regexp = String::fromChars(this.lex.contents.slice(this.lex.pos, pos));
+      this.lex.!pos = pos;
+      Regexp(regexp)
+    | TKLessThan() ->
+      ty = this.type(0);
+      this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+      | Some(Token(TKGreaterThan(), _)) -> void
+      | Some(unexpectedTok) ->
+        this.error(
+          this.lex.posStart(unexpectedTok),
+          ExpectedTokenNot(TKGreaterThan()),
+        )
+      };
+      e = this.expr(prec);
+      return As(e, ty)
+    | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
+    };
+
+    loop {
+      binopTok = this.lex.peek() match {
+      | None() -> return left
+      | Some(x) -> x
+      };
+      if (this.lex.isEqTok(binopTok, "instanceof")) {
+        (_assoc, opPrec) = instanceofPrec;
+        if (prec <= opPrec) {
+          leftPosRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          _ = this.lex.next();
+          !left = InstanceOf(Expr(leftPosRange, left), this.expr(opPrec));
+          continue;
+        };
+        return left;
+      };
+      if (binopTok.kind is TKIncr()) {
+        (_assoc, opPrec) = precedence[binopTok.kind];
+        if (prec <= opPrec) {
+          leftPosRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          _ = this.lex.next();
+          !left = PostOp(POIncr(), Expr(leftPosRange, left));
+        };
+        return left;
+      };
+      if (binopTok.kind is TKDecr()) {
+        (_assoc, opPrec) = precedence[binopTok.kind];
+        if (prec <= opPrec) {
+          leftPosRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          _ = this.lex.next();
+          !left = PostOp(PODecr(), Expr(leftPosRange, left));
+        };
+        return left;
+      };
+      if (binopTok.kind is TKExclamationMark()) {
+        (_assoc, opPrec) = precedence[TKIncr()];
+        if (prec <= opPrec) {
+          leftPosRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          _ = this.lex.next();
+          !left = PostOp(POExcl(), Expr(leftPosRange, left));
+        };
+        return left;
+      };
+      if (binopTok.kind is TKQuestionMark()) {
+        (_assoc, opPrec) = precedence[binopTok.kind];
+        if (prec <= opPrec) {
+          leftPosRange = PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          );
+          _ = this.lex.next();
+          e2 = this.expr(0);
+          this.expect(TKColon());
+          e3 = this.expr(opPrec);
+          !left = EIf(Expr(leftPosRange, left), e2, e3);
+        };
+        return left;
+      };
+      if (
+        binopTok.kind is TKColon() &&
+        this.lex.lookAhead(() -> {
+          try {
+            _ = this.lex.next();
+            _ = this.type(0);
+            this.lex.peekKind() is Some(TKClosure())
+          } catch {
+          | ErrorExn _ -> false
+          | exn -> throw exn
+          }
+        })
+      ) {
+        _ = this.lex.next();
+        rty = this.type(0);
+        this.expect(TKClosure());
+        !left = {
+          params = left match {
+          | Params(params) -> params
+          | Var(varName) -> Array[(varName, None())]
+          | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
+          };
+          closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
+            CBBlock(this.blockOrStmt())
+          } else {
+            CBExpr(this.expr(0))
+          };
+          Closure(params, Some(rty), closureBody)
+        }
+      };
+      if (binopTok.kind is TKClosure()) {
+        _ = this.lex.next();
+        !left = {
+          params = left match {
+          | Params(params) -> params
+          | Var(varName) -> Array[(varName, None())]
+          | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
+          };
+          closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
+            CBBlock(this.blockOrStmt())
+          } else {
+            CBExpr(this.expr(0))
+          };
+          Closure(params, None(), closureBody)
+        }
+      };
+      if (binopTok.kind is TKOpenSquare()) {
+        if (prec >= callPrec) return left;
+        _ = this.lex.next();
+        !left = Get(
+          Expr(
+            PosRange(
+              this.lex.fileName,
+              tok.posRange.start,
+              this.lex.getLastPos(),
+            ),
+            left,
+          ),
+          this.expr(0),
+        );
+        this.expect(TKCloseSquare());
+        continue;
+      };
+      hasTArgs = this.hasTArgs();
+      if (binopTok.kind is TKOpenParen() || hasTArgs) {
+        if (prec >= callPrec) return left;
+        _ = this.lex.next();
+        targs = mutable Vector[];
+        if (hasTArgs) {
+          loop {
+            targs.push(this.type(0));
+            commaTok = this.lex.next() match {
+            | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+            | Some(tk) -> tk
+            };
+            commaTok.kind match {
+            | TKComma() ->
+              if (this.lex.peekKind() is Some(TKGreaterThan())) {
+                _ = this.lex.next();
+                break void
+              }
+            | TKGreaterThan() -> break void
+            | _ ->
+              this.error(
+                this.lex.posStart(commaTok),
+                ExpectedToken(TKGreaterThan()),
+              )
+            }
+          };
+          this.expect(TKOpenParen())
+        };
+        args = this.arguments();
+        !left = Call(
+          Expr(
+            PosRange(
+              this.lex.fileName,
+              tok.posRange.start,
+              this.lex.getLastPos(),
+            ),
+            left,
+          ),
+          targs.toArray(),
+          args,
+        );
+        continue;
+      };
+      if (binopTok.kind is TKEquality()) {
+        this.error(this.lex.posStart(binopTok), DontUseEquality())
+      };
+      if (binopTok.kind is TKInequality()) {
+        this.error(this.lex.posStart(binopTok), DontUseInequality())
+      };
+      if (this.lex.isEqTok(binopTok, "as")) {
+        leftPosRange = PosRange(
+          this.lex.fileName,
+          tok.posRange.start,
+          this.lex.getLastPos(),
+        );
+        _ = this.lex.next();
+        ty = this.type(0);
+        result = As(Expr(leftPosRange, left), ty);
+        loop {
+          if (this.lex.isEq("as")) {
+            _ = this.lex.next();
+            type = this.type(0);
+            !result = As(
+              Expr(
+                PosRange(
+                  this.lex.fileName,
+                  tok.posRange.start,
+                  this.lex.getLastPos(),
+                ),
+                result,
+              ),
+              type,
+            );
+          };
+          break void;
+        };
+        return result;
+      };
+      (assoc, bopPrec) = precedence.maybeGet(binopTok.kind) match {
+      | None() -> return left
+      | Some(x) -> x
+      };
+      binop = binopTok.kind.toBinop() match {
+      | None() -> return left
+      | Some(x) -> x
+      };
+      if (bopPrec == prec) {
+        leftPosRange = PosRange(
+          this.lex.fileName,
+          tok.posRange.start,
+          this.lex.getLastPos(),
+        );
+        _ = this.lex.next();
+        assoc match {
+        | ALeft() ->
+          right = this.expr(prec + 1);
+          !left = Binop(binop, Expr(leftPosRange, left), right)
+        | ARight() ->
+          !left = Binop(binop, Expr(leftPosRange, left), this.expr(prec))
+        | ANonAssoc() ->
+          this.error(
+            this.lex.posStart(binopTok),
+            NonAssociative(this.lex.getStrTok(binopTok)),
+          )
+        };
+        continue;
+      };
+      if (bopPrec > prec) {
+        leftPosRange = PosRange(
+          this.lex.fileName,
+          tok.posRange.start,
+          this.lex.getLastPos(),
+        );
+        _ = this.lex.next();
+        !left = Binop(binop, Expr(leftPosRange, left), this.expr(bopPrec + 1));
+        continue;
+      };
+      if (bopPrec >= prec) {
+        invariant_violation("bopPrec should be less than prec")
+      };
+      return left
+    }
+  }
+
+  // Check if the current position starts with type arguments
+  mutable fun hasTArgs(): Bool {
+    this.lex.lookAhead(() -> {
+      binopTok = this.lex.peek() match {
+      | None() -> return false
+      | Some(x) -> x
+      };
+      if (!(binopTok.kind is TKLessThan())) return false;
+      try {
+        _ = this.lex.next();
+        loop {
+          _ = this.type(0);
+          commaTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+          | Some(tk) -> tk
+          };
+          commaTok.kind match {
+          | TKComma() ->
+            if (this.lex.peekKind() is Some(TKGreaterThan())) {
+              _ = this.lex.next();
+              break void
+            }
+          | TKGreaterThan() -> break void
+          | _ ->
+            this.error(
+              this.lex.posStart(commaTok),
+              ExpectedToken(TKGreaterThan()),
+            )
+          }
+        };
+        this.expect(TKOpenParen());
+        true
+      } catch {
+      | ErrorExn _ -> false
+      | exn -> throw exn
+      }
+    })
+  }
+
+  // Parse function call arguments
+  mutable fun arguments(): Array<Expr> {
+    if (this.lex.peekKind() is Some(TKCloseParen())) {
+      _ = this.lex.next();
+      return Array[]
+    };
+    args = mutable Vector[];
+    loop {
+      args.push(this.expr(0));
+      commaTok = this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+      | Some(x) -> x
+      };
+      commaTok.kind match {
+      | TKCloseParen() -> break void
+      | TKComma() ->
+        if (this.lex.peekKind() is Some(TKCloseParen())) {
+          _ = this.lex.next();
+          break void
+        }
+      | _ ->
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokenNot(TKCloseParen()),
+        )
+      }
+    };
+    args.toArray()
+  }
+
+  // Parse object field in expression context
+  mutable fun field(): Field {
+    if (this.lex.peekKind() is Some(TKDotDotDot())) {
+      _ = this.lex.next();
+      e = this.expr(0);
+      return FDSpread(e);
+    };
+    modifiers = this.modifiers(None());
+    fieldGetSet = this.isGetSet();
+    fieldName = this.getName();
+    if (
+      this.lex.peekKind() is Some(TKOpenParen()) ||
+      this.lex.peekKind() is Some(TKLessThan())
+    ) {
+      return this.anonMethodDef(
+        None(),
+        modifiers,
+        fieldGetSet,
+        Some(FNNormal(fieldName)),
+        true,
+        None(),
+      )
+    };
+    tok = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+    | Some(x) -> x
+    };
+    tok.kind match {
+    | TKColon() ->
+      _ = this.lex.next();
+      FDNormal(fieldName, this.expr(0))
+    | TKComma()
+    | TKCloseCurly() ->
+      FDNormal(fieldName, Expr(fieldName.posRange, Var(fieldName)))
+    | _ -> this.error(this.lex.posStart(tok), ExpectedTokenNot(TKCloseCurly()))
+    }
+  }
+}
+
+module end;

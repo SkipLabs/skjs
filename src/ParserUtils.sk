@@ -1,0 +1,49 @@
+module SKJS;
+
+extension class Parser {
+  /***************************************************************************/
+  // Helpers
+  /***************************************************************************/
+
+  readonly fun error<T>(pos: ErrorPos, kind: ParsingKind): T {
+    error(ParsingError(pos, kind))
+  }
+
+  mutable fun expect(kind: TokenKind): void {
+    this.lex.next() match {
+    | None() -> this.error(this.lex.posEnd(), ExpectedToken(kind))
+    | Some(tok) if (tok.kind == kind) -> void
+    | Some(tok) -> this.error(this.lex.posStart(tok), ExpectedTokenNot(kind))
+    }
+  }
+
+  mutable fun expectStr(str: String): void {
+    this.lex.next() match {
+    | None() -> this.error(this.lex.posEnd(), ExpectedStrNot(str))
+    | Some(tok) ->
+      if (this.lex.isEqTok(tok, str)) void else {
+        this.error(this.lex.posStart(tok), ExpectedStrNot(str))
+      }
+    }
+  }
+
+  mutable fun expectStringValue(): void {
+    this.lex.next() match {
+    | None() -> this.error(this.lex.posEnd(), ExpectedString())
+    | Some(tok) ->
+      tok.kind match {
+      | TKQuote()
+      | TKDoubleQuote()
+      | TKBackTick() ->
+        void
+      | _ ->
+        this.error(
+          this.lex.posStart(tok),
+          ExpectedStringNot(this.lex.getStrTok(tok)),
+        )
+      }
+    }
+  }
+}
+
+module end;
