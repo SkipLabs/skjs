@@ -4,15 +4,6 @@
 
 module SKJS;
 
-mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
-  /***************************************************************************/
-  // Parser helper methods have been moved to ParserUtils.sk
-  // Type parsing methods have been moved to ParserType.sk
-  // Expression parsing methods have been moved to ParserExpr.sk
-  // Statement parsing methods have been moved to ParserStmt.sk
-  // Pattern parsing methods have been moved to ParserPattern.sk
-  // Definition parsing methods have been moved to ParserDefs.sk
-  /***************************************************************************/
-}
+mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {}
 
 module end;
