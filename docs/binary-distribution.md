@@ -269,7 +269,7 @@ For issues with binary distribution:
 
 1. Check this documentation
 2. Review CI/CD build logs
-3. Test with fetch scripts in debug mode
+3. Test with the fetch script using verbose curl output
 4. Open issues in the SKJS repository with:
    - Platform/architecture details
    - Error messages

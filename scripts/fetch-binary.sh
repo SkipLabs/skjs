@@ -43,6 +43,8 @@ Fetch pre-built SKJS binaries from CircleCI artifacts.
 OPTIONS:
     -b, --branch BRANCH     Branch to fetch from (default: main)
     -c, --commit SHA        Specific commit SHA to fetch
+    -r, --release TAG       Fetch release by tag (e.g., v1.0.0)
+    --latest-release        Fetch latest release (any tag starting with 'v')
     -p, --platform PLATFORM Platform (default: linux)
     -a, --arch ARCH         Architecture (default: amd64)
     -o, --output PATH       Output path for binary (default: ./skjs)
@@ -50,14 +52,20 @@ OPTIONS:
     -h, --help              Show this help message
 
 EXAMPLES:
-    # Fetch latest binary from main branch
+    # Fetch latest development build from main branch
     $0 --token YOUR_CIRCLECI_TOKEN
+
+    # Fetch specific release
+    $0 --release v1.0.0 --token YOUR_CIRCLECI_TOKEN
+
+    # Fetch latest release
+    $0 --latest-release --token YOUR_CIRCLECI_TOKEN
+
+    # Fetch from feature branch
+    $0 --branch feature-parser --token YOUR_CIRCLECI_TOKEN
 
     # Fetch specific commit
     $0 --commit abc123def --token YOUR_CIRCLECI_TOKEN
-
-    # Fetch to specific location
-    $0 --output /usr/local/bin/skjs --token YOUR_CIRCLECI_TOKEN
 
 ENVIRONMENT VARIABLES:
     CIRCLECI_TOKEN          CircleCI API token
@@ -67,6 +75,8 @@ EOF
 # Default values
 BRANCH="main"
 COMMIT=""
+RELEASE_TAG=""
+LATEST_RELEASE=false
 PLATFORM="$DEFAULT_PLATFORM"
 ARCH="$DEFAULT_ARCH"
 OUTPUT_PATH="./skjs"
@@ -82,6 +92,14 @@ while [[ $# -gt 0 ]]; do
         -c|--commit)
             COMMIT="$2"
             shift 2
+            ;;
+        -r|--release)
+            RELEASE_TAG="$2"
+            shift 2
+            ;;
+        --latest-release)
+            LATEST_RELEASE=true
+            shift
             ;;
         -p|--platform)
             PLATFORM="$2"
@@ -126,9 +144,25 @@ fetch_from_circleci() {
     # Step 1: Get pipeline ID
     log "Getting pipeline ID..."
     local pipeline_id
-    pipeline_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
-      "https://circleci.com/api/v2/project/github/SkipLabs/skjs/pipeline?branch=${branch_or_commit}" | \
-      jq -r '.items[0].id // empty')
+    
+    if [[ -n "$RELEASE_TAG" ]]; then
+        # For specific release tag
+        log "Looking for tag: $RELEASE_TAG"
+        pipeline_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+          "https://circleci.com/api/v2/project/github/SkipLabs/skjs/pipeline" | \
+          jq -r ".items[] | select(.vcs.tag == \"${RELEASE_TAG}\") | .id" | head -1)
+    elif [[ "$LATEST_RELEASE" == true ]]; then
+        # For latest release (any tag starting with 'v')
+        log "Looking for latest release tag..."
+        pipeline_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+          "https://circleci.com/api/v2/project/github/SkipLabs/skjs/pipeline" | \
+          jq -r '.items[] | select(.vcs.tag and (.vcs.tag | startswith("v"))) | .id' | head -1)
+    else
+        # For branch-based builds
+        pipeline_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+          "https://circleci.com/api/v2/project/github/SkipLabs/skjs/pipeline?branch=${branch_or_commit}" | \
+          jq -r '.items[0].id // empty')
+    fi
     
     if [[ -z "$pipeline_id" ]] || [[ "$pipeline_id" = "null" ]]; then
       error "No pipelines found for branch $branch_or_commit"
@@ -169,9 +203,27 @@ fetch_from_circleci() {
     # Step 4: Get artifact URL  
     log "Getting artifact URL..."
     local artifact_url
-    artifact_url=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
-      "https://circleci.com/api/v2/project/github/SkipLabs/skjs/${job_number}/artifacts" | \
-      jq -r ".items[] | select(.path | contains(\"skjs_\") and contains(\"${PLATFORM}_${ARCH}\") and (contains(\".json\") | not)) | .url // empty")
+    
+    # Different search patterns for development vs release builds
+    if [[ -n "$RELEASE_TAG" ]] || [[ "$LATEST_RELEASE" == true ]]; then
+        # For release builds: skjs_{tag}_{platform}_{arch}
+        local tag_pattern
+        if [[ -n "$RELEASE_TAG" ]]; then
+            tag_pattern="$RELEASE_TAG"
+        else
+            # Will be handled in pipeline selection
+            tag_pattern="v[0-9]"  # Any version tag
+        fi
+        
+        artifact_url=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+          "https://circleci.com/api/v2/project/github/SkipLabs/skjs/${job_number}/artifacts" | \
+          jq -r ".items[] | select(.path | contains(\"skjs_\") and contains(\"${PLATFORM}_${ARCH}\") and (contains(\".json\") | not) and (contains(\"${tag_pattern}\") or test(\"skjs_v[0-9]\"))) | .url // empty")
+    else
+        # For development builds: skjs_{commit}_{branch}_{platform}_{arch}
+        artifact_url=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+          "https://circleci.com/api/v2/project/github/SkipLabs/skjs/${job_number}/artifacts" | \
+          jq -r ".items[] | select(.path | contains(\"skjs_\") and contains(\"${branch_or_commit}\") and contains(\"${PLATFORM}_${ARCH}\") and (contains(\".json\") | not)) | .url // empty")
+    fi
     
     if [[ -z "$artifact_url" ]] || [[ "$artifact_url" = "null" ]]; then
       error "No matching SKJS binary artifact found"
@@ -208,11 +260,29 @@ main() {
     log "Platform: ${PLATFORM}_${ARCH}"
     log "Output: $OUTPUT_PATH"
     
-    # Use CircleCI method
-    local target
-    if [[ -n "$COMMIT" ]]; then
+    # Validate options
+    local mode_count=0
+    [[ -n "$RELEASE_TAG" ]] && ((mode_count++))
+    [[ "$LATEST_RELEASE" == true ]] && ((mode_count++))
+    [[ -n "$COMMIT" ]] && ((mode_count++))
+    
+    if [[ $mode_count -gt 1 ]]; then
+        error "Cannot specify multiple fetch modes (--release, --latest-release, --commit)"
+        exit 1
+    fi
+    
+    # Determine what we're fetching
+    if [[ -n "$RELEASE_TAG" ]]; then
+        log "Fetching release: $RELEASE_TAG"
+        target="$RELEASE_TAG"
+    elif [[ "$LATEST_RELEASE" == true ]]; then
+        log "Fetching latest release"
+        target="latest-release"
+    elif [[ -n "$COMMIT" ]]; then
+        log "Fetching commit: $COMMIT"
         target="$COMMIT"
     else
+        log "Fetching latest from branch: $BRANCH"
         target="$BRANCH"
     fi
     

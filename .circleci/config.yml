@@ -58,8 +58,21 @@ jobs:
             PLATFORM="linux"
             ARCH="amd64"
             
-            # Create versioned binary name
-            BINARY_NAME="skjs_${CIRCLE_SHA1}_${PLATFORM}_${ARCH}"
+            # Determine binary name based on build type
+            if [[ -n "${CIRCLE_TAG:-}" ]]; then
+              # Tag-based release build
+              BINARY_NAME="skjs_${CIRCLE_TAG}_${PLATFORM}_${ARCH}"
+              BUILD_TYPE="release"
+              VERSION="${CIRCLE_TAG}"
+            else
+              # Branch-based development build  
+              BINARY_NAME="skjs_${CIRCLE_SHA1}_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}"
+              BUILD_TYPE="development"
+              VERSION="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
+            fi
+            
+            echo "Build type: $BUILD_TYPE"
+            echo "Binary name: $BINARY_NAME"
             
             # Copy binary with versioned name
             cp target/host/release/skjs "artifacts/${BINARY_NAME}"
@@ -67,20 +80,29 @@ jobs:
             # Create metadata JSON
             cat > "artifacts/${BINARY_NAME}.json" \<< EOF
             {
+              "name": "skjs",
+              "version": "${VERSION}",
+              "build_type": "${BUILD_TYPE}",
               "commit": "${CIRCLE_SHA1}",
               "branch": "${CIRCLE_BRANCH}",
+              "tag": "${CIRCLE_TAG:-}",
               "build_num": "${CIRCLE_BUILD_NUM}",
               "platform": "${PLATFORM}",
               "architecture": "${ARCH}",
               "timestamp": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
-              "version": "0.1.0",
               "job_id": "${CIRCLE_WORKFLOW_JOB_ID}",
               "build_url": "${CIRCLE_BUILD_URL}"
             }
             EOF
             
-            # Create latest symlink for easy access
-            ln -sf "${BINARY_NAME}" "artifacts/skjs_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}_latest"
+            # Create appropriate symlinks
+            if [[ -n "${CIRCLE_TAG:-}" ]]; then
+              # For releases, create a stable release link
+              ln -sf "${BINARY_NAME}" "artifacts/skjs_release_${PLATFORM}_${ARCH}_latest"
+            else
+              # For development, create branch-specific link
+              ln -sf "${BINARY_NAME}" "artifacts/skjs_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}_latest"
+            fi
             
             # List artifacts for verification
             ls -la artifacts/
@@ -96,3 +118,8 @@ workflows:
       - build_binaries:
           requires:
             - build
+          filters:
+            tags:
+              only: /^v.*/
+            branches:
+              only: /.*/
