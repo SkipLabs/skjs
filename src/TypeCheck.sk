@@ -627,23 +627,17 @@ class TypeChecker{
     true
   }
 
-  // Returns true if the type contains void (including Top which represents all types)
-  fun containsVoid(env: mutable TCEnv, ty: TType): Bool {
-    if (ty.isTop) return true;
-    ty.expand(env.subst, this.tenv, Covariant()) match {
-    | None() -> false
-    | Some(clauses) ->
-      for (clause in clauses.clauses) {
-        clause.stypes match {
-        | None() -> void
-        | Some(stypes) ->
-          if (stypes.any(stype ~> stype is TPrimVoid(TVoid(), _))) {
-            return true
-          }
-        }
-      };
-      false
-    }
+  // Returns true if the type is not Top but contains void
+  fun nonTopContainsVoid(env: mutable TCEnv, ty: TType): Bool {
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | Some(stypes) if (stypes.any(stype ~> stype is TPrimVoid(TVoid(), _))) ->
+        return true
+      | _ -> void
+      }
+    };
+    false
   }
 
   fun constructor(
@@ -1210,7 +1204,7 @@ class TypeChecker{
 
   fun nonVoidExpr(pos: PosRange, env: mutable TCEnv, e: Expr): TType {
     ty = this.expr(env, e);
-    if (this.containsVoid(env, ty)) {
+    if (this.nonTopContainsVoid(env, ty)) {
       typingError(
         Array[
           (pos, "Invalid operation on type void"),

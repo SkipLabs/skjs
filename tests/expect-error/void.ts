@@ -189,3 +189,31 @@ const x20: boolean = returningVoid() === undefined;
 
 // @ts-expect-error Invalid operation on type void
 const x21: boolean = returningVoidOrNull() === null;
+
+// @ts-expect-error Invalid + operation
+const x22: number = returningVoid() + 5;
+
+// @ts-expect-error Invalid operation
+const x23: number = returningVoid() - 5;
+
+// @ts-expect-error Invalid operation
+const x24: number = returningVoid() * 5;
+
+// @ts-expect-error Invalid operation
+const x25: number = returningVoid() / 5;
+
+// @ts-expect-error Invalid operation
+const x26: number = returningVoid() % 5;
+
+// Additional operations that should be disallowed on void
+
+function testConditionalWithVoid(): number {
+  // @ts-expect-error Invalid ? condition
+  return returningVoid() ? 1 : 0;
+}
+
+function testArithmeticAssignment(): void {
+  let x: number = 5;
+  // @ts-expect-error Invalid + operand
+  x += returningVoid();
+}
