@@ -5,8 +5,7 @@
 
 set -euo pipefail
 
-# Configuration
-CIRCLECI_PROJECT="github/SkipLabs/skjs"
+# Configuration  
 DEFAULT_PLATFORM="linux"
 DEFAULT_ARCH="amd64"
 
@@ -112,7 +111,7 @@ while [[ $# -gt 0 ]]; do
     esac
 done
 
-# Function to fetch binary from CircleCI
+# Function to fetch binary from CircleCI (using working Dockerfile approach)
 fetch_from_circleci() {
     local branch_or_commit="$1"
     
@@ -121,68 +120,84 @@ fetch_from_circleci() {
         return 1
     fi
     
-    log "Fetching binary from CircleCI for branch/commit: $branch_or_commit"
+    log "Fetching binary from CircleCI for branch: $branch_or_commit"
+    log "Platform: ${PLATFORM}_${ARCH}"
     
-    # Query CircleCI API for recent builds
-    local api_url="https://circleci.com/api/v2/project/${CIRCLECI_PROJECT}/pipeline"
-    local pipeline_response
+    # Step 1: Get pipeline ID
+    log "Getting pipeline ID..."
+    local pipeline_id
+    pipeline_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+      "https://circleci.com/api/v2/project/github/SkipLabs/skjs/pipeline?branch=${branch_or_commit}" | \
+      jq -r '.items[0].id // empty')
     
-    if [[ -n "$COMMIT" ]]; then
-        # Fetch specific commit
-        pipeline_response=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "${api_url}?branch=${BRANCH}" | \
-                           jq -r ".items[] | select(.vcs.revision == \"${COMMIT}\") | .id" | head -1)
-    else
-        # Fetch latest from branch
-        pipeline_response=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "${api_url}?branch=${branch_or_commit}" | \
-                           jq -r '.items[0].id')
+    if [[ -z "$pipeline_id" ]] || [[ "$pipeline_id" = "null" ]]; then
+      error "No pipelines found for branch $branch_or_commit"
+      return 1
     fi
+    log "Pipeline ID: $pipeline_id"
     
-    if [[ -z "$pipeline_response" || "$pipeline_response" == "null" ]]; then
-        error "No pipelines found for branch/commit: $branch_or_commit"
-        return 1
-    fi
-    
-    # Get workflows for the pipeline
+    # Step 2: Get workflow ID  
+    log "Getting workflow ID..."
     local workflow_id
     workflow_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
-                  "https://circleci.com/api/v2/pipeline/${pipeline_response}/workflow" | \
-                  jq -r '.items[0].id')
+      "https://circleci.com/api/v2/pipeline/${pipeline_id}/workflow" | \
+      jq -r '.items[0].id // empty')
     
-    # Get jobs for the workflow
-    local job_id
-    job_id=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
-             "https://circleci.com/api/v2/workflow/${workflow_id}/job" | \
-             jq -r '.items[] | select(.name == "build_binaries") | .job_number')
+    if [[ -z "$workflow_id" ]] || [[ "$workflow_id" = "null" ]]; then
+      error "No workflows found for pipeline $pipeline_id"  
+      return 1
+    fi
+    log "Workflow ID: $workflow_id"
     
-    if [[ -z "$job_id" || "$job_id" == "null" ]]; then
-        error "No build_binaries job found in the workflow"
-        return 1
+    # Step 3: Get job number for build_binaries job
+    log "Getting job number..."
+    local job_number
+    job_number=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+      "https://circleci.com/api/v2/workflow/${workflow_id}/job" | \
+      jq -r '.items[] | select(.name == "build_binaries") | .job_number // empty')
+    
+    if [[ -z "$job_number" ]] || [[ "$job_number" = "null" ]]; then
+      error "No build_binaries job found"
+      log "Available jobs:"
+      curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+        "https://circleci.com/api/v2/workflow/${workflow_id}/job" | \
+        jq -r '.items[].name'
+      return 1
+    fi
+    log "Job number: $job_number"
+    
+    # Step 4: Get artifact URL  
+    log "Getting artifact URL..."
+    local artifact_url
+    artifact_url=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+      "https://circleci.com/api/v2/project/github/SkipLabs/skjs/${job_number}/artifacts" | \
+      jq -r ".items[] | select(.path | contains(\"skjs_\") and contains(\"${PLATFORM}_${ARCH}\") and (contains(\".json\") | not)) | .url // empty")
+    
+    if [[ -z "$artifact_url" ]] || [[ "$artifact_url" = "null" ]]; then
+      error "No matching SKJS binary artifact found"
+      log "Available artifacts:"
+      curl -s -H "Circle-Token: $CIRCLECI_TOKEN" \
+        "https://circleci.com/api/v2/project/github/SkipLabs/skjs/${job_number}/artifacts" | \
+        jq -r '.items[].path'
+      return 1
     fi
     
-    # Get artifacts for the job
-    local artifacts_url="https://circleci.com/api/v2/project/${CIRCLECI_PROJECT}/${job_id}/artifacts"
-    local binary_url
-    binary_url=$(curl -s -H "Circle-Token: $CIRCLECI_TOKEN" "$artifacts_url" | \
-                 jq -r ".items[] | select(.path | contains(\"skjs_\") and contains(\"${PLATFORM}_${ARCH}\") and (contains(\".json\") | not)) | .url")
-    
-    if [[ -z "$binary_url" || "$binary_url" == "null" ]]; then
-        error "No binary found for platform: ${PLATFORM}_${ARCH}"
+    # Step 5: Download binary
+    log "Downloading SKJS binary..."
+    if curl -L -H "Circle-Token: $CIRCLECI_TOKEN" "$artifact_url" -o "$OUTPUT_PATH"; then
+        chmod +x "$OUTPUT_PATH" 
+        success "Binary downloaded to: $OUTPUT_PATH"
+        
+        # Verify the binary
+        if [[ -f "$OUTPUT_PATH" ]] && [[ -x "$OUTPUT_PATH" ]]; then
+            local version
+            version=$("$OUTPUT_PATH" --help 2>&1 | head -1 || echo "Binary ready")
+            log "Binary info: $version"
+        fi
+        return 0
+    else
+        error "Failed to download binary"
         return 1
-    fi
-    
-    log "Downloading binary from: $binary_url"
-    
-    # Download the binary
-    curl -L -H "Circle-Token: $CIRCLECI_TOKEN" "$binary_url" -o "$OUTPUT_PATH"
-    chmod +x "$OUTPUT_PATH"
-    
-    success "Binary downloaded to: $OUTPUT_PATH"
-    
-    # Verify the binary
-    if [[ -f "$OUTPUT_PATH" ]] && [[ -x "$OUTPUT_PATH" ]]; then
-        local version
-        version=$("$OUTPUT_PATH" --help 2>&1 | head -1 || echo "Version check failed")
-        log "Binary version info: $version"
     fi
 }
 
