@@ -65,10 +65,11 @@ jobs:
               BUILD_TYPE="release"
               VERSION="${CIRCLE_TAG}"
             else
-              # Branch-based development build  
-              BINARY_NAME="skjs_${CIRCLE_SHA1}_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}"
+              # Branch-based development build with short hash
+              SHORT_SHA="${CIRCLE_SHA1:0:8}"
+              BINARY_NAME="skjs_${SHORT_SHA}_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}"
               BUILD_TYPE="development"
-              VERSION="${CIRCLE_BRANCH}-${CIRCLE_SHA1:0:7}"
+              VERSION="${CIRCLE_BRANCH}-${SHORT_SHA}"
             fi
             
             echo "Build type: $BUILD_TYPE"
@@ -118,7 +119,8 @@ jobs:
             if [[ -n "${CIRCLE_TAG:-}" ]]; then
               BINARY_NAME="skjs_${CIRCLE_TAG}_${PLATFORM}_${ARCH}"
             else
-              BINARY_NAME="skjs_${CIRCLE_SHA1}_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}"
+              SHORT_SHA="${CIRCLE_SHA1:0:8}"
+              BINARY_NAME="skjs_${SHORT_SHA}_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}"
             fi
             
             echo "Validating binary: ${BINARY_NAME}"
