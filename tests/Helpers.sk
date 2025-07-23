@@ -12,7 +12,7 @@ class TSExpectError{restOfLine: String} extends ReferenceError {
   fun validate(fileName: String, typeError: SKJS.TypingError): void {
     if (this.restOfLine.length() > 0) {
       SKTest.expectEq(
-        typeError.messages[0].i1,
+        typeError.messages[0].i1.trimRight(),
         this.restOfLine,
         `${fileName}:${this.line} Wrong error message`,
       );
@@ -107,7 +107,9 @@ fun findTSExpectErrors(contents: String): mutable Iterator<TSExpectError> {
     while (pos < chars.size() && chars[pos] != '\n') {
       !pos = pos + 1;
     };
-    restOfLine = String::fromChars(chars.slice(restOfLineStart, pos));
+    restOfLine = String::fromChars(
+      chars.slice(restOfLineStart, pos),
+    ).trimRight();
     yield TSExpectError{line => lineNumber + 1, restOfLine};
   };
 }
