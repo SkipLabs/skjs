@@ -92,3 +92,87 @@ function unsafeInTypescript(b: boolean, returningVoid: () => void): string {
 }
 // @ts-expect-error Invalid call
 unsafeInTypescript(false, returningVoidOrNumber);
+
+/* With type parameters */
+
+// @ts-expect-error This function may not always return a value
+function returningGenericVoid<T>(): T | void {}
+
+function returningConstrainedVoid<T extends void>(): T {}
+
+function returningVoidParam<T extends void>(param: T): void {
+  return param;
+}
+
+function takesVoidGeneric<T extends void>(param: T): void {}
+
+// @ts-expect-error Invalid call
+takesVoidGeneric<number>(5);
+
+takesVoidGeneric<void>(returningVoid());
+
+function callGenericVoidFunction<T>(arg: T): void {
+  const func = (x: T) => {};
+  return func(arg);
+}
+
+const result: void = callGenericVoidFunction("test");
+
+type VoidOrT<T> = void | T;
+
+// TODO: should be invalid
+function invalidNullishCoalescing<T>(value: void | T): void | T | null {
+  return value ?? null;
+}
+
+function invalidLogicalOr<T>(value: void | T): T {
+  // @ts-expect-error Invalid ||
+  return value || null;
+}
+
+function invalidPropertyAccess<T>(value: void | T): string {
+  // @ts-expect-error Invalid '.' for type: void | T:T:10:3523836110
+  return value.toString();
+}
+
+function invalidOptionalChaining<T>(value: void | T): string {
+  // @ts-expect-error Invalid '.' for type: void | T:T:11:3523836110
+  return value?.toString();
+}
+
+function invalidComparison<T>(value1: void | T, value2: void | T): boolean {
+  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, and booleans.
+  return value1 < value2;
+}
+
+function invalidArrayAccess<T>(value: void | T): T {
+  // @ts-expect-error Expected an array
+  return value[0];
+}
+
+function invalidFunctionCall<T>(value: void | T): T {
+  // @ts-expect-error Invalid call
+  return value();
+}
+
+// TODO: should be invalid
+function validVoidUnionUsage<T>(value: void | T): boolean {
+  return value === value;
+}
+
+function conditionalVoidUnion<T>(condition: boolean, fallback: T): void | T {
+  if (condition) {
+    return;
+  }
+  return fallback;
+}
+
+interface VoidGenericInterface<T> {
+  method(): T | void;
+}
+
+class VoidGenericClass<T> implements VoidGenericInterface<T> {
+  method(): T | void {
+    return;
+  }
+}
