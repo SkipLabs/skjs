@@ -47,25 +47,29 @@ OPTIONS:
     --latest-release        Fetch latest release (any tag starting with 'v')
     -p, --platform PLATFORM Platform (default: linux)
     -a, --arch ARCH         Architecture (default: amd64)
-    -o, --output PATH       Output path for binary (default: ./skjs)
+    -o, --output PATH       Output path for binary (default: auto-generated)
     -t, --token TOKEN       CircleCI API token (required)
     -h, --help              Show this help message
 
 EXAMPLES:
     # Fetch latest development build from main branch
+    # → saves as: skjs-main-abc1234-linux-amd64
     $0 --token YOUR_CIRCLECI_TOKEN
 
     # Fetch specific release
+    # → saves as: skjs-v1.0.0-linux-amd64
     $0 --release v1.0.0 --token YOUR_CIRCLECI_TOKEN
 
     # Fetch latest release
+    # → saves as: skjs-latest-release-linux-amd64
     $0 --latest-release --token YOUR_CIRCLECI_TOKEN
 
     # Fetch from feature branch
+    # → saves as: skjs-feature-parser-abc1234-linux-amd64
     $0 --branch feature-parser --token YOUR_CIRCLECI_TOKEN
 
-    # Fetch specific commit
-    $0 --commit abc123def --token YOUR_CIRCLECI_TOKEN
+    # Use custom filename
+    $0 --output ./my-skjs --token YOUR_CIRCLECI_TOKEN
 
 ENVIRONMENT VARIABLES:
     CIRCLECI_TOKEN          CircleCI API token
@@ -79,7 +83,7 @@ RELEASE_TAG=""
 LATEST_RELEASE=false
 PLATFORM="$DEFAULT_PLATFORM"
 ARCH="$DEFAULT_ARCH"
-OUTPUT_PATH="./skjs"
+OUTPUT_PATH=""  # Will be determined dynamically
 CIRCLECI_TOKEN="${CIRCLECI_TOKEN:-}"
 
 # Parse command line arguments
@@ -128,6 +132,28 @@ while [[ $# -gt 0 ]]; do
             ;;
     esac
 done
+
+# Function to generate default output filename
+generate_output_filename() {
+    local filename
+    
+    if [[ -n "$RELEASE_TAG" ]]; then
+        # For releases: skjs-v1.0.0-linux-amd64
+        filename="skjs-${RELEASE_TAG}-${PLATFORM}-${ARCH}"
+    elif [[ "$LATEST_RELEASE" == true ]]; then
+        # For latest release: skjs-latest-release-linux-amd64
+        filename="skjs-latest-release-${PLATFORM}-${ARCH}"
+    elif [[ -n "$COMMIT" ]]; then
+        # For specific commit: skjs-abc1234-linux-amd64
+        local short_commit="${COMMIT:0:7}"
+        filename="skjs-${short_commit}-${PLATFORM}-${ARCH}"
+    else
+        # For branch: skjs-main-abc1234-linux-amd64 (will get commit from API)
+        filename="skjs-${BRANCH}-${PLATFORM}-${ARCH}"
+    fi
+    
+    echo "$filename"
+}
 
 # Function to fetch binary from CircleCI (using working Dockerfile approach)
 fetch_from_circleci() {
@@ -238,6 +264,22 @@ fetch_from_circleci() {
     log "Downloading SKJS binary..."
     if curl -L -H "Circle-Token: $CIRCLECI_TOKEN" "$artifact_url" -o "$OUTPUT_PATH"; then
         chmod +x "$OUTPUT_PATH" 
+        
+        # Try to enhance filename with commit info if not already specified
+        if [[ -z "$COMMIT" && "$BRANCH" != "main" && -z "$RELEASE_TAG" && "$LATEST_RELEASE" != true ]]; then
+            # Get commit SHA from the artifact name to enhance the filename
+            local artifact_commit
+            artifact_commit=$(echo "$artifact_url" | grep -o 'skjs_[a-f0-9]\{40\}' | cut -d'_' -f2 | head -c7)
+            if [[ -n "$artifact_commit" ]]; then
+                local enhanced_filename="${OUTPUT_PATH%-"${PLATFORM}"-"${ARCH}"}-${artifact_commit}-${PLATFORM}-${ARCH}"
+                if [[ "$enhanced_filename" != "$OUTPUT_PATH" ]]; then
+                    mv "$OUTPUT_PATH" "$enhanced_filename"
+                    OUTPUT_PATH="$enhanced_filename"
+                    log "Enhanced filename with commit: $(basename "$OUTPUT_PATH")"
+                fi
+            fi
+        fi
+        
         success "Binary downloaded to: $OUTPUT_PATH"
         
         # Verify the binary
@@ -269,6 +311,12 @@ main() {
     if [[ $mode_count -gt 1 ]]; then
         error "Cannot specify multiple fetch modes (--release, --latest-release, --commit)"
         exit 1
+    fi
+    
+    # Set default output path if not specified
+    if [[ -z "$OUTPUT_PATH" ]]; then
+        OUTPUT_PATH="$(generate_output_filename)"
+        log "Using default filename: $OUTPUT_PATH"
     fi
     
     # Determine what we're fetching

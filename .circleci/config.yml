@@ -106,6 +106,77 @@ jobs:
             
             # List artifacts for verification
             ls -la artifacts/
+      - run:
+          name: Validate binary artifacts
+          command: |
+            echo "=== Binary Validation ==="
+            
+            # Recreate the same logic to determine binary name
+            PLATFORM="linux"
+            ARCH="amd64"
+            
+            if [[ -n "${CIRCLE_TAG:-}" ]]; then
+              BINARY_NAME="skjs_${CIRCLE_TAG}_${PLATFORM}_${ARCH}"
+            else
+              BINARY_NAME="skjs_${CIRCLE_SHA1}_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}"
+            fi
+            
+            echo "Validating binary: ${BINARY_NAME}"
+            
+            # Check that binary exists and is executable
+            if [[ -f "artifacts/${BINARY_NAME}" ]]; then
+              echo "✓ Binary file exists: ${BINARY_NAME}"
+              
+              # Check file permissions
+              if [[ -x "artifacts/${BINARY_NAME}" ]]; then
+                echo "✓ Binary is executable"
+              else
+                echo "✗ Binary is not executable"
+                exit 1
+              fi
+              
+              # Check file size (should be > 1MB for a real binary)
+              SIZE=$(stat -c%s "artifacts/${BINARY_NAME}" 2>/dev/null || stat -f%z "artifacts/${BINARY_NAME}")
+              if [[ $SIZE -gt 1048576 ]]; then
+                echo "✓ Binary size looks reasonable: $(numfmt --to=iec $SIZE)"
+              else
+                echo "✗ Binary size too small: $(numfmt --to=iec $SIZE)"
+                exit 1
+              fi
+              
+              # Try to run binary (basic smoke test)
+              echo "=== Smoke Test ==="
+              if timeout 10s "./artifacts/${BINARY_NAME}" --help >/dev/null 2>&1; then
+                echo "✓ Binary responds to --help"
+              else
+                echo "✗ Binary failed smoke test (--help)"
+                exit 1
+              fi
+              
+            else
+              echo "✗ Binary file missing: ${BINARY_NAME}"
+              exit 1
+            fi
+            
+            # Check that metadata exists
+            if [[ -f "artifacts/${BINARY_NAME}.json" ]]; then
+              echo "✓ Metadata file exists"
+              
+              # Validate JSON format
+              if jq . "artifacts/${BINARY_NAME}.json" >/dev/null; then
+                echo "✓ Metadata is valid JSON"
+                echo "Metadata contents:"
+                jq . "artifacts/${BINARY_NAME}.json"
+              else
+                echo "✗ Metadata is invalid JSON"
+                exit 1
+              fi
+            else
+              echo "✗ Metadata file missing: ${BINARY_NAME}.json"
+              exit 1
+            fi
+            
+            echo "=== All validations passed! ==="
       - store_artifacts:
           path: artifacts/
           destination: binaries
