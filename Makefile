@@ -17,8 +17,12 @@ fmt: fmt-sk
 .PHONY: check-fmt
 check-fmt:
 	${MAKE} fmt
-	if ! git diff --quiet --exit-code; then echo "make fmt changed some files:"; git status --porcelain; exit 1; fi
+	if ! git diff --quiet --exit-code --ignore-submodules; then echo "make fmt changed some files:"; git diff --name-only; exit 1; fi
 
 .PHONY: check-sh
 check-sh:
-	find . -name "*.sh" | xargs shellcheck
+	git ls-files "*.sh" | xargs shellcheck
+
+.PHONY: clean
+clean:
+	skargo clean
