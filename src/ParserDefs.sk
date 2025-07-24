@@ -911,7 +911,7 @@ extension class Parser {
       name = this.lex.getStrTok(tok);
       tdparams.push(
         TypeParam(
-          Id(name + ":" + this.id + ":" + this.lex.fileName.hash()),
+          Id::create(name, this.id, this.lex),
           Name(tok.posRange, name),
           constr,
           default,
@@ -958,7 +958,7 @@ extension class Parser {
       this.!id = this.id + 1;
       result.push(
         TypeParam(
-          Id(tparamName.value + ":" + this.id + ":" + this.lex.fileName.hash()),
+          Id::create(tparamName.value, this.id, this.lex),
           tparamName,
           tparamType,
           default,

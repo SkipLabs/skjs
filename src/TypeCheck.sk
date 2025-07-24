@@ -385,7 +385,7 @@ class TypeChecker{
         TParamWithConstraint(
           "this",
           c.name.posRange.fileName,
-          Id("this"),
+          Id::createThis(),
           None(),
         ),
         cstr.getSTypes(subst, this.tenv, Covariant()),
