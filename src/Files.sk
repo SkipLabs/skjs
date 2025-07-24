@@ -30,11 +30,7 @@ class Files(
     srcFileSeq: Sequence<String>,
   ): Result<Files, String> {
     builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
-    rootOpt: ?DirName = None();
-    baseUrlOpt match {
-    | Some(baseUrl) -> !rootOpt = Some(DirName::create(Path.resolve(baseUrl)))
-    | None() -> void
-    };
+    rootOpt = baseUrlOpt.map(baseUrl -> DirName::create(Path.resolve(baseUrl)));
     if (srcFileSeq.isEmpty()) {
       root = rootOpt match {
       | Some(root) -> root
