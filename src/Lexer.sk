@@ -8,6 +8,9 @@ mutable class Lexer{
   // The name of the file that we are lexing
   fileName: String,
 
+  // The relative path for consistent ID generation across machines
+  relativeFileName: String,
+
   // The contents of the file
   contents: Array<Char>,
 
@@ -34,6 +37,7 @@ mutable class Lexer{
   readonly private fun save(): this {
     Lexer{
       fileName => this.fileName,
+      relativeFileName => this.relativeFileName,
       contents => this.contents,
       pos => this.pos,
       lastTok => this.lastTok,
@@ -85,6 +89,7 @@ mutable class Lexer{
   static private fun mcreateFromSaved(lexer: Lexer): mutable Lexer {
     mutable Lexer{
       fileName => lexer.fileName,
+      relativeFileName => lexer.relativeFileName,
       contents => lexer.contents,
       pos => lexer.pos,
       lastTok => lexer.lastTok,
@@ -100,8 +105,22 @@ mutable class Lexer{
     result
   }
 
-  static fun mcreate(fileName: String, contents: String): mutable this {
-    mutable static{fileName, contents => contents.chars().toArray()}
+  static fun mcreate(
+    fileName: String,
+    contents: String,
+    rootOpt: ?DirName,
+  ): mutable this {
+    // Compute relative path for consistent ID generation across machines
+    base = rootOpt match {
+    | Some(root) -> root.toString()
+    | None() -> getcwd()
+    };
+    relativeFileName = Path.relativeTo{path => fileName, base};
+    mutable static{
+      fileName,
+      relativeFileName,
+      contents => contents.chars().toArray(),
+    }
   }
 
   readonly fun peekKind(): ?TokenKind {
