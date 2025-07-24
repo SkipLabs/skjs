@@ -104,7 +104,7 @@ class Files(
         //          return void;
         //        };
         content = contentIter.first.value;
-        lexer = Lexer::mcreate(fileName, content);
+        lexer = Lexer::mcreate(fileName, content, this.rootOpt);
         parser = mutable Parser(lexer);
         try {
           writer.setArray(
