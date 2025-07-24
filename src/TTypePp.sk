@@ -348,10 +348,10 @@ mutable class TypePp{
           };
           this.out(level, margin, tparam.name + ":" + tparam.id);
         };
-        if (!clauses.vars.isEmpty()) this.out(level, margin, " extends ");
         clauses.stypes match {
         | None() -> void
         | Some(c) ->
+          if (!clauses.vars.isEmpty()) this.out(level, margin, " extends ");
           for (k => sty in c) {
             if (k != 0) {
               this.out(level, margin, " | ");
