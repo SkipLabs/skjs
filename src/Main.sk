@@ -175,7 +175,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .short("b")
     .long("backtrace")
     .about("Internal (debugging)"),
-  Cli.Arg::string("baseUrl")
+  Cli.Arg::string("base-url")
     .value_name("PATH")
     .about("Base directory from which to resolve modules"),
   Cli.Arg::string("builtins-file")
@@ -202,7 +202,7 @@ const sinkDirName: SKStore.DirName = SKStore.DirName::create("/sink/");
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
-  baseUrlOpt = args.maybeGetString("baseUrl");
+  baseUrlOpt = args.maybeGetString("base-url");
   builtinsFileName = args.getString("builtins-file");
   srcFiles: Sequence<String> = args.getArray("src-file");
   errorsDirName = SKStore.DirName::create("/check/errors/");
