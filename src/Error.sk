@@ -271,6 +271,12 @@ class MissingReturnType() extends ParsingKind {
   }
 }
 
+class MissingParameterName() extends ParsingKind {
+  fun toString(): String {
+    "Function parameter must have a name"
+  }
+}
+
 /*****************************************************************************/
 /* Name resolution error */
 /*****************************************************************************/

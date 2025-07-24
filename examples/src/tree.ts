@@ -8,9 +8,9 @@ type node = {
 };
 
 type tree = {
-  height: (node) => number,
-  rightRotate: (node) => node,
-  leftRotate: (node) => node,
+  height: (n: node) => number,
+  rightRotate: (n: node) => node,
+  leftRotate: (n: node) => node,
 };
 
 function foo<T1 extends { fd1: number }, T2 extends  {fd2: number}>(
