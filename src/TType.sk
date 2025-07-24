@@ -1051,7 +1051,7 @@ class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
 
 value class Id private (id: String) uses XXHash64.Hashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): this {
-    static(`${name}:${id}:${lexer.fileName.hash()}`)
+    static(`${name}:${id}:${lexer.relativeFileName.hash()}`)
   }
 
   static fun createThis(): this {
