@@ -1095,8 +1095,11 @@ class Clause(
   vars: ArraySet<TParam>,
   stypes: ?STypes,
 ) uses XXHash64.Hashable, Orderable, Projectable<ArraySet<TParam>> {
-  static fun fromSTypes(stypes: STypes): this {
-    static(ArraySet::empty(), Some(stypes))
+  // Returns None if the result is bottom (i.e. if stypes is bottom)
+  static fun fromSTypes(stypes: STypes): ?this {
+    if (stypes.isEmpty()) None() else {
+      Some(static(ArraySet::empty(), Some(stypes)))
+    }
   }
 
   static fun undefined(undefinedPosRange: PosRange): this {
@@ -1212,10 +1215,10 @@ class Clauses private (
   }
 
   static fun fromSTypes(stypes: STypes): this {
-    if (stypes.isEmpty()) {
-      return static(InternalKeyedArrayMap::empty())
-    };
-    static(InternalKeyedArrayMap::single(Clause::fromSTypes(stypes)))
+    Clause::fromSTypes(stypes) match {
+    | None() -> static::empty()
+    | Some(clause) -> static(InternalKeyedArrayMap::single(clause))
+    }
   }
 
   static fun inter(
