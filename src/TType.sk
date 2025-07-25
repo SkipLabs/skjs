@@ -1025,6 +1025,8 @@ class TUnion(ty1: TType, ty2: TType) extends TInst
 
 base class TInst uses XXHash64.Hashable, Orderable
 
+/* "Instance"/Unexpanded types */
+//
 // Interpretation:
 // 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
 class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
