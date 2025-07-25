@@ -1080,6 +1080,17 @@ class TParam(
   id: Id,
 ) uses XXHash64.Hashable, Orderable
 
+/* Clause */
+//
+// Interpretation:
+// 〚 clause 〛 = 〚 clause.vars 〛 ⨅ 〚 clause.stypes 〛
+// 〚 vars 〛 = ⨅ 〚 v 〛, for v in vars
+// 〚 stypes 〛 = Top     if stypes is None
+//              〚 st 〛  if stypes = Some(st)
+//                \-->  see STypes, this is a union
+//
+// In particular, Clause(ArraySet[], None()) represents ⊤
+//                Clause(_, Some(STypes::empty())) represents ⊥
 class Clause(
   vars: ArraySet<TParam>,
   stypes: ?STypes,
@@ -1091,6 +1102,7 @@ class Clause(
     )
   }
 
+  // Returns None if the result is bottom
   fun inter(subst: mutable Subst, env: TEnv, other: Clause): ?Clause {
     vars = this.vars.union(other.vars);
     (this.stypes, other.stypes) match {
