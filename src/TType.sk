@@ -1187,22 +1187,16 @@ class Clauses private (
     this.clauses.isEmpty()
   }
 
-  static fun single(tparam: TParam): this {
+  static fun single(tparam: TParam, stypes: ?STypes = None()): this {
     Clauses(
-      InternalKeyedArrayMap::single(Clause(ArraySet::single(tparam), None())),
+      InternalKeyedArrayMap::single(Clause(ArraySet::single(tparam), stypes)),
     )
   }
 
   static fun fromTypeParam(tparam: TypeParam, stypes: ?STypes): this {
-    static(
-      InternalKeyedArrayMap::single(
-        Clause(
-          ArraySet::single(
-            TParam(tparam.name.value, tparam.name.posRange.fileName, tparam.id),
-          ),
-          stypes,
-        ),
-      ),
+    static::single(
+      TParam(tparam.name.value, tparam.name.posRange.fileName, tparam.id),
+      stypes,
     )
   }
   static fun fromTParamWithConstraint(
