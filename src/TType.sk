@@ -1090,16 +1090,23 @@ class TParam(
 //                \-->  see STypes, this is a union
 //
 // In particular, Clause(ArraySet[], None()) represents ⊤
-//                Clause(_, Some(STypes::empty())) represents ⊥
-class Clause(
+class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
 ) uses XXHash64.Hashable, Orderable, Projectable<ArraySet<TParam>> {
+  /* Invariant: Clause cannot be bottom */
+
+  // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
+  static fun create(vars: ArraySet<TParam>, stypes: ?STypes): ?this {
+    stypes match {
+    | Some(s) if (s.isEmpty()) -> None()
+    | _ -> Some(static(vars, stypes))
+    }
+  }
+
   // Returns None if the result is bottom (i.e. if stypes is bottom)
   static fun fromSTypes(stypes: STypes): ?this {
-    if (stypes.isEmpty()) None() else {
-      Some(static(ArraySet::empty(), Some(stypes)))
-    }
+    static::create(ArraySet::empty(), Some(stypes))
   }
 
   static fun undefined(undefinedPosRange: PosRange): this {
@@ -1206,9 +1213,10 @@ class Clauses private (
   }
 
   static fun single(tparam: TParam, stypes: ?STypes = None()): this {
-    Clauses(
-      InternalKeyedArrayMap::single(Clause(ArraySet::single(tparam), stypes)),
-    )
+    Clause::create(ArraySet::single(tparam), stypes) match {
+    | None() -> static::empty()
+    | Some(clause) -> static(InternalKeyedArrayMap::single(clause))
+    }
   }
 
   static fun fromTypeParam(tparam: TypeParam, stypes: ?STypes): this {
