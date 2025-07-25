@@ -1040,6 +1040,10 @@ class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
     )
   }
 
+  fun map(f: TInst -> TInst): this {
+    static(this.insts.map(f))
+  }
+
   fun isEmpty(): Bool {
     this.insts.isEmpty()
   }
@@ -2177,7 +2181,7 @@ mutable base class ApplyType(
     env: this::Env,
     insts: TInsts,
   ): TInsts {
-    TInsts(insts.insts.map(x -> this.inst(env, x)))
+    insts.map(x -> this.inst(env, x))
   }
 
   overridable deferred mutable fun inst(env: this::Env, inst: TInst): TInst {
