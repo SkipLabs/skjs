@@ -1109,8 +1109,14 @@ class Clause(
     )
   }
 
-  fun map(fTParam: TParam -> TParam, fSTypes: STypes -> STypes): this {
-    static(this.vars.map(fTParam), this.stypes.map(fSTypes))
+  // Returns None if the result is bottom
+  fun map(fTParam: TParam -> TParam, fSTypes: STypes -> STypes): ?this {
+    this.stypes.map(fSTypes) match {
+    | Some(sTypes) if (sTypes.isEmpty()) -> None()
+    | stypes ->
+      vars = this.vars.map(fTParam);
+      Some(static(vars, stypes))
+    }
   }
 
   // Returns None if the result is bottom
@@ -2055,7 +2061,7 @@ mutable base class ApplyType(
     env: this::Env,
     clause: Clause,
   ): ?Clause {
-    Some(clause.map(x -> this.typeParam(env, x), x -> this.stypes(env, x)))
+    clause.map(x -> this.typeParam(env, x), x -> this.stypes(env, x))
   }
 
   overridable deferred mutable fun typeParamWithConstraint(
