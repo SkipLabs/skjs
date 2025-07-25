@@ -1203,14 +1203,7 @@ class Clauses private (
     tparam: TParamWithConstraint,
     stypes: ?STypes,
   ): this {
-    static(
-      InternalKeyedArrayMap::single(
-        Clause(
-          ArraySet::single(TParam(tparam.name, tparam.fileName, tparam.id)),
-          stypes,
-        ),
-      ),
-    )
+    static::single(TParam(tparam.name, tparam.fileName, tparam.id), stypes)
   }
 
   static fun fromSTypes(stypes: STypes): this {
