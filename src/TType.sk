@@ -1143,7 +1143,7 @@ class Clause(
 
   fun containsUndefined(): Bool {
     this.stypes match {
-    | None() -> false
+    | None() -> this.vars.isEmpty()
     | Some(stypes) -> stypes.containsUndefined()
     }
   }
