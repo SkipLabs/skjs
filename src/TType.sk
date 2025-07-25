@@ -1025,7 +1025,7 @@ base class TInst uses XXHash64.Hashable, Orderable
 //
 // Interpretation:
 // 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
-class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
+class TInsts private (insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
   static fun empty(): this {
     static(Array[])
   }
