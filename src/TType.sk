@@ -1120,10 +1120,9 @@ class Clause(
       invariant_violation("clause vars must be equal for union")
     };
     stypesOpt = (this.stypes, other.stypes) match {
-    | (None(), None()) -> None()
-    | (x @ Some(_), None())
-    | (None(), x @ Some(_)) ->
-      x
+    | (None(), _)
+    | (_, None()) ->
+      None()
     | (Some(x), Some(y)) -> Some(STypes::union(subst, env, x, y))
     };
     Clause(this.vars, stypesOpt)
