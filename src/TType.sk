@@ -1106,8 +1106,9 @@ class Clause(
   fun inter(subst: mutable Subst, env: TEnv, other: Clause): ?Clause {
     vars = this.vars.union(other.vars);
     (this.stypes, other.stypes) match {
-    | (None(), _) -> Some(Clause(vars, other.stypes))
-    | (_, None()) -> Some(Clause(vars, this.stypes))
+    | (None(), stypes)
+    | (stypes, None()) ->
+      Some(Clause(vars, stypes))
     | (Some(stypes1), Some(stypes2)) ->
       STypes::inter(subst, env, stypes1, stypes2).map(stypes ->
         Clause(vars, Some(stypes))
