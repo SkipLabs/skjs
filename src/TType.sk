@@ -1051,10 +1051,6 @@ class TInsts private (insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
   fun values(): mutable Iterator<TInst> {
     this.insts.values()
   }
-
-  fun toArray(): Array<TInst> {
-    this.insts
-  }
 }
 
 value class Id private (id: String) uses XXHash64.Hashable, Orderable, Show {
