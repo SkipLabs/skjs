@@ -1093,6 +1093,7 @@ class TParam(
 //                \-->  see STypes, this is a union
 //
 // In particular, Clause(ArraySet[], None()) represents ⊤
+//                Clause(_, Some(STypes::empty())) represents ⊥
 class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
