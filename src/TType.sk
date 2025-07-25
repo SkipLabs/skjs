@@ -156,17 +156,17 @@ class TType private {
     | Some(stypes) ->
       for (stype in stypes) {
         stype match {
-        | SKJS.TPrimVoid _
+        | TPrimVoid _
         | TPrimValue _ ->
           continue
         | TTuple(tys, _) ->
           for (ty in tys) {
             if (!ty.isPrimitiveType(subst, env)) return false
           }
-        | SKJS.TAlgebraic _
-        | SKJS.TFuns _
-        | SKJS.TObject _
-        | SKJS.TPromise _ ->
+        | TAlgebraic _
+        | TFuns _
+        | TObject _
+        | TPromise _ ->
           return false
         }
       };
@@ -1049,7 +1049,15 @@ class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
   }
 }
 
-value class Id(id: String) uses XXHash64.Hashable, Orderable, Show {
+value class Id private (id: String) uses XXHash64.Hashable, Orderable, Show {
+  static fun create(name: String, id: Int, lexer: readonly Lexer): this {
+    static(`${name}:${id}:${lexer.relativeFileName.hash()}`)
+  }
+
+  static fun createThis(): this {
+    static("this")
+  }
+
   fun toString(): String {
     this.id
   }
@@ -1398,13 +1406,13 @@ base class STResult {
           x.values.map(x -> "'" + x.i1 + "'").join(" | ")
 
       | TPromise _ -> "This is a Promise"
-      | SKJS.TAlgebraic _ ->
+      | TAlgebraic _ ->
         "This is a constructor (the field kind is a static string)"
-      | SKJS.TFuns _ ->
+      | TFuns _ ->
         "This is a function of type: " +
           prettyPrintType(false, TType::single(PosRange::none, sty))
-      | SKJS.TObject _ -> "This is an object"
-      | SKJS.TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
+      | TObject _ -> "This is an object"
+      | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
       }
     | STTooManyTConstr(_) -> "This is a constructor"
     | STTooManyTTuple(tuple) -> "This is a tuple of size " + tuple.tuple.size()

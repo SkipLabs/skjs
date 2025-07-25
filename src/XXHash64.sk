@@ -15,21 +15,13 @@ trait Hashable extends .Hashable {
   }
 }
 
+const prime1: Int = -7046029254386353131; // 0x9E3779B185EBCA87
+const prime2: Int = -4417276706812531889; // 0xC2B2AE3D27D4EB4F
+const prime3: Int = 1609587929392839161; // 0x165667B19E3779F9
+const prime4: Int = -8796714831421723037; // 0x85EBCA77C2B2AE63
+const prime5: Int = 2870177450012600261; // 0x27D4EB2F165667C5
+
 fun xxHash64(data: Int, seed: Int = 0): Int {
-  primes: (Int, Int, Int, Int, Int) = (
-    -7046029254386353131, // 0x9E3779B185EBCA87
-    -4417276706812531889, // 0xC2B2AE3D27D4EB4F
-    1609587929392839161, // 0x165667B19E3779F9
-    -8796714831421723037, // 0x85EBCA77C2B2AE63
-    2870177450012600261, // 0x27D4EB2F165667C5
-  );
-
-  prime1 = primes.i0;
-  prime2 = primes.i1;
-  prime3 = primes.i2;
-  prime4 = primes.i3;
-  prime5 = primes.i4;
-
   // For a single Int (8 bytes), we don't have enough data for a full block
   // So we use the simplified path for small inputs
   length = 8;
@@ -56,10 +48,9 @@ fun rotateLeft(value: Int, bits: Int): Int {
 }
 
 fun round(acc: Int, value: Int): Int {
-  acc2 = acc + value * -4417276706812531889; // prime2
+  acc2 = acc + value * prime2;
   acc3 = rotateLeft(acc2, 31);
-  acc3 *
-    -7046029254386353131 // prime1
+  acc3 * prime1
 }
 
 module end;
