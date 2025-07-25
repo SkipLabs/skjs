@@ -1197,16 +1197,7 @@ class Clauses private (
   fun map(f: Clause -> ?Clause): this {
     static(
       InternalKeyedArrayMap::createFromSortedIterator(
-        this.clauses.filterMap(f)
-          .toArray()
-          .filter(x ->
-            x.stypes match {
-            | None() -> true
-            | Some(stypes) -> !stypes.isEmpty()
-            }
-          )
-          .sorted()
-          .iterator(),
+        this.clauses.filterMap(f).toArray().sorted().iterator(),
       ),
     )
   }
@@ -1254,10 +1245,6 @@ class Clauses private (
         clause1.inter(subst, env, clause2) match {
         | None() -> void
         | Some(inter) ->
-          inter.stypes match {
-          | Some(x) if (x.isEmpty()) -> continue
-          | _ -> void
-          };
           if (!result.containsKey(inter.vars)) {
             !result[inter.vars] = inter;
           } else {
