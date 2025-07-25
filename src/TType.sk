@@ -273,11 +273,7 @@ class TType private {
     if (ty1.isTop) return ty1;
     if (ty2.isTop) return ty2;
     if (env.seenUnion.contains((ty1, ty2))) {
-      return TType::create(
-        ty1.pos,
-        TInsts::single(TUnion(ty1, ty2)),
-        Clauses::empty(),
-      );
+      return TType::fromTInst(ty1.pos, TUnion(ty1, ty2));
     };
     !env.seenUnion = env.seenUnion.set((ty1, ty2));
 
@@ -1959,11 +1955,7 @@ fun interTType_(
   if (ty1.isTop) return ty2;
   if (ty2.isTop) return ty1;
   if (env.seenInter.contains((ty1, ty2))) {
-    return TType::create(
-      ty1.pos,
-      TInsts::single(TInter(ty1, ty2)),
-      Clauses::empty(),
-    );
+    return TType::fromTInst(ty1.pos, TInter(ty1, ty2));
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
   if (
