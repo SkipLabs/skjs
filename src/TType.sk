@@ -2015,7 +2015,7 @@ fun interTType_(
   | _ -> void
   };
   clauses = Clauses::inter(subst, env, clauses1, clauses2);
-  TType::create(ty1.pos, TInsts::empty(), clauses);
+  TType::fromClauses(ty1.pos, clauses);
 }
 
 /*****************************************************************************/
@@ -2284,7 +2284,7 @@ mutable class ExpandTVars() extends ApplyType {
     (subst, tenv) = env;
     ty.expand(subst, tenv, Covariant()) match {
     | None() -> TType::top(ty.pos)
-    | Some(clauses) -> TType::create(ty.pos, TInsts::empty(), clauses)
+    | Some(clauses) -> TType::fromClauses(ty.pos, clauses)
     }
   }
 }
