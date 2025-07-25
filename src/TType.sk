@@ -1178,10 +1178,10 @@ class Clauses private (
     Clauses(InternalKeyedArrayMap::empty())
   }
 
-  fun map(f: Clause -> Clause): this {
+  fun map(f: Clause -> ?Clause): this {
     static(
       InternalKeyedArrayMap::createFromSortedIterator(
-        this.clauses.map(f)
+        this.clauses.filterMap(f)
           .toArray()
           .filter(x ->
             x.stypes match {
@@ -2054,8 +2054,8 @@ mutable base class ApplyType(
   overridable deferred mutable fun clause(
     env: this::Env,
     clause: Clause,
-  ): Clause {
-    clause.map(x -> this.typeParam(env, x), x -> this.stypes(env, x))
+  ): ?Clause {
+    Some(clause.map(x -> this.typeParam(env, x), x -> this.stypes(env, x)))
   }
 
   overridable deferred mutable fun typeParamWithConstraint(
