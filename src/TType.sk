@@ -1171,10 +1171,11 @@ class Clauses private (
     Clauses(InternalKeyedArrayMap::empty())
   }
 
-  static fun createFromItems(clauses: Array<Clause>): this {
+  fun map(f: Clause -> Clause): this {
     static(
       InternalKeyedArrayMap::createFromSortedIterator(
-        clauses
+        this.clauses.map(f)
+          .toArray()
           .filter(x ->
             x.stypes match {
             | None() -> true
@@ -2040,9 +2041,7 @@ mutable base class ApplyType(
     env: this::Env,
     clauses: Clauses,
   ): Clauses {
-    Clauses::createFromItems(
-      clauses.clauses.map(x -> this.clause(env, x)).toArray(),
-    )
+    clauses.map(c -> this.clause(env, c))
   }
 
   overridable deferred mutable fun clause(
