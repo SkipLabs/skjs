@@ -1140,10 +1140,6 @@ class Clause(
     this
   }
 
-  fun toString(): String {
-    this.vars.toArray().map(x -> x.name + ":" + x.id).join(" & ")
-  }
-
   fun containsUndefined(): Bool {
     this.stypes match {
     | None() -> false
