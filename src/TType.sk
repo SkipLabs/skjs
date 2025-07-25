@@ -1133,7 +1133,7 @@ class Clause(
       invariant_violation("Trying to add undefined to an intersection clause")
     };
     stypes = this.stypes match {
-    | None() -> invariant_violation("Empty clause")
+    | None() -> invariant_violation("Trying to add undefined to a Top clause")
     | Some(stypes) -> stypes.addUndefined(undefinedPosRange)
     };
     !this.stypes = Some(stypes);
