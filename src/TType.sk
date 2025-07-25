@@ -1095,6 +1095,10 @@ class Clause(
   vars: ArraySet<TParam>,
   stypes: ?STypes,
 ) uses XXHash64.Hashable, Orderable, Projectable<ArraySet<TParam>> {
+  static fun fromSTypes(stypes: STypes): this {
+    static(ArraySet::empty(), Some(stypes))
+  }
+
   static fun undefined(undefinedPosRange: PosRange): this {
     static(
       ArraySet::empty(),
@@ -1210,11 +1214,7 @@ class Clauses private (
     if (stypes.isEmpty()) {
       return static(InternalKeyedArrayMap::empty())
     };
-    static(
-      InternalKeyedArrayMap::single(
-        Clause(ArraySet::createFromIterator(Array[].iterator()), Some(stypes)),
-      ),
-    )
+    static(InternalKeyedArrayMap::single(Clause::fromSTypes(stypes)))
   }
 
   static fun inter(
