@@ -1128,18 +1128,6 @@ class Clause(
     Clause(this.vars, stypesOpt)
   }
 
-  fun interSTypes(subst: mutable Subst, env: TEnv, stypes: STypes): ?Clause {
-    if (stypes.isEmpty()) invariant_violation("stypes should not be empty");
-    vars = this.vars;
-    this.stypes match {
-    | None() -> Some(Clause(vars, Some(stypes)))
-    | Some(thisSTypes) ->
-      STypes::inter(subst, env, thisSTypes, stypes).map(stypes ->
-        Clause(vars, Some(stypes))
-      )
-    }
-  }
-
   fun addUndefined(undefinedPosRange: PosRange): this {
     if (!this.vars.isEmpty()) {
       invariant_violation("Trying to add undefined to an intersection clause")
