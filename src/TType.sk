@@ -277,7 +277,7 @@ class TType private {
     };
     !env.seenUnion = env.seenUnion.set((ty1, ty2));
 
-    types = unionTInsts(ty1.insts, ty2.insts);
+    types = TInsts::union(ty1.insts, ty2.insts);
     clauses = Clauses::union(subst, env, ty1.clauses, ty2.clauses);
     static::create(ty1.pos, types, clauses)
   }
@@ -1034,6 +1034,12 @@ class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
     TInsts(Array[inst])
   }
 
+  static fun union(insts1: this, insts2: this): this {
+    static(
+      mapUnion(insts1.values(), insts2.values(), x ~> x, x ~> x, (x, _) ~> x),
+    )
+  }
+
   fun isEmpty(): Bool {
     this.insts.isEmpty()
   }
@@ -1766,12 +1772,6 @@ fun unionTTuple(
     }
   };
   TTuple(result.toArray(), tuple1.pos)
-}
-
-fun unionTInsts(insts1: TInsts, insts2: TInsts): TInsts {
-  TInsts(
-    mapUnion(insts1.values(), insts2.values(), x ~> x, x ~> x, (x, _) ~> x),
-  )
 }
 
 /*****************************************************************************/
