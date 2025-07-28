@@ -283,7 +283,7 @@ class TType private {
     if (ty2.isTop || ty1.isBottom()) return ty1;
     if (ty1.isTop || ty2.isBottom()) return ty2;
     if (env.seenInter.contains((ty1, ty2))) {
-      return TType::fromTInst(ty1.pos, TInter(ty1, ty2));
+      return TType::fromTInst(ty1.pos, TInter::create(ty1, ty2));
     };
     !env.seenInter = env.seenInter.set((ty1, ty2));
     if (
@@ -1102,7 +1102,11 @@ class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
 //
 // Interpretation:
 // 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
-class TInter(ty1: TType, ty2: TType) extends TInst
+class TInter private (ty1: TType, ty2: TType) extends TInst {
+  static fun create(ty1: TType, ty2: TType): this {
+    static(ty1, ty2)
+  }
+}
 
 /* Unexpanded union */
 //
@@ -2182,7 +2186,8 @@ mutable base class ApplyType(
   overridable deferred mutable fun inst(env: this::Env, inst: TInst): TInst {
     inst match {
     | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
-    | TInter(ty1, ty2) -> TInter(this.type(env, ty1), this.type(env, ty2))
+    | TInter(ty1, ty2) ->
+      TInter::create(this.type(env, ty1), this.type(env, ty2))
     | TUnion(ty1, ty2) -> TUnion(this.type(env, ty1), this.type(env, ty2))
     | tvar @ TVar _ -> tvar.mapConstraints(ty -> this.type(env, ty))
     }
