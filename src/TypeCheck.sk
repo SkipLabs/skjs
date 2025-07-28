@@ -613,21 +613,18 @@ class TypeChecker{
   }
 
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
-    ty.expand(env.subst, this.tenv, Covariant()) match {
-    | None() -> false
-    | Some(clauses) ->
-      for (clause in clauses.clauses) {
-        clause.stypes match {
-        | None() -> return false
-        | Some(stypes) ->
-          stypes.singleElt() match {
-          | Some(TPrimVoid(TVoid(), _)) -> void
-          | _ -> return false
-          }
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | None() -> return false
+      | Some(stypes) ->
+        stypes.singleElt() match {
+        | Some(TPrimVoid(TVoid(), _)) -> void
+        | _ -> return false
         }
-      };
-      true
-    }
+      }
+    };
+    true
   }
 
   fun constructor(
@@ -1336,10 +1333,8 @@ class TypeChecker{
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
-      ty = exprTy.expand(env.subst, this.tenv, Covariant()) match {
-      | None() -> TType::top(exprTy.pos)
-      | Some(clauses) -> TType::fromClauses(exprTy.pos, clauses)
-      };
+      clauses = exprTy.expand(env.subst, this.tenv, Covariant());
+      ty = TType::fromClauses(exprTy.pos, clauses);
       print_error(prettyPrintType(false, ty));
       TType::single(pos, TPrimVoid(TVoid(), pos))
     | Call(f, targs, args) ->
@@ -2305,16 +2300,12 @@ class TypeChecker{
     map: SType ~> SType = x ~> x,
   ): void {
     ty = env.scope.get(local);
-    (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv, Covariant()) match {
-    | None() -> (TType::top(ty.pos), true)
-    | Some(clauses) ->
-      t = TType::fromClauses(ty.pos, clauses);
-      !t = (mutable FilterType()).type((filter, map), t);
-      isTopOrEmpty = t.getSTypes(env.subst, this.tenv, Covariant()) match {
-      | None() -> true
-      | Some(stypes2) -> stypes2.isEmpty()
-      };
-      (t, isTopOrEmpty)
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    !ty = TType::fromClauses(ty.pos, clauses);
+    !ty = (mutable FilterType()).type((filter, map), ty);
+    isTopOrEmpty = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
+    | None() -> true
+    | Some(stypes) -> stypes.isEmpty()
     };
     localType = default match {
     | Some(d) if (isTopOrEmpty) -> TType::single(d.pos, d)
