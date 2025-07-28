@@ -1119,6 +1119,11 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
 // 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
 class TUnion private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
+    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop || ty2.isTop) {
+      invariant_violation(
+        `Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`,
+      )
+    };
     static(ty1, ty2)
   }
 }
