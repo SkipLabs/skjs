@@ -233,7 +233,7 @@ class TEnv{
         tparam.constraint match {
         | None() -> ty
         | Some(cstr) ->
-          interTType(
+          TType::inter(
             Subst::mcreate{context},
             this,
             ty,
@@ -538,7 +538,7 @@ class TEnv{
         );
         tparam.cstr match {
         | None() -> ty
-        | Some(cstr) -> interTType(Subst::mcreate{context}, this, ty, cstr)
+        | Some(cstr) -> TType::inter(Subst::mcreate{context}, this, ty, cstr)
         }
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
@@ -587,7 +587,7 @@ class TEnv{
       );
       ty.withPos(pos)
     | TAInter(ty1, ty2) ->
-      ty = interTType(
+      ty = TType::inter(
         subst,
         this,
         this.normalize(context, ty1),
