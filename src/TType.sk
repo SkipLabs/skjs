@@ -1223,6 +1223,10 @@ class Clause private (
     )
   }
 
+  static fun top(): this {
+    static(ArraySet::empty(), None())
+  }
+
   // Returns None if the result is bottom
   fun map(fTParam: TParam -> TParam, fSTypes: STypes -> STypes): ?this {
     this.stypes.map(fSTypes) match {
@@ -1285,6 +1289,10 @@ class Clause private (
     }
   }
 
+  fun isTop(): Bool {
+    this.stypes is None() && this.vars.isEmpty()
+  }
+
   fun project(): ArraySet<TParam> {
     this.vars
   }
@@ -1297,12 +1305,25 @@ class Clause private (
 class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
 ) uses XXHash64.Hashable, Orderable {
+  /*
+    Invariant: if one of the clauses is Top, then there are no other clauses
+   */
+  private static fun create(
+    clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
+  ): this {
+    if (clauses.any(c -> c.isTop())) static::top() else Clauses(clauses)
+  }
+
   static fun empty(): this {
     Clauses(InternalKeyedArrayMap::empty())
   }
 
+  static fun top(): this {
+    Clauses(InternalKeyedArrayMap::single(Clause::top()))
+  }
+
   fun map(f: Clause -> ?Clause): this {
-    static(
+    static::create(
       InternalKeyedArrayMap::createFromSortedIterator(
         this.clauses.filterMap(f).toArray().sorted().iterator(),
       ),
@@ -1373,7 +1394,7 @@ class Clauses private (
     clauses1: Clauses,
     clauses2: Clauses,
   ): Clauses {
-    Clauses(
+    static::create(
       clauses1.clauses.mapUnion(clauses2.clauses, (x, y) ->
         x.union(subst, env, y)
       ),
