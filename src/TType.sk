@@ -258,6 +258,22 @@ class TType private {
     static::create(ty1.pos, types, clauses)
   }
 
+  static fun inter(
+    subst: mutable Subst,
+    env: TEnv,
+    ty1: TType,
+    ty2: TType,
+  ): TType {
+    pair = (ty1, ty2);
+    subst.seenInter.maybeGet(pair) match {
+    | None() ->
+      result = interTType_(subst, env, ty1, ty2);
+      subst.seenInter![pair] = result;
+      result
+    | Some(ty) -> ty
+    }
+  }
+
   // UTILITIES
 
   fun toString(): String {
@@ -337,7 +353,7 @@ class TType private {
       inst = insts.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
-      | TInter(ty1, ty2) -> interTType(subst, env, ty1, ty2)
+      | TInter(ty1, ty2) -> TType::inter(subst, env, ty1, ty2)
       | TUnion(ty1, ty2) -> TType::union(subst, env, ty1, ty2)
       | tvar @ TVar _ -> subst.get(env, tvar, variance)
       };
@@ -727,7 +743,7 @@ class TField private (
       x.pos,
       x.name,
       x.isOptional && y.isOptional,
-      interTType(subst, env, x.type, y.type),
+      TType::inter(subst, env, x.type, y.type),
     )
   }
 
@@ -1699,23 +1715,23 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     | (None(), None()) -> None()
     | (None(), Some(x)) -> Some(x)
     | (Some(x), None()) -> Some(x)
-    | (Some(x), Some(y)) -> Some(interTType(subst, env, x, y))
+    | (Some(x), Some(y)) -> Some(TType::inter(subst, env, x, y))
     };
     clauses.push(tparam1 with {cstr});
   };
   !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
   params = mutable Vector[];
   for (i in Range(0, f1.params.size())) {
-    params.push(interTType(subst, env, f1.params[i], f2.params[i]));
+    params.push(TType::inter(subst, env, f1.params[i], f2.params[i]));
   };
   optionalParams = mutable Vector[];
   for (i in Range(0, min(f1.optionalParams.size(), f2.optionalParams.size()))) {
     optionalParams.push(
-      interTType(subst, env, f1.optionalParams[i], f2.optionalParams[i]),
+      TType::inter(subst, env, f1.optionalParams[i], f2.optionalParams[i]),
     );
   };
   spreadParam = (f1.spreadParam, f2.spreadParam) match {
-  | (Some(ty1), Some(ty2)) -> Some(interTType(subst, env, ty1, ty2))
+  | (Some(ty1), Some(ty2)) -> Some(TType::inter(subst, env, ty1, ty2))
   | _ -> None()
   };
   retType = TType::union(subst, env, f1.retType, f2.retType);
@@ -1832,7 +1848,7 @@ fun interSType(
     Some(interTTuple(subst, env, tuple1, tuple2))
 
   | (TPromise(ty1, pos1), TPromise(ty2, _)) ->
-    Some(TPromise(interTType(subst, env, ty1, ty2), pos1))
+    Some(TPromise(TType::inter(subst, env, ty1, ty2), pos1))
 
   | (obj1 @ TObject _, obj2 @ TObject _) ->
     Some(interTObject(subst, env, obj1, obj2))
@@ -1894,7 +1910,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   | (None(), ty @ Some _) -> ty
   | (Some(ty1), Some(ty2)) -> Some(TType::union(subst, env, ty1, ty2))
   };
-  retType = interTType(subst, env, f1.retType, f2.retType);
+  retType = TType::inter(subst, env, f1.retType, f2.retType);
   if (f1.lambdas.size() != 0) {
     typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
   };
@@ -1920,7 +1936,7 @@ fun interTTuple(
 ): TTuple {
   result = mutable Vector[];
   for (i in Range(0, min(tuple1.tuple.size(), tuple2.tuple.size()))) {
-    result.push(interTType(subst, env, tuple1.tuple[i], tuple2.tuple[i]));
+    result.push(TType::inter(subst, env, tuple1.tuple[i], tuple2.tuple[i]));
   };
   if (tuple1.tuple.size() < tuple2.tuple.size()) {
     for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
@@ -1932,17 +1948,6 @@ fun interTTuple(
     }
   };
   TTuple(result.toArray(), tuple1.pos)
-}
-
-fun interTType(subst: mutable Subst, env: TEnv, ty1: TType, ty2: TType): TType {
-  pair = (ty1, ty2);
-  subst.seenInter.maybeGet(pair) match {
-  | None() ->
-    result = interTType_(subst, env, ty1, ty2);
-    subst.seenInter![pair] = result;
-    result
-  | Some(ty) -> ty
-  }
 }
 
 fun interTType_(
@@ -2241,9 +2246,9 @@ mutable class Instantiate() extends ApplyType {
       for (tparam in clause.vars) {
         if (map.containsKey(tparam.id)) {
           paramTy = map[tparam.id];
-          !clauseTy = interTType(subst, tenv, clauseTy, paramTy)
+          !clauseTy = TType::inter(subst, tenv, clauseTy, paramTy)
         } else {
-          !clauseTy = interTType(
+          !clauseTy = TType::inter(
             subst,
             tenv,
             clauseTy,
@@ -2254,7 +2259,7 @@ mutable class Instantiate() extends ApplyType {
       clause.stypes match {
       | None() -> void
       | Some(stypes) ->
-        !clauseTy = interTType(
+        !clauseTy = TType::inter(
           subst,
           tenv,
           clauseTy,
@@ -2360,7 +2365,7 @@ mutable class Subst private {
       }
     };
     for (cstr in tvar.constraints) {
-      !result = interTType(this, env, result, cstr);
+      !result = TType::inter(this, env, result, cstr);
     };
     result
   }

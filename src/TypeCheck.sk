@@ -372,7 +372,8 @@ class TypeChecker{
         );
         ttypeParam.cstr match {
         | None() -> ty
-        | Some(cstr) -> interTType(Subst::mcreate{context}, this.tenv, ty, cstr)
+        | Some(cstr) ->
+          TType::inter(Subst::mcreate{context}, this.tenv, ty, cstr)
         }
       }),
     );
@@ -1321,7 +1322,7 @@ class TypeChecker{
         };
         this.callConstructor(env, pos, super, args.map(x -> this.expr(env, x)));
         thisName = Name(pos, "this");
-        thisType = interTType(
+        thisType = TType::inter(
           env.subst,
           this.tenv,
           env.scope.get(thisName),
