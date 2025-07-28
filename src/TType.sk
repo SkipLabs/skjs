@@ -264,7 +264,7 @@ class TType private {
     }
   }
 
-  static fun union_(
+  private static fun union_(
     subst: mutable Subst,
     env: TEnv,
     ty1: this,
