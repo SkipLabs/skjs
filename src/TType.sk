@@ -249,7 +249,7 @@ class TType private {
     if (ty1.isTop || ty2.isBottom()) return ty1;
     if (ty2.isTop || ty1.isBottom()) return ty2;
     if (env.seenUnion.contains((ty1, ty2))) {
-      return TType::fromTInst(ty1.pos, TUnion(ty1, ty2));
+      return TType::fromTInst(ty1.pos, TUnion::create(ty1, ty2));
     };
     !env.seenUnion = env.seenUnion.set((ty1, ty2));
 
@@ -1117,7 +1117,11 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
 //
 // Interpretation:
 // 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
-class TUnion(ty1: TType, ty2: TType) extends TInst
+class TUnion private (ty1: TType, ty2: TType) extends TInst {
+  static fun create(ty1: TType, ty2: TType): this {
+    static(ty1, ty2)
+  }
+}
 
 base class TInst uses XXHash64.Hashable, Orderable
 
@@ -2193,7 +2197,8 @@ mutable base class ApplyType(
     | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
     | TInter(ty1, ty2) ->
       TInter::create(this.type(env, ty1), this.type(env, ty2))
-    | TUnion(ty1, ty2) -> TUnion(this.type(env, ty1), this.type(env, ty2))
+    | TUnion(ty1, ty2) ->
+      TUnion::create(this.type(env, ty1), this.type(env, ty2))
     | tvar @ TVar _ -> tvar.mapConstraints(ty -> this.type(env, ty))
     }
   }
