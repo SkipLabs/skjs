@@ -330,7 +330,7 @@ mutable class TypePp{
       this.out(level, margin, "...");
       return void;
     };
-    if (ty.isTop) {
+    if (ty.isTop()) {
       return void;
     };
     if (ty.isBottom()) {
