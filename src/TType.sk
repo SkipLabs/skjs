@@ -150,30 +150,6 @@ class TType private {
     static::inst(Name(pos, name), TArgs(Array[]))
   }
 
-  fun isPrimitiveType(subst: mutable Subst, env: TEnv): Bool {
-    this.getSTypes(subst, env, Covariant()) match {
-    | None() -> false
-    | Some(stypes) ->
-      for (stype in stypes) {
-        stype match {
-        | TPrimVoid _
-        | TPrimValue _ ->
-          continue
-        | TTuple(tys, _) ->
-          for (ty in tys) {
-            if (!ty.isPrimitiveType(subst, env)) return false
-          }
-        | TAlgebraic _
-        | TFuns _
-        | TObject _
-        | TPromise _ ->
-          return false
-        }
-      };
-      true
-    }
-  }
-
   // TRANSFORMERS
 
   /* Returns None() if clauses are empty (Top included)
@@ -305,6 +281,30 @@ class TType private {
   fun containsUndefined(): Bool {
     if (this.isTop) return true;
     this.clauses.containsUndefined()
+  }
+
+  fun isPrimitiveType(subst: mutable Subst, env: TEnv): Bool {
+    this.getSTypes(subst, env, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      for (stype in stypes) {
+        stype match {
+        | TPrimVoid _
+        | TPrimValue _ ->
+          continue
+        | TTuple(tys, _) ->
+          for (ty in tys) {
+            if (!ty.isPrimitiveType(subst, env)) return false
+          }
+        | TAlgebraic _
+        | TFuns _
+        | TObject _
+        | TPromise _ ->
+          return false
+        }
+      };
+      true
+    }
   }
 
   // OTHER PROPERTIES
