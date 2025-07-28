@@ -14,9 +14,6 @@
 
 module SKJS;
 
-// Arbitrary hash for Top
-const kTopHash: Int = "Top".hash();
-
 /*****************************************************************************/
 // The class representing all the types.
 //
@@ -40,8 +37,7 @@ const kTopHash: Int = "Top".hash();
 // not affect the instances defined inside the type.
 //
 // Interpretation:
-// 〚 ttype 〛 = | Top                                  if ttype.isTop = true
-//             | 〚 ttype.insts 〛 ⨆ 〚 ttype.clauses 〛  otherwise
+// 〚 ttype 〛 = 〚 ttype.insts 〛 ⨆ 〚 ttype.clauses 〛
 //
 /*****************************************************************************/
 
@@ -55,21 +51,6 @@ class TType private {
   // two types are different. The hash is computed by smart constructors,
   // that's why the constructor is private
   private h: Int,
-
-  // This field is true if the type represents TOP (meaning, the type
-  // that contains all possible values). Note that TOP and BOTTOM have
-  // the same representation outside of this field. Why is that? We
-  // could have introduced an algebraic data type of the form: TOP |
-  // BOTTOM | TTYPE. The reason is that outside of those 3 operations:
-  // sub-typing, intersection and union, we really want to treat TOP
-  // and BOTTOM the same way. For example, imagine you are writing x.y
-  // where the type of x is BOTTOM. Technically, that operation is
-  // correct. But do we really want to allow it? Why would anyone
-  // write an operation that we know is unreachable. From that
-  // perspective, x.y when x is bottom should do the same thing as
-  // when x is TOP, it should result in an error. And this
-  // representation makes it nice and easy.
-  isTop: Bool,
 
   // The list of type instances which can be:
   // - Type variables
@@ -95,9 +76,7 @@ class TType private {
   // Returns the type that represents all possible values. Every other
   // type is sub-type of top.
   static fun top(pos: PosRange): this {
-    insts = TInsts::empty();
-    clauses = Clauses::empty();
-    static{h => kTopHash, pos, isTop => true, insts, clauses}
+    static::create(pos, TInsts::empty(), Clauses::top())
   }
 
   // Creates an unexpanded instance.
@@ -137,9 +116,11 @@ class TType private {
   }
 
   static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
-    if (clauses.isTop()) return static::top(pos);
+    if (clauses.isTop()) {
+      !insts = TInsts::empty();
+    };
     h = (insts, clauses).hash();
-    static{h, pos, isTop => false, insts, clauses};
+    static{h, pos, insts, clauses};
   }
 
   static fun expandPrim(pos: PosRange, kind: TPrimValueKind): this {
@@ -169,9 +150,7 @@ class TType private {
   }
 
   fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): this {
-    if (this.isTop) this else {
-      static::create(this.pos, insts(this.insts), clauses(this.clauses))
-    }
+    static::create(this.pos, insts(this.insts), clauses(this.clauses))
   }
 
   /* Returns this union undefined */
@@ -242,8 +221,8 @@ class TType private {
     ty1: this,
     ty2: this,
   ): this {
-    if (ty1.isTop || ty2.isBottom()) return ty1;
-    if (ty2.isTop || ty1.isBottom()) return ty2;
+    if (ty1.isTop() || ty2.isBottom()) return ty1;
+    if (ty2.isTop() || ty1.isBottom()) return ty2;
     if (env.seenUnion.contains((ty1, ty2))) {
       return TType::fromTInst(ty1.pos, TUnion::create(ty1, ty2));
     };
@@ -276,8 +255,8 @@ class TType private {
     ty1: TType,
     ty2: TType,
   ): TType {
-    if (ty2.isTop || ty1.isBottom()) return ty1;
-    if (ty1.isTop || ty2.isBottom()) return ty2;
+    if (ty2.isTop() || ty1.isBottom()) return ty1;
+    if (ty1.isTop() || ty2.isBottom()) return ty2;
     if (env.seenInter.contains((ty1, ty2))) {
       return TType::fromTInst(ty1.pos, TInter::create(ty1, ty2));
     };
@@ -339,11 +318,14 @@ class TType private {
   // BOOLEAN PROPERTIES
 
   fun isBottom(): Bool {
-    !this.isTop && this.insts.isEmpty() && this.clauses.isEmpty()
+    this.insts.isEmpty() && this.clauses.isEmpty()
+  }
+
+  fun isTop(): Bool {
+    this.clauses.isTop()
   }
 
   fun containsUndefined(): Bool {
-    if (this.isTop) return true;
     this.clauses.containsUndefined()
   }
 
@@ -388,7 +370,6 @@ class TType private {
   }
 
   fun expand(subst: mutable Subst, env: TEnv, variance: Variance): Clauses {
-    if (this.isTop) return Clauses::top();
     clauses = this.clauses;
     insts = Vector::mcreateFromItems(this.insts.insts);
     seen = Set::mcreateFromItems(insts);
@@ -401,7 +382,7 @@ class TType private {
       | TUnion(ty1, ty2) -> TType::union(subst, env, ty1, ty2)
       | tvar @ TVar _ -> subst.get(env, tvar, variance)
       };
-      if (tyDef.isTop) return Clauses::top();
+      if (tyDef.isTop()) return Clauses::top();
       !clauses = Clauses::union(subst, env, clauses, tyDef.clauses);
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
@@ -412,13 +393,13 @@ class TType private {
   }
 
   fun getConstantString(): ?(PosRange, String) {
-    if (this.isTop || !this.insts.isEmpty()) None() else {
+    if (!this.insts.isEmpty()) None() else {
       this.clauses.getConstantString()
     }
   }
 
   fun getSingleVar(): ?TVar {
-    if (!this.isTop && this.clauses.isEmpty()) this.insts.getSingleVar() else {
+    if (this.clauses.isEmpty()) this.insts.getSingleVar() else {
       None()
     }
   }
@@ -1082,7 +1063,7 @@ class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
 // 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
 class TInter private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
-    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop || ty2.isTop) {
+    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
       invariant_violation(
         `Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`,
       )
@@ -1097,7 +1078,7 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
 // 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
 class TUnion private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
-    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop || ty2.isTop) {
+    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
       invariant_violation(
         `Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`,
       )
@@ -1576,7 +1557,7 @@ fun isSubTType_(
   u1: TType,
   u2: TType,
 ): STResult {
-  if (u2.isTop) return STOk();
+  if (u2.isTop()) return STOk();
   if (env.seenSub.contains((subst.version, u1, u2))) return STOk();
   !env.seenSub = env.seenSub.set((subst.version, u1, u2));
   savedSubst = subst.save();
@@ -2068,18 +2049,14 @@ mutable base class ApplyType(
     this.seen.maybeGet(ty) match {
     | None() ->
       !this.visiting = this.visiting.set(ty);
-      result = if (ty.isTop) this.top(env, ty) else this.nonTop(env, ty);
+      result = this.type_(env, ty);
       this.seen![ty] = result;
       result
     | Some(x) -> x
     }
   }
 
-  overridable deferred mutable fun top(_env: this::Env, top: TType): TType {
-    top
-  }
-
-  overridable deferred mutable fun nonTop(env: this::Env, ty: TType): TType {
+  overridable deferred mutable fun type_(env: this::Env, ty: TType): TType {
     ty.rawMap(
       (insts) -> this.insts(env, insts),
       (clauses) -> this.clauses(env, clauses),
@@ -2262,7 +2239,7 @@ mutable class FilterType() extends ApplyType {
 mutable class Instantiate() extends ApplyType {
   type Env = (mutable Subst, TEnv, Map<Id, TType>);
 
-  mutable fun nonTop(env: this::Env, ty: TType): TType {
+  mutable fun type_(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
       (clauses) -> this.clauses(env, clauses),
@@ -2303,7 +2280,7 @@ mutable class Instantiate() extends ApplyType {
 mutable class ExpandTVars() extends ApplyType {
   type Env = (mutable Subst, TEnv);
 
-  mutable fun nonTop(env: this::Env, ty: TType): TType {
+  mutable fun type_(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
       (insts) -> this.insts(env, insts),
       (clauses) -> this.clauses(env, clauses),
