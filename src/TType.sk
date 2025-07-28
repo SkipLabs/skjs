@@ -152,19 +152,14 @@ class TType private {
 
   // TRANSFORMERS
 
-  /* Returns None() if clauses are empty (Top included)
-     Returns Some((clauses, ty)) where ty = this with empty clauses otherwise */
-  fun resetClauses(): ?(Clauses, this) {
-    if (this.isTop) {
-      if (!this.clauses.isEmpty()) {
-        invariant_violation("clauses should be empty when isTop")
-      };
-      None()
-    } else {
-      Some(
-        (this.clauses, static::create(this.pos, this.insts, Clauses::empty())),
-      )
-    }
+  /* Returns (clauses, ty) where ty = this with empty clauses */
+  fun resetClauses(): (Clauses, this) {
+    (
+      this.clauses,
+      if (this.clauses.isEmpty()) this else {
+        static::fromTInsts(this.pos, this.insts)
+      },
+    )
   }
 
   fun withPos(pos: PosRange): this {
@@ -2256,10 +2251,7 @@ mutable class Instantiate() extends ApplyType {
       (insts) -> this.insts(env, insts),
       (clauses) -> this.clauses(env, clauses),
     );
-    (clauses, result) = ty.resetClauses() match {
-    | None() -> /* already empty */ return ty
-    | Some(r) -> r
-    };
+    (clauses, result) = ty.resetClauses();
     (subst, tenv, map) = env;
     for (clause in clauses.clauses) {
       clauseTy = TType::top(ty.pos);
