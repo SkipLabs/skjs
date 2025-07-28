@@ -137,6 +137,7 @@ class TType private {
   }
 
   static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
+    if (clauses.isTop()) return static::top(pos);
     h = (insts, clauses).hash();
     static{h, pos, isTop => false, insts, clauses};
   }
@@ -1332,6 +1333,13 @@ class Clauses private (
 
   fun isEmpty(): Bool {
     this.clauses.isEmpty()
+  }
+
+  fun isTop(): Bool {
+    this.clauses.singleElt() match {
+    | None() -> false
+    | Some(clause) -> clause.isTop()
+    }
   }
 
   static fun single(tparam: TParam, stypes: ?STypes = None()): this {
