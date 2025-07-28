@@ -246,8 +246,8 @@ class TType private {
     ty1: this,
     ty2: this,
   ): this {
-    if (ty1.isTop) return ty1;
-    if (ty2.isTop) return ty2;
+    if (ty1.isTop || ty2.isBottom()) return ty1;
+    if (ty2.isTop || ty1.isBottom()) return ty2;
     if (env.seenUnion.contains((ty1, ty2))) {
       return TType::fromTInst(ty1.pos, TUnion(ty1, ty2));
     };
