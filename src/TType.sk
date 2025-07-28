@@ -290,14 +290,8 @@ class TType private {
     | None() -> void
     | Some(tvar) -> return TType::fromTInst(tvar.pos, tvar.addConstraint(ty1))
     };
-    clauses1 = ty1.expand(subst, env, Covariant()) match {
-    | None() -> return ty2
-    | Some(x) -> x
-    };
-    clauses2 = ty2.expand(subst, env, Covariant()) match {
-    | None() -> return ty1
-    | Some(x) -> x
-    };
+    clauses1 = ty1.expand(subst, env, Covariant());
+    clauses2 = ty2.expand(subst, env, Covariant());
     (clauses1.primKind(), clauses2.getObject()) match {
     | (Some(primKind), Some(stype)) ->
       isSubTType(
@@ -381,29 +375,25 @@ class TType private {
 
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): ?STypes {
-    this.expand(subst, env, variance) match {
-    | None() -> None()
-    | Some(clauses) ->
-      result = STypes::empty();
-      for (clause in clauses.clauses) {
-        clause.stypes match {
-        | None() -> return None()
-        | Some(clauseSTypes) ->
-          !result = STypes::union(subst, env, result, clauseSTypes)
-        }
-      };
-      Some(result)
-    }
+    clauses = this.expand(subst, env, variance);
+    result = STypes::empty();
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | None() -> return None()
+      | Some(clauseSTypes) ->
+        !result = STypes::union(subst, env, result, clauseSTypes)
+      }
+    };
+    Some(result)
   }
 
-  // Returns None() if the result is Top after expansion
-  fun expand(subst: mutable Subst, env: TEnv, variance: Variance): ?Clauses {
-    if (this.isTop) return None();
+  fun expand(subst: mutable Subst, env: TEnv, variance: Variance): Clauses {
+    if (this.isTop) return Clauses::top();
     clauses = this.clauses;
     insts = Vector::mcreateFromItems(this.insts.insts);
     seen = Set::mcreateFromItems(insts);
     loop {
-      if (insts.isEmpty()) return Some(clauses);
+      if (insts.isEmpty()) return clauses;
       inst = insts.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
@@ -411,7 +401,7 @@ class TType private {
       | TUnion(ty1, ty2) -> TType::union(subst, env, ty1, ty2)
       | tvar @ TVar _ -> subst.get(env, tvar, variance)
       };
-      if (tyDef.isTop) return None();
+      if (tyDef.isTop) return Clauses::top();
       !clauses = Clauses::union(subst, env, clauses, tyDef.clauses);
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
@@ -1615,13 +1605,8 @@ fun isSubTType_(
     | _ -> void
     }
   };
-  u1expanded = u1.expand(subst, env, Covariant());
-  u2expanded = u2.expand(subst, env, Contravariant());
-  (clauses1, clauses2) = (u1expanded, u2expanded) match {
-  | (_, None()) -> return STOk()
-  | (None(), Some(_)) -> return STTop()
-  | (Some(clauses1), Some(clauses2)) -> (clauses1, clauses2)
-  };
+  clauses1 = u1.expand(subst, env, Covariant());
+  clauses2 = u2.expand(subst, env, Contravariant());
   Clauses::isSub(subst, env, clauses1, clauses2) match {
   | STOk() -> STOk()
   | err @ STRec _ ->
@@ -2325,10 +2310,8 @@ mutable class ExpandTVars() extends ApplyType {
       (clauses) -> this.clauses(env, clauses),
     );
     (subst, tenv) = env;
-    ty.expand(subst, tenv, Covariant()) match {
-    | None() -> TType::top(ty.pos)
-    | Some(clauses) -> TType::fromClauses(ty.pos, clauses)
-    }
+    clauses = ty.expand(subst, tenv, Covariant());
+    TType::fromClauses(ty.pos, clauses)
   }
 }
 
