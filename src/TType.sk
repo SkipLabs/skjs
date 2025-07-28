@@ -1104,6 +1104,11 @@ class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
 // 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
 class TInter private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
+    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop || ty2.isTop) {
+      invariant_violation(
+        `Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`,
+      )
+    };
     static(ty1, ty2)
   }
 }
