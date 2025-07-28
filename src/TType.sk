@@ -281,27 +281,13 @@ class TType private {
       return TType::fromTInst(ty1.pos, TInter::create(ty1, ty2));
     };
     !env.seenInter = env.seenInter.set((ty1, ty2));
-    if (
-      ty1.insts.insts.size() == 1 &&
-      ty1.insts.insts[0] is TVar _ &&
-      ty1.clauses.isEmpty()
-    ) {
-      ty1.insts.insts[0] match {
-      | tvar @ TVar(pos, _, _) ->
-        return TType::fromTInst(pos, tvar.addConstraint(ty2))
-      | _ -> invariant_violation("Already checked it was a TVar")
-      }
+    ty1.getSingleVar() match {
+    | None() -> void
+    | Some(tvar) -> return TType::fromTInst(tvar.pos, tvar.addConstraint(ty2))
     };
-    if (
-      ty2.insts.insts.size() == 1 &&
-      ty2.insts.insts[0] is TVar _ &&
-      ty2.clauses.isEmpty()
-    ) {
-      ty2.insts.insts[0] match {
-      | tvar @ TVar(pos, _, _) ->
-        return TType::fromTInst(pos, tvar.addConstraint(ty1))
-      | _ -> invariant_violation("Already checked it was a TVar")
-      }
+    ty2.getSingleVar() match {
+    | None() -> void
+    | Some(tvar) -> return TType::fromTInst(tvar.pos, tvar.addConstraint(ty1))
     };
     clauses1 = ty1.expand(subst, env, Covariant()) match {
     | None() -> return ty2
@@ -437,6 +423,12 @@ class TType private {
   fun getConstantString(): ?(PosRange, String) {
     if (this.isTop || !this.insts.isEmpty()) None() else {
       this.clauses.getConstantString()
+    }
+  }
+
+  fun getSingleVar(): ?TVar {
+    if (!this.isTop && this.clauses.isEmpty()) this.insts.getSingleVar() else {
+      None()
     }
   }
 }
@@ -1154,6 +1146,17 @@ class TInsts private (insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
 
   fun values(): mutable Iterator<TInst> {
     this.insts.values()
+  }
+
+  fun getSingleVar(): ?TVar {
+    if (this.insts.size() == 1) {
+      this.insts[0] match {
+      | res @ TVar _ -> Some(res)
+      | _ -> None()
+      }
+    } else {
+      None()
+    }
   }
 }
 
