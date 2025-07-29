@@ -598,6 +598,14 @@ class STypes private (
     static(InternalKeyedArrayMap::single(x))
   }
 
+  static fun nullish(pos: PosRange): this {
+    static(
+      InternalKeyedArrayMap::single((TPrimVoid(TNull(), pos) : SType)).union(
+        InternalKeyedArrayMap::single((TPrimVoid(TUndefined(), pos) : SType)),
+      ),
+    )
+  }
+
   fun map(f: SType -> SType): this {
     static(this.stypes.map(f))
   }
