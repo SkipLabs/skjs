@@ -162,6 +162,12 @@ class TType private {
     }
   }
 
+  /* Returns an over-approximation of this minus null and undefined */
+  fun withoutNullish(): this {
+    clauses = this.clauses.withoutNullish();
+    static::create(this.pos, this.insts, clauses)
+  }
+
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
     this.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
       stypes.singleElt()
@@ -1012,6 +1018,20 @@ class STypes private (
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
 
+  /* Returns an over-approximation of this minus null and undefined */
+  fun withoutNullish(): this {
+    static(
+      this.stypes.filter(stype ->
+        stype match {
+        | TPrimVoid(TNull(), _)
+        | TPrimVoid(TUndefined(), _) ->
+          false
+        | _ -> true
+        }
+      ),
+    )
+  }
+
   fun getConstantString(): ?(PosRange, String) {
     this.singleElt() match {
     | Some(TPrimValue(TString(), Some(values), _)) -> values.singleElt()
@@ -1254,6 +1274,15 @@ class Clause private (
     this
   }
 
+  /* Returns an over-approximation of this minus null and undefined
+     Returns None() if the result is bottom */
+  fun withoutNullish(): ?this {
+    this.stypes match {
+    | None() -> Some(this)
+    | Some(stypes) -> static::create(this.vars, Some(stypes.withoutNullish()))
+    }
+  }
+
   fun containsUndefined(): Bool {
     this.stypes match {
     | None() -> this.vars.isEmpty()
@@ -1431,6 +1460,11 @@ class Clauses private (
       clause.addUndefined(undefinedPosRange)
     );
     this
+  }
+
+  /* Returns an over-approximation of this minus null and undefined */
+  fun withoutNullish(): this {
+    static(this.clauses.filterMap(c -> c.withoutNullish()))
   }
 
   fun getConstantString(): ?(PosRange, String) {

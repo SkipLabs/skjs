@@ -1680,7 +1680,7 @@ class TypeChecker{
             )
           }
         };
-        TType::union(env.subst, this.tenv, ty1, ty2)
+        TType::union(env.subst, this.tenv, ty1.withoutNullish(), ty2)
       }
 
     | InstanceOf(e1, Expr(_, Var(className))) ->
