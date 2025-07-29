@@ -155,11 +155,11 @@ class TType private {
 
   /* Returns this union undefined */
   fun withUndefined(undefinedPosRange: PosRange): this {
-    if (!this.containsUndefined()) {
-      !this.clauses = this.clauses.withUndefined(undefinedPosRange);
-    };
-    // We need this to make sure the hash is up-to-date
-    static::create(this.pos, this.insts, this.clauses)
+    if (this.containsUndefined()) this else {
+      clauses = this.clauses.withUndefined(undefinedPosRange);
+      // We need this to make sure the hash is up-to-date
+      static::create(this.pos, this.insts, clauses)
+    }
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
