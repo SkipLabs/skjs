@@ -769,13 +769,14 @@ extension class TypeChecker {
         | Some(stypes) ->
           hasVoid = false;
           hasNullOrUndefined = false;
+          hasOthers = false;
           for (stype in stypes) {
             stype match {
             | TPrimVoid(TVoid(), _) -> !hasVoid = true
             | TPrimVoid(TNull(), _)
             | TPrimVoid(TUndefined(), _) ->
               !hasNullOrUndefined = true
-            | _ -> void
+            | _ -> !hasOthers = true
             }
           };
           if (hasVoid) {
@@ -793,6 +794,14 @@ extension class TypeChecker {
                 (e1.pos, "This construction is never null or undefined"),
               ],
             );
+          };
+          if (!hasOthers) {
+            typingError(
+              Array[
+                (pos, "This operator is useless"),
+                (e.pos, "This constructor is always null or undefined"),
+              ],
+            )
           }
         };
         TType::union(env.subst, this.tenv, ty1, ty2)
