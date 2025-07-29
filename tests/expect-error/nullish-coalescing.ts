@@ -19,14 +19,10 @@ function uselessNoNull(x: number): number {
 }
 
 function withSameType(x: null | undefined | number): number {
-  // TODO: should not be an error
-  // @ts-expect-error Invalid return type
   return x ?? 0;
 }
 
 function withAnotherType(x: null | undefined | string): string | number {
-  // TODO: should not be an error
-  // @ts-expect-error Invalid return type
   return x ?? 0;
 }
 
@@ -45,8 +41,6 @@ function uselessNoNullParam<T extends number>(x: T): number {
 }
 
 function withSameTypeParam<T extends null | undefined | number>(x: T): number {
-  // TODO: should not be an error
-  // @ts-expect-error Invalid return type
   return x ?? 0;
 }
 
@@ -59,7 +53,5 @@ function withAnotherTypeParamT<T extends null | undefined | string>(
 function withAnotherTypeParamMorePrecise<T extends null | undefined | string>(
   x: T,
 ): string | number {
-  // TODO: should not be an error
-  // @ts-expect-error Invalid return type
   return x ?? 0;
 }

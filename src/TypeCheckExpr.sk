@@ -804,7 +804,9 @@ extension class TypeChecker {
             )
           }
         };
-        TType::union(env.subst, this.tenv, ty1, ty2)
+        nullish = TType::fromSTypes(pos, STypes::nullish(pos));
+        ty1WithoutNullish = ty1.diff(nullish);
+        TType::union(env.subst, this.tenv, ty1WithoutNullish, ty2)
       }
 
     | InstanceOf(e1, Expr(_, Var(className))) ->
