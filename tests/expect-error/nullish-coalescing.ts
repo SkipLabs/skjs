@@ -1,18 +1,15 @@
 function uselessNull(x: null): number {
-  // TODO: should be useless
-  // @ts-expect-error Invalid return type
+  // @ts-expect-error This operator is useless
   return x ?? 0;
 }
 
 function uselessUndefined(x: undefined): number {
-  // TODO: should be useless
-  // @ts-expect-error Invalid return type
+  // @ts-expect-error This operator is useless
   return x ?? 0;
 }
 
 function uselessNullOrUndefined(x: null | undefined): number {
-  // TODO: should be useless
-  // @ts-expect-error Invalid return type
+  // @ts-expect-error This operator is useless
   return x ?? 0;
 }
 
@@ -38,8 +35,7 @@ function paramTop<T>(x: T): T | number {
 }
 
 function uselessNullOrUndefinedParam<T extends null | undefined>(x: T): number {
-  // TODO: should be useless
-  // @ts-expect-error Invalid return type
+  // @ts-expect-error This operator is useless
   return x ?? 0;
 }
 
@@ -55,13 +51,13 @@ function withSameTypeParam<T extends null | undefined | number>(x: T): number {
 }
 
 function withAnotherTypeParamT<T extends null | undefined | string>(
-  x: T
+  x: T,
 ): T | number {
   return x ?? 0;
 }
 
 function withAnotherTypeParamMorePrecise<T extends null | undefined | string>(
-  x: T
+  x: T,
 ): string | number {
   // TODO: should not be an error
   // @ts-expect-error Invalid return type
