@@ -11,7 +11,7 @@ declare class Array<T> {
   sort(f?: (a: object, b: object) => number): Array<T>;
   map<T2>(f: (item: T) => T2): Array<T2>;
   static isArray<T>(value: T): boolean;
-  get(idx: number): T;
+  get_DO_NOT_USE(idx: number): T;
 }
 
 declare const Math: {
