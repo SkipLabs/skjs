@@ -102,8 +102,8 @@ extension class TypeChecker {
           ),
         ],
       )
-    | status ->
-      typingError(Array[(pos, status.toString(env.subst, this.tenv, ty1))])
+    | err @ STError _ ->
+      typingError(Array[(pos, err.toString(env.subst, this.tenv, ty1))])
     }
   }
 

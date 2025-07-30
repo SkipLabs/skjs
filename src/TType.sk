@@ -1023,9 +1023,12 @@ class Clauses private (
 /* Sub-typing */
 /***************************************************************************/
 
-base class STResult {
+base class STResult
+
+class STOk() extends STResult
+
+base class STError extends STResult {
   children =
-  | STOk()
   | STNoConstraint()
   | STMissingField(String)
   | STMissingSpread()
@@ -1034,12 +1037,10 @@ base class STResult {
   | STTooManyTTuple(TTuple)
   | STTooManyTFun(TFun)
   | STInvalidTypeParams(String)
-  | STRec(STResult, PosRange, TType)
+  | STRec(STError, PosRange, TType)
 
   fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
     this match {
-    | STOk() ->
-      internal_error("Internal error: STResult should never go to String")
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->

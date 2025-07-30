@@ -153,7 +153,7 @@ extension class Clauses {
         | (Some(x1), Some(x2)) ->
           STypes::isSub(subst, env, x1, x2) match {
           | STOk() -> break void
-          | err ->
+          | err @ STError _ ->
             !errors = List.Cons(err, errors);
             continue
           }
@@ -238,7 +238,7 @@ fun isSubTType_(
   | other @ STTooManySType(stype) ->
     subst.restore(savedSubst);
     STRec(other, stype.pos, u2)
-  | other ->
+  | other @ STError _ ->
     subst.restore(savedSubst);
     STRec(other, u1.pos, u2)
   }
