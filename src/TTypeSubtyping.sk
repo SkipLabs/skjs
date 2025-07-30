@@ -70,9 +70,7 @@ extension class TFuns {
         static::isSubTFun(subst, env, x, y)
       ) match {
       | Failure(err) -> err
-      | Success(void) ->
-        ok: STResult = STOk();
-        ok
+      | Success(void) -> (STOk() : STResult)
       }
     }
   }
