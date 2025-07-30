@@ -1485,19 +1485,17 @@ class TypeChecker{
       | BOStrictEquality() ->
         ty1 = this.expr(env, e1);
         ty2 = this.expr(env, e2);
-        isSubTType(env.subst, this.tenv, ty1, ty2) match {
-        | STOk() -> void
-        | STError _ ->
-          isSubTType(env.subst, this.tenv, ty2, ty1) match {
-          | STOk() -> void
-          | STError _ ->
-            alwaysResult = op match {
-            | BOStrictEquality() -> "false"
-            | BOStrictInequality() -> "true"
-            | _ -> invariant_violation("Internal error: unexpected operator")
-            };
-            typingError(Array[(pos, "This equality is always " + alwaysResult)])
-          }
+        st1 = isSubTType(env.subst, this.tenv, ty1, ty2);
+        st2 = isSubTType(env.subst, this.tenv, ty2, ty1);
+        (st1, st2) match {
+        | (STError _, STError _) ->
+          alwaysResult = op match {
+          | BOStrictEquality() -> "false"
+          | BOStrictInequality() -> "true"
+          | _ -> invariant_violation("Internal error: unexpected operator")
+          };
+          typingError(Array[(pos, "This equality is always " + alwaysResult)])
+        | _ -> void
         };
         TType::single(pos, TPrimValue(TBool(), None(), pos))
 
