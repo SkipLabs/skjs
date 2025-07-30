@@ -565,11 +565,15 @@ base class BinaryOperator {
   | BOLessThanOrEqual()
   | BOGreaterThan()
   | BOGreaterThanOrEqual()
-  | BOStrictEquality()
-  | BOStrictInequality()
   | BOAs()
   | BOAssignment()
   | BOOpAssignment(AssignableBinaryOperator)
+}
+
+base class BOStrictComparison() extends BinaryOperator {
+  children =
+  | BOStrictEquality()
+  | BOStrictInequality()
 }
 
 module end;
