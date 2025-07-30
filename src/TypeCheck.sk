@@ -1471,7 +1471,7 @@ class TypeChecker{
         | Some(TPrimValue(k @ TString(), _, primPos)) ->
           ty2 = this.expr(env, e2);
           this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1);
-          TType::single(pos, TPrimValue(k, None(), primPos))
+          TType::single(pos, TPrimValue::allValues(k, primPos))
         | _ ->
           typingError(
             Array[
