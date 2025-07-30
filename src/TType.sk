@@ -735,7 +735,6 @@ base class SType(
   pos: PosRange,
 ) uses XXHash64.Hashable, Orderable, Projectable<Int> {
   children =
-  | TPrimUnit(TPrimUnitKind)
   | TPromise(TType)
 
   fun tag(): Int {
@@ -758,6 +757,8 @@ base class SType(
     this.tag()
   }
 }
+
+class TPrimUnit(kind: TPrimUnitKind) extends SType
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
 
