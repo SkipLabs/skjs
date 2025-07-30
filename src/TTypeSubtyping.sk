@@ -201,8 +201,7 @@ fun isSubTType_(
     | tvar @ TVar(_, _, constraints) ->
       for (_ => cstr in constraints) {
         status = isSubTType(subst, env, u1, cstr);
-        if (status is STOk()) continue;
-        return status;
+        if (status is STError _) return status;
       };
       subst.grow(env, tvar, u1.diff(u2), true)
     | _ -> void
@@ -215,9 +214,10 @@ fun isSubTType_(
         substCopy = subst.save();
         for (_ => cstr in constraints) {
           status = isSubTType(subst, env, u2, cstr);
-          if (status is STOk()) continue;
-          subst.restore(substCopy);
-          break false
+          if (status is STError _) {
+            subst.restore(substCopy);
+            break false
+          }
         } else {
           true
         }
