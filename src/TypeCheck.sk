@@ -1403,7 +1403,14 @@ class TypeChecker{
             pos,
             this.expr(
               env,
-              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "get_DO_NOT_USE"))))),
+              Expr(
+                pos,
+                Binop(
+                  BODot(),
+                  arr,
+                  Expr(pos, Var(Name(pos, "get_DO_NOT_USE"))),
+                ),
+              ),
             ),
             Array[],
             Array[idxType],
