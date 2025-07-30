@@ -1023,10 +1023,13 @@ class Clauses private (
 /* Sub-typing */
 /***************************************************************************/
 
+/* Result for a check of subtyping of types T1 and T2 */
 base class STResult
 
+/* T1 ⊑ T2 */
 class STOk() extends STResult
 
+/* All other cases: T1 ⋢ T2 */
 base class STError extends STResult {
   children =
   | STNoConstraint()
