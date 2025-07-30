@@ -372,7 +372,8 @@ class TypeChecker{
         );
         ttypeParam.cstr match {
         | None() -> ty
-        | Some(cstr) -> interTType(Subst::mcreate{context}, this.tenv, ty, cstr)
+        | Some(cstr) ->
+          TType::inter(Subst::mcreate{context}, this.tenv, ty, cstr)
         }
       }),
     );
@@ -612,21 +613,18 @@ class TypeChecker{
   }
 
   fun isVoid(env: mutable TCEnv, ty: TType): Bool {
-    ty.expand(env.subst, this.tenv, Covariant()) match {
-    | None() -> false
-    | Some(clauses) ->
-      for (clause in clauses.clauses) {
-        clause.stypes match {
-        | None() -> return false
-        | Some(stypes) ->
-          stypes.singleElt() match {
-          | Some(TPrimVoid(TVoid(), _)) -> void
-          | _ -> return false
-          }
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | None() -> return false
+      | Some(stypes) ->
+        stypes.singleElt() match {
+        | Some(TPrimVoid(TVoid(), _)) -> void
+        | _ -> return false
         }
-      };
-      true
-    }
+      }
+    };
+    true
   }
 
   fun constructor(
@@ -1321,7 +1319,7 @@ class TypeChecker{
         };
         this.callConstructor(env, pos, super, args.map(x -> this.expr(env, x)));
         thisName = Name(pos, "this");
-        thisType = interTType(
+        thisType = TType::inter(
           env.subst,
           this.tenv,
           env.scope.get(thisName),
@@ -1335,10 +1333,8 @@ class TypeChecker{
 
     | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
-      ty = exprTy.expand(env.subst, this.tenv, Covariant()) match {
-      | None() -> TType::top(exprTy.pos)
-      | Some(clauses) -> TType::fromClauses(exprTy.pos, clauses)
-      };
+      clauses = exprTy.expand(env.subst, this.tenv, Covariant());
+      ty = TType::fromClauses(exprTy.pos, clauses);
       print_error(prettyPrintType(false, ty));
       TType::single(pos, TPrimVoid(TVoid(), pos))
     | Call(f, targs, args) ->
@@ -1407,7 +1403,14 @@ class TypeChecker{
             pos,
             this.expr(
               env,
-              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "get"))))),
+              Expr(
+                pos,
+                Binop(
+                  BODot(),
+                  arr,
+                  Expr(pos, Var(Name(pos, "get_DO_NOT_USE"))),
+                ),
+              ),
             ),
             Array[],
             Array[idxType],
@@ -1988,7 +1991,7 @@ class TypeChecker{
   }
 
   fun getArrayEltType(env: mutable TCEnv, object: TObject): TType {
-    object.fields.maybeGet("get") match {
+    object.fields.maybeGet("get_DO_NOT_USE") match {
     | None() ->
       typingError(Array[(object.pos, "Expected an Array or Record type")])
     | Some(getMethod) ->
@@ -2304,16 +2307,12 @@ class TypeChecker{
     map: SType ~> SType = x ~> x,
   ): void {
     ty = env.scope.get(local);
-    (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv, Covariant()) match {
-    | None() -> (TType::top(ty.pos), true)
-    | Some(clauses) ->
-      t = TType::fromClauses(ty.pos, clauses);
-      !t = (mutable FilterType()).type((filter, map), t);
-      isTopOrEmpty = t.getSTypes(env.subst, this.tenv, Covariant()) match {
-      | None() -> true
-      | Some(stypes2) -> stypes2.isEmpty()
-      };
-      (t, isTopOrEmpty)
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    !ty = TType::fromClauses(ty.pos, clauses);
+    !ty = (mutable FilterType()).type((filter, map), ty);
+    isTopOrEmpty = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
+    | None() -> true
+    | Some(stypes) -> stypes.isEmpty()
     };
     localType = default match {
     | Some(d) if (isTopOrEmpty) -> TType::single(d.pos, d)
