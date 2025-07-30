@@ -1407,7 +1407,7 @@ class TypeChecker{
             pos,
             this.expr(
               env,
-              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "get"))))),
+              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "get_DO_NOT_USE"))))),
             ),
             Array[],
             Array[idxType],
@@ -1988,7 +1988,7 @@ class TypeChecker{
   }
 
   fun getArrayEltType(env: mutable TCEnv, object: TObject): TType {
-    object.fields.maybeGet("get") match {
+    object.fields.maybeGet("get_DO_NOT_USE") match {
     | None() ->
       typingError(Array[(object.pos, "Expected an Array or Record type")])
     | Some(getMethod) ->
