@@ -466,7 +466,6 @@ base class SType private (
   pos: PosRange,
 ) uses XXHashable, Orderable, Projectable<Int> {
   children =
-  | TPrimUnit(TPrimUnitKind)
   | TPromise(TType)
 
   fun tag(): Int {
@@ -490,6 +489,8 @@ base class SType private (
     this.tag()
   }
 }
+
+class TPrimUnit(kind: TPrimUnitKind) extends SType
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
 
