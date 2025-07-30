@@ -16,7 +16,7 @@ extension class TAlgebraic {
       | Some(b2) ->
         TConstr::isSub(subst, env, b1, b2) match {
         | STOk() -> Success(void)
-        | err -> Failure(err)
+        | err @ STError _ -> Failure(err)
         }
       | None() -> Failure(STTooManyTConstr(b1))
       }
@@ -49,7 +49,7 @@ extension class TFuns {
     | Some(f2) ->
       isSubTFun(subst, env, f1, f2) match {
       | STOk() -> Success(void)
-      | err -> Failure(err)
+      | err @ STError _ -> Failure(err)
       }
     | None() -> Failure(STTooManyTFun(f1))
     }
@@ -97,7 +97,7 @@ extension class TFields {
         } else {
           isSubTType(subst, env, f1.type, f2.type) match {
           | STOk() -> Success(void)
-          | err -> Failure(err)
+          | err @ STError _ -> Failure(err)
           }
         }
       }
@@ -120,7 +120,7 @@ extension class STypes {
       | Some(t2) ->
         isSubSType(subst, env, t1, t2) match {
         | STOk() -> Success(void)
-        | err -> Failure(err)
+        | err @ STError _ -> Failure(err)
         }
       | None() -> Failure(STTooManySType(t1))
       }
@@ -292,7 +292,7 @@ fun isSubTTuple(
   for (i in Range(0, tuple2.tuple.size())) {
     isSubTType(subst, env, tuple1.tuple[i], tuple2.tuple[i]) match {
     | STOk() -> void
-    | err -> return err
+    | err @ STError _ -> return err
     }
   };
   STOk()
@@ -316,7 +316,7 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
     | (Some(ty1), Some(ty2)) ->
       isSubTType(subst, env, ty2, ty1) match {
       | STOk() -> void
-      | err -> return err
+      | err @ STError _ -> return err
       }
     };
     !tsubst[tparam2.id] = tparam1;
@@ -327,7 +327,7 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
   for (i in Range(0, params1.size())) {
     isSubTType(subst, env, params2[i], params1[i]) match {
     | STOk() -> void
-    | err -> return err
+    | err @ STError _ -> return err
     }
   };
   for (lambda in f1.lambdas) {
@@ -341,7 +341,7 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
     | Some(spread1) ->
       isSubTType(subst, env, spread1, spread2) match {
       | STOk() -> void
-      | err -> return err
+      | err @ STError _ -> return err
       }
     }
   };

@@ -613,10 +613,10 @@ extension class TypeChecker {
         if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
           isSubTType(env.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
-          | _ ->
+          | STError _ ->
             isSubTType(env.subst, this.tenv, ty2, ty1) match {
             | STOk() -> void
-            | _ ->
+            | STError _ ->
               alwaysResult = op match {
               | BOStrictEquality() -> "false"
               | BOStrictInequality() -> "true"
