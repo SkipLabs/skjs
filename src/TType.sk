@@ -1019,14 +1019,12 @@ base class STResult {
   | STTooManyTFun(TFun)
   | STInvalidTypeParam(String)
   | STInvalidTypeParams(String)
-  | STTop()
   | STRec(STResult, PosRange, TType)
 
   fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
     this match {
     | STOk() ->
       internal_error("Internal error: STResult should never go to String")
-    | STTop() -> "This is of type any"
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
