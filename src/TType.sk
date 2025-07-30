@@ -1017,7 +1017,6 @@ base class STResult {
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
   | STTooManyTFun(TFun)
-  | STInvalidTypeParam(String)
   | STInvalidTypeParams(String)
   | STRec(STResult, PosRange, TType)
 
@@ -1058,7 +1057,6 @@ base class STResult {
           false,
           TType::single(TFuns::singleFun(f, f.minSizeWitness)),
         )
-    | STInvalidTypeParam(n) -> "This is of type " + n
     | STInvalidTypeParams(n) -> "This is of type " + n
     | STRec(st, _, ty2) -> st.toString(subst, env, ty2)
     }
