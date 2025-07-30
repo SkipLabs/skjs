@@ -281,6 +281,10 @@ class ArrayValues private (
     inspect(this).toString()
   }
 
+  fun isEmpty(): Bool {
+    this.values.isEmpty()
+  }
+
   fun contains(x: String): Bool {
     idx = SKStore.binSearch(
       i ~> this.values[i].i1,

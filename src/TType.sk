@@ -759,7 +759,7 @@ class TPrimUnit(kind: TPrimUnitKind) extends SType
 
 class TPrimValue private (
   kind: TPrimValueKind,
-  values: ?ArrayValues,
+  values: /* Invariant: never empty */ ?ArrayValues,
 ) extends SType {
   static fun single(kind: TPrimValueKind, value: String, pos: PosRange): this {
     static(kind, Some(ArrayValues::single((pos, value))), pos)
@@ -794,16 +794,21 @@ class TPrimValue private (
     }
   }
 
-  static fun inter(t1: this, t2: this): this {
+  // Returns None() if the result is bottom
+  static fun inter(t1: this, t2: this): ?this {
     if (t1.kind != t2.kind) {
       invariant_violation(
         "Intersection must be called on primitive value types of same kind",
       )
     };
     (t1.values, t2.values) match {
-    | (_, None()) -> t1
-    | (None(), Some _) -> t2
-    | (Some(s1), Some(s2)) -> static(t1.kind, Some(s1.inter(s2)), t1.pos)
+    | (_, None()) -> Some(t1)
+    | (None(), Some _) -> Some(t2)
+    | (Some(s1), Some(s2)) ->
+      values = s1.inter(s2);
+      if (values.isEmpty()) None() else {
+        Some(static(t1.kind, Some(values), t1.pos))
+      }
     }
   }
 }
@@ -2002,7 +2007,7 @@ fun interSType(
     if (k1 != k2) invariant_violation("primitive void kinds must match");
     Some(sty1)
 
-  | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> Some(TPrimValue::inter(p1, p2))
+  | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::inter(p1, p2)
 
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
     Some(interTTuple(subst, env, tuple1, tuple2))
