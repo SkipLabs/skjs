@@ -179,12 +179,11 @@ fun isSubTType(
   if (u1 == u2) return STOk();
   pair = (u1, u2);
   if (subst.seenSub.contains(pair)) return STOk();
-  isSubTType_(subst, env, u1, u2) match {
-  | STOk() ->
-    subst.!seenSub = subst.seenSub.set(pair);
-    STOk()
-  | err -> err
-  }
+  res = isSubTType_(subst, env, u1, u2);
+  if (res is STOk()) {
+    subst.!seenSub = subst.seenSub.set(pair)
+  };
+  res
 }
 
 fun isSubTType_(
