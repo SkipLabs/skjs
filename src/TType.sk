@@ -622,7 +622,7 @@ class TFuns(
     env: TEnv,
     f1: TFun,
     f2O: ?TFun,
-  ): Result<void, STResult> {
+  ): Result<void, STError> {
     f2O match {
     | Some(f2) ->
       isSubTFun(subst, env, f1, f2) match {
