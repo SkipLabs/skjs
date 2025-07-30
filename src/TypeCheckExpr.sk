@@ -594,7 +594,7 @@ extension class TypeChecker {
         | Some(TPrimValue(k @ TString(), _, primPos))
         | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
           ty2 = this.expr(env, e2);
-          res = TType::single(TPrimValue(k, None(), primPos));
+          res = TType::single(TPrimValue::full(k, primPos));
           this.checkSubType(env, e2.pos, "Invalid + operand", ty2, res);
           res
         | _ ->
@@ -757,7 +757,7 @@ extension class TypeChecker {
             ],
           )
         };
-        TType::single(TPrimValue(kind1, None(), pos))
+        TType::single(TPrimValue::full(kind1, pos))
 
       | BONullishCoalescing() ->
         ty1 = this.nonVoidExpr(pos, env, e1);
