@@ -1088,7 +1088,7 @@ class TypeChecker{
       e.posRange,
       "A condition is expected to be of type boolean, not: ",
       this.expr(env, e),
-      TType::single(e.posRange, TPrimValue(TBool(), None(), e.posRange)),
+      TType::single(e.posRange, TPrimValue::boolean(e.posRange)),
     );
   }
 
@@ -1192,19 +1192,18 @@ class TypeChecker{
   fun expr(env: mutable TCEnv, e: Expr): TType {
     pos = e.posRange;
     e.value match {
-    | Number(_) -> TType::single(pos, TPrimValue(TNum(), None(), pos))
+    | Number(_) -> TType::single(pos, TPrimValue::number(pos))
     | EString(SKQuote(), x) ->
       TType::single(
         pos,
         TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
       )
-    | EString(SKDoubleQuote(), _) ->
-      TType::single(pos, TPrimValue(TString(), None(), pos))
+    | EString(SKDoubleQuote(), _) -> TType::single(pos, TPrimValue::string(pos))
     | EString(SKBackTick(), _) ->
       typingError(Array[(pos, "TODO: support for backtick strings")])
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
-      TType::single(pos, TPrimValue(TBool(), None(), pos))
+      TType::single(pos, TPrimValue::boolean(pos))
     | Var(Name(_, "null")) ->
       this.makeBoundTVar(env, TType::single(pos, TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
@@ -1454,7 +1453,7 @@ class TypeChecker{
     | Unop(uop, subExpr) ->
       uop match {
       | UOExclamationMark() ->
-        bool = TType::single(pos, TPrimValue(TBool(), None(), pos));
+        bool = TType::single(pos, TPrimValue::boolean(pos));
         this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
         bool
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
@@ -1495,7 +1494,7 @@ class TypeChecker{
           typingError(Array[(pos, "This equality is always " + alwaysResult)])
         | _ -> void
         };
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TType::single(pos, TPrimValue::boolean(pos))
 
       | BOLogicalAnd() ->
         ty1 = this.expr(env, e1);
@@ -1504,7 +1503,7 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty1,
-          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+          TType::single(e1.posRange, TPrimValue::boolean(e1.posRange)),
         );
         this.evalCond(env, e1, true);
         ty2 = this.expr(env, e2);
@@ -1513,9 +1512,9 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty2,
-          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
+          TType::single(e2.posRange, TPrimValue::boolean(e2.posRange)),
         );
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TType::single(pos, TPrimValue::boolean(pos))
       | BOLogicalOr() ->
         ty1 = this.expr(env, e1);
         this.checkSubType(
@@ -1523,7 +1522,7 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty1,
-          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+          TType::single(e1.posRange, TPrimValue::boolean(e1.posRange)),
         );
         this.evalCond(env, e1, false);
         ty2 = this.expr(env, e2);
@@ -1532,9 +1531,9 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty2,
-          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
+          TType::single(e2.posRange, TPrimValue::boolean(e2.posRange)),
         );
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TType::single(pos, TPrimValue::boolean(pos))
 
       | BODot() ->
         e2.value match {
@@ -1593,7 +1592,7 @@ class TypeChecker{
             ],
           )
         };
-        TType::single(pos, TPrimValue(TBool(), None(), pos))
+        TType::single(pos, TPrimValue::boolean(pos))
 
       | BOOpAssignment(assOp) ->
         this.expr(
@@ -1678,18 +1677,18 @@ class TypeChecker{
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(env, e1);
       _ = this.tenv.getClass(env.context, className);
-      TType::single(pos, TPrimValue(TBool(), None(), pos))
+      TType::single(pos, TPrimValue::boolean(pos))
     | InstanceOf(_, e2) ->
       typingError(Array[(e2.posRange, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
       _ = this.expr(env, subExpr);
-      TType::single(pos, TPrimValue(TString(), None(), pos))
+      TType::single(pos, TPrimValue::string(pos))
 
     | PostOp(pop, subExpr) ->
       pop match {
       | PODecr()
       | POIncr() ->
-        num = TType::single(pos, TPrimValue(TNum(), None(), pos));
+        num = TType::single(pos, TPrimValue::number(pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
         num
@@ -1770,7 +1769,7 @@ class TypeChecker{
         e1.posRange,
         "Invalid ? condition",
         cond,
-        TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+        TType::single(e1.posRange, TPrimValue::boolean(e1.posRange)),
       );
       TType::union(env.subst, this.tenv, left, right)
     | KeyOf _ -> notSupported(pos)
@@ -2208,18 +2207,15 @@ class TypeChecker{
       | "string" ->
         (
           (x ~> (x is TPrimValue(TString(), _, _))),
-          Some(TPrimValue(TString(), None(), typePos)),
+          Some(TPrimValue::string(typePos)),
         )
       | "number" ->
-        (
-          x ~> x is TPrimValue(TNum(), _, _),
-          Some(TPrimValue(TNum(), None(), typePos)),
-        )
+        (x ~> x is TPrimValue(TNum(), _, _), Some(TPrimValue::number(typePos)))
       | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
       | "boolean" ->
         (
           x ~> x is TPrimValue(TBool(), _, _),
-          Some(TPrimValue(TBool(), None(), typePos)),
+          Some(TPrimValue::boolean(typePos)),
         )
 
       | "symbol" -> return void

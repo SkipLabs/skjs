@@ -456,9 +456,9 @@ class TEnv{
         pos,
         kind match {
         | TPKNull() -> TPrimUnit(TNull(), typeAst.posRange)
-        | TPKBool() -> TPrimValue(TBool(), None(), typeAst.posRange)
-        | TPKNum() -> TPrimValue(TNum(), None(), typeAst.posRange)
-        | TPKString() -> TPrimValue(TString(), None(), typeAst.posRange)
+        | TPKBool() -> TPrimValue::boolean(typeAst.posRange)
+        | TPKNum() -> TPrimValue::number(typeAst.posRange)
+        | TPKString() -> TPrimValue::string(typeAst.posRange)
         },
       )
     | TAObject(fields) ->
