@@ -273,15 +273,11 @@ class TType private {
     if (ty1.isTop) return ty1;
     if (ty2.isTop) return ty2;
     if (env.seenUnion.contains((ty1, ty2))) {
-      return TType::create(
-        ty1.pos,
-        TInsts::single(TUnion(ty1, ty2)),
-        Clauses::empty(),
-      );
+      return TType::fromTInst(ty1.pos, TUnion(ty1, ty2));
     };
     !env.seenUnion = env.seenUnion.set((ty1, ty2));
 
-    types = unionTInsts(ty1.insts, ty2.insts);
+    types = TInsts::union(ty1.insts, ty2.insts);
     clauses = Clauses::union(subst, env, ty1.clauses, ty2.clauses);
     static::create(ty1.pos, types, clauses)
   }
@@ -881,9 +877,12 @@ class STypes private (
     stypes1: STypes,
     stypes2: STypes,
   ): ?STypes {
-    stypes1.stypes
-      .mapInterOption(stypes2.stypes, (x, y) -> interSType(subst, env, x, y))
-      .map(x -> static(x))
+    stypes1.stypes.mapInterOption(stypes2.stypes, (x, y) ->
+      interSType(subst, env, x, y)
+    ) match {
+    | Some(stypes) if (!stypes.isEmpty()) -> Some(static(stypes))
+    | _ -> None()
+    }
   }
 
   static fun isSub(
@@ -1025,9 +1024,11 @@ class TUnion(ty1: TType, ty2: TType) extends TInst
 
 base class TInst uses XXHash64.Hashable, Orderable
 
+/* "Instance"/Unexpanded types */
+//
 // Interpretation:
 // 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
-class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
+class TInsts private (insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
   static fun empty(): this {
     static(Array[])
   }
@@ -1036,16 +1037,22 @@ class TInsts(insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
     TInsts(Array[inst])
   }
 
+  static fun union(insts1: this, insts2: this): this {
+    static(
+      mapUnion(insts1.values(), insts2.values(), x ~> x, x ~> x, (x, _) ~> x),
+    )
+  }
+
+  fun map(f: TInst -> TInst): this {
+    static(this.insts.map(f))
+  }
+
   fun isEmpty(): Bool {
     this.insts.isEmpty()
   }
 
   fun values(): mutable Iterator<TInst> {
     this.insts.values()
-  }
-
-  fun toArray(): Array<TInst> {
-    this.insts
   }
 }
 
@@ -1076,10 +1083,35 @@ class TParam(
   id: Id,
 ) uses XXHash64.Hashable, Orderable
 
-class Clause(
+/* Clause */
+//
+// Interpretation:
+// 〚 clause 〛 = 〚 clause.vars 〛 ⨅ 〚 clause.stypes 〛
+// 〚 vars 〛 = ⨅ 〚 v 〛, for v in vars
+// 〚 stypes 〛 = Top     if stypes is None
+//              〚 st 〛  if stypes = Some(st)
+//                \-->  see STypes, this is a union
+//
+// In particular, Clause(ArraySet[], None()) represents ⊤
+class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
 ) uses XXHash64.Hashable, Orderable, Projectable<ArraySet<TParam>> {
+  /* Invariant: Clause cannot be bottom */
+
+  // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
+  static fun create(vars: ArraySet<TParam>, stypes: ?STypes): ?this {
+    stypes match {
+    | Some(s) if (s.isEmpty()) -> None()
+    | _ -> Some(static(vars, stypes))
+    }
+  }
+
+  // Returns None if the result is bottom (i.e. if stypes is bottom)
+  static fun fromSTypes(stypes: STypes): ?this {
+    static::create(ArraySet::empty(), Some(stypes))
+  }
+
   static fun undefined(undefinedPosRange: PosRange): this {
     static(
       ArraySet::empty(),
@@ -1087,11 +1119,23 @@ class Clause(
     )
   }
 
+  // Returns None if the result is bottom
+  fun map(fTParam: TParam -> TParam, fSTypes: STypes -> STypes): ?this {
+    this.stypes.map(fSTypes) match {
+    | Some(sTypes) if (sTypes.isEmpty()) -> None()
+    | stypes ->
+      vars = this.vars.map(fTParam);
+      Some(static(vars, stypes))
+    }
+  }
+
+  // Returns None if the result is bottom
   fun inter(subst: mutable Subst, env: TEnv, other: Clause): ?Clause {
     vars = this.vars.union(other.vars);
     (this.stypes, other.stypes) match {
-    | (None(), _) -> Some(Clause(vars, other.stypes))
-    | (_, None()) -> Some(Clause(vars, this.stypes))
+    | (None(), stypes)
+    | (stypes, None()) ->
+      Some(Clause(vars, stypes))
     | (Some(stypes1), Some(stypes2)) ->
       STypes::inter(subst, env, stypes1, stypes2).map(stypes ->
         Clause(vars, Some(stypes))
@@ -1104,25 +1148,12 @@ class Clause(
       invariant_violation("clause vars must be equal for union")
     };
     stypesOpt = (this.stypes, other.stypes) match {
-    | (None(), None()) -> None()
-    | (x @ Some(_), None())
-    | (None(), x @ Some(_)) ->
-      x
+    | (None(), _)
+    | (_, None()) ->
+      None()
     | (Some(x), Some(y)) -> Some(STypes::union(subst, env, x, y))
     };
     Clause(this.vars, stypesOpt)
-  }
-
-  fun interSTypes(subst: mutable Subst, env: TEnv, stypes: STypes): ?Clause {
-    if (stypes.isEmpty()) invariant_violation("stypes should not be empty");
-    vars = this.vars;
-    this.stypes match {
-    | None() -> Some(Clause(vars, Some(stypes)))
-    | Some(thisSTypes) ->
-      STypes::inter(subst, env, thisSTypes, stypes).map(stypes ->
-        Clause(vars, Some(stypes))
-      )
-    }
   }
 
   fun addUndefined(undefinedPosRange: PosRange): this {
@@ -1130,20 +1161,16 @@ class Clause(
       invariant_violation("Trying to add undefined to an intersection clause")
     };
     stypes = this.stypes match {
-    | None() -> invariant_violation("Empty clause")
+    | None() -> invariant_violation("Trying to add undefined to a Top clause")
     | Some(stypes) -> stypes.addUndefined(undefinedPosRange)
     };
     !this.stypes = Some(stypes);
     this
   }
 
-  fun toString(): String {
-    this.vars.toArray().map(x -> x.name + ":" + x.id).join(" & ")
-  }
-
   fun containsUndefined(): Bool {
     this.stypes match {
-    | None() -> false
+    | None() -> this.vars.isEmpty()
     | Some(stypes) -> stypes.containsUndefined()
     }
   }
@@ -1167,18 +1194,10 @@ class Clauses private (
     Clauses(InternalKeyedArrayMap::empty())
   }
 
-  static fun createFromItems(clauses: Array<Clause>): this {
+  fun map(f: Clause -> ?Clause): this {
     static(
       InternalKeyedArrayMap::createFromSortedIterator(
-        clauses
-          .filter(x ->
-            x.stypes match {
-            | None() -> true
-            | Some(stypes) -> !stypes.isEmpty()
-            }
-          )
-          .sorted()
-          .iterator(),
+        this.clauses.filterMap(f).toArray().sorted().iterator(),
       ),
     )
   }
@@ -1187,47 +1206,31 @@ class Clauses private (
     this.clauses.isEmpty()
   }
 
-  static fun single(tparam: TParam): this {
-    Clauses(
-      InternalKeyedArrayMap::single(Clause(ArraySet::single(tparam), None())),
-    )
+  static fun single(tparam: TParam, stypes: ?STypes = None()): this {
+    Clause::create(ArraySet::single(tparam), stypes) match {
+    | None() -> static::empty()
+    | Some(clause) -> static(InternalKeyedArrayMap::single(clause))
+    }
   }
 
   static fun fromTypeParam(tparam: TypeParam, stypes: ?STypes): this {
-    static(
-      InternalKeyedArrayMap::single(
-        Clause(
-          ArraySet::single(
-            TParam(tparam.name.value, tparam.name.posRange.fileName, tparam.id),
-          ),
-          stypes,
-        ),
-      ),
+    static::single(
+      TParam(tparam.name.value, tparam.name.posRange.fileName, tparam.id),
+      stypes,
     )
   }
   static fun fromTParamWithConstraint(
     tparam: TParamWithConstraint,
     stypes: ?STypes,
   ): this {
-    static(
-      InternalKeyedArrayMap::single(
-        Clause(
-          ArraySet::single(TParam(tparam.name, tparam.fileName, tparam.id)),
-          stypes,
-        ),
-      ),
-    )
+    static::single(TParam(tparam.name, tparam.fileName, tparam.id), stypes)
   }
 
   static fun fromSTypes(stypes: STypes): this {
-    if (stypes.isEmpty()) {
-      return static(InternalKeyedArrayMap::empty())
-    };
-    static(
-      InternalKeyedArrayMap::single(
-        Clause(ArraySet::createFromIterator(Array[].iterator()), Some(stypes)),
-      ),
-    )
+    Clause::fromSTypes(stypes) match {
+    | None() -> static::empty()
+    | Some(clause) -> static(InternalKeyedArrayMap::single(clause))
+    }
   }
 
   static fun inter(
@@ -1242,10 +1245,6 @@ class Clauses private (
         clause1.inter(subst, env, clause2) match {
         | None() -> void
         | Some(inter) ->
-          inter.stypes match {
-          | Some(x) if (x.isEmpty()) -> continue
-          | _ -> void
-          };
           if (!result.containsKey(inter.vars)) {
             !result[inter.vars] = inter;
           } else {
@@ -1770,12 +1769,6 @@ fun unionTTuple(
   TTuple(result.toArray(), tuple1.pos)
 }
 
-fun unionTInsts(insts1: TInsts, insts2: TInsts): TInsts {
-  TInsts(
-    mapUnion(insts1.values(), insts2.values(), x ~> x, x ~> x, (x, _) ~> x),
-  )
-}
-
 /*****************************************************************************/
 /* Intersections */
 /*****************************************************************************/
@@ -1957,11 +1950,7 @@ fun interTType_(
   if (ty1.isTop) return ty2;
   if (ty2.isTop) return ty1;
   if (env.seenInter.contains((ty1, ty2))) {
-    return TType::create(
-      ty1.pos,
-      TInsts::single(TInter(ty1, ty2)),
-      Clauses::empty(),
-    );
+    return TType::fromTInst(ty1.pos, TInter(ty1, ty2));
   };
   !env.seenInter = env.seenInter.set((ty1, ty2));
   if (
@@ -2021,7 +2010,7 @@ fun interTType_(
   | _ -> void
   };
   clauses = Clauses::inter(subst, env, clauses1, clauses2);
-  TType::create(ty1.pos, TInsts::empty(), clauses);
+  TType::fromClauses(ty1.pos, clauses);
 }
 
 /*****************************************************************************/
@@ -2063,19 +2052,14 @@ mutable base class ApplyType(
     env: this::Env,
     clauses: Clauses,
   ): Clauses {
-    Clauses::createFromItems(
-      clauses.clauses.map(x -> this.clause(env, x)).toArray(),
-    )
+    clauses.map(c -> this.clause(env, c))
   }
 
   overridable deferred mutable fun clause(
     env: this::Env,
     clause: Clause,
-  ): Clause {
-    Clause(
-      clause.vars.map(x -> this.typeParam(env, x)),
-      clause.stypes.map(x -> this.stypes(env, x)),
-    )
+  ): ?Clause {
+    clause.map(x -> this.typeParam(env, x), x -> this.stypes(env, x))
   }
 
   overridable deferred mutable fun typeParamWithConstraint(
@@ -2183,7 +2167,7 @@ mutable base class ApplyType(
     env: this::Env,
     insts: TInsts,
   ): TInsts {
-    TInsts(insts.insts.map(x -> this.inst(env, x)))
+    insts.map(x -> this.inst(env, x))
   }
 
   overridable deferred mutable fun inst(env: this::Env, inst: TInst): TInst {
@@ -2290,7 +2274,7 @@ mutable class ExpandTVars() extends ApplyType {
     (subst, tenv) = env;
     ty.expand(subst, tenv, Covariant()) match {
     | None() -> TType::top(ty.pos)
-    | Some(clauses) -> TType::create(ty.pos, TInsts::empty(), clauses)
+    | Some(clauses) -> TType::fromClauses(ty.pos, clauses)
     }
   }
 }

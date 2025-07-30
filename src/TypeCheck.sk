@@ -1337,7 +1337,7 @@ class TypeChecker{
       exprTy = this.expr(env, args[0]);
       ty = exprTy.expand(env.subst, this.tenv, Covariant()) match {
       | None() -> TType::top(exprTy.pos)
-      | Some(clauses) -> TType::create(exprTy.pos, TInsts::empty(), clauses)
+      | Some(clauses) -> TType::fromClauses(exprTy.pos, clauses)
       };
       print_error(prettyPrintType(false, ty));
       TType::single(pos, TPrimVoid(TVoid(), pos))
@@ -2307,7 +2307,7 @@ class TypeChecker{
     (!ty, isTopOrEmpty) = ty.expand(env.subst, this.tenv, Covariant()) match {
     | None() -> (TType::top(ty.pos), true)
     | Some(clauses) ->
-      t = TType::create(ty.pos, TInsts::empty(), clauses);
+      t = TType::fromClauses(ty.pos, clauses);
       !t = (mutable FilterType()).type((filter, map), t);
       isTopOrEmpty = t.getSTypes(env.subst, this.tenv, Covariant()) match {
       | None() -> true
