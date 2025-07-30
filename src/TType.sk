@@ -1593,12 +1593,11 @@ fun isSubTType(
 ): STResult {
   pair = (u1, u2);
   if (subst.seenSub.contains(pair)) return STOk();
-  isSubTType_(subst, env, u1, u2) match {
-  | STOk() ->
-    subst.seenSub.insert(pair);
-    STOk()
-  | err -> err
-  }
+  res = isSubTType_(subst, env, u1, u2);
+  if (res is STOk()) {
+    subst.seenSub.insert(pair)
+  };
+  res
 }
 
 fun isSubTType_(
