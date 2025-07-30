@@ -85,10 +85,7 @@ class TType private {
   }
 
   static fun constantString(pos: PosRange, s: String): this {
-    static::single(
-      pos,
-      TPrimValue(TString(), Some(ArrayValues::single((pos, s))), pos),
-    )
+    static::single(pos, TPrimValue::single(TString(), s, pos))
   }
 
   static fun single(pos: PosRange, sType: SType): this {
@@ -761,6 +758,10 @@ base class SType(
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
+  static fun single(kind: TPrimValueKind, value: String, pos: PosRange): this {
+    static(kind, Some(ArrayValues::single((pos, value))), pos)
+  }
+
   static fun allValues(kind: TPrimValueKind, pos: PosRange): this {
     static(kind, None(), pos)
   }
@@ -1684,9 +1685,7 @@ fun isSubSType(
   | (TPrimValue(k, Some(s1), _), TPrimValue(_, Some(s2), _)) ->
     for (elt in s1.values) {
       if (!s2.contains(elt.i1)) {
-        break STTooManySType(
-          TPrimValue(k, Some(ArrayValues::single(elt)), elt.i0),
-        )
+        break STTooManySType(TPrimValue::single(k, elt.i1, elt.i0))
       }
     } else {
       STOk()

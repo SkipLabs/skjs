@@ -1194,10 +1194,7 @@ class TypeChecker{
     e.value match {
     | Number(_) -> TType::single(pos, TPrimValue::number(pos))
     | EString(SKQuote(), x) ->
-      TType::single(
-        pos,
-        TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
-      )
+      TType::single(pos, TPrimValue::single(TString(), x, pos))
     | EString(SKDoubleQuote(), _) -> TType::single(pos, TPrimValue::string(pos))
     | EString(SKBackTick(), _) ->
       typingError(Array[(pos, "TODO: support for backtick strings")])
@@ -1787,49 +1784,17 @@ class TypeChecker{
     | Expr(valuePos, Var(Name(_, "undefined"))) ->
       Some(TType::single(valuePos, TPrimUnit(TUndefined(), valuePos)))
     | Expr(valuePos, Number(n)) ->
-      Some(
-        TType::single(
-          valuePos,
-          TPrimValue(
-            TNum(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
-        ),
-      )
+      Some(TType::single(valuePos, TPrimValue::single(TNum(), n, valuePos)))
     | Expr(valuePos, Var(Name(_, "true"))) ->
       Some(
-        TType::single(
-          valuePos,
-          TPrimValue(
-            TBool(),
-            Some(ArrayValues::single((valuePos, "true"))),
-            valuePos,
-          ),
-        ),
+        TType::single(valuePos, TPrimValue::single(TBool(), "true", valuePos)),
       )
     | Expr(valuePos, Var(Name(_, "false"))) ->
       Some(
-        TType::single(
-          valuePos,
-          TPrimValue(
-            TBool(),
-            Some(ArrayValues::single((valuePos, "false"))),
-            valuePos,
-          ),
-        ),
+        TType::single(valuePos, TPrimValue::single(TBool(), "false", valuePos)),
       )
     | Expr(valuePos, EString(_, n)) ->
-      Some(
-        TType::single(
-          valuePos,
-          TPrimValue(
-            TString(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
-        ),
-      )
+      Some(TType::single(valuePos, TPrimValue::single(TString(), n, valuePos)))
     | _ -> None()
     }
   }

@@ -423,23 +423,9 @@ class TEnv{
     | TAExtends _ -> invariant_violation("TODO extends ")
     | TAExtendsQuestion _ -> invariant_violation("TODO extendsQuestion ")
     | TAStringLiteral(x) ->
-      TType::single(
-        pos,
-        TPrimValue(
-          TString(),
-          Some(ArrayValues::single((typeAst.posRange, x))),
-          typeAst.posRange,
-        ),
-      )
+      TType::single(pos, TPrimValue::single(TString(), x, typeAst.posRange))
     | TANumLiteral(x) ->
-      TType::single(
-        pos,
-        TPrimValue(
-          TNum(),
-          Some(ArrayValues::single((typeAst.posRange, x))),
-          typeAst.posRange,
-        ),
-      )
+      TType::single(pos, TPrimValue::single(TNum(), x, typeAst.posRange))
     | TATypeOf(expr) ->
       expr.value match {
       | Var(name) ->
@@ -516,14 +502,7 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(pos, "Invalid number of type arguments")])
       };
-      TType::single(
-        pos,
-        TPrimValue(
-          TBool(),
-          Some(ArrayValues::single((typeAst.posRange, x))),
-          typeAst.posRange,
-        ),
-      )
+      TType::single(pos, TPrimValue::single(TBool(), x, typeAst.posRange))
     | TAInst(n, targs) ->
       if (this.clauses.containsKey(n.value)) {
         if (targs.size() != 0) {
