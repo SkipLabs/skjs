@@ -522,10 +522,7 @@ class TEnv{
     subst = Subst::mcreate{context};
     pos = typeAst.pos;
     typeAst.value match {
-    | TABigIntLiteral(x) ->
-      TType::single(
-        TPrimValue(TBigInt(), Some(ArrayValues::single((pos, x))), pos),
-      )
+    | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
     | TAAssertIs _ -> internal_error("TODO assertIs ")
     | TAAbstract _ -> internal_error("TODO abstract ")
     | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
@@ -540,14 +537,8 @@ class TEnv{
     | TAReadonly _ -> internal_error("TODO readonly ")
     | TAExtends _ -> internal_error("TODO extends ")
     | TAExtendsQuestion _ -> internal_error("TODO extendsQuestion ")
-    | TAStringLiteral(x) ->
-      TType::single(
-        TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
-      )
-    | TANumLiteral(x) ->
-      TType::single(
-        TPrimValue(TNum(), Some(ArrayValues::single((pos, x))), pos),
-      )
+    | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
+    | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(expr) ->
       expr.value match {
       | Var(name) ->
@@ -614,9 +605,7 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(pos, "Invalid number of type arguments")])
       };
-      TType::single(
-        TPrimValue(TBool(), Some(ArrayValues::single((pos, x))), pos),
-      )
+      TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
       if (this.tparams.containsKey(n.value)) {
         if (targs.size() != 0) {

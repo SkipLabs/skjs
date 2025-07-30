@@ -296,9 +296,7 @@ class TConstr(
   fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
     if (fieldName.value == kAlgebraicBranchFieldName) {
       pos = this.tagPos;
-      TType::single(
-        TPrimValue(TString(), Some(ArrayValues::single((pos, this.tag))), pos),
-      )
+      TType::single(TPrimValue::single(TString(), this.tag, pos))
     } else {
       this.fields.getType(subst, tenv, fieldName)
     }
@@ -493,6 +491,10 @@ base class SType private (
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
+  static fun single(kind: TPrimValueKind, value: String, pos: PosRange): this {
+    static(kind, Some(ArrayValues::single((pos, value))), pos)
+  }
+
   static fun full(kind: TPrimValueKind, pos: PosRange): this {
     static(kind, None(), pos)
   }

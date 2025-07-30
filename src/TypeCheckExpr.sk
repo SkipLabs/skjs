@@ -980,36 +980,13 @@ extension class TypeChecker {
     | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
       Some(TType::single(TPrimUnit(TUndefined(), pos)))
-    | Number(n) ->
-      Some(
-        TType::single(
-          TPrimValue(TNum(), Some(ArrayValues::single((pos, n))), pos),
-        ),
-      )
-    | BigInt(n) ->
-      Some(
-        TType::single(
-          TPrimValue(TBigInt(), Some(ArrayValues::single((pos, n))), pos),
-        ),
-      )
+    | Number(n) -> Some(TType::single(TPrimValue::single(TNum(), n, pos)))
+    | BigInt(n) -> Some(TType::single(TPrimValue::single(TBigInt(), n, pos)))
     | Var(Name(_, "true")) ->
-      Some(
-        TType::single(
-          TPrimValue(TBool(), Some(ArrayValues::single((pos, "true"))), pos),
-        ),
-      )
+      Some(TType::single(TPrimValue::single(TBool(), "true", pos)))
     | Var(Name(_, "false")) ->
-      Some(
-        TType::single(
-          TPrimValue(TBool(), Some(ArrayValues::single((pos, "false"))), pos),
-        ),
-      )
-    | EString(n) ->
-      Some(
-        TType::single(
-          TPrimValue(TString(), Some(ArrayValues::single((pos, n))), pos),
-        ),
-      )
+      Some(TType::single(TPrimValue::single(TBool(), "false", pos)))
+    | EString(n) -> Some(TType::single(TPrimValue::single(TString(), n, pos)))
     | _ -> None()
     }
   }
