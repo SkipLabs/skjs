@@ -757,7 +757,10 @@ base class SType private (
 
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
-class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
+class TPrimValue private (
+  kind: TPrimValueKind,
+  values: ?ArrayValues,
+) extends SType {
   static fun single(kind: TPrimValueKind, value: String, pos: PosRange): this {
     static(kind, Some(ArrayValues::single((pos, value))), pos)
   }
