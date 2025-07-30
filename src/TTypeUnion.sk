@@ -171,6 +171,21 @@ extension class Clauses {
   }
 }
 
+extension class TPrimValue {
+  static fun union(t1: this, t2: this): this {
+    if (t1.kind != t2.kind) {
+      invariant_violation(
+        "Union must be called on primitive value types of same kind",
+      )
+    };
+    (t1.values, t2.values) match {
+    | (None(), _) -> t1
+    | (Some _, None()) -> t2
+    | (Some(s1), Some(s2)) -> static(t1.kind, Some(s1.union(s2)), t1.pos)
+    }
+  }
+}
+
 /***************************************************************************/
 /* Unions. */
 /***************************************************************************/
@@ -212,12 +227,7 @@ fun unionSType(
   (sty1, sty2) match {
   | (TPrimVoid(_, _), TPrimVoid(_, _)) -> sty1
 
-  | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> sty1
-  | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> sty1
-  | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> sty2
-  | (TPrimValue(k1, Some(s1), pos), TPrimValue(k2, Some(s2), _)) ->
-    if (k1 != k2) internal_error("primitive value kinds must match");
-    TPrimValue(k1, Some(s1.union(s2)), pos)
+  | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::union(p1, p2)
 
   | (TPromise(ty1, pos), TPromise(ty2, _)) ->
     TPromise(TType::union(subst, env, ty1, ty2), pos)
