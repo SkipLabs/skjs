@@ -496,6 +496,22 @@ class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
   static fun full(kind: TPrimValueKind, pos: PosRange): this {
     static(kind, None(), pos)
   }
+
+  static fun boolean(pos: PosRange): this {
+    static::full(TBool(), pos)
+  }
+
+  static fun number(pos: PosRange): this {
+    static::full(TNum(), pos)
+  }
+
+  static fun string(pos: PosRange): this {
+    static::full(TString(), pos)
+  }
+
+  static fun bigint(pos: PosRange): this {
+    static::full(TBigInt(), pos)
+  }
 }
 
 class TField private (

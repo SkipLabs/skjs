@@ -562,10 +562,10 @@ class TEnv{
       TType::single(
         kind match {
         | TPKNull() -> TPrimUnit(TNull(), pos)
-        | TPKBool() -> TPrimValue(TBool(), None(), pos)
-        | TPKNum() -> TPrimValue(TNum(), None(), pos)
-        | TPKString() -> TPrimValue(TString(), None(), pos)
-        | TPKBigInt() -> TPrimValue(TBigInt(), None(), pos)
+        | TPKBool() -> TPrimValue::boolean(pos)
+        | TPKNum() -> TPrimValue::number(pos)
+        | TPKString() -> TPrimValue::string(pos)
+        | TPKBigInt() -> TPrimValue::bigint(pos)
         },
       )
     | TAObject(fields) ->

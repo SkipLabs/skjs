@@ -94,7 +94,7 @@ extension class TypeChecker {
     | "string" ->
       (filter, default) = (
         x ~> (x is TPrimValue(TString(), _, _)),
-        Some(TPrimValue(TString(), None(), typePos)),
+        Some(TPrimValue::string(typePos)),
       );
       this.setLocal(
         env,
@@ -105,7 +105,7 @@ extension class TypeChecker {
     | "number" ->
       (filter, default) = (
         x ~> x is TPrimValue(TNum(), _, _),
-        Some(TPrimValue(TNum(), None(), typePos)),
+        Some(TPrimValue::number(typePos)),
       );
       this.setLocal(
         env,
@@ -116,7 +116,7 @@ extension class TypeChecker {
     | "bigint" ->
       (filter, default) = (
         x ~> x is TPrimValue(TBigInt(), _, _),
-        Some(TPrimValue(TBigInt(), None(), typePos)),
+        Some(TPrimValue::bigint(typePos)),
       );
       this.setLocal(
         env,
@@ -127,7 +127,7 @@ extension class TypeChecker {
     | "boolean" ->
       (filter, default) = (
         x ~> x is TPrimValue(TBool(), _, _),
-        Some(TPrimValue(TBool(), None(), typePos)),
+        Some(TPrimValue::boolean(typePos)),
       );
       this.setLocal(
         env,

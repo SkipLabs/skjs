@@ -375,12 +375,12 @@ extension class TypeChecker {
 
     pos = e.pos;
     e.value match {
-    | Number(_) -> TType::single(TPrimValue(TNum(), None(), pos))
-    | BigInt(_) -> TType::single(TPrimValue(TBigInt(), None(), pos))
-    | EString(_) -> TType::single(TPrimValue(TString(), None(), pos))
+    | Number(_) -> TType::single(TPrimValue::number(pos))
+    | BigInt(_) -> TType::single(TPrimValue::bigint(pos))
+    | EString(_) -> TType::single(TPrimValue::string(pos))
     | TemplateLiteral(_parts, exprs) ->
       // Type check all embedded expressions - allow primitive types that can be converted to strings
-      strType = TType::single(TPrimValue(TString(), None(), pos));
+      strType = TType::single(TPrimValue::string(pos));
       for (expr in exprs) {
         ety = this.expr(env, expr);
         this.checkStringifiable(env, expr.pos, ety);
@@ -389,7 +389,7 @@ extension class TypeChecker {
 
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
-      TType::single(TPrimValue(TBool(), None(), pos))
+      TType::single(TPrimValue::boolean(pos))
     | Var(Name(_, "null")) ->
       this.makeBoundTVar(env, TType::single(TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
@@ -577,7 +577,7 @@ extension class TypeChecker {
     | Unop(uop, subExpr) ->
       uop match {
       | UOExclamationMark() ->
-        bool = TType::single(TPrimValue(TBool(), None(), pos));
+        bool = TType::single(TPrimValue::boolean(pos));
         this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
         bool
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
@@ -626,7 +626,7 @@ extension class TypeChecker {
             }
           }
         };
-        TType::single(TPrimValue(TBool(), None(), pos))
+        TType::single(TPrimValue::boolean(pos))
 
       | BOLogicalAnd() ->
         ty1 = this.expr(env, e1);
@@ -635,7 +635,7 @@ extension class TypeChecker {
           pos,
           "Invalid &&",
           ty1,
-          TType::single(TPrimValue(TBool(), None(), e1.pos)),
+          TType::single(TPrimValue::boolean(e1.pos)),
         );
         this.evalCond(env, e1, true);
         ty2 = this.expr(env, e2);
@@ -644,9 +644,9 @@ extension class TypeChecker {
           pos,
           "Invalid &&",
           ty2,
-          TType::single(TPrimValue(TBool(), None(), e2.pos)),
+          TType::single(TPrimValue::boolean(e2.pos)),
         );
-        TType::single(TPrimValue(TBool(), None(), pos))
+        TType::single(TPrimValue::boolean(pos))
       | BOLogicalOr() ->
         ty1 = this.expr(env, e1);
         this.checkSubType(
@@ -654,7 +654,7 @@ extension class TypeChecker {
           pos,
           "Invalid ||",
           ty1,
-          TType::single(TPrimValue(TBool(), None(), e1.pos)),
+          TType::single(TPrimValue::boolean(e1.pos)),
         );
         this.evalCond(env, e1, false);
         ty2 = this.expr(env, e2);
@@ -663,9 +663,9 @@ extension class TypeChecker {
           pos,
           "Invalid ||",
           ty2,
-          TType::single(TPrimValue(TBool(), None(), e2.pos)),
+          TType::single(TPrimValue::boolean(e2.pos)),
         );
-        TType::single(TPrimValue(TBool(), None(), pos))
+        TType::single(TPrimValue::boolean(pos))
 
       | BODot() ->
         e2.value match {
@@ -722,7 +722,7 @@ extension class TypeChecker {
             ],
           )
         };
-        TType::single(TPrimValue(TBool(), None(), pos))
+        TType::single(TPrimValue::boolean(pos))
 
       | BOOpAssignment(assOp) ->
         this.expr(
@@ -810,17 +810,17 @@ extension class TypeChecker {
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(env, e1);
       _ = this.tenv.getClass(env.context, className);
-      TType::single(TPrimValue(TBool(), None(), pos))
+      TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, env, subExpr);
-      TType::single(TPrimValue(TString(), None(), pos))
+      TType::single(TPrimValue::string(pos))
 
     | PostOp(pop, subExpr) ->
       pop match {
       | PODecr()
       | POIncr() ->
-        num = TType::single(TPrimValue(TNum(), None(), pos));
+        num = TType::single(TPrimValue::number(pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
         num
@@ -859,7 +859,7 @@ extension class TypeChecker {
         e1.pos,
         "Invalid ? condition",
         cond,
-        TType::single(TPrimValue(TBool(), None(), e1.pos)),
+        TType::single(TPrimValue::boolean(e1.pos)),
       );
 
       // Create scopes for the true and false branches with type refinements
