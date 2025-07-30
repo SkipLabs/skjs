@@ -2237,7 +2237,11 @@ class TypeChecker{
         )
 
       | "symbol" -> return void
-      | "undefined" -> (x ~> x is TPrimVoid(TUndefined(), _), None())
+      | "undefined" ->
+        (
+          x ~> x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _),
+          None(),
+        )
       | "object" ->
         (
           (x ~>
@@ -2264,7 +2268,7 @@ class TypeChecker{
     | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
       if (!target) {
         this.setLocal(env, local, None(), x ~>
-          !(x is TPrimVoid(TUndefined _, _))
+          !(x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _))
         )
       }
 
