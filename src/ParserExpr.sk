@@ -308,6 +308,230 @@ extension class Parser {
     this.parseBinaryAndPostfixOps(left, tok, prec)
   }
 
+  // Handle binary operators with precedence climbing
+  mutable fun tryParseBinaryOp(mutableLeft: Expr_, binopTok: Token, tok: Token, prec: Int): (Bool, Expr_) {
+    (assoc, bopPrec) = precedence.maybeGet(binopTok.kind) match {
+    | None() -> return (false, mutableLeft)
+    | Some(x) -> x
+    };
+    binop = binopTok.kind.toBinop() match {
+    | None() -> return (false, mutableLeft)
+    | Some(x) -> x
+    };
+    if (bopPrec == prec) {
+      leftPosRange = PosRange(
+        this.lex.fileName,
+        tok.posRange.start,
+        this.lex.getLastPos(),
+      );
+      _ = this.lex.next();
+      newLeft = assoc match {
+      | ALeft() ->
+        right = this.expr(prec + 1);
+        Binop(binop, Expr(leftPosRange, mutableLeft), right)
+      | ARight() ->
+        Binop(binop, Expr(leftPosRange, mutableLeft), this.expr(prec))
+      | ANonAssoc() ->
+        this.error(
+          this.lex.posStart(binopTok),
+          NonAssociative(this.lex.getStrTok(binopTok)),
+        )
+      };
+      (true, newLeft)
+    } else if (bopPrec > prec) {
+      leftPosRange = PosRange(
+        this.lex.fileName,
+        tok.posRange.start,
+        this.lex.getLastPos(),
+      );
+      _ = this.lex.next();
+      newLeft = Binop(binop, Expr(leftPosRange, mutableLeft), this.expr(bopPrec + 1));
+      (true, newLeft)
+    } else {
+      if (bopPrec >= prec) {
+        invariant_violation("bopPrec should be less than prec")
+      };
+      (false, mutableLeft)
+    }
+  }
+
+  // Handle closure syntax (: type => expr and => expr)
+  mutable fun tryParseClosure(mutableLeft: Expr_, binopTok: Token, tok: Token): (Bool, Expr_) {
+    if (
+      binopTok.kind is TKColon() &&
+      this.lex.lookAhead(() -> {
+        try {
+          _ = this.lex.next();
+          _ = this.type(0);
+          this.lex.peekKind() is Some(TKClosure())
+        } catch {
+        | ErrorExn _ -> false
+        | exn -> throw exn
+        }
+      })
+    ) {
+      _ = this.lex.next();
+      rty = this.type(0);
+      this.expect(TKClosure());
+      params = mutableLeft match {
+      | Params(params) -> params
+      | Var(varName) -> Array[(varName, None())]
+      | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
+      };
+      closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
+        CBBlock(this.blockOrStmt())
+      } else {
+        CBExpr(this.expr(0))
+      };
+      (true, Closure(params, Some(rty), closureBody))
+    } else if (binopTok.kind is TKClosure()) {
+      _ = this.lex.next();
+      params = mutableLeft match {
+      | Params(params) -> params
+      | Var(varName) -> Array[(varName, None())]
+      | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
+      };
+      closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
+        CBBlock(this.blockOrStmt())
+      } else {
+        CBExpr(this.expr(0))
+      };
+      (true, Closure(params, None(), closureBody))
+    } else {
+      (false, mutableLeft)
+    }
+  }
+
+  // Handle type casting with 'as' keyword
+  mutable fun tryParseTypeCast(mutableLeft: Expr_, binopTok: Token, tok: Token): (Bool, Expr_) {
+    if (this.lex.isEqTok(binopTok, "as")) {
+      leftPosRange = PosRange(
+        this.lex.fileName,
+        tok.posRange.start,
+        this.lex.getLastPos(),
+      );
+      _ = this.lex.next();
+      ty = this.type(0);
+      result = As(Expr(leftPosRange, mutableLeft), ty);
+      loop {
+        if (this.lex.isEq("as")) {
+          _ = this.lex.next();
+          type = this.type(0);
+          !result = As(
+            Expr(
+              PosRange(
+                this.lex.fileName,
+                tok.posRange.start,
+                this.lex.getLastPos(),
+              ),
+              result,
+            ),
+            type,
+          );
+        };
+        break void;
+      };
+      (true, result)
+    } else {
+      (false, mutableLeft)
+    }
+  }
+
+  // Handle function calls with optional type arguments
+  mutable fun tryParseFunctionCall(mutableLeft: Expr_, binopTok: Token, tok: Token, prec: Int): (Bool, Expr_) {
+    hasTArgs = this.hasTArgs();
+    if (binopTok.kind is TKOpenParen() || hasTArgs) {
+      if (prec >= callPrec) return (false, mutableLeft);
+      _ = this.lex.next();
+      targs = mutable Vector[];
+      if (hasTArgs) {
+        loop {
+          targs.push(this.type(0));
+          commaTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+          | Some(tk) -> tk
+          };
+          commaTok.kind match {
+          | TKComma() ->
+            if (this.lex.peekKind() is Some(TKGreaterThan())) {
+              _ = this.lex.next();
+              break void
+            }
+          | TKGreaterThan() -> break void
+          | _ ->
+            this.error(
+              this.lex.posStart(commaTok),
+              ExpectedToken(TKGreaterThan()),
+            )
+          }
+        };
+        this.expect(TKOpenParen())
+      };
+      args = this.arguments();
+      newLeft = Call(
+        Expr(
+          PosRange(
+            this.lex.fileName,
+            tok.posRange.start,
+            this.lex.getLastPos(),
+          ),
+          mutableLeft,
+        ),
+        targs.toArray(),
+        args,
+      );
+      (true, newLeft)
+    } else {
+      (false, mutableLeft)
+    }
+  }
+
+  // Handle postfix operators (++, --, !)
+  mutable fun tryParsePostfixOp(mutableLeft: Expr_, binopTok: Token, tok: Token, prec: Int): (Bool, Expr_) {
+    binopTok.kind match {
+    | TKIncr() ->
+      (_assoc, opPrec) = precedence[binopTok.kind];
+      if (prec <= opPrec) {
+        leftPosRange = PosRange(
+          this.lex.fileName,
+          tok.posRange.start,
+          this.lex.getLastPos(),
+        );
+        _ = this.lex.next();
+        (true, PostOp(POIncr(), Expr(leftPosRange, mutableLeft)))
+      } else {
+        (false, mutableLeft)
+      }
+    | TKDecr() ->
+      (_assoc, opPrec) = precedence[binopTok.kind];
+      if (prec <= opPrec) {
+        leftPosRange = PosRange(
+          this.lex.fileName,
+          tok.posRange.start,
+          this.lex.getLastPos(),
+        );
+        _ = this.lex.next();
+        (true, PostOp(PODecr(), Expr(leftPosRange, mutableLeft)))
+      } else {
+        (false, mutableLeft)
+      }
+    | TKExclamationMark() ->
+      (_assoc, opPrec) = precedence[TKIncr()];
+      if (prec <= opPrec) {
+        leftPosRange = PosRange(
+          this.lex.fileName,
+          tok.posRange.start,
+          this.lex.getLastPos(),
+        );
+        _ = this.lex.next();
+        (true, PostOp(POExcl(), Expr(leftPosRange, mutableLeft)))
+      } else {
+        (false, mutableLeft)
+      }
+    | _ -> (false, mutableLeft)
+    }
+  }
+
   // Handle binary and postfix operators with precedence
   // Processes: function calls, array access, binary ops, ternary, instanceof, as casts
   // Uses precedence climbing algorithm for correct operator associativity
@@ -332,43 +556,9 @@ extension class Parser {
         };
         return mutableLeft;
       };
-      if (binopTok.kind is TKIncr()) {
-        (_assoc, opPrec) = precedence[binopTok.kind];
-        if (prec <= opPrec) {
-          leftPosRange = PosRange(
-            this.lex.fileName,
-            tok.posRange.start,
-            this.lex.getLastPos(),
-          );
-          _ = this.lex.next();
-          !mutableLeft = PostOp(POIncr(), Expr(leftPosRange, mutableLeft));
-        };
-        return mutableLeft;
-      };
-      if (binopTok.kind is TKDecr()) {
-        (_assoc, opPrec) = precedence[binopTok.kind];
-        if (prec <= opPrec) {
-          leftPosRange = PosRange(
-            this.lex.fileName,
-            tok.posRange.start,
-            this.lex.getLastPos(),
-          );
-          _ = this.lex.next();
-          !mutableLeft = PostOp(PODecr(), Expr(leftPosRange, mutableLeft));
-        };
-        return mutableLeft;
-      };
-      if (binopTok.kind is TKExclamationMark()) {
-        (_assoc, opPrec) = precedence[TKIncr()];
-        if (prec <= opPrec) {
-          leftPosRange = PosRange(
-            this.lex.fileName,
-            tok.posRange.start,
-            this.lex.getLastPos(),
-          );
-          _ = this.lex.next();
-          !mutableLeft = PostOp(POExcl(), Expr(leftPosRange, mutableLeft));
-        };
+      (postfixHandled, postfixResult) = this.tryParsePostfixOp(mutableLeft, binopTok, tok, prec);
+      if (postfixHandled) {
+        !mutableLeft = postfixResult;
         return mutableLeft;
       };
       if (binopTok.kind is TKQuestionMark()) {
@@ -387,51 +577,9 @@ extension class Parser {
         };
         return mutableLeft;
       };
-      if (
-        binopTok.kind is TKColon() &&
-        this.lex.lookAhead(() -> {
-          try {
-            _ = this.lex.next();
-            _ = this.type(0);
-            this.lex.peekKind() is Some(TKClosure())
-          } catch {
-          | ErrorExn _ -> false
-          | exn -> throw exn
-          }
-        })
-      ) {
-        _ = this.lex.next();
-        rty = this.type(0);
-        this.expect(TKClosure());
-        !mutableLeft = {
-          params = mutableLeft match {
-          | Params(params) -> params
-          | Var(varName) -> Array[(varName, None())]
-          | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
-          };
-          closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-            CBBlock(this.blockOrStmt())
-          } else {
-            CBExpr(this.expr(0))
-          };
-          Closure(params, Some(rty), closureBody)
-        }
-      };
-      if (binopTok.kind is TKClosure()) {
-        _ = this.lex.next();
-        !mutableLeft = {
-          params = mutableLeft match {
-          | Params(params) -> params
-          | Var(varName) -> Array[(varName, None())]
-          | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
-          };
-          closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-            CBBlock(this.blockOrStmt())
-          } else {
-            CBExpr(this.expr(0))
-          };
-          Closure(params, None(), closureBody)
-        }
+      (closureHandled, closureResult) = this.tryParseClosure(mutableLeft, binopTok, tok);
+      if (closureHandled) {
+        !mutableLeft = closureResult;
       };
       if (binopTok.kind is TKOpenSquare()) {
         if (prec >= callPrec) return mutableLeft;
@@ -450,47 +598,9 @@ extension class Parser {
         this.expect(TKCloseSquare());
         continue;
       };
-      hasTArgs = this.hasTArgs();
-      if (binopTok.kind is TKOpenParen() || hasTArgs) {
-        if (prec >= callPrec) return mutableLeft;
-        _ = this.lex.next();
-        targs = mutable Vector[];
-        if (hasTArgs) {
-          loop {
-            targs.push(this.type(0));
-            commaTok = this.lex.next() match {
-            | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-            | Some(tk) -> tk
-            };
-            commaTok.kind match {
-            | TKComma() ->
-              if (this.lex.peekKind() is Some(TKGreaterThan())) {
-                _ = this.lex.next();
-                break void
-              }
-            | TKGreaterThan() -> break void
-            | _ ->
-              this.error(
-                this.lex.posStart(commaTok),
-                ExpectedToken(TKGreaterThan()),
-              )
-            }
-          };
-          this.expect(TKOpenParen())
-        };
-        args = this.arguments();
-        !mutableLeft = Call(
-          Expr(
-            PosRange(
-              this.lex.fileName,
-              tok.posRange.start,
-              this.lex.getLastPos(),
-            ),
-            mutableLeft,
-          ),
-          targs.toArray(),
-          args,
-        );
+      (callHandled, callResult) = this.tryParseFunctionCall(mutableLeft, binopTok, tok, prec);
+      if (callHandled) {
+        !mutableLeft = callResult;
         continue;
       };
       if (binopTok.kind is TKEquality()) {
@@ -499,76 +609,14 @@ extension class Parser {
       if (binopTok.kind is TKInequality()) {
         this.error(this.lex.posStart(binopTok), DontUseInequality())
       };
-      if (this.lex.isEqTok(binopTok, "as")) {
-        leftPosRange = PosRange(
-          this.lex.fileName,
-          tok.posRange.start,
-          this.lex.getLastPos(),
-        );
-        _ = this.lex.next();
-        ty = this.type(0);
-        result = As(Expr(leftPosRange, mutableLeft), ty);
-        loop {
-          if (this.lex.isEq("as")) {
-            _ = this.lex.next();
-            type = this.type(0);
-            !result = As(
-              Expr(
-                PosRange(
-                  this.lex.fileName,
-                  tok.posRange.start,
-                  this.lex.getLastPos(),
-                ),
-                result,
-              ),
-              type,
-            );
-          };
-          break void;
-        };
-        return result;
+      (castHandled, castResult) = this.tryParseTypeCast(mutableLeft, binopTok, tok);
+      if (castHandled) {
+        return castResult;
       };
-      (assoc, bopPrec) = precedence.maybeGet(binopTok.kind) match {
-      | None() -> return mutableLeft
-      | Some(x) -> x
-      };
-      binop = binopTok.kind.toBinop() match {
-      | None() -> return mutableLeft
-      | Some(x) -> x
-      };
-      if (bopPrec == prec) {
-        leftPosRange = PosRange(
-          this.lex.fileName,
-          tok.posRange.start,
-          this.lex.getLastPos(),
-        );
-        _ = this.lex.next();
-        assoc match {
-        | ALeft() ->
-          right = this.expr(prec + 1);
-          !mutableLeft = Binop(binop, Expr(leftPosRange, mutableLeft), right)
-        | ARight() ->
-          !mutableLeft = Binop(binop, Expr(leftPosRange, mutableLeft), this.expr(prec))
-        | ANonAssoc() ->
-          this.error(
-            this.lex.posStart(binopTok),
-            NonAssociative(this.lex.getStrTok(binopTok)),
-          )
-        };
+      (binaryHandled, binaryResult) = this.tryParseBinaryOp(mutableLeft, binopTok, tok, prec);
+      if (binaryHandled) {
+        !mutableLeft = binaryResult;
         continue;
-      };
-      if (bopPrec > prec) {
-        leftPosRange = PosRange(
-          this.lex.fileName,
-          tok.posRange.start,
-          this.lex.getLastPos(),
-        );
-        _ = this.lex.next();
-        !mutableLeft = Binop(binop, Expr(leftPosRange, mutableLeft), this.expr(bopPrec + 1));
-        continue;
-      };
-      if (bopPrec >= prec) {
-        invariant_violation("bopPrec should be less than prec")
       };
       return mutableLeft
     }
