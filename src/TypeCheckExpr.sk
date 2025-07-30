@@ -656,10 +656,22 @@ extension class TypeChecker {
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1);
         ty2 = this.nonVoidExpr(pos, tcenv, e2);
-        if (TType::inter(tcenv.subst.clone(), this.tenv, ty1, ty2).isBottom()) {
+        tmpSubst = tcenv.subst.clone();
+        inter = TType::inter(tmpSubst, this.tenv, ty1, ty2);
+        if (inter.isBottom()) {
           alwaysResult = op_ match {
           | BOStrictEquality() -> "false"
           | BOStrictInequality() -> "true"
+          };
+          typingError(Array[(pos, `This equality is always ${alwaysResult}`)])
+        };
+        if (
+          ty1.hasAtMostOneValue(tmpSubst, this.tenv) &&
+          ty2.hasAtMostOneValue(tmpSubst, this.tenv)
+        ) {
+          alwaysResult = op_ match {
+          | BOStrictEquality() -> "true"
+          | BOStrictInequality() -> "false"
           };
           typingError(Array[(pos, `This equality is always ${alwaysResult}`)])
         };
