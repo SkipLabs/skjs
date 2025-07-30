@@ -1434,7 +1434,7 @@ class Clauses private (
         | (Some(x1), Some(x2)) ->
           STypes::isSub(subst, env, x1, x2) match {
           | STOk() -> break void
-          | err ->
+          | err @ STError _ ->
             !errors = List.Cons(err, errors);
             continue
           }
@@ -1529,9 +1529,12 @@ class Clauses private (
 /* Sub-typing */
 /*****************************************************************************/
 
-base class STResult {
+base class STResult
+
+class STOk() extends STResult
+
+base class STError extends STResult {
   children =
-  | STOk()
   | STNoConstraint()
   | STMissingField(String)
   | STMissingSpread()
@@ -1540,12 +1543,10 @@ base class STResult {
   | STTooManyTTuple(TTuple)
   | STTooManyTFun(TFun)
   | STInvalidTypeParams(String)
-  | STRec(STResult, PosRange, TType)
+  | STRec(STError, PosRange, TType)
 
   fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
     this match {
-    | STOk() ->
-      invariant_violation("Internal error: STResult should never go to String")
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
@@ -1646,7 +1647,7 @@ fun isSubTType_(
   | other @ STTooManySType(stype) ->
     subst.restore(savedSubst);
     STRec(other, stype.pos, u2)
-  | other ->
+  | other @ STError _ ->
     subst.restore(savedSubst);
     STRec(other, u1.pos, u2)
   }
