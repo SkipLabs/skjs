@@ -1483,6 +1483,19 @@ class TypeChecker{
         st1 = isSubTType(env.subst, this.tenv, ty1, ty2);
         st2 = isSubTType(env.subst, this.tenv, ty2, ty1);
         (st1, st2) match {
+        | (STOk(), STOk()) ->
+          if (ty1.hasAtMostOneValue(env.subst, this.tenv)) {
+            if (!ty2.hasAtMostOneValue(env.subst, this.tenv)) {
+              invariant_violation(
+                "Subtype of a singleton value type should be a singleton value type",
+              );
+            };
+            alwaysResult = op_ match {
+            | BOStrictEquality() -> "true"
+            | BOStrictInequality() -> "false"
+            };
+            typingError(Array[(pos, "This equality is always " + alwaysResult)])
+          }
         | (STError _, STError _) ->
           alwaysResult = op_ match {
           | BOStrictEquality() -> "false"

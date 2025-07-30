@@ -1,20 +1,20 @@
 function alwaysTrueUndefined(x: undefined, y: undefined): boolean {
-  // TODO: always true
+  // @ts-expect-error This equality is always true
   return x === y;
 }
 
 function alwaysTrueNull(x: null, y: null): boolean {
-  // TODO: always true
+  // @ts-expect-error This equality is always true
   return x === y;
 }
 
 function alwaysTrueString(x: "a", y: "a"): boolean {
-  // TODO: always true
+  // @ts-expect-error This equality is always true
   return x === y;
 }
 
 function alwaysTrueNumber(x: 0, y: 0): boolean {
-  // TODO: always true
+  // @ts-expect-error This equality is always true
   return x === y;
 }
 

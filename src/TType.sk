@@ -356,6 +356,13 @@ class TType private {
     }
   }
 
+  fun hasAtMostOneValue(subst: mutable Subst, env: TEnv): Bool {
+    this.getSTypes(subst, env, Covariant()) match {
+    | None() -> false
+    | Some(stypes) -> stypes.hasAtMostOneValue()
+    }
+  }
+
   // OTHER PROPERTIES
 
   // Returns the actual STypes after head expansion, forgetting type parameters,
@@ -734,6 +741,10 @@ base class SType private (
   children =
   | TPromise(TType)
 
+  overridable fun hasAtMostOneValue(): Bool {
+    false
+  }
+
   fun tag(): Int {
     this match {
     | TPrimUnit(TUndefined _, _) -> 0
@@ -755,7 +766,16 @@ base class SType private (
   }
 }
 
-class TPrimUnit(kind: TPrimUnitKind) extends SType
+class TPrimUnit(kind: TPrimUnitKind) extends SType {
+  fun hasAtMostOneValue(): Bool {
+    this.kind match {
+    | TNull()
+    | TUndefined() ->
+      true
+    | TVoid() -> false /* true be should not be observable */
+    }
+  }
+}
 
 class TPrimValue private (
   kind: TPrimValueKind,
@@ -808,6 +828,18 @@ class TPrimValue private (
       values = s1.inter(s2);
       if (values.isEmpty()) None() else {
         Some(static(t1.kind, Some(values), t1.pos))
+      }
+    }
+  }
+
+  fun hasAtMostOneValue(): Bool {
+    this.values match {
+    | None() -> false
+    | Some(values) ->
+      values.singleElt() match {
+      | None() -> false
+      | Some((_, "NaN")) if (this.kind is TNum()) -> false
+      | Some _ -> true
       }
     }
   }
@@ -1049,6 +1081,13 @@ class STypes private (
 
   fun singleElt(): ?SType {
     if (this.stypes.size() == 1) this.stypes.minimum() else None()
+  }
+
+  fun hasAtMostOneValue(): Bool {
+    this.singleElt() match {
+    | None() -> this.stypes.size() == 0
+    | Some(stype) -> stype.hasAtMostOneValue()
+    }
   }
 
   fun containsUndefined(): Bool {
