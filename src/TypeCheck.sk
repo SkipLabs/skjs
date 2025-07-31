@@ -627,6 +627,19 @@ class TypeChecker{
     true
   }
 
+  // Returns true if the type is not Top but contains void
+  fun nonTopContainsVoid(env: mutable TCEnv, ty: TType): Bool {
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | Some(stypes) if (stypes.any(stype ~> stype is TPrimVoid(TVoid(), _))) ->
+        return true
+      | _ -> void
+      }
+    };
+    false
+  }
+
   fun constructor(
     context: mutable SKStore.Context,
     thisType: TType,
@@ -1189,6 +1202,19 @@ class TypeChecker{
     result
   }
 
+  fun nonVoidExpr(pos: PosRange, env: mutable TCEnv, e: Expr): TType {
+    ty = this.expr(env, e);
+    if (this.nonTopContainsVoid(env, ty)) {
+      typingError(
+        Array[
+          (pos, "Invalid operation on type void"),
+          (e.posRange, `This expression has type ${ty}`),
+        ],
+      )
+    };
+    ty
+  }
+
   fun expr(env: mutable TCEnv, e: Expr): TType {
     pos = e.posRange;
     e.value match {
@@ -1490,8 +1516,8 @@ class TypeChecker{
       | BOAssignment() -> this.assign(env, pos, e1, e2)
       | BOStrictInequality()
       | BOStrictEquality() ->
-        ty1 = this.expr(env, e1);
-        ty2 = this.expr(env, e2);
+        ty1 = this.nonVoidExpr(pos, env, e1);
+        ty2 = this.nonVoidExpr(pos, env, e2);
         if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
           isSubTType(env.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
@@ -1645,19 +1671,12 @@ class TypeChecker{
         ty1
 
       | BONullishCoalescing() ->
-        ty1 = this.expr(env, e1);
+        ty1 = this.nonVoidExpr(pos, env, e1);
         ty2 = this.expr(env, e2);
         ty1.getSTypes(env.subst, this.tenv, Covariant()) match {
         | None() -> void
         | Some(stypes) ->
-          hasNullOrUndefined = stypes.any(stype ~>
-            stype match {
-            | TPrimVoid(TNull(), _)
-            | TPrimVoid(TUndefined(), _) ->
-              true
-            | _ -> false
-            }
-          );
+          hasNullOrUndefined = stypes.any(stype ~> stype is TPrimVoid _);
           if (!hasNullOrUndefined) {
             typingError(
               Array[
@@ -1677,7 +1696,7 @@ class TypeChecker{
     | InstanceOf(_, e2) ->
       typingError(Array[(e2.posRange, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
-      _ = this.expr(env, subExpr);
+      _ = this.nonVoidExpr(pos, env, subExpr);
       TType::single(pos, TPrimValue(TString(), None(), pos))
 
     | PostOp(pop, subExpr) ->
@@ -2218,7 +2237,11 @@ class TypeChecker{
         )
 
       | "symbol" -> return void
-      | "undefined" -> (x ~> x is TPrimVoid(TUndefined(), _), None())
+      | "undefined" ->
+        (
+          x ~> x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _),
+          None(),
+        )
       | "object" ->
         (
           (x ~>
@@ -2245,7 +2268,7 @@ class TypeChecker{
     | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
       if (!target) {
         this.setLocal(env, local, None(), x ~>
-          !(x is TPrimVoid(TUndefined _, _))
+          !(x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _))
         )
       }
 
