@@ -72,12 +72,13 @@ extension class Parser {
       c = this.lex.contents[pos];
       if (
         c == 'g' ||
-        c == 'u' ||
+        c == 'i' ||
         c == 'm' ||
         c == 's' ||
         c == 'u' ||
         c == 'y'
       ) {
+        !pos = pos + 1;
         continue;
       };
       break void
