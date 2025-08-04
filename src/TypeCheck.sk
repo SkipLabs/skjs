@@ -2211,6 +2211,14 @@ class TypeChecker{
     | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
       this.evalUndefinedEquality(env, local, target)
 
+    | (Expr(pos, _), Expr(_, Var(Name(_, "null"))))
+    | (Expr(_, Var(Name(_, "null"))), Expr(pos, _))
+    | (Expr(pos, _), Expr(_, Var(Name(_, "undefined"))))
+    | (Expr(_, Var(Name(_, "undefined"))), Expr(pos, _)) ->
+      typingError(
+        Array[(pos, "Only locals can be compared to null/undefined.")],
+      )
+
     | _ -> void
     }
   }
@@ -2282,7 +2290,8 @@ class TypeChecker{
         if (target) filter else x ~> !filter(x),
       )
     | "undefined" ->
-      filter = x ~> x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _);
+      filter = x ~>
+        x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _);
       this.setLocal(
         env,
         local,
@@ -2318,7 +2327,11 @@ class TypeChecker{
     }
   }
 
-  fun evalUndefinedEquality(env: mutable TCEnv, local: Name, target: Bool): void {
+  fun evalUndefinedEquality(
+    env: mutable TCEnv,
+    local: Name,
+    target: Bool,
+  ): void {
     if (!target) {
       this.setLocal(env, local, None(), x ~>
         !(x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _))
