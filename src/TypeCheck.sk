@@ -1438,29 +1438,68 @@ class TypeChecker{
           ).withPos(pos)
 
         | TPrimValue(primKind, _, primPos) ->
-          idxType
-            .getSTypes(env.subst, this.tenv, Covariant())
-            .flatMap(stypes ~> stypes.singleElt()) match {
-          | Some(TPrimValue(TString(), Some(stringValues), _)) ->
-            objName = primKind.toString();
-            obj = this.tenv.newObject(
-              env.context,
-              Name(primPos, objName),
-              Array[],
-            );
-            ty = TType::bottom(pos);
-            for (stringValue in stringValues.values) {
-              t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
-              !ty = TType::union(env.subst, this.tenv, ty, t);
-            };
-            ty
+          primKind match {
+          | TString() ->
+            // Handle string indexing: str[number] -> string | undefined
+            idxType
+              .getSTypes(env.subst, this.tenv, Covariant())
+              .flatMap(stypes ~> stypes.singleElt()) match {
+            | Some(TPrimValue(TNum(), _, _)) ->
+              // Numeric indexing of string: str[0] -> string | undefined
+              TType::union(
+                env.subst,
+                this.tenv,
+                TType::single(pos, TPrimValue(TString(), None(), pos)),
+                TType::single(pos, TPrimVoid(TUndefined(), pos)),
+              )
+            | Some(TPrimValue(TString(), Some(stringValues), _)) ->
+              // Static string indexing for property access: str["length"]
+              objName = primKind.toString();
+              obj = this.tenv.newObject(
+                env.context,
+                Name(primPos, objName),
+                Array[],
+              );
+              ty = TType::bottom(pos);
+              for (stringValue in stringValues.values) {
+                t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
+                !ty = TType::union(env.subst, this.tenv, ty, t);
+              };
+              ty
+            | _ ->
+              typingError(
+                Array[
+                  (pos, "Invalid index"),
+                  (primPos, "String indexing requires a number or static string"),
+                ],
+              )
+            }
           | _ ->
-            typingError(
-              Array[
-                (pos, "Invalid index"),
-                (primPos, "A primitive type expects a static string index"),
-              ],
-            )
+            // Handle other primitive types (numbers, booleans, etc.)
+            idxType
+              .getSTypes(env.subst, this.tenv, Covariant())
+              .flatMap(stypes ~> stypes.singleElt()) match {
+            | Some(TPrimValue(TString(), Some(stringValues), _)) ->
+              objName = primKind.toString();
+              obj = this.tenv.newObject(
+                env.context,
+                Name(primPos, objName),
+                Array[],
+              );
+              ty = TType::bottom(pos);
+              for (stringValue in stringValues.values) {
+                t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
+                !ty = TType::union(env.subst, this.tenv, ty, t);
+              };
+              ty
+            | _ ->
+              typingError(
+                Array[
+                  (pos, "Invalid index"),
+                  (primPos, "A primitive type expects a static string index"),
+                ],
+              )
+            }
           }
         | _ ->
           typingError(
