@@ -8,8 +8,9 @@ function getUnique<T>(arr: Array<T>): Array<T> {
   
   // loop through array
   for(let i = 0; i < arr.length; i++) {
-    if(uniqueArr.indexOf(arr[i]) === -1) {
-      uniqueArr.push(arr[i]);
+    const item = arr[i];
+    if(item !== undefined && uniqueArr.indexOf(item) === -1) {
+      uniqueArr.push(item);
     }
   }
   return uniqueArr;

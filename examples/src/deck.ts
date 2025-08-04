@@ -28,8 +28,12 @@ function main(): void {
   // create a deck of cards
   for (let i = 0; i < suits.length; i++) {
     for (let x = 0; x < values.length; x++) {
-      let card = { Value: values[x], Suit: suits[i] };
-      deck.push(card);
+      const value = values[x];
+      const suit = suits[i];
+      if (value !== undefined && suit !== undefined) {
+        let card = { Value: value, Suit: suit };
+        deck.push(card);
+      }
     }
   }
 
@@ -45,7 +49,10 @@ function main(): void {
 
   // display 5 results
   for (let i = 0; i < 5; i++) {
-    console.log(deck[i].Value + " of " + deck[i].Suit)
+    const card = deck[i];
+    if (card !== undefined) {
+      console.log(card.Value + " of " + card.Suit);
+    }
   }
 }
 

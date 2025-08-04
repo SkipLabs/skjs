@@ -46,14 +46,28 @@ function compareObjects(a: object, b: object): number {
   while (i < keysA.length && i < keysB.length) {
     const keyA = keysA[i];
     const keyB = keysB[j];
+    if (keyA === undefined || keyB === undefined) {
+      // This shouldn't happen in normal cases since we check array bounds
+      return keyA === undefined ? -1 : 1;
+    }
     if (keyA < keyB) {
       return -1;
     }
     if (keyA > keyB) {
       return 1;
     }
-    const result = compare(a[keyA], b[keyB]);
-    if (result !== 0) return result;
+    const valueA = a[keyA];
+    const valueB = b[keyB];
+    if (valueA === undefined && valueB === undefined) {
+      // Both undefined, continue
+    } else if (valueA === undefined) {
+      return -1;
+    } else if (valueB === undefined) {
+      return 1;
+    } else {
+      const result = compare(valueA, valueB);
+      if (result !== 0) return result;
+    }
     i++;
     j++;
   }
