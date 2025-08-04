@@ -192,10 +192,12 @@ function deleteNodeHelper(root: null | node, item: number): null | node {
 //get node with minimum value
 function nodeWithMinimumValue(node: node): node {
   let current = node;
-  while (current.left !== null){
-    let left = current.left;
+  let left = current.left;
+  while (left !== null){
+    left = current.left;
     console.assert(left !== null);
     current = left;
+    left = current.left;
   }
   return current;
 }
