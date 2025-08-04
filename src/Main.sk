@@ -194,7 +194,8 @@ fun check(): (Cli.Command, Cli.ParseResults ~> void) {
 }
 
 fun execCheck(args: Cli.ParseResults): void {
-  _ = execCheckWithStatus(args);
+  status = execCheckWithStatus(args);
+  throw Exit(status);
 }
 
 const sinkDirName: SKStore.DirName = SKStore.DirName::create("/sink/");
