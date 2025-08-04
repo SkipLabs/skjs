@@ -14,7 +14,10 @@ function reverse<T>(l: list<T>): list<T> {
 function list<T>(...elts: T[]): list<T> {
   let result = null;
   for(let i = 0; i < elts.length; i++) {
-    result = { head: elts[i], tail: result };
+    const elt = elts[i];
+    if (elt !== undefined) {
+      result = { head: elt, tail: result };
+    }
   }
   return reverse(result);
 }
