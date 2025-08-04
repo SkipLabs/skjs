@@ -2194,82 +2194,135 @@ class TypeChecker{
       ),
       Expr(_, EString(SKQuote(), tag)),
     ) if (fieldName == kAlgebraicBranchFieldName) ->
-      if (target) {
-        this.setLocal(
-          env,
-          local,
-          None(),
-          _ ~> true,
-          stype ~>
-            stype match {
-            | TAlgebraic(branches, aPos) ->
-              TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
-            | x -> x
-            }
-          ,
-        )
-      }
+      this.evalAlgebraicBranchEquality(env, local, tag, target)
 
     | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(_, typeStr)))
     | (
       Expr(typePos, EString(_, typeStr)),
       Expr(_, TypeOf(Expr(_, Var(local)))),
     ) ->
-      (filter, default) = typeStr match {
-      | "string" ->
-        (
-          (x ~> (x is TPrimValue(TString(), _, _))),
-          Some(TPrimValue(TString(), None(), typePos)),
-        )
-      | "number" ->
-        (
-          x ~> x is TPrimValue(TNum(), _, _),
-          Some(TPrimValue(TNum(), None(), typePos)),
-        )
-      | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
-      | "boolean" ->
-        (
-          x ~> x is TPrimValue(TBool(), _, _),
-          Some(TPrimValue(TBool(), None(), typePos)),
-        )
+      this.evalTypeofEquality(env, local, typeStr, typePos, target)
 
-      | "symbol" -> return void
-      | "undefined" ->
-        (
-          x ~> x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _),
-          None(),
-        )
-      | "object" ->
-        (
-          (x ~>
-            x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _)),
-          Some(TObject(TFields::empty(), typePos)),
-        )
-      | "function" -> (x ~> x is TFuns _, None())
-      | _ -> return void
-      };
+    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
+    | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
+      this.evalNullEquality(env, local, target)
+
+    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
+    | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
+      this.evalUndefinedEquality(env, local, target)
+
+    | _ -> void
+    }
+  }
+
+  fun evalAlgebraicBranchEquality(
+    env: mutable TCEnv,
+    local: Name,
+    tag: String,
+    target: Bool,
+  ): void {
+    if (target) {
+      this.setLocal(
+        env,
+        local,
+        None(),
+        _ ~> true,
+        stype ~>
+          stype match {
+          | TAlgebraic(branches, aPos) ->
+            TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
+          | x -> x
+          }
+        ,
+      )
+    }
+  }
+
+  fun evalTypeofEquality(
+    env: mutable TCEnv,
+    local: Name,
+    typeStr: String,
+    typePos: PosRange,
+    target: Bool,
+  ): void {
+    typeStr match {
+    | "symbol" -> void
+    | "string" ->
+      (filter, default) = (
+        x ~> (x is TPrimValue(TString(), _, _)),
+        Some(TPrimValue(TString(), None(), typePos)),
+      );
       this.setLocal(
         env,
         local,
         if (target) default else None(),
         if (target) filter else x ~> !filter(x),
       )
-
-    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
-    | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
-      if (!target) {
-        this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
-      }
-
-    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
-    | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
-      if (!target) {
-        this.setLocal(env, local, None(), x ~>
-          !(x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _))
-        )
-      }
-
+    | "number" ->
+      (filter, default) = (
+        x ~> x is TPrimValue(TNum(), _, _),
+        Some(TPrimValue(TNum(), None(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
+    | "boolean" ->
+      (filter, default) = (
+        x ~> x is TPrimValue(TBool(), _, _),
+        Some(TPrimValue(TBool(), None(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "undefined" ->
+      filter = x ~> x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _);
+      this.setLocal(
+        env,
+        local,
+        if (target) None() else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "object" ->
+      (filter, default) = (
+        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _),
+        Some(TObject(TFields::empty(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "function" ->
+      filter = x ~> x is TFuns _;
+      this.setLocal(
+        env,
+        local,
+        if (target) None() else None(),
+        if (target) filter else x ~> !filter(x),
+      )
     | _ -> void
+    }
+  }
+
+  fun evalNullEquality(env: mutable TCEnv, local: Name, target: Bool): void {
+    if (!target) {
+      this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
+    }
+  }
+
+  fun evalUndefinedEquality(env: mutable TCEnv, local: Name, target: Bool): void {
+    if (!target) {
+      this.setLocal(env, local, None(), x ~>
+        !(x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _))
+      )
     }
   }
 
