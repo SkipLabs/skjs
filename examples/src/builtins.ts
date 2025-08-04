@@ -19,11 +19,6 @@ declare class Array<T> {
   join(separator: string): string;
   slice(start: number, end?: number): Array<T>;
   
-  // SKJS-ONLY METHOD: This method only exists for SKJS type checking purposes.
-  // In real JavaScript/TypeScript, use array[index] syntax instead of array.get(index)
-  // DO NOT USE IN RUNTIME CODE - will cause runtime errors!
-  get_DO_NOT_USE(idx: number): T | undefined;
-  
   // Additional essential Array methods
   pop(): T | undefined;
   shift(): T | undefined;

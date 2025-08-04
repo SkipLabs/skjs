@@ -1424,23 +1424,18 @@ class TypeChecker{
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
         | TObject _ ->
+          this.checkIsNumber(env, pos, "Invalid index", idxType);
           this.call(
             env,
             pos,
             this.expr(
               env,
-              Expr(
-                pos,
-                Binop(
-                  BODot(),
-                  arr,
-                  Expr(pos, Var(Name(pos, "get_DO_NOT_USE"))),
-                ),
-              ),
+              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "pop"))))),
             ),
             Array[],
-            Array[idxType],
-          )
+            Array[],
+          ).withPos(pos)
+
         | TPrimValue(primKind, _, primPos) ->
           idxType
             .getSTypes(env.subst, this.tenv, Covariant())
@@ -1654,20 +1649,9 @@ class TypeChecker{
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
         ty1 = this.expr(env, e1);
-        ty1.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
-          stypes.singleElt()
-        ) match {
-        | Some(TPrimValue(TNum(), _, _)) ->
-          ty2 = this.expr(env, e2);
-          this.checkSubType(env, pos, "Invalid operation", ty1, ty2)
-        | _ ->
-          typingError(
-            Array[
-              (pos, "Invalid operation"),
-              (ty1.pos, "This is not a number"),
-            ],
-          )
-        };
+        this.checkIsNumber(env, pos, "Invalid operation", ty1);
+        ty2 = this.expr(env, e2);
+        this.checkIsNumber(env, pos, "Invalid operation", ty2);
         ty1
 
       | BONullishCoalescing() ->
@@ -1793,6 +1777,20 @@ class TypeChecker{
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | Spread _ -> typingError(Array[(pos, "TODO: ...")])
     }
+  }
+
+  fun checkIsNumber(
+    env: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty: TType,
+  ): void {
+    ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TPrimValue(TNum(), _, _)) -> void
+    | _ -> typingError(Array[(pos, msg), (ty.pos, "This is not a number")])
+    };
   }
 
   fun makeLiteralType(e: Expr): ?TType {
@@ -2010,11 +2008,10 @@ class TypeChecker{
   }
 
   fun getArrayEltType(env: mutable TCEnv, object: TObject): TType {
-    object.fields.maybeGet("get_DO_NOT_USE") match {
-    | None() ->
-      typingError(Array[(object.pos, "Expected an Array or Record type")])
-    | Some(getMethod) ->
-      getF = getMethod.type
+    object.fields.maybeGet("pop") match {
+    | None() -> typingError(Array[(object.pos, "Expected an Array type")])
+    | Some(popMethod) ->
+      popF = popMethod.type
         .getSTypes(env.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt())
         .fromSome() match {
@@ -2022,11 +2019,11 @@ class TypeChecker{
         for (met in methods) {
           break met
         } else {
-          invariant_violation("Unexpected type for Array::get or Record::get")
+          invariant_violation("Unexpected type for Array::pop")
         }
-      | _ -> invariant_violation("Unexpected get method type for")
+      | _ -> invariant_violation("Unexpected pop method type for")
       };
-      getF.retType
+      popF.retType
     };
   }
 
