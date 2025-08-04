@@ -901,6 +901,7 @@ class TypeChecker{
   fun stmt(env: mutable TCEnv, st: Stmt): void {
     st.value match {
     | Break() -> void
+    | Continue() -> void
     | StmtEmpty() -> void
     | StmtExpr(e) ->
       ty = this.expr(env, e);

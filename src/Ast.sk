@@ -207,6 +207,7 @@ base class Stmt_ {
   | StmtEmpty()
   | StmtExpr(Expr)
   | Break()
+  | Continue()
   | Return(PosRange, ?Expr)
   | Throw(Expr)
   | If(Expr, Array<Stmt>, ?Array<Stmt>)
