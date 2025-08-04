@@ -19,12 +19,14 @@ module SKJS;
 value class StmtTermination private {
   mayReturn: Bool = false,
   mayBreak: Bool = false,
+  mayContinue: Bool = false,
   mayThrow: Bool = false,
   mayLoop: Bool = false,
   mayFallthrough: Bool = false,
 } {
   const return_: this = StmtTermination{mayReturn => true};
   const break_: this = StmtTermination{mayBreak => true};
+  const continue_: this = StmtTermination{mayContinue => true};
   const throw_: this = StmtTermination{mayThrow => true};
   const loop_: this = StmtTermination{mayLoop => true};
   const skip: this = StmtTermination{mayFallthrough => true};
@@ -41,10 +43,11 @@ value class StmtTermination private {
   fun merge(that: this, mergeThrough: (Bool, Bool) ~> Bool): this {
     mayReturn = this.mayReturn || that.mayReturn;
     mayBreak = this.mayBreak || that.mayBreak;
+    mayContinue = this.mayContinue || that.mayContinue;
     mayThrow = this.mayThrow || that.mayThrow;
     mayLoop = this.mayLoop || that.mayLoop;
     mayFallthrough = mergeThrough(this.mayFallthrough, that.mayFallthrough);
-    static{mayReturn, mayBreak, mayThrow, mayLoop, mayFallthrough}
+    static{mayReturn, mayBreak, mayContinue, mayThrow, mayLoop, mayFallthrough}
   }
   /* Or: taking either branch */
   fun /(that: this): this {
@@ -71,9 +74,18 @@ value class StmtTermination private {
       this
     }
   }
+  /* Converts continues to fallThroughs. To be used on a block that may continue */
+  fun continueToFallthrough(): this {
+    if (this.mayContinue) {
+      this with {mayContinue => false, mayFallthrough => true}
+    } else {
+      this
+    }
+  }
   fun mayNonThrough(): ?String {
     if (this.mayReturn) return Some("return");
     if (this.mayBreak) return Some("break");
+    if (this.mayContinue) return Some("continue");
     if (this.mayThrow) return Some("throw");
     if (this.mayLoop) return Some("loop forever");
     None()
@@ -101,6 +113,7 @@ value class StmtTermination private {
     | StmtEmpty() -> static::skip
     | StmtExpr(e) -> static::expr(e)
     | Break() -> static::break_
+    | Continue() -> static::continue_
     | Return(_pos, eo) -> static::exprOpt(eo).then(() ~> static::return_)
     | Throw(e) -> static::expr(e).then(() ~> static::throw_)
     | If(cond, bl1, bl2o) ->

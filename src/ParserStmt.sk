@@ -92,6 +92,9 @@ extension class Parser {
       | "break" ->
         _ = this.lex.next();
         Some(Break())
+      | "continue" ->
+        _ = this.lex.next();
+        Some(Continue())
       | "switch" ->
         _ = this.lex.next();
         this.expect(TKOpenParen());
