@@ -225,7 +225,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       _ = applyMap(
         getInitDir(context),
         SKStore.IID::keyType,
-        SKStore.IntFile::type,
+        SKStore.StringFile::type,
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
@@ -234,7 +234,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             .checkFiles(context)
             .map(
               SKStore.IID::keyType,
-              SKStore.IntFile::type,
+              SKStore.StringFile::type,
               context,
               errorsDirName,
               (context, writer, _key, valueIter) ~> {
@@ -245,17 +245,18 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                   )
                 | Some(CheckResult(_, x, y)) -> (x, y)
                 };
+                errors = mutable Vector[];
                 parseErrorOpt match {
                 | None() -> void
-                | Some(err) ->
-                  writer.set(SKStore.IID(2), SKStore.IntFile(1));
-                  print_error(err)
+                | Some(err) -> errors.push(SKStore.StringFile(err.toString()))
                 };
-                writer.set(SKStore.IID(2), SKStore.IntFile(1));
 
                 for (error in typeErrors) {
-                  print_string(checker.errorToString(context, error));
-                }
+                  errors.push(
+                    SKStore.StringFile(checker.errorToString(context, error)),
+                  );
+                };
+                writer.setArray(SKStore.IID(2), errors.toArray());
               },
             )
         },
@@ -266,7 +267,12 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   );
   context.maybeGetEagerDir(errorsDirName) match {
   | None() -> 2
-  | Some(dir) -> if (dir.getArrayRaw(SKStore.IID(2)).size() != 0) 2 else 0
+  | Some(dir) ->
+    errors = dir.getArrayRaw(SKStore.IID(2));
+    for (error in errors) {
+      print_error(SKStore.StringFile::type(error).value);
+    };
+    if (errors.size() != 0) 2 else 0
   }
 }
 

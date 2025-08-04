@@ -19,7 +19,6 @@ declare class Array<T> {
   join(separator: string): string;
   slice(start: number, end?: number): Array<T>;
   
-  
   // Additional essential Array methods
   pop(): T | undefined;
   shift(): T | undefined;
