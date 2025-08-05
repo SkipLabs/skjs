@@ -177,8 +177,7 @@ class TEnv{
       className,
       targs,
       fieldType ~> {
-        filter(fieldType) &&
-          !fieldType.modifiers.modifiers.containsKey("static")
+        filter(fieldType) && !fieldType.isStatic()
       },
     );
     TObject(TFields::create(fields.values().collect(Array)), className.posRange)
@@ -203,7 +202,7 @@ class TEnv{
       true,
       className,
       targs,
-      fieldType ~> fieldType.modifiers.modifiers.containsKey("static"),
+      fieldType ~> fieldType.isStatic(),
     );
     TObject(TFields::create(fields.values().collect(Array)), className.posRange)
   }

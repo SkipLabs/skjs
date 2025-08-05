@@ -372,7 +372,12 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange)
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /***************************************************************************/
-base class FieldType{modifiers: Modifiers}
+base class FieldType{modifiers: Modifiers} {
+  fun isStatic(): Bool {
+    this.modifiers.modifiers.containsKey("static")
+  }
+}
+
 class FieldTypeValue{
   pos: PosRange,
   setGet: ?FieldGetSet,
