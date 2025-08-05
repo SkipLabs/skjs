@@ -1565,12 +1565,17 @@ fun isSubTType_(
   for (inst in u1.insts) {
     inst match {
     | tvar @ TVar(_, _, constraints) ->
-      for (_ => cstr in constraints) {
-        status = isSubTType(subst, env, u2, cstr);
-        if (status is STOk()) continue;
-        return status;
-      };
-      subst.grow(env, tvar, u2, false)
+      if ({
+        substCopy = subst.save();
+        for (_ => cstr in constraints) {
+          status = isSubTType(subst, env, u2, cstr);
+          if (status is STOk()) continue;
+          subst.restore(substCopy);
+          break false
+        } else {
+          true
+        }
+      }) subst.grow(env, tvar, u2, false)
     | _ -> void
     }
   };
