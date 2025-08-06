@@ -6,6 +6,10 @@ version = "0.1.0"
 std = { path = "../skip/skiplang/prelude" }
 cli = { path = "../cli" }
 
+[build-dependencies]
+cc = { path = "../skip/skiplang/cc" }
+pkg-config = { path = "../skip/skiplang/pkg-config" }
+
 [dev-dependencies]
 sktest = { path = "../sktest" }
 

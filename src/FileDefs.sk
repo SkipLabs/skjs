@@ -145,8 +145,8 @@ mutable class FileDefsState{
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
       | FNSymbol(n) -> "[" + n.value + "]"
-      | FNIn _ -> invariant_violation("TODO: invalid fundef name")
-      | FNColon _ -> invariant_violation("TODO: invalid fundef name")
+      | FNIn _ -> internal_error("TODO: invalid fundef name")
+      | FNColon _ -> internal_error("TODO: invalid fundef name")
       };
       if (isDefault is Some _) this.!default = Some(fname);
       if (isExport) this.exported![fname] = fname;
@@ -158,19 +158,19 @@ mutable class FileDefsState{
     | VarDefs(k, varDefs) ->
       if (isDefault is Some _) {
         if (varDefs.size() > 1) {
-          invariant_violation("TODO: more than one default");
+          internal_error("TODO: more than one default");
         };
         this.!default = Some(
           varDefs[0].pat.value match {
           | PVar(x) -> x.value
-          | _ -> invariant_violation("TODO: cannot have default base on names")
+          | _ -> internal_error("TODO: cannot have default base on names")
           },
         );
       };
       for (varDef in varDefs) {
         exportName = varDefs[0].pat.value match {
         | PVar(x) -> x
-        | _ -> invariant_violation("TODO: cannot have exports base on names")
+        | _ -> internal_error("TODO: cannot have exports base on names")
         };
         if (isExport) this.exported![exportName.value] = exportName.value;
         if (!this.defs.containsKey(exportName.value)) {
@@ -180,7 +180,7 @@ mutable class FileDefsState{
           Def(exportName.posRange, VarDefs(k, Array[varDef])),
         );
       }
-    | _ -> invariant_violation("Internal error: expected a definition")
+    | _ -> internal_error("Internal error: expected a definition")
     }
   }
 }
@@ -227,9 +227,9 @@ class FileDefs{
         | Some(x) -> x
         };
         static::exportNamesFrom(state, names, fn)
-      | ExportNames _ -> invariant_violation("TODO: unsupported export")
+      | ExportNames _ -> internal_error("TODO: unsupported export")
       | ExportDefault(_, Expr(_, Var(n))) -> state.!default = Some(n.value)
-      | ExportDefault _ -> invariant_violation("TODO: unsupported export")
+      | ExportDefault _ -> internal_error("TODO: unsupported export")
       | ExportEq(v) ->
         v.value match {
         | Var(n) -> state.!exportEq = Some(n)
@@ -341,10 +341,10 @@ class FileDefs{
       | Export(_, _, Declare(Def(_, ExportDefault _)))
       | Export(_, _, Declare(Def(_, ExportEq _)))
       | Export(_, _, Declare(Def(_, ExportImport _))) ->
-        invariant_violation("Internal error")
+        internal_error("Internal error")
 
       | Declare(Def(_, Global _)) -> debug(("TODO declare global"))
-      | Declare _ -> invariant_violation("TODO rest of declare")
+      | Declare _ -> internal_error("TODO rest of declare")
       | ImportExpr _ -> void
       }
     };

@@ -82,7 +82,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       prev match {
       | Some(p) ->
         if (p.project() >= curr.project()) {
-          invariant_violation("InternalKeyedArrayMap::create")
+          internal_error("InternalKeyedArrayMap::create")
         }
       | None() -> void
       };

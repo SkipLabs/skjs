@@ -116,7 +116,7 @@ class TEnv{
         }
       };
       if (tparam.default is Some _) {
-        invariant_violation("TODO default type param");
+        internal_error("TODO default type param");
       };
       !this.subst[tparam.name.value] = (true, targ);
     };
@@ -407,21 +407,21 @@ class TEnv{
     subst = Subst::mcreate{context};
     pos = typeAst.posRange;
     typeAst.value match {
-    | TABigIntLiteral _ -> invariant_violation("TODO BigIntLiteral ")
-    | TAAssertIs _ -> invariant_violation("TODO assertIs ")
-    | TAAbstract _ -> invariant_violation("TODO abstract ")
-    | TAUniqueSymbol() -> invariant_violation("TODO uniqueSymbol ")
-    | TAAsserts _ -> invariant_violation("TODO asserts ")
-    | TAIs _ -> invariant_violation("TODO is ")
-    | TANew _ -> invariant_violation("TODO new ")
-    | TAKeyOf _ -> invariant_violation("TODO keyof ")
-    | TAEmptyArray _ -> invariant_violation("TODO emptyArray ")
-    | TAInfer _ -> invariant_violation("TODO infer ")
-    | TATemplate _ -> invariant_violation("TODO template ")
-    | TAImport _ -> invariant_violation("TODO import ")
-    | TAReadonly _ -> invariant_violation("TODO readonly ")
-    | TAExtends _ -> invariant_violation("TODO extends ")
-    | TAExtendsQuestion _ -> invariant_violation("TODO extendsQuestion ")
+    | TABigIntLiteral _ -> internal_error("TODO BigIntLiteral ")
+    | TAAssertIs _ -> internal_error("TODO assertIs ")
+    | TAAbstract _ -> internal_error("TODO abstract ")
+    | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
+    | TAAsserts _ -> internal_error("TODO asserts ")
+    | TAIs _ -> internal_error("TODO is ")
+    | TANew _ -> internal_error("TODO new ")
+    | TAKeyOf _ -> internal_error("TODO keyof ")
+    | TAEmptyArray _ -> internal_error("TODO emptyArray ")
+    | TAInfer _ -> internal_error("TODO infer ")
+    | TATemplate _ -> internal_error("TODO template ")
+    | TAImport _ -> internal_error("TODO import ")
+    | TAReadonly _ -> internal_error("TODO readonly ")
+    | TAExtends _ -> internal_error("TODO extends ")
+    | TAExtendsQuestion _ -> internal_error("TODO extendsQuestion ")
     | TAStringLiteral(x) ->
       TType::single(
         pos,
@@ -446,9 +446,9 @@ class TEnv{
         name.value match {
         | "undefined" ->
           TType::single(pos, TPrimVoid(TUndefined(), name.posRange))
-        | _ -> invariant_violation(`TODO typeof ${name.value}`)
+        | _ -> internal_error(`TODO typeof ${name.value}`)
         }
-      | Binop(BODot(), _, Expr(_, Var(_))) -> invariant_violation("TODO typeof")
+      | Binop(BODot(), _, Expr(_, Var(_))) -> internal_error("TODO typeof")
       | _ -> typingError(Array[(expr.posRange, "Invalid typeof expression")])
       }
     | TAPrim(kind) ->
@@ -599,12 +599,12 @@ class TEnv{
       for (ty in tupleElts) {
         ty match {
         | TEType(n, optional, x) ->
-          if (n is Some _) invariant_violation("TODO named tuple");
+          if (n is Some _) internal_error("TODO named tuple");
           if (optional is Some _) {
-            invariant_violation("TODO optional element tuple")
+            internal_error("TODO optional element tuple")
           };
           typeVec.push(x)
-        | TESpread _ -> invariant_violation("TODO tuple spread")
+        | TESpread _ -> internal_error("TODO tuple spread")
         }
       };
       types = typeVec.toArray();
@@ -675,7 +675,7 @@ class TEnv{
         TFuns::singleFun(tfun, typeAst.posRange)
       };
       TType::single(pos, tfuns)
-    | TAGet _ -> invariant_violation("TODO TAGet")
+    | TAGet _ -> internal_error("TODO TAGet")
     }
   }
 
@@ -692,13 +692,13 @@ class TEnv{
         elt match {
         | fd @ FieldTypeValue _ ->
           fd.type match {
-          | None() -> invariant_violation("TODO no type")
+          | None() -> internal_error("TODO no type")
           | Some(ty) ->
             normalizedType = this.normalize(context, ty);
             fd.name match {
-            | FNColon _ -> invariant_violation("TODO fnColon")
-            | FNIn _ -> invariant_violation("TODO fnIn")
-            | FNSymbol _ -> invariant_violation("TODO symbol")
+            | FNColon _ -> internal_error("TODO fnColon")
+            | FNIn _ -> internal_error("TODO fnIn")
+            | FNSymbol _ -> internal_error("TODO symbol")
             | FNNormal(name) ->
               optField = TField::create(
                 name.posRange,

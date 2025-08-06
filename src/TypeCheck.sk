@@ -148,10 +148,10 @@ mutable class Scope{
     scope2: readonly Scope,
   ): void {
     if (scope1.up.map(x -> x.id) != Some(this.id)) {
-      invariant_violation("scope1 up id mismatch")
+      internal_error("scope1 up id mismatch")
     };
     if (scope2.up.map(x -> x.id) != Some(this.id)) {
-      invariant_violation("scope2 up id mismatch")
+      internal_error("scope2 up id mismatch")
     };
     _ = mapUnion(
       scope1.escapingRefs(),
@@ -170,7 +170,7 @@ mutable class Scope{
         (name1, ref1) = nameRef1;
         (name2, ref2) = nameRef2;
         if (name1 != name2) {
-          invariant_violation("name refs must have same name")
+          internal_error("name refs must have same name")
         };
         this.!refs[name1] = LocalRef(
           TType::union(subst, tenv, ref1.type, ref2.type),
@@ -183,7 +183,7 @@ mutable class Scope{
 
   mutable fun popReplace(scope: readonly Scope): void {
     if (scope.up.fromSome().id != this.id) {
-      invariant_violation("scope up id mismatch")
+      internal_error("scope up id mismatch")
     };
     for (nameRef in scope.escapingRefs()) {
       (name, ref) = nameRef;
@@ -224,7 +224,7 @@ mutable class TCEnv(
     scope: readonly Scope,
   ): void {
     if (scope.up.fromSome().id != this.scope.id) {
-      invariant_violation("scope up id mismatch")
+      internal_error("scope up id mismatch")
     };
     this.scope.merge(subst, tenv, scope, this.mcreateSubScope{isLoop => false});
   }
@@ -334,7 +334,7 @@ class TypeChecker{
       | PVar _ -> void
       | PArray _ /* (Array<Pattern>) */
       | PObject _ /* (Array<(Name, Pattern)>) */ ->
-        invariant_violation("TODO pattern varDef")
+        internal_error("TODO pattern varDef")
       };
       e = varDef.value match {
       | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
@@ -926,7 +926,7 @@ class TypeChecker{
       this.checkSubType(env, epos, "Invalid return type", rtype, retType)
 
     | Bind(BKVar(), vars) ->
-      if (vars.size() == 0) invariant_violation("vars size should not be 0");
+      if (vars.size() == 0) internal_error("vars size should not be 0");
       typingError(
         Array[(vars[0].pat.pos, "Don't use var, use let or const instead")],
       )
@@ -1023,7 +1023,7 @@ class TypeChecker{
       term = StmtTermination::block(block);
       if (term.mayFallthrough) {
         if (block.size() == 0) {
-          invariant_violation("block size should not be 0")
+          internal_error("block size should not be 0")
         };
         last = block[block.size() - 1];
         typingError(Array[(last.pos, "Missing break")])
@@ -1082,7 +1082,7 @@ class TypeChecker{
       | Default(stmts) ->
         if (cases.isEmpty()) {
           if (stmts.isEmpty()) {
-            invariant_violation("Internal error: empty default");
+            internal_error("Internal error: empty default");
           };
           typingError(Array[(stmts[0].pos, "Unused branch")])
         };
@@ -1257,7 +1257,7 @@ class TypeChecker{
           | c @ Class _ -> break this.tenv.newStatic(env.context, c.name)
           | VarDefs(kind, varDefArr) ->
             if (varDefArr.size() != 1) {
-              invariant_violation("varDefArr size should be 1")
+              internal_error("varDefArr size should be 1")
             };
             varDef = varDefArr[0];
             if (!(kind is VDKConst _)) {
@@ -1294,7 +1294,7 @@ class TypeChecker{
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(x, y) -> (x, this.expr(env, y))
-        | FDSpread _ -> invariant_violation("TODO spread")
+        | FDSpread _ -> internal_error("TODO spread")
         | fd @ FunDef _ -> this.tenv.funDecl(env.context, true, fd)
         };
         TField::create(name.posRange, name.value, false, ty) match {
@@ -1566,7 +1566,7 @@ class TypeChecker{
               alwaysResult = op match {
               | BOStrictEquality() -> "false"
               | BOStrictInequality() -> "true"
-              | _ -> invariant_violation("Internal error: unexpected operator")
+              | _ -> internal_error("Internal error: unexpected operator")
               };
               typingError(
                 Array[(pos, "This is equality is always " + alwaysResult)],
@@ -1816,7 +1816,7 @@ class TypeChecker{
       TType::union(env.subst, this.tenv, left, right)
     | KeyOf _ -> notSupported(pos)
     | Params _ ->
-      invariant_violation("Internal error: Params should not be an expression")
+      internal_error("Internal error: Params should not be an expression")
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | Spread _ -> typingError(Array[(pos, "TODO: ...")])
     }
@@ -1934,7 +1934,7 @@ class TypeChecker{
         )
       | Some(cstr) -> _ = this.call(env, pos, cstr.type, Array[], args)
       }
-    | _ -> invariant_violation("Internal error: unexpected constructor call")
+    | _ -> internal_error("Internal error: unexpected constructor call")
     }
   }
 
@@ -2014,7 +2014,7 @@ class TypeChecker{
           fieldType,
         ) match {
         | None() ->
-          invariant_violation("TODO: converting an object to an algebraic")
+          internal_error("TODO: converting an object to an algebraic")
         | Some(f) -> f
         };
         env.scope.set(
@@ -2038,7 +2038,7 @@ class TypeChecker{
         fieldType
       | Some(fd) -> fd.type
       }
-    | _ -> invariant_violation("Internal error: local object is not an object")
+    | _ -> internal_error("Internal error: local object is not an object")
     };
     this.checkSubType(
       env,
@@ -2062,9 +2062,9 @@ class TypeChecker{
         for (met in methods) {
           break met
         } else {
-          invariant_violation("Unexpected type for Array::pop")
+          internal_error("Unexpected type for Array::pop")
         }
-      | _ -> invariant_violation("Unexpected pop method type for")
+      | _ -> internal_error("Unexpected pop method type for")
       };
       popF.retType
     };
@@ -2175,7 +2175,7 @@ class TypeChecker{
         };
         for (lambda in tfun.lambdas) {
           if (tfun.optionalParams.size() != 0) {
-            invariant_violation("tfun.optionalParams should be empty")
+            internal_error("tfun.optionalParams should be empty")
           };
           lambda.compute(env.subst, args, tfun.retType)
         };

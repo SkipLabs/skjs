@@ -69,7 +69,7 @@ extension class Parser {
       this.type(0) match {
       | Type(_, TAFun(isMethod, emptyTParams, params, retType)) ->
         if (emptyTParams.size() != 0) {
-          invariant_violation("emptyTParams should be empty")
+          internal_error("emptyTParams should be empty")
         };
         TAFun(isMethod, tparams, params, retType)
       | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
@@ -338,10 +338,10 @@ extension class Parser {
         isType = bop match {
         | TKBitwiseOr() -> true
         | TKBitwiseAnd() -> false
-        | _ -> invariant_violation("Internal error")
+        | _ -> internal_error("Internal error")
         };
         (assoc, bopPrec) = precedence[bop];
-        if (!(assoc is ALeft())) invariant_violation("assoc should be ALeft");
+        if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
         if (bopPrec == prec) {
           leftRange = PosRange(
             this.lex.fileName,
@@ -371,7 +371,7 @@ extension class Parser {
           continue;
         };
         if (bopPrec >= prec) {
-          invariant_violation("bopPrec should be less than prec")
+          internal_error("bopPrec should be less than prec")
         };
         return left
       | _ -> return left
@@ -507,7 +507,7 @@ extension class Parser {
             );
           } else {
             if (!(this.lex.peekKind() is Some(TKColon()))) {
-              invariant_violation("expected TKColon")
+              internal_error("expected TKColon")
             };
             _ = this.lex.next();
             type = this.type(0);
