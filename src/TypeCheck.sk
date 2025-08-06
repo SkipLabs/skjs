@@ -2013,8 +2013,7 @@ class TypeChecker{
           false,
           fieldType,
         ) match {
-        | None() ->
-          internal_error("TODO: converting an object to an algebraic")
+        | None() -> internal_error("TODO: converting an object to an algebraic")
         | Some(f) -> f
         };
         env.scope.set(
