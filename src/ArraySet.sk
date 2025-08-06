@@ -61,7 +61,7 @@ private mutable class DiffInterDiffIterator<T: Orderable> private (
 // A set of orderable elements backed by a sorted array.
 class .ArraySet<T: Orderable> private (
   private inner: Vector<T>,
-) uses Orderable, XXHash64.Hashable[T: XXHash64.Hashable] {
+) uses Orderable, XXHashable[T: XXHashable] {
   static fun empty(): this {
     static(Vector[])
   }
@@ -240,11 +240,25 @@ fun mapInter<T, Key: Orderable>(
 
 class ArrayValues private (
   values: Array<(PosRange, String)>,
-) uses XXHash64.Hashable, Orderable, Show {
+) uses XXHashable, Orderable, Show {
   // Invariant: values is not empty and is sorted by x ~> x.i1
 
   static fun single(elt: (PosRange, String)): this {
     static(Array[elt])
+  }
+
+  fun hash(): Int {
+    // Custom hash that excludes positions, only hashes the strings
+    this.values.map(x -> x.i1).hash()
+  }
+
+  fun xxhash(): Int {
+    // Custom xxhash that excludes positions, only hashes the strings
+    result = 0;
+    for (i in Range(0, this.values.size())) {
+      !result = XXHash64.xxHash64(result, this.values[i].i1.xxhash());
+    };
+    result
   }
 
   fun singleElt(): ?(PosRange, String) {

@@ -62,7 +62,7 @@ class TType private {
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   clauses: Clauses,
-} uses XXHash64.Hashable, Orderable {
+} uses XXHashable, Orderable {
   // CONSTRUCTORS
 
   // Returns the type that is sub-type of all types. This type is
@@ -119,7 +119,7 @@ class TType private {
     if (clauses.isTop()) {
       !insts = TInsts::empty();
     };
-    h = (insts, clauses).hash();
+    h = (insts, clauses).xxhash();
     static{h, pos, insts, clauses};
   }
 
@@ -206,10 +206,11 @@ class TType private {
     ty1: this,
     ty2: this,
   ): this {
+    if (ty1 == ty2) return ty1;
     subst.seenUnion.maybeGet((ty1, ty2)) match {
     | None() ->
       result = static::union_(subst, env, ty1, ty2);
-      subst.seenUnion![(ty1, ty2)] = result;
+      subst.!seenUnion[(ty1, ty2)] = result;
       result
     | Some(ty) -> ty
     }
@@ -239,11 +240,12 @@ class TType private {
     ty1: TType,
     ty2: TType,
   ): TType {
+    if (ty1 == ty2) return ty1;
     pair = (ty1, ty2);
     subst.seenInter.maybeGet(pair) match {
     | None() ->
       result = static::inter_(subst, env, ty1, ty2);
-      subst.seenInter![pair] = result;
+      subst.!seenInter[pair] = result;
       result
     | Some(ty) -> ty
     }
@@ -315,6 +317,10 @@ class TType private {
     this.h
   }
 
+  fun xxhash(): Int {
+    this.h
+  }
+
   // BOOLEAN PROPERTIES
 
   fun isBottom(): Bool {
@@ -372,7 +378,7 @@ class TType private {
   fun expand(subst: mutable Subst, env: TEnv, variance: Variance): Clauses {
     clauses = this.clauses;
     insts = Vector::mcreateFromItems(this.insts.insts);
-    seen = Set::mcreateFromItems(insts);
+    seen = SortedSet::createFromItems(insts);
     loop {
       if (insts.isEmpty()) return clauses;
       inst = insts.pop();
@@ -386,7 +392,7 @@ class TType private {
       !clauses = Clauses::union(subst, env, clauses, tyDef.clauses);
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
-        seen.insert(newInst);
+        !seen = seen.set(newInst);
         insts.push(newInst);
       }
     }
@@ -483,7 +489,7 @@ class TConstr(
   tagPos: PosRange,
   // TODO: make fields private so that we don't try to access "kind" from fields
   fields: TFields,
-) uses XXHash64.Hashable, Orderable, Projectable<String> {
+) uses XXHashable, Orderable, Projectable<String> {
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
     invariant(x.tag == y.tag);
     static(x.tag, x.tagPos, interTFields(subst, env, x.fields, y.fields))
@@ -517,6 +523,11 @@ class TConstr(
 
   fun project(): String {
     this.tag
+  }
+
+  fun xxhash(): Int {
+    // Custom xxhash that excludes tagPos position
+    (this.tag, this.fields).xxhash()
   }
 }
 
@@ -665,7 +676,7 @@ class TFun(
   minSizeWitness: PosRange,
   lambdas: Array<Lambda>,
   retType: TType,
-) uses XXHash64.Hashable, Orderable, Projectable<(Int, Int)> {
+) uses XXHashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
     internal_error("TODO TFun toString()")
   }
@@ -673,14 +684,27 @@ class TFun(
   fun project(): (Int, Int) {
     (this.clauses.size(), this.params.size())
   }
+
+  fun xxhash(): Int {
+    // Custom xxhash that excludes minSizeWitness position
+    (
+      this.clauses,
+      this.params,
+      this.optionalParams,
+      this.spreadParam,
+      this.lambdas,
+      this.retType,
+    ).xxhash()
+  }
 }
 
 class Lambda(
   pos: PosRange,
   compute: (mutable Subst, Array<TType>, TType) ~> void,
-) uses XXHash64.Hashable, Orderable {
-  fun hash(): Int {
-    this.pos.hash()
+) uses XXHashable, Orderable {
+  fun xxhash(): Int {
+    // Custom xxhash that excludes position components (start, end) - only hash filename
+    this.pos.fileName.xxhash()
   }
   fun compare(other: Lambda): Order {
     this.pos.compare(other.pos)
@@ -691,7 +715,7 @@ class Lambda(
 /* Single types */
 /*****************************************************************************/
 
-base class TPrimVoidKind uses XXHash64.Hashable, Orderable {
+base class TPrimVoidKind uses XXHashable, Orderable {
   children =
   | TUndefined()
   | TVoid()
@@ -706,7 +730,7 @@ base class TPrimVoidKind uses XXHash64.Hashable, Orderable {
   }
 }
 
-base class TPrimValueKind uses XXHash64.Hashable, Orderable {
+base class TPrimValueKind uses XXHashable, Orderable {
   children =
   | TNum()
   | TBool()
@@ -721,9 +745,7 @@ base class TPrimValueKind uses XXHash64.Hashable, Orderable {
   }
 }
 
-base class SType(
-  pos: PosRange,
-) uses XXHash64.Hashable, Orderable, Projectable<Int> {
+base class SType(pos: PosRange) uses XXHashable, Orderable, Projectable<Int> {
   children =
   | TPrimVoid(TPrimVoidKind)
   | TPromise(TType)
@@ -747,6 +769,23 @@ base class SType(
   fun project(): Int {
     this.tag()
   }
+
+  fun xxhash(): Int {
+    // Custom xxhash that excludes position - just xxhash the structure without pos
+    this match {
+    | TPrimVoid(kind, _) -> kind.xxhash()
+    | TPrimValue(kind, values, _) ->
+      values match {
+      | None() -> kind.xxhash()
+      | Some(vals) -> (kind.xxhash(), vals.xxhash()).xxhash()
+      }
+    | TTuple(tuple, _) -> tuple.map(ty -> ty.xxhash()).xxhash()
+    | TPromise(ty, _) -> ty.xxhash()
+    | TObject(fields, _) -> fields.xxhash()
+    | TAlgebraic(branches, _) -> branches.xxhash()
+    | TFuns(funs, methods, _) -> (funs, methods).xxhash()
+    }
+  }
 }
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
@@ -756,7 +795,7 @@ class TField private (
   name: /* Invariant: name != kAlgebraicBranchFieldName */ String,
   isOptional: Bool,
   type: TType,
-) uses XXHash64.Hashable, Orderable, Projectable<String> {
+) uses XXHashable, Orderable, Projectable<String> {
   static fun create(
     pos: PosRange,
     name: String,
@@ -799,11 +838,16 @@ class TField private (
   fun project(): String {
     this.name
   }
+
+  fun xxhash(): Int {
+    // Custom xxhash that excludes position
+    (this.name, this.isOptional, this.type.xxhash()).xxhash()
+  }
 }
 
 class TFields private (
   fields: InternalKeyedArrayMap<String, TField>,
-) uses XXHash64.Hashable, Orderable {
+) uses XXHashable, Orderable {
   static fun empty(): this {
     static(InternalKeyedArrayMap::empty())
   }
@@ -895,7 +939,7 @@ class TFields private (
 
 class STypes private (
   private stypes: InternalKeyedArrayMap<Int, SType>,
-) uses XXHash64.Hashable, Orderable {
+) uses XXHashable, Orderable {
   static fun empty(): this {
     static(InternalKeyedArrayMap::empty())
   }
@@ -1050,12 +1094,31 @@ class TVar private (
     !this.constraints = this.constraints.map((_id, ty) -> f(ty));
     this
   }
+
+  fun xxhash(): Int {
+    (
+      this.id,
+      this.constraints.map((_key, ty) -> ty.xxhash())
+        .items()
+        .collect(Array)
+        .xxhash(),
+    ).xxhash()
+  }
 }
 
 /* Unexpanded named type */
 // possibly with type arguments
-class TSInst(name: Name, targs: TArgs) extends TInst
-class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
+class TSInst(name: Name, targs: TArgs) extends TInst {
+  fun xxhash(): Int {
+    (this.name.value, this.targs).xxhash()
+  }
+}
+
+class TArgs(targs: Array<TType>) uses XXHashable, Orderable {
+  fun xxhash(): Int {
+    this.targs.map(ty -> ty.xxhash()).xxhash()
+  }
+}
 
 /* Unexpanded intersection */
 //
@@ -1064,11 +1127,13 @@ class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
 class TInter private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
     if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      internal_error(
-        `Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`,
-      )
+      internal_error(`Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`)
     };
     static(ty1, ty2)
+  }
+
+  fun xxhash(): Int {
+    (this.ty1.xxhash(), this.ty2.xxhash()).xxhash()
   }
 }
 
@@ -1079,21 +1144,23 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
 class TUnion private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
     if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      internal_error(
-        `Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`,
-      )
+      internal_error(`Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`)
     };
     static(ty1, ty2)
   }
+
+  fun hash(): Int {
+    (this.ty1.hash(), this.ty2.hash()).hash()
+  }
 }
 
-base class TInst uses XXHash64.Hashable, Orderable
+base class TInst uses XXHashable, Orderable
 
 /* "Instance"/Unexpanded types */
 //
 // Interpretation:
 // 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
-class TInsts private (insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
+class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
   static fun empty(): this {
     static(Array[])
   }
@@ -1132,7 +1199,7 @@ class TInsts private (insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
   }
 }
 
-value class Id private (id: String) uses XXHash64.Hashable, Orderable, Show {
+value class Id private (id: String) uses XXHashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): this {
     static(`${name}:${id}:${lexer.relativeFileName.hash()}`)
   }
@@ -1151,13 +1218,9 @@ class TParamWithConstraint(
   fileName: String,
   id: Id,
   cstr: ?TType,
-) uses XXHash64.Hashable, Orderable
+) uses XXHashable, Orderable
 
-class TParam(
-  name: String,
-  fileName: String,
-  id: Id,
-) uses XXHash64.Hashable, Orderable
+class TParam(name: String, fileName: String, id: Id) uses XXHashable, Orderable
 
 /* Clause */
 //
@@ -1173,7 +1236,7 @@ class TParam(
 class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
-) uses XXHash64.Hashable, Orderable, Projectable<ArraySet<TParam>> {
+) uses XXHashable, Orderable, Projectable<ArraySet<TParam>> {
   /* Invariant: Clause cannot be bottom */
 
   // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
@@ -1277,7 +1340,7 @@ class Clause private (
 // 〚 clauses 〛 = ⨆ 〚 c 〛, for c in clauses.clauses
 class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
-) uses XXHash64.Hashable, Orderable {
+) uses XXHashable, Orderable {
   /*
     Invariant: if one of the clauses is Top, then there are no other clauses
    */
@@ -1542,11 +1605,12 @@ fun isSubTType(
   u1: TType,
   u2: TType,
 ): STResult {
+  if (u1 == u2) return STOk();
   pair = (u1, u2);
   if (subst.seenSub.contains(pair)) return STOk();
   isSubTType_(subst, env, u1, u2) match {
   | STOk() ->
-    subst.seenSub.insert(pair);
+    subst.!seenSub = subst.seenSub.set(pair);
     STOk()
   | err -> err
   }
@@ -1671,7 +1735,7 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
   if (!f2.lambdas.isEmpty()) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
-  tsubst = mutable Map[];
+  tsubst = SortedMap[];
   for (i in Range(0, f1.clauses.size())) {
     tparam1 = f1.clauses[i];
     tparam2 = f2.clauses[i];
@@ -1685,9 +1749,9 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
       | err -> return err
       }
     };
-    tsubst![tparam2.id] = tparam1;
+    !tsubst[tparam2.id] = tparam1;
   };
-  !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
+  !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
   params1 = f1.params;
   params2 = f2.params;
   for (i in Range(0, params1.size())) {
@@ -1793,12 +1857,12 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (!f2.lambdas.isEmpty()) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
-  tsubst = mutable Map[];
+  tsubst = SortedMap[];
   clauses = mutable Vector[];
   for (i in Range(0, f1.clauses.size())) {
     tparam1 = f1.clauses[i];
     tparam2 = f2.clauses[i];
-    tsubst![tparam2.id] = tparam1;
+    !tsubst[tparam2.id] = tparam1;
     cstr = (tparam1.cstr, tparam2.cstr) match {
     | (None(), None()) -> None()
     | (None(), Some(x)) -> Some(x)
@@ -1807,7 +1871,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     };
     clauses.push(tparam1 with {cstr});
   };
-  !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
+  !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
   params = mutable Vector[];
   for (i in Range(0, f1.params.size())) {
     params.push(TType::inter(subst, env, f1.params[i], f2.params[i]));
@@ -1952,12 +2016,12 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (f1.clauses.size() != f2.clauses.size()) {
     internal_error("function clause sizes must match")
   };
-  tsubst = mutable Map[];
+  tsubst = SortedMap[];
   clauses = mutable Vector[];
   for (i in Range(0, f1.clauses.size())) {
     tparam1 = f1.clauses[i];
     tparam2 = f2.clauses[i];
-    tsubst![tparam2.id] = tparam1;
+    !tsubst[tparam2.id] = tparam1;
     cstr = (tparam1.cstr, tparam2.cstr) match {
     | (None(), None()) -> None()
     | (None(), Some(x)) -> Some(x)
@@ -2044,7 +2108,7 @@ fun interTTuple(
 
 mutable base class ApplyType(
   visiting: SortedSet<TType> = SortedSet[],
-  seen: mutable Map<TType, TType> = mutable Map[],
+  mutable seen: SortedMap<TType, TType> = SortedMap[],
 ) {
   type Env;
 
@@ -2056,7 +2120,7 @@ mutable base class ApplyType(
     | None() ->
       !this.visiting = this.visiting.set(ty);
       result = this.type_(env, ty);
-      this.seen![ty] = result;
+      this.!seen[ty] = result;
       result
     | Some(x) -> x
     }
@@ -2208,7 +2272,7 @@ mutable base class ApplyType(
 }
 
 mutable class RenameClauses() extends ApplyType {
-  type Env = Map<Id, TParamWithConstraint>;
+  type Env = SortedMap<Id, TParamWithConstraint>;
   mutable fun typeParamWithConstraint(
     subst: this::Env,
     tparam: TParamWithConstraint,
@@ -2243,7 +2307,7 @@ mutable class FilterType() extends ApplyType {
 }
 
 mutable class Instantiate() extends ApplyType {
-  type Env = (mutable Subst, TEnv, Map<Id, TType>);
+  type Env = (mutable Subst, TEnv, SortedMap<Id, TType>);
 
   mutable fun type_(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
@@ -2315,9 +2379,9 @@ class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
 
 mutable class Subst private {
   context: mutable SKStore.Context,
-  seenSub: mutable Set<(TType, TType)> = mutable Set[],
-  seenInter: mutable Map<(TType, TType), TType> = mutable Map[],
-  seenUnion: mutable Map<(TType, TType), TType> = mutable Map[],
+  mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
+  mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
+  mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {

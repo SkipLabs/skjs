@@ -29,16 +29,24 @@ value class RelPosRange(start: RelPos, end: RelPos) {
   }
 }
 
-value class Pos(value: Int) uses XXHash64.Hashable, Orderable {
+value class Pos(value: Int) uses XXHashable, Orderable {
   const none: this = Pos(-1);
+
+  fun xxhash(): Int {
+    internal_error("should never hash a Pos");
+  }
 }
 
 value class PosRange(
   fileName: String,
   start: Pos,
   end: Pos,
-) uses XXHash64.Hashable, Orderable {
+) uses XXHashable, Orderable {
   const none: this = PosRange("", Pos::none, Pos::none);
+
+  fun xxhash(): Int {
+    internal_error("should never hash a PosRange");
+  }
 }
 
 /*****************************************************************************/
