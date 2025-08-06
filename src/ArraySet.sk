@@ -252,13 +252,13 @@ class ArrayValues private (
     this.values.map(x -> x.i1).hash()
   }
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     // Custom xxhash that excludes positions, only hashes the strings
     result = 0;
     for (i in Range(0, this.values.size())) {
-      !result = XXHash64.xxHash64(result, this.values[i].i1.xxhash());
+      !result = XXHash64.xxHash64(result, this.values[i].i1.xxhash().value);
     };
-    result
+    XXHash(result)
   }
 
   fun singleElt(): ?(PosRange, String) {

@@ -1,15 +1,21 @@
 /*****************************************************************************/
 // XXHash64 implementation
 /*****************************************************************************/
+
+// Introducing a value class to make sure we never mix Hashable and XXHashable
+value class XXHash(value: Int) uses Orderable
+
 module FastOption;
 extension class SentinelOption uses XXHashable[T: XXHashable] {
-  fun xxhash[T: XXHashable](): Int {
-    if (this.isSome()) {
-      this.unsafeFromSome().xxhash() + 1
-    } else {
-      // Arbitrary hash value for None(), copied from Option.sk.
-      1027410261
-    }
+  fun xxhash[T: XXHashable](): XXHash {
+    XXHash(
+      if (this.isSome()) {
+        this.unsafeFromSome().xxhash().value + 1
+      } else {
+        // Arbitrary hash value for None(), copied from Option.sk.
+        1027410261
+      },
+    )
   }
 }
 
@@ -18,43 +24,45 @@ module end;
 module XXHash64;
 
 extension class .Int uses XXHashable {
-  fun xxhash(): Int {
-    this
+  fun xxhash(): XXHash {
+    XXHash(this)
   }
 }
 extension class .Bool uses XXHashable {
-  fun xxhash(): Int {
-    this.hash()
+  fun xxhash(): XXHash {
+    XXHash(this.hash())
   }
 }
 extension class .String uses XXHashable {
-  fun xxhash(): Int {
-    xxHash64String(this)
+  fun xxhash(): XXHash {
+    XXHash(xxHash64String(this))
   }
 }
 extension class .Void uses XXHashable {
-  fun xxhash(): Int {
-    this.hash()
+  fun xxhash(): XXHash {
+    XXHash(this.hash())
   }
 }
 extension base class .Option uses XXHashable[T: XXHashable] {
-  fun xxhash[T: XXHashable](): Int {
-    if (this.isSome()) {
-      this.fromSome().xxhash() + 1
-    } else {
-      // Arbitrary hash value for None(), copied from Option.sk.
-      1027410261
-    }
+  fun xxhash[T: XXHashable](): XXHash {
+    XXHash(
+      if (this.isSome()) {
+        this.fromSome().xxhash().value + 1
+      } else {
+        // Arbitrary hash value for None(), copied from Option.sk.
+        1027410261
+      },
+    )
   }
 }
 extension class .Vector uses XXHashable[T: XXHashable] {
-  readonly fun xxhash[T: XXHashable](): Int {
-    this.foldl((seed, v) -> xxHash64(seed, v.xxhash()), -1)
+  readonly fun xxhash[T: XXHashable](): XXHash {
+    XXHash(this.foldl((seed, v) -> xxHash64(seed, v.xxhash().value), -1))
   }
 }
 extension class .Array uses XXHashable[T: XXHashable] {
-  readonly fun xxhash[T: XXHashable](): Int {
-    this.foldl((seed, v) -> xxHash64(seed, v.xxhash()), -1)
+  readonly fun xxhash[T: XXHashable](): XXHash {
+    XXHash(this.foldl((seed, v) -> xxHash64(seed, v.xxhash().value), -1))
   }
 }
 extension class .Tuple2 uses XXHashable[T0: XXHashable, T1: XXHashable]
@@ -145,9 +153,11 @@ trait .XXHashable {
   // The hash method should return a 64-bit hash value. The bits do not
   // need to be scrambled, that is the responsibility of the user of this
   // method.
-  overridable macro fun xxhash(): Int {
-    h = #thisClassName.hash();
-    #forEachField (#field) !h = xxHash64(h, this.#field.xxhash());
+  overridable macro fun xxhash(): XXHash {
+    h = #thisClassName.xxhash();
+    #forEachField (#field) {
+      !h = XXHash(xxHash64(h.value, this.#field.xxhash().value))
+    };
     h
   }
 }

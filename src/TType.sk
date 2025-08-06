@@ -50,7 +50,7 @@ class TType private {
   // The hash, it's important because we need to quickly determine if
   // two types are different. The hash is computed by smart constructors,
   // that's why the constructor is private
-  private h: Int,
+  private h: XXHash,
 
   // The list of type instances which can be:
   // - Type variables
@@ -312,10 +312,10 @@ class TType private {
   }
 
   fun hash(): Int {
-    this.h
+    this.h.value
   }
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     this.h
   }
 
@@ -523,7 +523,7 @@ class TConstr(
     this.tag
   }
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     // Custom xxhash that excludes tagPos position
     (this.tag, this.fields).xxhash()
   }
@@ -683,7 +683,7 @@ class TFun(
     (this.clauses.size(), this.params.size())
   }
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     // Custom xxhash that excludes minSizeWitness position
     (
       this.clauses,
@@ -700,9 +700,8 @@ class Lambda(
   pos: PosRange,
   compute: (mutable Subst, Array<TType>, TType) ~> void,
 ) uses XXHashable, Orderable {
-  fun xxhash(): Int {
-    // Custom xxhash that excludes position components (start, end) - only hash filename
-    this.pos.fileName.xxhash()
+  fun xxhash(): XXHash {
+    (this.pos.fileName, this.pos.start, this.pos.end).xxhash()
   }
   fun compare(other: Lambda): Order {
     this.pos.compare(other.pos)
@@ -768,16 +767,12 @@ base class SType(pos: PosRange) uses XXHashable, Orderable, Projectable<Int> {
     this.tag()
   }
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     // Custom xxhash that excludes position - just xxhash the structure without pos
     this match {
     | TPrimVoid(kind, _) -> kind.xxhash()
-    | TPrimValue(kind, values, _) ->
-      values match {
-      | None() -> kind.xxhash()
-      | Some(vals) -> (kind.xxhash(), vals.xxhash()).xxhash()
-      }
-    | TTuple(tuple, _) -> tuple.map(ty -> ty.xxhash()).xxhash()
+    | TPrimValue(kind, values, _) -> (kind, values).xxhash()
+    | TTuple(tuple, _) -> tuple.xxhash()
     | TPromise(ty, _) -> ty.xxhash()
     | TObject(fields, _) -> fields.xxhash()
     | TAlgebraic(branches, _) -> branches.xxhash()
@@ -837,9 +832,9 @@ class TField private (
     this.name
   }
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     // Custom xxhash that excludes position
-    (this.name, this.isOptional, this.type.xxhash()).xxhash()
+    (this.name, this.isOptional, this.type).xxhash()
   }
 }
 
@@ -1093,30 +1088,20 @@ class TVar private (
     this
   }
 
-  fun xxhash(): Int {
-    (
-      this.id,
-      this.constraints.map((_key, ty) -> ty.xxhash())
-        .items()
-        .collect(Array)
-        .xxhash(),
-    ).xxhash()
+  fun xxhash(): XXHash {
+    (this.id, this.constraints.items().collect(Array)).xxhash()
   }
 }
 
 /* Unexpanded named type */
 // possibly with type arguments
 class TSInst(name: Name, targs: TArgs) extends TInst {
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     (this.name.value, this.targs).xxhash()
   }
 }
 
-class TArgs(targs: Array<TType>) uses XXHashable, Orderable {
-  fun xxhash(): Int {
-    this.targs.map(ty -> ty.xxhash()).xxhash()
-  }
-}
+class TArgs(targs: Array<TType>) uses XXHashable, Orderable
 
 /* Unexpanded intersection */
 //
@@ -1130,8 +1115,8 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
     static(ty1, ty2)
   }
 
-  fun xxhash(): Int {
-    (this.ty1.xxhash(), this.ty2.xxhash()).xxhash()
+  fun xxhash(): XXHash {
+    (this.ty1, this.ty2).xxhash()
   }
 }
 

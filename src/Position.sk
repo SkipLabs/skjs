@@ -32,7 +32,7 @@ value class RelPosRange(start: RelPos, end: RelPos) {
 value class Pos(value: Int) uses XXHashable, Orderable {
   const none: this = Pos(-1);
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     internal_error("should never hash a Pos");
   }
 }
@@ -44,7 +44,7 @@ value class PosRange(
 ) uses XXHashable, Orderable {
   const none: this = PosRange("", Pos::none, Pos::none);
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     internal_error("should never hash a PosRange");
   }
 }

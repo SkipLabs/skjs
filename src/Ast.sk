@@ -21,7 +21,7 @@ value class Name(
     this.value.hash()
   }
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     // Custom hash that excludes position
     this.value.xxhash()
   }
@@ -361,7 +361,7 @@ base class Symbol uses XXHashable, Hashable, Orderable {
     this.getName().hash()
   }
 
-  fun xxhash(): Int {
+  fun xxhash(): XXHash {
     this.getName().xxhash()
   }
 }
