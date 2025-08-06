@@ -2013,8 +2013,7 @@ class TypeChecker{
           false,
           fieldType,
         ) match {
-        | None() ->
-          internal_error("TODO: converting an object to an algebraic")
+        | None() -> internal_error("TODO: converting an object to an algebraic")
         | Some(f) -> f
         };
         env.scope.set(
@@ -2096,9 +2095,9 @@ class TypeChecker{
             ],
           )
         };
-        map = mutable Map[];
+        map = SortedMap[];
         for (i => tparamDecl in tfun.clauses) {
-          map![tparamDecl.id] = if (targs.isEmpty()) {
+          !map[tparamDecl.id] = if (targs.isEmpty()) {
             this.newTVar(env, pos)
           } else {
             targs[i]

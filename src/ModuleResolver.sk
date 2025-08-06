@@ -96,9 +96,7 @@ base class DirName(path: Array<String>) uses Orderable, Show {
 class FileName(dirName: DirName, baseName: String) {
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
-      internal_error(
-        `File name '${fileName}' is not expected to end with /`,
-      )
+      internal_error(`File name '${fileName}' is not expected to end with /`)
     };
     vec = splitPath(fileName);
     path = vec.slice(0, vec.size() - 1);

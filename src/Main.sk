@@ -240,9 +240,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
               (context, writer, _key, valueIter) ~> {
                 (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
                 | None() ->
-                  internal_error(
-                    "Unexpected missing value in print-errors",
-                  )
+                  internal_error("Unexpected missing value in print-errors")
                 | Some(CheckResult(_, x, y)) -> (x, y)
                 };
                 errors = mutable Vector[];
