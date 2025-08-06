@@ -181,7 +181,7 @@ class TType private {
               fieldSType match {
               | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
               | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                invariant_violation(
+                internal_error(
                   "TODO: encountered both non-empty funs and methods in filterMethod",
                 )
               //Some(tfuns with {methods => Array[]})
@@ -196,7 +196,7 @@ class TType private {
           pos,
         ),
       )
-    | _ -> invariant_violation("Internal error: new should produce an object")
+    | _ -> internal_error("Internal error: new should produce an object")
     }
   }
 
@@ -564,7 +564,7 @@ fun createObject(
 
 class TTuple(tuple: Array<TType>) extends SType {
   fun toString(): String {
-    invariant_violation("TODO TTuple toString")
+    internal_error("TODO TTuple toString")
   }
 }
 
@@ -667,7 +667,7 @@ class TFun(
   retType: TType,
 ) uses XXHash64.Hashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
-    invariant_violation("TODO TFun toString()")
+    internal_error("TODO TFun toString()")
   }
 
   fun project(): (Int, Int) {
@@ -769,7 +769,7 @@ class TField private (
   }
 
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
-    if (x.name != y.name) invariant_violation("field names must match");
+    if (x.name != y.name) internal_error("field names must match");
     static(
       x.pos,
       x.name,
@@ -779,7 +779,7 @@ class TField private (
   }
 
   static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
-    if (x.name != y.name) invariant_violation("field names must match");
+    if (x.name != y.name) internal_error("field names must match");
     static(
       x.pos,
       x.name,
@@ -1000,7 +1000,7 @@ class STypes private (
 
   fun addUndefined(pos: PosRange): this {
     if (this.containsUndefined()) {
-      invariant_violation("type already contains undefined")
+      internal_error("type already contains undefined")
     };
     undef: SType = TPrimVoid(TUndefined(), pos);
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
@@ -1064,7 +1064,7 @@ class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
 class TInter private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
     if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      invariant_violation(
+      internal_error(
         `Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`,
       )
     };
@@ -1079,7 +1079,7 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
 class TUnion private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
     if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      invariant_violation(
+      internal_error(
         `Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`,
       )
     };
@@ -1226,7 +1226,7 @@ class Clause private (
 
   fun union(subst: mutable Subst, env: TEnv, other: Clause): Clause {
     if (this.vars != other.vars) {
-      invariant_violation("clause vars must be equal for union")
+      internal_error("clause vars must be equal for union")
     };
     stypesOpt = (this.stypes, other.stypes) match {
     | (None(), _)
@@ -1239,10 +1239,10 @@ class Clause private (
 
   fun addUndefined(undefinedPosRange: PosRange): this {
     if (!this.vars.isEmpty()) {
-      invariant_violation("Trying to add undefined to an intersection clause")
+      internal_error("Trying to add undefined to an intersection clause")
     };
     stypes = this.stypes match {
-    | None() -> invariant_violation("Trying to add undefined to a Top clause")
+    | None() -> internal_error("Trying to add undefined to a Top clause")
     | Some(stypes) -> stypes.addUndefined(undefinedPosRange)
     };
     !this.stypes = Some(stypes);
@@ -1493,7 +1493,7 @@ base class STResult {
   fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
     this match {
     | STOk() ->
-      invariant_violation("Internal error: STResult should never go to String")
+      internal_error("Internal error: STResult should never go to String")
     | STTop() -> "This is of type any"
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
@@ -1642,7 +1642,7 @@ fun isSubSType(
     STTooManySType(sty1)
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
     TAlgebraic::isSub(subst, env, a1, a2)
-  | _ -> invariant_violation("Internal error")
+  | _ -> internal_error("Internal error")
   }
 }
 
@@ -1666,7 +1666,7 @@ fun isSubTTuple(
 
 fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
   if (f1.clauses.size() != f2.clauses.size()) {
-    invariant_violation("function clause sizes must match")
+    internal_error("function clause sizes must match")
   };
   if (!f2.lambdas.isEmpty()) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
@@ -1768,7 +1768,7 @@ fun unionSType(
   | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> sty1
   | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> sty2
   | (TPrimValue(k1, Some(s1), pos), TPrimValue(k2, Some(s2), _)) ->
-    if (k1 != k2) invariant_violation("primitive value kinds must match");
+    if (k1 != k2) internal_error("primitive value kinds must match");
     TPrimValue(k1, Some(s1.union(s2)), pos)
 
   | (TPromise(ty1, pos), TPromise(ty2, _)) ->
@@ -1779,13 +1779,13 @@ fun unionSType(
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
     TAlgebraic::union(subst, env, a1, a2)
   | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::union(subst, env, f1, f2)
-  | _ -> invariant_violation("Internal error")
+  | _ -> internal_error("Internal error")
   }
 }
 
 fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (f1.clauses.size() != f2.clauses.size()) {
-    invariant_violation("function clause sizes must match")
+    internal_error("function clause sizes must match")
   };
   if (!f1.lambdas.isEmpty()) {
     typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
@@ -1915,14 +1915,14 @@ fun interSType(
 ): ?SType {
   (sty1, sty2) match {
   | (TPrimVoid(k1, _), TPrimVoid(k2, _)) ->
-    if (k1 != k2) invariant_violation("primitive void kinds must match");
+    if (k1 != k2) internal_error("primitive void kinds must match");
     Some(sty1)
 
   | (
     tPrimValue1 @ TPrimValue(k1, values1, _),
     tPrimValue2 @ TPrimValue(k2, values2, _),
   ) ->
-    if (k1 != k2) invariant_violation("primitive value kinds must match");
+    if (k1 != k2) internal_error("primitive value kinds must match");
     (values1, values2) match {
     | (_, None()) -> Some(tPrimValue1)
     | (None(), Some _) -> Some(tPrimValue2)
@@ -1944,13 +1944,13 @@ fun interSType(
     Some(TAlgebraic::inter(subst, env, a1, a2))
 
   | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::inter(subst, env, f1, f2))
-  | _ -> invariant_violation("Internal error")
+  | _ -> internal_error("Internal error")
   }
 }
 
 fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (f1.clauses.size() != f2.clauses.size()) {
-    invariant_violation("function clause sizes must match")
+    internal_error("function clause sizes must match")
   };
   tsubst = mutable Map[];
   clauses = mutable Vector[];
@@ -2050,7 +2050,7 @@ mutable base class ApplyType(
 
   overridable deferred mutable fun type(env: this::Env, ty: TType): TType {
     if (this.visiting.contains(ty)) {
-      invariant_violation("Found a Cyclic type in ApplyType");
+      internal_error("Found a Cyclic type in ApplyType");
     };
     this.seen.maybeGet(ty) match {
     | None() ->

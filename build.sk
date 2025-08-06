@@ -1,0 +1,58 @@
+// Build script for skjs native runtime components
+
+fun main(): void {
+  pic = (Environ.var("RELOCATION_MODEL") == "pic");
+  profile = Environ.var("PROFILE");
+
+  // Native C++ source files
+  native_cpp_srcs = Array["runtime.cpp"];
+
+  // Mark files for dependency tracking
+  native_cpp_srcs.each(f -> print_string(`skargo:rerun-if-changed=${f}`));
+  print_string("skargo:rerun-if-changed=runtime.h");
+
+  // Compile the C++ runtime
+  builder = Cc.Build()
+    .cpp(true) // Enable C++ compilation
+    .pic(pic) // Position independent code based on environment
+    .files(native_cpp_srcs)
+    .define("SKIP64");
+
+  // Add release flag for optimized builds
+  if (profile == "release") {
+    !builder = builder.define("RELEASE")
+  };
+
+  // Try to get libbacktrace configuration (for debug builds)
+  if (profile != "release") {
+    // Only try to use libbacktrace for non-release builds
+    try {
+      libbacktrace_cfg = PkgConfig.Config().probe("libbacktrace");
+      libbacktrace_cfg match {
+      | Success(cfg) ->
+        cfg.include_paths.each(path -> {
+          !builder = builder.include(path)
+        })
+      | Failure(_) ->
+        // Fallback: assume system libbacktrace headers are available
+        void
+      }
+    } catch {
+    | _ ->
+      void // Ignore if libbacktrace is not available
+    }
+  };
+
+  // Compile the library
+  builder.compile("skjs_runtime");
+
+  // Link the compiled library (specify full path to the static library)
+  print_string(
+    `skargo:skc-link-lib=${Environ.var("OUT_DIR")}/libskjs_runtime.a`,
+  );
+
+  // Link libbacktrace for non-release builds
+  if (profile != "release") {
+    print_string("skargo:skc-link-arg=-lbacktrace")
+  };
+}

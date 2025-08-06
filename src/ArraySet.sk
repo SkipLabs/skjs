@@ -81,7 +81,7 @@ class .ArraySet<T: Orderable> private (
           prev match {
           | Some(p) ->
             if (p >= curr) {
-              invariant_violation("ArraySet::create")
+              internal_error("ArraySet::create")
             }
           | None() -> void
           };
@@ -155,7 +155,7 @@ class .ArraySet<T: Orderable> private (
       | (Some(x), _)
       | (None(), Some(x)) ->
         x
-      | (None(), None()) -> invariant_violation("ArraySet.union")
+      | (None(), None()) -> internal_error("ArraySet.union")
       }
     )
   }

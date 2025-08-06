@@ -5,6 +5,18 @@
 module SKJS;
 
 /*****************************************************************************/
+/* The function that is called whenever there is an internal error. */
+/*****************************************************************************/
+
+@cpp_extern("SKIP_print_backtrace")
+native fun printBacktrace(): void;
+
+fun internal_error(msg: String): T {
+  printBacktrace();
+  invariant_violation("Internal error: " + msg);
+}
+
+/*****************************************************************************/
 /* The function that is called whenever there is a user-visible error. */
 /*****************************************************************************/
 
