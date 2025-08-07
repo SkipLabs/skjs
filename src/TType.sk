@@ -206,6 +206,7 @@ class TType private {
     ty1: this,
     ty2: this,
   ): this {
+    if (ty1 == ty2) return ty1;
     subst.seenUnion.maybeGet((ty1, ty2)) match {
     | None() ->
       result = static::union_(subst, env, ty1, ty2);
@@ -239,6 +240,7 @@ class TType private {
     ty1: TType,
     ty2: TType,
   ): TType {
+    if (ty1 == ty2) return ty1;
     pair = (ty1, ty2);
     subst.seenInter.maybeGet(pair) match {
     | None() ->
@@ -1588,6 +1590,7 @@ fun isSubTType(
   u1: TType,
   u2: TType,
 ): STResult {
+  if (u1 == u2) return STOk();
   pair = (u1, u2);
   if (subst.seenSub.contains(pair)) return STOk();
   isSubTType_(subst, env, u1, u2) match {
@@ -1608,6 +1611,18 @@ fun isSubTType_(
   if (env.seenSub.contains((subst.version, u1, u2))) return STOk();
   !env.seenSub = env.seenSub.set((subst.version, u1, u2));
   savedSubst = subst.save();
+  for (inst in u2.insts) {
+    inst match {
+    | tvar @ TVar(_, _, constraints) ->
+      for (_ => cstr in constraints) {
+        status = isSubTType(subst, env, u1, cstr);
+        if (status is STOk()) continue;
+        return status;
+      };
+      subst.grow(env, tvar, u1, true)
+    | _ -> void
+    }
+  };
   for (inst in u1.insts) {
     inst match {
     | tvar @ TVar(_, _, constraints) ->
@@ -1622,18 +1637,6 @@ fun isSubTType_(
           true
         }
       }) subst.grow(env, tvar, u2, false)
-    | _ -> void
-    }
-  };
-  for (inst in u2.insts) {
-    inst match {
-    | tvar @ TVar(_, _, constraints) ->
-      for (_ => cstr in constraints) {
-        status = isSubTType(subst, env, u1, cstr);
-        if (status is STOk()) continue;
-        return status;
-      };
-      subst.grow(env, tvar, u1, true)
     | _ -> void
     }
   };
