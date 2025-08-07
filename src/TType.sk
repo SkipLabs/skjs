@@ -50,7 +50,7 @@ class TType private {
   // The hash, it's important because we need to quickly determine if
   // two types are different. The hash is computed by smart constructors,
   // that's why the constructor is private
-  private h: Int,
+  private h: XXHash,
 
   // The list of type instances which can be:
   // - Type variables
@@ -62,7 +62,7 @@ class TType private {
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   clauses: Clauses,
-} uses XXHash64.Hashable, Orderable {
+} uses XXHashable, Orderable {
   // CONSTRUCTORS
 
   // Returns the type that is sub-type of all types. This type is
@@ -119,7 +119,7 @@ class TType private {
     if (clauses.isTop()) {
       !insts = TInsts::empty();
     };
-    h = (insts, clauses).hash();
+    h = (insts, clauses).xxhash();
     static{h, pos, insts, clauses};
   }
 
@@ -181,7 +181,7 @@ class TType private {
               fieldSType match {
               | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
               | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                invariant_violation(
+                internal_error(
                   "TODO: encountered both non-empty funs and methods in filterMethod",
                 )
               //Some(tfuns with {methods => Array[]})
@@ -196,7 +196,7 @@ class TType private {
           pos,
         ),
       )
-    | _ -> invariant_violation("Internal error: new should produce an object")
+    | _ -> internal_error("Internal error: new should produce an object")
     }
   }
 
@@ -209,7 +209,7 @@ class TType private {
     subst.seenUnion.maybeGet((ty1, ty2)) match {
     | None() ->
       result = static::union_(subst, env, ty1, ty2);
-      subst.seenUnion![(ty1, ty2)] = result;
+      subst.!seenUnion[(ty1, ty2)] = result;
       result
     | Some(ty) -> ty
     }
@@ -243,7 +243,7 @@ class TType private {
     subst.seenInter.maybeGet(pair) match {
     | None() ->
       result = static::inter_(subst, env, ty1, ty2);
-      subst.seenInter![pair] = result;
+      subst.!seenInter[pair] = result;
       result
     | Some(ty) -> ty
     }
@@ -312,6 +312,10 @@ class TType private {
   }
 
   fun hash(): Int {
+    this.h.value
+  }
+
+  fun xxhash(): XXHash {
     this.h
   }
 
@@ -372,7 +376,7 @@ class TType private {
   fun expand(subst: mutable Subst, env: TEnv, variance: Variance): Clauses {
     clauses = this.clauses;
     insts = Vector::mcreateFromItems(this.insts.insts);
-    seen = Set::mcreateFromItems(insts);
+    seen = SortedSet::createFromItems(insts);
     loop {
       if (insts.isEmpty()) return clauses;
       inst = insts.pop();
@@ -386,7 +390,7 @@ class TType private {
       !clauses = Clauses::union(subst, env, clauses, tyDef.clauses);
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
-        seen.insert(newInst);
+        !seen = seen.set(newInst);
         insts.push(newInst);
       }
     }
@@ -483,7 +487,7 @@ class TConstr(
   tagPos: PosRange,
   // TODO: make fields private so that we don't try to access "kind" from fields
   fields: TFields,
-) uses XXHash64.Hashable, Orderable, Projectable<String> {
+) uses XXHashable, Orderable, Projectable<String> {
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
     invariant(x.tag == y.tag);
     static(x.tag, x.tagPos, interTFields(subst, env, x.fields, y.fields))
@@ -517,6 +521,11 @@ class TConstr(
 
   fun project(): String {
     this.tag
+  }
+
+  fun xxhash(): XXHash {
+    // Custom xxhash that excludes tagPos position
+    (this.tag, this.fields).xxhash()
   }
 }
 
@@ -564,7 +573,7 @@ fun createObject(
 
 class TTuple(tuple: Array<TType>) extends SType {
   fun toString(): String {
-    invariant_violation("TODO TTuple toString")
+    internal_error("TODO TTuple toString")
   }
 }
 
@@ -665,22 +674,34 @@ class TFun(
   minSizeWitness: PosRange,
   lambdas: Array<Lambda>,
   retType: TType,
-) uses XXHash64.Hashable, Orderable, Projectable<(Int, Int)> {
+) uses XXHashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
-    invariant_violation("TODO TFun toString()")
+    internal_error("TODO TFun toString()")
   }
 
   fun project(): (Int, Int) {
     (this.clauses.size(), this.params.size())
+  }
+
+  fun xxhash(): XXHash {
+    // Custom xxhash that excludes minSizeWitness position
+    (
+      this.clauses,
+      this.params,
+      this.optionalParams,
+      this.spreadParam,
+      this.lambdas,
+      this.retType,
+    ).xxhash()
   }
 }
 
 class Lambda(
   pos: PosRange,
   compute: (mutable Subst, Array<TType>, TType) ~> void,
-) uses XXHash64.Hashable, Orderable {
-  fun hash(): Int {
-    this.pos.hash()
+) uses XXHashable, Orderable {
+  fun xxhash(): XXHash {
+    (this.pos.fileName, this.pos.start, this.pos.end).xxhash()
   }
   fun compare(other: Lambda): Order {
     this.pos.compare(other.pos)
@@ -691,7 +712,7 @@ class Lambda(
 /* Single types */
 /*****************************************************************************/
 
-base class TPrimVoidKind uses XXHash64.Hashable, Orderable {
+base class TPrimVoidKind uses XXHashable, Orderable {
   children =
   | TUndefined()
   | TVoid()
@@ -706,7 +727,7 @@ base class TPrimVoidKind uses XXHash64.Hashable, Orderable {
   }
 }
 
-base class TPrimValueKind uses XXHash64.Hashable, Orderable {
+base class TPrimValueKind uses XXHashable, Orderable {
   children =
   | TNum()
   | TBool()
@@ -721,9 +742,7 @@ base class TPrimValueKind uses XXHash64.Hashable, Orderable {
   }
 }
 
-base class SType(
-  pos: PosRange,
-) uses XXHash64.Hashable, Orderable, Projectable<Int> {
+base class SType(pos: PosRange) uses XXHashable, Orderable, Projectable<Int> {
   children =
   | TPrimVoid(TPrimVoidKind)
   | TPromise(TType)
@@ -747,6 +766,19 @@ base class SType(
   fun project(): Int {
     this.tag()
   }
+
+  fun xxhash(): XXHash {
+    // Custom xxhash that excludes position - just xxhash the structure without pos
+    this match {
+    | TPrimVoid(kind, _) -> kind.xxhash()
+    | TPrimValue(kind, values, _) -> (kind, values).xxhash()
+    | TTuple(tuple, _) -> tuple.xxhash()
+    | TPromise(ty, _) -> ty.xxhash()
+    | TObject(fields, _) -> fields.xxhash()
+    | TAlgebraic(branches, _) -> branches.xxhash()
+    | TFuns(funs, methods, _) -> (funs, methods).xxhash()
+    }
+  }
 }
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
@@ -756,7 +788,7 @@ class TField private (
   name: /* Invariant: name != kAlgebraicBranchFieldName */ String,
   isOptional: Bool,
   type: TType,
-) uses XXHash64.Hashable, Orderable, Projectable<String> {
+) uses XXHashable, Orderable, Projectable<String> {
   static fun create(
     pos: PosRange,
     name: String,
@@ -769,7 +801,7 @@ class TField private (
   }
 
   static fun inter(subst: mutable Subst, env: TEnv, x: this, y: this): this {
-    if (x.name != y.name) invariant_violation("field names must match");
+    if (x.name != y.name) internal_error("field names must match");
     static(
       x.pos,
       x.name,
@@ -779,7 +811,7 @@ class TField private (
   }
 
   static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): this {
-    if (x.name != y.name) invariant_violation("field names must match");
+    if (x.name != y.name) internal_error("field names must match");
     static(
       x.pos,
       x.name,
@@ -799,11 +831,16 @@ class TField private (
   fun project(): String {
     this.name
   }
+
+  fun xxhash(): XXHash {
+    // Custom xxhash that excludes position
+    (this.name, this.isOptional, this.type).xxhash()
+  }
 }
 
 class TFields private (
   fields: InternalKeyedArrayMap<String, TField>,
-) uses XXHash64.Hashable, Orderable {
+) uses XXHashable, Orderable {
   static fun empty(): this {
     static(InternalKeyedArrayMap::empty())
   }
@@ -895,7 +932,7 @@ class TFields private (
 
 class STypes private (
   private stypes: InternalKeyedArrayMap<Int, SType>,
-) uses XXHash64.Hashable, Orderable {
+) uses XXHashable, Orderable {
   static fun empty(): this {
     static(InternalKeyedArrayMap::empty())
   }
@@ -1000,7 +1037,7 @@ class STypes private (
 
   fun addUndefined(pos: PosRange): this {
     if (this.containsUndefined()) {
-      invariant_violation("type already contains undefined")
+      internal_error("type already contains undefined")
     };
     undef: SType = TPrimVoid(TUndefined(), pos);
     static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
@@ -1050,12 +1087,21 @@ class TVar private (
     !this.constraints = this.constraints.map((_id, ty) -> f(ty));
     this
   }
+
+  fun xxhash(): XXHash {
+    (this.id, this.constraints.items().collect(Array)).xxhash()
+  }
 }
 
 /* Unexpanded named type */
 // possibly with type arguments
-class TSInst(name: Name, targs: TArgs) extends TInst
-class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
+class TSInst(name: Name, targs: TArgs) extends TInst {
+  fun xxhash(): XXHash {
+    (this.name.value, this.targs).xxhash()
+  }
+}
+
+class TArgs(targs: Array<TType>) uses XXHashable, Orderable
 
 /* Unexpanded intersection */
 //
@@ -1064,11 +1110,13 @@ class TArgs(targs: Array<TType>) uses XXHash64.Hashable, Orderable
 class TInter private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
     if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      invariant_violation(
-        `Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`,
-      )
+      internal_error(`Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`)
     };
     static(ty1, ty2)
+  }
+
+  fun xxhash(): XXHash {
+    (this.ty1, this.ty2).xxhash()
   }
 }
 
@@ -1079,21 +1127,23 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
 class TUnion private (ty1: TType, ty2: TType) extends TInst {
   static fun create(ty1: TType, ty2: TType): this {
     if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      invariant_violation(
-        `Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`,
-      )
+      internal_error(`Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`)
     };
     static(ty1, ty2)
   }
+
+  fun hash(): Int {
+    (this.ty1.hash(), this.ty2.hash()).hash()
+  }
 }
 
-base class TInst uses XXHash64.Hashable, Orderable
+base class TInst uses XXHashable, Orderable
 
 /* "Instance"/Unexpanded types */
 //
 // Interpretation:
 // 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
-class TInsts private (insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
+class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
   static fun empty(): this {
     static(Array[])
   }
@@ -1132,7 +1182,7 @@ class TInsts private (insts: Array<TInst>) uses XXHash64.Hashable, Orderable {
   }
 }
 
-value class Id private (id: String) uses XXHash64.Hashable, Orderable, Show {
+value class Id private (id: String) uses XXHashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): this {
     static(`${name}:${id}:${lexer.relativeFileName.hash()}`)
   }
@@ -1151,13 +1201,9 @@ class TParamWithConstraint(
   fileName: String,
   id: Id,
   cstr: ?TType,
-) uses XXHash64.Hashable, Orderable
+) uses XXHashable, Orderable
 
-class TParam(
-  name: String,
-  fileName: String,
-  id: Id,
-) uses XXHash64.Hashable, Orderable
+class TParam(name: String, fileName: String, id: Id) uses XXHashable, Orderable
 
 /* Clause */
 //
@@ -1173,7 +1219,7 @@ class TParam(
 class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
-) uses XXHash64.Hashable, Orderable, Projectable<ArraySet<TParam>> {
+) uses XXHashable, Orderable, Projectable<ArraySet<TParam>> {
   /* Invariant: Clause cannot be bottom */
 
   // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
@@ -1226,7 +1272,7 @@ class Clause private (
 
   fun union(subst: mutable Subst, env: TEnv, other: Clause): Clause {
     if (this.vars != other.vars) {
-      invariant_violation("clause vars must be equal for union")
+      internal_error("clause vars must be equal for union")
     };
     stypesOpt = (this.stypes, other.stypes) match {
     | (None(), _)
@@ -1239,10 +1285,10 @@ class Clause private (
 
   fun addUndefined(undefinedPosRange: PosRange): this {
     if (!this.vars.isEmpty()) {
-      invariant_violation("Trying to add undefined to an intersection clause")
+      internal_error("Trying to add undefined to an intersection clause")
     };
     stypes = this.stypes match {
-    | None() -> invariant_violation("Trying to add undefined to a Top clause")
+    | None() -> internal_error("Trying to add undefined to a Top clause")
     | Some(stypes) -> stypes.addUndefined(undefinedPosRange)
     };
     !this.stypes = Some(stypes);
@@ -1277,7 +1323,7 @@ class Clause private (
 // 〚 clauses 〛 = ⨆ 〚 c 〛, for c in clauses.clauses
 class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
-) uses XXHash64.Hashable, Orderable {
+) uses XXHashable, Orderable {
   /*
     Invariant: if one of the clauses is Top, then there are no other clauses
    */
@@ -1493,7 +1539,7 @@ base class STResult {
   fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
     this match {
     | STOk() ->
-      invariant_violation("Internal error: STResult should never go to String")
+      internal_error("Internal error: STResult should never go to String")
     | STTop() -> "This is of type any"
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
@@ -1546,7 +1592,7 @@ fun isSubTType(
   if (subst.seenSub.contains(pair)) return STOk();
   isSubTType_(subst, env, u1, u2) match {
   | STOk() ->
-    subst.seenSub.insert(pair);
+    subst.!seenSub = subst.seenSub.set(pair);
     STOk()
   | err -> err
   }
@@ -1565,12 +1611,17 @@ fun isSubTType_(
   for (inst in u1.insts) {
     inst match {
     | tvar @ TVar(_, _, constraints) ->
-      for (_ => cstr in constraints) {
-        status = isSubTType(subst, env, u2, cstr);
-        if (status is STOk()) continue;
-        return status;
-      };
-      subst.grow(env, tvar, u2, false)
+      if ({
+        substCopy = subst.save();
+        for (_ => cstr in constraints) {
+          status = isSubTType(subst, env, u2, cstr);
+          if (status is STOk()) continue;
+          subst.restore(substCopy);
+          break false
+        } else {
+          true
+        }
+      }) subst.grow(env, tvar, u2, false)
     | _ -> void
     }
   };
@@ -1637,7 +1688,7 @@ fun isSubSType(
     STTooManySType(sty1)
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
     TAlgebraic::isSub(subst, env, a1, a2)
-  | _ -> invariant_violation("Internal error")
+  | _ -> internal_error("Internal error")
   }
 }
 
@@ -1661,12 +1712,12 @@ fun isSubTTuple(
 
 fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
   if (f1.clauses.size() != f2.clauses.size()) {
-    invariant_violation("function clause sizes must match")
+    internal_error("function clause sizes must match")
   };
   if (!f2.lambdas.isEmpty()) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
-  tsubst = mutable Map[];
+  tsubst = SortedMap[];
   for (i in Range(0, f1.clauses.size())) {
     tparam1 = f1.clauses[i];
     tparam2 = f2.clauses[i];
@@ -1680,9 +1731,9 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
       | err -> return err
       }
     };
-    tsubst![tparam2.id] = tparam1;
+    !tsubst[tparam2.id] = tparam1;
   };
-  !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
+  !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
   params1 = f1.params;
   params2 = f2.params;
   for (i in Range(0, params1.size())) {
@@ -1763,7 +1814,7 @@ fun unionSType(
   | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) -> sty1
   | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> sty2
   | (TPrimValue(k1, Some(s1), pos), TPrimValue(k2, Some(s2), _)) ->
-    if (k1 != k2) invariant_violation("primitive value kinds must match");
+    if (k1 != k2) internal_error("primitive value kinds must match");
     TPrimValue(k1, Some(s1.union(s2)), pos)
 
   | (TPromise(ty1, pos), TPromise(ty2, _)) ->
@@ -1774,13 +1825,13 @@ fun unionSType(
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
     TAlgebraic::union(subst, env, a1, a2)
   | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::union(subst, env, f1, f2)
-  | _ -> invariant_violation("Internal error")
+  | _ -> internal_error("Internal error")
   }
 }
 
 fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (f1.clauses.size() != f2.clauses.size()) {
-    invariant_violation("function clause sizes must match")
+    internal_error("function clause sizes must match")
   };
   if (!f1.lambdas.isEmpty()) {
     typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
@@ -1788,12 +1839,12 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (!f2.lambdas.isEmpty()) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
-  tsubst = mutable Map[];
+  tsubst = SortedMap[];
   clauses = mutable Vector[];
   for (i in Range(0, f1.clauses.size())) {
     tparam1 = f1.clauses[i];
     tparam2 = f2.clauses[i];
-    tsubst![tparam2.id] = tparam1;
+    !tsubst[tparam2.id] = tparam1;
     cstr = (tparam1.cstr, tparam2.cstr) match {
     | (None(), None()) -> None()
     | (None(), Some(x)) -> Some(x)
@@ -1802,7 +1853,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     };
     clauses.push(tparam1 with {cstr});
   };
-  !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
+  !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
   params = mutable Vector[];
   for (i in Range(0, f1.params.size())) {
     params.push(TType::inter(subst, env, f1.params[i], f2.params[i]));
@@ -1910,14 +1961,14 @@ fun interSType(
 ): ?SType {
   (sty1, sty2) match {
   | (TPrimVoid(k1, _), TPrimVoid(k2, _)) ->
-    if (k1 != k2) invariant_violation("primitive void kinds must match");
+    if (k1 != k2) internal_error("primitive void kinds must match");
     Some(sty1)
 
   | (
     tPrimValue1 @ TPrimValue(k1, values1, _),
     tPrimValue2 @ TPrimValue(k2, values2, _),
   ) ->
-    if (k1 != k2) invariant_violation("primitive value kinds must match");
+    if (k1 != k2) internal_error("primitive value kinds must match");
     (values1, values2) match {
     | (_, None()) -> Some(tPrimValue1)
     | (None(), Some _) -> Some(tPrimValue2)
@@ -1939,20 +1990,20 @@ fun interSType(
     Some(TAlgebraic::inter(subst, env, a1, a2))
 
   | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::inter(subst, env, f1, f2))
-  | _ -> invariant_violation("Internal error")
+  | _ -> internal_error("Internal error")
   }
 }
 
 fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (f1.clauses.size() != f2.clauses.size()) {
-    invariant_violation("function clause sizes must match")
+    internal_error("function clause sizes must match")
   };
-  tsubst = mutable Map[];
+  tsubst = SortedMap[];
   clauses = mutable Vector[];
   for (i in Range(0, f1.clauses.size())) {
     tparam1 = f1.clauses[i];
     tparam2 = f2.clauses[i];
-    tsubst![tparam2.id] = tparam1;
+    !tsubst[tparam2.id] = tparam1;
     cstr = (tparam1.cstr, tparam2.cstr) match {
     | (None(), None()) -> None()
     | (None(), Some(x)) -> Some(x)
@@ -2039,19 +2090,19 @@ fun interTTuple(
 
 mutable base class ApplyType(
   visiting: SortedSet<TType> = SortedSet[],
-  seen: mutable Map<TType, TType> = mutable Map[],
+  mutable seen: SortedMap<TType, TType> = SortedMap[],
 ) {
   type Env;
 
   overridable deferred mutable fun type(env: this::Env, ty: TType): TType {
     if (this.visiting.contains(ty)) {
-      invariant_violation("Found a Cyclic type in ApplyType");
+      internal_error("Found a Cyclic type in ApplyType");
     };
     this.seen.maybeGet(ty) match {
     | None() ->
       !this.visiting = this.visiting.set(ty);
       result = this.type_(env, ty);
-      this.seen![ty] = result;
+      this.!seen[ty] = result;
       result
     | Some(x) -> x
     }
@@ -2203,7 +2254,7 @@ mutable base class ApplyType(
 }
 
 mutable class RenameClauses() extends ApplyType {
-  type Env = Map<Id, TParamWithConstraint>;
+  type Env = SortedMap<Id, TParamWithConstraint>;
   mutable fun typeParamWithConstraint(
     subst: this::Env,
     tparam: TParamWithConstraint,
@@ -2238,7 +2289,7 @@ mutable class FilterType() extends ApplyType {
 }
 
 mutable class Instantiate() extends ApplyType {
-  type Env = (mutable Subst, TEnv, Map<Id, TType>);
+  type Env = (mutable Subst, TEnv, SortedMap<Id, TType>);
 
   mutable fun type_(env: this::Env, ty: TType): TType {
     !ty = ty.rawMap(
@@ -2310,9 +2361,9 @@ class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
 
 mutable class Subst private {
   context: mutable SKStore.Context,
-  seenSub: mutable Set<(TType, TType)> = mutable Set[],
-  seenInter: mutable Map<(TType, TType), TType> = mutable Map[],
-  seenUnion: mutable Map<(TType, TType), TType> = mutable Map[],
+  mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
+  mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
+  mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {

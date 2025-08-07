@@ -359,7 +359,7 @@ extension class Parser {
       (true, newLeft)
     } else {
       if (bopPrec >= prec) {
-        invariant_violation("bopPrec should be less than prec")
+        internal_error("bopPrec should be less than prec")
       };
       (false, mutableLeft)
     }

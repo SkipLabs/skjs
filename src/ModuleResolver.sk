@@ -24,7 +24,7 @@ fun removeDotDot(path: Array<String>): Array<String> {
   for (elt in path) {
     if (elt == "..") {
       result.maybePop() match {
-      | None() -> invariant_violation("Invalid path: " + path)
+      | None() -> internal_error("Invalid path: " + path)
       | Some(_) -> continue
       }
     };
@@ -47,12 +47,12 @@ base class DirName(path: Array<String>) uses Orderable, Show {
     (this, other) match {
     | (DRelative(d1), DRelative(d2)) -> DRelative(d1.concat(d2))
     | (DRelative _, DAbsolute _) ->
-      invariant_violation(
+      internal_error(
         "Internal error: cannot add an absolute path to a relative one",
       )
     | (DAbsolute(d1), DRelative(d2)) -> DAbsolute(removeDotDot(d1.concat(d2)))
     | (DAbsolute _, DAbsolute _) ->
-      invariant_violation(
+      internal_error(
         "Internal error: cannot add an absolute path to another absolute path",
       )
     }
@@ -64,7 +64,7 @@ base class DirName(path: Array<String>) uses Orderable, Show {
   }
 
   fun endsWith(str: String): Bool {
-    if (str == "") invariant_violation("str should not be empty");
+    if (str == "") internal_error("str should not be empty");
     this.path.size() > 0 && this.path[this.path.size() - 1] == str
   }
 
@@ -78,7 +78,7 @@ base class DirName(path: Array<String>) uses Orderable, Show {
   fun allAncestors(): mutable Iterator<DirName> {
     this match {
     | DRelative(_) ->
-      invariant_violation(
+      internal_error(
         "Internal error: cannot call allAncestors on a relative path",
       )
     | DAbsolute(path) ->
@@ -96,9 +96,7 @@ base class DirName(path: Array<String>) uses Orderable, Show {
 class FileName(dirName: DirName, baseName: String) {
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
-      invariant_violation(
-        `File name '${fileName}' is not expected to end with /`,
-      )
+      internal_error(`File name '${fileName}' is not expected to end with /`)
     };
     vec = splitPath(fileName);
     path = vec.slice(0, vec.size() - 1);
@@ -146,7 +144,7 @@ class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
   fun lookup(fileName: FileName): ?FileName {
     fileNameStr = fileName.toString();
     if (fileNameStr.contains("..")) {
-      invariant_violation(
+      internal_error(
         `File name '${fileNameStr}' is not expected to contain '..'`,
       )
     };
@@ -211,7 +209,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
     path: DirName,
     file: FileName,
   ): ?FileName {
-    if (!(path is DAbsolute _)) invariant_violation("path should be DAbsolute");
+    if (!(path is DAbsolute _)) internal_error("path should be DAbsolute");
     for (ancestor in path.allAncestors()) {
       this.modules.maybeGet(
         context,
@@ -285,7 +283,7 @@ fun resolveName(
     if (endsWithJS || endsWithMJS) {
       suffix = if (endsWithJS) ".js" else {
         if (!endsWithMJS) {
-          invariant_violation("expected endsWithMJS to be true")
+          internal_error("expected endsWithMJS to be true")
         };
         ".mjs";
       };

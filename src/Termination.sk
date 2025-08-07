@@ -101,7 +101,7 @@ value class StmtTermination private {
     static::it(s.iterator(), f)
   }
   static fun or<T>(s: Sequence<T>, f: T ~> this): this {
-    if (s.isEmpty()) invariant_violation("sequence should not be empty");
+    if (s.isEmpty()) internal_error("sequence should not be empty");
     s.reduce((acc, x) -> acc / f(x), static{})
   }
   static fun and<T>(s: Sequence<T>, f: T ~> this): this {
@@ -186,7 +186,7 @@ value class StmtTermination private {
         static::unknownCall
       )
     | Params(_) ->
-      invariant_violation("Internal error: Params should not be an expression")
+      internal_error("Internal error: Params should not be an expression")
     | Object(fields) -> static::and(fields, static::field)
     | EArray(exprs) -> static::and(exprs, static::expr)
     | EIf(cond, e1, e2) ->

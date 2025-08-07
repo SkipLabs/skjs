@@ -95,7 +95,7 @@ fun main_no_exit(): void {
             }
           },
         )
-      | _ -> invariant_violation(`Unknown subcommand ${subcmd}`)
+      | _ -> internal_error(`Unknown subcommand ${subcmd}`)
       }
     | None() ->
       print_string(Cli.usage(args.cmd, true));
@@ -240,9 +240,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
               (context, writer, _key, valueIter) ~> {
                 (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
                 | None() ->
-                  invariant_violation(
-                    "Unexpected missing value in print-errors",
-                  )
+                  internal_error("Unexpected missing value in print-errors")
                 | Some(CheckResult(_, x, y)) -> (x, y)
                 };
                 errors = mutable Vector[];
@@ -320,7 +318,7 @@ class Checker private {
       SKStore.DirName::create("/check-results/"),
       (context, writer, fileNameKey, valueIter) ~> {
         parsedFile = valueIter.getUnique() match {
-        | None() -> invariant_violation("File not parsed")
+        | None() -> internal_error("File not parsed")
         | Some(x) -> x
         };
         parsedFile.value match {

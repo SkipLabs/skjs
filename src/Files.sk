@@ -128,7 +128,7 @@ class Files(
       for (error in errors) {
         error.value match {
         | PRError(err) -> print_error(err)
-        | _ -> invariant_violation("Unexpected parsing result")
+        | _ -> internal_error("Unexpected parsing result")
         }
       };
       throw Exit(2);

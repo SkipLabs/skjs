@@ -233,7 +233,7 @@ extension class Parser {
         | "let" -> BKLet()
         | "const" -> BKConst()
         | "var" -> BKVar()
-        | _ -> invariant_violation("Internal error")
+        | _ -> internal_error("Internal error")
         };
         bindings = mutable Vector[];
         loop {

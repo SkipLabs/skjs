@@ -36,13 +36,13 @@ mutable class TypePp{
     // The string does not contain special characters
     for (c in str) {
       if (c == '\n' || c == '\r' || c == '\t') {
-        invariant_violation("unexpected character")
+        internal_error("unexpected character")
       };
     };
     if (this.cols < margin.size) {
       // The string does not start with a space
       for (_c in str) {
-        //        if (c == ' ') invariant_violation("unexpected white space: " + str);
+        //        if (c == ' ') internal_error("unexpected white space: " + str);
         break void;
       };
       this.!cols = margin.size;

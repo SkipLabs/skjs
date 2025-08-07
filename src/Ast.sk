@@ -15,7 +15,17 @@ module SKJS;
 value class Name(
   posRange: PosRange,
   value: String,
-) uses XXHash64.Hashable, Orderable
+) uses XXHashable, Hashable, Orderable {
+  fun hash(): Int {
+    // Custom hash that excludes position
+    this.value.hash()
+  }
+
+  fun xxhash(): XXHash {
+    // Custom hash that excludes position
+    this.value.xxhash()
+  }
+}
 
 /*****************************************************************************/
 // <def> ::=
@@ -330,7 +340,7 @@ base class PostOperator {
 //   | <name> in <type> (? <type>)? (<fn-op>)?
 //   | <name> : <type>
 /*****************************************************************************/
-base class Symbol uses XXHash64.Hashable, Orderable {
+base class Symbol uses XXHashable, Hashable, Orderable {
   children =
   | FNNormal(Name)
   | FNSymbol(Name)
@@ -349,6 +359,10 @@ base class Symbol uses XXHash64.Hashable, Orderable {
 
   fun hash(): Int {
     this.getName().hash()
+  }
+
+  fun xxhash(): XXHash {
+    this.getName().xxhash()
   }
 }
 
