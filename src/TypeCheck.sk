@@ -1358,7 +1358,7 @@ class TypeChecker{
       };
       TType::single(pos, TPrimVoid(TVoid(), pos))
 
-    | Call(Expr(_, Var(Name(_, "show"))), _, args) ->
+    | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
       clauses = exprTy.expand(env.subst, this.tenv, Covariant());
       ty = TType::fromClauses(exprTy.pos, clauses);
