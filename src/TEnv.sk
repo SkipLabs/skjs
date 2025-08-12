@@ -313,27 +313,54 @@ class TEnv{
             typingError(Array[(modifier.posRange, "TODO: field modifier")])
           }
         };
-        type = field.type match {
-        | None() -> typingError(Array[(field.pos, "Missing type annotation")])
-        | Some(ty) -> this.normalize(context, ty)
-        };
-        fieldName = field.name match {
-        | FNNormal(x) -> x.value
+        field.name match {
+        | FNNormal(fdName) ->
+          fieldName = fdName.value;
+          type = field.type match {
+          | None() -> typingError(Array[(field.pos, "Missing type annotation")])
+          | Some(ty) -> this.normalize(context, ty)
+          };
+          TField::create(
+            field.pos,
+            fieldName,
+            field.optional is Some _,
+            type,
+          ) match {
+          | None() ->
+            typingError(
+              Array[
+                (field.pos, `Forbidden field name '${fieldName}' in a class`),
+              ],
+            )
+          | Some(f) -> acc![fieldName] = f
+          }
+        | FNColon(indexName, indexType, returnType) ->
+          TField::create(
+            indexName.posRange,
+            "[]",
+            false,
+            this.normalize(
+              context,
+              Type(
+                indexName.posRange,
+                TAFun(
+                  true,
+                  Array[],
+                  Array[
+                    TAFunParam(Some(TAParamName(indexName)), None(), indexType),
+                  ],
+                  returnType,
+                ),
+              ),
+            ),
+          ) match {
+          | None() ->
+            typingError(
+              Array[(field.pos, `Forbidden field name [] in a class`)],
+            )
+          | Some(f) -> acc!["[]"] = f
+          }
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
-        };
-        TField::create(
-          field.pos,
-          fieldName,
-          field.optional is Some _,
-          type,
-        ) match {
-        | None() ->
-          typingError(
-            Array[
-              (field.pos, `Forbidden field name '${fieldName}' in a class`),
-            ],
-          )
-        | Some(f) -> acc![fieldName] = f
         }
       | fd @ FunDef _ ->
         (metName, metType) = this.funDecl(context, true, fd);
