@@ -145,9 +145,11 @@ extension class Parser {
           FNIn(fname, ty, asOpt, op)
         } else if (this.lex.peekKind() is Some(TKColon())) {
           _ = this.lex.next();
-          ty = this.type(0);
+          indexType = this.type(0);
           this.expect(TKCloseSquare());
-          FNColon(fname, ty)
+          this.expect(TKColon());
+          returnType = this.type(0);
+          FNColon(fname, indexType, returnType)
         } else {
           this.expect(TKCloseSquare());
           FNSymbol(fname);

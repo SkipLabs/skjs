@@ -6,6 +6,8 @@ declare const console: {
 declare class Array<T> {
   constructor();
   length: number;
+
+  [index: number]: T | undefined;
   
   // Existing methods
   find(filter: (item: T) => boolean): undefined | T;

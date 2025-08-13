@@ -1425,16 +1425,15 @@ class TypeChecker{
         | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
           TType::top(objectPos)
         | TObject _ ->
-          this.checkIsNumber(env, pos, "Invalid index", idxType);
           this.call(
             env,
             pos,
             this.expr(
               env,
-              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "pop"))))),
+              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "[]"))))),
             ),
             Array[],
-            Array[],
+            Array[idxType],
           ).withPos(pos)
 
         | TPrimValue(primKind, _, primPos) ->
