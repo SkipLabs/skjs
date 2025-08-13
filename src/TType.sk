@@ -689,7 +689,7 @@ class TFun(
   retType: TType,
 ) uses XXHashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
-    internal_error("TODO TFun toString()")
+    prettyPrintSType(TFuns::singleFun(this, PosRange::none))
   }
 
   fun project(): (Int, Int) {
