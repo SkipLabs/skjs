@@ -559,9 +559,12 @@ fun createObject(
             pos,
             `Algebraic field ${kAlgebraicBranchFieldName} was expected to be a constant string`,
           ),
-          (algebraicBranchFieldPos, `Got ${algebraicBranchFieldType} instead. ` +
-            `Note that "foo" has type string, while 'foo' has type 'foo'. ` +
-            `For algebraic data types, the '${kAlgebraicBranchFieldName}' field must use single quotes to create a string literal type.`),
+          (
+            algebraicBranchFieldPos,
+            `Got ${algebraicBranchFieldType} instead. ` +
+              `Note that "foo" has type string, while 'foo' has type 'foo'. ` +
+              `For algebraic data types, the '${kAlgebraicBranchFieldName}' field must use single quotes to create a string literal type.`,
+          ),
         ],
       )
     | Some((tagPos, tag)) ->
@@ -1620,10 +1623,10 @@ base class STResult {
     | STTooManySType(sty) ->
       sty match {
       | TPrimVoid(kind, _) -> "This is a " + kind.toString()
-      | TPrimValue(TString(), None(), _) -> 
+      | TPrimValue(TString(), None(), _) ->
         "This is of type string. " +
-        "Note that \"foo\" has type string, while 'foo' has the more specific type 'foo'. " +
-        "Use single quotes to create a string literal type."
+          "Note that \"foo\" has type string, while 'foo' has the more specific type 'foo'. " +
+          "Use single quotes to create a string literal type."
       | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
       | TPrimValue(kind, Some(x), _) ->
         `This is a static ${kind.toString()}: ` +
