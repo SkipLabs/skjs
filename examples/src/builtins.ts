@@ -8,7 +8,7 @@ declare class Array<T> {
   length: number;
 
   [index: number]: T | undefined;
-  
+ 
   // Existing methods
   find(filter: (item: T) => boolean): undefined | T;
   push(elt: T): void;
@@ -147,6 +147,8 @@ declare const Number: {
 
 declare class string {
   length: number;
+
+  [index: number]: string | undefined;
   
   // Existing methods
   charAt(pos: number): string;
@@ -351,4 +353,27 @@ declare class RegExp {
   exec(str: string): Array<string> | undefined;
   test(str: string): boolean;
   toString(): string;
+}
+
+declare class bigint {
+  // Instance methods
+  toString(radix?: number): string;
+  valueOf(): bigint;
+  
+  // Static properties  
+  static MAX_SAFE_INTEGER: bigint;
+  static MIN_SAFE_INTEGER: bigint;
+  
+  // Static methods
+  static asIntN(width: number, bigint: bigint): bigint;
+  static asUintN(width: number, bigint: bigint): bigint;
+}
+
+// BigInt constructor function
+declare const BigInt: {
+  (value: number | string | boolean): bigint;
+  
+  // Static methods
+  asIntN(width: number, bigint: bigint): bigint;
+  asUintN(width: number, bigint: bigint): bigint;
 }
