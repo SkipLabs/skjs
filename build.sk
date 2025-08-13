@@ -26,21 +26,7 @@ fun main(): void {
   // Try to get libbacktrace configuration (for debug builds)
   if (profile != "release") {
     // Only try to use libbacktrace for non-release builds
-    try {
-      libbacktrace_cfg = PkgConfig.Config().probe("libbacktrace");
-      libbacktrace_cfg match {
-      | Success(cfg) ->
-        cfg.include_paths.each(path -> {
-          !builder = builder.include(path)
-        })
-      | Failure(_) ->
-        // Fallback: assume system libbacktrace headers are available
-        void
-      }
-    } catch {
-    | _ ->
-      void // Ignore if libbacktrace is not available
-    }
+    !builder = builder.include("../skip/skiplang/prelude/libbacktrace/")
   };
 
   // Compile the library
