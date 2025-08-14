@@ -714,7 +714,7 @@ class Lambda(
   compute: (mutable Subst, Array<TType>, TType) ~> void,
 ) uses XXHashable, Orderable {
   fun xxhash(): XXHash {
-    (this.pos.fileName, this.pos.start, this.pos.end).xxhash()
+    (this.pos.fileName, this.pos.start.value, this.pos.end.value).xxhash()
   }
   fun compare(other: Lambda): Order {
     this.pos.compare(other.pos)
