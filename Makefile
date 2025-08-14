@@ -1,3 +1,6 @@
+.PHONY: check
+check:
+	skargo check
 
 .PHONY: build
 build:
