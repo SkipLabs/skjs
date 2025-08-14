@@ -2271,6 +2271,7 @@ class TypeChecker{
     target: Bool,
   ): void {
     if (target) {
+      // Positive branch: narrow to only the matching tag
       this.setLocal(
         env,
         local,
@@ -2280,6 +2281,21 @@ class TypeChecker{
           stype match {
           | TAlgebraic(branches, aPos) ->
             TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
+          | x -> x
+          }
+        ,
+      )
+    } else {
+      // Negative branch: eliminate the matching tag (refinement by elimination)
+      this.setLocal(
+        env,
+        local,
+        None(),
+        _ ~> true,
+        stype ~>
+          stype match {
+          | TAlgebraic(branches, aPos) ->
+            TAlgebraic(branches.filter(branch -> branch.tag != tag), aPos)
           | x -> x
           }
         ,
