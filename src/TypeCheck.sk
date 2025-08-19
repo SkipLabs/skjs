@@ -22,7 +22,7 @@ mutable class Scope{
     mutable static{
       id => 0,
       isLoop => false,
-      callingContext => CGNode::create(TopLevelExpr(fileName)),
+      callingContext => CGNode::create(Toplevel(fileName)),
     }
   }
 
