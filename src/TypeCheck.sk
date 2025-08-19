@@ -13,18 +13,24 @@ value class LocalRef(type: TType, isInitialized: Bool)
 mutable class Scope{
   id: Int,
   private isLoop: Bool,
+  callingContext: CGNode,
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
-  static fun mcreateToplevel(): mutable this {
-    mutable static{id => 0, isLoop => false}
+  static fun mcreateToplevel(fileName: String): mutable this {
+    mutable static{
+      id => 0,
+      isLoop => false,
+      callingContext => CGNode::create(TopLevelExpr(fileName)),
+    }
   }
 
   readonly fun clone(): Scope {
     Scope{
       id => this.id,
       isLoop => this.isLoop,
+      callingContext => this.callingContext,
       up => this.up.map(x -> x.clone()),
       locals => this.locals,
       refs => this.refs,
@@ -35,6 +41,7 @@ mutable class Scope{
     mutable Scope{
       id => saved.id,
       isLoop => saved.isLoop,
+      callingContext => saved.callingContext,
       up => saved.up.map(x -> static::fromSaved(x)),
       locals => saved.locals,
       refs => saved.refs,
@@ -150,6 +157,12 @@ mutable class Scope{
     if (scope2.up.map(x -> x.id) != Some(this.id)) {
       internal_error("scope2 up id mismatch")
     };
+    if (scope1.callingContext != this.callingContext) {
+      internal_error("scope1 calling context mismatch");
+    };
+    if (scope2.callingContext != this.callingContext) {
+      internal_error("scope2 calling context mismatch");
+    };
     _ = mapUnion(
       scope1.escapingRefs(),
       scope2.escapingRefs(),
@@ -231,7 +244,12 @@ mutable class TCEnv(
   }
 
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
-    mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
+    mutable Scope{
+      id => this.next(),
+      isLoop,
+      up => Some(this.scope),
+      callingContext => this.scope.callingContext,
+    }
   }
 }
 
@@ -245,6 +263,7 @@ class TypeChecker{
   backtrace: Bool,
   defMap: DefMap,
   tenv: TEnv,
+  callgraph: CallGraph,
   super: ?TType = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
@@ -274,11 +293,16 @@ class TypeChecker{
     | Module _ -> notSupported(def.pos)
     | ToplevelExpr(e) ->
       subst = Subst::mcreate{context};
-      scope = Scope::mcreateToplevel();
+      scope = Scope::mcreateToplevel(def.pos.fileName);
       env = mutable TCEnv(context, subst, scope);
       ty = this.expr(env, e);
-    | fd @ FunDef _ -> this.funDef(context, None(), fd)
       this.checkIsVoid(env, e.pos, ty)
+    | fd @ FunDef _ ->
+      cgNode = fd.name match {
+      | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
+      | None() -> CGNode::create(AnonymousFunDef(fd))
+      };
+      this.funDef(context, None(), fd, cgNode)
     | Declare _ -> void
     | Namespace _ -> notSupported(def.pos)
     | Export(_, _, d) -> this.checkDef(context, Def(def.pos, d))
@@ -337,7 +361,7 @@ class TypeChecker{
       | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
       | Some(x) -> x
       };
-      scope = Scope::mcreateToplevel();
+      scope = Scope::mcreateToplevel(varDef.pat.pos.fileName);
       env = mutable TCEnv(context, subst, scope);
       this.checkSubType(
         env,
@@ -401,7 +425,7 @@ class TypeChecker{
           if (!isInterface) {
             !this.super = Some(super);
           };
-          scope = Scope::mcreateToplevel();
+          scope = Scope::mcreateToplevel(fileName);
           env = mutable TCEnv(context, subst, scope);
           this.checkSubType(
             env,
@@ -422,7 +446,7 @@ class TypeChecker{
           parentName,
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
-        scope = Scope::mcreateToplevel();
+        scope = Scope::mcreateToplevel(fileName);
         env = mutable TCEnv(context, subst, scope);
         this.checkSubType(
           env,
@@ -452,7 +476,7 @@ class TypeChecker{
         field.value match {
         | None() -> void
         | Some(e) ->
-          scope = Scope::mcreateToplevel();
+          scope = Scope::mcreateToplevel(fileName);
           env = mutable TCEnv(context, subst, scope);
           this.checkSubType(
             env,
@@ -471,9 +495,18 @@ class TypeChecker{
             targs.targs,
             fieldType ~> (fieldType is FieldTypeValue{value => Some _}),
           );
-          _ = this.constructor(context, thisType, partialThisType, fd)
+          _ = this.constructor(
+            context,
+            thisType,
+            partialThisType,
+            fd,
+            Some(c.name),
+          )
         } else {
-          _ = this.funDef(context, Some((c.kind, thisType)), fd)
+          cgNode = CGNode::create(
+            Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
+          );
+          _ = this.funDef(context, Some((c.kind, thisType)), fd, cgNode)
         }
       }
     };
@@ -503,9 +536,10 @@ class TypeChecker{
     context: mutable SKStore.Context,
     thisTypeOpt: ?TType,
     fd: FunDef,
+    callingContext: CGNode,
   ): (this, mutable TCEnv) {
     subst = Subst::mcreate{context};
-    scope = Scope::mcreateToplevel();
+    scope = Scope::mcreateToplevel(fd.pos.fileName) with {callingContext};
     env = mutable TCEnv(context, subst, scope);
     thisTypeOpt match {
     | None() -> void
@@ -547,6 +581,7 @@ class TypeChecker{
     context: mutable SKStore.Context,
     thisTypeOpt: ?(ClassKind, TType),
     fd: FunDef,
+    cgNode: CGNode,
   ): void {
     for (modifier in fd.modifiers.modifiers) {
       modifier.value match {
@@ -563,7 +598,12 @@ class TypeChecker{
         )
       }
     };
-    (!this, env) = this.funDefSetup(context, thisTypeOpt.map(x -> x.i1), fd);
+    (!this, env) = this.funDefSetup(
+      context,
+      thisTypeOpt.map(x -> x.i1),
+      fd,
+      cgNode,
+    );
     if (this.retType is None()) {
       typingError(Array[(fd.retType.i0, "Missing return type")])
     };
@@ -634,6 +674,7 @@ class TypeChecker{
     thisType: TType,
     partialThisType: TType,
     fd: FunDef,
+    className: ?Name,
   ): void {
     if (fd.retType.i1 is Some _) {
       typingError(
@@ -650,7 +691,13 @@ class TypeChecker{
         ],
       );
     };
-    (!this, env) = this.funDefSetup(context, Some(partialThisType), fd);
+    cgNode = CGNode::create(
+      className match {
+      | Some(cname) -> Constructor(cname, fd.pos.fileName)
+      | None() -> AnonymousFunDef(fd)
+      },
+    );
+    (!this, env) = this.funDefSetup(context, Some(partialThisType), fd, cgNode);
     env.localObjects!["this"] = Some(thisType);
     fd.isAsync match {
     | None() -> void
@@ -1231,7 +1278,16 @@ class TypeChecker{
         };
         for (def in defs) {
           def.value match {
-          | fd @ FunDef _ -> break this.tenv.funDecl(env.context, false, fd).i1
+          | fd @ FunDef _ ->
+            break this.tenv.funDecl(
+              env.context,
+              false,
+              fd,
+              fd.cgNode match {
+              | Some(n) -> n
+              | None() -> CGNode::create(AnonymousFunDef(fd))
+              },
+            ).i1
           | c @ Class _ -> break this.tenv.newStatic(env.context, c.name)
           | VarDefs(kind, varDefArr) ->
             if (varDefArr.size() != 1) {
@@ -1272,8 +1328,11 @@ class TypeChecker{
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(x, y) -> (x, this.expr(env, y))
+
         | FDSpread _ -> internal_error("TODO spread")
-        | fd @ FunDef _ -> this.tenv.funDecl(env.context, true, fd)
+        | fd @ FunDef _ ->
+          cgNode = CGNode::create(AnonymousFunDef(fd));
+          this.tenv.funDecl(env.context, true, fd, cgNode)
         };
         TField::create(name.pos, name.value, false, ty) match {
         | None() ->
@@ -1305,9 +1364,11 @@ class TypeChecker{
               obj,
               static::uninitializedThisType(pos),
               fd,
+              None(),
             )
           } else {
-            this.funDef(env.context, Some((CKClass(), obj)), fd)
+            cgNode = CGNode::create(AnonymousFunDef(fd));
+            this.funDef(env.context, Some((CKClass(), obj)), fd, cgNode)
           }
         | _ -> void
         }
@@ -1714,7 +1775,7 @@ class TypeChecker{
       | POExcl() -> notSupported(pos)
       }
 
-    | Closure(params, retTypeAstOpt, body) ->
+    | c @ Closure(params, retTypeAstOpt, body) ->
       paramTypes = mutable Vector[];
       noAnnot: ?PosRange = None();
       for (param in params) {
@@ -1732,7 +1793,9 @@ class TypeChecker{
       | None() -> this.newTVar(env, pos)
       | Some(retTypeAst) -> this.tenv.normalize(env.context, retTypeAst)
       };
-      savedScope = env.scope.clone();
+      callingContext = CGNode::create(AnonymousLambda(pos, c));
+      savedScope = env.scope.clone() with {callingContext};
+
       lambdas = if (noAnnot is None()) {
         this.closure(
           env.subst,
@@ -1761,6 +1824,7 @@ class TypeChecker{
             pos,
             lambdas,
             retType,
+            CGNodes::singleton(callingContext),
           ),
           pos,
         ),
@@ -2057,6 +2121,11 @@ class TypeChecker{
     ) match {
     | Some(TFuns(funs, methods, _)) ->
       for (tfun in funs.values().concat(methods.values())) {
+        this.callgraph.recordCalls(
+          env.context,
+          env.scope.callingContext,
+          tfun.cgNodes,
+        );
         if (targs.size() != 0 && targs.size() != tfun.clauses.size()) {
           typingError(
             Array[
