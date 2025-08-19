@@ -266,7 +266,7 @@ extension class Parser {
       }
     | TKQuote() -> EString(SKQuote(), this.lex.getStrTok(tok))
     | TKDoubleQuote() -> EString(SKDoubleQuote(), this.lex.getStrTok(tok))
-    | TKBackTick() -> EString(SKBackTick(), this.lex.getStrTok(tok))
+    | TKBackTick() -> invariant_violation("TODO: support for backtick strings")
     | subTok @ TKAddition()
     | subTok @ TKSubtraction() ->
       (_assoc, bopPrec) = precedence[subTok];

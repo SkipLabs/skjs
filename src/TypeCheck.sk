@@ -1227,8 +1227,6 @@ class TypeChecker{
       )
     | EString(SKDoubleQuote(), _) ->
       TType::single(pos, TPrimValue(TString(), None(), pos))
-    | EString(SKBackTick(), _) ->
-      typingError(Array[(pos, "TODO: support for backtick strings")])
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
       TType::single(pos, TPrimValue(TBool(), None(), pos))
