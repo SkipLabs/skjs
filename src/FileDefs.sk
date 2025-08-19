@@ -21,7 +21,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
     context: mutable S.Context,
     index: FileNameIndex,
     rootOpt: ?DirName,
-    parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
+    parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
   ): this {
     static(
       S.LHandle::create(
@@ -468,15 +468,15 @@ class FileDefs{
 }
 
 base class IDefMap {
-  fun getType(mutable SKStore.Context, Name): DefMapType;
-  fun get(mutable SKStore.Context, FileName, Name): Array<Def>;
+  fun getType(mutable S.Context, Name): DefMapType;
+  fun get(mutable S.Context, FileName, Name): Array<Def>;
 }
 
 class SortedDefMap{map: SortedMap<String, TypeDef>} extends IDefMap {
-  fun getType(mutable SKStore.Context, name: Name): DefMapType {
+  fun getType(mutable S.Context, name: Name): DefMapType {
     TDType(this.map[name.value])
   }
-  fun get(mutable SKStore.Context, FileName, Name): Array<Def> {
+  fun get(mutable S.Context, FileName, Name): Array<Def> {
     Array[]
   }
 }
