@@ -51,38 +51,33 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Error**: "Invariant violation: TODO keyof"
 - **Workaround**: Use explicit property access or type-specific functions
 
-### 9. String Literals vs String Types
-- **Rule**: Single quotes `'text'` create literal types, double quotes `"text"` create string types
-- **Usage**: Use single quotes for union type members, double quotes for general strings
-- **Example**: `type Status = 'active' | 'inactive'` but `let message: string = "Hello"`
-
-### 10. Function Overloading Not Supported
+### 9. Function Overloading Not Supported
 - **Rule**: Function overloading is not supported in SKJS
 - **Workaround**: Use different function names or union types with type guards
 
-### 11. Generic Type Method Calls
+### 10. Generic Type Method Calls
 - **Rule**: Cannot call methods like `.toString()` on unconstrained generic types
 - **Error**: "Invalid '.' for type: T extends"
 - **Workaround**: Use type constraints or avoid calling methods on raw generic types
 
-### 12. Nested Function Declarations Not Supported
+### 11. Nested Function Declarations Not Supported
 - **Rule**: Cannot declare functions inside other functions
 - **Error**: "Function inside expressions are not supported, use closures instead"
 - **Workaround**: Declare all functions at module level
 
-### 13. Algebraic Data Types with 'kind' Field ✅
+### 12. Algebraic Data Types with 'kind' Field ✅
 - **Rule**: ADTs must use `kind` field for discriminated unions
 - **Syntax**: `type Foo = { kind: 'variant1', ... } | { kind: 'variant2', ... }`
 - **Pattern Matching**: Use `if (value.kind === 'variant1')` for type narrowing
 - **Special**: Only `kind` field enables ADT pattern matching, other field names won't work
 
-### 14. Import System ✅
+### 13. Import System ✅
 - **Rule**: Imports must use relative paths starting with `./` and ending with `.js`
 - **Syntax**: `import { functionName, TypeName } from './filename.js'`
 - **Requirements**: File must start with `./` and end with `.js` extension
 - **Example**: `import { add, User } from './utils.js'`
 
-### 15. Only Locals Can Be Compared to null/undefined
+### 14. Only Locals Can Be Compared to null/undefined
 - **Rule**: Only local variables can be directly compared to `null`, `undefined`, or string literals
 - **Limitation**: Cannot compare property access expressions like `x.foo` or `obj.property` to null/undefined
 - **Error**: Expressions like `if (x.foo != null)` or `while (current.next !== null)` will fail
@@ -113,7 +108,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   }
   ```
 
-### 16. NEVER Call Array.get() - Runtime Compatibility
+### 15. NEVER Call Array.get() - Runtime Compatibility
 - **CRITICAL RULE**: NEVER call `arr.get(index)` in your code - it will crash at runtime!
 - **Explanation**: `Array.get()` exists ONLY for SKJS type checking purposes
 - **Reality**: The `.get()` method does not exist on JavaScript arrays at runtime
@@ -131,7 +126,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   ```
 - **Memory Aid**: If you see `.get(` in array code, it's a bug waiting to happen!
 
-### 17. The `any` Type is Not Supported
+### 16. The `any` Type is Not Supported
 - **CRITICAL RULE**: NEVER use the `any` type in SKJS code
 - **Explanation**: The `any` type is not implemented in the SKJS type checker
 - **Error**: Using `any` will cause type checking errors
@@ -151,7 +146,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   function process<T>(value: T): T { return value; }
   ```
 
-### 18. Template Literal Strings Not Supported
+### 17. Template Literal Strings Not Supported
 - **Rule**: Backtick template strings are not implemented
 - **Error**: "TODO: support for backtick strings"
 - **Workaround**: Use string concatenation with `+` operator
@@ -164,7 +159,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   let message = "Hello " + name + ", you are " + age + " years old";
   ```
 
-### 19. Boolean Literal Type Casting Not Supported
+### 18. Boolean Literal Type Casting Not Supported
 - **Rule**: Casting boolean values to literal boolean types is not supported
 - **Error**: "Construction not supported" when using `false as false` or `true as true`
 - **Workaround**: Use explicit boolean comparisons or different type definitions
@@ -177,7 +172,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   let result: 'true' | 'false' = condition ? 'true' : 'false';
   ```
 
-### 20. For...of Loops Not Supported  
+### 19. For...of Loops Not Supported  
 - **Rule**: For...of loop syntax is not implemented
 - **Error**: "TODO: for ... of not implemented, you can use a normal for (for now)"
 - **Workaround**: Use traditional for loops with index
@@ -197,7 +192,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   }
   ```
 
-### 21. In Operator Not Supported
+### 20. In Operator Not Supported
 - **Rule**: The `in` operator for type guards is not supported
 - **Error**: "Expected )" when using `if ("prop" in obj)`
 - **Workaround**: Use instanceof checks or explicit type assertions
@@ -235,7 +230,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 
 ## File Organization and Structure Guidelines
 
-### 22. Prefer Small, Focused Files
+### 21. Prefer Small, Focused Files
 - **Rule**: Split code into as many separate files as possible
 - **Guideline**: Aim for one function per file whenever practical
 - **Rationale**: Small files are easier to type-check, debug, and maintain in SKJS
@@ -257,7 +252,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   export { add, multiply };
   ```
 
-### 23. Keep Classes Minimal
+### 22. Keep Classes Minimal
 - **Rule**: Define only core methods in classes (constructor, essential primitives)
 - **Guideline**: Move complex logic to separate utility functions
 - **Rationale**: Smaller classes are easier to type-check and less prone to SKJS limitations
@@ -287,7 +282,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   }
   ```
 
-### 24. File Size Guidelines
+### 23. File Size Guidelines
 - **Target**: Aim for files under 50 lines when possible
 - **Maximum**: Keep files under 100 lines for optimal SKJS performance
 - **Benefits**: 
@@ -297,7 +292,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   - Reduced complexity per file
 - **When to Split**: If a file has multiple functions, consider splitting into separate files
 
-### 25. Logical File Organization
+### 24. Logical File Organization
 - **Group by Feature**: Create separate files for related functionality
 - **Separate Concerns**: Keep types, utilities, and business logic in different files
 - **Example Directory Structure**:
@@ -318,7 +313,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   └── main.ts
   ```
 
-### 26. Import/Export Organization
+### 25. Import/Export Organization
 - **Rule**: Use barrel exports to aggregate related functionality
 - **Pattern**: Create index files that re-export from multiple small files
 - **Example**:
@@ -412,16 +407,12 @@ let x: number = 10; // "Construction not supported: toplevel let"
 
 ### Literal Types and Union Types
 ```typescript
-// Good - use single quotes for literal types
+// Good - literal union types
 type Status = 'active' | 'inactive' | 'pending';
 let userStatus: Status = 'active';
 
-// Good - use double quotes for string values
+// Good - string values
 let message: string = "Hello, world!";
-
-// Avoid - mixing quotes inappropriately
-type Status = "active" | "inactive"; // Should use single quotes
-let userStatus: Status = "active"; // Should use single quotes
 ```
 
 ### Algebraic Data Types
