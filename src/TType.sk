@@ -687,6 +687,7 @@ class TFun(
   minSizeWitness: PosRange,
   lambdas: Array<Lambda>,
   retType: TType,
+  cgNodes: CGNodes,
 ) uses XXHashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
     prettyPrintSType(TFuns::singleFun(this, PosRange::none))
@@ -1949,6 +1950,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   sizeWitness = if (totalSize1 <= totalSize2) f1.minSizeWitness else {
     f2.minSizeWitness
   };
+  cgNodes = f1.cgNodes.union(f2.cgNodes);
   TFun(
     clauses.toArray(),
     params.toArray(),
@@ -1957,6 +1959,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     sizeWitness,
     Array[],
     retType,
+    cgNodes,
   )
 }
 
@@ -2126,6 +2129,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (f2.lambdas.size() != 0) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
+  cgNodes = f1.cgNodes.intersection(f2.cgNodes);
   TFun(
     clauses.toArray(),
     params.toArray(),
@@ -2134,6 +2138,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     sizeWitness,
     Array[],
     retType,
+    cgNodes,
   )
 }
 
@@ -2281,6 +2286,7 @@ mutable base class ApplyType(
       f.minSizeWitness,
       f.lambdas,
       this.type(env, f.retType),
+      f.cgNodes,
     )
   }
 

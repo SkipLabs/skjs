@@ -305,9 +305,18 @@ class Checker private {
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
     tenv = TEnv{defMap};
-    checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
+    callgraph = CallGraph::create(context);
+    checker = TypeChecker{
+      builtins,
+      backtrace,
+      defMap,
+      tenv,
+      builtinsFileName,
+      callgraph,
+    };
     static{files, parsedFiles, checker, newLinesMap}
   }
+
   fun checkFiles(
     context: mutable SKStore.Context,
   ): SKStore.EHandle<SKStore.SID, CheckResult> {

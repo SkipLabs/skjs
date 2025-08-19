@@ -129,6 +129,7 @@ class FunDef{
   params: Array<Param>,
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
+  cgNode: ?CGNode,
 } extends Def_, FieldType, Field uses XXHashable
 
 base class FunDefBody uses XXHashable {
@@ -446,7 +447,7 @@ base class Type_ uses XXHashable {
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
   | TATuple(Array<TupleEltType>)
-  | TAFun(Bool, Array<TypeParam>, Array<TAFunParam>, Type)
+  | TAFun(Bool, Array<TypeParam>, Array<TAFunParam>, Type, CGNode)
   | TAGet(Type, Type)
   | TAExtendsQuestion(Type, Type, Type, Type)
   | TAExtends(Type, Type)

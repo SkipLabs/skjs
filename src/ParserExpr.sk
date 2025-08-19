@@ -755,6 +755,7 @@ extension class Parser {
         Some(FNNormal(fieldName)),
         true,
         None(),
+        None(),
       )
     };
     tok = this.lex.peek() match {

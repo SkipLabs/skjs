@@ -351,7 +351,10 @@ class TEnv{
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ FunDef _ ->
-        (metName, metType) = this.funDecl(context, true, fd);
+        cgNode = CGNode::create(
+          Method(fd.name, className, fd.pos.fileName, fd.isStatic()),
+        );
+        (metName, metType) = this.funDecl(context, true, fd, cgNode);
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
           typingError(
@@ -367,6 +370,7 @@ class TEnv{
     context: mutable SKStore.Context,
     isMethod: Bool,
     fd: FunDef,
+    cgNode: CGNode,
   ): (Name, TType) {
     name = fd.name match {
     | Some(FNNormal(x)) -> x
@@ -411,6 +415,7 @@ class TEnv{
             Type(fd.retType.i0, TAInst(Name(fd.retType.i0, "void"), Array[]))
           | Some(x) -> x
           },
+          cgNode,
         ),
       ),
     );
@@ -635,7 +640,7 @@ class TEnv{
         pos,
         TTuple(types.map(ty -> this.normalize(context, ty)), typeAst.pos),
       )
-    | TAFun(isMethod, clauses, params, retType) ->
+    | TAFun(isMethod, clauses, params, retType, cgNode) ->
       funClauses = mutable Vector[];
       for (tparam in clauses) {
         funTParam = TParamWithConstraint(
@@ -689,6 +694,7 @@ class TEnv{
         pos,
         Array[],
         this.normalize(context, retType),
+        CGNodes::singleton(cgNode),
       );
       tfuns = if (isMethod) {
         TFuns::singleMethod(tfun, typeAst.pos)
@@ -753,7 +759,8 @@ class TEnv{
             }
           }
         | fd @ FunDef _ ->
-          (name, decl) = this.funDecl(context, true, fd);
+          cgNode = CGNode::create(AnonymousFunDef(fd));
+          (name, decl) = this.funDecl(context, true, fd, cgNode);
           optField = TField::create(name.pos, name.value, false, decl);
           if (optField is None()) {
             typingError(

@@ -299,6 +299,7 @@ extension class Parser {
         fieldName,
         true,
         isOptional,
+        None(),
       )
     } else {
       this.getNormalFieldType(
@@ -335,6 +336,7 @@ extension class Parser {
           None(),
           None(),
           false,
+          None(),
           None(),
         );
         fields.push(method);
@@ -387,18 +389,18 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse a definition
-  mutable fun def(): Def {
+  mutable fun def(topLevel: Bool): Def {
     while (this.lex.peekKind() is Some(TKSemi())) {
       _ = this.lex.next();
     };
-    this.defHelper()
+    this.defHelper(topLevel)
   }
 
   // Parse top-level definitions
   mutable fun toplevelDefs(): Array<Def> {
     defs = mutable Vector[];
     loop {
-      this.maybeDef() match {
+      this.maybeDef(true) match {
       | None() -> return defs.toArray()
       | Some(def) -> defs.push(def)
       }
@@ -406,7 +408,7 @@ extension class Parser {
   }
 
   // Parse a block of definitions
-  mutable fun defs(): Array<Def> {
+  mutable fun defs(topLevel: Bool): Array<Def> {
     this.expect(TKOpenCurly());
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
@@ -414,7 +416,7 @@ extension class Parser {
     };
     defs = mutable Vector[];
     loop {
-      def = this.def();
+      def = this.def(topLevel);
       defs.push(def);
       loop {
         if (this.lex.peekKind() is Some(TKSemi())) {
@@ -431,28 +433,28 @@ extension class Parser {
   }
 
   // Try to parse a definition, returning None if at end of input
-  mutable fun maybeDef(): ?Def {
+  mutable fun maybeDef(topLevel: Bool): ?Def {
     while (this.lex.peekKind() is Some(TKSemi())) {
       _ = this.lex.next();
     };
     if (this.lex.peekKind() is None()) return None();
-    Some(this.def())
+    Some(this.def(topLevel))
   }
 
   // Helper for parsing definitions with position tracking
-  mutable fun defHelper(): Def {
+  mutable fun defHelper(topLevel: Bool): Def {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
     };
     start = tok.pos.start;
-    def_ = this.defHelper_();
+    def_ = this.defHelper_(topLevel);
     end = this.lex.lastTok.fromSome().pos.end;
     Def(PosRange(this.lex.fileName, start, end), def_)
   }
 
   // Internal definition parsing implementation
-  mutable fun defHelper_(): Def_ {
+  mutable fun defHelper_(topLevel: Bool): Def_ {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
@@ -460,15 +462,15 @@ extension class Parser {
     this.lex.getStrTok(tok) match {
     | "declare" ->
       _ = this.lex.next();
-      def = this.def();
+      def = this.def(topLevel);
       Declare(def)
     | "global" ->
       _ = this.lex.next();
-      Global(this.defs())
+      Global(this.defs(false))
     | "namespace" ->
       _ = this.lex.next();
       name = this.getName();
-      defs = this.defs();
+      defs = this.defs(false);
       Namespace(name, defs)
     | "import" ->
       _ = this.lex.next();
@@ -576,10 +578,11 @@ extension class Parser {
                 None(),
                 true,
                 None(),
+                None(),
               ),
             )
           } else {
-            Export(isType, default, this.def().value)
+            Export(isType, default, this.def(false).value)
           }
         | Some("async")
         | Some("namespace")
@@ -593,7 +596,7 @@ extension class Parser {
         | Some("var")
         | Some("abstract")
         | Some("type") ->
-          def = this.def();
+          def = this.def(false);
           Export(isType, default, def.value)
         | _ ->
           if (default is None()) {
@@ -606,10 +609,10 @@ extension class Parser {
     | "async" ->
       asyncTok = this.lex.next().fromSome();
       this.expectStr("function");
-      this.funDef(Some(asyncTok.pos), true)
+      this.funDef(Some(asyncTok.pos), true, true)
     | "function" ->
       _ = this.lex.next();
-      this.funDef(None(), true)
+      this.funDef(None(), true, topLevel)
     | "type" ->
       _ = this.lex.next();
       this.typeDef()
@@ -628,7 +631,7 @@ extension class Parser {
       _ = this.lex.next();
       name = this.getNameOrString();
       defs = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-        Some(this.defs())
+        Some(this.defs(false))
       } else {
         None()
       };
@@ -994,15 +997,25 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse function definitions
-  mutable fun funDef(isAsync: ?PosRange, parseBlock: Bool): FunDef {
-    funName = this.getName();
+  mutable fun funDef(
+    isAsync: ?PosRange,
+    parseBlock: Bool,
+    isTopLevel: Bool,
+  ): FunDef {
+    funName = FNNormal(this.getName());
+    cgNode = if (isTopLevel) {
+      Some(CGNode::create(TopLevelFunDef(funName, this.lex.fileName)))
+    } else {
+      None()
+    };
     this.methodDef(
       isAsync,
       Modifiers::empty(),
       None(),
-      FNNormal(funName),
+      funName,
       parseBlock,
       None(),
+      cgNode,
     )
   }
 
@@ -1014,6 +1027,7 @@ extension class Parser {
     funName: Symbol,
     parseBlock: Bool,
     optional: ?PosRange,
+    cgNode: ?CGNode,
   ): FunDef {
     this.anonMethodDef(
       isAsync,
@@ -1022,6 +1036,7 @@ extension class Parser {
       Some(funName),
       parseBlock,
       optional,
+      cgNode,
     )
   }
 
@@ -1033,6 +1048,7 @@ extension class Parser {
     funName: ?Symbol,
     parseBlock: Bool,
     isOptional: ?PosRange,
+    cgNode: ?CGNode,
   ): FunDef {
     funStart = this.lex.lastTok.fromSome().pos.end;
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
@@ -1138,6 +1154,7 @@ extension class Parser {
       params => params.toArray(),
       retType,
       body,
+      cgNode,
     }
   }
 

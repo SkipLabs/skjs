@@ -67,11 +67,11 @@ extension class Parser {
     | TKLessThan() ->
       tparams = this.typeParams();
       this.type(0) match {
-      | Type(_, TAFun(isMethod, emptyTParams, params, retType)) ->
+      | Type(_, TAFun(isMethod, emptyTParams, params, retType, cgNode)) ->
         if (emptyTParams.size() != 0) {
           internal_error("emptyTParams should be empty")
         };
-        TAFun(isMethod, tparams, params, retType)
+        TAFun(isMethod, tparams, params, retType, cgNode)
       | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
       }
     | TKOpenSquare() ->
@@ -151,7 +151,13 @@ extension class Parser {
         params = this.typeFunParams();
         this.expect(TKClosure());
         retType = this.type(0);
-        TAFun(false, Array[], params, retType)
+        TAFun(
+          false,
+          Array[],
+          params,
+          retType,
+          CGNode::create(ArrowTypeAnnot(this.lex.fileName)),
+        )
       } else {
         res = this.type(0).value;
         this.expect(TKCloseParen());
