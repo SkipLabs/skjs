@@ -537,7 +537,6 @@ base class StringKind {
   children =
   | SKQuote()
   | SKDoubleQuote()
-  | SKBackTick()
 }
 
 base class FNOp {
