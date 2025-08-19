@@ -184,6 +184,9 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Path to the file containing type declarations for JavaScript builtins",
     ),
+  Cli.Arg::bool("log-affected-files").about(
+    "Output a list of files potentially affected by changes since laqst run.  Requires `--data` persistent cache.",
+  ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -204,6 +207,21 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
   baseUrlOpt = args.maybeGetString("base-url");
   builtinsFileName = args.getString("builtins-file");
+  logAffectedFiles = args.getBool("log-affected-files");
+  if (logAffectedFiles) {
+    if (args.maybeGetString("init").isSome()) {
+      print_error(
+        "--log-affected-files is incompatible with --init; run with --data after initializing",
+      );
+      throw Exit(2);
+    };
+    if (args.maybeGetString("data").isNone()) {
+      print_error(
+        "--log-affected-files requires a persisted cache of results; did you run with --init? ",
+      );
+      throw Exit(2);
+    };
+  };
   srcFiles: Sequence<String> = args.getArray("src-file");
   errorsDirName = SKStore.DirName::create("/check/errors/");
 
@@ -215,12 +233,16 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         baseUrlOpt,
         builtinsFileName,
         srcFiles,
+        logAffectedFiles,
       ) match {
       | Failure(err) ->
         print_error(err);
         return SKStore.CStop(None())
       | Success(checker) -> checker
       };
+
+      // Just print out the reverse callgraph for now; should actually compute the set of affected files given changes found by frontend
+      if (logAffectedFiles) CallGraph::create(context).debug(context);
 
       _ = applyMap(
         getInitDir(context),
@@ -229,7 +251,12 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{context, backtrace, files};
+          checker = Checker::create{
+            context,
+            files,
+            backtrace,
+            logAffectedFiles,
+          };
           _ = checker
             .checkFiles(context)
             .map(
@@ -288,8 +315,9 @@ class Checker private {
 } {
   static fun create{
     context: mutable SKStore.Context,
-    backtrace: Bool = false,
     files: Files,
+    backtrace: Bool = false,
+    logAffectedFiles: Bool = false,
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
