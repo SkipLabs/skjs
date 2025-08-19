@@ -689,7 +689,7 @@ class TFun(
   retType: TType,
 ) uses XXHashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
-    internal_error("TODO TFun toString()")
+    prettyPrintSType(TFuns::singleFun(this, PosRange::none))
   }
 
   fun project(): (Int, Int) {
@@ -762,12 +762,12 @@ base class SType(pos: PosRange) uses XXHashable, Orderable, Projectable<Int> {
 
   fun tag(): Int {
     this match {
-    | TPrimVoid(TUndefined _, _) -> 0
-    | TPrimVoid(TVoid _, _) -> 1
-    | TPrimVoid(TNull _, _) -> 2
-    | TPrimValue(TBool _, _, _) -> 3
-    | TPrimValue(TNum _, _, _) -> 4
-    | TPrimValue(TString _, _, _) -> 5
+    | TPrimVoid(TUndefined(), _) -> 0
+    | TPrimVoid(TVoid(), _) -> 1
+    | TPrimVoid(TNull(), _) -> 2
+    | TPrimValue(TBool(), _, _) -> 3
+    | TPrimValue(TNum(), _, _) -> 4
+    | TPrimValue(TString(), _, _) -> 5
     | TTuple _ -> 7
     | TPromise _ -> 8
     | TObject _ -> 9
