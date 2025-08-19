@@ -1623,10 +1623,6 @@ base class STResult {
     | STTooManySType(sty) ->
       sty match {
       | TPrimVoid(kind, _) -> "This is a " + kind.toString()
-      | TPrimValue(TString(), None(), _) ->
-        "This is of type string. " +
-          "Note that \"foo\" has type string, while 'foo' has the more specific type 'foo'. " +
-          "Use single quotes to create a string literal type."
       | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
       | TPrimValue(kind, Some(x), _) ->
         `This is a static ${kind.toString()}: ` +

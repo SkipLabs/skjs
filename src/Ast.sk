@@ -260,7 +260,7 @@ base class SwitchBranch {
 //   | <string-number>
 //   | <name>
 //   | ... <name>
-//   | <string-kind> <string>
+//   | <string>
 //   | typeof <expr>
 //   | keyof <type>
 //   | await <expr>
@@ -287,7 +287,7 @@ base class Expr_ {
   | Number(String)
   | Var(Name)
   | Spread(Name)
-  | EString(StringKind, String)
+  | EString(String)
   | TypeOf(Expr)
   | KeyOf(Type)
   | Await(Expr)
@@ -531,12 +531,6 @@ base class ClassKind {
   | CKInterface()
   | CKClass()
   | CKAbstract()
-}
-
-base class StringKind {
-  children =
-  | SKQuote()
-  | SKDoubleQuote()
 }
 
 base class FNOp {
