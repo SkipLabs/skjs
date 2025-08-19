@@ -9,7 +9,7 @@ base class CGNode_ uses XXHashable, Show {
   | TopLevelFunDef(name: Symbol, fileName: String)
   | Method(name: ?Symbol, _class: Name, fileName: String, _static: Bool)
   | Constructor(_class: Name, fileName: String)
-  | TopLevelExpr(fileName: String)
+  | Toplevel(fileName: String)
   | ArrowTypeAnnot(fileName: String)
 
   fun toString(): String {
@@ -29,7 +29,7 @@ base class CGNode_ uses XXHashable, Show {
         ")"
     | Constructor(_class, file) ->
       _class.value + ".constructor" + " (" + file + ")"
-    | TopLevelExpr(file) -> "top-level expr (" + file + ")"
+    | Toplevel(file) -> "top-level expr (" + file + ")"
     | ArrowTypeAnnot(file) -> "arrow-type annotation (" + file + ")"
     | AnonymousLambda(pos, _closure) ->
       "lambda (" + pos.fileName + ":" + pos.start.value + ")"
