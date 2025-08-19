@@ -1,4 +1,4 @@
-/*****************************************************************************/
+/***************************************************************************/
 // Logic that resolves exports/imports in a file.
 //
 // Note that a lot of that logic is poorly tested and probably
@@ -10,7 +10,7 @@
 // export { x, y, z } from ...
 //
 // The rest is too old. I am pushing the code as is, but this needs cleanup.
-/*****************************************************************************/
+/***************************************************************************/
 
 module alias S = SKStore;
 
