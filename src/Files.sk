@@ -6,8 +6,6 @@ module alias S = SKStore;
 
 module SKJS;
 
-class DefFile(defs: Array<Def>) extends SKStore.File
-
 base class ParsedResult {
   children =
   | PROk(Array<Def>)
