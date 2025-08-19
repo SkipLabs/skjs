@@ -4,14 +4,14 @@ version = "0.1.0"
 
 [dependencies]
 std = { path = "../skip/skiplang/prelude" }
-cli = { path = "../cli" }
+cli = { path = "../skip/skiplang/cli" }
 
 [build-dependencies]
 cc = { path = "../skip/skiplang/cc" }
 pkg-config = { path = "../skip/skiplang/pkg-config" }
 
 [dev-dependencies]
-sktest = { path = "../sktest" }
+sktest = { path = "../skip/skiplang/sktest" }
 
 [[bin]]
 name = "skjs"
