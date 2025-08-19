@@ -81,7 +81,7 @@ class TType private {
 
   // Creates an unexpanded instance.
   static fun inst(name: Name, targs: TArgs): this {
-    static::fromTInst(name.posRange, TSInst(name, targs))
+    static::fromTInst(name.pos, TSInst(name, targs))
   }
 
   static fun constantString(pos: PosRange, s: String): this {
@@ -895,9 +895,9 @@ class TFields private (
     | None() ->
       typingError(
         Array[
-          (fieldName.posRange, "Unbound field: " + fieldName.value),
+          (fieldName.pos, "Unbound field: " + fieldName.value),
           (
-            fieldName.posRange,
+            fieldName.pos,
             "Possible options are:\n" +
               this.fields.filter(x -> x.name != "constructor")
                 .toArray()
@@ -908,7 +908,7 @@ class TFields private (
       )
     | Some(fd) ->
       ty = fd.type;
-      if (fd.isOptional) ty.withUndefined(fieldName.posRange) else ty
+      if (fd.isOptional) ty.withUndefined(fieldName.pos) else ty
     }
   }
 
@@ -1402,7 +1402,7 @@ class Clauses private (
 
   static fun fromTypeParam(tparam: TypeParam, stypes: ?STypes): this {
     static::single(
-      TParam(tparam.name.value, tparam.name.posRange.fileName, tparam.id),
+      TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
       stypes,
     )
   }

@@ -40,10 +40,10 @@ extension class Parser {
     this.lex.!inType = false;
     start = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(tok) -> tok.posRange.start
+    | Some(tok) -> tok.pos.start
     };
     e_ = this.expr_(prec);
-    end = this.lex.lastTok.fromSome().posRange.end;
+    end = this.lex.lastTok.fromSome().pos.end;
     this.lex.!inType = inTypeCopy;
     Expr(PosRange(this.lex.fileName, start, end), e_)
   }
@@ -193,11 +193,8 @@ extension class Parser {
         loop {
           e = this.expr(0) match {
           | Expr(_, Var(x)) -> x
-          | Expr(posRange, _) ->
-            this.error(
-              EPChar(this.lex.fileName, posRange.start),
-              ExpectedVarName(),
-            )
+          | Expr(pos, _) ->
+            this.error(EPChar(this.lex.fileName, pos.start), ExpectedVarName())
           };
           tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
             _ = this.lex.next();
@@ -262,7 +259,7 @@ extension class Parser {
       | "await" -> Await(this.expr(0))
       | "typeof" -> TypeOf(this.expr(typeOfPrec))
       | "keyof" -> KeyOf(this.type(0))
-      | _ -> Var(Name(tok.posRange, str))
+      | _ -> Var(Name(tok.pos, str))
       }
     | TKQuote() -> EString(SKQuote(), this.lex.getStrTok(tok))
     | TKDoubleQuote() -> EString(SKDoubleQuote(), this.lex.getStrTok(tok))
@@ -327,7 +324,7 @@ extension class Parser {
     if (bopPrec == prec) {
       leftPosRange = PosRange(
         this.lex.fileName,
-        tok.posRange.start,
+        tok.pos.start,
         this.lex.getLastPos(),
       );
       _ = this.lex.next();
@@ -347,7 +344,7 @@ extension class Parser {
     } else if (bopPrec > prec) {
       leftPosRange = PosRange(
         this.lex.fileName,
-        tok.posRange.start,
+        tok.pos.start,
         this.lex.getLastPos(),
       );
       _ = this.lex.next();
@@ -425,7 +422,7 @@ extension class Parser {
     if (this.lex.isEqTok(binopTok, "as")) {
       leftPosRange = PosRange(
         this.lex.fileName,
-        tok.posRange.start,
+        tok.pos.start,
         this.lex.getLastPos(),
       );
       _ = this.lex.next();
@@ -437,11 +434,7 @@ extension class Parser {
           type = this.type(0);
           !result = As(
             Expr(
-              PosRange(
-                this.lex.fileName,
-                tok.posRange.start,
-                this.lex.getLastPos(),
-              ),
+              PosRange(this.lex.fileName, tok.pos.start, this.lex.getLastPos()),
               result,
             ),
             type,
@@ -493,11 +486,7 @@ extension class Parser {
       args = this.arguments();
       newLeft = Call(
         Expr(
-          PosRange(
-            this.lex.fileName,
-            tok.posRange.start,
-            this.lex.getLastPos(),
-          ),
+          PosRange(this.lex.fileName, tok.pos.start, this.lex.getLastPos()),
           mutableLeft,
         ),
         targs.toArray(),
@@ -522,7 +511,7 @@ extension class Parser {
       if (prec <= opPrec) {
         leftPosRange = PosRange(
           this.lex.fileName,
-          tok.posRange.start,
+          tok.pos.start,
           this.lex.getLastPos(),
         );
         _ = this.lex.next();
@@ -535,7 +524,7 @@ extension class Parser {
       if (prec <= opPrec) {
         leftPosRange = PosRange(
           this.lex.fileName,
-          tok.posRange.start,
+          tok.pos.start,
           this.lex.getLastPos(),
         );
         _ = this.lex.next();
@@ -548,7 +537,7 @@ extension class Parser {
       if (prec <= opPrec) {
         leftPosRange = PosRange(
           this.lex.fileName,
-          tok.posRange.start,
+          tok.pos.start,
           this.lex.getLastPos(),
         );
         _ = this.lex.next();
@@ -579,7 +568,7 @@ extension class Parser {
         if (prec <= opPrec) {
           leftPosRange = PosRange(
             this.lex.fileName,
-            tok.posRange.start,
+            tok.pos.start,
             this.lex.getLastPos(),
           );
           _ = this.lex.next();
@@ -606,7 +595,7 @@ extension class Parser {
         if (prec <= opPrec) {
           leftPosRange = PosRange(
             this.lex.fileName,
-            tok.posRange.start,
+            tok.pos.start,
             this.lex.getLastPos(),
           );
           _ = this.lex.next();
@@ -630,11 +619,7 @@ extension class Parser {
         _ = this.lex.next();
         !mutableLeft = Get(
           Expr(
-            PosRange(
-              this.lex.fileName,
-              tok.posRange.start,
-              this.lex.getLastPos(),
-            ),
+            PosRange(this.lex.fileName, tok.pos.start, this.lex.getLastPos()),
             mutableLeft,
           ),
           this.expr(0),
@@ -782,7 +767,7 @@ extension class Parser {
       FDNormal(fieldName, this.expr(0))
     | TKComma()
     | TKCloseCurly() ->
-      FDNormal(fieldName, Expr(fieldName.posRange, Var(fieldName)))
+      FDNormal(fieldName, Expr(fieldName.pos, Var(fieldName)))
     | _ -> this.error(this.lex.posStart(tok), ExpectedTokenNot(TKCloseCurly()))
     }
   }

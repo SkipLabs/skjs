@@ -225,10 +225,7 @@ value class StmtTermination private {
     static::expr(e).mayNonThrough().each(term ->
       typingError(
         Array[
-          (
-            e.posRange,
-            `Invalid switch branch case expression, it may ${term}.`,
-          ),
+          (e.pos, `Invalid switch branch case expression, it may ${term}.`),
         ],
       )
     )

@@ -48,9 +48,9 @@ base class CGNode_ uses XXHashable, Show {
     }
   }
 }
-class AnonymousLambda(posRange: PosRange, closure: Closure) extends CGNode_ {
+class AnonymousLambda(pos: PosRange, closure: Closure) extends CGNode_ {
   fun hash(): Int {
-    XXHash64.xxHash64(this.posRange.hash(), this.closure.positionBlindHash())
+    XXHash64.xxHash64(this.pos.hash(), this.closure.positionBlindHash())
   }
 }
 class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
