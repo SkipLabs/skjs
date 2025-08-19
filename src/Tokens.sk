@@ -4,7 +4,7 @@
 
 module SKJS;
 
-value class Token(kind: TokenKind, posRange: PosRange)
+value class Token(kind: TokenKind, pos: PosRange)
 
 base class TokenKind uses Equality, XXHashable, Hashable {
   children =

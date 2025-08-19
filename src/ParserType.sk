@@ -39,7 +39,7 @@ extension class Parser {
     this.lex.!inType = true;
     start = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-    | Some(tok) -> tok.posRange.start
+    | Some(tok) -> tok.pos.start
     };
     if (
       this.lex.peekKind() is Some(TKBitwiseOr()) ||
@@ -48,7 +48,7 @@ extension class Parser {
       _ = this.lex.next();
     };
     type = this.type_(prec);
-    end = this.lex.lastTok.fromSome().posRange.end;
+    end = this.lex.lastTok.fromSome().pos.end;
     this.lex.!inType = inTypeCopy;
     Type(PosRange(this.lex.fileName, start, end), type)
   }
@@ -110,7 +110,7 @@ extension class Parser {
           ) {
             name = this.getName();
             optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-              Some(this.lex.next().fromSome().posRange)
+              Some(this.lex.next().fromSome().pos)
             } else {
               None()
             };
@@ -120,7 +120,7 @@ extension class Parser {
           } else {
             type = this.type(0);
             optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-              Some(this.lex.next().fromSome().posRange)
+              Some(this.lex.next().fromSome().pos)
             } else {
               None()
             };
@@ -173,11 +173,7 @@ extension class Parser {
             _ = this.lex.next();
             dotName = this.getName();
             !name = Name(
-              PosRange(
-                this.lex.fileName,
-                name.posRange.start,
-                dotName.posRange.end,
-              ),
+              PosRange(this.lex.fileName, name.pos.start, dotName.pos.end),
               name.value + "." + dotName.value,
             );
           };
@@ -212,17 +208,13 @@ extension class Parser {
       | "abstract" -> TANew(this.type(prec))
       | "new" -> TANew(this.type(prec))
       | className ->
-        name = Name(tok.posRange, className);
+        name = Name(tok.pos, className);
         loop {
           if (this.lex.peekKind() != Some(TKDot())) break void;
           _ = this.lex.next();
           dotName = this.getName();
           !name = Name(
-            PosRange(
-              this.lex.fileName,
-              name.posRange.start,
-              dotName.posRange.end,
-            ),
+            PosRange(this.lex.fileName, name.pos.start, dotName.pos.end),
             name.value + "." + dotName.value,
           );
         };
@@ -278,7 +270,7 @@ extension class Parser {
           _ = this.lex.next();
           leftRange = PosRange(
             this.lex.fileName,
-            tok.posRange.start,
+            tok.pos.start,
             this.lex.getLastPos(),
           );
           !left = TAArray(Type(leftRange, left));
@@ -287,7 +279,7 @@ extension class Parser {
         ty = this.type(0);
         leftRange = PosRange(
           this.lex.fileName,
-          tok.posRange.start,
+          tok.pos.start,
           this.lex.getLastPos(),
         );
         this.expect(TKCloseSquare());
@@ -303,7 +295,7 @@ extension class Parser {
         _ = this.lex.next();
         leftRange = PosRange(
           this.lex.fileName,
-          tok.posRange.start,
+          tok.pos.start,
           this.lex.getLastPos(),
         );
         !left = TAIs(Type(leftRange, left), this.type(0))
@@ -320,14 +312,14 @@ extension class Parser {
           ty3 = this.type(assignPrec);
           leftRange = PosRange(
             this.lex.fileName,
-            tok.posRange.start,
+            tok.pos.start,
             this.lex.getLastPos(),
           );
           !left = TAExtendsQuestion(Type(leftRange, left), ty1, ty2, ty3);
         } else {
           leftRange = PosRange(
             this.lex.fileName,
-            tok.posRange.start,
+            tok.pos.start,
             this.lex.getLastPos(),
           );
           !left = TAExtends(Type(leftRange, left), ty1);
@@ -345,7 +337,7 @@ extension class Parser {
         if (bopPrec == prec) {
           leftRange = PosRange(
             this.lex.fileName,
-            tok.posRange.start,
+            tok.pos.start,
             this.lex.getLastPos(),
           );
           _ = this.lex.next();
@@ -359,7 +351,7 @@ extension class Parser {
         if (bopPrec > prec) {
           leftRange = PosRange(
             this.lex.fileName,
-            tok.posRange.start,
+            tok.pos.start,
             this.lex.getLastPos(),
           );
           _ = this.lex.next();
@@ -421,8 +413,8 @@ extension class Parser {
           type = this.type(0);
           result.push(
             TAFunParam(
-              Some(TAParamSpread(Name(tok.posRange, this.lex.getStrTok(tok)))),
-              Some(qm.posRange),
+              Some(TAParamSpread(Name(tok.pos, this.lex.getStrTok(tok)))),
+              Some(qm.pos),
               type,
             ),
           );
@@ -431,7 +423,7 @@ extension class Parser {
           type = this.type(0);
           result.push(
             TAFunParam(
-              Some(TAParamSpread(Name(tok.posRange, this.lex.getStrTok(tok)))),
+              Some(TAParamSpread(Name(tok.pos, this.lex.getStrTok(tok)))),
               None(),
               type,
             ),
@@ -476,7 +468,7 @@ extension class Parser {
           }
         };
         qm = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          Some(this.lex.next().fromSome().posRange)
+          Some(this.lex.next().fromSome().pos)
         } else {
           None()
         };
@@ -503,7 +495,7 @@ extension class Parser {
             this.expect(TKColon());
             type = this.type(0);
             result.push(
-              TAFunParam(Some(TAParamName(paramName)), Some(qm.posRange), type),
+              TAFunParam(Some(TAParamName(paramName)), Some(qm.pos), type),
             );
           } else {
             if (!(this.lex.peekKind() is Some(TKColon()))) {

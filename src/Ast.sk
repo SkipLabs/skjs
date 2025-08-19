@@ -13,7 +13,7 @@ module SKJS;
 /***************************************************************************/
 
 value class Name(
-  posRange: PosRange,
+  pos: PosRange,
   value: String,
 ) uses XXHashable, Hashable, Orderable {
   fun hash(): Int {
@@ -48,9 +48,9 @@ value class Name(
 //   | <var-def-kind> { <var-def>* }
 /***************************************************************************/
 
-class Def(pos: PosRange, value: Def_)
+class Def(pos: PosRange, value: Def_) uses XXHashable
 
-base class Def_ {
+base class Def_ uses XXHashable {
   children =
   | ToplevelExpr(Expr)
   | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
@@ -83,7 +83,7 @@ base class Def_ {
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
 }
 
-base class ImportName {
+base class ImportName uses XXHashable {
   children =
   | INPath(Name)
   | INName(Name)
@@ -93,7 +93,7 @@ base class ImportName {
 // <var-def> ::= <pattern> (: <type>)? (= <expr>)?
 /***************************************************************************/
 
-class VarDef(pat: Pattern, type: ?Type, value: ?Expr)
+class VarDef(pat: Pattern, type: ?Type, value: ?Expr) uses XXHashable
 
 /***************************************************************************/
 // <pattern> ::=
@@ -102,9 +102,9 @@ class VarDef(pat: Pattern, type: ?Type, value: ?Expr)
 //   | <pattern> ::= { (<name> : <pattern>)* }
 /***************************************************************************/
 
-class Pattern(pos: PosRange, value: Pattern_)
+class Pattern(pos: PosRange, value: Pattern_) uses XXHashable
 
-base class Pattern_ {
+base class Pattern_ uses XXHashable {
   children =
   | PVar(Name)
   | PArray(Array<Pattern>)
@@ -129,9 +129,9 @@ class FunDef{
   params: Array<Param>,
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
-} extends Def_, FieldType, Field
+} extends Def_, FieldType, Field uses XXHashable
 
-base class FunDefBody {
+base class FunDefBody uses XXHashable {
   children =
   | FDBNone(PosRange)
   | FDBSome(Array<Stmt>)
@@ -144,7 +144,7 @@ base class FunDefBody {
 //   | <name>, { <module-def-name>* }
 /***************************************************************************/
 
-base class ModuleNames {
+base class ModuleNames uses XXHashable {
   children =
   | MStar(?Name)
   | MCurly(Array<ModuleDefName>)
@@ -155,13 +155,22 @@ base class ModuleNames {
 // <module-def-name> ::= (type?) <name> (as <name>)?
 /***************************************************************************/
 
-class ModuleDefName(isType: ?PosRange, name: Name, asName: ?Name)
+class ModuleDefName(
+  isType: ?PosRange,
+  name: Name,
+  asName: ?Name,
+) uses XXHashable
 
 /***************************************************************************/
 // <type-param> ::= <name> (: <type>)? (= <type>)?
 /***************************************************************************/
 
-class TypeParam(id: Id, name: Name, constraint: ?Type, default: ?Type)
+class TypeParam(
+  id: Id,
+  name: Name,
+  constraint: ?Type,
+  default: ?Type,
+) uses XXHashable
 
 /***************************************************************************/
 // <param> ::= <modifiers> <param-names> ("?"?) (: <type>)? (= <expr>)?
@@ -174,7 +183,7 @@ class Param(
   optional: ?PosRange,
   type: ?Type,
   default: ?Expr,
-)
+) uses XXHashable
 
 /***************************************************************************/
 // <param-names> ::=
@@ -184,7 +193,7 @@ class Param(
 //   | { <param-names>* }
 /***************************************************************************/
 
-base class ParamNames {
+base class ParamNames uses XXHashable {
   children =
   | PNDDD(name: Name)
   | PNName(name: Name, type: ?Type)
@@ -211,8 +220,8 @@ base class ParamNames {
 //   | { <stmt>* }
 /***************************************************************************/
 
-class Stmt(pos: PosRange, value: Stmt_)
-base class Stmt_ {
+class Stmt(pos: PosRange, value: Stmt_) uses XXHashable
+base class Stmt_ uses XXHashable {
   children =
   | StmtEmpty()
   | StmtExpr(Expr)
@@ -234,9 +243,9 @@ base class Stmt_ {
 // <binding> ::= <pattern> (: <type>)? (= <expr>)?
 /***************************************************************************/
 
-class Binding(pat: Pattern, type: ?Type, value: ?Expr)
+class Binding(pat: Pattern, type: ?Type, value: ?Expr) uses XXHashable
 
-base class BindKind {
+base class BindKind uses XXHashable {
   children =
   | BKLet()
   | BKConst()
@@ -249,7 +258,7 @@ base class BindKind {
 //   | default : <stmt>*
 /***************************************************************************/
 
-base class SwitchBranch {
+base class SwitchBranch uses XXHashable {
   children =
   | Case(Expr, Array<Stmt>)
   | Default(Array<Stmt>)
@@ -281,8 +290,9 @@ base class SwitchBranch {
 //   | async <expr>
 /***************************************************************************/
 
-class Expr(posRange: PosRange, value: Expr_)
-base class Expr_ {
+class Expr(pos: PosRange, value: Expr_) uses XXHashable
+
+base class Expr_ uses XXHashable {
   children =
   | Number(String)
   | Var(Name)
@@ -308,7 +318,7 @@ base class Expr_ {
   | Async(Expr)
 }
 
-base class ClosureBody {
+base class ClosureBody uses XXHashable {
   children =
   | CBExpr(Expr)
   | CBBlock(Array<Stmt>)
@@ -317,7 +327,7 @@ base class ClosureBody {
 /***************************************************************************/
 // <field> ::= <name> : <expr> | ... <expr>
 /***************************************************************************/
-base class Field {
+base class Field uses XXHashable {
   children =
   | FDNormal(name: Name, expr: Expr)
   | FDSpread(expr: Expr)
@@ -326,7 +336,7 @@ base class Field {
 /***************************************************************************/
 // <post-op> ::= -- | ++ | !
 /***************************************************************************/
-base class PostOperator {
+base class PostOperator uses XXHashable {
   children =
   | PODecr()
   | POIncr()
@@ -366,13 +376,13 @@ base class Symbol uses XXHashable, Hashable, Orderable {
   }
 }
 
-class FieldGetSet(kind: FieldGetSetKind, pos: PosRange)
+class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 
 /***************************************************************************/
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /***************************************************************************/
-base class FieldType{modifiers: Modifiers} {
+base class FieldType{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
     this.modifiers.modifiers.containsKey("static")
   }
@@ -420,8 +430,9 @@ class FieldTypeValue{
 //   | unique symbol
 /***************************************************************************/
 
-class Type(posRange: PosRange, value: Type_)
-base class Type_ {
+class Type(pos: PosRange, value: Type_) uses XXHashable
+
+base class Type_ uses XXHashable {
   children =
   | TAStringLiteral(String)
   | TATemplate(String)
@@ -456,7 +467,7 @@ base class Type_ {
 // <tuple-elt-type> ::= <name>? "?"? <type> | ... <name> <type>
 /***************************************************************************/
 
-base class TupleEltType {
+base class TupleEltType uses XXHashable {
   children =
   | TEType(name: ?Name, optional: ?PosRange, Type)
   | TESpread(name: ?Name, Type)
@@ -466,7 +477,11 @@ base class TupleEltType {
 // <ta-fun-param> ::= <ta-param-names> "?"? : <type>
 /***************************************************************************/
 
-class TAFunParam(name: ?TAParamNames, optional: ?PosRange, type: Type)
+class TAFunParam(
+  name: ?TAParamNames,
+  optional: ?PosRange,
+  type: Type,
+) uses XXHashable
 
 /***************************************************************************/
 // <ta-param-names> ::=
@@ -475,7 +490,7 @@ class TAFunParam(name: ?TAParamNames, optional: ?PosRange, type: Type)
 //   | { <curly-name>* } (as <name>)?
 /***************************************************************************/
 
-base class TAParamNames {
+base class TAParamNames uses XXHashable {
   children =
   | TAParamName(Name)
   | TAParamSpread(Name)
@@ -486,7 +501,7 @@ base class TAParamNames {
 // <curly-name> ::= <name> (: <type>)?
 /***************************************************************************/
 
-class CurlyName(name: Name, type: ?Type)
+class CurlyName(name: Name, type: ?Type) uses XXHashable
 
 /***************************************************************************/
 // Modifiers
@@ -494,7 +509,10 @@ class CurlyName(name: Name, type: ?Type)
 // TODO: introduce an ADT for the modifiers that we actually want to support
 /***************************************************************************/
 
-class Modifiers(isRemove: ?PosRange, modifiers: Map<String, Name>) {
+class Modifiers(
+  isRemove: ?PosRange,
+  modifiers: Map<String, Name>,
+) uses XXHashable {
   static fun empty(): this {
     Modifiers(None(), Map[])
   }
@@ -504,14 +522,14 @@ class Modifiers(isRemove: ?PosRange, modifiers: Map<String, Name>) {
 /* Enums */
 /***************************************************************************/
 
-base class VarDefKind {
+base class VarDefKind uses XXHashable {
   children =
   | VDKConst()
   | VDKVar()
   | VDKLet()
 }
 
-base class TPrimKind {
+base class TPrimKind uses XXHashable {
   children =
   | TPKNull()
   | TPKBool()
@@ -519,47 +537,47 @@ base class TPrimKind {
   | TPKString()
 }
 
-base class FieldGetSetKind {
+base class FieldGetSetKind uses XXHashable {
   children =
   | FGet()
   | FSet()
 }
 
-base class ImportKind {
+base class ImportKind uses XXHashable {
   children =
   | IKFrom()
   | IKEq()
 }
 
-base class ClassKind {
+base class ClassKind uses XXHashable {
   children =
   | CKInterface()
   | CKClass()
   | CKAbstract()
 }
 
-base class StringKind {
+base class StringKind uses XXHashable {
   children =
   | SKQuote()
   | SKDoubleQuote()
   | SKBackTick()
 }
 
-base class FNOp {
+base class FNOp uses XXHashable {
   children =
   | FNQuestion(PosRange)
   | FNRemove(PosRange)
   | FNAdd(PosRange)
 }
 
-base class UnaryOperator {
+base class UnaryOperator uses XXHashable {
   children =
   | UOExclamationMark()
   | UOTild()
   | UOMinus()
 }
 
-base class AssignableBinaryOperator extends BinaryOperator {
+base class AssignableBinaryOperator extends BinaryOperator uses XXHashable {
   children =
   | BOMultiplication()
   | BODivision()
@@ -577,7 +595,7 @@ base class AssignableBinaryOperator extends BinaryOperator {
   | BONullishCoalescing()
 }
 
-base class BinaryOperator {
+base class BinaryOperator uses XXHashable {
   children =
   | BODot()
   | BOOptionalDot()

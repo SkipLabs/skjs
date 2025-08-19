@@ -54,7 +54,7 @@ mutable class Scope{
 
   readonly private fun getLocal(name: Name): Name {
     this.maybeGetLocal(name) match {
-    | None() -> typingError(Array[(name.posRange, "Unbound name")])
+    | None() -> typingError(Array[(name.pos, "Unbound name")])
     | Some(x) -> x
     }
   }
@@ -86,8 +86,8 @@ mutable class Scope{
     | Some(otherDef) ->
       typingError(
         Array[
-          (name.posRange, name.value + " is already defined"),
-          (otherDef.posRange, "Previous definition was here"),
+          (name.pos, name.value + " is already defined"),
+          (otherDef.pos, "Previous definition was here"),
         ],
       )
     }
@@ -105,9 +105,7 @@ mutable class Scope{
     | None() -> None()
     | Some((_, ref)) ->
       if (!ref.isInitialized) {
-        typingError(
-          Array[(name.posRange, "This local is not fully initialized")],
-        )
+        typingError(Array[(name.pos, "This local is not fully initialized")])
       } else {
         Some(ref.type)
       }
@@ -116,7 +114,7 @@ mutable class Scope{
 
   readonly fun get(name: Name): TType {
     this.maybeGet(name) match {
-    | None() -> typingError(Array[(name.posRange, "Unbound name")])
+    | None() -> typingError(Array[(name.pos, "Unbound name")])
     | Some(x) -> x
     }
   }
@@ -127,8 +125,7 @@ mutable class Scope{
     isSubType: (TType, TType) -> void,
   ): void {
     (throughLoop, upRef) = this.maybeGetRef(name.value) match {
-    | None() ->
-      typingError(Array[(name.posRange, "Unbound name: " + name.value)])
+    | None() -> typingError(Array[(name.pos, "Unbound name: " + name.value)])
     | Some(x) -> x
     };
     if (throughLoop) {
@@ -280,8 +277,8 @@ class TypeChecker{
       scope = Scope::mcreateToplevel();
       env = mutable TCEnv(context, subst, scope);
       ty = this.expr(env, e);
-      this.checkIsVoid(env, e.posRange, ty)
     | fd @ FunDef _ -> this.funDef(context, None(), fd)
+      this.checkIsVoid(env, e.pos, ty)
     | Declare _ -> void
     | Namespace _ -> notSupported(def.pos)
     | Export(_, _, d) -> this.checkDef(context, Def(def.pos, d))
@@ -362,12 +359,12 @@ class TypeChecker{
       c.tparams.map(tparam -> {
         ttypeParam = TParamWithConstraint(
           tparam.name.value,
-          tparam.name.posRange.fileName,
+          tparam.name.pos.fileName,
           tparam.id,
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
         ty = TType::fromClauses(
-          tparam.name.posRange,
+          tparam.name.pos,
           Clauses::fromTParamWithConstraint(ttypeParam, None()),
         );
         ttypeParam.cstr match {
@@ -378,26 +375,20 @@ class TypeChecker{
       }),
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
+    fileName = c.name.pos.fileName;
     subst = Subst::mcreate{context};
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromClauses(
-      c.name.posRange,
+      c.name.pos,
       Clauses::fromTParamWithConstraint(
-        TParamWithConstraint(
-          "this",
-          c.name.posRange.fileName,
-          Id::createThis(),
-          None(),
-        ),
+        TParamWithConstraint("this", fileName, Id::createThis(), None()),
         cstr.getSTypes(subst, this.tenv, Covariant()),
       ),
     );
     if (c.extends_.size() != 0) {
       isInterface = c.kind is CKInterface();
       if (c.extends_.size() > 1 && !isInterface) {
-        typingError(
-          Array[(c.name.posRange, "Cannot extend more than one class")],
-        )
+        typingError(Array[(c.name.pos, "Cannot extend more than one class")])
       };
       for (ext in c.extends_) {
         ext.value match {
@@ -414,12 +405,12 @@ class TypeChecker{
           env = mutable TCEnv(context, subst, scope);
           this.checkSubType(
             env,
-            parentName.posRange,
+            parentName.pos,
             "Invalid extends",
             thisType,
             super,
           )
-        | _ -> typingError(Array[(c.name.posRange, "Invalid extend")])
+        | _ -> typingError(Array[(c.name.pos, "Invalid extend")])
         }
       }
     };
@@ -435,12 +426,12 @@ class TypeChecker{
         env = mutable TCEnv(context, subst, scope);
         this.checkSubType(
           env,
-          parentName.posRange,
+          parentName.pos,
           "Invalid implements",
           thisType,
           super,
         )
-      | _ -> typingError(Array[(c.name.posRange, "Invalid implements")])
+      | _ -> typingError(Array[(c.name.pos, "Invalid implements")])
       }
     };
     hasConstructor = false;
@@ -452,7 +443,7 @@ class TypeChecker{
         | Some(FieldGetSet(_, pos)) -> notSupported(pos)
         };
         for (modifier in field.modifiers.modifiers) {
-          typingError(Array[(modifier.posRange, "TODO: field modifier")])
+          typingError(Array[(modifier.pos, "TODO: field modifier")])
         };
         type = field.type match {
         | None() -> typingError(Array[(field.pos, "Missing type annotation")])
@@ -465,7 +456,7 @@ class TypeChecker{
           env = mutable TCEnv(context, subst, scope);
           this.checkSubType(
             env,
-            e.posRange,
+            e.pos,
             "Invalid assignment",
             type,
             this.expr(env, e),
@@ -528,9 +519,7 @@ class TypeChecker{
       | PNName(n, ty) -> (n, ty)
       | PNDDD(name) ->
         if (i != fd.params.size() - 1) {
-          typingError(
-            Array[(name.posRange, "... should be the last parameter")],
-          )
+          typingError(Array[(name.pos, "... should be the last parameter")])
         };
         (name, None())
       | _ ->
@@ -567,7 +556,7 @@ class TypeChecker{
         typingError(
           Array[
             (
-              modifier.posRange,
+              modifier.pos,
               `TODO: support for method modifiers (encountered ${unsupported})`,
             ),
           ],
@@ -655,7 +644,7 @@ class TypeChecker{
       typingError(
         Array[
           (
-            fd.modifiers.modifiers.firstItem().i1.posRange,
+            fd.modifiers.modifiers.firstItem().i1.pos,
             "Constructors cannot have modifiers",
           ),
         ],
@@ -817,7 +806,7 @@ class TypeChecker{
                 typingError(
                   Array[
                     (
-                      fieldName.posRange,
+                      fieldName.pos,
                       "The field " + fieldName.value + " is missing",
                     ),
                     (type.pos, "Out of " + type.toString()),
@@ -841,7 +830,7 @@ class TypeChecker{
   }
 
   fun bindType(
-    posRange: PosRange,
+    pos: PosRange,
     env: mutable TCEnv,
     kind: BindKind,
     type: ?Type,
@@ -850,11 +839,10 @@ class TypeChecker{
     value match {
     | None() ->
       if (kind is BKConst()) {
-        typingError(Array[(posRange, "Const must be bound to a value")]);
+        typingError(Array[(pos, "Const must be bound to a value")]);
       };
       type match {
-      | None() ->
-        typingError(Array[(posRange, "Was expecting a type or a value")])
+      | None() -> typingError(Array[(pos, "Was expecting a type or a value")])
       | Some(annotAst) ->
         ty = this.tenv.normalize(env.context, annotAst);
         (ty, false)
@@ -865,13 +853,7 @@ class TypeChecker{
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.tenv.normalize(env.context, annotAst);
-        this.checkSubType(
-          env,
-          annotAst.posRange,
-          "Invalid annotation",
-          ty,
-          annot,
-        );
+        this.checkSubType(env, annotAst.pos, "Invalid annotation", ty, annot);
         (annot, true)
       }
     }
@@ -906,7 +888,7 @@ class TypeChecker{
     | StmtExpr(e) ->
       ty = this.expr(env, e);
       if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
-        this.checkIsVoid(env, e.posRange, ty)
+        this.checkIsVoid(env, e.pos, ty)
       }
     | Return(pos, eOpt) ->
       retType = this.retType match {
@@ -916,7 +898,7 @@ class TypeChecker{
       };
       (epos, etype) = eOpt match {
       | None() -> (pos, TType::single(pos, TPrimVoid(TVoid(), pos)))
-      | Some(e) -> (e.posRange, this.expr(env, e))
+      | Some(e) -> (e.pos, this.expr(env, e))
       };
       rtype = if (this.isAsync) {
         TType::single(epos, TPromise(etype, epos))
@@ -1017,7 +999,7 @@ class TypeChecker{
 
   fun switch(env: mutable TCEnv, e: Expr, branches: Array<SwitchBranch>): void {
     if (branches.size() == 0) {
-      typingError(Array[(e.posRange, "Missing branch")])
+      typingError(Array[(e.pos, "Missing branch")])
     };
     checkBreak = block -> {
       term = StmtTermination::block(block);
@@ -1032,9 +1014,9 @@ class TypeChecker{
     scope = branches[0] match {
     | Case(v, block) ->
       checkBreak(block);
-      cond = Expr(e.posRange, (Binop(BOStrictEquality(), e, v)));
+      cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(env, block, Some((cond, true)))
-    | Default(_) -> typingError(Array[(e.posRange, "Missing branch")])
+    | Default(_) -> typingError(Array[(e.pos, "Missing branch")])
     };
     for (i in Range(1, branches.size())) {
       env.mergeScope(
@@ -1044,7 +1026,7 @@ class TypeChecker{
         branches[i] match {
         | Case(v, block) ->
           checkBreak(block);
-          cond = Expr(e.posRange, (Binop(BOStrictEquality(), e, v)));
+          cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
           this.block(env, block, Some((cond, true)))
         | Default(stmts) -> this.block(env, stmts)
         },
@@ -1073,7 +1055,7 @@ class TypeChecker{
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.contains(staticValue)) {
-            typingError(Array[(v.posRange, "Unused branch")])
+            typingError(Array[(v.pos, "Unused branch")])
           };
           cases.remove(staticValue)
         | _ -> void
@@ -1090,19 +1072,17 @@ class TypeChecker{
       }
     };
     if (!cases.isEmpty()) {
-      typingError(
-        Array[(e.posRange, "Missing branches:\n" + cases.join("\n"))],
-      );
+      typingError(Array[(e.pos, "Missing branches:\n" + cases.join("\n"))]);
     }
   }
 
   fun checkBool(env: mutable TCEnv, e: Expr): void {
     this.checkSubType(
       env,
-      e.posRange,
+      e.pos,
       "A condition is expected to be of type boolean, not: ",
       this.expr(env, e),
-      TType::single(e.posRange, TPrimValue(TBool(), None(), e.posRange)),
+      TType::single(e.pos, TPrimValue(TBool(), None(), e.pos)),
     );
   }
 
@@ -1115,9 +1095,7 @@ class TypeChecker{
     optionalChaining: Bool = false,
   ): TType {
     if (fieldName.value == "constructor") {
-      typingError(
-        Array[(fieldName.posRange, "Cannot access field 'constructor'")],
-      );
+      typingError(Array[(fieldName.pos, "Cannot access field 'constructor'")]);
     };
     stypes = objType.getSTypes(env.subst, this.tenv, variance) match {
     | Some(stypes) if (!stypes.isEmpty()) -> stypes
@@ -1209,7 +1187,7 @@ class TypeChecker{
       typingError(
         Array[
           (pos, "Invalid operation on type void"),
-          (e.posRange, `This expression has type ${ty}`),
+          (e.pos, `This expression has type ${ty}`),
         ],
       )
     };
@@ -1217,7 +1195,7 @@ class TypeChecker{
   }
 
   fun expr(env: mutable TCEnv, e: Expr): TType {
-    pos = e.posRange;
+    pos = e.pos;
     e.value match {
     | Number(_) -> TType::single(pos, TPrimValue(TNum(), None(), pos))
     | EString(SKQuote(), x) ->
@@ -1238,7 +1216,7 @@ class TypeChecker{
       this.makeBoundTVar(env, TType::single(pos, TPrimVoid(TUndefined(), pos)))
     | Var(local) ->
       if (env.localObjects.containsKey(local.value)) {
-        env.usedObjects![local.value] = local.posRange
+        env.usedObjects![local.value] = local.pos
       };
       env.scope.maybeGet(local) match {
       | None() ->
@@ -1247,7 +1225,7 @@ class TypeChecker{
         } else {
           this.defMap.get(
             env.context,
-            FileName::create(local.posRange.fileName),
+            FileName::create(local.pos.fileName),
             local,
           )
         };
@@ -1297,19 +1275,19 @@ class TypeChecker{
         | FDSpread _ -> internal_error("TODO spread")
         | fd @ FunDef _ -> this.tenv.funDecl(env.context, true, fd)
         };
-        TField::create(name.posRange, name.value, false, ty) match {
+        TField::create(name.pos, name.value, false, ty) match {
         | None() ->
           algebraicBranchField match {
           | Some((existingPos, _existingType)) ->
             typingError(
               Array[
-                (name.posRange, `Duplicate field ${name.value}`),
+                (name.pos, `Duplicate field ${name.value}`),
                 (existingPos, "Previously declared here"),
               ],
             )
           | None() -> void
           };
-          !algebraicBranchField = Some((name.posRange, ty))
+          !algebraicBranchField = Some((name.pos, ty))
         | Some(field) -> fields.push(field)
         }
       };
@@ -1415,7 +1393,7 @@ class TypeChecker{
           | None() ->
             typingError(
               Array[
-                (idx.posRange, "Invalid index"),
+                (idx.pos, "Invalid index"),
                 (tuplePos, "A tuple expects a static index"),
               ],
             )
@@ -1540,13 +1518,13 @@ class TypeChecker{
         | Some(TPrimValue(k @ TNum(), _, primPos))
         | Some(TPrimValue(k @ TString(), _, primPos)) ->
           ty2 = this.expr(env, e2);
-          this.checkSubType(env, e2.posRange, "Invalid + operand", ty2, ty1);
+          this.checkSubType(env, e2.pos, "Invalid + operand", ty2, ty1);
           TType::single(pos, TPrimValue(k, None(), primPos))
         | _ ->
           typingError(
             Array[
               (pos, "Invalid + operation"),
-              (e1.posRange, `For an object of type: ${ty1}`),
+              (e1.pos, `For an object of type: ${ty1}`),
             ],
           )
         }
@@ -1582,7 +1560,7 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty1,
-          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+          TType::single(e1.pos, TPrimValue(TBool(), None(), e1.pos)),
         );
         this.evalCond(env, e1, true);
         ty2 = this.expr(env, e2);
@@ -1591,7 +1569,7 @@ class TypeChecker{
           pos,
           "Invalid &&",
           ty2,
-          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
+          TType::single(e2.pos, TPrimValue(TBool(), None(), e2.pos)),
         );
         TType::single(pos, TPrimValue(TBool(), None(), pos))
       | BOLogicalOr() ->
@@ -1601,7 +1579,7 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty1,
-          TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+          TType::single(e1.pos, TPrimValue(TBool(), None(), e1.pos)),
         );
         this.evalCond(env, e1, false);
         ty2 = this.expr(env, e2);
@@ -1610,15 +1588,15 @@ class TypeChecker{
           pos,
           "Invalid ||",
           ty2,
-          TType::single(e2.posRange, TPrimValue(TBool(), None(), e2.posRange)),
+          TType::single(e2.pos, TPrimValue(TBool(), None(), e2.pos)),
         );
         TType::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BODot() ->
         e2.value match {
         | Var(fieldName) ->
-          this.dot(env, e1.posRange, this.expr(env, e1), fieldName, Covariant())
-        | _ -> typingError(Array[(e2.posRange, "Invalid '.'")])
+          this.dot(env, e1.pos, this.expr(env, e1), fieldName, Covariant())
+        | _ -> typingError(Array[(e2.pos, "Invalid '.'")])
         }
 
       | BOOptionalDot() ->
@@ -1626,13 +1604,13 @@ class TypeChecker{
         | Var(fieldName) ->
           this.dot(
             env,
-            e1.posRange,
+            e1.pos,
             this.expr(env, e1),
             fieldName,
             Covariant(),
             true/* optionalChaining */ ,
           )
-        | _ -> typingError(Array[(e2.posRange, "Invalid '?.'")])
+        | _ -> typingError(Array[(e2.pos, "Invalid '?.'")])
         }
 
       | BOLessThan()
@@ -1652,7 +1630,7 @@ class TypeChecker{
                   pos,
                   "Invalid comparison. You can only compare strings, numbers, and booleans.",
                 ),
-                (e1.posRange, `This is a ${ty}`),
+                (e1.pos, `This is a ${ty}`),
               ],
             )
           }
@@ -1666,8 +1644,8 @@ class TypeChecker{
                 pos,
                 "Invalid comparison. Both operands must have the same type.",
               ),
-              (e1.posRange, `This is a ${kind1}`),
-              (e2.posRange, `This is a ${kind2}`),
+              (e1.pos, `This is a ${kind1}`),
+              (e2.pos, `This is a ${kind2}`),
             ],
           )
         };
@@ -1707,7 +1685,7 @@ class TypeChecker{
             typingError(
               Array[
                 (pos, "This operator is useless"),
-                (e1.posRange, "This construction is never null or undefined"),
+                (e1.pos, "This construction is never null or undefined"),
               ],
             );
           }
@@ -1719,8 +1697,7 @@ class TypeChecker{
       _ = this.expr(env, e1);
       _ = this.tenv.getClass(env.context, className);
       TType::single(pos, TPrimValue(TBool(), None(), pos))
-    | InstanceOf(_, e2) ->
-      typingError(Array[(e2.posRange, "Unexpected instanceof")])
+    | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, env, subExpr);
       TType::single(pos, TPrimValue(TString(), None(), pos))
@@ -1743,9 +1720,9 @@ class TypeChecker{
         paramType = param.i1 match {
         | None() ->
           if (noAnnot is None()) {
-            !noAnnot = Some(param.i0.posRange)
+            !noAnnot = Some(param.i0.pos)
           };
-          this.newTVar(env, param.i0.posRange)
+          this.newTVar(env, param.i0.pos)
         | Some(ty) -> this.tenv.normalize(env.context, ty)
         };
         paramTypes.push((param.i0, paramType));
@@ -1807,10 +1784,10 @@ class TypeChecker{
       right = this.expr(env, e3);
       this.checkSubType(
         env,
-        e1.posRange,
+        e1.pos,
         "Invalid ? condition",
         cond,
-        TType::single(e1.posRange, TPrimValue(TBool(), None(), e1.posRange)),
+        TType::single(e1.pos, TPrimValue(TBool(), None(), e1.pos)),
       );
       TType::union(env.subst, this.tenv, left, right)
     | KeyOf _ -> notSupported(pos)
@@ -1904,7 +1881,7 @@ class TypeChecker{
     | CBExpr(e) ->
       this.checkSubType(
         env,
-        e.posRange,
+        e.pos,
         "Invalid callback return",
         this.expr(env, e),
         retType,
@@ -1957,17 +1934,17 @@ class TypeChecker{
       | Some(objectType) ->
         this.checkSubType(
           env,
-          e2.posRange,
+          e2.pos,
           "Invalid assignment",
           fieldType,
-          this.dot(env, e1.posRange, objectType, fieldName, Covariant()),
+          this.dot(env, e1.pos, objectType, fieldName, Covariant()),
         )
       };
       this.assignLocalObject(env, pos, local, fieldName, fieldType)
     | _ ->
       ty1 = this.expr(env, e1);
       ty2 = this.expr(env, e2);
-      this.checkSubType(env, e2.posRange, "Invalid assignment", ty2, ty1);
+      this.checkSubType(env, e2.pos, "Invalid assignment", ty2, ty1);
       ty1
     }
   }
@@ -2001,9 +1978,7 @@ class TypeChecker{
         };
         if (env.scope.isThroughLoop(local)) {
           typingError(
-            Array[
-              (local.posRange, "You cannot add a field to an object in a loop"),
-            ],
+            Array[(local.pos, "You cannot add a field to an object in a loop")],
           )
         };
         field = TField::create(
@@ -2209,13 +2184,12 @@ class TypeChecker{
 
   fun checkLValue(e: Expr): void {
     e.value match {
-    | Var(Name(_, "super")) ->
-      typingError(Array[(e.posRange, "Invalid lvalue")])
+    | Var(Name(_, "super")) -> typingError(Array[(e.pos, "Invalid lvalue")])
     | Var _ -> void
     | Get _ -> void
     | EArray _ -> void
     | Binop(BODot(), e1, Expr(_, Var(_))) -> this.checkLValue(e1)
-    | _ -> typingError(Array[(e.posRange, "Invalid lvalue")])
+    | _ -> typingError(Array[(e.pos, "Invalid lvalue")])
     }
   }
 
@@ -2425,9 +2399,7 @@ class TypeChecker{
           className,
           this.tenv.makeTArgs(env.context, env.subst, className),
         ),
-        (x, y) ->
-          this.checkSubType(env, e.posRange, "Invalid instanceof", x, y)
-        ,
+        (x, y) -> this.checkSubType(env, e.pos, "Invalid instanceof", x, y),
       )
 
     | Binop(BOLogicalAnd(), e1, e2) if (target) ->

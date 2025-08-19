@@ -85,7 +85,7 @@ class TEnv{
     | TDClass(ca) -> ca.tparams
     };
     if (clauses.size() != targs.targs.size()) {
-      typingError(Array[(name.posRange, "Invalid number of type arguments")])
+      typingError(Array[(name.pos, "Invalid number of type arguments")])
     };
 
     for (i => targ in targs.targs) {
@@ -99,9 +99,9 @@ class TEnv{
         | _ ->
           typingError(
             Array[
-              (name.posRange, "Constraint not satisfied"),
+              (name.pos, "Constraint not satisfied"),
               (targ.pos, `This is of type: ${targ.toString()}`),
-              (cstr.posRange, `It does not implement: ${cstrTy.toString()}`),
+              (cstr.pos, `It does not implement: ${cstrTy.toString()}`),
             ],
           )
         }
@@ -121,8 +121,7 @@ class TEnv{
   fun getClass(context: mutable SKStore.Context, className: Name): Class {
     tdef = this.defMap.getType(context, className);
     tdef match {
-    | TDType(_) ->
-      typingError(Array[(className.posRange, "Expected a class name")])
+    | TDType(_) -> typingError(Array[(className.pos, "Expected a class name")])
     | TDClass(ca) -> ca
     };
   }
@@ -133,8 +132,8 @@ class TEnv{
     className: Name,
   ): Array<TType> {
     this.getClass(context, className).tparams.map(tparam -> {
-      tvar = subst.gen(className.posRange);
-      ty = TType::fromTInst(className.posRange, tvar);
+      tvar = subst.gen(className.pos);
+      ty = TType::fromTInst(className.pos, tvar);
       tparam.constraint match {
       | None() -> ty
       | Some(cstr) ->
@@ -150,7 +149,7 @@ class TEnv{
     filter: FieldType ~> Bool = _ ~> true,
   ): TType {
     obj = this.newObject(context, className, targs, filter);
-    TType::single(className.posRange, obj)
+    TType::single(className.pos, obj)
   }
 
   fun newObject(
@@ -162,7 +161,7 @@ class TEnv{
     c = this.getClass(context, className);
     if (c.tparams.size() != targs.size()) {
       typingError(
-        Array[(className.posRange, `Expected ${c.tparams.size()} parameters`)],
+        Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
       )
     };
     visitedClasses = SortedSet[];
@@ -180,12 +179,12 @@ class TEnv{
         filter(fieldType) && !fieldType.isStatic()
       },
     );
-    TObject(TFields::create(fields.values().collect(Array)), className.posRange)
+    TObject(TFields::create(fields.values().collect(Array)), className.pos)
   }
 
   fun newStatic(context: mutable SKStore.Context, className: Name): TType {
     obj = this.newStaticObject(context, className);
-    TType::single(className.posRange, obj)
+    TType::single(className.pos, obj)
   }
 
   private fun newStaticObject(
@@ -204,7 +203,7 @@ class TEnv{
       targs,
       fieldType ~> fieldType.isStatic(),
     );
-    TObject(TFields::create(fields.values().collect(Array)), className.posRange)
+    TObject(TFields::create(fields.values().collect(Array)), className.pos)
   }
 
   fun addTParams(
@@ -213,7 +212,7 @@ class TEnv{
   ): this {
     for (tparam in clauses) {
       ty = TType::fromClauses(
-        tparam.name.posRange,
+        tparam.name.pos,
         Clauses::fromTypeParam(tparam, None()),
       );
       !this.subst[tparam.name.value] = (
@@ -243,12 +242,12 @@ class TEnv{
     filter: FieldType ~> Bool,
   ): void {
     if (visitedClasses.contains(className.value)) {
-      typingError(Array[(className.posRange, "Cyclic class definition")]);
+      typingError(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
     defs = this.defMap.get(
       context,
-      FileName::create(className.posRange.fileName),
+      FileName::create(className.pos.fileName),
       className,
     );
     cls = for (def in defs) {
@@ -257,13 +256,13 @@ class TEnv{
       | _ -> void
       }
     } else {
-      typingError(Array[(className.posRange, "Unbound class")])
+      typingError(Array[(className.pos, "Unbound class")])
     };
     if (targs.size() != 0 && targs.size() != cls.tparams.size()) {
       typingError(
         Array[
-          (className.posRange, "Invalid number of type arguments"),
-          (cls.name.posRange, "Class declaration is here"),
+          (className.pos, "Invalid number of type arguments"),
+          (cls.name.pos, "Class declaration is here"),
         ],
       )
     };
@@ -286,7 +285,7 @@ class TEnv{
           },
           filter,
         )
-      | _ -> typingError(Array[(extend.posRange, "Unexpected extend")])
+      | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
     };
     for (fieldType in cls.fields) {
@@ -299,7 +298,7 @@ class TEnv{
         };
         for (modifier in field.modifiers.modifiers) {
           if (modifier.value != "static") {
-            typingError(Array[(modifier.posRange, "TODO: field modifier")])
+            typingError(Array[(modifier.pos, "TODO: field modifier")])
           }
         };
         field.name match {
@@ -325,13 +324,13 @@ class TEnv{
           }
         | FNColon(indexName, indexType, returnType) ->
           TField::create(
-            indexName.posRange,
+            indexName.pos,
             "[]",
             false,
             this.normalize(
               context,
               Type(
-                indexName.posRange,
+                indexName.pos,
                 TAFun(
                   true,
                   Array[],
@@ -388,15 +387,14 @@ class TEnv{
               | None() ->
                 param.type match {
                 | None() ->
-                  typingError(Array[(n.posRange, "Missing type annotation")])
+                  typingError(Array[(n.pos, "Missing type annotation")])
                 | Some(ty) -> (TAParamName(n), ty)
                 }
               | Some(ty) -> (TAParamName(n), ty)
               }
             | PNDDD(n) ->
               param.type match {
-              | None() ->
-                typingError(Array[(n.posRange, "Missing type annotation")])
+              | None() -> typingError(Array[(n.pos, "Missing type annotation")])
               | Some(x) -> (TAParamSpread(n), x)
               }
             | _ ->
@@ -421,7 +419,7 @@ class TEnv{
 
   fun normalize(context: mutable SKStore.Context, typeAst: Type): TType {
     subst = Subst::mcreate{context};
-    pos = typeAst.posRange;
+    pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral _ -> internal_error("TODO BigIntLiteral ")
     | TAAssertIs _ -> internal_error("TODO assertIs ")
@@ -443,8 +441,8 @@ class TEnv{
         pos,
         TPrimValue(
           TString(),
-          Some(ArrayValues::single((typeAst.posRange, x))),
-          typeAst.posRange,
+          Some(ArrayValues::single((typeAst.pos, x))),
+          typeAst.pos,
         ),
       )
     | TANumLiteral(x) ->
@@ -452,43 +450,42 @@ class TEnv{
         pos,
         TPrimValue(
           TNum(),
-          Some(ArrayValues::single((typeAst.posRange, x))),
-          typeAst.posRange,
+          Some(ArrayValues::single((typeAst.pos, x))),
+          typeAst.pos,
         ),
       )
     | TATypeOf(expr) ->
       expr.value match {
       | Var(name) ->
         name.value match {
-        | "undefined" ->
-          TType::single(pos, TPrimVoid(TUndefined(), name.posRange))
+        | "undefined" -> TType::single(pos, TPrimVoid(TUndefined(), name.pos))
         | _ -> internal_error(`TODO typeof ${name.value}`)
         }
       | Binop(BODot(), _, Expr(_, Var(_))) -> internal_error("TODO typeof")
-      | _ -> typingError(Array[(expr.posRange, "Invalid typeof expression")])
+      | _ -> typingError(Array[(expr.pos, "Invalid typeof expression")])
       }
     | TAPrim(kind) ->
       TType::single(
         pos,
         kind match {
-        | TPKNull() -> TPrimVoid(TNull(), typeAst.posRange)
-        | TPKBool() -> TPrimValue(TBool(), None(), typeAst.posRange)
-        | TPKNum() -> TPrimValue(TNum(), None(), typeAst.posRange)
-        | TPKString() -> TPrimValue(TString(), None(), typeAst.posRange)
+        | TPKNull() -> TPrimVoid(TNull(), typeAst.pos)
+        | TPKBool() -> TPrimValue(TBool(), None(), typeAst.pos)
+        | TPKNum() -> TPrimValue(TNum(), None(), typeAst.pos)
+        | TPKString() -> TPrimValue(TString(), None(), typeAst.pos)
         },
       )
     | TAObject(fields) ->
       (algebraicBranchField, tFields) = this.createTFields(context, fields);
-      createObject(typeAst.posRange, algebraicBranchField, tFields)
+      createObject(typeAst.pos, algebraicBranchField, tFields)
     | TAInst(n @ Name(p, "object"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+        typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
       TType::single(p, TObject(TFields::empty(), p))
 
     | TAInst(n @ Name(p, "Array"), targs) ->
       if (targs.size() != 1) {
-        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+        typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
       TType::fromTInst(
         pos,
@@ -506,21 +503,21 @@ class TEnv{
 
     | TAInst(n @ Name(p, "void"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+        typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
       TType::single(p, TPrimVoid(TVoid(), p))
     | TAInst(n @ Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+        typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
       TType::single(p, TPrimVoid(TUndefined(), p))
     | TAInst(n @ Name(_, "Promise"), targs) ->
       if (targs.size() != 1) {
-        typingError(Array[(n.posRange, "Invalid number of type arguments")])
+        typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
       TType::single(
         pos,
-        TPromise(this.normalize(context, targs[0]), typeAst.posRange),
+        TPromise(this.normalize(context, targs[0]), typeAst.pos),
       )
     | TAInst(Name(_, "never"), targs) ->
       if (targs.size() != 0) {
@@ -536,8 +533,8 @@ class TEnv{
         pos,
         TPrimValue(
           TBool(),
-          Some(ArrayValues::single((typeAst.posRange, x))),
-          typeAst.posRange,
+          Some(ArrayValues::single((typeAst.pos, x))),
+          typeAst.pos,
         ),
       )
     | TAInst(n, targs) ->
@@ -546,7 +543,7 @@ class TEnv{
           typingError(
             Array[
               (
-                n.posRange,
+                n.pos,
                 "A bound occurrence of a type parameter cannot have type arguments",
               ),
             ],
@@ -566,7 +563,7 @@ class TEnv{
           typingError(
             Array[
               (
-                n.posRange,
+                n.pos,
                 "A bound occurrence of a type parameter cannot have type arguments",
               ),
             ],
@@ -575,17 +572,17 @@ class TEnv{
         (keepPos, ty) = this.subst[n.value];
         if (keepPos) ty else ty.withPos(pos)
       } else if (this.forbiddenInsts.contains(n.value)) {
-        typingError(Array[(n.posRange, "Cyclic definition")])
+        typingError(Array[(n.pos, "Cyclic definition")])
       } else {
         tdef = this.defMap.getType(context, n);
         tdef match {
         | TDType(ta) ->
           if (ta.tdefParams.size() != targs.size()) {
-            typingError(Array[(n.posRange, "Invalid number of type arguments")])
+            typingError(Array[(n.pos, "Invalid number of type arguments")])
           }
         | TDClass(ca) ->
           if (ca.tparams.size() != targs.size()) {
-            typingError(Array[(n.posRange, "Invalid number of type arguments")])
+            typingError(Array[(n.pos, "Invalid number of type arguments")])
           }
         };
 
@@ -636,14 +633,14 @@ class TEnv{
       types = typeVec.toArray();
       TType::single(
         pos,
-        TTuple(types.map(ty -> this.normalize(context, ty)), typeAst.posRange),
+        TTuple(types.map(ty -> this.normalize(context, ty)), typeAst.pos),
       )
     | TAFun(isMethod, clauses, params, retType) ->
       funClauses = mutable Vector[];
       for (tparam in clauses) {
         funTParam = TParamWithConstraint(
           tparam.name.value,
-          tparam.name.posRange.fileName,
+          tparam.name.pos.fileName,
           tparam.id,
           tparam.constraint.map(cstr -> this.normalize(context, cstr)),
         );
@@ -660,9 +657,7 @@ class TEnv{
         | Some(TAParamSpread(spreadName)) ->
           if (i != params.size() - 1) {
             typingError(
-              Array[
-                (spreadName.posRange, "... must always be the last parameter"),
-              ],
+              Array[(spreadName.pos, "... must always be the last parameter")],
             );
           };
           !spreadParam = Some(paramType);
@@ -676,7 +671,7 @@ class TEnv{
           | Some(wpos) ->
             typingError(
               Array[
-                (param.type.posRange, "This parameter is not optional"),
+                (param.type.pos, "This parameter is not optional"),
                 (wpos, "It appears after this parameter that is optional"),
               ],
             )
@@ -696,9 +691,9 @@ class TEnv{
         this.normalize(context, retType),
       );
       tfuns = if (isMethod) {
-        TFuns::singleMethod(tfun, typeAst.posRange)
+        TFuns::singleMethod(tfun, typeAst.pos)
       } else {
-        TFuns::singleFun(tfun, typeAst.posRange)
+        TFuns::singleFun(tfun, typeAst.pos)
       };
       TType::single(pos, tfuns)
     | TAGet _ -> internal_error("TODO TAGet")
@@ -727,7 +722,7 @@ class TEnv{
             | FNSymbol _ -> internal_error("TODO symbol")
             | FNNormal(name) ->
               optField = TField::create(
-                name.posRange,
+                name.pos,
                 name.value,
                 fd.optional is Some _,
                 normalizedType,
@@ -737,7 +732,7 @@ class TEnv{
                 | Some((existingPos, _existingType)) ->
                   typingError(
                     Array[
-                      (name.posRange, `Duplicate field ${name.value}`),
+                      (name.pos, `Duplicate field ${name.value}`),
                       (existingPos, "Previously declared here"),
                     ],
                   )
@@ -752,17 +747,17 @@ class TEnv{
                   )
                 | None() -> void
                 };
-                !algebraicBranchField = Some((name.posRange, normalizedType))
+                !algebraicBranchField = Some((name.pos, normalizedType))
               };
               optField
             }
           }
         | fd @ FunDef _ ->
           (name, decl) = this.funDecl(context, true, fd);
-          optField = TField::create(name.posRange, name.value, false, decl);
+          optField = TField::create(name.pos, name.value, false, decl);
           if (optField is None()) {
             typingError(
-              Array[(name.posRange, `Forbidden method name ${name.value}`)],
+              Array[(name.pos, `Forbidden method name ${name.value}`)],
             )
           };
           optField

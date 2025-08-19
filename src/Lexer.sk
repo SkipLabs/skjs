@@ -48,7 +48,7 @@ mutable class Lexer{
   // parameter. Note that we do not allocate a string for the token on
   // purpose, we want to save as many allocations as possible.
   readonly fun isEqTok(tok: Token, str: String): Bool {
-    pos = tok.posRange.start.value;
+    pos = tok.pos.start.value;
     for (c in str) {
       if (this.contents[pos] == c) {
         !pos = pos + 1;
@@ -56,13 +56,13 @@ mutable class Lexer{
       };
       return false;
     };
-    pos == tok.posRange.end.value
+    pos == tok.pos.end.value
   }
 
   // Returns the string associated with a token.
   readonly fun getStrTok(tok: Token): String {
     str = String::fromChars(
-      this.contents.slice(tok.posRange.start.value, tok.posRange.end.value),
+      this.contents.slice(tok.pos.start.value, tok.pos.end.value),
     );
     tok.kind match {
     | TKQuote() -> str.stripPrefix("'").stripSuffix("'").replace("\\'", "'")
@@ -140,7 +140,7 @@ mutable class Lexer{
   }
 
   readonly fun posStart(tok: Token): ErrorPos {
-    EPChar(this.fileName, tok.posRange.start)
+    EPChar(this.fileName, tok.pos.start)
   }
 
   // This is the method containing the main logic of the lexer. Note
@@ -446,13 +446,13 @@ mutable class Lexer{
     tokOpt match {
     | None() -> tokOpt
     | Some(tok) ->
-      this.!pos = tok.posRange.end.value;
+      this.!pos = tok.pos.end.value;
       tokOpt
     }
   }
 
   readonly fun getLastPos(): Pos {
-    this.lastTok.fromSome().posRange.end
+    this.lastTok.fromSome().pos.end
   }
 }
 
