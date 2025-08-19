@@ -319,8 +319,8 @@ base class ClosureBody {
 /***************************************************************************/
 base class Field {
   children =
-  | FDNormal(Name, Expr)
-  | FDSpread(Expr)
+  | FDNormal(name: Name, expr: Expr)
+  | FDSpread(expr: Expr)
 }
 
 /***************************************************************************/

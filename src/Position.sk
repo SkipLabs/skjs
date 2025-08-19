@@ -47,6 +47,10 @@ value class PosRange(
   fun xxhash(): XXHash {
     internal_error("should never hash a PosRange");
   }
+  fun positionBlindHash(): Int {
+    // Intentionally collide all PosRange hashes so that ASTs can compare as equal if they only differ in PosRange values
+    1232240476 // first 8 bytes of sha256("PosRange")
+  }
 }
 
 /***************************************************************************/
