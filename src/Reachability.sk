@@ -1,0 +1,170 @@
+/*****************************************************************************/
+/* Reachability Analysis for SKJS */
+/*****************************************************************************/
+
+module SKJS;
+
+base class CGNode_ uses XXHashable, Show {
+  children =
+  | TopLevelFunDef(name: Symbol, fileName: String)
+  | Method(name: ?Symbol, _class: Name, fileName: String, _static: Bool)
+  | Constructor(_class: Name, fileName: String)
+  | TopLevelExpr(fileName: String)
+  | ArrowTypeAnnot(fileName: String)
+
+  fun toString(): String {
+    this match {
+    | TopLevelFunDef(name, file) ->
+      "toplevel: " + name.getName() + " (" + file + ")"
+    | Method(name, _class, file, _static) ->
+      (if (_static) "static " else "") +
+        _class.value +
+        "." +
+        (name match {
+        | Some(n) -> n.getName()
+        | None() -> "__anonymous"
+        }) +
+        " (" +
+        file +
+        ")"
+    | Constructor(_class, file) ->
+      _class.value + ".constructor" + " (" + file + ")"
+    | TopLevelExpr(file) -> "top-level expr (" + file + ")"
+    | ArrowTypeAnnot(file) -> "arrow-type annotation (" + file + ")"
+    | AnonymousLambda(pos, _closure) ->
+      "lambda (" + pos.fileName + ":" + pos.start.value + ")"
+    | AnonymousFunDef(fd) ->
+      name = fd.name match {
+      | Some(n) -> "\"" + n.getName() + "\""
+      | None() -> "(anonymous)"
+      };
+      "function def " +
+        name +
+        " (" +
+        fd.pos.fileName +
+        ":" +
+        fd.pos.start.value +
+        ")"
+    }
+  }
+}
+class AnonymousLambda(posRange: PosRange, closure: Closure) extends CGNode_ {
+  fun hash(): Int {
+    XXHash64.xxHash64(this.posRange.hash(), this.closure.positionBlindHash())
+  }
+}
+class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
+  fun hash(): Int {
+    XXHash64.xxHash64(this.funDef.pos.hash(), this.funDef.positionBlindHash())
+  }
+}
+
+class CGNode private (
+  id: CGNode_,
+  precomputed_hash: Int,
+) extends SKStore.Key, SKStore.File uses Hashable {
+  static fun create(id: CGNode_): this {
+    static(id, id.hash())
+  }
+  fun hash(): Int {
+    this.precomputed_hash
+  }
+  fun toString(): String {
+    "CGNode[" + this.id.toString() + "]"
+  }
+  fun compare(other: SKStore.Key): Order {
+    other match {
+    | CGNode(_otherId, otherHash) -> this.precomputed_hash.compare(otherHash)
+    | _ -> LT()
+    }
+  }
+}
+
+class CGNodes(nodes: SortedSet<CGNode>) uses Hashable, Orderable {
+  fun toString(): String {
+    "CGNodes[" + this.nodes.collect(Vector).map((n) -> n.id).join(", ") + "]"
+  }
+
+  static fun singleton(node: CGNode): this {
+    static(SortedSet::create().add(node))
+  }
+  static fun empty(): this {
+    static(SortedSet::create())
+  }
+
+  fun union(that: CGNodes): this {
+    static(this.nodes.union(that.nodes))
+  }
+  fun intersection(that: CGNodes): this {
+    static(this.nodes.intersection(that.nodes))
+  }
+  fun compare(other: CGNodes): Order {
+    this.nodes.inner.compare(other.nodes.inner)
+  }
+}
+
+const callGraphDirName: SKStore.DirName = SKStore.DirName::create(
+  "/call-graph/",
+);
+const depGraphDirName: SKStore.DirName = SKStore.DirName::create(
+  "/dependency-graph/",
+);
+class CallGraph private (
+  callgraph: SKStore.EHandle<CGNode, CGNode>,
+  depgraph: SKStore.EHandle<CGNode, CGNode>,
+) {
+  static fun create(context: mutable SKStore.Context): this {
+    context.unsafeMaybeGetEagerDir(callGraphDirName) match {
+    | None() ->
+      callgraph = context.mkdir(
+        CGNode::keyType,
+        CGNode::type,
+        callGraphDirName,
+        Array[],
+      );
+      depgraph = callgraph.map(
+        CGNode::keyType,
+        CGNode::type,
+        context,
+        depGraphDirName,
+        (_context, writer, caller, callees) ~> {
+          for (callee in callees) {
+            writer.append(callee, caller)
+          }
+        },
+      );
+
+      static(callgraph, depgraph)
+    | Some _ ->
+      static(
+        SKStore.EHandle(CGNode::keyType, CGNode::type, callGraphDirName),
+        SKStore.EHandle(CGNode::keyType, CGNode::type, depGraphDirName),
+      )
+    }
+  }
+
+  fun recordCalls(
+    context: mutable SKStore.Context,
+    caller: CGNode,
+    newCallees: CGNodes,
+  ): void {
+    oldCallees = this.callgraph.getIter(context, caller);
+    callees = oldCallees.foldl(
+      (nodes, node) -> nodes.set(node),
+      newCallees.nodes,
+    );
+    this.callgraph.writeArray(context, caller, callees.toArray())
+  }
+
+  fun debug(context: mutable SKStore.Context): void {
+    context.update();
+    for ((callee, callers) in this.depgraph.items(context)) {
+      print_string("CALLEE: " + callee.toString());
+      for (caller in callers) {
+        print_string("  CALLER: " + caller.toString())
+      }
+    }
+  }
+}
+
+module end;
