@@ -1,0 +1,873 @@
+module SKJS;
+
+extension class Name {
+  fun positionBlindHash(): Int {
+    h = 247855348; // first 8 bytes of sha256("Name")
+    XXHash64.xxHash64(h, this.value.xxhash().value);
+  }
+}
+
+extension class Def {
+  fun positionBlindHash(): Int {
+    h = 440478213; // first 8 bytes of sha256("Def")
+    XXHash64.xxHash64(h, this.value.positionBlindHash())
+  }
+}
+
+extension base class Def_ {
+  fun positionBlindHash(): Int {
+    this match {
+    | ToplevelExpr(expr) ->
+      h = 3307818416; // first 8 bytes of sha256("ToplevelExpr")
+      XXHash64.xxHash64(h, expr.positionBlindHash())
+    | TypeDef{name, tdefParams, body} ->
+      h = 3254464298; // first 8 bytes of sha256("TypeDef")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      for (tdefParam in tdefParams) {
+        !h = XXHash64.xxHash64(h, tdefParam.positionBlindHash())
+      };
+      !h = XXHash64.xxHash64(h, body.positionBlindHash());
+      h
+    | Class{kind, name, extends_, implements, tparams, fields} ->
+      h = 1383585092; // first 8 bytes of sha256("Class")
+      !h = kind match {
+      | CKInterface() -> XXHash64.xxHash64(h, 1)
+      | CKClass() -> XXHash64.xxHash64(h, 2)
+      | CKAbstract() -> XXHash64.xxHash64(h, 3)
+      };
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      for (ty in extends_) {
+        !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+      };
+      for (ty in implements) {
+        !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+      };
+      for (ty in tparams) {
+        !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+      };
+      for (field in fields) {
+        !h = XXHash64.xxHash64(h, field.positionBlindHash())
+      };
+      h
+    | Enum(isConst, name, fields) ->
+      h = 352675505; // first 8 bytes of sha256("Enum")
+      if (isConst.isSome()) !h = XXHash64.xxHash64(h, 1);
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      for ((fieldName, fieldInitOpt) in fields) {
+        !h = XXHash64.xxHash64(h, fieldName.positionBlindHash());
+        fieldInitOpt match {
+        | Some(expr) -> !h = XXHash64.xxHash64(h, expr.positionBlindHash())
+        | None() -> void
+        }
+      };
+      h
+    | Namespace(name, defs) ->
+      h = 98119849; // first 8 bytes of sha256("Namespace")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      for (def in defs) {
+        !h = XXHash64.xxHash64(h, def.positionBlindHash())
+      };
+      h
+    | Module(name, defsOpt) ->
+      h = 4244461137; // first 8 bytes of sha256("Module")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      defsOpt match {
+      | Some(defs) ->
+        for (def in defs) {
+          !h = XXHash64.xxHash64(h, def.positionBlindHash())
+        }
+      | None() -> void
+      };
+      h
+    | ExportNames(isType, moduleNames, fromOpt) ->
+      h = 3456925443; // first 8 bytes of sha256("ExportNames")
+      if (isType.isSome()) !h = XXHash64.xxHash64(h, 1);
+      !h = XXHash64.xxHash64(h, moduleNames.positionBlindHash());
+      fromOpt match {
+      | Some(expr) -> !h = XXHash64.xxHash64(h, expr.positionBlindHash())
+      | None() -> void
+      };
+      h
+    | Export(isType, default, def) ->
+      h = 1242901520; // first 8 bytes of sha256("Export")
+      if (isType.isSome()) !h = XXHash64.xxHash64(h, 1);
+      if (default.isSome()) !h = XXHash64.xxHash64(h, 2);
+      !h = XXHash64.xxHash64(h, def.positionBlindHash());
+      h
+    | ExportDefault(isType, name) ->
+      h = 471416097; // first 8 bytes of sha256("ExportDefault")
+      if (isType.isSome()) !h = XXHash64.xxHash64(h, 1);
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      h
+    | ExportEq(e) ->
+      h = 2250230032; // first 8 bytes of sha256("ExportEq")
+      !h = XXHash64.xxHash64(h, e.positionBlindHash());
+      h
+    | ExportAs(name) ->
+      h = 3948090855; // first 8 bytes of sha256("ExportAs")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      h
+    | ExportImport(name, expr) ->
+      h = 725698734; // first 8 bytes of sha256("ExportImport")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      !h = XXHash64.xxHash64(h, expr.positionBlindHash());
+      h
+    | Global(defs) ->
+      h = 2194559326; // first 8 bytes of sha256("Global")
+      for (def in defs) !h = XXHash64.xxHash64(h, def.positionBlindHash());
+      h
+    | Import(kind, isType, moduleNames, importFrom) ->
+      h = 4250290412; // first 8 bytes of sha256("Import")
+      !h = kind match {
+      | IKFrom() -> XXHash64.xxHash64(h, 1)
+      | IKEq() -> XXHash64.xxHash64(h, 2)
+      };
+      if (isType.isSome()) !h = XXHash64.xxHash64(h, 3);
+      !h = XXHash64.xxHash64(h, moduleNames.positionBlindHash());
+      !h = XXHash64.xxHash64(h, importFrom.positionBlindHash());
+      h
+    | ImportExpr(name) ->
+      h = 3694441401; // first 8 bytes of sha256("ImportExpr")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+    | Declare(def) ->
+      h = 1738631810; // first 8 bytes of sha256("Declare")
+      XXHash64.xxHash64(h, def.positionBlindHash())
+    | VarDefs(kind, varDefs) ->
+      h = 3315253602; // first 8 bytes of sha256("VarDefs")
+      !h = kind match {
+      | VDKConst() -> XXHash64.xxHash64(h, 1)
+      | VDKVar() -> XXHash64.xxHash64(h, 2)
+      | VDKLet() -> XXHash64.xxHash64(h, 3)
+      };
+      for (def in varDefs) {
+        !h = XXHash64.xxHash64(h, def.positionBlindHash());
+      };
+      h
+    | FunDef{
+      isAsync,
+      isGetSet,
+      name,
+      optional,
+      tparams,
+      params,
+      retType,
+      body,
+    } ->
+      h = 1326184531; // first 8 bytes of sha256("FunDef")
+      if (isAsync.isSome()) !h = XXHash64.xxHash64(h, 1);
+      isGetSet match {
+      | Some(getSet) -> !h = XXHash64.xxHash64(h, getSet.positionBlindHash())
+      | None() -> void
+      };
+      !h = XXHash64.xxHash64(h, name.xxhash().value);
+      if (optional.isSome()) !h = XXHash64.xxHash64(h, 1);
+      for (tparam in tparams) {
+        !h = XXHash64.xxHash64(h, tparam.positionBlindHash())
+      };
+      for (param in params) {
+        !h = XXHash64.xxHash64(h, param.positionBlindHash())
+      };
+      retType match {
+      | (_, Some(ty)) -> !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+      | _ -> void
+      };
+      !h = XXHash64.xxHash64(h, body.positionBlindHash());
+      h
+    }
+  }
+}
+extension base class FunDefBody {
+  fun positionBlindHash(): Int {
+    this match {
+    | FDBNone(_) ->
+      2232779613 // first 8 bytes of sha256("FDBNone")
+    | FDBSome(stmts) ->
+      h = 3310105709; // first 8 bytes of sha256("FDBSome")
+      for (stmt in stmts) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+    }
+  }
+}
+
+extension base class ImportName {
+  fun positionBlindHash(): Int {
+    this match {
+    | INPath(name) ->
+      h = 1223788269; // first 8 bytes of sha256("INPath")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+    | INName(name) ->
+      h = 1366975433; // first 8 bytes of sha256("INName")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+    }
+  }
+}
+
+extension class Expr {
+  fun positionBlindHash(): Int {
+    h = 3092053272; // first 8 bytes of sha256("Expr")
+    XXHash64.xxHash64(h, this.value.positionBlindHash())
+  }
+}
+
+extension base class Expr_ {
+  fun positionBlindHash(): Int {
+    this match {
+    | Number(_) -> this.xxhash().value
+    | EString(_, _) -> this.xxhash().value
+    | Regexp(_) -> this.xxhash().value
+    | Var(name) ->
+      h = 2805212453; // first 8 bytes of sha256("Var")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+    | Spread(name) ->
+      h = 567868336; // first 8 bytes of sha256("Spread")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+    | TypeOf(expr) ->
+      h = 2329834565; // first 8 bytes of sha256("TypeOf")
+      XXHash64.xxHash64(h, expr.positionBlindHash())
+    | KeyOf(type) ->
+      h = 3377878269; // first 8 bytes of sha256("KeyOf")
+      XXHash64.xxHash64(h, type.positionBlindHash())
+    | Await(expr) ->
+      h = 2724640271; // first 8 bytes of sha256("Await")
+      XXHash64.xxHash64(h, expr.positionBlindHash())
+    | Get(l, r) ->
+      h = 790640480; // first 8 bytes of sha256("Get")
+      !h = XXHash64.xxHash64(h, l.positionBlindHash());
+      !h = XXHash64.xxHash64(h, r.positionBlindHash());
+      h
+    | New(name, types, exprs) ->
+      h = 2301874861; // first 8 bytes of sha256("New")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      for (type in types) !h = XXHash64.xxHash64(h, type.positionBlindHash());
+      for (expr in exprs) !h = XXHash64.xxHash64(h, expr.positionBlindHash());
+      h
+    | Unop(op, expr) ->
+      XXHash64.xxHash64(op.xxhash().value, expr.positionBlindHash())
+    | PostOp(op, expr) ->
+      XXHash64.xxHash64(op.xxhash().value, expr.positionBlindHash())
+    | Binop(op, l, r) ->
+      h = op.xxhash().value;
+      !h = XXHash64.xxHash64(h, l.positionBlindHash());
+      !h = XXHash64.xxHash64(h, r.positionBlindHash());
+      h
+    | Call(rcvr, types, actuals) ->
+      h = 2776269117; // first 8 bytes of sha256("Call")
+      !h = XXHash64.xxHash64(h, rcvr.positionBlindHash());
+      for (type in types) !h = XXHash64.xxHash64(h, type.positionBlindHash());
+      for (actual in actuals) {
+        !h = XXHash64.xxHash64(h, actual.positionBlindHash())
+      };
+      h
+    | Params(params) ->
+      h = 1018288175; // first 8 bytes of sha256("Params")
+      for ((name, typeOpt) in params) {
+        !h = XXHash64.xxHash64(h, name.positionBlindHash());
+        typeOpt match {
+        | Some(ty) -> !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+        | None() -> void
+        }
+      };
+      h
+    | Object(fields) ->
+      h = 253096158; // first 8 bytes of sha256("Object")
+      for (field in fields) {
+        !h = XXHash64.xxHash64(h, field.positionBlindHash())
+      };
+      h
+    | Closure(formals, retType, body) ->
+      h = 2555097301; // first 8 bytes of sha256("Closure")
+      for ((name, typeOpt) in formals) {
+        !h = XXHash64.xxHash64(h, name.positionBlindHash());
+        typeOpt match {
+        | Some(ty) -> !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+        | None() -> void
+        }
+      };
+      retType match {
+      | Some(ty) -> !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+      | None() -> void
+      };
+      !h = XXHash64.xxHash64(h, body.positionBlindHash());
+      h
+    | EArray(exprs) ->
+      h = 3596064720; // first 8 bytes of sha256("EArray")
+      for (expr in exprs) !h = XXHash64.xxHash64(h, expr.positionBlindHash());
+      h
+    | EIf(cond, t, f) ->
+      h = 292438162; // first 8 bytes of sha256("EIf")
+      !h = XXHash64.xxHash64(h, cond.positionBlindHash());
+      !h = XXHash64.xxHash64(h, t.positionBlindHash());
+      !h = XXHash64.xxHash64(h, f.positionBlindHash());
+      h
+    | InstanceOf(l, r) ->
+      h = 2601282596; // first 8 bytes of sha256("InstanceOf")
+      !h = XXHash64.xxHash64(h, l.positionBlindHash());
+      !h = XXHash64.xxHash64(h, r.positionBlindHash());
+      h
+    | As(expr, type) ->
+      h = 4137903769; // first 8 bytes of sha256("As")
+      !h = XXHash64.xxHash64(h, expr.positionBlindHash());
+      !h = XXHash64.xxHash64(h, type.positionBlindHash());
+      h
+    | Async(expr) ->
+      h = 170855394; // first 8 bytes of sha256("Async")
+      XXHash64.xxHash64(h, expr.positionBlindHash())
+    }
+  }
+}
+
+extension base class ClosureBody {
+  fun positionBlindHash(): Int {
+    this match {
+    | CBExpr(expr) ->
+      h = 1690771350; // first 8 bytes of sha256("CBExpr")
+      XXHash64.xxHash64(h, expr.positionBlindHash())
+    | CBBlock(stmts) ->
+      h = 436729911; // first 8 bytes of sha256("CBBlock")
+      for (stmt in stmts) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+    }
+  }
+}
+extension base class Field {
+  fun positionBlindHash(): Int;
+}
+
+extension class FDNormal {
+  fun positionBlindHash(): Int {
+    h = 2815110123; // first 8 bytes of sha256("FDNormal")
+    !h = XXHash64.xxHash64(h, this.name.positionBlindHash());
+    !h = XXHash64.xxHash64(h, this.expr.positionBlindHash());
+    h
+  }
+}
+extension class FDSpread {
+  fun positionBlindHash(): Int {
+    h = 4237519998; // first 8 bytes of sha256("FDSpread")
+    XXHash64.xxHash64(h, this.expr.positionBlindHash())
+  }
+}
+
+extension class FieldGetSet {
+  fun positionBlindHash(): Int {
+    h = 4003147810; // first 8 bytes of sha256("FieldGetSet")
+    this.kind match {
+    | FGet() -> XXHash64.xxHash64(h, 0)
+    | FSet() -> XXHash64.xxHash64(h, 1)
+    }
+  }
+}
+
+extension base class FieldType {
+  fun positionBlindHash(): Int;
+}
+
+extension class FieldTypeValue {
+  fun positionBlindHash(): Int {
+    h = 3216399525; // first 8 bytes of sha256("FieldTypeValue")
+    this.setGet match {
+    | Some(setGet) -> !h = XXHash64.xxHash64(h, setGet.positionBlindHash())
+    | None() -> void
+    };
+    !h = XXHash64.xxHash64(h, this.name.xxhash().value);
+    if (this.optional.isSome()) !h = XXHash64.xxHash64(h, 1);
+    this.type match {
+    | Some(type) -> !h = XXHash64.xxHash64(h, type.positionBlindHash())
+    | None() -> void
+    };
+    this.value match {
+    | Some(value) -> !h = XXHash64.xxHash64(h, value.positionBlindHash())
+    | None() -> void
+    };
+    h
+  }
+}
+
+extension class Type {
+  fun positionBlindHash(): Int {
+    this.value.positionBlindHash()
+  }
+}
+
+extension base class Type_ {
+  fun positionBlindHash(): Int {
+    this match {
+    | TAStringLiteral(_) -> this.xxhash().value
+    | TATemplate(_) -> this.xxhash().value
+    | TANumLiteral(_) -> this.xxhash().value
+    | TABigIntLiteral(_) -> this.xxhash().value
+    | TAPrim(_) -> this.xxhash().value
+    | TAEmptyArray() -> this.xxhash().value
+    | TAUniqueSymbol() -> this.xxhash().value
+    | TATypeOf(expr) ->
+      h = 2002627899; // first 8 bytes of sha256("TATypeOf")
+      XXHash64.xxHash64(h, expr.positionBlindHash())
+    | TAArray(ty) ->
+      h = 173902283; // first 8 bytes of sha256("TAArray")
+      XXHash64.xxHash64(h, ty.positionBlindHash())
+    | TAObject(fieldTypes) ->
+      h = 1583197876; // first 8 bytes of sha256("TAObject")
+      for (ty in fieldTypes) !h = XXHash64.xxHash64(h, ty.positionBlindHash());
+      h
+    | TAInst(name, types) ->
+      h = 2336869069; // first 8 bytes of sha256("TAInst")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      for (ty in types) !h = XXHash64.xxHash64(h, ty.positionBlindHash());
+      h
+    | TAUnion(l, r) ->
+      h = 1732880756; // first 8 bytes of sha256("TAUnion")
+      !h = XXHash64.xxHash64(h, l.positionBlindHash());
+      !h = XXHash64.xxHash64(h, r.positionBlindHash());
+      h
+    | TAInter(l, r) ->
+      h = 307380411; // first 8 bytes of sha256("TAInter")
+      !h = XXHash64.xxHash64(h, l.positionBlindHash());
+      !h = XXHash64.xxHash64(h, r.positionBlindHash());
+      h
+    | TATuple(eltTypes) ->
+      h = 144642613; // first 8 bytes of sha256("TATuple")
+      for (ty in eltTypes) !h = XXHash64.xxHash64(h, ty.positionBlindHash());
+      h
+    | TAFun(isMethod, tparams, params, ret, _) ->
+      h = 3309863623; // first 8 bytes of sha256("TAFun")
+      !h = XXHash64.xxHash64(h, isMethod.xxhash().value);
+      for (ty in tparams) !h = XXHash64.xxHash64(h, ty.positionBlindHash());
+      for (param in params) {
+        !h = XXHash64.xxHash64(h, param.positionBlindHash())
+      };
+      !h = XXHash64.xxHash64(h, ret.positionBlindHash());
+      h
+    | TAGet(l, r) ->
+      h = 2890001354; // first 8 bytes of sha256("TAGet")
+      !h = XXHash64.xxHash64(h, l.positionBlindHash());
+      !h = XXHash64.xxHash64(h, r.positionBlindHash());
+      h
+    | TAExtendsQuestion(ty1, ty2, ty3, ty4) ->
+      h = 3562292822; // first 8 bytes of sha256("TAExtendsQuestion")
+      !h = XXHash64.xxHash64(h, ty1.positionBlindHash());
+      !h = XXHash64.xxHash64(h, ty2.positionBlindHash());
+      !h = XXHash64.xxHash64(h, ty3.positionBlindHash());
+      !h = XXHash64.xxHash64(h, ty4.positionBlindHash());
+      h
+    | TAExtends(ty1, ty2) ->
+      h = 2186354631; // first 8 bytes of sha256("TAExtends")
+      !h = XXHash64.xxHash64(h, ty1.positionBlindHash());
+      !h = XXHash64.xxHash64(h, ty2.positionBlindHash());
+      h
+    | TAReadonly(ty) ->
+      h = 1061202381; // first 8 bytes of sha256("TAReadonly")
+      XXHash64.xxHash64(h, ty.positionBlindHash())
+    | TAImport(expr, nameOpt, targsOpt) ->
+      h = 1135083278; // first 8 bytes of sha256("TAImport")
+      !h = XXHash64.xxHash64(h, expr.positionBlindHash());
+      nameOpt match {
+      | Some(name) -> !h = XXHash64.xxHash64(h, name.positionBlindHash())
+      | None() -> void
+      };
+      targsOpt match {
+      | Some(targs) ->
+        for (ty in targs) !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+      | None() -> void
+      };
+      h
+    | TAInfer(name) ->
+      h = 1943939194; // first 8 bytes of sha256("TAInfer")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+
+    | TAKeyOf(ty) ->
+      h = 2045893741; // first 8 bytes of sha256("TAKeyOf")
+      XXHash64.xxHash64(h, ty.positionBlindHash())
+    | TANew(ty) ->
+      h = 639325934; // first 8 bytes of sha256("TANew")
+      XXHash64.xxHash64(h, ty.positionBlindHash())
+    | TAAbstract(ty) ->
+      h = 1874406556; // first 8 bytes of sha256("TAAbstract")
+      XXHash64.xxHash64(h, ty.positionBlindHash())
+    | TAIs(l, r) ->
+      h = 70566854; // first 8 bytes of sha256("TAIs")
+      !h = XXHash64.xxHash64(h, l.positionBlindHash());
+      !h = XXHash64.xxHash64(h, r.positionBlindHash());
+      h
+    | TAAsserts(name) ->
+      h = 890406376; // first 8 bytes of sha256("TAAsserts")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+    | TAAssertIs(name, ty) ->
+      h = 1231435137; // first 8 bytes of sha256("TAAssertIs")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      !h = XXHash64.xxHash64(h, ty.positionBlindHash());
+      h
+    }
+  }
+}
+
+extension base class TupleEltType {
+  fun positionBlindHash(): Int {
+    this match {
+    | TEType(nameOpt, optional, ty) ->
+      h = 2014824091; // first 8 bytes of sha256("TEType")
+      nameOpt match {
+      | Some(name) -> !h = XXHash64.xxHash64(h, name.positionBlindHash())
+      | None() -> void
+      };
+      if (optional.isSome()) !h = XXHash64.xxHash64(h, 1);
+      !h = XXHash64.xxHash64(h, ty.positionBlindHash());
+      h
+    | TESpread(nameOpt, ty) ->
+      h = 4010255715; // first 8 bytes of sha256("TESpread")
+      nameOpt match {
+      | Some(name) -> !h = XXHash64.xxHash64(h, name.positionBlindHash())
+      | None() -> void
+      };
+      !h = XXHash64.xxHash64(h, ty.positionBlindHash());
+      h
+    }
+  }
+}
+
+extension class TAFunParam {
+  fun positionBlindHash(): Int {
+    h = 299617332; // first 8 bytes of sha256("TAFunParam")
+    this.name match {
+    | Some(name) -> !h = XXHash64.xxHash64(h, name.positionBlindHash())
+    | None() -> void
+    };
+    if (this.optional.isSome()) !h = XXHash64.xxHash64(h, 1);
+    !h = XXHash64.xxHash64(h, this.type.positionBlindHash());
+    h
+  }
+}
+
+extension base class TAParamNames {
+  fun positionBlindHash(): Int {
+    this match {
+    | TAParamName(name) ->
+      h = 1282319412; // first 8 bytes of sha256("TAParamName")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+
+    | TAParamSpread(name) ->
+      h = 2483453500; // first 8 bytes of sha256("TAParamSpread")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+
+    | TACurlyNames(cNames, nameOpt) ->
+      h = 3453847981; // first 8 bytes of sha256("TACurlyNames")
+      for (cname in cNames) {
+        !h = XXHash64.xxHash64(h, cname.positionBlindHash())
+      };
+      nameOpt match {
+      | Some(name) -> !h = XXHash64.xxHash64(h, name.positionBlindHash())
+      | None() -> void
+      };
+      h
+    }
+  }
+}
+
+extension class CurlyName {
+  fun positionBlindHash(): Int {
+    h = 3344111861; // first 8 bytes of sha256("CurlyName")
+    !h = XXHash64.xxHash64(h, this.name.positionBlindHash());
+    this.type match {
+    | Some(type) -> !h = XXHash64.xxHash64(h, type.positionBlindHash())
+    | None() -> void
+    };
+    h
+  }
+}
+
+extension base class FNOp {
+  fun positionBlindHash(): Int {
+    this match {
+    | FNQuestion(_) ->
+      110341360 // first 8 bytes of sha256("FNQuestion")
+    | FNRemove(_) ->
+      862284265 // first 8 bytes of sha256("FNRemove")
+    | FNAdd(_) ->
+      3815712383 // first 8 bytes of sha256("FNAdd")
+    }
+  }
+}
+
+extension class TypeParam {
+  fun positionBlindHash(): Int {
+    h = 1073093686; // first 8 bytes of sha256("TypeParam")
+    !h = XXHash64.xxHash64(h, this.id.id.xxhash().value);
+    this.constraint match {
+    | None() -> void
+    | Some(ty) -> !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+    };
+    !h = XXHash64.xxHash64(h, this.name.positionBlindHash());
+    this.default match {
+    | None() -> void
+    | Some(ty) -> !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+    };
+    h
+  }
+}
+extension base class ModuleNames {
+  fun positionBlindHash(): Int {
+    this match {
+    | MStar(nameOpt) ->
+      h = 3930437131; // first 8 bytes of sha256("MStar")
+      nameOpt match {
+      | Some(name) -> XXHash64.xxHash64(h, name.positionBlindHash())
+      | None() -> h
+      }
+
+    | MCurly(mdNames) ->
+      h = 1862722754; // first 8 bytes of sha256("MCurly")
+      for (name in mdNames) {
+        !h = XXHash64.xxHash64(h, name.positionBlindHash())
+      };
+      h
+
+    | MName(name, mdNames) ->
+      h = 493868055; // first 8 bytes of sha256("MName")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      for (mdName in mdNames) {
+        !h = XXHash64.xxHash64(h, mdName.positionBlindHash())
+      };
+      h
+    }
+  }
+}
+extension class ModuleDefName {
+  fun positionBlindHash(): Int {
+    h = 2334749545; // first 8 bytes of sha256("ModuleDefName")
+    if (this.isType.isSome()) !h = XXHash64.xxHash64(h, 1);
+    !h = XXHash64.xxHash64(h, this.name.positionBlindHash());
+    this.asName match {
+    | Some(name) -> XXHash64.xxHash64(h, name.positionBlindHash())
+    | None() -> h
+    }
+  }
+}
+
+extension class VarDef {
+  fun positionBlindHash(): Int {
+    h = 1142915525; // first 8 bytes of sha256("VarDef")
+    !h = XXHash64.xxHash64(h, this.pat.value.positionBlindHash());
+    this.type match {
+    | Some(type) -> !h = XXHash64.xxHash64(h, type.positionBlindHash())
+    | None() -> void
+    };
+    this.value match {
+    | Some(value) -> !h = XXHash64.xxHash64(h, value.positionBlindHash())
+    | None() -> void
+    };
+    h
+  }
+}
+
+extension base class Pattern_ {
+  fun positionBlindHash(): Int {
+    this match {
+    | PVar(name) ->
+      h = 2533921653; // first 8 bytes of sha256("PVar")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+    | PArray(pats) ->
+      h = 129383564; // first 8 bytes of sha256("PArray")
+      for (pat in pats) {
+        !h = XXHash64.xxHash64(h, pat.value.positionBlindHash())
+      };
+      h
+
+    | PObject(pats) ->
+      h = 3151766113; // first 8 bytes of sha256("PObject")
+      for ((name, pat) in pats) {
+        !h = XXHash64.xxHash64(h, name.positionBlindHash());
+        !h = XXHash64.xxHash64(h, pat.value.positionBlindHash());
+      };
+      h
+    }
+  }
+}
+
+extension class Param {
+  fun positionBlindHash(): Int {
+    h = 2313605285; // first 8 bytes of sha256("Param")
+    !h = XXHash64.xxHash64(h, this.modifiers.positionBlindHash());
+    !h = XXHash64.xxHash64(h, this.name.positionBlindHash());
+    if (this.optional.isSome()) !h = XXHash64.xxHash64(h, 1);
+    this.type match {
+    | Some(ty) -> !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+    | None() -> void
+    };
+    this.default match {
+    | Some(expr) -> !h = XXHash64.xxHash64(h, expr.positionBlindHash())
+    | None() -> void
+    };
+    h
+  }
+}
+
+extension class Modifiers {
+  fun positionBlindHash(): Int {
+    h = 1057186361; // first 8 bytes of sha256("Modifiers")
+    if (this.isRemove.isSome()) !h = XXHash64.xxHash64(h, 1);
+    for ((k, v) in this.modifiers.items()) {
+      !h = XXHash64.xxHash64(h, k.xxhash().value);
+      !h = XXHash64.xxHash64(h, v.positionBlindHash());
+    };
+    h
+  }
+}
+
+extension base class ParamNames {
+  fun positionBlindHash(): Int {
+    this match {
+    | PNDDD(name) ->
+      h = 3624038171; // first 8 bytes of sha256("PNDDD")
+      XXHash64.xxHash64(h, name.positionBlindHash())
+
+    | PNName(name, typeOpt) ->
+      h = 3680214638; // first 8 bytes of sha256("PNName")
+      !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      typeOpt match {
+      | Some(ty) -> !h = XXHash64.xxHash64(h, ty.positionBlindHash())
+      | None() -> void
+      };
+      h
+    | PNSquare(names) ->
+      h = 1216663852; // first 8 bytes of sha256("PNSquare")
+      for (name in names) !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      h
+
+    | PNCurly(names) ->
+      h = 2435218587; // first 8 bytes of sha256("PNCurly")
+      for (name in names) !h = XXHash64.xxHash64(h, name.positionBlindHash());
+      h
+    }
+  }
+}
+
+extension class Stmt {
+  fun positionBlindHash(): Int {
+    this.value.positionBlindHash()
+  }
+}
+
+extension base class Stmt_ {
+  fun positionBlindHash(): Int {
+    this match {
+    | StmtEmpty() ->
+      1084963473 // first 8 bytes of sha256("StmtEmpty")
+
+    | StmtExpr(expr) ->
+      h = 1403360588; // first 8 bytes of sha256("StmtExpr")
+      XXHash64.xxHash64(h, expr.positionBlindHash())
+
+    | Break() ->
+      404038491 // first 8 bytes of sha256("Break")
+    | Continue() ->
+      2914145291 // first 8 bytes of sha256("Continue")
+    | Return(_pos, exprOpt) ->
+      h = 2381425329; // first 8 bytes of sha256("Return")
+      exprOpt match {
+      | Some(expr) -> XXHash64.xxHash64(h, expr.positionBlindHash())
+      | None() -> h
+      }
+
+    | Throw(expr) ->
+      h = 2140992533; // first 8 bytes of sha256("Throw")
+      XXHash64.xxHash64(h, expr.positionBlindHash())
+
+    | If(cond, tBranch, fBranchOpt) ->
+      h = 750278116; // first 8 bytes of sha256("If")
+      !h = XXHash64.xxHash64(h, cond.positionBlindHash());
+      for (stmt in tBranch) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      fBranchOpt match {
+      | Some(fBranch) ->
+        !h = XXHash64.xxHash64(h, 1); // make sure we don't collide when stmts are moved between t/f branches
+        for (stmt in fBranch) {
+          !h = XXHash64.xxHash64(h, stmt.positionBlindHash())
+        }
+      | None() -> void
+      };
+      h
+
+    | ForIn(headStmt, headExpr, body) ->
+      h = 3411929529; // first 8 bytes of sha256("ForIn")
+      !h = XXHash64.xxHash64(h, headStmt.positionBlindHash());
+      !h = XXHash64.xxHash64(h, headExpr.positionBlindHash());
+      for (stmt in body) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+
+    | ForOf(headStmt, headExpr, body) ->
+      h = 1796983996; // first 8 bytes of sha256("ForOf")
+      !h = XXHash64.xxHash64(h, headStmt.positionBlindHash());
+      !h = XXHash64.xxHash64(h, headExpr.positionBlindHash());
+      for (stmt in body) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+
+    | For(headStmt, headExpr1, headExpr2, body) ->
+      h = 3391767641; // first 8 bytes of sha256("For")
+      !h = XXHash64.xxHash64(h, headStmt.positionBlindHash());
+      !h = XXHash64.xxHash64(h, headExpr1.positionBlindHash());
+      !h = XXHash64.xxHash64(h, headExpr2.positionBlindHash());
+      for (stmt in body) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+    | While(cond, body) ->
+      h = 839257658; // first 8 bytes of sha256("While")
+      !h = XXHash64.xxHash64(h, cond.positionBlindHash());
+      for (stmt in body) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+    | Bind(kind, bindings) ->
+      h = kind match {
+      | BKLet() ->
+        1261972878 // first 8 bytes of sha256("BKLet")
+      | BKConst() ->
+        2964885510 // first 8 bytes of sha256("BKConst")
+      | BKVar() ->
+        40576495 // first 8 bytes of sha256("BKVar")
+      };
+      for (binding in bindings) {
+        !h = XXHash64.xxHash64(h, binding.positionBlindHash());
+      };
+      h
+    | Switch(expr, branches) ->
+      h = 111424529; // first 8 bytes of sha256("Switch")
+      !h = XXHash64.xxHash64(h, expr.positionBlindHash());
+      for (branch in branches) {
+        !h = XXHash64.xxHash64(h, branch.positionBlindHash())
+      };
+      h
+    | Block(stmts) ->
+      h = 1445259218; // first 8 bytes of sha256("Block")
+      for (stmt in stmts) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+    }
+  }
+}
+
+extension class Binding {
+  fun positionBlindHash(): Int {
+    h = 1802779053; // first 8 bytes of sha256("Binding")
+    !h = XXHash64.xxHash64(h, this.pat.value.positionBlindHash());
+    this.type match {
+    | Some(type) -> !h = XXHash64.xxHash64(h, type.positionBlindHash())
+    | None() -> void
+    };
+    this.value match {
+    | Some(value) -> !h = XXHash64.xxHash64(h, value.positionBlindHash())
+    | None() -> void
+    };
+    h
+  }
+}
+
+extension base class SwitchBranch {
+  fun positionBlindHash(): Int {
+    this match {
+    | Case(expr, body) ->
+      h = 3215306018; // first 8 bytes of sha256("Case")
+      !h = XXHash64.xxHash64(h, expr.positionBlindHash());
+      for (stmt in body) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+    | Default(body) ->
+      h = 1929503161; // first 8 bytes of sha256("Default")
+      for (stmt in body) !h = XXHash64.xxHash64(h, stmt.positionBlindHash());
+      h
+    }
+  }
+}
+module end;
