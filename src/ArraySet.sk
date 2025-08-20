@@ -169,7 +169,7 @@ module end;
 
 module SKJS;
 
-fun mapUnion<T, Key: Orderable>(
+private fun mapUnion<T, Key: Orderable>(
   iter1: mutable Iterator<T>,
   iter2: mutable Iterator<T>,
   proj: T ~> Key,
@@ -203,7 +203,7 @@ fun mapUnion<T, Key: Orderable>(
   result.toArray()
 }
 
-fun mapInter<T, Key: Orderable>(
+private fun mapInter<T, Key: Orderable>(
   iter1: mutable Iterator<T>,
   iter2: mutable Iterator<T>,
   proj: T ~> Key,
