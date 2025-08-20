@@ -121,6 +121,9 @@ class Files(
     )
   }
 
+  const parsesDirName: SKStore.DirName = SKStore.DirName::create(
+    "/skjs/parsed_with_errors/",
+  );
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
@@ -129,7 +132,7 @@ class Files(
       SKStore.SID::keyType,
       ParsedResultFile::type,
       context,
-      SKStore.DirName::create("/skjs/parsed_with_errors/"),
+      parsesDirName,
       (context, writer, key, contentIter) ~> {
         fileName = key.value;
         //        if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
@@ -171,19 +174,30 @@ class Files(
   // (added-defs, removed-defs) since last run
   fun getChangedDefs(
     context: mutable SKStore.Context,
-    currentParses: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
   ): (Array<Def>, Array<Def>) {
     added: mutable Vector<Def> = mutable Vector[];
     removed: mutable Vector<Def> = mutable Vector[];
-    if (this.changedFileOldParsedResults.isNone()) {
+
+    oldParses = this.changedFileOldParsedResults match {
+    | Some(oldParses) -> oldParses
+    | None() ->
       invariant_violation(
         "getChangedDefs called without any old parsed results",
       )
     };
-    for ((
-      fileName,
-      previousParsedResult,
-    ) in this.changedFileOldParsedResults.fromSome().items()) {
+    currentParses = context.unsafeMaybeGetEagerDir(parsesDirName) match {
+    | Some _ ->
+      SKStore.EHandle(
+        SKStore.SID::keyType,
+        ParsedResultFile::type,
+        parsesDirName,
+      )
+    | None() ->
+      invariant_violation(
+        "getChangedDefs called without any current parsed results ",
+      )
+    };
+    for ((fileName, previousParsedResult) in oldParses.items()) {
       currentParsedResult = currentParses.get(
         context,
         SKStore.SID(fileName),
