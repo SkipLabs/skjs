@@ -1794,6 +1794,12 @@ class TypeChecker{
       | Some(retTypeAst) -> this.tenv.normalize(env.context, retTypeAst)
       };
       callingContext = CGNode::create(AnonymousLambda(pos, c));
+      // Register a dependency from parent context on this lambda
+      this.callgraph.recordCalls(
+        env.context,
+        env.scope.callingContext,
+        CGNodes::singleton(callingContext),
+      );
       savedScope = env.scope.clone() with {callingContext};
 
       lambdas = if (noAnnot is None()) {
