@@ -9,7 +9,7 @@ module SKJS;
 base class ParsedResult {
   children =
   | PROk(Array<Def>)
-  | PRError(String)
+  | PRError(Error)
 }
 
 class ParsedResultFile(
@@ -135,12 +135,9 @@ class Files(
       SKStore.SID::keyType,
       ParsedResultFile::type,
       context,
-      parsesDirName,
-      (context, writer, key, contentIter) ~> {
+      SKStore.DirName::create("/skjs/parsed_with_errors/"),
+      (_context, writer, key, contentIter) ~> {
         fileName = key.value;
-        //        if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
-        //          return void;
-        //        };
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content, this.rootOpt);
         parser = mutable Parser(lexer);
@@ -156,24 +153,22 @@ class Files(
           )
         } catch {
         | ErrorExn(err) ->
+          symbols = lexer.getAllSymbolLocations();
           writer.setArray(
             SKStore.SID(""),
-            Array[
-              ParsedResultFile(
-                PRError(err.toString(context, newLinesMap)),
-                lexer.getAllSymbolLocations(),
-              ),
-            ],
+            Array[ParsedResultFile(PRError(err), symbols)],
           )
         | exn -> throw exn
         }
       },
     );
     errors = parsedFiles.unsafeGetArray(context, SKStore.SID(""));
+    symbolsMap = SymbolsMap::create(context, parsedFiles);
     if (errors.size() != 0) {
       for (error in errors) {
         error.value match {
-        | PRError(err) -> print_error(err)
+        | PRError(err) ->
+          print_error(err.toString(context, newLinesMap, symbolsMap))
         | _ -> internal_error("Unexpected parsing result")
         }
       };

@@ -191,10 +191,14 @@ extension class Parser {
         };
         params = mutable Vector[(firstName, firstTypeOpt)];
         loop {
+          tok = this.lex.peek();
           e = this.expr(0) match {
           | Expr(_, Var(x)) -> x
-          | Expr(pos, _) ->
-            this.error(EPChar(this.lex.fileName, pos.start), ExpectedVarName())
+          | Expr _ ->
+            this.error(
+              EPChar(this.lex.fileName, tok.fromSome().posStart),
+              ExpectedVarName(),
+            )
           };
           tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
             _ = this.lex.next();
@@ -259,7 +263,8 @@ extension class Parser {
       | "await" -> Await(this.expr(0))
       | "typeof" -> TypeOf(this.expr(typeOfPrec))
       | "keyof" -> KeyOf(this.type(0))
-      | _ -> Var(Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), str))
+      | _ ->
+        Var(Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), str))
       }
     | TKQuote() -> EString(SKQuote(), this.lex.getStrTok(tok))
     | TKDoubleQuote() -> EString(SKDoubleQuote(), this.lex.getStrTok(tok))
@@ -434,11 +439,7 @@ extension class Parser {
           type = this.type(0);
           !result = As(
             Expr(
-              PosRange::create(
-                this.lex,
-                tok.posStart,
-                this.lex.getLastPos(),
-              ),
+              PosRange::create(this.lex, tok.posStart, this.lex.getLastPos()),
               result,
             ),
             type,
@@ -490,11 +491,7 @@ extension class Parser {
       args = this.arguments();
       newLeft = Call(
         Expr(
-          PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          ),
+          PosRange::create(this.lex, tok.posStart, this.lex.getLastPos()),
           mutableLeft,
         ),
         targs.toArray(),
@@ -627,11 +624,7 @@ extension class Parser {
         _ = this.lex.next();
         !mutableLeft = Get(
           Expr(
-            PosRange::create(
-              this.lex,
-              tok.posStart,
-              this.lex.getLastPos(),
-            ),
+            PosRange::create(this.lex, tok.posStart, this.lex.getLastPos()),
             mutableLeft,
           ),
           this.expr(0),
@@ -755,6 +748,10 @@ extension class Parser {
     };
     modifiers = this.modifiers(None());
     fieldGetSet = this.isGetSet();
+    fieldNameTok = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+    | Some(x) -> x
+    };
     fieldName = this.getName();
     if (
       this.lex.peekKind() is Some(TKOpenParen()) ||
@@ -764,7 +761,7 @@ extension class Parser {
         None(),
         modifiers,
         fieldGetSet,
-        Some(FNNormal(fieldName)),
+        Some((fieldNameTok.posStart, FNNormal(fieldName))),
         true,
         None(),
         None(),

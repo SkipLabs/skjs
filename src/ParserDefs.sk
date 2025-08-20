@@ -15,7 +15,11 @@ extension class Parser {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
     | Some(tok) ->
       tok.kind match {
-      | TKVar() -> Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), this.lex.getStrTok(tok))
+      | TKVar() ->
+        Name(
+          PosRange::create(this.lex, tok.posStart, tok.posEnd),
+          this.lex.getStrTok(tok),
+        )
       | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
       }
     }
@@ -37,7 +41,11 @@ extension class Parser {
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
-      | TKVar() -> Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), this.lex.getStrTok(tok))
+      | TKVar() ->
+        Name(
+          PosRange::create(this.lex, tok.posStart, tok.posEnd),
+          this.lex.getStrTok(tok),
+        )
       | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
       }
     }
@@ -92,7 +100,10 @@ extension class Parser {
         )
       | TKNumber()
       | TKVar() ->
-        Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), this.lex.getStrTok(tok))
+        Name(
+          PosRange::create(this.lex, tok.posStart, tok.posEnd),
+          this.lex.getStrTok(tok),
+        )
       | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
       }
     }
@@ -135,13 +146,31 @@ extension class Parser {
           this.expect(TKCloseSquare());
           op = if (this.lex.peekKind() is Some(TKRemoveQM())) {
             tokRemove = this.lex.next().fromSome();
-            Some(FNRemove(PosRange::create(this.lex, tokRemove.posStart, tokRemove.posEnd)));
+            Some(
+              FNRemove(
+                PosRange::create(
+                  this.lex,
+                  tokRemove.posStart,
+                  tokRemove.posEnd,
+                ),
+              ),
+            );
           } else if (this.lex.peekKind() is Some(TKAddQM())) {
             tokAdd = this.lex.next().fromSome();
-            Some(FNAdd(PosRange::create(this.lex, tokAdd.posStart, tokAdd.posEnd)));
+            Some(
+              FNAdd(PosRange::create(this.lex, tokAdd.posStart, tokAdd.posEnd)),
+            );
           } else if (this.lex.peekKind() is Some(TKQuestionMark())) {
             tokQuestion = this.lex.next().fromSome();
-            Some(FNQuestion(PosRange::create(this.lex, tokQuestion.posStart, tokQuestion.posEnd)))
+            Some(
+              FNQuestion(
+                PosRange::create(
+                  this.lex,
+                  tokQuestion.posStart,
+                  tokQuestion.posEnd,
+                ),
+              ),
+            )
           } else {
             None()
           };
@@ -194,7 +223,9 @@ extension class Parser {
       | Some(x @ "abstract")
       | Some(x @ "readonly") ->
         nameTok = this.lex.next().fromSome();
-        modifiers.push(Name(PosRange::create(this.lex, nameTok.posStart, nameTok.posEnd), x))
+        modifiers.push(
+          Name(PosRange::create(this.lex, nameTok.posStart, nameTok.posEnd), x),
+        )
       | _ -> break void
       }
     };
@@ -232,7 +263,12 @@ extension class Parser {
       });
       if (isGetterOrSetter) {
         nextTok = this.lex.next().fromSome();
-        Some(FieldGetSet(kind, PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd)))
+        Some(
+          FieldGetSet(
+            kind,
+            PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd),
+          ),
+        )
       } else {
         None()
       }
@@ -289,6 +325,10 @@ extension class Parser {
   // Parse a field type (method or normal field)
   mutable fun getFieldType(modifiers: Modifiers): FieldType {
     fieldGetSet = this.isGetSet();
+    fieldNamePos = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+    | Some(x) -> x.posStart
+    };
     fieldName = this.getSymbol();
     fieldPos = PosRange::create(
       this.lex,
@@ -309,7 +349,7 @@ extension class Parser {
         None(),
         modifiers,
         fieldGetSet,
-        fieldName,
+        (fieldNamePos, fieldName),
         true,
         isOptional,
         None(),
@@ -461,14 +501,14 @@ extension class Parser {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
     };
-    start = PosRange::create(this.lex, tok.posStart, tok.posEnd).start;
-    def_ = this.defHelper_(topLevel);
+    start = tok.posStart;
+    def_ = this.defHelper_();
     end = this.lex.lastTok.fromSome().posEnd;
     Def(PosRange::create(this.lex, start, end), def_)
   }
 
   // Internal definition parsing implementation
-  mutable fun defHelper_(topLevel: Bool): Def_ {
+  mutable fun defHelper_(): Def_ {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
@@ -626,10 +666,13 @@ extension class Parser {
     | "async" ->
       asyncTok = this.lex.next().fromSome();
       this.expectStr("function");
-      this.funDef(Some(PosRange::create(this.lex, asyncTok.posStart, asyncTok.posEnd)), true, topLevel)
+      this.funDef(
+        Some(PosRange::create(this.lex, asyncTok.posStart, asyncTok.posEnd)),
+        true,
+      )
     | "function" ->
       _ = this.lex.next();
-      this.funDef(None(), true, topLevel)
+      this.funDef(None(), true)
     | "type" ->
       _ = this.lex.next();
       this.typeDef()
@@ -657,16 +700,16 @@ extension class Parser {
     | "abstract" ->
       _ = this.lex.next();
       this.expectStr("class");
-      this.class_(CKAbstract())
+      this.class_(tok.posStart.value, CKAbstract())
     | "enum" ->
       _ = this.lex.next();
       this.enum(None())
     | "interface" ->
       _ = this.lex.next();
-      this.class_(CKInterface())
+      this.class_(tok.posStart.value, CKInterface())
     | "class" ->
       _ = this.lex.next();
-      this.class_(CKClass())
+      this.class_(tok.posStart.value, CKClass())
     | "let" ->
       _ = this.lex.next();
       this.varDef(VDKLet())
@@ -860,15 +903,16 @@ extension class Parser {
   }
 
   // Parse class definitions
-  mutable fun class_(kind: ClassKind): Class {
+  mutable fun class_(_pos: Int, kind: ClassKind): Class {
     name = this.getName();
     // Record the class definition and set context
     classSymbol = SPClass(name.value);
-    this.recordSymbolDefinition(classSymbol, name.pos.start.value);
+    symbolContextPos = this.lex.pos;
+    this.recordSymbolDefinition(classSymbol, symbolContextPos);
     prevSymbol = this.getCurrentSymbol();
     prevPos = this.lex.currentSymbolPos;
-    this.setSymbolContext(classSymbol, this.lex.pos);
-    
+    this.setSymbolContext(classSymbol, symbolContextPos);
+
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
       this.typeDefsParams();
@@ -907,10 +951,10 @@ extension class Parser {
     };
     this.expect(TKOpenCurly());
     fields = this.objectFields();
-    
+
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
-    
+
     Class{kind, name, extends_, implements, tparams, fields}
   }
 
@@ -1027,35 +1071,30 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse function definitions
-  mutable fun funDef(
-    isAsync: ?PosRange,
-    parseBlock: Bool,
-    isTopLevel: Bool,
-  ): FunDef {
+  mutable fun funDef(isAsync: ?PosRange, parseBlock: Bool): FunDef {
+    funTok = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
+    | Some(x) -> x
+    };
     funName = this.getName();
     // Record the function definition and set context
     funcSymbol = SPFunction(funName.value);
-    this.recordSymbolDefinition(funcSymbol, funName.pos.start.value);
+    symbolContextPos = this.lex.pos;
+    this.recordSymbolDefinition(funcSymbol, symbolContextPos);
     prevSymbol = this.getCurrentSymbol();
     prevPos = this.lex.currentSymbolPos;
-    this.setSymbolContext(funcSymbol, this.lex.pos);
-    
-    cgNode = if (isTopLevel) {
-      Some(CGNode::create(TopLevelFunDef(FNNormal(funName), this.lex.fileName)))
-    } else {
-      None()
-    };
-    
+    this.setSymbolContext(funcSymbol, symbolContextPos);
+
     result = this.methodDef(
       isAsync,
       Modifiers::empty(),
       None(),
-      FNNormal(funName),
+      (funTok.posStart, FNNormal(funName)),
       parseBlock,
       None(),
       cgNode,
     );
-    
+
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
     result
@@ -1066,7 +1105,7 @@ extension class Parser {
     isAsync: ?PosRange,
     modifiers: Modifiers,
     fieldGetSet: ?FieldGetSet,
-    funName: Symbol,
+    funName: (Pos, Symbol),
     parseBlock: Bool,
     optional: ?PosRange,
     cgNode: ?CGNode,
@@ -1087,7 +1126,7 @@ extension class Parser {
     isAsync: ?PosRange,
     methodModifiers: Modifiers,
     isGetSet: ?FieldGetSet,
-    funName: ?Symbol,
+    funName: ?(Pos, Symbol),
     parseBlock: Bool,
     isOptional: ?PosRange,
     cgNode: ?CGNode,
@@ -1096,17 +1135,20 @@ extension class Parser {
     prevSymbol = this.getCurrentSymbol();
     prevPos = this.lex.currentSymbolPos;
     (funName, this.getCurrentSymbol()) match {
-    | (Some(FNNormal(name)), SPClass(className)) ->
+    | (Some((_funPos, FNNormal(name))), SPClass(className)) ->
       methodSymbol = SPMethod(className, name.value);
-      this.recordSymbolDefinition(methodSymbol, name.pos.start.value);
-      this.setSymbolContext(methodSymbol, this.lex.pos)
-    | (Some(FNNormal(name)), _) ->
+      symbolContextPos = this.lex.pos;
+      this.recordSymbolDefinition(methodSymbol, symbolContextPos);
+      this.setSymbolContext(methodSymbol, symbolContextPos)
+    | (Some((_funPos, FNNormal(name))), _) ->
       funcSymbol = SPFunction(name.value);
-      this.recordSymbolDefinition(funcSymbol, name.pos.start.value);
-      this.setSymbolContext(funcSymbol, this.lex.pos)
-    | _ -> void // Keep current context for anonymous methods
+      symbolContextPos = this.lex.pos;
+      this.recordSymbolDefinition(funcSymbol, symbolContextPos);
+      this.setSymbolContext(funcSymbol, symbolContextPos)
+    | _ ->
+      void // Keep current context for anonymous methods
     };
-    
+
     funStart = this.lex.lastTok.fromSome().posEnd;
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
@@ -1195,14 +1237,15 @@ extension class Parser {
       };
       bodyTok.kind match {
       | TKOpenCurly() -> FDBSome(this.block())
-      | _ -> FDBNone(PosRange::create(this.lex, bodyTok.posStart, bodyTok.posEnd))
+      | _ ->
+        FDBNone(PosRange::create(this.lex, bodyTok.posStart, bodyTok.posEnd))
       }
     } else {
       lastTok = this.lex.lastTok.fromSome();
       FDBNone(PosRange::create(this.lex, lastTok.posStart, lastTok.posEnd))
     };
     funEnd = this.lex.lastTok.fromSome().posEnd;
-    
+
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
     FunDef{
@@ -1211,7 +1254,7 @@ extension class Parser {
       modifiers => methodModifiers,
       tparams => tparams,
       isGetSet,
-      name => funName,
+      name => funName.map(x -> x.i1),
       optional => isOptional,
       params => params.toArray(),
       retType,

@@ -697,8 +697,9 @@ class Lambda(
   pos: PosRange,
   compute: (mutable Subst, Array<TType>, TType) ~> void,
 ) uses XXHashable, Orderable {
-  fun xxhash(_ignorePos: Bool = false): XXHash {
-    (this.pos.fileName, this.pos.start, this.pos.end).xxhash()
+  fun xxhash(): XXHash {
+    (this.pos.fileName, this.pos.relStart.value, this.pos.relEnd.value).xxhash()
+  }
   }
   fun compare(other: Lambda): Order {
     this.pos.compare(other.pos)
@@ -1940,7 +1941,7 @@ fun unionTTuple(
   };
   if (tuple1.tuple.size() < tuple2.tuple.size()) {
     for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
-      posEnd = tuple1.pos.withStartEnd(tuple1.pos.end, tuple1.pos.end);
+      posEnd = tuple1.pos.atEnd();
       result.push(
         TType::union(
           subst,
@@ -1952,7 +1953,7 @@ fun unionTTuple(
     }
   } else if (tuple2.tuple.size() < tuple1.tuple.size()) {
     for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
-      posEnd = tuple2.pos.withStartEnd(tuple2.pos.end, tuple2.pos.end);
+      posEnd = tuple2.pos.atEnd();
       result.push(
         TType::union(
           subst,

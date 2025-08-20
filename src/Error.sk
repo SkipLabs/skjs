@@ -34,10 +34,11 @@ class ErrorExn(error: Error) extends Exception
 /* The class for all the errors. */
 /***************************************************************************/
 
-base class Error {
+base class Error uses Equality {
   fun toString(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
+    symbolsMap: SymbolsMap,
   ): String;
 }
 
@@ -52,10 +53,12 @@ base class SinglePosError<K: ErrorKind>(
   fun toString(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
+    symbolsMap: SymbolsMap,
   ): String {
     fileName = this.pos.fileName();
     newLines = newLinesMap.get(context, fileName);
-    resolver = PositionResolver{fileName, newLines};
+    symbols = symbolsMap.get(context, fileName);
+    resolver = PositionResolver{fileName, newLines, symbols};
     this.pos.toString(resolver) + "\n" + this.errorKind.toString()
   }
 }
@@ -75,10 +78,12 @@ class DuplicateSymbolError(
   fun toString(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
+    symbolsMap: SymbolsMap,
   ): String {
     fileName = this.newPos.fileName;
     newLines = newLinesMap.get(context, fileName);
-    resolver = PositionResolver{fileName, newLines};
+    symbols = symbolsMap.get(context, fileName);
+    resolver = PositionResolver{fileName, newLines, symbols};
     symbolName = this.symbol match {
     | SPTopLevel() -> "top-level"
     | SPClass(name) -> `class '${name}'`
@@ -102,7 +107,7 @@ class DuplicateSymbolError(
  */
 /***************************************************************************/
 
-base class ErrorPos {
+base class ErrorPos uses Equality {
   children =
   | EPRange(PosRange)
   | EPChar(String, Pos)
@@ -120,7 +125,7 @@ base class ErrorPos {
 /* Error kinds (description of the error) */
 /***************************************************************************/
 
-base class ErrorKind {
+base class ErrorKind uses Equality {
   fun toString(): String;
 }
 base class ParsingKind extends ErrorKind

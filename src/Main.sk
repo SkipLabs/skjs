@@ -270,7 +270,10 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                 errors = mutable Vector[];
                 parseErrorOpt match {
                 | None() -> void
-                | Some(err) -> errors.push(SKStore.StringFile(err.toString()))
+                | Some(err) ->
+                  errors.push(
+                    SKStore.StringFile(checker.errorToString(context, err)),
+                  )
                 };
 
                 for (error in typeErrors) {
@@ -307,7 +310,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
 class CheckResult(
   fileName: String,
-  parseError: ?String,
+  parseError: ?Error,
   errors: Array<Error>,
 ) extends SKStore.File
 
@@ -316,6 +319,7 @@ class Checker private {
   parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
+  symbolsMap: SymbolsMap,
 } {
   static fun create{
     context: mutable SKStore.Context,
@@ -326,6 +330,7 @@ class Checker private {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
     parsedFiles = files.parse(context, newLinesMap);
+    symbolsMap = SymbolsMap::create(context, parsedFiles);
     fileDefsMap = FileDefsMap::create(
       context,
       index,
@@ -337,16 +342,8 @@ class Checker private {
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
     tenv = TEnv{defMap};
-    callgraph = CallGraph::create(context);
-    checker = TypeChecker{
-      builtins,
-      backtrace,
-      defMap,
-      tenv,
-      builtinsFileName,
-      callgraph,
-    };
-    static{files, parsedFiles, checker, newLinesMap}
+    checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
+    static{files, parsedFiles, checker, newLinesMap, symbolsMap}
   }
 
   fun checkFiles(
@@ -379,7 +376,7 @@ class Checker private {
     );
   }
   fun errorToString(context: mutable SKStore.Context, err: Error): String {
-    err.toString(context, this.newLinesMap)
+    err.toString(context, this.newLinesMap, this.symbolsMap)
   }
 }
 

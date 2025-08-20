@@ -1,0 +1,47 @@
+/***************************************************************************/
+// Module resolving Symbols.
+/***************************************************************************/
+
+module SKJS;
+
+/***************************************************************************/
+/* Symbols directory. */
+/***************************************************************************/
+
+class SymbolsFile(symbols: Map<SymbolicPos, Int>) extends SKStore.File
+
+fun makeSymbolsDir(
+  context: mutable SKStore.Context,
+  parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
+): SKStore.EHandle<SKStore.SID, SymbolsFile> {
+  parsedFiles.map(
+    SKStore.SID::keyType,
+    SymbolsFile::type,
+    context,
+    SKStore.DirName::create("/skjs/symbols/"),
+    (_context, writer, key, values) ~> {
+      writer.set(key, SymbolsFile(values.first.symbols))
+    },
+  )
+}
+
+/***************************************************************************/
+/* Symbols map (associates Symbols to a filename) */
+/***************************************************************************/
+
+class SymbolsMap{dir: SKStore.EHandle<SKStore.SID, SymbolsFile>} {
+  static fun create(
+    context: mutable SKStore.Context,
+    parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
+  ): this {
+    static{dir => makeSymbolsDir(context, parsedFiles)}
+  }
+  fun get(
+    context: mutable SKStore.Context,
+    fileName: String,
+  ): Map<SymbolicPos, Int> {
+    this.dir.get(context, SKStore.SID(fileName)).symbols
+  }
+}
+
+module end;
