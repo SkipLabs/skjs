@@ -2075,11 +2075,11 @@ class TypeChecker{
     targs: Array<TType>,
     args: Array<TType>,
   ): TType {
-    result: ?TType = None();
     fty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
     | Some(TFuns(funs, methods, _)) ->
+      result = TType::bottom(pos);
       for (tfun in funs.values().concat(methods.values())) {
         if (targs.size() != 0 && targs.size() != tfun.clauses.size()) {
           typingError(
@@ -2177,22 +2177,16 @@ class TypeChecker{
           };
           lambda.compute(env.subst, args, tfun.retType)
         };
-        !result = result match {
-        | None() -> Some(tfun.retType)
-        | Some(r) -> Some(TType::union(env.subst, this.tenv, r, tfun.retType))
-        };
-      }
-    | _ -> void
-    };
-    result match {
-    | None() ->
+        !result = TType::union(env.subst, this.tenv, result, tfun.retType);
+      };
+      result
+    | _ ->
       typingError(
         Array[
           (pos, "Invalid call"),
           (fty.pos, `Type ${fty} is not a function`),
         ],
       )
-    | Some(x) -> x
     }
   }
 
