@@ -42,12 +42,21 @@ value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
   }
 }
 
-value class PosRange(
+value class PosRange private (
+  symbol: SymbolicPos,
   fileName: String,
   start: Pos,
   end: Pos,
-) uses Hashable, XXHashable, Orderable {
-  const none: this = PosRange("", Pos::none, Pos::none);
+) uses XXHashable, Orderable {
+  const none: this = PosRange(SPTopLevel(), "", Pos::none, Pos::none);
+
+  static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {
+    static(lexer.currentSymbol, lexer.fileName, start, end)
+  }
+
+  fun withStartEnd(start: Pos, end: Pos): this {
+    this with {start, end}
+  }
 
   fun xxhash(ignorePos: Bool = false): XXHash {
     if (ignorePos) {

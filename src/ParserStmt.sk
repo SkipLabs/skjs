@@ -60,7 +60,7 @@ extension class Parser {
     end = this.lex.lastTok.fromSome().pos.end;
     result match {
     | None() -> None()
-    | Some(x) -> Some(Stmt(PosRange(this.lex.fileName, start, end), x))
+    | Some(x) -> Some(Stmt(PosRange::create(this.lex, start, end), x))
     }
   }
 

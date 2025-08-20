@@ -45,7 +45,7 @@ extension class Parser {
     e_ = this.expr_(prec);
     end = this.lex.lastTok.fromSome().pos.end;
     this.lex.!inType = inTypeCopy;
-    Expr(PosRange(this.lex.fileName, start, end), e_)
+    Expr(PosRange::create(this.lex, start, end), e_)
   }
 
   // Parse regular expression literals (/pattern/flags)
@@ -322,8 +322,8 @@ extension class Parser {
     | Some(x) -> x
     };
     if (bopPrec == prec) {
-      leftPosRange = PosRange(
-        this.lex.fileName,
+      leftPosRange = PosRange::create(
+        this.lex,
         tok.pos.start,
         this.lex.getLastPos(),
       );
@@ -342,8 +342,8 @@ extension class Parser {
       };
       (true, newLeft)
     } else if (bopPrec > prec) {
-      leftPosRange = PosRange(
-        this.lex.fileName,
+      leftPosRange = PosRange::create(
+        this.lex,
         tok.pos.start,
         this.lex.getLastPos(),
       );
@@ -420,8 +420,8 @@ extension class Parser {
     tok: Token,
   ): (Bool, Expr_) {
     if (this.lex.isEqTok(binopTok, "as")) {
-      leftPosRange = PosRange(
-        this.lex.fileName,
+      leftPosRange = PosRange::create(
+        this.lex,
         tok.pos.start,
         this.lex.getLastPos(),
       );
@@ -434,7 +434,11 @@ extension class Parser {
           type = this.type(0);
           !result = As(
             Expr(
-              PosRange(this.lex.fileName, tok.pos.start, this.lex.getLastPos()),
+              PosRange::create(
+                this.lex,
+                tok.pos.start,
+                this.lex.getLastPos(),
+              ),
               result,
             ),
             type,
@@ -486,7 +490,11 @@ extension class Parser {
       args = this.arguments();
       newLeft = Call(
         Expr(
-          PosRange(this.lex.fileName, tok.pos.start, this.lex.getLastPos()),
+          PosRange::create(
+            this.lex,
+            tok.pos.start,
+            this.lex.getLastPos(),
+          ),
           mutableLeft,
         ),
         targs.toArray(),
@@ -509,8 +517,8 @@ extension class Parser {
     | TKIncr() ->
       (_assoc, opPrec) = precedence[binopTok.kind];
       if (prec <= opPrec) {
-        leftPosRange = PosRange(
-          this.lex.fileName,
+        leftPosRange = PosRange::create(
+          this.lex,
           tok.pos.start,
           this.lex.getLastPos(),
         );
@@ -522,8 +530,8 @@ extension class Parser {
     | TKDecr() ->
       (_assoc, opPrec) = precedence[binopTok.kind];
       if (prec <= opPrec) {
-        leftPosRange = PosRange(
-          this.lex.fileName,
+        leftPosRange = PosRange::create(
+          this.lex,
           tok.pos.start,
           this.lex.getLastPos(),
         );
@@ -535,8 +543,8 @@ extension class Parser {
     | TKExclamationMark() ->
       (_assoc, opPrec) = precedence[TKIncr()];
       if (prec <= opPrec) {
-        leftPosRange = PosRange(
-          this.lex.fileName,
+        leftPosRange = PosRange::create(
+          this.lex,
           tok.pos.start,
           this.lex.getLastPos(),
         );
@@ -566,8 +574,8 @@ extension class Parser {
       if (this.lex.isEqTok(binopTok, "instanceof")) {
         (_assoc, opPrec) = instanceofPrec;
         if (prec <= opPrec) {
-          leftPosRange = PosRange(
-            this.lex.fileName,
+          leftPosRange = PosRange::create(
+            this.lex,
             tok.pos.start,
             this.lex.getLastPos(),
           );
@@ -593,8 +601,8 @@ extension class Parser {
       if (binopTok.kind is TKQuestionMark()) {
         (_assoc, opPrec) = precedence[binopTok.kind];
         if (prec <= opPrec) {
-          leftPosRange = PosRange(
-            this.lex.fileName,
+          leftPosRange = PosRange::create(
+            this.lex,
             tok.pos.start,
             this.lex.getLastPos(),
           );
@@ -619,7 +627,11 @@ extension class Parser {
         _ = this.lex.next();
         !mutableLeft = Get(
           Expr(
-            PosRange(this.lex.fileName, tok.pos.start, this.lex.getLastPos()),
+            PosRange::create(
+              this.lex,
+              tok.pos.start,
+              this.lex.getLastPos(),
+            ),
             mutableLeft,
           ),
           this.expr(0),

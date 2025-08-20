@@ -1940,7 +1940,7 @@ fun unionTTuple(
   };
   if (tuple1.tuple.size() < tuple2.tuple.size()) {
     for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
-      posEnd = PosRange(tuple1.pos.fileName, tuple1.pos.end, tuple1.pos.end);
+      posEnd = tuple1.pos.withStartEnd(tuple1.pos.end, tuple1.pos.end);
       result.push(
         TType::union(
           subst,
@@ -1952,7 +1952,7 @@ fun unionTTuple(
     }
   } else if (tuple2.tuple.size() < tuple1.tuple.size()) {
     for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
-      posEnd = PosRange(tuple2.pos.fileName, tuple2.pos.end, tuple2.pos.end);
+      posEnd = tuple2.pos.withStartEnd(tuple2.pos.end, tuple2.pos.end);
       result.push(
         TType::union(
           subst,

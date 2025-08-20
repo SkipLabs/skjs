@@ -78,7 +78,7 @@ extension class Parser {
         | Some(x) -> x
         };
         Name(
-          PosRange(this.lex.fileName, start, nbr.pos.end),
+          PosRange::create(this.lex, start, nbr.pos.end),
           "-" + this.lex.getStrTok(nbr),
         )
       | TKNumber()
@@ -277,8 +277,8 @@ extension class Parser {
   mutable fun getFieldType(modifiers: Modifiers): FieldType {
     fieldGetSet = this.isGetSet();
     fieldName = this.getSymbol();
-    fieldPos = PosRange(
-      this.lex.fileName,
+    fieldPos = PosRange::create(
+      this.lex,
       this.lex.getLastPos(),
       this.lex.getLastPos(),
     );
@@ -450,7 +450,7 @@ extension class Parser {
     start = tok.pos.start;
     def_ = this.defHelper_(topLevel);
     end = this.lex.lastTok.fromSome().pos.end;
-    Def(PosRange(this.lex.fileName, start, end), def_)
+    Def(PosRange::create(this.lex, start, end), def_)
   }
 
   // Internal definition parsing implementation
@@ -1102,7 +1102,7 @@ extension class Parser {
         };
         paramName = this.paramNames();
         end = this.lex.lastTok.fromSome().pos.end;
-        pos = PosRange(this.lex.fileName, start, end);
+        pos = PosRange::create(this.lex, start, end);
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           Some(this.lex.next().fromSome().pos)
         } else {
@@ -1146,8 +1146,8 @@ extension class Parser {
       this.expect(TKColon());
       retTypeTok = this.lex.peek();
       retType = this.type(0);
-      retPos = PosRange(
-        this.lex.fileName,
+      retPos = PosRange::create(
+        this.lex,
         retTypeTok.fromSome().pos.start,
         this.lex.lastTok.fromSome().pos.end,
       );
@@ -1158,7 +1158,7 @@ extension class Parser {
       | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
       | Some(x) -> x.pos.start
       };
-      (PosRange(this.lex.fileName, start, end), None())
+      (PosRange::create(this.lex, start, end), None())
     };
     body = if (parseBlock) {
       bodyTok = this.lex.peek() match {
@@ -1177,7 +1177,7 @@ extension class Parser {
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
     FunDef{
-      pos => PosRange(this.lex.fileName, funStart, funEnd),
+      pos => PosRange::create(this.lex, funStart, funEnd),
       isAsync,
       modifiers => methodModifiers,
       tparams => tparams,

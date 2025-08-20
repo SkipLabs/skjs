@@ -4,7 +4,7 @@
 
 module SKJS;
 
-base class SymbolPos {
+base class SymbolicPos uses Orderable {
   children =
   | SPTopLevel()
   | SPClass(className: String)
@@ -13,7 +13,7 @@ base class SymbolPos {
 }
 
 mutable class Lexer{
-  mutable currentSymbol: SymbolPos = SPTopLevel(),
+  mutable currentSymbol: SymbolicPos = SPTopLevel(),
   mutable currentSymbolPos: Int = -1,
 
   // The name of the file that we are lexing
@@ -216,7 +216,7 @@ mutable class Lexer{
     pos = start;
     if (pos >= this.contents.size()) return None();
     mkToken = (kind: TokenKind) -> {
-      Some(Token(kind, PosRange(this.fileName, Pos(start), Pos(pos))))
+      Some(Token(kind, PosRange::create(this, Pos(start), Pos(pos))))
     };
     this.contents[pos] match {
     | '(' ->
@@ -384,7 +384,7 @@ mutable class Lexer{
         };
         break void;
       };
-      Some(Token(TKVar(), PosRange(this.fileName, Pos(start), Pos(pos))))
+      Some(Token(TKVar(), PosRange::create(this, Pos(start), Pos(pos))))
 
     | c if (c >= '0' && c <= '9') ->
       loop {

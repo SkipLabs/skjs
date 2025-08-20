@@ -22,8 +22,8 @@ extension class Parser {
     };
     pat_ = this.pattern_();
     Pattern(
-      PosRange(
-        this.lex.fileName,
+      PosRange::create(
+        this.lex,
         start.pos.start,
         this.lex.lastTok.fromSome().pos.end,
       ),

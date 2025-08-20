@@ -50,7 +50,7 @@ extension class Parser {
     type = this.type_(prec);
     end = this.lex.lastTok.fromSome().pos.end;
     this.lex.!inType = inTypeCopy;
-    Type(PosRange(this.lex.fileName, start, end), type)
+    Type(PosRange::create(this.lex, start, end), type)
   }
 
   mutable fun type_(prec: Int): Type_ {
@@ -179,7 +179,7 @@ extension class Parser {
             _ = this.lex.next();
             dotName = this.getName();
             !name = Name(
-              PosRange(this.lex.fileName, name.pos.start, dotName.pos.end),
+              PosRange::create(this.lex, name.pos.start, dotName.pos.end),
               name.value + "." + dotName.value,
             );
           };
@@ -220,7 +220,7 @@ extension class Parser {
           _ = this.lex.next();
           dotName = this.getName();
           !name = Name(
-            PosRange(this.lex.fileName, name.pos.start, dotName.pos.end),
+            PosRange::create(this.lex, name.pos.start, dotName.pos.end),
             name.value + "." + dotName.value,
           );
         };
@@ -274,8 +274,8 @@ extension class Parser {
         _ = this.lex.next();
         if (this.lex.peekKind() is Some(TKCloseSquare())) {
           _ = this.lex.next();
-          leftRange = PosRange(
-            this.lex.fileName,
+          leftRange = PosRange::create(
+            this.lex,
             tok.pos.start,
             this.lex.getLastPos(),
           );
@@ -283,8 +283,8 @@ extension class Parser {
           continue;
         };
         ty = this.type(0);
-        leftRange = PosRange(
-          this.lex.fileName,
+        leftRange = PosRange::create(
+          this.lex,
           tok.pos.start,
           this.lex.getLastPos(),
         );
@@ -299,8 +299,8 @@ extension class Parser {
       this.lex.peekKind() match {
       | Some(TKVar()) if (this.lex.peekStr() == Some("is")) ->
         _ = this.lex.next();
-        leftRange = PosRange(
-          this.lex.fileName,
+        leftRange = PosRange::create(
+          this.lex,
           tok.pos.start,
           this.lex.getLastPos(),
         );
@@ -316,15 +316,15 @@ extension class Parser {
           ty2 = this.type(0);
           this.expect(TKColon());
           ty3 = this.type(assignPrec);
-          leftRange = PosRange(
-            this.lex.fileName,
+          leftRange = PosRange::create(
+            this.lex,
             tok.pos.start,
             this.lex.getLastPos(),
           );
           !left = TAExtendsQuestion(Type(leftRange, left), ty1, ty2, ty3);
         } else {
-          leftRange = PosRange(
-            this.lex.fileName,
+          leftRange = PosRange::create(
+            this.lex,
             tok.pos.start,
             this.lex.getLastPos(),
           );
@@ -341,8 +341,8 @@ extension class Parser {
         (assoc, bopPrec) = precedence[bop];
         if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
         if (bopPrec == prec) {
-          leftRange = PosRange(
-            this.lex.fileName,
+          leftRange = PosRange::create(
+            this.lex,
             tok.pos.start,
             this.lex.getLastPos(),
           );
@@ -355,8 +355,8 @@ extension class Parser {
           continue;
         };
         if (bopPrec > prec) {
-          leftRange = PosRange(
-            this.lex.fileName,
+          leftRange = PosRange::create(
+            this.lex,
             tok.pos.start,
             this.lex.getLastPos(),
           );
