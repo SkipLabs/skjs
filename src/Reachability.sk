@@ -75,7 +75,7 @@ class CGNode private (
   fun compare(other: SKStore.Key): Order {
     other match {
     | CGNode(_otherId, otherHash) -> this.precomputed_hash.compare(otherHash)
-    | _ -> LT()
+    | _ -> invariant_violation("CGNode comparison to non-CGNode Key")
     }
   }
 }
