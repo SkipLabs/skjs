@@ -241,9 +241,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       | Success(checker) -> checker
       };
 
-      // Just print out the reverse callgraph for now; should actually compute the set of affected files given changes found by frontend
-      if (logAffectedFiles) CallGraph::create(context).debug(context);
-
       _ = applyMap(
         getInitDir(context),
         SKStore.IID::keyType,
@@ -286,6 +283,13 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             )
         },
       );
+
+      if (logAffectedFiles) {
+        context.update();
+        callgraph = CallGraph::create(context);
+        (_addedDefs, removedDefs) = files.getChangedDefs(context);
+        callgraph.affectedFiles(context, removedDefs).each(print_string);
+      };
 
       SKStore.CStop(None())
     },
