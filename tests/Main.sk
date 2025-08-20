@@ -218,7 +218,12 @@ fun testDirectory(
 ): void {
   dir = Path.resolve(dirName);
   srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
-    if (f.endsWith(".ts")) Some(Path.join(dir, f)) else None()
+    if (f.endsWith(".ts")) Some(Path.join(dir, f)) else {
+      if (f != "." && f != "..") {
+        invariant_violation(`Unexpected non-ts file ${f} in ${dir}`)
+      };
+      None()
+    }
   );
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
