@@ -812,6 +812,18 @@ extension class Parser {
     defs = mutable Vector[];
     loop {
       pat = this.pattern();
+      
+      // Track top-level constants as symbols
+      if (kind is VDKConst() && this.getCurrentSymbol() is SPTopLevel()) {
+        pat.value match {
+        | PVar(name) ->
+          constSymbol = SPConstant(name.value);
+          // Use the relative position since we're at top level (SPTopLevel)
+          this.recordSymbolDefinition(constSymbol, name.posRange.relStart.value);
+        | _ -> void // Only track simple variable patterns
+        }
+      };
+      
       type = if (this.lex.peekKind() is Some(TKColon())) {
         this.expect(TKColon());
         Some(this.type(0));

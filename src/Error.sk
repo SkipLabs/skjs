@@ -89,6 +89,7 @@ class DuplicateSymbolError(
     | SPClass(name) -> `class '${name}'`
     | SPFunction(name) -> `function '${name}'`
     | SPMethod(className, methodName) -> `method '${className}.${methodName}'`
+    | SPConstant(name) -> `constant '${name}'`
     };
     resolver.relPosRange(this.newPos).toString() +
       "\n" +

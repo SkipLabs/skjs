@@ -10,6 +10,7 @@ base class SymbolicPos uses Orderable, Hashable {
   | SPClass(className: String)
   | SPMethod(className: String, metName: String)
   | SPFunction(funName: String)
+  | SPConstant(constName: String)
 }
 
 mutable class Lexer{
