@@ -568,6 +568,12 @@ extension class Parser {
                 this.lex.peekKind() is Some(TKLessThan())
             })
           ) {
+            if (default is None()) {
+              this.error(
+                this.lex.posStart(tok),
+                NonDefaultAnonymousFunctionExport(),
+              )
+            };
             _ = this.lex.next();
             Export(
               isType,
