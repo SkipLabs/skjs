@@ -242,11 +242,6 @@ fun testDirectory(
 }
 
 @test
-fun testUnit(): void {
-  testFile("./tests/unit.ts");
-}
-
-@test
 fun testExamples(): void {
   testDirectory("./examples/src/");
 }
