@@ -47,15 +47,23 @@ value class PosRange private (
   fileName: String,
   start: Pos,
   end: Pos,
+  relStart: Pos,
+  relEnd: Pos,
 ) uses XXHashable, Orderable {
-  const none: this = PosRange(SPTopLevel(), "", Pos::none, Pos::none);
+  const none: this = PosRange(SPTopLevel(), "", Pos::none, Pos::none, Pos::none, Pos::none);
 
   static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {
-    static(lexer.currentSymbol, lexer.fileName, start, end)
+    symbolPos = lexer.currentSymbolPos;
+    relativeStart = Pos(start.value - symbolPos);
+    relativeEnd = Pos(end.value - symbolPos);
+    static(lexer.currentSymbol, lexer.fileName, start, end, relativeStart, relativeEnd)
   }
 
   fun withStartEnd(start: Pos, end: Pos): this {
-    this with {start, end}
+    symbolPos = this.relStart.value - this.start.value + start.value;
+    relativeStart = Pos(start.value - symbolPos);
+    relativeEnd = Pos(end.value - symbolPos);
+    this with {start, end, relStart => relativeStart, relEnd => relativeEnd}
   }
 
   fun xxhash(ignorePos: Bool = false): XXHash {
