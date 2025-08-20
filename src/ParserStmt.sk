@@ -167,9 +167,19 @@ extension class Parser {
           this.lex.peekKind() is Some(TKSemi()) ||
           this.lex.peekKind() is Some(TKCloseCurly())
         ) {
-          return Some(Return(PosRange::create(this.lex, retTok.posStart, retTok.posEnd), None()));
+          return Some(
+            Return(
+              PosRange::create(this.lex, retTok.posStart, retTok.posEnd),
+              None(),
+            ),
+          );
         };
-        Some(Return(PosRange::create(this.lex, retTok.posStart, retTok.posEnd), Some(this.expr(0))))
+        Some(
+          Return(
+            PosRange::create(this.lex, retTok.posStart, retTok.posEnd),
+            Some(this.expr(0)),
+          ),
+        )
       | "throw" ->
         _ = this.lex.next();
         Some(Throw(this.expr(0)))
