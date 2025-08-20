@@ -40,10 +40,10 @@ extension class Parser {
     this.lex.!inType = false;
     start = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(tok) -> tok.pos.start
+    | Some(tok) -> tok.posStart
     };
     e_ = this.expr_(prec);
-    end = this.lex.lastTok.fromSome().pos.end;
+    end = this.lex.lastTok.fromSome().posEnd;
     this.lex.!inType = inTypeCopy;
     Expr(PosRange::create(this.lex, start, end), e_)
   }
@@ -259,7 +259,7 @@ extension class Parser {
       | "await" -> Await(this.expr(0))
       | "typeof" -> TypeOf(this.expr(typeOfPrec))
       | "keyof" -> KeyOf(this.type(0))
-      | _ -> Var(Name(tok.pos, str))
+      | _ -> Var(Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), str))
       }
     | TKQuote() -> EString(SKQuote(), this.lex.getStrTok(tok))
     | TKDoubleQuote() -> EString(SKDoubleQuote(), this.lex.getStrTok(tok))
@@ -291,7 +291,7 @@ extension class Parser {
       ty = this.type(0);
       this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-      | Some(Token(TKGreaterThan(), _)) -> void
+      | Some(Token(TKGreaterThan(), _, _)) -> void
       | Some(unexpectedTok) ->
         this.error(
           this.lex.posStart(unexpectedTok),
@@ -324,7 +324,7 @@ extension class Parser {
     if (bopPrec == prec) {
       leftPosRange = PosRange::create(
         this.lex,
-        tok.pos.start,
+        tok.posStart,
         this.lex.getLastPos(),
       );
       _ = this.lex.next();
@@ -344,7 +344,7 @@ extension class Parser {
     } else if (bopPrec > prec) {
       leftPosRange = PosRange::create(
         this.lex,
-        tok.pos.start,
+        tok.posStart,
         this.lex.getLastPos(),
       );
       _ = this.lex.next();
@@ -422,7 +422,7 @@ extension class Parser {
     if (this.lex.isEqTok(binopTok, "as")) {
       leftPosRange = PosRange::create(
         this.lex,
-        tok.pos.start,
+        tok.posStart,
         this.lex.getLastPos(),
       );
       _ = this.lex.next();
@@ -436,7 +436,7 @@ extension class Parser {
             Expr(
               PosRange::create(
                 this.lex,
-                tok.pos.start,
+                tok.posStart,
                 this.lex.getLastPos(),
               ),
               result,
@@ -492,7 +492,7 @@ extension class Parser {
         Expr(
           PosRange::create(
             this.lex,
-            tok.pos.start,
+            tok.posStart,
             this.lex.getLastPos(),
           ),
           mutableLeft,
@@ -519,7 +519,7 @@ extension class Parser {
       if (prec <= opPrec) {
         leftPosRange = PosRange::create(
           this.lex,
-          tok.pos.start,
+          tok.posStart,
           this.lex.getLastPos(),
         );
         _ = this.lex.next();
@@ -532,7 +532,7 @@ extension class Parser {
       if (prec <= opPrec) {
         leftPosRange = PosRange::create(
           this.lex,
-          tok.pos.start,
+          tok.posStart,
           this.lex.getLastPos(),
         );
         _ = this.lex.next();
@@ -545,7 +545,7 @@ extension class Parser {
       if (prec <= opPrec) {
         leftPosRange = PosRange::create(
           this.lex,
-          tok.pos.start,
+          tok.posStart,
           this.lex.getLastPos(),
         );
         _ = this.lex.next();
@@ -576,7 +576,7 @@ extension class Parser {
         if (prec <= opPrec) {
           leftPosRange = PosRange::create(
             this.lex,
-            tok.pos.start,
+            tok.posStart,
             this.lex.getLastPos(),
           );
           _ = this.lex.next();
@@ -603,7 +603,7 @@ extension class Parser {
         if (prec <= opPrec) {
           leftPosRange = PosRange::create(
             this.lex,
-            tok.pos.start,
+            tok.posStart,
             this.lex.getLastPos(),
           );
           _ = this.lex.next();
@@ -629,7 +629,7 @@ extension class Parser {
           Expr(
             PosRange::create(
               this.lex,
-              tok.pos.start,
+              tok.posStart,
               this.lex.getLastPos(),
             ),
             mutableLeft,
@@ -805,8 +805,8 @@ extension class Parser {
     originalLastTok = this.lex.lastTok;
 
     // Reset to start of template content (after opening backtick)
-    templateStart = tok.pos.start.value + 1; // Skip opening `
-    templateEnd = tok.pos.end.value - 1; // Skip closing `
+    templateStart = tok.posStart.value + 1; // Skip opening `
+    templateEnd = tok.posEnd.value - 1; // Skip closing `
     this.lex.!pos = templateStart;
     this.lex.!lastTok = None();
 
@@ -839,7 +839,7 @@ extension class Parser {
         loop {
           if (pos >= templateEnd) {
             this.error(
-              EPChar(this.lex.fileName, tok.pos.start),
+              EPChar(this.lex.fileName, tok.posStart),
               UnterminatedExpr(),
             );
           };

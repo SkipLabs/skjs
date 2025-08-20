@@ -54,10 +54,10 @@ extension class Parser {
   mutable fun stmt(): ?Stmt {
     start = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
-    | Some(tok) -> tok.pos.start
+    | Some(tok) -> tok.posStart
     };
     result = this.stmt_();
-    end = this.lex.lastTok.fromSome().pos.end;
+    end = this.lex.lastTok.fromSome().posEnd;
     result match {
     | None() -> None()
     | Some(x) -> Some(Stmt(PosRange::create(this.lex, start, end), x))
@@ -167,9 +167,9 @@ extension class Parser {
           this.lex.peekKind() is Some(TKSemi()) ||
           this.lex.peekKind() is Some(TKCloseCurly())
         ) {
-          return Some(Return(retTok.pos, None()));
+          return Some(Return(PosRange::create(this.lex, retTok.posStart, retTok.posEnd), None()));
         };
-        Some(Return(retTok.pos, Some(this.expr(0))))
+        Some(Return(PosRange::create(this.lex, retTok.posStart, retTok.posEnd), Some(this.expr(0))))
       | "throw" ->
         _ = this.lex.next();
         Some(Throw(this.expr(0)))

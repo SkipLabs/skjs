@@ -24,8 +24,8 @@ extension class Parser {
     Pattern(
       PosRange::create(
         this.lex,
-        start.pos.start,
-        this.lex.lastTok.fromSome().pos.end,
+        start.posStart,
+        this.lex.lastTok.fromSome().posEnd,
       ),
       pat_,
     )
