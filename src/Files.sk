@@ -12,7 +12,10 @@ base class ParsedResult {
   | PRError(String)
 }
 
-class ParsedResultFile(value: ParsedResult) extends SKStore.File
+class ParsedResultFile(
+  value: ParsedResult,
+  symbols: Map<SymbolicPos, Int>,
+) extends SKStore.File
 const parseErrorKey: SKStore.SID = SKStore.SID("");
 
 const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
@@ -144,14 +147,22 @@ class Files(
         try {
           writer.setArray(
             key,
-            Array[ParsedResultFile(PROk(parser.toplevelDefs()))],
+            Array[
+              ParsedResultFile(
+                PROk(parser.toplevelDefs()),
+                lexer.getAllSymbolLocations(),
+              ),
+            ],
           )
         } catch {
         | ErrorExn(err) ->
           writer.setArray(
             SKStore.SID(""),
             Array[
-              ParsedResultFile(PRError(err.toString(context, newLinesMap))),
+              ParsedResultFile(
+                PRError(err.toString(context, newLinesMap)),
+                lexer.getAllSymbolLocations(),
+              ),
             ],
           )
         | exn -> throw exn

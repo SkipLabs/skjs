@@ -68,9 +68,9 @@ class LexingError extends SinglePosError<LexingKind>
 /***************************************************************************/
 
 class DuplicateSymbolError(
-  symbol: SymbolicPos, 
-  existingPos: PosRange, 
-  newPos: PosRange
+  symbol: SymbolicPos,
+  existingPos: PosRange,
+  newPos: PosRange,
 ) extends Error {
   fun toString(
     context: mutable SKStore.Context,
@@ -85,10 +85,12 @@ class DuplicateSymbolError(
     | SPFunction(name) -> `function '${name}'`
     | SPMethod(className, methodName) -> `method '${className}.${methodName}'`
     };
-    resolver.relPosRange(this.newPos).toString() + "\n" +
-    `Error: ${symbolName} is already defined\n` +
-    resolver.relPosRange(this.existingPos).toString() + "\n" +
-    `Note: ${symbolName} was first defined here`
+    resolver.relPosRange(this.newPos).toString() +
+      "\n" +
+      `Error: ${symbolName} is already defined\n` +
+      resolver.relPosRange(this.existingPos).toString() +
+      "\n" +
+      `Note: ${symbolName} was first defined here`
   }
 }
 
