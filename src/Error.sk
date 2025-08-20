@@ -289,6 +289,12 @@ class MissingParameterName() extends ParsingKind {
   }
 }
 
+class NonDefaultAnonymousFunctionExport() extends ParsingKind {
+  fun toString(): String {
+    "An anonymous function can be exported only if it is the default export"
+  }
+}
+
 /***************************************************************************/
 /* Name resolution error */
 /***************************************************************************/
