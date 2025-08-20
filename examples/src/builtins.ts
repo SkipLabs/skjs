@@ -377,3 +377,7 @@ declare const BigInt: {
   asIntN(width: number, bigint: bigint): bigint;
   asUintN(width: number, bigint: bigint): bigint;
 }
+
+declare class Error {
+  constructor(cause?: string);
+}
