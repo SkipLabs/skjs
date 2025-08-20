@@ -843,6 +843,11 @@ extension class Parser {
   // Parse class definitions
   mutable fun class_(kind: ClassKind): Class {
     name = this.getName();
+    // Set class context
+    prevSymbol = this.getCurrentSymbol();
+    prevPos = this.lex.currentSymbolPos;
+    this.setSymbolContext(SPClass(name.value), this.lex.pos);
+    
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
       this.typeDefsParams();
@@ -881,6 +886,10 @@ extension class Parser {
     };
     this.expect(TKOpenCurly());
     fields = this.objectFields();
+    
+    // Restore previous context
+    this.setSymbolContext(prevSymbol, prevPos);
+    
     Class{kind, name, extends_, implements, tparams, fields}
   }
 
@@ -1002,21 +1011,31 @@ extension class Parser {
     parseBlock: Bool,
     isTopLevel: Bool,
   ): FunDef {
-    funName = FNNormal(this.getName());
+    funName = this.getName();
+    // Set function context
+    prevSymbol = this.getCurrentSymbol();
+    prevPos = this.lex.currentSymbolPos;
+    this.setSymbolContext(SPFunction(funName.value), this.lex.pos);
+    
     cgNode = if (isTopLevel) {
-      Some(CGNode::create(TopLevelFunDef(funName, this.lex.fileName)))
+      Some(CGNode::create(TopLevelFunDef(FNNormal(funName), this.lex.fileName)))
     } else {
       None()
     };
-    this.methodDef(
+    
+    result = this.methodDef(
       isAsync,
       Modifiers::empty(),
       None(),
-      funName,
+      FNNormal(funName),
       parseBlock,
       None(),
       cgNode,
-    )
+    );
+    
+    // Restore previous context
+    this.setSymbolContext(prevSymbol, prevPos);
+    result
   }
 
   // Parse method definitions
@@ -1050,6 +1069,17 @@ extension class Parser {
     isOptional: ?PosRange,
     cgNode: ?CGNode,
   ): FunDef {
+    // Set method context based on current symbol and function name
+    prevSymbol = this.getCurrentSymbol();
+    prevPos = this.lex.currentSymbolPos;
+    (funName, this.getCurrentSymbol()) match {
+    | (Some(FNNormal(name)), SPClass(className)) ->
+      this.setSymbolContext(SPMethod(className, name.value), this.lex.pos)
+    | (Some(FNNormal(name)), _) ->
+      this.setSymbolContext(SPFunction(name.value), this.lex.pos)
+    | _ -> void // Keep current context for anonymous methods
+    };
+    
     funStart = this.lex.lastTok.fromSome().pos.end;
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
@@ -1143,6 +1173,9 @@ extension class Parser {
       FDBNone(this.lex.lastTok.fromSome().pos)
     };
     funEnd = this.lex.lastTok.fromSome().pos.end;
+    
+    // Restore previous context
+    this.setSymbolContext(prevSymbol, prevPos);
     FunDef{
       pos => PosRange(this.lex.fileName, funStart, funEnd),
       isAsync,
