@@ -4,7 +4,7 @@
 
 module SKJS;
 
-base class SymbolicPos uses Orderable {
+base class SymbolicPos uses Orderable, Hashable {
   children =
   | SPTopLevel()
   | SPClass(className: String)
@@ -15,6 +15,9 @@ base class SymbolicPos uses Orderable {
 mutable class Lexer{
   mutable currentSymbol: SymbolicPos = SPTopLevel(),
   mutable currentSymbolPos: Int = -1,
+
+  // Track unique symbol locations encountered during parsing
+  mutable symbolLocations: mutable Map<SymbolicPos, Int> = mutable Map[],
 
   // The name of the file that we are lexing
   fileName: String,
@@ -464,6 +467,33 @@ mutable class Lexer{
 
   readonly fun getLastPos(): Pos {
     this.lastTok.fromSome().pos.end
+  }
+
+  // Record a symbol location for tracking - only stores first occurrence
+  mutable fun recordSymbolLocation(symbol: SymbolicPos, position: Int): void {
+    this.symbolLocations.maybeGet(symbol) match {
+    | None() ->
+      this.symbolLocations.set(symbol, position)
+    | Some(_existingPos) ->
+      // Symbol already exists - keep the first occurrence, ignore subsequent ones
+      // This allows for TypeScript method overloads and interface redeclarations
+      void
+    }
+  }
+
+  // Get recorded location for a symbol
+  readonly fun getSymbolLocation(symbol: SymbolicPos): ?Int {
+    this.symbolLocations.maybeGet(symbol)
+  }
+
+  // Check if a symbol is already defined
+  readonly fun isSymbolDefined(symbol: SymbolicPos): Bool {
+    this.symbolLocations.maybeGet(symbol).isSome()
+  }
+
+  // Get all recorded symbols and their locations
+  readonly fun getAllSymbolLocations(): Map<SymbolicPos, Int> {
+    this.symbolLocations.chill()
   }
 }
 

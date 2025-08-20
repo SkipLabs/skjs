@@ -843,10 +843,12 @@ extension class Parser {
   // Parse class definitions
   mutable fun class_(kind: ClassKind): Class {
     name = this.getName();
-    // Set class context
+    // Record the class definition and set context
+    classSymbol = SPClass(name.value);
+    this.recordSymbolDefinition(classSymbol, name.posRange.start.value);
     prevSymbol = this.getCurrentSymbol();
     prevPos = this.lex.currentSymbolPos;
-    this.setSymbolContext(SPClass(name.value), this.lex.pos);
+    this.setSymbolContext(classSymbol, this.lex.pos);
     
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
@@ -1012,10 +1014,12 @@ extension class Parser {
     isTopLevel: Bool,
   ): FunDef {
     funName = this.getName();
-    // Set function context
+    // Record the function definition and set context
+    funcSymbol = SPFunction(funName.value);
+    this.recordSymbolDefinition(funcSymbol, funName.posRange.start.value);
     prevSymbol = this.getCurrentSymbol();
     prevPos = this.lex.currentSymbolPos;
-    this.setSymbolContext(SPFunction(funName.value), this.lex.pos);
+    this.setSymbolContext(funcSymbol, this.lex.pos);
     
     cgNode = if (isTopLevel) {
       Some(CGNode::create(TopLevelFunDef(FNNormal(funName), this.lex.fileName)))
@@ -1069,14 +1073,18 @@ extension class Parser {
     isOptional: ?PosRange,
     cgNode: ?CGNode,
   ): FunDef {
-    // Set method context based on current symbol and function name
+    // Record method/function definition and set context
     prevSymbol = this.getCurrentSymbol();
     prevPos = this.lex.currentSymbolPos;
     (funName, this.getCurrentSymbol()) match {
     | (Some(FNNormal(name)), SPClass(className)) ->
-      this.setSymbolContext(SPMethod(className, name.value), this.lex.pos)
+      methodSymbol = SPMethod(className, name.value);
+      this.recordSymbolDefinition(methodSymbol, name.posRange.start.value);
+      this.setSymbolContext(methodSymbol, this.lex.pos)
     | (Some(FNNormal(name)), _) ->
-      this.setSymbolContext(SPFunction(name.value), this.lex.pos)
+      funcSymbol = SPFunction(name.value);
+      this.recordSymbolDefinition(funcSymbol, name.posRange.start.value);
+      this.setSymbolContext(funcSymbol, this.lex.pos)
     | _ -> void // Keep current context for anonymous methods
     };
     

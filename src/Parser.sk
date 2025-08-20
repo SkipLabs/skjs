@@ -11,9 +11,29 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
     this.lex.!currentSymbolPos = pos;
   }
 
+  // Record a symbol definition (only call this when a symbol is actually defined)
+  mutable fun recordSymbolDefinition(symbol: SymbolicPos, pos: Int): void {
+    this.lex.recordSymbolLocation(symbol, pos);
+  }
+
   // Get current symbol context from the lexer
   readonly fun getCurrentSymbol(): SymbolicPos {
     this.lex.currentSymbol
+  }
+
+  // Get all recorded symbol locations
+  readonly fun getAllSymbolLocations(): Map<SymbolicPos, Int> {
+    this.lex.getAllSymbolLocations()
+  }
+
+  // Get location for a specific symbol
+  readonly fun getSymbolLocation(symbol: SymbolicPos): ?Int {
+    this.lex.getSymbolLocation(symbol)
+  }
+
+  // Check if a symbol is already defined
+  readonly fun isSymbolDefined(symbol: SymbolicPos): Bool {
+    this.lex.isSymbolDefined(symbol)
   }
 }
 
