@@ -266,7 +266,7 @@ extension class Parser {
       }
     | TKQuote() -> EString(SKQuote(), this.lex.getStrTok(tok))
     | TKDoubleQuote() -> EString(SKDoubleQuote(), this.lex.getStrTok(tok))
-    | TKBackTick() -> invariant_violation("TODO: support for backtick strings")
+    | TKTemplateStart() -> this.parseTemplate(tok)
     | subTok @ TKAddition()
     | subTok @ TKSubtraction() ->
       (_assoc, bopPrec) = precedence[subTok];
@@ -747,6 +747,71 @@ extension class Parser {
       }
     };
     args.toArray()
+  }
+
+  // Parse template literal with incremental lexing approach
+  mutable fun parseTemplate(tok: Token): Expr_ {
+    elements = mutable Vector<TemplateElement>[];
+    
+    // Add first text segment from TKTemplateStart
+    text = this.lex.getStrTok(tok);
+    if (!text.isEmpty()) {
+      elements.push(TEText(text));
+    };
+    
+    // Now expect either TKOpenCurly (for ${) or TKTemplateEnd
+    loop {
+      nextTok = this.lex.peek() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+      | Some(x) -> x
+      };
+      
+      nextTok.kind match {
+      | TKTemplateEnd() ->
+        // End of template literal
+        _ = this.lex.next();
+        endText = this.lex.getStrTok(nextTok);
+        if (!endText.isEmpty()) {
+          elements.push(TEText(endText));
+        };
+        break void
+      | TKOpenCurly() ->
+        // Start of expression interpolation
+        _ = this.lex.next();
+        expr = this.expr(0);
+        elements.push(TEExpr(expr));
+        
+        // After expression, expect TKTemplateMiddle or TKTemplateEnd
+        middleTok = this.lex.peek() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+        | Some(x) -> x
+        };
+        
+        middleTok.kind match {
+        | TKTemplateMiddle() ->
+          _ = this.lex.next();
+          middleText = this.lex.getStrTok(middleTok);
+          if (!middleText.isEmpty()) {
+            elements.push(TEText(middleText));
+          };
+          // Continue loop for next interpolation
+          continue
+        | TKTemplateEnd() ->
+          _ = this.lex.next();
+          endText = this.lex.getStrTok(middleTok);
+          if (!endText.isEmpty()) {
+            elements.push(TEText(endText));
+          };
+          break void
+        | _ ->
+          this.error(this.lex.posStart(middleTok), UnexpectedToken())
+        }
+      | _ ->
+        this.error(this.lex.posStart(nextTok), UnexpectedToken())
+      }
+    };
+    
+    ETemplate(elements.toArray())
   }
 
   // Parse object field in expression context

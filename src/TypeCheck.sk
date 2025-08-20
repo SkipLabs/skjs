@@ -1227,6 +1227,8 @@ class TypeChecker{
       )
     | EString(SKDoubleQuote(), _) ->
       TType::single(pos, TPrimValue(TString(), None(), pos))
+    | ETemplate(_) ->
+      TType::single(pos, TPrimValue(TString(), None(), pos))
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
       TType::single(pos, TPrimValue(TBool(), None(), pos))

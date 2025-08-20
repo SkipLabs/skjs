@@ -161,6 +161,7 @@ value class StmtTermination private {
     | Var(_name)
     | Spread(_name)
     | EString(_, _)
+    | ETemplate(_elements)
     | KeyOf(_ty)
     | Closure(_args, _retTy, _body)
     | Regexp(_) ->

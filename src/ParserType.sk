@@ -61,7 +61,7 @@ extension class Parser {
     left = tok.kind match {
     | TKQuote() -> TAStringLiteral(this.lex.getStrTok(tok))
     | TKDoubleQuote() -> TAStringLiteral(this.lex.getStrTok(tok))
-    | TKBackTick() -> TATemplate(this.lex.getStrTok(tok))
+    | TKTemplateStart() -> TATemplate(this.lex.getStrTok(tok))
     | TKBigInt() -> TABigIntLiteral(this.lex.getStrTok(tok))
     | TKNumber() -> TANumLiteral(this.lex.getStrTok(tok))
     | TKLessThan() ->

@@ -19,6 +19,9 @@ mutable class Lexer{
   // be lexed as the operator '>>'.
   mutable inType: Bool = false,
 
+  // Template literal nesting depth. > 0 means we're inside template literal(s)
+  mutable templateDepth: Int = 0,
+
   // The current position in the file
   mutable pos: Int = 0,
 
@@ -41,6 +44,8 @@ mutable class Lexer{
       contents => this.contents,
       pos => this.pos,
       lastTok => this.lastTok,
+      inType => this.inType,
+      templateDepth => this.templateDepth,
     }
   }
 
@@ -68,6 +73,9 @@ mutable class Lexer{
     | TKQuote() -> str.stripPrefix("'").stripSuffix("'").replace("\\'", "'")
     | TKDoubleQuote() ->
       str.stripPrefix("\"").stripSuffix("\"").replace("\\\"", "\"")
+    | TKTemplateStart() -> str.stripPrefix("`").stripSuffix("${")
+    | TKTemplateMiddle() -> str.stripPrefix("}").stripSuffix("${") 
+    | TKTemplateEnd() -> str.stripPrefix("}").stripSuffix("`")
     | _ -> str
     }
   }
@@ -102,6 +110,7 @@ mutable class Lexer{
     this.!pos = saved.pos;
     this.!lastTok = saved.lastTok;
     this.!inType = saved.inType;
+    this.!templateDepth = saved.templateDepth;
     result
   }
 
@@ -228,7 +237,33 @@ mutable class Lexer{
       mkToken(TKOpenCurly())
     | '}' ->
       !pos = pos + 1;
-      mkToken(TKCloseCurly())
+      if (this.templateDepth > 0) {
+        // We're closing an expression inside a template literal
+        // Continue reading template content until next ${, `, or end
+        loop {
+          if (pos >= this.contents.size()) {
+            this.error(pos, UnterminatedString());
+          };
+          c = this.contents[pos];
+          if (c == '\\') {
+            !pos = pos + 2;
+            continue
+          };
+          if (c == '$' && pos + 1 < this.contents.size() && this.contents[pos + 1] == '{') {
+            // Found next interpolation
+            break mkToken(TKTemplateMiddle())
+          } else if (c == '`') {
+            // End of template literal
+            !pos = pos + 1;
+            break mkToken(TKTemplateEnd())
+          } else {
+            !pos = pos + 1;
+            continue
+          }
+        }
+      } else {
+        mkToken(TKCloseCurly())
+      }
 
     | '\'' ->
       !pos = pos + 1;
@@ -271,7 +306,9 @@ mutable class Lexer{
       mkToken(TKDoubleQuote())
 
     | '`' ->
+      // Starting a template literal (possibly nested)
       !pos = pos + 1;
+      // Read template content until ${, `, or end
       loop {
         if (pos >= this.contents.size()) {
           this.error(pos, UnterminatedString());
@@ -281,41 +318,18 @@ mutable class Lexer{
           !pos = pos + 2;
           continue
         };
-        if (c == '$') {
+        if (c == '$' && pos + 1 < this.contents.size() && this.contents[pos + 1] == '{') {
+          // Found interpolation - return template start token
+          break mkToken(TKTemplateStart())
+        } else if (c == '`') {
+          // End of template literal
           !pos = pos + 1;
-          if (pos >= this.contents.size()) {
-            this.error(pos, UnterminatedString());
-          };
-          if (this.contents[pos] == '{') {
-            count = 0;
-            loop {
-              if (pos >= this.contents.size()) {
-                this.error(pos, UnterminatedString());
-              };
-              if (this.contents[pos] == '{') {
-                !count = count + 1;
-                !pos = pos + 1;
-                continue
-              };
-              if (this.contents[pos] == '}') {
-                !count = count - 1;
-                if (count == 0) break void;
-                !pos = pos + 1;
-                continue;
-              };
-              !pos = pos + 1;
-            }
-          } else {
-            continue
-          };
-        };
-        if (c == '`') {
+          break mkToken(TKTemplateEnd())
+        } else {
           !pos = pos + 1;
-          break void;
-        };
-        !pos = pos + 1;
-      };
-      mkToken(TKBackTick())
+          continue
+        }
+      }
 
     | '.' ->
       !pos = pos + 1;
@@ -446,6 +460,12 @@ mutable class Lexer{
     tokOpt match {
     | None() -> tokOpt
     | Some(tok) ->
+      // Update template depth based on token type
+      tok.kind match {
+      | TKTemplateStart() -> this.!templateDepth = this.templateDepth + 1
+      | TKTemplateEnd() -> this.!templateDepth = this.templateDepth - 1
+      | _ -> void
+      };
       this.!pos = tok.posRange.end.value;
       tokOpt
     }

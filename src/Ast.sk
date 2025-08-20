@@ -288,6 +288,7 @@ base class Expr_ {
   | Var(Name)
   | Spread(Name)
   | EString(StringKind, String)
+  | ETemplate(Array<TemplateElement>)
   | TypeOf(Expr)
   | KeyOf(Type)
   | Await(Expr)
@@ -312,6 +313,15 @@ base class ClosureBody {
   children =
   | CBExpr(Expr)
   | CBBlock(Array<Stmt>)
+}
+
+/***************************************************************************/
+// Template literal elements
+/***************************************************************************/
+base class TemplateElement {
+  children =
+  | TEText(String)
+  | TEExpr(Expr)
 }
 
 /***************************************************************************/

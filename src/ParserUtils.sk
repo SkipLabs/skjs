@@ -34,7 +34,9 @@ extension class Parser {
       tok.kind match {
       | TKQuote()
       | TKDoubleQuote()
-      | TKBackTick() ->
+      | TKTemplateStart()
+      | TKTemplateMiddle() 
+      | TKTemplateEnd() ->
         void
       | _ ->
         this.error(
