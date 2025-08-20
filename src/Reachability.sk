@@ -7,8 +7,8 @@ module SKJS;
 base class CGNode_ uses XXHashable, Show {
   children =
   | TopLevelFunDef(name: Symbol, fileName: String)
-  | Method(name: ?Symbol, _class: Name, fileName: String, _static: Bool)
-  | Constructor(_class: Name, fileName: String)
+  | Method(name: ?Symbol, class_: Name, fileName: String, static_: Bool)
+  | Constructor(class_: Name, fileName: String)
   | Toplevel(fileName: String)
   | ArrowTypeAnnot(fileName: String)
 
@@ -16,9 +16,9 @@ base class CGNode_ uses XXHashable, Show {
     this match {
     | TopLevelFunDef(name, file) ->
       "toplevel: " + name.getName() + " (" + file + ")"
-    | Method(name, _class, file, _static) ->
-      (if (_static) "static " else "") +
-        _class.value +
+    | Method(name, class_, file, static_) ->
+      (if (static_) "static " else "") +
+        class_.value +
         "." +
         (name match {
         | Some(n) -> n.getName()
@@ -27,8 +27,8 @@ base class CGNode_ uses XXHashable, Show {
         " (" +
         file +
         ")"
-    | Constructor(_class, file) ->
-      _class.value + ".constructor" + " (" + file + ")"
+    | Constructor(class_, file) ->
+      class_.value + ".constructor" + " (" + file + ")"
     | Toplevel(file) -> "top-level expr (" + file + ")"
     | ArrowTypeAnnot(file) -> "arrow-type annotation (" + file + ")"
     | AnonymousLambda(pos, _closure) ->
