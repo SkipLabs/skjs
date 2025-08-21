@@ -1310,10 +1310,10 @@ class Clauses private (
     }
   }
 
-  static fun fromTypeParam(tparam: TypeParam, stypes: ?STypes): this {
+  static fun fromTypeParam(tparam: TypeParam): this {
     static::single(
       TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
-      stypes,
+      None(),
     )
   }
 

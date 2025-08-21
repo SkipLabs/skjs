@@ -211,10 +211,7 @@ class TEnv{
     clauses: Array<TypeParam>,
   ): this {
     for (tparam in clauses) {
-      ty = TType::fromClauses(
-        tparam.name.pos,
-        Clauses::fromTypeParam(tparam, None()),
-      );
+      ty = TType::fromClauses(tparam.name.pos, Clauses::fromTypeParam(tparam));
       !this.subst[tparam.name.value] = (
         false,
         tparam.constraint match {
