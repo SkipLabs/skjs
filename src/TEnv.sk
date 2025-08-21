@@ -444,20 +444,12 @@ class TEnv{
     | TAStringLiteral(x) ->
       TType::single(
         pos,
-        TPrimValue(
-          TString(),
-          Some(ArrayValues::single((typeAst.pos, x))),
-          typeAst.pos,
-        ),
+        TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
       )
     | TANumLiteral(x) ->
       TType::single(
         pos,
-        TPrimValue(
-          TNum(),
-          Some(ArrayValues::single((typeAst.pos, x))),
-          typeAst.pos,
-        ),
+        TPrimValue(TNum(), Some(ArrayValues::single((pos, x))), pos),
       )
     | TATypeOf(expr) ->
       expr.value match {
@@ -473,15 +465,15 @@ class TEnv{
       TType::single(
         pos,
         kind match {
-        | TPKNull() -> TPrimVoid(TNull(), typeAst.pos)
-        | TPKBool() -> TPrimValue(TBool(), None(), typeAst.pos)
-        | TPKNum() -> TPrimValue(TNum(), None(), typeAst.pos)
-        | TPKString() -> TPrimValue(TString(), None(), typeAst.pos)
+        | TPKNull() -> TPrimVoid(TNull(), pos)
+        | TPKBool() -> TPrimValue(TBool(), None(), pos)
+        | TPKNum() -> TPrimValue(TNum(), None(), pos)
+        | TPKString() -> TPrimValue(TString(), None(), pos)
         },
       )
     | TAObject(fields) ->
       (algebraicBranchField, tFields) = this.createTFields(context, fields);
-      createObject(typeAst.pos, algebraicBranchField, tFields)
+      createObject(pos, algebraicBranchField, tFields)
     | TAInst(n @ Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
@@ -520,10 +512,7 @@ class TEnv{
       if (targs.size() != 1) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
-      TType::single(
-        pos,
-        TPromise(this.normalize(context, targs[0]), typeAst.pos),
-      )
+      TType::single(pos, TPromise(this.normalize(context, targs[0]), pos))
     | TAInst(Name(_, "never"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(pos, "Invalid number of type arguments")])
@@ -536,11 +525,7 @@ class TEnv{
       };
       TType::single(
         pos,
-        TPrimValue(
-          TBool(),
-          Some(ArrayValues::single((typeAst.pos, x))),
-          typeAst.pos,
-        ),
+        TPrimValue(TBool(), Some(ArrayValues::single((pos, x))), pos),
       )
     | TAInst(n, targs) ->
       if (this.tparams.containsKey(n.value)) {
@@ -631,7 +616,7 @@ class TEnv{
       types = typeVec.toArray();
       TType::single(
         pos,
-        TTuple(types.map(ty -> this.normalize(context, ty)), typeAst.pos),
+        TTuple(types.map(ty -> this.normalize(context, ty)), pos),
       )
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
       funClauses = mutable Vector[];
@@ -690,9 +675,9 @@ class TEnv{
         CGNodes::singleton(cgNode),
       );
       tfuns = if (isMethod) {
-        TFuns::singleMethod(tfun, typeAst.pos)
+        TFuns::singleMethod(tfun, pos)
       } else {
-        TFuns::singleFun(tfun, typeAst.pos)
+        TFuns::singleFun(tfun, pos)
       };
       TType::single(pos, tfuns)
     | TAGet _ -> internal_error("TODO TAGet")
