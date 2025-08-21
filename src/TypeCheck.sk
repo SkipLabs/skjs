@@ -608,7 +608,7 @@ class TypeChecker{
     | Some(asyncPos) ->
       !this.isAsync = true;
       tvar = env.subst.gen(asyncPos);
-      type = TType::fromTInst(asyncPos, tvar);
+      type = TType::fromTInst(tvar);
       this.checkSubType(
         env,
         asyncPos,
@@ -2292,12 +2292,12 @@ class TypeChecker{
   fun makeBoundTVar(env: mutable TCEnv, ty: TType): TType {
     tvar = env.subst.gen(ty.pos);
     env.subst.grow(this.tenv, tvar, ty, true);
-    TType::fromTInst(ty.pos, tvar)
+    TType::fromTInst(tvar)
   }
 
   fun newTVar(env: mutable TCEnv, pos: PosRange): TType {
     tvar = env.subst.gen(pos);
-    TType::fromTInst(pos, tvar)
+    TType::fromTInst(tvar)
   }
 
   fun checkLValue(e: Expr): void {
@@ -2503,7 +2503,6 @@ class TypeChecker{
       env.scope.set(
         local,
         TType::fromTInst(
-          posArray,
           TSInst(Name(posArray, "Array"), TArgs(Array[TType::top(posArray)])),
         ),
         (_, _) -> void,
