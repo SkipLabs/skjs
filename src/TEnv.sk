@@ -322,7 +322,7 @@ class TEnv{
             )
           | Some(f) -> acc![fieldName] = f
           }
-        | FNColon(indexName, indexType, returnType) ->
+        | idx @ FNColon(indexName, indexType, returnType) ->
           TField::create(
             indexName.pos,
             "[]",
@@ -338,6 +338,9 @@ class TEnv{
                     TAFunParam(Some(TAParamName(indexName)), None(), indexType),
                   ],
                   returnType,
+                  CGNode::create(
+                    Method(Some(idx), className, indexName.pos.fileName, false),
+                  ),
                 ),
               ),
             ),
