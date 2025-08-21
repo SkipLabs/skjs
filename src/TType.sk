@@ -146,15 +146,6 @@ class TType private {
     static{h, pos, insts, clauses};
   }
 
-  static fun expandPrim(pos: PosRange, kind: TPrimValueKind): this {
-    name = kind match {
-    | TString _ -> "string"
-    | TBool _ -> "boolean"
-    | TNum _ -> "number"
-    };
-    static::inst(Name(pos, name), TArgs(Array[]))
-  }
-
   // TRANSFORMERS
 
   /* Returns (clauses, ty) where ty = this with empty clauses */
@@ -275,6 +266,14 @@ class TType private {
     ty1: TType,
     ty2: TType,
   ): TType {
+    expandPrim = (pos, kind) -> {
+      name = kind match {
+      | TString _ -> "string"
+      | TBool _ -> "boolean"
+      | TNum _ -> "number"
+      };
+      static::inst(Name(pos, name), TArgs(Array[]))
+    };
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
     if (env.seenInter.contains((ty1, ty2))) {
@@ -296,7 +295,7 @@ class TType private {
       isSubTType(
         subst,
         env,
-        TType::expandPrim(ty1.pos, primKind),
+        expandPrim(ty1.pos, primKind),
         TType::single(stype),
       ) match {
       | STOk() -> return ty1
@@ -309,7 +308,7 @@ class TType private {
       isSubTType(
         subst,
         env,
-        TType::expandPrim(ty2.pos, primKind),
+        expandPrim(ty2.pos, primKind),
         TType::single(stype),
       ) match {
       | STOk() -> return ty2
