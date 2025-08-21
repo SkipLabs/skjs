@@ -65,6 +65,22 @@ extension class .Array uses XXHashable[T: XXHashable] {
     XXHash(this.foldl((seed, v) -> xxHash64(seed, v.xxhash().value), -1))
   }
 }
+
+extension class .Map uses XXHashable[K: XXHashable, V: XXHashable] {
+  readonly fun xxhash[K: XXHashable, V: XXHashable](): XXHash {
+    XXHash(
+      this.items().foldl(
+        (seed, kv) -> {
+          k = kv.i0.xxhash().value;
+          v = kv.i1.xxhash().value;
+          xxHash64(xxHash64(seed, k), v)
+        },
+        -1,
+      ),
+    )
+  }
+}
+
 extension class .Tuple2 uses XXHashable[T0: XXHashable, T1: XXHashable]
 extension class .Tuple3 uses
   XXHashable[T0: XXHashable, T1: XXHashable, T2: XXHashable],
