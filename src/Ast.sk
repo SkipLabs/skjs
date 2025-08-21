@@ -312,6 +312,7 @@ base class Expr_ uses XXHashable {
   | As(Expr, Type)
   | Regexp(String)
   | Async(Expr)
+  | TemplateLiteral(Array<String>, Array<Expr>)
 }
 
 base class ClosureBody uses XXHashable {
