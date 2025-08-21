@@ -149,7 +149,7 @@ class TEnv{
     filter: FieldType ~> Bool = _ ~> true,
   ): TType {
     obj = this.newObject(context, className, targs, filter);
-    TType::single(className.pos, obj)
+    TType::single(obj)
   }
 
   fun newObject(
@@ -184,7 +184,7 @@ class TEnv{
 
   fun newStatic(context: mutable SKStore.Context, className: Name): TType {
     obj = this.newStaticObject(context, className);
-    TType::single(className.pos, obj)
+    TType::single(obj)
   }
 
   private fun newStaticObject(
@@ -443,19 +443,17 @@ class TEnv{
     | TAExtendsQuestion _ -> internal_error("TODO extendsQuestion ")
     | TAStringLiteral(x) ->
       TType::single(
-        pos,
         TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
       )
     | TANumLiteral(x) ->
       TType::single(
-        pos,
         TPrimValue(TNum(), Some(ArrayValues::single((pos, x))), pos),
       )
     | TATypeOf(expr) ->
       expr.value match {
       | Var(name) ->
         name.value match {
-        | "undefined" -> TType::single(pos, TPrimVoid(TUndefined(), name.pos))
+        | "undefined" -> TType::single(TPrimVoid(TUndefined(), name.pos))
         | _ -> internal_error(`TODO typeof ${name.value}`)
         }
       | Binop(BODot(), _, Expr(_, Var(_))) -> internal_error("TODO typeof")
@@ -463,7 +461,6 @@ class TEnv{
       }
     | TAPrim(kind) ->
       TType::single(
-        pos,
         kind match {
         | TPKNull() -> TPrimVoid(TNull(), pos)
         | TPKBool() -> TPrimValue(TBool(), None(), pos)
@@ -478,7 +475,7 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
-      TType::single(p, TObject(TFields::empty(), p))
+      TType::single(TObject(TFields::empty(), p))
 
     | TAInst(n @ Name(p, "Array"), targs) ->
       if (targs.size() != 1) {
@@ -502,17 +499,17 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
-      TType::single(p, TPrimVoid(TVoid(), p))
+      TType::single(TPrimVoid(TVoid(), p))
     | TAInst(n @ Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
-      TType::single(p, TPrimVoid(TUndefined(), p))
+      TType::single(TPrimVoid(TUndefined(), p))
     | TAInst(n @ Name(_, "Promise"), targs) ->
       if (targs.size() != 1) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
-      TType::single(pos, TPromise(this.normalize(context, targs[0]), pos))
+      TType::single(TPromise(this.normalize(context, targs[0]), pos))
     | TAInst(Name(_, "never"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(pos, "Invalid number of type arguments")])
@@ -524,7 +521,6 @@ class TEnv{
         typingError(Array[(pos, "Invalid number of type arguments")])
       };
       TType::single(
-        pos,
         TPrimValue(TBool(), Some(ArrayValues::single((pos, x))), pos),
       )
     | TAInst(n, targs) ->
@@ -614,10 +610,7 @@ class TEnv{
         }
       };
       types = typeVec.toArray();
-      TType::single(
-        pos,
-        TTuple(types.map(ty -> this.normalize(context, ty)), pos),
-      )
+      TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
       funClauses = mutable Vector[];
       for (tparam in clauses) {
@@ -679,7 +672,7 @@ class TEnv{
       } else {
         TFuns::singleFun(tfun, pos)
       };
-      TType::single(pos, tfuns)
+      TType::single(tfuns)
     | TAGet _ -> internal_error("TODO TAGet")
     }
   }
