@@ -664,6 +664,47 @@ class TypeChecker{
     false
   }
 
+  static private fun filterMethods(
+    ty: TType,
+    subst: mutable Subst,
+    env: TEnv,
+  ): TType {
+    ty.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
+      stypes.singleElt()
+    }) match {
+    | Some(TObject(fields, pos)) ->
+      TType::single(
+        TObject(
+          fields.filterMap(field -> {
+            fieldType = field.type;
+            fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
+            fieldSTypes = fieldSTypesOpt match {
+            | None() -> return None()
+            | Some(x) -> x
+            };
+            !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
+              fieldSType match {
+              | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
+              | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                internal_error(
+                  "TODO: encountered both non-empty funs and methods in filterMethod",
+                )
+              //Some(tfuns with {methods => Array[]})
+              | _ -> Some(fieldSType)
+              }
+            });
+            !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
+            if (fieldType.isBottom()) None() else {
+              Some(field.mapType(_existingType -> fieldType))
+            }
+          }),
+          pos,
+        ),
+      )
+    | _ -> internal_error("Internal error: new should produce an object")
+    }
+  }
+
   fun constructor(
     context: mutable SKStore.Context,
     thisType: TType,
@@ -704,8 +745,8 @@ class TypeChecker{
     | FDBSome(body) ->
       blockScope = this.block(env, body);
       blockThisType = blockScope.get(Name(fd.pos, "this"));
-      objType = blockThisType.filterMethods(env.subst, this.tenv);
-      fullType = thisType.filterMethods(env.subst, this.tenv);
+      objType = static::filterMethods(blockThisType, env.subst, this.tenv);
+      fullType = static::filterMethods(thisType, env.subst, this.tenv);
       this.checkSubType(
         env,
         fd.pos,
