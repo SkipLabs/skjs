@@ -12,10 +12,13 @@ base class ParsedResult {
   | PRError(Error)
 }
 
-class ParsedResultFile(
+class ParsedResultAndSymbolsFile(
   value: ParsedResult,
   symbols: Map<SymbolicPos, Int>,
 ) extends SKStore.File
+
+class ParsedResultFile(value: ParsedResult) extends SKStore.File
+
 const parseErrorKey: SKStore.SID = SKStore.SID("");
 
 const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
@@ -130,10 +133,10 @@ class Files(
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
-  ): SKStore.EHandle<SKStore.SID, ParsedResultFile> {
+  ): SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile> {
     parsedFiles = this.filesContent.map(
       SKStore.SID::keyType,
-      ParsedResultFile::type,
+      ParsedResultAndSymbolsFile::type,
       context,
       SKStore.DirName::create("/skjs/parsed_with_errors/"),
       (_context, writer, key, contentIter) ~> {
@@ -145,7 +148,7 @@ class Files(
           writer.setArray(
             key,
             Array[
-              ParsedResultFile(
+              ParsedResultAndSymbolsFile(
                 PROk(parser.toplevelDefs()),
                 lexer.getAllSymbolLocations(),
               ),
@@ -155,14 +158,14 @@ class Files(
         | ErrorExn(err) ->
           symbols = lexer.getAllSymbolLocations();
           writer.setArray(
-            SKStore.SID(""),
-            Array[ParsedResultFile(PRError(err), symbols)],
+            parseErrorKey,
+            Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
           )
         | exn -> throw exn
         }
       },
     );
-    errors = parsedFiles.unsafeGetArray(context, SKStore.SID(""));
+    errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
     symbolsMap = SymbolsMap::create(context, parsedFiles);
     if (errors.size() != 0) {
       for (error in errors) {
@@ -229,6 +232,24 @@ class Files(
     };
     (added.toArray(), removed.toArray())
   }
+}
+
+fun removeSymbols(
+  context: mutable SKStore.Context,
+  parsedResultAndSymbols: SKStore.EHandle<
+    SKStore.SID,
+    ParsedResultAndSymbolsFile,
+  >,
+): SKStore.EHandle<SKStore.SID, ParsedResultFile> {
+  parsedResultAndSymbols.map(
+    SKStore.SID::keyType,
+    ParsedResultFile::type,
+    context,
+    SKStore.DirName::create("/parsed/nosymbols/"),
+    (_context, writer, key, values) ~> {
+      writer.set(key, ParsedResultFile(values.first.value))
+    },
+  )
 }
 
 module end;

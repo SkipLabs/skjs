@@ -12,7 +12,7 @@ class SymbolsFile(symbols: Map<SymbolicPos, Int>) extends SKStore.File
 
 fun makeSymbolsDir(
   context: mutable SKStore.Context,
-  parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
+  parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile>,
 ): SKStore.EHandle<SKStore.SID, SymbolsFile> {
   parsedFiles.map(
     SKStore.SID::keyType,
@@ -32,7 +32,7 @@ fun makeSymbolsDir(
 class SymbolsMap{dir: SKStore.EHandle<SKStore.SID, SymbolsFile>} {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
+    parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile>,
   ): this {
     static{dir => makeSymbolsDir(context, parsedFiles)}
   }
