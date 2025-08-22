@@ -21,7 +21,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
     context: mutable S.Context,
     index: FileNameIndex,
     rootOpt: ?DirName,
-    parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
+    parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
   ): this {
     static(
       S.LHandle::create(
@@ -177,7 +177,7 @@ mutable class FileDefsState{
           this.defs![exportName.value] = mutable Vector[];
         };
         this.defs[exportName.value].push(
-          Def(exportName.posRange, VarDefs(k, Array[varDef])),
+          Def(exportName.pos, VarDefs(k, Array[varDef])),
         );
       }
     | _ -> internal_error("Internal error: expected a definition")
@@ -468,15 +468,15 @@ class FileDefs{
 }
 
 base class IDefMap {
-  fun getType(mutable SKStore.Context, Name): DefMapType;
-  fun get(mutable SKStore.Context, FileName, Name): Array<Def>;
+  fun getType(mutable S.Context, Name): DefMapType;
+  fun get(mutable S.Context, FileName, Name): Array<Def>;
 }
 
 class SortedDefMap{map: SortedMap<String, TypeDef>} extends IDefMap {
-  fun getType(mutable SKStore.Context, name: Name): DefMapType {
+  fun getType(mutable S.Context, name: Name): DefMapType {
     TDType(this.map[name.value])
   }
-  fun get(mutable SKStore.Context, FileName, Name): Array<Def> {
+  fun get(mutable S.Context, FileName, Name): Array<Def> {
     Array[]
   }
 }
@@ -494,22 +494,18 @@ class DefMap{
   builtinsFileName: FileName,
 } extends IDefMap {
   fun notFound<T>(defName: Name): T {
-    error(ParsingError(EPRange(defName.posRange), NotFound(defName.value)))
+    error(ParsingError(EPRange(defName.pos), NotFound(defName.value)))
   }
 
   fun getType(context: mutable S.Context, name: Name): DefMapType {
-    for (def in this.get(
-      context,
-      FileName::create(name.posRange.fileName),
-      name,
-    )) {
+    for (def in this.get(context, FileName::create(name.pos.fileName), name)) {
       def.value match {
       | td @ TypeDef _ -> return TDType(td)
       | c @ Class _ -> return TDClass(c)
       | _ -> void
       }
     };
-    typingError(Array[(name.posRange, "Unbound name")])
+    typingError(Array[(name.pos, "Unbound name")])
   }
   fun get(
     context: mutable S.Context,
@@ -539,14 +535,14 @@ class DefMap{
         return this.get(
           context,
           fileDefs.importedModulesFrom[moduleName],
-          Name(defName.posRange, newDefName),
+          Name(defName.pos, newDefName),
         );
       };
       if (fileDefs.exportedModulesFrom.containsKey(moduleName)) {
         return this.get(
           context,
           fileDefs.exportedModulesFrom[moduleName],
-          Name(defName.posRange, newDefName),
+          Name(defName.pos, newDefName),
         );
       };
       if (fileDefs.namespaces.containsKey(moduleName)) {
@@ -554,7 +550,7 @@ class DefMap{
           context,
           fileName,
           fileDefs.namespaces[moduleName],
-          Name(defName.posRange, newDefName),
+          Name(defName.pos, newDefName),
         )
       };
       if (fileDefs.exportedNamespaces.containsKey(moduleName)) {
@@ -562,7 +558,7 @@ class DefMap{
           context,
           fileName,
           fileDefs.exportedNamespaces[moduleName],
-          Name(defName.posRange, newDefName),
+          Name(defName.pos, newDefName),
         )
       };
       if (fileDefs.importedFrom.containsKey(moduleName)) {
@@ -570,7 +566,7 @@ class DefMap{
         return this.get(
           context,
           newFileName,
-          Name(defName.posRange, origName + newDefName),
+          Name(defName.pos, origName + newDefName),
         );
       };
       if (fileDefs.exportedFrom.containsKey(moduleName)) {
@@ -578,7 +574,7 @@ class DefMap{
         return this.get(
           context,
           newFileName,
-          Name(defName.posRange, origName + newDefName),
+          Name(defName.pos, origName + newDefName),
         );
       };
       this.notFound(defName);
@@ -590,7 +586,7 @@ class DefMap{
       return this.getExported(
         context,
         importedFileName,
-        Name(defName.posRange, exportedDefName),
+        Name(defName.pos, exportedDefName),
       );
     };
     for (importedFileName in fileDefs.importedStar) {
@@ -661,14 +657,14 @@ class DefMap{
         return this.getExported(
           context,
           fileDefs.importedModulesFrom[moduleName],
-          Name(defName.posRange, newDefName),
+          Name(defName.pos, newDefName),
         );
       };
       if (fileDefs.exportedModulesFrom.containsKey(moduleName)) {
         return this.getExported(
           context,
           fileDefs.exportedModulesFrom[moduleName],
-          Name(defName.posRange, newDefName),
+          Name(defName.pos, newDefName),
         );
       };
       this.notFound(defName);
@@ -694,7 +690,7 @@ class DefMap{
         context,
         fileName,
         fileDefs,
-        Name(defName.posRange, defaultName),
+        Name(defName.pos, defaultName),
       )
     } else {
       if (fileDefs.exported.containsKey(defName.value)) {
@@ -703,7 +699,7 @@ class DefMap{
           context,
           fileName,
           fileDefs,
-          Name(defName.posRange, asName),
+          Name(defName.pos, asName),
         )
       };
       if (fileDefs.exportedFrom.containsKey(defName.value)) {
@@ -711,7 +707,7 @@ class DefMap{
         return this.getExported(
           context,
           newFileName,
-          Name(defName.posRange, newDefName),
+          Name(defName.pos, newDefName),
         );
       }
     };

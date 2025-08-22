@@ -81,7 +81,7 @@ class TType private {
 
   // Creates an unexpanded instance.
   static fun inst(name: Name, targs: TArgs): this {
-    static::fromTInst(name.posRange, TSInst(name, targs))
+    static::fromTInst(name.pos, TSInst(name, targs))
   }
 
   static fun constantString(pos: PosRange, s: String): this {
@@ -119,7 +119,7 @@ class TType private {
     if (clauses.isTop()) {
       !insts = TInsts::empty();
     };
-    h = (insts, clauses).xxhash();
+    h = (insts, clauses).xxhash(true);
     static{h, pos, insts, clauses};
   }
 
@@ -317,8 +317,8 @@ class TType private {
     this.h.value
   }
 
-  fun xxhash(): XXHash {
-    this.h
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    if (ignorePos) this.h else (this.insts, this.clauses).xxhash()
   }
 
   // BOOLEAN PROPERTIES
@@ -530,11 +530,6 @@ class TConstr(
   fun project(): String {
     this.tag
   }
-
-  fun xxhash(): XXHash {
-    // Custom xxhash that excludes tagPos position
-    (this.tag, this.fields).xxhash()
-  }
 }
 
 fun createObject(
@@ -687,6 +682,7 @@ class TFun(
   minSizeWitness: PosRange,
   lambdas: Array<Lambda>,
   retType: TType,
+  cgNodes: CGNodes,
 ) uses XXHashable, Orderable, Projectable<(Int, Int)> {
   fun toString(): String {
     prettyPrintSType(TFuns::singleFun(this, PosRange::none))
@@ -695,25 +691,13 @@ class TFun(
   fun project(): (Int, Int) {
     (this.clauses.size(), this.params.size())
   }
-
-  fun xxhash(): XXHash {
-    // Custom xxhash that excludes minSizeWitness position
-    (
-      this.clauses,
-      this.params,
-      this.optionalParams,
-      this.spreadParam,
-      this.lambdas,
-      this.retType,
-    ).xxhash()
-  }
 }
 
 class Lambda(
   pos: PosRange,
   compute: (mutable Subst, Array<TType>, TType) ~> void,
 ) uses XXHashable, Orderable {
-  fun xxhash(): XXHash {
+  fun xxhash(_ignorePos: Bool = false): XXHash {
     (this.pos.fileName, this.pos.start, this.pos.end).xxhash()
   }
   fun compare(other: Lambda): Order {
@@ -779,19 +763,6 @@ base class SType(pos: PosRange) uses XXHashable, Orderable, Projectable<Int> {
   fun project(): Int {
     this.tag()
   }
-
-  fun xxhash(): XXHash {
-    // Custom xxhash that excludes position - just xxhash the structure without pos
-    this match {
-    | TPrimVoid(kind, _) -> kind.xxhash()
-    | TPrimValue(kind, values, _) -> (kind, values).xxhash()
-    | TTuple(tuple, _) -> tuple.xxhash()
-    | TPromise(ty, _) -> ty.xxhash()
-    | TObject(fields, _) -> fields.xxhash()
-    | TAlgebraic(branches, _) -> branches.xxhash()
-    | TFuns(funs, methods, _) -> (funs, methods).xxhash()
-    }
-  }
 }
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
@@ -844,11 +815,6 @@ class TField private (
   fun project(): String {
     this.name
   }
-
-  fun xxhash(): XXHash {
-    // Custom xxhash that excludes position
-    (this.name, this.isOptional, this.type).xxhash()
-  }
 }
 
 class TFields private (
@@ -895,9 +861,9 @@ class TFields private (
     | None() ->
       typingError(
         Array[
-          (fieldName.posRange, "Unbound field: " + fieldName.value),
+          (fieldName.pos, "Unbound field: " + fieldName.value),
           (
-            fieldName.posRange,
+            fieldName.pos,
             "Possible options are:\n" +
               this.fields.filter(x -> x.name != "constructor")
                 .toArray()
@@ -908,7 +874,7 @@ class TFields private (
       )
     | Some(fd) ->
       ty = fd.type;
-      if (fd.isOptional) ty.withUndefined(fieldName.posRange) else ty
+      if (fd.isOptional) ty.withUndefined(fieldName.pos) else ty
     }
   }
 
@@ -1110,19 +1076,23 @@ class TVar private (
     !this.constraints = this.constraints.map((_id, ty) -> f(ty));
     this
   }
-
-  fun xxhash(): XXHash {
-    (this.id, this.constraints.items().collect(Array)).xxhash()
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    XXHash(
+      this.constraints.items().foldl(
+        (seed, kv) -> {
+          k = kv.i0.xxhash(ignorePos).value;
+          v = kv.i1.xxhash(ignorePos).value;
+          XXHash64.xxHash64(XXHash64.xxHash64(seed, k), v)
+        },
+        XXHash64.xxHash64(this.id, this.pos.xxhash(ignorePos).value),
+      ),
+    )
   }
 }
 
 /* Unexpanded named type */
 // possibly with type arguments
-class TSInst(name: Name, targs: TArgs) extends TInst {
-  fun xxhash(): XXHash {
-    (this.name.value, this.targs).xxhash()
-  }
-}
+class TSInst(name: Name, targs: TArgs) extends TInst {}
 
 class TArgs(targs: Array<TType>) uses XXHashable, Orderable
 
@@ -1136,10 +1106,6 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
       internal_error(`Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`)
     };
     static(ty1, ty2)
-  }
-
-  fun xxhash(): XXHash {
-    (this.ty1, this.ty2).xxhash()
   }
 }
 
@@ -1402,7 +1368,7 @@ class Clauses private (
 
   static fun fromTypeParam(tparam: TypeParam, stypes: ?STypes): this {
     static::single(
-      TParam(tparam.name.value, tparam.name.posRange.fileName, tparam.id),
+      TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
       stypes,
     )
   }
@@ -1949,6 +1915,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   sizeWitness = if (totalSize1 <= totalSize2) f1.minSizeWitness else {
     f2.minSizeWitness
   };
+  cgNodes = f1.cgNodes.union(f2.cgNodes);
   TFun(
     clauses.toArray(),
     params.toArray(),
@@ -1957,6 +1924,7 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     sizeWitness,
     Array[],
     retType,
+    cgNodes,
   )
 }
 
@@ -2126,6 +2094,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (f2.lambdas.size() != 0) {
     typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
   };
+  cgNodes = f1.cgNodes.intersection(f2.cgNodes);
   TFun(
     clauses.toArray(),
     params.toArray(),
@@ -2134,6 +2103,7 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     sizeWitness,
     Array[],
     retType,
+    cgNodes,
   )
 }
 
@@ -2281,6 +2251,7 @@ mutable base class ApplyType(
       f.minSizeWitness,
       f.lambdas,
       this.type(env, f.retType),
+      f.cgNodes,
     )
   }
 

@@ -1,6 +1,6 @@
 
 
 function test(): void {
-  show(1);
-  show(new Array());
+  __SKJS_show(1);
+  __SKJS_show(new Array());
 }

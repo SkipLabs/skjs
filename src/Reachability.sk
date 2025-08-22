@@ -1,0 +1,309 @@
+/*****************************************************************************/
+/* Reachability Analysis for SKJS */
+/*****************************************************************************/
+
+module SKJS;
+
+base class CGNode_ uses XXHashable, Show {
+  children =
+  | TopLevelFunDef(name: Symbol, fileName: String)
+  | Method(name: ?Symbol, class_: Name, fileName: String, static_: Bool)
+  | Constructor(class_: Name, fileName: String)
+  | Toplevel(fileName: String)
+  | ArrowTypeAnnot(fileName: String)
+
+  fun getFileName(): String {
+    this match {
+    | TopLevelFunDef(_, fileName)
+    | Method(_, _, fileName, _)
+    | Constructor(_, fileName)
+    | Toplevel(fileName)
+    | ArrowTypeAnnot(fileName) ->
+      fileName
+    | AnonymousLambda(pos, _) -> pos.fileName
+    | AnonymousFunDef(fd) -> fd.pos.fileName
+    }
+  }
+
+  fun toString(): String {
+    this match {
+    | TopLevelFunDef(name, file) ->
+      "toplevel: " + name.getName() + " (" + file + ")"
+    | Method(name, class_, file, static_) ->
+      (if (static_) "static " else "") +
+        class_.value +
+        "." +
+        (name match {
+        | Some(n) -> n.getName()
+        | None() -> "__anonymous"
+        }) +
+        " (" +
+        file +
+        ")"
+    | Constructor(class_, file) ->
+      class_.value + ".constructor" + " (" + file + ")"
+    | Toplevel(file) -> "top-level expr (" + file + ")"
+    | ArrowTypeAnnot(file) -> "arrow-type annotation (" + file + ")"
+    | AnonymousLambda(pos, _closure) ->
+      "lambda (" + pos.fileName + ":" + pos.start.value + ")"
+    | AnonymousFunDef(fd) ->
+      name = fd.name match {
+      | Some(n) -> "\"" + n.getName() + "\""
+      | None() -> "(anonymous)"
+      };
+      "function def " +
+        name +
+        " (" +
+        fd.pos.fileName +
+        ":" +
+        fd.pos.start.value +
+        ")"
+    }
+  }
+}
+class AnonymousLambda(
+  pos: PosRange,
+  closure: Closure,
+) extends CGNode_ uses XXHashable {
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    //always hash the pos to be more conservative
+    XXHash(
+      XXHash64.xxHash64(
+        (this.pos.fileName, this.pos.start.value, this.pos.end.value).xxhash()
+          .value,
+        this.closure.xxhash(ignorePos).value,
+      ),
+    )
+  }
+}
+class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    //always hash the pos to be more conservative
+    XXHash(
+      XXHash64.xxHash64(
+        (
+          this.funDef.pos.fileName,
+          this.funDef.pos.start.value,
+          this.funDef.pos.end.value,
+        ).xxhash().value,
+        this.funDef.xxhash(ignorePos).value,
+      ),
+    )
+  }
+}
+
+class CGNode private (
+  id: CGNode_,
+  precomputed_hash: XXHash,
+) extends SKStore.Key, SKStore.File uses Hashable, XXHashable {
+  static fun create(id: CGNode_): this {
+    static(id, id.xxhash(true))
+  }
+  fun hash(): Int {
+    this.precomputed_hash.value
+  }
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    if (ignorePos) this.precomputed_hash else this.id.xxhash(false)
+  }
+  fun toString(): String {
+    "CGNode[" + this.id.toString() + "]"
+  }
+  fun compare(other: SKStore.Key): Order {
+    other match {
+    | CGNode(_otherId, otherHash) -> this.precomputed_hash.compare(otherHash)
+    | _ -> invariant_violation("CGNode comparison to non-CGNode Key")
+    }
+  }
+}
+
+class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
+  fun toString(): String {
+    "CGNodes[" + this.nodes.collect(Vector).map((n) -> n.id).join(", ") + "]"
+  }
+
+  static fun singleton(node: CGNode): this {
+    static(SortedSet::create().add(node))
+  }
+  static fun empty(): this {
+    static(SortedSet::create())
+  }
+
+  fun union(that: CGNodes): this {
+    static(this.nodes.union(that.nodes))
+  }
+  fun intersection(that: CGNodes): this {
+    static(this.nodes.intersection(that.nodes))
+  }
+  fun compare(other: CGNodes): Order {
+    this.nodes.inner.compare(other.nodes.inner)
+  }
+
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    XXHash(
+      this.nodes.iterator().foldl(
+        (seed, node) -> XXHash64.xxHash64(seed, node.xxhash(ignorePos).value),
+        -1,
+      ),
+    )
+  }
+}
+
+const callGraphDirName: SKStore.DirName = SKStore.DirName::create(
+  "/call-graph/",
+);
+const depGraphDirName: SKStore.DirName = SKStore.DirName::create(
+  "/dependency-graph/",
+);
+class CallGraph private (
+  callgraph: SKStore.EHandle<CGNode, CGNode>,
+  depgraph: SKStore.EHandle<CGNode, CGNode>,
+) {
+  static fun create(context: mutable SKStore.Context): this {
+    context.unsafeMaybeGetEagerDir(callGraphDirName) match {
+    | None() ->
+      callgraph = context.mkdir(
+        CGNode::keyType,
+        CGNode::type,
+        callGraphDirName,
+        Array[],
+      );
+      depgraph = callgraph.map(
+        CGNode::keyType,
+        CGNode::type,
+        context,
+        depGraphDirName,
+        (_context, writer, caller, callees) ~> {
+          for (callee in callees) {
+            writer.append(callee, caller)
+          }
+        },
+      );
+
+      static(callgraph, depgraph)
+    | Some _ ->
+      static(
+        SKStore.EHandle(CGNode::keyType, CGNode::type, callGraphDirName),
+        SKStore.EHandle(CGNode::keyType, CGNode::type, depGraphDirName),
+      )
+    }
+  }
+
+  fun recordCalls(
+    context: mutable SKStore.Context,
+    caller: CGNode,
+    newCallees: CGNodes,
+  ): void {
+    oldCallees = this.callgraph.getIter(context, caller);
+    callees = oldCallees.foldl(
+      (nodes, node) -> nodes.set(node),
+      newCallees.nodes,
+    );
+    this.callgraph.writeArray(context, caller, callees.toArray())
+  }
+
+  private fun transitiveClosure(
+    context: mutable SKStore.Context,
+    roots: Sequence<CGNode>,
+  ): Set<CGNode> {
+    frontier: mutable Vector<CGNode> = Vector::mcreateFromItems(roots);
+    closure: mutable Set<CGNode> = Set::mcreateFromItems(roots);
+    while (frontier.size() > 0) {
+      curr = frontier.pop();
+      for (succ in this.depgraph.getIter(context, curr)) {
+        if (!closure.contains(succ)) {
+          closure.insert(succ);
+          frontier.push(succ);
+        }
+      }
+    };
+    closure.chill()
+  }
+
+  fun affectedFiles(
+    context: mutable SKStore.Context,
+    changedDefs: Array<Def>,
+    debug: Bool = false,
+  ): SortedSet<String> {
+    affectedCGNodes: mutable Set<CGNode> = mutable Set[];
+    affectedClasses: mutable Set<(Name, String)> = mutable Set[]; // (className, fileName) pairs
+    for (def in changedDefs) {
+      checkDef(def, affectedCGNodes, affectedClasses)
+    };
+    for (item in this.depgraph.items(context)) {
+      node = item.i0;
+      node.id match {
+      | Method(_, class_, fileName, _)
+      | Constructor(class_, fileName) ->
+        classIdent = (class_, fileName);
+        if (affectedClasses.contains(classIdent)) {
+          affectedCGNodes.insert(node)
+        }
+      | TopLevelFunDef _
+      | Toplevel _
+      | ArrowTypeAnnot _
+      | AnonymousLambda _
+      | AnonymousFunDef _ ->
+        void
+      }
+    };
+    closure = this.transitiveClosure(context, affectedCGNodes.chill());
+
+    if (debug) {
+      print_error("[debug] Directly-affected CG nodes:");
+      for (node in affectedCGNodes) {
+        print_error("[debug]   " + node.toString())
+      };
+      print_error("[debug] Transitively-affected CG nodes:");
+      for (node in closure) {
+        print_error("[debug]   " + node.toString())
+      }
+    };
+
+    closure
+      .iterator()
+      .foldl(
+        (affectedFiles, cgNode) -> {
+          affectedFiles.set(cgNode.id.getFileName())
+        },
+        SortedSet<String>[],
+      )
+  }
+}
+// lifted helper outside of `affectedFiles` for recursion
+private fun checkDef(
+  def: Def,
+  nodes: mutable Set<CGNode>,
+  classes: mutable Set<(Name, String)>,
+): void {
+  def.value match {
+  // Unsupported syntactic forms
+  | ExportImport _
+  | Global _
+  | ExportAs _
+  | ExportEq _
+  | Module _
+  | Namespace _
+  | ExportDefault _
+  | Enum _ ->
+    notSupported(def.pos)
+  // Syntactic forms which can't be called
+  | ImportExpr _
+  | TypeDef _
+  | ExportNames _
+  | Import _
+  | VarDefs _ ->
+    void
+  | Declare(d) -> checkDef(d, nodes, classes)
+  | Export(_, _, d) -> checkDef(Def(def.pos, d), nodes, classes)
+  | ToplevelExpr(_) -> nodes.insert(CGNode::create(Toplevel(def.pos.fileName)))
+  | fd @ FunDef _ ->
+    cgNode = fd.name match {
+    | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
+    | None() -> CGNode::create(AnonymousFunDef(fd))
+    };
+    nodes.insert(cgNode)
+  | c @ Class _ -> classes.insert((c.name, def.pos.fileName))
+  }
+}
+
+module end;

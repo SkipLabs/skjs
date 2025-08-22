@@ -24,8 +24,8 @@ extension class Parser {
     Pattern(
       PosRange(
         this.lex.fileName,
-        start.posRange.start,
-        this.lex.lastTok.fromSome().posRange.end,
+        start.pos.start,
+        this.lex.lastTok.fromSome().pos.end,
       ),
       pat_,
     )
@@ -78,7 +78,7 @@ extension class Parser {
           (
             fieldName,
             fieldPat match {
-            | None() -> Pattern(fieldName.posRange, PVar(fieldName))
+            | None() -> Pattern(fieldName.pos, PVar(fieldName))
             | Some(x) -> x
             },
           ),

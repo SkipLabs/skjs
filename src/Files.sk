@@ -6,8 +6,6 @@ module alias S = SKStore;
 
 module SKJS;
 
-class DefFile(defs: Array<Def>) extends SKStore.File
-
 base class ParsedResult {
   children =
   | PROk(Array<Def>)
@@ -17,17 +15,26 @@ base class ParsedResult {
 class ParsedResultFile(value: ParsedResult) extends SKStore.File
 const parseErrorKey: SKStore.SID = SKStore.SID("");
 
+const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
+const parsesDirName: SKStore.DirName = SKStore.DirName::create(
+  "/skjs/parsed_with_errors/",
+);
+const oldParsesDirName: SKStore.DirName = SKStore.DirName::create(
+  "/skjs/changed_file_old_parse_results/",
+);
 class Files(
   isInit: Bool,
   rootOpt: ?DirName,
   builtinsFileName: FileName,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
+  changedFileOldParsedResults: ?SortedMap<String, ParsedResult>,
 ) {
   static fun create(
     context: mutable SKStore.Context,
     baseUrlOpt: ?String,
     builtinsFileNameStr: String,
     srcFileSeq: Sequence<String>,
+    trackChangedFiles: Bool = false,
   ): Result<Files, String> {
     builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
     rootOpt = baseUrlOpt.map(baseUrl -> DirName::create(Path.resolve(baseUrl)));
@@ -58,14 +65,13 @@ class Files(
       Array[builtinsFileName.toString()],
     ].flatten().collect(SortedSet);
 
-    filesDirName = SKStore.DirName::create("/skjs/files/");
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileDir = if (isInit) {
       context.mkdir(
         SKStore.SID::keyType,
         SKStore.StringFile::type,
         filesDirName,
-      )
+      );
     } else {
       SKStore.EHandle(
         SKStore.SID::keyType,
@@ -73,12 +79,27 @@ class Files(
         filesDirName,
       )
     };
+    fileEagerDir = context.unsafeGetEagerDir(filesDirName);
+    oldParses: SortedMap<String, ParsedResult> = SortedMap::create();
+
     for (fileName in srcFiles) {
-      fileDir.writeArray(
-        context,
-        SKStore.SID(fileName),
-        Array[SKStore.StringFile(FileSystem.readTextFile(fileName))],
-      );
+      key = SKStore.SID(fileName);
+      content = FileSystem.readTextFile(fileName);
+      if (!isInit && trackChangedFiles) {
+        oldFile = fileEagerDir.getArrayRaw(key);
+        if (
+          oldFile.size() == 1 &&
+          SKStore.StringFile::type(oldFile[0]).value != content
+        ) {
+          // stash defs from previous run to compare against new versions
+          oldParsedResult = context
+            .unsafeGetEagerDir(parsesDirName)
+            .getArrayRaw(key)
+            .map(ParsedResultFile::type)[0].value;
+          !oldParses = oldParses.set(fileName, oldParsedResult);
+        }
+      };
+      fileDir.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
     for (kv in fileDir.items(context)) {
       fileName = kv.i0.value;
@@ -86,9 +107,23 @@ class Files(
         fileDir.writeArray(context, kv.i0, Array[]);
       };
     };
-    Success(Files(isInit, rootOpt, builtinsFileName, fileDir))
+    changedFileOldParsedResults = if (trackChangedFiles) Some(oldParses) else {
+      None()
+    };
+    Success(
+      Files(
+        isInit,
+        rootOpt,
+        builtinsFileName,
+        fileDir,
+        changedFileOldParsedResults,
+      ),
+    )
   }
 
+  const parsesDirName: SKStore.DirName = SKStore.DirName::create(
+    "/skjs/parsed_with_errors/",
+  );
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
@@ -97,7 +132,7 @@ class Files(
       SKStore.SID::keyType,
       ParsedResultFile::type,
       context,
-      SKStore.DirName::create("/skjs/parsed_with_errors/"),
+      parsesDirName,
       (context, writer, key, contentIter) ~> {
         fileName = key.value;
         //        if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
@@ -134,6 +169,59 @@ class Files(
       throw Exit(2);
     };
     parsedFiles
+  }
+
+  // (added-defs, removed-defs) since last run
+  fun getChangedDefs(
+    context: mutable SKStore.Context,
+  ): (Array<Def>, Array<Def>) {
+    added: mutable Vector<Def> = mutable Vector[];
+    removed: mutable Vector<Def> = mutable Vector[];
+
+    oldParses = this.changedFileOldParsedResults match {
+    | Some(oldParses) -> oldParses
+    | None() ->
+      invariant_violation(
+        "getChangedDefs called without any old parsed results",
+      )
+    };
+    currentParses = context.unsafeMaybeGetEagerDir(parsesDirName) match {
+    | Some _ ->
+      SKStore.EHandle(
+        SKStore.SID::keyType,
+        ParsedResultFile::type,
+        parsesDirName,
+      )
+    | None() ->
+      invariant_violation(
+        "getChangedDefs called without any current parsed results ",
+      )
+    };
+    for ((fileName, previousParsedResult) in oldParses.items()) {
+      currentParsedResult = currentParses.get(
+        context,
+        SKStore.SID(fileName),
+      ).value;
+      (previousParsedResult, currentParsedResult) match {
+      | (PRError(_), PRError(_)) -> continue
+      | (PROk(prevDefs), PRError(_)) -> removed.extend(prevDefs)
+      | (PRError(_), PROk(currDefs)) -> added.extend(currDefs)
+      | (PROk(prevDefs), PROk(currDefs)) ->
+        prevDefsByHash = SortedMap::createFromIterator(
+          prevDefs.values().map((def) -> (def.xxhash(true), def)),
+        );
+        currDefsByHash = SortedMap::createFromIterator(
+          currDefs.values().map((def) -> (def.xxhash(true), def)),
+        );
+        for ((hash, def) in prevDefsByHash.items()) {
+          if (!currDefsByHash.containsKey(hash)) removed.push(def)
+        };
+        for ((hash, def) in currDefsByHash.items()) {
+          if (!prevDefsByHash.containsKey(hash)) added.push(def)
+        }
+      }
+    };
+    (added.toArray(), removed.toArray())
   }
 }
 

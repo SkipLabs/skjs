@@ -29,11 +29,16 @@ value class RelPosRange(start: RelPos, end: RelPos) {
   }
 }
 
-value class Pos(value: Int) uses XXHashable, Orderable {
+value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
   const none: this = Pos(-1);
 
-  fun xxhash(): XXHash {
-    internal_error("should never hash a Pos");
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    if (ignorePos) {
+      // Intentionally collide all PosRange hashes so that ASTs can compare as equal if they only differ in PosRange values
+      XXHash(3691082372) // first 8 bytes of sha256("Pos")
+    } else {
+      internal_error("should never xx-hash a Pos")
+    };
   }
 }
 
@@ -41,11 +46,16 @@ value class PosRange(
   fileName: String,
   start: Pos,
   end: Pos,
-) uses XXHashable, Orderable {
+) uses Hashable, XXHashable, Orderable {
   const none: this = PosRange("", Pos::none, Pos::none);
 
-  fun xxhash(): XXHash {
-    internal_error("should never hash a PosRange");
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    if (ignorePos) {
+      // Intentionally collide all PosRange hashes so that ASTs can compare as equal if they only differ in PosRange values
+      XXHash(1232240476) // first 8 bytes of sha256("PosRange")
+    } else {
+      internal_error("should never xx-hash a PosRange")
+    };
   }
 }
 
