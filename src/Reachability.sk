@@ -68,7 +68,11 @@ class AnonymousLambda(
   fun xxhash(ignorePos: Bool = false): XXHash {
     //always hash the pos to be more conservative
     XXHash(
-      XXHash64.xxHash64(this.pos.hash(), this.closure.xxhash(ignorePos).value),
+      XXHash64.xxHash64(
+        (this.pos.fileName, this.pos.start.value, this.pos.end.value).xxhash()
+          .value,
+        this.closure.xxhash(ignorePos).value,
+      ),
     )
   }
 }
@@ -77,7 +81,11 @@ class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
     //always hash the pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
-        this.funDef.pos.hash(),
+        (
+          this.funDef.pos.fileName,
+          this.funDef.pos.start.value,
+          this.funDef.pos.end.value,
+        ).xxhash().value,
         this.funDef.xxhash(ignorePos).value,
       ),
     )
@@ -108,7 +116,7 @@ class CGNode private (
   }
 }
 
-class CGNodes(nodes: SortedSet<CGNode>) uses Hashable, XXHashable, Orderable {
+class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
   fun toString(): String {
     "CGNodes[" + this.nodes.collect(Vector).map((n) -> n.id).join(", ") + "]"
   }
