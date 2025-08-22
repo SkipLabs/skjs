@@ -119,7 +119,7 @@ class TType private {
     if (clauses.isTop()) {
       !insts = TInsts::empty();
     };
-    h = (insts, clauses).xxhash(true);
+    h = (insts, clauses).xxhash();
     static{h, pos, insts, clauses};
   }
 
@@ -317,8 +317,8 @@ class TType private {
     this.h.value
   }
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
-    if (ignorePos) this.h else (this.insts, this.clauses).xxhash()
+  fun xxhash(): XXHash {
+    this.h
   }
 
   // BOOLEAN PROPERTIES
@@ -697,8 +697,8 @@ class Lambda(
   pos: PosRange,
   compute: (mutable Subst, Array<TType>, TType) ~> void,
 ) uses XXHashable, Orderable {
-  fun xxhash(_ignorePos: Bool = false): XXHash {
-    (this.pos.fileName, this.pos.start, this.pos.end).xxhash()
+  fun xxhash(): XXHash {
+    (this.pos.fileName, this.pos.start.value, this.pos.end.value).xxhash()
   }
   fun compare(other: Lambda): Order {
     this.pos.compare(other.pos)
@@ -1076,15 +1076,15 @@ class TVar private (
     !this.constraints = this.constraints.map((_id, ty) -> f(ty));
     this
   }
-  fun xxhash(ignorePos: Bool = false): XXHash {
+  fun xxhash(): XXHash {
     XXHash(
       this.constraints.items().foldl(
         (seed, kv) -> {
-          k = kv.i0.xxhash(ignorePos).value;
-          v = kv.i1.xxhash(ignorePos).value;
+          k = kv.i0.xxhash().value;
+          v = kv.i1.xxhash().value;
           XXHash64.xxHash64(XXHash64.xxHash64(seed, k), v)
         },
-        XXHash64.xxHash64(this.id, this.pos.xxhash(ignorePos).value),
+        XXHash64.xxHash64(this.id, this.pos.xxhash().value),
       ),
     )
   }
