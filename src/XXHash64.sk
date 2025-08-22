@@ -155,8 +155,10 @@ trait .XXHashable {
   // method.
   overridable macro fun xxhash(): XXHash {
     h = #thisClassName.xxhash();
-    #forEachField (#field) {
-      !h = XXHash(xxHash64(h.value, this.#field.xxhash().value))
+    #forEachField (#field, #fieldName) {
+      if (#fieldName != "pos" && #fieldName != "posRange") {
+        !h = XXHash(xxHash64(h.value, this.#field.xxhash().value))
+      }
     };
     h
   }
