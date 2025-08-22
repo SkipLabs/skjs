@@ -208,10 +208,10 @@ class Files(
       | (PRError(_), PROk(currDefs)) -> added.extend(currDefs)
       | (PROk(prevDefs), PROk(currDefs)) ->
         prevDefsByHash = SortedMap::createFromIterator(
-          prevDefs.values().map((def) -> (def.positionBlindHash(), def)),
+          prevDefs.values().map((def) -> (def.xxhash(true), def)),
         );
         currDefsByHash = SortedMap::createFromIterator(
-          currDefs.values().map((def) -> (def.positionBlindHash(), def)),
+          currDefs.values().map((def) -> (def.xxhash(true), def)),
         );
         for ((hash, def) in prevDefsByHash.items()) {
           if (!currDefsByHash.containsKey(hash)) removed.push(def)
