@@ -61,26 +61,41 @@ base class CGNode_ uses XXHashable, Show {
     }
   }
 }
-class AnonymousLambda(pos: PosRange, closure: Closure) extends CGNode_ {
-  fun hash(): Int {
-    XXHash64.xxHash64(this.pos.hash(), this.closure.positionBlindHash())
+class AnonymousLambda(
+  pos: PosRange,
+  closure: Closure,
+) extends CGNode_ uses XXHashable {
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    //always hash the pos to be more conservative
+    XXHash(
+      XXHash64.xxHash64(this.pos.hash(), this.closure.xxhash(ignorePos).value),
+    )
   }
 }
 class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
-  fun hash(): Int {
-    XXHash64.xxHash64(this.funDef.pos.hash(), this.funDef.positionBlindHash())
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    //always hash the pos to be more conservative
+    XXHash(
+      XXHash64.xxHash64(
+        this.funDef.pos.hash(),
+        this.funDef.xxhash(ignorePos).value,
+      ),
+    )
   }
 }
 
 class CGNode private (
   id: CGNode_,
-  precomputed_hash: Int,
-) extends SKStore.Key, SKStore.File uses Hashable {
+  precomputed_hash: XXHash,
+) extends SKStore.Key, SKStore.File uses Hashable, XXHashable {
   static fun create(id: CGNode_): this {
-    static(id, id.hash())
+    static(id, id.xxhash(true))
   }
   fun hash(): Int {
-    this.precomputed_hash
+    this.precomputed_hash.value
+  }
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    if (ignorePos) this.precomputed_hash else this.id.xxhash(false)
   }
   fun toString(): String {
     "CGNode[" + this.id.toString() + "]"
@@ -93,7 +108,7 @@ class CGNode private (
   }
 }
 
-class CGNodes(nodes: SortedSet<CGNode>) uses Hashable, Orderable {
+class CGNodes(nodes: SortedSet<CGNode>) uses Hashable, XXHashable, Orderable {
   fun toString(): String {
     "CGNodes[" + this.nodes.collect(Vector).map((n) -> n.id).join(", ") + "]"
   }
@@ -113,6 +128,15 @@ class CGNodes(nodes: SortedSet<CGNode>) uses Hashable, Orderable {
   }
   fun compare(other: CGNodes): Order {
     this.nodes.inner.compare(other.nodes.inner)
+  }
+
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    XXHash(
+      this.nodes.iterator().foldl(
+        (seed, node) -> XXHash64.xxHash64(seed, node.xxhash(ignorePos).value),
+        -1,
+      ),
+    )
   }
 }
 
