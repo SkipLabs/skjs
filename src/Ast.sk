@@ -367,8 +367,8 @@ base class Symbol uses XXHashable, Hashable, Orderable {
     this.getName().hash()
   }
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
-    this.getName().xxhash(ignorePos)
+  fun xxhash(): XXHash {
+    this.getName().xxhash()
   }
 }
 

@@ -252,14 +252,11 @@ class ArrayValues private (
     this.values.map(x -> x.i1).hash()
   }
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
+  fun xxhash(): XXHash {
     // Custom xxhash that excludes positions, only hashes the strings
     result = 0;
     for (i in Range(0, this.values.size())) {
-      !result = XXHash64.xxHash64(
-        result,
-        this.values[i].i1.xxhash(ignorePos).value,
-      );
+      !result = XXHash64.xxHash64(result, this.values[i].i1.xxhash().value);
     };
     XXHash(result)
   }
