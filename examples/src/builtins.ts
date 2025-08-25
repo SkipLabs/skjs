@@ -40,7 +40,9 @@ declare class Array<T> {
   reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 
   // Static methods
-  static from<T, U>(arrayLike: Array<T>, mapFn?: (item: T) => U): Array<U>;
+  static from<T>(arrayLike: Array<T>): Array<T>;
+  // If we have overloads:
+  // static from<T, U>(arrayLike: Array<T>, mapFn: (item: T) => U): Array<U>;
   static of<T>(elements: T): Array<T>;
 }
 
