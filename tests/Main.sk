@@ -274,4 +274,45 @@ fun testNotSupportedTypeScriptConformance(): void {
   }
 }
 
+fun checkNoLostTest(path: String): void {
+  files = if (FileSystem.isDirectory(path)) {
+    FileSystem.readFilesRecursive(path)
+  } else {
+    Array[path]
+  };
+  for (file in files) {
+    if (file.endsWith(".ts")) {
+      invariant_violation(`${file} not covered by tests`)
+    };
+    if (file.endsWith(".js")) {
+      invariant_violation(`${file}: no JS file expected`)
+    }
+  }
+}
+
+@test
+fun testNoLostTest(): void {
+  cwd = getcwd();
+  files = FileSystem.readDirectory(cwd);
+  for (file in files) {
+    absFile = Path.join(cwd, file);
+    if (file == "examples") {
+      subFiles = FileSystem.readDirectory(absFile);
+      for (subFile in subFiles) {
+        if (subFile == "src") continue; // handled in testExamples
+        checkNoLostTest(Path.join(absFile, subFile))
+      }
+    } else if (file == "tests") {
+      subFiles = FileSystem.readDirectory(absFile);
+      for (subFile in subFiles) {
+        if (subFile == "expect-error") continue; // handled in testExpectError
+        if (subFile == "ts-conformance") continue; // handled in testTypeScriptConformance and testNotSupportedTypeScriptConformance
+        checkNoLostTest(Path.join(absFile, subFile))
+      };
+    } else {
+      checkNoLostTest(absFile)
+    }
+  }
+}
+
 module end;
