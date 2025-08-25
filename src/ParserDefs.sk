@@ -489,9 +489,12 @@ extension class Parser {
         if (this.lex.isEq("from")) {
           _ = this.lex.next();
           importFrom = this.getString();
+          // Allow relaxed import restrictions for files named "imports.ts"
+          isImportsFile = this.lex.fileName.endsWith("imports.ts");
           if (
-            !importFrom.value.startsWith("./") ||
-            !importFrom.value.endsWith(".js")
+            !isImportsFile &&
+            (!importFrom.value.startsWith("./") ||
+            !importFrom.value.endsWith(".js"))
           ) {
             this.error(this.lex.posEnd(), InvalidImport())
           };
