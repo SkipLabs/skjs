@@ -1,7 +1,7 @@
 // Test file to verify continue statement behavior in loops
 
 function testContinueInForLoop(): string[] {
-  const result: string[] = [];
+  const result: Array<string> = new Array();
   
   for (let i = 0; i < 10; i++) {
     if (i % 2 === 0) {
@@ -29,10 +29,10 @@ function testContinueInWhileLoop(): number {
 }
 
 function testNestedLoopsWithContinue(): number[][] {
-  const result: number[][] = [];
+  const result: Array<Array<number>> = new Array();
   
   for (let i = 0; i < 3; i++) {
-    const row: number[] = [];
+    const row: Array<number> = new Array();
     for (let j = 0; j < 5; j++) {
       if (j === 2) {
         continue; // Skip j=2 in inner loop
