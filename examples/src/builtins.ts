@@ -107,24 +107,6 @@ declare class number {
   toExponential(fractionDigits?: number): string;
   toPrecision(precision?: number): string;
   valueOf(): number;
-
-  // Static properties
-  static MAX_VALUE: number;
-  static MIN_VALUE: number;
-  static POSITIVE_INFINITY: number;
-  static NEGATIVE_INFINITY: number;
-  static NaN: number;
-  static MAX_SAFE_INTEGER: number;
-  static MIN_SAFE_INTEGER: number;
-  static EPSILON: number;
-
-  // Static methods
-  static isFinite(value: number): boolean;
-  static isInteger(value: number): boolean;
-  static isNaN(value: number): boolean;
-  static isSafeInteger(value: number): boolean;
-  static parseFloat(string: string): number;
-  static parseInt(string: string, radix?: number): number;
 }
 
 // Number object for static access (e.g., Number.MAX_VALUE)
@@ -180,10 +162,12 @@ declare class string {
   trimEnd(): string;
   trimStart(): string;
   valueOf(): string;
-
-  // Static methods
-  static fromCharCode(code: number): string;
 }
+
+declare const String: {
+  // Static methods
+  fromCharCode(code: number): string;
+};
 
 declare class Object {
   // Existing methods
