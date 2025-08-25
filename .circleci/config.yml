@@ -67,7 +67,9 @@ jobs:
             else
               # Branch-based development build with short hash
               SHORT_SHA="${CIRCLE_SHA1:0:8}"
-              BINARY_NAME="skjs_${SHORT_SHA}_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}"
+              # Sanitize branch name by replacing slashes with underscores
+              SAFE_BRANCH="${CIRCLE_BRANCH//\//_}"
+              BINARY_NAME="skjs_${SHORT_SHA}_${SAFE_BRANCH}_${PLATFORM}_${ARCH}"
               BUILD_TYPE="development"
               VERSION="${CIRCLE_BRANCH}-${SHORT_SHA}"
             fi
