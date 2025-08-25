@@ -36,7 +36,6 @@ declare class Array<T> {
   findIndex(predicate: (item: T) => boolean): number;
   fill(value: T, start?: number, end?: number): Array<T>;
   copyWithin(target: number, start: number, end?: number): Array<T>;
-  flat<U>(): Array<U>;
   flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
   reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 
