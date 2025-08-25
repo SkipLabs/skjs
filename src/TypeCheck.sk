@@ -1133,6 +1133,35 @@ class TypeChecker{
     );
   }
 
+  fun checkStringifiable(env: mutable TCEnv, pos: PosRange, ty: TType): void {
+    // Check if the type is a primitive type that can be converted to string
+    // Allowed types: string, number, boolean, null, undefined
+    isStringifiable = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      stypes.singleElt() match {
+      | Some(TPrimValue(TString(), _, _)) -> true
+      | Some(TPrimValue(TNum(), _, _)) -> true
+      | Some(TPrimValue(TBool(), _, _)) -> true
+      | Some(TPrimVoid(TNull(), _)) -> true
+      | Some(TPrimVoid(TUndefined(), _)) -> true
+      | Some(TPrimVoid(TVoid(), _)) -> true
+      | _ -> false
+      }
+    };
+
+    if (!isStringifiable) {
+      typingError(
+        Array[
+          (
+            pos,
+            "Template literal expressions must be string, number, boolean, null, or undefined",
+          ),
+        ],
+      );
+    }
+  }
+
   fun dot(
     env: mutable TCEnv,
     pos: PosRange,
@@ -1253,7 +1282,16 @@ class TypeChecker{
     | EString(SKDoubleQuote(), _) ->
       TType::single(pos, TPrimValue(TString(), None(), pos))
     | EString(SKBackTick(), _) ->
-      typingError(Array[(pos, "TODO: support for backtick strings")])
+      TType::single(pos, TPrimValue(TString(), None(), pos))
+    | TemplateLiteral(_parts, exprs) ->
+      // Type check all embedded expressions - allow primitive types that can be converted to strings
+      strType = TType::single(pos, TPrimValue(TString(), None(), pos));
+      for (expr in exprs) {
+        ety = this.expr(env, expr);
+        this.checkStringifiable(env, expr.pos, ety);
+      };
+      strType
+
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
       TType::single(pos, TPrimValue(TBool(), None(), pos))

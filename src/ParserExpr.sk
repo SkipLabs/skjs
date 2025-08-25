@@ -263,7 +263,7 @@ extension class Parser {
       }
     | TKQuote() -> EString(SKQuote(), this.lex.getStrTok(tok))
     | TKDoubleQuote() -> EString(SKDoubleQuote(), this.lex.getStrTok(tok))
-    | TKBackTick() -> EString(SKBackTick(), this.lex.getStrTok(tok))
+    | TKBackTick() -> this.parseTemplateLiteral(tok)
     | subTok @ TKAddition()
     | subTok @ TKSubtraction() ->
       (_assoc, bopPrec) = precedence[subTok];
@@ -771,6 +771,100 @@ extension class Parser {
       FDNormal(fieldName, Expr(fieldName.pos, Var(fieldName)))
     | _ -> this.error(this.lex.posStart(tok), ExpectedTokenNot(TKCloseCurly()))
     }
+  }
+
+  // Parse template literals with interpolation: `text ${expr} more text`
+  mutable fun parseTemplateLiteral(tok: Token): Expr_ {
+    rawContent = this.lex.getStrTok(tok);
+
+    if (!rawContent.contains("${")) {
+      // Simple template literal without interpolation
+      return EString(SKBackTick(), rawContent)
+    };
+
+    // Parse template literal with interpolation by manipulating lexer position
+    // The lexer has already consumed the entire template, but we can re-parse it
+
+    parts = mutable Vector<String>[];
+    expressions = mutable Vector<Expr>[];
+
+    // Save current lexer position
+    originalPos = this.lex.pos;
+    originalLastTok = this.lex.lastTok;
+
+    // Reset to start of template content (after opening backtick)
+    templateStart = tok.pos.start.value + 1; // Skip opening `
+    templateEnd = tok.pos.end.value - 1; // Skip closing `
+    this.lex.!pos = templateStart;
+    this.lex.!lastTok = None();
+
+    currentStart = templateStart;
+    pos = templateStart;
+
+    // Parse through the template content
+    loop {
+      if (pos >= templateEnd) break void;
+
+      // Look for ${ pattern
+      if (
+        pos + 1 < templateEnd &&
+        this.lex.contents[pos] == '$' &&
+        this.lex.contents[pos + 1] == '{'
+      ) {
+        // Add string part before ${
+        if (pos > currentStart) {
+          part = String::fromChars(this.lex.contents.slice(currentStart, pos));
+          parts.push(part);
+        };
+
+        // Skip ${
+        !pos = pos + 2;
+        this.lex.!pos = pos;
+
+        // Find matching }
+        braceCount = 1;
+        exprStart = pos;
+        loop {
+          if (pos >= templateEnd) {
+            this.error(
+              EPChar(this.lex.fileName, tok.pos.start),
+              UnterminatedExpr(),
+            );
+          };
+          c = this.lex.contents[pos];
+          if (c == '{') !braceCount = braceCount + 1;
+          if (c == '}') !braceCount = braceCount - 1;
+          if (braceCount == 0) break void;
+          !pos = pos + 1;
+        };
+
+        // Set lexer to parse the expression content
+        this.lex.!pos = exprStart;
+        expr = this.expr(0);
+        expressions.push(expr);
+
+        // Move past the closing }
+        !pos = pos + 1;
+        !currentStart = pos;
+        this.lex.!pos = pos;
+      } else {
+        !pos = pos + 1;
+      }
+    };
+
+    // Add final string part
+    if (currentStart < templateEnd) {
+      part = String::fromChars(
+        this.lex.contents.slice(currentStart, templateEnd),
+      );
+      parts.push(part);
+    };
+
+    // Restore lexer position
+    this.lex.!pos = originalPos;
+    this.lex.!lastTok = originalLastTok;
+
+    TemplateLiteral(parts.toArray(), expressions.toArray())
   }
 }
 

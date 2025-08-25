@@ -165,6 +165,8 @@ value class StmtTermination private {
     | Closure(_args, _retTy, _body)
     | Regexp(_) ->
       static::skip
+    | TemplateLiteral(_parts, expressions) ->
+      static::and(expressions, static::expr)
     | TypeOf(e)
     | Await(e)
     | As(e, _ty) ->
