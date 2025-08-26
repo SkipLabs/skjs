@@ -1271,11 +1271,8 @@ class TypeChecker{
     pos = e.pos;
     e.value match {
     | Number(_) -> TType::single(pos, TPrimValue(TNum(), None(), pos))
-    | EString(SKQuote(), x) ->
-      TType::single(
-        pos,
-        TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
-      )
+    | EString(SKQuote(), _) ->
+      TType::single(pos, TPrimValue(TString(), None(), pos))
     | EString(SKDoubleQuote(), _) ->
       TType::single(pos, TPrimValue(TString(), None(), pos))
     | EString(SKBackTick(), _) ->
@@ -1896,6 +1893,18 @@ class TypeChecker{
         TType::single(e1.pos, TPrimValue(TBool(), None(), e1.pos)),
       );
       TType::union(env.subst, this.tenv, left, right)
+    | AsConst(subExpr) ->
+      subExpr.value match {
+      | EString(_, x) ->
+        TType::single(
+          pos,
+          TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
+        )
+      | _ ->
+        typingError(
+          Array[(pos, "'as const' can only be used with string literals")],
+        )
+      }
     | KeyOf _ -> notSupported(pos)
     | Params _ ->
       internal_error("Internal error: Params should not be an expression")
@@ -1968,6 +1977,21 @@ class TypeChecker{
           ),
         ),
       )
+    | Expr(valuePos, AsConst(subExpr)) ->
+      subExpr.value match {
+      | EString(_, n) ->
+        Some(
+          TType::single(
+            valuePos,
+            TPrimValue(
+              TString(),
+              Some(ArrayValues::single((valuePos, n))),
+              valuePos,
+            ),
+          ),
+        )
+      | _ -> None()
+      }
     | _ -> None()
     }
   }

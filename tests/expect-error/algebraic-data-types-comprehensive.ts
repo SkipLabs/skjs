@@ -178,24 +178,24 @@ type ConnectionState =
 function transitionState(current: ConnectionState, action: string): ConnectionState {
     if (current.kind === 'disconnected') {
         if (action === 'connect') {
-            return { kind: 'connecting', timeout: 5000, attempts: 1 };
+            return { kind: 'connecting' as const, timeout: 5000, attempts: 1 };
         }
         return current;
     } else if (current.kind === 'connecting') {
         if (action === 'success') {
-            return { kind: 'connected', sessionId: "session-123", duration: 0 };
+            return { kind: 'connected' as const, sessionId: "session-123", duration: 0 };
         } else if (action === 'timeout') {
-            return { kind: 'error', errorCode: 408, retryAfter: 3000 };
+            return { kind: 'error' as const, errorCode: 408, retryAfter: 3000 };
         }
         return current;
     } else if (current.kind === 'connected') {
         if (action === 'disconnect') {
-            return { kind: 'disconnected', reason: "user_initiated" };
+            return { kind: 'disconnected' as const, reason: "user_initiated" };
         }
         return current;
     } else if (current.kind === 'error') {
         if (action === 'retry') {
-            return { kind: 'connecting', timeout: 5000, attempts: 1 };
+            return { kind: 'connecting' as const, timeout: 5000, attempts: 1 };
         }
         return current;
     }
@@ -261,11 +261,11 @@ type Option<T> =
 
 function mapOption<T, U>(option: Option<T>, fn: (value: T) => U): Option<U> {
     if (option.kind === 'some') {
-        return { kind: 'some', value: fn(option.value) };
+        return { kind: 'some' as const, value: fn(option.value) };
     } else if (option.kind === 'none') {
-        return { kind: 'none' };
+        return { kind: 'none' as const };
     }
-    return { kind: 'none' };
+    return { kind: 'none' as const };
 }
 
 function unwrapOption<T>(option: Option<T>, defaultValue: T): T {
@@ -359,9 +359,9 @@ function extractNumbers(data: DataValue): Array<number> {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testBasicADTs(): void {
-    let redColor: Color = { kind: 'red', intensity: 80 };
-    let greenColor: Color = { kind: 'green', intensity: 60 };
-    let blueColor: Color = { kind: 'blue', intensity: 90 };
+    let redColor: Color = { kind: 'red' as const, intensity: 80 };
+    let greenColor: Color = { kind: 'green' as const, intensity: 60 };
+    let blueColor: Color = { kind: 'blue' as const, intensity: 90 };
     
     console.log(processColor(redColor));
     console.log(processColor(greenColor));
@@ -373,13 +373,13 @@ function testBasicADTs(): void {
 }
 
 function testShapeADTs(): void {
-    let circle: Shape = { kind: 'circle', radius: 5 };
-    let rectangle: Shape = { kind: 'rectangle', width: 4, height: 6 };
+    let circle: Shape = { kind: 'circle' as const, radius: 5 };
+    let rectangle: Shape = { kind: 'rectangle' as const, width: 4, height: 6 };
     let angles: Array<number> = new Array<number>();
     angles.push(60);
     angles.push(60);
     angles.push(60);
-    let triangle: Shape = { kind: 'triangle', base: 3, height: 4, angles: angles };
+    let triangle: Shape = { kind: 'triangle' as const, base: 3, height: 4, angles: angles };
     
     console.log(calculateArea(circle).toString());
     console.log(calculateArea(rectangle).toString());
@@ -391,13 +391,13 @@ function testShapeADTs(): void {
 }
 
 function testNestedADTs(): void {
-    let profileData: UserData = { kind: 'profile', name: 'Alice', email: 'alice@example.com' };
-    let settingsData: UserData = { kind: 'settings', theme: 'dark', notifications: true };
-    let activityData: UserData = { kind: 'activity', lastLogin: '2024-01-01', sessionCount: 42 };
+    let profileData: UserData = { kind: 'profile' as const, name: 'Alice', email: 'alice@example.com' };
+    let settingsData: UserData = { kind: 'settings' as const, theme: 'dark', notifications: true };
+    let activityData: UserData = { kind: 'activity' as const, lastLogin: '2024-01-01', sessionCount: 42 };
     
-    let textMessage: Message = { kind: 'text', content: 'Hello World', timestamp: 1234567890 };
-    let profileMessage: Message = { kind: 'user', userData: profileData, messageId: 'msg-001' };
-    let systemMessage: Message = { kind: 'system', level: 'warning', code: 404 };
+    let textMessage: Message = { kind: 'text' as const, content: 'Hello World', timestamp: 1234567890 };
+    let profileMessage: Message = { kind: 'user' as const, userData: profileData, messageId: 'msg-001' };
+    let systemMessage: Message = { kind: 'system' as const, level: 'warning', code: 404 };
     
     console.log(processMessage(textMessage));
     console.log(processMessage(profileMessage));
@@ -409,9 +409,9 @@ function testNestedADTs(): void {
 }
 
 function testApiResults(): void {
-    let successResult: ApiResult<string> = { kind: 'success', data: 'Hello', status: 200 };
-    let errorResult: ApiResult<string> = { kind: 'error', message: 'Not found', code: 404 };
-    let loadingResult: ApiResult<string> = { kind: 'loading', progress: 75 };
+    let successResult: ApiResult<string> = { kind: 'success' as const, data: 'Hello', status: 200 };
+    let errorResult: ApiResult<string> = { kind: 'error' as const, message: 'Not found', code: 404 };
+    let loadingResult: ApiResult<string> = { kind: 'loading' as const, progress: 75 };
     
     console.log(handleStringResult(successResult));
     console.log(handleStringResult(errorResult));
@@ -423,7 +423,7 @@ function testApiResults(): void {
 }
 
 function testStateMachine(): void {
-    let disconnected: ConnectionState = { kind: 'disconnected', reason: 'timeout' };
+    let disconnected: ConnectionState = { kind: 'disconnected' as const, reason: 'timeout' };
     let connecting = transitionState(disconnected, 'connect');
     let connected = transitionState(connecting, 'success');
     let errorState = transitionState(connecting, 'timeout');
@@ -435,9 +435,9 @@ function testStateMachine(): void {
 }
 
 function testTreeADT(): void {
-    let leaf1: TreeNode<number> = { kind: 'leaf', value: 10 };
-    let leaf2: TreeNode<number> = { kind: 'leaf', value: 20 };
-    let branch: TreeNode<number> = { kind: 'branch', left: leaf1, right: leaf2, value: 5 };
+    let leaf1: TreeNode<number> = { kind: 'leaf' as const, value: 10 };
+    let leaf2: TreeNode<number> = { kind: 'leaf' as const, value: 20 };
+    let branch: TreeNode<number> = { kind: 'branch' as const, left: leaf1, right: leaf2, value: 5 };
     
     console.log(countNodes(leaf1).toString());
     console.log(countNodes(branch).toString());
@@ -450,8 +450,8 @@ function doubleNumber(x: number): number {
 }
 
 function testOptionADT(): void {
-    let someValue: Option<number> = { kind: 'some', value: 42 };
-    let noneValue: Option<number> = { kind: 'none' };
+    let someValue: Option<number> = { kind: 'some' as const, value: 42 };
+    let noneValue: Option<number> = { kind: 'none' as const };
     
     let mappedSome = mapOption(someValue, doubleNumber);
     let mappedNone = mapOption(noneValue, doubleNumber);
@@ -467,15 +467,15 @@ function testOptionADT(): void {
 }
 
 function testComplexNestedADT(): void {
-    let numberData: DataValue = { kind: 'number', value: 42 };
-    let textData: DataValue = { kind: 'text', value: 'hello' };
+    let numberData: DataValue = { kind: 'number' as const, value: 42 };
+    let textData: DataValue = { kind: 'text' as const, value: 'hello' };
     
     let items: Array<DataValue> = new Array<DataValue>();
     items.push(numberData);
     items.push(textData);
-    items.push({ kind: 'number', value: 100 });
+    items.push({ kind: 'number' as const, value: 100 });
     
-    let listData: DataValue = { kind: 'list', items: items };
+    let listData: DataValue = { kind: 'list' as const, items: items };
     
     console.log(processDataValue(numberData));
     console.log(processDataValue(textData));
@@ -694,17 +694,17 @@ function testGenericEliminationNumber(value: GenericElimination<number>): string
 ///////////////////////////////////////////////////////////////////////////////
 
 function testSimpleEliminationCases(): void {
-    let valueA: SimpleADT = { kind: 'a' };
-    let valueB: SimpleADT = { kind: 'b', msg: 'hello' };
+    let valueA: SimpleADT = { kind: 'a' as const };
+    let valueB: SimpleADT = { kind: 'b' as const, msg: 'hello' };
     
     console.log(testSimpleElimination(valueA));
     console.log(testSimpleElimination(valueB));
 }
 
 function testThreeVariantEliminationCases(): void {
-    let first: ThreeVariantADT = { kind: 'first', data: 42 };
-    let second: ThreeVariantADT = { kind: 'second', info: 'test' };
-    let third: ThreeVariantADT = { kind: 'third', flag: true };
+    let first: ThreeVariantADT = { kind: 'first' as const, data: 42 };
+    let second: ThreeVariantADT = { kind: 'second' as const, info: 'test' };
+    let third: ThreeVariantADT = { kind: 'third' as const, flag: true };
     
     console.log(testThreeVariantElimination(first));
     console.log(testThreeVariantElimination(second));
@@ -720,17 +720,17 @@ function deltaCallback(x: number): boolean {
 }
 
 function testComplexEliminationCases(): void {
-    let alpha: ComplexElimination = { kind: 'alpha', x: 10, y: 'test' };
+    let alpha: ComplexElimination = { kind: 'alpha' as const, x: 10, y: 'test' };
     
     let betaItems: Array<number> = new Array<number>();
     betaItems.push(1);
     betaItems.push(2);
     betaItems.push(3);
-    let beta: ComplexElimination = { kind: 'beta', items: betaItems };
+    let beta: ComplexElimination = { kind: 'beta' as const, items: betaItems };
     
-    let gamma: ComplexElimination = { kind: 'gamma', nested: { a: true, b: 100 } };
+    let gamma: ComplexElimination = { kind: 'gamma' as const, nested: { a: true, b: 100 } };
     
-    let delta: ComplexElimination = { kind: 'delta', fn: deltaFn };
+    let delta: ComplexElimination = { kind: 'delta' as const, fn: deltaFn };
     
     console.log(testComplexElimination(alpha));
     console.log(testComplexElimination(beta));
@@ -739,9 +739,9 @@ function testComplexEliminationCases(): void {
 }
 
 function testNestedEliminationCases(): void {
-    let outer1: NestedElimination = { kind: 'outer', inner: { kind: 'inner1', val: 123 } };
-    let outer2: NestedElimination = { kind: 'outer', inner: { kind: 'inner2', text: 'nested' } };
-    let simple: NestedElimination = { kind: 'simple', value: false };
+    let outer1: NestedElimination = { kind: 'outer' as const, inner: { kind: 'inner1' as const, val: 123 } };
+    let outer2: NestedElimination = { kind: 'outer' as const, inner: { kind: 'inner2' as const, text: 'nested' } };
+    let simple: NestedElimination = { kind: 'simple' as const, value: false };
     
     console.log(testNestedElimination(outer1));
     console.log(testNestedElimination(outer2));
@@ -753,10 +753,10 @@ function testFourBranchEliminationCases(): void {
     alphaItems.push("item1");
     alphaItems.push("item2");
     
-    let alpha: FourBranchADT = { kind: 'alpha', value: 100, metadata: 'test metadata' };
-    let beta: FourBranchADT = { kind: 'beta', items: alphaItems, count: 5 };
-    let gamma: FourBranchADT = { kind: 'gamma', flag: true, config: { enabled: true, timeout: 1000 } };
-    let delta: FourBranchADT = { kind: 'delta', callback: deltaCallback, priority: 3 };
+    let alpha: FourBranchADT = { kind: 'alpha' as const, value: 100, metadata: 'test metadata' };
+    let beta: FourBranchADT = { kind: 'beta' as const, items: alphaItems, count: 5 };
+    let gamma: FourBranchADT = { kind: 'gamma' as const, flag: true, config: { enabled: true, timeout: 1000 } };
+    let delta: FourBranchADT = { kind: 'delta' as const, callback: deltaCallback, priority: 3 };
     
     console.log("=== Four Branch Complete Elimination ===");
     console.log(testFourBranchElimination(alpha));
@@ -778,16 +778,16 @@ function testFourBranchEliminationCases(): void {
 }
 
 function testChainedEliminationCases(): void {
-    let type1: ChainedElimination = { kind: 'type1', a: 1 };
-    let type2: ChainedElimination = { kind: 'type2', b: 'two' };
-    let type3: ChainedElimination = { kind: 'type3', c: true };
+    let type1: ChainedElimination = { kind: 'type1' as const, a: 1 };
+    let type2: ChainedElimination = { kind: 'type2' as const, b: 'two' };
+    let type3: ChainedElimination = { kind: 'type3' as const, c: true };
     
     let type4Items: Array<string> = new Array<string>();
     type4Items.push('item1');
     type4Items.push('item2');
-    let type4: ChainedElimination = { kind: 'type4', d: type4Items };
+    let type4: ChainedElimination = { kind: 'type4' as const, d: type4Items };
     
-    let type5: ChainedElimination = { kind: 'type5', e: { x: 5, y: 10 } };
+    let type5: ChainedElimination = { kind: 'type5' as const, e: { x: 5, y: 10 } };
     
     console.log(testChainedElimination(type1));
     console.log(testChainedElimination(type2));
@@ -797,11 +797,11 @@ function testChainedEliminationCases(): void {
 }
 
 function testGenericEliminationCases(): void {
-    let stringSuccess: GenericElimination<string> = { kind: 'success', result: 'test result' };
-    let stringFailure: GenericElimination<string> = { kind: 'failure', error: 'string error' };
+    let stringSuccess: GenericElimination<string> = { kind: 'success' as const, result: 'test result' };
+    let stringFailure: GenericElimination<string> = { kind: 'failure' as const, error: 'string error' };
     
-    let numberSuccess: GenericElimination<number> = { kind: 'success', result: 42 };
-    let numberFailure: GenericElimination<number> = { kind: 'failure', error: 'number error' };
+    let numberSuccess: GenericElimination<number> = { kind: 'success' as const, result: 42 };
+    let numberFailure: GenericElimination<number> = { kind: 'failure' as const, error: 'number error' };
     
     console.log(testGenericEliminationString(stringSuccess));
     console.log(testGenericEliminationString(stringFailure));

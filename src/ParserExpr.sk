@@ -418,7 +418,7 @@ extension class Parser {
     }
   }
 
-  // Handle type casting with 'as' keyword
+  // Handle type casting with 'as' keyword and 'as const' syntax
   mutable fun tryParseTypeCast(
     mutableLeft: Expr_,
     binopTok: Token,
@@ -431,23 +431,40 @@ extension class Parser {
         this.lex.getLastPos(),
       );
       _ = this.lex.next();
-      ty = this.type(0);
-      result = As(Expr(leftPosRange, mutableLeft), ty);
-      loop {
-        if (this.lex.isEq("as")) {
-          _ = this.lex.next();
-          type = this.type(0);
-          !result = As(
-            Expr(
-              PosRange::create(this.lex, tok.posStart, this.lex.getLastPos()),
-              result,
-            ),
-            type,
-          );
+
+      // Check if this is 'as const' for string literals only
+      if (this.lex.isEq("const")) {
+        // Only allow 'as const' on string literals
+        mutableLeft match {
+        | EString(_, _) ->
+          _ = this.lex.next(); // consume 'const'
+          result = AsConst(Expr(leftPosRange, mutableLeft));
+          (true, result)
+        | _ ->
+          // For non-string literals, treat "const" as a type identifier
+          ty = this.type(0);
+          result = As(Expr(leftPosRange, mutableLeft), ty);
+          (true, result)
+        }
+      } else {
+        ty = this.type(0);
+        result = As(Expr(leftPosRange, mutableLeft), ty);
+        loop {
+          if (this.lex.isEq("as")) {
+            _ = this.lex.next();
+            type = this.type(0);
+            !result = As(
+              Expr(
+                PosRange::create(this.lex, tok.posStart, this.lex.getLastPos()),
+                result,
+              ),
+              type,
+            );
+          };
+          break void;
         };
-        break void;
-      };
-      (true, result)
+        (true, result)
+      }
     } else {
       (false, mutableLeft)
     }
