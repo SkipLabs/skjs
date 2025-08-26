@@ -296,12 +296,8 @@ extension class Parser {
     } else {
       None()
     };
-    fieldType = if (this.lex.peekKind() is Some(TKColon())) {
-      this.expect(TKColon());
-      Some(this.type(0))
-    } else {
-      None()
-    };
+    this.expect(TKColon());
+    fieldType = this.type(0);
     if (this.lex.peekKind() is Some(TKAssignment())) {
       eqTok = this.lex.next().fromSome();
       if (fieldValue is Some _) {

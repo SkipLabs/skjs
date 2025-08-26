@@ -469,10 +469,7 @@ class TypeChecker{
         for (modifier in field.modifiers.modifiers) {
           typingError(Array[(modifier.pos, "TODO: field modifier")])
         };
-        type = field.type match {
-        | None() -> typingError(Array[(field.pos, "Missing type annotation")])
-        | Some(ty) -> this.tenv.normalize(context, ty)
-        };
+        type = this.tenv.normalize(context, field.type);
         field.value match {
         | None() -> void
         | Some(e) ->

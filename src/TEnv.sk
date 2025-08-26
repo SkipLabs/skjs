@@ -304,10 +304,7 @@ class TEnv{
         field.name match {
         | FNNormal(fdName) ->
           fieldName = fdName.value;
-          type = field.type match {
-          | None() -> typingError(Array[(field.pos, "Missing type annotation")])
-          | Some(ty) -> this.normalize(context, ty)
-          };
+          type = this.normalize(context, field.type);
           TField::create(
             field.pos,
             fieldName,
@@ -323,10 +320,6 @@ class TEnv{
           | Some(f) -> acc![fieldName] = f
           }
         | idx @ FNColon(indexName, indexType) ->
-          returnType = field.type match {
-          | None() -> typingError(Array[(field.pos, "Missing type annotation")])
-          | Some(ty) -> ty
-          };
           TField::create(
             indexName.pos,
             "[]",
@@ -341,7 +334,7 @@ class TEnv{
                   Array[
                     TAFunParam(Some(TAParamName(indexName)), None(), indexType),
                   ],
-                  returnType,
+                  field.type,
                   CGNode::create(
                     Method(Some(idx), className, indexName.pos.fileName, false),
                   ),
@@ -725,45 +718,41 @@ class TEnv{
       fields.filterMap(elt -> {
         elt match {
         | fd @ FieldTypeValue _ ->
-          fd.type match {
-          | None() -> internal_error("TODO no type")
-          | Some(ty) ->
-            normalizedType = this.normalize(context, ty);
-            fd.name match {
-            | FNColon _ -> internal_error("TODO fnColon")
-            | FNIn _ -> internal_error("TODO fnIn")
-            | FNSymbol _ -> internal_error("TODO symbol")
-            | FNNormal(name) ->
-              optField = TField::create(
-                name.pos,
-                name.value,
-                fd.optional is Some _,
-                normalizedType,
-              );
-              if (optField is None()) {
-                algebraicBranchField match {
-                | Some((existingPos, _existingType)) ->
-                  typingError(
-                    Array[
-                      (name.pos, `Duplicate field ${name.value}`),
-                      (existingPos, "Previously declared here"),
-                    ],
-                  )
-                | None() -> void
-                };
-                fd.optional match {
-                | Some(optionalPos) ->
-                  typingError(
-                    Array[
-                      (optionalPos, `Field ${name.value} cannot be optional`),
-                    ],
-                  )
-                | None() -> void
-                };
-                !algebraicBranchField = Some((name.pos, normalizedType))
+          normalizedType = this.normalize(context, fd.type);
+          fd.name match {
+          | FNColon _ -> internal_error("TODO fnColon")
+          | FNIn _ -> internal_error("TODO fnIn")
+          | FNSymbol _ -> internal_error("TODO symbol")
+          | FNNormal(name) ->
+            optField = TField::create(
+              name.pos,
+              name.value,
+              fd.optional is Some _,
+              normalizedType,
+            );
+            if (optField is None()) {
+              algebraicBranchField match {
+              | Some((existingPos, _existingType)) ->
+                typingError(
+                  Array[
+                    (name.pos, `Duplicate field ${name.value}`),
+                    (existingPos, "Previously declared here"),
+                  ],
+                )
+              | None() -> void
               };
-              optField
-            }
+              fd.optional match {
+              | Some(optionalPos) ->
+                typingError(
+                  Array[
+                    (optionalPos, `Field ${name.value} cannot be optional`),
+                  ],
+                )
+              | None() -> void
+              };
+              !algebraicBranchField = Some((name.pos, normalizedType))
+            };
+            optField
           }
         | fd @ FunDef _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
