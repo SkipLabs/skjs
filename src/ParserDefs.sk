@@ -819,16 +819,13 @@ extension class Parser {
     } else {
       None()
     };
-    
+
     defs = mutable Vector[];
     loop {
       pat = this.pattern();
 
       // Track top-level constants as symbols
-      if (
-        kind is VDKConst() &&
-        this.getCurrentSymbol() is SPTopLevel()
-      ) {
+      if (kind is VDKConst() && this.getCurrentSymbol() is SPTopLevel()) {
         pat.value match {
         | PVar(name) ->
           constSymbol = SPConstant(name.value);
@@ -854,7 +851,7 @@ extension class Parser {
         None()
       };
       defs.push(VarDef(pat, type, value));
-      
+
       commaTok = this.lex.peek() match {
       | None() -> break void
       | Some(x) -> x
@@ -869,14 +866,13 @@ extension class Parser {
       | _ -> break void
       }
     };
-    
+
     // Restore previous symbol context if we were parsing constants
     contextInfo match {
-    | Some((prevSymbol, prevPos)) ->
-      this.setSymbolContext(prevSymbol, prevPos)
+    | Some((prevSymbol, prevPos)) -> this.setSymbolContext(prevSymbol, prevPos)
     | None() -> void
     };
-    
+
     VarDefs(kind, defs.toArray())
   }
 
