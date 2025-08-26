@@ -701,12 +701,12 @@ class TEnv{
       fields.filterMap(elt -> {
         elt match {
         | fd @ FieldTypeValue _ ->
-          normalizedType = this.normalize(context, fd.type);
           fd.name match {
           | FNColon _ -> internal_error("TODO fnColon")
           | FNIn _ -> internal_error("TODO fnIn")
           | FNSymbol _ -> internal_error("TODO symbol")
           | FNNormal(name) ->
+            normalizedType = this.normalize(context, fd.type);
             optField = TField::create(
               name.pos,
               name.value,
