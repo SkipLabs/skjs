@@ -21,6 +21,16 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
     this.lex.currentSymbol
   }
 
+  // Get current symbol position from the lexer
+  readonly fun getCurrentSymbolPos(): Int {
+    this.lex.currentSymbolPos
+  }
+
+  // Get current symbol context (both symbol and position)
+  readonly fun getCurrentSymbolContext(): (SymbolicPos, Int) {
+    (this.lex.currentSymbol, this.lex.currentSymbolPos)
+  }
+
   // Get all recorded symbol locations
   readonly fun getAllSymbolLocations(): Map<SymbolicPos, Int> {
     this.lex.getAllSymbolLocations()
