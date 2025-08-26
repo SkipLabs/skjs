@@ -344,7 +344,14 @@ class Checker private {
     defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
     tenv = TEnv{defMap};
     callgraph = CallGraph::create(context);
-    checker = TypeChecker{builtins, backtrace, defMap, tenv, callgraph, builtinsFileName};
+    checker = TypeChecker{
+      builtins,
+      backtrace,
+      defMap,
+      tenv,
+      callgraph,
+      builtinsFileName,
+    };
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}
   }
 

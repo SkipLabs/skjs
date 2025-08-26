@@ -809,17 +809,33 @@ extension class Parser {
 
   // Parse variable definitions
   mutable fun varDef(kind: VarDefKind): VarDefs {
+    // Track symbol context for the entire variable definition block
+    contextInfo = if (
+      kind is VDKConst() &&
+      this.getCurrentSymbol() is SPTopLevel()
+    ) {
+      (prevSymbol, prevPos) = this.getCurrentSymbolContext();
+      Some((prevSymbol, prevPos))
+    } else {
+      None()
+    };
+    
     defs = mutable Vector[];
     loop {
       pat = this.pattern();
 
       // Track top-level constants as symbols
-      if (kind is VDKConst() && this.getCurrentSymbol() is SPTopLevel()) {
+      if (
+        kind is VDKConst() &&
+        this.getCurrentSymbol() is SPTopLevel()
+      ) {
         pat.value match {
         | PVar(name) ->
           constSymbol = SPConstant(name.value);
+          symbolContextPos = name.pos.relStart.value;
           // Use the relative position since we're at top level (SPTopLevel)
-          this.recordSymbolDefinition(constSymbol, name.pos.relStart.value)
+          this.recordSymbolDefinition(constSymbol, symbolContextPos);
+          this.setSymbolContext(constSymbol, symbolContextPos)
         | _ ->
           void // Only track simple variable patterns
         }
@@ -838,6 +854,7 @@ extension class Parser {
         None()
       };
       defs.push(VarDef(pat, type, value));
+      
       commaTok = this.lex.peek() match {
       | None() -> break void
       | Some(x) -> x
@@ -852,6 +869,14 @@ extension class Parser {
       | _ -> break void
       }
     };
+    
+    // Restore previous symbol context if we were parsing constants
+    contextInfo match {
+    | Some((prevSymbol, prevPos)) ->
+      this.setSymbolContext(prevSymbol, prevPos)
+    | None() -> void
+    };
+    
     VarDefs(kind, defs.toArray())
   }
 
@@ -1097,7 +1122,7 @@ extension class Parser {
     this.setSymbolContext(funcSymbol, symbolContextPos);
 
     cgNode = None(); // TODO: Add call graph support back
-    
+
     result = this.methodDef(
       isAsync,
       Modifiers::empty(),

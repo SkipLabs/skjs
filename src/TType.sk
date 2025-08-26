@@ -700,7 +700,7 @@ class Lambda(
   fun xxhash(_ignorePos: Bool = false): XXHash {
     (this.pos.fileName, this.pos.relStart.value, this.pos.relEnd.value).xxhash()
   }
-  
+
   fun compare(other: Lambda): Order {
     this.pos.compare(other.pos)
   }

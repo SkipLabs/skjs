@@ -69,8 +69,11 @@ class AnonymousLambda(
     //always hash the pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
-        (this.pos.fileName, this.pos.relStart.value, this.pos.relEnd.value).xxhash()
-          .value,
+        (
+          this.pos.fileName,
+          this.pos.relStart.value,
+          this.pos.relEnd.value,
+        ).xxhash().value,
         this.closure.xxhash(ignorePos).value,
       ),
     )
