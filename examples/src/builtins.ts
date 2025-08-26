@@ -174,22 +174,21 @@ declare class Object {
   static keys(obj: object): Array<string>;
 
   // Additional Object utility methods
-  static values<T>(obj: T): Array<T>;
-  static entries<T>(obj: T): Array<[string, T]>;
-  static assign<T, U>(target: T, source: U): T;
-  static create<T>(prototype: T): T;
-  static defineProperty<T>(obj: T, prop: string, descriptor: object): T;
-  static freeze<T>(obj: T): T;
+  static values<T>(obj: { [s: string]: T }): Array<T>;
+  static entries<T>(obj: { [s: string]: T }): Array<[string, T]>;
+  static assign<T extends object, U>(target: T, source: U): T & U;
+  // static create<T>(prototype: T): T; // disallowed
+  // static defineProperty<T>(obj: T, prop: string, descriptor: object): T;
+  // static freeze<T>(obj: T): T;
   static getOwnPropertyNames<T>(obj: T): Array<string>;
   static getOwnPropertyDescriptor<T>(obj: T, prop: string): object | undefined;
-  static getPrototypeOf<T>(obj: T): T;
-  static hasOwnProperty<T>(obj: T, prop: string): boolean;
+  // static getPrototypeOf<T>(obj: T): T; // disallowed
   static isExtensible<T>(obj: T): boolean;
   static isFrozen<T>(obj: T): boolean;
   static isSealed<T>(obj: T): boolean;
   static preventExtensions<T>(obj: T): T;
   static seal<T>(obj: T): T;
-  static setPrototypeOf<T, U>(obj: T, prototype: U): T;
+  // static setPrototypeOf<T, U>(obj: T, prototype: U): T; // disallowed
 
   // Instance methods
   toString(): string;
