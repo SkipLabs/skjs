@@ -18,7 +18,7 @@ mutable class Lexer{
   mutable currentSymbolPos: Int = -1,
 
   // Track unique symbol locations encountered during parsing
-  mutable symbolLocations: mutable Map<SymbolicPos, Int> = mutable Map[],
+  symbolLocations: mutable Map<SymbolicPos, Int> = mutable Map[],
 
   // The name of the file that we are lexing
   fileName: String,
