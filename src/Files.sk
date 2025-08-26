@@ -9,10 +9,16 @@ module SKJS;
 base class ParsedResult {
   children =
   | PROk(Array<Def>)
-  | PRError(String)
+  | PRError(Error)
 }
 
+class ParsedResultAndSymbolsFile(
+  value: ParsedResult,
+  symbols: Map<SymbolicPos, Int>,
+) extends SKStore.File
+
 class ParsedResultFile(value: ParsedResult) extends SKStore.File
+
 const parseErrorKey: SKStore.SID = SKStore.SID("");
 
 const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
@@ -127,42 +133,45 @@ class Files(
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
-  ): SKStore.EHandle<SKStore.SID, ParsedResultFile> {
+  ): SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile> {
     parsedFiles = this.filesContent.map(
       SKStore.SID::keyType,
-      ParsedResultFile::type,
+      ParsedResultAndSymbolsFile::type,
       context,
-      parsesDirName,
-      (context, writer, key, contentIter) ~> {
+      SKStore.DirName::create("/skjs/parsed_with_errors/"),
+      (_context, writer, key, contentIter) ~> {
         fileName = key.value;
-        //        if (!this.srcFiles.contains(fileName) && !fileName.endsWith(".d.ts")) {
-        //          return void;
-        //        };
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content, this.rootOpt);
         parser = mutable Parser(lexer);
         try {
           writer.setArray(
             key,
-            Array[ParsedResultFile(PROk(parser.toplevelDefs()))],
+            Array[
+              ParsedResultAndSymbolsFile(
+                PROk(parser.toplevelDefs()),
+                lexer.getAllSymbolLocations(),
+              ),
+            ],
           )
         } catch {
         | ErrorExn(err) ->
+          symbols = lexer.getAllSymbolLocations();
           writer.setArray(
-            SKStore.SID(""),
-            Array[
-              ParsedResultFile(PRError(err.toString(context, newLinesMap))),
-            ],
+            parseErrorKey,
+            Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
           )
         | exn -> throw exn
         }
       },
     );
-    errors = parsedFiles.unsafeGetArray(context, SKStore.SID(""));
+    errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
+    symbolsMap = SymbolsMap::create(context, parsedFiles);
     if (errors.size() != 0) {
       for (error in errors) {
         error.value match {
-        | PRError(err) -> print_error(err)
+        | PRError(err) ->
+          print_error(err.toString(context, newLinesMap, symbolsMap))
         | _ -> internal_error("Unexpected parsing result")
         }
       };
@@ -223,6 +232,24 @@ class Files(
     };
     (added.toArray(), removed.toArray())
   }
+}
+
+fun removeSymbols(
+  context: mutable SKStore.Context,
+  parsedResultAndSymbols: SKStore.EHandle<
+    SKStore.SID,
+    ParsedResultAndSymbolsFile,
+  >,
+): SKStore.EHandle<SKStore.SID, ParsedResultFile> {
+  parsedResultAndSymbols.map(
+    SKStore.SID::keyType,
+    ParsedResultFile::type,
+    context,
+    SKStore.DirName::create("/parsed/nosymbols/"),
+    (_context, writer, key, values) ~> {
+      writer.set(key, ParsedResultFile(values.first.value))
+    },
+  )
 }
 
 module end;

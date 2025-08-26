@@ -7,7 +7,8 @@ fun getLinedTypeErrors(
   typeErrors: Array<SKJS.Error>,
 ): Array<(Int, SKJS.TypingError)> {
   newLines = checker.newLinesMap.get(context, fileName);
-  resolver = SKJS.PositionResolver{fileName, newLines};
+  symbols = checker.symbolsMap.get(context, fileName);
+  resolver = SKJS.PositionResolver{fileName, newLines, symbols};
 
   typeErrors
     .map(err ->
@@ -19,7 +20,7 @@ fun getLinedTypeErrors(
           errStr = checker.errorToString(context, e);
           SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
         };
-        line = resolver.relPos(pos.start).line;
+        line = resolver.relPos(pos.getStart(symbols)).line;
         (line, e)
       | e ->
         errStr = checker.errorToString(context, e);

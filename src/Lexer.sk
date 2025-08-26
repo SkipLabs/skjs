@@ -4,7 +4,22 @@
 
 module SKJS;
 
+base class SymbolicPos uses Orderable, Hashable {
+  children =
+  | SPTopLevel()
+  | SPClass(className: String)
+  | SPMethod(className: String, metName: String)
+  | SPFunction(funName: String)
+  | SPConstant(constName: String)
+}
+
 mutable class Lexer{
+  mutable currentSymbol: SymbolicPos = SPTopLevel(),
+  mutable currentSymbolPos: Int = -1,
+
+  // Track unique symbol locations encountered during parsing
+  symbolLocations: mutable Map<SymbolicPos, Int> = mutable Map[],
+
   // The name of the file that we are lexing
   fileName: String,
 
@@ -48,7 +63,7 @@ mutable class Lexer{
   // parameter. Note that we do not allocate a string for the token on
   // purpose, we want to save as many allocations as possible.
   readonly fun isEqTok(tok: Token, str: String): Bool {
-    pos = tok.pos.start.value;
+    pos = tok.posStart.value;
     for (c in str) {
       if (this.contents[pos] == c) {
         !pos = pos + 1;
@@ -56,13 +71,13 @@ mutable class Lexer{
       };
       return false;
     };
-    pos == tok.pos.end.value
+    pos == tok.posEnd.value
   }
 
   // Returns the string associated with a token.
   readonly fun getStrTok(tok: Token): String {
     str = String::fromChars(
-      this.contents.slice(tok.pos.start.value, tok.pos.end.value),
+      this.contents.slice(tok.posStart.value, tok.posEnd.value),
     );
     tok.kind match {
     | TKQuote() -> str.stripPrefix("'").stripSuffix("'").replace("\\'", "'")
@@ -140,7 +155,7 @@ mutable class Lexer{
   }
 
   readonly fun posStart(tok: Token): ErrorPos {
-    EPChar(this.fileName, tok.pos.start)
+    EPChar(this.fileName, tok.posStart)
   }
 
   // This is the method containing the main logic of the lexer. Note
@@ -205,7 +220,7 @@ mutable class Lexer{
     pos = start;
     if (pos >= this.contents.size()) return None();
     mkToken = (kind: TokenKind) -> {
-      Some(Token(kind, PosRange(this.fileName, Pos(start), Pos(pos))))
+      Some(Token(kind, Pos(start), Pos(pos)))
     };
     this.contents[pos] match {
     | '(' ->
@@ -373,7 +388,7 @@ mutable class Lexer{
         };
         break void;
       };
-      Some(Token(TKVar(), PosRange(this.fileName, Pos(start), Pos(pos))))
+      Some(Token(TKVar(), Pos(start), Pos(pos)))
 
     | c if (c >= '0' && c <= '9') ->
       loop {
@@ -446,13 +461,39 @@ mutable class Lexer{
     tokOpt match {
     | None() -> tokOpt
     | Some(tok) ->
-      this.!pos = tok.pos.end.value;
+      this.!pos = tok.posEnd.value;
       tokOpt
     }
   }
 
   readonly fun getLastPos(): Pos {
-    this.lastTok.fromSome().pos.end
+    this.lastTok.fromSome().posEnd
+  }
+
+  // Record a symbol location for tracking - only stores first occurrence
+  mutable fun recordSymbolLocation(symbol: SymbolicPos, position: Int): void {
+    this.symbolLocations.maybeGet(symbol) match {
+    | None() -> this.symbolLocations.set(symbol, position)
+    | Some(_existingPos) ->
+      // Symbol already exists - keep the first occurrence, ignore subsequent ones
+      // This allows for TypeScript method overloads and interface redeclarations
+      void
+    }
+  }
+
+  // Get recorded location for a symbol
+  readonly fun getSymbolLocation(symbol: SymbolicPos): ?Int {
+    this.symbolLocations.maybeGet(symbol)
+  }
+
+  // Check if a symbol is already defined
+  readonly fun isSymbolDefined(symbol: SymbolicPos): Bool {
+    this.symbolLocations.maybeGet(symbol).isSome()
+  }
+
+  // Get all recorded symbols and their locations
+  readonly fun getAllSymbolLocations(): Map<SymbolicPos, Int> {
+    this.symbolLocations.chill()
   }
 }
 

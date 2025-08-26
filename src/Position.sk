@@ -8,7 +8,7 @@ module SKJS;
 /* Position types. */
 /***************************************************************************/
 
-value class RelPos(fileName: String, line: Int, col: Int) uses Show {
+value class RelPos(fileName: String, line: Int, col: Int) uses Show, Equality {
   fun toString(): String {
     fileName = this.fileName.replace("\"", "\\\"");
     `File "${fileName}", line ${this.line}, character ${this.col}:`
@@ -42,12 +42,27 @@ value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
   }
 }
 
-value class PosRange(
+value class PosRange private (
+  symbol: SymbolicPos,
   fileName: String,
-  start: Pos,
-  end: Pos,
-) uses Hashable, XXHashable, Orderable {
-  const none: this = PosRange("", Pos::none, Pos::none);
+  relStart: Pos,
+  relEnd: Pos,
+) uses XXHashable, Orderable {
+  const none: this = PosRange(SPTopLevel(), "", Pos::none, Pos::none);
+
+  static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {
+    symbolPos = lexer.currentSymbolPos;
+    relativeStart = Pos(start.value - symbolPos);
+    relativeEnd = Pos(end.value - symbolPos);
+    static(lexer.currentSymbol, lexer.fileName, relativeStart, relativeEnd)
+  }
+
+  fun extend(end: PosRange): this {
+    if (this.symbol != end.symbol) {
+      internal_error("Cannot extend a position with a different symbol");
+    };
+    this with {relEnd => end.relEnd}
+  }
 
   fun xxhash(ignorePos: Bool = false): XXHash {
     if (ignorePos) {
@@ -57,15 +72,40 @@ value class PosRange(
       internal_error("should never xx-hash a PosRange")
     };
   }
+
+  fun getStart(symbols: Map<SymbolicPos, Int>): Pos {
+    this.symbol match {
+    | SPTopLevel() -> this.relStart
+    | other -> Pos(symbols[other] + this.relStart.value)
+    }
+  }
+
+  fun getEnd(symbols: Map<SymbolicPos, Int>): Pos {
+    this.symbol match {
+    | SPTopLevel() -> this.relEnd
+    | other -> Pos(symbols[other] + this.relEnd.value)
+    }
+  }
+
+  fun atEnd(): this {
+    this with {relStart => this.relEnd}
+  }
 }
 
 /***************************************************************************/
 /* Position resolver. */
 /***************************************************************************/
 
-class PositionResolver{fileName: String = "", newLines: Array<Int> = Array[]} {
+class PositionResolver{
+  fileName: String = "",
+  newLines: Array<Int> = Array[],
+  symbols: Map<SymbolicPos, Int>,
+} {
   fun relPosRange(pos: PosRange): RelPosRange {
-    RelPosRange(this.relPos(pos.start), this.relPos(pos.end))
+    RelPosRange(
+      this.relPos(pos.getStart(this.symbols)),
+      this.relPos(pos.getEnd(this.symbols)),
+    )
   }
 
   fun relPos(pos: Pos): RelPos {

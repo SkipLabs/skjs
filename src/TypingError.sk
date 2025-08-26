@@ -8,13 +8,15 @@ class TypingError(messages: Array<(PosRange, String)>) extends Error {
   fun toString(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
+    symbolsMap: SymbolsMap,
   ): String {
     result = mutable Vector[];
     for (message in this.messages) {
       pos = message.i0;
       fileName = pos.fileName;
       newLines = newLinesMap.get(context, fileName);
-      resolver = PositionResolver{fileName, newLines};
+      symbols = symbolsMap.get(context, fileName);
+      resolver = PositionResolver{fileName, newLines, symbols};
       result.push(resolver.relPosRange(message.i0).toString());
       result.push(message.i1);
     };

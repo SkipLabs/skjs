@@ -4,6 +4,47 @@
 
 module SKJS;
 
-mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {}
+mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
+  // Set symbol context in the lexer
+  mutable fun setSymbolContext(symbol: SymbolicPos, pos: Int): void {
+    this.lex.!currentSymbol = symbol;
+    this.lex.!currentSymbolPos = pos;
+  }
+
+  // Record a symbol definition (only call this when a symbol is actually defined)
+  mutable fun recordSymbolDefinition(symbol: SymbolicPos, pos: Int): void {
+    this.lex.recordSymbolLocation(symbol, pos);
+  }
+
+  // Get current symbol context from the lexer
+  readonly fun getCurrentSymbol(): SymbolicPos {
+    this.lex.currentSymbol
+  }
+
+  // Get current symbol position from the lexer
+  readonly fun getCurrentSymbolPos(): Int {
+    this.lex.currentSymbolPos
+  }
+
+  // Get current symbol context (both symbol and position)
+  readonly fun getCurrentSymbolContext(): (SymbolicPos, Int) {
+    (this.lex.currentSymbol, this.lex.currentSymbolPos)
+  }
+
+  // Get all recorded symbol locations
+  readonly fun getAllSymbolLocations(): Map<SymbolicPos, Int> {
+    this.lex.getAllSymbolLocations()
+  }
+
+  // Get location for a specific symbol
+  readonly fun getSymbolLocation(symbol: SymbolicPos): ?Int {
+    this.lex.getSymbolLocation(symbol)
+  }
+
+  // Check if a symbol is already defined
+  readonly fun isSymbolDefined(symbol: SymbolicPos): Bool {
+    this.lex.isSymbolDefined(symbol)
+  }
+}
 
 module end;
