@@ -558,7 +558,7 @@ fun createObject(
             algebraicBranchFieldPos,
             `Got ${algebraicBranchFieldType} instead. ` +
               `Note that "foo" has type string, while 'foo' has type 'foo'. ` +
-              `For algebraic data types, the '${kAlgebraicBranchFieldName}' field must use single quotes to create a string literal type.`,
+              `For algebraic data types, the '${kAlgebraicBranchFieldName}' field must use 'as const' to create a string literal type, for example: { ${kAlgebraicBranchFieldName}: "foo" as const }.`,
           ),
         ],
       )
@@ -1593,7 +1593,7 @@ base class STResult {
       | TPrimValue(TString(), None(), _) ->
         "This is of type string. " +
           "Note that \"foo\" has type string, while 'foo' has the more specific type 'foo'. " +
-          "Use single quotes to create a string literal type."
+          "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
       | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
       | TPrimValue(kind, Some(x), _) ->
         `This is a static ${kind.toString()}: ` +
