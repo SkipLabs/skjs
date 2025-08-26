@@ -29,7 +29,7 @@ function testContinueInWhile(): number {
 }
 
 function testContinueWithBreak(): number[] {
-  let results: number[] = [];
+  let results: Array<number> = new Array();
   
   for (let i = 0; i < 10; i++) {
     if (i > 6) {

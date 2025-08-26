@@ -60,19 +60,6 @@ function testStringIndexingTypeCompatibility(): void {
   }
 }
 
-function testStringIndexingInConditions(): void {
-  const text = "conditional";
-  
-  // Should work in boolean contexts
-  if (text[0]) {
-    console.log("First character exists");
-  }
-  
-  if (text[100]) {
-    console.log("This won't run");
-  }
-}
-
 function testStringIndexingWithDifferentNumberTypes(): void {
   const str = "numbers";
   

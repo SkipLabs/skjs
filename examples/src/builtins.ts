@@ -1,5 +1,5 @@
 declare const console: {
-  log<T>(msg: T): void;
+  log<T>(...msg: T[]): void;
   assert(cond: boolean, msg?: string): void;
 };
 
@@ -376,4 +376,8 @@ declare const BigInt: {
   // Static methods
   asIntN(width: number, bigint: bigint): bigint;
   asUintN(width: number, bigint: bigint): bigint;
+}
+
+declare class Error {
+  constructor(cause?: string);
 }

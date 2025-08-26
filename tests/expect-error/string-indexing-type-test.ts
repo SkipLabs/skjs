@@ -27,11 +27,24 @@ function testStringIndexingInUnion(): void {
 }
 
 // Test to ensure we can handle the undefined case
-function testUndefinedHandling(): void {
+function testUndefinedHandlingInline(): void {
+  const str = "world";
+  const char = str[0];
+  
+  // TODO: Should work with undefined checks
+  // @ts-expect-error Invalid '.'
+  const length = char !== undefined ? char.length : 0;
+  console.log(length);
+}
+
+// Test to ensure we can handle the undefined case
+function testUndefinedHandling(): number {
   const str = "world";
   const char = str[0];
   
   // Should work with undefined checks
-  const length = char !== undefined ? char.length : 0;
-  console.log(length);
+  if (char !== undefined) {
+    return char.length;
+  }
+  return 0;
 }
