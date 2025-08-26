@@ -114,9 +114,9 @@ extension class Parser {
   //
   // <symbol> ::=
   //   | <name>
-  //   | <name>
-  //   | <name> in <type> (? <type>)? (<fn-op>)?
-  //   | <name> : <type>
+  //   | [ <name> ]
+  //   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
+  //   | [ <name> : <type> ]
   /***************************************************************************/
 
   // Parse a symbol (used in function names and computed property names)
@@ -179,9 +179,7 @@ extension class Parser {
           _ = this.lex.next();
           indexType = this.type(0);
           this.expect(TKCloseSquare());
-          this.expect(TKColon());
-          returnType = this.type(0);
-          FNColon(fname, indexType, returnType)
+          FNColon(fname, indexType)
         } else {
           this.expect(TKCloseSquare());
           FNSymbol(fname);

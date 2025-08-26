@@ -343,22 +343,22 @@ base class PostOperator uses XXHashable {
 /***************************************************************************/
 // <symbol> ::=
 //   | <name>
-//   | <name>
-//   | <name> in <type> (? <type>)? (<fn-op>)?
-//   | [ <name> : <type> ]: <type>
+//   | [ <name> ]
+//   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
+//   | [ <name> : <type> ]
 /***************************************************************************/
 base class Symbol uses XXHashable, Hashable, Orderable {
   children =
   | FNNormal(Name)
   | FNSymbol(Name)
   | FNIn(Name, Type, ?Type, ?FNOp)
-  | FNColon(indexName: Name, indexType: Type, returnType: Type)
+  | FNColon(indexName: Name, indexType: Type)
 
   fun getName(): String
   | FNNormal(n) -> n.value
   | FNSymbol(n) -> n.value
   | FNIn(n, _, _, _) -> n.value
-  | FNColon(n, _, _) -> n.value
+  | FNColon(n, _) -> n.value
 
   fun compare(other: Symbol): Order {
     this.getName().compare(other.getName())

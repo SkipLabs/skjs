@@ -322,7 +322,11 @@ class TEnv{
             )
           | Some(f) -> acc![fieldName] = f
           }
-        | idx @ FNColon(indexName, indexType, returnType) ->
+        | idx @ FNColon(indexName, indexType) ->
+          returnType = field.type match {
+          | None() -> typingError(Array[(field.pos, "Missing type annotation")])
+          | Some(ty) -> ty
+          };
           TField::create(
             indexName.pos,
             "[]",
