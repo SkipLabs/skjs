@@ -58,6 +58,9 @@ value class PosRange private (
   }
 
   fun extend(end: PosRange): this {
+    if (this.symbol != end.symbol) {
+      internal_error("Cannot extend a position with a different symbol");
+    };
     this with {relEnd => end.relEnd}
   }
 
