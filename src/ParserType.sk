@@ -193,7 +193,7 @@ extension class Parser {
             _ = this.lex.next();
             dotName = this.getName();
             !name = Name(
-              name.posRange.extend(dotName.posRange),
+              name.pos.extend(dotName.pos),
               name.value + "." + dotName.value,
             );
           };
@@ -237,7 +237,7 @@ extension class Parser {
           _ = this.lex.next();
           dotName = this.getName();
           !name = Name(
-            name.posRange.extend(dotName.posRange),
+            name.pos.extend(dotName.pos),
             name.value + "." + dotName.value,
           );
         };

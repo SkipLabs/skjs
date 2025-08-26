@@ -45,7 +45,7 @@ base class CGNode_ uses XXHashable, Show {
     | Toplevel(file) -> "top-level expr (" + file + ")"
     | ArrowTypeAnnot(file) -> "arrow-type annotation (" + file + ")"
     | AnonymousLambda(pos, _closure) ->
-      "lambda (" + pos.fileName + ":" + pos.start.value + ")"
+      "lambda (" + pos.fileName + ":" + pos.relStart.value + ")"
     | AnonymousFunDef(fd) ->
       name = fd.name match {
       | Some(n) -> "\"" + n.getName() + "\""
@@ -56,7 +56,7 @@ base class CGNode_ uses XXHashable, Show {
         " (" +
         fd.pos.fileName +
         ":" +
-        fd.pos.start.value +
+        fd.pos.relStart.value +
         ")"
     }
   }
@@ -69,7 +69,7 @@ class AnonymousLambda(
     //always hash the pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
-        (this.pos.fileName, this.pos.start.value, this.pos.end.value).xxhash()
+        (this.pos.fileName, this.pos.relStart.value, this.pos.relEnd.value).xxhash()
           .value,
         this.closure.xxhash(ignorePos).value,
       ),
@@ -83,8 +83,8 @@ class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
       XXHash64.xxHash64(
         (
           this.funDef.pos.fileName,
-          this.funDef.pos.start.value,
-          this.funDef.pos.end.value,
+          this.funDef.pos.relStart.value,
+          this.funDef.pos.relEnd.value,
         ).xxhash().value,
         this.funDef.xxhash(ignorePos).value,
       ),
