@@ -176,13 +176,30 @@ class TType private {
     static::create(this.pos, insts(this.insts), clauses(this.clauses))
   }
 
-  /* Returns this union undefined */
-  fun withUndefined(undefinedPosRange: PosRange): this {
-    if (!this.containsUndefined()) {
-      !this.clauses = this.clauses.withUndefined(undefinedPosRange);
+  // Manually inlined and specialized version of
+  // static::union(_, _, this, static::single(TPrimVoid(TUndefined(), pos)))
+  // Josh: It will be easy for this to become out of sync with union. It is
+  // unclear that the optimization benefit is worthwhile.
+  fun unionUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
+    result = if (this.containsUndefined()) {
+      this
+    } else {
+      static::create(
+        this.pos,
+        this.insts,
+        this.clauses.unionUndefined(subst, tenv, pos),
+      )
     };
-    // We need this to make sure the hash is up-to-date
-    static::create(this.pos, this.insts, this.clauses)
+    assert(
+      result ==
+        static::union(
+          subst,
+          tenv,
+          this,
+          static::single(TPrimVoid(TUndefined(), pos)),
+        ),
+    );
+    result
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
@@ -541,11 +558,11 @@ class TConstr(
     TFields::isSub(subst, env, x.fields, y.fields)
   }
 
-  fun getType(fieldName: Name): TType {
+  fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
     if (fieldName.value == kAlgebraicBranchFieldName) {
       TType::constantString(this.tagPos, this.tag)
     } else {
-      this.fields.getType(fieldName)
+      this.fields.getType(subst, tenv, fieldName)
     }
   }
 
@@ -878,7 +895,7 @@ class TFields private (
     Some(this.fields[idx])
   }
 
-  fun getType(fieldName: Name): TType {
+  fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
     this.maybeGet(fieldName.value) match {
     | None() ->
       typingError(
@@ -896,7 +913,11 @@ class TFields private (
       )
     | Some(fd) ->
       ty = fd.type;
-      if (fd.isOptional) ty.withUndefined(fieldName.pos) else ty
+      if (fd.isOptional) {
+        ty.unionUndefined(subst, tenv, fieldName.pos)
+      } else {
+        ty
+      }
     }
   }
 
@@ -1036,12 +1057,19 @@ class STypes private (
     )
   }
 
-  fun addUndefined(pos: PosRange): this {
+  // Manually inlined and specialized version of
+  // static::union(_, _, this, static::single(TPrimVoid(TUndefined(), pos)))
+  // except that this fails if the result would be unchanged.
+  // Josh: It will be easy for this to become out of sync with union. It is
+  // unclear that the optimization benefit is worthwhile.
+  fun addUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
     if (this.containsUndefined()) {
       internal_error("type already contains undefined")
     };
     undef: SType = TPrimVoid(TUndefined(), pos);
-    static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
+    result = static(this.stypes.union(InternalKeyedArrayMap::single(undef)));
+    assert(result == static::union(subst, tenv, this, static::single(undef)));
+    result
   }
 
   fun getConstantString(): ?(PosRange, String) {
@@ -1256,10 +1284,10 @@ class Clause private (
     static::create(ArraySet::empty(), Some(stypes))
   }
 
-  static fun undefined(undefinedPosRange: PosRange): this {
+  static fun undefined(pos: PosRange): this {
     static(
       ArraySet::empty(),
-      Some(STypes::empty().addUndefined(undefinedPosRange)),
+      Some(STypes::single(TPrimVoid(TUndefined(), pos))),
     )
   }
 
@@ -1304,16 +1332,22 @@ class Clause private (
     Clause(this.vars, stypesOpt)
   }
 
-  fun addUndefined(undefinedPosRange: PosRange): this {
+  // Manually inlined and specialized version of
+  // this.union(_, _, static::undefined(pos))
+  // except that this fails if the result would be unchanged.
+  // Josh: It will be easy for this to become out of sync with union. It is
+  // unclear that the optimization benefit is worthwhile.
+  fun addUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
     if (!this.vars.isEmpty()) {
       internal_error("Trying to add undefined to an intersection clause")
     };
     stypes = this.stypes match {
     | None() -> internal_error("Trying to add undefined to a Top clause")
-    | Some(stypes) -> stypes.addUndefined(undefinedPosRange)
+    | Some(stypes) -> stypes.addUndefined(subst, tenv, pos)
     };
-    !this.stypes = Some(stypes);
-    this
+    result = static(this.vars, Some(stypes));
+    assert(result == this.union(subst, tenv, static::undefined(pos)));
+    result
   }
 
   fun containsUndefined(): Bool {
@@ -1479,14 +1513,30 @@ class Clauses private (
     STOk()
   }
 
-  fun withUndefined(undefinedPosRange: PosRange): this {
-    undefined = InternalKeyedArrayMap::single(
-      Clause::undefined(undefinedPosRange),
+  // Manually inlined and specialized version of
+  // static::union(_, _, this, static::create(InternalKeyedArrayMap::single(Clause::undefined(pos))))
+  // Josh: It will be easy for this to become out of sync with union. It is
+  // unclear that the optimization benefit is worthwhile.
+  fun unionUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
+    result = if (this.containsUndefined()) {
+      this
+    } else {
+      undefined = InternalKeyedArrayMap::single(Clause::undefined(pos));
+      clauses = this.clauses.mapUnion(undefined, (clause, _) -> {
+        clause.addUndefined(subst, tenv, pos)
+      });
+      static(clauses)
+    };
+    assert(
+      result ==
+        static::union(
+          subst,
+          tenv,
+          this,
+          static::create(InternalKeyedArrayMap::single(Clause::undefined(pos))),
+        ),
     );
-    !this.clauses = this.clauses.mapUnion(undefined, (clause, _) ->
-      clause.addUndefined(undefinedPosRange)
-    );
-    this
+    result
   }
 
   fun getConstantString(): ?(PosRange, String) {
