@@ -51,10 +51,26 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Error**: "Invariant violation: TODO keyof"
 - **Workaround**: Use explicit property access or type-specific functions
 
-### 9. String Literals vs String Types
-- **Rule**: Single quotes `'text'` create literal types, double quotes `"text"` create string types
-- **Usage**: Use single quotes for union type members, double quotes for general strings
-- **Example**: `type Status = 'active' | 'inactive'` but `let message: string = "Hello"`
+### 9. String Literals and 'as const' Syntax
+- **Rule**: Both single and double quotes create the same behavior in expressions and types
+- **Type Contexts**: Both `'text'` and `"text"` always create string literal types in type definitions
+- **Expression Contexts**: Both `'text'` and `"text"` create regular string types unless `as const` is used
+- **'as const' Usage**: Use `'text' as const` or `"text" as const` in expressions to create string literal types
+- **ADT Pattern**: Discriminated unions require `as const` in object expressions for type narrowing
+- **Examples**:
+  ```typescript
+  // Type definitions - both quotes create literal types
+  type Status = 'active' | 'inactive';  // ✓ literal types
+  type Status = "active" | "inactive";  // ✓ also literal types
+  
+  // Expressions - need 'as const' for literals
+  let obj = { kind: 'success' as const, data: 'hello' };  // ✓ 'success' is literal
+  let obj = { kind: 'success', data: 'hello' };           // ✗ 'success' is string
+  
+  // Both quote styles work with 'as const'
+  let single = { kind: 'active' as const };   // ✓ works
+  let double = { kind: "active" as const };   // ✓ also works
+  ```
 
 ### 10. Function Overloading Not Supported
 - **Rule**: Function overloading is not supported in SKJS
@@ -231,7 +247,8 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 9. **Use local variables for null/undefined comparisons**: Always assign properties to locals before comparing to null/undefined
 10. **NEVER use Array.get()**: Always use `arr[index]` syntax - `.get()` will crash at runtime!
 11. **NEVER use the `any` type**: The `any` type is not supported in SKJS - use specific types or union types instead
-12. **Avoid the `!` operator**: Use explicit comparisons like `=== false` instead of `!` for better type safety
+12. **Use 'as const' for discriminated unions**: Always use `'value' as const` in object expressions for ADT patterns
+13. **Avoid the `!` operator**: Use explicit comparisons like `=== false` instead of `!` for better type safety
 
 ## File Organization and Structure Guidelines
 
@@ -410,27 +427,37 @@ function main(): void {
 let x: number = 10; // "Construction not supported: toplevel let"
 ```
 
-### Literal Types and Union Types
+### String Literals and 'as const' Syntax
 ```typescript
-// Good - use single quotes for literal types
-type Status = 'active' | 'inactive' | 'pending';
-let userStatus: Status = 'active';
+// Good - both quote styles work in type definitions
+type Status = 'active' | 'inactive' | 'pending';   // ✓ creates literal types
+type Status = "active" | "inactive" | "pending";   // ✓ also creates literal types
 
-// Good - use double quotes for string values
-let message: string = "Hello, world!";
+// Good - use 'as const' in expressions for literal types
+let config = { status: 'active' as const, id: 123 };      // ✓ 'active' is literal
+let config = { status: "active" as const, id: 123 };      // ✓ also works
 
-// Avoid - mixing quotes inappropriately
-type Status = "active" | "inactive"; // Should use single quotes
-let userStatus: Status = "active"; // Should use single quotes
+// Good - regular string values don't need 'as const'
+let message: string = "Hello, world!";                     // ✓ regular string
+
+// Avoid - missing 'as const' in discriminated unions
+let result = { kind: 'success', data: 'hello' };          // ✗ 'success' is string, not literal
 ```
 
 ### Algebraic Data Types
 ```typescript
-// Good - ADT with 'kind' field
+// Good - ADT type definition (no 'as const' needed in types)
 type Shape = 
     | { kind: 'circle', radius: number }
     | { kind: 'square', side: number };
 
+// Good - ADT object creation with 'as const'
+function createShapes(): void {
+    let circle: Shape = { kind: 'circle' as const, radius: 5 };
+    let square: Shape = { kind: 'square' as const, side: 4 };
+}
+
+// Good - pattern matching works with 'as const' objects
 function calculateArea(shape: Shape): number {
     if (shape.kind === 'circle') {
         return Math.PI * shape.radius * shape.radius;
@@ -439,6 +466,9 @@ function calculateArea(shape: Shape): number {
     }
     return 0;
 }
+
+// Avoid - missing 'as const' in object expressions
+let badCircle: Shape = { kind: 'circle', radius: 5 };  // ✗ 'circle' is string, not literal
 
 // Avoid - using different discriminator field
 type BadShape = 
