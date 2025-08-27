@@ -826,8 +826,19 @@ class TFields private (
     Some(this.fields[idx])
   }
 
+  fun maybeGetType(subst: mutable Subst, tenv: TEnv, fieldName: Name): ?TType {
+    this.maybeGet(fieldName.value).map(fd -> {
+      ty = fd.type;
+      if (fd.isOptional) {
+        ty.unionUndefined(subst, tenv, fieldName.pos)
+      } else {
+        ty
+      }
+    })
+  }
+
   fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
-    this.maybeGet(fieldName.value) match {
+    this.maybeGetType(subst, tenv, fieldName) match {
     | None() ->
       typingError(
         Array[
@@ -842,13 +853,7 @@ class TFields private (
           ),
         ],
       )
-    | Some(fd) ->
-      ty = fd.type;
-      if (fd.isOptional) {
-        ty.unionUndefined(subst, tenv, fieldName.pos)
-      } else {
-        ty
-      }
+    | Some(ty) -> ty
     }
   }
 
