@@ -221,7 +221,7 @@ class FileDefs{
       | VarDefs _ ->
         state.newDef(context, index, rootOpt, dirName, None(), false, def)
       | ExportNames(_, names, None()) -> static::exportNames(state, names)
-      | ExportNames(_, names, Some(Expr(_, EString(_, mname)))) ->
+      | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
         fn = resolveName(context, index, rootOpt, dirName, mname) match {
         | None() -> continue
         | Some(x) -> x
