@@ -477,8 +477,8 @@ class TypeChecker{
             env,
             e.pos,
             "Invalid assignment",
-            type,
             this.expr(env, e),
+            type,
           )
         }
       | fd @ FunDef _ ->
