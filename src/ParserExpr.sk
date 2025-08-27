@@ -28,6 +28,7 @@ extension class Parser {
   //   | [ <expr>* ]
   //   | <expr> ? <expr> : <expr>
   //   | <expr> instanceof <expr>
+  //   | <expr> as const
   //   | <expr> as <type>
   //   | < <type> > <expr>
   //   | /<regexp>/
@@ -432,20 +433,11 @@ extension class Parser {
       );
       _ = this.lex.next();
 
-      // Check if this is 'as const' for string literals only
+      // Check if this is 'as const'
       if (this.lex.isEq("const")) {
-        // Only allow 'as const' on string literals
-        mutableLeft match {
-        | EString(_, _) ->
-          _ = this.lex.next(); // consume 'const'
-          result = AsConst(Expr(leftPosRange, mutableLeft));
-          (true, result)
-        | _ ->
-          // For non-string literals, treat "const" as a type identifier
-          ty = this.type(0);
-          result = As(Expr(leftPosRange, mutableLeft), ty);
-          (true, result)
-        }
+        _ = this.lex.next(); // consume 'const'
+        result = AsConst(Expr(leftPosRange, mutableLeft));
+        (true, result)
       } else {
         ty = this.type(0);
         result = As(Expr(leftPosRange, mutableLeft), ty);
