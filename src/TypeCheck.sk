@@ -477,7 +477,7 @@ class TypeChecker{
             env,
             e.pos,
             "Invalid assignment",
-            this.expr(env, e),
+            this.expr(env, e, true),
             type,
           )
         }
