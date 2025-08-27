@@ -1330,13 +1330,11 @@ class TypeChecker{
       | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
         TType::top(objectPos)
       | TObject _ ->
+        arrTy = TType::single(stype);
         this.call(
           env,
           pos,
-          this.expr(
-            env,
-            Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "[]"))))),
-          ),
+          this.dot(env, arr.pos, arrTy, Name(pos, "[]")),
           Array[],
           Array[idxType],
         ).withPos(pos)
