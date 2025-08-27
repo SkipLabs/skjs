@@ -1518,7 +1518,7 @@ class TypeChecker{
         )
       | Some(stypes) -> stypes
       };
-      idxType = this.expr(env, idx);
+      idxType = this.expr(env, idx, true);
       result = TType::bottom(pos);
       for (stype in stypes) {
         ty = stype match {
