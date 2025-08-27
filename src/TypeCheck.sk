@@ -1199,6 +1199,9 @@ class TypeChecker{
     }
   }
 
+  /* Typechecks expression  obj.fieldName
+             or expression  obj?.fieldName  if optionalChaining is true
+       where obj has type objType */
   fun dot(
     env: mutable TCEnv,
     pos: PosRange,
