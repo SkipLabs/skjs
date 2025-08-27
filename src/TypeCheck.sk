@@ -1939,66 +1939,46 @@ class TypeChecker{
   }
 
   fun makeLiteralType(e: Expr): ?TType {
-    e match {
-    | Expr(valuePos, Var(Name(_, "null"))) ->
-      Some(TType::single(valuePos, TPrimVoid(TNull(), valuePos)))
-    | Expr(valuePos, Var(Name(_, "undefined"))) ->
-      Some(TType::single(valuePos, TPrimVoid(TUndefined(), valuePos)))
-    | Expr(valuePos, Number(n)) ->
+    pos = e.pos;
+    e.value match {
+    | Var(Name(_, "null")) -> Some(TType::single(pos, TPrimVoid(TNull(), pos)))
+    | Var(Name(_, "undefined")) ->
+      Some(TType::single(pos, TPrimVoid(TUndefined(), pos)))
+    | Number(n) ->
       Some(
         TType::single(
-          valuePos,
-          TPrimValue(
-            TNum(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
+          pos,
+          TPrimValue(TNum(), Some(ArrayValues::single((pos, n))), pos),
         ),
       )
-    | Expr(valuePos, Var(Name(_, "true"))) ->
+    | Var(Name(_, "true")) ->
       Some(
         TType::single(
-          valuePos,
-          TPrimValue(
-            TBool(),
-            Some(ArrayValues::single((valuePos, "true"))),
-            valuePos,
-          ),
+          pos,
+          TPrimValue(TBool(), Some(ArrayValues::single((pos, "true"))), pos),
         ),
       )
-    | Expr(valuePos, Var(Name(_, "false"))) ->
+    | Var(Name(_, "false")) ->
       Some(
         TType::single(
-          valuePos,
-          TPrimValue(
-            TBool(),
-            Some(ArrayValues::single((valuePos, "false"))),
-            valuePos,
-          ),
+          pos,
+          TPrimValue(TBool(), Some(ArrayValues::single((pos, "false"))), pos),
         ),
       )
-    | Expr(valuePos, EString(_, n)) ->
+    | EString(_, n) ->
       Some(
         TType::single(
-          valuePos,
-          TPrimValue(
-            TString(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
+          pos,
+          TPrimValue(TString(), Some(ArrayValues::single((pos, n))), pos),
         ),
       )
-    | Expr(valuePos, AsConst(subExpr)) ->
+    | AsConst(subExpr) ->
       subExpr.value match {
       | EString(_, n) ->
         Some(
           TType::single(
-            valuePos,
-            TPrimValue(
-              TString(),
-              Some(ArrayValues::single((valuePos, n))),
-              valuePos,
-            ),
+            pos,
+            TPrimValue(TString(), Some(ArrayValues::single((pos, n))), pos),
           ),
         )
       | _ -> None()
