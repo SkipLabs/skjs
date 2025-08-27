@@ -111,6 +111,23 @@ class TType private {
     static::fromClauses(pos, Clauses::single(tParam))
   }
 
+  static fun fromTParamWithConstraint(
+    context: mutable SKStore.Context,
+    tenv: TEnv,
+    pos: PosRange,
+    tparam: TParamWithConstraint,
+    stypes: ?STypes,
+  ): this {
+    ty = TType::fromClauses(
+      pos,
+      Clauses::single(TParam(tparam.name, tparam.fileName, tparam.id), stypes),
+    );
+    tparam.cstr match {
+    | None() -> ty
+    | Some(cstr) -> TType::inter(Subst::mcreate{context}, tenv, ty, cstr)
+    }
+  }
+
   static fun fromClauses(pos: PosRange, clauses: Clauses): this {
     static::create(pos, TInsts::empty(), clauses)
   }
@@ -1372,12 +1389,6 @@ class Clauses private (
       TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
       stypes,
     )
-  }
-  static fun fromTParamWithConstraint(
-    tparam: TParamWithConstraint,
-    stypes: ?STypes,
-  ): this {
-    static::single(TParam(tparam.name, tparam.fileName, tparam.id), stypes)
   }
 
   static fun fromSTypes(stypes: STypes): this {

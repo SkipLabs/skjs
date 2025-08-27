@@ -555,14 +555,7 @@ class TEnv{
           )
         };
         tparam = this.tparams[n.value];
-        ty = TType::fromClauses(
-          pos,
-          Clauses::fromTParamWithConstraint(tparam, None()),
-        );
-        tparam.cstr match {
-        | None() -> ty
-        | Some(cstr) -> TType::inter(Subst::mcreate{context}, this, ty, cstr)
-        }
+        TType::fromTParamWithConstraint(context, this, pos, tparam, None())
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
