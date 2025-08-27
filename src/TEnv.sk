@@ -229,6 +229,42 @@ class TEnv{
     this
   }
 
+  private fun createIndexingMethod(
+    context: mutable SKStore.Context,
+    idx: FNColon,
+    returnType: Type,
+    cgNode: CGNode,
+  ): TField {
+    pos = idx.indexName.pos;
+    TField::create(
+      pos,
+      "[]",
+      false,
+      this.normalize(
+        context,
+        Type(
+          pos,
+          TAFun(
+            true,
+            Array[],
+            Array[
+              TAFunParam(
+                Some(TAParamName(idx.indexName)),
+                None(),
+                idx.indexType,
+              ),
+            ],
+            returnType,
+            cgNode,
+          ),
+        ),
+      ),
+    ) match {
+    | None() -> typingError(Array[(pos, `Forbidden field name [] in a class`)])
+    | Some(f) -> f
+    }
+  }
+
   private fun addFields(
     context: mutable SKStore.Context,
     acc: mutable Map<String, TField>,
@@ -316,35 +352,15 @@ class TEnv{
             )
           | Some(f) -> acc![fieldName] = f
           }
-        | idx @ FNColon(indexName, indexType) ->
-          TField::create(
-            indexName.pos,
-            "[]",
-            false,
-            this.normalize(
-              context,
-              Type(
-                indexName.pos,
-                TAFun(
-                  true,
-                  Array[],
-                  Array[
-                    TAFunParam(Some(TAParamName(indexName)), None(), indexType),
-                  ],
-                  field.type,
-                  CGNode::create(
-                    Method(Some(idx), className, indexName.pos.fileName, false),
-                  ),
-                ),
-              ),
+        | idx @ FNColon(indexName, _indexType) ->
+          acc!["[]"] = this.createIndexingMethod(
+            context,
+            idx,
+            field.type,
+            CGNode::create(
+              Method(Some(idx), className, indexName.pos.fileName, false),
             ),
-          ) match {
-          | None() ->
-            typingError(
-              Array[(field.pos, `Forbidden field name [] in a class`)],
-            )
-          | Some(f) -> acc!["[]"] = f
-          }
+          )
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ FunDef _ ->
