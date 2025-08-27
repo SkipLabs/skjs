@@ -1,0 +1,250 @@
+/***************************************************************************/
+/* Function-related type checking methods for the SKJS type checker. */
+/***************************************************************************/
+
+module SKJS;
+
+extension class TypeChecker {
+  static fun uninitializedThisType(pos: PosRange): TType {
+    TType::single(TObject(TFields::create(Array[]), pos));
+  }
+
+  fun funDefSetup(
+    context: mutable SKStore.Context,
+    thisTypeOpt: ?TType,
+    fd: FunDef,
+    callingContext: CGNode,
+  ): (this, mutable TCEnv) {
+    subst = Subst::mcreate{context};
+    scope = Scope::mcreateToplevel(fd.pos.fileName) with {callingContext};
+    env = mutable TCEnv(context, subst, scope);
+    thisTypeOpt match {
+    | None() -> void
+    | Some(thisType) ->
+      !this.tenv.subst["this"] = (false, thisType);
+      scope.bind(Name(fd.pos, "this"), thisType, true)
+    };
+    !this.tenv = this.tenv.addTParams(context, fd.tparams);
+    for (i => param in fd.params) {
+      (paramName, tyOpt) = param.name match {
+      | PNName(n, ty) -> (n, ty)
+      | PNDDD(name) ->
+        if (i != fd.params.size() - 1) {
+          typingError(Array[(name.pos, "... should be the last parameter")])
+        };
+        (name, None())
+      | _ ->
+        typingError(
+          Array[
+            (param.pos, "TODO: support for patterns in function parameters"),
+          ],
+        )
+      };
+      paramType = tyOpt match {
+      | None() ->
+        param.type match {
+        | None() -> typingError(Array[(param.pos, "Missing type annotation")])
+        | Some(ty) -> ty
+        }
+      | Some(x) -> x
+      };
+      scope.bind(paramName, this.tenv.normalize(context, paramType), true)
+    };
+    !this.retType = fd.retType.i1.map(rty -> this.tenv.normalize(context, rty));
+    (this, env)
+  }
+
+  fun funDef(
+    context: mutable SKStore.Context,
+    thisTypeOpt: ?(ClassKind, TType),
+    fd: FunDef,
+    cgNode: CGNode,
+  ): void {
+    for (modifier in fd.modifiers.modifiers) {
+      modifier.value match {
+      | "static" -> !thisTypeOpt = None()
+      | unsupported ->
+        // TODO: protected, private, public, abstract, readonly
+        typingError(
+          Array[
+            (
+              modifier.pos,
+              `TODO: support for method modifiers (encountered ${unsupported})`,
+            ),
+          ],
+        )
+      }
+    };
+    (!this, env) = this.funDefSetup(
+      context,
+      thisTypeOpt.map(x -> x.i1),
+      fd,
+      cgNode,
+    );
+    if (this.retType is None()) {
+      typingError(Array[(fd.retType.i0, "Missing return type")])
+    };
+    retType = this.retType.fromSome();
+    fd.isAsync match {
+    | None() -> void
+    | Some(asyncPos) ->
+      !this.isAsync = true;
+      tvar = env.subst.gen(asyncPos);
+      type = TType::fromTInst(tvar);
+      this.checkSubType(
+        env,
+        asyncPos,
+        "Async functions must return an object of type Promise<_>",
+        retType,
+        TType::single(TPromise(type, asyncPos)),
+      )
+    };
+    fd.body match {
+    | FDBNone(pos) ->
+      if (thisTypeOpt is Some((CKClass(), _))) {
+        typingError(Array[(pos, "Missing definition")])
+      }
+    | FDBSome(body) ->
+      if (thisTypeOpt is Some((CKInterface(), _))) {
+        typingError(Array[(fd.pos, "An interface cannot implement a method")])
+      };
+      _ = this.block(env, body);
+      term = StmtTermination::block(body);
+      if (term.mayFallthrough && !this.isVoid(env, retType)) {
+        typingError(
+          Array[(fd.pos, "This function may not always return a value")],
+        )
+      }
+    };
+  }
+
+  fun isVoid(env: mutable TCEnv, ty: TType): Bool {
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | None() -> return false
+      | Some(stypes) ->
+        stypes.singleElt() match {
+        | Some(TPrimVoid(TVoid(), _)) -> void
+        | _ -> return false
+        }
+      }
+    };
+    true
+  }
+
+  // Returns true if the type is not Top but contains void
+  fun nonTopContainsVoid(env: mutable TCEnv, ty: TType): Bool {
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | Some(stypes) if (stypes.any(stype ~> stype is TPrimVoid(TVoid(), _))) ->
+        return true
+      | _ -> void
+      }
+    };
+    false
+  }
+
+  fun constructor(
+    context: mutable SKStore.Context,
+    thisType: TType,
+    partialThisType: TType,
+    fd: FunDef,
+    className: ?Name,
+  ): void {
+    if (fd.retType.i1 is Some _) {
+      typingError(
+        Array[(fd.retType.i0, "Constructors don't have return types")],
+      );
+    };
+    if (!fd.modifiers.modifiers.isEmpty()) {
+      typingError(
+        Array[
+          (
+            fd.modifiers.modifiers.firstItem().i1.pos,
+            "Constructors cannot have modifiers",
+          ),
+        ],
+      );
+    };
+    cgNode = CGNode::create(
+      className match {
+      | Some(cname) -> Constructor(cname, fd.pos.fileName)
+      | None() -> AnonymousFunDef(fd)
+      },
+    );
+    (!this, env) = this.funDefSetup(context, Some(partialThisType), fd, cgNode);
+    env.localObjects!["this"] = Some(thisType);
+    fd.isAsync match {
+    | None() -> void
+    | Some(asyncPos) ->
+      typingError(Array[(asyncPos, "Constructors cannot be async")])
+    };
+    fd.body match {
+    | FDBNone(pos) -> typingError(Array[(pos, "Missing definition")])
+    | FDBSome(body) ->
+      blockScope = this.block(env, body);
+      blockThisType = blockScope.get(Name(fd.pos, "this"));
+      objType = blockThisType.filterMethods(env.subst, this.tenv);
+      fullType = thisType.filterMethods(env.subst, this.tenv);
+      this.checkSubType(
+        env,
+        fd.pos,
+        "Invalid initialization",
+        objType,
+        fullType,
+      )
+    };
+  }
+
+  fun closure(
+    subst: mutable Subst,
+    scope: Scope,
+    params: Array<(Name, TType)>,
+    retType: TType,
+    body: ClosureBody,
+  ): void {
+    env = mutable TCEnv(subst.context, subst, Scope::fromSaved(scope));
+    for (param in params) {
+      env.scope.bind(param.i0, param.i1, true)
+    };
+    body match {
+    | CBExpr(e) ->
+      this.checkSubType(
+        env,
+        e.pos,
+        "Invalid callback return",
+        this.expr(env, e),
+        retType,
+      )
+    | CBBlock(bl) ->
+      !this.retType = Some(retType);
+      _ = this.block(env, bl)
+    }
+  }
+
+  fun callConstructor(
+    env: mutable TCEnv,
+    pos: PosRange,
+    obj: TType,
+    args: Array<TType>,
+  ): void {
+    obj.getSTypes(env.subst, this.tenv, Contravariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TObject(fields, _)) ->
+      fields.maybeGet("constructor") match {
+      | None() ->
+        if (args.size() == 0) return void;
+        typingError(
+          Array[(pos, "Invalid new: constructor expects no arguments")],
+        )
+      | Some(cstr) -> _ = this.call(env, pos, cstr.type, Array[], args)
+      }
+    | _ -> internal_error("Internal error: unexpected constructor call")
+    }
+  }
+}
+
+module end;

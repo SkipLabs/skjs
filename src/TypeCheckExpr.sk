@@ -1,0 +1,1144 @@
+/***************************************************************************/
+/* Expression type checking methods for the SKJS type checker. */
+/***************************************************************************/
+
+module SKJS;
+
+extension class TypeChecker {
+  fun nonVoidExpr(pos: PosRange, env: mutable TCEnv, e: Expr): TType {
+    ty = this.expr(env, e);
+    if (this.nonTopContainsVoid(env, ty)) {
+      typingError(
+        Array[
+          (pos, "Invalid operation on type void"),
+          (e.pos, `This expression has type ${ty}`),
+        ],
+      )
+    };
+    ty
+  }
+
+  fun expr(env: mutable TCEnv, e: Expr): TType {
+    pos = e.pos;
+    e.value match {
+    | Number(_) -> TType::single(TPrimValue(TNum(), None(), pos))
+    | EString(SKQuote(), _) -> TType::single(TPrimValue(TString(), None(), pos))
+    | EString(SKDoubleQuote(), _) ->
+      TType::single(TPrimValue(TString(), None(), pos))
+    | EString(SKBackTick(), _) ->
+      TType::single(TPrimValue(TString(), None(), pos))
+    | TemplateLiteral(_parts, exprs) ->
+      // Type check all embedded expressions - allow primitive types that can be converted to strings
+      strType = TType::single(TPrimValue(TString(), None(), pos));
+      for (expr in exprs) {
+        ety = this.expr(env, expr);
+        this.checkStringifiable(env, expr.pos, ety);
+      };
+      strType
+
+    | Var(Name(_, "true"))
+    | Var(Name(_, "false")) ->
+      TType::single(TPrimValue(TBool(), None(), pos))
+    | Var(Name(_, "null")) ->
+      this.makeBoundTVar(env, TType::single(TPrimVoid(TNull(), pos)))
+    | Var(Name(_, "undefined")) ->
+      this.makeBoundTVar(env, TType::single(TPrimVoid(TUndefined(), pos)))
+    | Var(local) ->
+      if (env.localObjects.containsKey(local.value)) {
+        env.usedObjects![local.value] = local.pos
+      };
+      env.scope.maybeGet(local) match {
+      | None() ->
+        defs = if (this.builtins.contains(local.value)) {
+          this.defMap.get(env.context, this.builtinsFileName, local)
+        } else {
+          this.defMap.get(
+            env.context,
+            FileName::create(local.pos.fileName),
+            local,
+          )
+        };
+        for (def in defs) {
+          def.value match {
+          | fd @ FunDef _ ->
+            break this.tenv.funDecl(
+              env.context,
+              false,
+              fd,
+              fd.cgNode match {
+              | Some(n) -> n
+              | None() -> CGNode::create(AnonymousFunDef(fd))
+              },
+            ).i1
+          | c @ Class _ -> break this.tenv.newStatic(env.context, c.name)
+          | VarDefs(kind, varDefArr) ->
+            if (varDefArr.size() != 1) {
+              internal_error("varDefArr size should be 1")
+            };
+            varDef = varDefArr[0];
+            if (!(kind is VDKConst _)) {
+              typingError(
+                Array[(varDef.pat.pos, "Construction not supported")],
+              );
+            };
+            if (!(varDef.pat is Pattern(_, PVar _))) {
+              typingError(
+                Array[(varDef.pat.pos, "Construction not supported")],
+              );
+            };
+            break varDef.type match {
+            | None() ->
+              varDef.value match {
+              | None() -> None()
+              | Some(x) -> this.makeLiteralType(x)
+              } match {
+              | None() -> this.newTVar(env, pos)
+              | Some(ty) -> ty
+              }
+            | Some(ty) -> this.tenv.normalize(env.context, ty)
+            }
+          | _ -> void
+          }
+        } else {
+          typingError(Array[(pos, "Unbound name")])
+        }
+      | Some(localDef) -> localDef
+      }
+    | Object(efields) ->
+      algebraicBranchField: ?(PosRange, TType) = None();
+      fields = mutable Vector[];
+      for (efield in efields) {
+        (name, ty) = efield match {
+        | FDNormal(x, y) -> (x, this.expr(env, y))
+
+        | FDSpread _ -> internal_error("TODO spread")
+        | fd @ FunDef _ ->
+          cgNode = CGNode::create(AnonymousFunDef(fd));
+          this.tenv.funDecl(env.context, true, fd, cgNode)
+        };
+        TField::create(name.pos, name.value, false, ty) match {
+        | None() ->
+          algebraicBranchField match {
+          | Some((existingPos, _existingType)) ->
+            typingError(
+              Array[
+                (name.pos, `Duplicate field ${name.value}`),
+                (existingPos, "Previously declared here"),
+              ],
+            )
+          | None() -> void
+          };
+          !algebraicBranchField = Some((name.pos, ty))
+        | Some(field) -> fields.push(field)
+        }
+      };
+      obj = createObject(
+        pos,
+        algebraicBranchField,
+        TFields::create(fields.toArray()),
+      );
+      for (efield in efields) {
+        efield match {
+        | fd @ FunDef _ ->
+          if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
+            this.constructor(
+              env.context,
+              obj,
+              static::uninitializedThisType(pos),
+              fd,
+              None(),
+            )
+          } else {
+            cgNode = CGNode::create(AnonymousFunDef(fd));
+            this.funDef(env.context, Some((CKClass(), obj)), fd, cgNode)
+          }
+        | _ -> void
+        }
+      };
+      obj
+    | Call(Expr(_, Var(Name(superPos, "super"))), targs, args) ->
+      this.super match {
+      | None() -> typingError(Array[(superPos, "'super' is not defined")])
+      | Some(super) ->
+        if (targs.size() != 0) {
+          typingError(
+            Array[(pos, "super cannot be called with type arguments")],
+          );
+        };
+        this.callConstructor(env, pos, super, args.map(x -> this.expr(env, x)));
+        thisName = Name(pos, "this");
+        thisType = TType::inter(
+          env.subst,
+          this.tenv,
+          env.scope.get(thisName),
+          super,
+        );
+        env.scope.set(thisName, thisType, (x, y) -> {
+          this.checkSubType(env, pos, "Invalid super call", x, y)
+        })
+      };
+      TType::single(TPrimVoid(TVoid(), pos))
+
+    | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
+      exprTy = this.expr(env, args[0]);
+      clauses = exprTy.expand(env.subst, this.tenv, Covariant());
+      ty = TType::fromClauses(exprTy.pos, clauses);
+      print_error(prettyPrintType(false, ty));
+      TType::single(TPrimVoid(TVoid(), pos))
+    | Call(f, targs, args) ->
+      rty = this.call(
+        env,
+        pos,
+        this.expr(env, f),
+        targs.map(ty -> this.tenv.normalize(env.context, ty)),
+        args.map(x -> this.expr(env, x)),
+      );
+      f.value match {
+      | Binop(
+        BODot(),
+        Expr(_, Var(Name(_, "console"))),
+        Expr(_, Var(Name(_, "assert"))),
+      ) if (args.size() >= 1) ->
+        this.evalCond(env, args[0], true)
+      | _ -> void
+      };
+      rty
+    | New(className, targsAst, argsAst) ->
+      targs = if (targsAst.size() == 0) {
+        this.tenv.makeTArgs(env.context, env.subst, className)
+      } else {
+        targsAst.map(targ -> this.tenv.normalize(env.context, targ))
+      };
+      obj = this.tenv.new(env.context, className, targs);
+      this.callConstructor(env, pos, obj, argsAst.map(e -> this.expr(env, e)));
+      obj
+    | Get(arr, idx) ->
+      arrType = this.expr(env, arr);
+      stypes = arrType.getSTypes(env.subst, this.tenv, Covariant()) match {
+      | None() ->
+        typingError(
+          Array[
+            (pos, "Expected an array"),
+            (pos, "Not: " + prettyPrintType(false, arrType)),
+          ],
+        )
+      | Some(stypes) -> stypes
+      };
+      idxType = this.expr(env, idx);
+      result = TType::bottom(pos);
+      for (stype in stypes) {
+        ty = stype match {
+        | TTuple(tyArr, tuplePos) ->
+          n = idx.value match {
+          | Number(str) -> str.toIntOption()
+          | _ -> None()
+          } match {
+          | None() ->
+            typingError(
+              Array[
+                (idx.pos, "Invalid index"),
+                (tuplePos, "A tuple expects a static index"),
+              ],
+            )
+          | Some(x) -> x
+          };
+          tyArr[n]
+        | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
+          TType::top(objectPos)
+        | TObject _ ->
+          this.call(
+            env,
+            pos,
+            this.expr(
+              env,
+              Expr(pos, Binop(BODot(), arr, Expr(pos, Var(Name(pos, "[]"))))),
+            ),
+            Array[],
+            Array[idxType],
+          ).withPos(pos)
+
+        | TPrimValue(primKind, _, primPos) ->
+          primKind match {
+          | TString() ->
+            // Handle string indexing: str[number] -> string | undefined
+            idxType
+              .getSTypes(env.subst, this.tenv, Covariant())
+              .flatMap(stypes ~> stypes.singleElt()) match {
+            | Some(TPrimValue(TNum(), _, _)) ->
+              // Numeric indexing of string: str[0] -> string | undefined
+              TType::union(
+                env.subst,
+                this.tenv,
+                TType::single(TPrimValue(TString(), None(), pos)),
+                TType::single(TPrimVoid(TUndefined(), pos)),
+              )
+            | Some(TPrimValue(TString(), Some(stringValues), _)) ->
+              // Static string indexing for property access: str["length"]
+              objName = primKind.toString();
+              obj = this.tenv.newObject(
+                env.context,
+                Name(primPos, objName),
+                Array[],
+              );
+              ty = TType::bottom(pos);
+              for (stringValue in stringValues.values) {
+                t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
+                !ty = TType::union(env.subst, this.tenv, ty, t);
+              };
+              ty
+            | _ ->
+              typingError(
+                Array[
+                  (pos, "Invalid index"),
+                  (
+                    primPos,
+                    "String indexing requires a number or static string",
+                  ),
+                ],
+              )
+            }
+          | _ ->
+            // Handle other primitive types (numbers, booleans, etc.)
+            idxType
+              .getSTypes(env.subst, this.tenv, Covariant())
+              .flatMap(stypes ~> stypes.singleElt()) match {
+            | Some(TPrimValue(TString(), Some(stringValues), _)) ->
+              objName = primKind.toString();
+              obj = this.tenv.newObject(
+                env.context,
+                Name(primPos, objName),
+                Array[],
+              );
+              ty = TType::bottom(pos);
+              for (stringValue in stringValues.values) {
+                t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
+                !ty = TType::union(env.subst, this.tenv, ty, t);
+              };
+              ty
+            | _ ->
+              typingError(
+                Array[
+                  (pos, "Invalid index"),
+                  (primPos, "A primitive type expects a static string index"),
+                ],
+              )
+            }
+          }
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Expected an array"),
+              (pos, "Not: " + prettyPrintType(false, TType::single(stype))),
+            ],
+          )
+        };
+        !result = TType::union(env.subst, this.tenv, result, ty);
+      };
+      result
+    | EArray(arr) -> TType::single(TTuple(arr.map(x -> this.expr(env, x)), pos))
+
+    | Unop(uop, subExpr) ->
+      uop match {
+      | UOExclamationMark() ->
+        bool = TType::single(TPrimValue(TBool(), None(), pos));
+        this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
+        bool
+      | _ -> typingError(Array[(pos, "TODO: unary operator")])
+      }
+
+    | Binop(op, e1, e2) ->
+      op match {
+      | BOAddition() ->
+        ty1 = this.expr(env, e1);
+        ty1.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+          stypes.singleElt()
+        ) match {
+        | Some(TPrimValue(k @ TNum(), _, primPos))
+        | Some(TPrimValue(k @ TString(), _, primPos)) ->
+          ty2 = this.expr(env, e2);
+          res = TType::single(TPrimValue(k, None(), primPos));
+          this.checkSubType(env, e2.pos, "Invalid + operand", ty2, res);
+          res
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Invalid + operation"),
+              (e1.pos, `For an object of type: ${ty1}`),
+            ],
+          )
+        }
+      | BOAssignment() -> this.assign(env, pos, e1, e2)
+      | BOStrictInequality()
+      | BOStrictEquality() ->
+        ty1 = this.nonVoidExpr(pos, env, e1);
+        ty2 = this.nonVoidExpr(pos, env, e2);
+        if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
+          isSubTType(env.subst, this.tenv, ty1, ty2) match {
+          | STOk() -> void
+          | _ ->
+            isSubTType(env.subst, this.tenv, ty2, ty1) match {
+            | STOk() -> void
+            | _ ->
+              alwaysResult = op match {
+              | BOStrictEquality() -> "false"
+              | BOStrictInequality() -> "true"
+              | _ -> internal_error("Internal error: unexpected operator")
+              };
+              typingError(
+                Array[(pos, "This is equality is always " + alwaysResult)],
+              )
+            }
+          }
+        };
+        TType::single(TPrimValue(TBool(), None(), pos))
+
+      | BOLogicalAnd() ->
+        ty1 = this.expr(env, e1);
+        this.checkSubType(
+          env,
+          pos,
+          "Invalid &&",
+          ty1,
+          TType::single(TPrimValue(TBool(), None(), e1.pos)),
+        );
+        this.evalCond(env, e1, true);
+        ty2 = this.expr(env, e2);
+        this.checkSubType(
+          env,
+          pos,
+          "Invalid &&",
+          ty2,
+          TType::single(TPrimValue(TBool(), None(), e2.pos)),
+        );
+        TType::single(TPrimValue(TBool(), None(), pos))
+      | BOLogicalOr() ->
+        ty1 = this.expr(env, e1);
+        this.checkSubType(
+          env,
+          pos,
+          "Invalid ||",
+          ty1,
+          TType::single(TPrimValue(TBool(), None(), e1.pos)),
+        );
+        this.evalCond(env, e1, false);
+        ty2 = this.expr(env, e2);
+        this.checkSubType(
+          env,
+          pos,
+          "Invalid ||",
+          ty2,
+          TType::single(TPrimValue(TBool(), None(), e2.pos)),
+        );
+        TType::single(TPrimValue(TBool(), None(), pos))
+
+      | BODot() ->
+        e2.value match {
+        | Var(fieldName) ->
+          this.dot(env, e1.pos, this.expr(env, e1), fieldName, Covariant())
+        | _ -> typingError(Array[(e2.pos, "Invalid '.'")])
+        }
+
+      | BOOptionalDot() ->
+        e2.value match {
+        | Var(fieldName) ->
+          this.dot(
+            env,
+            e1.pos,
+            this.expr(env, e1),
+            fieldName,
+            Covariant(),
+            true/* optionalChaining */ ,
+          )
+        | _ -> typingError(Array[(e2.pos, "Invalid '?.'")])
+        }
+
+      | BOLessThan()
+      | BOLessThanOrEqual()
+      | BOGreaterThan()
+      | BOGreaterThanOrEqual() ->
+        getExprPrimKind = (e) -> {
+          ty = this.expr(env, e);
+          ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+            stypes.singleElt()
+          ) match {
+          | Some(TPrimValue(k, _, _)) -> k
+          | _ ->
+            typingError(
+              Array[
+                (
+                  pos,
+                  "Invalid comparison. You can only compare strings, numbers, and booleans.",
+                ),
+                (e1.pos, `This is a ${ty}`),
+              ],
+            )
+          }
+        };
+        kind1 = getExprPrimKind(e1);
+        kind2 = getExprPrimKind(e2);
+        if (kind1 != kind2) {
+          typingError(
+            Array[
+              (
+                pos,
+                "Invalid comparison. Both operands must have the same type.",
+              ),
+              (e1.pos, `This is a ${kind1}`),
+              (e2.pos, `This is a ${kind2}`),
+            ],
+          )
+        };
+        TType::single(TPrimValue(TBool(), None(), pos))
+
+      | BOOpAssignment(assOp) ->
+        this.expr(
+          env,
+          Expr(pos, Binop(BOAssignment(), e1, Expr(pos, Binop(assOp, e1, e2)))),
+        )
+
+      | BOAs() -> notSupported(pos)
+      | BOMultiplication()
+      | BODivision()
+      | BORemainder()
+      | BOSubtraction()
+      | BOBitwiseAnd()
+      | BOBitwiseOr()
+      | BOBitwiseXor()
+      | BOLeftShift()
+      | BOSignedRightShift()
+      | BOZeroFilledRightShift() ->
+        ty1 = this.expr(env, e1);
+        this.checkIsNumber(env, pos, "Invalid operation", ty1);
+        ty2 = this.expr(env, e2);
+        this.checkIsNumber(env, pos, "Invalid operation", ty2);
+        ty1
+
+      | BONullishCoalescing() ->
+        ty1 = this.nonVoidExpr(pos, env, e1);
+        ty2 = this.expr(env, e2);
+        ty1.getSTypes(env.subst, this.tenv, Covariant()) match {
+        | None() -> void
+        | Some(stypes) ->
+          hasNullOrUndefined = stypes.any(stype ~> stype is TPrimVoid _);
+          if (!hasNullOrUndefined) {
+            typingError(
+              Array[
+                (pos, "This operator is useless"),
+                (e1.pos, "This construction is never null or undefined"),
+              ],
+            );
+          }
+        };
+        TType::union(env.subst, this.tenv, ty1, ty2)
+      }
+
+    | InstanceOf(e1, Expr(_, Var(className))) ->
+      _ = this.expr(env, e1);
+      _ = this.tenv.getClass(env.context, className);
+      TType::single(TPrimValue(TBool(), None(), pos))
+    | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
+    | TypeOf(subExpr) ->
+      _ = this.nonVoidExpr(pos, env, subExpr);
+      TType::single(TPrimValue(TString(), None(), pos))
+
+    | PostOp(pop, subExpr) ->
+      pop match {
+      | PODecr()
+      | POIncr() ->
+        num = TType::single(TPrimValue(TNum(), None(), pos));
+        ty = this.expr(env, subExpr);
+        this.checkSubType(env, pos, "Expected integer", ty, num);
+        num
+      | POExcl() -> notSupported(pos)
+      }
+
+    | c @ Closure(params, retTypeAstOpt, body) ->
+      paramTypes = mutable Vector[];
+      noAnnot: ?PosRange = None();
+      for (param in params) {
+        paramType = param.i1 match {
+        | None() ->
+          if (noAnnot is None()) {
+            !noAnnot = Some(param.i0.pos)
+          };
+          this.newTVar(env, param.i0.pos)
+        | Some(ty) -> this.tenv.normalize(env.context, ty)
+        };
+        paramTypes.push((param.i0, paramType));
+      };
+      retType = retTypeAstOpt match {
+      | None() -> this.newTVar(env, pos)
+      | Some(retTypeAst) -> this.tenv.normalize(env.context, retTypeAst)
+      };
+      callingContext = CGNode::create(AnonymousLambda(pos, c));
+      // Register a dependency from parent context on this lambda
+      this.callgraph.recordCalls(
+        env.context,
+        env.scope.callingContext,
+        CGNodes::singleton(callingContext),
+      );
+      savedScope = env.scope.clone() with {callingContext};
+
+      lambdas = if (noAnnot is None()) {
+        this.closure(
+          env.subst,
+          savedScope,
+          paramTypes.toArray(),
+          retType,
+          body,
+        );
+        Array[]
+      } else {
+        Array[
+          Lambda(pos, (subst, argsTypes, retType) ~> {
+            args = params.mapWithIndex((i, p) ~> (p.i0, argsTypes[i]));
+            this.closure(subst, savedScope, args, retType, body)
+          }),
+        ]
+      };
+      TType::single(
+        TFuns::singleFun(
+          TFun(
+            Array[],
+            paramTypes.map(x -> x.i1).toArray(),
+            Array[],
+            None(),
+            pos,
+            lambdas,
+            retType,
+            CGNodes::singleton(callingContext),
+          ),
+          pos,
+        ),
+      )
+
+    | As _ -> notSupported(pos)
+    | Async _ -> typingError(Array[(pos, "TODO: async closures")])
+    | Await(ae) ->
+      aeType = this.expr(env, ae);
+      aeType.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+        stypes.singleElt()
+      ) match {
+      | Some(TPromise(ty, _)) -> ty
+      | _ ->
+        typingError(
+          Array[(pos, "Invalid await"), (aeType.pos, "This is not a promise")],
+        )
+      }
+    | EIf(e1, e2, e3) ->
+      cond = this.expr(env, e1);
+      left = this.expr(env, e2);
+      right = this.expr(env, e3);
+      this.checkSubType(
+        env,
+        e1.pos,
+        "Invalid ? condition",
+        cond,
+        TType::single(TPrimValue(TBool(), None(), e1.pos)),
+      );
+      TType::union(env.subst, this.tenv, left, right)
+    | AsConst(subExpr) ->
+      subExpr.value match {
+      | EString(_, x) ->
+        TType::single(
+          TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
+        )
+      | _ ->
+        typingError(
+          Array[(pos, "'as const' can only be used with string literals")],
+        )
+      }
+    | KeyOf _ -> notSupported(pos)
+    | Params _ ->
+      internal_error("Internal error: Params should not be an expression")
+    | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
+    | Spread _ -> typingError(Array[(pos, "TODO: ...")])
+    }
+  }
+
+  fun dot(
+    env: mutable TCEnv,
+    pos: PosRange,
+    objType: TType,
+    fieldName: Name,
+    variance: Variance,
+    optionalChaining: Bool = false,
+  ): TType {
+    if (fieldName.value == "constructor") {
+      typingError(Array[(fieldName.pos, "Cannot access field 'constructor'")]);
+    };
+    stypes = objType.getSTypes(env.subst, this.tenv, variance) match {
+    | Some(stypes) if (!stypes.isEmpty()) -> stypes
+    | _ ->
+      typingError(
+        Array[
+          (pos, "Invalid '.' for type: " + prettyPrintType(false, objType)),
+        ],
+      )
+    };
+    result = TType::bottom(pos);
+    optionalChainingIsUseless = optionalChaining;
+    optionalChainingIsAlwaysUndefined = optionalChaining;
+    for (stype in stypes) {
+      optionalChainingIsAlwaysUndefinedForThisSType = false;
+      stype match {
+      | TObject(fields, _) ->
+        fieldType = fields.getType(fieldName);
+        !result = TType::union(env.subst, this.tenv, result, fieldType)
+
+      | TAlgebraic(branches, _) ->
+        for (branch in branches) {
+          !result = TType::union(
+            env.subst,
+            this.tenv,
+            result,
+            branch.getType(fieldName),
+          )
+        }
+      | TPrimValue(primKind, _, stringPos) ->
+        objName = primKind.toString();
+        obj = this.tenv.newObject(
+          env.context,
+          Name(stringPos, objName),
+          Array[],
+        );
+        !result = TType::union(
+          env.subst,
+          this.tenv,
+          result,
+          obj.fields.getType(fieldName),
+        )
+      | TPrimVoid(TUndefined(), undefPos)
+      | TPrimVoid(
+        TNull(),
+        undefPos,
+      ) if (optionalChaining) ->
+        !result = result.withUndefined(undefPos);
+        !optionalChainingIsUseless = false;
+        !optionalChainingIsAlwaysUndefinedForThisSType = true
+      | _ ->
+        typingError(
+          Array[
+            (pos, "Invalid '.'"),
+            (
+              stype.pos,
+              "For type: " + prettyPrintType(false, TType::single(stype)),
+            ),
+          ],
+        )
+      };
+      !optionalChainingIsAlwaysUndefined =
+        optionalChainingIsAlwaysUndefined &&
+        optionalChainingIsAlwaysUndefinedForThisSType;
+    };
+    if (optionalChainingIsUseless) {
+      typingError(
+        Array[
+          (pos, "Useless '?.'. Use '.' instead"),
+          (objType.pos, `${objType} is never null nor undefined`),
+        ],
+      )
+    };
+    if (optionalChainingIsAlwaysUndefined) {
+      typingError(
+        Array[
+          (pos, "Result of optional chaining is always undefined"),
+          (objType.pos, `${objType} is always null or undefined`),
+        ],
+      )
+    };
+    result
+  }
+
+  fun call(
+    env: mutable TCEnv,
+    pos: PosRange,
+    fty: TType,
+    targs: Array<TType>,
+    args: Array<TType>,
+  ): TType {
+    result: ?TType = None();
+    fty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TFuns(funs, methods, _)) ->
+      for (tfun in funs.values().concat(methods.values())) {
+        this.callgraph.recordCalls(
+          env.context,
+          env.scope.callingContext,
+          tfun.cgNodes,
+        );
+        if (targs.size() != 0 && targs.size() != tfun.clauses.size()) {
+          typingError(
+            Array[
+              (
+                pos,
+                "Incompatible number of type arguments: " +
+                  targs.size() +
+                  " passed",
+              ),
+              (fty.pos, "Expected: " + tfun.clauses.size()),
+            ],
+          )
+        };
+        map = SortedMap[];
+        for (i => tparamDecl in tfun.clauses) {
+          !map[tparamDecl.id] = if (targs.isEmpty()) {
+            this.newTVar(env, pos)
+          } else {
+            targs[i]
+          };
+        };
+        !tfun = (mutable Instantiate()).fun_(
+          (env.subst, this.tenv, map.chill()),
+          tfun with {clauses => Array[]},
+        );
+        version = env.subst.version;
+        loop {
+          for (i in Range(0, tfun.params.size())) {
+            if (i >= args.size()) {
+              typingError(
+                Array[
+                  (pos, "Invalid call"),
+                  (
+                    fty.pos,
+                    "This function has " + tfun.params.size() + " parameters",
+                  ),
+                ],
+              )
+            };
+            this.checkSubType(env, pos, "Invalid call", args[i], tfun.params[i])
+          };
+          for (j in Range(0, tfun.optionalParams.size())) {
+            i = tfun.params.size() + j;
+            if (i >= args.size()) break void;
+            this.checkSubType(
+              env,
+              pos,
+              "Invalid call",
+              args[i],
+              tfun.optionalParams[j],
+            )
+          };
+          if (env.subst.version == version) break void;
+          !version = env.subst.version;
+        };
+        totalSize = tfun.params.size() + tfun.optionalParams.size();
+        if (totalSize < args.size()) {
+          tfun.spreadParam match {
+          | None() ->
+            typingError(
+              Array[
+                (pos, "Too many arguments"),
+                (tfun.minSizeWitness, "For this function"),
+              ],
+            )
+          | Some(spreadType) ->
+            spreadType
+              .getSTypes(env.subst, this.tenv, Contravariant())
+              .flatMap(stypes ~> stypes.singleElt()) match {
+            | Some(object @ TObject _) ->
+              eltType = this.getArrayEltType(env, object);
+              for (i in Range(totalSize, args.size())) {
+                this.checkSubType(
+                  env,
+                  pos,
+                  "Invalid argument",
+                  args[i],
+                  eltType,
+                );
+              }
+            | _ ->
+              typingError(
+                Array[
+                  (pos, "Invalid call. Unexpected type for ..."),
+                  (spreadType.pos, `${spreadType} is not an array`),
+                ],
+              )
+            }
+          }
+        };
+        for (lambda in tfun.lambdas) {
+          if (tfun.optionalParams.size() != 0) {
+            internal_error("tfun.optionalParams should be empty")
+          };
+          lambda.compute(env.subst, args, tfun.retType)
+        };
+        !result = result match {
+        | None() -> Some(tfun.retType)
+        | Some(r) -> Some(TType::union(env.subst, this.tenv, r, tfun.retType))
+        };
+      }
+    | _ -> void
+    };
+    result match {
+    | None() ->
+      typingError(
+        Array[
+          (pos, "Invalid call"),
+          (fty.pos, `Type ${fty} is not a function`),
+        ],
+      )
+    | Some(x) -> x
+    }
+  }
+
+  fun checkIsNumber(
+    env: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty: TType,
+  ): void {
+    ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TPrimValue(TNum(), _, _)) -> void
+    | _ -> typingError(Array[(pos, msg), (ty.pos, "This is not a number")])
+    };
+  }
+
+  fun checkStringifiable(env: mutable TCEnv, pos: PosRange, ty: TType): void {
+    // Check if the type is a primitive type that can be converted to string
+    // Allowed types: string, number, boolean, null, undefined
+    isStringifiable = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      stypes.singleElt() match {
+      | Some(TPrimValue(TString(), _, _)) -> true
+      | Some(TPrimValue(TNum(), _, _)) -> true
+      | Some(TPrimValue(TBool(), _, _)) -> true
+      | Some(TPrimVoid(TNull(), _)) -> true
+      | Some(TPrimVoid(TUndefined(), _)) -> true
+      | Some(TPrimVoid(TVoid(), _)) -> true
+      | _ -> false
+      }
+    };
+
+    if (!isStringifiable) {
+      typingError(
+        Array[
+          (
+            pos,
+            "Template literal expressions must be string, number, boolean, null, or undefined",
+          ),
+        ],
+      );
+    }
+  }
+
+  fun makeLiteralType(e: Expr): ?TType {
+    e match {
+    | Expr(valuePos, Var(Name(_, "null"))) ->
+      Some(TType::single(TPrimVoid(TNull(), valuePos)))
+    | Expr(valuePos, Var(Name(_, "undefined"))) ->
+      Some(TType::single(TPrimVoid(TUndefined(), valuePos)))
+    | Expr(valuePos, Number(n)) ->
+      Some(
+        TType::single(
+          TPrimValue(
+            TNum(),
+            Some(ArrayValues::single((valuePos, n))),
+            valuePos,
+          ),
+        ),
+      )
+    | Expr(valuePos, Var(Name(_, "true"))) ->
+      Some(
+        TType::single(
+          TPrimValue(
+            TBool(),
+            Some(ArrayValues::single((valuePos, "true"))),
+            valuePos,
+          ),
+        ),
+      )
+    | Expr(valuePos, Var(Name(_, "false"))) ->
+      Some(
+        TType::single(
+          TPrimValue(
+            TBool(),
+            Some(ArrayValues::single((valuePos, "false"))),
+            valuePos,
+          ),
+        ),
+      )
+    | Expr(valuePos, EString(_, n)) ->
+      Some(
+        TType::single(
+          TPrimValue(
+            TString(),
+            Some(ArrayValues::single((valuePos, n))),
+            valuePos,
+          ),
+        ),
+      )
+    | Expr(valuePos, AsConst(subExpr)) ->
+      subExpr.value match {
+      | EString(_, n) ->
+        Some(
+          TType::single(
+            TPrimValue(
+              TString(),
+              Some(ArrayValues::single((valuePos, n))),
+              valuePos,
+            ),
+          ),
+        )
+      | _ -> None()
+      }
+    | _ -> None()
+    }
+  }
+
+  fun makeBoundTVar(env: mutable TCEnv, ty: TType): TType {
+    tvar = env.subst.gen(ty.pos);
+    env.subst.grow(this.tenv, tvar, ty, true);
+    TType::fromTInst(tvar)
+  }
+
+  fun newTVar(env: mutable TCEnv, pos: PosRange): TType {
+    tvar = env.subst.gen(pos);
+    TType::fromTInst(tvar)
+  }
+
+  fun checkLValue(e: Expr): void {
+    e.value match {
+    | Var(Name(_, "super")) -> typingError(Array[(e.pos, "Invalid lvalue")])
+    | Var _ -> void
+    | Get _ -> void
+    | EArray _ -> void
+    | Binop(BODot(), e1, Expr(_, Var(_))) -> this.checkLValue(e1)
+    | _ -> typingError(Array[(e.pos, "Invalid lvalue")])
+    }
+  }
+
+  fun assign(env: mutable TCEnv, pos: PosRange, e1: Expr, e2: Expr): TType {
+    this.checkLValue(e1);
+    e1.value match {
+    | Var(n) ->
+      ty2 = this.expr(env, e2);
+      env.scope.set(n, ty2, (x, y) ->
+        this.checkSubType(env, pos, "Invalid assignment", x, y)
+      );
+      ty2
+    | Binop(
+      BODot(),
+      Expr(_, Var(local)),
+      Expr(_, Var(fieldName)),
+    ) if (env.localObjects.containsKey(local.value)) ->
+      fieldType = this.expr(env, e2);
+      env.localObjects[local.value] match {
+      | None() -> void
+      | Some(objectType) ->
+        this.checkSubType(
+          env,
+          e2.pos,
+          "Invalid assignment",
+          fieldType,
+          this.dot(env, e1.pos, objectType, fieldName, Covariant()),
+        )
+      };
+      this.assignLocalObject(env, pos, local, fieldName, fieldType)
+    | _ ->
+      ty1 = this.expr(env, e1);
+      ty2 = this.expr(env, e2);
+      this.checkSubType(env, e2.pos, "Invalid assignment", ty2, ty1);
+      ty1
+    }
+  }
+
+  fun assignLocalObject(
+    env: mutable TCEnv,
+    pos: PosRange,
+    local: Name,
+    fieldName: Name,
+    fieldType: TType,
+  ): TType {
+    objField = env.scope
+      .get(local)
+      .getSTypes(env.subst, this.tenv, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(fields, objPos)) ->
+      fields.maybeGet(fieldName.value) match {
+      | None() ->
+        env.usedObjects.maybeGet(local.value) match {
+        | None() -> void
+        | Some(usedPos) ->
+          typingError(
+            Array[
+              (pos, "You are trying to add a field to this object"),
+              (
+                usedPos,
+                "But this object has been already been used for something else",
+              ),
+            ],
+          )
+        };
+        if (env.scope.isThroughLoop(local)) {
+          typingError(
+            Array[(local.pos, "You cannot add a field to an object in a loop")],
+          )
+        };
+        field = TField::create(
+          fieldType.pos,
+          fieldName.value,
+          false,
+          fieldType,
+        ) match {
+        | None() -> internal_error("TODO: converting an object to an algebraic")
+        | Some(f) -> f
+        };
+        env.scope.set(
+          local,
+          TType::single(
+            TObject(
+              interTFields(
+                env.subst,
+                this.tenv,
+                fields,
+                TFields::create(Array[field]),
+              ),
+              objPos,
+            ),
+          ),
+          (x, y) -> {
+            this.checkSubType(env, fieldType.pos, "Invalid assignment", x, y)
+          },
+        );
+        fieldType
+      | Some(fd) -> fd.type
+      }
+    | _ -> internal_error("Internal error: local object is not an object")
+    };
+    this.checkSubType(
+      env,
+      fieldType.pos,
+      "Invalid assignment",
+      fieldType,
+      objField,
+    );
+    fieldType
+  }
+
+  fun getArrayEltType(env: mutable TCEnv, object: TObject): TType {
+    object.fields.maybeGet("pop") match {
+    | None() -> typingError(Array[(object.pos, "Expected an Array type")])
+    | Some(popMethod) ->
+      popF = popMethod.type
+        .getSTypes(env.subst, this.tenv, Covariant())
+        .flatMap(stypes ~> stypes.singleElt())
+        .fromSome() match {
+      | TFuns(_, methods, _) ->
+        for (met in methods) {
+          break met
+        } else {
+          internal_error("Unexpected type for Array::pop")
+        }
+      | _ -> internal_error("Unexpected pop method type for")
+      };
+      popF.retType
+    };
+  }
+}
+
+module end;

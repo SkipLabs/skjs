@@ -1,0 +1,397 @@
+/***************************************************************************/
+/* Definition type checking methods for SKJS */
+/***************************************************************************/
+
+module SKJS;
+
+extension class TypeChecker {
+  fun check(context: mutable SKStore.Context, defs: Array<Def>): Array<Error> {
+    errors = mutable Vector[];
+    for (def in defs) {
+      if (this.backtrace) this.checkDef(context, def) else {
+        try {
+          this.checkDef(context, def)
+        } catch {
+        | ErrorExn(err) -> errors.push(err)
+        | exn -> throw exn
+        }
+      }
+    };
+    errors.toArray()
+  }
+
+  fun checkDef(context: mutable SKStore.Context, def: Def): void {
+    def.value match {
+    | ExportImport _ -> notSupported(def.pos)
+    | ImportExpr _ -> void
+    | Global _ -> notSupported(def.pos)
+    | ExportAs _ -> notSupported(def.pos)
+    | ExportEq _ -> notSupported(def.pos)
+    | Module _ -> notSupported(def.pos)
+    | ToplevelExpr(e) ->
+      subst = Subst::mcreate{context};
+      scope = Scope::mcreateToplevel(def.pos.fileName);
+      env = mutable TCEnv(context, subst, scope);
+      ty = this.expr(env, e);
+      this.checkIsVoid(env, e.pos, ty)
+    | fd @ FunDef _ ->
+      cgNode = fd.name match {
+      | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
+      | None() -> CGNode::create(AnonymousFunDef(fd))
+      };
+      this.funDef(context, None(), fd, cgNode)
+    | Declare _ -> void
+    | Namespace _ -> notSupported(def.pos)
+    | Export(_, _, d) -> this.checkDef(context, Def(def.pos, d))
+    | ExportDefault _ -> notSupported(def.pos)
+    | ExportNames _ -> void
+    | Import _ -> void
+    | c @ Class _ -> this.class_(context, c)
+    | Enum _ -> notSupported(def.pos)
+    | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs)
+    | TypeDef _ -> void
+    }
+  }
+
+  fun varDefs(
+    context: mutable SKStore.Context,
+    kind: VarDefKind,
+    varDefs: Array<VarDef>,
+  ): void {
+    for (varDef in varDefs) {
+      kind match {
+      | VDKConst() -> void
+      | VDKLet() -> notSupported(varDef.pat.pos, "toplevel let")
+      | VDKVar() -> notSupported(varDef.pat.pos, "toplevel var")
+      };
+      literalType = varDef.value match {
+      | None() -> None()
+      | Some(x) -> this.makeLiteralType(x)
+      };
+      type = varDef.type match {
+      | None() ->
+        literalType match {
+        | Some(ty) -> ty
+        | _ -> typingError(Array[(varDef.pat.pos, "Missing type annotation")])
+        }
+      | Some(x) -> this.tenv.normalize(context, x)
+      };
+      subst = Subst::mcreate{context};
+      if (!type.isPrimitiveType(subst, this.tenv)) {
+        typingError(
+          Array[
+            (
+              varDef.pat.pos,
+              "Invalid type for constant, " +
+                "only primitive types (not objects) are allowed",
+            ),
+          ],
+        );
+      };
+      varDef.pat.value match {
+      | PVar _ -> void
+      | PArray _ /* (Array<Pattern>) */
+      | PObject _ /* (Array<(Name, Pattern)>) */ ->
+        internal_error("TODO pattern varDef")
+      };
+      e = varDef.value match {
+      | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
+      | Some(x) -> x
+      };
+      scope = Scope::mcreateToplevel(varDef.pat.pos.fileName);
+      env = mutable TCEnv(context, subst, scope);
+      this.checkSubType(
+        env,
+        varDef.pat.pos,
+        "Invalid definition",
+        literalType match {
+        | None() ->
+          ty = this.expr(env, e);
+          ty
+        | Some(litType) -> litType
+        },
+        type,
+      )
+    }
+  }
+
+  fun class_(context: mutable SKStore.Context, c: Class): void {
+    targs = TArgs(
+      c.tparams.map(tparam -> {
+        ttypeParam = TParamWithConstraint(
+          tparam.name.value,
+          tparam.name.pos.fileName,
+          tparam.id,
+          tparam.constraint.map(c -> this.tenv.normalize(context, c)),
+        );
+        TType::fromTParamWithConstraint(
+          context,
+          this.tenv,
+          tparam.name.pos,
+          ttypeParam,
+          None(),
+        )
+      }),
+    );
+    !this.tenv = this.tenv.addTParams(context, c.tparams);
+    fileName = c.name.pos.fileName;
+    subst = Subst::mcreate{context};
+    cstr = TType::inst(c.name, targs);
+    thisType = TType::fromTParamWithConstraint(
+      context,
+      this.tenv,
+      c.name.pos,
+      TParamWithConstraint("this", fileName, Id::createThis(), None()),
+      cstr.getSTypes(subst, this.tenv, Covariant()),
+    );
+    if (c.extends_.size() != 0) {
+      isInterface = c.kind is CKInterface();
+      if (c.extends_.size() > 1 && !isInterface) {
+        typingError(Array[(c.name.pos, "Cannot extend more than one class")])
+      };
+      for (ext in c.extends_) {
+        ext.value match {
+        | TAInst(parentName, parentTArgs) ->
+          super = this.tenv.new(
+            context,
+            parentName,
+            parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+          );
+          if (!isInterface) {
+            !this.super = Some(super);
+          };
+          scope = Scope::mcreateToplevel(fileName);
+          env = mutable TCEnv(context, subst, scope);
+          this.checkSubType(
+            env,
+            parentName.pos,
+            "Invalid extends",
+            thisType,
+            super,
+          )
+        | _ -> typingError(Array[(c.name.pos, "Invalid extend")])
+        }
+      }
+    };
+    for (interface in c.implements) {
+      interface.value match {
+      | TAInst(parentName, parentTArgs) ->
+        super = this.tenv.new(
+          context,
+          parentName,
+          parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+        );
+        scope = Scope::mcreateToplevel(fileName);
+        env = mutable TCEnv(context, subst, scope);
+        this.checkSubType(
+          env,
+          parentName.pos,
+          "Invalid implements",
+          thisType,
+          super,
+        )
+      | _ -> typingError(Array[(c.name.pos, "Invalid implements")])
+      }
+    };
+    hasConstructor = false;
+    for (fieldType in c.fields) {
+      fieldType match {
+      | field @ FieldTypeValue _ ->
+        field.setGet match {
+        | None() -> void
+        | Some(FieldGetSet(_, pos)) -> notSupported(pos)
+        };
+        for (modifier in field.modifiers.modifiers) {
+          typingError(Array[(modifier.pos, "TODO: field modifier")])
+        };
+        type = this.tenv.normalize(context, field.type);
+        field.value match {
+        | None() -> void
+        | Some(e) ->
+          scope = Scope::mcreateToplevel(fileName);
+          env = mutable TCEnv(context, subst, scope);
+          this.checkSubType(
+            env,
+            e.pos,
+            "Invalid assignment",
+            type,
+            this.expr(env, e),
+          )
+        }
+      | fd @ FunDef _ ->
+        if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
+          !hasConstructor = true;
+          partialThisType = this.tenv.new(
+            context,
+            c.name,
+            targs.targs,
+            fieldType ~> (fieldType is FieldTypeValue{value => Some _}),
+          );
+          _ = this.constructor(
+            context,
+            thisType,
+            partialThisType,
+            fd,
+            Some(c.name),
+          )
+        } else {
+          cgNode = CGNode::create(
+            Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
+          );
+          _ = this.funDef(context, Some((c.kind, thisType)), fd, cgNode)
+        }
+      }
+    };
+    if (c.kind is CKInterface() || c.kind is CKAbstract()) return void;
+    if (!hasConstructor) {
+      for (fieldType in c.fields) {
+        fieldType match {
+        | field @ FieldTypeValue _ ->
+          field.value match {
+          | None() ->
+            if (field.optional is None()) {
+              typingError(Array[(field.pos, "Uninitialized field")])
+            }
+          | Some(_) -> void
+          }
+        | FunDef _ -> void
+        }
+      }
+    }
+  }
+
+  fun bind(
+    env: mutable TCEnv,
+    kind: BindKind,
+    pat: Pattern,
+    type: TType,
+    isInitialized: Bool,
+    isLocalObject: Bool,
+  ): void {
+    pos = pat.pos;
+    pat.value match {
+    | PVar(local) ->
+      if (
+        isLocalObject &&
+        !env.scope.isThroughLoop(local) &&
+        !env.localObjects.containsKey(local.value)
+      ) {
+        env.localObjects![local.value] = None()
+      };
+      env.scope.bind(local, type, isInitialized)
+    | PArray(arrPat) ->
+      type.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+        stypes.singleElt()
+      ) match {
+      | Some(TTuple(tyl, _)) ->
+        if (arrPat.size() != tyl.size()) {
+          typingError(
+            Array[
+              (
+                pos,
+                "Invalid tuple pattern size, it is of size " + arrPat.size(),
+              ),
+              (
+                type.pos,
+                "It is incompatible with a tuple of size " + tyl.size(),
+              ),
+            ],
+          )
+        };
+        for (i in Range(0, arrPat.size())) {
+          this.bind(env, kind, arrPat[i], tyl[i], isInitialized, false)
+        }
+      | _ ->
+        typingError(
+          Array[
+            (pos, "Invalid tuple pattern"),
+            (type.pos, "This is not a tuple, it is " + type.toString()),
+          ],
+        )
+      }
+
+    | PObject(objectFields) ->
+      type.getSTypes(env.subst, this.tenv, Covariant()) match {
+      | None() ->
+        typingError(
+          Array[
+            (pos, "Invalid object pattern"),
+            (type.pos, "This is " + type.toString()),
+          ],
+        )
+      | Some(stypes) ->
+        for (stype in stypes) {
+          branches = stype match {
+          | TObject(fields, _) -> Array[fields]
+          | a @ TAlgebraic _ -> a.branches.toArray().map(x -> x.fields)
+          | _ ->
+            typingError(
+              Array[
+                (pos, "Invalid object pattern"),
+                (type.pos, "This is " + type.toString()),
+              ],
+            )
+          };
+          for (field in objectFields) {
+            (fieldName, fieldPat) = field;
+            for (fields in branches) {
+              fields.maybeGet(fieldName.value) match {
+              | None() ->
+                typingError(
+                  Array[
+                    (
+                      fieldName.pos,
+                      "The field " + fieldName.value + " is missing",
+                    ),
+                    (type.pos, "Out of " + type.toString()),
+                  ],
+                )
+              | Some(tfield) ->
+                this.bind(
+                  env,
+                  kind,
+                  fieldPat,
+                  tfield.type,
+                  isInitialized,
+                  false,
+                )
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  fun bindType(
+    pos: PosRange,
+    env: mutable TCEnv,
+    kind: BindKind,
+    type: ?Type,
+    value: ?Expr,
+  ): (TType, Bool) {
+    value match {
+    | None() ->
+      if (kind is BKConst()) {
+        typingError(Array[(pos, "Const must be bound to a value")]);
+      };
+      type match {
+      | None() -> typingError(Array[(pos, "Was expecting a type or a value")])
+      | Some(annotAst) ->
+        ty = this.tenv.normalize(env.context, annotAst);
+        (ty, false)
+      }
+    | Some(e) ->
+      ty = this.expr(env, e);
+      type match {
+      | None() -> (ty, true)
+      | Some(annotAst) ->
+        annot = this.tenv.normalize(env.context, annotAst);
+        this.checkSubType(env, annotAst.pos, "Invalid annotation", ty, annot);
+        (annot, true)
+      }
+    }
+  }
+}
+
+module end;
