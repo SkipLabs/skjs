@@ -329,7 +329,7 @@ class TypeChecker{
       };
       literalType = varDef.value match {
       | None() -> None()
-      | Some(x) -> this.makeLiteralType(x)
+      | Some(x) -> this.asConstExpr(x)
       };
       type = varDef.type match {
       | None() ->
@@ -1375,7 +1375,7 @@ class TypeChecker{
             | None() ->
               varDef.value match {
               | None() -> None()
-              | Some(x) -> this.makeLiteralType(x)
+              | Some(x) -> this.asConstExpr(x)
               } match {
               | None() -> this.newTVar(env, pos)
               | Some(ty) -> ty
@@ -1959,20 +1959,6 @@ class TypeChecker{
     }
   }
 
-  /* Typechecks expression e as const */
-  fun asConstExpr(e: Expr): ?TType {
-    pos = e.pos;
-    e.value match {
-    | EString(x) ->
-      Some(
-        TType::single(
-          TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
-        ),
-      )
-    | _ -> None()
-    }
-  }
-
   fun checkIsNumber(
     env: mutable TCEnv,
     pos: PosRange,
@@ -2009,7 +1995,8 @@ class TypeChecker{
     };
   }
 
-  fun makeLiteralType(e: Expr): ?TType {
+  /* Typechecks expression e as const */
+  fun asConstExpr(e: Expr): ?TType {
     pos = e.pos;
     e.value match {
     | Var(Name(_, "null")) -> Some(TType::single(TPrimVoid(TNull(), pos)))
