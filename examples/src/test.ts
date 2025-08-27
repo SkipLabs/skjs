@@ -1,19 +1,19 @@
 import { array } from "./skjs.js";
 
-type list<T> = null | { head: T, tail: list<T> };
+type list<T> = null | { head: T; tail: list<T> };
 
 function reverse<T>(l: list<T>): list<T> {
   let result = null;
-  while(l !== null) {
+  while (l !== null) {
     result = { head: l.head, tail: result };
     l = l.tail;
-  };
-  return result
+  }
+  return result;
 }
 
 function list<T>(...elts: T[]): list<T> {
   let result = null;
-  for(let i = 0; i < elts.length; i++) {
+  for (let i = 0; i < elts.length; i++) {
     const elt = elts[i];
     if (elt !== undefined) {
       result = { head: elt, tail: result };
@@ -21,8 +21,6 @@ function list<T>(...elts: T[]): list<T> {
   }
   return reverse(result);
 }
-
-
 
 function myObject(): { field1: number } {
   let obj = {};
@@ -35,4 +33,3 @@ function main(): void {
 }
 
 main();
-

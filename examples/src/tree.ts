@@ -1,22 +1,22 @@
 import { array } from "./skjs.js";
 
 type node = {
-  item: number,
-  height: number,
-  left: null | node,
-  right: null | node,
+  item: number;
+  height: number;
+  left: null | node;
+  right: null | node;
 };
 
 type tree = {
-  height: (n: node) => number,
-  rightRotate: (n: node) => node,
-  leftRotate: (n: node) => node,
+  height: (n: node) => number;
+  rightRotate: (n: node) => node;
+  leftRotate: (n: node) => node;
 };
 
-function foo<T1 extends { fd1: number }, T2 extends  {fd2: number}>(
+function foo<T1 extends { fd1: number }, T2 extends { fd2: number }>(
   v: T1,
-  x: T1 & T2
-): {fd1: number, fd2: number} {
+  x: T1 & T2,
+): { fd1: number; fd2: number } {
   return x;
 }
 function foo2(x: Array<number>): Array<number> {
@@ -35,14 +35,14 @@ function Node(item: number): node {
 
 //return height of the node
 function height(N: node | null): number {
-  if (N === null){
+  if (N === null) {
     return 0;
   }
-  
+
   return N.height;
 }
 
-  //right rotate
+//right rotate
 function rightRotate(y: node): node {
   let x = y.left;
   console.assert(x !== null);
@@ -66,38 +66,36 @@ function leftRotate(x: node): node {
   return y;
 }
 
-
 // get balance factor of a node
 function getBalanceFactor(N: null | node): number {
-  if (N === null){
+  if (N === null) {
     return 0;
   }
-  
+
   return height(N.left) - height(N.right);
 }
 
 // helper function to insert a node
 function insertNodeHelper(node: null | node, item: number): node {
-
   // find the position and insert the node
-  if (node === null){
-    return (Node(item));
+  if (node === null) {
+    return Node(item);
   }
-  
-  if (item < node.item){
+
+  if (item < node.item) {
     node.left = insertNodeHelper(node.left, item);
-  } else if (item > node.item){
+  } else if (item > node.item) {
     node.right = insertNodeHelper(node.right, item);
-  } else{
+  } else {
     return node;
   }
-  
+
   // update the balance factor of each node
   // and, balance the tree
   node.height = 1 + Math.max(height(node.left), height(node.right));
-  
+
   let balanceFactor = getBalanceFactor(node);
-  
+
   if (balanceFactor > 1) {
     let left = node.left;
     console.assert(left !== null);
@@ -108,7 +106,7 @@ function insertNodeHelper(node: null | node, item: number): node {
       return rightRotate(node);
     }
   }
-  
+
   if (balanceFactor < -1) {
     let right = node.right;
     console.assert(right !== null);
@@ -119,36 +117,35 @@ function insertNodeHelper(node: null | node, item: number): node {
       return leftRotate(node);
     }
   }
-  
+
   return node;
 }
 
 // delete helper
 function deleteNodeHelper(root: null | node, item: number): null | node {
-
   // find the node to be deleted and remove it
-  if (root === null){
+  if (root === null) {
     return root;
   }
-  if (item < root.item){
+  if (item < root.item) {
     root.left = deleteNodeHelper(root.left, item);
-  }else if (item > root.item){
+  } else if (item > root.item) {
     root.right = deleteNodeHelper(root.right, item);
-  }else {
+  } else {
     let left = root.left;
     let right = root.right;
-    if ((left === null) || (right === null)) {
+    if (left === null || right === null) {
       let temp = null;
-      if (temp === left){
+      if (temp === left) {
         temp = right;
-      }else{
+      } else {
         temp = left;
       }
-      
+
       if (temp === null) {
         temp = root;
         root = null;
-      } else{
+      } else {
         root = temp;
       }
     } else {
@@ -157,13 +154,13 @@ function deleteNodeHelper(root: null | node, item: number): null | node {
       root.right = deleteNodeHelper(root.right, temp.item);
     }
   }
-  if (root === null){
+  if (root === null) {
     return root;
   }
 
   // Update the balance factor of each node and balance the tree
   root.height = Math.max(height(root.left), height(root.right)) + 1;
-  
+
   let balanceFactor = getBalanceFactor(root);
   if (balanceFactor > 1) {
     if (getBalanceFactor(root.left) >= 0) {
@@ -188,12 +185,11 @@ function deleteNodeHelper(root: null | node, item: number): null | node {
   return root;
 }
 
-
 //get node with minimum value
 function nodeWithMinimumValue(node: node): node {
   let current = node;
   let left = current.left;
-  while (left !== null){
+  while (left !== null) {
     left = current.left;
     console.assert(left !== null);
     current = left;
@@ -214,27 +210,27 @@ function preOrderHelper(node: null | node): void {
 function AVLTree(): void {
   let rroot = null;
   let obj = {};
-          
+
   // insert a node
   obj.insertNode = (item: number) => {
     // console.log(root);
     rroot = insertNodeHelper(rroot, item);
-  }
-      
+  };
+
   //delete a node
   obj.deleteNode = (item: number) => {
     rroot = deleteNodeHelper(rroot, item);
-  }
-  
+  };
+
   // print the tree in pre - order
   obj.preOrder = () => {
     preOrderHelper(rroot);
-  }
-
-  for(let i = 0; i < 10; i++) {
-    obj.insertNode(i);
   };
+
+  for (let i = 0; i < 10; i++) {
+    obj.insertNode(i);
+  }
   console.log(rroot);
 }
 
-AVLTree()
+AVLTree();
