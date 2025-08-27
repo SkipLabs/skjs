@@ -1,0 +1,7 @@
+# ignore everything except files with selected extensions
+*
+!/**/
+!*.*
+**/*.*
+!**/*.ts
+tests/ts-conformance/**/*.ts
