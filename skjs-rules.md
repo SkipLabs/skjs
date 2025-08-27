@@ -129,23 +129,6 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   }
   ```
 
-### 16. NEVER Call Array.get() - Runtime Compatibility
-- **CRITICAL RULE**: NEVER call `arr.get(index)` in your code - it will crash at runtime!
-- **Explanation**: `Array.get()` exists ONLY for SKJS type checking purposes
-- **Reality**: The `.get()` method does not exist on JavaScript arrays at runtime
-- **Syntax Sugar**: `arr[index]` is treated as syntactic sugar for `arr.get(index)` by SKJS
-- **Runtime Behavior**: `arr[index]` works fine at runtime, `arr.get(index)` will throw "method not found"
-- **Example**:
-  ```typescript
-  let arr: Array<number> = [1, 2, 3];
-  
-  // CORRECT - works in both SKJS and runtime
-  let element = arr[0];
-  
-  // WRONG - will crash at runtime!
-  let element = arr.get(0); // TypeError: arr.get is not a function
-  ```
-- **Memory Aid**: If you see `.get(` in array code, it's a bug waiting to happen!
 
 ### 17. The `any` Type is Not Supported
 - **CRITICAL RULE**: NEVER use the `any` type in SKJS code
@@ -245,7 +228,6 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 7. **Generic classes work well**: Both generic functions and generic classes are fully supported
 8. **Use `new Array<T>()` for array initialization**: This works in all cases including generic classes
 9. **Use local variables for null/undefined comparisons**: Always assign properties to locals before comparing to null/undefined
-10. **NEVER use Array.get()**: Always use `arr[index]` syntax - `.get()` will crash at runtime!
 11. **NEVER use the `any` type**: The `any` type is not supported in SKJS - use specific types or union types instead
 12. **Use 'as const' for discriminated unions**: Always use `'value' as const` in object expressions for ADT patterns
 13. **Avoid the `!` operator**: Use explicit comparisons like `=== false` instead of `!` for better type safety
