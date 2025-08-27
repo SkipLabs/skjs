@@ -254,7 +254,13 @@ class TEnv{
                 idx.indexType,
               ),
             ],
-            returnType,
+            Type(
+              pos,
+              TAUnion(
+                returnType,
+                Type(pos, TAInst(Name(pos, "undefined"), Array[])),
+              ),
+            ),
             cgNode,
           ),
         ),
