@@ -81,7 +81,7 @@ class TType private {
 
   // Creates an unexpanded instance.
   static fun inst(name: Name, targs: TArgs): this {
-    static::fromTInst(name.pos, TSInst(name, targs))
+    static::fromTInst(TSInst(name, targs))
   }
 
   static fun constantString(pos: PosRange, s: String): this {
@@ -94,7 +94,14 @@ class TType private {
     static::fromSTypes(sType.pos, STypes::single(sType))
   }
 
-  static fun fromTInst(pos: PosRange, tInst: TInst): this {
+  static fun fromTInst(tInst: TInst): this {
+    pos = tInst match {
+    | TVar(p, _, _) -> p
+    | TSInst(n, _) -> n.pos
+    | TInter(t, _)
+    | TUnion(t, _) ->
+      t.pos
+    };
     static::fromTInsts(pos, TInsts::single(tInst))
   }
 
@@ -240,7 +247,7 @@ class TType private {
     if (ty1.isTop() || ty2.isBottom()) return ty1;
     if (ty2.isTop() || ty1.isBottom()) return ty2;
     if (env.seenUnion.contains((ty1, ty2))) {
-      return TType::fromTInst(ty1.pos, TUnion::create(ty1, ty2));
+      return TType::fromTInst(TUnion::create(ty1, ty2));
     };
     !env.seenUnion = env.seenUnion.set((ty1, ty2));
 
@@ -275,16 +282,16 @@ class TType private {
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
     if (env.seenInter.contains((ty1, ty2))) {
-      return TType::fromTInst(ty1.pos, TInter::create(ty1, ty2));
+      return TType::fromTInst(TInter::create(ty1, ty2));
     };
     !env.seenInter = env.seenInter.set((ty1, ty2));
     ty1.getSingleVar() match {
     | None() -> void
-    | Some(tvar) -> return TType::fromTInst(tvar.pos, tvar.addConstraint(ty2))
+    | Some(tvar) -> return TType::fromTInst(tvar.addConstraint(ty2))
     };
     ty2.getSingleVar() match {
     | None() -> void
-    | Some(tvar) -> return TType::fromTInst(tvar.pos, tvar.addConstraint(ty1))
+    | Some(tvar) -> return TType::fromTInst(tvar.addConstraint(ty1))
     };
     clauses1 = ty1.expand(subst, env, Covariant());
     clauses2 = ty2.expand(subst, env, Covariant());

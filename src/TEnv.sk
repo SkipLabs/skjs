@@ -133,7 +133,7 @@ class TEnv{
   ): Array<TType> {
     this.getClass(context, className).tparams.map(tparam -> {
       tvar = subst.gen(className.pos);
-      ty = TType::fromTInst(className.pos, tvar);
+      ty = TType::fromTInst(tvar);
       tparam.constraint match {
       | None() -> ty
       | Some(cstr) ->
@@ -482,7 +482,6 @@ class TEnv{
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
       TType::fromTInst(
-        pos,
         TSInst(
           Name(p, "Array"),
           TArgs(Array[this.normalize(context, targs[0])]),
@@ -491,7 +490,6 @@ class TEnv{
 
     | TAArray(ty) ->
       TType::fromTInst(
-        pos,
         TSInst(Name(pos, "Array"), TArgs(Array[this.normalize(context, ty)])),
       )
 
@@ -566,7 +564,6 @@ class TEnv{
         };
 
         TType::fromTInst(
-          pos,
           TSInst(
             n,
             TArgs(
