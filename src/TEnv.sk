@@ -575,21 +575,19 @@ class TEnv{
         )
       }
     | TAUnion(ty1, ty2) ->
-      ty = TType::union(
+      TType::union(
         subst,
         this,
         this.normalize(context, ty1),
         this.normalize(context, ty2),
-      );
-      ty.withPos(pos)
+      ).withPos(pos)
     | TAInter(ty1, ty2) ->
-      ty = TType::inter(
+      TType::inter(
         subst,
         this,
         this.normalize(context, ty1),
         this.normalize(context, ty2),
-      );
-      ty.withPos(pos)
+      ).withPos(pos)
     | TATuple(tupleElts) ->
       typeVec = mutable Vector[];
       for (ty in tupleElts) {
