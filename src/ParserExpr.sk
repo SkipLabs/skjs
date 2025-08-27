@@ -267,8 +267,9 @@ extension class Parser {
       | _ ->
         Var(Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), str))
       }
-    | TKQuote() -> EString(SKQuote(), this.lex.getStrTok(tok))
-    | TKDoubleQuote() -> EString(SKDoubleQuote(), this.lex.getStrTok(tok))
+    | TKQuote()
+    | TKDoubleQuote() ->
+      EString(this.lex.getStrTok(tok))
     | TKBackTick() -> this.parseTemplateLiteral(tok)
     | subTok @ TKAddition()
     | subTok @ TKSubtraction() ->
@@ -797,7 +798,7 @@ extension class Parser {
 
     if (!rawContent.contains("${")) {
       // Simple template literal without interpolation
-      return EString(SKBackTick(), rawContent)
+      return EString(rawContent)
     };
 
     // Parse template literal with interpolation by manipulating lexer position

@@ -293,7 +293,7 @@ base class Expr_ uses XXHashable {
   | Number(String)
   | Var(Name)
   | Spread(Name)
-  | EString(StringKind, String)
+  | EString(String)
   | TypeOf(Expr)
   | KeyOf(Type)
   | Await(Expr)
@@ -552,13 +552,6 @@ base class ClassKind uses XXHashable {
   | CKInterface()
   | CKClass()
   | CKAbstract()
-}
-
-base class StringKind uses XXHashable {
-  children =
-  | SKQuote()
-  | SKDoubleQuote()
-  | SKBackTick()
 }
 
 base class FNOp uses XXHashable {
