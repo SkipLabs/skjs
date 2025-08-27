@@ -176,30 +176,9 @@ class TType private {
     static::create(this.pos, insts(this.insts), clauses(this.clauses))
   }
 
-  // Manually inlined and specialized version of
-  // static::union(_, _, this, static::single(TPrimVoid(TUndefined(), pos)))
-  // Josh: It will be easy for this to become out of sync with union. It is
-  // unclear that the optimization benefit is worthwhile.
   fun unionUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
-    result = if (this.containsUndefined()) {
-      this
-    } else {
-      static::create(
-        this.pos,
-        this.insts,
-        this.clauses.unionUndefined(subst, tenv, pos),
-      )
-    };
-    assert(
-      result ==
-        static::union(
-          subst,
-          tenv,
-          this,
-          static::single(TPrimVoid(TUndefined(), pos)),
-        ),
-    );
-    result
+    undef = static::single(TPrimVoid(TUndefined(), pos));
+    static::union(subst, tenv, this, undef)
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
@@ -368,10 +347,6 @@ class TType private {
 
   fun isTop(): Bool {
     this.clauses.isTop()
-  }
-
-  fun containsUndefined(): Bool {
-    this.clauses.containsUndefined()
   }
 
   fun isPrimitiveType(subst: mutable Subst, env: TEnv): Bool {
@@ -1048,30 +1023,6 @@ class STypes private (
     if (this.stypes.size() == 1) this.stypes.minimum() else None()
   }
 
-  fun containsUndefined(): Bool {
-    this.stypes.any(stype ->
-      stype match {
-      | TPrimVoid(TUndefined(), _) -> true
-      | _ -> false
-      }
-    )
-  }
-
-  // Manually inlined and specialized version of
-  // static::union(_, _, this, static::single(TPrimVoid(TUndefined(), pos)))
-  // except that this fails if the result would be unchanged.
-  // Josh: It will be easy for this to become out of sync with union. It is
-  // unclear that the optimization benefit is worthwhile.
-  fun addUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
-    if (this.containsUndefined()) {
-      internal_error("type already contains undefined")
-    };
-    undef: SType = TPrimVoid(TUndefined(), pos);
-    result = static(this.stypes.union(InternalKeyedArrayMap::single(undef)));
-    assert(result == static::union(subst, tenv, this, static::single(undef)));
-    result
-  }
-
   fun getConstantString(): ?(PosRange, String) {
     this.singleElt() match {
     | Some(TPrimValue(TString(), Some(values), _)) -> values.singleElt()
@@ -1332,31 +1283,6 @@ class Clause private (
     Clause(this.vars, stypesOpt)
   }
 
-  // Manually inlined and specialized version of
-  // this.union(_, _, static::undefined(pos))
-  // except that this fails if the result would be unchanged.
-  // Josh: It will be easy for this to become out of sync with union. It is
-  // unclear that the optimization benefit is worthwhile.
-  fun addUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
-    if (!this.vars.isEmpty()) {
-      internal_error("Trying to add undefined to an intersection clause")
-    };
-    stypes = this.stypes match {
-    | None() -> internal_error("Trying to add undefined to a Top clause")
-    | Some(stypes) -> stypes.addUndefined(subst, tenv, pos)
-    };
-    result = static(this.vars, Some(stypes));
-    assert(result == this.union(subst, tenv, static::undefined(pos)));
-    result
-  }
-
-  fun containsUndefined(): Bool {
-    this.stypes match {
-    | None() -> this.vars.isEmpty()
-    | Some(stypes) -> stypes.containsUndefined()
-    }
-  }
-
   fun getConstantString(): ?(PosRange, String) {
     if (!this.vars.isEmpty()) None() else {
       this.stypes.flatMap(sTypes -> sTypes.getConstantString())
@@ -1513,32 +1439,6 @@ class Clauses private (
     STOk()
   }
 
-  // Manually inlined and specialized version of
-  // static::union(_, _, this, static::create(InternalKeyedArrayMap::single(Clause::undefined(pos))))
-  // Josh: It will be easy for this to become out of sync with union. It is
-  // unclear that the optimization benefit is worthwhile.
-  fun unionUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
-    result = if (this.containsUndefined()) {
-      this
-    } else {
-      undefined = InternalKeyedArrayMap::single(Clause::undefined(pos));
-      clauses = this.clauses.mapUnion(undefined, (clause, _) -> {
-        clause.addUndefined(subst, tenv, pos)
-      });
-      static(clauses)
-    };
-    assert(
-      result ==
-        static::union(
-          subst,
-          tenv,
-          this,
-          static::create(InternalKeyedArrayMap::single(Clause::undefined(pos))),
-        ),
-    );
-    result
-  }
-
   fun getConstantString(): ?(PosRange, String) {
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
   }
@@ -1559,13 +1459,6 @@ class Clauses private (
       }
     };
     cand
-  }
-
-  fun containsUndefined(): Bool {
-    for (clause in this.clauses) {
-      if (clause.containsUndefined()) return true;
-    };
-    false
   }
 
   fun getObject(): ?SType {
