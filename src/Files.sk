@@ -157,8 +157,14 @@ class Files(
         } catch {
         | ErrorExn(err) ->
           symbols = lexer.getAllSymbolLocations();
+          // Store the error under parseErrorKey for error reporting
           writer.setArray(
             parseErrorKey,
+            Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
+          );
+          // Also store the symbols under the actual filename for symbol resolution
+          writer.setArray(
+            key,
             Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
           )
         | exn -> throw exn
