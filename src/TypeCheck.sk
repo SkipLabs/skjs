@@ -369,7 +369,7 @@ class TypeChecker{
         "Invalid definition",
         literalType match {
         | None() ->
-          ty = this.expr(env, e, kind is VDKConst());
+          ty = this.expr(env, e);
           ty
         | Some(litType) -> litType
         },
