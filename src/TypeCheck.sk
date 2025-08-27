@@ -942,7 +942,7 @@ class TypeChecker{
       };
       (epos, etype) = eOpt match {
       | None() -> (pos, TType::single(pos, TPrimVoid(TVoid(), pos)))
-      | Some(e) -> (e.pos, this.expr(env, e))
+      | Some(e) -> (e.pos, this.expr(env, e, true))
       };
       rtype = if (this.isAsync) {
         TType::single(epos, TPromise(etype, epos))
