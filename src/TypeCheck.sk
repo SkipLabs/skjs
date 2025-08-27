@@ -1944,12 +1944,9 @@ class TypeChecker{
       );
       TType::union(env.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
-      subExpr.value match {
-      | EString(x) ->
-        TType::single(
-          TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
-        )
-      | _ ->
+      this.asConstExpr(subExpr) match {
+      | Some(ty) -> ty
+      | None() ->
         typingError(
           Array[(pos, "'as const' can only be used with string literals")],
         )
@@ -1959,6 +1956,20 @@ class TypeChecker{
       internal_error("Internal error: Params should not be an expression")
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | Spread _ -> typingError(Array[(pos, "TODO: ...")])
+    }
+  }
+
+  /* Typechecks expression e as const */
+  fun asConstExpr(e: Expr): ?TType {
+    pos = e.pos;
+    e.value match {
+    | EString(x) ->
+      Some(
+        TType::single(
+          TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
+        ),
+      )
+    | _ -> None()
     }
   }
 
