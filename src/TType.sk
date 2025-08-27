@@ -79,12 +79,6 @@ class TType private {
     static::create(pos, TInsts::empty(), Clauses::top())
   }
 
-  static fun constantString(pos: PosRange, s: String): this {
-    static::single(
-      TPrimValue(TString(), Some(ArrayValues::single((pos, s))), pos),
-    )
-  }
-
   // A single atomic type.
   static fun single(sType: SType): this {
     static::fromSTypes(sType.pos, STypes::single(sType))
@@ -501,7 +495,10 @@ class TConstr(
 
   fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
     if (fieldName.value == kAlgebraicBranchFieldName) {
-      TType::constantString(this.tagPos, this.tag)
+      pos = this.tagPos;
+      TType::single(
+        TPrimValue(TString(), Some(ArrayValues::single((pos, this.tag))), pos),
+      )
     } else {
       this.fields.getType(subst, tenv, fieldName)
     }
