@@ -1607,10 +1607,7 @@ class TypeChecker{
 
     | Unop(uop, subExpr) ->
       uop match {
-      | UOExclamationMark() ->
-        bool = TType::single(pos, TPrimValue(TBool(), None(), pos));
-        this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
-        bool
+      | UOExclamationMark() -> this.checkBool(env, subExpr, "Invalid !")
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
       }
 
@@ -1661,42 +1658,14 @@ class TypeChecker{
         TType::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BOLogicalAnd() ->
-        ty1 = this.expr(env, e1);
-        this.checkSubType(
-          env,
-          pos,
-          "Invalid &&",
-          ty1,
-          TType::single(e1.pos, TPrimValue(TBool(), None(), e1.pos)),
-        );
+        this.checkBool(env, e1, "Invalid &&");
         this.evalCond(env, e1, true);
-        ty2 = this.expr(env, e2);
-        this.checkSubType(
-          env,
-          pos,
-          "Invalid &&",
-          ty2,
-          TType::single(e2.pos, TPrimValue(TBool(), None(), e2.pos)),
-        );
+        this.checkBool(env, e2, "Invalid &&");
         TType::single(pos, TPrimValue(TBool(), None(), pos))
       | BOLogicalOr() ->
-        ty1 = this.expr(env, e1);
-        this.checkSubType(
-          env,
-          pos,
-          "Invalid ||",
-          ty1,
-          TType::single(e1.pos, TPrimValue(TBool(), None(), e1.pos)),
-        );
+        this.checkBool(env, e1, "Invalid ||");
         this.evalCond(env, e1, false);
-        ty2 = this.expr(env, e2);
-        this.checkSubType(
-          env,
-          pos,
-          "Invalid ||",
-          ty2,
-          TType::single(e2.pos, TPrimValue(TBool(), None(), e2.pos)),
-        );
+        this.checkBool(env, e2, "Invalid ||");
         TType::single(pos, TPrimValue(TBool(), None(), pos))
 
       | BODot() ->
@@ -1895,16 +1864,9 @@ class TypeChecker{
         )
       }
     | EIf(e1, e2, e3) ->
-      cond = this.expr(env, e1);
+      this.checkBool(env, e1, "Invalid ? condition");
       left = this.expr(env, e2);
       right = this.expr(env, e3);
-      this.checkSubType(
-        env,
-        e1.pos,
-        "Invalid ? condition",
-        cond,
-        TType::single(e1.pos, TPrimValue(TBool(), None(), e1.pos)),
-      );
       TType::union(env.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
       this.asConstExpr(subExpr) match {
