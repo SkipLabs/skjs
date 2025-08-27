@@ -1403,7 +1403,8 @@ class TypeChecker{
       fields = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
-        | FDNormal(x, y) -> (x, this.expr(env, y))
+        | FDNormal(x, y) ->
+          (x, this.expr(env, y, x.value == kAlgebraicBranchFieldName))
 
         | FDSpread _ -> internal_error("TODO spread")
         | fd @ FunDef _ ->

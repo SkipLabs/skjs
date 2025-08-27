@@ -105,16 +105,16 @@ function main(): void {
   handleNullableString({ message: null });
 
   // Test 2: Union types with ADT pattern
-  processResponse({ kind: "success" as const, data: "success data" });
-  processResponse({ kind: "error" as const, message: "error message" });
+  processResponse({ kind: "success", data: "success data" });
+  processResponse({ kind: "error", message: "error message" });
 
   // Test 3: Nested objects
   handleNestedObject({ user: { name: "Alice" } });
   handleNestedObject({ user: null });
 
   // Test 4: ADT pattern matching
-  handleAPIResponse({ kind: "success" as const, data: "test data" });
-  handleAPIResponse({ kind: "error" as const, message: "test error" });
+  handleAPIResponse({ kind: "success", data: "test data" });
+  handleAPIResponse({ kind: "error", message: "test error" });
 
   // Test 5: Array elements
   let users: Array<{ name: string | null }> = new Array<{
