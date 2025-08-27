@@ -837,22 +837,25 @@ class TFields private (
     })
   }
 
+  fun getTypeTypingError<T>(fieldName: Name): T {
+    typingError(
+      Array[
+        (fieldName.pos, `Unbound field: ${fieldName.value}`),
+        (
+          fieldName.pos,
+          "Possible options are:\n" +
+            this.fields.filter(x -> x.name != "constructor")
+              .toArray()
+              .map(x -> x.name)
+              .join("\n"),
+        ),
+      ],
+    )
+  }
+
   fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
     this.maybeGetType(subst, tenv, fieldName) match {
-    | None() ->
-      typingError(
-        Array[
-          (fieldName.pos, "Unbound field: " + fieldName.value),
-          (
-            fieldName.pos,
-            "Possible options are:\n" +
-              this.fields.filter(x -> x.name != "constructor")
-                .toArray()
-                .map(x -> x.name)
-                .join("\n"),
-          ),
-        ],
-      )
+    | None() -> this.getTypeTypingError(fieldName)
     | Some(ty) -> ty
     }
   }
