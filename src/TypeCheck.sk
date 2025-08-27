@@ -1204,13 +1204,12 @@ class TypeChecker{
     pos: PosRange,
     objType: TType,
     fieldName: Name,
-    variance: Variance,
     optionalChaining: Bool = false,
   ): TType {
     if (fieldName.value == "constructor") {
       typingError(Array[(fieldName.pos, "Cannot access field 'constructor'")]);
     };
-    stypes = objType.getSTypes(env.subst, this.tenv, variance) match {
+    stypes = objType.getSTypes(env.subst, this.tenv, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> stypes
     | _ ->
       typingError(
@@ -1740,8 +1739,7 @@ class TypeChecker{
 
       | BODot() ->
         e2.value match {
-        | Var(fieldName) ->
-          this.dot(env, e1.pos, this.expr(env, e1), fieldName, Covariant())
+        | Var(fieldName) -> this.dot(env, e1.pos, this.expr(env, e1), fieldName)
         | _ -> typingError(Array[(e2.pos, "Invalid '.'")])
         }
 
@@ -1753,7 +1751,6 @@ class TypeChecker{
             e1.pos,
             this.expr(env, e1),
             fieldName,
-            Covariant(),
             true/* optionalChaining */ ,
           )
         | _ -> typingError(Array[(e2.pos, "Invalid '?.'")])
@@ -2122,7 +2119,7 @@ class TypeChecker{
           e2.pos,
           "Invalid assignment",
           fieldType,
-          this.dot(env, e1.pos, objectType, fieldName, Covariant()),
+          this.dot(env, e1.pos, objectType, fieldName),
         )
       };
       this.assignLocalObject(env, pos, local, fieldName, fieldType)
