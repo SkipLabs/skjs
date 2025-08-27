@@ -1120,11 +1120,15 @@ class TypeChecker{
     }
   }
 
-  fun checkBool(env: mutable TCEnv, e: Expr): void {
+  fun checkBool(
+    env: mutable TCEnv,
+    e: Expr,
+    msg: String = "A condition is expected to be of type boolean, not: ",
+  ): void {
     this.checkSubType(
       env,
       e.pos,
-      "A condition is expected to be of type boolean, not: ",
+      msg,
       this.expr(env, e),
       TType::single(e.pos, TPrimValue(TBool(), None(), e.pos)),
     );
