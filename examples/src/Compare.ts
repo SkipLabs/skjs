@@ -1,18 +1,17 @@
-
 function compare<T>(a: T, b: T): number {
   if (a === b) return 0;
   if (a === null || b === null) return a === null ? -1 : 1;
   if (typeof a !== typeof b) return typeof a < typeof b ? -1 : 1;
 
-  if (typeof a === 'number' && typeof b === 'number') {
+  if (typeof a === "number" && typeof b === "number") {
     return a < b ? -1 : 1;
   }
 
-  if (typeof a === 'boolean' && typeof b === 'boolean') {
+  if (typeof a === "boolean" && typeof b === "boolean") {
     return a < b ? -1 : 1;
   }
 
-  if (typeof a === 'string' && typeof b === 'string') {
+  if (typeof a === "string" && typeof b === "string") {
     return a < b ? -1 : 1;
   }
 
@@ -20,11 +19,11 @@ function compare<T>(a: T, b: T): number {
     return compareArrays(a, b);
   }
 
-  if (typeof a === 'object' && typeof b === 'object') {
+  if (typeof a === "object" && typeof b === "object") {
     return compareObjects(a, b);
   }
 
-  throw 'Unsupported types';
+  throw "Unsupported types";
 }
 
 function compareArrays<T>(a: Array<T>, b: Array<T>): number {
@@ -35,7 +34,6 @@ function compareArrays<T>(a: Array<T>, b: Array<T>): number {
   }
   return 0;
 }
-
 
 function compareObjects(a: object, b: object): number {
   const keysA = Object.keys(a).sort();
@@ -87,5 +85,3 @@ console.log(compare({ a: 3 }, { a: 2 })); // 1
 console.log(compare([1, 2, 3], [1, 2, 4])); // -1
 console.log(compare([1, 2, 3], [1, 2, 3])); // 0
 console.log(compare([1, 2, 3], [1, 2, 2])); // 1
-
-

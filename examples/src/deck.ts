@@ -3,7 +3,6 @@ import { array } from "./skjs.js";
 // program to shuffle the deck of cards
 
 function main(): void {
-
   // declare card elements
   const suits = array("Spades", "Diamonds", "Club", "Heart");
   const values = array(
@@ -45,7 +44,7 @@ function main(): void {
     deck[j] = temp;
   }
 
-  console.log('The first five cards are:');
+  console.log("The first five cards are:");
 
   // display 5 results
   for (let i = 0; i < 5; i++) {

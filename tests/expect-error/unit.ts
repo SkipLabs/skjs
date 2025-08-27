@@ -34,9 +34,10 @@ function checkObject(obj: { field1: number }): { field1: number } {
   return obj;
 }
 
-function checkObject(
-  obj: { field1: number } & { field2: number }
-): { field1: number, field2: number } {
+function checkObject(obj: { field1: number } & { field2: number }): {
+  field1: number;
+  field2: number;
+} {
   return obj;
 }
 
@@ -45,7 +46,7 @@ function checkObject(obj: { field1: number } | { field2: number }): {} {
 }
 
 function checkObject(
-  obj: { field1: number } | { field1: number, field2: number }
+  obj: { field1: number } | { field1: number; field2: number },
 ): { field1: number } {
   return obj;
 }
@@ -54,13 +55,10 @@ function checkObject(
 // Algebraic data types
 ///////////////////////////////////////////////////////////////////////////////
 
-type adt =
-  | { kind: 'tag1', field1: boolean }
-  | { kind: 'tag2', field2: number }
-  ;
+type adt = { kind: "tag1"; field1: boolean } | { kind: "tag2"; field2: number };
 
 function check(data: adt): boolean {
-  if (data.kind === 'tag1') return data.field1;
+  if (data.kind === "tag1") return data.field1;
   return false;
 }
 
@@ -86,8 +84,8 @@ function check(t1: [number] | [boolean]): number | boolean {
 }
 
 function check(
-  t1: [{ field1: number }] & [{ field2: boolean }]
-): [{ field1: number, field2: boolean }] {
+  t1: [{ field1: number }] & [{ field2: boolean }],
+): [{ field1: number; field2: boolean }] {
   return t1;
 }
 
@@ -95,14 +93,17 @@ function checkTuple(tuple: [number, string]): [number, string] {
   return tuple;
 }
 
-function checkTuple(tuple: [number, string] | [string, number]): [number | string, number | string] {
+function checkTuple(
+  tuple: [number, string] | [string, number],
+): [number | string, number | string] {
   return tuple;
 }
 
-function checkTuple(tuple: [number, string, boolean]): [number, string, boolean] {
+function checkTuple(
+  tuple: [number, string, boolean],
+): [number, string, boolean] {
   return tuple;
 }
-
 
 ///////////////////////////////////////////////////////////////////////////////
 // consts
@@ -129,7 +130,7 @@ function check(): 0 | 1 {
 
 const s = "hello";
 
-function check(): 'hello' {
+function check(): "hello" {
   return s;
 }
 
@@ -163,11 +164,15 @@ function checkFunction(func: (x: number) => number): (x: number) => number {
   return func;
 }
 
-function checkFunction(func: (x: number) => number | string): (x: number) => number | string {
+function checkFunction(
+  func: (x: number) => number | string,
+): (x: number) => number | string {
   return func;
 }
 
-function checkFunction(func: (x: number) => number & string): (x: number) => never {
+function checkFunction(
+  func: (x: number) => number & string,
+): (x: number) => never {
   return func;
 }
 
@@ -178,19 +183,28 @@ function checkFunction(func: (x: number) => number & string): (x: number) => nev
 type LiteralType1 = { field1: number };
 type LiteralType2 = { field2: string };
 
-function checkLiteralType(obj: LiteralType1 & LiteralType2): LiteralType1 & LiteralType2 {
+function checkLiteralType(
+  obj: LiteralType1 & LiteralType2,
+): LiteralType1 & LiteralType2 {
   return obj;
 }
 
-function checkLiteralType(obj: LiteralType1 | LiteralType2): LiteralType1 | LiteralType2 {
+function checkLiteralType(
+  obj: LiteralType1 | LiteralType2,
+): LiteralType1 | LiteralType2 {
   return obj;
 }
 
-function checkLiteralType(obj: { field1: number, field2: string }): LiteralType1 & LiteralType2 {
+function checkLiteralType(obj: {
+  field1: number;
+  field2: string;
+}): LiteralType1 & LiteralType2 {
   return obj;
 }
 
-function checkLiteralType(obj: { field1: number } | { field2: string }): LiteralType1 | LiteralType2 {
+function checkLiteralType(
+  obj: { field1: number } | { field2: string },
+): LiteralType1 | LiteralType2 {
   return obj;
 }
 
@@ -201,11 +215,15 @@ function checkLiteralType(obj: { field1: number } | { field2: string }): Literal
 type NestedType1 = { a: { b: { c: number } } };
 type NestedType2 = { a: { b: { d: string } } };
 
-function checkNestedType(obj: NestedType1 & NestedType2): { a: { b: { c: number, d: string } } } {
+function checkNestedType(obj: NestedType1 & NestedType2): {
+  a: { b: { c: number; d: string } };
+} {
   return obj;
 }
 
-function checkNestedType(obj: NestedType1 | NestedType2): { a: { b: { c?: number, d?: string } } } {
+function checkNestedType(obj: NestedType1 | NestedType2): {
+  a: { b: { c?: number; d?: string } };
+} {
   return obj;
 }
 
@@ -214,7 +232,9 @@ function checkNestedType(obj: NestedType1 | NestedType2): { a: { b: { c?: number
 ///////////////////////////////////////////////////////////////////////////////
 
 type AliasType = { field: number };
-interface InterfaceType { field: number }
+interface InterfaceType {
+  field: number;
+}
 
 function checkAlias(obj: AliasType): AliasType {
   return obj;
@@ -224,11 +244,15 @@ function checkInterface(obj: InterfaceType): InterfaceType {
   return obj;
 }
 
-function checkAliasAndInterface(obj: AliasType & InterfaceType): { field: number } {
+function checkAliasAndInterface(obj: AliasType & InterfaceType): {
+  field: number;
+} {
   return obj;
 }
 
-function checkAliasAndInterface(obj: AliasType | InterfaceType): { field: number } {
+function checkAliasAndInterface(obj: AliasType | InterfaceType): {
+  field: number;
+} {
   return obj;
 }
 
@@ -261,11 +285,15 @@ function checkAnotherInterface(obj: AnotherInterface): AnotherInterface {
   return obj;
 }
 
-function checkIntersectionInterface(obj: SimpleInterface & AnotherInterface): SimpleInterface & AnotherInterface {
+function checkIntersectionInterface(
+  obj: SimpleInterface & AnotherInterface,
+): SimpleInterface & AnotherInterface {
   return obj;
 }
 
-function checkUnionInterface(obj: SimpleInterface | AnotherInterface): SimpleInterface | AnotherInterface {
+function checkUnionInterface(
+  obj: SimpleInterface | AnotherInterface,
+): SimpleInterface | AnotherInterface {
   return obj;
 }
 
@@ -274,7 +302,7 @@ function checkUnionInterface(obj: SimpleInterface | AnotherInterface): SimpleInt
 ///////////////////////////////////////////////////////////////////////////////
 
 interface AliasWithInterface extends SimpleInterface {
-  field5: string
+  field5: string;
 }
 
 interface InterfaceWithAlias extends AliasWithInterface {
@@ -313,11 +341,15 @@ class ClassImplementingExtendedInterface implements ExtendedInterface {
   }
 }
 
-function checkClassImplementingInterface(obj: ClassImplementingInterface): SimpleInterface {
+function checkClassImplementingInterface(
+  obj: ClassImplementingInterface,
+): SimpleInterface {
   return obj;
 }
 
-function checkClassImplementingExtendedInterface(obj: ClassImplementingExtendedInterface): ExtendedInterface {
+function checkClassImplementingExtendedInterface(
+  obj: ClassImplementingExtendedInterface,
+): ExtendedInterface {
   return obj;
 }
 
@@ -352,7 +384,9 @@ interface DerivedInterface2 extends BaseInterface {
   derivedField2: boolean;
 }
 
-interface CombinedDerivedInterface extends DerivedInterface1, DerivedInterface2 { }
+interface CombinedDerivedInterface
+  extends DerivedInterface1,
+    DerivedInterface2 {}
 
 function checkBaseInterface(obj: BaseInterface): BaseInterface {
   return obj;
@@ -366,7 +400,9 @@ function checkDerivedInterface2(obj: DerivedInterface2): DerivedInterface2 {
   return obj;
 }
 
-function checkCombinedDerivedInterface(obj: CombinedDerivedInterface): CombinedDerivedInterface {
+function checkCombinedDerivedInterface(
+  obj: CombinedDerivedInterface,
+): CombinedDerivedInterface {
   return obj;
 }
 
@@ -388,7 +424,9 @@ class ClassWithConstructor implements InitSimpleInterface {
   }
 }
 
-function checkClassWithConstructor(obj: ClassWithConstructor): InitSimpleInterface {
+function checkClassWithConstructor(
+  obj: ClassWithConstructor,
+): InitSimpleInterface {
   return obj;
 }
 
@@ -407,7 +445,9 @@ class ClassWithExtendedConstructor implements InitExtendedInterface {
   }
 }
 
-function checkClassWithExtendedConstructor(obj: ClassWithExtendedConstructor): InitExtendedInterface {
+function checkClassWithExtendedConstructor(
+  obj: ClassWithExtendedConstructor,
+): InitExtendedInterface {
   return obj;
 }
 
@@ -435,7 +475,9 @@ class ClassWithComplexConstructor implements InitComplexInterface {
   }
 }
 
-function checkClassWithComplexConstructor(obj: ClassWithComplexConstructor): InitComplexInterface {
+function checkClassWithComplexConstructor(
+  obj: ClassWithComplexConstructor,
+): InitComplexInterface {
   return obj;
 }
 
@@ -444,8 +486,8 @@ function checkClassWithComplexConstructor(obj: ClassWithComplexConstructor): Ini
 ///////////////////////////////////////////////////////////////////////////////
 
 interface InitAliasWithInterface extends InitSimpleInterface {
-  field4: string
-};
+  field4: string;
+}
 
 class ClassWithAliasConstructor implements InitAliasWithInterface {
   field1: number;
@@ -458,7 +500,9 @@ class ClassWithAliasConstructor implements InitAliasWithInterface {
   }
 }
 
-function checkClassWithAliasConstructor(obj: ClassWithAliasConstructor): InitAliasWithInterface {
+function checkClassWithAliasConstructor(
+  obj: ClassWithAliasConstructor,
+): InitAliasWithInterface {
   return obj;
 }
 
@@ -479,7 +523,9 @@ class ClassWithInterfaceAliasConstructor implements InitInterfaceWithAlias {
   }
 }
 
-function checkClassWithInterfaceAliasConstructor(obj: ClassWithInterfaceAliasConstructor): InitInterfaceWithAlias {
+function checkClassWithInterfaceAliasConstructor(
+  obj: ClassWithInterfaceAliasConstructor,
+): InitInterfaceWithAlias {
   return obj;
 }
 
@@ -504,7 +550,9 @@ class ClassImplementingMultipleInterfaces implements Interface1, Interface2 {
   }
 }
 
-function checkClassImplementingMultipleInterfaces(obj: ClassImplementingMultipleInterfaces): Interface1 & Interface2 {
+function checkClassImplementingMultipleInterfaces(
+  obj: ClassImplementingMultipleInterfaces,
+): Interface1 & Interface2 {
   return obj;
 }
 
@@ -524,20 +572,30 @@ interface InitDerivedInterface2 extends InitBaseInterface {
   derivedField2: boolean;
 }
 
-interface InitCombinedDerivedInterface extends InitDerivedInterface1, InitDerivedInterface2 { }
+interface InitCombinedDerivedInterface
+  extends InitDerivedInterface1,
+    InitDerivedInterface2 {}
 
-class ClassWithCombinedDerivedConstructor implements InitCombinedDerivedInterface {
+class ClassWithCombinedDerivedConstructor
+  implements InitCombinedDerivedInterface
+{
   baseField: number;
   derivedField1: string;
   derivedField2: boolean;
-  constructor(baseField: number, derivedField1: string, derivedField2: boolean) {
+  constructor(
+    baseField: number,
+    derivedField1: string,
+    derivedField2: boolean,
+  ) {
     this.baseField = baseField;
     this.derivedField1 = derivedField1;
     this.derivedField2 = derivedField2;
   }
 }
 
-function checkClassWithCombinedDerivedConstructor(obj: ClassWithCombinedDerivedConstructor): InitCombinedDerivedInterface {
+function checkClassWithCombinedDerivedConstructor(
+  obj: ClassWithCombinedDerivedConstructor,
+): InitCombinedDerivedInterface {
   return obj;
 }
 
@@ -559,7 +617,9 @@ class ClassWithOptionalFields implements OptionalFieldsInterface {
   }
 }
 
-function checkClassWithOptionalFields(obj: ClassWithOptionalFields): OptionalFieldsInterface {
+function checkClassWithOptionalFields(
+  obj: ClassWithOptionalFields,
+): OptionalFieldsInterface {
   return obj;
 }
 
@@ -567,7 +627,9 @@ interface ExtendedOptionalFieldsInterface extends OptionalFieldsInterface {
   field3?: boolean;
 }
 
-class ClassWithExtendedOptionalFields implements ExtendedOptionalFieldsInterface {
+class ClassWithExtendedOptionalFields
+  implements ExtendedOptionalFieldsInterface
+{
   field1: number;
   field2?: string;
   field3?: boolean;
@@ -578,7 +640,9 @@ class ClassWithExtendedOptionalFields implements ExtendedOptionalFieldsInterface
   }
 }
 
-function checkClassWithExtendedOptionalFields(obj: ClassWithExtendedOptionalFields): ExtendedOptionalFieldsInterface {
+function checkClassWithExtendedOptionalFields(
+  obj: ClassWithExtendedOptionalFields,
+): ExtendedOptionalFieldsInterface {
   return obj;
 }
 
@@ -606,7 +670,9 @@ class ClassWithComplexOptionalFields implements ComplexOptionalFieldsInterface {
   }
 }
 
-function checkClassWithComplexOptionalFields(obj: ClassWithComplexOptionalFields): ComplexOptionalFieldsInterface {
+function checkClassWithComplexOptionalFields(
+  obj: ClassWithComplexOptionalFields,
+): ComplexOptionalFieldsInterface {
   return obj;
 }
 
@@ -615,8 +681,8 @@ function checkClassWithComplexOptionalFields(obj: ClassWithComplexOptionalFields
 ///////////////////////////////////////////////////////////////////////////////
 
 interface OptionalAliasWithInterface extends OptionalFieldsInterface {
-  field4?: string
-};
+  field4?: string;
+}
 
 class ClassWithOptionalAliasConstructor implements OptionalAliasWithInterface {
   field1: number;
@@ -629,7 +695,9 @@ class ClassWithOptionalAliasConstructor implements OptionalAliasWithInterface {
   }
 }
 
-function checkClassWithOptionalAliasConstructor(obj: ClassWithOptionalAliasConstructor): OptionalAliasWithInterface {
+function checkClassWithOptionalAliasConstructor(
+  obj: ClassWithOptionalAliasConstructor,
+): OptionalAliasWithInterface {
   return obj;
 }
 
@@ -637,12 +705,19 @@ interface OptionalInterfaceWithAlias extends OptionalAliasWithInterface {
   field5?: boolean;
 }
 
-class ClassWithOptionalInterfaceAliasConstructor implements OptionalInterfaceWithAlias {
+class ClassWithOptionalInterfaceAliasConstructor
+  implements OptionalInterfaceWithAlias
+{
   field1: number;
   field2?: string;
   field4?: string;
   field5?: boolean;
-  constructor(field1: number, field2?: string, field4?: string, field5?: boolean) {
+  constructor(
+    field1: number,
+    field2?: string,
+    field4?: string,
+    field5?: boolean,
+  ) {
     this.field1 = field1;
     this.field2 = field2;
     this.field4 = field4;
@@ -650,7 +725,9 @@ class ClassWithOptionalInterfaceAliasConstructor implements OptionalInterfaceWit
   }
 }
 
-function checkClassWithOptionalInterfaceAliasConstructor(obj: ClassWithOptionalInterfaceAliasConstructor): OptionalInterfaceWithAlias {
+function checkClassWithOptionalInterfaceAliasConstructor(
+  obj: ClassWithOptionalInterfaceAliasConstructor,
+): OptionalInterfaceWithAlias {
   return obj;
 }
 
@@ -667,7 +744,9 @@ interface OptionalInterface2 {
   field3?: boolean;
 }
 
-class ClassImplementingOptionalInterfaces implements OptionalInterface1, OptionalInterface2 {
+class ClassImplementingOptionalInterfaces
+  implements OptionalInterface1, OptionalInterface2
+{
   field1: number;
   field2?: string;
   field3?: boolean;
@@ -678,7 +757,9 @@ class ClassImplementingOptionalInterfaces implements OptionalInterface1, Optiona
   }
 }
 
-function checkClassImplementingOptionalInterfaces(obj: ClassImplementingOptionalInterfaces): OptionalInterface1 & OptionalInterface2 {
+function checkClassImplementingOptionalInterfaces(
+  obj: ClassImplementingOptionalInterfaces,
+): OptionalInterface1 & OptionalInterface2 {
   return obj;
 }
 
@@ -701,9 +782,13 @@ interface OptionalDerivedInterface2 extends OptionalBaseInterface {
   optionalDerivedField2?: string;
 }
 
-interface OptionalCombinedDerivedInterface extends OptionalDerivedInterface1, OptionalDerivedInterface2 { }
+interface OptionalCombinedDerivedInterface
+  extends OptionalDerivedInterface1,
+    OptionalDerivedInterface2 {}
 
-class ClassWithOptionalCombinedDerivedConstructor implements OptionalCombinedDerivedInterface {
+class ClassWithOptionalCombinedDerivedConstructor
+  implements OptionalCombinedDerivedInterface
+{
   baseField: number;
   optionalBaseField?: string;
   derivedField1: string;
@@ -716,7 +801,7 @@ class ClassWithOptionalCombinedDerivedConstructor implements OptionalCombinedDer
     derivedField2: boolean,
     optionalBaseField?: string,
     optionalDerivedField1?: boolean,
-    optionalDerivedField2?: string
+    optionalDerivedField2?: string,
   ) {
     this.baseField = baseField;
     this.optionalBaseField = optionalBaseField;
@@ -727,10 +812,11 @@ class ClassWithOptionalCombinedDerivedConstructor implements OptionalCombinedDer
   }
 }
 
-function checkClassWithOptionalCombinedDerivedConstructor(obj: ClassWithOptionalCombinedDerivedConstructor): OptionalCombinedDerivedInterface {
+function checkClassWithOptionalCombinedDerivedConstructor(
+  obj: ClassWithOptionalCombinedDerivedConstructor,
+): OptionalCombinedDerivedInterface {
   return obj;
 }
-
 
 interface ConditionalInterface {
   field1: number;
@@ -772,7 +858,7 @@ function checkTypeofUndefined(): typeof undefined {
 ///////////////////////////////////////////////////////////////////////////////
 
 function checkIfElseExpression(input: number | string): number {
-  if (typeof input === 'number') {
+  if (typeof input === "number") {
     return input;
   } else {
     return 0;
@@ -780,7 +866,7 @@ function checkIfElseExpression(input: number | string): number {
 }
 
 function checkIfElseExpression(input: number | string): string {
-  if (typeof input === 'string') {
+  if (typeof input === "string") {
     return input;
   } else {
     return "";
@@ -910,7 +996,7 @@ function checkSwitchInitialization(value: number): MyType {
 
 function checkNestedConditionalInitialization(input: number | string): MyType {
   let x: MyType;
-  if (typeof input === 'number') {
+  if (typeof input === "number") {
     if (input > 0) {
       x = { field1: input, field2: "positive" };
     } else {
@@ -930,11 +1016,11 @@ function checkNestedConditionalInitialization(input: number | string): MyType {
 // Type Guard Initialization
 ///////////////////////////////////////////////////////////////////////////////
 
-type ComplexType = { kind: 'A', value: number } | { kind: 'B', value: string };
+type ComplexType = { kind: "A"; value: number } | { kind: "B"; value: string };
 
 function checkTypeGuardInitialization(obj: ComplexType): MyType {
   let x: MyType;
-  if (obj.kind === 'A') {
+  if (obj.kind === "A") {
     x = { field1: obj.value, field2: "type A" };
   } else {
     x = { field1: 0, field2: "type B" };
@@ -1012,11 +1098,11 @@ function checkObjectClosure(input: number, str: string): () => MyObject {
 // Closure with Type Guards
 ///////////////////////////////////////////////////////////////////////////////
 
-type MyType2 = { kind: 'A', value: number } | { kind: 'B', value: string };
+type MyType2 = { kind: "A"; value: number } | { kind: "B"; value: string };
 
 function checkTypeGuardClosure(input: MyType2): () => string {
   let x: string;
-  if (input.kind === 'A') {
+  if (input.kind === "A") {
     x = "Type A";
   } else {
     x = "Type B";
@@ -1053,11 +1139,15 @@ function checkGenericClosureWithParam<T>(input: T): (arg: T) => T {
   return (arg: T) => arg;
 }
 
-function checkGenericClosureWithParamNumber(input: number): (arg: number) => number {
+function checkGenericClosureWithParamNumber(
+  input: number,
+): (arg: number) => number {
   return checkGenericClosureWithParam<number>(input);
 }
 
-function checkGenericClosureWithParamString(input: string): (arg: string) => string {
+function checkGenericClosureWithParamString(
+  input: string,
+): (arg: string) => string {
   return checkGenericClosureWithParam<string>(input);
 }
 
@@ -1065,16 +1155,28 @@ function checkGenericClosureWithParamString(input: string): (arg: string) => str
 // Generic Closure with Multiple Parameters
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkGenericClosureWithMultipleParams<T1, T2>(input1: T1, input2: T2): (arg1: T1, arg2: T2) => [T1, T2] {
+function checkGenericClosureWithMultipleParams<T1, T2>(
+  input1: T1,
+  input2: T2,
+): (arg1: T1, arg2: T2) => [T1, T2] {
   return (arg1: T1, arg2: T2) => [arg1, arg2];
 }
 
-function checkGenericClosureWithMultipleParamsNumberString(input1: number, input2: string): (arg1: number, arg2: string) => [number, string] {
+function checkGenericClosureWithMultipleParamsNumberString(
+  input1: number,
+  input2: string,
+): (arg1: number, arg2: string) => [number, string] {
   return checkGenericClosureWithMultipleParams<number, string>(input1, input2);
 }
 
-function checkGenericClosureWithMultipleParamsBooleanObject(input1: boolean, input2: { field: string }): (arg1: boolean, arg2: { field: string }) => [boolean, { field: string }] {
-  return checkGenericClosureWithMultipleParams<boolean, { field: string }>(input1, input2);
+function checkGenericClosureWithMultipleParamsBooleanObject(
+  input1: boolean,
+  input2: { field: string },
+): (arg1: boolean, arg2: { field: string }) => [boolean, { field: string }] {
+  return checkGenericClosureWithMultipleParams<boolean, { field: string }>(
+    input1,
+    input2,
+  );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1085,11 +1187,15 @@ function checkGenericClosureWithArrayParam<T>(input: T[]): (arg: T[]) => T[] {
   return (arg: T[]) => arg;
 }
 
-function checkGenericClosureWithArrayParamNumber(input: number[]): (arg: number[]) => number[] {
+function checkGenericClosureWithArrayParamNumber(
+  input: number[],
+): (arg: number[]) => number[] {
   return checkGenericClosureWithArrayParam<number>(input);
 }
 
-function checkGenericClosureWithArrayParamString(input: string[]): (arg: string[]) => string[] {
+function checkGenericClosureWithArrayParamString(
+  input: string[],
+): (arg: string[]) => string[] {
   return checkGenericClosureWithArrayParam<string>(input);
 }
 
@@ -1102,15 +1208,21 @@ interface ComplexObject<T> {
   description: string;
 }
 
-function checkGenericClosureWithObjectParam<T>(input: ComplexObject<T>): (arg: ComplexObject<T>) => ComplexObject<T> {
+function checkGenericClosureWithObjectParam<T>(
+  input: ComplexObject<T>,
+): (arg: ComplexObject<T>) => ComplexObject<T> {
   return (arg: ComplexObject<T>) => arg;
 }
 
-function checkGenericClosureWithObjectParamNumber(input: ComplexObject<number>): (arg: ComplexObject<number>) => ComplexObject<number> {
+function checkGenericClosureWithObjectParamNumber(
+  input: ComplexObject<number>,
+): (arg: ComplexObject<number>) => ComplexObject<number> {
   return checkGenericClosureWithObjectParam<number>(input);
 }
 
-function checkGenericClosureWithObjectParamString(input: ComplexObject<string>): (arg: ComplexObject<string>) => ComplexObject<string> {
+function checkGenericClosureWithObjectParamString(
+  input: ComplexObject<string>,
+): (arg: ComplexObject<string>) => ComplexObject<string> {
   return checkGenericClosureWithObjectParam<string>(input);
 }
 
@@ -1118,15 +1230,21 @@ function checkGenericClosureWithObjectParamString(input: ComplexObject<string>):
 // Generic Closure with Constraints
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkConstrainedGenericClosureWithParam<T extends { length: number }>(input: T): (arg: T) => number {
+function checkConstrainedGenericClosureWithParam<T extends { length: number }>(
+  input: T,
+): (arg: T) => number {
   return (arg: T) => arg.length;
 }
 
-function checkConstrainedGenericClosureWithParamString(input: string): (arg: string) => number {
+function checkConstrainedGenericClosureWithParamString(
+  input: string,
+): (arg: string) => number {
   return checkConstrainedGenericClosureWithParam<string>(input);
 }
 
-function checkConstrainedGenericClosureWithParamArray(input: { length: number }): (arg: { length: number }) => number {
+function checkConstrainedGenericClosureWithParamArray(input: {
+  length: number;
+}): (arg: { length: number }) => number {
   return checkConstrainedGenericClosureWithParam<{ length: number }>(input);
 }
 
@@ -1134,16 +1252,31 @@ function checkConstrainedGenericClosureWithParamArray(input: { length: number })
 // Generic Closure with Multiple Type Parameters and Constraints
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkMultipleConstrainedGenericClosureWithParam<T1 extends { length: number }, T2 extends { size: number }>(input1: T1, input2: T2): (arg1: T1, arg2: T2) => [number, number] {
+function checkMultipleConstrainedGenericClosureWithParam<
+  T1 extends { length: number },
+  T2 extends { size: number },
+>(input1: T1, input2: T2): (arg1: T1, arg2: T2) => [number, number] {
   return (arg1: T1, arg2: T2) => [arg1.length, arg2.size];
 }
 
-function checkMultipleConstrainedGenericClosureWithParamStringArray(input1: string, input2: { size: number }): (arg1: string, arg2: { size: number }) => [number, number] {
-  return checkMultipleConstrainedGenericClosureWithParam<string, { size: number }>(input1, input2);
+function checkMultipleConstrainedGenericClosureWithParamStringArray(
+  input1: string,
+  input2: { size: number },
+): (arg1: string, arg2: { size: number }) => [number, number] {
+  return checkMultipleConstrainedGenericClosureWithParam<
+    string,
+    { size: number }
+  >(input1, input2);
 }
 
-function checkMultipleConstrainedGenericClosureWithParamObjectArray(input1: { length: number }, input2: { size: number }): (arg1: { length: number }, arg2: { size: number }) => [number, number] {
-  return checkMultipleConstrainedGenericClosureWithParam<{ length: number }, { size: number }>(input1, input2);
+function checkMultipleConstrainedGenericClosureWithParamObjectArray(
+  input1: { length: number },
+  input2: { size: number },
+): (arg1: { length: number }, arg2: { size: number }) => [number, number] {
+  return checkMultipleConstrainedGenericClosureWithParam<
+    { length: number },
+    { size: number }
+  >(input1, input2);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1154,15 +1287,24 @@ function checkMultipleConstrainedGenericClosureWithParamObjectArray(input1: { le
 // Basic Generic Function with Optional Parameters
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkGenericFunctionWithOptionalParam<T>(input: T, arg?: T): T | undefined {
+function checkGenericFunctionWithOptionalParam<T>(
+  input: T,
+  arg?: T,
+): T | undefined {
   return arg;
 }
 
-function checkGenericFunctionWithOptionalParamNumber(input: number, arg?: number): number | undefined {
+function checkGenericFunctionWithOptionalParamNumber(
+  input: number,
+  arg?: number,
+): number | undefined {
   return checkGenericFunctionWithOptionalParam<number>(input, arg);
 }
 
-function checkGenericFunctionWithOptionalParamString(input: string, arg?: string): string | undefined {
+function checkGenericFunctionWithOptionalParamString(
+  input: string,
+  arg?: string,
+): string | undefined {
   return checkGenericFunctionWithOptionalParam<string>(input, arg);
 }
 
@@ -1170,31 +1312,63 @@ function checkGenericFunctionWithOptionalParamString(input: string, arg?: string
 // Generic Function with Multiple Optional Parameters
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkGenericFunctionWithMultipleOptionalParams<T1, T2>(input1: T1, input2: T2, arg1?: T1, arg2?: T2): [T1 | undefined, T2 | undefined] {
+function checkGenericFunctionWithMultipleOptionalParams<T1, T2>(
+  input1: T1,
+  input2: T2,
+  arg1?: T1,
+  arg2?: T2,
+): [T1 | undefined, T2 | undefined] {
   return [arg1, arg2];
 }
 
-function checkGenericFunctionWithMultipleOptionalParamsNumberString(input1: number, input2: string, arg1?: number, arg2?: string): [number | undefined, string | undefined] {
-  return checkGenericFunctionWithMultipleOptionalParams<number, string>(input1, input2, arg1, arg2);
+function checkGenericFunctionWithMultipleOptionalParamsNumberString(
+  input1: number,
+  input2: string,
+  arg1?: number,
+  arg2?: string,
+): [number | undefined, string | undefined] {
+  return checkGenericFunctionWithMultipleOptionalParams<number, string>(
+    input1,
+    input2,
+    arg1,
+    arg2,
+  );
 }
 
-function checkGenericFunctionWithMultipleOptionalParamsBooleanObject(input1: boolean, input2: { field: string }, arg1?: boolean, arg2?: { field: string }): [boolean | undefined, { field: string } | undefined] {
-  return checkGenericFunctionWithMultipleOptionalParams<boolean, { field: string }>(input1, input2, arg1, arg2);
+function checkGenericFunctionWithMultipleOptionalParamsBooleanObject(
+  input1: boolean,
+  input2: { field: string },
+  arg1?: boolean,
+  arg2?: { field: string },
+): [boolean | undefined, { field: string } | undefined] {
+  return checkGenericFunctionWithMultipleOptionalParams<
+    boolean,
+    { field: string }
+  >(input1, input2, arg1, arg2);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Generic Function with Optional Array Parameters
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkGenericFunctionWithOptionalArrayParam<T>(input: T[], arg?: T[]): T[] | undefined {
+function checkGenericFunctionWithOptionalArrayParam<T>(
+  input: T[],
+  arg?: T[],
+): T[] | undefined {
   return arg;
 }
 
-function checkGenericFunctionWithOptionalArrayParamNumber(input: number[], arg?: number[]): number[] | undefined {
+function checkGenericFunctionWithOptionalArrayParamNumber(
+  input: number[],
+  arg?: number[],
+): number[] | undefined {
   return checkGenericFunctionWithOptionalArrayParam<number>(input, arg);
 }
 
-function checkGenericFunctionWithOptionalArrayParamString(input: string[], arg?: string[]): string[] | undefined {
+function checkGenericFunctionWithOptionalArrayParamString(
+  input: string[],
+  arg?: string[],
+): string[] | undefined {
   return checkGenericFunctionWithOptionalArrayParam<string>(input, arg);
 }
 
@@ -1207,15 +1381,24 @@ interface ComplexObject<T> {
   description: string;
 }
 
-function checkGenericFunctionWithOptionalObjectParam<T>(input: ComplexObject<T>, arg?: ComplexObject<T>): ComplexObject<T> | undefined {
+function checkGenericFunctionWithOptionalObjectParam<T>(
+  input: ComplexObject<T>,
+  arg?: ComplexObject<T>,
+): ComplexObject<T> | undefined {
   return arg;
 }
 
-function checkGenericFunctionWithOptionalObjectParamNumber(input: ComplexObject<number>, arg?: ComplexObject<number>): ComplexObject<number> | undefined {
+function checkGenericFunctionWithOptionalObjectParamNumber(
+  input: ComplexObject<number>,
+  arg?: ComplexObject<number>,
+): ComplexObject<number> | undefined {
   return checkGenericFunctionWithOptionalObjectParam<number>(input, arg);
 }
 
-function checkGenericFunctionWithOptionalObjectParamString(input: ComplexObject<string>, arg?: ComplexObject<string>): ComplexObject<string> | undefined {
+function checkGenericFunctionWithOptionalObjectParamString(
+  input: ComplexObject<string>,
+  arg?: ComplexObject<string>,
+): ComplexObject<string> | undefined {
   return checkGenericFunctionWithOptionalObjectParam<string>(input, arg);
 }
 
@@ -1223,33 +1406,68 @@ function checkGenericFunctionWithOptionalObjectParamString(input: ComplexObject<
 // Generic Function with Optional Parameters and Constraints
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkConstrainedGenericFunctionWithOptionalParam<T extends { length: number }>(input: T, arg?: T): number | undefined {
+function checkConstrainedGenericFunctionWithOptionalParam<
+  T extends { length: number },
+>(input: T, arg?: T): number | undefined {
   if (arg === undefined) return undefined;
   return 0;
 }
 
-function checkConstrainedGenericFunctionWithOptionalParamString(input: string, arg?: string): number | undefined {
+function checkConstrainedGenericFunctionWithOptionalParamString(
+  input: string,
+  arg?: string,
+): number | undefined {
   return checkConstrainedGenericFunctionWithOptionalParam<string>(input, arg);
 }
 
-function checkConstrainedGenericFunctionWithOptionalParamArray(input: { length: number }, arg?: { length: number }): number | undefined {
-  return checkConstrainedGenericFunctionWithOptionalParam<{ length: number }>(input, arg);
+function checkConstrainedGenericFunctionWithOptionalParamArray(
+  input: { length: number },
+  arg?: { length: number },
+): number | undefined {
+  return checkConstrainedGenericFunctionWithOptionalParam<{ length: number }>(
+    input,
+    arg,
+  );
 }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Generic Function with Multiple Optional Type Parameters and Constraints
 ///////////////////////////////////////////////////////////////////////////////
 
-function checkMultipleConstrainedGenericFunctionWithOptionalParam<T1 extends { length: number }, T2 extends { size: number }>(input1: T1, input2: T2, arg1?: T1, arg2?: T2): [number | undefined, number | undefined] {
+function checkMultipleConstrainedGenericFunctionWithOptionalParam<
+  T1 extends { length: number },
+  T2 extends { size: number },
+>(
+  input1: T1,
+  input2: T2,
+  arg1?: T1,
+  arg2?: T2,
+): [number | undefined, number | undefined] {
   return [0, 0];
 }
 
-function checkMultipleConstrainedGenericFunctionWithOptionalParamStringArray(input1: string, input2: { size: number }, arg1?: string, arg2?: { size: number }): [number | undefined, number | undefined] {
-  return checkMultipleConstrainedGenericFunctionWithOptionalParam<string, { size: number }>(input1, input2, arg1, arg2);
+function checkMultipleConstrainedGenericFunctionWithOptionalParamStringArray(
+  input1: string,
+  input2: { size: number },
+  arg1?: string,
+  arg2?: { size: number },
+): [number | undefined, number | undefined] {
+  return checkMultipleConstrainedGenericFunctionWithOptionalParam<
+    string,
+    { size: number }
+  >(input1, input2, arg1, arg2);
 }
 
-function checkMultipleConstrainedGenericFunctionWithOptionalParamObjectArray(input1: { length: number }, input2: { size: number }, arg1?: { length: number }, arg2?: { size: number }): [number | undefined, number | undefined] {
-  return checkMultipleConstrainedGenericFunctionWithOptionalParam<{ length: number }, { size: number }>(input1, input2, arg1, arg2);
+function checkMultipleConstrainedGenericFunctionWithOptionalParamObjectArray(
+  input1: { length: number },
+  input2: { size: number },
+  arg1?: { length: number },
+  arg2?: { size: number },
+): [number | undefined, number | undefined] {
+  return checkMultipleConstrainedGenericFunctionWithOptionalParam<
+    { length: number },
+    { size: number }
+  >(input1, input2, arg1, arg2);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -1257,9 +1475,9 @@ function checkMultipleConstrainedGenericFunctionWithOptionalParamObjectArray(inp
 ///////////////////////////////////////////////////////////////////////////////
 
 function checkFieldOfString(s: string): boolean {
-  return s.startsWith('foo');
+  return s.startsWith("foo");
 }
 
 function checkSubscriptionOf(): string {
-  return 2024['toString' as const]();
+  return (2024)["toString" as const]();
 }

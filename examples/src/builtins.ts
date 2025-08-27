@@ -8,7 +8,7 @@ declare class Array<T> {
   length: number;
 
   [index: number]: T | undefined;
- 
+
   // Existing methods
   find(filter: (item: T) => boolean): undefined | T;
   push(elt: T): void;
@@ -20,7 +20,7 @@ declare class Array<T> {
   static isArray<T>(value: T): boolean;
   join(separator: string): string;
   slice(start: number, end?: number): Array<T>;
-  
+
   // Additional essential Array methods
   pop(): T | undefined;
   shift(): T | undefined;
@@ -39,7 +39,7 @@ declare class Array<T> {
   flat<U>(): Array<U>;
   flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
   reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
-  
+
   // Static methods
   static from<T, U>(arrayLike: Array<T>, mapFn?: (item: T) => U): Array<U>;
   static of<T>(elements: T): Array<T>;
@@ -55,7 +55,7 @@ declare const Math: {
   LOG10E: number;
   SQRT1_2: number;
   SQRT2: number;
-  
+
   // Existing methods
   max: (a: number, b: number) => number;
   min: (a: number, b: number) => number;
@@ -66,7 +66,7 @@ declare const Math: {
   pow: (x: number, y: number) => number;
   sqrt: (x: number) => number;
   random: () => number;
-  
+
   // Additional essential Math methods
   acos: (x: number) => number;
   acosh: (x: number) => number;
@@ -106,7 +106,7 @@ declare class number {
   toExponential(fractionDigits?: number): string;
   toPrecision(precision?: number): string;
   valueOf(): number;
-  
+
   // Static properties
   static MAX_VALUE: number;
   static MIN_VALUE: number;
@@ -116,7 +116,7 @@ declare class number {
   static MAX_SAFE_INTEGER: number;
   static MIN_SAFE_INTEGER: number;
   static EPSILON: number;
-  
+
   // Static methods
   static isFinite(value: number): boolean;
   static isInteger(value: number): boolean;
@@ -136,7 +136,7 @@ declare const Number: {
   MAX_SAFE_INTEGER: number;
   MIN_SAFE_INTEGER: number;
   EPSILON: number;
-  
+
   isFinite(value: number): boolean;
   isInteger(value: number): boolean;
   isNaN(value: number): boolean;
@@ -149,7 +149,7 @@ declare class string {
   length: number;
 
   [index: number]: string | undefined;
-  
+
   // Existing methods
   charAt(pos: number): string;
   startsWith(prefix: string): boolean;
@@ -159,7 +159,7 @@ declare class string {
   split(separator: string): Array<string>;
   toLowerCase(): string;
   toUpperCase(): string;
-  
+
   // Additional essential String methods
   charCodeAt(index: number): number;
   concat(str: string): string;
@@ -179,7 +179,7 @@ declare class string {
   trimEnd(): string;
   trimStart(): string;
   valueOf(): string;
-  
+
   // Static methods
   static fromCharCode(code: number): string;
 }
@@ -187,7 +187,7 @@ declare class string {
 declare class Object {
   // Existing methods
   static keys(obj: object): Array<string>;
-  
+
   // Additional Object utility methods
   static values<T>(obj: T): Array<T>;
   static entries<T>(obj: T): Array<[string, T]>;
@@ -205,7 +205,7 @@ declare class Object {
   static preventExtensions<T>(obj: T): T;
   static seal<T>(obj: T): T;
   static setPrototypeOf<T, U>(obj: T, prototype: U): T;
-  
+
   // Instance methods
   toString(): string;
   valueOf(): object;
@@ -253,7 +253,7 @@ declare class Map<K, V> {
 declare class Set<T> {
   constructor(values?: Array<T>);
   size: number;
-  
+
   // Set methods
   add(value: T): void;
   clear(): void;
@@ -281,8 +281,16 @@ declare class WeakSet<T> {
 }
 
 declare class Date {
-  constructor(year: number, month: number, day?: number, hour?: number, minute?: number, second?: number, millisecond?: number);
-  
+  constructor(
+    year: number,
+    month: number,
+    day?: number,
+    hour?: number,
+    minute?: number,
+    second?: number,
+    millisecond?: number,
+  );
+
   // Instance methods
   getDate(): number;
   getDay(): number;
@@ -304,7 +312,12 @@ declare class Date {
   getUTCSeconds(): number;
   setDate(date: number): number;
   setFullYear(year: number, month?: number, date?: number): number;
-  setHours(hours: number, minutes?: number, seconds?: number, milliseconds?: number): number;
+  setHours(
+    hours: number,
+    minutes?: number,
+    seconds?: number,
+    milliseconds?: number,
+  ): number;
   setMilliseconds(milliseconds: number): number;
   setMinutes(minutes: number, seconds?: number, milliseconds?: number): number;
   setMonth(month: number, date?: number): number;
@@ -312,9 +325,18 @@ declare class Date {
   setTime(time: number): number;
   setUTCDate(date: number): number;
   setUTCFullYear(year: number, month?: number, date?: number): number;
-  setUTCHours(hours: number, minutes?: number, seconds?: number, milliseconds?: number): number;
+  setUTCHours(
+    hours: number,
+    minutes?: number,
+    seconds?: number,
+    milliseconds?: number,
+  ): number;
   setUTCMilliseconds(milliseconds: number): number;
-  setUTCMinutes(minutes: number, seconds?: number, milliseconds?: number): number;
+  setUTCMinutes(
+    minutes: number,
+    seconds?: number,
+    milliseconds?: number,
+  ): number;
   setUTCMonth(month: number, date?: number): number;
   setUTCSeconds(seconds: number, milliseconds?: number): number;
   toDateString(): string;
@@ -327,28 +349,40 @@ declare class Date {
   toTimeString(): string;
   toUTCString(): string;
   valueOf(): number;
-  
+
   // Static methods
   static now(): number;
   static parse(s: string): number;
-  static UTC(year: number, month: number, date?: number, hours?: number, minutes?: number, seconds?: number, ms?: number): number;
+  static UTC(
+    year: number,
+    month: number,
+    date?: number,
+    hours?: number,
+    minutes?: number,
+    seconds?: number,
+    ms?: number,
+  ): number;
 }
 
 declare const JSON: {
   parse<T>(text: string): T;
-  stringify<T>(value: T, replacer?: (key: string, value: T) => T, space?: string | number): string;
-}
+  stringify<T>(
+    value: T,
+    replacer?: (key: string, value: T) => T,
+    space?: string | number,
+  ): string;
+};
 
 declare class RegExp {
   constructor(pattern: string, flags?: string);
-  
+
   // Properties
   global: boolean;
   ignoreCase: boolean;
   multiline: boolean;
   source: string;
   lastIndex: number;
-  
+
   // Methods
   exec(str: string): Array<string> | undefined;
   test(str: string): boolean;
@@ -359,11 +393,11 @@ declare class bigint {
   // Instance methods
   toString(radix?: number): string;
   valueOf(): bigint;
-  
-  // Static properties  
+
+  // Static properties
   static MAX_SAFE_INTEGER: bigint;
   static MIN_SAFE_INTEGER: bigint;
-  
+
   // Static methods
   static asIntN(width: number, bigint: bigint): bigint;
   static asUintN(width: number, bigint: bigint): bigint;
@@ -372,11 +406,11 @@ declare class bigint {
 // BigInt constructor function
 declare const BigInt: {
   (value: number | string | boolean): bigint;
-  
+
   // Static methods
   asIntN(width: number, bigint: bigint): bigint;
   asUintN(width: number, bigint: bigint): bigint;
-}
+};
 
 declare class Error {
   constructor(cause?: string);

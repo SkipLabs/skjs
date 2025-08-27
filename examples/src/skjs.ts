@@ -5,4 +5,3 @@ export function array<T>(...elts: T[]): Array<T> {
 export function map<K, V>(...elts: Array<[K, V]>): Map<K, V> {
   return new Map(elts);
 }
-

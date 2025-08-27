@@ -3,13 +3,12 @@ import { array } from "./skjs.js";
 // program to remove duplicate values from an array
 
 function getUnique<T>(arr: Array<T>): Array<T> {
-  
   let uniqueArr = array();
-  
+
   // loop through array
-  for(let i = 0; i < arr.length; i++) {
+  for (let i = 0; i < arr.length; i++) {
     const item = arr[i];
-    if(item !== undefined && uniqueArr.indexOf(item) === -1) {
+    if (item !== undefined && uniqueArr.indexOf(item) === -1) {
       uniqueArr.push(item);
     }
   }

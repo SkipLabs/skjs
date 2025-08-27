@@ -4,10 +4,14 @@ const obj: { f: number } = { f: 1 };
 // @ts-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const obj2: { f?: number } = {};
 
-function returningVoid(): void { };
+function returningVoid(): void {}
 
-function maybeObj(): { f: number } | undefined { return undefined; }
-function maybeObj2(): { f?: number } | null { return {}; }
+function maybeObj(): { f: number } | undefined {
+  return undefined;
+}
+function maybeObj2(): { f?: number } | null {
+  return {};
+}
 
 // @ts-expect-error Useless '?.'. Use '.' instead
 const x1: number = obj?.f;
