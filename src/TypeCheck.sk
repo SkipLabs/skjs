@@ -1184,7 +1184,7 @@ class TypeChecker{
       optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
       | TObject(fields, _) ->
-        fieldType = fields.getType(fieldName);
+        fieldType = fields.getType(env.subst, this.tenv, fieldName);
         !result = TType::union(env.subst, this.tenv, result, fieldType)
 
       | TAlgebraic(branches, _) ->
@@ -1193,7 +1193,7 @@ class TypeChecker{
             env.subst,
             this.tenv,
             result,
-            branch.getType(fieldName),
+            branch.getType(env.subst, this.tenv, fieldName),
           )
         }
       | TPrimValue(primKind, _, stringPos) ->
@@ -1207,14 +1207,14 @@ class TypeChecker{
           env.subst,
           this.tenv,
           result,
-          obj.fields.getType(fieldName),
+          obj.fields.getType(env.subst, this.tenv, fieldName),
         )
       | TPrimVoid(TUndefined(), undefPos)
       | TPrimVoid(
         TNull(),
         undefPos,
       ) if (optionalChaining) ->
-        !result = result.withUndefined(undefPos);
+        !result = result.unionUndefined(env.subst, this.tenv, undefPos);
         !optionalChainingIsUseless = false;
         !optionalChainingIsAlwaysUndefinedForThisSType = true
       | _ ->
@@ -1528,7 +1528,11 @@ class TypeChecker{
               );
               ty = TType::bottom(pos);
               for (stringValue in stringValues.values) {
-                t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
+                t = obj.fields.getType(
+                  env.subst,
+                  this.tenv,
+                  Name(stringValue.i0, stringValue.i1),
+                );
                 !ty = TType::union(env.subst, this.tenv, ty, t);
               };
               ty
@@ -1557,7 +1561,11 @@ class TypeChecker{
               );
               ty = TType::bottom(pos);
               for (stringValue in stringValues.values) {
-                t = obj.fields.getType(Name(stringValue.i0, stringValue.i1));
+                t = obj.fields.getType(
+                  env.subst,
+                  this.tenv,
+                  Name(stringValue.i0, stringValue.i1),
+                );
                 !ty = TType::union(env.subst, this.tenv, ty, t);
               };
               ty

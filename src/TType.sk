@@ -176,13 +176,9 @@ class TType private {
     static::create(this.pos, insts(this.insts), clauses(this.clauses))
   }
 
-  /* Returns this union undefined */
-  fun withUndefined(undefinedPosRange: PosRange): this {
-    if (!this.containsUndefined()) {
-      !this.clauses = this.clauses.withUndefined(undefinedPosRange);
-    };
-    // We need this to make sure the hash is up-to-date
-    static::create(this.pos, this.insts, this.clauses)
+  fun unionUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
+    undef = static::single(TPrimVoid(TUndefined(), pos));
+    static::union(subst, tenv, this, undef)
   }
 
   fun filterMethods(subst: mutable Subst, env: TEnv): this {
@@ -351,10 +347,6 @@ class TType private {
 
   fun isTop(): Bool {
     this.clauses.isTop()
-  }
-
-  fun containsUndefined(): Bool {
-    this.clauses.containsUndefined()
   }
 
   fun isPrimitiveType(subst: mutable Subst, env: TEnv): Bool {
@@ -541,11 +533,11 @@ class TConstr(
     TFields::isSub(subst, env, x.fields, y.fields)
   }
 
-  fun getType(fieldName: Name): TType {
+  fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
     if (fieldName.value == kAlgebraicBranchFieldName) {
       TType::constantString(this.tagPos, this.tag)
     } else {
-      this.fields.getType(fieldName)
+      this.fields.getType(subst, tenv, fieldName)
     }
   }
 
@@ -878,7 +870,7 @@ class TFields private (
     Some(this.fields[idx])
   }
 
-  fun getType(fieldName: Name): TType {
+  fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
     this.maybeGet(fieldName.value) match {
     | None() ->
       typingError(
@@ -896,7 +888,11 @@ class TFields private (
       )
     | Some(fd) ->
       ty = fd.type;
-      if (fd.isOptional) ty.withUndefined(fieldName.pos) else ty
+      if (fd.isOptional) {
+        ty.unionUndefined(subst, tenv, fieldName.pos)
+      } else {
+        ty
+      }
     }
   }
 
@@ -1025,23 +1021,6 @@ class STypes private (
 
   fun singleElt(): ?SType {
     if (this.stypes.size() == 1) this.stypes.minimum() else None()
-  }
-
-  fun containsUndefined(): Bool {
-    this.stypes.any(stype ->
-      stype match {
-      | TPrimVoid(TUndefined(), _) -> true
-      | _ -> false
-      }
-    )
-  }
-
-  fun addUndefined(pos: PosRange): this {
-    if (this.containsUndefined()) {
-      internal_error("type already contains undefined")
-    };
-    undef: SType = TPrimVoid(TUndefined(), pos);
-    static(this.stypes.union(InternalKeyedArrayMap::single(undef)))
   }
 
   fun getConstantString(): ?(PosRange, String) {
@@ -1256,10 +1235,10 @@ class Clause private (
     static::create(ArraySet::empty(), Some(stypes))
   }
 
-  static fun undefined(undefinedPosRange: PosRange): this {
+  static fun undefined(pos: PosRange): this {
     static(
       ArraySet::empty(),
-      Some(STypes::empty().addUndefined(undefinedPosRange)),
+      Some(STypes::single(TPrimVoid(TUndefined(), pos))),
     )
   }
 
@@ -1302,25 +1281,6 @@ class Clause private (
     | (Some(x), Some(y)) -> Some(STypes::union(subst, env, x, y))
     };
     Clause(this.vars, stypesOpt)
-  }
-
-  fun addUndefined(undefinedPosRange: PosRange): this {
-    if (!this.vars.isEmpty()) {
-      internal_error("Trying to add undefined to an intersection clause")
-    };
-    stypes = this.stypes match {
-    | None() -> internal_error("Trying to add undefined to a Top clause")
-    | Some(stypes) -> stypes.addUndefined(undefinedPosRange)
-    };
-    !this.stypes = Some(stypes);
-    this
-  }
-
-  fun containsUndefined(): Bool {
-    this.stypes match {
-    | None() -> this.vars.isEmpty()
-    | Some(stypes) -> stypes.containsUndefined()
-    }
   }
 
   fun getConstantString(): ?(PosRange, String) {
@@ -1479,16 +1439,6 @@ class Clauses private (
     STOk()
   }
 
-  fun withUndefined(undefinedPosRange: PosRange): this {
-    undefined = InternalKeyedArrayMap::single(
-      Clause::undefined(undefinedPosRange),
-    );
-    !this.clauses = this.clauses.mapUnion(undefined, (clause, _) ->
-      clause.addUndefined(undefinedPosRange)
-    );
-    this
-  }
-
   fun getConstantString(): ?(PosRange, String) {
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
   }
@@ -1509,13 +1459,6 @@ class Clauses private (
       }
     };
     cand
-  }
-
-  fun containsUndefined(): Bool {
-    for (clause in this.clauses) {
-      if (clause.containsUndefined()) return true;
-    };
-    false
   }
 
   fun getObject(): ?SType {
