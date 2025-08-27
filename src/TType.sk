@@ -86,13 +86,12 @@ class TType private {
 
   static fun constantString(pos: PosRange, s: String): this {
     static::single(
-      pos,
       TPrimValue(TString(), Some(ArrayValues::single((pos, s))), pos),
     )
   }
 
-  static fun single(pos: PosRange, sType: SType): this {
-    static::fromSTypes(pos, STypes::single(sType))
+  static fun single(sType: SType): this {
+    static::fromSTypes(sType.pos, STypes::single(sType))
   }
 
   static fun fromTInst(pos: PosRange, tInst: TInst): this {
@@ -185,7 +184,6 @@ class TType private {
     }) match {
     | Some(TObject(fields, pos)) ->
       static::single(
-        this.pos,
         TObject(
           fields.filterMap(field -> {
             fieldType = field.type;
@@ -296,7 +294,7 @@ class TType private {
         subst,
         env,
         TType::expandPrim(ty1.pos, primKind),
-        TType::single(ty2.pos, stype),
+        TType::single(stype),
       ) match {
       | STOk() -> return ty1
       | _ -> void
@@ -309,7 +307,7 @@ class TType private {
         subst,
         env,
         TType::expandPrim(ty2.pos, primKind),
-        TType::single(ty1.pos, stype),
+        TType::single(stype),
       ) match {
       | STOk() -> return ty2
       | _ -> void
@@ -581,14 +579,13 @@ fun createObject(
       )
     | Some((tagPos, tag)) ->
       TType::single(
-        pos,
         TAlgebraic::single(
           TConstr(tag, tagPos, fields),
           algebraicBranchFieldPos,
         ),
       )
     }
-  | None() -> TType::single(pos, TObject(fields, pos))
+  | None() -> TType::single(TObject(fields, pos))
   }
 }
 
@@ -1615,7 +1612,7 @@ base class STResult {
         "This is a constructor (the field kind is a static string)"
       | TFuns _ ->
         "This is a function of type: " +
-          prettyPrintType(false, TType::single(PosRange::none, sty))
+          prettyPrintType(false, TType::single(sty))
       | TObject _ -> "This is an object"
       | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
       }
@@ -1625,7 +1622,7 @@ base class STResult {
       "This is a function: " +
         prettyPrintType(
           false,
-          TType::single(PosRange::none, TFuns::singleFun(f, PosRange::none)),
+          TType::single(TFuns::singleFun(f, f.minSizeWitness)),
         )
     | STInvalidTypeParam(n) -> "This is of type " + n
     | STInvalidTypeParams(n) -> "This is of type " + n
@@ -1957,7 +1954,7 @@ fun unionTTuple(
         TType::union(
           subst,
           env,
-          TType::single(tuple1.pos, TPrimVoid(TUndefined(), posEnd)),
+          TType::single(TPrimVoid(TUndefined(), posEnd)),
           tuple2.tuple[i],
         ),
       );
@@ -1970,7 +1967,7 @@ fun unionTTuple(
           subst,
           env,
           tuple1.tuple[i],
-          TType::single(tuple2.pos, TPrimVoid(TUndefined(), posEnd)),
+          TType::single(TPrimVoid(TUndefined(), posEnd)),
         ),
       );
     }
