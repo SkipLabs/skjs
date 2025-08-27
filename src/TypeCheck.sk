@@ -1927,6 +1927,8 @@ class TypeChecker{
   fun asConstExpr(e: Expr): ?TType {
     pos = e.pos;
     e.value match {
+    | AsConst(subExpr) ->
+      typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
     | Var(Name(_, "null")) -> Some(TType::single(pos, TPrimVoid(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
       Some(TType::single(pos, TPrimVoid(TUndefined(), pos)))
@@ -1958,17 +1960,6 @@ class TypeChecker{
           TPrimValue(TString(), Some(ArrayValues::single((pos, n))), pos),
         ),
       )
-    | AsConst(subExpr) ->
-      subExpr.value match {
-      | EString(_, n) ->
-        Some(
-          TType::single(
-            pos,
-            TPrimValue(TString(), Some(ArrayValues::single((pos, n))), pos),
-          ),
-        )
-      | _ -> None()
-      }
     | _ -> None()
     }
   }
