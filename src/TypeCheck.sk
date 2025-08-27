@@ -1122,7 +1122,7 @@ class TypeChecker{
     e: Expr,
     branches: Array<SwitchBranch>,
   ): void {
-    condType = this.expr(env, e);
+    condType = this.expr(env, e, true);
     cases = condType
       .getSTypes(env.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
@@ -1133,7 +1133,7 @@ class TypeChecker{
     for (branch in branches) {
       branch match {
       | Case(v, _) ->
-        this.expr(env, v)
+        this.expr(env, v, true)
           .getSTypes(env.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
@@ -1141,7 +1141,7 @@ class TypeChecker{
             typingError(Array[(v.pos, "Unused branch")])
           };
           cases.remove(staticValue)
-        | _ -> void
+        | None() -> void
         }
 
       | Default(stmts) ->
