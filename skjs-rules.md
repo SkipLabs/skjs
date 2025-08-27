@@ -167,17 +167,21 @@ This document describes the rules and restrictions of the SKJS type checker, whi
   function process<T>(value: T): T { return value; }
   ```
 
-### 18. Template Literal Strings Not Supported
-- **Rule**: Backtick template strings are not implemented
-- **Error**: "TODO: support for backtick strings"
-- **Workaround**: Use string concatenation with `+` operator
+### 18. Template Literal Strings ✅
+- **Rule**: Template literals with backticks and string interpolation are fully supported
+- **Syntax**: Use backticks `` ` `` with `${expression}` for interpolation
+- **Features**: 
+  - Basic template literals: `` `Hello World` ``
+  - String interpolation: `` `Hello ${name}` ``
+  - Complex expressions: `` `Result: ${value.toString()}, Sum: ${a + b}` ``
+  - Multiline templates with interpolation
+- **Type Safety**: Interpolated expressions must be convertible to string (primitives, objects with toString(), etc.)
 - **Example**:
   ```typescript
-  // WRONG - will cause errors
-  let message = `Hello ${name}, you are ${age} years old`;
-  
-  // CORRECT - use string concatenation
-  let message = "Hello " + name + ", you are " + age + " years old";
+  // ✓ CORRECT - template literals work with complex expressions and multiline
+  const message: string = `Hello ${name.toUpperCase()}, Status: ${age >= 18 ? "Adult" : "Minor"}`;
+  const multiline: string = `Line 1: ${name}
+  Line 2: ${age}`;
   ```
 
 ### 19. Boolean Literal Type Casting Not Supported
@@ -249,6 +253,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 11. **NEVER use the `any` type**: The `any` type is not supported in SKJS - use specific types or union types instead
 12. **Use 'as const' for discriminated unions**: Always use `'value' as const` in object expressions for ADT patterns
 13. **Avoid the `!` operator**: Use explicit comparisons like `=== false` instead of `!` for better type safety
+14. **Template literals work as expected**: Use backticks and `${expression}` syntax for string interpolation and multiline strings
 
 ## File Organization and Structure Guidelines
 
@@ -370,6 +375,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - Method calls with proper type checking
 - Explicit type annotations
 - String concatenation and basic operations
+- Template literal strings with interpolation
 - Math operations and comparisons
 
 ## Recommended Patterns
@@ -491,6 +497,12 @@ export interface MyInterface { ... }
 import { add } from 'math_utils';        // Missing ./ and .js
 import { add } from './math_utils';      // Missing .js extension
 import { add } from './math_utils.ts';   // Wrong extension
+```
+
+### Template Literal Patterns
+```typescript
+// Avoid - non-stringifiable objects (will cause type errors)
+// const badTemplate: string = `Object: ${someComplexObject}`; // Error if object lacks toString()
 ```
 
 ### Null/Undefined Comparison Patterns
