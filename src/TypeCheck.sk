@@ -2363,7 +2363,7 @@ class TypeChecker{
   fun evalEquality(env: mutable TCEnv, e1: Expr, e2: Expr, target: Bool): void {
     (e1, e2) match {
     | (
-      Expr(_, EString(SKQuote(), tag)),
+      Expr(_, EString(_, tag)),
       Expr(
         _,
         Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
@@ -2374,7 +2374,7 @@ class TypeChecker{
         _,
         Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
       ),
-      Expr(_, EString(SKQuote(), tag)),
+      Expr(_, EString(_, tag)),
     ) if (fieldName == kAlgebraicBranchFieldName) ->
       this.evalAlgebraicBranchEquality(env, local, tag, target)
 
