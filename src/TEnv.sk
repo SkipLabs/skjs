@@ -423,7 +423,10 @@ class TEnv{
     subst = Subst::mcreate{context};
     pos = typeAst.pos;
     typeAst.value match {
-    | TABigIntLiteral _ -> internal_error("TODO BigIntLiteral ")
+    | TABigIntLiteral(x) ->
+      TType::single(
+        TPrimValue(TBigInt(), Some(ArrayValues::single((pos, x))), pos),
+      )
     | TAAssertIs _ -> internal_error("TODO assertIs ")
     | TAAbstract _ -> internal_error("TODO abstract ")
     | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
@@ -463,6 +466,7 @@ class TEnv{
         | TPKBool() -> TPrimValue(TBool(), None(), pos)
         | TPKNum() -> TPrimValue(TNum(), None(), pos)
         | TPKString() -> TPrimValue(TString(), None(), pos)
+        | TPKBigInt() -> TPrimValue(TBigInt(), None(), pos)
         },
       )
     | TAObject(fields) ->

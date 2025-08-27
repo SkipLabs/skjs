@@ -1,10 +1,10 @@
 function singleTypeLhs(x: number | string): boolean {
-  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, and booleans.
+  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
   return x < 0;
 }
 
 function singleTypeRhs(x: number | string): boolean {
-  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, and booleans.
+  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
   return 0 < x;
 }
 

@@ -291,6 +291,7 @@ class Expr(pos: PosRange, value: Expr_) uses XXHashable
 base class Expr_ uses XXHashable {
   children =
   | Number(String)
+  | BigInt(String)
   | Var(Name)
   | Spread(Name)
   | EString(String)
@@ -533,6 +534,7 @@ base class TPrimKind uses XXHashable {
   | TPKBool()
   | TPKNum()
   | TPKString()
+  | TPKBigInt()
 }
 
 base class FieldGetSetKind uses XXHashable {

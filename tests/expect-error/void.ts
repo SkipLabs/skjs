@@ -40,7 +40,7 @@ const x4: () => void = () => null;
 // @ts-expect-error Expected an array
 const x5: undefined = returningVoid()["bla"];
 
-// @ts-expect-error Invalid comparison. You can only compare strings, numbers, and booleans.
+// @ts-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
 const x6: boolean = returningVoid() < returningVoid();
 
 // @ts-expect-error Invalid operation on type void
@@ -142,7 +142,7 @@ function invalidOptionalChaining<T>(value: void | T): string {
 }
 
 function invalidComparison<T>(value1: void | T, value2: void | T): boolean {
-  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, and booleans.
+  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
   return value1 < value2;
 }
 
