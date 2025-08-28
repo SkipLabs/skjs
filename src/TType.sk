@@ -256,6 +256,9 @@ class TType private {
     }
   }
 
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
   fun diff(other: TType): TType {
     diffInsts = this.insts.diff(other.insts);
     diffClauses = this.clauses.diff(other.clauses);
@@ -647,6 +650,9 @@ class STypes private (
     }
   }
 
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
   fun diff(other: STypes): STypes {
     (noMatch1, _noMatch2, _present) = mapInter(
       this.stypes.values(),
@@ -745,6 +751,9 @@ class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
     }
   }
 
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
   fun diff(other: TInsts): TInsts {
     (noMatch1, _noMatch2, _present) = mapInter(
       this.values(),
@@ -944,6 +953,9 @@ class Clauses private (
     }
   }
 
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
   fun diff(other: Clauses): Clauses {
     // Use merge to handle the diff operation
     diffClauses = this.clauses.merge(
