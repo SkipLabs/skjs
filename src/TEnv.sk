@@ -102,8 +102,8 @@ class TEnv{
           typingError(
             Array[
               (name.pos, "Constraint not satisfied"),
-              (targ.pos, `This is of type: ${targ.toString()}`),
-              (cstr.pos, `It does not implement: ${cstrTy.toString()}`),
+              (targ.pos, `This is of type: ${targ}`),
+              (cstr.pos, `It does not implement: ${cstrTy}`),
             ],
           )
         }

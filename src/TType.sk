@@ -1031,7 +1031,7 @@ base class STResult {
           "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
       | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
       | TPrimValue(kind, Some(x), _) ->
-        `This is a static ${kind.toString()}: ` +
+        `This is a static ${kind}: ` +
           x.values.map(x -> "'" + x.i1 + "'").join(" | ")
 
       | TPromise _ -> "This is a Promise"
