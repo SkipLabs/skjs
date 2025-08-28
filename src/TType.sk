@@ -1017,22 +1017,18 @@ base class STResult {
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
-      "The field '" +
-        fieldName +
-        "' is missing" +
-        "\n" +
-        "Out of the type: " +
-        expandTVars(subst, env, ty).toString()
+      `The field '${fieldName}' is missing\n` +
+        `Out of the type: ${expandTVars(subst, env, ty)}`
     | STTooManySType(sty) ->
       sty match {
-      | TPrimVoid(kind, _) -> "This is a " + kind.toString()
+      | TPrimVoid(kind, _) -> `This is a ${kind}`
       | TPrimValue(TString(), None(), _) ->
         "This is of type string. " +
           "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
-      | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
+      | TPrimValue(kind, None(), _) -> `This is of type ${kind}`
       | TPrimValue(kind, Some(x), _) ->
         `This is a static ${kind}: ` +
-          x.values.map(x -> "'" + x.i1 + "'").join(" | ")
+          x.values.map(x -> `'${x.i1}'`).join(" | ")
 
       | TPromise _ -> "This is a Promise"
       | TAlgebraic _ ->
