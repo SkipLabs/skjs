@@ -826,29 +826,37 @@ class TFields private (
     Some(this.fields[idx])
   }
 
-  fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
-    this.maybeGet(fieldName.value) match {
-    | None() ->
-      typingError(
-        Array[
-          (fieldName.pos, "Unbound field: " + fieldName.value),
-          (
-            fieldName.pos,
-            "Possible options are:\n" +
-              this.fields.filter(x -> x.name != "constructor")
-                .toArray()
-                .map(x -> x.name)
-                .join("\n"),
-          ),
-        ],
-      )
-    | Some(fd) ->
+  fun maybeGetType(subst: mutable Subst, tenv: TEnv, fieldName: Name): ?TType {
+    this.maybeGet(fieldName.value).map(fd -> {
       ty = fd.type;
       if (fd.isOptional) {
         ty.unionUndefined(subst, tenv, fieldName.pos)
       } else {
         ty
       }
+    })
+  }
+
+  fun getTypeTypingError<T>(fieldName: Name): T {
+    typingError(
+      Array[
+        (fieldName.pos, `Unbound field: ${fieldName.value}`),
+        (
+          fieldName.pos,
+          "Possible options are:\n" +
+            this.fields.filter(x -> x.name != "constructor")
+              .toArray()
+              .map(x -> x.name)
+              .join("\n"),
+        ),
+      ],
+    )
+  }
+
+  fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
+    this.maybeGetType(subst, tenv, fieldName) match {
+    | None() -> this.getTypeTypingError(fieldName)
+    | Some(ty) -> ty
     }
   }
 
