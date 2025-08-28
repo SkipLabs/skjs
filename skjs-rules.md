@@ -51,26 +51,54 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Error**: "Invariant violation: TODO keyof"
 - **Workaround**: Use explicit property access or type-specific functions
 
-### 9. String Literals and 'as const' Syntax
-- **Rule**: Both single and double quotes create the same behavior in expressions and types
-- **Type Contexts**: Both `'text'` and `"text"` always create string literal types in type definitions
-- **Expression Contexts**: Both `'text'` and `"text"` create regular string types unless `as const` is used
-- **'as const' Usage**: Use `'text' as const` or `"text" as const` in expressions to create string literal types
-- **ADT Pattern**: Discriminated unions require `as const` in object expressions for type narrowing
-- **Examples**:
-  ```typescript
-  // Type definitions - both quotes create literal types
-  type Status = 'active' | 'inactive';  // ✓ literal types
-  type Status = "active" | "inactive";  // ✓ also literal types
-  
-  // Expressions - need 'as const' for literals
-  let obj = { kind: 'success' as const, data: 'hello' };  // ✓ 'success' is literal
-  let obj = { kind: 'success', data: 'hello' };           // ✗ 'success' is string
-  
-  // Both quote styles work with 'as const'
-  let single = { kind: 'active' as const };   // ✓ works
-  let double = { kind: "active" as const };   // ✓ also works
-  ```
+### 9. Literal Typing and `as const`
+- **Rule**: SKJS automatically uses precise literal types in some contexts but requires the use of `as const` in others
+- **Automatic precise typing contexts**: 
+  - **ADT `kind` fields**: `{ kind: "success" }` automatically gets literal type "success"
+  - **`const` declarations**: `const x = "hello"` automatically gets literal type "hello"  
+  - **Return statements**: `return "success"` gets literal type when function expects it
+  - **Switch expressions/cases**: Precise typing applied, enables unused branch detection
+  - **Array indexing**: `obj["key"]` uses precise literal type for the index string
+  - **Class field initialization**: `status = "ready"` gets literal type in class fields
+- **Error for redundant 'as const'**: SKJS errors when `as const` is used unnecessarily
+- **Manual 'as const' still needed for**: Non-ADT object properties, array elements, nested values
+
+#### Examples - Automatic Literal Types:
+```typescript
+// ✓ ADT kind fields - automatic (unlike TypeScript)
+type Result<T> = { kind: 'success'; data: T } | { kind: 'error'; message: string };
+let result: Result<string> = { kind: 'success', data: 'hello' };  // 'success' is literal
+
+// ✓ Const declarations - automatic  
+const status = 'ready';  // gets literal type 'ready'
+const count = 42;        // gets literal type 42
+
+// ✓ Return statements - automatic when function expects literal
+function getStatus(): 'ready' {
+  return 'ready';  // automatically gets literal type
+}
+
+// ✓ Switch expressions - automatic precise typing + unused branch detection
+function handleCode(code: 1 | 2): string {
+  switch (code) {
+    case 1: return 'first';
+    case 2: return 'second';
+    case 3: return 'third';  // Error: "Unused branch" 
+  }
+}
+```
+
+#### Examples - Where `as const` is still needed:
+```typescript
+// Non-ADT object properties need 'as const'
+let config = { 
+  kind: 'config',        // ✓ automatic literal (special 'kind' field)
+  type: 'settings' as const,  // ✗ need 'as const' for non-kind fields
+  level: 'high' as const      // ✗ need 'as const' for non-kind fields
+};
+
+// Tuple elements need 'as const'
+let tags = ['urgent' as const, 'priority' as const];
 
 ### 10. Function Overloading Not Supported
 - **Rule**: Function overloading is not supported in SKJS
@@ -233,7 +261,6 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 8. **Use `new Array<T>()` for array initialization**: This works in all cases including generic classes
 9. **Use local variables for null/undefined comparisons**: Always assign properties to locals before comparing to null/undefined
 11. **NEVER use the `any` type**: The `any` type is not supported in SKJS - use specific types or union types instead
-12. **Use 'as const' for discriminated unions**: Always use `'value' as const` in object expressions for ADT patterns
 13. **Avoid the `!` operator**: Use explicit comparisons like `=== false` instead of `!` for better type safety
 14. **Template literals work as expected**: Use backticks and `${expression}` syntax for string interpolation and multiline strings
 
@@ -428,8 +455,8 @@ let config = { status: "active" as const, id: 123 };      // ✓ also works
 // Good - regular string values don't need 'as const'
 let message: string = "Hello, world!";                     // ✓ regular string
 
-// Avoid - missing 'as const' in discriminated unions
-let result = { kind: 'success', data: 'hello' };          // ✗ 'success' is string, not literal
+// Now works - automatic literal types for kind field
+let result = { kind: 'success', data: 'hello' };          // ✓ 'success' is automatically literal
 ```
 
 ### Algebraic Data Types
@@ -439,10 +466,10 @@ type Shape =
     | { kind: 'circle', radius: number }
     | { kind: 'square', side: number };
 
-// Good - ADT object creation with 'as const'
+// Good - ADT object creation (automatic literal types for kind field)
 function createShapes(): void {
-    let circle: Shape = { kind: 'circle' as const, radius: 5 };
-    let square: Shape = { kind: 'square' as const, side: 4 };
+    let circle: Shape = { kind: 'circle', radius: 5 };
+    let square: Shape = { kind: 'square', side: 4 };
 }
 
 // Good - pattern matching works with 'as const' objects
@@ -455,8 +482,8 @@ function calculateArea(shape: Shape): number {
     return 0;
 }
 
-// Avoid - missing 'as const' in object expressions
-let badCircle: Shape = { kind: 'circle', radius: 5 };  // ✗ 'circle' is string, not literal
+// Now works - automatic literal types for kind field  
+let badCircle: Shape = { kind: 'circle', radius: 5 };  // ✓ 'circle' is automatically literal
 
 // Avoid - using different discriminator field
 type BadShape = 
