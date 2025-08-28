@@ -390,27 +390,14 @@ declare class RegExp {
 }
 
 declare class bigint {
-  // Instance methods
+  // Instance methods (all verified to exist in real JavaScript)
   toString(radix?: number): string;
   valueOf(): bigint;
-
-  // Static properties
-  static MAX_SAFE_INTEGER: bigint;
-  static MIN_SAFE_INTEGER: bigint;
-
-  // Static methods
-  static asIntN(width: number, bigint: bigint): bigint;
-  static asUintN(width: number, bigint: bigint): bigint;
+  toLocaleString(): string;
 }
 
 // BigInt constructor function
-declare const BigInt: {
-  (value: number | string | boolean): bigint;
-
-  // Static methods
-  asIntN(width: number, bigint: bigint): bigint;
-  asUintN(width: number, bigint: bigint): bigint;
-};
+declare function BigInt(value: number | string | boolean | bigint): bigint;
 
 declare class Error {
   constructor(cause?: string);

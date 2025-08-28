@@ -222,6 +222,7 @@ extension class Parser {
       | "number" -> TAPrim(TPKNum())
       | "boolean" -> TAPrim(TPKBool())
       | "string" -> TAPrim(TPKString())
+      | "bigint" -> TAPrim(TPKBigInt())
       | "readonly" -> TAReadonly(this.type(prec))
       | "infer" -> TAInfer(this.getName())
       | "keyof" -> TAKeyOf(this.type(prec))

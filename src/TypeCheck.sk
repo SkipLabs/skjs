@@ -1171,13 +1171,14 @@ class TypeChecker{
 
   fun checkStringifiable(env: mutable TCEnv, pos: PosRange, ty: TType): void {
     // Check if the type is a primitive type that can be converted to string
-    // Allowed types: string, number, boolean, null, undefined
+    // Allowed types: string, number, bigint, boolean, null, undefined
     isStringifiable = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
     | None() -> false
     | Some(stypes) ->
       stypes.singleElt() match {
       | Some(TPrimValue(TString(), _, _)) -> true
       | Some(TPrimValue(TNum(), _, _)) -> true
+      | Some(TPrimValue(TBigInt(), _, _)) -> true
       | Some(TPrimValue(TBool(), _, _)) -> true
       | Some(TPrimVoid(TNull(), _)) -> true
       | Some(TPrimVoid(TUndefined(), _)) -> true
@@ -1191,7 +1192,7 @@ class TypeChecker{
         Array[
           (
             pos,
-            "Template literal expressions must be string, number, boolean, null, or undefined",
+            "Template literal expressions must be string, number, bigint, boolean, null, or undefined",
           ),
         ],
       );
@@ -1309,6 +1310,7 @@ class TypeChecker{
     pos = e.pos;
     e.value match {
     | Number(_) -> TType::single(TPrimValue(TNum(), None(), pos))
+    | BigInt(_) -> TType::single(TPrimValue(TBigInt(), None(), pos))
     | EString(_) -> TType::single(TPrimValue(TString(), None(), pos))
     | TemplateLiteral(_parts, exprs) ->
       // Type check all embedded expressions - allow primitive types that can be converted to strings
@@ -1645,7 +1647,8 @@ class TypeChecker{
           stypes.singleElt()
         ) match {
         | Some(TPrimValue(k @ TNum(), _, primPos))
-        | Some(TPrimValue(k @ TString(), _, primPos)) ->
+        | Some(TPrimValue(k @ TString(), _, primPos))
+        | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
           ty2 = this.expr(env, e2);
           res = TType::single(TPrimValue(k, None(), primPos));
           this.checkSubType(env, e2.pos, "Invalid + operand", ty2, res);
@@ -1758,7 +1761,7 @@ class TypeChecker{
               Array[
                 (
                   pos,
-                  "Invalid comparison. You can only compare strings, numbers, and booleans.",
+                  "Invalid comparison. You can only compare strings, numbers, bigints, and booleans.",
                 ),
                 (e1.pos, `This is a ${ty}`),
               ],
@@ -1799,10 +1802,22 @@ class TypeChecker{
       | BOSignedRightShift()
       | BOZeroFilledRightShift() ->
         ty1 = this.expr(env, e1);
-        this.checkIsNumber(env, pos, "Invalid operation", ty1);
+        kind1 = this.checkIsNumeric(env, e1.pos, "Invalid operation", ty1);
         ty2 = this.expr(env, e2);
-        this.checkIsNumber(env, pos, "Invalid operation", ty2);
-        ty1
+        kind2 = this.checkIsNumeric(env, e2.pos, "Invalid operation", ty2);
+        if (kind1 != kind2) {
+          typingError(
+            Array[
+              (
+                pos,
+                "Arithmetic operations require both operands to be the same numeric type",
+              ),
+              (e1.pos, `Left operand is ${kind1}`),
+              (e2.pos, `Right operand is ${kind2}`),
+            ],
+          )
+        };
+        TType::single(TPrimValue(kind1, None(), pos))
 
       | BONullishCoalescing() ->
         ty1 = this.nonVoidExpr(pos, env, e1);
@@ -1961,6 +1976,28 @@ class TypeChecker{
     };
   }
 
+  fun checkIsNumeric(
+    env: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty: TType,
+  ): TPrimValueKind {
+    ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TPrimValue(kind @ TNum(), _, _))
+    | Some(TPrimValue(kind @ TBigInt(), _, _)) ->
+      kind
+    | _ ->
+      typingError(
+        Array[
+          (pos, msg),
+          (ty.pos, "This is not a numeric type (number or bigint)"),
+        ],
+      )
+    };
+  }
+
   fun makeLiteralType(e: Expr): ?TType {
     e match {
     | Expr(valuePos, Var(Name(_, "null"))) ->
@@ -1972,6 +2009,16 @@ class TypeChecker{
         TType::single(
           TPrimValue(
             TNum(),
+            Some(ArrayValues::single((valuePos, n))),
+            valuePos,
+          ),
+        ),
+      )
+    | Expr(valuePos, BigInt(n)) ->
+      Some(
+        TType::single(
+          TPrimValue(
+            TBigInt(),
             Some(ArrayValues::single((valuePos, n))),
             valuePos,
           ),
@@ -2468,7 +2515,17 @@ class TypeChecker{
         if (target) default else None(),
         if (target) filter else x ~> !filter(x),
       )
-    | "bigint" -> typingError(Array[(typePos, "TODO: support for bigint")])
+    | "bigint" ->
+      (filter, default) = (
+        x ~> x is TPrimValue(TBigInt(), _, _),
+        Some(TPrimValue(TBigInt(), None(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
     | "boolean" ->
       (filter, default) = (
         x ~> x is TPrimValue(TBool(), _, _),

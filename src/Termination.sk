@@ -158,6 +158,7 @@ value class StmtTermination private {
        we assume that the existence of _name is checked in the typechecker. */
     expr.value match {
     | Number(_)
+    | BigInt(_)
     | Var(_name)
     | Spread(_name)
     | EString(_)

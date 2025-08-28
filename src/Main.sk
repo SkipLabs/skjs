@@ -180,7 +180,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about("Base directory from which to resolve modules"),
   Cli.Arg::string("builtins-file")
     .value_name("PATH")
-    .default("./src/builtins.ts")
+    .default("./examples/src/builtins.ts")
     .about(
       "Path to the file containing type declarations for JavaScript builtins",
     ),
