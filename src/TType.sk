@@ -228,12 +228,7 @@ class TType private {
     ty2: TType,
   ): TType {
     expandPrim = (pos, kind) -> {
-      name = kind match {
-      | TString _ -> "string"
-      | TBool _ -> "boolean"
-      | TNum _ -> "number"
-      };
-      static::inst(Name(pos, name), TArgs(Array[]))
+      static::inst(Name(pos, kind.toString()), TArgs(Array[]))
     };
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
