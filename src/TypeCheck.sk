@@ -329,7 +329,7 @@ class TypeChecker{
       };
       literalType = varDef.value match {
       | None() -> None()
-      | Some(x) -> this.makeLiteralType(x)
+      | Some(x) -> this.asConstExpr(x)
       };
       type = varDef.type match {
       | None() ->
@@ -477,8 +477,8 @@ class TypeChecker{
             env,
             e.pos,
             "Invalid assignment",
+            this.expr(env, e, true),
             type,
-            this.expr(env, e),
           )
         }
       | fd @ FunDef _ ->
@@ -931,7 +931,7 @@ class TypeChecker{
         (ty, false)
       }
     | Some(e) ->
-      ty = this.expr(env, e);
+      ty = this.expr(env, e, kind is BKConst());
       type match {
       | None() -> (ty, true)
       | Some(annotAst) ->
@@ -981,7 +981,7 @@ class TypeChecker{
       };
       (epos, etype) = eOpt match {
       | None() -> (pos, TType::single(TPrimVoid(TVoid(), pos)))
-      | Some(e) -> (e.pos, this.expr(env, e))
+      | Some(e) -> (e.pos, this.expr(env, e, true))
       };
       rtype = if (this.isAsync) {
         TType::single(TPromise(etype, epos))
@@ -1122,7 +1122,7 @@ class TypeChecker{
     e: Expr,
     branches: Array<SwitchBranch>,
   ): void {
-    condType = this.expr(env, e);
+    condType = this.expr(env, e, true);
     cases = condType
       .getSTypes(env.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
@@ -1133,7 +1133,7 @@ class TypeChecker{
     for (branch in branches) {
       branch match {
       | Case(v, _) ->
-        this.expr(env, v)
+        this.expr(env, v, true)
           .getSTypes(env.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
@@ -1141,7 +1141,7 @@ class TypeChecker{
             typingError(Array[(v.pos, "Unused branch")])
           };
           cases.remove(staticValue)
-        | _ -> void
+        | None() -> void
         }
 
       | Default(stmts) ->
@@ -1306,7 +1306,16 @@ class TypeChecker{
     ty
   }
 
-  fun expr(env: mutable TCEnv, e: Expr): TType {
+  /* Typechecks expression e
+     If mostPrecise, use the most precise type. */
+  fun expr(env: mutable TCEnv, e: Expr, mostPrecise: Bool = false): TType {
+    if (mostPrecise) {
+      this.asConstExpr(e) match {
+      | Some(ty) -> return ty
+      | None() -> void
+      }
+    };
+
     pos = e.pos;
     e.value match {
     | Number(_) -> TType::single(TPrimValue(TNum(), None(), pos))
@@ -1375,7 +1384,7 @@ class TypeChecker{
             | None() ->
               varDef.value match {
               | None() -> None()
-              | Some(x) -> this.makeLiteralType(x)
+              | Some(x) -> this.asConstExpr(x)
               } match {
               | None() -> this.newTVar(env, pos)
               | Some(ty) -> ty
@@ -1394,7 +1403,8 @@ class TypeChecker{
       fields = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
-        | FDNormal(x, y) -> (x, this.expr(env, y))
+        | FDNormal(x, y) ->
+          (x, this.expr(env, y, x.value == kAlgebraicBranchFieldName))
 
         | FDSpread _ -> internal_error("TODO spread")
         | fd @ FunDef _ ->
@@ -1509,7 +1519,7 @@ class TypeChecker{
         )
       | Some(stypes) -> stypes
       };
-      idxType = this.expr(env, idx);
+      idxType = this.expr(env, idx, true);
       result = TType::bottom(pos);
       for (stype in stypes) {
         ty = stype match {
@@ -1944,12 +1954,9 @@ class TypeChecker{
       );
       TType::union(env.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
-      subExpr.value match {
-      | EString(x) ->
-        TType::single(
-          TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
-        )
-      | _ ->
+      this.asConstExpr(subExpr) match {
+      | Some(ty) -> ty
+      | None() ->
         typingError(
           Array[(pos, "'as const' can only be used with string literals")],
         )
@@ -1998,76 +2005,45 @@ class TypeChecker{
     };
   }
 
-  fun makeLiteralType(e: Expr): ?TType {
-    e match {
-    | Expr(valuePos, Var(Name(_, "null"))) ->
-      Some(TType::single(TPrimVoid(TNull(), valuePos)))
-    | Expr(valuePos, Var(Name(_, "undefined"))) ->
-      Some(TType::single(TPrimVoid(TUndefined(), valuePos)))
-    | Expr(valuePos, Number(n)) ->
+  /* Typechecks expression e as const */
+  fun asConstExpr(e: Expr): ?TType {
+    pos = e.pos;
+    e.value match {
+    | AsConst(subExpr) ->
+      typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
+    | Var(Name(_, "null")) -> Some(TType::single(TPrimVoid(TNull(), pos)))
+    | Var(Name(_, "undefined")) ->
+      Some(TType::single(TPrimVoid(TUndefined(), pos)))
+    | Number(n) ->
       Some(
         TType::single(
-          TPrimValue(
-            TNum(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
+          TPrimValue(TNum(), Some(ArrayValues::single((pos, n))), pos),
         ),
       )
-    | Expr(valuePos, BigInt(n)) ->
+    | BigInt(n) ->
       Some(
         TType::single(
-          TPrimValue(
-            TBigInt(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
+          TPrimValue(TBigInt(), Some(ArrayValues::single((pos, n))), pos),
         ),
       )
-    | Expr(valuePos, Var(Name(_, "true"))) ->
+    | Var(Name(_, "true")) ->
       Some(
         TType::single(
-          TPrimValue(
-            TBool(),
-            Some(ArrayValues::single((valuePos, "true"))),
-            valuePos,
-          ),
+          TPrimValue(TBool(), Some(ArrayValues::single((pos, "true"))), pos),
         ),
       )
-    | Expr(valuePos, Var(Name(_, "false"))) ->
+    | Var(Name(_, "false")) ->
       Some(
         TType::single(
-          TPrimValue(
-            TBool(),
-            Some(ArrayValues::single((valuePos, "false"))),
-            valuePos,
-          ),
+          TPrimValue(TBool(), Some(ArrayValues::single((pos, "false"))), pos),
         ),
       )
-    | Expr(valuePos, EString(n)) ->
+    | EString(n) ->
       Some(
         TType::single(
-          TPrimValue(
-            TString(),
-            Some(ArrayValues::single((valuePos, n))),
-            valuePos,
-          ),
+          TPrimValue(TString(), Some(ArrayValues::single((pos, n))), pos),
         ),
       )
-    | Expr(valuePos, AsConst(subExpr)) ->
-      subExpr.value match {
-      | EString(n) ->
-        Some(
-          TType::single(
-            TPrimValue(
-              TString(),
-              Some(ArrayValues::single((valuePos, n))),
-              valuePos,
-            ),
-          ),
-        )
-      | _ -> None()
-      }
     | _ -> None()
     }
   }

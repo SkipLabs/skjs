@@ -1,5 +1,5 @@
 function const_plus_const(): string {
-  const a: "a" = "a" as const;
-  const b: "b" = "b" as const;
+  const a: "a" = "a";
+  const b: "b" = "b";
   return a + b;
 }

@@ -1479,5 +1479,5 @@ function checkFieldOfString(s: string): boolean {
 }
 
 function checkSubscriptionOf(): string {
-  return (2024)["toString" as const]();
+  return (2024)["toString"]();
 }
