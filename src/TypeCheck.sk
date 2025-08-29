@@ -1321,20 +1321,20 @@ class TypeChecker{
     result
   }
 
-  /* Typechecks expression arr[idx]
-     where arr has type arrType */
-  fun get(env: mutable TCEnv, pos: PosRange, arrType: TType, idx: Expr): TType {
+  /* Typechecks expression obj[idx]
+     where obj has type objType */
+  fun get(env: mutable TCEnv, pos: PosRange, objType: TType, idx: Expr): TType {
     idx.value match {
     | EString("constructor") ->
       typingError(Array[(idx.pos, "Cannot access field 'constructor'")])
     | _ -> void
     };
-    stypes = arrType.getSTypes(env.subst, this.tenv, Covariant()) match {
+    stypes = objType.getSTypes(env.subst, this.tenv, Covariant()) match {
     | None() ->
       typingError(
         Array[
           (pos, "Expected an array"),
-          (pos, "Not: " + prettyPrintType(false, arrType)),
+          (pos, "Not: " + prettyPrintType(false, objType)),
         ],
       )
     | Some(stypes) -> stypes
@@ -1361,11 +1361,11 @@ class TypeChecker{
       | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
         TType::top(objectPos)
       | TObject _ ->
-        arrTy = TType::single(stype);
+        objTy = TType::single(stype);
         this.call(
           env,
           pos,
-          this.dot(env, pos, arrTy, Name(pos, "[]")),
+          this.dot(env, pos, objTy, Name(pos, "[]")),
           Array[],
           Array[idxType],
         ).withPos(pos)
