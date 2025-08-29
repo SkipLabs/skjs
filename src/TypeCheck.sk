@@ -1362,8 +1362,9 @@ class TypeChecker{
       optionalChainingIsAlwaysUndefinedForThisSType = false;
       ty = stype match {
       | TTuple(tyArr, tuplePos) ->
-        n = idx.value match {
-        | Number(str) -> str.toIntOption()
+        n = idxSType match {
+        | TPrimValue(TNum(), Some(numbers), _) ->
+          numbers.singleElt().flatMap(s -> s.i1.toIntOption())
         | _ -> None()
         } match {
         | None() ->
