@@ -1321,9 +1321,17 @@ class TypeChecker{
     result
   }
 
-  /* Typechecks expression obj[idx]
+  /* Typechecks expression  obj[idx]
+             or expression  obj.idx
+             or expression  obj?.idx  if optionalChaining is true
      where obj has type objType */
-  fun get(env: mutable TCEnv, pos: PosRange, objType: TType, idx: Expr): TType {
+  fun get(
+    env: mutable TCEnv,
+    pos: PosRange,
+    objType: TType,
+    idx: Expr,
+    optionalChaining: Bool = false,
+  ): TType {
     idx.value match {
     | EString("constructor") ->
       typingError(Array[(idx.pos, "Cannot access field 'constructor'")])
@@ -1340,7 +1348,10 @@ class TypeChecker{
     };
     idxType = this.expr(env, idx, true);
     result = TType::bottom(pos);
+    optionalChainingIsUseless = optionalChaining;
+    optionalChainingIsAlwaysUndefined = optionalChaining;
     for (stype in stypes) {
+      optionalChainingIsAlwaysUndefinedForThisSType = false;
       ty = stype match {
       | TTuple(tyArr, tuplePos) ->
         n = idx.value match {
@@ -1441,6 +1452,14 @@ class TypeChecker{
             )
           }
         }
+      | TPrimVoid(TUndefined(), undefPos)
+      | TPrimVoid(
+        TNull(),
+        undefPos,
+      ) if (optionalChaining) ->
+        !optionalChainingIsUseless = false;
+        !optionalChainingIsAlwaysUndefinedForThisSType = true;
+        TType::single(TPrimVoid(TUndefined(), undefPos))
       | _ ->
         typingError(
           Array[
@@ -1450,6 +1469,25 @@ class TypeChecker{
         )
       };
       !result = TType::union(env.subst, this.tenv, result, ty);
+      !optionalChainingIsAlwaysUndefined =
+        optionalChainingIsAlwaysUndefined &&
+        optionalChainingIsAlwaysUndefinedForThisSType;
+    };
+    if (optionalChainingIsUseless) {
+      typingError(
+        Array[
+          (pos, "Useless '?.'. Use '.' instead"),
+          (objType.pos, `${objType} is never null nor undefined`),
+        ],
+      )
+    };
+    if (optionalChainingIsAlwaysUndefined) {
+      typingError(
+        Array[
+          (pos, "Result of optional chaining is always undefined"),
+          (objType.pos, `${objType} is always null or undefined`),
+        ],
+      )
     };
     result
   }
