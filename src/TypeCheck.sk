@@ -1338,7 +1338,8 @@ class TypeChecker{
     | _ -> void
     };
     stypes = objType.getSTypes(env.subst, this.tenv, Covariant()) match {
-    | Some(stypes) if (!stypes.isEmpty()) -> stypes
+    | Some(stypes) if (!stypes.isEmpty()) ->
+      Vector::mcreateFromIterator(stypes.values())
     | _ ->
       typingError(
         Array[
@@ -1358,7 +1359,9 @@ class TypeChecker{
     result = TType::bottom(pos);
     optionalChainingIsUseless = optionalChaining;
     optionalChainingIsAlwaysUndefined = optionalChaining;
-    for (stype in stypes) {
+    while (!stypes.isEmpty()) {
+      stype = stypes.pop();
+
       optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
       | TTuple(tyArr, tuplePos) ->
