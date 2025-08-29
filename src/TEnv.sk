@@ -7,6 +7,8 @@
 
 module SKJS;
 
+value class CstrType(cstr: ?TType)
+
 class TEnv{
   // The defMap associates an AST to a type name.
   private defMap: IDefMap,
@@ -152,6 +154,21 @@ class TEnv{
     TType::single(obj)
   }
 
+  fun newConstructor(
+    context: mutable SKStore.Context,
+    className: Name,
+    targs: Array<TType>,
+  ): CstrType {
+    c = this.getClass(context, className);
+    if (c.tparams.size() != targs.size()) {
+      typingError(
+        Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
+      )
+    };
+    visitedClasses = SortedSet[];
+    CstrType(this.findConstructor(context, visitedClasses, className, targs))
+  }
+
   fun newObject(
     context: mutable SKStore.Context,
     className: Name,
@@ -271,15 +288,13 @@ class TEnv{
     }
   }
 
-  private fun addFields(
+  private fun processClassSetup(
     context: mutable SKStore.Context,
-    acc: mutable Map<String, TField>,
     visitedClasses: SortedSet<String>,
-    isStatic: Bool,
+    withTParams: Bool,
     className: Name,
     targs: Array<TType>,
-    filter: FieldType ~> Bool,
-  ): void {
+  ): (this, Class) {
     if (visitedClasses.contains(className.value)) {
       typingError(Array[(className.pos, "Cyclic class definition")]);
     };
@@ -305,11 +320,30 @@ class TEnv{
         ],
       )
     };
-    if (!isStatic) {
+    if (withTParams) {
       for (i => tparam in cls.tparams) {
         !this.subst[tparam.name.value] = (false, targs[i])
       };
     };
+    (this, cls)
+  }
+
+  private fun addFields(
+    context: mutable SKStore.Context,
+    acc: mutable Map<String, TField>,
+    visitedClasses: SortedSet<String>,
+    isStatic: Bool,
+    className: Name,
+    targs: Array<TType>,
+    filter: FieldType ~> Bool,
+  ): void {
+    (!this, cls) = this.processClassSetup(
+      context,
+      visitedClasses,
+      !isStatic,
+      className,
+      targs,
+    );
     for (extend in cls.extends_) {
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
@@ -370,6 +404,10 @@ class TEnv{
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ FunDef _ ->
+        if (fd.name is Some(FNNormal(Name(_, "constructor")))) continue;
+        metIsStatic = fieldType.modifiers.modifiers.containsKey("static");
+        if (isStatic && !metIsStatic) continue;
+        if (!isStatic && metIsStatic) continue;
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, fd.isStatic()),
         );
@@ -383,6 +421,45 @@ class TEnv{
         }
       }
     }
+  }
+
+  private fun findConstructor(
+    context: mutable SKStore.Context,
+    visitedClasses: SortedSet<String>,
+    className: Name,
+    targs: Array<TType>,
+  ): ?TType {
+    (!this, cls) = this.processClassSetup(
+      context,
+      visitedClasses,
+      true,
+      className,
+      targs,
+    );
+    for (fieldType in cls.fields) {
+      fieldType match {
+      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
+        cgNode = CGNode::create(
+          Method(fd.name, className, fd.pos.fileName, true),
+        );
+        (_metName, metType) = this.funDecl(context, true, fd, cgNode);
+        return Some(metType)
+      | _ -> void
+      }
+    };
+    for (extend in cls.extends_) {
+      extend.value match {
+      | TAInst(parentName, paramTArgs) ->
+        return this.findConstructor(
+          context,
+          visitedClasses,
+          parentName,
+          paramTArgs.map(targ -> this.normalize(context, targ)),
+        )
+      | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
+      }
+    };
+    None()
   }
 
   fun funDecl(

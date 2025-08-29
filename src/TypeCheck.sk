@@ -264,7 +264,7 @@ class TypeChecker{
   defMap: DefMap,
   tenv: TEnv,
   callgraph: CallGraph,
-  super: ?TType = None(),
+  super: ?(CstrType, TType) = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
 } {
@@ -415,13 +415,18 @@ class TypeChecker{
       for (ext in c.extends_) {
         ext.value match {
         | TAInst(parentName, parentTArgs) ->
+          superCstr = this.tenv.newConstructor(
+            context,
+            parentName,
+            parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+          );
           super = this.tenv.new(
             context,
             parentName,
             parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
           );
           if (!isInterface) {
-            !this.super = Some(super);
+            !this.super = Some((superCstr, super));
           };
           scope = Scope::mcreateToplevel(fileName);
           env = mutable TCEnv(context, subst, scope);
@@ -1606,13 +1611,18 @@ class TypeChecker{
     | Call(Expr(_, Var(Name(superPos, "super"))), targs, args) ->
       this.super match {
       | None() -> typingError(Array[(superPos, "'super' is not defined")])
-      | Some(super) ->
+      | Some((superCstr, super)) ->
         if (targs.size() != 0) {
           typingError(
             Array[(pos, "super cannot be called with type arguments")],
           );
         };
-        this.callConstructor(env, pos, super, args.map(x -> this.expr(env, x)));
+        this.callConstructor(
+          env,
+          pos,
+          superCstr,
+          args.map(x -> this.expr(env, x)),
+        );
         thisName = Name(pos, "this");
         thisType = TType::inter(
           env.subst,
@@ -1656,9 +1666,9 @@ class TypeChecker{
       } else {
         targsAst.map(targ -> this.tenv.normalize(env.context, targ))
       };
-      obj = this.tenv.new(env.context, className, targs);
-      this.callConstructor(env, pos, obj, argsAst.map(e -> this.expr(env, e)));
-      obj
+      cstr = this.tenv.newConstructor(env.context, className, targs);
+      this.callConstructor(env, pos, cstr, argsAst.map(e -> this.expr(env, e)));
+      this.tenv.new(env.context, className, targs)
 
     | Get(arr, idx) -> this.get(env, pos, arr, idx)
 
@@ -2099,22 +2109,14 @@ class TypeChecker{
   fun callConstructor(
     env: mutable TCEnv,
     pos: PosRange,
-    obj: TType,
+    cstrType: CstrType,
     args: Array<TType>,
   ): void {
-    obj.getSTypes(env.subst, this.tenv, Contravariant()).flatMap(stypes ~>
-      stypes.singleElt()
-    ) match {
-    | Some(TObject(fields, _)) ->
-      fields.maybeGet("constructor") match {
-      | None() ->
-        if (args.size() == 0) return void;
-        typingError(
-          Array[(pos, "Invalid new: constructor expects no arguments")],
-        )
-      | Some(cstr) -> _ = this.call(env, pos, cstr.type, Array[], args)
-      }
-    | _ -> internal_error("Internal error: unexpected constructor call")
+    cstrType.cstr match {
+    | None() ->
+      if (args.size() == 0) return void;
+      typingError(Array[(pos, "Invalid new: constructor expects no arguments")])
+    | Some(cstr) -> _ = this.call(env, pos, cstr, Array[], args)
     }
   }
 
