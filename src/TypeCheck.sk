@@ -1381,16 +1381,54 @@ class TypeChecker{
       | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
         !result = TType::top(objectPos)
 
-      | TObject _ ->
-        objTy = TType::single(stype);
-        ty = this.call(
-          env,
-          pos,
-          this.dot(env, pos, objTy, Name(pos, "[]")),
-          Array[],
-          Array[idxType],
-        ).withPos(pos);
-        !result = TType::union(env.subst, this.tenv, result, ty)
+      | TObject(fields, objectPos) ->
+        idxSType.values match {
+        | None() -> Some(idxSType)
+        | Some(values) ->
+          values
+            .filter(posAndFieldName ->
+              fields.maybeGetType(
+                env.subst,
+                this.tenv,
+                Name(posAndFieldName.i0, posAndFieldName.i1),
+              ) match {
+              | Some(ty) ->
+                !result = TType::union(env.subst, this.tenv, result, ty);
+                false
+              | None() -> true
+              }
+            )
+            .map(remainingValues ->
+              idxSType with {values => Some(remainingValues)}
+            )
+        } match {
+        | None() -> void
+        | Some(idxSTypeToPassToIdxMethod) ->
+          fields.maybeGetType(env.subst, this.tenv, Name(pos, "[]")) match {
+          | None() ->
+            idxSType.values match {
+            | None() ->
+              typingError(
+                Array[
+                  (pos, "Invalid access"),
+                  (idx.pos, `Index has non-literal type ${idxSType.kind}`),
+                  (objectPos, "But object has no index field"),
+                ],
+              )
+            | Some(values) ->
+              fields.getTypeTypingError(Name(pos, values.toStringList()))
+            }
+          | Some(idxMethodType) ->
+            ty = this.call(
+              env,
+              pos,
+              idxMethodType,
+              Array[],
+              Array[TType::single(idxSTypeToPassToIdxMethod)],
+            ).withPos(pos);
+            !result = TType::union(env.subst, this.tenv, result, ty)
+          }
+        }
 
       | TPrimValue(primKind, _, primPos) ->
         primKind match {

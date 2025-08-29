@@ -34,8 +34,6 @@ function testMixedObjectNormalFieldCorrectDot(obj: tIndex2): string {
 }
 
 function testMixedObjectNormalFieldCorrectGet(obj: tIndex2): string {
-  // TODO: fix this
-  // @ts-expect-error Invalid call
   return obj["name"];
 }
 
