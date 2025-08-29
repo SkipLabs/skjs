@@ -57,10 +57,10 @@ function returningVoidOrNumber(): void | number {}
 // @ts-expect-error This function may not always return a value
 function returningVoidOrUndefined(): void | undefined {}
 
-// @ts-expect-error Invalid '.'
+// @ts-expect-error Type cannot be accessed
 const x8: string | undefined = returningVoid()?.toString();
 
-// @ts-expect-error Invalid '.'
+// @ts-expect-error Type cannot be accessed
 const x9: string | undefined = returningVoidOrNumber()?.toString();
 
 // @ts-expect-error Invalid operation on type void
@@ -132,12 +132,12 @@ function invalidLogicalOr<T>(value: void | T): T {
 }
 
 function invalidPropertyAccess<T>(value: void | T): string {
-  // @ts-expect-error Invalid '.' for type: void | T:T:10:3523836110
+  // @ts-expect-error Invalid access for type void | T:T:10:3523836110
   return value.toString();
 }
 
 function invalidOptionalChaining<T>(value: void | T): string {
-  // @ts-expect-error Invalid '.' for type: void | T:T:11:3523836110
+  // @ts-expect-error Invalid access for type void | T:T:11:3523836110
   return value?.toString();
 }
 

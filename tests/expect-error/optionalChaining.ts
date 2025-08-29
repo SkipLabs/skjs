@@ -28,7 +28,7 @@ const x4: undefined = null?.f;
 // @ts-expect-error Invalid definition
 const x5: null = maybeObj()?.f;
 
-// @ts-expect-error Invalid '.'
+// @ts-expect-error Type cannot be accessed
 const x6: undefined = returningVoid()?.f;
 
 // @ts-expect-error Invalid definition
