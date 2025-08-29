@@ -55,3 +55,11 @@ function testMixedObjectNormalFieldIncorrectIndexingType(
   // @ts-expect-error Invalid call
   return obj.missing;
 }
+
+function cannotAccessFieldConstructor(
+  obj: object,
+  f: "constructor" | "banana",
+): void {
+  // @ts-expect-error Cannot access field 'constructor'
+  const whatever = obj[f];
+}

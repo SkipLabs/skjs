@@ -1229,11 +1229,6 @@ class TypeChecker{
     idx: Expr,
     optionalChaining: Bool = false,
   ): TType {
-    idx.value match {
-    | EString("constructor") ->
-      typingError(Array[(idx.pos, "Cannot access field 'constructor'")])
-    | _ -> void
-    };
     stypes = objType.getSTypes(env.subst, this.tenv, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) ->
       Vector::mcreateFromIterator(stypes.values())
@@ -1248,6 +1243,10 @@ class TypeChecker{
     idxSType = idxType
       .getSTypes(env.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(
+      TPrimValue(TString(), Some(values), _),
+    ) if (values.contains("constructor")) ->
+      typingError(Array[(idx.pos, "Cannot access field 'constructor'")])
     | Some(ty @ TPrimValue(TString(), _, _))
     | Some(ty @ TPrimValue(TNum(), _, _)) ->
       ty
