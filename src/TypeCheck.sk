@@ -1474,8 +1474,11 @@ class TypeChecker{
       | _ ->
         typingError(
           Array[
-            (pos, "Expected an array"),
-            (pos, "Not: " + prettyPrintType(false, TType::single(stype))),
+            (pos, "Type cannot be accessed"),
+            (
+              idxType.pos,
+              "This is a " + prettyPrintType(false, TType::single(stype)),
+            ),
           ],
         )
       };

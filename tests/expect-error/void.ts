@@ -37,7 +37,7 @@ const x3: void = {};
 // @ts-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const x4: () => void = () => null;
 
-// @ts-expect-error Expected an array
+// @ts-expect-error Type cannot be accessed
 const x5: undefined = returningVoid()["bla"];
 
 // @ts-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
