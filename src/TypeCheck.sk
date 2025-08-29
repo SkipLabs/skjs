@@ -1472,7 +1472,7 @@ class TypeChecker{
             );
             !result = result.unionUndefined(env.subst, this.tenv, pos)
 
-          | TPrimValue(TString(), Some(stringValues), _) ->
+          | _ ->
             // Static string indexing for property access: str["length"]
             objName = primKind.toString();
             obj = this.tenv.newObject(
@@ -1480,49 +1480,18 @@ class TypeChecker{
               Name(primPos, objName),
               Array[],
             );
-            for (stringValue in stringValues.values) {
-              t = obj.fields.getType(
-                env.subst,
-                this.tenv,
-                Name(stringValue.i0, stringValue.i1),
-              );
-              !result = TType::union(env.subst, this.tenv, result, t)
-            }
-          | _ ->
-            typingError(
-              Array[
-                (pos, "Invalid index"),
-                (primPos, "String indexing requires a number or static string"),
-              ],
-            )
+            stypes.push(obj)
           }
 
         | _ ->
           // Handle other primitive types (numbers, booleans, etc.)
-          idxSType match {
-          | TPrimValue(TString(), Some(stringValues), _) ->
-            objName = primKind.toString();
-            obj = this.tenv.newObject(
-              env.context,
-              Name(primPos, objName),
-              Array[],
-            );
-            for (stringValue in stringValues.values) {
-              t = obj.fields.getType(
-                env.subst,
-                this.tenv,
-                Name(stringValue.i0, stringValue.i1),
-              );
-              !result = TType::union(env.subst, this.tenv, result, t)
-            }
-          | _ ->
-            typingError(
-              Array[
-                (pos, "Invalid index"),
-                (primPos, "A primitive type expects a static string index"),
-              ],
-            )
-          }
+          objName = primKind.toString();
+          obj = this.tenv.newObject(
+            env.context,
+            Name(primPos, objName),
+            Array[],
+          );
+          stypes.push(obj)
         }
 
       | TPrimVoid(TUndefined(), undefPos)
