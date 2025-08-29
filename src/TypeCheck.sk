@@ -1430,6 +1430,30 @@ class TypeChecker{
           }
         }
 
+      | TAlgebraic(branches, _) ->
+        idxSType match {
+        | TPrimValue(TString(), Some(values), _) ->
+          values.singleElt().map(v -> Name(v.i0, v.i1))
+        | _ -> None()
+        } match {
+        | None() ->
+          typingError(
+            Array[
+              (idx.pos, "Invalid index"),
+              (pos, "An algebraic expects a static index"),
+            ],
+          )
+        | Some(fieldName) ->
+          for (branch in branches) {
+            !result = TType::union(
+              env.subst,
+              this.tenv,
+              result,
+              branch.getType(env.subst, this.tenv, fieldName),
+            )
+          }
+        }
+
       | TPrimValue(primKind, _, primPos) ->
         primKind match {
         | TString() ->
