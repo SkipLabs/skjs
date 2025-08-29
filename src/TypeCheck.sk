@@ -1321,9 +1321,9 @@ class TypeChecker{
     result
   }
 
-  /* Typechecks expression arr[idx] */
-  fun get(env: mutable TCEnv, pos: PosRange, arr: Expr, idx: Expr): TType {
-    arrType = this.expr(env, arr);
+  /* Typechecks expression arr[idx]
+     where arr has type arrType */
+  fun get(env: mutable TCEnv, pos: PosRange, arrType: TType, idx: Expr): TType {
     stypes = arrType.getSTypes(env.subst, this.tenv, Covariant()) match {
     | None() ->
       typingError(
@@ -1360,7 +1360,7 @@ class TypeChecker{
         this.call(
           env,
           pos,
-          this.dot(env, arr.pos, arrTy, Name(pos, "[]")),
+          this.dot(env, pos, arrTy, Name(pos, "[]")),
           Array[],
           Array[idxType],
         ).withPos(pos)
@@ -1670,7 +1670,7 @@ class TypeChecker{
       this.callConstructor(env, pos, cstr, argsAst.map(e -> this.expr(env, e)));
       this.tenv.new(env.context, className, targs)
 
-    | Get(arr, idx) -> this.get(env, pos, arr, idx)
+    | Get(arr, idx) -> this.get(env, pos, this.expr(env, arr), idx)
 
     | EArray(arr) -> TType::single(TTuple(arr.map(x -> this.expr(env, x)), pos))
 
