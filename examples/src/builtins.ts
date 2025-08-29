@@ -36,12 +36,13 @@ declare class Array<T> {
   findIndex(predicate: (item: T) => boolean): number;
   fill(value: T, start?: number, end?: number): Array<T>;
   copyWithin(target: number, start: number, end?: number): Array<T>;
-  flat<U>(): Array<U>;
   flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
   reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 
   // Static methods
-  static from<T, U>(arrayLike: Array<T>, mapFn?: (item: T) => U): Array<U>;
+  static from<T>(arrayLike: Array<T>): Array<T>;
+  // If we have overloads:
+  // static from<T, U>(arrayLike: Array<T>, mapFn: (item: T) => U): Array<U>;
   static of<T>(elements: T): Array<T>;
 }
 
@@ -106,24 +107,6 @@ declare class number {
   toExponential(fractionDigits?: number): string;
   toPrecision(precision?: number): string;
   valueOf(): number;
-
-  // Static properties
-  static MAX_VALUE: number;
-  static MIN_VALUE: number;
-  static POSITIVE_INFINITY: number;
-  static NEGATIVE_INFINITY: number;
-  static NaN: number;
-  static MAX_SAFE_INTEGER: number;
-  static MIN_SAFE_INTEGER: number;
-  static EPSILON: number;
-
-  // Static methods
-  static isFinite(value: number): boolean;
-  static isInteger(value: number): boolean;
-  static isNaN(value: number): boolean;
-  static isSafeInteger(value: number): boolean;
-  static parseFloat(string: string): number;
-  static parseInt(string: string, radix?: number): number;
 }
 
 // Number object for static access (e.g., Number.MAX_VALUE)
@@ -179,32 +162,33 @@ declare class string {
   trimEnd(): string;
   trimStart(): string;
   valueOf(): string;
-
-  // Static methods
-  static fromCharCode(code: number): string;
 }
+
+declare const String: {
+  // Static methods
+  fromCharCode(code: number): string;
+};
 
 declare class Object {
   // Existing methods
   static keys(obj: object): Array<string>;
 
   // Additional Object utility methods
-  static values<T>(obj: T): Array<T>;
-  static entries<T>(obj: T): Array<[string, T]>;
-  static assign<T, U>(target: T, source: U): T;
-  static create<T>(prototype: T): T;
-  static defineProperty<T>(obj: T, prop: string, descriptor: object): T;
-  static freeze<T>(obj: T): T;
+  static values<T>(obj: { [s: string]: T }): Array<T>;
+  static entries<T>(obj: { [s: string]: T }): Array<[string, T]>;
+  static assign<T extends object, U>(target: T, source: U): T & U;
+  // static create<T>(prototype: T): T; // disallowed
+  // static defineProperty<T>(obj: T, prop: string, descriptor: object): T;
+  // static freeze<T>(obj: T): T;
   static getOwnPropertyNames<T>(obj: T): Array<string>;
   static getOwnPropertyDescriptor<T>(obj: T, prop: string): object | undefined;
-  static getPrototypeOf<T>(obj: T): T;
-  static hasOwnProperty<T>(obj: T, prop: string): boolean;
+  // static getPrototypeOf<T>(obj: T): T; // disallowed
   static isExtensible<T>(obj: T): boolean;
   static isFrozen<T>(obj: T): boolean;
   static isSealed<T>(obj: T): boolean;
   static preventExtensions<T>(obj: T): T;
   static seal<T>(obj: T): T;
-  static setPrototypeOf<T, U>(obj: T, prototype: U): T;
+  // static setPrototypeOf<T, U>(obj: T, prototype: U): T; // disallowed
 
   // Instance methods
   toString(): string;
