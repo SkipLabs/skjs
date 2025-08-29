@@ -1330,14 +1330,13 @@ class TypeChecker{
     | _ -> void
     };
     stypes = objType.getSTypes(env.subst, this.tenv, Covariant()) match {
-    | None() ->
+    | Some(stypes) if (!stypes.isEmpty()) -> stypes
+    | _ ->
       typingError(
         Array[
-          (pos, "Expected an array"),
-          (pos, "Not: " + prettyPrintType(false, objType)),
+          (pos, `Invalid access for type ${prettyPrintType(false, objType)}`),
         ],
       )
-    | Some(stypes) -> stypes
     };
     idxType = this.expr(env, idx, true);
     result = TType::bottom(pos);

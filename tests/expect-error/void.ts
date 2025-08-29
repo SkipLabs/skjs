@@ -147,7 +147,7 @@ function invalidComparison<T>(value1: void | T, value2: void | T): boolean {
 }
 
 function invalidArrayAccess<T>(value: void | T): T {
-  // @ts-expect-error Expected an array
+  // @ts-expect-error Invalid access for type void | T:T:13:3523836110
   return value[0];
 }
 
