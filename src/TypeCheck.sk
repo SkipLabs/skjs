@@ -1360,7 +1360,7 @@ class TypeChecker{
     optionalChainingIsAlwaysUndefined = optionalChaining;
     for (stype in stypes) {
       optionalChainingIsAlwaysUndefinedForThisSType = false;
-      ty = stype match {
+      stype match {
       | TTuple(tyArr, tuplePos) ->
         n = idxSType match {
         | TPrimValue(TNum(), Some(numbers), _) ->
@@ -1376,18 +1376,21 @@ class TypeChecker{
           )
         | Some(x) -> x
         };
-        tyArr[n]
+        !result = TType::union(env.subst, this.tenv, result, tyArr[n])
+
       | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
-        TType::top(objectPos)
+        !result = TType::top(objectPos)
+
       | TObject _ ->
         objTy = TType::single(stype);
-        this.call(
+        ty = this.call(
           env,
           pos,
           this.dot(env, pos, objTy, Name(pos, "[]")),
           Array[],
           Array[idxType],
-        ).withPos(pos)
+        ).withPos(pos);
+        !result = TType::union(env.subst, this.tenv, result, ty)
 
       | TPrimValue(primKind, _, primPos) ->
         primKind match {
@@ -1396,12 +1399,14 @@ class TypeChecker{
           idxSType match {
           | TPrimValue(TNum(), _, _) ->
             // Numeric indexing of string: str[0] -> string | undefined
-            TType::union(
+            !result = TType::union(
               env.subst,
               this.tenv,
+              result,
               TType::single(TPrimValue(TString(), None(), pos)),
-              TType::single(TPrimVoid(TUndefined(), pos)),
-            )
+            );
+            !result = result.unionUndefined(env.subst, this.tenv, pos)
+
           | TPrimValue(TString(), Some(stringValues), _) ->
             // Static string indexing for property access: str["length"]
             objName = primKind.toString();
@@ -1410,16 +1415,14 @@ class TypeChecker{
               Name(primPos, objName),
               Array[],
             );
-            ty = TType::bottom(pos);
             for (stringValue in stringValues.values) {
               t = obj.fields.getType(
                 env.subst,
                 this.tenv,
                 Name(stringValue.i0, stringValue.i1),
               );
-              !ty = TType::union(env.subst, this.tenv, ty, t);
-            };
-            ty
+              !result = TType::union(env.subst, this.tenv, result, t)
+            }
           | _ ->
             typingError(
               Array[
@@ -1428,6 +1431,7 @@ class TypeChecker{
               ],
             )
           }
+
         | _ ->
           // Handle other primitive types (numbers, booleans, etc.)
           idxSType match {
@@ -1438,16 +1442,14 @@ class TypeChecker{
               Name(primPos, objName),
               Array[],
             );
-            ty = TType::bottom(pos);
             for (stringValue in stringValues.values) {
               t = obj.fields.getType(
                 env.subst,
                 this.tenv,
                 Name(stringValue.i0, stringValue.i1),
               );
-              !ty = TType::union(env.subst, this.tenv, ty, t);
-            };
-            ty
+              !result = TType::union(env.subst, this.tenv, result, t)
+            }
           | _ ->
             typingError(
               Array[
@@ -1457,6 +1459,7 @@ class TypeChecker{
             )
           }
         }
+
       | TPrimVoid(TUndefined(), undefPos)
       | TPrimVoid(
         TNull(),
@@ -1464,7 +1467,8 @@ class TypeChecker{
       ) if (optionalChaining) ->
         !optionalChainingIsUseless = false;
         !optionalChainingIsAlwaysUndefinedForThisSType = true;
-        TType::single(TPrimVoid(TUndefined(), undefPos))
+        !result = result.unionUndefined(env.subst, this.tenv, undefPos)
+
       | _ ->
         typingError(
           Array[
@@ -1473,7 +1477,6 @@ class TypeChecker{
           ],
         )
       };
-      !result = TType::union(env.subst, this.tenv, result, ty);
       !optionalChainingIsAlwaysUndefined =
         optionalChainingIsAlwaysUndefined &&
         optionalChainingIsAlwaysUndefinedForThisSType;
