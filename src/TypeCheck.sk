@@ -1458,41 +1458,9 @@ class TypeChecker{
         }
 
       | TPrimValue(primKind, _, primPos) ->
-        primKind match {
-        | TString() ->
-          // Handle string indexing: str[number] -> string | undefined
-          idxSType match {
-          | TPrimValue(TNum(), _, _) ->
-            // Numeric indexing of string: str[0] -> string | undefined
-            !result = TType::union(
-              env.subst,
-              this.tenv,
-              result,
-              TType::single(TPrimValue(TString(), None(), pos)),
-            );
-            !result = result.unionUndefined(env.subst, this.tenv, pos)
-
-          | _ ->
-            // Static string indexing for property access: str["length"]
-            objName = primKind.toString();
-            obj = this.tenv.newObject(
-              env.context,
-              Name(primPos, objName),
-              Array[],
-            );
-            stypes.push(obj)
-          }
-
-        | _ ->
-          // Handle other primitive types (numbers, booleans, etc.)
-          objName = primKind.toString();
-          obj = this.tenv.newObject(
-            env.context,
-            Name(primPos, objName),
-            Array[],
-          );
-          stypes.push(obj)
-        }
+        objName = primKind.toString();
+        obj = this.tenv.newObject(env.context, Name(primPos, objName), Array[]);
+        stypes.push(obj)
 
       | TPrimVoid(TUndefined(), undefPos)
       | TPrimVoid(
