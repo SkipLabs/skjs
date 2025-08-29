@@ -1324,6 +1324,11 @@ class TypeChecker{
   /* Typechecks expression arr[idx]
      where arr has type arrType */
   fun get(env: mutable TCEnv, pos: PosRange, arrType: TType, idx: Expr): TType {
+    idx.value match {
+    | EString("constructor") ->
+      typingError(Array[(idx.pos, "Cannot access field 'constructor'")])
+    | _ -> void
+    };
     stypes = arrType.getSTypes(env.subst, this.tenv, Covariant()) match {
     | None() ->
       typingError(
