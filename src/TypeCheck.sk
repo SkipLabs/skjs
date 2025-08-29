@@ -1347,6 +1347,14 @@ class TypeChecker{
       )
     };
     idxType = this.expr(env, idx, true);
+    idxSType = idxType
+      .getSTypes(env.subst, this.tenv, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(ty @ TPrimValue(TString(), _, _))
+    | Some(ty @ TPrimValue(TNum(), _, _)) ->
+      ty
+    | _ -> typingError(Array[(idx.pos, "Invalid index type")])
+    };
     result = TType::bottom(pos);
     optionalChainingIsUseless = optionalChaining;
     optionalChainingIsAlwaysUndefined = optionalChaining;
@@ -1384,10 +1392,8 @@ class TypeChecker{
         primKind match {
         | TString() ->
           // Handle string indexing: str[number] -> string | undefined
-          idxType
-            .getSTypes(env.subst, this.tenv, Covariant())
-            .flatMap(stypes ~> stypes.singleElt()) match {
-          | Some(TPrimValue(TNum(), _, _)) ->
+          idxSType match {
+          | TPrimValue(TNum(), _, _) ->
             // Numeric indexing of string: str[0] -> string | undefined
             TType::union(
               env.subst,
@@ -1395,7 +1401,7 @@ class TypeChecker{
               TType::single(TPrimValue(TString(), None(), pos)),
               TType::single(TPrimVoid(TUndefined(), pos)),
             )
-          | Some(TPrimValue(TString(), Some(stringValues), _)) ->
+          | TPrimValue(TString(), Some(stringValues), _) ->
             // Static string indexing for property access: str["length"]
             objName = primKind.toString();
             obj = this.tenv.newObject(
@@ -1423,10 +1429,8 @@ class TypeChecker{
           }
         | _ ->
           // Handle other primitive types (numbers, booleans, etc.)
-          idxType
-            .getSTypes(env.subst, this.tenv, Covariant())
-            .flatMap(stypes ~> stypes.singleElt()) match {
-          | Some(TPrimValue(TString(), Some(stringValues), _)) ->
+          idxSType match {
+          | TPrimValue(TString(), Some(stringValues), _) ->
             objName = primKind.toString();
             obj = this.tenv.newObject(
               env.context,
