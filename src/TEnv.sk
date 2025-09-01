@@ -495,8 +495,10 @@ class TEnv{
     | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
     | TAAsserts _ -> internal_error("TODO asserts ")
     | TAIs _ -> internal_error("TODO is ")
-    | TANew _ -> typingError(Array[(pos, "TODO new")])
-    | TAKeyOf _ -> internal_error("TODO keyof ")
+    | TANew _ -> internal_error("TODO new ")
+    | TAKeyOf(ty) ->
+      targetType = this.normalize(context, ty);
+      this.keyOfType(subst, targetType, pos)
     | TAEmptyArray _ -> internal_error("TODO emptyArray ")
     | TAInfer _ -> internal_error("TODO infer ")
     | TATemplate _ -> internal_error("TODO template ")
@@ -786,6 +788,53 @@ class TEnv{
     });
     tFields = TFields::create(fields, indexes.toArray());
     (algebraicBranchField, tFields)
+  }
+
+  fun keyOfType(subst: mutable Subst, targetType: TType, pos: PosRange): TType {
+    targetType.getSTypes(subst, this, Covariant()) match {
+    | None() -> TType::bottom(pos)
+    | Some(stypes) ->
+      result: ?TType = None();
+      for (stype in stypes) {
+        stype match {
+        | TObject(fields, _) ->
+          for (field in fields) {
+            keyType = TType::single(
+              TPrimValue(
+                TString(),
+                Some(ArrayValues::single((pos, field.name))),
+                pos,
+              ),
+            );
+            !result = result match {
+            | None() -> Some(keyType)
+            | Some(acc) -> Some(TType::union(subst, this, acc, keyType))
+            }
+          }
+        | TAlgebraic(branches, _) ->
+          for (branch in branches) {
+            for (field in branch.fields) {
+              keyType = TType::single(
+                TPrimValue(
+                  TString(),
+                  Some(ArrayValues::single((pos, field.name))),
+                  pos,
+                ),
+              );
+              !result = result match {
+              | None() -> Some(keyType)
+              | Some(acc) -> Some(TType::union(subst, this, acc, keyType))
+              }
+            }
+          }
+        | _ -> void
+        }
+      };
+      result match {
+      | None() -> TType::bottom(pos)
+      | Some(ty) -> ty
+      }
+    }
   }
 }
 
