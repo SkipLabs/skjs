@@ -34,8 +34,6 @@ function testMixedObjectNormalFieldCorrectDot(obj: tIndex2): string {
 }
 
 function testMixedObjectNormalFieldCorrectGet(obj: tIndex2): string {
-  // TODO: fix this
-  // @ts-expect-error Invalid call
   return obj["name"];
 }
 
@@ -56,4 +54,12 @@ function testMixedObjectNormalFieldIncorrectIndexingType(
   // TODO: should be missing field
   // @ts-expect-error Invalid call
   return obj.missing;
+}
+
+function cannotAccessFieldConstructor(
+  obj: object,
+  f: "constructor" | "banana",
+): void {
+  // @ts-expect-error Cannot access field 'constructor'
+  const whatever = obj[f];
 }

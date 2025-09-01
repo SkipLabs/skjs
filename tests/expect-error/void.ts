@@ -37,7 +37,7 @@ const x3: void = {};
 // @ts-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const x4: () => void = () => null;
 
-// @ts-expect-error Expected an array
+// @ts-expect-error Type cannot be accessed
 const x5: undefined = returningVoid()["bla"];
 
 // @ts-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
@@ -57,10 +57,10 @@ function returningVoidOrNumber(): void | number {}
 // @ts-expect-error This function may not always return a value
 function returningVoidOrUndefined(): void | undefined {}
 
-// @ts-expect-error Invalid '.'
+// @ts-expect-error Type cannot be accessed
 const x8: string | undefined = returningVoid()?.toString();
 
-// @ts-expect-error Invalid '.'
+// @ts-expect-error Type cannot be accessed
 const x9: string | undefined = returningVoidOrNumber()?.toString();
 
 // @ts-expect-error Invalid operation on type void
@@ -132,12 +132,12 @@ function invalidLogicalOr<T>(value: void | T): T {
 }
 
 function invalidPropertyAccess<T>(value: void | T): string {
-  // @ts-expect-error Invalid '.' for type: void | T:T:10:3523836110
+  // @ts-expect-error Invalid access for type void | T:T:10:3523836110
   return value.toString();
 }
 
 function invalidOptionalChaining<T>(value: void | T): string {
-  // @ts-expect-error Invalid '.' for type: void | T:T:11:3523836110
+  // @ts-expect-error Invalid access for type void | T:T:11:3523836110
   return value?.toString();
 }
 
@@ -147,7 +147,7 @@ function invalidComparison<T>(value1: void | T, value2: void | T): boolean {
 }
 
 function invalidArrayAccess<T>(value: void | T): T {
-  // @ts-expect-error Expected an array
+  // @ts-expect-error Invalid access for type void | T:T:13:3523836110
   return value[0];
 }
 

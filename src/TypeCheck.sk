@@ -1214,86 +1214,166 @@ class TypeChecker{
     fieldName: Name,
     optionalChaining: Bool = false,
   ): TType {
-    if (fieldName.value == "constructor") {
-      typingError(Array[(fieldName.pos, "Cannot access field 'constructor'")]);
-    };
+    idx = Expr(fieldName.pos, EString(fieldName.value));
+    this.get(env, pos, objType, idx, optionalChaining)
+  }
+
+  /* Typechecks expression  obj[idx]
+             or expression  obj.idx
+             or expression  obj?.idx  if optionalChaining is true
+     where obj has type objType */
+  fun get(
+    env: mutable TCEnv,
+    pos: PosRange,
+    objType: TType,
+    idx: Expr,
+    optionalChaining: Bool = false,
+  ): TType {
     stypes = objType.getSTypes(env.subst, this.tenv, Covariant()) match {
-    | Some(stypes) if (!stypes.isEmpty()) -> stypes
+    | Some(stypes) if (!stypes.isEmpty()) ->
+      Vector::mcreateFromIterator(stypes.values())
     | _ ->
       typingError(
         Array[
-          (pos, "Invalid '.' for type: " + prettyPrintType(false, objType)),
+          (pos, `Invalid access for type ${prettyPrintType(false, objType)}`),
         ],
       )
+    };
+    idxType = this.expr(env, idx, true);
+    idxSType = idxType
+      .getSTypes(env.subst, this.tenv, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(
+      TPrimValue(TString(), Some(values), _),
+    ) if (values.contains("constructor")) ->
+      typingError(Array[(idx.pos, "Cannot access field 'constructor'")])
+    | Some(ty @ TPrimValue(TString(), _, _))
+    | Some(ty @ TPrimValue(TNum(), _, _)) ->
+      ty
+    | _ -> typingError(Array[(idx.pos, "Invalid index type")])
     };
     result = TType::bottom(pos);
     optionalChainingIsUseless = optionalChaining;
     optionalChainingIsAlwaysUndefined = optionalChaining;
-    for (stype in stypes) {
+    while (!stypes.isEmpty()) {
+      stype = stypes.pop();
+
       optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
-      | TObject(fields, _) ->
-        fieldType = fields.maybeGetType(env.subst, this.tenv, fieldName) match {
-        | Some(ty) -> ty
+      | TTuple(tyArr, tuplePos) ->
+        n = idxSType match {
+        | TPrimValue(TNum(), Some(numbers), _) ->
+          numbers.singleElt().flatMap(s -> s.i1.toIntOption())
+        | _ -> None()
+        } match {
         | None() ->
+          typingError(
+            Array[
+              (idx.pos, "Invalid index"),
+              (tuplePos, "A tuple expects a static index"),
+            ],
+          )
+        | Some(x) -> x
+        };
+        !result = TType::union(env.subst, this.tenv, result, tyArr[n])
+
+      | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
+        !result = TType::top(objectPos)
+
+      | TObject(fields, objectPos) ->
+        idxSType.values match {
+        | None() -> Some(idxSType)
+        | Some(values) ->
+          values
+            .filter(posAndFieldName ->
+              fields.maybeGetType(
+                env.subst,
+                this.tenv,
+                Name(posAndFieldName.i0, posAndFieldName.i1),
+              ) match {
+              | Some(ty) ->
+                !result = TType::union(env.subst, this.tenv, result, ty);
+                false
+              | None() -> true
+              }
+            )
+            .map(remainingValues ->
+              idxSType with {values => Some(remainingValues)}
+            )
+        } match {
+        | None() -> void
+        | Some(idxSTypeToPassToIdxMethod) ->
           fields.maybeGetType(env.subst, this.tenv, Name(pos, "[]")) match {
-          | None() -> fields.getTypeTypingError(fieldName)
-          | Some(indexType) ->
-            fieldNameType = TType::single(
-              TPrimValue(
-                TString(),
-                Some(ArrayValues::single((fieldName.pos, fieldName.value))),
-                fieldName.pos,
-              ),
-            );
-            this.call(
+          | None() ->
+            idxSType.values match {
+            | None() ->
+              typingError(
+                Array[
+                  (pos, "Invalid access"),
+                  (idx.pos, `Index has non-literal type ${idxSType.kind}`),
+                  (objectPos, "But object has no index field"),
+                ],
+              )
+            | Some(values) ->
+              fields.getTypeTypingError(Name(pos, values.toStringList()))
+            }
+          | Some(idxMethodType) ->
+            ty = this.call(
               env,
               pos,
-              indexType,
+              idxMethodType,
               Array[],
-              Array[fieldNameType],
-            ).withPos(pos)
+              Array[TType::single(idxSTypeToPassToIdxMethod)],
+            ).withPos(pos);
+            !result = TType::union(env.subst, this.tenv, result, ty)
           }
-        };
-        !result = TType::union(env.subst, this.tenv, result, fieldType)
+        }
 
       | TAlgebraic(branches, _) ->
-        for (branch in branches) {
-          !result = TType::union(
-            env.subst,
-            this.tenv,
-            result,
-            branch.getType(env.subst, this.tenv, fieldName),
+        idxSType match {
+        | TPrimValue(TString(), Some(values), _) ->
+          values.singleElt().map(v -> Name(v.i0, v.i1))
+        | _ -> None()
+        } match {
+        | None() ->
+          typingError(
+            Array[
+              (idx.pos, "Invalid index"),
+              (pos, "An algebraic expects a static index"),
+            ],
           )
+        | Some(fieldName) ->
+          for (branch in branches) {
+            !result = TType::union(
+              env.subst,
+              this.tenv,
+              result,
+              branch.getType(env.subst, this.tenv, fieldName),
+            )
+          }
         }
-      | TPrimValue(primKind, _, stringPos) ->
+
+      | TPrimValue(primKind, _, primPos) ->
         objName = primKind.toString();
-        obj = this.tenv.newObject(
-          env.context,
-          Name(stringPos, objName),
-          Array[],
-        );
-        !result = TType::union(
-          env.subst,
-          this.tenv,
-          result,
-          obj.fields.getType(env.subst, this.tenv, fieldName),
-        )
+        obj = this.tenv.newObject(env.context, Name(primPos, objName), Array[]);
+        stypes.push(obj)
+
       | TPrimVoid(TUndefined(), undefPos)
       | TPrimVoid(
         TNull(),
         undefPos,
       ) if (optionalChaining) ->
-        !result = result.unionUndefined(env.subst, this.tenv, undefPos);
         !optionalChainingIsUseless = false;
-        !optionalChainingIsAlwaysUndefinedForThisSType = true
+        !optionalChainingIsAlwaysUndefinedForThisSType = true;
+        !result = result.unionUndefined(env.subst, this.tenv, undefPos)
+
       | _ ->
         typingError(
           Array[
-            (pos, "Invalid '.'"),
+            (pos, "Type cannot be accessed"),
             (
-              stype.pos,
-              "For type: " + prettyPrintType(false, TType::single(stype)),
+              idxType.pos,
+              "This is a " + prettyPrintType(false, TType::single(stype)),
             ),
           ],
         )
@@ -1317,135 +1397,6 @@ class TypeChecker{
           (objType.pos, `${objType} is always null or undefined`),
         ],
       )
-    };
-    result
-  }
-
-  /* Typechecks expression arr[idx] */
-  fun get(env: mutable TCEnv, pos: PosRange, arr: Expr, idx: Expr): TType {
-    arrType = this.expr(env, arr);
-    stypes = arrType.getSTypes(env.subst, this.tenv, Covariant()) match {
-    | None() ->
-      typingError(
-        Array[
-          (pos, "Expected an array"),
-          (pos, "Not: " + prettyPrintType(false, arrType)),
-        ],
-      )
-    | Some(stypes) -> stypes
-    };
-    idxType = this.expr(env, idx, true);
-    result = TType::bottom(pos);
-    for (stype in stypes) {
-      ty = stype match {
-      | TTuple(tyArr, tuplePos) ->
-        n = idx.value match {
-        | Number(str) -> str.toIntOption()
-        | _ -> None()
-        } match {
-        | None() ->
-          typingError(
-            Array[
-              (idx.pos, "Invalid index"),
-              (tuplePos, "A tuple expects a static index"),
-            ],
-          )
-        | Some(x) -> x
-        };
-        tyArr[n]
-      | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
-        TType::top(objectPos)
-      | TObject _ ->
-        arrTy = TType::single(stype);
-        this.call(
-          env,
-          pos,
-          this.dot(env, arr.pos, arrTy, Name(pos, "[]")),
-          Array[],
-          Array[idxType],
-        ).withPos(pos)
-
-      | TPrimValue(primKind, _, primPos) ->
-        primKind match {
-        | TString() ->
-          // Handle string indexing: str[number] -> string | undefined
-          idxType
-            .getSTypes(env.subst, this.tenv, Covariant())
-            .flatMap(stypes ~> stypes.singleElt()) match {
-          | Some(TPrimValue(TNum(), _, _)) ->
-            // Numeric indexing of string: str[0] -> string | undefined
-            TType::union(
-              env.subst,
-              this.tenv,
-              TType::single(TPrimValue(TString(), None(), pos)),
-              TType::single(TPrimVoid(TUndefined(), pos)),
-            )
-          | Some(TPrimValue(TString(), Some(stringValues), _)) ->
-            // Static string indexing for property access: str["length"]
-            objName = primKind.toString();
-            obj = this.tenv.newObject(
-              env.context,
-              Name(primPos, objName),
-              Array[],
-            );
-            ty = TType::bottom(pos);
-            for (stringValue in stringValues.values) {
-              t = obj.fields.getType(
-                env.subst,
-                this.tenv,
-                Name(stringValue.i0, stringValue.i1),
-              );
-              !ty = TType::union(env.subst, this.tenv, ty, t);
-            };
-            ty
-          | _ ->
-            typingError(
-              Array[
-                (pos, "Invalid index"),
-                (primPos, "String indexing requires a number or static string"),
-              ],
-            )
-          }
-        | _ ->
-          // Handle other primitive types (numbers, booleans, etc.)
-          idxType
-            .getSTypes(env.subst, this.tenv, Covariant())
-            .flatMap(stypes ~> stypes.singleElt()) match {
-          | Some(TPrimValue(TString(), Some(stringValues), _)) ->
-            objName = primKind.toString();
-            obj = this.tenv.newObject(
-              env.context,
-              Name(primPos, objName),
-              Array[],
-            );
-            ty = TType::bottom(pos);
-            for (stringValue in stringValues.values) {
-              t = obj.fields.getType(
-                env.subst,
-                this.tenv,
-                Name(stringValue.i0, stringValue.i1),
-              );
-              !ty = TType::union(env.subst, this.tenv, ty, t);
-            };
-            ty
-          | _ ->
-            typingError(
-              Array[
-                (pos, "Invalid index"),
-                (primPos, "A primitive type expects a static string index"),
-              ],
-            )
-          }
-        }
-      | _ ->
-        typingError(
-          Array[
-            (pos, "Expected an array"),
-            (pos, "Not: " + prettyPrintType(false, TType::single(stype))),
-          ],
-        )
-      };
-      !result = TType::union(env.subst, this.tenv, result, ty);
     };
     result
   }
@@ -1670,7 +1621,7 @@ class TypeChecker{
       this.callConstructor(env, pos, cstr, argsAst.map(e -> this.expr(env, e)));
       this.tenv.new(env.context, className, targs)
 
-    | Get(arr, idx) -> this.get(env, pos, arr, idx)
+    | Get(arr, idx) -> this.get(env, pos, this.expr(env, arr), idx)
 
     | EArray(arr) -> TType::single(TTuple(arr.map(x -> this.expr(env, x)), pos))
 
