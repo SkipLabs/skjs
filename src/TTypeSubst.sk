@@ -1,0 +1,95 @@
+/***************************************************************************/
+/* Class that maintains the environment for type variables. */
+/***************************************************************************/
+
+module SKJS;
+
+base class SubstValue {
+  children =
+  | SVOpen(TType)
+  | SVClosed(TType)
+}
+
+class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
+
+mutable class Subst private {
+  context: mutable SKStore.Context,
+  mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
+  mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
+  mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
+  mutable version: Int = 0,
+  private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+} {
+  static fun mcreate{context: mutable SKStore.Context}: mutable this {
+    mutable static{context}
+  }
+
+  readonly fun save(): SavedSubst {
+    SavedSubst{version => this.version, values => this.values}
+  }
+
+  mutable fun restore(saved: SavedSubst): void {
+    this.!version = saved.version;
+    this.!values = saved.values;
+  }
+
+  mutable fun grow(env: TEnv, tvar: TVar, ty: TType, isContra: Bool): void {
+    if (!this.values.containsKey(tvar.id)) {
+      this.!values[tvar.id] = if (isContra) SVOpen(ty) else SVClosed(ty);
+      return void;
+    };
+    this.values[tvar.id] match {
+    | SVOpen(ty2) ->
+      newTy = TType::union(this, env, ty2, ty);
+      if (newTy == ty2) return void;
+      this.!version = this.version + 1;
+      this.!values[tvar.id] = if (isContra) SVOpen(newTy) else SVClosed(newTy)
+    | SVClosed(_) -> void
+    }
+  }
+
+  mutable fun get(env: TEnv, tvar: TVar, variance: Variance): TType {
+    result = variance match {
+    | Covariant() ->
+      (if (!this.values.containsKey(tvar.id)) {
+        SVOpen(TType::bottom(tvar.pos));
+      } else {
+        this.values[tvar.id]
+      }) match {
+      | SVOpen(ty) ->
+        this.!values[tvar.id] = SVClosed(ty);
+        ty
+      | SVClosed(ty) -> ty
+      }
+    | Contravariant() ->
+      if (!this.values.containsKey(tvar.id)) {
+        TType::bottom(tvar.pos)
+      } else {
+        this.values[tvar.id] match {
+        | SVOpen(ty)
+        | SVClosed(ty) ->
+          ty
+        }
+      }
+    };
+    for (cstr in tvar.constraints) {
+      !result = TType::inter(this, env, result, cstr);
+    };
+    result
+  }
+
+  mutable fun gen(pos: PosRange): TVar {
+    id = this.version;
+    this.!version = this.version + 1;
+    TVar::create(pos, id)
+  }
+
+  readonly fun isOpen(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) match {
+    | Some(SVOpen _) -> true
+    | _ -> false
+    }
+  }
+}
+
+module end;
