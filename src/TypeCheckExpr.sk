@@ -801,67 +801,19 @@ extension class TypeChecker {
       }
 
     | c @ Closure(params, retTypeAstOpt, body) ->
-      paramTypes = mutable Vector[];
-      noAnnot: ?PosRange = None();
-      for (param in params) {
-        paramType = param.i1 match {
-        | None() ->
-          if (noAnnot is None()) {
-            !noAnnot = Some(param.i0.pos)
-          };
-          this.newTVar(env, param.i0.pos)
-        | Some(ty) -> this.tenv.normalize(env.context, ty)
-        };
-        paramTypes.push((param.i0, paramType));
-      };
-      retType = retTypeAstOpt match {
-      | None() -> this.newTVar(env, pos)
-      | Some(retTypeAst) -> this.tenv.normalize(env.context, retTypeAst)
-      };
-      callingContext = CGNode::create(AnonymousLambda(pos, c));
-      // Register a dependency from parent context on this lambda
-      this.callgraph.recordCalls(
-        env.context,
-        env.scope.callingContext,
-        CGNodes::singleton(callingContext),
-      );
-      savedScope = env.scope.clone() with {callingContext};
-
-      lambdas = if (noAnnot is None()) {
-        this.closure(
-          env.subst,
-          savedScope,
-          paramTypes.toArray(),
-          retType,
-          body,
-        );
-        Array[]
-      } else {
-        Array[
-          Lambda(pos, (subst, argsTypes, retType) ~> {
-            args = params.mapWithIndex((i, p) ~> (p.i0, argsTypes[i]));
-            this.closure(subst, savedScope, args, retType, body)
-          }),
-        ]
-      };
-      TType::single(
-        TFuns::singleFun(
-          TFun(
-            Array[],
-            paramTypes.map(x -> x.i1).toArray(),
-            Array[],
-            None(),
-            pos,
-            lambdas,
-            retType,
-            CGNodes::singleton(callingContext),
-          ),
-          pos,
-        ),
+      this.anonFunction(env, None(), pos, c, params, retTypeAstOpt, body)
+    | Async(Expr(closurePos, c @ Closure(params, retTypeAstOpt, body))) ->
+      this.anonFunction(
+        env,
+        Some(pos),
+        closurePos,
+        c,
+        params,
+        retTypeAstOpt,
+        body,
       )
-
     | As _ -> notSupported(pos)
-    | Async _ -> typingError(Array[(pos, "TODO: async closures")])
+    | Async _ -> typingError(Array[(pos, "Invalid async")])
     | Await(ae) ->
       aeType = this.expr(env, ae);
       aeType.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
@@ -899,6 +851,81 @@ extension class TypeChecker {
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | Spread _ -> typingError(Array[(pos, "TODO: ...")])
     }
+  }
+
+  fun anonFunction(
+    env: mutable TCEnv,
+    isAsync: ?PosRange,
+    pos: PosRange,
+    c: Closure,
+    params: Array<(Name, ?Type)>,
+    retTypeAstOpt: ?Type,
+    body: ClosureBody,
+  ): TType {
+    paramTypes = mutable Vector[];
+    noAnnot: ?PosRange = None();
+    for (param in params) {
+      paramType = param.i1 match {
+      | None() ->
+        if (noAnnot is None()) {
+          !noAnnot = Some(param.i0.pos)
+        };
+        this.newTVar(env, param.i0.pos)
+      | Some(ty) -> this.tenv.normalize(env.context, ty)
+      };
+      paramTypes.push((param.i0, paramType));
+    };
+    retType = retTypeAstOpt match {
+    | None() ->
+      tvar = this.newTVar(env, pos);
+      isAsync match {
+      | None() -> tvar
+      | Some(asyncPos) -> TType::single(TPromise(tvar, asyncPos))
+      }
+    | Some(retTypeAst) -> this.tenv.normalize(env.context, retTypeAst)
+    };
+    callingContext = CGNode::create(AnonymousLambda(pos, c));
+    // Register a dependency from parent context on this lambda
+    this.callgraph.recordCalls(
+      env.context,
+      env.scope.callingContext,
+      CGNodes::singleton(callingContext),
+    );
+    savedScope = env.scope.clone() with {callingContext};
+
+    lambdas = if (noAnnot is None()) {
+      this.closure(
+        env.subst,
+        savedScope,
+        isAsync,
+        paramTypes.toArray(),
+        retType,
+        body,
+      );
+      Array[]
+    } else {
+      Array[
+        Lambda(pos, (subst, argsTypes, retType) ~> {
+          args = params.mapWithIndex((i, p) ~> (p.i0, argsTypes[i]));
+          this.closure(subst, savedScope, isAsync, args, retType, body)
+        }),
+      ]
+    };
+    TType::single(
+      TFuns::singleFun(
+        TFun(
+          Array[],
+          paramTypes.map(x -> x.i1).toArray(),
+          Array[],
+          None(),
+          pos,
+          lambdas,
+          retType,
+          CGNodes::singleton(callingContext),
+        ),
+        pos,
+      ),
+    )
   }
 
   /* Typechecks expression e as const */
@@ -947,6 +974,7 @@ extension class TypeChecker {
   fun closure(
     subst: mutable Subst,
     scope: Scope,
+    isAsync: ?PosRange,
     params: Array<(Name, TType)>,
     retType: TType,
     body: ClosureBody,
@@ -961,10 +989,14 @@ extension class TypeChecker {
         env,
         e.pos,
         "Invalid callback return",
-        this.expr(env, e),
+        isAsync match {
+        | None() -> this.expr(env, e)
+        | Some(asyncPos) -> TType::single(TPromise(this.expr(env, e), asyncPos))
+        },
         retType,
       )
     | CBBlock(bl) ->
+      if (isAsync is Some _) !this.isAsync = true;
       !this.retType = Some(retType);
       _ = this.block(env, bl)
     }
