@@ -1,0 +1,211 @@
+module SKJS;
+
+extension class TypeChecker {
+  static fun uninitializedThisType(pos: PosRange): TType {
+    TType::single(TObject(TFields::create(Array[]), pos));
+  }
+
+  fun class_(context: mutable SKStore.Context, c: Class): void {
+    targs = TArgs(
+      c.tparams.map(tparam -> {
+        ttypeParam = TParamWithConstraint(
+          tparam.name.value,
+          tparam.name.pos.fileName,
+          tparam.id,
+          tparam.constraint.map(c -> this.tenv.normalize(context, c)),
+        );
+        TType::fromTParamWithConstraint(
+          context,
+          this.tenv,
+          tparam.name.pos,
+          ttypeParam,
+          None(),
+        )
+      }),
+    );
+    !this.tenv = this.tenv.addTParams(context, c.tparams);
+    fileName = c.name.pos.fileName;
+    subst = Subst::mcreate{context};
+    cstr = TType::inst(c.name, targs);
+    thisType = TType::fromTParamWithConstraint(
+      context,
+      this.tenv,
+      c.name.pos,
+      TParamWithConstraint("this", fileName, Id::createThis(), None()),
+      cstr.getSTypes(subst, this.tenv, Covariant()),
+    );
+    if (c.extends_.size() != 0) {
+      isInterface = c.kind is CKInterface();
+      if (c.extends_.size() > 1 && !isInterface) {
+        typingError(Array[(c.name.pos, "Cannot extend more than one class")])
+      };
+      for (ext in c.extends_) {
+        ext.value match {
+        | TAInst(parentName, parentTArgs) ->
+          superCstr = this.tenv.newConstructor(
+            context,
+            parentName,
+            parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+          );
+          super = this.tenv.new(
+            context,
+            parentName,
+            parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+          );
+          if (!isInterface) {
+            !this.super = Some((superCstr, super));
+          };
+          scope = Scope::mcreateToplevel(fileName);
+          env = mutable TCEnv(context, subst, scope);
+          this.checkSubType(
+            env,
+            parentName.pos,
+            "Invalid extends",
+            thisType,
+            super,
+          )
+        | _ -> typingError(Array[(c.name.pos, "Invalid extend")])
+        }
+      }
+    };
+    for (interface in c.implements) {
+      interface.value match {
+      | TAInst(parentName, parentTArgs) ->
+        super = this.tenv.new(
+          context,
+          parentName,
+          parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+        );
+        scope = Scope::mcreateToplevel(fileName);
+        env = mutable TCEnv(context, subst, scope);
+        this.checkSubType(
+          env,
+          parentName.pos,
+          "Invalid implements",
+          thisType,
+          super,
+        )
+      | _ -> typingError(Array[(c.name.pos, "Invalid implements")])
+      }
+    };
+    hasConstructor = false;
+    for (fieldType in c.fields) {
+      fieldType match {
+      | field @ FieldTypeValue _ ->
+        field.setGet match {
+        | None() -> void
+        | Some(FieldGetSet(_, pos)) -> notSupported(pos)
+        };
+        for (modifier in field.modifiers.modifiers) {
+          typingError(Array[(modifier.pos, "TODO: field modifier")])
+        };
+        type = this.tenv.normalize(context, field.type);
+        field.value match {
+        | None() -> void
+        | Some(e) ->
+          scope = Scope::mcreateToplevel(fileName);
+          env = mutable TCEnv(context, subst, scope);
+          this.checkSubType(
+            env,
+            e.pos,
+            "Invalid assignment",
+            this.expr(env, e, true),
+            type,
+          )
+        }
+      | fd @ FunDef _ ->
+        if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
+          !hasConstructor = true;
+          partialThisType = this.tenv.new(
+            context,
+            c.name,
+            targs.targs,
+            fieldType ~> (fieldType is FieldTypeValue{value => Some _}),
+          );
+          _ = this.constructor(
+            context,
+            thisType,
+            partialThisType,
+            fd,
+            Some(c.name),
+          )
+        } else {
+          cgNode = CGNode::create(
+            Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
+          );
+          _ = this.funDef(context, Some((c.kind, thisType)), fd, cgNode)
+        }
+      }
+    };
+    if (c.kind is CKInterface() || c.kind is CKAbstract()) return void;
+    if (!hasConstructor) {
+      for (fieldType in c.fields) {
+        fieldType match {
+        | field @ FieldTypeValue _ ->
+          field.value match {
+          | None() ->
+            if (field.optional is None()) {
+              typingError(Array[(field.pos, "Uninitialized field")])
+            }
+          | Some(_) -> void
+          }
+        | FunDef _ -> void
+        }
+      }
+    }
+  }
+
+  fun constructor(
+    context: mutable SKStore.Context,
+    thisType: TType,
+    partialThisType: TType,
+    fd: FunDef,
+    className: ?Name,
+  ): void {
+    if (fd.retType.i1 is Some _) {
+      typingError(
+        Array[(fd.retType.i0, "Constructors don't have return types")],
+      );
+    };
+    if (!fd.modifiers.modifiers.isEmpty()) {
+      typingError(
+        Array[
+          (
+            fd.modifiers.modifiers.firstItem().i1.pos,
+            "Constructors cannot have modifiers",
+          ),
+        ],
+      );
+    };
+    cgNode = CGNode::create(
+      className match {
+      | Some(cname) -> Constructor(cname, fd.pos.fileName)
+      | None() -> AnonymousFunDef(fd)
+      },
+    );
+    (!this, env) = this.funDefSetup(context, Some(partialThisType), fd, cgNode);
+    env.localObjects!["this"] = Some(thisType);
+    fd.isAsync match {
+    | None() -> void
+    | Some(asyncPos) ->
+      typingError(Array[(asyncPos, "Constructors cannot be async")])
+    };
+    fd.body match {
+    | FDBNone(pos) -> typingError(Array[(pos, "Missing definition")])
+    | FDBSome(body) ->
+      blockScope = this.block(env, body);
+      blockThisType = blockScope.get(Name(fd.pos, "this"));
+      objType = static::filterMethods(blockThisType, env.subst, this.tenv);
+      fullType = static::filterMethods(thisType, env.subst, this.tenv);
+      this.checkSubType(
+        env,
+        fd.pos,
+        "Invalid initialization",
+        objType,
+        fullType,
+      )
+    };
+  }
+}
+
+module end;

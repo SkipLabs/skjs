@@ -1,0 +1,267 @@
+/***************************************************************************/
+/* Type transformation class. */
+/***************************************************************************/
+
+module SKJS;
+
+mutable base class ApplyType(
+  visiting: SortedSet<TType> = SortedSet[],
+  mutable seen: SortedMap<TType, TType> = SortedMap[],
+) {
+  type Env;
+
+  overridable deferred mutable fun type(env: this::Env, ty: TType): TType {
+    if (this.visiting.contains(ty)) {
+      internal_error("Found a Cyclic type in ApplyType");
+    };
+    this.seen.maybeGet(ty) match {
+    | None() ->
+      !this.visiting = this.visiting.set(ty);
+      result = this.type_(env, ty);
+      this.!seen[ty] = result;
+      result
+    | Some(x) -> x
+    }
+  }
+
+  overridable deferred mutable fun type_(env: this::Env, ty: TType): TType {
+    ty.rawMap(
+      (insts) -> this.insts(env, insts),
+      (clauses) -> this.clauses(env, clauses),
+    )
+  }
+
+  overridable deferred mutable fun clauses(
+    env: this::Env,
+    clauses: Clauses,
+  ): Clauses {
+    clauses.map(c -> this.clause(env, c))
+  }
+
+  overridable deferred mutable fun clause(
+    env: this::Env,
+    clause: Clause,
+  ): ?Clause {
+    clause.map(x -> this.typeParam(env, x), x -> this.stypes(env, x))
+  }
+
+  overridable deferred mutable fun typeParamWithConstraint(
+    env: this::Env,
+    tparam: TParamWithConstraint,
+  ): TParamWithConstraint {
+    TParamWithConstraint(
+      tparam.name,
+      tparam.fileName,
+      tparam.id,
+      tparam.cstr.map(c -> this.type(env, c)),
+    )
+  }
+
+  overridable deferred mutable fun typeParam(
+    _env: this::Env,
+    tparam: TParam,
+  ): TParam {
+    TParam(tparam.name, tparam.fileName, tparam.id)
+  }
+
+  overridable deferred mutable fun stypes(
+    env: this::Env,
+    stypes: STypes,
+  ): STypes {
+    stypes.map(stype -> this.stype(env, stype))
+  }
+
+  overridable deferred mutable fun stype(env: this::Env, stype: SType): SType {
+    stype match {
+    | x @ TPrimVoid _
+    | x @ TPrimValue _ ->
+      x
+    | TPromise(ty, pos) -> TPromise(this.type(env, ty), pos)
+    | algs @ TAlgebraic _ -> this.algebraic(env, algs)
+    | funs @ TFuns _ -> this.funs(env, funs)
+    | obj @ TObject _ -> this.object(env, obj)
+    | tuples @ TTuple _ -> this.tuple(env, tuples)
+    }
+  }
+
+  overridable deferred mutable fun algebraic(
+    env: this::Env,
+    algebraic: TAlgebraic,
+  ): TAlgebraic {
+    TAlgebraic(algebraic.branches.map(x -> this.constr(env, x)), algebraic.pos)
+  }
+
+  overridable deferred mutable fun constr(
+    env: this::Env,
+    constr: TConstr,
+  ): TConstr {
+    constr.map(fields -> this.fields(env, fields))
+  }
+
+  overridable deferred mutable fun object(
+    env: this::Env,
+    object: TObject,
+  ): TObject {
+    TObject(this.fields(env, object.fields), object.pos)
+  }
+
+  overridable deferred mutable fun funs(env: this::Env, funs: TFuns): TFuns {
+    TFuns(
+      funs.funs.map(x -> this.fun_(env, x)),
+      funs.methods.map(x -> this.fun_(env, x)),
+      funs.pos,
+    )
+  }
+
+  overridable deferred mutable fun fun_(env: this::Env, f: TFun): TFun {
+    TFun(
+      f.clauses.map(x -> this.typeParamWithConstraint(env, x)),
+      f.params.map(x -> this.type(env, x)),
+      f.optionalParams.map(x -> this.type(env, x)),
+      f.spreadParam.map(x -> this.type(env, x)),
+      f.minSizeWitness,
+      f.lambdas,
+      this.type(env, f.retType),
+      f.cgNodes,
+    )
+  }
+
+  overridable deferred mutable fun fields(
+    env: this::Env,
+    fields: TFields,
+  ): TFields {
+    fields.map(x -> this.field(env, x))
+  }
+
+  overridable deferred mutable fun field(
+    env: this::Env,
+    field: TField,
+  ): TField {
+    field.mapType(ty -> this.type(env, ty))
+  }
+
+  overridable deferred mutable fun tuple(
+    env: this::Env,
+    tuple: TTuple,
+  ): TTuple {
+    TTuple(tuple.tuple.map(x -> this.type(env, x)), tuple.pos)
+  }
+
+  overridable deferred mutable fun insts(
+    env: this::Env,
+    insts: TInsts,
+  ): TInsts {
+    insts.map(x -> this.inst(env, x))
+  }
+
+  overridable deferred mutable fun inst(env: this::Env, inst: TInst): TInst {
+    inst match {
+    | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
+    | TInter(ty1, ty2) ->
+      TInter::create(this.type(env, ty1), this.type(env, ty2))
+    | TUnion(ty1, ty2) ->
+      TUnion::create(this.type(env, ty1), this.type(env, ty2))
+    | tvar @ TVar _ -> tvar.mapConstraints(ty -> this.type(env, ty))
+    }
+  }
+
+  overridable deferred mutable fun targs(env: this::Env, targs: TArgs): TArgs {
+    TArgs(targs.targs.map(x -> this.type(env, x)))
+  }
+}
+
+mutable class RenameClauses() extends ApplyType {
+  type Env = SortedMap<Id, TParamWithConstraint>;
+  mutable fun typeParamWithConstraint(
+    subst: this::Env,
+    tparam: TParamWithConstraint,
+  ): TParamWithConstraint {
+    if (subst.containsKey(tparam.id)) {
+      subst[tparam.id]
+    } else {
+      tparam
+    }
+  }
+
+  mutable fun typeParam(subst: this::Env, tparam: TParam): TParam {
+    if (subst.containsKey(tparam.id)) {
+      newTParam = subst[tparam.id];
+      TParam(newTParam.name, newTParam.fileName, newTParam.id)
+    } else {
+      tparam
+    }
+  }
+}
+
+mutable class FilterType() extends ApplyType {
+  type Env = (SType ~> Bool, SType ~> SType);
+
+  mutable fun insts(_env: this::Env, insts: TInsts): TInsts {
+    insts
+  }
+
+  mutable fun stypes(env: this::Env, stypes: STypes): STypes {
+    stypes.filterMap(x -> if (env.i0(x)) Some(env.i1(x)) else None())
+  }
+}
+
+mutable class Instantiate() extends ApplyType {
+  type Env = (mutable Subst, TEnv, SortedMap<Id, TType>);
+
+  mutable fun type_(env: this::Env, ty: TType): TType {
+    !ty = ty.rawMap(
+      (insts) -> this.insts(env, insts),
+      (clauses) -> this.clauses(env, clauses),
+    );
+    (clauses, result) = ty.resetClauses();
+    (subst, tenv, map) = env;
+    for (clause in clauses.clauses) {
+      clauseTy = TType::top(ty.pos);
+      for (tparam in clause.vars) {
+        if (map.containsKey(tparam.id)) {
+          paramTy = map[tparam.id];
+          !clauseTy = TType::inter(subst, tenv, clauseTy, paramTy)
+        } else {
+          !clauseTy = TType::inter(
+            subst,
+            tenv,
+            clauseTy,
+            TType::fromTParam(ty.pos, tparam),
+          )
+        }
+      };
+      clause.stypes match {
+      | None() -> void
+      | Some(stypes) ->
+        !clauseTy = TType::inter(
+          subst,
+          tenv,
+          clauseTy,
+          TType::fromSTypes(ty.pos, stypes),
+        )
+      };
+      !result = TType::union(subst, tenv, result, clauseTy);
+    };
+    result
+  }
+}
+
+mutable class ExpandTVars() extends ApplyType {
+  type Env = (mutable Subst, TEnv);
+
+  mutable fun type_(env: this::Env, ty: TType): TType {
+    !ty = ty.rawMap(
+      (insts) -> this.insts(env, insts),
+      (clauses) -> this.clauses(env, clauses),
+    );
+    (subst, tenv) = env;
+    clauses = ty.expand(subst, tenv, Covariant());
+    TType::fromClauses(ty.pos, clauses)
+  }
+}
+
+fun expandTVars(subst: mutable Subst, tenv: TEnv, ty: TType): TType {
+  (mutable ExpandTVars()).type((subst, tenv), ty)
+}
+
+module end;
