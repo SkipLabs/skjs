@@ -214,6 +214,7 @@ extension class Parser {
         })
       ) break void;
       this.lex.peekStr() match {
+      | Some(x @ "async")
       | Some(x @ "protected")
       | Some(x @ "private")
       | Some(x @ "public")

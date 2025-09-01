@@ -54,6 +54,7 @@ extension class TypeChecker {
   ): void {
     for (modifier in fd.modifiers.modifiers) {
       modifier.value match {
+      | "async" -> !fd.isAsync = Some(modifier.pos)
       | "static" -> !thisTypeOpt = None()
       | unsupported ->
         // TODO: protected, private, public, abstract, readonly
