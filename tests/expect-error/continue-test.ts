@@ -49,17 +49,16 @@ function testNestedLoopsWithContinue(): number[][] {
 }
 
 // Test to verify continue works with array iteration
-// TODO: for of not implemented
-// function testContinueWithArrayIteration(): string {
-//   const items = ['a', 'b', 'skip', 'c', 'skip', 'd'];
-//   let result = '';
+function testContinueWithArrayIteration(): string {
+  const items = ["a", "b", "skip", "c", "skip", "d"];
+  let result = "";
 
-//   for (const item of items) {
-//     if (item === 'skip') {
-//       continue;
-//     }
-//     result += item;
-//   }
+  for (const item of items) {
+    if (item === "skip") {
+      continue;
+    }
+    result += item;
+  }
 
-//   return result; // Should be 'abcd'
-// }
+  return result; // Should be 'abcd'
+}

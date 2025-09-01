@@ -84,24 +84,43 @@ extension class TypeChecker {
       for (stmt in stmts) {
         this.stmt(env, stmt)
       }
-    | ForIn _ ->
-      typingError(
-        Array[
-          (
-            st.pos,
-            "TODO: for ... in not implemented, you can use a normal for (for now)",
-          ),
-        ],
-      )
-    | ForOf _ ->
-      typingError(
-        Array[
-          (
-            st.pos,
-            "TODO: for ... of not implemented, you can use a normal for (for now)",
-          ),
-        ],
-      )
+    | ForIn(initStmt, iterable, block) ->
+      scopeCopy = env.scope;
+      initScope = env.mcreateSubScope{isLoop => false};
+      env.!scope = initScope;
+
+      iterableType = this.expr(env, iterable, true);
+      keyType = this.getKeyType(env, iterable.pos, iterableType);
+
+      this.bindLoopVar(env, initStmt, keyType);
+
+      loopScope = env.mcreateSubScope{isLoop => true};
+      env.!scope = loopScope;
+      loopBody = this.block(env, block);
+      env.popScopeReplace(loopBody);
+      env.!scope = initScope;
+      env.popScope(env.subst, this.tenv, loopScope);
+      env.!scope = scopeCopy;
+      env.popScopeReplace(initScope)
+
+    | ForOf(initStmt, iterable, block) ->
+      scopeCopy = env.scope;
+      initScope = env.mcreateSubScope{isLoop => false};
+      env.!scope = initScope;
+
+      iterableType = this.expr(env, iterable, true);
+      valueType = this.getValueType(env, iterable.pos, iterableType);
+
+      this.bindLoopVar(env, initStmt, valueType);
+
+      loopScope = env.mcreateSubScope{isLoop => true};
+      env.!scope = loopScope;
+      loopBody = this.block(env, block);
+      env.popScopeReplace(loopBody);
+      env.!scope = initScope;
+      env.popScope(env.subst, this.tenv, loopScope);
+      env.!scope = scopeCopy;
+      env.popScopeReplace(initScope)
     | Throw(e) -> _ = this.expr(env, e)
     | While(cond, block) ->
       scopeCopy = env.scope;
@@ -245,6 +264,139 @@ extension class TypeChecker {
     if (!cases.isEmpty()) {
       typingError(Array[(e.pos, "Missing branches:\n" + cases.join("\n"))]);
     }
+  }
+
+  fun bindLoopVar(env: mutable TCEnv, initStmt: Stmt, varType: TType): void {
+    initStmt.value match {
+    | Bind(kind, bindings) ->
+      if (bindings.size() != 1) {
+        typingError(
+          Array[
+            (
+              initStmt.pos,
+              "Loop variable declaration must have exactly one binding",
+            ),
+          ],
+        )
+      };
+      binding = bindings[0];
+      this.bind(env, kind, binding.pat, varType, true, false)
+    | _ ->
+      typingError(Array[(initStmt.pos, "Invalid loop variable declaration")])
+    }
+  }
+
+  fun getKeyType(
+    env: mutable TCEnv,
+    pos: PosRange,
+    iterableType: TType,
+  ): TType {
+    stypes = iterableType.getSTypes(env.subst, this.tenv, Covariant()) match {
+    | Some(stypes) if (!stypes.isEmpty()) -> stypes
+    | _ -> typingError(Array[(pos, "Invalid iterable type for for-in loop")])
+    };
+
+    result = TType::bottom(pos);
+    for (stype in stypes) {
+      stype match {
+      | TObject(fields, _) ->
+        keyNames = mutable Vector[];
+        for (field in fields.values()) {
+          keyNames.push((pos, field.name))
+        };
+        if (!keyNames.isEmpty()) {
+          sortedKeys = keyNames.toArray().sortedBy(x ~> x.i1);
+          stringValues = ArrayValues::single(sortedKeys[0]);
+          for (i in Range(1, sortedKeys.size())) {
+            !stringValues = stringValues.union(
+              ArrayValues::single(sortedKeys[i]),
+            )
+          };
+          stringType = TPrimValue(TString(), Some(stringValues), pos);
+          !result = TType::union(
+            env.subst,
+            this.tenv,
+            result,
+            TType::single(stringType),
+          )
+        }
+      | TTuple(tuple, _) ->
+        indices = mutable Vector[];
+        for (i in Range(0, tuple.size())) {
+          indices.push((pos, i.toString()))
+        };
+        if (!indices.isEmpty()) {
+          sortedIndices = indices.toArray().sortedBy(x ~> x.i1);
+          stringValues = ArrayValues::single(sortedIndices[0]);
+          for (i in Range(1, sortedIndices.size())) {
+            !stringValues = stringValues.union(
+              ArrayValues::single(sortedIndices[i]),
+            )
+          };
+          stringType = TPrimValue(TString(), Some(stringValues), pos);
+          !result = TType::union(
+            env.subst,
+            this.tenv,
+            result,
+            TType::single(stringType),
+          )
+        }
+      | _ ->
+        typingError(
+          Array[(pos, "for-in loop requires an object or array type")],
+        )
+      }
+    };
+    result
+  }
+
+  fun getValueType(
+    env: mutable TCEnv,
+    pos: PosRange,
+    iterableType: TType,
+  ): TType {
+    stypes = iterableType.getSTypes(env.subst, this.tenv, Covariant()) match {
+    | Some(stypes) if (!stypes.isEmpty()) -> stypes
+    | _ -> typingError(Array[(pos, "Invalid iterable type for for-of loop")])
+    };
+
+    result = TType::bottom(pos);
+    for (stype in stypes) {
+      stype match {
+      | TObject(fields, _objectPos) ->
+        fields.maybeGet("pop") match {
+        | Some(popMethod) ->
+          popF = popMethod.type
+            .getSTypes(env.subst, this.tenv, Covariant())
+            .flatMap(stypes ~> stypes.singleElt())
+            .fromSome() match {
+          | TFuns(_, methods, _) ->
+            for (met in methods) {
+              break met
+            } else {
+              internal_error("Unexpected type for Array::pop")
+            }
+          | _ -> internal_error("Unexpected pop method type")
+          };
+          !result = TType::union(env.subst, this.tenv, result, popF.retType)
+        | None() ->
+          for (field in fields.values()) {
+            !result = TType::union(env.subst, this.tenv, result, field.type)
+          }
+        }
+      | TTuple(tuple, _) ->
+        for (elementType in tuple) {
+          !result = TType::union(env.subst, this.tenv, result, elementType)
+        }
+      | _ ->
+        typingError(
+          Array[
+            (pos, "for-of loop requires an array, object, or iterable type"),
+          ],
+        )
+      }
+    };
+    result
   }
 }
 
