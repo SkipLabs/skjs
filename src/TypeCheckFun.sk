@@ -102,7 +102,7 @@ extension class TypeChecker {
       };
       _ = this.block(env, body);
       term = StmtTermination::block(body);
-      if (term.mayFallthrough && !this.isVoid(env, retType)) {
+      if (term.mayFallthrough && !this.isVoid(env, this.isAsync, retType)) {
         typingError(
           Array[(fd.pos, "This function may not always return a value")],
         )

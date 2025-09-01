@@ -1,7 +1,24 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun isVoid(env: mutable TCEnv, ty: TType): Bool {
+  fun isVoid(env: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | None() -> return false
+      | Some(stypes) ->
+        stypes.singleElt() match {
+        | Some(TPrimVoid(TVoid(), _)) if (!isAsync) -> void
+        | Some(TPromise(realType, _)) if (isAsync) ->
+          return this.isStrictlyVoid(env, realType)
+        | _ -> return false
+        }
+      }
+    };
+    true
+  }
+
+  fun isStrictlyVoid(env: mutable TCEnv, ty: TType): Bool {
     clauses = ty.expand(env.subst, this.tenv, Covariant());
     for (clause in clauses.clauses) {
       clause.stypes match {
