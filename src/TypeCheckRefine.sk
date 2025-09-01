@@ -1,0 +1,255 @@
+module SKJS;
+
+extension class TypeChecker {
+  fun evalEquality(env: mutable TCEnv, e1: Expr, e2: Expr, target: Bool): void {
+    (e1, e2) match {
+    | (
+      Expr(_, EString(tag)),
+      Expr(
+        _,
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
+      ),
+    )
+    | (
+      Expr(
+        _,
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
+      ),
+      Expr(_, EString(tag)),
+    ) if (fieldName == kAlgebraicBranchFieldName) ->
+      this.evalAlgebraicBranchEquality(env, local, tag, target)
+
+    | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
+    | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
+      this.evalTypeofEquality(env, local, typeStr, typePos, target)
+
+    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
+    | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
+      this.evalNullEquality(env, local, target)
+
+    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
+    | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
+      this.evalUndefinedEquality(env, local, target)
+
+    | (Expr(pos, _), Expr(_, Var(Name(_, "null"))))
+    | (Expr(_, Var(Name(_, "null"))), Expr(pos, _))
+    | (Expr(pos, _), Expr(_, Var(Name(_, "undefined"))))
+    | (Expr(_, Var(Name(_, "undefined"))), Expr(pos, _)) ->
+      typingError(
+        Array[(pos, "Only locals can be compared to null/undefined.")],
+      )
+
+    | _ -> void
+    }
+  }
+
+  fun evalAlgebraicBranchEquality(
+    env: mutable TCEnv,
+    local: Name,
+    tag: String,
+    target: Bool,
+  ): void {
+    if (target) {
+      // Positive branch: narrow to only the matching tag
+      this.setLocal(
+        env,
+        local,
+        None(),
+        _ ~> true,
+        stype ~>
+          stype match {
+          | TAlgebraic(branches, aPos) ->
+            TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
+          | x -> x
+          }
+        ,
+      )
+    } else {
+      // Negative branch: eliminate the matching tag (refinement by elimination)
+      this.setLocal(
+        env,
+        local,
+        None(),
+        _ ~> true,
+        stype ~>
+          stype match {
+          | TAlgebraic(branches, aPos) ->
+            TAlgebraic(branches.filter(branch -> branch.tag != tag), aPos)
+          | x -> x
+          }
+        ,
+      )
+    }
+  }
+
+  fun evalTypeofEquality(
+    env: mutable TCEnv,
+    local: Name,
+    typeStr: String,
+    typePos: PosRange,
+    target: Bool,
+  ): void {
+    typeStr match {
+    | "symbol" -> void
+    | "string" ->
+      (filter, default) = (
+        x ~> (x is TPrimValue(TString(), _, _)),
+        Some(TPrimValue(TString(), None(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "number" ->
+      (filter, default) = (
+        x ~> x is TPrimValue(TNum(), _, _),
+        Some(TPrimValue(TNum(), None(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "bigint" ->
+      (filter, default) = (
+        x ~> x is TPrimValue(TBigInt(), _, _),
+        Some(TPrimValue(TBigInt(), None(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "boolean" ->
+      (filter, default) = (
+        x ~> x is TPrimValue(TBool(), _, _),
+        Some(TPrimValue(TBool(), None(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "undefined" ->
+      filter = x ~>
+        x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _);
+      this.setLocal(
+        env,
+        local,
+        if (target) None() else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "object" ->
+      (filter, default) = (
+        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _),
+        Some(TObject(TFields::empty(), typePos)),
+      );
+      this.setLocal(
+        env,
+        local,
+        if (target) default else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | "function" ->
+      filter = x ~> x is TFuns _;
+      this.setLocal(
+        env,
+        local,
+        if (target) None() else None(),
+        if (target) filter else x ~> !filter(x),
+      )
+    | _ -> void
+    }
+  }
+
+  fun evalNullEquality(env: mutable TCEnv, local: Name, target: Bool): void {
+    if (!target) {
+      this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
+    }
+  }
+
+  fun evalUndefinedEquality(
+    env: mutable TCEnv,
+    local: Name,
+    target: Bool,
+  ): void {
+    if (!target) {
+      this.setLocal(env, local, None(), x ~>
+        !(x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _))
+      )
+    }
+  }
+
+  fun evalCond(env: mutable TCEnv, e: Expr, target: Bool): void {
+    e.value match {
+    | Binop(BOStrictEquality(), e1, e2) ->
+      this.evalEquality(env, e1, e2, target)
+
+    | Binop(BOStrictInequality(), e1, e2) ->
+      this.evalEquality(env, e1, e2, !target)
+
+    | InstanceOf(
+      Expr(_, Var(local)),
+      Expr(_, Var(Name(posArray, "Array"))),
+    ) if (target) ->
+      env.scope.set(
+        local,
+        TType::inst(
+          Name(posArray, "Array"),
+          TArgs(Array[TType::top(posArray)]),
+        ),
+        (_, _) -> void,
+      )
+
+    | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
+      env.scope.set(
+        local,
+        this.tenv.new(
+          env.context,
+          className,
+          this.tenv.makeTArgs(env.context, env.subst, className),
+        ),
+        (x, y) -> this.checkSubType(env, e.pos, "Invalid instanceof", x, y),
+      )
+
+    | Binop(BOLogicalAnd(), e1, e2) if (target) ->
+      this.evalCond(env, e1, true);
+      this.evalCond(env, e2, true)
+
+    | Binop(BOLogicalOr(), e1, e2) if (!target) ->
+      this.evalCond(env, e1, false);
+      this.evalCond(env, e2, false)
+
+    | _ -> void
+    }
+  }
+
+  fun setLocal(
+    env: mutable TCEnv,
+    local: Name,
+    default: ?SType,
+    filter: SType ~> Bool,
+    map: SType ~> SType = x ~> x,
+  ): void {
+    ty = env.scope.get(local);
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    !ty = TType::fromClauses(ty.pos, clauses);
+    !ty = (mutable FilterType()).type((filter, map), ty);
+    isTopOrEmpty = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
+    | None() -> true
+    | Some(stypes) -> stypes.isEmpty()
+    };
+    localType = default match {
+    | Some(d) if (isTopOrEmpty) -> TType::single(d)
+    | _ -> ty
+    };
+    env.scope.set(local, localType, (_, _) -> void)
+  }
+}
+
+module end;

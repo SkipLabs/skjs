@@ -1,0 +1,201 @@
+module SKJS;
+
+extension class TypeChecker {
+  fun stmt(env: mutable TCEnv, st: Stmt): void {
+    st.value match {
+    | Break() -> void
+    | Continue() -> void
+    | StmtEmpty() -> void
+    | StmtExpr(e) ->
+      ty = this.expr(env, e);
+      if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
+        this.checkIsVoid(env, e.pos, ty)
+      }
+    | Return(pos, eOpt) ->
+      retType = this.retType match {
+      | None() ->
+        TType::single(TPrimVoid(TVoid(), st.pos)) // constructor
+      | Some(x) -> x
+      };
+      (epos, etype) = eOpt match {
+      | None() -> (pos, TType::single(TPrimVoid(TVoid(), pos)))
+      | Some(e) -> (e.pos, this.expr(env, e, true))
+      };
+      rtype = if (this.isAsync) {
+        TType::single(TPromise(etype, epos))
+      } else {
+        etype
+      };
+      this.checkSubType(env, epos, "Invalid return type", rtype, retType)
+
+    | Bind(BKVar(), vars) ->
+      if (vars.size() == 0) internal_error("vars size should not be 0");
+      typingError(
+        Array[(vars[0].pat.pos, "Don't use var, use let or const instead")],
+      )
+
+    | Bind(bkind, bindings) ->
+      for (binding in bindings) {
+        (ty, isInitialized) = this.bindType(
+          binding.pat.pos,
+          env,
+          bkind,
+          binding.type,
+          binding.value,
+        );
+        this.bind(
+          env,
+          bkind,
+          binding.pat,
+          ty,
+          isInitialized,
+          binding.value is Some(Expr(_, Object _)),
+        )
+      }
+
+    | If(e, block1, block2) ->
+      this.checkBool(env, e);
+      scope1 = this.block(env, block1, Some((e, true)));
+      scope2 = block2 match {
+      | None() -> env.mcreateSubScope{isLoop => false}
+      | Some(b) -> this.block(env, b, Some((e, false)))
+      };
+      env.mergeScope(env.subst, this.tenv, scope1, scope2);
+      if (isTerminalBlock(false, block1)) {
+        this.evalCond(env, e, false);
+      }
+
+    | For(initStmt, cond, incr, block) ->
+      scopeCopy = env.scope;
+      initScope = env.mcreateSubScope{isLoop => false};
+      env.!scope = initScope;
+      this.stmt(env, initStmt);
+      loopScope = env.mcreateSubScope{isLoop => true};
+      env.!scope = loopScope;
+      this.checkBool(env, cond);
+      loopBody = this.block(env, block);
+      env.popScopeReplace(loopBody);
+      _ = this.expr(env, incr);
+      env.!scope = initScope;
+      env.popScope(env.subst, this.tenv, loopScope);
+      env.!scope = scopeCopy;
+      env.popScopeReplace(initScope)
+    | Block(stmts) ->
+      for (stmt in stmts) {
+        this.stmt(env, stmt)
+      }
+    | ForIn _ ->
+      typingError(
+        Array[
+          (
+            st.pos,
+            "TODO: for ... in not implemented, you can use a normal for (for now)",
+          ),
+        ],
+      )
+    | ForOf _ ->
+      typingError(
+        Array[
+          (
+            st.pos,
+            "TODO: for ... of not implemented, you can use a normal for (for now)",
+          ),
+        ],
+      )
+    | Throw(e) -> _ = this.expr(env, e)
+    | While(cond, block) ->
+      scopeCopy = env.scope;
+      loopScope = env.mcreateSubScope{isLoop => true};
+      env.!scope = loopScope;
+      this.checkBool(env, cond);
+      loopBody = this.block(env, block, Some((cond, true)));
+      env.popScopeReplace(loopBody);
+      env.!scope = scopeCopy;
+      env.popScope(env.subst, this.tenv, loopScope)
+    | Switch(e, branches) ->
+      this.switchCheckExhaustiveness(env, e, branches);
+      this.switch(env, e, branches)
+    }
+  }
+
+  fun switch(env: mutable TCEnv, e: Expr, branches: Array<SwitchBranch>): void {
+    if (branches.size() == 0) {
+      typingError(Array[(e.pos, "Missing branch")])
+    };
+    checkBreak = block -> {
+      term = StmtTermination::block(block);
+      if (term.mayFallthrough) {
+        if (block.size() == 0) {
+          internal_error("block size should not be 0")
+        };
+        last = block[block.size() - 1];
+        typingError(Array[(last.pos, "Missing break")])
+      }
+    };
+    scope = branches[0] match {
+    | Case(v, block) ->
+      checkBreak(block);
+      cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
+      this.block(env, block, Some((cond, true)))
+    | Default(_) -> typingError(Array[(e.pos, "Missing branch")])
+    };
+    for (i in Range(1, branches.size())) {
+      env.mergeScope(
+        env.subst,
+        this.tenv,
+        scope,
+        branches[i] match {
+        | Case(v, block) ->
+          checkBreak(block);
+          cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
+          this.block(env, block, Some((cond, true)))
+        | Default(stmts) -> this.block(env, stmts)
+        },
+      )
+    }
+  }
+
+  fun switchCheckExhaustiveness(
+    env: mutable TCEnv,
+    e: Expr,
+    branches: Array<SwitchBranch>,
+  ): void {
+    condType = this.expr(env, e, true);
+    cases = condType
+      .getSTypes(env.subst, this.tenv, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TPrimValue(_, Some(values), _)) ->
+      Set::mcreateFromItems(values.values.map(x -> x.i1))
+    | _ -> return void
+    };
+    for (branch in branches) {
+      branch match {
+      | Case(v, _) ->
+        this.expr(env, v, true)
+          .getSTypes(env.subst, this.tenv, Covariant())
+          .flatMap(stypes ~> stypes.staticValue()) match {
+        | Some(staticValue) ->
+          if (!cases.contains(staticValue)) {
+            typingError(Array[(v.pos, "Unused branch")])
+          };
+          cases.remove(staticValue)
+        | None() -> void
+        }
+
+      | Default(stmts) ->
+        if (cases.isEmpty()) {
+          if (stmts.isEmpty()) {
+            internal_error("Internal error: empty default");
+          };
+          typingError(Array[(stmts[0].pos, "Unused branch")])
+        };
+        cases.clear()
+      }
+    };
+    if (!cases.isEmpty()) {
+      typingError(Array[(e.pos, "Missing branches:\n" + cases.join("\n"))]);
+    }
+  }
+}
+
+module end;

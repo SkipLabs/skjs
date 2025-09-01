@@ -1,0 +1,226 @@
+module SKJS;
+
+extension class TypeChecker {
+  fun isVoid(env: mutable TCEnv, ty: TType): Bool {
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | None() -> return false
+      | Some(stypes) ->
+        stypes.singleElt() match {
+        | Some(TPrimVoid(TVoid(), _)) -> void
+        | _ -> return false
+        }
+      }
+    };
+    true
+  }
+
+  // Returns true if the type is not Top but contains void
+  fun nonTopContainsVoid(env: mutable TCEnv, ty: TType): Bool {
+    clauses = ty.expand(env.subst, this.tenv, Covariant());
+    for (clause in clauses.clauses) {
+      clause.stypes match {
+      | Some(stypes) if (stypes.any(stype ~> stype is TPrimVoid(TVoid(), _))) ->
+        return true
+      | _ -> void
+      }
+    };
+    false
+  }
+
+  static private fun filterMethods(
+    ty: TType,
+    subst: mutable Subst,
+    env: TEnv,
+  ): TType {
+    ty.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
+      stypes.singleElt()
+    }) match {
+    | Some(TObject(fields, pos)) ->
+      TType::single(
+        TObject(
+          fields.filterMap(field -> {
+            fieldType = field.type;
+            fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
+            fieldSTypes = fieldSTypesOpt match {
+            | None() -> return None()
+            | Some(x) -> x
+            };
+            !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
+              fieldSType match {
+              | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
+              | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                internal_error(
+                  "TODO: encountered both non-empty funs and methods in filterMethod",
+                )
+              //Some(tfuns with {methods => Array[]})
+              | _ -> Some(fieldSType)
+              }
+            });
+            !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
+            if (fieldType.isBottom()) None() else {
+              Some(field.mapType(_existingType -> fieldType))
+            }
+          }),
+          pos,
+        ),
+      )
+    | _ -> internal_error("Internal error: new should produce an object")
+    }
+  }
+
+  fun checkSubType(
+    env: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty1: TType,
+    ty2: TType,
+  ): void {
+    isSubTType(env.subst, this.tenv, ty1, ty2) match {
+    | STOk() -> void
+    | STRec(reason, pos1, subTy2) ->
+      typingError(
+        Array[
+          (pos, msg),
+          (
+            pos1,
+            reason.toString(
+              env.subst,
+              this.tenv,
+              expandTVars(env.subst, this.tenv, ty1),
+            ),
+          ),
+          (
+            subTy2.pos,
+            "It is incompatible with: " +
+              expandTVars(env.subst, this.tenv, subTy2).toString(),
+          ),
+        ],
+      )
+    | status ->
+      typingError(Array[(pos, status.toString(env.subst, this.tenv, ty1))])
+    }
+  }
+
+  fun checkIsVoid(env: mutable TCEnv, pos: PosRange, ty: TType): void {
+    this.checkSubType(
+      env,
+      pos,
+      "This expression was expected to be of type void",
+      ty,
+      TType::single(TPrimVoid(TVoid(), ty.pos)),
+    );
+  }
+
+  static fun isPossiblyNonVoidExpressionAllowedAsStatement(e: Expr): Bool {
+    e.value match {
+    | Binop(BOAssignment(), _, _)
+    | Binop(BOOpAssignment(_), _, _)
+    | PostOp(PODecr(), _)
+    | PostOp(POIncr(), _) ->
+      true
+    | _ -> false
+    }
+  }
+
+  fun checkBool(env: mutable TCEnv, e: Expr): void {
+    this.checkSubType(
+      env,
+      e.pos,
+      "A condition is expected to be of type boolean, not: ",
+      this.expr(env, e),
+      TType::single(TPrimValue(TBool(), None(), e.pos)),
+    );
+  }
+
+  fun checkStringifiable(env: mutable TCEnv, pos: PosRange, ty: TType): void {
+    // Check if the type is a primitive type that can be converted to string
+    // Allowed types: string, number, bigint, boolean, null, undefined
+    isStringifiable = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
+    | None() -> false
+    | Some(stypes) ->
+      stypes.singleElt() match {
+      | Some(TPrimValue(TString(), _, _)) -> true
+      | Some(TPrimValue(TNum(), _, _)) -> true
+      | Some(TPrimValue(TBigInt(), _, _)) -> true
+      | Some(TPrimValue(TBool(), _, _)) -> true
+      | Some(TPrimVoid(TNull(), _)) -> true
+      | Some(TPrimVoid(TUndefined(), _)) -> true
+      | Some(TPrimVoid(TVoid(), _)) -> true
+      | _ -> false
+      }
+    };
+
+    if (!isStringifiable) {
+      typingError(
+        Array[
+          (
+            pos,
+            "Template literal expressions must be string, number, bigint, boolean, null, or undefined",
+          ),
+        ],
+      );
+    }
+  }
+
+  fun checkIsNumber(
+    env: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty: TType,
+  ): void {
+    ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TPrimValue(TNum(), _, _)) -> void
+    | _ -> typingError(Array[(pos, msg), (ty.pos, "This is not a number")])
+    };
+  }
+
+  fun checkIsNumeric(
+    env: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    ty: TType,
+  ): TPrimValueKind {
+    ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TPrimValue(kind @ TNum(), _, _))
+    | Some(TPrimValue(kind @ TBigInt(), _, _)) ->
+      kind
+    | _ ->
+      typingError(
+        Array[
+          (pos, msg),
+          (ty.pos, "This is not a numeric type (number or bigint)"),
+        ],
+      )
+    };
+  }
+
+  fun makeBoundTVar(env: mutable TCEnv, ty: TType): TType {
+    tvar = env.subst.gen(ty.pos);
+    env.subst.grow(this.tenv, tvar, ty, true);
+    TType::var(tvar)
+  }
+
+  fun newTVar(env: mutable TCEnv, pos: PosRange): TType {
+    tvar = env.subst.gen(pos);
+    TType::var(tvar)
+  }
+
+  fun checkLValue(e: Expr): void {
+    e.value match {
+    | Var(Name(_, "super")) -> typingError(Array[(e.pos, "Invalid lvalue")])
+    | Var _ -> void
+    | Get _ -> void
+    | EArray _ -> void
+    | Binop(BODot(), e1, Expr(_, Var(_))) -> this.checkLValue(e1)
+    | _ -> typingError(Array[(e.pos, "Invalid lvalue")])
+    }
+  }
+}
+
+module end;
