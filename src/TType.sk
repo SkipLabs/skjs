@@ -940,17 +940,15 @@ class Clauses private (
     cand
   }
 
-  fun getObject(): ?SType {
-    if (this.clauses.size() != 1) return None();
-    this.clauses[0].stypes match {
-    | None() -> None()
-    | Some(stypes) ->
-      if (stypes.size() != 1) return None();
-      stypes.singleElt() match {
-      | Some(obj @ TObject _) -> Some(obj)
-      | _ -> None()
-      }
-    }
+  fun getObject(): ?TObject {
+    this.clauses.singleElt().flatMap(clause ->
+      clause.stypes.flatMap(stypes -> {
+        stypes.singleElt() match {
+        | Some(obj @ TObject _) -> Some(obj)
+        | _ -> None()
+        }
+      })
+    )
   }
 
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
