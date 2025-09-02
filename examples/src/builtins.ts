@@ -221,7 +221,7 @@ declare class Map<K, V> {
   size: number;
 
   // Existing methods
-  get(key: K): V;
+  get(key: K): V | undefined;
   set(key: K, value: V): void;
 
   // Additional Map methods
