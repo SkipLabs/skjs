@@ -969,10 +969,8 @@ class Clauses private (
         | (Some(clauseThis), Some(clauseOther)) ->
           // Both clauses have the same type parameters
           (clauseThis.stypes, clauseOther.stypes) match {
-          | (None(), None()) ->
-            None() // Top - Top = bottom (remove clause)
-          | (Some(_), None()) ->
-            None() // Something - Top = bottom (remove clause)
+          | (_, None()) ->
+            None() // anything - Top = bottom (remove clause)
           | (None(), Some(_)) ->
             Some(clauseThis) // Top - Something <= Top (keep clause)
           | (Some(stypesThis), Some(stypesOther)) ->
