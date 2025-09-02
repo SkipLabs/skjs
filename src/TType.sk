@@ -964,22 +964,26 @@ class Clauses private (
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
   fun diff(other: Clauses): Clauses {
+    noParamOtherOpt = other.clauses.maybeGet(ArraySet::empty());
+
     // Use merge to handle the diff operation
     diffClauses = this.clauses.merge(
       other.clauses,
-      (clauseThisOpt, clauseOtherOpt) ->
-        (clauseThisOpt, clauseOtherOpt) match {
-        | (Some(clauseThis), None()) ->
+      (clauseThisOpt, clauseOtherOpt) -> {
+        (clauseThisOpt, clauseOtherOpt, noParamOtherOpt) match {
+        | (Some(clauseThis), None(), None()) ->
           Some(clauseThis) // Keep clause from this
-        | (None(), Some(_)) ->
+        | (None(), _, _) ->
           None() // Don't include clauses only in other
-        | (Some(clauseThis), Some(clauseOther)) ->
-          // Both clauses have the same type parameters
-          clauseThis.diff(clauseOther.stypes)
-        | (None(), None()) ->
-          None() // Should not happen
+        | (Some(clauseThis), Some(another), None())
+        | (Some(clauseThis), None(), Some(another)) ->
+          clauseThis.diff(another.stypes)
+        | (Some(clauseThis), Some(clauseOther), Some(noParamOther)) ->
+          clauseThis.diff(clauseOther.stypes).flatMap(c ->
+            c.diff(noParamOther.stypes)
+          )
         }
-      ,
+      },
     );
 
     static::create(diffClauses)
