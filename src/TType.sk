@@ -424,6 +424,18 @@ class Lambda(
 /* Single types */
 /***************************************************************************/
 
+/* Types with a single inhabitant:
+- undefined for types void and undefined
+- null for type null
+
+In Typescript, void is both bottom and a supertype of everything when used as a
+return type.
+
+In SKJS, we decided (see https://github.com/SkipLabs/skjs/issues/75) that void
+would be a distinct type from undefined. It contains the value undefined but
+with no operations permitted on it.
+
+We should ensure that nothing non-undefined can be of type void. */
 base class TPrimVoidKind uses XXHashable, Orderable {
   children =
   | TUndefined()
@@ -439,6 +451,7 @@ base class TPrimVoidKind uses XXHashable, Orderable {
   }
 }
 
+/* Types with literal subtypes: booleans, numbers, strings, and bigints. */
 base class TPrimValueKind uses XXHashable, Orderable {
   children =
   | TNum()
@@ -1004,35 +1017,28 @@ base class STResult {
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
   | STTooManyTFun(TFun)
-  | STInvalidTypeParam(String)
   | STInvalidTypeParams(String)
-  | STTop()
   | STRec(STResult, PosRange, TType)
 
   fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
     this match {
     | STOk() ->
       internal_error("Internal error: STResult should never go to String")
-    | STTop() -> "This is of type any"
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
-      "The field '" +
-        fieldName +
-        "' is missing" +
-        "\n" +
-        "Out of the type: " +
-        expandTVars(subst, env, ty).toString()
+      `The field '${fieldName}' is missing\n` +
+        `Out of the type: ${expandTVars(subst, env, ty)}`
     | STTooManySType(sty) ->
       sty match {
-      | TPrimVoid(kind, _) -> "This is a " + kind.toString()
+      | TPrimVoid(kind, _) -> `This is a ${kind}`
       | TPrimValue(TString(), None(), _) ->
         "This is of type string. " +
           "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
-      | TPrimValue(kind, None(), _) -> "This is of type " + kind.toString()
+      | TPrimValue(kind, None(), _) -> `This is of type ${kind}`
       | TPrimValue(kind, Some(x), _) ->
-        `This is a static ${kind.toString()}: ` +
-          x.values.map(x -> "'" + x.i1 + "'").join(" | ")
+        `This is a static ${kind}: ` +
+          x.values.map(x -> `'${x.i1}'`).join(" | ")
 
       | TPromise _ -> "This is a Promise"
       | TAlgebraic _ ->
@@ -1051,7 +1057,6 @@ base class STResult {
           false,
           TType::single(TFuns::singleFun(f, f.minSizeWitness)),
         )
-    | STInvalidTypeParam(n) -> "This is of type " + n
     | STInvalidTypeParams(n) -> "This is of type " + n
     | STRec(st, _, ty2) -> st.toString(subst, env, ty2)
     }
