@@ -200,8 +200,14 @@ fun testFile(
 
   srcFiles = Array[fileName];
   files =
-    SKJS.Files::create(context, None(), builtinsFileName, srcFiles) |>
-    expectFilesSuccess;
+    SKJS.Files::create(
+      context,
+      None(),
+      builtinsFileName,
+      srcFiles,
+      false,
+      None(),
+    ) |> expectFilesSuccess;
 
   checker = SKJS.Checker::create{context, files};
   for (res in checker.checkFiles(context).items(context)) {
@@ -229,8 +235,14 @@ fun testDirectory(
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
   files =
-    SKJS.Files::create(context, None(), builtinsFileName, srcFiles) |>
-    expectFilesSuccess;
+    SKJS.Files::create(
+      context,
+      None(),
+      builtinsFileName,
+      srcFiles,
+      false,
+      None(),
+    ) |> expectFilesSuccess;
 
   checker = SKJS.Checker::create{context, files};
   for (res in checker.checkFiles(context).items(context)) {

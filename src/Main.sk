@@ -169,6 +169,9 @@ const checkArgs: Array<Cli.Arg> = Array[
     .positional()
     .repeatable()
     .about("Source files (default: src/**/*.ts)"),
+  Cli.Arg::string("dir")
+    .value_name("PATH")
+    .about("Source directory to check (default: src)"),
   Cli.Arg::string("init").about("Initializes persistent cache"),
   Cli.Arg::string("data").about("Uses persistent cache"),
   Cli.Arg::bool("backtrace")
@@ -208,6 +211,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   baseUrlOpt = args.maybeGetString("base-url");
   builtinsFileName = args.getString("builtins-file");
   logAffectedFiles = args.getBool("log-affected-files");
+  sourceDirOpt = args.maybeGetString("dir");
   if (logAffectedFiles) {
     if (args.maybeGetString("init").isSome()) {
       print_error(
@@ -234,6 +238,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         builtinsFileName,
         srcFiles,
         logAffectedFiles,
+        sourceDirOpt,
       ) match {
       | Failure(err) ->
         print_error(err);
