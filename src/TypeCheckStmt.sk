@@ -57,7 +57,13 @@ extension class TypeChecker {
       this.checkBool(env, e);
       scope1 = this.block(env, block1, Some((e, true)));
       scope2 = block2 match {
-      | None() -> env.mcreateSubScope{isLoop => false}
+      | None() ->
+        scopeCopy = env.scope;
+        scope = env.mcreateSubScope{isLoop => false};
+        env.!scope = scope;
+        this.evalCond(env, e, false);
+        env.!scope = scopeCopy;
+        scope
       | Some(b) -> this.block(env, b, Some((e, false)))
       };
       env.mergeScope(env.subst, this.tenv, scope1, scope2);
