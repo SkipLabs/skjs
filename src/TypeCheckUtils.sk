@@ -10,7 +10,9 @@ extension class TypeChecker {
         stypes.singleElt() match {
         | Some(TPrimVoid(TVoid(), _)) if (!isAsync) -> void
         | Some(TPromise(realType, _)) if (isAsync) ->
-          return this.isStrictlyVoid(env, realType)
+          if (!this.isStrictlyVoid(env, realType)) {
+            return false
+          }
         | _ -> return false
         }
       }
