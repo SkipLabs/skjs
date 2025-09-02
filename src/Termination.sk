@@ -66,6 +66,10 @@ value class StmtTermination private {
   fun then(kafter: () -> this): this {
     if (!this.mayFallthrough) this else this.merge(kafter(), (_t1, t2) ~> t2)
   }
+  /* Finally: after supersedes any non-loop exit from this */
+  fun finally(after: this): this {
+    this.anyExitToFallthrough().then(() ~> after.then(() ~> this))
+  }
   /* Converts breaks to fallThroughs. To be used on a block that may break */
   fun breakToFallthrough(): this {
     if (this.mayBreak) {
@@ -81,6 +85,16 @@ value class StmtTermination private {
     } else {
       this
     }
+  }
+  /* Converts any non-loop exit to fallthrough */
+  fun anyExitToFallthrough(): this {
+    mayFallthrough =
+      this.mayReturn ||
+      this.mayBreak ||
+      this.mayContinue ||
+      this.mayThrow ||
+      this.mayFallthrough;
+    static{mayLoop => this.mayLoop, mayFallthrough}
   }
   fun mayNonThrough(): ?String {
     if (this.mayReturn) return Some("return");
@@ -142,6 +156,24 @@ value class StmtTermination private {
         if (switchIsExhaustive) branchesTerm else branchesTerm.maybe();
       })
     | Block(block) -> static::block(block)
+    | Try(tryBlock, catchClause, finallyBlock) ->
+      tryTerm = static::block(tryBlock);
+      afterCatchTerm = catchClause match {
+      | Some(CatchClause(_, _, catchBlock)) ->
+        // TODO: warning if tryTerm.mayThrow is false
+        // Remove mayThrow from try and combine with catch
+        tryNoThrow = tryTerm with {mayThrow => false};
+        catchTerm = static::block(catchBlock);
+        tryNoThrow / catchTerm
+      | None() -> tryTerm
+      };
+      finallyBlock match {
+      | Some(finallyStmts) ->
+        // TODO: warning if afterCatchTerm always loops or terminates normally
+        finallyTerm = static::block(finallyStmts);
+        afterCatchTerm.finally(finallyTerm)
+      | None() -> afterCatchTerm
+      }
     }
   }
 

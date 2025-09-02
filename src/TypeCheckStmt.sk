@@ -115,6 +115,56 @@ extension class TypeChecker {
     | Switch(e, branches) ->
       this.switchCheckExhaustiveness(env, e, branches);
       this.switch(env, e, branches)
+    | Try(tryBlock, catchClause, finallyBlock) ->
+      scopeCopy = env.scope;
+      tryScope = env.mcreateSubScope{isLoop => false};
+      env.!scope = tryScope;
+      for (stmt in tryBlock) {
+        this.stmt(env, stmt)
+      };
+      env.!scope = scopeCopy;
+      env.popScope(env.subst, this.tenv, tryScope);
+
+      catchClause match {
+      | Some(CatchClause(param, type, catchBlock)) ->
+        catchScope = env.mcreateSubScope{isLoop => false};
+        env.!scope = catchScope;
+        param match {
+        | Some(pat) ->
+          errorType = type match {
+          | Some(t) -> // If we trusted user: this.tenv.normalize(env.context, t)
+            typingError(
+              Array[
+                (
+                  t.pos,
+                  "Do not specify a type annotation for caught exceptions as it cannot be trusted",
+                ),
+              ],
+            )
+          | None() -> TType::top(pat.pos)
+          };
+          this.bind(env, BKLet(), pat, errorType, true, false)
+        | None() -> void
+        };
+        for (stmt in catchBlock) {
+          this.stmt(env, stmt)
+        };
+        env.!scope = scopeCopy;
+        env.popScope(env.subst, this.tenv, catchScope)
+      | None() -> void
+      };
+
+      finallyBlock match {
+      | Some(finallyStmts) ->
+        finallyScope = env.mcreateSubScope{isLoop => false};
+        env.!scope = finallyScope;
+        for (stmt in finallyStmts) {
+          this.stmt(env, stmt)
+        };
+        env.!scope = scopeCopy;
+        env.popScope(env.subst, this.tenv, finallyScope)
+      | None() -> void
+      }
     }
   }
 

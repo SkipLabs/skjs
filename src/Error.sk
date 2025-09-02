@@ -314,6 +314,12 @@ class ExpectedStmt() extends ParsingKind {
   }
 }
 
+class ExpectedCatchOrFinally() extends ParsingKind {
+  fun toString(): String {
+    "Expected catch or finally clause"
+  }
+}
+
 class MissingReturnType() extends ParsingKind {
   fun toString(): String {
     "Missing return type"
