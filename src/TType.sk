@@ -256,6 +256,9 @@ class TType private {
     }
   }
 
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
   fun diff(other: TType): TType {
     diffInsts = this.insts.diff(other.insts);
     diffClauses = this.clauses.diff(other.clauses);
@@ -540,15 +543,7 @@ class TFields private (
   }
 
   fun maybeGet(fieldName: String): ?TField {
-    idx = SKStore.binSearch(
-      i ~> this.fields[i].name,
-      fieldName,
-      0,
-      this.fields.size() - 1,
-    );
-    if (idx < 0 || idx >= this.fields.size()) return None();
-    if (this.fields[idx].name != fieldName) return None();
-    Some(this.fields[idx])
+    this.fields.maybeGet(fieldName)
   }
 
   fun maybeGetType(subst: mutable Subst, tenv: TEnv, fieldName: Name): ?TType {
@@ -647,6 +642,9 @@ class STypes private (
     }
   }
 
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
   fun diff(other: STypes): STypes {
     (noMatch1, _noMatch2, _present) = mapInter(
       this.stypes.values(),
@@ -745,6 +743,9 @@ class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
     }
   }
 
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
   fun diff(other: TInsts): TInsts {
     (noMatch1, _noMatch2, _present) = mapInter(
       this.values(),
@@ -843,6 +844,23 @@ class Clause private (
   fun project(): ArraySet<TParam> {
     this.vars
   }
+
+  /*
+    t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+    i.e. such that t3 <= 1 and t3 | t2 >= t1
+    Returns None if the result is bottom */
+  fun diff(other: ?STypes): ?Clause {
+    (this.stypes, other) match {
+    | (_, None()) ->
+      None() // anything - Top = bottom
+    | (None(), Some(_)) ->
+      Some(this) // Top - Something <= Top (keep clause)
+    | (Some(stypesThis), Some(stypesOther)) ->
+      // Compute the difference of the stypes
+      diffResult = stypesThis.diff(stypesOther);
+      Clause::create(this.vars, Some(diffResult))
+    }
+  }
 }
 
 /* Clauses: type parameters and simple types in DNF */
@@ -931,51 +949,41 @@ class Clauses private (
     cand
   }
 
-  fun getObject(): ?SType {
-    if (this.clauses.size() != 1) return None();
-    this.clauses[0].stypes match {
-    | None() -> None()
-    | Some(stypes) ->
-      if (stypes.size() != 1) return None();
-      stypes.singleElt() match {
-      | Some(obj @ TObject _) -> Some(obj)
-      | _ -> None()
-      }
-    }
+  fun getObject(): ?TObject {
+    this.clauses.singleElt().flatMap(clause ->
+      clause.stypes.flatMap(stypes -> {
+        stypes.singleElt() match {
+        | Some(obj @ TObject _) -> Some(obj)
+        | _ -> None()
+        }
+      })
+    )
   }
 
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
   fun diff(other: Clauses): Clauses {
+    noParamOtherOpt = other.clauses.maybeGet(ArraySet::empty());
+
     // Use merge to handle the diff operation
     diffClauses = this.clauses.merge(
       other.clauses,
-      (clauseThisOpt, clauseOtherOpt) ->
-        (clauseThisOpt, clauseOtherOpt) match {
-        | (Some(clauseThis), None()) ->
+      (clauseThisOpt, clauseOtherOpt) -> {
+        (clauseThisOpt, clauseOtherOpt, noParamOtherOpt) match {
+        | (Some(clauseThis), None(), None()) ->
           Some(clauseThis) // Keep clause from this
-        | (None(), Some(_)) ->
+        | (None(), _, _) ->
           None() // Don't include clauses only in other
-        | (Some(clauseThis), Some(clauseOther)) ->
-          // Both clauses have the same type parameters
-          (clauseThis.stypes, clauseOther.stypes) match {
-          | (None(), None()) ->
-            None() // None - None = bottom (remove clause)
-          | (Some(_), None()) ->
-            None() // Something - None = bottom (remove clause)
-          | (None(), Some(_)) ->
-            Some(clauseThis) // None - Something = None (keep clause)
-          | (Some(stypesThis), Some(stypesOther)) ->
-            // Compute the difference of the stypes
-            diffResult = stypesThis.diff(stypesOther);
-            if (diffResult.isEmpty()) {
-              None() // Remove clause if no stypes remain
-            } else {
-              Clause::create(clauseThis.vars, Some(diffResult))
-            }
-          }
-        | (None(), None()) ->
-          None() // Should not happen
+        | (Some(clauseThis), Some(another), None())
+        | (Some(clauseThis), None(), Some(another)) ->
+          clauseThis.diff(another.stypes)
+        | (Some(clauseThis), Some(clauseOther), Some(noParamOther)) ->
+          clauseThis.diff(clauseOther.stypes).flatMap(c ->
+            c.diff(noParamOther.stypes)
+          )
         }
-      ,
+      },
     );
 
     static::create(diffClauses)
