@@ -41,6 +41,7 @@ class Files(
     builtinsFileNameStr: String,
     srcFileSeq: Sequence<String>,
     trackChangedFiles: Bool = false,
+    sourceDirOpt: ?String = None(),
   ): Result<Files, String> {
     builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
     rootOpt = baseUrlOpt.map(baseUrl -> DirName::create(Path.resolve(baseUrl)));
@@ -50,9 +51,12 @@ class Files(
       | None() -> DirName::create(FileSystem.realpath("."))
       };
       !rootOpt = Some(root);
-      srcDir = `${root}src/`;
+      srcDir = sourceDirOpt match {
+      | Some(dir) -> Path.resolve(dir)
+      | None() -> `${root}src/`
+      };
       if (!FileSystem.exists(srcDir)) {
-        return Failure(`Could not find src/ dir in: ${root}`);
+        return Failure(`Could not find source dir: ${srcDir}`);
       };
       !srcFileSeq = FileSystem.readFilesRecursive(srcDir, fileName ->
         fileName.endsWith(".ts")
