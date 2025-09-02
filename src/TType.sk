@@ -970,11 +970,11 @@ class Clauses private (
           // Both clauses have the same type parameters
           (clauseThis.stypes, clauseOther.stypes) match {
           | (None(), None()) ->
-            None() // None - None = bottom (remove clause)
+            None() // Top - Top = bottom (remove clause)
           | (Some(_), None()) ->
-            None() // Something - None = bottom (remove clause)
+            None() // Something - Top = bottom (remove clause)
           | (None(), Some(_)) ->
-            Some(clauseThis) // None - Something = None (keep clause)
+            Some(clauseThis) // Top - Something <= Top (keep clause)
           | (Some(stypesThis), Some(stypesOther)) ->
             // Compute the difference of the stypes
             diffResult = stypesThis.diff(stypesOther);
