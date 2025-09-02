@@ -66,6 +66,10 @@ value class StmtTermination private {
   fun then(kafter: () -> this): this {
     if (!this.mayFallthrough) this else this.merge(kafter(), (_t1, t2) ~> t2)
   }
+  /* Finally: after supersedes any non-loop exit from this */
+  fun finally(after: this): this {
+    this.anyExitToFallthrough().then(() ~> after.then(() ~> this))
+  }
   /* Converts breaks to fallThroughs. To be used on a block that may break */
   fun breakToFallthrough(): this {
     if (this.mayBreak) {
@@ -81,6 +85,16 @@ value class StmtTermination private {
     } else {
       this
     }
+  }
+  /* Converts any non-loop exit to fallthrough */
+  fun anyExitToFallthrough(): this {
+    mayFallthrough =
+      this.mayReturn ||
+      this.mayBreak ||
+      this.mayContinue ||
+      this.mayThrow ||
+      this.mayFallthrough;
+    static{mayLoop => this.mayLoop, mayFallthrough}
   }
   fun mayNonThrough(): ?String {
     if (this.mayReturn) return Some("return");
@@ -144,25 +158,22 @@ value class StmtTermination private {
     | Block(block) -> static::block(block)
     | Try(tryBlock, catchClause, finallyBlock) ->
       tryTerm = static::block(tryBlock);
-      catchTerm = catchClause match {
-      | Some(CatchClause(_, _, catchBlock)) -> static::block(catchBlock)
-      | None() -> static::skip
-      };
-      finallyTerm = finallyBlock match {
-      | Some(finallyStmts) -> static::block(finallyStmts)
-      | None() -> static::skip
-      };
-      // Try can throw, but catch might handle it
-      // If there's a catch, the throw from try is handled by catch
-      tryWithCatch = if (catchClause is Some _) {
+      afterCatchTerm = catchClause match {
+      | Some(CatchClause(_, _, catchBlock)) ->
+        // TODO: warning if tryTerm.mayThrow is false
         // Remove mayThrow from try and combine with catch
         tryNoThrow = tryTerm with {mayThrow => false};
+        catchTerm = static::block(catchBlock);
         tryNoThrow / catchTerm
-      } else {
-        tryTerm
+      | None() -> tryTerm
       };
-      // Finally always executes
-      tryWithCatch.then(() ~> finallyTerm)
+      finallyBlock match {
+      | Some(finallyStmts) ->
+        // TODO: warning if afterCatchTerm always loops or terminates normally
+        finallyTerm = static::block(finallyStmts);
+        afterCatchTerm.finally(finallyTerm)
+      | None() -> afterCatchTerm
+      }
     }
   }
 
