@@ -49,15 +49,6 @@ function nestedTryCatch(): void {
   }
 }
 
-function asyncTryCatch(): void {
-  try {
-    // Just a simple async operation without Promise references
-    console.log("async operation");
-  } catch (e) {
-    console.log("async error:", e);
-  }
-}
-
 function tryWithReturn(): number {
   try {
     return 1;
