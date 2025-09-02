@@ -543,15 +543,7 @@ class TFields private (
   }
 
   fun maybeGet(fieldName: String): ?TField {
-    idx = SKStore.binSearch(
-      i ~> this.fields[i].name,
-      fieldName,
-      0,
-      this.fields.size() - 1,
-    );
-    if (idx < 0 || idx >= this.fields.size()) return None();
-    if (this.fields[idx].name != fieldName) return None();
-    Some(this.fields[idx])
+    this.fields.maybeGet(fieldName)
   }
 
   fun maybeGetType(subst: mutable Subst, tenv: TEnv, fieldName: Name): ?TType {

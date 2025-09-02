@@ -119,8 +119,18 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     this.inner.maybeGet(0)
   }
 
-  fun get(i: Int): T {
-    this.inner.get(i)
+  fun maybeGet(k: K): ?T {
+    idx = SKStore.binSearch(
+      i ~> this.inner[i].project(),
+      k,
+      0,
+      this.inner.size() - 1,
+    );
+    if (idx < 0 || idx >= this.inner.size() || this.inner[idx].project() != k) {
+      None()
+    } else {
+      Some(this.inner[idx])
+    }
   }
 
   fun toArray(): Array<T> {
