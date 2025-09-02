@@ -10,24 +10,9 @@ extension class TypeChecker {
         stypes.singleElt() match {
         | Some(TPrimVoid(TVoid(), _)) if (!isAsync) -> void
         | Some(TPromise(realType, _)) if (isAsync) ->
-          if (!this.isStrictlyVoid(env, realType)) {
+          if (!this.isVoid(env, false, realType)) {
             return false
           }
-        | _ -> return false
-        }
-      }
-    };
-    true
-  }
-
-  fun isStrictlyVoid(env: mutable TCEnv, ty: TType): Bool {
-    clauses = ty.expand(env.subst, this.tenv, Covariant());
-    for (clause in clauses.clauses) {
-      clause.stypes match {
-      | None() -> return false
-      | Some(stypes) ->
-        stypes.singleElt() match {
-        | Some(TPrimVoid(TVoid(), _)) -> void
         | _ -> return false
         }
       }
