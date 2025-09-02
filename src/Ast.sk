@@ -213,6 +213,7 @@ base class ParamNames uses XXHashable {
 //   | var <binding>*
 //   | const <binding>*
 //   | switch ( <expr> ) { <switch-branch>* }
+//   | try { <stmt>* } (catch ( <pattern> (: <type>)? ) { <stmt>* })? (finally { <stmt>* })?
 //   | { <stmt>* }
 /***************************************************************************/
 
@@ -233,6 +234,7 @@ base class Stmt_ uses XXHashable {
   | Bind(BindKind, Array<Binding>)
   | Switch(Expr, Array<SwitchBranch>)
   | Block(Array<Stmt>)
+  | Try(Array<Stmt>, ?CatchClause, ?Array<Stmt>)
 }
 
 /***************************************************************************/
@@ -259,6 +261,16 @@ base class SwitchBranch uses XXHashable {
   | Case(Expr, Array<Stmt>)
   | Default(Array<Stmt>)
 }
+
+/***************************************************************************/
+// <catch-clause> ::= catch ( <pattern> (: <type>)? ) <stmt>*
+/***************************************************************************/
+
+class CatchClause(
+  param: ?Pattern,
+  type: ?Type,
+  body: Array<Stmt>,
+) uses XXHashable
 
 /***************************************************************************/
 // <expr> ::=

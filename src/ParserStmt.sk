@@ -22,6 +22,7 @@ extension class Parser {
   //   | var <binding>*
   //   | const <binding>*
   //   | switch ( <expr> ) { <switch-branch>* }
+  //   | try { <stmt>* } (catch ( <pattern> (: <type>)? ) { <stmt>* })? (finally { <stmt>* })?
   //   | { <stmt>* }
   /***************************************************************************/
 
@@ -269,6 +270,73 @@ extension class Parser {
           }
         };
         Some(Bind(bkind, bindings.toArray()))
+      | "try" ->
+        _ = this.lex.next();
+        this.expect(TKOpenCurly());
+        tryBlock = mutable Vector[];
+        loop {
+          this.stmt() match {
+          | None() -> break void
+          | Some(st) -> tryBlock.push(st)
+          }
+        };
+        this.expect(TKCloseCurly());
+
+        catchClause = this.lex.peekStr() match {
+        | Some("catch") ->
+          _ = this.lex.next();
+          (param, type) = if (this.lex.peekKind() is Some(TKOpenParen())) {
+            this.expect(TKOpenParen());
+            param = if (this.lex.peekKind() is Some(TKCloseParen())) {
+              None()
+            } else {
+              Some(this.pattern())
+            };
+            type = if (this.lex.peekKind() is Some(TKColon())) {
+              _ = this.lex.next();
+              Some(this.type(0))
+            } else {
+              None()
+            };
+            this.expect(TKCloseParen());
+            (param, type)
+          } else {
+            (None(), None())
+          };
+          this.expect(TKOpenCurly());
+          catchBlock = mutable Vector[];
+          loop {
+            this.stmt() match {
+            | None() -> break void
+            | Some(st) -> catchBlock.push(st)
+            }
+          };
+          this.expect(TKCloseCurly());
+          Some(CatchClause(param, type, catchBlock.toArray()))
+        | _ -> None()
+        };
+
+        finallyBlock = this.lex.peekStr() match {
+        | Some("finally") ->
+          _ = this.lex.next();
+          this.expect(TKOpenCurly());
+          finallyStmts = mutable Vector[];
+          loop {
+            this.stmt() match {
+            | None() -> break void
+            | Some(st) -> finallyStmts.push(st)
+            }
+          };
+          this.expect(TKCloseCurly());
+          Some(finallyStmts.toArray())
+        | _ -> None()
+        };
+
+        if (catchClause is None() && finallyBlock is None()) {
+          this.error(this.lex.posEnd(), ExpectedCatchOrFinally())
+        };
+
+        Some(Try(tryBlock.toArray(), catchClause, finallyBlock))
 
       | _ ->
         e = this.expr(0);

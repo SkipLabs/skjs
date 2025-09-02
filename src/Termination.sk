@@ -142,6 +142,27 @@ value class StmtTermination private {
         if (switchIsExhaustive) branchesTerm else branchesTerm.maybe();
       })
     | Block(block) -> static::block(block)
+    | Try(tryBlock, catchClause, finallyBlock) ->
+      tryTerm = static::block(tryBlock);
+      catchTerm = catchClause match {
+      | Some(CatchClause(_, _, catchBlock)) -> static::block(catchBlock)
+      | None() -> static::skip
+      };
+      finallyTerm = finallyBlock match {
+      | Some(finallyStmts) -> static::block(finallyStmts)
+      | None() -> static::skip
+      };
+      // Try can throw, but catch might handle it
+      // If there's a catch, the throw from try is handled by catch
+      tryWithCatch = if (catchClause is Some _) {
+        // Remove mayThrow from try and combine with catch
+        tryNoThrow = tryTerm with {mayThrow => false};
+        tryNoThrow / catchTerm
+      } else {
+        tryTerm
+      };
+      // Finally always executes
+      tryWithCatch.then(() ~> finallyTerm)
     }
   }
 
