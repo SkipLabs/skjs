@@ -132,7 +132,15 @@ extension class TypeChecker {
         param match {
         | Some(pat) ->
           errorType = type match {
-          | Some(t) -> this.tenv.normalize(env.context, t)
+          | Some(t) -> // If we trusted user: this.tenv.normalize(env.context, t)
+            typingError(
+              Array[
+                (
+                  t.pos,
+                  "Do not specify a type annotation for caught exceptions as it cannot be trusted",
+                ),
+              ],
+            )
           | None() -> TType::top(pat.pos)
           };
           this.bind(env, BKLet(), pat, errorType, true, false)

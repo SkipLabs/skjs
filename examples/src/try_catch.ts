@@ -10,6 +10,7 @@ function basicTryCatch(): void {
 function tryCatchWithType(): void {
   try {
     throw "string error";
+    // @ts-expect-error Do not specify a type annotation for caught exceptions as it cannot be trusted
   } catch (e: string) {
     console.log("Caught string:", e);
   }
@@ -27,6 +28,7 @@ function tryFinally(): void {
 function tryCatchFinally(): void {
   try {
     throw new Error("test");
+    // @ts-expect-error Do not specify a type annotation for caught exceptions as it cannot be trusted
   } catch (e: Error) {
     console.log("caught:", e.message);
   } finally {
@@ -38,12 +40,12 @@ function nestedTryCatch(): void {
   try {
     try {
       throw new Error("inner error");
-    } catch (inner: Error) {
-      console.log("inner catch:", inner.message);
+    } catch (inner) {
+      if (inner instanceof Error) console.log("inner catch:", inner.message);
       throw new Error("outer error");
     }
-  } catch (outer: Error) {
-    console.log("outer catch:", outer.message);
+  } catch (outer) {
+    if (outer instanceof Error) console.log("outer catch:", outer.message);
   }
 }
 
