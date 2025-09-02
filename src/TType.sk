@@ -844,6 +844,23 @@ class Clause private (
   fun project(): ArraySet<TParam> {
     this.vars
   }
+
+  /*
+    t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+    i.e. such that t3 <= 1 and t3 | t2 >= t1
+    Returns None if the result is bottom */
+  fun diff(other: ?STypes): ?Clause {
+    (this.stypes, other) match {
+    | (_, None()) ->
+      None() // anything - Top = bottom
+    | (None(), Some(_)) ->
+      Some(this) // Top - Something <= Top (keep clause)
+    | (Some(stypesThis), Some(stypesOther)) ->
+      // Compute the difference of the stypes
+      diffResult = stypesThis.diff(stypesOther);
+      Clause::create(this.vars, Some(diffResult))
+    }
+  }
 }
 
 /* Clauses: type parameters and simple types in DNF */
@@ -958,20 +975,7 @@ class Clauses private (
           None() // Don't include clauses only in other
         | (Some(clauseThis), Some(clauseOther)) ->
           // Both clauses have the same type parameters
-          (clauseThis.stypes, clauseOther.stypes) match {
-          | (_, None()) ->
-            None() // anything - Top = bottom (remove clause)
-          | (None(), Some(_)) ->
-            Some(clauseThis) // Top - Something <= Top (keep clause)
-          | (Some(stypesThis), Some(stypesOther)) ->
-            // Compute the difference of the stypes
-            diffResult = stypesThis.diff(stypesOther);
-            if (diffResult.isEmpty()) {
-              None() // Remove clause if no stypes remain
-            } else {
-              Clause::create(clauseThis.vars, Some(diffResult))
-            }
-          }
+          clauseThis.diff(clauseOther.stypes)
         | (None(), None()) ->
           None() // Should not happen
         }
