@@ -207,18 +207,11 @@ class TType private {
 
   // OTHER PROPERTIES
 
+  // Returns the actual STypes after head expansion, forgetting type parameters,
+  // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): ?STypes {
-    clauses = this.expand(subst, env, variance);
-    result = STypes::empty();
-    for (clause in clauses.clauses) {
-      clause.stypes match {
-      | None() -> return None()
-      | Some(clauseSTypes) ->
-        !result = STypes::union(subst, env, result, clauseSTypes)
-      }
-    };
-    Some(result)
+    this.expand(subst, env, variance).getSTypes(subst, env)
   }
 
   fun expand(subst: mutable Subst, env: TEnv, variance: Variance): Clauses {
@@ -605,6 +598,14 @@ class STypes private (
     static(InternalKeyedArrayMap::single(x))
   }
 
+  static fun nullish(pos: PosRange): this {
+    static(
+      InternalKeyedArrayMap::single((TPrimVoid(TNull(), pos) : SType)).union(
+        InternalKeyedArrayMap::single((TPrimVoid(TUndefined(), pos) : SType)),
+      ),
+    )
+  }
+
   fun map(f: SType -> SType): this {
     static(this.stypes.map(f))
   }
@@ -942,6 +943,21 @@ class Clauses private (
 
   fun getConstantString(): ?(PosRange, String) {
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
+  }
+
+  // Returns the actual STypes, forgetting type parameters,
+  // so the return value over-approximates the type
+  // Returns None() if the type eventually expands to Top
+  fun getSTypes(subst: mutable Subst, env: TEnv): ?STypes {
+    result = STypes::empty();
+    for (clause in this.clauses) {
+      clause.stypes match {
+      | None() -> return None()
+      | Some(clauseSTypes) ->
+        !result = STypes::union(subst, env, result, clauseSTypes)
+      }
+    };
+    Some(result)
   }
 
   fun primKind(): ?TPrimValueKind {
