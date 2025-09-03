@@ -354,7 +354,21 @@ fun isSubTObject(
   obj1: TObject,
   obj2: TObject,
 ): STResult {
-  TFields::isSub(subst, env, obj1.fields, obj2.fields)
+  (
+    obj1.fields.fields.find(field -> field.name == "[]"),
+    obj2.fields.fields.find(field -> field.name == "[]"),
+  ) match {
+  | (None(), Some(indexingField)) ->
+    for (field in obj1.fields) {
+      retType = extractReturnType("Unexpected type for []", indexingField.type);
+      isSubTType(subst, env, field.type, retType) match {
+      | STOk() -> void
+      | err -> return err
+      }
+    };
+    STOk()
+  | _ -> TFields::isSub(subst, env, obj1.fields, obj2.fields)
+  }
 }
 
 module end;
