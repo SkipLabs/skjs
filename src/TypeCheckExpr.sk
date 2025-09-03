@@ -892,9 +892,6 @@ extension class TypeChecker {
           Array[(pos, "'as const' can only be used with string literals")],
         )
       }
-    | KeyOf(ty) ->
-      targetType = this.tenv.normalize(env.context, ty);
-      this.tenv.keyOfType(env.subst, targetType, pos)
     | Params _ ->
       internal_error("Internal error: Params should not be an expression")
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
