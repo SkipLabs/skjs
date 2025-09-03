@@ -1,0 +1,31 @@
+// Test recursive type with generic constraints
+
+// Recursive JSON type definition
+type Json = { [key: string]: Json } | number | string;
+
+// Generic function with constraint that extends recursive type
+function foo<T extends Json>(x: T): void {}
+
+// Usage with object that satisfies the constraint
+foo<{ x: number; y: string }>({ x: 0, y: "" });
+
+// Additional test cases
+function testJsonUsage(): void {
+  // Basic JSON values
+  let num: Json = 42;
+  let str: Json = "hello";
+
+  // Nested object
+  let nested: Json = {
+    name: "test",
+    value: 123,
+    nested: {
+      inner: "value",
+    },
+  };
+
+  // Using with generic function
+  foo<number>(42);
+  foo<string>("hello");
+  foo<{ name: string; age: number }>({ name: "John", age: 30 });
+}

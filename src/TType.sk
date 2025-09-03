@@ -1083,4 +1083,26 @@ base class STError extends STResult {
   }
 }
 
+fun extractReturnType(msg: String, ty: TType): TType {
+  for (clause in ty.clauses.clauses) {
+    if (clause.vars.size() != 0) {
+      internal_error(msg)
+    };
+    clause.stypes match {
+    | None() -> internal_error(msg)
+    | Some(stypes) ->
+      for (stype in stypes) {
+        stype match {
+        | TFuns(_funs, methods, _) ->
+          for (method in methods) {
+            return method.retType
+          }
+        | _ -> internal_error(msg)
+        }
+      }
+    }
+  };
+  internal_error(msg)
+}
+
 module end;

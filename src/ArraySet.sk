@@ -66,6 +66,10 @@ class .ArraySet<T: Orderable> private (
     static(Vector[])
   }
 
+  fun size(): Int {
+    this.inner.size()
+  }
+
   private static fun create<T: Orderable>(
     size: Int,
     init: (T -> void) -> void,

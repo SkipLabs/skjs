@@ -531,7 +531,7 @@ class TEnv{
     | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
     | TAAsserts _ -> internal_error("TODO asserts ")
     | TAIs _ -> internal_error("TODO is ")
-    | TANew _ -> internal_error("TODO new ")
+    | TANew _ -> typingError(Array[(pos, "TODO new")])
     | TAKeyOf _ -> internal_error("TODO keyof ")
     | TAEmptyArray _ -> internal_error("TODO emptyArray ")
     | TAInfer _ -> internal_error("TODO infer ")
@@ -779,7 +779,7 @@ class TEnv{
         elt match {
         | fd @ FieldTypeValue _ ->
           fd.name match {
-          | FNIn _ -> internal_error("TODO fnIn")
+          | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
           | FNSymbol _ -> internal_error("TODO symbol")
           | FNNormal(name) ->
             normalizedType = this.normalize(context, fd.type);
