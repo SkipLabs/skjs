@@ -10,8 +10,6 @@ function testIfElseRefinement(x: string | null): string {
 }
 
 function testTernaryRefinement(x: string | null): string {
-  // This should work with ternary operators after our fix
-  // Currently this likely doesn't work due to missing type refinements
   return x !== null ? x.toUpperCase() : "default";
 }
 
