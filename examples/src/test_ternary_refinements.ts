@@ -24,7 +24,9 @@ function testNestedTernary(x: string | null, y: number | null): string {
 
 function testTernaryWithTypeOf(value: string | number): string {
   // Test typeof refinements in ternary operators
-  return typeof value === "string" ? value.toUpperCase() : (value + 1).toString();
+  return typeof value === "string"
+    ? value.toUpperCase()
+    : (value + 1).toString();
 }
 
 function testTernaryWithInstanceOf(obj: Array<string> | string): number {
@@ -41,4 +43,3 @@ function testTernaryWithADT(response: Response): string {
   // Test ADT refinement in ternary operators
   return response.kind === "success" ? response.data : response.message;
 }
-
