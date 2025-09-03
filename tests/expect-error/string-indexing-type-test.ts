@@ -31,7 +31,6 @@ function testUndefinedHandlingInline(): void {
   const str = "world";
   const char = str[0];
 
-  // Now works with undefined checks in ternary operators
   const length = char !== undefined ? char.length : 0;
   console.log(length);
 }
