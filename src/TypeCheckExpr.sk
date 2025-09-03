@@ -856,8 +856,6 @@ extension class TypeChecker {
       }
     | EIf(e1, e2, e3) ->
       cond = this.expr(env, e1);
-      left = this.expr(env, e2);
-      right = this.expr(env, e3);
       this.checkSubType(
         env,
         e1.pos,
@@ -865,6 +863,24 @@ extension class TypeChecker {
         cond,
         TType::single(TPrimValue(TBool(), None(), e1.pos)),
       );
+
+      // Create scopes for the true and false branches with type refinements
+      scopeCopy = env.scope;
+
+      // True branch - evaluate e2 with refinements from e1 being true
+      trueScope = env.mcreateSubScope{isLoop => false};
+      env.!scope = trueScope;
+      this.evalCond(env, e1, true);
+      left = this.expr(env, e2);
+      env.!scope = scopeCopy;
+
+      // False branch - evaluate e3 with refinements from e1 being false
+      falseScope = env.mcreateSubScope{isLoop => false};
+      env.!scope = falseScope;
+      this.evalCond(env, e1, false);
+      right = this.expr(env, e3);
+      env.!scope = scopeCopy;
+
       TType::union(env.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
       this.asConstExpr(subExpr) match {

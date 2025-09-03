@@ -31,8 +31,6 @@ function testUndefinedHandlingInline(): void {
   const str = "world";
   const char = str[0];
 
-  // TODO: Should work with undefined checks
-  // @ts-expect-error Type cannot be accessed
   const length = char !== undefined ? char.length : 0;
   console.log(length);
 }
