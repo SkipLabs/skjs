@@ -62,7 +62,7 @@ extension class TType {
         TType::single(stype),
       ) match {
       | STOk() -> return ty1
-      | _ -> void
+      | STError _ -> void
       }
     | _ -> void
     };
@@ -75,7 +75,7 @@ extension class TType {
         TType::single(stype),
       ) match {
       | STOk() -> return ty2
-      | _ -> void
+      | STError _ -> void
       }
     | _ -> void
     };
