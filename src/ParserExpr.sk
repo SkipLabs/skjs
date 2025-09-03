@@ -264,7 +264,6 @@ extension class Parser {
       | "async" -> Async(this.expr(0))
       | "await" -> Await(this.expr(0))
       | "typeof" -> TypeOf(this.expr(typeOfPrec))
-      | "keyof" -> KeyOf(this.type(0))
       | _ ->
         Var(Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), str))
       }

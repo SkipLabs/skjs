@@ -194,7 +194,6 @@ value class StmtTermination private {
     | Var(_name)
     | Spread(_name)
     | EString(_)
-    | KeyOf(_ty)
     | Closure(_args, _retTy, _body)
     | Regexp(_) ->
       static::skip
