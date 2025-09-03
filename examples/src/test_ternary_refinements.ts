@@ -1,5 +1,4 @@
 // Tests for type refinements in ternary operators
-// This file demonstrates the current limitation and will test our fix
 
 function testIfElseRefinement(x: string | null): string {
   // This works with if/then/else - type refinements are applied
