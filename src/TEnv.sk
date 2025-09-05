@@ -760,70 +760,65 @@ class TEnv{
    */
   private fun createTFields(
     context: mutable SKStore.Context,
-    fields: Array<FieldType>,
+    fieldTypes: Array<FieldType>,
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
-    tFields = TFields::create(
-      fields.filterMap(elt -> {
-        elt match {
-        | fd @ FieldTypeValue _ ->
-          fd.name match {
-          | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
-          | FNSymbol _ -> internal_error("TODO symbol")
-          | FNNormal(name) ->
-            normalizedType = this.normalize(context, fd.type);
-            optField = TField::create(
-              name.pos,
-              name.value,
-              fd.optional is Some _,
-              normalizedType,
-            );
-            if (optField is None()) {
-              algebraicBranchField match {
-              | Some((existingPos, _existingType)) ->
-                typingError(
-                  Array[
-                    (name.pos, `Duplicate field ${name.value}`),
-                    (existingPos, "Previously declared here"),
-                  ],
-                )
-              | None() -> void
-              };
-              fd.optional match {
-              | Some(optionalPos) ->
-                typingError(
-                  Array[
-                    (optionalPos, `Field ${name.value} cannot be optional`),
-                  ],
-                )
-              | None() -> void
-              };
-              !algebraicBranchField = Some((name.pos, normalizedType))
-            };
-            optField
-          | idx @ FNColon(indexName, _indexType) ->
-            Some(
-              this.createIndexingMethod(
-                context,
-                idx,
-                fd.type,
-                CGNode::create(ObjectMethod(idx, indexName.pos.fileName)),
-              ),
-            )
-          }
-        | fd @ FunDef _ ->
-          cgNode = CGNode::create(AnonymousFunDef(fd));
-          (name, decl) = this.funDecl(context, true, fd, cgNode);
-          optField = TField::create(name.pos, name.value, false, decl);
+    fields = fieldTypes.filterMap(elt -> {
+      elt match {
+      | fd @ FieldTypeValue _ ->
+        fd.name match {
+        | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
+        | FNSymbol _ -> internal_error("TODO symbol")
+        | FNNormal(name) ->
+          normalizedType = this.normalize(context, fd.type);
+          optField = TField::create(
+            name.pos,
+            name.value,
+            fd.optional is Some _,
+            normalizedType,
+          );
           if (optField is None()) {
-            typingError(
-              Array[(name.pos, `Forbidden method name ${name.value}`)],
-            )
+            algebraicBranchField match {
+            | Some((existingPos, _existingType)) ->
+              typingError(
+                Array[
+                  (name.pos, `Duplicate field ${name.value}`),
+                  (existingPos, "Previously declared here"),
+                ],
+              )
+            | None() -> void
+            };
+            fd.optional match {
+            | Some(optionalPos) ->
+              typingError(
+                Array[(optionalPos, `Field ${name.value} cannot be optional`)],
+              )
+            | None() -> void
+            };
+            !algebraicBranchField = Some((name.pos, normalizedType))
           };
           optField
+        | idx @ FNColon(indexName, _indexType) ->
+          Some(
+            this.createIndexingMethod(
+              context,
+              idx,
+              fd.type,
+              CGNode::create(ObjectMethod(idx, indexName.pos.fileName)),
+            ),
+          )
         }
-      }),
-    );
+      | fd @ FunDef _ ->
+        cgNode = CGNode::create(AnonymousFunDef(fd));
+        (name, decl) = this.funDecl(context, true, fd, cgNode);
+        optField = TField::create(name.pos, name.value, false, decl);
+        if (optField is None()) {
+          typingError(Array[(name.pos, `Forbidden method name ${name.value}`)])
+        };
+        optField
+      }
+    });
+    tFields = TFields::create(fields);
     (algebraicBranchField, tFields)
   }
 }
