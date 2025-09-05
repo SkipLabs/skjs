@@ -83,28 +83,25 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult {
-    fields1.fields.geq(fields2.fields, (f1O, f2) ->
-      f1O match {
-      | None() ->
-        if (f2.isOptional) {
-          Success(void)
-        } else {
-          Failure(STMissingField(f2.name))
+    for (f1of2o in fields1.fields.iterDiffInterDiff(fields2.fields)) {
+      f1of2o match {
+      | (_, None()) -> void
+      | (None(), Some(f2)) ->
+        if (!f2.isOptional) {
+          return STMissingField(f2.name)
         }
-      | Some(f1) ->
+      | (Some(f1), Some(f2)) ->
         if (f1.isOptional && !f2.isOptional) {
-          Failure(STMissingField(f1.name))
+          return STMissingField(f1.name)
         } else {
           isSubTType(subst, env, f1.type, f2.type) match {
-          | STOk() -> Success(void)
-          | err @ STError _ -> Failure(err)
+          | STOk() -> void
+          | err @ STError _ -> return err
           }
         }
       }
-    ) match {
-    | Success(void) -> STOk()
-    | Failure(err) -> err
-    }
+    };
+    STOk()
   }
 }
 
