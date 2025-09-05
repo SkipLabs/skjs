@@ -169,6 +169,7 @@ mutable base class ApplyType(
     | TUnion(ty1, ty2) ->
       TUnion::create(this.type(env, ty1), this.type(env, ty2))
     | tvar @ TVar _ -> tvar.mapConstraints(ty -> this.type(env, ty))
+    | TKeyOf(ty) -> TKeyOf(this.type(env, ty))
     }
   }
 

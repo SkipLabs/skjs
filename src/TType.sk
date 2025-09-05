@@ -89,6 +89,10 @@ class TType private {
     static::create(v.pos, TInsts::single(v), Clauses::empty())
   }
 
+  static fun keyOf(pos: PosRange, ty: TType): this {
+    static::create(pos, TInsts::single(TKeyOf(ty)), Clauses::empty())
+  }
+
   // Unexpanded instance of a named generic type.
   static fun inst(name: Name, targs: TArgs): this {
     x = TSInst(name, targs);
@@ -226,6 +230,7 @@ class TType private {
       | TInter(ty1, ty2) -> TType::inter(subst, env, ty1, ty2)
       | TUnion(ty1, ty2) -> TType::union(subst, env, ty1, ty2)
       | tvar @ TVar _ -> subst.get(env, tvar, variance)
+      | ko @ TKeyOf _ -> ko.expand(this.pos, subst, env, variance)
       };
       if (tyDef.isTop()) return Clauses::top();
       !clauses = Clauses::union(subst, env, clauses, tyDef.clauses);
@@ -263,6 +268,10 @@ base class Variance {
   children =
   | Covariant()
   | Contravariant()
+
+  fun negate(): this
+  | Covariant() -> Contravariant()
+  | Contravariant() -> Covariant()
 }
 
 /***************************************************************************/
@@ -666,10 +675,27 @@ class STypes private (
 
   static fun nullish(pos: PosRange): this {
     static(
-      InternalKeyedArrayMap::single((TPrimUnit(TNull(), pos) : SType)).union(
-        InternalKeyedArrayMap::single((TPrimUnit(TUndefined(), pos) : SType)),
+      InternalKeyedArrayMap::two(
+        TPrimUnit(TNull(), pos),
+        TPrimUnit(TUndefined(), pos),
       ),
     )
+  }
+
+  static fun numberOrString(
+    pos: PosRange,
+    values: ?ArrayValues = None(),
+  ): this {
+    static(
+      InternalKeyedArrayMap::two(
+        TPrimValue(TString(), values, pos),
+        TPrimValue(TNum(), values, pos),
+      ),
+    )
+  }
+
+  static fun keyRange(pos: PosRange, n: Int): this {
+    static::numberOrString(pos, Some(ArrayValues::range(pos, n)))
   }
 
   fun map(f: SType -> SType): this {
@@ -784,6 +810,67 @@ class TVar private (
 class TSInst(name: Name, targs: TArgs) extends TInst {}
 
 class TArgs(targs: Array<TType>) uses XXHashable, Orderable
+
+/* Unexpanded keyof ty */
+// keyof is a decreasing function on types
+//
+// Rules
+// keyof (a | b) = (keyof a) & (keyof b)
+// keyof (a & b) = (keyof a) | (keyof b)
+// keyof { f: T } = 'f'
+// keyof { [k: T]: U } = T | `${T}`
+// keyof [T0, ..., Tn] = 0 | ... | n | '0' | ... | 'n'
+// keyof void, null, undefined, never = never (let's error)
+// keyof primitive, function, promise = fields of that object
+// keyof any = string | number (| symbol once we have them)
+class TKeyOf(ty: TType) extends TInst {
+  fun expand(
+    pos: PosRange,
+    subst: mutable Subst,
+    env: TEnv,
+    variance: Variance,
+  ): TType {
+    clauses = this.ty.expand(subst, env, variance.negate());
+    if (clauses.isEmpty()) typingError(Array[(pos, "keyof never")]);
+    result = TType::fromSTypes(pos, STypes::numberOrString(pos));
+    for (clause in clauses) {
+      if (!clause.vars.isEmpty()) {
+        typingError(
+          Array[
+            (pos, `Cannot resolve keyof ${prettyPrintType(false, this.ty)}`),
+          ],
+        )
+      };
+      clause.stypes match {
+      | None() -> /* Top */ void
+      | Some(clauseSTypes) ->
+        stypes = Vector::mcreateFromIterator(clauseSTypes.values());
+        while (!stypes.isEmpty()) {
+          stype = stypes.pop();
+          ty = stype match {
+          | TPrimValue(primKind, _, primPos) ->
+            objName = primKind.toString();
+            obj = env.newObject(subst.context, Name(primPos, objName), Array[]);
+            stypes.push(obj);
+            continue
+          | TTuple(tuple) ->
+            ty = TType::single(STypes::keyRange(pos, tuple.size()))
+          | TPrimUnit _
+          | TPromise _
+          | TFuns _ ->
+            typingError(
+              Array[
+                (pos, `Unsupported: keyof ${prettyPrintType(false, this.ty)}`),
+              ],
+            )
+          };
+          !result = TType::inter(subst, env, result, ty)
+        }
+      }
+    };
+    result
+  }
+}
 
 base class TInst uses XXHashable, Orderable
 
