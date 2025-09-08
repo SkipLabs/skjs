@@ -945,6 +945,10 @@ class Clauses private (
     }
   }
 
+  static fun singleClause(clause: Clause): this {
+    static(InternalKeyedArrayMap::single(clause))
+  }
+
   static fun single(tparam: TParam, stypes: ?STypes = None()): this {
     Clause::create(ArraySet::single(tparam), stypes) match {
     | None() -> static::empty()
@@ -1064,7 +1068,7 @@ base class STError extends STResult {
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
   | STTooManyTFun(TFun)
-  | STInvalidTypeParams(String)
+  | STInvalidClause(Clause)
   | STRec(STError, PosRange, TType)
 
   fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
@@ -1102,7 +1106,7 @@ base class STError extends STResult {
           false,
           TType::single(TFuns::singleFun(f, f.minSizeWitness)),
         )
-    | STInvalidTypeParams(n) -> "This is of type " + n
+    | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
     | STRec(st, _, ty2) -> st.toString(subst, env, ty2)
     }
   }

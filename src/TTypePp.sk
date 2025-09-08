@@ -350,7 +350,12 @@ mutable class TypePp{
           this.out(level, margin, tparam.name + ":" + tparam.id);
         };
         clauses.stypes match {
-        | None() -> void
+        | None() ->
+          invariant(
+            !clauses.vars.isEmpty(),
+            "several clauses with a Top clause",
+          );
+          void
         | Some(c) ->
           if (!clauses.vars.isEmpty()) this.out(level, margin, " extends ");
           for (k => sty in c) {
@@ -458,6 +463,13 @@ fun prettyPrintSType(stype: SType, compact: Bool = false): String {
 
 fun prettyPrintSTypes(stypes: STypes, compact: Bool = false): String {
   prettyPrintType(compact, TType::fromSTypes(PosRange::none, stypes))
+}
+
+fun prettyPrintClause(clause: Clause, compact: Bool = false): String {
+  prettyPrintType(
+    compact,
+    TType::fromClauses(PosRange::none, Clauses::singleClause(clause)),
+  )
 }
 
 module end;
