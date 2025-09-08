@@ -11,7 +11,7 @@ check-file () {
     if [[ "$file" == *.sk ]]; then # keep in sync with fmt-sk in Makefile
         fmt="skfmt --assume-filename=$file"
     elif [[ "$file" =~ .*\.(ts)$ ]]; then # keep in sync with .prettierignore
-        fmt="npx prettier --stdin-filepath $file --loglevel debug"
+        fmt="npx prettier --stdin-filepath $file"
     else
         exit 0;
     fi
