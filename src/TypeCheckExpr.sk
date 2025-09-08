@@ -226,7 +226,7 @@ extension class TypeChecker {
         };
         !result = TType::union(env.subst, this.tenv, result, tyArr[n])
 
-      | TObject(fields, objectPos) if (fields.fields.isEmpty()) ->
+      | TObject(fields, objectPos) if (fields.isEmpty()) ->
         !result = TType::top(objectPos)
 
       | TObject(fields, objectPos) ->
@@ -251,29 +251,33 @@ extension class TypeChecker {
             )
         } match {
         | None() -> void
-        | Some(idxSTypeToPassToIdxMethod) ->
-          fields.maybeGetType(env.subst, this.tenv, Name(pos, "[]")) match {
+        | Some(remainingIdxSType) ->
+          fields.maybeSingleIndex() match {
           | None() ->
-            idxSType.values match {
+            remainingIdxSType.values match {
             | None() ->
               typingError(
                 Array[
                   (pos, "Invalid access"),
-                  (idx.pos, `Index has non-literal type ${idxSType.kind}`),
+                  (
+                    idx.pos,
+                    `Index has non-literal type ${remainingIdxSType.kind}`,
+                  ),
                   (objectPos, "But object has no index field"),
                 ],
               )
             | Some(values) ->
               fields.getTypeTypingError(Name(pos, values.toStringList()))
             }
-          | Some(idxMethodType) ->
-            ty = this.call(
+          | Some(index) ->
+            this.checkSubType(
               env,
               pos,
-              idxMethodType,
-              Array[],
-              Array[TType::single(idxSTypeToPassToIdxMethod)],
-            ).withPos(pos);
+              "Invalid index key",
+              TType::single(remainingIdxSType),
+              index.keyType,
+            );
+            ty = index.valueType.unionUndefined(env.subst, this.tenv, pos);
             !result = TType::union(env.subst, this.tenv, result, ty)
           }
         }
@@ -487,7 +491,7 @@ extension class TypeChecker {
       obj = createObject(
         pos,
         algebraicBranchField,
-        TFields::create(fields.toArray()),
+        TFields::create(fields.toArray(), Array[]),
       );
       for (efield in efields) {
         efield match {
@@ -1120,7 +1124,7 @@ extension class TypeChecker {
                 env.subst,
                 this.tenv,
                 fields,
-                TFields::create(Array[field]),
+                TFields::create(Array[field], Array[]),
               ),
               objPos,
             ),

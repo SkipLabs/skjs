@@ -297,6 +297,7 @@ mutable class TypePp{
     multiLine: Bool,
   ): void {
     fieldArray = fields.fields;
+    indexes = fields.indexes;
     for (i => field in fieldArray) {
       fieldName = field.name;
       fieldType = field.type;
@@ -306,11 +307,25 @@ mutable class TypePp{
       };
       this.out(level, margin, ": ");
       this.type(level, margin, fieldType);
-      if (i != fieldArray.size() - 1) {
+      if (i != fieldArray.size() - 1 || !indexes.isEmpty()) {
         this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         };
+      }
+    };
+    for (i => index in indexes) {
+      this.out(level, margin, "[ ");
+      this.out(level, margin, static::escapeName(index.keyName));
+      this.out(level, margin, ": ");
+      this.type(level, margin, index.keyType);
+      this.out(level, margin, " ]: ");
+      this.type(level, margin, index.valueType);
+      if (i != indexes.size() - 1) {
+        this.out(level, margin, ",");
+        if (multiLine) this.newLine() else {
+          this.out(level, margin, " ")
+        }
       }
     }
   }

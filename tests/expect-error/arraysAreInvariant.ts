@@ -1,8 +1,3 @@
-///////////////////////////////////////////////////////////////////////////////
-// Intersection of Top
-///////////////////////////////////////////////////////////////////////////////
-
-// This currently gives Array<Top>
 type arrayNumberOrArrayString = Array<number> | Array<string>;
 
 // Involves an inst which is both an intersection and a named type
@@ -10,6 +5,8 @@ type arrayNumberOrArrayString = Array<number> | Array<string>;
 function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {
   const result = x[0];
   if (result === undefined) throw "Array is empty";
+  // TODO: Intersection on index field is not precise enough
+  // @ts-expect-error Invalid return type
   return result;
 }
 
