@@ -51,8 +51,7 @@ function testMixedObjectNormalFieldIncorrectIndexing(obj: tIndex2): boolean {
 function testMixedObjectNormalFieldIncorrectIndexingType(
   obj: tIndex2,
 ): boolean | string | undefined {
-  // TODO: should be missing field
-  // @ts-expect-error Invalid call
+  // @ts-expect-error Invalid index key
   return obj.missing;
 }
 

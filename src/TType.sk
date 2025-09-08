@@ -546,31 +546,72 @@ class TField private (
   }
 }
 
+/* Fields such as { [keyName: KeyType]: ValueType } */
+class TIndexField(
+  pos: PosRange,
+  keyName: String,
+  keyType: TType,
+  valueType: TType,
+) uses XXHashable, Orderable {
+  fun mapTypes(f: TType -> TType): this {
+    keyType = f(this.keyType);
+    valueType = f(this.valueType);
+    this with {keyType, valueType}
+  }
+}
+
 class TFields private (
   fields: InternalKeyedArrayMap<String, TField>,
+  indexes: Array<TIndexField>,
+  /* There can be several index fields.
+     Typescript allows only one per object, but is fine with
+     intersecting two objects with index fields, so it's like having
+     two of them. This array is expected to have zero or one element
+     most of the time, or at most a few elements.
+
+     TODO: allow only subtypes of string | number (| symbol)
+     TODO: if a field name is included an index key type, then its
+      type must be a subtype of the index key type
+  */
 ) uses XXHashable, Orderable {
   static fun empty(): this {
-    static(InternalKeyedArrayMap::empty())
+    static(InternalKeyedArrayMap::empty(), Array[])
   }
 
-  static fun create(fields: Array<TField>): this {
+  static fun create(fields: Array<TField>, indexes: Array<TIndexField>): this {
     static(
       InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
+      indexes,
     )
   }
 
-  fun map(f: TField -> TField): this {
-    static(this.fields.map(f))
+  fun isEmpty(): Bool {
+    this.fields.isEmpty() && this.indexes.isEmpty()
+  }
+
+  fun map(
+    fField: TField -> TField,
+    fIndexField: TIndexField -> TIndexField,
+  ): this {
+    static(this.fields.map(fField), this.indexes.map(fIndexField))
   }
 
   fun filterMap(f: TField -> ?TField): this {
-    static(this.fields.filterMap(f))
+    static(this.fields.filterMap(f), this.indexes)
   }
 
   fun values(): mutable Iterator<TField> {
     this.fields.values()
+  }
+
+  fun maybeSingleIndex(): ?TIndexField {
+    this.indexes.size() match {
+    | 0 -> None()
+    | 1 -> Some(this.indexes[0])
+    | _ -> internal_error("TODO: multiple indexes")
+    }
   }
 
   fun maybeGet(fieldName: String): ?TField {

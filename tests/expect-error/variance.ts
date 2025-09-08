@@ -1,4 +1,3 @@
-// This currently normalizes to Top
 type arrayBooleanOrArrayString = Array<boolean> | Array<string>;
 
 // The intersection does not behave as expected since it appears in
@@ -6,6 +5,8 @@ type arrayBooleanOrArrayString = Array<boolean> | Array<string>;
 function interWithTop<T>(...x: T[] & arrayBooleanOrArrayString): T {
   const result = x[0];
   if (result === undefined) throw "Array is empty";
+  // TODO: Intersection on index field is not precise enough
+  // @ts-expect-error Invalid return type
   return result;
 }
 

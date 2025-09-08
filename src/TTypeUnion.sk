@@ -101,6 +101,18 @@ extension class TField {
   }
 }
 
+extension class TIndexField {
+  static fun union(subst: mutable Subst, env: TEnv, x: this, y: this): ?this {
+    /* Currently over-approximating by a union
+       for { [f: 0 | 1]: 4 | 5 } | { [g: 1 | 2]: 5 | 6 },
+       the result would be { [f: 0]: 4 | 5, [fg: 1]: 4 | 5 | 6, [g: 2]: 5 | 6}
+       but we return { [f: 0 | 1 | 2]: 4 | 5 | 6 } */
+    valueType = TType::union(subst, env, x.valueType, y.valueType);
+    keyType = TType::union(subst, env, x.keyType, y.keyType);
+    Some(static(x.pos, x.keyName, keyType, valueType))
+  }
+}
+
 extension class STypes {
   static fun union(
     subst: mutable Subst,
@@ -206,7 +218,23 @@ fun unionTFields(
     .concat(noMatch1.map(x -> x.withOptional()))
     .concat(noMatch2.map(x -> x.withOptional()))
     .sortedBy(x ~> x.name);
-  TFields::create(fields)
+  // TODO: handle intersection between normal fields and index fields
+  indexes = {
+    index1o = fields1.maybeSingleIndex();
+    index2o = fields2.maybeSingleIndex();
+    (index1o, index2o) match {
+    | (None(), None()) -> None()
+    | (Some(index), None())
+    | (None(), Some(index)) ->
+      Some(index)
+    | (Some(index1), Some(index2)) ->
+      TIndexField::union(subst, env, index1, index2)
+    } match {
+    | None() -> Array[]
+    | Some(index) -> Array[index]
+    }
+  };
+  TFields::create(fields, indexes)
 }
 
 fun unionTObject(
