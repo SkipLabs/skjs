@@ -94,7 +94,7 @@ extension class TypeChecker {
     | "string" ->
       (filter, default) = (
         x ~> (x is TPrimValue(TString(), _, _)),
-        Some(TPrimValue(TString(), None(), typePos)),
+        Some(TPrimValue::string(typePos)),
       );
       this.setLocal(
         env,
@@ -105,7 +105,7 @@ extension class TypeChecker {
     | "number" ->
       (filter, default) = (
         x ~> x is TPrimValue(TNum(), _, _),
-        Some(TPrimValue(TNum(), None(), typePos)),
+        Some(TPrimValue::number(typePos)),
       );
       this.setLocal(
         env,
@@ -116,7 +116,7 @@ extension class TypeChecker {
     | "bigint" ->
       (filter, default) = (
         x ~> x is TPrimValue(TBigInt(), _, _),
-        Some(TPrimValue(TBigInt(), None(), typePos)),
+        Some(TPrimValue::bigint(typePos)),
       );
       this.setLocal(
         env,
@@ -127,7 +127,7 @@ extension class TypeChecker {
     | "boolean" ->
       (filter, default) = (
         x ~> x is TPrimValue(TBool(), _, _),
-        Some(TPrimValue(TBool(), None(), typePos)),
+        Some(TPrimValue::boolean(typePos)),
       );
       this.setLocal(
         env,
@@ -137,7 +137,7 @@ extension class TypeChecker {
       )
     | "undefined" ->
       filter = x ~>
-        x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _);
+        x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _);
       this.setLocal(
         env,
         local,
@@ -146,7 +146,7 @@ extension class TypeChecker {
       )
     | "object" ->
       (filter, default) = (
-        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimVoid(TNull(), _),
+        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimUnit(TNull(), _),
         Some(TObject(TFields::empty(), typePos)),
       );
       this.setLocal(
@@ -169,7 +169,7 @@ extension class TypeChecker {
 
   fun evalNullEquality(env: mutable TCEnv, local: Name, target: Bool): void {
     if (!target) {
-      this.setLocal(env, local, None(), x ~> !(x is TPrimVoid(TNull(), _)))
+      this.setLocal(env, local, None(), x ~> !(x is TPrimUnit(TNull(), _)))
     }
   }
 
@@ -180,7 +180,7 @@ extension class TypeChecker {
   ): void {
     if (!target) {
       this.setLocal(env, local, None(), x ~>
-        !(x is TPrimVoid(TUndefined(), _) || x is TPrimVoid(TVoid(), _))
+        !(x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _))
       )
     }
   }

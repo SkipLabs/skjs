@@ -522,10 +522,7 @@ class TEnv{
     subst = Subst::mcreate{context};
     pos = typeAst.pos;
     typeAst.value match {
-    | TABigIntLiteral(x) ->
-      TType::single(
-        TPrimValue(TBigInt(), Some(ArrayValues::single((pos, x))), pos),
-      )
+    | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
     | TAAssertIs _ -> internal_error("TODO assertIs ")
     | TAAbstract _ -> internal_error("TODO abstract ")
     | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
@@ -540,19 +537,13 @@ class TEnv{
     | TAReadonly _ -> internal_error("TODO readonly ")
     | TAExtends _ -> internal_error("TODO extends ")
     | TAExtendsQuestion _ -> internal_error("TODO extendsQuestion ")
-    | TAStringLiteral(x) ->
-      TType::single(
-        TPrimValue(TString(), Some(ArrayValues::single((pos, x))), pos),
-      )
-    | TANumLiteral(x) ->
-      TType::single(
-        TPrimValue(TNum(), Some(ArrayValues::single((pos, x))), pos),
-      )
+    | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
+    | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(expr) ->
       expr.value match {
       | Var(name) ->
         name.value match {
-        | "undefined" -> TType::single(TPrimVoid(TUndefined(), name.pos))
+        | "undefined" -> TType::single(TPrimUnit(TUndefined(), name.pos))
         | _ -> internal_error(`TODO typeof ${name.value}`)
         }
       | Binop(BODot(), _, Expr(_, Var(_))) -> internal_error("TODO typeof")
@@ -561,11 +552,11 @@ class TEnv{
     | TAPrim(kind) ->
       TType::single(
         kind match {
-        | TPKNull() -> TPrimVoid(TNull(), pos)
-        | TPKBool() -> TPrimValue(TBool(), None(), pos)
-        | TPKNum() -> TPrimValue(TNum(), None(), pos)
-        | TPKString() -> TPrimValue(TString(), None(), pos)
-        | TPKBigInt() -> TPrimValue(TBigInt(), None(), pos)
+        | TPKNull() -> TPrimUnit(TNull(), pos)
+        | TPKBool() -> TPrimValue::boolean(pos)
+        | TPKNum() -> TPrimValue::number(pos)
+        | TPKString() -> TPrimValue::string(pos)
+        | TPKBigInt() -> TPrimValue::bigint(pos)
         },
       )
     | TAObject(fields) ->
@@ -593,12 +584,12 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
-      TType::single(TPrimVoid(TVoid(), p))
+      TType::single(TPrimUnit(TVoid(), p))
     | TAInst(n @ Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
-      TType::single(TPrimVoid(TUndefined(), p))
+      TType::single(TPrimUnit(TUndefined(), p))
     | TAInst(n @ Name(_, "Promise"), targs) ->
       if (targs.size() != 1) {
         typingError(Array[(n.pos, "Invalid number of type arguments")])
@@ -614,9 +605,7 @@ class TEnv{
       if (targs.size() != 0) {
         typingError(Array[(pos, "Invalid number of type arguments")])
       };
-      TType::single(
-        TPrimValue(TBool(), Some(ArrayValues::single((pos, x))), pos),
-      )
+      TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
       if (this.tparams.containsKey(n.value)) {
         if (targs.size() != 0) {

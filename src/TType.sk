@@ -187,7 +187,7 @@ class TType private {
     | Some(stypes) ->
       for (stype in stypes) {
         stype match {
-        | TPrimVoid _
+        | TPrimUnit _
         | TPrimValue _ ->
           continue
         | TTuple(tys, _) ->
@@ -296,9 +296,7 @@ class TConstr(
   fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
     if (fieldName.value == kAlgebraicBranchFieldName) {
       pos = this.tagPos;
-      TType::single(
-        TPrimValue(TString(), Some(ArrayValues::single((pos, this.tag))), pos),
-      )
+      TType::single(TPrimValue::single(TString(), this.tag, pos))
     } else {
       this.fields.getType(subst, tenv, fieldName)
     }
@@ -429,7 +427,7 @@ would be a distinct type from undefined. It contains the value undefined but
 with no operations permitted on it.
 
 We should ensure that nothing non-undefined can be of type void. */
-base class TPrimVoidKind uses XXHashable, Orderable {
+base class TPrimUnitKind uses XXHashable, Orderable {
   children =
   | TUndefined()
   | TVoid()
@@ -466,14 +464,13 @@ base class SType private (
   pos: PosRange,
 ) uses XXHashable, Orderable, Projectable<Int> {
   children =
-  | TPrimVoid(TPrimVoidKind)
   | TPromise(TType)
 
   fun tag(): Int {
     this match {
-    | TPrimVoid(TUndefined(), _) -> 0
-    | TPrimVoid(TVoid(), _) -> 1
-    | TPrimVoid(TNull(), _) -> 2
+    | TPrimUnit(TUndefined(), _) -> 0
+    | TPrimUnit(TVoid(), _) -> 1
+    | TPrimUnit(TNull(), _) -> 2
     | TPrimValue(TBool(), _, _) -> 3
     | TPrimValue(TNum(), _, _) -> 4
     | TPrimValue(TString(), _, _) -> 5
@@ -491,7 +488,33 @@ base class SType private (
   }
 }
 
-class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType
+class TPrimUnit(kind: TPrimUnitKind) extends SType
+
+class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
+  static fun single(kind: TPrimValueKind, value: String, pos: PosRange): this {
+    static(kind, Some(ArrayValues::single((pos, value))), pos)
+  }
+
+  static fun full(kind: TPrimValueKind, pos: PosRange): this {
+    static(kind, None(), pos)
+  }
+
+  static fun boolean(pos: PosRange): this {
+    static::full(TBool(), pos)
+  }
+
+  static fun number(pos: PosRange): this {
+    static::full(TNum(), pos)
+  }
+
+  static fun string(pos: PosRange): this {
+    static::full(TString(), pos)
+  }
+
+  static fun bigint(pos: PosRange): this {
+    static::full(TBigInt(), pos)
+  }
+}
 
 class TField private (
   pos: PosRange,
@@ -602,8 +625,8 @@ class STypes private (
 
   static fun nullish(pos: PosRange): this {
     static(
-      InternalKeyedArrayMap::single((TPrimVoid(TNull(), pos) : SType)).union(
-        InternalKeyedArrayMap::single((TPrimVoid(TUndefined(), pos) : SType)),
+      InternalKeyedArrayMap::single((TPrimUnit(TNull(), pos) : SType)).union(
+        InternalKeyedArrayMap::single((TPrimUnit(TUndefined(), pos) : SType)),
       ),
     )
   }
@@ -829,7 +852,7 @@ class Clause private (
   static fun undefined(pos: PosRange): this {
     static(
       ArraySet::empty(),
-      Some(STypes::single(TPrimVoid(TUndefined(), pos))),
+      Some(STypes::single(TPrimUnit(TUndefined(), pos))),
     )
   }
 
@@ -1053,7 +1076,7 @@ base class STError extends STResult {
         `Out of the type: ${expandTVars(subst, env, ty)}`
     | STTooManySType(sty) ->
       sty match {
-      | TPrimVoid(kind, _) -> `This is a ${kind}`
+      | TPrimUnit(kind, _) -> `This is a ${kind}`
       | TPrimValue(TString(), None(), _) ->
         "This is of type string. " +
           "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."

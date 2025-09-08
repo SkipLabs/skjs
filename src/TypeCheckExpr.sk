@@ -307,8 +307,8 @@ extension class TypeChecker {
         obj = this.tenv.newObject(env.context, Name(primPos, objName), Array[]);
         stypes.push(obj)
 
-      | TPrimVoid(TUndefined(), undefPos)
-      | TPrimVoid(
+      | TPrimUnit(TUndefined(), undefPos)
+      | TPrimUnit(
         TNull(),
         undefPos,
       ) if (optionalChaining) ->
@@ -375,12 +375,12 @@ extension class TypeChecker {
 
     pos = e.pos;
     e.value match {
-    | Number(_) -> TType::single(TPrimValue(TNum(), None(), pos))
-    | BigInt(_) -> TType::single(TPrimValue(TBigInt(), None(), pos))
-    | EString(_) -> TType::single(TPrimValue(TString(), None(), pos))
+    | Number(_) -> TType::single(TPrimValue::number(pos))
+    | BigInt(_) -> TType::single(TPrimValue::bigint(pos))
+    | EString(_) -> TType::single(TPrimValue::string(pos))
     | TemplateLiteral(_parts, exprs) ->
       // Type check all embedded expressions - allow primitive types that can be converted to strings
-      strType = TType::single(TPrimValue(TString(), None(), pos));
+      strType = TType::single(TPrimValue::string(pos));
       for (expr in exprs) {
         ety = this.expr(env, expr);
         this.checkStringifiable(env, expr.pos, ety);
@@ -389,11 +389,11 @@ extension class TypeChecker {
 
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
-      TType::single(TPrimValue(TBool(), None(), pos))
+      TType::single(TPrimValue::boolean(pos))
     | Var(Name(_, "null")) ->
-      this.makeBoundTVar(env, TType::single(TPrimVoid(TNull(), pos)))
+      this.makeBoundTVar(env, TType::single(TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
-      this.makeBoundTVar(env, TType::single(TPrimVoid(TUndefined(), pos)))
+      this.makeBoundTVar(env, TType::single(TPrimUnit(TUndefined(), pos)))
     | Var(local) ->
       if (env.localObjects.containsKey(local.value)) {
         env.usedObjects![local.value] = local.pos
@@ -534,14 +534,14 @@ extension class TypeChecker {
           this.checkSubType(env, pos, "Invalid super call", x, y)
         })
       };
-      TType::single(TPrimVoid(TVoid(), pos))
+      TType::single(TPrimUnit(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       exprTy = this.expr(env, args[0]);
       clauses = exprTy.expand(env.subst, this.tenv, Covariant());
       ty = TType::fromClauses(exprTy.pos, clauses);
       print_error(prettyPrintType(false, ty));
-      TType::single(TPrimVoid(TVoid(), pos))
+      TType::single(TPrimUnit(TVoid(), pos))
     | Call(f, targs, args) ->
       rty = this.call(
         env,
@@ -577,7 +577,7 @@ extension class TypeChecker {
     | Unop(uop, subExpr) ->
       uop match {
       | UOExclamationMark() ->
-        bool = TType::single(TPrimValue(TBool(), None(), pos));
+        bool = TType::single(TPrimValue::boolean(pos));
         this.checkSubType(env, pos, "Invalid !", this.expr(env, subExpr), bool);
         bool
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
@@ -594,7 +594,7 @@ extension class TypeChecker {
         | Some(TPrimValue(k @ TString(), _, primPos))
         | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
           ty2 = this.expr(env, e2);
-          res = TType::single(TPrimValue(k, None(), primPos));
+          res = TType::single(TPrimValue::full(k, primPos));
           this.checkSubType(env, e2.pos, "Invalid + operand", ty2, res);
           res
         | _ ->
@@ -626,7 +626,7 @@ extension class TypeChecker {
             }
           }
         };
-        TType::single(TPrimValue(TBool(), None(), pos))
+        TType::single(TPrimValue::boolean(pos))
 
       | BOLogicalAnd() ->
         ty1 = this.expr(env, e1);
@@ -635,7 +635,7 @@ extension class TypeChecker {
           pos,
           "Invalid &&",
           ty1,
-          TType::single(TPrimValue(TBool(), None(), e1.pos)),
+          TType::single(TPrimValue::boolean(e1.pos)),
         );
         this.evalCond(env, e1, true);
         ty2 = this.expr(env, e2);
@@ -644,9 +644,9 @@ extension class TypeChecker {
           pos,
           "Invalid &&",
           ty2,
-          TType::single(TPrimValue(TBool(), None(), e2.pos)),
+          TType::single(TPrimValue::boolean(e2.pos)),
         );
-        TType::single(TPrimValue(TBool(), None(), pos))
+        TType::single(TPrimValue::boolean(pos))
       | BOLogicalOr() ->
         ty1 = this.expr(env, e1);
         this.checkSubType(
@@ -654,7 +654,7 @@ extension class TypeChecker {
           pos,
           "Invalid ||",
           ty1,
-          TType::single(TPrimValue(TBool(), None(), e1.pos)),
+          TType::single(TPrimValue::boolean(e1.pos)),
         );
         this.evalCond(env, e1, false);
         ty2 = this.expr(env, e2);
@@ -663,9 +663,9 @@ extension class TypeChecker {
           pos,
           "Invalid ||",
           ty2,
-          TType::single(TPrimValue(TBool(), None(), e2.pos)),
+          TType::single(TPrimValue::boolean(e2.pos)),
         );
-        TType::single(TPrimValue(TBool(), None(), pos))
+        TType::single(TPrimValue::boolean(pos))
 
       | BODot() ->
         e2.value match {
@@ -722,7 +722,7 @@ extension class TypeChecker {
             ],
           )
         };
-        TType::single(TPrimValue(TBool(), None(), pos))
+        TType::single(TPrimValue::boolean(pos))
 
       | BOOpAssignment(assOp) ->
         this.expr(
@@ -757,7 +757,7 @@ extension class TypeChecker {
             ],
           )
         };
-        TType::single(TPrimValue(kind1, None(), pos))
+        TType::single(TPrimValue::full(kind1, pos))
 
       | BONullishCoalescing() ->
         ty1 = this.nonVoidExpr(pos, env, e1);
@@ -770,9 +770,9 @@ extension class TypeChecker {
           hasOthers = false;
           for (stype in stypes) {
             stype match {
-            | TPrimVoid(TVoid(), _) -> !hasVoid = true
-            | TPrimVoid(TNull(), _)
-            | TPrimVoid(TUndefined(), _) ->
+            | TPrimUnit(TVoid(), _) -> !hasVoid = true
+            | TPrimUnit(TNull(), _)
+            | TPrimUnit(TUndefined(), _) ->
               !hasNullOrUndefined = true
             | _ -> !hasOthers = true
             }
@@ -810,17 +810,17 @@ extension class TypeChecker {
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(env, e1);
       _ = this.tenv.getClass(env.context, className);
-      TType::single(TPrimValue(TBool(), None(), pos))
+      TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, env, subExpr);
-      TType::single(TPrimValue(TString(), None(), pos))
+      TType::single(TPrimValue::string(pos))
 
     | PostOp(pop, subExpr) ->
       pop match {
       | PODecr()
       | POIncr() ->
-        num = TType::single(TPrimValue(TNum(), None(), pos));
+        num = TType::single(TPrimValue::number(pos));
         ty = this.expr(env, subExpr);
         this.checkSubType(env, pos, "Expected integer", ty, num);
         num
@@ -859,7 +859,7 @@ extension class TypeChecker {
         e1.pos,
         "Invalid ? condition",
         cond,
-        TType::single(TPrimValue(TBool(), None(), e1.pos)),
+        TType::single(TPrimValue::boolean(e1.pos)),
       );
 
       // Create scopes for the true and false branches with type refinements
@@ -977,39 +977,16 @@ extension class TypeChecker {
     e.value match {
     | AsConst(subExpr) ->
       typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
-    | Var(Name(_, "null")) -> Some(TType::single(TPrimVoid(TNull(), pos)))
+    | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
     | Var(Name(_, "undefined")) ->
-      Some(TType::single(TPrimVoid(TUndefined(), pos)))
-    | Number(n) ->
-      Some(
-        TType::single(
-          TPrimValue(TNum(), Some(ArrayValues::single((pos, n))), pos),
-        ),
-      )
-    | BigInt(n) ->
-      Some(
-        TType::single(
-          TPrimValue(TBigInt(), Some(ArrayValues::single((pos, n))), pos),
-        ),
-      )
+      Some(TType::single(TPrimUnit(TUndefined(), pos)))
+    | Number(n) -> Some(TType::single(TPrimValue::single(TNum(), n, pos)))
+    | BigInt(n) -> Some(TType::single(TPrimValue::single(TBigInt(), n, pos)))
     | Var(Name(_, "true")) ->
-      Some(
-        TType::single(
-          TPrimValue(TBool(), Some(ArrayValues::single((pos, "true"))), pos),
-        ),
-      )
+      Some(TType::single(TPrimValue::single(TBool(), "true", pos)))
     | Var(Name(_, "false")) ->
-      Some(
-        TType::single(
-          TPrimValue(TBool(), Some(ArrayValues::single((pos, "false"))), pos),
-        ),
-      )
-    | EString(n) ->
-      Some(
-        TType::single(
-          TPrimValue(TString(), Some(ArrayValues::single((pos, n))), pos),
-        ),
-      )
+      Some(TType::single(TPrimValue::single(TBool(), "false", pos)))
+    | EString(n) -> Some(TType::single(TPrimValue::single(TString(), n, pos)))
     | _ -> None()
     }
   }

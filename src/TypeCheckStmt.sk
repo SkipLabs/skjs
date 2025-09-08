@@ -14,11 +14,11 @@ extension class TypeChecker {
     | Return(pos, eOpt) ->
       retType = this.retType match {
       | None() ->
-        TType::single(TPrimVoid(TVoid(), st.pos)) // constructor
+        TType::single(TPrimUnit(TVoid(), st.pos)) // constructor
       | Some(x) -> x
       };
       (epos, etype) = eOpt match {
-      | None() -> (pos, TType::single(TPrimVoid(TVoid(), pos)))
+      | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
       | Some(e) -> (e.pos, this.expr(env, e, true))
       };
       rtype = if (this.isAsync) {

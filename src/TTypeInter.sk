@@ -258,7 +258,7 @@ fun interSType(
   sty2: SType,
 ): ?SType {
   (sty1, sty2) match {
-  | (TPrimVoid(k1, _), TPrimVoid(k2, _)) ->
+  | (TPrimUnit(k1, _), TPrimUnit(k2, _)) ->
     if (k1 != k2) internal_error("primitive void kinds must match");
     Some(sty1)
 
