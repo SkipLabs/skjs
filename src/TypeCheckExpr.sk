@@ -606,8 +606,7 @@ extension class TypeChecker {
           )
         }
       | BOAssignment() -> this.assign(env, pos, e1, e2)
-      | BOStrictInequality()
-      | BOStrictEquality() ->
+      | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, env, e1);
         ty2 = this.nonVoidExpr(pos, env, e2);
         if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
@@ -617,10 +616,9 @@ extension class TypeChecker {
             isSubTType(env.subst, this.tenv, ty2, ty1) match {
             | STOk() -> void
             | STError _ ->
-              alwaysResult = op match {
+              alwaysResult = op_ match {
               | BOStrictEquality() -> "false"
               | BOStrictInequality() -> "true"
-              | _ -> internal_error("Internal error: unexpected operator")
               };
               typingError(
                 Array[(pos, "This is equality is always " + alwaysResult)],

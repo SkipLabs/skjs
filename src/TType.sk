@@ -462,7 +462,9 @@ base class TPrimValueKind uses XXHashable, Orderable {
   }
 }
 
-base class SType(pos: PosRange) uses XXHashable, Orderable, Projectable<Int> {
+base class SType private (
+  pos: PosRange,
+) uses XXHashable, Orderable, Projectable<Int> {
   children =
   | TPrimVoid(TPrimVoidKind)
   | TPromise(TType)
