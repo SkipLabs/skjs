@@ -7,6 +7,7 @@
 
 module SKJS;
 
+const cstrName: String = "constructor";
 value class CstrType(cstr: ?TType)
 
 class TEnv{
@@ -166,7 +167,15 @@ class TEnv{
       )
     };
     visitedClasses = SortedSet[];
-    CstrType(this.findConstructor(context, visitedClasses, className, targs))
+    CstrType(
+      this.findConstructor(
+        context,
+        visitedClasses,
+        className,
+        c.tparams,
+        targs,
+      ),
+    )
   }
 
   fun newObject(
@@ -191,7 +200,7 @@ class TEnv{
       fields,
       indexes,
       visitedClasses,
-      false,
+      None(),
       className,
       targs,
       fieldType ~> {
@@ -213,6 +222,7 @@ class TEnv{
     context: mutable SKStore.Context,
     className: Name,
   ): TObject {
+    c = this.getClass(context, className);
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
@@ -222,15 +232,44 @@ class TEnv{
       fields,
       indexes,
       visitedClasses,
-      true,
+      Some(c.tparams),
       className,
       targs,
       fieldType ~> fieldType.isStatic(),
     );
+    pos = className.pos;
+    if (!fields.containsKey(cstrName)) {
+      fields![cstrName] = this.makeEmptyConstructor(context, pos, className, c);
+    };
     TObject(
       TFields::create(fields.values().collect(Array), indexes.toArray()),
-      className.pos,
+      pos,
     )
+  }
+
+  private fun makeEmptyConstructor(
+    context: mutable SKStore.Context,
+    pos: PosRange,
+    className: Name,
+    c: Class,
+  ): TField {
+    cgNode = CGNode::create(
+      Method(
+        Some(FNNormal(Name(pos, cstrName))),
+        className,
+        c.name.pos.fileName,
+        true,
+      ),
+    );
+    targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
+    retType = Type(pos, TAInst(className, targs));
+    ftype = Type(pos, TAFun(true, c.tparams, Array[], retType, cgNode));
+    TField::create(
+      pos,
+      "constructor",
+      false,
+      this.normalize(context, ftype),
+    ).fromSome()
   }
 
   fun addTParams(
@@ -301,7 +340,7 @@ class TEnv{
     acc: mutable Map<String, TField>,
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
-    isStatic: Bool,
+    isStatic: ?Array<TypeParam>,
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
@@ -309,7 +348,7 @@ class TEnv{
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
-      !isStatic,
+      isStatic is None(),
       className,
       targs,
     );
@@ -323,7 +362,7 @@ class TEnv{
           visitedClasses,
           isStatic,
           parentName,
-          if (isStatic) Array[] else {
+          if (isStatic is Some _) Array[] else {
             paramTArgs.map(targ -> this.normalize(context, targ))
           },
           filter,
@@ -332,9 +371,9 @@ class TEnv{
       }
     };
     for (fieldType in cls.fields) {
-      if (!filter(fieldType)) continue;
       fieldType match {
       | field @ FieldTypeValue _ ->
+        if (!filter(fieldType)) continue;
         field.setGet match {
         | None() -> void
         | Some(FieldGetSet(_, pos)) -> notSupported(pos)
@@ -371,14 +410,29 @@ class TEnv{
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ FunDef _ ->
-        if (fd.name is Some(FNNormal(Name(_, "constructor")))) continue;
-        metIsStatic = fieldType.modifiers.modifiers.containsKey("static");
-        if (isStatic && !metIsStatic) continue;
-        if (!isStatic && metIsStatic) continue;
+        isConstructor = fd.name is Some(FNNormal(Name(_, "constructor")));
+        metIsStatic = if (isConstructor) {
+          true
+        } else {
+          fieldType.modifiers.modifiers.containsKey("static")
+        };
+        if (isStatic is Some _ && !metIsStatic) continue;
+        if (isStatic is None() && metIsStatic) continue;
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, fd.isStatic()),
         );
-        (metName, metType) = this.funDecl(context, true, fd, cgNode);
+        (metName, metType) = if (isConstructor) {
+          name = fd.name match {
+          | Some(FNNormal(name)) -> name
+          | _ -> internal_error("Unexpected constructor name")
+          };
+          (
+            name,
+            this.makeConstructor(context, className, isStatic.fromSome(), fd),
+          )
+        } else {
+          this.funDecl(context, true, fd, cgNode)
+        };
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
           typingError(
@@ -394,6 +448,7 @@ class TEnv{
     context: mutable SKStore.Context,
     visitedClasses: SortedSet<String>,
     className: Name,
+    tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?TType {
     (!this, cls) = this.processClassSetup(
@@ -406,11 +461,7 @@ class TEnv{
     for (fieldType in cls.fields) {
       fieldType match {
       | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
-        cgNode = CGNode::create(
-          Method(fd.name, className, fd.pos.fileName, true),
-        );
-        (_metName, metType) = this.funDecl(context, true, fd, cgNode);
-        return Some(metType)
+        return Some(this.makeConstructor(context, className, tparams, fd))
       | _ -> void
       }
     };
@@ -421,12 +472,75 @@ class TEnv{
           context,
           visitedClasses,
           parentName,
+          tparams,
           paramTArgs.map(targ -> this.normalize(context, targ)),
         )
       | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
     };
     None()
+  }
+
+  // Normalizes constructor signatures by making type parameters and
+  // return types explicit.  For example, in a generic class A<T> {
+  // constructor() {} }, the constructor is transformed into:
+  // constructor<T>(...): A<T> This ensures constructors reflect their
+  // class's type parameters and return type.
+
+  fun makeConstructor(
+    context: mutable SKStore.Context,
+    className: Name,
+    tparams: Array<TypeParam>,
+    fd: FunDef,
+  ): TType {
+    cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
+    !tparams = tparams.map(x -> {
+      // We give the tparams a different name to make sure they are
+      // not confused with the type parameters of the class
+      !x.id = Id::createFromString("$" + x.id.id);
+      x
+    });
+    params = fd.params.map(this.convertParam);
+    retType = fd.retType.i1 match {
+    | None() -> // constructor
+      Type(
+        fd.retType.i0,
+        TAInst(
+          Name(fd.retType.i0, className.value),
+          tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
+        ),
+      )
+    | Some(x) ->
+      typingError(Array[(x.pos, "Unexpected annotation for constructor")])
+    };
+    this.normalize(
+      context,
+      Type(fd.pos, TAFun(true, tparams, params, retType, cgNode)),
+    );
+  }
+
+  private fun convertParam(param: Param): TAFunParam {
+    (paramName, ty) = param.name match {
+    | PNName(n, tyOpt) ->
+      tyOpt match {
+      | None() ->
+        param.type match {
+        | None() -> typingError(Array[(n.pos, "Missing type annotation")])
+        | Some(ty) -> (TAParamName(n), ty)
+        }
+      | Some(ty) -> (TAParamName(n), ty)
+      }
+    | PNDDD(n) ->
+      param.type match {
+      | None() -> typingError(Array[(n.pos, "Missing type annotation")])
+      | Some(x) -> (TAParamSpread(n), x)
+      }
+    | _ ->
+      typingError(
+        Array[(param.pos, "TODO: support for param pattern in typeDecl")],
+      )
+    };
+    TAFunParam(Some(paramName), param.optional, ty)
   }
 
   fun funDecl(
@@ -447,32 +561,7 @@ class TEnv{
         TAFun(
           isMethod,
           fd.tparams,
-          fd.params.map(param -> {
-            (paramName, ty) = param.name match {
-            | PNName(n, tyOpt) ->
-              tyOpt match {
-              | None() ->
-                param.type match {
-                | None() ->
-                  typingError(Array[(n.pos, "Missing type annotation")])
-                | Some(ty) -> (TAParamName(n), ty)
-                }
-              | Some(ty) -> (TAParamName(n), ty)
-              }
-            | PNDDD(n) ->
-              param.type match {
-              | None() -> typingError(Array[(n.pos, "Missing type annotation")])
-              | Some(x) -> (TAParamSpread(n), x)
-              }
-            | _ ->
-              typingError(
-                Array[
-                  (param.pos, "TODO: support for param pattern in typeDecl"),
-                ],
-              )
-            };
-            TAFunParam(Some(paramName), param.optional, ty)
-          }),
+          fd.params.map(this.convertParam),
           fd.retType.i1 match {
           | None() -> // constructor
             Type(fd.retType.i0, TAInst(Name(fd.retType.i0, "void"), Array[]))
@@ -495,10 +584,29 @@ class TEnv{
     | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
     | TAAsserts _ -> internal_error("TODO asserts ")
     | TAIs _ -> internal_error("TODO is ")
-    | TANew _ -> internal_error("TODO new ")
     | TAKeyOf(ty) ->
       targetType = this.normalize(context, ty);
       this.keyOfType(subst, targetType, pos)
+    | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
+      TType::single(
+        TObject(
+          TFields::create(
+            Array[
+              TField::create(
+                pos,
+                cstrName,
+                false,
+                this.normalize(
+                  context,
+                  Type(tyPos, TAFun(true, clauses, params, retType, cgNode)),
+                ),
+              ).fromSome(),
+            ],
+          ),
+          pos,
+        ),
+      )
+    | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> internal_error("TODO emptyArray ")
     | TAInfer _ -> internal_error("TODO infer ")
     | TATemplate _ -> internal_error("TODO template ")

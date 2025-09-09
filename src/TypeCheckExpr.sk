@@ -180,6 +180,7 @@ extension class TypeChecker {
     objType: TType,
     idx: Expr,
     optionalChaining: Bool = false,
+    allowConstructor: Bool = false,
   ): TType {
     stypes = objType.getSTypes(env.subst, this.tenv, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) ->
@@ -197,7 +198,7 @@ extension class TypeChecker {
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(
       TPrimValue(TString(), Some(values), _),
-    ) if (values.contains("constructor")) ->
+    ) if (values.contains("constructor") && !allowConstructor) ->
       typingError(Array[(idx.pos, "Cannot access field 'constructor'")])
     | Some(ty @ TPrimValue(TString(), _, _))
     | Some(ty @ TPrimValue(TNum(), _, _)) ->
@@ -428,7 +429,9 @@ extension class TypeChecker {
               | None() -> CGNode::create(AnonymousFunDef(fd))
               },
             ).i1
-          | c @ Class _ -> break this.tenv.newStatic(env.context, c.name)
+          | c @ Class _ ->
+            staticClass = this.tenv.newStatic(env.context, c.name);
+            break staticClass
           | VarDefs(kind, varDefArr) ->
             if (varDefArr.size() != 1) {
               internal_error("varDefArr size should be 1")
@@ -567,6 +570,27 @@ extension class TypeChecker {
       | _ -> void
       };
       rty
+    | New(
+      className,
+      targsAst,
+      argsAst,
+    ) if (env.scope.maybeGet(className) is Some _) ->
+      cstr = this.get(
+        env,
+        pos,
+        this.expr(env, Expr(pos, Var(className))),
+        Expr(pos, EString("constructor")),
+        false,
+        true,
+      );
+      this.call(
+        env,
+        pos,
+        cstr,
+        targsAst.map(x -> this.tenv.normalize(env.context, x)),
+        argsAst.map(x -> this.expr(env, x)),
+      )
+
     | New(className, targsAst, argsAst) ->
       targs = if (targsAst.size() == 0) {
         this.tenv.makeTArgs(env.context, env.subst, className)
