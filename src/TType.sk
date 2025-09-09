@@ -673,6 +673,18 @@ class STypes private (
     )
   }
 
+  static fun stringOrNumber(
+    pos: PosRange,
+    values: ?ArrayValues = None(),
+  ): this {
+    static(
+      InternalKeyedArrayMap::two(
+        (TPrimValue(TString(), values, pos) : SType),
+        TPrimValue(TNum(), values, pos),
+      ),
+    )
+  }
+
   fun map(f: SType -> SType): this {
     static(this.stypes.map(f))
   }
