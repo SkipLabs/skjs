@@ -251,6 +251,12 @@ class ArrayValues private (
     static(Array[elt])
   }
 
+  static fun ofSet(set: SortedSet<String>, pos: PosRange): ?this {
+    if (set.isEmpty()) None() else {
+      Some(static(set.toArray().map(s -> (pos, s))))
+    }
+  }
+
   fun hash(): Int {
     // Custom hash that excludes positions, only hashes the strings
     this.values.map(x -> x.i1).hash()

@@ -790,50 +790,42 @@ class TEnv{
     (algebraicBranchField, tFields)
   }
 
+  /* Over-approximates keyof targetType
+     Though keyof should be treated symbolically because it is a decreasing
+     function of types */
   fun keyOfType(subst: mutable Subst, targetType: TType, pos: PosRange): TType {
-    targetType.getSTypes(subst, this, Covariant()) match {
-    | None() -> TType::bottom(pos)
-    | Some(stypes) ->
-      result: ?TType = None();
-      for (stype in stypes) {
-        stype match {
-        | TObject(fields, _) ->
-          for (field in fields) {
-            keyType = TType::single(
-              TPrimValue(
-                TString(),
-                Some(ArrayValues::single((pos, field.name))),
-                pos,
-              ),
-            );
-            !result = result match {
-            | None() -> Some(keyType)
-            | Some(acc) -> Some(TType::union(subst, this, acc, keyType))
+    clauses = targetType.expand(subst, this, Covariant()).clauses;
+    if (
+      clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
+    ) {
+      return TType::fromSTypes(pos, STypes::stringOrNumber(pos))
+    };
+    strings = SortedSet[];
+    for (clause in clauses) {
+      invariant(clause.vars.isEmpty());
+      clause.stypes match {
+      | None() -> invariant_violation("Already checked above")
+      | Some(stypes) ->
+        for (stype in stypes) {
+          stype match {
+          | TObject(fields, _) ->
+            for (field in fields) {
+              !strings = strings.set(field.name);
             }
-          }
-        | TAlgebraic(branches, _) ->
-          for (branch in branches) {
-            for (field in branch.fields) {
-              keyType = TType::single(
-                TPrimValue(
-                  TString(),
-                  Some(ArrayValues::single((pos, field.name))),
-                  pos,
-                ),
-              );
-              !result = result match {
-              | None() -> Some(keyType)
-              | Some(acc) -> Some(TType::union(subst, this, acc, keyType))
+          | TAlgebraic(branches, _) ->
+            for (branch in branches) {
+              for (field in branch.fields) {
+                !strings = strings.set(field.name);
               }
             }
+          | _ -> void
           }
-        | _ -> void
         }
-      };
-      result match {
-      | None() -> TType::bottom(pos)
-      | Some(ty) -> ty
       }
+    };
+    ArrayValues::ofSet(strings, pos) match {
+    | None() -> TType::bottom(pos)
+    | values @ Some _ -> TType::single(TPrimValue(TString(), values, pos))
     }
   }
 }
