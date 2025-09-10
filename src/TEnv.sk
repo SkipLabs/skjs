@@ -805,32 +805,30 @@ class TEnv{
     strings = SortedSet[];
     for (clause in clauses) {
       invariant(clause.vars.isEmpty());
-      clause.stypes match {
-      | None() -> invariant_violation("Already checked above")
-      | Some(stypes) ->
-        for (stype in stypes) {
-          stype match {
-          | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
-          | TObject(fields, _) ->
-            for (field in fields) {
+      stypes = Vector::mcreateFromIterator(clause.stypes.fromSome().values());
+      while (!stypes.isEmpty()) {
+        stype = stypes.pop();
+        stype match {
+        | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
+        | TObject(fields, _) ->
+          for (field in fields) {
+            !strings = strings.set(field.name);
+          };
+          for (index in fields.indexes) {
+            // TODO: convert numbers to strings
+            !result = TType::union(subst, this, result, index.keyType);
+          }
+        | TAlgebraic(branches, _) ->
+          for (branch in branches) {
+            for (field in branch.fields) {
               !strings = strings.set(field.name);
             };
-            for (index in fields.indexes) {
+            for (index in branch.fields.indexes) {
               // TODO: convert numbers to strings
               !result = TType::union(subst, this, result, index.keyType);
             }
-          | TAlgebraic(branches, _) ->
-            for (branch in branches) {
-              for (field in branch.fields) {
-                !strings = strings.set(field.name);
-              };
-              for (index in branch.fields.indexes) {
-                // TODO: convert numbers to strings
-                !result = TType::union(subst, this, result, index.keyType);
-              }
-            }
-          | _ -> void
           }
+        | _ -> void
         }
       }
     };
