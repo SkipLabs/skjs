@@ -11,7 +11,7 @@ function tryCatchWithType(): void {
   try {
     throw "string error";
     // @ts-expect-error Do not specify a type annotation for caught exceptions as it cannot be trusted
-  } catch (e: string) {
+  } catch (e) {
     console.log("Caught string:", e);
   }
 }
@@ -29,8 +29,13 @@ function tryCatchFinally(): void {
   try {
     throw new Error("test");
     // @ts-expect-error Do not specify a type annotation for caught exceptions as it cannot be trusted
-  } catch (e: Error) {
-    console.log("caught:", e.message);
+  } catch (e) {
+    if (typeof e === "object") {
+      let msg = e["message"];
+      if (msg !== undefined) {
+        console.log("caught:", e.message);
+      }
+    }
   } finally {
     console.log("finally executed");
   }
