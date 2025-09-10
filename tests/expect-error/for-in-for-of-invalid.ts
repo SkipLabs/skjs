@@ -10,9 +10,8 @@ function testForInWithPrimitive(): void {
 
 function testForOfWithPrimitive(): void {
   const str = "hello";
-  // @ts-expect-error
   for (const char of str) {
-    // Should error: for-of loop requires an array, object, or iterable type
+    console.log(char);
   }
 }
 

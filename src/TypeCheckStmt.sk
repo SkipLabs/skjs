@@ -310,10 +310,17 @@ extension class TypeChecker {
         for (elementType in tuple) {
           !result = TType::union(env.subst, this.tenv, result, elementType)
         }
+      | TPrimValue(TString(), _, _) ->
+        !result = TType::union(
+          env.subst,
+          this.tenv,
+          result,
+          TType::single(TPrimValue::string(pos)),
+        )
       | _ ->
         typingError(
           Array[
-            (pos, "for-of loop requires an array, object, or iterable type"),
+            (pos, "for-of loop requires an array, string, or iterable type"),
           ],
         )
       }
