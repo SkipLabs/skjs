@@ -106,11 +106,7 @@ mutable base class ApplyType(
   }
 
   overridable deferred mutable fun funs(env: this::Env, funs: TFuns): TFuns {
-    TFuns(
-      funs.funs.map(x -> this.fun_(env, x)),
-      funs.methods.map(x -> this.fun_(env, x)),
-      funs.pos,
-    )
+    funs.mapFuns(x -> this.fun_(env, x))
   }
 
   overridable deferred mutable fun fun_(env: this::Env, f: TFun): TFun {

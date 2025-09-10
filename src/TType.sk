@@ -358,10 +358,12 @@ class TTuple(tuple: Array<TType>) extends SType {
 /* Funs */
 /***************************************************************************/
 
-class TFuns(
+class TFuns private (
   funs: InternalKeyedArrayMap<(Int, Int), TFun>,
   methods: InternalKeyedArrayMap<(Int, Int), TFun>,
 ) extends SType {
+  /* Invariant: funs and methods are not both empty */
+
   static fun singleFun(x: TFun, pos: PosRange): this {
     static(
       InternalKeyedArrayMap::single(x),
@@ -376,6 +378,10 @@ class TFuns(
       InternalKeyedArrayMap::single(x),
       pos,
     )
+  }
+
+  fun mapFuns(f: TFun -> TFun): this {
+    static(this.funs.map(f), this.methods.map(f), this.pos)
   }
 }
 

@@ -113,12 +113,14 @@ extension class TFuns {
     env: TEnv,
     f1: TFuns,
     f2: TFuns,
-  ): TFuns {
-    static(
-      f1.funs.mapInter(f2.funs, (x, y) -> interTFun(subst, env, x, y)),
-      f1.methods.mapInter(f2.methods, (x, y) -> interTFun(subst, env, x, y)),
-      f1.pos,
-    )
+  ): ?TFuns {
+    funs = f1.funs.mapInter(f2.funs, (x, y) -> interTFun(subst, env, x, y));
+    methods = f1.methods.mapInter(f2.methods, (x, y) ->
+      interTFun(subst, env, x, y)
+    );
+    if (funs.isEmpty() && methods.isEmpty()) None() else {
+      Some(static(funs, methods, f1.pos))
+    }
   }
 }
 
@@ -303,7 +305,7 @@ fun interSType(
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
     Some(TAlgebraic::inter(subst, env, a1, a2))
 
-  | (f1 @ TFuns _, f2 @ TFuns _) -> Some(TFuns::inter(subst, env, f1, f2))
+  | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::inter(subst, env, f1, f2)
   | _ -> internal_error("Internal error")
   }
 }
