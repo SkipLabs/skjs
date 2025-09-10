@@ -25,6 +25,8 @@ type EmptyKeys = keyof {};
 type ObjKeys = keyof { x: number; y: string };
 const objKey: ObjKeys = "x";
 
+const koKind: keyof { kind: "a" } = "kind";
+
 // @ts-expect-error
 const invalidObjKey: ObjKeys = "z";
 
@@ -44,4 +46,3 @@ const koStrIdx: keyof "a" = 99;
 const koStrFld: keyof string = "charAt";
 // @ts-expect-error Invalid definition
 const koStrInvalid: keyof string = "notAFieldOfString";
-
