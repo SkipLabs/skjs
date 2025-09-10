@@ -79,7 +79,7 @@ extension class TypeChecker {
     };
     retType = this.retType.fromSome();
     fd.isAsync match {
-    | None() -> void
+    | None() -> !this.isAsync = false
     | Some(asyncPos) ->
       !this.isAsync = true;
       tvar = env.subst.gen(asyncPos);
