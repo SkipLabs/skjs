@@ -451,6 +451,25 @@ class TEnv{
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?TType {
+    this.findConstructorMethod(
+      context,
+      visitedClasses,
+      className,
+      tparams,
+      targs,
+    ) match {
+    | None() -> None()
+    | Some(fd) -> Some(this.makeConstructor(context, className, tparams, fd))
+    }
+  }
+
+  private fun findConstructorMethod(
+    context: mutable SKStore.Context,
+    visitedClasses: SortedSet<String>,
+    className: Name,
+    tparams: Array<TypeParam>,
+    targs: Array<TType>,
+  ): ?FunDef {
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
@@ -461,14 +480,14 @@ class TEnv{
     for (fieldType in cls.fields) {
       fieldType match {
       | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
-        return Some(this.makeConstructor(context, className, tparams, fd))
+        return Some(fd)
       | _ -> void
       }
     };
     for (extend in cls.extends_) {
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
-        return this.findConstructor(
+        return this.findConstructorMethod(
           context,
           visitedClasses,
           parentName,
@@ -588,20 +607,14 @@ class TEnv{
       targetType = this.normalize(context, ty);
       this.keyOfType(subst, targetType, pos)
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
+      tfun = this.normalize(
+        context,
+        Type(tyPos, TAFun(true, clauses, params, retType, cgNode)),
+      );
       TType::single(
         TObject(
           TFields::create(
-            Array[
-              TField::create(
-                pos,
-                cstrName,
-                false,
-                this.normalize(
-                  context,
-                  Type(tyPos, TAFun(true, clauses, params, retType, cgNode)),
-                ),
-              ).fromSome(),
-            ],
+            Array[TField::create(pos, cstrName, false, tfun).fromSome()],
           ),
           pos,
         ),
@@ -616,15 +629,38 @@ class TEnv{
     | TAExtendsQuestion _ -> internal_error("TODO extendsQuestion ")
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
-    | TATypeOf(expr) ->
-      expr.value match {
-      | Var(name) ->
-        name.value match {
-        | "undefined" -> TType::single(TPrimUnit(TUndefined(), name.pos))
-        | _ -> internal_error(`TODO typeof ${name.value}`)
+    | TATypeOf(ty) ->
+      ty.value match {
+      | TAInst(className, targs) ->
+        c = this.getClass(context, className);
+        this.findConstructorMethod(
+          context,
+          SortedSet[],
+          className,
+          c.tparams,
+          targs.map(x -> this.normalize(context, x)),
+        ) match {
+        | None() ->
+          TType::single(
+            TObject(
+              TFields::create(
+                Array[this.makeEmptyConstructor(context, pos, className, c)],
+              ),
+              pos,
+            ),
+          )
+        | Some(fd) ->
+          tfun = this.makeConstructor(context, className, c.tparams, fd);
+          TType::single(
+            TObject(
+              TFields::create(
+                Array[TField::create(pos, cstrName, false, tfun).fromSome()],
+              ),
+              pos,
+            ),
+          )
         }
-      | Binop(BODot(), _, Expr(_, Var(_))) -> internal_error("TODO typeof")
-      | _ -> typingError(Array[(expr.pos, "Invalid typeof expression")])
+      | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
     | TAPrim(kind) ->
       TType::single(

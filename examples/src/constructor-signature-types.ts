@@ -17,7 +17,7 @@ class Person {
 
 // Basic constructor assignment with non-generic class
 function demonstrateBasicAssignment(): void {
-  const PersonCtor: new (name: string, age: number) => Person = Person;
+  const PersonCtor: typeof Person = Person;
 
   const person = new PersonCtor("Alice", 30);
 

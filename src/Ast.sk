@@ -449,7 +449,7 @@ base class Type_ uses XXHashable {
   | TANumLiteral(String)
   | TABigIntLiteral(String)
   | TAPrim(TPrimKind)
-  | TATypeOf(Expr)
+  | TATypeOf(Type)
   | TAArray(Type)
   | TAObject(Array<FieldType>)
   | TAInst(Name, Array<Type>)

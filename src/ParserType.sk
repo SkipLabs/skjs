@@ -10,7 +10,7 @@ extension class Parser {
   //   | <number>
   //   | <bigint>
   //   | <prim-kind>
-  //   | typeof <expr>
+  //   | typeof <type>
   //   | <type> []
   //   | { <field-type>* }
   //   | <name> < <type>* >
@@ -180,7 +180,7 @@ extension class Parser {
     | TKOpenCurly() -> TAObject(this.objectFields())
     | TKVar() ->
       this.lex.getStrTok(tok) match {
-      | "typeof" -> TATypeOf(this.expr(typeOfPrec))
+      | "typeof" -> TATypeOf(this.type(0))
       | "import" ->
         this.expect(TKOpenParen());
         e = this.expr(0);
