@@ -83,28 +83,79 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult {
-    fields1.fields.geq(fields2.fields, (f1O, f2) ->
-      f1O match {
-      | None() ->
-        if (f2.isOptional) {
-          Success(void)
-        } else {
-          Failure(STMissingField(f2.name))
-        }
-      | Some(f1) ->
-        if (f1.isOptional && !f2.isOptional) {
-          Failure(STMissingField(f1.name))
-        } else {
-          isSubTType(subst, env, f1.type, f2.type) match {
-          | STOk() -> Success(void)
-          | err @ STError _ -> Failure(err)
+    index1o = fields1.maybeSingleIndex();
+    index2o = fields2.maybeSingleIndex();
+    context = subst.context;
+    (index1o, index2o) match {
+    | (_, None()) -> void
+    | (Some(index1), Some(index2)) ->
+      isSubTType(subst, env, index2.keyType, index1.keyType) match {
+      | err @ STError _ -> return err
+      | STOk() -> void
+      };
+      isSubTType(subst, env, index1.valueType, index2.valueType) match {
+      | err @ STError _ -> return err
+      | STOk() -> void
+      }
+    | (None(), Some(index2)) ->
+      for (f1 in fields1.fields) {
+        f1keyType = TType::single(
+          TPrimValue::single(TString(), f1.name, f1.pos),
+        );
+        isSubTType(
+          Subst::mcreate{context},
+          env,
+          f1keyType,
+          index2.keyType,
+        ) match {
+        | STError _ -> void
+        | STOk() ->
+          isSubTType(subst, env, f1.type, index2.valueType) match {
+          | err @ STError _ -> return err
+          | STOk() -> void
           }
         }
       }
-    ) match {
-    | Success(void) -> STOk()
-    | Failure(err) -> err
-    }
+    };
+    for (f1of2o in fields1.fields.iterDiffInterDiff(fields2.fields)) {
+      f1of2o match {
+      | (_, None()) -> void
+      | (None(), Some(f2)) ->
+        if (!f2.isOptional) {
+          return STMissingField(f2.name)
+        };
+        index1o match {
+        | None() -> void
+        | Some(index1) ->
+          f2keyType = TType::single(
+            TPrimValue::single(TString(), f2.name, f2.pos),
+          );
+          isSubTType(
+            Subst::mcreate{context},
+            env,
+            f2keyType,
+            index1.keyType,
+          ) match {
+          | STError _ -> void
+          | STOk() ->
+            isSubTType(subst, env, index1.valueType, f2.type) match {
+            | err @ STError _ -> return err
+            | STOk() -> void
+            }
+          }
+        }
+      | (Some(f1), Some(f2)) ->
+        if (f1.isOptional && !f2.isOptional) {
+          return STMissingField(f1.name)
+        } else {
+          isSubTType(subst, env, f1.type, f2.type) match {
+          | STOk() -> void
+          | err @ STError _ -> return err
+          }
+        }
+      }
+    };
+    STOk()
   }
 }
 
@@ -351,21 +402,7 @@ fun isSubTObject(
   obj1: TObject,
   obj2: TObject,
 ): STResult {
-  (
-    obj1.fields.fields.find(field -> field.name == "[]"),
-    obj2.fields.fields.find(field -> field.name == "[]"),
-  ) match {
-  | (None(), Some(indexingField)) ->
-    for (field in obj1.fields) {
-      retType = extractReturnType("Unexpected type for []", indexingField.type);
-      isSubTType(subst, env, field.type, retType) match {
-      | STOk() -> void
-      | err -> return err
-      }
-    };
-    STOk()
-  | _ -> TFields::isSub(subst, env, obj1.fields, obj2.fields)
-  }
+  TFields::isSub(subst, env, obj1.fields, obj2.fields)
 }
 
 module end;

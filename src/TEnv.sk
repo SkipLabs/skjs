@@ -183,11 +183,13 @@ class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
+    indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
     this.addFields(
       context,
       fields,
+      indexes,
       visitedClasses,
       false,
       className,
@@ -196,7 +198,10 @@ class TEnv{
         filter(fieldType) && !fieldType.isStatic()
       },
     );
-    TObject(TFields::create(fields.values().collect(Array)), className.pos)
+    TObject(
+      TFields::create(fields.values().collect(Array), indexes.toArray()),
+      className.pos,
+    )
   }
 
   fun newStatic(context: mutable SKStore.Context, className: Name): TType {
@@ -211,16 +216,21 @@ class TEnv{
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
+    indexes = mutable Vector[];
     this.addFields(
       context,
       fields,
+      indexes,
       visitedClasses,
       true,
       className,
       targs,
       fieldType ~> fieldType.isStatic(),
     );
-    TObject(TFields::create(fields.values().collect(Array)), className.pos)
+    TObject(
+      TFields::create(fields.values().collect(Array), indexes.toArray()),
+      className.pos,
+    )
   }
 
   fun addTParams(
@@ -244,48 +254,6 @@ class TEnv{
       )
     };
     this
-  }
-
-  private fun createIndexingMethod(
-    context: mutable SKStore.Context,
-    idx: FNColon,
-    returnType: Type,
-    cgNode: CGNode,
-  ): TField {
-    pos = idx.indexName.pos;
-    TField::create(
-      pos,
-      "[]",
-      false,
-      this.normalize(
-        context,
-        Type(
-          pos,
-          TAFun(
-            true,
-            Array[],
-            Array[
-              TAFunParam(
-                Some(TAParamName(idx.indexName)),
-                None(),
-                idx.indexType,
-              ),
-            ],
-            Type(
-              pos,
-              TAUnion(
-                returnType,
-                Type(pos, TAInst(Name(pos, "undefined"), Array[])),
-              ),
-            ),
-            cgNode,
-          ),
-        ),
-      ),
-    ) match {
-    | None() -> typingError(Array[(pos, `Forbidden field name [] in a class`)])
-    | Some(f) -> f
-    }
   }
 
   private fun processClassSetup(
@@ -331,6 +299,7 @@ class TEnv{
   private fun addFields(
     context: mutable SKStore.Context,
     acc: mutable Map<String, TField>,
+    indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
     isStatic: Bool,
     className: Name,
@@ -350,6 +319,7 @@ class TEnv{
         this.addFields(
           context,
           acc,
+          indexes,
           visitedClasses,
           isStatic,
           parentName,
@@ -392,14 +362,11 @@ class TEnv{
             )
           | Some(f) -> acc![fieldName] = f
           }
-        | idx @ FNColon(indexName, _indexType) ->
-          acc!["[]"] = this.createIndexingMethod(
-            context,
-            idx,
-            field.type,
-            CGNode::create(
-              Method(Some(idx), className, indexName.pos.fileName, false),
-            ),
+        | FNColon(indexName, indexType) ->
+          keyType = this.normalize(context, indexType);
+          valueType = this.normalize(context, field.type);
+          indexes.push(
+            TIndexField(indexName.pos, indexName.value, keyType, valueType),
           )
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
@@ -760,70 +727,64 @@ class TEnv{
    */
   private fun createTFields(
     context: mutable SKStore.Context,
-    fields: Array<FieldType>,
+    fieldTypes: Array<FieldType>,
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
-    tFields = TFields::create(
-      fields.filterMap(elt -> {
-        elt match {
-        | fd @ FieldTypeValue _ ->
-          fd.name match {
-          | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
-          | FNSymbol _ -> internal_error("TODO symbol")
-          | FNNormal(name) ->
-            normalizedType = this.normalize(context, fd.type);
-            optField = TField::create(
-              name.pos,
-              name.value,
-              fd.optional is Some _,
-              normalizedType,
-            );
-            if (optField is None()) {
-              algebraicBranchField match {
-              | Some((existingPos, _existingType)) ->
-                typingError(
-                  Array[
-                    (name.pos, `Duplicate field ${name.value}`),
-                    (existingPos, "Previously declared here"),
-                  ],
-                )
-              | None() -> void
-              };
-              fd.optional match {
-              | Some(optionalPos) ->
-                typingError(
-                  Array[
-                    (optionalPos, `Field ${name.value} cannot be optional`),
-                  ],
-                )
-              | None() -> void
-              };
-              !algebraicBranchField = Some((name.pos, normalizedType))
-            };
-            optField
-          | idx @ FNColon(indexName, _indexType) ->
-            Some(
-              this.createIndexingMethod(
-                context,
-                idx,
-                fd.type,
-                CGNode::create(ObjectMethod(idx, indexName.pos.fileName)),
-              ),
-            )
-          }
-        | fd @ FunDef _ ->
-          cgNode = CGNode::create(AnonymousFunDef(fd));
-          (name, decl) = this.funDecl(context, true, fd, cgNode);
-          optField = TField::create(name.pos, name.value, false, decl);
+    indexes = mutable Vector[];
+    fields = fieldTypes.filterMap(elt -> {
+      elt match {
+      | fd @ FieldTypeValue _ ->
+        fd.name match {
+        | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
+        | FNSymbol _ -> internal_error("TODO symbol")
+        | FNNormal(name) ->
+          normalizedType = this.normalize(context, fd.type);
+          optField = TField::create(
+            name.pos,
+            name.value,
+            fd.optional is Some _,
+            normalizedType,
+          );
           if (optField is None()) {
-            typingError(
-              Array[(name.pos, `Forbidden method name ${name.value}`)],
-            )
+            algebraicBranchField match {
+            | Some((existingPos, _existingType)) ->
+              typingError(
+                Array[
+                  (name.pos, `Duplicate field ${name.value}`),
+                  (existingPos, "Previously declared here"),
+                ],
+              )
+            | None() -> void
+            };
+            fd.optional match {
+            | Some(optionalPos) ->
+              typingError(
+                Array[(optionalPos, `Field ${name.value} cannot be optional`)],
+              )
+            | None() -> void
+            };
+            !algebraicBranchField = Some((name.pos, normalizedType))
           };
           optField
+        | FNColon(indexName, indexType) ->
+          keyType = this.normalize(context, indexType);
+          valueType = this.normalize(context, fd.type);
+          indexes.push(
+            TIndexField(indexName.pos, indexName.value, keyType, valueType),
+          );
+          None()
         }
-      }),
-    );
+      | fd @ FunDef _ ->
+        cgNode = CGNode::create(AnonymousFunDef(fd));
+        (name, decl) = this.funDecl(context, true, fd, cgNode);
+        optField = TField::create(name.pos, name.value, false, decl);
+        if (optField is None()) {
+          typingError(Array[(name.pos, `Forbidden method name ${name.value}`)])
+        };
+        optField
+      }
+    });
+    tFields = TFields::create(fields, indexes.toArray());
     (algebraicBranchField, tFields)
   }
 }

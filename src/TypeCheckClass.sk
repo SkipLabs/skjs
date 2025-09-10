@@ -2,7 +2,7 @@ module SKJS;
 
 extension class TypeChecker {
   static fun uninitializedThisType(pos: PosRange): TType {
-    TType::single(TObject(TFields::create(Array[]), pos));
+    TType::single(TObject(TFields::create(Array[], Array[]), pos));
   }
 
   fun class_(context: mutable SKStore.Context, c: Class): void {
