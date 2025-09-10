@@ -823,6 +823,7 @@ class TEnv{
             !result = TType::union(subst, this, result, index.keyType);
           }
         | TAlgebraic(branches, _) ->
+          !strings = strings.set(kAlgebraicBranchFieldName);
           for (branch in branches) {
             for (field in branch.fields) {
               !strings = strings.set(field.name);
