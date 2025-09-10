@@ -253,12 +253,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{
-            context,
-            files,
-            backtrace,
-            logAffectedFiles,
-          };
+          checker = Checker::create{context, files, backtrace};
           _ = checker
             .checkFiles(context)
             .map(
@@ -330,7 +325,6 @@ class Checker private {
     context: mutable SKStore.Context,
     files: Files,
     backtrace: Bool = false,
-    logAffectedFiles: Bool = false,
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
