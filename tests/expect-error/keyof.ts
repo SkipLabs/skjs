@@ -34,3 +34,8 @@ const koTup1: keyof [number] = 1;
 const koTup0s: keyof [number] = "0";
 // @ts-expect-error Invalid definition
 const koTup1s: keyof [number] = "1";
+
+const koIdx: keyof { [x: number]: string } = 42;
+// TODO: convert numbers to strings
+// @ts-expect-error Invalid definition
+const koIdxs: keyof { [x: number]: string } = "42";
