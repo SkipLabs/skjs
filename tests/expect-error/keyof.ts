@@ -27,3 +27,10 @@ const objKey: ObjKeys = "x";
 
 // @ts-expect-error
 const invalidObjKey: ObjKeys = "z";
+
+const koTup0: keyof [number] = 0;
+// @ts-expect-error Invalid definition
+const koTup1: keyof [number] = 1;
+const koTup0s: keyof [number] = "0";
+// @ts-expect-error Invalid definition
+const koTup1s: keyof [number] = "1";

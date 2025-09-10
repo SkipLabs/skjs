@@ -675,12 +675,13 @@ class STypes private (
 
   static fun stringOrNumber(
     pos: PosRange,
-    values: ?ArrayValues = None(),
+    strValues: ?ArrayValues = None(),
+    nbrValues: ?ArrayValues = None(),
   ): this {
     static(
       InternalKeyedArrayMap::two(
-        (TPrimValue(TString(), values, pos) : SType),
-        TPrimValue(TNum(), values, pos),
+        (TPrimValue(TString(), strValues, pos) : SType),
+        TPrimValue(TNum(), nbrValues, pos),
       ),
     )
   }
