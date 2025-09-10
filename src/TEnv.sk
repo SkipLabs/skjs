@@ -828,6 +828,10 @@ class TEnv{
               !result = TType::union(subst, this, result, index.keyType);
             }
           }
+        | TPrimValue(primKind, _, primPos) ->
+          objName = primKind.toString();
+          obj = this.newObject(subst.context, Name(primPos, objName), Array[]);
+          stypes.push(obj)
         | _ -> void
         }
       }
