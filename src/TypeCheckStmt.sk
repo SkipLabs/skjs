@@ -300,25 +300,11 @@ extension class TypeChecker {
     for (stype in stypes) {
       stype match {
       | TObject(fields, _objectPos) ->
-        fields.maybeGet("pop") match {
-        | Some(popMethod) ->
-          popF = popMethod.type
-            .getSTypes(env.subst, this.tenv, Covariant())
-            .flatMap(stypes ~> stypes.singleElt())
-            .fromSome() match {
-          | TFuns(_, methods, _) ->
-            for (met in methods) {
-              break met
-            } else {
-              internal_error("Unexpected type for Array::pop")
-            }
-          | _ -> internal_error("Unexpected pop method type")
-          };
-          !result = TType::union(env.subst, this.tenv, result, popF.retType)
-        | None() ->
-          for (field in fields.values()) {
-            !result = TType::union(env.subst, this.tenv, result, field.type)
-          }
+        if (fields.indexes.isEmpty()) {
+          typingError(Array[(pos, "Invalid iterable type for for-of loop")])
+        };
+        for (index in fields.indexes) {
+          !result = TType::union(env.subst, this.tenv, result, index.valueType)
         }
       | TTuple(tuple, _) ->
         for (elementType in tuple) {
