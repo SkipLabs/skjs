@@ -53,19 +53,11 @@ extension class TypeChecker {
         )
       }
 
-    | If(e, block1, block2) ->
+    | If(e, block1, block2opt) ->
+      block2 = block2opt.default(Array[]);
       this.checkBool(env, e);
       scope1 = this.block(env, block1, Some((e, true)));
-      scope2 = block2 match {
-      | None() ->
-        scopeCopy = env.scope;
-        scope = env.mcreateSubScope{isLoop => false};
-        env.!scope = scope;
-        this.evalCond(env, e, false);
-        env.!scope = scopeCopy;
-        scope
-      | Some(b) -> this.block(env, b, Some((e, false)))
-      };
+      scope2 = this.block(env, block2, Some((e, false)));
       env.mergeScope(env.subst, this.tenv, scope1, scope2);
       if (isTerminalBlock(false, block1)) {
         this.evalCond(env, e, false);
