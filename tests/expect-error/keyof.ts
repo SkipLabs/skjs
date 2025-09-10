@@ -39,3 +39,9 @@ const koIdx: keyof { [x: number]: string } = 42;
 // TODO: convert numbers to strings
 // @ts-expect-error Invalid definition
 const koIdxs: keyof { [x: number]: string } = "42";
+
+const koStrIdx: keyof "a" = 99;
+const koStrFld: keyof string = "charAt";
+// @ts-expect-error Invalid definition
+const koStrInvalid: keyof string = "notAFieldOfString";
+
