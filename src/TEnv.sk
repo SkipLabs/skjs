@@ -832,7 +832,10 @@ class TEnv{
           objName = primKind.toString();
           obj = this.newObject(subst.context, Name(primPos, objName), Array[]);
           stypes.push(obj)
-        | _ -> void
+        | TPrimUnit _ -> void /* bottom */
+        | TPromise _
+        | TFuns _ ->
+          internal_error(`TODO: keyof ${prettyPrintSType(stype)}`)
         }
       }
     };
