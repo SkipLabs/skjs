@@ -36,8 +36,10 @@ function testNestedConditions(): void {
 
   if (x === undefined) {
     x = 42;
-  }
-  if (y === undefined) {
+    if (y === undefined) {
+      y = "test";
+    }
+  } else if (y === undefined) {
     y = "test";
   }
 
