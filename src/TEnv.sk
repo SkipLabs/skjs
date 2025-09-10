@@ -564,6 +564,11 @@ class TEnv{
         typingError(Array[(n.pos, "Invalid number of type arguments")])
       };
       TType::single(TPromise(this.normalize(context, targs[0]), pos))
+    | TAInst(Name(p, "unknown"), targs) ->
+      if (targs.size() != 0) {
+        typingError(Array[(p, "Invalid number of type arguments")])
+      };
+      TType::top(p)
     | TAInst(Name(_, "never"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(pos, "Invalid number of type arguments")])
