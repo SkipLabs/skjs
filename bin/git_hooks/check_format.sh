@@ -11,7 +11,7 @@ check-file () {
     if [[ "$file" == *.sk ]]; then # keep in sync with fmt-sk in Makefile
         fmt="skfmt --assume-filename=$file"
     elif [[ "$file" =~ .*\.(ts)$ ]]; then # keep in sync with .prettierignore
-        fmt="npx prettier --stdin-filepath $file --loglevel debug"
+        fmt="npx prettier --stdin-filepath $file"
     else
         exit 0;
     fi
@@ -29,4 +29,4 @@ check-file () {
 export -f check-file
 
 # get list of staged files and check them in parallel
-git diff-index --cached --name-only HEAD | parallel check-file {}
+git diff-index --cached --name-only --diff-filter=d HEAD | parallel check-file {}

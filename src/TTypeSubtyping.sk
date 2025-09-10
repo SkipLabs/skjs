@@ -159,10 +159,7 @@ extension class Clauses {
       } else {
         return errors match {
         | List.Cons(err, List.Nil()) -> err
-        | _ ->
-          STInvalidTypeParams(
-            inter1.vars.toArray().map(x -> x.name.toString()).join(" & "),
-          )
+        | _ -> STInvalidClause(inter1)
         }
       }
     };
