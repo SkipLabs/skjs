@@ -16,9 +16,7 @@ function testExplicitUndefinedCheck(): void {
   if (value !== undefined) {
     return;
   }
-  // value should still be string | undefined here since we returned
-  // @ts-expect-error
-  let len: number = value.length; // Should cause error since value could be undefined
+  let len: undefined = value;
 }
 
 // Test with null check
