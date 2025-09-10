@@ -806,12 +806,7 @@ class TEnv{
     this.keys(subst, targetType, pos, false)
   }
 
-  fun keys(
-    subst: mutable Subst,
-    ty: TType,
-    pos: PosRange,
-    _forIn: Bool,
-  ): TType {
+  fun keys(subst: mutable Subst, ty: TType, pos: PosRange, forIn: Bool): TType {
     clauses = ty.expand(subst, this, Covariant()).clauses;
     if (
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
@@ -830,6 +825,7 @@ class TEnv{
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | TObject(fields, _) ->
           for (field in fields) {
+            if (forIn && field.type.isMethod(subst, this)) continue;
             !strings = strings.set(field.name);
           };
           for (index in fields.indexes) {
@@ -840,6 +836,7 @@ class TEnv{
           !strings = strings.set(kAlgebraicBranchFieldName);
           for (branch in branches) {
             for (field in branch.fields) {
+              if (forIn && field.type.isMethod(subst, this)) continue;
               !strings = strings.set(field.name);
             };
             for (index in branch.fields.indexes) {
@@ -847,6 +844,10 @@ class TEnv{
               !result = TType::union(subst, this, result, index.keyType);
             }
           }
+        | _ if (forIn) ->
+          typingError(
+            Array[(pos, "for-in loop requires an object or array type")],
+          )
         | TPrimValue(primKind, _, primPos) ->
           objName = primKind.toString();
           obj = this.newObject(subst.context, Name(primPos, objName), Array[]);
