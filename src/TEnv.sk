@@ -631,6 +631,11 @@ class TEnv{
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(ty) ->
       ty.value match {
+      | TAInst(Name(_, "undefined"), targs) ->
+        if (targs.size() != 0) {
+          typingError(Array[(pos, "Unexpected type parameters for undefined")])
+        };
+        TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
         c = this.getClass(context, className);
         this.findConstructorMethod(
