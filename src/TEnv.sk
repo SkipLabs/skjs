@@ -803,7 +803,16 @@ class TEnv{
      Try to keep in synch with TypeChecker#get in TypeCheckExpr
   */
   fun keyOfType(subst: mutable Subst, targetType: TType, pos: PosRange): TType {
-    clauses = targetType.expand(subst, this, Covariant()).clauses;
+    this.keys(subst, targetType, pos, false)
+  }
+
+  fun keys(
+    subst: mutable Subst,
+    ty: TType,
+    pos: PosRange,
+    _forIn: Bool,
+  ): TType {
+    clauses = ty.expand(subst, this, Covariant()).clauses;
     if (
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
     ) {
