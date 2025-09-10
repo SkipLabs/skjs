@@ -615,6 +615,7 @@ class TEnv{
         TObject(
           TFields::create(
             Array[TField::create(pos, cstrName, false, tfun).fromSome()],
+            Array[],
           ),
           pos,
         ),
@@ -650,6 +651,7 @@ class TEnv{
             TObject(
               TFields::create(
                 Array[this.makeEmptyConstructor(context, pos, className, c)],
+                Array[],
               ),
               pos,
             ),
@@ -660,6 +662,7 @@ class TEnv{
             TObject(
               TFields::create(
                 Array[TField::create(pos, cstrName, false, tfun).fromSome()],
+                Array[],
               ),
               pos,
             ),
