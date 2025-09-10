@@ -800,6 +800,7 @@ class TEnv{
     ) {
       return TType::fromSTypes(pos, STypes::stringOrNumber(pos))
     };
+    result = TType::bottom(pos);
     maxRange = -1;
     strings = SortedSet[];
     for (clause in clauses) {
@@ -813,11 +814,19 @@ class TEnv{
           | TObject(fields, _) ->
             for (field in fields) {
               !strings = strings.set(field.name);
+            };
+            for (index in fields.indexes) {
+              // TODO: convert numbers to strings
+              !result = TType::union(subst, this, result, index.keyType);
             }
           | TAlgebraic(branches, _) ->
             for (branch in branches) {
               for (field in branch.fields) {
                 !strings = strings.set(field.name);
+              };
+              for (index in branch.fields.indexes) {
+                // TODO: convert numbers to strings
+                !result = TType::union(subst, this, result, index.keyType);
               }
             }
           | _ -> void
@@ -830,17 +839,19 @@ class TEnv{
     );
     !strings = strings.union(numbers);
     ArrayValues::ofSet(strings, pos) match {
-    | None() -> TType::bottom(pos)
+    | None() -> void
     | strValues @ Some _ ->
-      ArrayValues::ofSet(numbers, pos) match {
+      literals = ArrayValues::ofSet(numbers, pos) match {
       | None() -> TType::single(TPrimValue(TString(), strValues, pos))
       | nbrValues @ Some _ ->
         TType::fromSTypes(
           pos,
           STypes::stringOrNumber(pos, strValues, nbrValues),
         )
-      }
-    }
+      };
+      !result = TType::union(subst, this, result, literals)
+    };
+    result
   }
 }
 
