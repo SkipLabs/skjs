@@ -90,7 +90,7 @@ extension class TypeChecker {
       env.!scope = initScope;
 
       iterableType = this.expr(env, iterable, true);
-      keyType = this.getKeyType(env, iterable.pos, iterableType);
+      keyType = this.tenv.forInKeys(env.subst, iterableType, iterable.pos);
 
       this.bindLoopVar(env, initStmt, keyType);
 
@@ -284,70 +284,6 @@ extension class TypeChecker {
     | _ ->
       typingError(Array[(initStmt.pos, "Invalid loop variable declaration")])
     }
-  }
-
-  fun getKeyType(
-    env: mutable TCEnv,
-    pos: PosRange,
-    iterableType: TType,
-  ): TType {
-    stypes = iterableType.getSTypes(env.subst, this.tenv, Covariant()) match {
-    | Some(stypes) if (!stypes.isEmpty()) -> stypes
-    | _ -> typingError(Array[(pos, "Invalid iterable type for for-in loop")])
-    };
-
-    result = TType::bottom(pos);
-    for (stype in stypes) {
-      stype match {
-      | TObject(fields, _) ->
-        keyNames = mutable Vector[];
-        for (field in fields.values()) {
-          keyNames.push((pos, field.name))
-        };
-        if (!keyNames.isEmpty()) {
-          sortedKeys = keyNames.toArray().sortedBy(x ~> x.i1);
-          stringValues = ArrayValues::single(sortedKeys[0]);
-          for (i in Range(1, sortedKeys.size())) {
-            !stringValues = stringValues.union(
-              ArrayValues::single(sortedKeys[i]),
-            )
-          };
-          stringType = TPrimValue(TString(), Some(stringValues), pos);
-          !result = TType::union(
-            env.subst,
-            this.tenv,
-            result,
-            TType::single(stringType),
-          )
-        }
-      | TTuple(tuple, _) ->
-        indices = mutable Vector[];
-        for (i in Range(0, tuple.size())) {
-          indices.push((pos, i.toString()))
-        };
-        if (!indices.isEmpty()) {
-          sortedIndices = indices.toArray().sortedBy(x ~> x.i1);
-          stringValues = ArrayValues::single(sortedIndices[0]);
-          for (i in Range(1, sortedIndices.size())) {
-            !stringValues = stringValues.union(
-              ArrayValues::single(sortedIndices[i]),
-            )
-          };
-          stringType = TPrimValue(TString(), Some(stringValues), pos);
-          !result = TType::union(
-            env.subst,
-            this.tenv,
-            result,
-            TType::single(stringType),
-          )
-        }
-      | _ ->
-        typingError(
-          Array[(pos, "for-in loop requires an object or array type")],
-        )
-      }
-    };
-    result
   }
 
   fun getValueType(
