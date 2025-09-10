@@ -105,7 +105,7 @@ class Files(
           oldParsedResult = context
             .unsafeGetEagerDir(parsesDirName)
             .getArrayRaw(key)
-            .map(ParsedResultFile::type)[0].value;
+            .map(ParsedResultAndSymbolsFile::type)[0].value;
           !oldParses = oldParses.set(fileName, oldParsedResult);
         }
       };
@@ -131,9 +131,6 @@ class Files(
     )
   }
 
-  const parsesDirName: SKStore.DirName = SKStore.DirName::create(
-    "/skjs/parsed_with_errors/",
-  );
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
@@ -208,7 +205,7 @@ class Files(
     | Some _ ->
       SKStore.EHandle(
         SKStore.SID::keyType,
-        ParsedResultFile::type,
+        ParsedResultAndSymbolsFile::type,
         parsesDirName,
       )
     | None() ->
