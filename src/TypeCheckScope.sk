@@ -147,10 +147,10 @@ mutable class Scope{
     scope1: readonly Scope,
     scope2: readonly Scope,
   ): void {
-    if (scope1.up.map(x -> x.id) != Some(this.id)) {
+    if (scope1.up.fromSome().id != this.id) {
       internal_error("scope1 up id mismatch")
     };
-    if (scope2.up.map(x -> x.id) != Some(this.id)) {
+    if (scope2.up.fromSome().id != this.id) {
       internal_error("scope2 up id mismatch")
     };
     if (scope1.callingContext != this.callingContext) {
