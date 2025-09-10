@@ -4,7 +4,7 @@ function testForInWithObjects(): void {
   // Test for-in with object - should iterate over property names
   const person = { name: "John", age: 30, city: "NYC" };
   for (const prop in person) {
-    const key: string = prop; // Should be typed as string literal union
+    const key: "name" | "age" | "city" = prop;
   }
 
   // Test with empty object
@@ -18,13 +18,13 @@ function testForInWithArrays(): void {
   // Test for-in with array - should iterate over indices as strings
   const numbers = [10, 20, 30, 40];
   for (const index in numbers) {
-    const idx: string = index; // Should be "0" | "1" | "2" | "3"
+    const idx: "0" | "1" | "2" | "3" = index;
   }
 
   // Test with string array
   const words = ["hello", "world"];
   for (const i in words) {
-    const index: string = i; // Should be "0" | "1"
+    const index: "0" | "1" = i;
   }
 }
 
@@ -32,13 +32,13 @@ function testForInWithTuples(): void {
   // Test for-in with tuple - should iterate over indices
   const coord: [number, number] = [10, 20];
   for (const index in coord) {
-    const idx: string = index; // Should be "0" | "1"
+    const idx: "0" | "1" = index;
   }
 
   // Test with mixed tuple
   const mixed: [string, number, boolean] = ["test", 42, true];
   for (const i in mixed) {
-    const index: string = i; // Should be "0" | "1" | "2"
+    const index: "0" | "1" | "2" = i;
   }
 }
 
@@ -46,19 +46,19 @@ function testForOfWithArrays(): void {
   // Test for-of with number array - should iterate over values
   const numbers = [1, 2, 3, 4, 5];
   for (const num of numbers) {
-    const value: number = num; // Should be typed as number
+    const value: number = num;
   }
 
   // Test with string array
   const words = ["apple", "banana", "cherry"];
   for (const word of words) {
-    const text: string = word; // Should be typed as string
+    const text: string = word;
   }
 
   // Test with boolean array
   const flags = [true, false, true];
   for (const flag of flags) {
-    const bool: boolean = flag; // Should be typed as boolean
+    const bool: boolean = flag;
   }
 }
 
@@ -66,7 +66,7 @@ function testForOfWithTuples(): void {
   // Test for-of with homogeneous tuple
   const coords: [number, number, number] = [1, 2, 3];
   for (const coord of coords) {
-    const value: number = coord; // Should be typed as number
+    const value: number = coord;
   }
 
   // Test for-of with heterogeneous tuple - should create union type
@@ -91,9 +91,9 @@ function testNestedForLoops(): void {
   };
 
   for (const sectionName in data) {
-    const name: string = sectionName; // Should be "section1" | "section2"
+    const name: "section1" | "section2" = sectionName;
     for (const value of data[sectionName]) {
-      const num: number = value; // Should be number
+      const num: number = value;
     }
   }
 }
