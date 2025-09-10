@@ -103,6 +103,14 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     static(Vector[x])
   }
 
+  static fun two(x: T, y: T): this {
+    x.project().compare(y.project()) match {
+    | EQ() -> internal_error("InternalKeyedArrayMap::two")
+    | LT() -> static(Vector[x, y])
+    | GT() -> static(Vector[y, x])
+    }
+  }
+
   fun isEmpty(): Bool {
     this.inner.isEmpty()
   }

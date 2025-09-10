@@ -170,7 +170,10 @@ extension class TypeChecker {
   /* Typechecks expression  obj[idx]
              or expression  obj.idx
              or expression  obj?.idx  if optionalChaining is true
-     where obj has type objType */
+     where obj has type objType
+
+     Try to keep in synch with TEnv#keyOfType
+  */
   fun get(
     env: mutable TCEnv,
     pos: PosRange,
@@ -892,7 +895,6 @@ extension class TypeChecker {
           Array[(pos, "'as const' can only be used with string literals")],
         )
       }
-    | KeyOf _ -> notSupported(pos)
     | Params _ ->
       internal_error("Internal error: Params should not be an expression")
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])

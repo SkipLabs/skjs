@@ -495,8 +495,10 @@ class TEnv{
     | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
     | TAAsserts _ -> internal_error("TODO asserts ")
     | TAIs _ -> internal_error("TODO is ")
-    | TANew _ -> typingError(Array[(pos, "TODO new")])
-    | TAKeyOf _ -> internal_error("TODO keyof ")
+    | TANew _ -> internal_error("TODO new ")
+    | TAKeyOf(ty) ->
+      targetType = this.normalize(context, ty);
+      this.keyOfType(subst, targetType, pos)
     | TAEmptyArray _ -> internal_error("TODO emptyArray ")
     | TAInfer _ -> internal_error("TODO infer ")
     | TATemplate _ -> internal_error("TODO template ")
@@ -786,6 +788,80 @@ class TEnv{
     });
     tFields = TFields::create(fields, indexes.toArray());
     (algebraicBranchField, tFields)
+  }
+
+  /* Over-approximates keyof targetType
+     Though keyof should be treated symbolically because it is a decreasing
+     function of types.
+     In particular, do not use keyof to check that a key is valid.
+
+     Try to keep in synch with TypeChecker#get in TypeCheckExpr
+  */
+  fun keyOfType(subst: mutable Subst, targetType: TType, pos: PosRange): TType {
+    clauses = targetType.expand(subst, this, Covariant()).clauses;
+    if (
+      clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
+    ) {
+      return TType::fromSTypes(pos, STypes::stringOrNumber(pos))
+    };
+    result = TType::bottom(pos);
+    maxRange = -1;
+    strings = SortedSet[];
+    for (clause in clauses) {
+      invariant(clause.vars.isEmpty());
+      stypes = Vector::mcreateFromIterator(clause.stypes.fromSome().values());
+      while (!stypes.isEmpty()) {
+        stype = stypes.pop();
+        stype match {
+        | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
+        | TObject(fields, _) ->
+          for (field in fields) {
+            !strings = strings.set(field.name);
+          };
+          for (index in fields.indexes) {
+            // TODO: convert numbers to strings
+            !result = TType::union(subst, this, result, index.keyType);
+          }
+        | TAlgebraic(branches, _) ->
+          !strings = strings.set(kAlgebraicBranchFieldName);
+          for (branch in branches) {
+            for (field in branch.fields) {
+              !strings = strings.set(field.name);
+            };
+            for (index in branch.fields.indexes) {
+              // TODO: convert numbers to strings
+              !result = TType::union(subst, this, result, index.keyType);
+            }
+          }
+        | TPrimValue(primKind, _, primPos) ->
+          objName = primKind.toString();
+          obj = this.newObject(subst.context, Name(primPos, objName), Array[]);
+          stypes.push(obj)
+        | TPrimUnit _ -> void /* bottom */
+        | TPromise _
+        | TFuns _ ->
+          internal_error(`TODO: keyof ${prettyPrintSType(stype)}`)
+        }
+      }
+    };
+    numbers = SortedSet::createFromItems(
+      Range(0, maxRange).map(i -> i.toString()),
+    );
+    !strings = strings.union(numbers);
+    ArrayValues::ofSet(strings, pos) match {
+    | None() -> void
+    | strValues @ Some _ ->
+      literals = ArrayValues::ofSet(numbers, pos) match {
+      | None() -> TType::single(TPrimValue(TString(), strValues, pos))
+      | nbrValues @ Some _ ->
+        TType::fromSTypes(
+          pos,
+          STypes::stringOrNumber(pos, strValues, nbrValues),
+        )
+      };
+      !result = TType::union(subst, this, result, literals)
+    };
+    result
   }
 }
 

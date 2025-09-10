@@ -308,7 +308,6 @@ base class Expr_ uses XXHashable {
   | Spread(Name)
   | EString(String)
   | TypeOf(Expr)
-  | KeyOf(Type)
   | Await(Expr)
   | Get(Expr, Expr)
   | New(Name, Array<Type>, Array<Expr>)

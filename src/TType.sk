@@ -666,8 +666,22 @@ class STypes private (
 
   static fun nullish(pos: PosRange): this {
     static(
-      InternalKeyedArrayMap::single((TPrimUnit(TNull(), pos) : SType)).union(
-        InternalKeyedArrayMap::single((TPrimUnit(TUndefined(), pos) : SType)),
+      InternalKeyedArrayMap::two(
+        (TPrimUnit(TNull(), pos) : SType),
+        TPrimUnit(TUndefined(), pos),
+      ),
+    )
+  }
+
+  static fun stringOrNumber(
+    pos: PosRange,
+    strValues: ?ArrayValues = None(),
+    nbrValues: ?ArrayValues = None(),
+  ): this {
+    static(
+      InternalKeyedArrayMap::two(
+        (TPrimValue(TString(), strValues, pos) : SType),
+        TPrimValue(TNum(), nbrValues, pos),
       ),
     )
   }
