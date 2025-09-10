@@ -231,7 +231,7 @@ class CallGraph private (
     debug: Bool = false,
   ): SortedSet<String> {
     affectedCGNodes: mutable Set<CGNode> = mutable Set[];
-    affectedClasses: mutable Set<(Name, String)> = mutable Set[]; // (className, fileName) pairs
+    affectedClasses: mutable Set<(String, String)> = mutable Set[]; // (className, fileName) pairs
     for (def in changedDefs) {
       checkDef(def, affectedCGNodes, affectedClasses)
     };
@@ -240,7 +240,7 @@ class CallGraph private (
       node.id match {
       | Method(_, class_, fileName, _)
       | Constructor(class_, fileName) ->
-        classIdent = (class_, fileName);
+        classIdent = (class_.value, fileName);
         if (affectedClasses.contains(classIdent)) {
           affectedCGNodes.insert(node)
         }
@@ -280,7 +280,7 @@ class CallGraph private (
 private fun checkDef(
   def: Def,
   nodes: mutable Set<CGNode>,
-  classes: mutable Set<(Name, String)>,
+  classes: mutable Set<(String, String)>,
 ): void {
   def.value match {
   // Unsupported syntactic forms
@@ -309,7 +309,7 @@ private fun checkDef(
     | None() -> CGNode::create(AnonymousFunDef(fd))
     };
     nodes.insert(cgNode)
-  | c @ Class _ -> classes.insert((c.name, def.pos.fileName))
+  | c @ Class _ -> classes.insert((c.name.value, def.pos.fileName))
   }
 }
 
