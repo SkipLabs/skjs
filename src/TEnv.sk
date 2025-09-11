@@ -414,11 +414,9 @@ class TEnv{
         | Some(FNNormal(name @ Name(_, "constructor"))) -> Some(name)
         | _ -> None()
         };
-        metIsStatic = if (isConstructor.isSome()) {
-          true
-        } else {
-          fieldType.modifiers.modifiers.containsKey("static")
-        };
+        metIsStatic =
+          isConstructor.isSome() ||
+          fieldType.modifiers.modifiers.containsKey("static");
         if (metIsStatic != isStatic.isSome()) continue;
         (metName, metType) = isConstructor match {
         | Some(name) ->
