@@ -416,8 +416,7 @@ class TEnv{
         } else {
           fieldType.modifiers.modifiers.containsKey("static")
         };
-        if (isStatic is Some _ && !metIsStatic) continue;
-        if (isStatic is None() && metIsStatic) continue;
+        if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, fd.isStatic()),
         );
