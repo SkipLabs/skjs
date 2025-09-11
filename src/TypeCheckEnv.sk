@@ -31,9 +31,6 @@ mutable class TCEnv(
     tenv: TEnv,
     scope: readonly Scope,
   ): void {
-    if (scope.up.fromSome().id != this.scope.id) {
-      internal_error("scope up id mismatch")
-    };
     this.scope.merge(subst, tenv, scope, this.mcreateSubScope{isLoop => false});
   }
 
