@@ -410,23 +410,23 @@ class TEnv{
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ FunDef _ ->
-        isConstructor = fd.name is Some(FNNormal(Name(_, "constructor")));
-        metIsStatic = if (isConstructor) {
+        isConstructor = fd.name match {
+        | Some(FNNormal(name @ Name(_, "constructor"))) -> Some(name)
+        | _ -> None()
+        };
+        metIsStatic = if (isConstructor.isSome()) {
           true
         } else {
           fieldType.modifiers.modifiers.containsKey("static")
         };
         if (metIsStatic != isStatic.isSome()) continue;
-        (metName, metType) = if (isConstructor) {
-          name = fd.name match {
-          | Some(FNNormal(name)) -> name
-          | _ -> internal_error("Unexpected constructor name")
-          };
+        (metName, metType) = isConstructor match {
+        | Some(name) ->
           (
             name,
             this.makeConstructor(context, className, isStatic.fromSome(), fd),
           )
-        } else {
+        | None() ->
           cgNode = CGNode::create(
             Method(fd.name, className, fd.pos.fileName, fd.isStatic()),
           );
