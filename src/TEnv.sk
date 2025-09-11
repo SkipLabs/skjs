@@ -568,6 +568,12 @@ class TEnv{
     | None() -> notSupported(fd.pos, "anonymous function")
     | _ -> notSupported(fd.pos, "non-normal function name")
     };
+    retType = fd.retType match {
+    | (pos, None()) ->
+      // constructors must use makeConstructor
+      typingError(Array[(pos, "Missing return type annotation")])
+    | (_, Some(x)) -> x
+    };
     fty = this.normalize(
       context,
       Type(
@@ -576,11 +582,7 @@ class TEnv{
           isMethod,
           fd.tparams,
           fd.params.map(this.convertParam),
-          fd.retType.i1 match {
-          | None() -> // constructor
-            Type(fd.retType.i0, TAInst(Name(fd.retType.i0, "void"), Array[]))
-          | Some(x) -> x
-          },
+          retType,
           cgNode,
         ),
       ),
