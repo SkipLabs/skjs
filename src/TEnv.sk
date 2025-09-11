@@ -515,16 +515,16 @@ class TEnv{
       x
     });
     params = fd.params.map(this.convertParam);
-    retType = fd.retType.i1 match {
-    | None() -> // constructor
+    retType = fd.retType match {
+    | (pos, None()) -> // constructor
       Type(
-        fd.retType.i0,
+        pos,
         TAInst(
-          Name(fd.retType.i0, className.value),
+          Name(pos, className.value),
           tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
         ),
       )
-    | Some(x) ->
+    | (_, Some(x)) ->
       typingError(Array[(x.pos, "Unexpected annotation for constructor")])
     };
     this.normalize(
