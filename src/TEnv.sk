@@ -511,7 +511,7 @@ class TEnv{
     !tparams = tparams.map(x -> {
       // We give the tparams a different name to make sure they are
       // not confused with the type parameters of the class
-      !x.id = Id::createFromString("$" + x.id.id);
+      !x.id = x.id.prefixWith("$");
       x
     });
     params = fd.params.map(this.convertParam);

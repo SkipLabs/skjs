@@ -877,8 +877,8 @@ value class Id private (id: String) uses XXHashable, Orderable, Show {
     static(`${name}:${id}:${lexer.relativeFileName.hash()}`)
   }
 
-  static fun createFromString(id: String): this {
-    static(id)
+  fun prefixWith(pre: String): this {
+    static(pre + this.id)
   }
 
   static fun createThis(): this {
