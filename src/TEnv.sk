@@ -414,9 +414,7 @@ class TEnv{
         | Some(FNNormal(name @ Name(_, "constructor"))) -> Some(name)
         | _ -> None()
         };
-        metIsStatic =
-          isConstructor.isSome() ||
-          fieldType.modifiers.modifiers.containsKey("static");
+        metIsStatic = isConstructor.isSome() || fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         (metName, metType) = isConstructor match {
         | Some(name) ->
@@ -426,7 +424,7 @@ class TEnv{
           )
         | None() ->
           cgNode = CGNode::create(
-            Method(fd.name, className, fd.pos.fileName, fd.isStatic()),
+            Method(fd.name, className, fd.pos.fileName, metIsStatic),
           );
           this.funDecl(context, true, fd, cgNode)
         };
