@@ -234,15 +234,14 @@ extension class TypeChecker {
   ): void {
     ty = env.scope.get(local);
     clauses = ty.expand(env.subst, this.tenv, Covariant());
-    !ty = TType::fromClauses(ty.pos, clauses);
-    !ty = (mutable FilterType()).type((filter, map), ty);
-    isTopOrEmpty = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
+    !clauses = (mutable FilterType()).clauses((filter, map), clauses);
+    isTopOrEmpty = clauses.getSTypes(env.subst, this.tenv) match {
     | None() -> true
     | Some(stypes) -> stypes.isEmpty()
     };
     localType = default match {
     | Some(d) if (isTopOrEmpty) -> TType::single(d)
-    | _ -> ty
+    | _ -> TType::fromClauses(ty.pos, clauses)
     };
     env.scope.set(local, localType, (_, _) -> void)
   }
