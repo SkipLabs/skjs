@@ -286,13 +286,21 @@ base class Variance {
 
 // Regular Typescript (open) object type
 // but disjoint from types in TAlgebraic
-class TObject(fields: TFields) extends SType
+class TObject(fields: TFields) extends SType {
+  static fun any(pos: PosRange): this {
+    static(TFields::empty(), pos)
+  }
+}
 
 const kAlgebraicBranchFieldName: String = "kind";
 
 class TAlgebraic(
   branches: InternalKeyedArrayMap<String, TConstr>,
 ) extends SType {
+  static fun any(pos: PosRange): this {
+    static(InternalKeyedArrayMap::empty(), pos)
+  }
+
   static fun single(x: TConstr, pos: PosRange): this {
     static(InternalKeyedArrayMap::single(x), pos)
   }
@@ -691,6 +699,24 @@ class STypes private (
         (TPrimUnit(TNull(), pos) : SType),
         TPrimUnit(TUndefined(), pos),
       ),
+    )
+  }
+
+  static fun undefinedish(pos: PosRange): this {
+    static(
+      InternalKeyedArrayMap::two(
+        (TPrimUnit(TUndefined(), pos) : SType),
+        TPrimUnit(TVoid(), pos),
+      ),
+    )
+  }
+
+  static fun objectish(pos: PosRange): this {
+    static(
+      InternalKeyedArrayMap::two(
+        (TObject::any(pos) : SType),
+        (TAlgebraic::any(pos)),
+      ).union(InternalKeyedArrayMap::single((TPrimUnit(TNull(), pos) : SType))),
     )
   }
 

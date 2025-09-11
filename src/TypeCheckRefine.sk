@@ -49,37 +49,15 @@ extension class TypeChecker {
     tag: String,
     target: Bool,
   ): void {
-    if (target) {
-      // Positive branch: narrow to only the matching tag
-      this.setLocal(
-        env,
-        local,
-        None(),
-        _ ~> true,
-        stype ~>
-          stype match {
-          | TAlgebraic(branches, aPos) ->
-            TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
-          | x -> x
-          }
-        ,
-      )
-    } else {
-      // Negative branch: eliminate the matching tag (refinement by elimination)
-      this.setLocal(
-        env,
-        local,
-        None(),
-        _ ~> true,
-        stype ~>
-          stype match {
-          | TAlgebraic(branches, aPos) ->
-            TAlgebraic(branches.filter(branch -> branch.tag != tag), aPos)
-          | x -> x
-          }
-        ,
-      )
-    }
+    pos = local.pos;
+    this.setLocal(
+      env,
+      local,
+      TType::single(
+        TAlgebraic::single(TConstr(tag, pos, TFields::empty()), pos),
+      ),
+      target,
+    )
   }
 
   fun evalTypeofEquality(
@@ -92,83 +70,66 @@ extension class TypeChecker {
     typeStr match {
     | "symbol" -> void
     | "string" ->
-      (filter, default) = (
-        x ~> (x is TPrimValue(TString(), _, _)),
-        Some(TPrimValue::string(typePos)),
-      );
       this.setLocal(
         env,
         local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
+        TType::single(TPrimValue::string(typePos)),
+        target,
       )
     | "number" ->
-      (filter, default) = (
-        x ~> x is TPrimValue(TNum(), _, _),
-        Some(TPrimValue::number(typePos)),
-      );
       this.setLocal(
         env,
         local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
+        TType::single(TPrimValue::number(typePos)),
+        target,
       )
     | "bigint" ->
-      (filter, default) = (
-        x ~> x is TPrimValue(TBigInt(), _, _),
-        Some(TPrimValue::bigint(typePos)),
-      );
       this.setLocal(
         env,
         local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
+        TType::single(TPrimValue::bigint(typePos)),
+        target,
       )
     | "boolean" ->
-      (filter, default) = (
-        x ~> x is TPrimValue(TBool(), _, _),
-        Some(TPrimValue::boolean(typePos)),
-      );
       this.setLocal(
         env,
         local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
+        TType::single(TPrimValue::boolean(typePos)),
+        target,
       )
     | "undefined" ->
-      filter = x ~>
-        x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _);
       this.setLocal(
         env,
         local,
-        if (target) None() else None(),
-        if (target) filter else x ~> !filter(x),
+        TType::fromSTypes(typePos, STypes::undefinedish(typePos)),
+        target,
       )
     | "object" ->
-      (filter, default) = (
-        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimUnit(TNull(), _),
-        Some(TObject(TFields::empty(), typePos)),
-      );
       this.setLocal(
         env,
         local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
+        TType::fromSTypes(typePos, STypes::objectish(typePos)),
+        target,
       )
-    | "function" ->
-      filter = x ~> x is TFuns _;
-      this.setLocal(
-        env,
-        local,
-        if (target) None() else None(),
-        if (target) filter else x ~> !filter(x),
-      )
+    | "function"  //  ->
+    // filter = x ~> x is TFuns _;
+    // this.setLocal(
+    //   env,
+    //   local,
+    //   if (target) None() else None(),
+    //   if (target) filter else x ~> !filter(x),
+    // )
     | _ -> void
     }
   }
 
   fun evalNullEquality(env: mutable TCEnv, local: Name, target: Bool): void {
-    this.setLocal(env, local, None(), x ~> x is TPrimUnit(TNull(), _) == target)
+    this.setLocal(
+      env,
+      local,
+      TType::single(TPrimUnit(TNull(), local.pos)),
+      target,
+    )
   }
 
   fun evalUndefinedEquality(
@@ -176,8 +137,12 @@ extension class TypeChecker {
     local: Name,
     target: Bool,
   ): void {
-    this.setLocal(env, local, None(), x ~>
-      (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) == target
+    pos = local.pos;
+    this.setLocal(
+      env,
+      local,
+      TType::fromSTypes(pos, STypes::undefinedish(pos)),
+      target,
     )
   }
 
@@ -228,23 +193,16 @@ extension class TypeChecker {
   fun setLocal(
     env: mutable TCEnv,
     local: Name,
-    default: ?SType,
-    filter: SType ~> Bool,
-    map: SType ~> SType = x ~> x,
+    targetType: TType,
+    target: Bool,
   ): void {
     ty = env.scope.get(local);
-    clauses = ty.expand(env.subst, this.tenv, Covariant());
-    !ty = TType::fromClauses(ty.pos, clauses);
-    !ty = (mutable FilterType()).type((filter, map), ty);
-    isTopOrEmpty = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
-    | None() -> true
-    | Some(stypes) -> stypes.isEmpty()
+    !ty = if (target) {
+      TType::inter(env.subst, this.tenv, ty, targetType)
+    } else {
+      ty.diff(targetType)
     };
-    localType = default match {
-    | Some(d) if (isTopOrEmpty) -> TType::single(d)
-    | _ -> ty
-    };
-    env.scope.set(local, localType, (_, _) -> void)
+    env.scope.set(local, ty, (_, _) -> void)
   }
 }
 

@@ -1,12 +1,24 @@
 function compare<T>(a: T, b: T): number {
+  __SKJS_show(a);
+  __SKJS_show(b);
   if (a === b) return 0;
+
+  __SKJS_show(a);
+  __SKJS_show(b);
   if (a === null || b === null) return a === null ? -1 : 1;
+
+  __SKJS_show(a);
+  __SKJS_show(b);
   if (typeof a !== typeof b) return typeof a < typeof b ? -1 : 1;
 
+  __SKJS_show(a);
+  __SKJS_show(b);
   if (typeof a === "number" && typeof b === "number") {
     return a < b ? -1 : 1;
   }
 
+  __SKJS_show(a);
+  __SKJS_show(b);
   if (typeof a === "boolean" && typeof b === "boolean") {
     return a < b ? -1 : 1;
   }
