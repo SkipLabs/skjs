@@ -124,7 +124,11 @@ class TType private {
     static::create(pos, TInsts::empty(), clauses)
   }
 
-  static fun create(pos: PosRange, insts: TInsts, clauses: Clauses): this {
+  static private fun create(
+    pos: PosRange,
+    insts: TInsts,
+    clauses: Clauses,
+  ): this {
     if (clauses.isTop()) {
       !insts = TInsts::empty();
     };
