@@ -92,6 +92,10 @@ class TType private {
     static::fromSTypes(pos, STypes::stringOrNumber(pos, strValues, nbrValues))
   }
 
+  static fun nullish(pos: PosRange): this {
+    static::fromSTypes(pos, STypes::nullish(pos))
+  }
+
   // Type variable.
   static fun var(v: TVar): this {
     static::create(v.pos, TInsts::single(v), Clauses::empty())
@@ -103,7 +107,7 @@ class TType private {
     static::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
-  static fun fromSTypes(pos: PosRange, sTypes: STypes): this {
+  static private fun fromSTypes(pos: PosRange, sTypes: STypes): this {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
