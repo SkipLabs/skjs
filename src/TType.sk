@@ -120,6 +120,16 @@ class TType private {
     }
   }
 
+  static fun fromTypeParam(tparam: TypeParam): this {
+    TType::fromClauses(
+      tparam.name.pos,
+      Clauses::single(
+        TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
+        None(),
+      ),
+    )
+  }
+
   static fun fromClauses(pos: PosRange, clauses: Clauses): this {
     static::create(pos, TInsts::empty(), clauses)
   }
@@ -1055,13 +1065,6 @@ class Clauses private (
     | None() -> static::empty()
     | Some(clause) -> static(InternalKeyedArrayMap::single(clause))
     }
-  }
-
-  static fun fromTypeParam(tparam: TypeParam): this {
-    static::single(
-      TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
-      None(),
-    )
   }
 
   static fun fromSTypes(stypes: STypes): this {
