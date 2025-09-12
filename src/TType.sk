@@ -126,11 +126,7 @@ class TType private {
     tparam: TParamWithConstraint,
     stypes: ?STypes,
   ): this {
-    ty = TType::fromTParam(
-      pos,
-      TParam(tparam.name, tparam.fileName, tparam.id),
-      stypes,
-    );
+    ty = TType::fromTParam(pos, tparam.withoutConstraint(), stypes);
     tparam.cstr match {
     | None() -> ty
     | Some(cstr) -> TType::inter(subst, tenv, ty, cstr)
@@ -954,7 +950,12 @@ class TParamWithConstraint(
   fileName: String,
   id: Id,
   cstr: ?TType,
-) uses XXHashable, Orderable
+) uses XXHashable, Orderable {
+  //
+  fun withoutConstraint(): TParam {
+    TParam(this.name, this.fileName, this.id)
+  }
+}
 
 class TParam(name: String, fileName: String, id: Id) uses XXHashable, Orderable
 
