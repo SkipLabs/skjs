@@ -143,15 +143,18 @@ class TType private {
     tenv: TEnv,
     tparam: TypeParam,
   ): this {
-    ty = TType::fromTParam(
+    TType::fromTParamWithConstraint(
+      subst,
+      tenv,
       tparam.name.pos,
-      TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
+      TParamWithConstraint(
+        tparam.name.value,
+        tparam.name.pos.fileName,
+        tparam.id,
+        tparam.constraint.map(cstr -> tenv.normalize(subst.context, cstr)),
+      ),
+      None(),
     );
-    tparam.constraint match {
-    | None() -> ty
-    | Some(cstr) ->
-      TType::inter(subst, tenv, ty, tenv.normalize(subst.context, cstr))
-    }
   }
 
   static private fun fromClauses(pos: PosRange, clauses: Clauses): this {
