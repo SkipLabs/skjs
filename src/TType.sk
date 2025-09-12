@@ -99,7 +99,7 @@ class TType private {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
-  static fun fromTParam(pos: PosRange, tParam: TParam): this {
+  static private fun fromTParam(pos: PosRange, tParam: TParam): this {
     static::fromClauses(pos, Clauses::single(tParam))
   }
 
