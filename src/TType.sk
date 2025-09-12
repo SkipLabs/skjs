@@ -111,8 +111,12 @@ class TType private {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
-  static private fun fromTParam(pos: PosRange, tParam: TParam): this {
-    static::fromClauses(pos, Clauses::single(tParam))
+  static private fun fromTParam(
+    pos: PosRange,
+    tParam: TParam,
+    stypes: ?STypes = None(),
+  ): this {
+    TType::fromClauses(pos, Clauses::single(tParam, stypes))
   }
 
   static fun fromTParamWithConstraint(
@@ -122,9 +126,10 @@ class TType private {
     tparam: TParamWithConstraint,
     stypes: ?STypes,
   ): this {
-    ty = TType::fromClauses(
+    ty = TType::fromTParam(
       pos,
-      Clauses::single(TParam(tparam.name, tparam.fileName, tparam.id), stypes),
+      TParam(tparam.name, tparam.fileName, tparam.id),
+      stypes,
     );
     tparam.cstr match {
     | None() -> ty
