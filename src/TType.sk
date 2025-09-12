@@ -137,14 +137,21 @@ class TType private {
     }
   }
 
-  static fun fromTypeParam(tparam: TypeParam): this {
-    TType::fromClauses(
+  // Type parameter injected into type, intersected with its constraint
+  static fun fromTypeParam(
+    subst: mutable Subst,
+    tenv: TEnv,
+    tparam: TypeParam,
+  ): this {
+    ty = TType::fromTParam(
       tparam.name.pos,
-      Clauses::single(
-        TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
-        None(),
-      ),
-    )
+      TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
+    );
+    tparam.constraint match {
+    | None() -> ty
+    | Some(cstr) ->
+      TType::inter(subst, tenv, ty, tenv.normalize(subst.context, cstr))
+    }
   }
 
   static private fun fromClauses(pos: PosRange, clauses: Clauses): this {
