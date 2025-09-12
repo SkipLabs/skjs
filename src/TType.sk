@@ -137,26 +137,6 @@ class TType private {
     }
   }
 
-  // Type parameter injected into type, intersected with its constraint
-  static fun fromTypeParam(
-    subst: mutable Subst,
-    tenv: TEnv,
-    tparam: TypeParam,
-  ): this {
-    TType::fromTParamWithConstraint(
-      subst,
-      tenv,
-      tparam.name.pos,
-      TParamWithConstraint(
-        tparam.name.value,
-        tparam.name.pos.fileName,
-        tparam.id,
-        tparam.constraint.map(cstr -> tenv.normalize(subst.context, cstr)),
-      ),
-      None(),
-    );
-  }
-
   static private fun fromClauses(pos: PosRange, clauses: Clauses): this {
     static::create(pos, TInsts::empty(), clauses)
   }

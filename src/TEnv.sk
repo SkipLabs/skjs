@@ -287,7 +287,18 @@ class TEnv{
 
   fun addTParams(subst: mutable Subst, clauses: Array<TypeParam>): this {
     for (tparam in clauses) {
-      ty = TType::fromTypeParam(subst, this, tparam);
+      ty = TType::fromTParamWithConstraint(
+        subst,
+        this,
+        tparam.name.pos,
+        TParamWithConstraint(
+          tparam.name.value,
+          tparam.name.pos.fileName,
+          tparam.id,
+          tparam.constraint.map(cstr -> this.normalize(subst.context, cstr)),
+        ),
+        None(),
+      );
       !this.subst[tparam.name.value] = (false, ty)
     };
     this
