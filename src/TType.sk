@@ -156,6 +156,19 @@ class TType private {
 
   // TRANSFORMERS
 
+  // t.mapSTypes(subst, env, variance, f) is t with stypes updated by f, or
+  // None() if the result is Top
+  fun mapSTypes(
+    subst: mutable Subst,
+    env: TEnv,
+    variance: Variance,
+    f: (STypes) -> STypes,
+  ): ?this {
+    this.getSTypes(subst, env, variance).map(stypes ->
+      TType::fromSTypes(this.pos, f(stypes))
+    )
+  }
+
   private fun mapClauses(
     subst: mutable Subst,
     tenv: TEnv,
@@ -752,6 +765,10 @@ class STypes private (
 
   fun map(f: SType -> SType): this {
     static(this.stypes.map(f))
+  }
+
+  fun filter(f: SType -> Bool): this {
+    static(this.stypes.filter(f))
   }
 
   fun filterMap(f: SType -> ?SType): this {

@@ -46,26 +46,25 @@ extension class TypeChecker {
         TObject(
           fields.filterMap(field -> {
             fieldType = field.type;
-            fieldSTypesOpt = fieldType.getSTypes(subst, tenv, Covariant());
-            fieldSTypes = fieldSTypesOpt match {
-            | None() -> return None()
-            | Some(x) -> x
-            };
-            !fieldSTypes = fieldSTypes.filterMap(fieldSType ~> {
-              fieldSType match {
-              | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> None()
-              | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                internal_error(
-                  "TODO: encountered both non-empty funs and methods in filterMethod",
-                )
-              //Some(tfuns with {methods => Array[]})
-              | _ -> Some(fieldSType)
-              }
-            });
-            !fieldType = TType::fromSTypes(fieldType.pos, fieldSTypes);
-            if (fieldType.isBottom()) None() else {
-              Some(field.mapType(_existingType -> fieldType))
-            }
+            fieldType
+              .mapSTypes(subst, tenv, Covariant(), fieldSTypes -> {
+                fieldSTypes.filter(fieldSType ~> {
+                  fieldSType match {
+                  | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> false
+                  | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
+                    internal_error(
+                      "TODO: encountered both non-empty funs and methods in filterMethod",
+                    )
+                  //Some(tfuns with {methods => Array[]})
+                  | _ -> true
+                  }
+                })
+              })
+              .flatMap((fieldType) ->
+                if (fieldType.isBottom()) None() else {
+                  Some(field.mapType(_existingType -> fieldType))
+                }
+              )
           }),
           pos,
         ),
