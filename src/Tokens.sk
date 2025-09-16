@@ -145,6 +145,7 @@ base class TokenKind uses Equality, XXHashable, Hashable {
     this match {
     | TKDot() -> Some(BODot())
     | TKQuestionMarkDot() -> Some(BOOptionalDot())
+    | TKExclamationMarkDot() -> Some(BOExclamationMarkDot())
     | TKMultiplication() -> Some(BOMultiplication())
     | TKDivision() -> Some(BODivision())
     | TKRemainder() -> Some(BORemainder())

@@ -603,6 +603,7 @@ base class BinaryOperator uses XXHashable {
   children =
   | BODot()
   | BOOptionalDot()
+  | BOExclamationMarkDot()
   | BOLessThan()
   | BOLessThanOrEqual()
   | BOGreaterThan()
