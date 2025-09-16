@@ -1,7 +1,5 @@
 function testUnaryVsFunctionCall(): boolean {
   let foo = (): boolean => true;
-  // TODO: should not be an error
-  // @ts-expect-error Invalid !
   return !foo();
 }
 
@@ -28,8 +26,6 @@ function testUnaryVsMethodCall(): boolean {
       return true;
     },
   };
-  // TODO: should not be an error
-  // @ts-expect-error Invalid !
   return !obj.met();
 }
 
