@@ -717,6 +717,8 @@ extension class TypeChecker {
         | _ -> typingError(Array[(e2.pos, "Invalid '?.'")])
         }
 
+      | BOExclamationMarkDot() -> notSupported(pos)
+
       | BOLessThan()
       | BOLessThanOrEqual()
       | BOGreaterThan()
