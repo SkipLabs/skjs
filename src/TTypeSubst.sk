@@ -33,9 +33,12 @@ mutable class Subst private {
     this.!values = saved.values;
   }
 
-  mutable fun grow(env: TEnv, tvar: TVar, ty: TType, isContra: Bool): void {
+  mutable fun grow(env: TEnv, tvar: TVar, ty: TType, variance: Variance): void {
     if (!this.values.containsKey(tvar.id)) {
-      this.!values[tvar.id] = if (isContra) SVOpen(ty) else SVClosed(ty);
+      this.!values[tvar.id] = variance match {
+      | Contravariant() -> SVOpen(ty)
+      | Covariant() -> SVClosed(ty)
+      };
       return void;
     };
     this.values[tvar.id] match {
@@ -43,7 +46,10 @@ mutable class Subst private {
       newTy = TType::union(this, env, ty2, ty);
       if (newTy == ty2) return void;
       this.!version = this.version + 1;
-      this.!values[tvar.id] = if (isContra) SVOpen(newTy) else SVClosed(newTy)
+      this.!values[tvar.id] = variance match {
+      | Contravariant() -> SVOpen(newTy)
+      | Covariant() -> SVClosed(newTy)
+      }
     | SVClosed(_) -> void
     }
   }

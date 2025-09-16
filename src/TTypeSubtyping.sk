@@ -251,7 +251,7 @@ fun isSubTType_(
         status = isSubTType(subst, env, u1, cstr);
         if (status is STError _) return status;
       };
-      subst.grow(env, tvar, u1.diff(u2), true)
+      subst.grow(env, tvar, u1.diff(u2), Contravariant())
     | _ -> void
     }
   };
@@ -269,7 +269,7 @@ fun isSubTType_(
         } else {
           true
         }
-      }) subst.grow(env, tvar, u2.diff(u1), false)
+      }) subst.grow(env, tvar, u2.diff(u1), Covariant())
     | _ -> void
     }
   };
