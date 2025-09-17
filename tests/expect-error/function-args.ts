@@ -12,6 +12,12 @@ function paramNoTypeDefaultOptional(p? = 3): void {}
 
 function paramTypeDefault(p: number = 3): void {}
 
+function callDefault(): void {
+  // TODO: not an error
+  // @ts-expect-error Invalid call
+  paramTypeDefault();
+}
+
 function paramTypeOptional(p?: number): void {}
 
 function paramTypeOptionalCanBeUndefined(p?: number): number {
@@ -23,6 +29,11 @@ function paramTypeOptionalCanBeUndefined(p?: number): number {
 function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
   // @ts-expect-error This operator is useless
   return p ?? 1;
+}
+
+function paramTypeOptionalCanBeUndefined2(p?: number): number {
+  // TODO: p can be undefined
+  return paramTypeOptionalCanBeUndefinedWitness(p);
 }
 
 // @ts-expect-error A parameter cannot both be optional and have a default value
