@@ -2,21 +2,20 @@ module SKJS;
 
 extension class TypeChecker {
   fun funDefSetup(
-    context: mutable SKStore.Context,
+    subst: mutable Subst,
     thisTypeOpt: ?TType,
     fd: FunDef,
     callingContext: CGNode,
   ): (this, mutable TCEnv) {
-    subst = Subst::mcreate{context};
     scope = Scope::mcreateToplevel(fd.pos.fileName) with {callingContext};
-    env = mutable TCEnv(context, subst, scope);
+    env = mutable TCEnv(subst.context, subst, scope);
     thisTypeOpt match {
     | None() -> void
     | Some(thisType) ->
       !this.tenv.subst["this"] = (false, thisType);
       scope.bind(Name(fd.pos, "this"), thisType, true)
     };
-    !this.tenv = this.tenv.addTParams(context, fd.tparams);
+    !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
       (paramName, tyOpt) = param.name match {
       | PNName(n, ty) -> (n, ty)
@@ -40,14 +39,16 @@ extension class TypeChecker {
         }
       | Some(x) -> x
       };
-      scope.bind(paramName, this.tenv.normalize(context, paramType), true)
+      scope.bind(paramName, this.tenv.normalize(subst.context, paramType), true)
     };
-    !this.retType = fd.retType.i1.map(rty -> this.tenv.normalize(context, rty));
+    !this.retType = fd.retType.i1.map(rty ->
+      this.tenv.normalize(subst.context, rty)
+    );
     (this, env)
   }
 
   fun funDef(
-    context: mutable SKStore.Context,
+    subst: mutable Subst,
     thisTypeOpt: ?(ClassKind, TType),
     fd: FunDef,
     cgNode: CGNode,
@@ -69,7 +70,7 @@ extension class TypeChecker {
       }
     };
     (!this, env) = this.funDefSetup(
-      context,
+      subst,
       thisTypeOpt.map(x -> x.i1),
       fd,
       cgNode,

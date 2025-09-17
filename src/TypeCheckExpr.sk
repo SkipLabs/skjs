@@ -504,7 +504,7 @@ extension class TypeChecker {
         | fd @ FunDef _ ->
           if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
             this.constructor(
-              env.context,
+              env.subst,
               obj,
               static::uninitializedThisType(pos),
               fd,
@@ -512,7 +512,7 @@ extension class TypeChecker {
             )
           } else {
             cgNode = CGNode::create(AnonymousFunDef(fd));
-            this.funDef(env.context, Some((CKClass(), obj)), fd, cgNode)
+            this.funDef(env.subst, Some((CKClass(), obj)), fd, cgNode)
           }
         | _ -> void
         }

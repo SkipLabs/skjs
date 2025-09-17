@@ -35,7 +35,8 @@ extension class TypeChecker {
       | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
       | None() -> CGNode::create(AnonymousFunDef(fd))
       };
-      this.funDef(context, None(), fd, cgNode)
+      subst = Subst::mcreate{context};
+      this.funDef(subst, None(), fd, cgNode)
     | Declare _ -> void
     | Namespace _ -> notSupported(def.pos)
     | Export(_, _, d) -> this.checkDef(context, Def(def.pos, d))

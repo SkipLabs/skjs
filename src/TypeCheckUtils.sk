@@ -206,7 +206,7 @@ extension class TypeChecker {
 
   fun makeBoundTVar(env: mutable TCEnv, ty: TType): TType {
     tvar = env.subst.gen(ty.pos);
-    env.subst.grow(this.tenv, tvar, ty, true);
+    env.subst.grow(this.tenv, tvar, ty, Contravariant());
     TType::var(tvar)
   }
 

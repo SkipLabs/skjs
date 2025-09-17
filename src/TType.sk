@@ -104,7 +104,7 @@ class TType private {
   }
 
   static fun fromTParamWithConstraint(
-    context: mutable SKStore.Context,
+    subst: mutable Subst,
     tenv: TEnv,
     pos: PosRange,
     tparam: TParamWithConstraint,
@@ -116,7 +116,7 @@ class TType private {
     );
     tparam.cstr match {
     | None() -> ty
-    | Some(cstr) -> TType::inter(Subst::mcreate{context}, tenv, ty, cstr)
+    | Some(cstr) -> TType::inter(subst, tenv, ty, cstr)
     }
   }
 
@@ -237,7 +237,7 @@ class TType private {
       if (insts.isEmpty()) return clauses;
       inst = insts.pop();
       tyDef = inst match {
-      | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
+      | TSInst(name, targs) -> env.instantiate(subst, name, targs)
       | TInter(ty1, ty2) -> TType::inter(subst, env, ty1, ty2)
       | TUnion(ty1, ty2) -> TType::union(subst, env, ty1, ty2)
       | tvar @ TVar _ -> subst.get(env, tvar, variance)
@@ -877,8 +877,8 @@ value class Id private (id: String) uses XXHashable, Orderable, Show {
     static(`${name}:${id}:${lexer.relativeFileName.hash()}`)
   }
 
-  static fun createFromString(id: String): this {
-    static(id)
+  fun prefixWith(pre: String): this {
+    static(pre + this.id)
   }
 
   static fun createThis(): this {

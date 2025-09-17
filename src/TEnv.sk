@@ -69,11 +69,7 @@ class TEnv{
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
-  fun instantiate(
-    context: mutable SKStore.Context,
-    name: Name,
-    targs: TArgs,
-  ): TType {
+  fun instantiate(subst: mutable Subst, name: Name, targs: TArgs): TType {
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
@@ -82,7 +78,7 @@ class TEnv{
     };
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
 
-    tdef = this.defMap.getType(context, name);
+    tdef = this.defMap.getType(subst.context, name);
     clauses = tdef match {
     | TDType(ta) -> ta.tdefParams
     | TDClass(ca) -> ca.tparams
@@ -96,8 +92,8 @@ class TEnv{
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
-        cstrTy = this.normalize(context, cstr);
-        isSubTType(Subst::mcreate{context}, this, targ, cstrTy) match {
+        cstrTy = this.normalize(subst.context, cstr);
+        isSubTType(subst, this, targ, cstrTy) match {
         | STOk() -> void
         | STError _ ->
           typingError(
@@ -116,8 +112,8 @@ class TEnv{
     };
 
     tdef match {
-    | TDType(ta) -> this.normalize(context, ta.body)
-    | TDClass(_) -> this.new(context, name, targs.targs)
+    | TDType(ta) -> this.normalize(subst.context, ta.body)
+    | TDClass(_) -> this.new(subst.context, name, targs.targs)
     }
   }
 
@@ -272,10 +268,7 @@ class TEnv{
     ).fromSome()
   }
 
-  fun addTParams(
-    context: mutable SKStore.Context,
-    clauses: Array<TypeParam>,
-  ): this {
+  fun addTParams(subst: mutable Subst, clauses: Array<TypeParam>): this {
     for (tparam in clauses) {
       ty = TType::fromClauses(tparam.name.pos, Clauses::fromTypeParam(tparam));
       !this.subst[tparam.name.value] = (
@@ -283,12 +276,7 @@ class TEnv{
         tparam.constraint match {
         | None() -> ty
         | Some(cstr) ->
-          TType::inter(
-            Subst::mcreate{context},
-            this,
-            ty,
-            this.normalize(context, cstr),
-          )
+          TType::inter(subst, this, ty, this.normalize(subst.context, cstr))
         },
       )
     };
@@ -410,27 +398,22 @@ class TEnv{
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ FunDef _ ->
-        isConstructor = fd.name is Some(FNNormal(Name(_, "constructor")));
-        metIsStatic = if (isConstructor) {
-          true
-        } else {
-          fieldType.modifiers.modifiers.containsKey("static")
+        isConstructor = fd.name match {
+        | Some(FNNormal(name @ Name(_, "constructor"))) -> Some(name)
+        | _ -> None()
         };
-        if (isStatic is Some _ && !metIsStatic) continue;
-        if (isStatic is None() && metIsStatic) continue;
-        cgNode = CGNode::create(
-          Method(fd.name, className, fd.pos.fileName, fd.isStatic()),
-        );
-        (metName, metType) = if (isConstructor) {
-          name = fd.name match {
-          | Some(FNNormal(name)) -> name
-          | _ -> internal_error("Unexpected constructor name")
-          };
+        metIsStatic = isConstructor.isSome() || fd.isStatic();
+        if (metIsStatic != isStatic.isSome()) continue;
+        (metName, metType) = isConstructor match {
+        | Some(name) ->
           (
             name,
             this.makeConstructor(context, className, isStatic.fromSome(), fd),
           )
-        } else {
+        | None() ->
+          cgNode = CGNode::create(
+            Method(fd.name, className, fd.pos.fileName, metIsStatic),
+          );
           this.funDecl(context, true, fd, cgNode)
         };
         TField::create(fd.pos, metName.value, false, metType) match {
@@ -516,20 +499,20 @@ class TEnv{
     !tparams = tparams.map(x -> {
       // We give the tparams a different name to make sure they are
       // not confused with the type parameters of the class
-      !x.id = Id::createFromString("$" + x.id.id);
+      !x.id = x.id.prefixWith("$");
       x
     });
     params = fd.params.map(this.convertParam);
-    retType = fd.retType.i1 match {
-    | None() -> // constructor
+    retType = fd.retType match {
+    | (pos, None()) -> // constructor
       Type(
-        fd.retType.i0,
+        pos,
         TAInst(
-          Name(fd.retType.i0, className.value),
+          Name(pos, className.value),
           tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
         ),
       )
-    | Some(x) ->
+    | (_, Some(x)) ->
       typingError(Array[(x.pos, "Unexpected annotation for constructor")])
     };
     this.normalize(
@@ -573,6 +556,12 @@ class TEnv{
     | None() -> notSupported(fd.pos, "anonymous function")
     | _ -> notSupported(fd.pos, "non-normal function name")
     };
+    retType = fd.retType match {
+    | (pos, None()) ->
+      // constructors must use makeConstructor
+      typingError(Array[(pos, "Missing return type annotation")])
+    | (_, Some(x)) -> x
+    };
     fty = this.normalize(
       context,
       Type(
@@ -581,11 +570,7 @@ class TEnv{
           isMethod,
           fd.tparams,
           fd.params.map(this.convertParam),
-          fd.retType.i1 match {
-          | None() -> // constructor
-            Type(fd.retType.i0, TAInst(Name(fd.retType.i0, "void"), Array[]))
-          | Some(x) -> x
-          },
+          retType,
           cgNode,
         ),
       ),
@@ -745,7 +730,7 @@ class TEnv{
           )
         };
         tparam = this.tparams[n.value];
-        TType::fromTParamWithConstraint(context, this, pos, tparam, None())
+        TType::fromTParamWithConstraint(subst, this, pos, tparam, None())
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(

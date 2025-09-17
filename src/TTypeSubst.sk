@@ -20,8 +20,26 @@ mutable class Subst private {
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {
+  /* To ensure consistency in type variable identifiers, use mcreate only
+     in functions that take no argument containing type variables and whose
+     return value does not contain type variables. */
   static fun mcreate{context: mutable SKStore.Context}: mutable this {
     mutable static{context}
+  }
+
+  /* Use Subst#clone to create a temporary subst when there is already
+     one that shouldn't be polluted.
+     One would typically do this to check subtyping relations that are
+     non-mandatory. */
+  mutable fun clone(): mutable this {
+    mutable static{
+      context => this.context,
+      seenSub => this.seenSub,
+      seenInter => this.seenInter,
+      seenUnion => this.seenUnion,
+      version => this.version,
+      values => this.values,
+    }
   }
 
   readonly fun save(): SavedSubst {
@@ -33,43 +51,41 @@ mutable class Subst private {
     this.!values = saved.values;
   }
 
-  mutable fun grow(env: TEnv, tvar: TVar, ty: TType, isContra: Bool): void {
-    if (!this.values.containsKey(tvar.id)) {
-      this.!values[tvar.id] = if (isContra) SVOpen(ty) else SVClosed(ty);
-      return void;
-    };
-    this.values[tvar.id] match {
-    | SVOpen(ty2) ->
+  mutable fun grow(env: TEnv, tvar: TVar, ty: TType, variance: Variance): void {
+    newTy = this.values.maybeGet(tvar.id) match {
+    | None() -> ty
+    | Some(SVClosed(_)) -> return void
+    | Some(SVOpen(ty2)) ->
       newTy = TType::union(this, env, ty2, ty);
       if (newTy == ty2) return void;
-      this.!version = this.version + 1;
-      this.!values[tvar.id] = if (isContra) SVOpen(newTy) else SVClosed(newTy)
-    | SVClosed(_) -> void
+      newTy
+    };
+    this.!version = this.version + 1;
+    this.!values[tvar.id] = variance match {
+    | Contravariant() -> SVOpen(newTy)
+    | Covariant() -> SVClosed(newTy)
     }
   }
 
   mutable fun get(env: TEnv, tvar: TVar, variance: Variance): TType {
     result = variance match {
     | Covariant() ->
-      (if (!this.values.containsKey(tvar.id)) {
-        SVOpen(TType::bottom(tvar.pos));
-      } else {
-        this.values[tvar.id]
-      }) match {
+      this.values.maybeGet(tvar.id) match {
+      | None() -> SVOpen(TType::bottom(tvar.pos))
+      | Some(sv) -> sv
+      } match {
       | SVOpen(ty) ->
+        this.!version = this.version + 1;
         this.!values[tvar.id] = SVClosed(ty);
         ty
       | SVClosed(ty) -> ty
       }
     | Contravariant() ->
-      if (!this.values.containsKey(tvar.id)) {
-        TType::bottom(tvar.pos)
-      } else {
-        this.values[tvar.id] match {
-        | SVOpen(ty)
-        | SVClosed(ty) ->
-          ty
-        }
+      this.values.maybeGet(tvar.id) match {
+      | None() -> TType::bottom(tvar.pos)
+      | Some(SVOpen(ty))
+      | Some(SVClosed(ty)) ->
+        ty
       }
     };
     for (cstr in tvar.constraints) {
