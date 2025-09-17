@@ -19,7 +19,7 @@ extension class TypeChecker {
     for (i => param in fd.params) {
       paramType = param.type match {
       | None() -> typingError(Array[(param.pos, "Missing type annotation")])
-      | Some(ty) -> ty
+      | Some(ty) -> this.tenv.normalize(subst.context, ty)
       };
       paramName = param.name match {
       | PNName(n) -> n
@@ -35,7 +35,7 @@ extension class TypeChecker {
           ],
         )
       };
-      scope.bind(paramName, this.tenv.normalize(subst.context, paramType), true)
+      scope.bind(paramName, paramType, true)
     };
     !this.retType = fd.retType.i1.map(rty ->
       this.tenv.normalize(subst.context, rty)
