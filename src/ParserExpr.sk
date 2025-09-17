@@ -168,6 +168,15 @@ extension class Parser {
       } else {
         None()
       };
+      firstDefaultOpt = if (
+        firstTypeOpt is Some(_) &&
+        this.lex.peekKind() is Some(TKAssignment())
+      ) {
+        _ = this.lex.next();
+        Some(this.expr(0))
+      } else {
+        None()
+      };
       commaTok = this.lex.peek() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
       | Some(x) -> x
@@ -175,14 +184,27 @@ extension class Parser {
       commaTok.kind match {
       | TKCloseParen() ->
         _ = this.lex.next();
-        firstTypeOpt match {
-        | None() -> first
-        | Some _ ->
+        (firstTypeOpt, firstDefaultOpt) match {
+        | (None(), None()) -> first
+        | _ ->
           firstName = first match {
           | Var(x) -> x
           | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
           };
-          Params(Array[(firstName, firstTypeOpt)])
+          paramPos = PosRange::create(
+            this.lex,
+            this.lex.getLastPos(),
+            this.lex.getLastPos(),
+          );
+          param = Param(
+            paramPos,
+            Modifiers::empty(),
+            PNName(firstName, None()),
+            None(),
+            firstTypeOpt,
+            firstDefaultOpt,
+          );
+          Params(Array[param])
         }
       | TKComma() ->
         _ = this.lex.next();
@@ -190,7 +212,20 @@ extension class Parser {
         | Var(x) -> x
         | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
         };
-        params = mutable Vector[(firstName, firstTypeOpt)];
+        firstParamPos = PosRange::create(
+          this.lex,
+          this.lex.getLastPos(),
+          this.lex.getLastPos(),
+        );
+        firstParam = Param(
+          firstParamPos,
+          Modifiers::empty(),
+          PNName(firstName, None()),
+          None(),
+          firstTypeOpt,
+          firstDefaultOpt,
+        );
+        params = mutable Vector[firstParam];
         loop {
           tok = this.lex.peek();
           e = this.expr(0) match {
@@ -207,7 +242,29 @@ extension class Parser {
           } else {
             None()
           };
-          params.push((e, tyOpt));
+          defaultOpt = if (
+            tyOpt is Some(_) &&
+            this.lex.peekKind() is Some(TKAssignment())
+          ) {
+            _ = this.lex.next();
+            Some(this.expr(0))
+          } else {
+            None()
+          };
+          paramPos = PosRange::create(
+            this.lex,
+            this.lex.getLastPos(),
+            this.lex.getLastPos(),
+          );
+          param = Param(
+            paramPos,
+            Modifiers::empty(),
+            PNName(e, None()),
+            None(),
+            tyOpt,
+            defaultOpt,
+          );
+          params.push(param);
           closeTok = this.lex.next() match {
           | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
           | Some(x) -> x
@@ -393,7 +450,21 @@ extension class Parser {
       this.expect(TKClosure());
       params = mutableLeft match {
       | Params(params) -> params
-      | Var(varName) -> Array[(varName, None())]
+      | Var(varName) ->
+        paramPos = PosRange::create(
+          this.lex,
+          this.lex.getLastPos(),
+          this.lex.getLastPos(),
+        );
+        param = Param(
+          paramPos,
+          Modifiers::empty(),
+          PNName(varName, None()),
+          None(),
+          None(),
+          None(),
+        );
+        Array[param]
       | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
       };
       closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
@@ -406,7 +477,21 @@ extension class Parser {
       _ = this.lex.next();
       params = mutableLeft match {
       | Params(params) -> params
-      | Var(varName) -> Array[(varName, None())]
+      | Var(varName) ->
+        paramPos = PosRange::create(
+          this.lex,
+          this.lex.getLastPos(),
+          this.lex.getLastPos(),
+        );
+        param = Param(
+          paramPos,
+          Modifiers::empty(),
+          PNName(varName, None()),
+          None(),
+          None(),
+          None(),
+        );
+        Array[param]
       | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
       };
       closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {

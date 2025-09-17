@@ -933,22 +933,27 @@ extension class TypeChecker {
     isAsync: ?PosRange,
     pos: PosRange,
     c: Closure,
-    params: Array<(Name, ?Type)>,
+    params: Array<Param>,
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
     paramTypes = mutable Vector[];
     noAnnot: ?PosRange = None();
     for (param in params) {
-      paramType = param.i1 match {
+      paramName = param.name match {
+      | PNName(name, _) -> name
+      | _ ->
+        invariant_violation("Complex parameter names not supported in closures")
+      };
+      paramType = param.type match {
       | None() ->
         if (noAnnot is None()) {
-          !noAnnot = Some(param.i0.pos)
+          !noAnnot = Some(param.pos)
         };
-        this.newTVar(env, param.i0.pos)
+        this.newTVar(env, param.pos)
       | Some(ty) -> this.tenv.normalize(env.context, ty)
       };
-      paramTypes.push((param.i0, paramType));
+      paramTypes.push((paramName, paramType));
     };
     retType = retTypeAstOpt match {
     | None() ->
@@ -981,7 +986,16 @@ extension class TypeChecker {
     } else {
       Array[
         Lambda(pos, (subst, argsTypes, retType) ~> {
-          args = params.mapWithIndex((i, p) ~> (p.i0, argsTypes[i]));
+          args = params.mapWithIndex((i, p) ~> {
+            paramName = p.name match {
+            | PNName(name, _) -> name
+            | _ ->
+              invariant_violation(
+                "Complex parameter names not supported in closures",
+              )
+            };
+            (paramName, argsTypes[i])
+          });
           this.closure(subst, savedScope, isAsync, args, retType, body)
         }),
       ]
