@@ -504,7 +504,7 @@ extension class TypeChecker {
         | fd @ FunDef _ ->
           if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
             this.constructor(
-              env.context,
+              env.subst,
               obj,
               static::uninitializedThisType(pos),
               fd,
