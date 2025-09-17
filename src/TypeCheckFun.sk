@@ -21,6 +21,11 @@ extension class TypeChecker {
       | None() -> typingError(Array[(param.pos, "Missing type annotation")])
       | Some(ty) -> this.tenv.normalize(subst.context, ty)
       };
+      param.optional match {
+      | None() -> void
+      | Some(optionalPos) ->
+        !paramType = paramType.unionUndefined(subst, this.tenv, optionalPos)
+      };
       param.default match {
       | None() -> void
       | Some(defaultExpr) ->
