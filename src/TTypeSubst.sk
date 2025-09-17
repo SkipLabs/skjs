@@ -20,6 +20,9 @@ mutable class Subst private {
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
 } {
+  /* To ensure consistency in type variable identifiers, use mcreate only
+     in functions that take no argument containing type variables and whose
+     return value does not contain type variables. */
   static fun mcreate{context: mutable SKStore.Context}: mutable this {
     mutable static{context}
   }
