@@ -72,6 +72,7 @@ mutable class Subst private {
       | Some(sv) -> sv
       } match {
       | SVOpen(ty) ->
+        this.!version = this.version + 1;
         this.!values[tvar.id] = SVClosed(ty);
         ty
       | SVClosed(ty) -> ty
