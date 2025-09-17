@@ -32,8 +32,6 @@ function callOptionalWithUndefined(): void {
 }
 
 function paramTypeOptionalCanBeUndefined(p?: number): number {
-  // TODO: p can be undefined
-  // @ts-expect-error This operator is useless
   return p ?? 1;
 }
 
@@ -43,7 +41,7 @@ function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
 }
 
 function paramTypeOptionalCanBeUndefined2(p?: number): number {
-  // TODO: p can be undefined
+  // @ts-expect-error Invalid call
   return paramTypeOptionalCanBeUndefinedWitness(p);
 }
 
