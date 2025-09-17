@@ -183,12 +183,7 @@ extension class TypeChecker {
       | None() -> AnonymousFunDef(fd)
       },
     );
-    (!this, env) = this.funDefSetup(
-      subst.context,
-      Some(partialThisType),
-      fd,
-      cgNode,
-    );
+    (!this, env) = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
     env.localObjects!["this"] = Some(thisType);
     fd.isAsync match {
     | None() -> void
