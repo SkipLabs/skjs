@@ -13,8 +13,6 @@ function paramNoTypeDefaultOptional(p? = 3): void {}
 function paramTypeDefault(p: number = 3): void {}
 
 function callDefault(): void {
-  // TODO: not an error
-  // @ts-expect-error Invalid call
   paramTypeDefault();
 }
 
