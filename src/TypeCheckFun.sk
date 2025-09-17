@@ -17,13 +17,13 @@ extension class TypeChecker {
     };
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
-      (paramName, tyOpt) = param.name match {
-      | PNName(n, ty) -> (n, ty)
+      paramName = param.name match {
+      | PNName(n) -> n
       | PNDDD(name) ->
         if (i != fd.params.size() - 1) {
           typingError(Array[(name.pos, "... should be the last parameter")])
         };
-        (name, None())
+        name
       | _ ->
         typingError(
           Array[
@@ -31,13 +31,9 @@ extension class TypeChecker {
           ],
         )
       };
-      paramType = tyOpt match {
-      | None() ->
-        param.type match {
-        | None() -> typingError(Array[(param.pos, "Missing type annotation")])
-        | Some(ty) -> ty
-        }
-      | Some(x) -> x
+      paramType = param.type match {
+      | None() -> typingError(Array[(param.pos, "Missing type annotation")])
+      | Some(ty) -> ty
       };
       scope.bind(paramName, this.tenv.normalize(subst.context, paramType), true)
     };
