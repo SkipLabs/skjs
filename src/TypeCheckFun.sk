@@ -21,6 +21,22 @@ extension class TypeChecker {
       | None() -> typingError(Array[(param.pos, "Missing type annotation")])
       | Some(ty) -> this.tenv.normalize(subst.context, ty)
       };
+      param.default match {
+      | None() -> void
+      | Some(_defaultExpr) ->
+        param.optional match {
+        | None() -> void
+        | Some(optionalPos) ->
+          typingError(
+            Array[
+              (
+                optionalPos,
+                "A parameter cannot both be optional and have a default value",
+              ),
+            ],
+          )
+        }
+      };
       paramName = param.name match {
       | PNName(n) -> n
       | PNDDD(name) ->

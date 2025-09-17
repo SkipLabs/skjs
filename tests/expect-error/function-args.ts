@@ -25,7 +25,7 @@ function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
   return p ?? 1;
 }
 
-// TODO: cannot be both
+// @ts-expect-error A parameter cannot both be optional and have a default value
 function paramTypeDefaultOptional(p?: number = 3): void {}
 
 // TODO: wrong type
@@ -57,7 +57,7 @@ function restTypeDefault(...rest: number[] = new Array()): void {}
 function restTypeOptional(...rest?: number[]): void {}
 
 // prettier-ignore
-// @ts-expect-error ... cannot be optional
+// @ts-expect-error A parameter cannot both be optional and have a default value
 function restTypeDefaultOptional(...rest?: number[] = new Array()): void {}
 
 // TODO: wrong type
