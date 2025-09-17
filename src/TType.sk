@@ -104,7 +104,7 @@ class TType private {
   }
 
   static fun fromTParamWithConstraint(
-    context: mutable SKStore.Context,
+    subst: mutable Subst,
     tenv: TEnv,
     pos: PosRange,
     tparam: TParamWithConstraint,
@@ -116,7 +116,7 @@ class TType private {
     );
     tparam.cstr match {
     | None() -> ty
-    | Some(cstr) -> TType::inter(Subst::mcreate{context}, tenv, ty, cstr)
+    | Some(cstr) -> TType::inter(subst, tenv, ty, cstr)
     }
   }
 

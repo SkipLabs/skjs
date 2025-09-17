@@ -6,6 +6,7 @@ extension class TypeChecker {
   }
 
   fun class_(context: mutable SKStore.Context, c: Class): void {
+    subst = Subst::mcreate{context};
     targs = TArgs(
       c.tparams.map(tparam -> {
         ttypeParam = TParamWithConstraint(
@@ -15,7 +16,7 @@ extension class TypeChecker {
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
         TType::fromTParamWithConstraint(
-          context,
+          subst,
           this.tenv,
           tparam.name.pos,
           ttypeParam,
@@ -25,10 +26,9 @@ extension class TypeChecker {
     );
     !this.tenv = this.tenv.addTParams(context, c.tparams);
     fileName = c.name.pos.fileName;
-    subst = Subst::mcreate{context};
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParamWithConstraint(
-      context,
+      subst,
       this.tenv,
       c.name.pos,
       TParamWithConstraint("this", fileName, Id::createThis(), None()),
