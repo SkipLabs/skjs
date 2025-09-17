@@ -24,6 +24,11 @@ extension class TypeChecker {
       paramName = param.name match {
       | PNName(n) -> n
       | PNDDD(name) ->
+        param.optional match {
+        | None() -> void
+        | Some(optionalPos) ->
+          typingError(Array[(optionalPos, "... cannot be optional")])
+        };
         if (i != fd.params.size() - 1) {
           typingError(Array[(name.pos, "... should be the last parameter")])
         };
