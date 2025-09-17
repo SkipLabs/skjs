@@ -75,7 +75,7 @@ function restNoTypeOptional(...rest?): void {}
 function restNoTypeDefaultOptional(...rest? = new Array()): void {}
 
 // prettier-ignore
-// TODO: cannot have default
+// @ts-expect-error ... cannot have a default value
 function restTypeDefault(...rest: number[] = new Array()): void {}
 
 // prettier-ignore
