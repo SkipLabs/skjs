@@ -538,7 +538,11 @@ class TEnv{
         Array[(param.pos, "TODO: support for param pattern in typeDecl")],
       )
     };
-    TAFunParam(Some(paramName), param.optional, ty)
+    optional = param.default match {
+    | None() -> param.optional
+    | Some(defaultExpr) -> Some(defaultExpr.pos)
+    };
+    TAFunParam(Some(paramName), optional, ty)
   }
 
   fun funDecl(
