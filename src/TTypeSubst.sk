@@ -24,6 +24,21 @@ mutable class Subst private {
     mutable static{context}
   }
 
+  /* Use Subst#clone to create a temporary subst when there is already
+     one that shouldn't be polluted.
+     One would typically do this to check subtyping relations that are
+     non-mandatory. */
+  mutable fun clone(): mutable this {
+    mutable static{
+      context => this.context,
+      seenSub => this.seenSub,
+      seenInter => this.seenInter,
+      seenUnion => this.seenUnion,
+      version => this.version,
+      values => this.values,
+    }
+  }
+
   readonly fun save(): SavedSubst {
     SavedSubst{version => this.version, values => this.values}
   }

@@ -85,7 +85,6 @@ extension class TFields {
   ): STResult {
     index1o = fields1.maybeSingleIndex();
     index2o = fields2.maybeSingleIndex();
-    context = subst.context;
     (index1o, index2o) match {
     | (_, None()) -> void
     | (Some(index1), Some(index2)) ->
@@ -102,12 +101,7 @@ extension class TFields {
         f1keyType = TType::single(
           TPrimValue::single(TString(), f1.name, f1.pos),
         );
-        isSubTType(
-          Subst::mcreate{context},
-          env,
-          f1keyType,
-          index2.keyType,
-        ) match {
+        isSubTType(subst.clone(), env, f1keyType, index2.keyType) match {
         | STError _ -> void
         | STOk() ->
           isSubTType(subst, env, f1.type, index2.valueType) match {
@@ -130,12 +124,7 @@ extension class TFields {
           f2keyType = TType::single(
             TPrimValue::single(TString(), f2.name, f2.pos),
           );
-          isSubTType(
-            Subst::mcreate{context},
-            env,
-            f2keyType,
-            index1.keyType,
-          ) match {
+          isSubTType(subst.clone(), env, f2keyType, index1.keyType) match {
           | STError _ -> void
           | STOk() ->
             isSubTType(subst, env, index1.valueType, f2.type) match {
