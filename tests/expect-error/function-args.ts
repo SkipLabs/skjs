@@ -16,7 +16,22 @@ function callDefault(): void {
   paramTypeDefault();
 }
 
+function callDefaultWithUndefined(): void {
+  // @ts-expect-error Invalid call
+  paramTypeDefault(undefined);
+}
+
 function paramTypeOptional(p?: number): void {}
+
+function callOptional(): void {
+  paramTypeOptional();
+}
+
+function callOptionalWithUndefined(): void {
+  // TODO: should not be an error
+  // @ts-expect-error Invalid call
+  paramTypeOptional(undefined);
+}
 
 function paramTypeOptionalCanBeUndefined(p?: number): number {
   // TODO: p can be undefined
