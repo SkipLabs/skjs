@@ -52,25 +52,21 @@ mutable class Subst private {
   mutable fun get(env: TEnv, tvar: TVar, variance: Variance): TType {
     result = variance match {
     | Covariant() ->
-      (if (!this.values.containsKey(tvar.id)) {
-        SVOpen(TType::bottom(tvar.pos));
-      } else {
-        this.values[tvar.id]
-      }) match {
+      this.values.maybeGet(tvar.id) match {
+      | None() -> SVOpen(TType::bottom(tvar.pos))
+      | Some(sv) -> sv
+      } match {
       | SVOpen(ty) ->
         this.!values[tvar.id] = SVClosed(ty);
         ty
       | SVClosed(ty) -> ty
       }
     | Contravariant() ->
-      if (!this.values.containsKey(tvar.id)) {
-        TType::bottom(tvar.pos)
-      } else {
-        this.values[tvar.id] match {
-        | SVOpen(ty)
-        | SVClosed(ty) ->
-          ty
-        }
+      this.values.maybeGet(tvar.id) match {
+      | None() -> TType::bottom(tvar.pos)
+      | Some(SVOpen(ty))
+      | Some(SVClosed(ty)) ->
+        ty
       }
     };
     for (cstr in tvar.constraints) {
