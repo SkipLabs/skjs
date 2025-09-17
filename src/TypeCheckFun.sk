@@ -55,6 +55,13 @@ extension class TypeChecker {
         | Some(optionalPos) ->
           typingError(Array[(optionalPos, "... cannot be optional")])
         };
+        param.default match {
+        | None() -> void
+        | Some(defaultExpr) ->
+          typingError(
+            Array[(defaultExpr.pos, "... cannot have a default value")],
+          )
+        };
         if (i != fd.params.size() - 1) {
           typingError(Array[(name.pos, "... should be the last parameter")])
         };
