@@ -16,7 +16,7 @@ extension class TypeChecker {
       !this.tenv.subst["this"] = (false, thisType);
       scope.bind(Name(fd.pos, "this"), thisType, true)
     };
-    !this.tenv = this.tenv.addTParams(context, fd.tparams);
+    !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
       (paramName, tyOpt) = param.name match {
       | PNName(n, ty) -> (n, ty)

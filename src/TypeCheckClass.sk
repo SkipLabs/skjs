@@ -24,7 +24,7 @@ extension class TypeChecker {
         )
       }),
     );
-    !this.tenv = this.tenv.addTParams(context, c.tparams);
+    !this.tenv = this.tenv.addTParams(subst, c.tparams);
     fileName = c.name.pos.fileName;
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParamWithConstraint(

@@ -268,10 +268,7 @@ class TEnv{
     ).fromSome()
   }
 
-  fun addTParams(
-    context: mutable SKStore.Context,
-    clauses: Array<TypeParam>,
-  ): this {
+  fun addTParams(subst: mutable Subst, clauses: Array<TypeParam>): this {
     for (tparam in clauses) {
       ty = TType::fromClauses(tparam.name.pos, Clauses::fromTypeParam(tparam));
       !this.subst[tparam.name.value] = (
@@ -279,12 +276,7 @@ class TEnv{
         tparam.constraint match {
         | None() -> ty
         | Some(cstr) ->
-          TType::inter(
-            Subst::mcreate{context},
-            this,
-            ty,
-            this.normalize(context, cstr),
-          )
+          TType::inter(subst, this, ty, this.normalize(subst.context, cstr))
         },
       )
     };
