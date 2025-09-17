@@ -28,8 +28,6 @@ function callOptional(): void {
 }
 
 function callOptionalWithUndefined(): void {
-  // TODO: should not be an error
-  // @ts-expect-error Invalid call
   paramTypeOptional(undefined);
 }
 
