@@ -14,8 +14,21 @@ function paramTypeDefault(p: number = 3): void {}
 
 function paramTypeOptional(p?: number): void {}
 
+function paramTypeOptionalCanBeUndefined(p?: number): number {
+  // TODO: p can be undefined
+  // @ts-expect-error This operator is useless
+  return p ?? 1;
+}
+
+function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
+  // @ts-expect-error This operator is useless
+  return p ?? 1;
+}
+
+// TODO: cannot be both
 function paramTypeDefaultOptional(p?: number = 3): void {}
 
+// TODO: wrong type
 function paramDefaultWrongType(p: number = "3"): void {}
 
 // @ts-expect-error Missing type annotation
@@ -36,14 +49,18 @@ function restNoTypeOptional(...rest?): void {}
 function restNoTypeDefaultOptional(...rest? = new Array()): void {}
 
 // prettier-ignore
+// TODO: cannot have default
 function restTypeDefault(...rest: number[] = new Array()): void {}
 
 // prettier-ignore
+// TODO: cannot be optional
 function restTypeOptional(...rest?: number[]): void {}
 
 // prettier-ignore
+// TODO: cannot have default or be optional
 function restTypeDefaultOptional(...rest?: number[] = new Array()): void {}
 
+// TODO: wrong type
 function restNotArray(...rest: number): void {}
 
 // @ts-expect-error ... should be the last parameter
