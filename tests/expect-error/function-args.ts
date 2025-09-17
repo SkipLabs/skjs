@@ -54,7 +54,7 @@ function paramTypeOptionalCanBeUndefined2(p?: number): number {
 // @ts-expect-error A parameter cannot both be optional and have a default value
 function paramTypeDefaultOptional(p?: number = 3): void {}
 
-// TODO: wrong type
+// @ts-expect-error Default value doesn't have the expected type
 function paramDefaultWrongType(p: number = "3"): void {}
 
 // @ts-expect-error Missing type annotation

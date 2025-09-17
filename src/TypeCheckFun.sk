@@ -23,7 +23,7 @@ extension class TypeChecker {
       };
       param.default match {
       | None() -> void
-      | Some(_defaultExpr) ->
+      | Some(defaultExpr) ->
         param.optional match {
         | None() -> void
         | Some(optionalPos) ->
@@ -35,7 +35,17 @@ extension class TypeChecker {
               ),
             ],
           )
-        }
+        };
+        paramScope = env.mcreateSubScope{isLoop => false};
+        env.!scope = paramScope;
+        this.checkSubType(
+          env,
+          defaultExpr.pos,
+          "Default value doesn't have the expected type",
+          this.expr(env, defaultExpr),
+          paramType,
+        );
+        env.!scope = scope
       };
       paramName = param.name match {
       | PNName(n) -> n
