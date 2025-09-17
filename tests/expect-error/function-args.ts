@@ -79,11 +79,11 @@ function restNoTypeDefaultOptional(...rest? = new Array()): void {}
 function restTypeDefault(...rest: number[] = new Array()): void {}
 
 // prettier-ignore
-// TODO: cannot be optional
+// @ts-expect-error ... cannot be optional
 function restTypeOptional(...rest?: number[]): void {}
 
 // prettier-ignore
-// TODO: cannot have default or be optional
+// @ts-expect-error ... cannot be optional
 function restTypeDefaultOptional(...rest?: number[] = new Array()): void {}
 
 // TODO: wrong type
