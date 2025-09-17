@@ -17,6 +17,10 @@ extension class TypeChecker {
     };
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
+      paramType = param.type match {
+      | None() -> typingError(Array[(param.pos, "Missing type annotation")])
+      | Some(ty) -> ty
+      };
       paramName = param.name match {
       | PNName(n) -> n
       | PNDDD(name) ->
@@ -30,10 +34,6 @@ extension class TypeChecker {
             (param.pos, "TODO: support for patterns in function parameters"),
           ],
         )
-      };
-      paramType = param.type match {
-      | None() -> typingError(Array[(param.pos, "Missing type annotation")])
-      | Some(ty) -> ty
       };
       scope.bind(paramName, this.tenv.normalize(subst.context, paramType), true)
     };
