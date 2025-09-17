@@ -237,7 +237,7 @@ class TType private {
       if (insts.isEmpty()) return clauses;
       inst = insts.pop();
       tyDef = inst match {
-      | TSInst(name, targs) -> env.instantiate(subst.context, name, targs)
+      | TSInst(name, targs) -> env.instantiate(subst, name, targs)
       | TInter(ty1, ty2) -> TType::inter(subst, env, ty1, ty2)
       | TUnion(ty1, ty2) -> TType::union(subst, env, ty1, ty2)
       | tvar @ TVar _ -> subst.get(env, tvar, variance)

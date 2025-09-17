@@ -69,11 +69,7 @@ class TEnv{
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
-  fun instantiate(
-    context: mutable SKStore.Context,
-    name: Name,
-    targs: TArgs,
-  ): TType {
+  fun instantiate(subst: mutable Subst, name: Name, targs: TArgs): TType {
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
@@ -82,7 +78,7 @@ class TEnv{
     };
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
 
-    tdef = this.defMap.getType(context, name);
+    tdef = this.defMap.getType(subst.context, name);
     clauses = tdef match {
     | TDType(ta) -> ta.tdefParams
     | TDClass(ca) -> ca.tparams
@@ -96,8 +92,8 @@ class TEnv{
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
-        cstrTy = this.normalize(context, cstr);
-        isSubTType(Subst::mcreate{context}, this, targ, cstrTy) match {
+        cstrTy = this.normalize(subst.context, cstr);
+        isSubTType(subst, this, targ, cstrTy) match {
         | STOk() -> void
         | STError _ ->
           typingError(
@@ -116,8 +112,8 @@ class TEnv{
     };
 
     tdef match {
-    | TDType(ta) -> this.normalize(context, ta.body)
-    | TDClass(_) -> this.new(context, name, targs.targs)
+    | TDType(ta) -> this.normalize(subst.context, ta.body)
+    | TDClass(_) -> this.new(subst.context, name, targs.targs)
     }
   }
 
