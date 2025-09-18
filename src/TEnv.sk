@@ -763,8 +763,19 @@ class TEnv{
         | TDType(ta) -> ta.tdefParams
         | TDClass(ca) -> ca.tparams
         };
-        if (tparams.size() != targs.size()) {
-          typingError(Array[(n.pos, "Invalid number of type arguments")])
+        if (
+          targs.size() > tparams.size() ||
+          (targs.size() < tparams.size() &&
+            tparams[targs.size()].default is None())
+        ) {
+          typingError(
+            Array[
+              (
+                n.pos,
+                `Invalid number of type arguments: given ${targs.size()}, expected ${tparams.size()}`,
+              ),
+            ],
+          )
         };
 
         TType::inst(
