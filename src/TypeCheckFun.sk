@@ -70,6 +70,17 @@ extension class TypeChecker {
         if (i != fd.params.size() - 1) {
           typingError(Array[(name.pos, "... should be the last parameter")])
         };
+        someArray = TType::inst(
+          Name(paramType.pos, "Array"),
+          TArgs(Array[TType::var(subst.gen(param.pos))]),
+        );
+        this.checkSubType(
+          env,
+          param.pos,
+          "The rest parameter must be an Array",
+          paramType,
+          someArray,
+        );
         name
       | _ ->
         typingError(
