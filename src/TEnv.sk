@@ -852,7 +852,6 @@ class TEnv{
         optionalParams.toArray(),
         spreadParam,
         pos,
-        Array[],
         this.normalize(context, retType),
         CGNodes::singleton(cgNode),
       );

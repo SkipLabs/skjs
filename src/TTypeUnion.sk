@@ -273,12 +273,6 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   if (f1.clauses.size() != f2.clauses.size()) {
     internal_error("function clause sizes must match")
   };
-  if (!f1.lambdas.isEmpty()) {
-    typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
-  };
-  if (!f2.lambdas.isEmpty()) {
-    typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
-  };
   tsubst = SortedMap[];
   clauses = mutable Vector[];
   for (i in Range(0, f1.clauses.size())) {
@@ -321,7 +315,6 @@ fun unionTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     optionalParams.toArray(),
     spreadParam,
     sizeWitness,
-    Array[],
     retType,
     cgNodes,
   )

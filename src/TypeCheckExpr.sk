@@ -938,14 +938,10 @@ extension class TypeChecker {
     body: ClosureBody,
   ): TType {
     paramTypes = mutable Vector[];
-    noAnnot: ?PosRange = None();
     for (param in params) {
       paramType = param.i1 match {
       | None() ->
-        if (noAnnot is None()) {
-          !noAnnot = Some(param.i0.pos)
-        };
-        this.newTVar(env, param.i0.pos)
+        typingError(Array[(param.i0.pos, "Please add a type annotation")])
       | Some(ty) -> this.tenv.normalize(env.context, ty)
       };
       paramTypes.push((param.i0, paramType));
@@ -968,24 +964,14 @@ extension class TypeChecker {
     );
     savedScope = env.scope.clone() with {callingContext};
 
-    lambdas = if (noAnnot is None()) {
-      this.closure(
-        env.subst,
-        savedScope,
-        isAsync,
-        paramTypes.toArray(),
-        retType,
-        body,
-      );
-      Array[]
-    } else {
-      Array[
-        Lambda(pos, (subst, argsTypes, retType) ~> {
-          args = params.mapWithIndex((i, p) ~> (p.i0, argsTypes[i]));
-          this.closure(subst, savedScope, isAsync, args, retType, body)
-        }),
-      ]
-    };
+    this.closure(
+      env.subst,
+      savedScope,
+      isAsync,
+      paramTypes.toArray(),
+      retType,
+      body,
+    );
     TType::single(
       TFuns::singleFun(
         TFun(
@@ -994,7 +980,6 @@ extension class TypeChecker {
           Array[],
           None(),
           pos,
-          lambdas,
           retType,
           CGNodes::singleton(callingContext),
         ),
@@ -1303,12 +1288,6 @@ extension class TypeChecker {
               )
             }
           }
-        };
-        for (lambda in tfun.lambdas) {
-          if (tfun.optionalParams.size() != 0) {
-            internal_error("tfun.optionalParams should be empty")
-          };
-          lambda.compute(env.subst, args, tfun.retType)
         };
         !result = result match {
         | None() -> Some(tfun.retType)
