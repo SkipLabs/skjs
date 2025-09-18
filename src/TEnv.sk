@@ -106,7 +106,7 @@ class TEnv{
         }
       };
       if (tparam.default is Some _) {
-        internal_error("TODO default type param");
+        typingError(Array[(tparam.name.pos, "TODO default type param")])
       };
       !this.subst[tparam.name.value] = (true, targ);
     };
