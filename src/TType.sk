@@ -406,7 +406,6 @@ class TFun(
   optionalParams: Array<TType>,
   spreadParam: ?TType,
   minSizeWitness: PosRange,
-  lambdas: Array<Lambda>,
   retType: TType,
   cgNodes: CGNodes,
 ) uses XXHashable, Orderable, Projectable<(Int, Int)> {
@@ -416,19 +415,6 @@ class TFun(
 
   fun project(): (Int, Int) {
     (this.clauses.size(), this.params.size())
-  }
-}
-
-class Lambda(
-  pos: PosRange,
-  compute: (mutable Subst, Array<TType>, TType) ~> void,
-) uses XXHashable, Orderable {
-  fun xxhash(_ignorePos: Bool = false): XXHash {
-    (this.pos.fileName, this.pos.relStart.value, this.pos.relEnd.value).xxhash()
-  }
-
-  fun compare(other: Lambda): Order {
-    this.pos.compare(other.pos)
   }
 }
 

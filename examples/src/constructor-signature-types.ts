@@ -74,7 +74,7 @@ function demonstrateConstructorArray(): void {
   animals.push(new Dog("Rex"));
   animals.push(new Cat("Whiskers"));
 
-  console.log(animals.map((animal) => animal.name)); // ["Rex", "Whiskers"]
+  console.log(animals.map((animal: Animal) => animal.name)); // ["Rex", "Whiskers"]
 }
 
 // Constructor with no parameters (non-generic)

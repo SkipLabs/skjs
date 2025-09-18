@@ -116,7 +116,6 @@ mutable base class ApplyType(
       f.optionalParams.map(x -> this.type(env, x)),
       f.spreadParam.map(x -> this.type(env, x)),
       f.minSizeWitness,
-      f.lambdas,
       this.type(env, f.retType),
       f.cgNodes,
     )

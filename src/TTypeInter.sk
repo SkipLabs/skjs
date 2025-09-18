@@ -361,12 +361,6 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
   | (Some(ty1), Some(ty2)) -> Some(TType::union(subst, env, ty1, ty2))
   };
   retType = TType::inter(subst, env, f1.retType, f2.retType);
-  if (f1.lambdas.size() != 0) {
-    typingError(Array[(f1.lambdas[0].pos, "Please add a type annotation")]);
-  };
-  if (f2.lambdas.size() != 0) {
-    typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
-  };
   cgNodes = f1.cgNodes.intersection(f2.cgNodes);
   TFun(
     clauses.toArray(),
@@ -374,7 +368,6 @@ fun interTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): TFun {
     optionalParams.toArray(),
     spreadParam,
     sizeWitness,
-    Array[],
     retType,
     cgNodes,
   )

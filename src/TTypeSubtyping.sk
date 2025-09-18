@@ -339,9 +339,6 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
   if (f1.clauses.size() != f2.clauses.size()) {
     internal_error("function clause sizes must match")
   };
-  if (!f2.lambdas.isEmpty()) {
-    typingError(Array[(f2.lambdas[0].pos, "Please add a type annotation")]);
-  };
   tsubst = SortedMap[];
   for (i in Range(0, f1.clauses.size())) {
     tparam1 = f1.clauses[i];
@@ -366,9 +363,6 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
     | STOk() -> void
     | err @ STError _ -> return err
     }
-  };
-  for (lambda in f1.lambdas) {
-    lambda.compute(subst, params2, f2.retType)
   };
   f2.spreadParam match {
   | None() -> void
