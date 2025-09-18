@@ -6,6 +6,7 @@ extension class TypeChecker {
   }
 
   fun class_(context: mutable SKStore.Context, c: Class): void {
+    static::checkTypeParams(c.tparams);
     subst = Subst::mcreate{context};
     targs = TArgs(
       c.tparams.map(tparam -> {
