@@ -46,7 +46,7 @@ extension class TypeChecker {
     | c @ Class _ -> this.class_(context, c)
     | Enum _ -> notSupported(def.pos)
     | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs)
-    | TypeDef _ -> void
+    | td @ TypeDef _ -> this.typeDef(td)
     }
   }
 
@@ -109,6 +109,32 @@ extension class TypeChecker {
         },
         type,
       )
+    }
+  }
+
+  fun typeDef(typeDef: TypeDef): void {
+    static::checkTypeParams(typeDef.tdefParams)
+  }
+
+  static fun checkTypeParams(tparams: Array<TypeParam>): void {
+    firstDefaultPosOpt: ?PosRange = None();
+    for (tparam in tparams) {
+      (tparam.default, firstDefaultPosOpt) match {
+      | (None(), Some(firstDefaultPos)) ->
+        typingError(
+          Array[
+            (
+              tparam.name.pos,
+              "Required type parameters may not follow optional type parameters.",
+            ),
+            (firstDefaultPos, "First optional type parameter was here"),
+          ],
+        )
+      | (Some _, None()) -> !firstDefaultPosOpt = Some(tparam.name.pos)
+      | (None(), None())
+      | (Some _, Some _) ->
+        void
+      }
     }
   }
 }
