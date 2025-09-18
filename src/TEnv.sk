@@ -87,8 +87,8 @@ class TEnv{
       typingError(Array[(name.pos, "Invalid number of type arguments")])
     };
 
-    for (i => targ in targs.targs) {
-      tparam = clauses[i];
+    for (i => tparam in clauses) {
+      targ = targs.targs[i];
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
