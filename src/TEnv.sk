@@ -759,15 +759,12 @@ class TEnv{
         typingError(Array[(n.pos, "Cyclic definition")])
       } else {
         tdef = this.defMap.getType(context, n);
-        tdef match {
-        | TDType(ta) ->
-          if (ta.tdefParams.size() != targs.size()) {
-            typingError(Array[(n.pos, "Invalid number of type arguments")])
-          }
-        | TDClass(ca) ->
-          if (ca.tparams.size() != targs.size()) {
-            typingError(Array[(n.pos, "Invalid number of type arguments")])
-          }
+        tparams = tdef match {
+        | TDType(ta) -> ta.tdefParams
+        | TDClass(ca) -> ca.tparams
+        };
+        if (tparams.size() != targs.size()) {
+          typingError(Array[(n.pos, "Invalid number of type arguments")])
         };
 
         TType::inst(
