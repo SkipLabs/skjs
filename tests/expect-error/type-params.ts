@@ -8,8 +8,6 @@ function tooManyTypeParameters(x: TGen<boolean, number>): void {}
 
 type TDefault<X = boolean> = X;
 
-// FIXME
-// @ts-expect-error Not enough type parameters: given 0, expected 1
 function takeTDefault(x: TDefault): boolean {
   return x;
 }
@@ -17,8 +15,6 @@ function takeTDefault(x: TDefault): boolean {
 type TDefaultUsePreviousParam<X, Y = X> = (x: X) => Y;
 
 function applyTDefaultUsePreviousParam<X>(
-  // FIXME
-  // @ts-expect-error Not enough type parameters: given 1, expected 2
   f: TDefaultUsePreviousParam<X>,
   x: X,
 ): X {
@@ -26,12 +22,10 @@ function applyTDefaultUsePreviousParam<X>(
 }
 
 function applyTDefaultUsePreviousParamError<X, Y>(
-  // FIXME
-  // @ts-expect-error Not enough type parameters: given 1, expected 2
   f: TDefaultUsePreviousParam<X>,
   x: X,
 ): Y {
-  // TODO Invalid return type
+  // @ts-expect-error Invalid return type
   return f(x);
 }
 
