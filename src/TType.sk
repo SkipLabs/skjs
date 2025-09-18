@@ -220,6 +220,75 @@ class TType private {
     }
   }
 
+  /* Check whether the type is some kind of Array<...>
+     We cannot check subtyping with Array<unknown> because Array is invariant.
+  */
+  fun isArray(subst: mutable Subst, env: TEnv): Bool {
+    seenInsts = mutable Map[];
+    this.isArray_(subst, env, seenInsts) is IAArray()
+  }
+
+  private fun isArray_(
+    subst: mutable Subst,
+    env: TEnv,
+    seenInsts: mutable Map<TInst, IsArrayResult>,
+  ): IsArrayResult {
+    if (!this.clauses.isEmpty()) return IANotArray();
+    result: IsArrayResult = IABottom();
+    for (inst in this.insts) {
+      seenInsts.maybeGet(inst) match {
+      | Some(IANotArray()) -> return IANotArray()
+      | Some(IAArray()) ->
+        !result = IAArray();
+        continue
+      | Some(IABottom()) -> continue
+      | None() -> void
+      };
+      seenInsts![
+        inst,
+      ] = /* default in case of recursive definition */ IANotArray();
+      instIA = inst match {
+      | TSInst(Name(_, "Array"), _targs) ->
+        /* Let's assume arity of targs has been checked somewhere else */
+        IAArray()
+      | TSInst(name, targs) ->
+        env.instantiate(subst, name, targs).isArray_(subst, env, seenInsts)
+      | TVar _ -> IANotArray()
+      | TInter(ty1, ty2) ->
+        ia1 = ty1.isArray_(subst, env, seenInsts);
+        ia2 = ty2.isArray_(subst, env, seenInsts);
+        (ia1, ia2) match {
+        | (IABottom(), _)
+        | (_, IABottom()) ->
+          IABottom()
+        | (IANotArray(), _)
+        | (_, IANotArray()) ->
+          IANotArray()
+        | (IAArray(), IAArray()) -> IAArray()
+        }
+      | TUnion(ty1, ty2) ->
+        ia1 = ty1.isArray_(subst, env, seenInsts);
+        ia2 = ty2.isArray_(subst, env, seenInsts);
+        (ia1, ia2) match {
+        | (IABottom(), ia)
+        | (ia, IABottom()) ->
+          ia
+        | (IANotArray(), _)
+        | (_, IANotArray()) ->
+          IANotArray()
+        | (IAArray(), IAArray()) -> IAArray()
+        }
+      };
+      seenInsts![inst] = instIA;
+      instIA match {
+      | IANotArray() -> return IANotArray()
+      | IABottom() -> void
+      | IAArray() -> !result = IAArray()
+      }
+    };
+    result
+  }
+
   // OTHER PROPERTIES
 
   // Returns the actual STypes after head expansion, forgetting type parameters,
@@ -272,6 +341,13 @@ class TType private {
     diffClauses = this.clauses.diff(other.clauses);
     static::create(this.pos, diffInsts, diffClauses)
   }
+}
+
+base class IsArrayResult {
+  children =
+  | IABottom()
+  | IANotArray()
+  | IAArray()
 }
 
 base class Variance {
