@@ -820,7 +820,11 @@ class TSInst(name: Name, targs: TArgs) extends TInst {}
 
 class TArgs(targs: Array<TType>) uses XXHashable, Orderable
 
-base class TInst uses XXHashable, Orderable
+base class TInst uses XXHashable, Hashable, Orderable {
+  fun hash(): Int {
+    this.xxhash(true).value
+  }
+}
 
 /* "Instance"/Unexpanded types */
 //
