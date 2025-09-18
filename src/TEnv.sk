@@ -83,8 +83,15 @@ class TEnv{
     | TDType(ta) -> ta.tdefParams
     | TDClass(ca) -> ca.tparams
     };
-    if (clauses.size() != targs.targs.size()) {
-      typingError(Array[(name.pos, "Invalid number of type arguments")])
+    if (targs.targs.size() > clauses.size()) {
+      typingError(
+        Array[
+          (
+            name.pos,
+            `Too many type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
+          ),
+        ],
+      )
     };
 
     for (i => tparam in clauses) {
