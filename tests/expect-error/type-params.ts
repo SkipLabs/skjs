@@ -1,9 +1,9 @@
 type TGen<X> = X;
 
-// @ts-expect-error Invalid number of type arguments
+// @ts-expect-error Invalid number of type arguments: given 0, expected 1
 function notEnoughTypeParameters(x: TGen): void {}
 
-// @ts-expect-error Invalid number of type arguments
+// @ts-expect-error Invalid number of type arguments: given 2, expected 1
 function tooManyTypeParameters(x: TGen<boolean, number>): void {}
 
 type TDefault<X = boolean> = X;
