@@ -95,17 +95,20 @@ class TEnv{
     };
 
     for (i => tparam in clauses) {
-      if (i >= targs.targs.size()) {
-        typingError(
-          Array[
-            (
-              name.pos,
-              `Not enough type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
-            ),
-          ],
-        )
+      targ = if (i < targs.targs.size()) targs.targs[i] else {
+        tparam.default match {
+        | Some(default) -> this.normalize(subst.context, default)
+        | None() ->
+          typingError(
+            Array[
+              (
+                name.pos,
+                `Not enough type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
+              ),
+            ],
+          )
+        }
       };
-      targ = targs.targs[i];
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
@@ -121,9 +124,6 @@ class TEnv{
             ],
           )
         }
-      };
-      if (tparam.default is Some _) {
-        typingError(Array[(tparam.name.pos, "TODO default type param")])
       };
       !this.subst[tparam.name.value] = (true, targ);
     };
