@@ -25,11 +25,11 @@ function alwaysTrueNumber(x: 0, y: 0): boolean {
 // }
 
 function alwaysFalseNumbers(x: 0, y: 1): boolean {
-  // TODO: always false
+  // @ts-expect-error This equality is always false
   return x === y;
 }
 
 function alwaysFalseDifferentTypes(x: number, y: string): boolean {
-  // TODO: always false
+  // @ts-expect-error This equality is always false
   return x === y;
 }
