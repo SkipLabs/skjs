@@ -40,3 +40,36 @@ function fNonLastDefault2(f: <X = boolean, Y>(x: X | Y) => void): void {}
 
 // @ts-expect-error Required type parameters may not follow optional type parameters.
 class cNonLastDefault<X = boolean, Y> {}
+
+function pair<X, Y = X>(x: X, y: Y): { x: X; y: Y } {
+  return { x, y };
+}
+
+function callfgen1(): { x: 1; y: boolean } {
+  const one: 1 = 1;
+  return pair(one, true);
+}
+
+function callfgen2(): { x: 1 | boolean; y: 1 | boolean } {
+  const one: 1 = 1;
+  return pair(one, true);
+}
+
+function callgen3(): { x: 1; y: boolean } {
+  const one: 1 = 1;
+  return pair<1, boolean>(one, true);
+}
+
+function callgen4(): { x: number; y: number } {
+  const one: 1 = 1;
+  // FIXME
+  // @ts-expect-error Incompatible number of type arguments: 1 passed
+  return pair<number>(one, 2);
+}
+
+function callgen5(): { x: 1; y: 1 } {
+  const one: 1 = 1;
+  // TODO: another error expected
+  // @ts-expect-error Incompatible number of type arguments: 1 passed
+  return pair<1>(one, 2);
+}
