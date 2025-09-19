@@ -74,6 +74,12 @@ extension class Parser {
         } else {
           None()
         };
+        fieldDefault = if (this.lex.peekKind() is Some(TKAssignment())) {
+          _ = this.lex.next();
+          Some(this.expr(0))
+        } else {
+          None()
+        };
         fields.push(
           (
             fieldName,
@@ -81,6 +87,7 @@ extension class Parser {
             | None() -> Pattern(fieldName.pos, PVar(fieldName))
             | Some(x) -> x
             },
+            fieldDefault,
           ),
         );
         commaTok = this.lex.next() match {

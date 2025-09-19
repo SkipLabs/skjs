@@ -93,7 +93,15 @@ extension class TypeChecker {
             )
           };
           for (field in objectFields) {
-            (fieldName, fieldPat) = field;
+            (fieldName, fieldPat, fieldDefault) = field;
+            fieldDefault match {
+            | None() -> void
+            | Some(defaultExpr) ->
+              notSupported(
+                defaultExpr.pos,
+                "default value in destructuring fields",
+              )
+            };
             for (fields in branches) {
               fields.maybeGet(fieldName.value) match {
               | None() ->
