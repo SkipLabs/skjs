@@ -7,14 +7,14 @@ module SKJS;
 extension class TAlgebraic {
   static fun isSub(
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
     a1: TAlgebraic,
     a2: TAlgebraic,
   ): STResult {
     a1.branches.leq(a2.branches, (b1, b2O) ->
       b2O match {
       | Some(b2) ->
-        TConstr::isSub(subst, env, b1, b2) match {
+        TConstr::isSub(subst, tenv, b1, b2) match {
         | STOk() -> Success(void)
         | err @ STError _ -> Failure(err)
         }
@@ -30,24 +30,24 @@ extension class TAlgebraic {
 extension class TConstr {
   static fun isSub(
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
     x: this,
     y: this,
   ): STResult {
-    TFields::isSub(subst, env, x.fields, y.fields)
+    TFields::isSub(subst, tenv, x.fields, y.fields)
   }
 }
 
 extension class TFuns {
   private static fun isSubTFun(
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
     f1: TFun,
     f2O: ?TFun,
   ): Result<void, STError> {
     f2O match {
     | Some(f2) ->
-      isSubTFun(subst, env, f1, f2) match {
+      isSubTFun(subst, tenv, f1, f2) match {
       | STOk() -> Success(void)
       | err @ STError _ -> Failure(err)
       }
@@ -57,17 +57,17 @@ extension class TFuns {
 
   static fun isSub(
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
     funs1: TFuns,
     funs2: TFuns,
   ): STResult {
     funs1.funs.leq(funs2.funs, (x, y) ->
-      static::isSubTFun(subst, env, x, y)
+      static::isSubTFun(subst, tenv, x, y)
     ) match {
     | Failure(err) -> err
     | Success(void) ->
       funs1.methods.leq(funs2.methods, (x, y) ->
-        static::isSubTFun(subst, env, x, y)
+        static::isSubTFun(subst, tenv, x, y)
       ) match {
       | Failure(err) -> err
       | Success(void) -> (STOk() : STResult)
@@ -79,7 +79,7 @@ extension class TFuns {
 extension class TFields {
   static fun isSub(
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
   ): STResult {
@@ -88,11 +88,11 @@ extension class TFields {
     (index1o, index2o) match {
     | (_, None()) -> void
     | (Some(index1), Some(index2)) ->
-      isSubTType(subst, env, index2.keyType, index1.keyType) match {
+      isSubTType(subst, tenv, index2.keyType, index1.keyType) match {
       | err @ STError _ -> return err
       | STOk() -> void
       };
-      isSubTType(subst, env, index1.valueType, index2.valueType) match {
+      isSubTType(subst, tenv, index1.valueType, index2.valueType) match {
       | err @ STError _ -> return err
       | STOk() -> void
       }
@@ -101,10 +101,10 @@ extension class TFields {
         f1keyType = TType::single(
           TPrimValue::single(TString(), f1.name, f1.pos),
         );
-        isSubTType(subst.clone(), env, f1keyType, index2.keyType) match {
+        isSubTType(subst.clone(), tenv, f1keyType, index2.keyType) match {
         | STError _ -> void
         | STOk() ->
-          isSubTType(subst, env, f1.type, index2.valueType) match {
+          isSubTType(subst, tenv, f1.type, index2.valueType) match {
           | err @ STError _ -> return err
           | STOk() -> void
           }
@@ -124,10 +124,10 @@ extension class TFields {
           f2keyType = TType::single(
             TPrimValue::single(TString(), f2.name, f2.pos),
           );
-          isSubTType(subst.clone(), env, f2keyType, index1.keyType) match {
+          isSubTType(subst.clone(), tenv, f2keyType, index1.keyType) match {
           | STError _ -> void
           | STOk() ->
-            isSubTType(subst, env, index1.valueType, f2.type) match {
+            isSubTType(subst, tenv, index1.valueType, f2.type) match {
             | err @ STError _ -> return err
             | STOk() -> void
             }
@@ -138,11 +138,11 @@ extension class TFields {
           return STMissingField(f1.name)
         } else {
           f2type = if (f2.isOptional) {
-            f2.type.unionUndefined(subst, env, f2.pos)
+            f2.type.unionUndefined(subst, tenv, f2.pos)
           } else {
             f2.type
           };
-          isSubTType(subst, env, f1.type, f2type) match {
+          isSubTType(subst, tenv, f1.type, f2type) match {
           | STOk() -> void
           | err @ STError _ -> return err
           }
@@ -156,14 +156,14 @@ extension class TFields {
 extension class STypes {
   static fun isSub(
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
     stypes1: STypes,
     stypes2: STypes,
   ): STResult {
     stypes1.stypes.leq(stypes2.stypes, (t1, t2O) ->
       t2O match {
       | Some(t2) ->
-        isSubSType(subst, env, t1, t2) match {
+        isSubSType(subst, tenv, t1, t2) match {
         | STOk() -> Success(void)
         | err @ STError _ -> Failure(err)
         }
@@ -179,7 +179,7 @@ extension class STypes {
 extension class Clauses {
   static fun isSub(
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
     clauses1: Clauses,
     clauses2: Clauses,
   ): STResult {
@@ -194,7 +194,7 @@ extension class Clauses {
         | (Some _, None()) -> break void
         | (None(), Some _) -> continue
         | (Some(x1), Some(x2)) ->
-          STypes::isSub(subst, env, x1, x2) match {
+          STypes::isSub(subst, tenv, x1, x2) match {
           | STOk() -> break void
           | err @ STError _ ->
             !errors = List.Cons(err, errors);
@@ -214,14 +214,14 @@ extension class Clauses {
 
 fun isSubTType(
   subst: mutable Subst,
-  env: TEnv,
+  tenv: TEnv,
   u1: TType,
   u2: TType,
 ): STResult {
   if (u1 == u2) return STOk();
   pair = (u1, u2);
   if (subst.seenSub.contains(pair)) return STOk();
-  res = isSubTType_(subst, env, u1, u2);
+  res = isSubTType_(subst, tenv, u1, u2);
   if (res is STOk()) {
     subst.!seenSub = subst.seenSub.set(pair)
   };
@@ -230,22 +230,22 @@ fun isSubTType(
 
 fun isSubTType_(
   subst: mutable Subst,
-  env: TEnv,
+  tenv: TEnv,
   u1: TType,
   u2: TType,
 ): STResult {
   if (u2.isTop()) return STOk();
-  if (env.seenSub.contains((subst.version, u1, u2))) return STOk();
-  !env.seenSub = env.seenSub.set((subst.version, u1, u2));
+  if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
+  !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
   savedSubst = subst.save();
   for (inst in u2.insts) {
     inst match {
     | tvar @ TVar(_, _, constraints) ->
       for (_ => cstr in constraints) {
-        status = isSubTType(subst, env, u1, cstr);
+        status = isSubTType(subst, tenv, u1, cstr);
         if (status is STError _) return status;
       };
-      subst.grow(env, tvar, u1.diff(u2), Contravariant())
+      subst.grow(tenv, tvar, u1.diff(u2), Contravariant())
     | _ -> void
     }
   };
@@ -255,7 +255,7 @@ fun isSubTType_(
       if ({
         substCopy = subst.save();
         for (_ => cstr in constraints) {
-          status = isSubTType(subst, env, u2, cstr);
+          status = isSubTType(subst, tenv, u2, cstr);
           if (status is STError _) {
             subst.restore(substCopy);
             break false
@@ -263,13 +263,13 @@ fun isSubTType_(
         } else {
           true
         }
-      }) subst.grow(env, tvar, u2.diff(u1), Covariant())
+      }) subst.grow(tenv, tvar, u2.diff(u1), Covariant())
     | _ -> void
     }
   };
-  clauses1 = u1.expand(subst, env, Covariant());
-  clauses2 = u2.expand(subst, env, Contravariant());
-  Clauses::isSub(subst, env, clauses1, clauses2) match {
+  clauses1 = u1.expand(subst, tenv, Covariant());
+  clauses2 = u2.expand(subst, tenv, Contravariant());
+  Clauses::isSub(subst, tenv, clauses1, clauses2) match {
   | STOk() -> STOk()
   | err @ STRec _ ->
     subst.restore(savedSubst);
@@ -285,7 +285,7 @@ fun isSubTType_(
 
 fun isSubSType(
   subst: mutable Subst,
-  env: TEnv,
+  tenv: TEnv,
   sty1: SType,
   sty2: SType,
 ): STResult {
@@ -308,23 +308,25 @@ fun isSubSType(
     }
 
   | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
-    isSubTTuple(subst, env, tuple1, tuple2)
+    isSubTTuple(subst, tenv, tuple1, tuple2)
 
-  | (TPromise(ty1, _), TPromise(ty2, _)) -> isSubTType(subst, env, ty1, ty2)
-  | (funs1 @ TFuns _, funs2 @ TFuns _) -> TFuns::isSub(subst, env, funs1, funs2)
-  | (obj1 @ TObject _, obj2 @ TObject _) -> isSubTObject(subst, env, obj1, obj2)
+  | (TPromise(ty1, _), TPromise(ty2, _)) -> isSubTType(subst, tenv, ty1, ty2)
+  | (funs1 @ TFuns _, funs2 @ TFuns _) ->
+    TFuns::isSub(subst, tenv, funs1, funs2)
+  | (obj1 @ TObject _, obj2 @ TObject _) ->
+    isSubTObject(subst, tenv, obj1, obj2)
   | (TAlgebraic _, TObject _)
   | (TObject _, TAlgebraic _) ->
     STTooManySType(sty1)
   | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    TAlgebraic::isSub(subst, env, a1, a2)
+    TAlgebraic::isSub(subst, tenv, a1, a2)
   | _ -> internal_error("Internal error")
   }
 }
 
 fun isSubTTuple(
   subst: mutable Subst,
-  env: TEnv,
+  tenv: TEnv,
   tuple1: TTuple,
   tuple2: TTuple,
 ): STResult {
@@ -332,7 +334,7 @@ fun isSubTTuple(
     return STTooManySType(tuple1)
   };
   for (i in Range(0, tuple2.tuple.size())) {
-    isSubTType(subst, env, tuple1.tuple[i], tuple2.tuple[i]) match {
+    isSubTType(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]) match {
     | STOk() -> void
     | err @ STError _ -> return err
     }
@@ -340,7 +342,7 @@ fun isSubTTuple(
   STOk()
 }
 
-fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
+fun isSubTFun(subst: mutable Subst, tenv: TEnv, f1: TFun, f2: TFun): STResult {
   if (f1.clauses.size() != f2.clauses.size()) {
     internal_error("function clause sizes must match")
   };
@@ -353,7 +355,7 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
     | (Some _, None()) -> void
     | (None(), Some _) -> return STNoConstraint()
     | (Some(ty1), Some(ty2)) ->
-      isSubTType(subst, env, ty2, ty1) match {
+      isSubTType(subst, tenv, ty2, ty1) match {
       | STOk() -> void
       | err @ STError _ -> return err
       }
@@ -364,7 +366,7 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
   params1 = f1.params;
   params2 = f2.params;
   for (i in Range(0, params1.size())) {
-    isSubTType(subst, env, params2[i], params1[i]) match {
+    isSubTType(subst, tenv, params2[i], params1[i]) match {
     | STOk() -> void
     | err @ STError _ -> return err
     }
@@ -375,22 +377,22 @@ fun isSubTFun(subst: mutable Subst, env: TEnv, f1: TFun, f2: TFun): STResult {
     f1.spreadParam match {
     | None() -> return STMissingSpread()
     | Some(spread1) ->
-      isSubTType(subst, env, spread1, spread2) match {
+      isSubTType(subst, tenv, spread1, spread2) match {
       | STOk() -> void
       | err @ STError _ -> return err
       }
     }
   };
-  isSubTType(subst, env, f1.retType, f2.retType)
+  isSubTType(subst, tenv, f1.retType, f2.retType)
 }
 
 fun isSubTObject(
   subst: mutable Subst,
-  env: TEnv,
+  tenv: TEnv,
   obj1: TObject,
   obj2: TObject,
 ): STResult {
-  TFields::isSub(subst, env, obj1.fields, obj2.fields)
+  TFields::isSub(subst, tenv, obj1.fields, obj2.fields)
 }
 
 module end;

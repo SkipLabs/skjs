@@ -181,8 +181,8 @@ class TType private {
     this.clauses.isTop()
   }
 
-  fun isPrimitiveType(subst: mutable Subst, env: TEnv): Bool {
-    this.getSTypes(subst, env, Covariant()) match {
+  fun isPrimitiveType(subst: mutable Subst, tenv: TEnv): Bool {
+    this.getSTypes(subst, tenv, Covariant()) match {
     | None() -> false
     | Some(stypes) ->
       for (stype in stypes) {
@@ -192,7 +192,7 @@ class TType private {
           continue
         | TTuple(tys, _) ->
           for (ty in tys) {
-            if (!ty.isPrimitiveType(subst, env)) return false
+            if (!ty.isPrimitiveType(subst, tenv)) return false
           }
         | TAlgebraic _
         | TFuns _
@@ -205,8 +205,8 @@ class TType private {
     }
   }
 
-  fun isMethod(subst: mutable Subst, env: TEnv): Bool {
-    this.getSTypes(subst, env, Covariant()) match {
+  fun isMethod(subst: mutable Subst, tenv: TEnv): Bool {
+    this.getSTypes(subst, tenv, Covariant()) match {
     | None() -> false
     | Some(stypes) ->
       if (stypes.isEmpty()) return false;
@@ -225,11 +225,11 @@ class TType private {
   // Returns the actual STypes after head expansion, forgetting type parameters,
   // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
-  fun getSTypes(subst: mutable Subst, env: TEnv, variance: Variance): ?STypes {
-    this.expand(subst, env, variance).getSTypes(subst, env)
+  fun getSTypes(subst: mutable Subst, tenv: TEnv, variance: Variance): ?STypes {
+    this.expand(subst, tenv, variance).getSTypes(subst, tenv)
   }
 
-  fun expand(subst: mutable Subst, env: TEnv, variance: Variance): Clauses {
+  fun expand(subst: mutable Subst, tenv: TEnv, variance: Variance): Clauses {
     clauses = this.clauses;
     insts = Vector::mcreateFromItems(this.insts.insts);
     seen = SortedSet::createFromItems(insts);
@@ -237,13 +237,13 @@ class TType private {
       if (insts.isEmpty()) return clauses;
       inst = insts.pop();
       tyDef = inst match {
-      | TSInst(name, targs) -> env.instantiate(subst, name, targs)
-      | TInter(ty1, ty2) -> TType::inter(subst, env, ty1, ty2)
-      | TUnion(ty1, ty2) -> TType::union(subst, env, ty1, ty2)
-      | tvar @ TVar _ -> subst.get(env, tvar, variance)
+      | TSInst(name, targs) -> tenv.instantiate(subst, name, targs)
+      | TInter(ty1, ty2) -> TType::inter(subst, tenv, ty1, ty2)
+      | TUnion(ty1, ty2) -> TType::union(subst, tenv, ty1, ty2)
+      | tvar @ TVar _ -> subst.get(tenv, tvar, variance)
       };
       if (tyDef.isTop()) return Clauses::top();
-      !clauses = Clauses::union(subst, env, clauses, tyDef.clauses);
+      !clauses = Clauses::union(subst, tenv, clauses, tyDef.clauses);
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
         !seen = seen.set(newInst);
@@ -1043,13 +1043,13 @@ class Clauses private (
   // Returns the actual STypes, forgetting type parameters,
   // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
-  fun getSTypes(subst: mutable Subst, env: TEnv): ?STypes {
+  fun getSTypes(subst: mutable Subst, tenv: TEnv): ?STypes {
     result = STypes::empty();
     for (clause in this.clauses) {
       clause.stypes match {
       | None() -> return None()
       | Some(clauseSTypes) ->
-        !result = STypes::union(subst, env, result, clauseSTypes)
+        !result = STypes::union(subst, tenv, result, clauseSTypes)
       }
     };
     Some(result)
@@ -1137,13 +1137,13 @@ base class STError extends STResult {
   | STInvalidClause(Clause)
   | STRec(STError, PosRange, TType)
 
-  fun toString(subst: mutable Subst, env: TEnv, ty: TType): String {
+  fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
       `The field '${fieldName}' is missing\n` +
-        `Out of the type: ${expandTVars(subst, env, ty)}`
+        `Out of the type: ${expandTVars(subst, tenv, ty)}`
     | STTooManySType(sty) ->
       sty match {
       | TPrimUnit(kind, _) -> `This is a ${kind}`
@@ -1173,7 +1173,7 @@ base class STError extends STResult {
           TType::single(TFuns::singleFun(f, f.minSizeWitness)),
         )
     | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
-    | STRec(st, _, ty2) -> st.toString(subst, env, ty2)
+    | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
     }
   }
 }

@@ -36,9 +36,9 @@ extension class TypeChecker {
   static private fun filterMethods(
     ty: TType,
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
   ): TType {
-    ty.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
+    ty.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~> {
       stypes.singleElt()
     }) match {
     | Some(TObject(fields, pos)) ->
@@ -46,7 +46,7 @@ extension class TypeChecker {
         TObject(
           fields.filterMap(field -> {
             fieldType = field.type;
-            fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
+            fieldSTypesOpt = fieldType.getSTypes(subst, tenv, Covariant());
             fieldSTypes = fieldSTypesOpt match {
             | None() -> return None()
             | Some(x) -> x
