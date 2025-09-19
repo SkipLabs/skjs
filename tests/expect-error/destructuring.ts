@@ -23,29 +23,21 @@ function usefulDefault(
 
 function defaultSameType(x: { f?: number }): number {
   const { f = 1 } = x;
-  // FIXME: cannot be undefined
-  // @ts-expect-error Invalid return type
   return f;
 }
 
 function defaultSameType2(x: { f: number | undefined }): number {
   const { f = 1 } = x;
-  // FIXME: cannot be undefined
-  // @ts-expect-error Invalid return type
   return f;
 }
 
 function defaultOtherType(x: { f?: number }): number | string {
   const { f = "a" } = x;
-  // FIXME: cannot be undefined
-  // @ts-expect-error Invalid return type
   return f;
 }
 
 function defaultOtherType2(x: { f: number | undefined }): number | string {
   const { f = "a" } = x;
-  // FIXME: cannot be undefined
-  // @ts-expect-error Invalid return type
   return f;
 }
 

@@ -116,16 +116,20 @@ extension class TypeChecker {
                 defaultOpt match {
                 | None() -> void
                 | Some((defaultPos, defaultType)) ->
+                  undefined = TType::single(
+                    TPrimUnit(TUndefined(), defaultPos),
+                  );
                   if (
                     tfield.isOptional ||
                     isSubTType(
                       tcenv.subst.clone(),
                       this.tenv,
-                      TType::single(TPrimUnit(TUndefined(), defaultPos)),
+                      undefined,
                       tfieldType,
                     ) is STOk()
                   ) {
                     !defaultIsUseless = None();
+                    !tfieldType = tfield.type.diff(undefined);
                     !tfieldType = TType::union(
                       tcenv.subst,
                       this.tenv,
