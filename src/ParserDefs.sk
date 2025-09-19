@@ -1309,13 +1309,7 @@ extension class Parser {
       PNDDD(this.getName())
     } else {
       name = this.getName();
-      type = if (this.lex.peekKind() is Some(TKColon())) {
-        _ = this.lex.next();
-        Some(this.type(0))
-      } else {
-        None()
-      };
-      PNName(name, type)
+      PNName(name)
     }
   }
 

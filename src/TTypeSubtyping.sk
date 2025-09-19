@@ -137,7 +137,12 @@ extension class TFields {
         if (f1.isOptional && !f2.isOptional) {
           return STMissingField(f1.name)
         } else {
-          isSubTType(subst, env, f1.type, f2.type) match {
+          f2type = if (f2.isOptional) {
+            f2.type.unionUndefined(subst, env, f2.pos)
+          } else {
+            f2.type
+          };
+          isSubTType(subst, env, f1.type, f2type) match {
           | STOk() -> void
           | err @ STError _ -> return err
           }

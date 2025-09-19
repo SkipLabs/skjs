@@ -184,7 +184,7 @@ class Param(
 /***************************************************************************/
 // <param-names> ::=
 //   | ... <name>
-//   | <name> (: <type>)?
+//   | <name>
 //   | [ <param-names>* ]
 //   | { <param-names>* }
 /***************************************************************************/
@@ -192,7 +192,7 @@ class Param(
 base class ParamNames uses XXHashable {
   children =
   | PNDDD(name: Name)
-  | PNName(name: Name, type: ?Type)
+  | PNName(name: Name)
   | PNSquare(Array<ParamNames>)
   | PNCurly(Array<ParamNames>)
 }

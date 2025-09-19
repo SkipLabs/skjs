@@ -17,13 +17,60 @@ extension class TypeChecker {
     };
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
-      (paramName, tyOpt) = param.name match {
-      | PNName(n, ty) -> (n, ty)
+      paramType = param.type match {
+      | None() -> typingError(Array[(param.pos, "Missing type annotation")])
+      | Some(ty) -> this.tenv.normalize(subst.context, ty)
+      };
+      param.optional match {
+      | None() -> void
+      | Some(optionalPos) ->
+        !paramType = paramType.unionUndefined(subst, this.tenv, optionalPos)
+      };
+      param.default match {
+      | None() -> void
+      | Some(defaultExpr) ->
+        param.optional match {
+        | None() -> void
+        | Some(optionalPos) ->
+          typingError(
+            Array[
+              (
+                optionalPos,
+                "A parameter cannot both be optional and have a default value",
+              ),
+            ],
+          )
+        };
+        paramScope = env.mcreateSubScope{isLoop => false};
+        env.!scope = paramScope;
+        this.checkSubType(
+          env,
+          defaultExpr.pos,
+          "Default value doesn't have the expected type",
+          this.expr(env, defaultExpr),
+          paramType,
+        );
+        env.!scope = scope
+      };
+      paramName = param.name match {
+      | PNName(n) -> n
       | PNDDD(name) ->
+        param.optional match {
+        | None() -> void
+        | Some(optionalPos) ->
+          typingError(Array[(optionalPos, "... cannot be optional")])
+        };
+        param.default match {
+        | None() -> void
+        | Some(defaultExpr) ->
+          typingError(
+            Array[(defaultExpr.pos, "... cannot have a default value")],
+          )
+        };
         if (i != fd.params.size() - 1) {
           typingError(Array[(name.pos, "... should be the last parameter")])
         };
-        (name, None())
+        name
       | _ ->
         typingError(
           Array[
@@ -31,15 +78,7 @@ extension class TypeChecker {
           ],
         )
       };
-      paramType = tyOpt match {
-      | None() ->
-        param.type match {
-        | None() -> typingError(Array[(param.pos, "Missing type annotation")])
-        | Some(ty) -> ty
-        }
-      | Some(x) -> x
-      };
-      scope.bind(paramName, this.tenv.normalize(subst.context, paramType), true)
+      scope.bind(paramName, paramType, true)
     };
     !this.retType = fd.retType.i1.map(rty ->
       this.tenv.normalize(subst.context, rty)

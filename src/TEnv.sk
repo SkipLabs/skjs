@@ -523,13 +523,9 @@ class TEnv{
 
   private fun convertParam(param: Param): TAFunParam {
     (paramName, ty) = param.name match {
-    | PNName(n, tyOpt) ->
-      tyOpt match {
-      | None() ->
-        param.type match {
-        | None() -> typingError(Array[(n.pos, "Missing type annotation")])
-        | Some(ty) -> (TAParamName(n), ty)
-        }
+    | PNName(n) ->
+      param.type match {
+      | None() -> typingError(Array[(n.pos, "Missing type annotation")])
       | Some(ty) -> (TAParamName(n), ty)
       }
     | PNDDD(n) ->
@@ -542,7 +538,22 @@ class TEnv{
         Array[(param.pos, "TODO: support for param pattern in typeDecl")],
       )
     };
-    TAFunParam(Some(paramName), param.optional, ty)
+    param.optional match {
+    | None() -> void
+    | Some(optionalPos) ->
+      !ty = Type(
+        param.pos,
+        TAUnion(
+          ty,
+          Type(optionalPos, TAInst(Name(optionalPos, "undefined"), Array[])),
+        ),
+      )
+    };
+    optional = param.default match {
+    | None() -> param.optional
+    | Some(defaultExpr) -> Some(defaultExpr.pos)
+    };
+    TAFunParam(Some(paramName), optional, ty)
   }
 
   fun funDecl(
