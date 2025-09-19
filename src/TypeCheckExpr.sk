@@ -1199,26 +1199,29 @@ extension class TypeChecker {
           env.scope.callingContext,
           tfun.cgNodes,
         );
-        if (targs.size() != 0 && targs.size() != tfun.clauses.size()) {
+        if (targs.size() > tfun.clauses.size()) {
           typingError(
             Array[
-              (
-                pos,
-                "Incompatible number of type arguments: " +
-                  targs.size() +
-                  " passed",
-              ),
-              (fty.pos, "Expected: " + tfun.clauses.size()),
+              (pos, `Too many type arguments: ${targs.size()} passed`),
+              (fty.pos, `Expected: ${tfun.clauses.size()}`),
             ],
           )
         };
         map = SortedMap[];
         for (i => tparamDecl in tfun.clauses) {
-          !map[tparamDecl.id] = if (targs.isEmpty()) {
+          !map[tparamDecl.id] = if (i < targs.size()) targs[i] else if (
+            targs.isEmpty() ||
+            tparamDecl.default is Some _
+          ) {
             this.newTVar(env, pos)
           } else {
-            targs[i]
-          };
+            typingError(
+              Array[
+                (pos, `Not enough type arguments: ${targs.size()} passed`),
+                (fty.pos, `Expected more`),
+              ],
+            )
+          }
         };
         !tfun = (mutable Instantiate()).fun_(
           (env.subst, this.tenv, map.chill()),
