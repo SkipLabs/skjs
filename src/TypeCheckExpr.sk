@@ -115,11 +115,19 @@ extension class TypeChecker {
                   ],
                 )
               | Some(tfield) ->
+                tfieldType = tfield.type;
+                if (tfield.isOptional) {
+                  !tfieldType = tfieldType.unionUndefined(
+                    tcenv.subst,
+                    this.tenv,
+                    tfield.pos,
+                  )
+                };
                 this.bind(
                   tcenv,
                   kind,
                   fieldPat,
-                  tfield.type,
+                  tfieldType,
                   isInitialized,
                   false,
                 )

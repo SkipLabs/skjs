@@ -6,7 +6,6 @@ function notSupportedDefault(x: { f: number }): number {
 
 function optionalMeansUndefined(x: { f?: number }): number {
   const { f } = x;
-  // @ts-expect-error This operator is useless
   return f ?? 0;
 }
 
