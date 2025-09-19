@@ -83,12 +83,32 @@ class TEnv{
     | TDType(ta) -> ta.tdefParams
     | TDClass(ca) -> ca.tparams
     };
-    if (clauses.size() != targs.targs.size()) {
-      typingError(Array[(name.pos, "Invalid number of type arguments")])
+    if (targs.targs.size() > clauses.size()) {
+      typingError(
+        Array[
+          (
+            name.pos,
+            `Too many type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
+          ),
+        ],
+      )
     };
 
-    for (i => targ in targs.targs) {
-      tparam = clauses[i];
+    for (i => tparam in clauses) {
+      targ = if (i < targs.targs.size()) targs.targs[i] else {
+        tparam.default match {
+        | Some(default) -> this.normalize(subst.context, default)
+        | None() ->
+          typingError(
+            Array[
+              (
+                name.pos,
+                `Not enough type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
+              ),
+            ],
+          )
+        }
+      };
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
@@ -104,9 +124,6 @@ class TEnv{
             ],
           )
         }
-      };
-      if (tparam.default is Some _) {
-        internal_error("TODO default type param");
       };
       !this.subst[tparam.name.value] = (true, targ);
     };
@@ -759,15 +776,23 @@ class TEnv{
         typingError(Array[(n.pos, "Cyclic definition")])
       } else {
         tdef = this.defMap.getType(context, n);
-        tdef match {
-        | TDType(ta) ->
-          if (ta.tdefParams.size() != targs.size()) {
-            typingError(Array[(n.pos, "Invalid number of type arguments")])
-          }
-        | TDClass(ca) ->
-          if (ca.tparams.size() != targs.size()) {
-            typingError(Array[(n.pos, "Invalid number of type arguments")])
-          }
+        tparams = tdef match {
+        | TDType(ta) -> ta.tdefParams
+        | TDClass(ca) -> ca.tparams
+        };
+        if (
+          targs.size() > tparams.size() ||
+          (targs.size() < tparams.size() &&
+            tparams[targs.size()].default is None())
+        ) {
+          typingError(
+            Array[
+              (
+                n.pos,
+                `Invalid number of type arguments: given ${targs.size()}, expected ${tparams.size()}`,
+              ),
+            ],
+          )
         };
 
         TType::inst(
@@ -812,8 +837,19 @@ class TEnv{
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
+      TypeChecker::checkTypeParams(clauses);
       funClauses = mutable Vector[];
       for (tparam in clauses) {
+        if (tparam.default is Some _) {
+          typingError(
+            Array[
+              (
+                tparam.name.pos,
+                "Optional type parameters are not supported for functions",
+              ),
+            ],
+          )
+        };
         funTParam = TParamWithConstraint(
           tparam.name.value,
           tparam.name.pos.fileName,
