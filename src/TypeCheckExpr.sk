@@ -49,11 +49,11 @@ extension class TypeChecker {
             Array[
               (
                 pos,
-                "Invalid tuple pattern size, it is of size " + arrPat.size(),
+                `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
               ),
               (
                 type.pos,
-                "It is incompatible with a tuple of size " + tyl.size(),
+                `It is incompatible with a tuple of size ${tyl.size()}`,
               ),
             ],
           )
@@ -65,7 +65,7 @@ extension class TypeChecker {
         typingError(
           Array[
             (pos, "Invalid tuple pattern"),
-            (type.pos, "This is not a tuple, it is " + type.toString()),
+            (type.pos, `This is not a tuple, it is ${type}`),
           ],
         )
       }
@@ -74,10 +74,7 @@ extension class TypeChecker {
       type.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
         typingError(
-          Array[
-            (pos, "Invalid object pattern"),
-            (type.pos, "This is " + type.toString()),
-          ],
+          Array[(pos, "Invalid object pattern"), (type.pos, `This is ${type}`)],
         )
       | Some(stypes) ->
         for (stype in stypes) {
@@ -88,7 +85,7 @@ extension class TypeChecker {
             typingError(
               Array[
                 (pos, "Invalid object pattern"),
-                (type.pos, "This is " + type.toString()),
+                (type.pos, `This is ${type}`),
               ],
             )
           };
@@ -107,11 +104,8 @@ extension class TypeChecker {
               | None() ->
                 typingError(
                   Array[
-                    (
-                      fieldName.pos,
-                      "The field " + fieldName.value + " is missing",
-                    ),
-                    (type.pos, "Out of " + type.toString()),
+                    (fieldName.pos, `The field ${fieldName.value} is missing`),
+                    (type.pos, `Out of ${type}`),
                   ],
                 )
               | Some(tfield) ->
