@@ -51,12 +51,17 @@ mutable class Subst private {
     this.!values = saved.values;
   }
 
-  mutable fun grow(env: TEnv, tvar: TVar, ty: TType, variance: Variance): void {
+  mutable fun grow(
+    tenv: TEnv,
+    tvar: TVar,
+    ty: TType,
+    variance: Variance,
+  ): void {
     newTy = this.values.maybeGet(tvar.id) match {
     | None() -> ty
     | Some(SVClosed(_)) -> return void
     | Some(SVOpen(ty2)) ->
-      newTy = TType::union(this, env, ty2, ty);
+      newTy = TType::union(this, tenv, ty2, ty);
       if (newTy == ty2) return void;
       newTy
     };
@@ -67,7 +72,7 @@ mutable class Subst private {
     }
   }
 
-  mutable fun get(env: TEnv, tvar: TVar, variance: Variance): TType {
+  mutable fun get(tenv: TEnv, tvar: TVar, variance: Variance): TType {
     result = variance match {
     | Covariant() ->
       this.values.maybeGet(tvar.id) match {
@@ -89,7 +94,7 @@ mutable class Subst private {
       }
     };
     for (cstr in tvar.constraints) {
-      !result = TType::inter(this, env, result, cstr);
+      !result = TType::inter(this, tenv, result, cstr);
     };
     result
   }

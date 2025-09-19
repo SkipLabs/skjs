@@ -1,15 +1,15 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun stmt(env: mutable TCEnv, st: Stmt): void {
+  fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
     st.value match {
     | Break() -> void
     | Continue() -> void
     | StmtEmpty() -> void
     | StmtExpr(e) ->
-      ty = this.expr(env, e);
+      ty = this.expr(tcenv, e);
       if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
-        this.checkIsVoid(env, e.pos, ty)
+        this.checkIsVoid(tcenv, e.pos, ty)
       }
     | Return(pos, eOpt) ->
       retType = this.retType match {
@@ -19,14 +19,14 @@ extension class TypeChecker {
       };
       (epos, etype) = eOpt match {
       | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
-      | Some(e) -> (e.pos, this.expr(env, e, true))
+      | Some(e) -> (e.pos, this.expr(tcenv, e, true))
       };
       rtype = if (this.isAsync) {
         TType::single(TPromise(etype, epos))
       } else {
         etype
       };
-      this.checkSubType(env, epos, "Invalid return type", rtype, retType)
+      this.checkSubType(tcenv, epos, "Invalid return type", rtype, retType)
 
     | Bind(BKVar(), vars) ->
       if (vars.size() == 0) internal_error("vars size should not be 0");
@@ -38,13 +38,13 @@ extension class TypeChecker {
       for (binding in bindings) {
         (ty, isInitialized) = this.bindType(
           binding.pat.pos,
-          env,
+          tcenv,
           bkind,
           binding.type,
           binding.value,
         );
         this.bind(
-          env,
+          tcenv,
           bkind,
           binding.pat,
           ty,
@@ -55,103 +55,104 @@ extension class TypeChecker {
 
     | If(e, block1, block2opt) ->
       block2 = block2opt.default(Array[]);
-      this.checkBool(env, e);
-      scope1 = this.block(env, block1, Some((e, true)));
-      scope2 = this.block(env, block2, Some((e, false)));
+      this.checkBool(tcenv, e);
+      scope1 = this.block(tcenv, block1, Some((e, true)));
+      scope2 = this.block(tcenv, block2, Some((e, false)));
       (isTerminalBlock(false, block1), isTerminalBlock(false, block2)) match {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
-      | (true, false) -> env.popScopeReplace(scope2)
-      | (false, true) -> env.popScopeReplace(scope1)
-      | (false, false) -> env.mergeScope(env.subst, this.tenv, scope1, scope2)
+      | (true, false) -> tcenv.popScopeReplace(scope2)
+      | (false, true) -> tcenv.popScopeReplace(scope1)
+      | (false, false) ->
+        tcenv.mergeScope(tcenv.subst, this.tenv, scope1, scope2)
       }
 
     | For(initStmt, cond, incr, block) ->
-      scopeCopy = env.scope;
-      initScope = env.mcreateSubScope{isLoop => false};
-      env.!scope = initScope;
-      this.stmt(env, initStmt);
-      loopScope = env.mcreateSubScope{isLoop => true};
-      env.!scope = loopScope;
-      this.checkBool(env, cond);
-      loopBody = this.block(env, block);
-      env.popScopeReplace(loopBody);
-      _ = this.expr(env, incr);
-      env.!scope = initScope;
-      env.popScope(env.subst, this.tenv, loopScope);
-      env.!scope = scopeCopy;
-      env.popScopeReplace(initScope)
+      scopeCopy = tcenv.scope;
+      initScope = tcenv.mcreateSubScope{isLoop => false};
+      tcenv.!scope = initScope;
+      this.stmt(tcenv, initStmt);
+      loopScope = tcenv.mcreateSubScope{isLoop => true};
+      tcenv.!scope = loopScope;
+      this.checkBool(tcenv, cond);
+      loopBody = this.block(tcenv, block);
+      tcenv.popScopeReplace(loopBody);
+      _ = this.expr(tcenv, incr);
+      tcenv.!scope = initScope;
+      tcenv.popScope(tcenv.subst, this.tenv, loopScope);
+      tcenv.!scope = scopeCopy;
+      tcenv.popScopeReplace(initScope)
     | Block(stmts) ->
       for (stmt in stmts) {
-        this.stmt(env, stmt)
+        this.stmt(tcenv, stmt)
       }
     | ForIn(initStmt, iterable, block) ->
-      scopeCopy = env.scope;
-      initScope = env.mcreateSubScope{isLoop => false};
-      env.!scope = initScope;
+      scopeCopy = tcenv.scope;
+      initScope = tcenv.mcreateSubScope{isLoop => false};
+      tcenv.!scope = initScope;
 
-      iterableType = this.expr(env, iterable, true);
-      keyType = this.tenv.forInKeys(env.subst, iterableType, iterable.pos);
+      iterableType = this.expr(tcenv, iterable, true);
+      keyType = this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos);
 
-      this.bindLoopVar(env, initStmt, keyType);
+      this.bindLoopVar(tcenv, initStmt, keyType);
 
-      loopScope = env.mcreateSubScope{isLoop => true};
-      env.!scope = loopScope;
-      loopBody = this.block(env, block);
-      env.popScopeReplace(loopBody);
-      env.!scope = initScope;
-      env.popScope(env.subst, this.tenv, loopScope);
-      env.!scope = scopeCopy;
-      env.popScopeReplace(initScope)
+      loopScope = tcenv.mcreateSubScope{isLoop => true};
+      tcenv.!scope = loopScope;
+      loopBody = this.block(tcenv, block);
+      tcenv.popScopeReplace(loopBody);
+      tcenv.!scope = initScope;
+      tcenv.popScope(tcenv.subst, this.tenv, loopScope);
+      tcenv.!scope = scopeCopy;
+      tcenv.popScopeReplace(initScope)
 
     | ForOf(initStmt, iterable, block) ->
-      scopeCopy = env.scope;
-      initScope = env.mcreateSubScope{isLoop => false};
-      env.!scope = initScope;
+      scopeCopy = tcenv.scope;
+      initScope = tcenv.mcreateSubScope{isLoop => false};
+      tcenv.!scope = initScope;
 
-      iterableType = this.expr(env, iterable, true);
-      valueType = this.getValueType(env, iterable.pos, iterableType);
+      iterableType = this.expr(tcenv, iterable, true);
+      valueType = this.getValueType(tcenv, iterable.pos, iterableType);
 
-      this.bindLoopVar(env, initStmt, valueType);
+      this.bindLoopVar(tcenv, initStmt, valueType);
 
-      loopScope = env.mcreateSubScope{isLoop => true};
-      env.!scope = loopScope;
-      loopBody = this.block(env, block);
-      env.popScopeReplace(loopBody);
-      env.!scope = initScope;
-      env.popScope(env.subst, this.tenv, loopScope);
-      env.!scope = scopeCopy;
-      env.popScopeReplace(initScope)
-    | Throw(e) -> _ = this.expr(env, e)
+      loopScope = tcenv.mcreateSubScope{isLoop => true};
+      tcenv.!scope = loopScope;
+      loopBody = this.block(tcenv, block);
+      tcenv.popScopeReplace(loopBody);
+      tcenv.!scope = initScope;
+      tcenv.popScope(tcenv.subst, this.tenv, loopScope);
+      tcenv.!scope = scopeCopy;
+      tcenv.popScopeReplace(initScope)
+    | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
-      scopeCopy = env.scope;
-      loopScope = env.mcreateSubScope{isLoop => true};
-      env.!scope = loopScope;
-      this.checkBool(env, cond);
-      loopBody = this.block(env, block, Some((cond, true)));
-      env.popScopeReplace(loopBody);
-      env.!scope = scopeCopy;
-      env.popScope(env.subst, this.tenv, loopScope)
+      scopeCopy = tcenv.scope;
+      loopScope = tcenv.mcreateSubScope{isLoop => true};
+      tcenv.!scope = loopScope;
+      this.checkBool(tcenv, cond);
+      loopBody = this.block(tcenv, block, Some((cond, true)));
+      tcenv.popScopeReplace(loopBody);
+      tcenv.!scope = scopeCopy;
+      tcenv.popScope(tcenv.subst, this.tenv, loopScope)
     | Switch(e, branches) ->
-      this.switchCheckExhaustiveness(env, e, branches);
-      this.switch(env, e, branches)
+      this.switchCheckExhaustiveness(tcenv, e, branches);
+      this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
-      scopeCopy = env.scope;
-      tryScope = env.mcreateSubScope{isLoop => false};
-      env.!scope = tryScope;
+      scopeCopy = tcenv.scope;
+      tryScope = tcenv.mcreateSubScope{isLoop => false};
+      tcenv.!scope = tryScope;
       for (stmt in tryBlock) {
-        this.stmt(env, stmt)
+        this.stmt(tcenv, stmt)
       };
-      env.!scope = scopeCopy;
-      env.popScope(env.subst, this.tenv, tryScope);
+      tcenv.!scope = scopeCopy;
+      tcenv.popScope(tcenv.subst, this.tenv, tryScope);
 
       catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
-        catchScope = env.mcreateSubScope{isLoop => false};
-        env.!scope = catchScope;
+        catchScope = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = catchScope;
         param match {
         | Some(pat) ->
           errorType = type match {
-          | Some(t) -> // If we trusted user: this.tenv.normalize(env.context, t)
+          | Some(t) -> // If we trusted user: this.tenv.normalize(tcenv.context, t)
             typingError(
               Array[
                 (
@@ -162,32 +163,36 @@ extension class TypeChecker {
             )
           | None() -> TType::top(pat.pos)
           };
-          this.bind(env, BKLet(), pat, errorType, true, false)
+          this.bind(tcenv, BKLet(), pat, errorType, true, false)
         | None() -> void
         };
         for (stmt in catchBlock) {
-          this.stmt(env, stmt)
+          this.stmt(tcenv, stmt)
         };
-        env.!scope = scopeCopy;
-        env.popScope(env.subst, this.tenv, catchScope)
+        tcenv.!scope = scopeCopy;
+        tcenv.popScope(tcenv.subst, this.tenv, catchScope)
       | None() -> void
       };
 
       finallyBlock match {
       | Some(finallyStmts) ->
-        finallyScope = env.mcreateSubScope{isLoop => false};
-        env.!scope = finallyScope;
+        finallyScope = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = finallyScope;
         for (stmt in finallyStmts) {
-          this.stmt(env, stmt)
+          this.stmt(tcenv, stmt)
         };
-        env.!scope = scopeCopy;
-        env.popScope(env.subst, this.tenv, finallyScope)
+        tcenv.!scope = scopeCopy;
+        tcenv.popScope(tcenv.subst, this.tenv, finallyScope)
       | None() -> void
       }
     }
   }
 
-  fun switch(env: mutable TCEnv, e: Expr, branches: Array<SwitchBranch>): void {
+  fun switch(
+    tcenv: mutable TCEnv,
+    e: Expr,
+    branches: Array<SwitchBranch>,
+  ): void {
     if (branches.size() == 0) {
       typingError(Array[(e.pos, "Missing branch")])
     };
@@ -205,33 +210,33 @@ extension class TypeChecker {
     | Case(v, block) ->
       checkBreak(block);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-      this.block(env, block, Some((cond, true)))
+      this.block(tcenv, block, Some((cond, true)))
     | Default(_) -> typingError(Array[(e.pos, "Missing branch")])
     };
     for (i in Range(1, branches.size())) {
-      env.mergeScope(
-        env.subst,
+      tcenv.mergeScope(
+        tcenv.subst,
         this.tenv,
         scope,
         branches[i] match {
         | Case(v, block) ->
           checkBreak(block);
           cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-          this.block(env, block, Some((cond, true)))
-        | Default(stmts) -> this.block(env, stmts)
+          this.block(tcenv, block, Some((cond, true)))
+        | Default(stmts) -> this.block(tcenv, stmts)
         },
       )
     }
   }
 
   fun switchCheckExhaustiveness(
-    env: mutable TCEnv,
+    tcenv: mutable TCEnv,
     e: Expr,
     branches: Array<SwitchBranch>,
   ): void {
-    condType = this.expr(env, e, true);
+    condType = this.expr(tcenv, e, true);
     cases = condType
-      .getSTypes(env.subst, this.tenv, Covariant())
+      .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TPrimValue(_, Some(values), _)) ->
       Set::mcreateFromItems(values.values.map(x -> x.i1))
@@ -240,8 +245,8 @@ extension class TypeChecker {
     for (branch in branches) {
       branch match {
       | Case(v, _) ->
-        this.expr(env, v, true)
-          .getSTypes(env.subst, this.tenv, Covariant())
+        this.expr(tcenv, v, true)
+          .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.contains(staticValue)) {
@@ -266,7 +271,7 @@ extension class TypeChecker {
     }
   }
 
-  fun bindLoopVar(env: mutable TCEnv, initStmt: Stmt, varType: TType): void {
+  fun bindLoopVar(tcenv: mutable TCEnv, initStmt: Stmt, varType: TType): void {
     initStmt.value match {
     | Bind(kind, bindings) ->
       if (bindings.size() != 1) {
@@ -280,18 +285,18 @@ extension class TypeChecker {
         )
       };
       binding = bindings[0];
-      this.bind(env, kind, binding.pat, varType, true, false)
+      this.bind(tcenv, kind, binding.pat, varType, true, false)
     | _ ->
       typingError(Array[(initStmt.pos, "Invalid loop variable declaration")])
     }
   }
 
   fun getValueType(
-    env: mutable TCEnv,
+    tcenv: mutable TCEnv,
     pos: PosRange,
     iterableType: TType,
   ): TType {
-    stypes = iterableType.getSTypes(env.subst, this.tenv, Covariant()) match {
+    stypes = iterableType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> stypes
     | _ -> typingError(Array[(pos, "Invalid iterable type for for-of loop")])
     };
@@ -304,15 +309,20 @@ extension class TypeChecker {
           typingError(Array[(pos, "Invalid iterable type for for-of loop")])
         };
         for (index in fields.indexes) {
-          !result = TType::union(env.subst, this.tenv, result, index.valueType)
+          !result = TType::union(
+            tcenv.subst,
+            this.tenv,
+            result,
+            index.valueType,
+          )
         }
       | TTuple(tuple, _) ->
         for (elementType in tuple) {
-          !result = TType::union(env.subst, this.tenv, result, elementType)
+          !result = TType::union(tcenv.subst, this.tenv, result, elementType)
         }
       | TPrimValue(TString(), _, _) ->
         !result = TType::union(
-          env.subst,
+          tcenv.subst,
           this.tenv,
           result,
           TType::single(TPrimValue::string(pos)),

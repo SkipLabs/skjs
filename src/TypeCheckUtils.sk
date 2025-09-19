@@ -1,8 +1,8 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun isVoid(env: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
-    clauses = ty.expand(env.subst, this.tenv, Covariant());
+  fun isVoid(tcenv: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
+    clauses = ty.expand(tcenv.subst, this.tenv, Covariant());
     for (clause in clauses.clauses) {
       clause.stypes match {
       | None() -> return false
@@ -10,7 +10,7 @@ extension class TypeChecker {
         stypes.singleElt() match {
         | Some(TPrimUnit(TVoid(), _)) if (!isAsync) -> void
         | Some(TPromise(realType, _)) if (isAsync) ->
-          if (!this.isVoid(env, false, realType)) {
+          if (!this.isVoid(tcenv, false, realType)) {
             return false
           }
         | _ -> return false
@@ -21,8 +21,8 @@ extension class TypeChecker {
   }
 
   // Returns true if the type is not Top but contains void
-  fun nonTopContainsVoid(env: mutable TCEnv, ty: TType): Bool {
-    clauses = ty.expand(env.subst, this.tenv, Covariant());
+  fun nonTopContainsVoid(tcenv: mutable TCEnv, ty: TType): Bool {
+    clauses = ty.expand(tcenv.subst, this.tenv, Covariant());
     for (clause in clauses.clauses) {
       clause.stypes match {
       | Some(stypes) if (stypes.any(stype ~> stype is TPrimUnit(TVoid(), _))) ->
@@ -36,9 +36,9 @@ extension class TypeChecker {
   static private fun filterMethods(
     ty: TType,
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
   ): TType {
-    ty.getSTypes(subst, env, Covariant()).flatMap(stypes ~> {
+    ty.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~> {
       stypes.singleElt()
     }) match {
     | Some(TObject(fields, pos)) ->
@@ -46,7 +46,7 @@ extension class TypeChecker {
         TObject(
           fields.filterMap(field -> {
             fieldType = field.type;
-            fieldSTypesOpt = fieldType.getSTypes(subst, env, Covariant());
+            fieldSTypesOpt = fieldType.getSTypes(subst, tenv, Covariant());
             fieldSTypes = fieldSTypesOpt match {
             | None() -> return None()
             | Some(x) -> x
@@ -75,13 +75,13 @@ extension class TypeChecker {
   }
 
   fun checkSubType(
-    env: mutable TCEnv,
+    tcenv: mutable TCEnv,
     pos: PosRange,
     msg: String,
     ty1: TType,
     ty2: TType,
   ): void {
-    isSubTType(env.subst, this.tenv, ty1, ty2) match {
+    isSubTType(tcenv.subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
     | STRec(reason, pos1, subTy2) ->
       typingError(
@@ -90,26 +90,26 @@ extension class TypeChecker {
           (
             pos1,
             reason.toString(
-              env.subst,
+              tcenv.subst,
               this.tenv,
-              expandTVars(env.subst, this.tenv, ty1),
+              expandTVars(tcenv.subst, this.tenv, ty1),
             ),
           ),
           (
             subTy2.pos,
             "It is incompatible with: " +
-              expandTVars(env.subst, this.tenv, subTy2).toString(),
+              expandTVars(tcenv.subst, this.tenv, subTy2).toString(),
           ),
         ],
       )
     | err @ STError _ ->
-      typingError(Array[(pos, err.toString(env.subst, this.tenv, ty1))])
+      typingError(Array[(pos, err.toString(tcenv.subst, this.tenv, ty1))])
     }
   }
 
-  fun checkIsVoid(env: mutable TCEnv, pos: PosRange, ty: TType): void {
+  fun checkIsVoid(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
     this.checkSubType(
-      env,
+      tcenv,
       pos,
       "This expression was expected to be of type void",
       ty,
@@ -128,20 +128,20 @@ extension class TypeChecker {
     }
   }
 
-  fun checkBool(env: mutable TCEnv, e: Expr): void {
+  fun checkBool(tcenv: mutable TCEnv, e: Expr): void {
     this.checkSubType(
-      env,
+      tcenv,
       e.pos,
       "A condition is expected to be of type boolean, not: ",
-      this.expr(env, e),
+      this.expr(tcenv, e),
       TType::single(TPrimValue::boolean(e.pos)),
     );
   }
 
-  fun checkStringifiable(env: mutable TCEnv, pos: PosRange, ty: TType): void {
+  fun checkStringifiable(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
     // Check if the type is a primitive type that can be converted to string
     // Allowed types: string, number, bigint, boolean, null, undefined
-    isStringifiable = ty.getSTypes(env.subst, this.tenv, Covariant()) match {
+    isStringifiable = ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
     | None() -> false
     | Some(stypes) ->
       stypes.singleElt() match {
@@ -169,12 +169,12 @@ extension class TypeChecker {
   }
 
   fun checkIsNumber(
-    env: mutable TCEnv,
+    tcenv: mutable TCEnv,
     pos: PosRange,
     msg: String,
     ty: TType,
   ): void {
-    ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+    ty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(TNum(), _, _)) -> void
@@ -183,12 +183,12 @@ extension class TypeChecker {
   }
 
   fun checkIsNumeric(
-    env: mutable TCEnv,
+    tcenv: mutable TCEnv,
     pos: PosRange,
     msg: String,
     ty: TType,
   ): TPrimValueKind {
-    ty.getSTypes(env.subst, this.tenv, Covariant()).flatMap(stypes ~>
+    ty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(kind @ TNum(), _, _))
@@ -204,14 +204,14 @@ extension class TypeChecker {
     };
   }
 
-  fun makeBoundTVar(env: mutable TCEnv, ty: TType): TType {
-    tvar = env.subst.gen(ty.pos);
-    env.subst.grow(this.tenv, tvar, ty, Contravariant());
+  fun makeBoundTVar(tcenv: mutable TCEnv, ty: TType): TType {
+    tvar = tcenv.subst.gen(ty.pos);
+    tcenv.subst.grow(this.tenv, tvar, ty, Contravariant());
     TType::var(tvar)
   }
 
-  fun newTVar(env: mutable TCEnv, pos: PosRange): TType {
-    tvar = env.subst.gen(pos);
+  fun newTVar(tcenv: mutable TCEnv, pos: PosRange): TType {
+    tvar = tcenv.subst.gen(pos);
     TType::var(tvar)
   }
 
