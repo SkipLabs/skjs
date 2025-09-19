@@ -94,6 +94,7 @@ extension class TypeChecker {
             defaultOpt = fieldDefault.map(e ->
               (e.pos, this.expr(tcenv, e, kind is BKConst()))
             );
+            defaultIsUseless = fieldDefault.map(e -> e.pos);
             for (fields in branches) {
               fields.maybeGet(fieldName.value) match {
               | None() ->
@@ -124,6 +125,7 @@ extension class TypeChecker {
                       tfieldType,
                     ) is STOk()
                   ) {
+                    !defaultIsUseless = None();
                     !tfieldType = TType::union(
                       tcenv.subst,
                       this.tenv,
@@ -141,6 +143,18 @@ extension class TypeChecker {
                   false,
                 )
               }
+            };
+            defaultIsUseless match {
+            | None() -> void
+            | Some(defaultPos) ->
+              typingError(
+                Array[
+                  (
+                    defaultPos,
+                    "Default is useless because field cannot be undefined",
+                  ),
+                ],
+              )
             }
           }
         }

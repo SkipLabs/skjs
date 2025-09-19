@@ -1,5 +1,5 @@
 function uselessDefault(x: { f: number }): number {
-  // TODO: useless default
+  // @ts-expect-error Default is useless because field cannot be undefined
   const { f = 1 } = x;
   return f;
 }
