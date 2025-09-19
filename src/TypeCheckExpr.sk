@@ -91,14 +91,9 @@ extension class TypeChecker {
           };
           for (field in objectFields) {
             (fieldName, fieldPat, fieldDefault) = field;
-            fieldDefault match {
-            | None() -> void
-            | Some(defaultExpr) ->
-              notSupported(
-                defaultExpr.pos,
-                "default value in destructuring fields",
-              )
-            };
+            defaultOpt = fieldDefault.map(e ->
+              (e.pos, this.expr(tcenv, e, kind is BKConst()))
+            );
             for (fields in branches) {
               fields.maybeGet(fieldName.value) match {
               | None() ->
@@ -116,6 +111,26 @@ extension class TypeChecker {
                     this.tenv,
                     tfield.pos,
                   )
+                };
+                defaultOpt match {
+                | None() -> void
+                | Some((defaultPos, defaultType)) ->
+                  if (
+                    tfield.isOptional ||
+                    isSubTType(
+                      tcenv.subst.clone(),
+                      this.tenv,
+                      TType::single(TPrimUnit(TUndefined(), defaultPos)),
+                      tfieldType,
+                    ) is STOk()
+                  ) {
+                    !tfieldType = TType::union(
+                      tcenv.subst,
+                      this.tenv,
+                      tfieldType,
+                      defaultType,
+                    )
+                  }
                 };
                 this.bind(
                   tcenv,
