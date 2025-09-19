@@ -108,7 +108,7 @@ extension class TypeChecker {
         )
       }
     };
-    (!this, env) = this.funDefSetup(
+    (!this, tcenv) = this.funDefSetup(
       subst,
       thisTypeOpt.map(x -> x.i1),
       fd,
@@ -122,10 +122,10 @@ extension class TypeChecker {
     | None() -> !this.isAsync = false
     | Some(asyncPos) ->
       !this.isAsync = true;
-      tvar = env.subst.gen(asyncPos);
+      tvar = tcenv.subst.gen(asyncPos);
       type = TType::var(tvar);
       this.checkSubType(
-        env,
+        tcenv,
         asyncPos,
         "Async functions must return an object of type Promise<_>",
         retType,
@@ -141,9 +141,9 @@ extension class TypeChecker {
       if (thisTypeOpt is Some((CKInterface(), _))) {
         typingError(Array[(fd.pos, "An interface cannot implement a method")])
       };
-      _ = this.block(env, body);
+      _ = this.block(tcenv, body);
       term = StmtTermination::block(body);
-      if (term.mayFallthrough && !this.isVoid(env, this.isAsync, retType)) {
+      if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
         typingError(
           Array[(fd.pos, "This function may not always return a value")],
         )

@@ -56,9 +56,9 @@ extension class TypeChecker {
             !this.super = Some((superCstr, super));
           };
           scope = Scope::mcreateToplevel(fileName);
-          env = mutable TCEnv(context, subst, scope);
+          tcenv = mutable TCEnv(context, subst, scope);
           this.checkSubType(
-            env,
+            tcenv,
             parentName.pos,
             "Invalid extends",
             thisType,
@@ -77,9 +77,9 @@ extension class TypeChecker {
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
         scope = Scope::mcreateToplevel(fileName);
-        env = mutable TCEnv(context, subst, scope);
+        tcenv = mutable TCEnv(context, subst, scope);
         this.checkSubType(
-          env,
+          tcenv,
           parentName.pos,
           "Invalid implements",
           thisType,
@@ -104,12 +104,12 @@ extension class TypeChecker {
         | None() -> void
         | Some(e) ->
           scope = Scope::mcreateToplevel(fileName);
-          env = mutable TCEnv(context, subst, scope);
+          tcenv = mutable TCEnv(context, subst, scope);
           this.checkSubType(
-            env,
+            tcenv,
             e.pos,
             "Invalid assignment",
-            this.expr(env, e, true),
+            this.expr(tcenv, e, true),
             type,
           )
         }
@@ -183,8 +183,8 @@ extension class TypeChecker {
       | None() -> AnonymousFunDef(fd)
       },
     );
-    (!this, env) = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
-    env.localObjects!["this"] = Some(thisType);
+    (!this, tcenv) = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
+    tcenv.localObjects!["this"] = Some(thisType);
     fd.isAsync match {
     | None() -> void
     | Some(asyncPos) ->
@@ -193,12 +193,12 @@ extension class TypeChecker {
     fd.body match {
     | FDBNone(pos) -> typingError(Array[(pos, "Missing definition")])
     | FDBSome(body) ->
-      blockScope = this.block(env, body);
+      blockScope = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fd.pos, "this"));
-      objType = static::filterMethods(blockThisType, env.subst, this.tenv);
-      fullType = static::filterMethods(thisType, env.subst, this.tenv);
+      objType = static::filterMethods(blockThisType, tcenv.subst, this.tenv);
+      fullType = static::filterMethods(thisType, tcenv.subst, this.tenv);
       this.checkSubType(
-        env,
+        tcenv,
         fd.pos,
         "Invalid initialization",
         objType,
