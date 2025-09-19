@@ -27,9 +27,9 @@ extension class TypeChecker {
     | ToplevelExpr(e) ->
       subst = Subst::mcreate{context};
       scope = Scope::mcreateToplevel(def.pos.fileName);
-      env = mutable TCEnv(context, subst, scope);
-      ty = this.expr(env, e);
-      this.checkIsVoid(env, e.pos, ty)
+      tcenv = mutable TCEnv(context, subst, scope);
+      ty = this.expr(tcenv, e);
+      this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ FunDef _ ->
       cgNode = fd.name match {
       | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
@@ -96,14 +96,14 @@ extension class TypeChecker {
       | Some(x) -> x
       };
       scope = Scope::mcreateToplevel(varDef.pat.pos.fileName);
-      env = mutable TCEnv(context, subst, scope);
+      tcenv = mutable TCEnv(context, subst, scope);
       this.checkSubType(
-        env,
+        tcenv,
         varDef.pat.pos,
         "Invalid definition",
         literalType match {
         | None() ->
-          ty = this.expr(env, e);
+          ty = this.expr(tcenv, e);
           ty
         | Some(litType) -> litType
         },
