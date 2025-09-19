@@ -840,6 +840,16 @@ class TEnv{
       TypeChecker::checkTypeParams(clauses);
       funClauses = mutable Vector[];
       for (tparam in clauses) {
+        if (tparam.default is Some _) {
+          typingError(
+            Array[
+              (
+                tparam.name.pos,
+                "Optional type parameters are not supported for functions",
+              ),
+            ],
+          )
+        };
         funTParam = TParamWithConstraint(
           tparam.name.value,
           tparam.name.pos.fileName,

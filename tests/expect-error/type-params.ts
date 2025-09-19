@@ -51,6 +51,7 @@ class cNonLastDefault<X = boolean, Y> {}
     Same thing for classes.
 */
 
+// @ts-expect-error Optional type parameters are not supported for functions
 function pair<X, Y = X>(x: X, y: Y): { x: X; y: Y } {
   return { x, y };
 }
@@ -80,4 +81,5 @@ function callpair1(): { x: 1; y: boolean } {
 //   return pair<1>(one, 2);
 // }
 
+// @ts-expect-error Optional type parameters are not supported for classes
 class ClassWithOptionalTypeParam<X = boolean> {}

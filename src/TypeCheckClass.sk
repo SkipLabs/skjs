@@ -10,6 +10,16 @@ extension class TypeChecker {
     subst = Subst::mcreate{context};
     targs = TArgs(
       c.tparams.map(tparam -> {
+        if (tparam.default is Some _) {
+          typingError(
+            Array[
+              (
+                tparam.name.pos,
+                "Optional type parameters are not supported for classes",
+              ),
+            ],
+          )
+        };
         ttypeParam = TParamWithConstraint(
           tparam.name.value,
           tparam.name.pos.fileName,
