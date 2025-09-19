@@ -40,3 +40,44 @@ function fNonLastDefault2(f: <X = boolean, Y>(x: X | Y) => void): void {}
 
 // @ts-expect-error Required type parameters may not follow optional type parameters.
 class cNonLastDefault<X = boolean, Y> {}
+
+/*
+    We don't support defaults for type parameters of functions
+    This is actually tricky because inference is used for missing type parameters
+    (when none are provided or when they have a default value).
+    The default value is used only if the inference fails, i.e. the type variable
+    is unconstrained.
+
+    Same thing for classes.
+*/
+
+function pair<X, Y = X>(x: X, y: Y): { x: X; y: Y } {
+  return { x, y };
+}
+
+function callpair1(): { x: 1; y: boolean } {
+  const one: 1 = 1;
+  return pair(one, true);
+}
+
+// function callpair2(): { x: 1 | boolean; y: 1 | boolean } {
+//   const one: 1 = 1;
+//   return pair(one, true);
+// }
+
+// function callpair3(): { x: 1; y: boolean } {
+//   const one: 1 = 1;
+//   return pair<1, boolean>(one, true);
+// }
+
+// function callpair4(): { x: number; y: number } {
+//   const one: 1 = 1;
+//   return pair<number>(one, 2);
+// }
+
+// function callpair5(): { x: 1; y: 1 } {
+//   const one: 1 = 1;
+//   return pair<1>(one, 2);
+// }
+
+class ClassWithOptionalTypeParam<X = boolean> {}
