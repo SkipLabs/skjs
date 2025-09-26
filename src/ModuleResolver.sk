@@ -198,7 +198,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
           context,
           S.DirName::create("/skjs/node_modules/index/"),
           (_context, writer, key, valueIter) ~> {
-            writer.set(key, NodeModuleDir(valueIter.collect(Array).sorted()))
+            writer.set(key, NodeModuleDir(valueIter.toArray().sorted()))
           },
         ),
     )
