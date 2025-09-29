@@ -173,9 +173,9 @@ mutable class TypePp{
       level,
       margin,
       (pp, level, margin) ~> {
-        if (tfun.clauses.size() != 0) {
+        if (tfun.tparams.size() != 0) {
           pp.out(level, margin, "<");
-          for (i => tparam in tfun.clauses) {
+          for (i => tparam in tfun.tparams) {
             if (i != 0) pp.out(level, margin, ", ");
             pp.out(level, margin, tparam.name + ":" + tparam.id);
             tparam.cstr match {
@@ -205,9 +205,9 @@ mutable class TypePp{
         pp.type(level, margin, tfun.retType);
       },
       (pp, level, prevMargin, margin) ~> {
-        if (tfun.clauses.size() != 0) {
+        if (tfun.tparams.size() != 0) {
           pp.out(level, margin, "<");
-          for (i => tparam in tfun.clauses) {
+          for (i => tparam in tfun.tparams) {
             if (i != 0) pp.out(level, margin, ", ");
             pp.out(level, margin, tparam.name + ":" + tparam.id);
             tparam.cstr match {

@@ -401,7 +401,7 @@ class TFuns private (
 }
 
 class TFun(
-  clauses: Array<TParamWithConstraint>,
+  tparams: Array<TParamWithConstraint>,
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?TType,
@@ -414,7 +414,7 @@ class TFun(
   }
 
   fun project(): (Int, Int) {
-    (this.clauses.size(), this.params.size())
+    (this.tparams.size(), this.params.size())
   }
 }
 
