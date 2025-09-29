@@ -1217,7 +1217,7 @@ extension class TypeChecker {
           tcenv.scope.callingContext,
           tfun.cgNodes,
         );
-        if (targs.size() != 0 && targs.size() != tfun.clauses.size()) {
+        if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
           typingError(
             Array[
               (
@@ -1226,12 +1226,12 @@ extension class TypeChecker {
                   targs.size() +
                   " passed",
               ),
-              (fty.pos, "Expected: " + tfun.clauses.size()),
+              (fty.pos, "Expected: " + tfun.tparams.size()),
             ],
           )
         };
         map = SortedMap[];
-        for (i => tparamDecl in tfun.clauses) {
+        for (i => tparamDecl in tfun.tparams) {
           !map[tparamDecl.id] = if (targs.isEmpty()) {
             this.newTVar(tcenv, pos)
           } else {
@@ -1240,7 +1240,7 @@ extension class TypeChecker {
         };
         !tfun = (mutable Instantiate()).fun_(
           (tcenv.subst, this.tenv, map.chill()),
-          tfun with {clauses => Array[]},
+          tfun with {tparams => Array[]},
         );
         version = tcenv.subst.version;
         loop {

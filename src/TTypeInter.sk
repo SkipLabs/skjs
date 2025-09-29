@@ -311,14 +311,14 @@ fun interSType(
 }
 
 fun interTFun(subst: mutable Subst, tenv: TEnv, f1: TFun, f2: TFun): TFun {
-  if (f1.clauses.size() != f2.clauses.size()) {
+  if (f1.tparams.size() != f2.tparams.size()) {
     internal_error("function clause sizes must match")
   };
   tsubst = SortedMap[];
   clauses = mutable Vector[];
-  for (i in Range(0, f1.clauses.size())) {
-    tparam1 = f1.clauses[i];
-    tparam2 = f2.clauses[i];
+  for (i in Range(0, f1.tparams.size())) {
+    tparam1 = f1.tparams[i];
+    tparam2 = f2.tparams[i];
     !tsubst[tparam2.id] = tparam1;
     cstr = (tparam1.cstr, tparam2.cstr) match {
     | (None(), None()) -> None()

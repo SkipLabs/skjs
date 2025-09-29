@@ -111,7 +111,7 @@ mutable base class ApplyType(
 
   overridable deferred mutable fun fun_(env: this::Env, f: TFun): TFun {
     TFun(
-      f.clauses.map(x -> this.typeParamWithConstraint(env, x)),
+      f.tparams.map(x -> this.typeParamWithConstraint(env, x)),
       f.params.map(x -> this.type(env, x)),
       f.optionalParams.map(x -> this.type(env, x)),
       f.spreadParam.map(x -> this.type(env, x)),
