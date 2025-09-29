@@ -227,4 +227,16 @@ extension class TypeChecker {
   }
 }
 
+fun paramsError<T>(pos: PosRange): T {
+  typingError(
+    Array[
+      (
+        pos,
+        "Type annotations in parentheses are not valid in an expression." +
+          "Use type assertions with 'as' keyword instead",
+      ),
+    ],
+  )
+}
+
 module end;
