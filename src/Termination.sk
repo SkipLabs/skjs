@@ -220,8 +220,7 @@ value class StmtTermination private {
       (static::expr(e) * static::and(args, static::expr)).then(() ~>
         static::unknownCall
       )
-    | Params(_) ->
-      internal_error("Internal error: Params should not be an expression")
+    | Params(_) -> paramsError(expr.pos)
     | Object(fields) -> static::and(fields, static::field)
     | EArray(exprs) -> static::and(exprs, static::expr)
     | EIf(cond, e1, e2) ->

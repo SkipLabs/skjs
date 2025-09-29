@@ -938,8 +938,7 @@ extension class TypeChecker {
           Array[(pos, "'as const' can only be used with string literals")],
         )
       }
-    | Params _ ->
-      internal_error("Internal error: Params should not be an expression")
+    | Params _ -> paramsError(pos)
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | Spread _ -> typingError(Array[(pos, "TODO: ...")])
     }
