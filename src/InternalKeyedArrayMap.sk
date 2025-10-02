@@ -100,6 +100,12 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     static::create(items.sizeHint().default(0), items.each)
   }
 
+  static fun createFromIterator<I: mutable Iterator<T>>(items: I): this {
+    inner = Vector::mcreateFromIterator(items);
+    inner.sortBy(x ~> x.project());
+    static::createFromSortedVector(unsafe_chill_trust_me(inner))
+  }
+
   static fun empty(): this {
     static(Vector[])
   }

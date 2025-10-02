@@ -994,8 +994,8 @@ class Clauses private (
 
   fun map(f: Clause -> ?Clause): this {
     static::create(
-      InternalKeyedArrayMap::createFromSortedIterator(
-        this.clauses.filterMap(f).toArray().sorted().iterator(),
+      InternalKeyedArrayMap::createFromIterator(
+        this.clauses.values().filterMap(f),
       ),
     )
   }
