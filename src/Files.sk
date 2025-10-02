@@ -99,14 +99,14 @@ class Files(
         filesDirName,
       )
     };
-    fileEagerDir = context.unsafeGetEagerDir(filesDirName);
+    fileDir = context.unsafeGetEagerDir(filesDirName);
     oldParses: SortedMap<String, ParsedResult> = SortedMap::create();
 
     for (fileName in srcFiles) {
       key = SKStore.SID(fileName);
       content = FileSystem.readTextFile(fileName);
       if (!isInit && trackChangedFiles) {
-        oldFile = fileEagerDir.getArrayRaw(key);
+        oldFile = fileDir.getArrayRaw(key);
         if (
           oldFile.size() == 1 &&
           SKStore.StringFile::type(oldFile[0]).value != content
