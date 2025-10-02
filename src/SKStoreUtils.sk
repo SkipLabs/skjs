@@ -13,8 +13,20 @@ fun getInitDir(
       initDirName,
       Array[(SKStore.IID(0), SKStore.IntFile(0))],
     )
-  | Some _ ->
+  | Some(_dir) ->
     SKStore.EHandle(SKStore.IID::keyType, SKStore.IntFile::type, initDirName)
+  }
+}
+
+fun createOrReuseEagerDir<K: SKStore.Key, V: SKStore.File>(
+  context: mutable SKStore.Context,
+  keyType: SKStore.Key ~> K,
+  fileType: SKStore.File ~> V,
+  dirName: SKStore.DirName,
+): SKStore.EHandle<K, V> {
+  context.unsafeMaybeGetEagerDir(dirName) match {
+  | Some(_dir) -> SKStore.EHandle(keyType, fileType, dirName)
+  | None() -> context.mkdir(keyType, fileType, dirName)
   }
 }
 

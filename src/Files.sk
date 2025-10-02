@@ -86,19 +86,12 @@ class Files(
     ].flatten().collect(SortedSet);
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
-    fileHdl = if (isInit) {
-      context.mkdir(
-        SKStore.SID::keyType,
-        SKStore.StringFile::type,
-        filesDirName,
-      );
-    } else {
-      SKStore.EHandle(
-        SKStore.SID::keyType,
-        SKStore.StringFile::type,
-        filesDirName,
-      )
-    };
+    fileHdl = createOrReuseEagerDir(
+      context,
+      SKStore.SID::keyType,
+      SKStore.StringFile::type,
+      filesDirName,
+    );
     fileDir = context.unsafeGetEagerDir(filesDirName);
     oldParses: SortedMap<String, ParsedResult> = SortedMap::create();
 
