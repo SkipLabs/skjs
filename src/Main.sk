@@ -328,8 +328,7 @@ class Checker private {
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
-    parsedAndSymbolsFiles = files.parse(context, newLinesMap);
-    symbolsMap = SymbolsMap::create(context, parsedAndSymbolsFiles);
+    (parsedAndSymbolsFiles, symbolsMap) = files.parse(context, newLinesMap);
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     fileDefsMap = FileDefsMap::create(
       context,

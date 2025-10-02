@@ -134,7 +134,7 @@ class Files(
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
-  ): SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile> {
+  ): (SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile>, SymbolsMap) {
     parsedFiles = this.filesContent.map(
       SKStore.SID::keyType,
       ParsedResultAndSymbolsFile::type,
@@ -184,7 +184,7 @@ class Files(
       };
       throw Exit(2);
     };
-    parsedFiles
+    (parsedFiles, symbolsMap)
   }
 
   // (added-defs, removed-defs) since last run
