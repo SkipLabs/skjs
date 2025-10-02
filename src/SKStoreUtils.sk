@@ -54,19 +54,6 @@ fun applyOrReuseMap<
   }
 }
 
-fun lazyDir<K: SKStore.Key, V: SKStore.File>(
-  keyType: SKStore.Key ~> K,
-  type: SKStore.File ~> V,
-  context: mutable SKStore.Context,
-  dirName: SKStore.DirName,
-  f: (mutable SKStore.Context, SKStore.LHandle<K, V>, K) ~> Array<V>,
-): SKStore.LHandle<K, V> {
-  context.maybeGetLazyDir(dirName) match {
-  | None() -> SKStore.LHandle::create(keyType, type, context, dirName, f)
-  | Some _ -> SKStore.LHandle(keyType, type, dirName)
-  }
-}
-
 module end;
 
 module SKStore;
