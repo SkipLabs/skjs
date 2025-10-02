@@ -70,10 +70,8 @@ private mutable class DiffInterDiffIterator<
 class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   private inner: Vector<T>,
 ) uses Orderable[T: Orderable], XXHashable[T: XXHashable] {
-  private static fun create(size: Int, init: (T -> void) -> void): this {
-    // create by allocating, initializing via push, and checking collisions
-    inner = Vector::mcreate(size);
-    init(inner.push);
+  //
+  private static fun createFromSortedVector(inner: Vector<T>): this {
     // inner must be strictly increasing under project, which is expected to
     // hold since every transformation of T, such as the argument of map,
     // should preserve project
@@ -88,11 +86,24 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       };
       !prev = Some(curr);
     };
-    static(unsafe_chill_trust_me(inner))
+    static(inner)
+  }
+
+  private static fun create(size: Int, init: (T -> void) -> void): this {
+    // create by allocating, initializing via push, and checking collisions
+    inner = Vector::mcreate(size);
+    init(inner.push);
+    static::createFromSortedVector(unsafe_chill_trust_me(inner))
   }
 
   static fun createFromSortedIterator<I: mutable Iterator<T>>(items: I): this {
     static::create(items.sizeHint().default(0), items.each)
+  }
+
+  static fun createFromIterator<I: mutable Iterator<T>>(items: I): this {
+    inner = Vector::mcreateFromIterator(items);
+    inner.sortBy(x ~> x.project());
+    static::createFromSortedVector(unsafe_chill_trust_me(inner))
   }
 
   static fun empty(): this {
@@ -173,11 +184,24 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
   fun map(f: T -> T): this {
+    !f = (x) -> {
+      y = f(x);
+      assert(x.project() == y.project());
+      y
+    };
     static::createFromSortedIterator(this.inner.values().map(f))
   }
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
   fun filterMap(f: T -> ?T): this {
+    !f = (x) -> {
+      yO = f(x);
+      yO match {
+      | None() -> void
+      | Some(y) -> assert(x.project() == y.project())
+      };
+      yO
+    };
     static::createFromSortedIterator(this.inner.values().filterMap(f))
   }
 
