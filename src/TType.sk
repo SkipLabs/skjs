@@ -84,6 +84,14 @@ class TType private {
     static::fromSTypes(sType.pos, STypes::single(sType))
   }
 
+  static fun stringOrNumber(
+    pos: PosRange,
+    strValues: ?ArrayValues = None(),
+    nbrValues: ?ArrayValues = None(),
+  ): this {
+    static::fromSTypes(pos, STypes::stringOrNumber(pos, strValues, nbrValues))
+  }
+
   // Type variable.
   static fun var(v: TVar): this {
     static::create(v.pos, TInsts::single(v), Clauses::empty())
