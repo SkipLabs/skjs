@@ -86,7 +86,7 @@ class Files(
     ].flatten().collect(SortedSet);
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
-    fileDir = if (isInit) {
+    fileHdl = if (isInit) {
       context.mkdir(
         SKStore.SID::keyType,
         SKStore.StringFile::type,
@@ -119,12 +119,12 @@ class Files(
           !oldParses = oldParses.set(fileName, oldParsedResult);
         }
       };
-      fileDir.writeArray(context, key, Array[SKStore.StringFile(content)]);
+      fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
-    for (kv in fileDir.items(context)) {
+    for (kv in fileHdl.items(context)) {
       fileName = kv.i0.value;
       if (!srcFiles.contains(fileName)) {
-        fileDir.writeArray(context, kv.i0, Array[]);
+        fileHdl.writeArray(context, kv.i0, Array[]);
       };
     };
     changedFileOldParsedResults = if (trackChangedFiles) Some(oldParses) else {
@@ -135,7 +135,7 @@ class Files(
         isInit,
         rootOpt,
         builtinsFileName,
-        fileDir,
+        fileHdl,
         importStubs.map(DirName::create),
         changedFileOldParsedResults,
       ),
