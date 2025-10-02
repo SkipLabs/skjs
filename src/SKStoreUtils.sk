@@ -18,7 +18,7 @@ fun getInitDir(
   }
 }
 
-fun applyMap<
+fun applyOrReuseMap<
   K: SKStore.Key,
   V: SKStore.File,
   K2: SKStore.Key,

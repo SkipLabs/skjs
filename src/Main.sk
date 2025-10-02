@@ -252,7 +252,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       | Success(checker) -> checker
       };
 
-      _ = applyMap(
+      _ = applyOrReuseMap(
         getInitDir(context),
         SKStore.IID::keyType,
         SKStore.StringFile::type,
