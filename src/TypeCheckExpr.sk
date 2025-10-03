@@ -49,11 +49,11 @@ extension class TypeChecker {
             Array[
               (
                 pos,
-                "Invalid tuple pattern size, it is of size " + arrPat.size(),
+                `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
               ),
               (
                 type.pos,
-                "It is incompatible with a tuple of size " + tyl.size(),
+                `It is incompatible with a tuple of size ${tyl.size()}`,
               ),
             ],
           )
@@ -65,7 +65,7 @@ extension class TypeChecker {
         typingError(
           Array[
             (pos, "Invalid tuple pattern"),
-            (type.pos, "This is not a tuple, it is " + type.toString()),
+            (type.pos, `This is not a tuple, it is ${type}`),
           ],
         )
       }
@@ -74,10 +74,7 @@ extension class TypeChecker {
       type.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
         typingError(
-          Array[
-            (pos, "Invalid object pattern"),
-            (type.pos, "This is " + type.toString()),
-          ],
+          Array[(pos, "Invalid object pattern"), (type.pos, `This is ${type}`)],
         )
       | Some(stypes) ->
         for (stype in stypes) {
@@ -88,34 +85,80 @@ extension class TypeChecker {
             typingError(
               Array[
                 (pos, "Invalid object pattern"),
-                (type.pos, "This is " + type.toString()),
+                (type.pos, `This is ${type}`),
               ],
             )
           };
           for (field in objectFields) {
-            (fieldName, fieldPat) = field;
+            (fieldName, fieldPat, fieldDefault) = field;
+            defaultOpt = fieldDefault.map(e ->
+              (e.pos, this.expr(tcenv, e, kind is BKConst()))
+            );
+            defaultIsUseless = fieldDefault.map(e -> e.pos);
             for (fields in branches) {
               fields.maybeGet(fieldName.value) match {
               | None() ->
                 typingError(
                   Array[
-                    (
-                      fieldName.pos,
-                      "The field " + fieldName.value + " is missing",
-                    ),
-                    (type.pos, "Out of " + type.toString()),
+                    (fieldName.pos, `The field ${fieldName.value} is missing`),
+                    (type.pos, `Out of ${type}`),
                   ],
                 )
               | Some(tfield) ->
+                tfieldType = tfield.type;
+                if (tfield.isOptional) {
+                  !tfieldType = tfieldType.unionUndefined(
+                    tcenv.subst,
+                    this.tenv,
+                    tfield.pos,
+                  )
+                };
+                defaultOpt match {
+                | None() -> void
+                | Some((defaultPos, defaultType)) ->
+                  undefined = TType::single(
+                    TPrimUnit(TUndefined(), defaultPos),
+                  );
+                  if (
+                    tfield.isOptional ||
+                    isSubTType(
+                      tcenv.subst.clone(),
+                      this.tenv,
+                      undefined,
+                      tfieldType,
+                    ) is STOk()
+                  ) {
+                    !defaultIsUseless = None();
+                    !tfieldType = tfield.type.diff(undefined);
+                    !tfieldType = TType::union(
+                      tcenv.subst,
+                      this.tenv,
+                      tfieldType,
+                      defaultType,
+                    )
+                  }
+                };
                 this.bind(
                   tcenv,
                   kind,
                   fieldPat,
-                  tfield.type,
+                  tfieldType,
                   isInitialized,
                   false,
                 )
               }
+            };
+            defaultIsUseless match {
+            | None() -> void
+            | Some(defaultPos) ->
+              typingError(
+                Array[
+                  (
+                    defaultPos,
+                    "Default is useless because field cannot be undefined",
+                  ),
+                ],
+              )
             }
           }
         }
