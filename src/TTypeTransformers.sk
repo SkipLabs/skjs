@@ -215,36 +215,8 @@ mutable class Instantiate() extends ApplyType {
       (insts) -> this.insts(env, insts),
       (clauses) -> this.clauses(env, clauses),
     );
-    (clauses, result) = ty.resetClauses();
     (subst, tenv, map) = env;
-    for (clause in clauses.clauses) {
-      clauseTy = TType::top(ty.pos);
-      for (tparam in clause.vars) {
-        if (map.containsKey(tparam.id)) {
-          paramTy = map[tparam.id];
-          !clauseTy = TType::inter(subst, tenv, clauseTy, paramTy)
-        } else {
-          !clauseTy = TType::inter(
-            subst,
-            tenv,
-            clauseTy,
-            TType::fromTParam(ty.pos, tparam),
-          )
-        }
-      };
-      clause.stypes match {
-      | None() -> void
-      | Some(stypes) ->
-        !clauseTy = TType::inter(
-          subst,
-          tenv,
-          clauseTy,
-          TType::fromSTypes(ty.pos, stypes),
-        )
-      };
-      !result = TType::union(subst, tenv, result, clauseTy);
-    };
-    result
+    ty.mapTParams(subst, tenv, (tparam) -> map.maybeGet(tparam.id))
   }
 }
 
