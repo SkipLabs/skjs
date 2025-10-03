@@ -339,6 +339,28 @@ mutable class TypePp{
     String::fromChars(chars.toArray())
   }
 
+  mutable fun clause(level: Int, margin: Margin, clause: Clause): void {
+    for (j => tparam in clause.vars) {
+      if (j != 0) {
+        this.out(level, margin, " & ");
+      };
+      this.out(level, margin, tparam.name + ":" + tparam.id);
+    };
+    clause.stypes match {
+    | None() ->
+      invariant(!clause.vars.isEmpty(), "several clauses with a Top clause");
+      void
+    | Some(c) ->
+      if (!clause.vars.isEmpty()) this.out(level, margin, " extends ");
+      for (k => sty in c) {
+        if (k != 0) {
+          this.out(level, margin, " | ");
+        };
+        this.stype(level, margin, sty);
+      }
+    }
+  }
+
   mutable fun type(level: Int, margin: Margin, ty: TType): void {
     !margin.depth = margin.depth + 1;
     if (margin.depth >= 2) {
@@ -354,32 +376,11 @@ mutable class TypePp{
       return void;
     };
     if (!ty.clauses.clauses.isEmpty()) {
-      for (i => clauses in ty.clauses.clauses) {
+      for (i => clause in ty.clauses.clauses) {
         if (i != 0) {
           this.out(level, margin, " | ");
         };
-        for (j => tparam in clauses.vars) {
-          if (j != 0) {
-            this.out(level, margin, " & ");
-          };
-          this.out(level, margin, tparam.name + ":" + tparam.id);
-        };
-        clauses.stypes match {
-        | None() ->
-          invariant(
-            !clauses.vars.isEmpty(),
-            "several clauses with a Top clause",
-          );
-          void
-        | Some(c) ->
-          if (!clauses.vars.isEmpty()) this.out(level, margin, " extends ");
-          for (k => sty in c) {
-            if (k != 0) {
-              this.out(level, margin, " | ");
-            };
-            this.stype(level, margin, sty);
-          }
-        }
+        this.clause(level, margin, clause);
       };
     };
     this.branch(
@@ -454,9 +455,9 @@ mutable class TypePp{
   }
 }
 
-fun prettyPrintType(compact: Bool, ty: TType): String {
+fun prettyPrint(compact: Bool, f: mutable TypePp -> void): String {
   pp = mutable TypePp{compact};
-  pp.type(0, Margin(), ty);
+  f(pp);
   strings = pp.buffer.reversed();
   if (compact) {
     !strings = strings.map(str ~> {
@@ -472,6 +473,12 @@ fun prettyPrintType(compact: Bool, ty: TType): String {
   result
 }
 
+fun prettyPrintType(compact: Bool, ty: TType): String {
+  prettyPrint(compact, pp -> {
+    pp.type(0, Margin(), ty);
+  })
+}
+
 fun prettyPrintSType(stype: SType, compact: Bool = false): String {
   prettyPrintSTypes(STypes::single(stype), compact)
 }
@@ -481,10 +488,9 @@ fun prettyPrintSTypes(stypes: STypes, compact: Bool = false): String {
 }
 
 fun prettyPrintClause(clause: Clause, compact: Bool = false): String {
-  prettyPrintType(
-    compact,
-    TType::fromClauses(PosRange::none, Clauses::singleClause(clause)),
-  )
+  prettyPrint(compact, pp -> {
+    pp.clause(0, Margin(), clause);
+  })
 }
 
 module end;
