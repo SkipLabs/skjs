@@ -134,14 +134,45 @@ class TType private {
 
   // TRANSFORMERS
 
-  /* Returns (clauses, ty) where ty = this with empty clauses */
-  fun resetClauses(): (Clauses, this) {
-    (
-      this.clauses,
-      if (this.clauses.isEmpty()) this else {
-        static::create(this.pos, this.insts, Clauses::empty())
-      },
-    )
+  private fun mapClauses(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f: Clause -> this,
+  ): this {
+    if (this.clauses.isEmpty()) {
+      this
+    } else {
+      accum = TType::create(this.pos, this.insts, Clauses::empty());
+      for (clause in this.clauses.clauses) {
+        !accum = TType::union(subst, tenv, accum, f(clause));
+      };
+      accum
+    }
+  }
+
+  // t.mapTParams(subst, tenv, f) is t with each TParam p replaced by u
+  // where f(p) is Some(u), or left unchanged if f(p) is None. The type's
+  // unions and intersections are rebuilt using subst and tenv.
+  fun mapTParams(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f: (TParam) -> ?TType,
+  ): this {
+    this.mapClauses(subst, tenv, clause0 -> {
+      clause1 = TType::top(this.pos);
+      for (tparam in clause0.vars) {
+        paramTy = f(tparam) match {
+        | None() -> TType::fromTParam(this.pos, tparam)
+        | Some(ty) -> ty
+        };
+        !clause1 = TType::inter(subst, tenv, clause1, paramTy)
+      };
+      clause0.stypes match {
+      | None() -> clause1
+      | Some(stypes) ->
+        TType::inter(subst, tenv, clause1, TType::fromSTypes(this.pos, stypes))
+      }
+    })
   }
 
   fun withPos(pos: PosRange): this {
