@@ -184,17 +184,17 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
   fun map(f: T -> T): this {
-    !f = (x) -> {
+    f1 = (x) -> {
       y = f(x);
       assert(x.project() == y.project());
       y
     };
-    static::createFromSortedIterator(this.inner.values().map(f))
+    static::createFromSortedIterator(this.inner.values().map(f1))
   }
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
   fun filterMap(f: T -> ?T): this {
-    !f = (x) -> {
+    f1 = (x) -> {
       yO = f(x);
       yO match {
       | None() -> void
@@ -202,7 +202,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       };
       yO
     };
-    static::createFromSortedIterator(this.inner.values().filterMap(f))
+    static::createFromSortedIterator(this.inner.values().filterMap(f1))
   }
 
   // s.iterDiffInterDiff(t) contains (Some(x), None()) for every element in
