@@ -7,6 +7,10 @@ exec 1>&2
 # check that a single staged file is well-formatted
 check-file () {
     file=$1
+    # skip files matching *-prettier-ignore.*
+    if [[ "$file" =~ .*-prettier-ignore\..* ]]; then
+        exit 0;
+    fi
     # select formatter based on filename extension, must transform stdin to stdout
     if [[ "$file" == *.sk ]]; then # keep in sync with fmt-sk in Makefile
         fmt="skfmt --assume-filename=$file"
