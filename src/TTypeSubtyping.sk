@@ -267,8 +267,8 @@ fun isSubTType_(
     | _ -> void
     }
   };
-  clauses1 = u1.expand(subst, tenv, Covariant());
-  clauses2 = u2.expand(subst, tenv, Contravariant());
+  clauses1 = u1.expand_(subst, tenv, Covariant());
+  clauses2 = u2.expand_(subst, tenv, Contravariant());
   Clauses::isSub(subst, tenv, clauses1, clauses2) match {
   | STOk() -> STOk()
   | err @ STRec _ ->
