@@ -83,5 +83,5 @@ function restTypeDefaultOptional(...rest?: number[] = new Array()): void {}
 // TODO: wrong type
 function restNotArray(...rest: number): void {}
 
-// @ts-expect-error ... should be the last parameter
-function restNotLast(...rest: number[], other): void {}
+// @ts-expect-error ... must always be the last parameter
+function restNotLast(...rest: number[], other: void): void {}

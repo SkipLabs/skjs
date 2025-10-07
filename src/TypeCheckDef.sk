@@ -36,6 +36,7 @@ extension class TypeChecker {
       | None() -> CGNode::create(AnonymousFunDef(fd))
       };
       subst = Subst::mcreate{context};
+      _ = this.tenv.funDecl(context, false/* isMethod */ , fd, cgNode);
       this.funDef(subst, None(), fd, cgNode)
     | Declare _ -> void
     | Namespace _ -> notSupported(def.pos)

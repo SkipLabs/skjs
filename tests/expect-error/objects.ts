@@ -87,4 +87,5 @@ function cannotHaveConstructorMethod(x: { constructor(): void }): void {}
 // @ts-expect-error Forbidden method name: constructor
 function cannotHaveConstructorMethod2(x: { constructor() }): void {}
 
+// @ts-expect-error Forbidden function name: constructor
 function constructor(): void {}

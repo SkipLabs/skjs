@@ -152,7 +152,8 @@ extension class TypeChecker {
           cgNode = CGNode::create(
             Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
           );
-          _ = this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
+          _ = this.tenv.funDecl(subst.context, true/* isMethod */ , fd, cgNode);
+          this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
         }
       }
     };
