@@ -62,3 +62,24 @@ function cannotAccessFieldConstructor(
   // @ts-expect-error Cannot access field 'constructor'
   const whatever = obj[f];
 }
+
+function cannotUseConstructorAsFieldName(): object {
+  return { constructor: 1 };
+}
+
+// function cannotUseConstructorAsMethodName(): object {
+//   return { constructor() {} };
+// }
+
+// function cannotUseConstructorAsMethodName2(): object {
+//   return { constructor(): void {} };
+// }
+
+function cannotHaveConstructorField(x: { constructor: string }): void {}
+
+// @ts-expect-error Missing return type annotation
+function cannotHaveConstructorMethod(x: { constructor(): void }): void {}
+
+function cannotHaveConstructorMethod2(x: { constructor() }): void {}
+
+function constructor(): void {}
