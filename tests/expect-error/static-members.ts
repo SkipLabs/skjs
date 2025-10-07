@@ -1,4 +1,4 @@
 class C1 {
-  // @ts-expect-error TODO: field modifier 'static' (TypeChecker#class_)
+  // @ts-expect-error static fields are forbidden
   static x: string = "a";
 }

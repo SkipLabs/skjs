@@ -108,14 +108,19 @@ extension class TypeChecker {
         | Some(FieldGetSet(_, pos)) -> notSupported(pos)
         };
         for (modifier in field.modifiers.modifiers) {
-          typingError(
-            Array[
-              (
-                modifier.pos,
-                `TODO: field modifier '${modifier.value}' (TypeChecker#class_)`,
-              ),
-            ],
-          )
+          modifier.value match {
+          | "static" ->
+            typingError(Array[(modifier.pos, "static fields are forbidden")])
+          | mod ->
+            typingError(
+              Array[
+                (
+                  modifier.pos,
+                  `TODO: field modifier '${mod}' (TypeChecker#class_)`,
+                ),
+              ],
+            )
+          }
         };
         type = this.tenv.normalize(context, field.type);
         field.value match {
