@@ -554,18 +554,8 @@ extension class TypeChecker {
       for (efield in efields) {
         efield match {
         | fd @ FunDef _ ->
-          if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
-            this.constructor(
-              tcenv.subst,
-              obj,
-              static::uninitializedThisType(pos),
-              fd,
-              None(),
-            )
-          } else {
-            cgNode = CGNode::create(AnonymousFunDef(fd));
-            this.funDef(tcenv.subst, Some((CKClass(), obj)), fd, cgNode)
-          }
+          cgNode = CGNode::create(AnonymousFunDef(fd));
+          this.funDef(tcenv.subst, Some((CKClass(), obj)), fd, cgNode)
         | _ -> void
         }
       };
