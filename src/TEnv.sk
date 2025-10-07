@@ -938,6 +938,11 @@ class TEnv{
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> internal_error("TODO symbol")
         | FNNormal(name) ->
+          if (name.value == "constructor") {
+            typingError(
+              Array[(name.pos, `Forbidden field name: ${name.value}`)],
+            )
+          };
           normalizedType = this.normalize(context, fd.type);
           optField = TField::create(
             name.pos,

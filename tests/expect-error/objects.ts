@@ -75,6 +75,7 @@ function cannotUseConstructorAsFieldName(): object {
 //   return { constructor(): void {} };
 // }
 
+// @ts-expect-error Forbidden field name: constructor
 function cannotHaveConstructorField(x: { constructor: string }): void {}
 
 // @ts-expect-error Missing return type annotation
