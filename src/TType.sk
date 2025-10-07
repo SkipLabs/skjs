@@ -120,7 +120,17 @@ class TType private {
     }
   }
 
-  static fun fromClauses(pos: PosRange, clauses: Clauses): this {
+  static fun fromTypeParam(tparam: TypeParam): this {
+    TType::fromClauses(
+      tparam.name.pos,
+      Clauses::single(
+        TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
+        None(),
+      ),
+    )
+  }
+
+  static private fun fromClauses(pos: PosRange, clauses: Clauses): this {
     static::create(pos, TInsts::empty(), clauses)
   }
 
@@ -261,10 +271,10 @@ class TType private {
   // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, tenv: TEnv, variance: Variance): ?STypes {
-    this.expand(subst, tenv, variance).getSTypes(subst, tenv)
+    this.expand_(subst, tenv, variance).getSTypes(subst, tenv)
   }
 
-  fun expand(subst: mutable Subst, tenv: TEnv, variance: Variance): Clauses {
+  fun expand_(subst: mutable Subst, tenv: TEnv, variance: Variance): Clauses {
     clauses = this.clauses;
     insts = Vector::mcreateFromItems(this.insts.insts);
     seen = SortedSet::createFromItems(insts);
@@ -285,6 +295,10 @@ class TType private {
         insts.push(newInst);
       }
     }
+  }
+
+  fun expand(subst: mutable Subst, tenv: TEnv, variance: Variance): TType {
+    static::fromClauses(this.pos, this.expand_(subst, tenv, variance))
   }
 
   fun getConstantString(): ?(PosRange, String) {
@@ -1057,13 +1071,6 @@ class Clauses private (
     }
   }
 
-  static fun fromTypeParam(tparam: TypeParam): this {
-    static::single(
-      TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
-      None(),
-    )
-  }
-
   static fun fromSTypes(stypes: STypes): this {
     Clause::fromSTypes(stypes) match {
     | None() -> static::empty()
@@ -1146,6 +1153,14 @@ class Clauses private (
     );
 
     static::create(diffClauses)
+  }
+
+  fun any(f: Clause -> Bool): Bool {
+    this.clauses.any(f)
+  }
+
+  fun values(): mutable Iterator<Clause> {
+    this.clauses.values()
   }
 }
 
