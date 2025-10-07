@@ -385,7 +385,8 @@ class TEnv{
         };
         for (modifier in field.modifiers.modifiers) {
           modifier.value match {
-          | "static" -> void
+          | "static" ->
+            typingError(Array[(modifier.pos, "static fields are forbidden")])
           | mod ->
             typingError(
               Array[
