@@ -108,7 +108,14 @@ extension class TypeChecker {
         | Some(FieldGetSet(_, pos)) -> notSupported(pos)
         };
         for (modifier in field.modifiers.modifiers) {
-          typingError(Array[(modifier.pos, "TODO: field modifier")])
+          typingError(
+            Array[
+              (
+                modifier.pos,
+                `TODO: field modifier '${modifier.value}' (TypeChecker#class_)`,
+              ),
+            ],
+          )
         };
         type = this.tenv.normalize(context, field.type);
         field.value match {
