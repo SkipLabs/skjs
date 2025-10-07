@@ -595,7 +595,7 @@ extension class TypeChecker {
 
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       exprTy = this.expr(tcenv, args[0]);
-      clauses = exprTy.expand(tcenv.subst, this.tenv, Covariant());
+      clauses = exprTy.expand(tcenv.subst.clone(), this.tenv, Covariant());
       ty = TType::fromClauses(exprTy.pos, clauses);
       print_error(prettyPrintType(false, ty));
       TType::single(TPrimUnit(TVoid(), pos))
