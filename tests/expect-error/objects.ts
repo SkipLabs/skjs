@@ -64,6 +64,7 @@ function cannotAccessFieldConstructor(
 }
 
 function cannotUseConstructorAsFieldName(): object {
+  // @ts-expect-error Forbidden field name: constructor
   return { constructor: 1 };
 }
 
