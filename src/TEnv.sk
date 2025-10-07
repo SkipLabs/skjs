@@ -590,7 +590,12 @@ class TEnv{
     cgNode: CGNode,
   ): (Name, TType) {
     name = fd.name match {
-    | Some(FNNormal(x)) -> x
+    | Some(FNNormal(name)) ->
+      if (name.value == "constructor") {
+        what = if (isMethod) "method" else "function";
+        typingError(Array[(name.pos, `Forbidden ${what} name: ${name.value}`)])
+      };
+      name
     | None() -> notSupported(fd.pos, "anonymous function")
     | _ -> notSupported(fd.pos, "non-normal function name")
     };
