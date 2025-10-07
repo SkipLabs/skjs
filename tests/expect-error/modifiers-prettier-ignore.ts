@@ -1,0 +1,9 @@
+// TODO: should be forbidden!
+function forbiddenModifiers(public x: string): void {}
+
+class C {
+    constructor(public x: string) {}
+}
+
+// TODO: should be forbidden
+function forbiddenModifiersOnObjectType(x : { public f: string}): void {}
