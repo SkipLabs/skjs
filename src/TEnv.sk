@@ -384,8 +384,18 @@ class TEnv{
         | Some(FieldGetSet(_, pos)) -> notSupported(pos)
         };
         for (modifier in field.modifiers.modifiers) {
-          if (modifier.value != "static") {
-            typingError(Array[(modifier.pos, "TODO: field modifier")])
+          modifier.value match {
+          | "static" ->
+            typingError(Array[(modifier.pos, "static fields are forbidden")])
+          | mod ->
+            typingError(
+              Array[
+                (
+                  modifier.pos,
+                  `TODO: field modifier '${mod}' (TEnv#addFields)`,
+                ),
+              ],
+            )
           }
         };
         field.name match {
