@@ -111,8 +111,12 @@ class TType private {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
-  static private fun fromTParam(pos: PosRange, tParam: TParam): this {
-    static::fromClauses(pos, Clauses::single(tParam))
+  static private fun fromTParam(
+    pos: PosRange,
+    tParam: TParam,
+    stypes: ?STypes = None(),
+  ): this {
+    TType::fromClauses(pos, Clauses::single(tParam, stypes))
   }
 
   static fun fromTParamWithConstraint(
@@ -122,24 +126,11 @@ class TType private {
     tparam: TParamWithConstraint,
     stypes: ?STypes,
   ): this {
-    ty = TType::fromClauses(
-      pos,
-      Clauses::single(TParam(tparam.name, tparam.fileName, tparam.id), stypes),
-    );
+    ty = TType::fromTParam(pos, tparam.withoutConstraint(), stypes);
     tparam.cstr match {
     | None() -> ty
     | Some(cstr) -> TType::inter(subst, tenv, ty, cstr)
     }
-  }
-
-  static fun fromTypeParam(tparam: TypeParam): this {
-    TType::fromClauses(
-      tparam.name.pos,
-      Clauses::single(
-        TParam(tparam.name.value, tparam.name.pos.fileName, tparam.id),
-        None(),
-      ),
-    )
   }
 
   static private fun fromClauses(pos: PosRange, clauses: Clauses): this {
@@ -959,7 +950,12 @@ class TParamWithConstraint(
   fileName: String,
   id: Id,
   cstr: ?TType,
-) uses XXHashable, Orderable
+) uses XXHashable, Orderable {
+  //
+  fun withoutConstraint(): TParam {
+    TParam(this.name, this.fileName, this.id)
+  }
+}
 
 class TParam(name: String, fileName: String, id: Id) uses XXHashable, Orderable
 

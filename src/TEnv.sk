@@ -285,17 +285,31 @@ class TEnv{
     ).fromSome()
   }
 
+  // TParamWithConstraint corresponding to syntactic TypeParam
+  static private fun makeTParam(
+    context: mutable SKStore.Context,
+    tenv: TEnv,
+    tparam: TypeParam,
+  ): TParamWithConstraint {
+    cstr = tparam.constraint.map(cstr -> tenv.normalize(context, cstr));
+    TParamWithConstraint(
+      tparam.name.value,
+      tparam.name.pos.fileName,
+      tparam.id,
+      cstr,
+    )
+  }
+
   fun addTParams(subst: mutable Subst, clauses: Array<TypeParam>): this {
     for (tparam in clauses) {
-      ty = TType::fromTypeParam(tparam);
-      !this.subst[tparam.name.value] = (
-        false,
-        tparam.constraint match {
-        | None() -> ty
-        | Some(cstr) ->
-          TType::inter(subst, this, ty, this.normalize(subst.context, cstr))
-        },
-      )
+      ty = TType::fromTParamWithConstraint(
+        subst,
+        this,
+        tparam.name.pos,
+        TEnv::makeTParam(subst.context, this, tparam),
+        None(),
+      );
+      !this.subst[tparam.name.value] = (false, ty)
     };
     this
   }
@@ -865,12 +879,7 @@ class TEnv{
             ],
           )
         };
-        funTParam = TParamWithConstraint(
-          tparam.name.value,
-          tparam.name.pos.fileName,
-          tparam.id,
-          tparam.constraint.map(cstr -> this.normalize(context, cstr)),
-        );
+        funTParam = TEnv::makeTParam(context, this, tparam);
         funClauses.push(funTParam);
         !this.tparams[tparam.name.value] = funTParam;
       };
