@@ -480,11 +480,7 @@ fun prettyPrintType(compact: Bool, ty: TType): String {
 }
 
 fun prettyPrintSType(stype: SType, compact: Bool = false): String {
-  prettyPrintSTypes(STypes::single(stype), compact)
-}
-
-fun prettyPrintSTypes(stypes: STypes, compact: Bool = false): String {
-  prettyPrintType(compact, TType::fromSTypes(PosRange::none, stypes))
+  prettyPrintType(compact, TType::single(stype))
 }
 
 fun prettyPrintClause(clause: Clause, compact: Bool = false): String {

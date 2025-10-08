@@ -84,6 +84,18 @@ class TType private {
     static::fromSTypes(sType.pos, STypes::single(sType))
   }
 
+  static fun stringOrNumber(
+    pos: PosRange,
+    strValues: ?ArrayValues = None(),
+    nbrValues: ?ArrayValues = None(),
+  ): this {
+    static::fromSTypes(pos, STypes::stringOrNumber(pos, strValues, nbrValues))
+  }
+
+  static fun nullish(pos: PosRange): this {
+    static::fromSTypes(pos, STypes::nullish(pos))
+  }
+
   // Type variable.
   static fun var(v: TVar): this {
     static::create(v.pos, TInsts::single(v), Clauses::empty())
@@ -95,7 +107,7 @@ class TType private {
     static::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
-  static fun fromSTypes(pos: PosRange, sTypes: STypes): this {
+  static private fun fromSTypes(pos: PosRange, sTypes: STypes): this {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
@@ -147,6 +159,19 @@ class TType private {
   }
 
   // TRANSFORMERS
+
+  // t.mapSTypes(subst, env, variance, f) is t with stypes updated by f, or
+  // None() if the result is Top
+  fun mapSTypes(
+    subst: mutable Subst,
+    env: TEnv,
+    variance: Variance,
+    f: (STypes) -> STypes,
+  ): ?this {
+    this.getSTypes(subst, env, variance).map(stypes ->
+      TType::fromSTypes(this.pos, f(stypes))
+    )
+  }
 
   private fun mapClauses(
     subst: mutable Subst,
@@ -744,6 +769,10 @@ class STypes private (
 
   fun map(f: SType -> SType): this {
     static(this.stypes.map(f))
+  }
+
+  fun filter(f: SType -> Bool): this {
+    static(this.stypes.filter(f))
   }
 
   fun filterMap(f: SType -> ?SType): this {
