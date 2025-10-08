@@ -27,7 +27,6 @@ extension class TypeChecker {
           this.tenv,
           tparam.name.pos,
           ttypeParam,
-          None(),
         )
       }),
     );
@@ -44,7 +43,6 @@ extension class TypeChecker {
         Id::createThis(),
         Some(cstr.expand(subst, this.tenv, Covariant())),
       ),
-      None(),
     );
     if (c.extends_.size() != 0) {
       isInterface = c.kind is CKInterface();

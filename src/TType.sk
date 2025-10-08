@@ -111,12 +111,8 @@ class TType private {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
-  static private fun fromTParam(
-    pos: PosRange,
-    tParam: TParam,
-    stypes: ?STypes = None(),
-  ): this {
-    TType::fromClauses(pos, Clauses::single(tParam, stypes))
+  static private fun fromTParam(pos: PosRange, tParam: TParam): this {
+    TType::fromClauses(pos, Clauses::single(tParam))
   }
 
   static fun fromTParamWithConstraint(
@@ -124,9 +120,8 @@ class TType private {
     tenv: TEnv,
     pos: PosRange,
     tparam: TParamWithConstraint,
-    stypes: ?STypes,
   ): this {
-    ty = TType::fromTParam(pos, tparam.withoutConstraint(), stypes);
+    ty = TType::fromTParam(pos, tparam.withoutConstraint());
     tparam.cstr match {
     | None() -> ty
     | Some(cstr) -> TType::inter(subst, tenv, ty, cstr)
@@ -1089,8 +1084,8 @@ class Clauses private (
     static(InternalKeyedArrayMap::single(clause))
   }
 
-  static fun single(tparam: TParam, stypes: ?STypes = None()): this {
-    Clause::create(ArraySet::single(tparam), stypes) match {
+  static fun single(tparam: TParam): this {
+    Clause::create(ArraySet::single(tparam), None()) match {
     | None() -> static::empty()
     | Some(clause) -> static(InternalKeyedArrayMap::single(clause))
     }

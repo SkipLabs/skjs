@@ -307,7 +307,6 @@ class TEnv{
         this,
         tparam.name.pos,
         TEnv::makeTParam(subst.context, this, tparam),
-        None(),
       );
       !this.subst[tparam.name.value] = (false, ty)
     };
@@ -787,7 +786,7 @@ class TEnv{
           )
         };
         tparam = this.tparams[n.value];
-        TType::fromTParamWithConstraint(subst, this, pos, tparam, None())
+        TType::fromTParamWithConstraint(subst, this, pos, tparam)
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
           typingError(
