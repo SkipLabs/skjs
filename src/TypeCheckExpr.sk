@@ -517,8 +517,13 @@ extension class TypeChecker {
       fields = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
-        | FDNormal(x, y) ->
-          (x, this.expr(tcenv, y, x.value == kAlgebraicBranchFieldName))
+        | FDNormal(name, y) ->
+          if (name.value == "constructor") {
+            typingError(
+              Array[(name.pos, `Forbidden field name: ${name.value}`)],
+            )
+          };
+          (name, this.expr(tcenv, y, name.value == kAlgebraicBranchFieldName))
 
         | FDSpread _ -> internal_error("TODO spread")
         | fd @ FunDef _ ->
@@ -549,18 +554,8 @@ extension class TypeChecker {
       for (efield in efields) {
         efield match {
         | fd @ FunDef _ ->
-          if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
-            this.constructor(
-              tcenv.subst,
-              obj,
-              static::uninitializedThisType(pos),
-              fd,
-              None(),
-            )
-          } else {
-            cgNode = CGNode::create(AnonymousFunDef(fd));
-            this.funDef(tcenv.subst, Some((CKClass(), obj)), fd, cgNode)
-          }
+          cgNode = CGNode::create(AnonymousFunDef(fd));
+          this.funDef(tcenv.subst, Some((CKClass(), obj)), fd, cgNode)
         | _ -> void
         }
       };

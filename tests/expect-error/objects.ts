@@ -62,3 +62,29 @@ function cannotAccessFieldConstructor(
   // @ts-expect-error Cannot access field 'constructor'
   const whatever = obj[f];
 }
+
+function cannotUseConstructorAsFieldName(): object {
+  // @ts-expect-error Forbidden field name: constructor
+  return { constructor: 1 };
+}
+
+function cannotUseConstructorAsMethodName(): object {
+  // @ts-expect-error Forbidden method name: constructor
+  return { constructor() {} };
+}
+
+function cannotUseConstructorAsMethodName2(): object {
+  // @ts-expect-error Forbidden method name: constructor
+  return { constructor(): void {} };
+}
+
+// @ts-expect-error Forbidden field name: constructor
+function cannotHaveConstructorField(x: { constructor: string }): void {}
+
+// @ts-expect-error Forbidden method name: constructor
+function cannotHaveConstructorMethod(x: { constructor(): void }): void {}
+
+// @ts-expect-error Forbidden method name: constructor
+function cannotHaveConstructorMethod2(x: { constructor() }): void {}
+
+function constructor(): void {}

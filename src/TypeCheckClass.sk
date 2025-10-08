@@ -1,10 +1,6 @@
 module SKJS;
 
 extension class TypeChecker {
-  static fun uninitializedThisType(pos: PosRange): TType {
-    TType::single(TObject(TFields::create(Array[], Array[]), pos));
-  }
-
   fun class_(context: mutable SKStore.Context, c: Class): void {
     static::checkTypeParams(c.tparams);
     subst = Subst::mcreate{context};
