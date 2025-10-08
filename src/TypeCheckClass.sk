@@ -38,8 +38,13 @@ extension class TypeChecker {
       subst,
       this.tenv,
       c.name.pos,
-      TParamWithConstraint("this", fileName, Id::createThis(), None()),
-      cstr.getSTypes(subst, this.tenv, Covariant()),
+      TParamWithConstraint(
+        "this",
+        fileName,
+        Id::createThis(),
+        Some(cstr.expand(subst, this.tenv, Covariant())),
+      ),
+      None(),
     );
     if (c.extends_.size() != 0) {
       isInterface = c.kind is CKInterface();
