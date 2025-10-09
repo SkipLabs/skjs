@@ -9,7 +9,7 @@ class FieldInitializationUsePreciseTyping {
 class TwoConstructors {
   constructor() {}
 
-  // TODO: error!
+  // @ts-expect-error Multiple constructor implementations are not allowed.
   constructor() {}
 }
 
