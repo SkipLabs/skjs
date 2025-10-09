@@ -115,7 +115,23 @@ extension class TypeChecker {
       | _ -> typingError(Array[(c.name.pos, "Invalid implements")])
       }
     };
-    hasConstructor = false;
+    constructor match {
+    | None() if (c.kind is CKClass()) ->
+      for (fieldType in c.fields) {
+        fieldType match {
+        | field @ FieldTypeValue _ ->
+          field.value match {
+          | None() ->
+            if (field.optional is None()) {
+              typingError(Array[(field.pos, "Uninitialized field")])
+            }
+          | Some(_) -> void
+          }
+        | FunDef _ -> void
+        }
+      }
+    | _ -> void
+    };
     for (fieldType in c.fields) {
       fieldType match {
       | field @ FieldTypeValue _ ->
@@ -154,7 +170,6 @@ extension class TypeChecker {
         }
       | fd @ FunDef _ ->
         if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
-          !hasConstructor = true;
           partialThisType = this.tenv.new(
             context,
             c.name,
@@ -173,22 +188,6 @@ extension class TypeChecker {
             Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
           );
           _ = this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
-        }
-      }
-    };
-    if (c.kind is CKInterface() || c.kind is CKAbstract()) return void;
-    if (!hasConstructor) {
-      for (fieldType in c.fields) {
-        fieldType match {
-        | field @ FieldTypeValue _ ->
-          field.value match {
-          | None() ->
-            if (field.optional is None()) {
-              typingError(Array[(field.pos, "Uninitialized field")])
-            }
-          | Some(_) -> void
-          }
-        | FunDef _ -> void
         }
       }
     }
