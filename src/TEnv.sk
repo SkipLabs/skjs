@@ -1039,7 +1039,12 @@ class TEnv{
     if (
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
     ) {
-      return TType::stringOrNumber(pos)
+      return TType::union(
+        subst,
+        this,
+        TType::single(TPrimValue(TString(), None(), pos)),
+        TType::single(TPrimValue(TNum(), None(), pos)),
+      )
     };
     result = TType::bottom(pos);
     maxRange = -1;
@@ -1096,7 +1101,13 @@ class TEnv{
     | strValues @ Some _ ->
       literals = ArrayValues::ofSet(numbers, pos) match {
       | None() -> TType::single(TPrimValue(TString(), strValues, pos))
-      | nbrValues @ Some _ -> TType::stringOrNumber(pos, strValues, nbrValues)
+      | nbrValues @ Some _ ->
+        TType::union(
+          subst,
+          this,
+          TType::single(TPrimValue(TString(), strValues, pos)),
+          TType::single(TPrimValue(TNum(), nbrValues, pos)),
+        )
       };
       !result = TType::union(subst, this, result, literals)
     };

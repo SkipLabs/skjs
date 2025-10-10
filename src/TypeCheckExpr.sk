@@ -889,7 +889,12 @@ extension class TypeChecker {
             )
           }
         };
-        nullish = TType::nullish(pos);
+        nullish = TType::union(
+          tcenv.subst,
+          this.tenv,
+          TType::single(TPrimUnit(TNull(), pos)),
+          TType::single(TPrimUnit(TUndefined(), pos)),
+        );
         ty1WithoutNullish = ty1.diff(nullish);
         TType::union(tcenv.subst, this.tenv, ty1WithoutNullish, ty2)
       }

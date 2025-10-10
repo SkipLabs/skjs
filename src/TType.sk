@@ -84,18 +84,6 @@ class TType private {
     static::fromSTypes(sType.pos, STypes::single(sType))
   }
 
-  static fun stringOrNumber(
-    pos: PosRange,
-    strValues: ?ArrayValues = None(),
-    nbrValues: ?ArrayValues = None(),
-  ): this {
-    static::fromSTypes(pos, STypes::stringOrNumber(pos, strValues, nbrValues))
-  }
-
-  static fun nullish(pos: PosRange): this {
-    static::fromSTypes(pos, STypes::nullish(pos))
-  }
-
   // Type variable.
   static fun var(v: TVar): this {
     static::create(v.pos, TInsts::single(v), Clauses::empty())
@@ -729,28 +717,6 @@ class STypes private (
 
   static fun single(x: SType): this {
     static(InternalKeyedArrayMap::single(x))
-  }
-
-  static fun nullish(pos: PosRange): this {
-    static(
-      InternalKeyedArrayMap::two(
-        (TPrimUnit(TNull(), pos) : SType),
-        TPrimUnit(TUndefined(), pos),
-      ),
-    )
-  }
-
-  static fun stringOrNumber(
-    pos: PosRange,
-    strValues: ?ArrayValues = None(),
-    nbrValues: ?ArrayValues = None(),
-  ): this {
-    static(
-      InternalKeyedArrayMap::two(
-        (TPrimValue(TString(), strValues, pos) : SType),
-        TPrimValue(TNum(), nbrValues, pos),
-      ),
-    )
   }
 
   fun map(f: SType -> SType): this {
