@@ -394,7 +394,7 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 /***************************************************************************/
 base class FieldType{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
-    this.modifiers.modifiers.any(mod -> mod.value == "static")
+    this.modifiers.modifiers.any(mod -> mod is ModStatic _)
   }
 }
 
@@ -515,11 +515,32 @@ class CurlyName(name: Name, type: ?Type) uses XXHashable
 
 /***************************************************************************/
 // Modifiers
-//
-// TODO: introduce an ADT for the modifiers that we actually want to support
 /***************************************************************************/
 
-class Modifiers(isRemove: ?PosRange, modifiers: Array<Name>) uses XXHashable {
+base class Modifier final (pos: PosRange) uses XXHashable {
+  children =
+  | ModAbstract
+  | ModAsync
+  | ModPrivate
+  | ModProtected
+  | ModPublic
+  | ModReadonly
+  | ModStatic
+
+  fun toString(): String
+  | ModAbstract _ -> "abstract"
+  | ModAsync _ -> "async"
+  | ModPrivate _ -> "private"
+  | ModProtected _ -> "protected"
+  | ModPublic _ -> "public"
+  | ModReadonly _ -> "readonly"
+  | ModStatic _ -> "static"
+}
+
+class Modifiers(
+  isRemove: ?PosRange,
+  modifiers: Array<Modifier>,
+) uses XXHashable {
   static fun empty(): this {
     Modifiers(None(), Array[])
   }
