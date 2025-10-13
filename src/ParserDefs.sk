@@ -487,19 +487,19 @@ extension class Parser {
   }
 
   // Helper for parsing definitions with position tracking
-  mutable fun defHelper(_topLevel: Bool): Def {
+  mutable fun defHelper(topLevel: Bool): Def {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
     };
     start = tok.posStart;
-    def_ = this.defHelper_(_topLevel);
+    def_ = this.defHelper_(topLevel);
     end = this.lex.lastTok.fromSome().posEnd;
     Def(PosRange::create(this.lex, start, end), def_)
   }
 
   // Internal definition parsing implementation
-  mutable fun defHelper_(_topLevel: Bool): Def_ {
+  mutable fun defHelper_(topLevel: Bool): Def_ {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
@@ -507,7 +507,7 @@ extension class Parser {
     this.lex.getStrTok(tok) match {
     | "declare" ->
       _ = this.lex.next();
-      def = this.def(_topLevel);
+      def = this.def(topLevel);
       Declare(def)
     | "global" ->
       _ = this.lex.next();
