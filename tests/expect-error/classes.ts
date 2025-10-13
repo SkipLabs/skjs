@@ -15,8 +15,18 @@ class TwoConstructors {
 
 class ClassWithParameterProperty {
   // FIXME
-  // @ts-expect-error TODO: field modifier 'public' (TEnv#addFields)
+  // @ts-expect-error Invalid initialization
   constructor(public f: string) {}
+
+  accessParameterProperty(): string {
+    return this.f;
+  }
+}
+
+class ClassWithPrivateParameterProperty {
+  // FIXME
+  // @ts-expect-error TODO: field modifier 'private' (TEnv#addFields)
+  constructor(private f: string) {}
 
   accessParameterProperty(): string {
     return this.f;
