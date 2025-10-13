@@ -213,7 +213,7 @@ extension class Parser {
           !(this.lex.peekKind() is Some(TKVar()))
         })
       ) break void;
-      this.lex.peekStr() match {
+      mod = this.lex.peekStr() match {
       | Some(x @ "async")
       | Some(x @ "protected")
       | Some(x @ "private")
@@ -221,12 +221,13 @@ extension class Parser {
       | Some(x @ "static")
       | Some(x @ "abstract")
       | Some(x @ "readonly") ->
-        nameTok = this.lex.next().fromSome();
-        modifiers.push(
-          Name(PosRange::create(this.lex, nameTok.posStart, nameTok.posEnd), x),
-        )
+        x
       | _ -> break void
-      }
+      };
+      nameTok = this.lex.next().fromSome();
+      modifiers.push(
+        Name(PosRange::create(this.lex, nameTok.posStart, nameTok.posEnd), mod),
+      )
     };
     Modifiers(isRemove, modifiers.toArray())
   }
