@@ -14,11 +14,11 @@ class TwoConstructors {
 }
 
 class ClassWithParameterProperty {
+  // FIXME
+  // @ts-expect-error TODO: field modifier 'public' (TEnv#addFields)
   constructor(public f: string) {}
 
   accessParameterProperty(): string {
-    // FIXME
-    // @ts-expect-error Unbound field: f
     return this.f;
   }
 }

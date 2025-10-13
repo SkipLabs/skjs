@@ -980,6 +980,57 @@ extension class Parser {
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
 
+    /* Desugar parameter properties */
+
+    parameterProperties = mutable Vector[];
+    !fields = fields.map(field ->
+      field match {
+      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+        !fd.params = fd.params.map(param -> {
+          param match {
+          | Param(
+            pos,
+            modifiers,
+            PNName(pName),
+            /*optional*/ None(),
+            Some(type),
+            default,
+          ) ->
+            isParameterProperty = false;
+            !param.modifiers.modifiers = modifiers.modifiers.filter(modifier ->
+              modifier match {
+              | ModPrivate _
+              | ModProtected _
+              | ModPublic _
+              | ModReadonly _ ->
+                !isParameterProperty = true;
+                false
+              | _ -> true
+              }
+            );
+            if (isParameterProperty) {
+              parameterProperties.push(
+                FieldTypeValue{
+                  pos,
+                  setGet => None(),
+                  name => FNNormal(pName),
+                  optional => None(),
+                  type,
+                  value => default,
+                  modifiers,
+                },
+              )
+            }
+          | _ -> void
+          };
+          param
+        });
+        fd
+      | _ -> field
+      }
+    );
+    !fields = fields.concat(parameterProperties.toArray());
+
     Class{kind, name, extends_, implements, tparams, fields}
   }
 
