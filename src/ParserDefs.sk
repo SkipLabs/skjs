@@ -228,11 +228,7 @@ extension class Parser {
       | _ -> break void
       }
     };
-    map = mutable Map[];
-    for (modifier in modifiers) {
-      map![modifier.value] = modifier;
-    };
-    Modifiers(isRemove, map.chill())
+    Modifiers(isRemove, modifiers.toArray())
   }
 
   /***************************************************************************/

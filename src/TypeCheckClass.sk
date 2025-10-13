@@ -189,15 +189,8 @@ extension class TypeChecker {
         Array[(fd.retType.i0, "Constructors don't have return types")],
       );
     };
-    if (!fd.modifiers.modifiers.isEmpty()) {
-      typingError(
-        Array[
-          (
-            fd.modifiers.modifiers.firstItem().i1.pos,
-            "Constructors cannot have modifiers",
-          ),
-        ],
-      );
+    for (modifier in fd.modifiers.modifiers) {
+      typingError(Array[(modifier.pos, "Constructors cannot have modifiers")]);
     };
     cgNode = CGNode::create(
       className match {
