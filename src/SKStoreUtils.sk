@@ -56,3 +56,29 @@ fun lazyDir<K: SKStore.Key, V: SKStore.File>(
 }
 
 module end;
+
+module SKStore;
+
+@cpp_noinline
+fun runWithGcReturnContext(
+  initCtx: Context,
+  f: mutable Context ~> ContextOp,
+  synchronizer: ?Synchronizer = None(),
+  sync: Bool = false,
+  fork: ?String = None(),
+): mutable Context {
+  contexts = runWithGcIntern(
+    initCtx,
+    icontext ~> {
+      context = icontext.mclone();
+      cop = f(context);
+      (context.clone(), cop);
+    },
+    synchronizer,
+    sync,
+    fork,
+  );
+  contexts[fork].mclone()
+}
+
+module end;
