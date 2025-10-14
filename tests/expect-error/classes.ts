@@ -25,7 +25,7 @@ class ClassWithParameterProperty {
 
 class ClassWithPrivateParameterProperty {
   // FIXME
-  // @ts-expect-error TODO: field modifier 'private' (TEnv#addFields)
+  // @ts-expect-error Invalid initialization
   constructor(private f: string) {}
 
   accessParameterProperty(): string {
