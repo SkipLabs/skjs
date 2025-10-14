@@ -22,8 +22,6 @@ class ClassWithParameterProperty {
 }
 
 class ClassWithPrivateParameterProperty {
-  // FIXME
-  // @ts-expect-error TODO: field modifier 'private' (TypeChecker#class_)
   constructor(private f: string) {}
 
   accessParameterProperty(): string {
