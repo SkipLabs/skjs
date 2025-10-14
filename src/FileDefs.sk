@@ -121,7 +121,7 @@ mutable class FileDefsState{
         this.importNamesFrom(names, fn)
 
       | Import(_, _, _names, INName _) ->
-        debug("TODO other imports (like namespace.defName)")
+        internal_error("TODO other imports (like namespace.defName)")
 
       | Declare(d @ Def(_, TypeDef _))
       | Declare(d @ Def(_, Class _))
