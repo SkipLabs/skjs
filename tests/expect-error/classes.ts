@@ -14,8 +14,6 @@ class TwoConstructors {
 }
 
 class ClassWithParameterProperty {
-  // FIXME
-  // @ts-expect-error TODO: field modifier 'public' (TypeChecker#class_)
   constructor(public f: string) {}
 
   accessParameterProperty(): string {
