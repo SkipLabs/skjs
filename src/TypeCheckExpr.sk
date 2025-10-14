@@ -70,7 +70,12 @@ extension class TypeChecker {
         )
       }
 
-    | PObject{fields => objectFields} ->
+    | PObject{fields => objectFields, rest} ->
+      rest match {
+      | None() -> void
+      | Some(name) ->
+        typingError(Array[(name.pos, "TODO: support rest destructuring")])
+      };
       type.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
         typingError(
