@@ -400,6 +400,10 @@ class TEnv{
           modifier match {
           | ModStatic(pos) ->
             typingError(Array[(pos, "static fields are forbidden")])
+          | ModPublic _ -> void /* public is the default */
+          | ModPrivate _
+          | ModProtected _ ->
+            /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
             typingError(
               Array[
@@ -947,6 +951,16 @@ class TEnv{
     fields = fieldTypes.filterMap(elt -> {
       elt match {
       | fd @ FieldTypeValue _ ->
+        for (modifier in fd.modifiers.modifiers) {
+          typingError(
+            Array[
+              (
+                modifier.pos,
+                `'${modifier}' modifier cannot appear on a type member.`,
+              ),
+            ],
+          )
+        };
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> internal_error("TODO symbol")

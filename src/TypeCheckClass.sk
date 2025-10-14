@@ -2,6 +2,23 @@ module SKJS;
 
 extension class TypeChecker {
   fun class_(context: mutable SKStore.Context, c: Class): void {
+    constructor: ?FunDef = None();
+    for (fieldType in c.fields) {
+      fieldType match {
+      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
+        constructor match {
+        | Some(existingConstructor) ->
+          typingError(
+            Array[
+              (fd.pos, "Multiple constructor implementations are not allowed."),
+              (existingConstructor.pos, "Previous implementation"),
+            ],
+          )
+        | None() -> !constructor = Some(fd)
+        }
+      | _ -> void
+      }
+    };
     static::checkTypeParams(c.tparams);
     subst = Subst::mcreate{context};
     targs = TArgs(
@@ -110,6 +127,10 @@ extension class TypeChecker {
           modifier match {
           | ModStatic(pos) ->
             typingError(Array[(pos, "static fields are forbidden")])
+          | ModPublic _ -> void /* public is the default */
+          | ModPrivate _
+          | ModProtected _ ->
+            /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
             typingError(
               Array[

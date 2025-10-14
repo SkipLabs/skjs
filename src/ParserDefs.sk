@@ -487,19 +487,19 @@ extension class Parser {
   }
 
   // Helper for parsing definitions with position tracking
-  mutable fun defHelper(_topLevel: Bool): Def {
+  mutable fun defHelper(topLevel: Bool): Def {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
     };
     start = tok.posStart;
-    def_ = this.defHelper_(_topLevel);
+    def_ = this.defHelper_(topLevel);
     end = this.lex.lastTok.fromSome().posEnd;
     Def(PosRange::create(this.lex, start, end), def_)
   }
 
   // Internal definition parsing implementation
-  mutable fun defHelper_(_topLevel: Bool): Def_ {
+  mutable fun defHelper_(topLevel: Bool): Def_ {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
@@ -507,7 +507,7 @@ extension class Parser {
     this.lex.getStrTok(tok) match {
     | "declare" ->
       _ = this.lex.next();
-      def = this.def(_topLevel);
+      def = this.def(topLevel);
       Declare(def)
     | "global" ->
       _ = this.lex.next();
@@ -979,6 +979,69 @@ extension class Parser {
 
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
+
+    /* Desugar parameter properties */
+
+    parameterProperties = mutable Vector[];
+    !fields = fields.map(field ->
+      field match {
+      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+        initializationStatements = mutable Vector[];
+        !fd.params = fd.params.map(param -> {
+          param match {
+          | Param(
+            pos,
+            modifiers,
+            PNName(pName),
+            /*optional*/ None(),
+            Some(type),
+            default,
+          ) ->
+            isParameterProperty = false;
+            !param.modifiers.modifiers = modifiers.modifiers.filter(modifier ->
+              modifier match {
+              | ModPrivate _
+              | ModProtected _
+              | ModPublic _
+              | ModReadonly _ ->
+                !isParameterProperty = true;
+                false
+              | _ -> true
+              }
+            );
+            if (isParameterProperty) {
+              parameterProperties.push(
+                FieldTypeValue{
+                  pos,
+                  setGet => None(),
+                  name => FNNormal(pName),
+                  optional => None(),
+                  type,
+                  value => default,
+                  modifiers,
+                },
+              );
+              eThis = Expr(pos, Var(Name(pos, "this")));
+              eName = Expr(pos, Var(pName));
+              eThisDotName = Expr(pos, Binop(BODot(), eThis, eName));
+              eAssign = Expr(pos, Binop(BOAssignment(), eThisDotName, eName));
+              initializationStatements.push(Stmt(pos, StmtExpr(eAssign)))
+            }
+          | _ -> void
+          };
+          param
+        });
+        fd.body match {
+        | FDBNone _ -> void
+        | FDBSome(stmts) ->
+          !stmts = initializationStatements.toArray().concat(stmts);
+          !fd.body = FDBSome(stmts)
+        };
+        fd
+      | _ -> field
+      }
+    );
+    !fields = fields.concat(parameterProperties.toArray());
 
     Class{kind, name, extends_, implements, tparams, fields}
   }
