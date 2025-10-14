@@ -94,9 +94,9 @@ extension class TypeChecker {
     cgNode: CGNode,
   ): void {
     for (modifier in fd.modifiers.modifiers) {
-      modifier.value match {
-      | "async" -> !fd.isAsync = Some(modifier.pos)
-      | "static" -> !thisTypeOpt = None()
+      modifier match {
+      | ModAsync(pos) -> !fd.isAsync = Some(pos)
+      | ModStatic(_) -> !thisTypeOpt = None()
       | unsupported ->
         // TODO: protected, private, public, abstract, readonly
         typingError(

@@ -213,26 +213,22 @@ extension class Parser {
           !(this.lex.peekKind() is Some(TKVar()))
         })
       ) break void;
-      this.lex.peekStr() match {
-      | Some(x @ "async")
-      | Some(x @ "protected")
-      | Some(x @ "private")
-      | Some(x @ "public")
-      | Some(x @ "static")
-      | Some(x @ "abstract")
-      | Some(x @ "readonly") ->
-        nameTok = this.lex.next().fromSome();
-        modifiers.push(
-          Name(PosRange::create(this.lex, nameTok.posStart, nameTok.posEnd), x),
-        )
+      mod = this.lex.peekStr() match {
+      | Some("abstract") -> ModAbstract
+      | Some("async") -> ModAsync
+      | Some("private") -> ModPrivate
+      | Some("protected") -> ModProtected
+      | Some("public") -> ModPublic
+      | Some("readonly") -> ModReadonly
+      | Some("static") -> ModStatic
       | _ -> break void
-      }
+      };
+      nameTok = this.lex.next().fromSome();
+      modifiers.push(
+        mod(PosRange::create(this.lex, nameTok.posStart, nameTok.posEnd)),
+      )
     };
-    map = mutable Map[];
-    for (modifier in modifiers) {
-      map![modifier.value] = modifier;
-    };
-    Modifiers(isRemove, map.chill())
+    Modifiers(isRemove, modifiers.toArray())
   }
 
   /***************************************************************************/
