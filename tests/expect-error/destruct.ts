@@ -12,3 +12,11 @@ function destructAlgebraic2(
   const { f } = x;
   return f;
 }
+
+// function destructRest(x: { a: string; b: number; c: boolean }): {
+//   b: number;
+//   c: boolean;
+// } {
+//   const { a, ...rest } = x;
+//   return rest;
+// }
