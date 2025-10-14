@@ -986,6 +986,7 @@ extension class Parser {
     !fields = fields.map(field ->
       field match {
       | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+        initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {
           | Param(
@@ -1019,12 +1020,23 @@ extension class Parser {
                   value => default,
                   modifiers,
                 },
-              )
+              );
+              eThis = Expr(pos, Var(Name(pos, "this")));
+              eName = Expr(pos, Var(pName));
+              eThisDotName = Expr(pos, Binop(BODot(), eThis, eName));
+              eAssign = Expr(pos, Binop(BOAssignment(), eThisDotName, eName));
+              initializationStatements.push(Stmt(pos, StmtExpr(eAssign)))
             }
           | _ -> void
           };
           param
         });
+        fd.body match {
+        | FDBNone _ -> void
+        | FDBSome(stmts) ->
+          !stmts = initializationStatements.toArray().concat(stmts);
+          !fd.body = FDBSome(stmts)
+        };
         fd
       | _ -> field
       }

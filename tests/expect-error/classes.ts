@@ -15,7 +15,7 @@ class TwoConstructors {
 
 class ClassWithParameterProperty {
   // FIXME
-  // @ts-expect-error Invalid initialization
+  // @ts-expect-error TODO: field modifier 'public' (TypeChecker#class_)
   constructor(public f: string) {}
 
   accessParameterProperty(): string {
@@ -25,7 +25,7 @@ class ClassWithParameterProperty {
 
 class ClassWithPrivateParameterProperty {
   // FIXME
-  // @ts-expect-error Invalid initialization
+  // @ts-expect-error TODO: field modifier 'private' (TypeChecker#class_)
   constructor(private f: string) {}
 
   accessParameterProperty(): string {
