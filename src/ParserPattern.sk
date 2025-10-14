@@ -66,7 +66,17 @@ extension class Parser {
         return PObject{fields => Array[], rest => None()}
       };
       fields = mutable Vector[];
+      rest: ?Name = None();
       loop {
+        if (this.lex.peekKind() is Some(TKDotDotDot())) {
+          _ = this.lex.next();
+          !rest = Some(this.getName());
+          if (this.lex.peekKind() is Some(TKComma())) {
+            _ = this.lex.next()
+          };
+          this.expect(TKCloseCurly());
+          break void
+        };
         fieldName = this.getName();
         fieldPat = if (this.lex.peekKind() is Some(TKColon())) {
           _ = this.lex.next();
@@ -104,10 +114,7 @@ extension class Parser {
         | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
         }
       };
-      PObject{
-        fields => fields.toArray().sortedBy(x ~> x.i0.value),
-        rest => None(),
-      }
+      PObject{fields => fields.toArray().sortedBy(x ~> x.i0.value), rest}
     | _ -> PVar(this.getName())
     }
   }
