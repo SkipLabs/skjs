@@ -63,7 +63,7 @@ extension class Parser {
       _ = this.lex.next();
       if (this.lex.peekKind() is Some(TKCloseCurly())) {
         _ = this.lex.next();
-        return PObject(Array[])
+        return PObject{fields => Array[]}
       };
       fields = mutable Vector[];
       loop {
@@ -104,7 +104,7 @@ extension class Parser {
         | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
         }
       };
-      PObject(fields.toArray().sortedBy(x ~> x.i0.value))
+      PObject{fields => fields.toArray().sortedBy(x ~> x.i0.value)}
     | _ -> PVar(this.getName())
     }
   }

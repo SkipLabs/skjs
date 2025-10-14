@@ -70,7 +70,7 @@ extension class TypeChecker {
         )
       }
 
-    | PObject(objectFields) ->
+    | PObject{fields => objectFields} ->
       type.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
         typingError(

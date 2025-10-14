@@ -103,7 +103,7 @@ base class Pattern_ uses XXHashable {
   children =
   | PVar(Name)
   | PArray(Array<Pattern>)
-  | PObject(Array<(Name, Pattern, ?Expr)>)
+  | PObject{fields: Array<(Name, Pattern, ?Expr)>}
 }
 
 /***************************************************************************/
