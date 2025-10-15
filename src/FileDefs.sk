@@ -93,7 +93,7 @@ mutable class FileDefsState{
         | None() -> continue
         | Some(x) -> x
         };
-        static::exportNamesFrom(this, names, fn)
+        this.exportNamesFrom(names, fn)
       | ExportNames _ -> internal_error("TODO: unsupported export")
       | ExportDefault(_, Expr(_, Var(n))) -> this.!default = Some(n.value)
       | ExportDefault _ -> internal_error("TODO: unsupported export")
@@ -343,41 +343,40 @@ mutable class FileDefsState{
     }
   }
 
-  static private fun exportNamesFrom(
-    state: mutable FileDefsState,
+  private mutable fun exportNamesFrom(
     names: ModuleNames,
     fileName: FileName,
   ): void {
     names match {
     | MStar(Some(moduleName)) ->
-      state.exportedModulesFrom![moduleName.value] = fileName
-    | MStar(None()) -> state.exportedStar.insert(fileName.toString())
+      this.exportedModulesFrom![moduleName.value] = fileName
+    | MStar(None()) -> this.exportedStar.insert(fileName.toString())
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
-          state.exportedFrom![moduleDefName.name.value] = (
+          this.exportedFrom![moduleDefName.name.value] = (
             moduleDefName.name.value,
             fileName,
           )
         | Some(asName) ->
-          state.exportedFrom![asName.value] = (
+          this.exportedFrom![asName.value] = (
             moduleDefName.name.value,
             fileName,
           )
         }
       }
     | MName(moduleName, moduleDefNames) ->
-      state.exportedModulesFrom![moduleName.value] = fileName;
+      this.exportedModulesFrom![moduleName.value] = fileName;
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
-          state.exportedFrom![moduleDefName.name.value] = (
+          this.exportedFrom![moduleDefName.name.value] = (
             moduleDefName.name.value,
             fileName,
           )
         | Some(asName) ->
-          state.exportedFrom![asName.value] = (
+          this.exportedFrom![asName.value] = (
             moduleDefName.name.value,
             fileName,
           )
