@@ -71,10 +71,10 @@ extension class TypeChecker {
       }
 
     | PObject{fields => objectFields, rest} ->
-      rest match {
-      | None() -> void
-      | Some(name) ->
-        typingError(Array[(name.pos, "TODO: support rest destructuring")])
+      fieldsToRemoveForRest = rest match {
+      | None() -> SortedSet[]
+      | Some(_name) ->
+        SortedSet::createFromItems(objectFields.map(f -> f.i0.value))
       };
       type.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
@@ -83,9 +83,14 @@ extension class TypeChecker {
         )
       | Some(stypes) ->
         for (stype in stypes) {
-          branches = stype match {
-          | TObject(fields, _) -> Array[fields]
-          | a @ TAlgebraic _ -> a.branches.toArray().map(x -> x.fields)
+          (branches, typeForRest) = stype match {
+          | tobj @ TObject(fields, _) ->
+            (Array[fields], tobj.removeFields(fieldsToRemoveForRest))
+          | a @ TAlgebraic _ ->
+            (
+              a.branches.toArray().map(x -> x.fields),
+              a.removeFields(fieldsToRemoveForRest),
+            )
           | _ ->
             typingError(
               Array[
@@ -165,7 +170,17 @@ extension class TypeChecker {
               )
             };
             this.bind(tcenv, kind, fieldPat, typeForField, isInitialized, false)
-          }
+          };
+          rest.each(name ->
+            this.bind(
+              tcenv,
+              kind,
+              Pattern(name.pos, PVar(name)),
+              TType::single(typeForRest),
+              isInitialized,
+              false,
+            )
+          )
         }
       }
     }

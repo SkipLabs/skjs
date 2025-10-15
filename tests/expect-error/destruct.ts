@@ -17,7 +17,6 @@ function destructRest(x: { a: string; b: number; c: boolean }): {
   b: number;
   c: boolean;
 } {
-  // @ts-expect-error TODO: support rest destructuring
   const { a, ...rest } = x;
   return rest;
 }
