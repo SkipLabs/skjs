@@ -335,45 +335,17 @@ fun resolveName(
     return None();
   };
 
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/dist/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/dist/types/types.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/types/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/typing/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
+  for (ext in Array[
+    "/index.d.ts",
+    "/dist/index.d.ts",
+    "/dist/types/types.d.ts",
+    "/types/index.d.ts",
+    "/typing/index.d.ts",
+  ]) {
+    index.lookup(context, cwd, FileName::create(moduleName + ext)) match {
+    | None() -> void
+    | x @ Some _ -> return x
+    }
   };
 
   index.lookup(
