@@ -33,6 +33,7 @@ class Files(
   rootOpt: ?DirName,
   builtinsFileName: FileName,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
+  importStubs: Array<DirName>,
   changedFileOldParsedResults: ?SortedMap<String, ParsedResult>,
 ) {
   static fun create(
@@ -42,6 +43,7 @@ class Files(
     srcFileSeq: Sequence<String>,
     trackChangedFiles: Bool = false,
     sourceDirOpt: ?String = None(),
+    importStubs: Array<String> = Array[],
   ): Result<Files, String> {
     builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
     rootOpt = baseUrlOpt.map(baseUrl -> DirName::create(Path.resolve(baseUrl)));
@@ -126,6 +128,7 @@ class Files(
         rootOpt,
         builtinsFileName,
         fileDir,
+        importStubs.map(DirName::create),
         changedFileOldParsedResults,
       ),
     )

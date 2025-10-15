@@ -214,6 +214,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
   baseUrlOpt = args.maybeGetString("base-url");
   builtinsFileName = args.getString("builtins-file");
+  importStubs = args.getArray("import-stubs");
   logAffectedFiles = args.getBool("log-affected-files");
   sourceDirOpt = args.maybeGetString("dir");
   if (logAffectedFiles) {
@@ -243,6 +244,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         srcFiles,
         logAffectedFiles,
         sourceDirOpt,
+        importStubs,
       ) match {
       | Failure(err) ->
         print_error(err);
@@ -338,6 +340,7 @@ class Checker private {
       context,
       index,
       files.rootOpt,
+      files.importStubs,
       parsedFiles,
     );
     builtinDefs = fileDefsMap.get(context, files.builtinsFileName);

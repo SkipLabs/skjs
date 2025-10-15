@@ -21,6 +21,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
     context: mutable S.Context,
     index: FileNameIndex,
     rootOpt: ?DirName,
+    importStubs: Array<DirName>,
     parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
   ): this {
     static(
@@ -35,7 +36,14 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
           parsedFile.value match {
           | PROk(defs) ->
             Array[
-              FileDefs::create(context, index, rootOpt, fileName.dirName, defs),
+              FileDefs::create(
+                context,
+                index,
+                rootOpt,
+                fileName.dirName,
+                importStubs,
+                defs,
+              ),
             ]
           | _ -> Array[]
           }
@@ -54,6 +62,7 @@ mutable class FileDefsState{
   index: FileNameIndex,
   rootOpt: ?DirName,
   dirName: DirName,
+  importStubs: Array<DirName>,
   importedStar: mutable Set<String> = mutable Set[],
   importedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   importedModulesFrom: mutable Map<String, FileName> = mutable Map[],
@@ -237,6 +246,7 @@ mutable class FileDefsState{
       index => this.index,
       rootOpt => this.rootOpt,
       dirName => this.dirName,
+      importStubs => this.importStubs,
     };
     state.processDefs(defs)
   }
@@ -448,9 +458,16 @@ class FileDefs{
     index: FileNameIndex,
     rootOpt: ?DirName,
     dirName: DirName,
+    importStubs: Array<DirName>,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable FileDefsState{context, index, rootOpt, dirName};
+    state = mutable FileDefsState{
+      context,
+      index,
+      rootOpt,
+      dirName,
+      importStubs,
+    };
     state.processDefs(parsedDefs)
   }
 }
