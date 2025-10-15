@@ -1,8 +1,14 @@
 function destructAlgebraic(
   x: { kind: "num"; f: number } | { kind: "str"; f: string },
 ): number {
-  // FIXME
-  // @ts-expect-error f is already defined
+  const { f } = x;
+  // @ts-expect-error Invalid return type
+  return f;
+}
+
+function destructAlgebraic2(
+  x: { kind: "num"; f: number } | { kind: "str"; f: string },
+): number | string {
   const { f } = x;
   return f;
 }

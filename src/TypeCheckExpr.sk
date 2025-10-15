@@ -95,6 +95,7 @@ extension class TypeChecker {
               (e.pos, this.expr(tcenv, e, kind is BKConst()))
             );
             defaultIsUseless = fieldDefault.map(e -> e.pos);
+            typeForField = TType::bottom(fieldName.pos);
             for (fields in branches) {
               fields.maybeGet(fieldName.value) match {
               | None() ->
@@ -138,13 +139,11 @@ extension class TypeChecker {
                     )
                   }
                 };
-                this.bind(
-                  tcenv,
-                  kind,
-                  fieldPat,
+                !typeForField = TType::union(
+                  tcenv.subst,
+                  this.tenv,
+                  typeForField,
                   tfieldType,
-                  isInitialized,
-                  false,
                 )
               }
             };
@@ -159,7 +158,8 @@ extension class TypeChecker {
                   ),
                 ],
               )
-            }
+            };
+            this.bind(tcenv, kind, fieldPat, typeForField, isInitialized, false)
           }
         }
       }
