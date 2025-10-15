@@ -334,7 +334,13 @@ base class Variance {
 
 // Regular Typescript (open) object type
 // but disjoint from types in TAlgebraic
-class TObject(fields: TFields) extends SType
+class TObject(fields: TFields) extends SType {
+  fun removeFields(fieldsToRemove: SortedSet<String>): this {
+    if (fieldsToRemove.isEmpty()) this else {
+      this with {fields => this.fields.removeFields(fieldsToRemove)}
+    }
+  }
+}
 
 const kAlgebraicBranchFieldName: String = "kind";
 
@@ -343,6 +349,16 @@ class TAlgebraic(
 ) extends SType {
   static fun single(x: TConstr, pos: PosRange): this {
     static(InternalKeyedArrayMap::single(x), pos)
+  }
+
+  fun removeFields(fieldsToRemove: SortedSet<String>): this {
+    if (fieldsToRemove.isEmpty()) this else {
+      this with {
+        branches => this.branches.map(branch ->
+          branch.removeFields(fieldsToRemove)
+        ),
+      }
+    }
   }
 }
 
@@ -362,6 +378,12 @@ class TConstr(
       TType::single(TPrimValue::single(TString(), this.tag, pos))
     } else {
       this.fields.getType(subst, tenv, fieldName)
+    }
+  }
+
+  fun removeFields(fieldsToRemove: SortedSet<String>): this {
+    if (fieldsToRemove.isEmpty()) this else {
+      this with {fields => this.fields.removeFields(fieldsToRemove)}
     }
   }
 
@@ -704,6 +726,17 @@ class TFields private (
     this.maybeGetType(subst, tenv, fieldName) match {
     | None() -> this.getTypeTypingError(fieldName)
     | Some(ty) -> ty
+    }
+  }
+
+  fun removeFields(fieldsToRemove: SortedSet<String>): this {
+    if (fieldsToRemove.isEmpty()) this else {
+      // TODO: better approximation of removing fields that may intersect with indexes
+      this with {
+        fields => this.fields.filter(field ->
+          !fieldsToRemove.contains(field.name)
+        ),
+      }
     }
   }
 }

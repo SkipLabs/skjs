@@ -70,7 +70,12 @@ extension class TypeChecker {
         )
       }
 
-    | PObject(objectFields) ->
+    | PObject{fields => objectFields, rest} ->
+      fieldsToRemoveForRest = rest match {
+      | None() -> SortedSet[]
+      | Some(_name) ->
+        SortedSet::createFromItems(objectFields.map(f -> f.i0.value))
+      };
       type.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
         typingError(
@@ -78,9 +83,14 @@ extension class TypeChecker {
         )
       | Some(stypes) ->
         for (stype in stypes) {
-          branches = stype match {
-          | TObject(fields, _) -> Array[fields]
-          | a @ TAlgebraic _ -> a.branches.toArray().map(x -> x.fields)
+          (branches, typeForRest) = stype match {
+          | tobj @ TObject(fields, _) ->
+            (Array[fields], tobj.removeFields(fieldsToRemoveForRest))
+          | a @ TAlgebraic _ ->
+            (
+              a.branches.toArray().map(x -> x.fields),
+              a.removeFields(fieldsToRemoveForRest),
+            )
           | _ ->
             typingError(
               Array[
@@ -95,6 +105,7 @@ extension class TypeChecker {
               (e.pos, this.expr(tcenv, e, kind is BKConst()))
             );
             defaultIsUseless = fieldDefault.map(e -> e.pos);
+            typeForField = TType::bottom(fieldName.pos);
             for (fields in branches) {
               fields.maybeGet(fieldName.value) match {
               | None() ->
@@ -138,13 +149,11 @@ extension class TypeChecker {
                     )
                   }
                 };
-                this.bind(
-                  tcenv,
-                  kind,
-                  fieldPat,
+                !typeForField = TType::union(
+                  tcenv.subst,
+                  this.tenv,
+                  typeForField,
                   tfieldType,
-                  isInitialized,
-                  false,
                 )
               }
             };
@@ -159,8 +168,19 @@ extension class TypeChecker {
                   ),
                 ],
               )
-            }
-          }
+            };
+            this.bind(tcenv, kind, fieldPat, typeForField, isInitialized, false)
+          };
+          rest.each(name ->
+            this.bind(
+              tcenv,
+              kind,
+              Pattern(name.pos, PVar(name)),
+              TType::single(typeForRest),
+              isInitialized,
+              false,
+            )
+          )
         }
       }
     }

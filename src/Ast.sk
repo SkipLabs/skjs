@@ -94,7 +94,7 @@ class VarDef(pat: Pattern, type: ?Type, value: ?Expr) uses XXHashable
 // <pattern> ::=
 //   | <name>
 //   | <pattern> ::= [ <pattern>* ]
-//   | <pattern> ::= { (<name> : <pattern> (= <expr>)?)* }
+//   | <pattern> ::= { (<name> : <pattern> (= <expr>)?)*, (...<name>)? }
 /***************************************************************************/
 
 class Pattern(pos: PosRange, value: Pattern_) uses XXHashable
@@ -103,7 +103,7 @@ base class Pattern_ uses XXHashable {
   children =
   | PVar(Name)
   | PArray(Array<Pattern>)
-  | PObject(Array<(Name, Pattern, ?Expr)>)
+  | PObject{fields: Array<(Name, Pattern, ?Expr)>, rest: ?Name}
 }
 
 /***************************************************************************/
