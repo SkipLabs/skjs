@@ -103,10 +103,18 @@ base class Pattern_ uses XXHashable {
   children =
   | PVar(Name)
   | PArray(Array<Pattern>)
-  | PObject{fields: Array<PField>, rest: ?Name}
+  | PObject{fields: InternalKeyedArrayMap<String, PField>, rest: ?Name}
 }
 
-class PField(name: Name, pat: Pattern, default: ?Expr) uses XXHashable
+class PField(
+  name: Name,
+  pat: Pattern,
+  default: ?Expr,
+) uses XXHashable, Projectable<String> {
+  fun project(): String {
+    this.name.value
+  }
+}
 
 /***************************************************************************/
 // <fun-def> ::=
