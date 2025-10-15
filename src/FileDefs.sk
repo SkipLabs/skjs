@@ -116,22 +116,11 @@ mutable class FileDefsState{
       };
       this.defs[name.value].push(def)
     | Namespace(name, defs) ->
+      fileDefs = FileDefs::create(context, index, rootOpt, dirName, defs);
       if (isExport) {
-        this.exportedNamespaces![name.value] = FileDefs::create(
-          context,
-          index,
-          rootOpt,
-          dirName,
-          defs,
-        )
+        this.exportedNamespaces![name.value] = fileDefs
       } else {
-        this.namespaces![name.value] = FileDefs::create(
-          context,
-          index,
-          rootOpt,
-          dirName,
-          defs,
-        )
+        this.namespaces![name.value] = fileDefs
       }
     | Module(name, Some(defs)) ->
       this.modules![name.value] = FileDefs::create(
