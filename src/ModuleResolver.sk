@@ -287,17 +287,9 @@ fun resolveName(
     | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
     | ".js" | ".mjs" ->
       stripped = fullName.baseName.stripSuffix(suffix);
-      tsName = fullName with {baseName => stripped + ".ts"};
-      if (tsName.exists()) {
-        return Some(tsName);
-      };
-      tsxName = fullName with {baseName => stripped + ".tsx"};
-      if (tsxName.exists()) {
-        return Some(tsxName);
-      };
-      dtsName = fullName with {baseName => stripped + ".d.ts"};
-      if (dtsName.exists()) {
-        return Some(dtsName);
+      for (ext in Array[".ts", ".tsx", ".d.ts"]) {
+        tryPath = fullName with {baseName => stripped + ext};
+        if (tryPath.exists()) return Some(tryPath)
       };
       print_error("Could not find file: " + fullName.toString());
       print_error("From: " + cwd.toString())
