@@ -174,6 +174,49 @@ mutable class FileDefsState{
     | _ -> internal_error("Internal error: expected a definition")
     }
   }
+
+  static fun importNamesFrom(
+    state: mutable FileDefsState,
+    names: ModuleNames,
+    fileName: FileName,
+  ): void {
+    names match {
+    | MStar(Some(moduleName)) ->
+      state.importedModulesFrom![moduleName.value] = fileName
+    | MStar(None()) -> state.importedStar.insert(fileName.toString())
+    | MCurly(moduleDefNames) ->
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          state.importedFrom![moduleDefName.name.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        | Some(asName) ->
+          state.importedFrom![asName.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        }
+      }
+    | MName(moduleName, moduleDefNames) ->
+      state.importedModulesFrom![moduleName.value] = fileName;
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          state.importedFrom![moduleDefName.name.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        | Some(asName) ->
+          state.importedFrom![asName.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        }
+      }
+    }
+  }
 }
 
 class FileDefs{
@@ -236,7 +279,7 @@ class FileDefs{
         | None() -> continue
         | Some(x) -> x
         };
-        static::importNamesFrom(state, names, fn)
+        FileDefsState::importNamesFrom(state, names, fn)
 
       | Import(_, _, _names, INName _) ->
         debug("TODO other imports (like namespace.defName)")
@@ -394,49 +437,6 @@ class FileDefs{
           )
         | Some(asName) ->
           state.exportedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    }
-  }
-
-  static private fun importNamesFrom(
-    state: mutable FileDefsState,
-    names: ModuleNames,
-    fileName: FileName,
-  ): void {
-    names match {
-    | MStar(Some(moduleName)) ->
-      state.importedModulesFrom![moduleName.value] = fileName
-    | MStar(None()) -> state.importedStar.insert(fileName.toString())
-    | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.importedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          state.importedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      state.importedModulesFrom![moduleName.value] = fileName;
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.importedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          state.importedFrom![asName.value] = (
             moduleDefName.name.value,
             fileName,
           )
