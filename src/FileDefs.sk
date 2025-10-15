@@ -317,7 +317,7 @@ mutable class FileDefsState{
     }
   }
 
-  static fun exportNames(
+  static private fun exportNames(
     state: mutable FileDefsState,
     names: ModuleNames,
   ): void {
@@ -346,7 +346,7 @@ mutable class FileDefsState{
     }
   }
 
-  static fun exportNamesFrom(
+  static private fun exportNamesFrom(
     state: mutable FileDefsState,
     names: ModuleNames,
     fileName: FileName,
@@ -389,7 +389,7 @@ mutable class FileDefsState{
     }
   }
 
-  static fun importNamesFrom(
+  static private fun importNamesFrom(
     state: mutable FileDefsState,
     names: ModuleNames,
     fileName: FileName,
