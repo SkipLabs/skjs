@@ -271,12 +271,13 @@ fun resolveName(
   if (moduleName.endsWith("-js")) {
     !moduleName = moduleName.stripSuffix("-js");
   };
-  if (moduleName.startsWith("/") || moduleName.startsWith(".")) {
+  isAbsolute = Path.isAbsolute(moduleName);
+  if (isAbsolute || moduleName.startsWith(".")) {
     if (moduleName == "." || moduleName == "./") {
       print_error("Could not resolve module '.'");
       return None();
     };
-    fullName = if (moduleName.startsWith("/")) {
+    fullName = if (isAbsolute) {
       FileName::create(moduleName)
     } else {
       cwd + FileName::create(moduleName)
@@ -317,7 +318,7 @@ fun resolveName(
       print_error("From: " + cwd.toString());
       return None();
     };
-    if (!moduleName.startsWith("/")) {
+    if (!isAbsolute) {
       pathFile = cwd + FileName::create(moduleName + ".d.ts");
       if (pathFile.exists()) return Some(pathFile);
       pathIndex = cwd + FileName::create(moduleName + "/index.d.ts");
