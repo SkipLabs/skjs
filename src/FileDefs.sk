@@ -175,6 +175,49 @@ mutable class FileDefsState{
     }
   }
 
+  static fun exportNamesFrom(
+    state: mutable FileDefsState,
+    names: ModuleNames,
+    fileName: FileName,
+  ): void {
+    names match {
+    | MStar(Some(moduleName)) ->
+      state.exportedModulesFrom![moduleName.value] = fileName
+    | MStar(None()) -> state.exportedStar.insert(fileName.toString())
+    | MCurly(moduleDefNames) ->
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          state.exportedFrom![moduleDefName.name.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        | Some(asName) ->
+          state.exportedFrom![asName.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        }
+      }
+    | MName(moduleName, moduleDefNames) ->
+      state.exportedModulesFrom![moduleName.value] = fileName;
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          state.exportedFrom![moduleDefName.name.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        | Some(asName) ->
+          state.exportedFrom![asName.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        }
+      }
+    }
+  }
+
   static fun importNamesFrom(
     state: mutable FileDefsState,
     names: ModuleNames,
@@ -260,7 +303,7 @@ class FileDefs{
         | None() -> continue
         | Some(x) -> x
         };
-        static::exportNamesFrom(state, names, fn)
+        FileDefsState::exportNamesFrom(state, names, fn)
       | ExportNames _ -> internal_error("TODO: unsupported export")
       | ExportDefault(_, Expr(_, Var(n))) -> state.!default = Some(n.value)
       | ExportDefault _ -> internal_error("TODO: unsupported export")
@@ -397,49 +440,6 @@ class FileDefs{
           state.exported![moduleDefName.name.value] = moduleDefName.name.value
         | Some(asName) ->
           state.exported![moduleDefName.name.value] = asName.value
-        }
-      }
-    }
-  }
-
-  static private fun exportNamesFrom(
-    state: mutable FileDefsState,
-    names: ModuleNames,
-    fileName: FileName,
-  ): void {
-    names match {
-    | MStar(Some(moduleName)) ->
-      state.exportedModulesFrom![moduleName.value] = fileName
-    | MStar(None()) -> state.exportedStar.insert(fileName.toString())
-    | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.exportedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          state.exportedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      state.exportedModulesFrom![moduleName.value] = fileName;
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.exportedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          state.exportedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
         }
       }
     }
