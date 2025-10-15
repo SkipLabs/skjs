@@ -118,7 +118,7 @@ mutable class FileDefsState{
         | None() -> continue
         | Some(x) -> x
         };
-        static::importNamesFrom(this, names, fn)
+        this.importNamesFrom(names, fn)
 
       | Import(_, _, _names, INName _) ->
         debug("TODO other imports (like namespace.defName)")
@@ -385,41 +385,40 @@ mutable class FileDefsState{
     }
   }
 
-  static private fun importNamesFrom(
-    state: mutable FileDefsState,
+  private mutable fun importNamesFrom(
     names: ModuleNames,
     fileName: FileName,
   ): void {
     names match {
     | MStar(Some(moduleName)) ->
-      state.importedModulesFrom![moduleName.value] = fileName
-    | MStar(None()) -> state.importedStar.insert(fileName.toString())
+      this.importedModulesFrom![moduleName.value] = fileName
+    | MStar(None()) -> this.importedStar.insert(fileName.toString())
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
-          state.importedFrom![moduleDefName.name.value] = (
+          this.importedFrom![moduleDefName.name.value] = (
             moduleDefName.name.value,
             fileName,
           )
         | Some(asName) ->
-          state.importedFrom![asName.value] = (
+          this.importedFrom![asName.value] = (
             moduleDefName.name.value,
             fileName,
           )
         }
       }
     | MName(moduleName, moduleDefNames) ->
-      state.importedModulesFrom![moduleName.value] = fileName;
+      this.importedModulesFrom![moduleName.value] = fileName;
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
-          state.importedFrom![moduleDefName.name.value] = (
+          this.importedFrom![moduleDefName.name.value] = (
             moduleDefName.name.value,
             fileName,
           )
         | Some(asName) ->
-          state.importedFrom![asName.value] = (
+          this.importedFrom![asName.value] = (
             moduleDefName.name.value,
             fileName,
           )
