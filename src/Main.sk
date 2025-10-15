@@ -187,6 +187,10 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Path to the file containing type declarations for JavaScript builtins",
     ),
+  Cli.Arg::string("import-stubs")
+    .value_name("PATH")
+    .repeatable()
+    .about("Path to directory containing stubs for imports"),
   Cli.Arg::bool("log-affected-files").about(
     "Output a list of files potentially affected by changes since laqst run.  Requires `--data` persistent cache.",
   ),
