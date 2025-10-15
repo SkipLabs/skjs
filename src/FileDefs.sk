@@ -70,7 +70,6 @@ mutable class FileDefsState{
   mutable exportEq: ?Name = None(),
 } {
   mutable fun processDefs(parsedDefs: Array<Def>): void {
-    state = this;
     for (def in parsedDefs) {
       def.value match {
       | ToplevelExpr(_) -> void
@@ -81,9 +80,8 @@ mutable class FileDefsState{
       | Module _
       | FunDef _
       | VarDefs _ ->
-        state.newDef(None(), false, def)
-      | ExportNames(_, names, None()) ->
-        FileDefsState::exportNames(state, names)
+        this.newDef(None(), false, def)
+      | ExportNames(_, names, None()) -> FileDefsState::exportNames(this, names)
       | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
         fn = resolveName(
           this.context,
@@ -95,13 +93,13 @@ mutable class FileDefsState{
         | None() -> continue
         | Some(x) -> x
         };
-        FileDefsState::exportNamesFrom(state, names, fn)
+        FileDefsState::exportNamesFrom(this, names, fn)
       | ExportNames _ -> internal_error("TODO: unsupported export")
-      | ExportDefault(_, Expr(_, Var(n))) -> state.!default = Some(n.value)
+      | ExportDefault(_, Expr(_, Var(n))) -> this.!default = Some(n.value)
       | ExportDefault _ -> internal_error("TODO: unsupported export")
       | ExportEq(v) ->
         v.value match {
-        | Var(n) -> state.!exportEq = Some(n)
+        | Var(n) -> this.!exportEq = Some(n)
         | _ ->
           debug(v);
           debug("TODO: exportEq other than a name")
@@ -120,7 +118,7 @@ mutable class FileDefsState{
         | None() -> continue
         | Some(x) -> x
         };
-        FileDefsState::importNamesFrom(state, names, fn)
+        FileDefsState::importNamesFrom(this, names, fn)
 
       | Import(_, _, _names, INName _) ->
         debug("TODO other imports (like namespace.defName)")
@@ -132,12 +130,12 @@ mutable class FileDefsState{
       | Declare(d @ Def(_, Module _))
       | Declare(d @ Def(_, FunDef _))
       | Declare(d @ Def(_, VarDefs _)) ->
-        state.newDef(None(), false, d)
+        this.newDef(None(), false, d)
       /*
               d match {
               | Module(_, Some(defs)) ->
                 for (moduleDef in defs) {
-                  state.newDef(
+                  this.newDef(
                     None(),
                     false,
                     moduleDef,
@@ -154,7 +152,7 @@ mutable class FileDefsState{
       | Export(_, None(), d @ Module _)
       | Export(_, None(), d @ FunDef _)
       | Export(_, None(), d @ VarDefs _) ->
-        state.newDef(None(), true, Def(def.pos, d))
+        this.newDef(None(), true, Def(def.pos, d))
 
       | Export(_, x @ Some _, d @ TypeDef _)
       | Export(_, x @ Some _, d @ Class _)
@@ -163,7 +161,7 @@ mutable class FileDefsState{
       | Export(_, x @ Some _, d @ Module _)
       | Export(_, x @ Some _, d @ FunDef _)
       | Export(_, x @ Some _, d @ VarDefs _) ->
-        state.newDef(x, true, Def(def.pos, d))
+        this.newDef(x, true, Def(def.pos, d))
 
       | Export(_, None(), Declare(d @ Def(_, TypeDef _)))
       | Export(_, None(), Declare(d @ Def(_, Class _)))
@@ -172,7 +170,7 @@ mutable class FileDefsState{
       | Export(_, None(), Declare(d @ Def(_, Module _)))
       | Export(_, None(), Declare(d @ Def(_, FunDef _)))
       | Export(_, None(), Declare(d @ Def(_, VarDefs _))) ->
-        state.newDef(None(), true, d)
+        this.newDef(None(), true, d)
 
       | Export(_, x @ Some _, Declare(d @ Def(_, TypeDef _)))
       | Export(_, x @ Some _, Declare(d @ Def(_, Class _)))
@@ -181,7 +179,7 @@ mutable class FileDefsState{
       | Export(_, x @ Some _, Declare(d @ Def(_, Module _)))
       | Export(_, x @ Some _, Declare(d @ Def(_, FunDef _)))
       | Export(_, x @ Some _, Declare(d @ Def(_, VarDefs _))) ->
-        state.newDef(x, true, d)
+        this.newDef(x, true, d)
 
       | Export(_, _, Declare(Def(_, Declare _)))
       | Export(_, _, ExportNames _)
