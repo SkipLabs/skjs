@@ -286,21 +286,16 @@ fun resolveName(
     suffix match {
     | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
     | ".js" | ".mjs" ->
-      tsName = fullName with {
-        baseName => fullName.baseName.stripSuffix(suffix) + ".ts",
-      };
+      stripped = fullName.baseName.stripSuffix(suffix);
+      tsName = fullName with {baseName => stripped + ".ts"};
       if (tsName.exists()) {
         return Some(tsName);
       };
-      tsxName = fullName with {
-        baseName => fullName.baseName.stripSuffix(suffix) + ".tsx",
-      };
+      tsxName = fullName with {baseName => stripped + ".tsx"};
       if (tsxName.exists()) {
         return Some(tsxName);
       };
-      dtsName = fullName with {
-        baseName => fullName.baseName.stripSuffix(suffix) + ".d.ts",
-      };
+      dtsName = fullName with {baseName => stripped + ".d.ts"};
       if (dtsName.exists()) {
         return Some(dtsName);
       };
