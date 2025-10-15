@@ -308,22 +308,15 @@ fun resolveName(
 
   root = rootOpt.default(cwd);
 
-  index.lookup(
-    context,
-    root,
-    FileName::create("./@types/" + moduleName + "/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-
-  index.lookup(
-    context,
-    root,
-    FileName::create("./@types/node/" + moduleName + ".d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
+  for (prepost in Array[
+    ("./@types/", "/index.d.ts"),
+    ("./@types/node/", ".d.ts"),
+  ]) {
+    tryPath = FileName::create(prepost.i0 + moduleName + prepost.i1);
+    index.lookup(context, root, tryPath) match {
+    | None() -> void
+    | x @ Some _ -> return x
+    }
   };
 
   if (moduleName.contains(":")) {
