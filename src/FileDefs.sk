@@ -69,7 +69,7 @@ mutable class FileDefsState{
   defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
-  mutable fun processDefs(parsedDefs: Array<Def>): void {
+  mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
     for (def in parsedDefs) {
       def.value match {
       | ToplevelExpr(_) -> void
@@ -208,10 +208,11 @@ mutable class FileDefsState{
       | Declare _ -> internal_error("TODO rest of declare")
       | ImportExpr _ -> void
       }
-    }
+    };
+    this.toFileDefs()
   }
 
-  readonly fun toFileDefs(): FileDefs {
+  private readonly fun toFileDefs(): FileDefs {
     FileDefs{
       importedStar => this.importedStar.chill(),
       importedFrom => this.importedFrom.chill(),
@@ -452,8 +453,7 @@ class FileDefs{
     parsedDefs: Array<Def>,
   ): FileDefs {
     state = mutable FileDefsState{context, index, rootOpt, dirName};
-    state.processDefs(parsedDefs);
-    state.toFileDefs()
+    state.processDefs(parsedDefs)
   }
 }
 
