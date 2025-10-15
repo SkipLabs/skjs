@@ -50,6 +50,10 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
 }
 
 mutable class FileDefsState{
+  context: mutable S.Context,
+  index: FileNameIndex,
+  rootOpt: ?DirName,
+  dirName: DirName,
   importedStar: mutable Set<String> = mutable Set[],
   importedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   importedModulesFrom: mutable Map<String, FileName> = mutable Map[],
@@ -65,7 +69,150 @@ mutable class FileDefsState{
   defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
-  readonly fun toFileDefs(): FileDefs {
+  mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
+    for (def in parsedDefs) {
+      def.value match {
+      | ToplevelExpr(_) -> void
+      | TypeDef _
+      | Class _
+      | Enum _
+      | Namespace _
+      | Module _
+      | FunDef _
+      | VarDefs _ ->
+        this.newDef(None(), false, def)
+      | ExportNames(_, names, None()) -> this.exportNames(names)
+      | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
+        fn = resolveName(
+          this.context,
+          this.index,
+          this.rootOpt,
+          this.dirName,
+          mname,
+        ) match {
+        | None() -> continue
+        | Some(x) -> x
+        };
+        this.exportNamesFrom(names, fn)
+      | ExportNames _ -> internal_error("TODO: unsupported export")
+      | ExportDefault(_, Expr(_, Var(n))) -> this.!default = Some(n.value)
+      | ExportDefault _ -> internal_error("TODO: unsupported export")
+      | ExportEq(v) ->
+        v.value match {
+        | Var(n) -> this.!exportEq = Some(n)
+        | _ ->
+          debug(v);
+          debug("TODO: exportEq other than a name")
+        }
+      | ExportAs _ -> void
+      | ExportImport _ -> debug("TODO: exportImport")
+      | Global _ -> debug("TODO: todo global")
+      | Import(_, _, names, INPath(mname)) ->
+        fn = resolveName(
+          this.context,
+          this.index,
+          this.rootOpt,
+          this.dirName,
+          mname.value,
+        ) match {
+        | None() -> continue
+        | Some(x) -> x
+        };
+        this.importNamesFrom(names, fn)
+
+      | Import(_, _, _names, INName _) ->
+        debug("TODO other imports (like namespace.defName)")
+
+      | Declare(d @ Def(_, TypeDef _))
+      | Declare(d @ Def(_, Class _))
+      | Declare(d @ Def(_, Enum _))
+      | Declare(d @ Def(_, Namespace _))
+      | Declare(d @ Def(_, Module _))
+      | Declare(d @ Def(_, FunDef _))
+      | Declare(d @ Def(_, VarDefs _)) ->
+        this.newDef(None(), false, d)
+      /*
+              d match {
+              | Module(_, Some(defs)) ->
+                for (moduleDef in defs) {
+                  this.newDef(
+                    None(),
+                    false,
+                    moduleDef,
+                  );
+                }
+              | _ -> void
+              }
+      */
+
+      | Export(_, None(), d @ TypeDef _)
+      | Export(_, None(), d @ Class _)
+      | Export(_, None(), d @ Enum _)
+      | Export(_, None(), d @ Namespace _)
+      | Export(_, None(), d @ Module _)
+      | Export(_, None(), d @ FunDef _)
+      | Export(_, None(), d @ VarDefs _) ->
+        this.newDef(None(), true, Def(def.pos, d))
+
+      | Export(_, x @ Some _, d @ TypeDef _)
+      | Export(_, x @ Some _, d @ Class _)
+      | Export(_, x @ Some _, d @ Enum _)
+      | Export(_, x @ Some _, d @ Namespace _)
+      | Export(_, x @ Some _, d @ Module _)
+      | Export(_, x @ Some _, d @ FunDef _)
+      | Export(_, x @ Some _, d @ VarDefs _) ->
+        this.newDef(x, true, Def(def.pos, d))
+
+      | Export(_, None(), Declare(d @ Def(_, TypeDef _)))
+      | Export(_, None(), Declare(d @ Def(_, Class _)))
+      | Export(_, None(), Declare(d @ Def(_, Enum _)))
+      | Export(_, None(), Declare(d @ Def(_, Namespace _)))
+      | Export(_, None(), Declare(d @ Def(_, Module _)))
+      | Export(_, None(), Declare(d @ Def(_, FunDef _)))
+      | Export(_, None(), Declare(d @ Def(_, VarDefs _))) ->
+        this.newDef(None(), true, d)
+
+      | Export(_, x @ Some _, Declare(d @ Def(_, TypeDef _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, Class _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, Enum _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, Namespace _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, Module _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, FunDef _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, VarDefs _))) ->
+        this.newDef(x, true, d)
+
+      | Export(_, _, Declare(Def(_, Declare _)))
+      | Export(_, _, ExportNames _)
+      | Export(_, _, Global _)
+      | Export(_, _, Import _)
+      | Export(_, _, ImportExpr _)
+      | Export(_, _, ToplevelExpr _)
+      | Export(_, _, Export _)
+      | Export(_, _, ExportAs _)
+      | Export(_, _, ExportDefault _)
+      | Export(_, _, ExportEq _)
+      | Export(_, _, ExportImport _)
+      | Export(_, _, Declare(Def(_, ExportNames _)))
+      | Export(_, _, Declare(Def(_, Global _)))
+      | Export(_, _, Declare(Def(_, Import _)))
+      | Export(_, _, Declare(Def(_, ImportExpr _)))
+      | Export(_, _, Declare(Def(_, ToplevelExpr _)))
+      | Export(_, _, Declare(Def(_, Export _)))
+      | Export(_, _, Declare(Def(_, ExportAs _)))
+      | Export(_, _, Declare(Def(_, ExportDefault _)))
+      | Export(_, _, Declare(Def(_, ExportEq _)))
+      | Export(_, _, Declare(Def(_, ExportImport _))) ->
+        internal_error("Internal error")
+
+      | Declare(Def(_, Global _)) -> debug(("TODO declare global"))
+      | Declare _ -> internal_error("TODO rest of declare")
+      | ImportExpr _ -> void
+      }
+    };
+    this.toFileDefs()
+  }
+
+  private readonly fun toFileDefs(): FileDefs {
     FileDefs{
       importedStar => this.importedStar.chill(),
       importedFrom => this.importedFrom.chill(),
@@ -84,15 +231,17 @@ mutable class FileDefsState{
     }
   }
 
-  mutable fun newDef(
-    context: mutable S.Context,
-    index: FileNameIndex,
-    rootOpt: ?DirName,
-    dirName: DirName,
-    isDefault: ?PosRange,
-    isExport: Bool,
-    def: Def,
-  ): void {
+  private mutable fun createFileDefs(defs: Array<Def>): FileDefs {
+    state = mutable static{
+      context => this.context,
+      index => this.index,
+      rootOpt => this.rootOpt,
+      dirName => this.dirName,
+    };
+    state.processDefs(defs)
+  }
+
+  mutable fun newDef(isDefault: ?PosRange, isExport: Bool, def: Def): void {
     def.value match {
     | TypeDef{name} ->
       if (isDefault is Some _) this.!default = Some(name.value);
@@ -116,31 +265,14 @@ mutable class FileDefsState{
       };
       this.defs[name.value].push(def)
     | Namespace(name, defs) ->
+      fileDefs = this.createFileDefs(defs);
       if (isExport) {
-        this.exportedNamespaces![name.value] = FileDefs::create(
-          context,
-          index,
-          rootOpt,
-          dirName,
-          defs,
-        )
+        this.exportedNamespaces![name.value] = fileDefs
       } else {
-        this.namespaces![name.value] = FileDefs::create(
-          context,
-          index,
-          rootOpt,
-          dirName,
-          defs,
-        )
+        this.namespaces![name.value] = fileDefs
       }
     | Module(name, Some(defs)) ->
-      this.modules![name.value] = FileDefs::create(
-        context,
-        index,
-        rootOpt,
-        dirName,
-        defs,
-      )
+      this.modules![name.value] = this.createFileDefs(defs)
     | FunDef{name} ->
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
@@ -183,6 +315,116 @@ mutable class FileDefsState{
     | _ -> internal_error("Internal error: expected a definition")
     }
   }
+
+  private mutable fun exportNames(names: ModuleNames): void {
+    names match {
+    | MStar(Some(moduleName)) -> this.exportedModules.insert(moduleName.value)
+    | MStar(None()) -> debug("TODO error export *")
+    | MCurly(moduleDefNames) ->
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          this.exported![moduleDefName.name.value] = moduleDefName.name.value
+        | Some(asName) ->
+          this.exported![moduleDefName.name.value] = asName.value
+        }
+      }
+    | MName(moduleName, moduleDefNames) ->
+      this.exportedModules.insert(moduleName.value);
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          this.exported![moduleDefName.name.value] = moduleDefName.name.value
+        | Some(asName) ->
+          this.exported![moduleDefName.name.value] = asName.value
+        }
+      }
+    }
+  }
+
+  private mutable fun exportNamesFrom(
+    names: ModuleNames,
+    fileName: FileName,
+  ): void {
+    names match {
+    | MStar(Some(moduleName)) ->
+      this.exportedModulesFrom![moduleName.value] = fileName
+    | MStar(None()) -> this.exportedStar.insert(fileName.toString())
+    | MCurly(moduleDefNames) ->
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          this.exportedFrom![moduleDefName.name.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        | Some(asName) ->
+          this.exportedFrom![asName.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        }
+      }
+    | MName(moduleName, moduleDefNames) ->
+      this.exportedModulesFrom![moduleName.value] = fileName;
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          this.exportedFrom![moduleDefName.name.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        | Some(asName) ->
+          this.exportedFrom![asName.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        }
+      }
+    }
+  }
+
+  private mutable fun importNamesFrom(
+    names: ModuleNames,
+    fileName: FileName,
+  ): void {
+    names match {
+    | MStar(Some(moduleName)) ->
+      this.importedModulesFrom![moduleName.value] = fileName
+    | MStar(None()) -> this.importedStar.insert(fileName.toString())
+    | MCurly(moduleDefNames) ->
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          this.importedFrom![moduleDefName.name.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        | Some(asName) ->
+          this.importedFrom![asName.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        }
+      }
+    | MName(moduleName, moduleDefNames) ->
+      this.importedModulesFrom![moduleName.value] = fileName;
+      for (moduleDefName in moduleDefNames) {
+        moduleDefName.asName match {
+        | None() ->
+          this.importedFrom![moduleDefName.name.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        | Some(asName) ->
+          this.importedFrom![asName.value] = (
+            moduleDefName.name.value,
+            fileName,
+          )
+        }
+      }
+    }
+  }
 }
 
 class FileDefs{
@@ -208,262 +450,8 @@ class FileDefs{
     dirName: DirName,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable FileDefsState{};
-    for (def in parsedDefs) {
-      def.value match {
-      | ToplevelExpr(_) -> void
-      | TypeDef _
-      | Class _
-      | Enum _
-      | Namespace _
-      | Module _
-      | FunDef _
-      | VarDefs _ ->
-        state.newDef(context, index, rootOpt, dirName, None(), false, def)
-      | ExportNames(_, names, None()) -> static::exportNames(state, names)
-      | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
-        fn = resolveName(context, index, rootOpt, dirName, mname) match {
-        | None() -> continue
-        | Some(x) -> x
-        };
-        static::exportNamesFrom(state, names, fn)
-      | ExportNames _ -> internal_error("TODO: unsupported export")
-      | ExportDefault(_, Expr(_, Var(n))) -> state.!default = Some(n.value)
-      | ExportDefault _ -> internal_error("TODO: unsupported export")
-      | ExportEq(v) ->
-        v.value match {
-        | Var(n) -> state.!exportEq = Some(n)
-        | _ ->
-          debug(v);
-          debug("TODO: exportEq other than a name")
-        }
-      | ExportAs _ -> void
-      | ExportImport _ -> debug("TODO: exportImport")
-      | Global _ -> debug("TODO: todo global")
-      | Import(_, _, names, INPath(mname)) ->
-        fn = resolveName(context, index, rootOpt, dirName, mname.value) match {
-        | None() -> continue
-        | Some(x) -> x
-        };
-        static::importNamesFrom(state, names, fn)
-
-      | Import(_, _, _names, INName _) ->
-        debug("TODO other imports (like namespace.defName)")
-
-      | Declare(d @ Def(_, TypeDef _))
-      | Declare(d @ Def(_, Class _))
-      | Declare(d @ Def(_, Enum _))
-      | Declare(d @ Def(_, Namespace _))
-      | Declare(d @ Def(_, Module _))
-      | Declare(d @ Def(_, FunDef _))
-      | Declare(d @ Def(_, VarDefs _)) ->
-        state.newDef(context, index, rootOpt, dirName, None(), false, d)
-      /*
-              d match {
-              | Module(_, Some(defs)) ->
-                for (moduleDef in defs) {
-                  state.newDef(
-                    context,
-                    index,
-                    rootOpt,
-                    dirName,
-                    None(),
-                    false,
-                    moduleDef,
-                  );
-                }
-              | _ -> void
-              }
-      */
-
-      | Export(_, None(), d @ TypeDef _)
-      | Export(_, None(), d @ Class _)
-      | Export(_, None(), d @ Enum _)
-      | Export(_, None(), d @ Namespace _)
-      | Export(_, None(), d @ Module _)
-      | Export(_, None(), d @ FunDef _)
-      | Export(_, None(), d @ VarDefs _) ->
-        state.newDef(
-          context,
-          index,
-          rootOpt,
-          dirName,
-          None(),
-          true,
-          Def(def.pos, d),
-        )
-
-      | Export(_, x @ Some _, d @ TypeDef _)
-      | Export(_, x @ Some _, d @ Class _)
-      | Export(_, x @ Some _, d @ Enum _)
-      | Export(_, x @ Some _, d @ Namespace _)
-      | Export(_, x @ Some _, d @ Module _)
-      | Export(_, x @ Some _, d @ FunDef _)
-      | Export(_, x @ Some _, d @ VarDefs _) ->
-        state.newDef(context, index, rootOpt, dirName, x, true, Def(def.pos, d))
-
-      | Export(_, None(), Declare(d @ Def(_, TypeDef _)))
-      | Export(_, None(), Declare(d @ Def(_, Class _)))
-      | Export(_, None(), Declare(d @ Def(_, Enum _)))
-      | Export(_, None(), Declare(d @ Def(_, Namespace _)))
-      | Export(_, None(), Declare(d @ Def(_, Module _)))
-      | Export(_, None(), Declare(d @ Def(_, FunDef _)))
-      | Export(_, None(), Declare(d @ Def(_, VarDefs _))) ->
-        state.newDef(context, index, rootOpt, dirName, None(), true, d)
-
-      | Export(_, x @ Some _, Declare(d @ Def(_, TypeDef _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Class _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Enum _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Namespace _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Module _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, FunDef _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, VarDefs _))) ->
-        state.newDef(context, index, rootOpt, dirName, x, true, d)
-
-      | Export(_, _, Declare(Def(_, Declare _)))
-      | Export(_, _, ExportNames _)
-      | Export(_, _, Global _)
-      | Export(_, _, Import _)
-      | Export(_, _, ImportExpr _)
-      | Export(_, _, ToplevelExpr _)
-      | Export(_, _, Export _)
-      | Export(_, _, ExportAs _)
-      | Export(_, _, ExportDefault _)
-      | Export(_, _, ExportEq _)
-      | Export(_, _, ExportImport _)
-      | Export(_, _, Declare(Def(_, ExportNames _)))
-      | Export(_, _, Declare(Def(_, Global _)))
-      | Export(_, _, Declare(Def(_, Import _)))
-      | Export(_, _, Declare(Def(_, ImportExpr _)))
-      | Export(_, _, Declare(Def(_, ToplevelExpr _)))
-      | Export(_, _, Declare(Def(_, Export _)))
-      | Export(_, _, Declare(Def(_, ExportAs _)))
-      | Export(_, _, Declare(Def(_, ExportDefault _)))
-      | Export(_, _, Declare(Def(_, ExportEq _)))
-      | Export(_, _, Declare(Def(_, ExportImport _))) ->
-        internal_error("Internal error")
-
-      | Declare(Def(_, Global _)) -> debug(("TODO declare global"))
-      | Declare _ -> internal_error("TODO rest of declare")
-      | ImportExpr _ -> void
-      }
-    };
-    state.toFileDefs()
-  }
-
-  static private fun exportNames(
-    state: mutable FileDefsState,
-    names: ModuleNames,
-  ): void {
-    names match {
-    | MStar(Some(moduleName)) -> state.exportedModules.insert(moduleName.value)
-    | MStar(None()) -> debug("TODO error export *")
-    | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.exported![moduleDefName.name.value] = moduleDefName.name.value
-        | Some(asName) ->
-          state.exported![moduleDefName.name.value] = asName.value
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      state.exportedModules.insert(moduleName.value);
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.exported![moduleDefName.name.value] = moduleDefName.name.value
-        | Some(asName) ->
-          state.exported![moduleDefName.name.value] = asName.value
-        }
-      }
-    }
-  }
-
-  static private fun exportNamesFrom(
-    state: mutable FileDefsState,
-    names: ModuleNames,
-    fileName: FileName,
-  ): void {
-    names match {
-    | MStar(Some(moduleName)) ->
-      state.exportedModulesFrom![moduleName.value] = fileName
-    | MStar(None()) -> state.exportedStar.insert(fileName.toString())
-    | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.exportedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          state.exportedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      state.exportedModulesFrom![moduleName.value] = fileName;
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.exportedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          state.exportedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    }
-  }
-
-  static private fun importNamesFrom(
-    state: mutable FileDefsState,
-    names: ModuleNames,
-    fileName: FileName,
-  ): void {
-    names match {
-    | MStar(Some(moduleName)) ->
-      state.importedModulesFrom![moduleName.value] = fileName
-    | MStar(None()) -> state.importedStar.insert(fileName.toString())
-    | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.importedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          state.importedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      state.importedModulesFrom![moduleName.value] = fileName;
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          state.importedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          state.importedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    }
+    state = mutable FileDefsState{context, index, rootOpt, dirName};
+    state.processDefs(parsedDefs)
   }
 }
 
