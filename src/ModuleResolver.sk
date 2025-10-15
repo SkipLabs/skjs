@@ -291,8 +291,8 @@ fun resolveName(
         tryPath = fullName with {baseName => stripped + ext};
         if (tryPath.exists()) return Some(tryPath)
       };
-      print_error("Could not find file: " + fullName.toString());
-      print_error("From: " + cwd.toString())
+      print_error(`Could not find file: ${fullName}`);
+      print_error(`From: ${cwd}`)
     | _ ->
       if (!isAbsolute) {
         for (ext in Array[".d.ts", "/index.d.ts", "/index.cjs"]) {
@@ -300,8 +300,8 @@ fun resolveName(
           if (tryPath.exists()) return Some(tryPath)
         }
       };
-      print_error("Could not find module[3]: " + moduleName);
-      print_error("From: " + cwd.toString())
+      print_error(`Could not find module[3]: ${moduleName}`);
+      print_error(`From: ${cwd}`)
     };
     return None()
   };
@@ -329,8 +329,8 @@ fun resolveName(
     index.lookup(context, cwd, requireTypesPath) match {
     | x @ Some _ -> return x
     | _ ->
-      print_error("Could not find module[2]: " + moduleName);
-      print_error("From: " + cwd.toString())
+      print_error(`Could not find module[2]: ${moduleName}`);
+      print_error(`From: ${cwd}`)
     };
     return None();
   };
@@ -372,7 +372,7 @@ fun resolveName(
   };
   //  };
 
-  debug("Could not find module[1]: " + moduleName);
+  debug(`Could not find module[1]: ${moduleName}`);
   None()
 }
 
