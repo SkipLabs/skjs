@@ -69,6 +69,150 @@ mutable class FileDefsState{
   defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
+  mutable fun processDefs(parsedDefs: Array<Def>): void {
+    state = this;
+    for (def in parsedDefs) {
+      def.value match {
+      | ToplevelExpr(_) -> void
+      | TypeDef _
+      | Class _
+      | Enum _
+      | Namespace _
+      | Module _
+      | FunDef _
+      | VarDefs _ ->
+        state.newDef(None(), false, def)
+      | ExportNames(_, names, None()) ->
+        FileDefsState::exportNames(state, names)
+      | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
+        fn = resolveName(
+          this.context,
+          this.index,
+          this.rootOpt,
+          this.dirName,
+          mname,
+        ) match {
+        | None() -> continue
+        | Some(x) -> x
+        };
+        FileDefsState::exportNamesFrom(state, names, fn)
+      | ExportNames _ -> internal_error("TODO: unsupported export")
+      | ExportDefault(_, Expr(_, Var(n))) -> state.!default = Some(n.value)
+      | ExportDefault _ -> internal_error("TODO: unsupported export")
+      | ExportEq(v) ->
+        v.value match {
+        | Var(n) -> state.!exportEq = Some(n)
+        | _ ->
+          debug(v);
+          debug("TODO: exportEq other than a name")
+        }
+      | ExportAs _ -> void
+      | ExportImport _ -> debug("TODO: exportImport")
+      | Global _ -> debug("TODO: todo global")
+      | Import(_, _, names, INPath(mname)) ->
+        fn = resolveName(
+          this.context,
+          this.index,
+          this.rootOpt,
+          this.dirName,
+          mname.value,
+        ) match {
+        | None() -> continue
+        | Some(x) -> x
+        };
+        FileDefsState::importNamesFrom(state, names, fn)
+
+      | Import(_, _, _names, INName _) ->
+        debug("TODO other imports (like namespace.defName)")
+
+      | Declare(d @ Def(_, TypeDef _))
+      | Declare(d @ Def(_, Class _))
+      | Declare(d @ Def(_, Enum _))
+      | Declare(d @ Def(_, Namespace _))
+      | Declare(d @ Def(_, Module _))
+      | Declare(d @ Def(_, FunDef _))
+      | Declare(d @ Def(_, VarDefs _)) ->
+        state.newDef(None(), false, d)
+      /*
+              d match {
+              | Module(_, Some(defs)) ->
+                for (moduleDef in defs) {
+                  state.newDef(
+                    None(),
+                    false,
+                    moduleDef,
+                  );
+                }
+              | _ -> void
+              }
+      */
+
+      | Export(_, None(), d @ TypeDef _)
+      | Export(_, None(), d @ Class _)
+      | Export(_, None(), d @ Enum _)
+      | Export(_, None(), d @ Namespace _)
+      | Export(_, None(), d @ Module _)
+      | Export(_, None(), d @ FunDef _)
+      | Export(_, None(), d @ VarDefs _) ->
+        state.newDef(None(), true, Def(def.pos, d))
+
+      | Export(_, x @ Some _, d @ TypeDef _)
+      | Export(_, x @ Some _, d @ Class _)
+      | Export(_, x @ Some _, d @ Enum _)
+      | Export(_, x @ Some _, d @ Namespace _)
+      | Export(_, x @ Some _, d @ Module _)
+      | Export(_, x @ Some _, d @ FunDef _)
+      | Export(_, x @ Some _, d @ VarDefs _) ->
+        state.newDef(x, true, Def(def.pos, d))
+
+      | Export(_, None(), Declare(d @ Def(_, TypeDef _)))
+      | Export(_, None(), Declare(d @ Def(_, Class _)))
+      | Export(_, None(), Declare(d @ Def(_, Enum _)))
+      | Export(_, None(), Declare(d @ Def(_, Namespace _)))
+      | Export(_, None(), Declare(d @ Def(_, Module _)))
+      | Export(_, None(), Declare(d @ Def(_, FunDef _)))
+      | Export(_, None(), Declare(d @ Def(_, VarDefs _))) ->
+        state.newDef(None(), true, d)
+
+      | Export(_, x @ Some _, Declare(d @ Def(_, TypeDef _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, Class _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, Enum _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, Namespace _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, Module _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, FunDef _)))
+      | Export(_, x @ Some _, Declare(d @ Def(_, VarDefs _))) ->
+        state.newDef(x, true, d)
+
+      | Export(_, _, Declare(Def(_, Declare _)))
+      | Export(_, _, ExportNames _)
+      | Export(_, _, Global _)
+      | Export(_, _, Import _)
+      | Export(_, _, ImportExpr _)
+      | Export(_, _, ToplevelExpr _)
+      | Export(_, _, Export _)
+      | Export(_, _, ExportAs _)
+      | Export(_, _, ExportDefault _)
+      | Export(_, _, ExportEq _)
+      | Export(_, _, ExportImport _)
+      | Export(_, _, Declare(Def(_, ExportNames _)))
+      | Export(_, _, Declare(Def(_, Global _)))
+      | Export(_, _, Declare(Def(_, Import _)))
+      | Export(_, _, Declare(Def(_, ImportExpr _)))
+      | Export(_, _, Declare(Def(_, ToplevelExpr _)))
+      | Export(_, _, Declare(Def(_, Export _)))
+      | Export(_, _, Declare(Def(_, ExportAs _)))
+      | Export(_, _, Declare(Def(_, ExportDefault _)))
+      | Export(_, _, Declare(Def(_, ExportEq _)))
+      | Export(_, _, Declare(Def(_, ExportImport _))) ->
+        internal_error("Internal error")
+
+      | Declare(Def(_, Global _)) -> debug(("TODO declare global"))
+      | Declare _ -> internal_error("TODO rest of declare")
+      | ImportExpr _ -> void
+      }
+    }
+  }
+
   readonly fun toFileDefs(): FileDefs {
     FileDefs{
       importedStar => this.importedStar.chill(),
@@ -315,134 +459,7 @@ class FileDefs{
     parsedDefs: Array<Def>,
   ): FileDefs {
     state = mutable FileDefsState{context, index, rootOpt, dirName};
-    for (def in parsedDefs) {
-      def.value match {
-      | ToplevelExpr(_) -> void
-      | TypeDef _
-      | Class _
-      | Enum _
-      | Namespace _
-      | Module _
-      | FunDef _
-      | VarDefs _ ->
-        state.newDef(None(), false, def)
-      | ExportNames(_, names, None()) ->
-        FileDefsState::exportNames(state, names)
-      | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
-        fn = resolveName(context, index, rootOpt, dirName, mname) match {
-        | None() -> continue
-        | Some(x) -> x
-        };
-        FileDefsState::exportNamesFrom(state, names, fn)
-      | ExportNames _ -> internal_error("TODO: unsupported export")
-      | ExportDefault(_, Expr(_, Var(n))) -> state.!default = Some(n.value)
-      | ExportDefault _ -> internal_error("TODO: unsupported export")
-      | ExportEq(v) ->
-        v.value match {
-        | Var(n) -> state.!exportEq = Some(n)
-        | _ ->
-          debug(v);
-          debug("TODO: exportEq other than a name")
-        }
-      | ExportAs _ -> void
-      | ExportImport _ -> debug("TODO: exportImport")
-      | Global _ -> debug("TODO: todo global")
-      | Import(_, _, names, INPath(mname)) ->
-        fn = resolveName(context, index, rootOpt, dirName, mname.value) match {
-        | None() -> continue
-        | Some(x) -> x
-        };
-        FileDefsState::importNamesFrom(state, names, fn)
-
-      | Import(_, _, _names, INName _) ->
-        debug("TODO other imports (like namespace.defName)")
-
-      | Declare(d @ Def(_, TypeDef _))
-      | Declare(d @ Def(_, Class _))
-      | Declare(d @ Def(_, Enum _))
-      | Declare(d @ Def(_, Namespace _))
-      | Declare(d @ Def(_, Module _))
-      | Declare(d @ Def(_, FunDef _))
-      | Declare(d @ Def(_, VarDefs _)) ->
-        state.newDef(None(), false, d)
-      /*
-              d match {
-              | Module(_, Some(defs)) ->
-                for (moduleDef in defs) {
-                  state.newDef(
-                    None(),
-                    false,
-                    moduleDef,
-                  );
-                }
-              | _ -> void
-              }
-      */
-
-      | Export(_, None(), d @ TypeDef _)
-      | Export(_, None(), d @ Class _)
-      | Export(_, None(), d @ Enum _)
-      | Export(_, None(), d @ Namespace _)
-      | Export(_, None(), d @ Module _)
-      | Export(_, None(), d @ FunDef _)
-      | Export(_, None(), d @ VarDefs _) ->
-        state.newDef(None(), true, Def(def.pos, d))
-
-      | Export(_, x @ Some _, d @ TypeDef _)
-      | Export(_, x @ Some _, d @ Class _)
-      | Export(_, x @ Some _, d @ Enum _)
-      | Export(_, x @ Some _, d @ Namespace _)
-      | Export(_, x @ Some _, d @ Module _)
-      | Export(_, x @ Some _, d @ FunDef _)
-      | Export(_, x @ Some _, d @ VarDefs _) ->
-        state.newDef(x, true, Def(def.pos, d))
-
-      | Export(_, None(), Declare(d @ Def(_, TypeDef _)))
-      | Export(_, None(), Declare(d @ Def(_, Class _)))
-      | Export(_, None(), Declare(d @ Def(_, Enum _)))
-      | Export(_, None(), Declare(d @ Def(_, Namespace _)))
-      | Export(_, None(), Declare(d @ Def(_, Module _)))
-      | Export(_, None(), Declare(d @ Def(_, FunDef _)))
-      | Export(_, None(), Declare(d @ Def(_, VarDefs _))) ->
-        state.newDef(None(), true, d)
-
-      | Export(_, x @ Some _, Declare(d @ Def(_, TypeDef _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Class _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Enum _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Namespace _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Module _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, FunDef _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, VarDefs _))) ->
-        state.newDef(x, true, d)
-
-      | Export(_, _, Declare(Def(_, Declare _)))
-      | Export(_, _, ExportNames _)
-      | Export(_, _, Global _)
-      | Export(_, _, Import _)
-      | Export(_, _, ImportExpr _)
-      | Export(_, _, ToplevelExpr _)
-      | Export(_, _, Export _)
-      | Export(_, _, ExportAs _)
-      | Export(_, _, ExportDefault _)
-      | Export(_, _, ExportEq _)
-      | Export(_, _, ExportImport _)
-      | Export(_, _, Declare(Def(_, ExportNames _)))
-      | Export(_, _, Declare(Def(_, Global _)))
-      | Export(_, _, Declare(Def(_, Import _)))
-      | Export(_, _, Declare(Def(_, ImportExpr _)))
-      | Export(_, _, Declare(Def(_, ToplevelExpr _)))
-      | Export(_, _, Declare(Def(_, Export _)))
-      | Export(_, _, Declare(Def(_, ExportAs _)))
-      | Export(_, _, Declare(Def(_, ExportDefault _)))
-      | Export(_, _, Declare(Def(_, ExportEq _)))
-      | Export(_, _, Declare(Def(_, ExportImport _))) ->
-        internal_error("Internal error")
-
-      | Declare(Def(_, Global _)) -> debug(("TODO declare global"))
-      | Declare _ -> internal_error("TODO rest of declare")
-      | ImportExpr _ -> void
-      }
-    };
+    state.processDefs(parsedDefs);
     state.toFileDefs()
   }
 }
