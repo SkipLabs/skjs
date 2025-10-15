@@ -282,20 +282,10 @@ fun resolveName(
     } else {
       cwd + FileName::create(moduleName)
     };
-    endsWithTS = fullName.baseName.endsWith(".ts");
-    endsWithTSX = fullName.baseName.endsWith(".tsx");
-    if ((endsWithTS || endsWithTSX) && fullName.exists()) {
-      return Some(fullName);
-    };
-    endsWithJS = fullName.baseName.endsWith(".js");
-    endsWithMJS = fullName.baseName.endsWith(".mjs");
-    if (endsWithJS || endsWithMJS) {
-      suffix = if (endsWithJS) ".js" else {
-        if (!endsWithMJS) {
-          internal_error("expected endsWithMJS to be true")
-        };
-        ".mjs";
-      };
+    suffix = Path.extname(moduleName);
+    suffix match {
+    | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
+    | ".js" | ".mjs" ->
       tsName = fullName with {
         baseName => fullName.baseName.stripSuffix(suffix) + ".ts",
       };
@@ -315,20 +305,20 @@ fun resolveName(
         return Some(dtsName);
       };
       print_error("Could not find file: " + fullName.toString());
-      print_error("From: " + cwd.toString());
-      return None();
+      print_error("From: " + cwd.toString())
+    | _ ->
+      if (!isAbsolute) {
+        pathFile = cwd + FileName::create(moduleName + ".d.ts");
+        if (pathFile.exists()) return Some(pathFile);
+        pathIndex = cwd + FileName::create(moduleName + "/index.d.ts");
+        if (pathIndex.exists()) return Some(pathIndex);
+        pathCjs = cwd + FileName::create(moduleName + "/index.cjs");
+        if (pathCjs.exists()) return Some(pathCjs);
+      };
+      print_error("Could not find module[3]: " + moduleName);
+      print_error("From: " + cwd.toString())
     };
-    if (!isAbsolute) {
-      pathFile = cwd + FileName::create(moduleName + ".d.ts");
-      if (pathFile.exists()) return Some(pathFile);
-      pathIndex = cwd + FileName::create(moduleName + "/index.d.ts");
-      if (pathIndex.exists()) return Some(pathIndex);
-      pathCjs = cwd + FileName::create(moduleName + "/index.cjs");
-      if (pathCjs.exists()) return Some(pathCjs);
-    };
-    print_error("Could not find module[3]: " + moduleName);
-    print_error("From: " + cwd.toString());
-    return None();
+    return None()
   };
 
   root = rootOpt.default(cwd);
