@@ -271,83 +271,52 @@ fun resolveName(
   if (moduleName.endsWith("-js")) {
     !moduleName = moduleName.stripSuffix("-js");
   };
-  if (moduleName.startsWith("/") || moduleName.startsWith(".")) {
+  isAbsolute = Path.isAbsolute(moduleName);
+  if (isAbsolute || moduleName.startsWith(".")) {
     if (moduleName == "." || moduleName == "./") {
       print_error("Could not resolve module '.'");
       return None();
     };
-    fullName = if (moduleName.startsWith("/")) {
+    fullName = if (isAbsolute) {
       FileName::create(moduleName)
     } else {
       cwd + FileName::create(moduleName)
     };
-    endsWithTS = fullName.baseName.endsWith(".ts");
-    endsWithTSX = fullName.baseName.endsWith(".tsx");
-    if ((endsWithTS || endsWithTSX) && fullName.exists()) {
-      return Some(fullName);
+    suffix = Path.extname(moduleName);
+    suffix match {
+    | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
+    | ".js" | ".mjs" ->
+      stripped = fullName.baseName.stripSuffix(suffix);
+      for (ext in Array[".ts", ".tsx", ".d.ts"]) {
+        tryPath = fullName with {baseName => stripped + ext};
+        if (tryPath.exists()) return Some(tryPath)
+      };
+      print_error(`Could not find file: ${fullName}`);
+      print_error(`From: ${cwd}`)
+    | _ ->
+      if (!isAbsolute) {
+        for (ext in Array[".d.ts", "/index.d.ts", "/index.cjs"]) {
+          tryPath = cwd + FileName::create(moduleName + ext);
+          if (tryPath.exists()) return Some(tryPath)
+        }
+      };
+      print_error(`Could not find module[3]: ${moduleName}`);
+      print_error(`From: ${cwd}`)
     };
-    endsWithJS = fullName.baseName.endsWith(".js");
-    endsWithMJS = fullName.baseName.endsWith(".mjs");
-    if (endsWithJS || endsWithMJS) {
-      suffix = if (endsWithJS) ".js" else {
-        if (!endsWithMJS) {
-          internal_error("expected endsWithMJS to be true")
-        };
-        ".mjs";
-      };
-      tsName = fullName with {
-        baseName => fullName.baseName.stripSuffix(suffix) + ".ts",
-      };
-      if (tsName.exists()) {
-        return Some(tsName);
-      };
-      tsxName = fullName with {
-        baseName => fullName.baseName.stripSuffix(suffix) + ".tsx",
-      };
-      if (tsxName.exists()) {
-        return Some(tsxName);
-      };
-      dtsName = fullName with {
-        baseName => fullName.baseName.stripSuffix(suffix) + ".d.ts",
-      };
-      if (dtsName.exists()) {
-        return Some(dtsName);
-      };
-      print_error("Could not find file: " + fullName.toString());
-      print_error("From: " + cwd.toString());
-      return None();
-    };
-    if (!moduleName.startsWith("/")) {
-      pathFile = cwd + FileName::create(moduleName + ".d.ts");
-      if (pathFile.exists()) return Some(pathFile);
-      pathIndex = cwd + FileName::create(moduleName + "/index.d.ts");
-      if (pathIndex.exists()) return Some(pathIndex);
-      pathCjs = cwd + FileName::create(moduleName + "/index.cjs");
-      if (pathCjs.exists()) return Some(pathCjs);
-    };
-    print_error("Could not find module[3]: " + moduleName);
-    print_error("From: " + cwd.toString());
-    return None();
+    return None()
   };
 
   root = rootOpt.default(cwd);
 
-  index.lookup(
-    context,
-    root,
-    FileName::create("./@types/" + moduleName + "/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-
-  index.lookup(
-    context,
-    root,
-    FileName::create("./@types/node/" + moduleName + ".d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
+  for (prepost in Array[
+    ("./@types/", "/index.d.ts"),
+    ("./@types/node/", ".d.ts"),
+  ]) {
+    tryPath = FileName::create(prepost.i0 + moduleName + prepost.i1);
+    index.lookup(context, root, tryPath) match {
+    | None() -> void
+    | x @ Some _ -> return x
+    }
   };
 
   if (moduleName.contains(":")) {
@@ -360,51 +329,23 @@ fun resolveName(
     index.lookup(context, cwd, requireTypesPath) match {
     | x @ Some _ -> return x
     | _ ->
-      print_error("Could not find module[2]: " + moduleName);
-      print_error("From: " + cwd.toString())
+      print_error(`Could not find module[2]: ${moduleName}`);
+      print_error(`From: ${cwd}`)
     };
     return None();
   };
 
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/dist/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/dist/types/types.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/types/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FileName::create(moduleName + "/typing/index.d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
+  for (ext in Array[
+    "/index.d.ts",
+    "/dist/index.d.ts",
+    "/dist/types/types.d.ts",
+    "/types/index.d.ts",
+    "/typing/index.d.ts",
+  ]) {
+    index.lookup(context, cwd, FileName::create(moduleName + ext)) match {
+    | None() -> void
+    | x @ Some _ -> return x
+    }
   };
 
   index.lookup(
@@ -431,7 +372,7 @@ fun resolveName(
   };
   //  };
 
-  debug("Could not find module[1]: " + moduleName);
+  debug(`Could not find module[1]: ${moduleName}`);
   None()
 }
 
