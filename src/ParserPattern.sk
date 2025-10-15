@@ -91,7 +91,7 @@ extension class Parser {
           None()
         };
         fields.push(
-          (
+          PField(
             fieldName,
             fieldPat match {
             | None() -> Pattern(fieldName.pos, PVar(fieldName))
@@ -114,7 +114,7 @@ extension class Parser {
         | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
         }
       };
-      PObject{fields => fields.toArray().sortedBy(x ~> x.i0.value), rest}
+      PObject{fields => fields.toArray().sortedBy(x ~> x.name.value), rest}
     | _ -> PVar(this.getName())
     }
   }

@@ -95,18 +95,20 @@ extension class TypeChecker {
             )
           };
           for (field in objectFields) {
-            (fieldName, fieldPat, fieldDefault) = field;
-            defaultOpt = fieldDefault.map(e ->
+            defaultOpt = field.default.map(e ->
               (e.pos, this.expr(tcenv, e, kind is BKConst()))
             );
-            defaultIsUseless = fieldDefault.map(e -> e.pos);
-            typeForField = TType::bottom(fieldName.pos);
+            defaultIsUseless = field.default.map(e -> e.pos);
+            typeForField = TType::bottom(field.name.pos);
             for (fields in branches) {
-              fields.maybeGet(fieldName.value) match {
+              fields.maybeGet(field.name.value) match {
               | None() ->
                 typingError(
                   Array[
-                    (fieldName.pos, `The field ${fieldName.value} is missing`),
+                    (
+                      field.name.pos,
+                      `The field ${field.name.value} is missing`,
+                    ),
                     (type.pos, `Out of ${type}`),
                   ],
                 )
@@ -164,7 +166,14 @@ extension class TypeChecker {
                 ],
               )
             };
-            this.bind(tcenv, kind, fieldPat, typeForField, isInitialized, false)
+            this.bind(
+              tcenv,
+              kind,
+              field.pat,
+              typeForField,
+              isInitialized,
+              false,
+            )
           }
         }
       }
