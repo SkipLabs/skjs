@@ -81,7 +81,7 @@ mutable class FileDefsState{
       | FunDef _
       | VarDefs _ ->
         this.newDef(None(), false, def)
-      | ExportNames(_, names, None()) -> static::exportNames(this, names)
+      | ExportNames(_, names, None()) -> this.exportNames(names)
       | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
         fn = resolveName(
           this.context,
@@ -317,30 +317,27 @@ mutable class FileDefsState{
     }
   }
 
-  static private fun exportNames(
-    state: mutable FileDefsState,
-    names: ModuleNames,
-  ): void {
+  private mutable fun exportNames(names: ModuleNames): void {
     names match {
-    | MStar(Some(moduleName)) -> state.exportedModules.insert(moduleName.value)
+    | MStar(Some(moduleName)) -> this.exportedModules.insert(moduleName.value)
     | MStar(None()) -> debug("TODO error export *")
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
-          state.exported![moduleDefName.name.value] = moduleDefName.name.value
+          this.exported![moduleDefName.name.value] = moduleDefName.name.value
         | Some(asName) ->
-          state.exported![moduleDefName.name.value] = asName.value
+          this.exported![moduleDefName.name.value] = asName.value
         }
       }
     | MName(moduleName, moduleDefNames) ->
-      state.exportedModules.insert(moduleName.value);
+      this.exportedModules.insert(moduleName.value);
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
-          state.exported![moduleDefName.name.value] = moduleDefName.name.value
+          this.exported![moduleDefName.name.value] = moduleDefName.name.value
         | Some(asName) ->
-          state.exported![moduleDefName.name.value] = asName.value
+          this.exported![moduleDefName.name.value] = asName.value
         }
       }
     }
