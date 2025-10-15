@@ -53,6 +53,7 @@ mutable class FileDefsState{
   context: mutable S.Context,
   index: FileNameIndex,
   rootOpt: ?DirName,
+  dirName: DirName,
   importedStar: mutable Set<String> = mutable Set[],
   importedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   importedModulesFrom: mutable Map<String, FileName> = mutable Map[],
@@ -87,12 +88,7 @@ mutable class FileDefsState{
     }
   }
 
-  mutable fun newDef(
-    dirName: DirName,
-    isDefault: ?PosRange,
-    isExport: Bool,
-    def: Def,
-  ): void {
+  mutable fun newDef(isDefault: ?PosRange, isExport: Bool, def: Def): void {
     def.value match {
     | TypeDef{name} ->
       if (isDefault is Some _) this.!default = Some(name.value);
@@ -120,7 +116,7 @@ mutable class FileDefsState{
         this.context,
         this.index,
         this.rootOpt,
-        dirName,
+        this.dirName,
         defs,
       );
       if (isExport) {
@@ -133,7 +129,7 @@ mutable class FileDefsState{
         this.context,
         this.index,
         this.rootOpt,
-        dirName,
+        this.dirName,
         defs,
       )
     | FunDef{name} ->
@@ -203,7 +199,7 @@ class FileDefs{
     dirName: DirName,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable FileDefsState{context, index, rootOpt};
+    state = mutable FileDefsState{context, index, rootOpt, dirName};
     for (def in parsedDefs) {
       def.value match {
       | ToplevelExpr(_) -> void
@@ -214,7 +210,7 @@ class FileDefs{
       | Module _
       | FunDef _
       | VarDefs _ ->
-        state.newDef(dirName, None(), false, def)
+        state.newDef(None(), false, def)
       | ExportNames(_, names, None()) -> static::exportNames(state, names)
       | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
         fn = resolveName(context, index, rootOpt, dirName, mname) match {
@@ -252,13 +248,12 @@ class FileDefs{
       | Declare(d @ Def(_, Module _))
       | Declare(d @ Def(_, FunDef _))
       | Declare(d @ Def(_, VarDefs _)) ->
-        state.newDef(dirName, None(), false, d)
+        state.newDef(None(), false, d)
       /*
               d match {
               | Module(_, Some(defs)) ->
                 for (moduleDef in defs) {
                   state.newDef(
-                    dirName,
                     None(),
                     false,
                     moduleDef,
@@ -275,7 +270,7 @@ class FileDefs{
       | Export(_, None(), d @ Module _)
       | Export(_, None(), d @ FunDef _)
       | Export(_, None(), d @ VarDefs _) ->
-        state.newDef(dirName, None(), true, Def(def.pos, d))
+        state.newDef(None(), true, Def(def.pos, d))
 
       | Export(_, x @ Some _, d @ TypeDef _)
       | Export(_, x @ Some _, d @ Class _)
@@ -284,7 +279,7 @@ class FileDefs{
       | Export(_, x @ Some _, d @ Module _)
       | Export(_, x @ Some _, d @ FunDef _)
       | Export(_, x @ Some _, d @ VarDefs _) ->
-        state.newDef(dirName, x, true, Def(def.pos, d))
+        state.newDef(x, true, Def(def.pos, d))
 
       | Export(_, None(), Declare(d @ Def(_, TypeDef _)))
       | Export(_, None(), Declare(d @ Def(_, Class _)))
@@ -293,7 +288,7 @@ class FileDefs{
       | Export(_, None(), Declare(d @ Def(_, Module _)))
       | Export(_, None(), Declare(d @ Def(_, FunDef _)))
       | Export(_, None(), Declare(d @ Def(_, VarDefs _))) ->
-        state.newDef(dirName, None(), true, d)
+        state.newDef(None(), true, d)
 
       | Export(_, x @ Some _, Declare(d @ Def(_, TypeDef _)))
       | Export(_, x @ Some _, Declare(d @ Def(_, Class _)))
@@ -302,7 +297,7 @@ class FileDefs{
       | Export(_, x @ Some _, Declare(d @ Def(_, Module _)))
       | Export(_, x @ Some _, Declare(d @ Def(_, FunDef _)))
       | Export(_, x @ Some _, Declare(d @ Def(_, VarDefs _))) ->
-        state.newDef(dirName, x, true, d)
+        state.newDef(x, true, d)
 
       | Export(_, _, Declare(Def(_, Declare _)))
       | Export(_, _, ExportNames _)
