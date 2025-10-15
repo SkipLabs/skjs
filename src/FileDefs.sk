@@ -231,6 +231,16 @@ mutable class FileDefsState{
     }
   }
 
+  private mutable fun createFileDefs(defs: Array<Def>): FileDefs {
+    state = mutable static{
+      context => this.context,
+      index => this.index,
+      rootOpt => this.rootOpt,
+      dirName => this.dirName,
+    };
+    state.processDefs(defs)
+  }
+
   mutable fun newDef(isDefault: ?PosRange, isExport: Bool, def: Def): void {
     def.value match {
     | TypeDef{name} ->
@@ -255,26 +265,14 @@ mutable class FileDefsState{
       };
       this.defs[name.value].push(def)
     | Namespace(name, defs) ->
-      fileDefs = FileDefs::create(
-        this.context,
-        this.index,
-        this.rootOpt,
-        this.dirName,
-        defs,
-      );
+      fileDefs = this.createFileDefs(defs);
       if (isExport) {
         this.exportedNamespaces![name.value] = fileDefs
       } else {
         this.namespaces![name.value] = fileDefs
       }
     | Module(name, Some(defs)) ->
-      this.modules![name.value] = FileDefs::create(
-        this.context,
-        this.index,
-        this.rootOpt,
-        this.dirName,
-        defs,
-      )
+      this.modules![name.value] = this.createFileDefs(defs)
     | FunDef{name} ->
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
