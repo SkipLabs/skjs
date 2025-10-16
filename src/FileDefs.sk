@@ -116,21 +116,21 @@ mutable class FileDefsState{
       | ExportAs _ -> void
       | ExportImport _ -> debug("TODO: exportImport")
       | Global _ -> debug("TODO: todo global")
-      | Import(_, _, names, INPath(mname)) ->
-        fn = resolveName(
-          this.context,
-          this.index,
-          this.rootOpt,
-          this.dirName,
-          mname.value,
-        ) match {
-        | None() -> continue
-        | Some(x) -> x
-        };
-        this.importNamesFrom(names, fn)
-
-      | Import(_, _, _names, INName _) ->
-        internal_error("TODO other imports (like namespace.defName)")
+      | Import(_, _, names, importName) ->
+        importName match {
+        | INPath(mname) ->
+          resolveName(
+            this.context,
+            this.index,
+            this.rootOpt,
+            this.dirName,
+            mname.value,
+          )
+        | INName(mname) -> resolveStubs(this.importStubs, mname.value)
+        } match {
+        | None() -> void
+        | Some(fn) -> this.importNamesFrom(names, fn)
+        }
 
       | Declare(d @ Def(_, TypeDef _))
       | Declare(d @ Def(_, Class _))

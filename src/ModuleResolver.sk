@@ -376,4 +376,14 @@ fun resolveName(
   None()
 }
 
+fun resolveStubs(importStubs: Array<DirName>, moduleName: String): ?FileName {
+  for (importStub in importStubs) {
+    path = FileName(importStub / DirName::create(moduleName), "index.d.ts");
+    if (path.exists()) break Some(path)
+  } else {
+    debug(`Could not find module[4]: ${moduleName}`);
+    None()
+  }
+}
+
 module end;
