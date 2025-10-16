@@ -72,9 +72,17 @@ class Files(
     if (!builtinsFileName.exists()) {
       return Failure(`Builtins not found: ${builtinsFileName}`);
     };
+    importStubsFiles = importStubs
+      .map(dir ->
+        FileSystem.readFilesRecursive(dir, fileName ->
+          fileName.endsWith("index.d.ts")
+        )
+      )
+      .flatten();
     srcFiles = Array[
       srcFileSeq,
       Array[builtinsFileName.toString()],
+      importStubsFiles,
     ].flatten().collect(SortedSet);
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
