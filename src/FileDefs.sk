@@ -507,12 +507,11 @@ class DefMap{
         fileName
       },
     );
-    this.getInDefs(context, fileName, fileDefs, defName)
+    this.getInDefs(context, fileDefs, defName)
   }
 
   private fun getInDefs(
     context: mutable S.Context,
-    fileName: FileName,
     fileDefs: FileDefs,
     defName: Name,
   ): Array<Def> {
@@ -537,7 +536,6 @@ class DefMap{
       if (fileDefs.namespaces.containsKey(moduleName)) {
         return this.getInDefs(
           context,
-          fileName,
           fileDefs.namespaces[moduleName],
           Name(defName.pos, newDefName),
         )
@@ -545,7 +543,6 @@ class DefMap{
       if (fileDefs.exportedNamespaces.containsKey(moduleName)) {
         return this.getInDefs(
           context,
-          fileName,
           fileDefs.exportedNamespaces[moduleName],
           Name(defName.pos, newDefName),
         )
@@ -603,16 +600,11 @@ class DefMap{
         this.notFound(defName);
       };
 
-      return this.getInDefs(
-        context,
-        fileName,
-        fileDefs.namespaces[name.value],
-        defName,
-      )
+      return this.getInDefs(context, fileDefs.namespaces[name.value], defName)
     };
     for (exportedNamespace in fileDefs.exportedNamespaces) {
       try {
-        Some(this.getInDefs(context, fileName, exportedNamespace, defName))
+        Some(this.getInDefs(context, exportedNamespace, defName))
       } catch {
       | _ -> None()
       } match {
@@ -629,12 +621,11 @@ class DefMap{
     defName: Name,
   ): Array<Def> {
     fileDefs = this.fileDefsMap.get(context, fileName);
-    this.getExportedInDefs(context, fileName, fileDefs, defName)
+    this.getExportedInDefs(context, fileDefs, defName)
   }
 
   private fun getExportedInDefs(
     context: mutable S.Context,
-    fileName: FileName,
     fileDefs: FileDefs,
     defName: Name,
   ): Array<Def> {
@@ -665,31 +656,16 @@ class DefMap{
         debug(fileDefs.exportedNamespaces.containsKey(name.value));
         this.notFound(defName);
       };
-      return this.getInDefs(
-        context,
-        fileName,
-        fileDefs.namespaces[name.value],
-        defName,
-      )
+      return this.getInDefs(context, fileDefs.namespaces[name.value], defName)
     };
 
     if (defName.value == "default" && fileDefs.default is Some _) {
       defaultName = fileDefs.default.fromSome();
-      return this.getInDefs(
-        context,
-        fileName,
-        fileDefs,
-        Name(defName.pos, defaultName),
-      )
+      return this.getInDefs(context, fileDefs, Name(defName.pos, defaultName))
     } else {
       if (fileDefs.exported.containsKey(defName.value)) {
         asName = fileDefs.exported[defName.value];
-        return this.getInDefs(
-          context,
-          fileName,
-          fileDefs,
-          Name(defName.pos, asName),
-        )
+        return this.getInDefs(context, fileDefs, Name(defName.pos, asName))
       };
       if (fileDefs.exportedFrom.containsKey(defName.value)) {
         (newDefName, newFileName) = fileDefs.exportedFrom[defName.value];
@@ -710,7 +686,7 @@ class DefMap{
 
     for (moduleDefs in fileDefs.modules) {
       try {
-        Some(this.getInDefs(context, fileName, moduleDefs, defName))
+        Some(this.getInDefs(context, moduleDefs, defName))
       } catch {
       | _ -> None()
       } match {
