@@ -481,7 +481,7 @@ class DefMap{
   builtins: Set<String>,
   builtinsFileName: FileName,
 } extends IDefMap {
-  fun notFound<T>(defName: Name): T {
+  private fun notFound<T>(defName: Name): T {
     error(ParsingError(EPRange(defName.pos), NotFound(defName.value)))
   }
 
@@ -495,6 +495,7 @@ class DefMap{
     };
     typingError(Array[(name.pos, "Unbound name")])
   }
+
   fun get(
     context: mutable S.Context,
     fileName: FileName,
@@ -509,7 +510,7 @@ class DefMap{
     this.getInDefs(context, fileName, fileDefs, defName)
   }
 
-  fun getInDefs(
+  private fun getInDefs(
     context: mutable S.Context,
     fileName: FileName,
     fileDefs: FileDefs,
@@ -622,7 +623,7 @@ class DefMap{
     this.notFound(defName);
   }
 
-  fun getExported(
+  private fun getExported(
     context: mutable S.Context,
     fileName: FileName,
     defName: Name,
@@ -631,7 +632,7 @@ class DefMap{
     this.getExportedInDefs(context, fileName, fileDefs, defName)
   }
 
-  fun getExportedInDefs(
+  private fun getExportedInDefs(
     context: mutable S.Context,
     fileName: FileName,
     fileDefs: FileDefs,
