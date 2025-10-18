@@ -104,7 +104,7 @@ jobs:
               ln -sf "${BINARY_NAME}" "artifacts/skjs_release_${PLATFORM}_${ARCH}_latest"
             else
               # For development, create branch-specific link
-              ln -sf "${BINARY_NAME}" "artifacts/skjs_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}_latest"
+              ln -sf "${BINARY_NAME}" "artifacts/skjs_${CIRCLE_BRANCH//\//_}_${PLATFORM}_${ARCH}_latest"
             fi
             
             # List artifacts for verification
@@ -122,7 +122,7 @@ jobs:
               BINARY_NAME="skjs_${CIRCLE_TAG}_${PLATFORM}_${ARCH}"
             else
               SHORT_SHA="${CIRCLE_SHA1:0:8}"
-              BINARY_NAME="skjs_${SHORT_SHA}_${CIRCLE_BRANCH}_${PLATFORM}_${ARCH}"
+              BINARY_NAME="skjs_${SHORT_SHA}_${CIRCLE_BRANCH//\//_}_${PLATFORM}_${ARCH}"
             fi
             
             echo "Validating binary: ${BINARY_NAME}"
