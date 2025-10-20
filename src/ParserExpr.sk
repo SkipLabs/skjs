@@ -762,7 +762,7 @@ extension class Parser {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
     | Some(x) -> x
     };
-    fieldName = this.getName();
+    fieldName = this.getNameOrStringOrInt();
     if (
       this.lex.peekKind() is Some(TKOpenParen()) ||
       this.lex.peekKind() is Some(TKLessThan())

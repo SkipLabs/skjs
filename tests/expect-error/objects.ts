@@ -93,6 +93,6 @@ function numberIsAValidFieldNameInType(x: { 0: number }): number {
   return x[0];
 }
 
-// function numberIsAValidFieldNameInValue(): { 0: number } {
-//   return { 0: 1 };
-// }
+function numberIsAValidFieldNameInValue(): { 0: number } {
+  return { 0: 1 };
+}
