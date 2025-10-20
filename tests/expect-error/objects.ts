@@ -88,3 +88,11 @@ function cannotHaveConstructorMethod(x: { constructor(): void }): void {}
 function cannotHaveConstructorMethod2(x: { constructor() }): void {}
 
 function constructor(): void {}
+
+function numberIsAValidFieldNameInType(x: { 0: number }): number {
+  return x[0];
+}
+
+function numberIsAValidFieldNameInValue(): { 0: number } {
+  return { 0: 1 };
+}
