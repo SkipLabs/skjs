@@ -536,13 +536,17 @@ extension class Parser {
           _ = this.lex.next();
           importFrom = this.getString();
           if (
-            !(importFrom.value.startsWith("./") ||
-              importFrom.value.startsWith("../")) ||
-            !importFrom.value.endsWith(".js")
+            importFrom.value.startsWith("./") ||
+            importFrom.value.startsWith("../")
           ) {
-            this.error(this.lex.posEnd(), InvalidImport())
-          };
-          Import(IKFrom(), isType, importNames, INPath(importFrom))
+            if (!importFrom.value.endsWith(".js")) {
+              this.error(this.lex.posEnd(), InvalidImport())
+            } else {
+              Import(IKFrom(), isType, importNames, INPath(importFrom))
+            }
+          } else {
+            Import(IKFrom(), isType, importNames, INName(importFrom))
+          }
         } else {
           this.error(this.lex.posEnd(), InvalidImport())
         }

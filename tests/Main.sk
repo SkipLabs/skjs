@@ -233,6 +233,7 @@ fun testDirectory(
     }
   );
   builtinsFileName = Path.resolve(builtinsArgFileName);
+  importStubs = Array[Path.resolve("./tests/import-stubs")];
   context = SKStore.Context::mcreate{};
   files =
     SKJS.Files::create(
@@ -242,6 +243,7 @@ fun testDirectory(
       srcFiles,
       false,
       None(),
+      importStubs,
     ) |> expectFilesSuccess;
 
   checker = SKJS.Checker::create{context, files};
@@ -318,9 +320,13 @@ fun testNoLostTest(): void {
     } else if (file == "tests") {
       subFiles = FileSystem.readDirectory(absFile);
       for (subFile in subFiles) {
-        if (subFile == "expect-error") continue; // handled in testExpectError
-        if (subFile == "ts-conformance") continue; // handled in testTypeScriptConformance and testNotSupportedTypeScriptConformance
-        checkNoLostTest(Path.join(absFile, subFile))
+        subFile match {
+        | "expect-error" /* handled in testExpectError */ //
+        | "ts-conformance" /* handled in testTypeScriptConformance and testNotSupportedTypeScriptConformance */
+        | "import-stubs" /* intentionally ignored because they are not tests themselves */ ->
+          void
+        | _ -> checkNoLostTest(Path.join(absFile, subFile))
+        }
       };
     } else {
       checkNoLostTest(absFile)
