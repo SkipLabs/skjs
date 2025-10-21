@@ -3,11 +3,22 @@ declare const console: {
   assert(cond: boolean, msg?: string): void;
 };
 
-declare class Array<T> {
-  constructor();
+/* It's not really the interface but for now it will do the trick given
+   that our Iterables are Arrays only. */
+declare interface Iterable<T> {
+  [i: number]: T;
+}
+
+declare interface ArrayLike<T> {
+  /*readonly*/ length: number;
+  /*readonly*/ [n: number]: T;
+}
+
+declare class Array<T> implements Iterable<T> {
+  constructor(...items: T[]);
   length: number;
 
-  [index: number]: T | undefined;
+  [index: number]: T;
 
   // Existing methods
   find(filter: (item: T) => boolean): undefined | T;
@@ -40,7 +51,7 @@ declare class Array<T> {
   reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 
   // Static methods
-  static from<T>(arrayLike: Array<T>): Array<T>;
+  static from<T>(arrayLike: ArrayLike<T> | Iterable<T>): Array<T>;
   // If we have overloads:
   // static from<T, U>(arrayLike: Array<T>, mapFn: (item: T) => U): Array<U>;
   static of<T>(elements: T): Array<T>;
