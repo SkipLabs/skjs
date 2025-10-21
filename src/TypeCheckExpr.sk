@@ -545,7 +545,8 @@ extension class TypeChecker {
           };
           (name, this.expr(tcenv, y, name.value == kAlgebraicBranchFieldName))
 
-        | FDSpread _ -> internal_error("TODO spread")
+        | FDSpread(spreadExpr) ->
+          typingError(Array[(spreadExpr.pos, "TODO spread")])
         | fd @ FunDef _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           this.tenv.funDecl(tcenv.context, true, fd, cgNode)
