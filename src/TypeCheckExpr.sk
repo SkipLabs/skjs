@@ -547,7 +547,36 @@ extension class TypeChecker {
           (name, this.expr(tcenv, y, name.value == kAlgebraicBranchFieldName))
 
         | FDSpread(spreadExpr) ->
-          typingError(Array[(spreadExpr.pos, "TODO spread")])
+          spreadTy = this.expr(tcenv, spreadExpr);
+          spreadTy.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+          | None() ->
+            typingError(
+              Array[
+                (spreadExpr.pos, "Invalid spread"),
+                (spreadTy.pos, "This has type unknown"),
+              ],
+            )
+          | Some(spreadSTypes) ->
+            for (spreadSType in spreadSTypes) {
+              spreadSType match {
+              | TObject(TFields(spreadFields, spreadIndexes), _pos) ->
+                for (spreadField in spreadFields) {
+                  fields![spreadField.name] = spreadField
+                };
+                for (spreadIndex in spreadIndexes) {
+                  indexes.push(spreadIndex)
+                }
+              | _ ->
+                typingError(
+                  Array[
+                    (spreadExpr.pos, "Invalid spread"),
+                    (spreadTy.pos, `This has type ${spreadTy}`),
+                  ],
+                )
+              }
+            }
+          };
+          continue
         | fd @ FunDef _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           this.tenv.funDecl(tcenv.context, true, fd, cgNode)

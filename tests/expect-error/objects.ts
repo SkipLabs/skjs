@@ -103,6 +103,5 @@ function extendWithSpread(x: { f1: number; f2: string }): {
   f2: number;
   f3: string;
 } {
-  // @ts-expect-error TODO spread
   return { f0: true, ...x, f2: 0, f3: "a" };
 }
