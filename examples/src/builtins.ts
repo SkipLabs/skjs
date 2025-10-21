@@ -1,6 +1,7 @@
 declare const console: {
   log<T>(...msg: T[]): void;
   assert(cond: boolean, msg?: string): void;
+  error(message?: unknown, ...optionalParams: unknown[]): void;
 };
 
 /* It's not really the interface but for now it will do the trick given
