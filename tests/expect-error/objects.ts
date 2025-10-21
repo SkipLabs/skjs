@@ -96,3 +96,12 @@ function numberIsAValidFieldNameInType(x: { 0: number }): number {
 function numberIsAValidFieldNameInValue(): { 0: number } {
   return { 0: 1 };
 }
+
+function extendWithSpread(x: { f1: number; f2: string }): {
+  f0: boolean;
+  f1: number;
+  f2: number;
+  f3: string;
+} {
+  return { f0: true, ...x, f2: 0, f3: "a" };
+}

@@ -534,7 +534,8 @@ extension class TypeChecker {
       }
     | Object(efields) ->
       algebraicBranchField: ?(PosRange, TType) = None();
-      fields = mutable Vector[];
+      fields = mutable Map[];
+      indexes = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
@@ -545,7 +546,37 @@ extension class TypeChecker {
           };
           (name, this.expr(tcenv, y, name.value == kAlgebraicBranchFieldName))
 
-        | FDSpread _ -> internal_error("TODO spread")
+        | FDSpread(spreadExpr) ->
+          spreadTy = this.expr(tcenv, spreadExpr);
+          spreadTy.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+          | None() ->
+            typingError(
+              Array[
+                (spreadExpr.pos, "Invalid spread"),
+                (spreadTy.pos, "This has type unknown"),
+              ],
+            )
+          | Some(spreadSTypes) ->
+            for (spreadSType in spreadSTypes) {
+              spreadSType match {
+              | TObject(TFields(spreadFields, spreadIndexes), _pos) ->
+                for (spreadField in spreadFields) {
+                  fields![spreadField.name] = spreadField
+                };
+                for (spreadIndex in spreadIndexes) {
+                  indexes.push(spreadIndex)
+                }
+              | _ ->
+                typingError(
+                  Array[
+                    (spreadExpr.pos, "Invalid spread"),
+                    (spreadTy.pos, `This has type ${spreadTy}`),
+                  ],
+                )
+              }
+            }
+          };
+          continue
         | fd @ FunDef _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           this.tenv.funDecl(tcenv.context, true, fd, cgNode)
@@ -563,13 +594,13 @@ extension class TypeChecker {
           | None() -> void
           };
           !algebraicBranchField = Some((name.pos, ty))
-        | Some(field) -> fields.push(field)
+        | Some(field) -> fields![name.value] = field
         }
       };
       obj = createObject(
         pos,
         algebraicBranchField,
-        TFields::create(fields.toArray(), Array[]),
+        TFields::create(fields.values().collect(Array), indexes.toArray()),
       );
       for (efield in efields) {
         efield match {
