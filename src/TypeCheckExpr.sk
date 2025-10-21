@@ -535,6 +535,7 @@ extension class TypeChecker {
     | Object(efields) ->
       algebraicBranchField: ?(PosRange, TType) = None();
       fields = mutable Map[];
+      indexes = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
@@ -570,7 +571,7 @@ extension class TypeChecker {
       obj = createObject(
         pos,
         algebraicBranchField,
-        TFields::create(fields.values().collect(Array), Array[]),
+        TFields::create(fields.values().collect(Array), indexes.toArray()),
       );
       for (efield in efields) {
         efield match {
