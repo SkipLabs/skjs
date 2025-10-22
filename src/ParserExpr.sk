@@ -425,7 +425,7 @@ extension class Parser {
     mutableLeft: Expr_,
     binopTok: Token,
     tok: Token,
-  ): (Bool, Expr_) {
+  ): ?Expr_ {
     if (this.lex.isEqTok(binopTok, "as")) {
       leftPosRange = PosRange::create(
         this.lex,
@@ -438,7 +438,7 @@ extension class Parser {
       if (this.lex.isEq("const")) {
         _ = this.lex.next(); // consume 'const'
         result = AsConst(Expr(leftPosRange, mutableLeft));
-        (true, result)
+        Some(result)
       } else {
         ty = this.type(0);
         result = As(Expr(leftPosRange, mutableLeft), ty);
@@ -456,10 +456,10 @@ extension class Parser {
           };
           break void;
         };
-        (true, result)
+        Some(result)
       }
     } else {
-      (false, mutableLeft)
+      None()
     }
   }
 
@@ -649,13 +649,9 @@ extension class Parser {
       if (binopTok.kind is TKInequality()) {
         this.error(this.lex.posStart(binopTok), DontUseInequality())
       };
-      (castHandled, castResult) = this.tryParseTypeCast(
-        mutableLeft,
-        binopTok,
-        tok,
-      );
-      if (castHandled) {
-        return castResult;
+      this.tryParseTypeCast(mutableLeft, binopTok, tok) match {
+      | None() -> void
+      | Some(castResult) -> return castResult
       };
       (binaryHandled, binaryResult) = this.tryParseBinaryOp(
         mutableLeft,
