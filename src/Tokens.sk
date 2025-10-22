@@ -166,7 +166,6 @@ base class TokenKind uses Equality, XXHashable, Hashable {
     | TKLogicalAnd() -> Some(BOLogicalAnd())
     | TKLogicalOr() -> Some(BOLogicalOr())
     | TKNullishCoalescing() -> Some(BONullishCoalescing())
-    | TKAs() -> Some(BOAs())
     | TKAssignment() -> Some(BOAssignment())
     | TKMultiplicationAssignment() -> Some(BOOpAssignment(BOMultiplication()))
     | TKDivisionAssignment() -> Some(BOOpAssignment(BODivision()))

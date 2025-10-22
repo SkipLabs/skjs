@@ -626,7 +626,6 @@ base class BinaryOperator uses XXHashable {
   | BOLessThanOrEqual()
   | BOGreaterThan()
   | BOGreaterThanOrEqual()
-  | BOAs()
   | BOAssignment()
   | BOOpAssignment(AssignableBinaryOperator)
 }
