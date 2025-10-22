@@ -35,10 +35,4 @@ fun notSupported<T>(pos: PosRange, what: String = ""): T {
   typingError(Array[(pos, message)])
 }
 
-fun expectedStringOrNumError<T>(pos: PosRange, type: TType): T {
-  typingError(
-    Array[(pos, "Expected a string or a number, not: " + type.toString())],
-  )
-}
-
 module end;
