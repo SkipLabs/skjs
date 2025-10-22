@@ -65,11 +65,8 @@ mutable class Lexer{
   readonly fun isEqTok(tok: Token, str: String): Bool {
     pos = tok.posStart.value;
     for (c in str) {
-      if (this.contents[pos] == c) {
-        !pos = pos + 1;
-        continue
-      };
-      return false;
+      if (this.contents[pos] != c) return false;
+      !pos = pos + 1;
     };
     pos == tok.posEnd.value
   }
