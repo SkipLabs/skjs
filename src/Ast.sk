@@ -292,6 +292,7 @@ class CatchClause(
 //   | function ( (<name> (: <type>)?)* ) (: <type>)? <closure-body>
 //   | [ <expr>* ]
 //   | <expr> ? <expr> : <expr>
+//   | <expr> in <expr>
 //   | <expr> instanceof <expr>
 //   | <expr> as <type>
 //   | /<regexp>/
@@ -320,6 +321,7 @@ base class Expr_ uses XXHashable {
   | Closure(Array<(Name, ?Type)>, ?Type, ClosureBody)
   | EArray(Array<Expr>)
   | EIf(Expr, Expr, Expr)
+  | In(Expr, Expr)
   | InstanceOf(Expr, Expr)
   | As(Expr, Type)
   | AsConst(Expr)
@@ -626,7 +628,6 @@ base class BinaryOperator uses XXHashable {
   | BOLessThanOrEqual()
   | BOGreaterThan()
   | BOGreaterThanOrEqual()
-  | BOAs()
   | BOAssignment()
   | BOOpAssignment(AssignableBinaryOperator)
 }

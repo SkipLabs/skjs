@@ -220,6 +220,79 @@ extension class TypeChecker {
         (x, y) -> this.checkSubType(tcenv, e.pos, "Invalid instanceof", x, y),
       )
 
+    | In(e1, Expr(_, Var(local))) ->
+      (_t1, fieldsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
+      default = if (target) {
+        fieldsOpt.flatMap(fieldsToCheck ->
+          fieldsToCheck.singleElt().flatMap(singleField ->
+            TField::create(
+              e1.pos,
+              singleField.i1,
+              false,
+              TType::top(e.pos),
+            ).map(field ->
+              TObject(TFields::create(Array[field], Array[]), e1.pos)
+            )
+          )
+        )
+      } else {
+        None()
+      };
+      filterSType = stype ~>
+        stype match {
+        | TPrimUnit _
+        | TPrimValue _ ->
+          !target
+        | TTuple _
+        | TAlgebraic _
+        | TFuns _
+        | TPromise _ ->
+          true /* TODO */
+        | TObject _ -> true
+        };
+      mapSType = stype ~>
+        stype match {
+        | TPrimUnit _
+        | TPrimValue _ ->
+          if (target) internal_error("Filter should have got rid of it") else {
+            stype
+          }
+        | TTuple _
+        | TAlgebraic _
+        | TFuns _
+        | TPromise _ ->
+          stype /* TODO */
+        | TObject(tFields @ TFields(_fields, indexes), tObjPos) ->
+          fieldsOpt
+            .flatMap(fieldsToCheck ->
+              fieldsToCheck
+                .singleElt()
+                .flatMap(singleField ->
+                  if (target) {
+                    if (!indexes.isEmpty()) None() else {
+                      TField::create(
+                        e1.pos,
+                        singleField.i1,
+                        false,
+                        TType::top(e.pos),
+                      ).flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
+                    }
+                  } else {
+                    Some(
+                      tFields.filterMap(tField ->
+                        if (tField.name == singleField.i1) None() else {
+                          Some(tField)
+                        }
+                      ),
+                    )
+                  }
+                )
+                .map(newTFields -> TObject(newTFields, tObjPos))
+            )
+            .default(stype)
+        };
+      this.setLocal(tcenv, local, default, filterSType, mapSType)
+
     | Binop(BOLogicalAnd(), e1, e2) if (target) ->
       this.evalCond(tcenv, e1, true);
       this.evalCond(tcenv, e2, true)
