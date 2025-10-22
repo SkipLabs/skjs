@@ -55,7 +55,7 @@ class Files(
       !rootOpt = Some(root);
       srcDir = sourceDirOpt match {
       | Some(dir) -> Path.resolve(dir)
-      | None() -> `${root}src/`
+      | None() -> Path.join(root.toString(), "src")
       };
       if (!FileSystem.exists(srcDir)) {
         return Failure(`Could not find source dir: ${srcDir}`);
@@ -86,27 +86,20 @@ class Files(
     ].flatten().collect(SortedSet);
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
-    fileDir = if (isInit) {
-      context.mkdir(
-        SKStore.SID::keyType,
-        SKStore.StringFile::type,
-        filesDirName,
-      );
-    } else {
-      SKStore.EHandle(
-        SKStore.SID::keyType,
-        SKStore.StringFile::type,
-        filesDirName,
-      )
-    };
-    fileEagerDir = context.unsafeGetEagerDir(filesDirName);
+    fileHdl = createOrReuseEagerDir(
+      context,
+      SKStore.SID::keyType,
+      SKStore.StringFile::type,
+      filesDirName,
+    );
+    fileDir = context.unsafeGetEagerDir(filesDirName);
     oldParses: SortedMap<String, ParsedResult> = SortedMap::create();
 
     for (fileName in srcFiles) {
       key = SKStore.SID(fileName);
       content = FileSystem.readTextFile(fileName);
       if (!isInit && trackChangedFiles) {
-        oldFile = fileEagerDir.getArrayRaw(key);
+        oldFile = fileDir.getArrayRaw(key);
         if (
           oldFile.size() == 1 &&
           SKStore.StringFile::type(oldFile[0]).value != content
@@ -119,12 +112,12 @@ class Files(
           !oldParses = oldParses.set(fileName, oldParsedResult);
         }
       };
-      fileDir.writeArray(context, key, Array[SKStore.StringFile(content)]);
+      fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
-    for (kv in fileDir.items(context)) {
+    for (kv in fileHdl.items(context)) {
       fileName = kv.i0.value;
       if (!srcFiles.contains(fileName)) {
-        fileDir.writeArray(context, kv.i0, Array[]);
+        fileHdl.writeArray(context, kv.i0, Array[]);
       };
     };
     changedFileOldParsedResults = if (trackChangedFiles) Some(oldParses) else {
@@ -135,7 +128,7 @@ class Files(
         isInit,
         rootOpt,
         builtinsFileName,
-        fileDir,
+        fileHdl,
         importStubs.map(DirName::create),
         changedFileOldParsedResults,
       ),

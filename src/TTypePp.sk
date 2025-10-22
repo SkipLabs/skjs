@@ -484,9 +484,13 @@ fun prettyPrintSType(stype: SType, compact: Bool = false): String {
 }
 
 fun prettyPrintClause(clause: Clause, compact: Bool = false): String {
-  prettyPrint(compact, pp -> {
-    pp.clause(0, Margin(), clause);
-  })
+  if (clause.isTop()) {
+    prettyPrint(compact, pp -> pp.out(0, Margin(), "unknown"))
+  } else {
+    prettyPrint(compact, pp -> {
+      pp.clause(0, Margin(), clause);
+    })
+  }
 }
 
 module end;
