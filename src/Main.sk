@@ -263,7 +263,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
           _ = checker
             .checkFiles(context)
             .map(
-              SKStore.IID::keyType,
+              SKStore.UnitID::keyType,
               SKStore.StringFile::type,
               context,
               errorsDirName,
@@ -287,7 +287,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                     SKStore.StringFile(checker.errorToString(context, error)),
                   );
                 };
-                writer.setArray(SKStore.IID(2), errors.toArray());
+                writer.setArray(SKStore.UnitID::singleton, errors.toArray());
               },
             )
         },
@@ -306,7 +306,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   context.maybeGetEagerDir(errorsDirName) match {
   | None() -> 2
   | Some(dir) ->
-    errors = dir.getArrayRaw(SKStore.IID(2));
+    errors = dir.getArrayRaw(SKStore.UnitID::singleton);
     for (error in errors) {
       print_error(SKStore.StringFile::type(error).value);
     };
