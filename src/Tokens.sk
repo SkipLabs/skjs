@@ -277,7 +277,7 @@ base class Associativity {
 // Operators associativity and precedence.
 /***************************************************************************/
 
-const instanceofPrec: (Associativity, Int) = (ANonAssoc(), 12);
+const in_and_instanceofPrec: (Associativity, Int) = (ANonAssoc(), 12);
 const callPrec: Int = 18;
 const typeOfPrec: Int = 13;
 

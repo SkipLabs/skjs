@@ -579,7 +579,7 @@ extension class Parser {
       | Some(x) -> x
       };
       if (this.lex.isEqTok(binopTok, "instanceof")) {
-        (_assoc, opPrec) = instanceofPrec;
+        (_assoc, opPrec) = in_and_instanceofPrec;
         if (prec <= opPrec) {
           leftPosRange = PosRange::create(
             this.lex,
