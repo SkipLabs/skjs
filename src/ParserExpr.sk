@@ -319,13 +319,13 @@ extension class Parser {
     binopTok: Token,
     tok: Token,
     prec: Int,
-  ): (Bool, Expr_) {
+  ): ?Expr_ {
     (assoc, bopPrec) = precedence.maybeGet(binopTok.kind) match {
-    | None() -> return (false, mutableLeft)
+    | None() -> return None()
     | Some(x) -> x
     };
     binop = binopTok.kind.toBinop() match {
-    | None() -> return (false, mutableLeft)
+    | None() -> return None()
     | Some(x) -> x
     };
     if (bopPrec == prec) {
@@ -347,7 +347,7 @@ extension class Parser {
           NonAssociative(this.lex.getStrTok(binopTok)),
         )
       };
-      (true, newLeft)
+      Some(newLeft)
     } else if (bopPrec > prec) {
       leftPosRange = PosRange::create(
         this.lex,
@@ -360,12 +360,12 @@ extension class Parser {
         Expr(leftPosRange, mutableLeft),
         this.expr(bopPrec + 1),
       );
-      (true, newLeft)
+      Some(newLeft)
     } else {
       if (bopPrec >= prec) {
         internal_error("bopPrec should be less than prec")
       };
-      (false, mutableLeft)
+      None()
     }
   }
 
@@ -653,15 +653,11 @@ extension class Parser {
       | None() -> void
       | Some(castResult) -> return castResult
       };
-      (binaryHandled, binaryResult) = this.tryParseBinaryOp(
-        mutableLeft,
-        binopTok,
-        tok,
-        prec,
-      );
-      if (binaryHandled) {
+      this.tryParseBinaryOp(mutableLeft, binopTok, tok, prec) match {
+      | None() -> void
+      | Some(binaryResult) ->
         !mutableLeft = binaryResult;
-        continue;
+        continue
       };
       return mutableLeft
     }
