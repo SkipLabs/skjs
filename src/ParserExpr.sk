@@ -374,7 +374,7 @@ extension class Parser {
     mutableLeft: Expr_,
     binopTok: Token,
     tok: Token,
-  ): (Bool, Expr_) {
+  ): ?Expr_ {
     if (
       binopTok.kind is TKColon() &&
       this.lex.lookAhead(() -> {
@@ -401,7 +401,7 @@ extension class Parser {
       } else {
         CBExpr(this.expr(0))
       };
-      (true, Closure(params, Some(rty), closureBody))
+      Some(Closure(params, Some(rty), closureBody))
     } else if (binopTok.kind is TKClosure()) {
       _ = this.lex.next();
       params = mutableLeft match {
@@ -414,9 +414,9 @@ extension class Parser {
       } else {
         CBExpr(this.expr(0))
       };
-      (true, Closure(params, None(), closureBody))
+      Some(Closure(params, None(), closureBody))
     } else {
-      (false, mutableLeft)
+      None()
     }
   }
 
@@ -621,14 +621,9 @@ extension class Parser {
         };
         return mutableLeft;
       };
-      (closureHandled, closureResult) = this.tryParseClosure(
-        mutableLeft,
-        binopTok,
-        tok,
+      this.tryParseClosure(mutableLeft, binopTok, tok).each(closureResult ->
+        !mutableLeft = closureResult
       );
-      if (closureHandled) {
-        !mutableLeft = closureResult;
-      };
       if (binopTok.kind is TKOpenSquare()) {
         if (prec >= callPrec) return mutableLeft;
         _ = this.lex.next();
