@@ -955,38 +955,7 @@ extension class TypeChecker {
       TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
     | In(e1, e2) ->
-      t1 = this.expr(tcenv, e1, true);
-      fieldsOpt = t1.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-      | None() ->
-        typingError(
-          Array[(pos, "Invalid in"), (e1.pos, "This has type unknown")],
-        )
-      | Some(stypes1) ->
-        fieldsOptOpt: ??ArrayValues = None();
-        for (stype1 in stypes1) {
-          stype1 match {
-          | TPrimValue(TNum(), values, _pos)
-          | TPrimValue(TString(), values, _pos) ->
-            (fieldsOptOpt, values) match {
-            | (Some(None()), _) -> void
-            | (None(), _)
-            | (Some(Some(_)), None()) ->
-              !fieldsOptOpt = Some(values)
-            | (Some(Some(existingFields)), Some(moreValues)) ->
-              !fieldsOptOpt = Some(Some(existingFields.union(moreValues)))
-            }
-          | _ ->
-            typingError(
-              Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)],
-            )
-          }
-        };
-        fieldsOptOpt
-      } match {
-      | None() ->
-        typingError(Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)])
-      | Some(fieldsOpt) -> fieldsOpt
-      };
+      (t1, fieldsOpt) = this.getInLhsTypeAndFields(tcenv, pos, e1);
       t2 = this.expr(tcenv, e2, true);
       t2.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
@@ -1373,6 +1342,43 @@ extension class TypeChecker {
       };
       popF.retType
     };
+  }
+
+  fun getInLhsTypeAndFields(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    e1: Expr,
+  ): (TType, ?ArrayValues) {
+    t1 = this.expr(tcenv, e1, true);
+    t1.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+    | None() ->
+      typingError(Array[(pos, "Invalid in"), (e1.pos, "This has type unknown")])
+    | Some(stypes1) ->
+      fieldsOptOpt: ??ArrayValues = None();
+      for (stype1 in stypes1) {
+        stype1 match {
+        | TPrimValue(TNum(), values, _pos)
+        | TPrimValue(TString(), values, _pos) ->
+          (fieldsOptOpt, values) match {
+          | (Some(None()), _) -> void
+          | (None(), _)
+          | (Some(Some(_)), None()) ->
+            !fieldsOptOpt = Some(values)
+          | (Some(Some(existingFields)), Some(moreValues)) ->
+            !fieldsOptOpt = Some(Some(existingFields.union(moreValues)))
+          }
+        | _ ->
+          typingError(
+            Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)],
+          )
+        }
+      };
+      fieldsOptOpt
+    } match {
+    | None() ->
+      typingError(Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)])
+    | Some(fieldsOpt) -> (t1, fieldsOpt)
+    }
   }
 
   fun call(
