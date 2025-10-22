@@ -11,7 +11,6 @@ base class TokenKind uses Equality, XXHashable, Hashable {
   | TKAddQM()
   | TKAddition()
   | TKAdditionAssignment()
-  | TKAs()
   | TKAssignment()
   | TKBackTick()
   | TKBigInt()
@@ -78,7 +77,6 @@ base class TokenKind uses Equality, XXHashable, Hashable {
   | TKAddQM() -> "+?"
   | TKAddition() -> "+"
   | TKAdditionAssignment() -> "+="
-  | TKAs() -> "as"
   | TKAssignment() -> "="
   | TKBackTick() -> "`"
   | TKBigInt() -> "a bigint"
@@ -291,7 +289,6 @@ const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   TKDecr() => (ANonAssoc(), 18),
   TKExclamationMark() => (ANonAssoc(), 17),
   TKTild() => (ANonAssoc(), 17),
-  TKAs() => (ALeft(), 17),
   TKMultiplication() => (ALeft(), 15),
   TKDivision() => (ALeft(), 15),
   TKRemainder() => (ALeft(), 15),
