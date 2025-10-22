@@ -144,6 +144,10 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     }
   }
 
+  fun containsKey(k: K): Bool {
+    this.maybeGet(k).isSome()
+  }
+
   fun toArray(): Array<T> {
     this.inner.toArray()
   }

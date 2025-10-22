@@ -729,6 +729,18 @@ class TFields private (
     }
   }
 
+  // Returns None() if the field already exist
+  fun addField(fieldToAdd: TField): ?this {
+    if (this.fields.containsKey(fieldToAdd.name)) None() else {
+      Some(
+        static(
+          this.fields.union(InternalKeyedArrayMap::single(fieldToAdd)),
+          this.indexes,
+        ),
+      )
+    }
+  }
+
   fun removeFields(fieldsToRemove: SortedSet<String>): this {
     if (fieldsToRemove.isEmpty()) this else {
       // TODO: better approximation of removing fields that may intersect with indexes

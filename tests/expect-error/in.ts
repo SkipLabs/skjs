@@ -39,8 +39,7 @@ function literalInRecordNotAlwaysFalse(x: { f: number }): boolean {
 
 function refineLiteralInRecordNotAlwaysFalse(x: { f: number }): number {
   if ("g" in x) {
-    // FIXME
-    // @ts-expect-error Unbound field: g
+    // @ts-expect-error Invalid return type
     return x.g;
   } else {
     return 0;
@@ -49,8 +48,6 @@ function refineLiteralInRecordNotAlwaysFalse(x: { f: number }): number {
 
 function refineLiteralInRecordNotAlwaysFalse2(x: { f: number }): unknown {
   if ("g" in x) {
-    // FIXME
-    // @ts-expect-error Unbound field: g
     return x.g;
   } else {
     return 0;
