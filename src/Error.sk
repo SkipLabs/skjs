@@ -40,6 +40,17 @@ base class Error uses Equality {
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
   ): String;
+
+  static fun resolver(
+    fileName: String,
+    context: mutable SKStore.Context,
+    newLinesMap: NewLinesMap,
+    symbolsMap: SymbolsMap,
+  ): PositionResolver {
+    newLines = newLinesMap.get(context, fileName);
+    symbols = symbolsMap.get(context, fileName);
+    PositionResolver{fileName, newLines, symbols}
+  }
 }
 
 /***************************************************************************/
@@ -56,9 +67,7 @@ base class SinglePosError<K: ErrorKind>(
     symbolsMap: SymbolsMap,
   ): String {
     fileName = this.pos.fileName();
-    newLines = newLinesMap.get(context, fileName);
-    symbols = symbolsMap.get(context, fileName);
-    resolver = PositionResolver{fileName, newLines, symbols};
+    resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
     this.pos.toString(resolver) + "\n" + this.errorKind.toString()
   }
 }
