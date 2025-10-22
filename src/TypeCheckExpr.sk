@@ -954,7 +954,91 @@ extension class TypeChecker {
       _ = this.tenv.getClass(tcenv.context, className);
       TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
-    | In(_, _) -> typingError(Array[(pos, "TODO: in")])
+    | In(e1, e2) ->
+      t1 = this.expr(tcenv, e1, true);
+      fieldsOpt = t1.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+      | None() ->
+        typingError(
+          Array[(pos, "Invalid in"), (e1.pos, "This has type unknown")],
+        )
+      | Some(stypes1) ->
+        fieldsOptOpt: ??ArrayValues = None();
+        for (stype1 in stypes1) {
+          stype1 match {
+          | TPrimValue(TNum(), values, _pos)
+          | TPrimValue(TString(), values, _pos) ->
+            (fieldsOptOpt, values) match {
+            | (Some(None()), _) -> void
+            | (None(), _)
+            | (Some(Some(_)), None()) ->
+              !fieldsOptOpt = Some(values)
+            | (Some(Some(existingFields)), Some(moreValues)) ->
+              !fieldsOptOpt = Some(Some(existingFields.union(moreValues)))
+            }
+          | _ ->
+            typingError(
+              Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)],
+            )
+          }
+        };
+        fieldsOptOpt
+      } match {
+      | None() ->
+        typingError(Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)])
+      | Some(fieldsOpt) -> fieldsOpt
+      };
+      t2 = this.expr(tcenv, e2, true);
+      t2.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+      | None() ->
+        typingError(
+          Array[(pos, "Invalid in"), (e2.pos, "This has type unknown")],
+        )
+      | Some(stypes2) ->
+        canBeTrue = false;
+        canBeFalse = false;
+        for (stype2 in stypes2) {
+          stype2 match {
+          | TPrimUnit _
+          | TPrimValue _ ->
+            typingError(
+              Array[(pos, "Invalid in"), (e2.pos, `This has type ${t2}`)],
+            )
+          | TObject(TFields(fields, indexes), _pos) ->
+            !canBeTrue = true; // object types are open
+            !canBeFalse =
+              canBeFalse ||
+              !indexes.isEmpty() /* TODO: refine */ ||
+              fieldsOpt match {
+              | None() -> true
+              | Some(fieldsToCheck) ->
+                fieldsToCheck.values.any(fieldToCheck ->
+                  fields.maybeGet(fieldToCheck.i1) match {
+                  | Some(tField) -> tField.isOptional
+                  | None() -> true
+                  }
+                )
+              }
+          | TTuple _
+          | TPromise _
+          | TAlgebraic _
+          | TFuns _ ->
+            typingError(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)])
+          }
+        };
+        (canBeTrue, canBeFalse) match {
+        | (true, true) -> TType::single(TPrimValue::boolean(pos))
+        | (false, false) ->
+          typingError(
+            Array[
+              (pos, "Unexpected in"),
+              (e1.pos, `This has type ${t1}`),
+              (e2.pos, `This has type ${t2}`),
+            ],
+          )
+        | _ ->
+          typingError(Array[(pos, `This expression is always ${canBeTrue}`)])
+        }
+      }
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, tcenv, subExpr);
       TType::single(TPrimValue::string(pos))

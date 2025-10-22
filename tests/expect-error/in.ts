@@ -1,40 +1,33 @@
 function literalInRecordAlwaysTrue(x: { f: number }): boolean {
-  // @ts-expect-error TODO: in
+  // @ts-expect-error This expression is always true
   return "f" in x;
 }
 
 function literalInRecordOpt(x: { f?: number }): boolean {
-  // @ts-expect-error TODO: in
   return "f" in x;
 }
 
 function literalInRecordNotAlwaysFalse(x: { f: number }): boolean {
-  // @ts-expect-error TODO: in
   return "g" in x;
 }
 
 function literalInRecordIndex(x: { [f: string]: number }): boolean {
-  // @ts-expect-error TODO: in
   return "a" in x;
 }
 
 function literalInRecordUnion(x: { f: number } | { g: number }): boolean {
-  // @ts-expect-error TODO: in
   return "f" in x;
 }
 
 function literalInRecordOptUnion(x: { f?: number } | { g: number }): boolean {
-  // @ts-expect-error TODO: in
   return "f" in x;
 }
 
 function unionInRecord(s: "f" | "g", x: { f: number }): boolean {
-  // @ts-expect-error TODO: in
   return s in x;
 }
 
 function unionInRecordOpt(s: "f" | "g", x: { f?: number }): boolean {
-  // @ts-expect-error TODO: in
   return s in x;
 }
 
@@ -42,7 +35,7 @@ function unionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): boolean {
-  // @ts-expect-error TODO: in
+  // @ts-expect-error This expression is always true
   return s in x;
 }
 
@@ -50,7 +43,6 @@ function unionInRecordOpt2(
   s: "f" | "g",
   x: { f?: number; g: number },
 ): boolean {
-  // @ts-expect-error TODO: in
   return s in x;
 }
 
@@ -58,17 +50,14 @@ function unionInRecordOpt3(
   s: "f" | "g",
   x: { f?: number; g?: number },
 ): boolean {
-  // @ts-expect-error TODO: in
   return s in x;
 }
 
 function unionInRecordNotAlwaysFalse(s: "f" | "g", x: { h: number }): boolean {
-  // @ts-expect-error TODO: in
   return s in x;
 }
 
 function stringInRecord(s: string, x: { f: number }): boolean {
-  // @ts-expect-error TODO: in
   return s in x;
 }
 
@@ -88,6 +77,6 @@ function literalInTupleUnion(x: [number] | [number, number]): boolean {
 }
 
 function literalInNonObject(x: number): boolean {
-  // @ts-expect-error TODO: in
+  // @ts-expect-error Invalid in
   return 0 in x;
 }
