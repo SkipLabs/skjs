@@ -309,6 +309,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
     for (error in errors) {
       print_error(SKStore.StringFile::type(error).value);
+      print_error("");
     };
     if (errors.size() != 0) 2 else 0
   }
