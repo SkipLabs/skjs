@@ -587,10 +587,9 @@ extension class Parser {
             this.lex.getLastPos(),
           );
           _ = this.lex.next();
-          !mutableLeft = InstanceOf(
-            Expr(leftPosRange, mutableLeft),
-            this.expr(opPrec),
-          );
+          rhs = this.expr(opPrec);
+          lhs = Expr(leftPosRange, mutableLeft);
+          !mutableLeft = InstanceOf(lhs, rhs);
           continue;
         };
         return mutableLeft;
