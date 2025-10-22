@@ -67,40 +67,6 @@ class ParsingError extends SinglePosError<ParsingKind>
 class LexingError extends SinglePosError<LexingKind>
 
 /***************************************************************************/
-/* Symbol definition errors */
-/***************************************************************************/
-
-class DuplicateSymbolError(
-  symbol: SymbolicPos,
-  existingPos: PosRange,
-  newPos: PosRange,
-) extends Error {
-  fun toString(
-    context: mutable SKStore.Context,
-    newLinesMap: NewLinesMap,
-    symbolsMap: SymbolsMap,
-  ): String {
-    fileName = this.newPos.fileName;
-    newLines = newLinesMap.get(context, fileName);
-    symbols = symbolsMap.get(context, fileName);
-    resolver = PositionResolver{fileName, newLines, symbols};
-    symbolName = this.symbol match {
-    | SPTopLevel() -> "top-level"
-    | SPClass(name) -> `class '${name}'`
-    | SPFunction(name) -> `function '${name}'`
-    | SPMethod(className, methodName) -> `method '${className}.${methodName}'`
-    | SPConstant(name) -> `constant '${name}'`
-    };
-    resolver.relPosRange(this.newPos).toString() +
-      "\n" +
-      `Error: ${symbolName} is already defined\n` +
-      resolver.relPosRange(this.existingPos).toString() +
-      "\n" +
-      `Note: ${symbolName} was first defined here`
-  }
-}
-
-/***************************************************************************/
 /* There are two types of positions:
  * - PosRanges: when an error has a beginning and an end
  * - Pos: when an error points at somewhere in the code (for example a lexing
