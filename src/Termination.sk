@@ -205,7 +205,8 @@ value class StmtTermination private {
     | AsConst(e) ->
       static::expr(e)
     | Get(e1, e2)
-    | InstanceOf(e1, e2) ->
+    | InstanceOf(e1, e2)
+    | In(e1, e2) ->
       static::expr(e1) * static::expr(e2)
     | New(_name, _targs, args) -> static::and(args, static::expr)
     | Unop(_unop, e)

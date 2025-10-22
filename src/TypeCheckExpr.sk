@@ -954,6 +954,7 @@ extension class TypeChecker {
       _ = this.tenv.getClass(tcenv.context, className);
       TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
+    | In(_, _) -> typingError(Array[(pos, "TODO: in")])
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, tcenv, subExpr);
       TType::single(TPrimValue::string(pos))
