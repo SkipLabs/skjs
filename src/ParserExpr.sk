@@ -565,7 +565,7 @@ extension class Parser {
   }
 
   // Handle binary and postfix operators with precedence
-  // Processes: function calls, array access, binary ops, ternary, instanceof, as casts
+  // Processes: function calls, array access, binary ops, ternary, in, instanceof, as casts
   // Uses precedence climbing algorithm for correct operator associativity
   mutable fun parseBinaryAndPostfixOps(
     left: Expr_,
@@ -578,7 +578,8 @@ extension class Parser {
       | None() -> return mutableLeft
       | Some(x) -> x
       };
-      if (this.lex.isEqTok(binopTok, "instanceof")) {
+      isIn = this.lex.isEqTok(binopTok, "in");
+      if (isIn || this.lex.isEqTok(binopTok, "instanceof")) {
         (_assoc, opPrec) = in_and_instanceofPrec;
         if (prec <= opPrec) {
           leftPosRange = PosRange::create(
@@ -589,7 +590,7 @@ extension class Parser {
           _ = this.lex.next();
           rhs = this.expr(opPrec);
           lhs = Expr(leftPosRange, mutableLeft);
-          !mutableLeft = InstanceOf(lhs, rhs);
+          !mutableLeft = if (isIn) In(lhs, rhs) else InstanceOf(lhs, rhs);
           continue;
         };
         return mutableLeft;
