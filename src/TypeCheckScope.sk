@@ -15,11 +15,11 @@ mutable class Scope{
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
   static fun mcreateToplevel(fileName: String): mutable this {
-    mutable static{
-      id => 0,
-      isLoop => false,
-      callingContext => CGNode::create(Toplevel(fileName)),
-    }
+    static::mcreateWithCallingContext(CGNode::create(Toplevel(fileName)))
+  }
+
+  static fun mcreateWithCallingContext(callingContext: CGNode): mutable this {
+    mutable static{id => 0, isLoop => false, callingContext}
   }
 
   readonly private fun maybeGetLocal(name: Name): ?Name {
