@@ -36,7 +36,7 @@ extension class TypeChecker {
         !tcenv.scope.isThroughLoop(local) &&
         !tcenv.localObjects.containsKey(local.value)
       ) {
-        tcenv.localObjects![local.value] = None()
+        tcenv.localObjects![local.value] = LOCanGrow(None())
       };
       tcenv.scope.bind(local, type, isInitialized)
     | PArray(arrPat) ->
@@ -471,7 +471,7 @@ extension class TypeChecker {
       this.makeBoundTVar(tcenv, TType::single(TPrimUnit(TUndefined(), pos)))
     | Var(local) ->
       if (tcenv.localObjects.containsKey(local.value)) {
-        tcenv.usedObjects![local.value] = local.pos
+        tcenv.localObjects![local.value] = LOUsed(local.pos)
       };
       tcenv.scope.maybeGet(local) match {
       | None() ->
@@ -1229,18 +1229,23 @@ extension class TypeChecker {
       Expr(_, Var(fieldName)),
     ) if (tcenv.localObjects.containsKey(local.value)) ->
       fieldType = this.expr(tcenv, e2);
-      tcenv.localObjects[local.value] match {
-      | None() -> void
-      | Some(objectType) ->
-        this.checkSubType(
-          tcenv,
-          e2.pos,
-          "Invalid assignment",
-          fieldType,
-          this.dot(tcenv, e1.pos, objectType, fieldName),
-        )
+      used = tcenv.localObjects[local.value] match {
+      | LOCanGrow(bound) ->
+        bound match {
+        | None() -> void
+        | Some(objectType) ->
+          this.checkSubType(
+            tcenv,
+            e2.pos,
+            "Invalid assignment",
+            fieldType,
+            this.dot(tcenv, e1.pos, objectType, fieldName),
+          )
+        };
+        None()
+      | LOUsed(usedPos) -> Some(usedPos)
       };
-      this.assignLocalObject(tcenv, pos, local, fieldName, fieldType)
+      this.assignLocalObject(tcenv, pos, local, fieldName, fieldType, used)
     | _ ->
       ty1 = this.expr(tcenv, e1);
       ty2 = this.expr(tcenv, e2);
@@ -1255,6 +1260,7 @@ extension class TypeChecker {
     local: Name,
     fieldName: Name,
     fieldType: TType,
+    used: ?PosRange,
   ): TType {
     objField = tcenv.scope
       .get(local)
@@ -1263,7 +1269,7 @@ extension class TypeChecker {
     | Some(TObject(fields, objPos)) ->
       fields.maybeGet(fieldName.value) match {
       | None() ->
-        tcenv.usedObjects.maybeGet(local.value) match {
+        used match {
         | None() -> void
         | Some(usedPos) ->
           typingError(

@@ -218,7 +218,7 @@ extension class TypeChecker {
       },
     );
     (!this, tcenv) = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
-    tcenv.localObjects!["this"] = Some(thisType);
+    tcenv.localObjects!["this"] = LOCanGrow(Some(thisType));
     fd.isAsync match {
     | None() -> void
     | Some(asyncPos) ->
