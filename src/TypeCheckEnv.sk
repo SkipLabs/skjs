@@ -9,8 +9,15 @@ mutable class TCEnv private (
   subst: mutable Subst,
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
-  localObjects: mutable Map<String, ?TType> = mutable Map[],
-  usedObjects: mutable Map<String, PosRange> = mutable Map[],
+  localObjects: mutable Map<String, ?TType> = mutable Map[]/*
+  Tracks local objects, i.e. object literals bounded to variables.
+  Those are allowed to grow if they haven't been used.
+  Growth is limited by the provided type, if any.
+  */ ,
+  usedObjects: mutable Map<String, PosRange> = mutable Map[]/*
+  Tracks local objects that have been used since they were declared.
+  Used to forbid adding fields to used objects.
+  */ ,
   private mutable counter: Int = 0,
 ) {
   static fun mcreate(
