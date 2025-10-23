@@ -8,7 +8,7 @@ extension class TypeChecker {
     callingContext: CGNode,
   ): (this, mutable TCEnv) {
     static::checkTypeParams(fd.tparams);
-    scope = Scope::mcreateToplevel(fd.pos.fileName) with {callingContext};
+    scope = Scope::mcreateWithCallingContext(callingContext);
     tcenv = mutable TCEnv(subst.context, subst, scope);
     thisTypeOpt match {
     | None() -> void
