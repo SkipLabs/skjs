@@ -131,11 +131,13 @@ export interface Reducer<V extends Json, A extends Json> {
 
 export interface Resource<
   Collections extends NamedCollections /* = NamedCollections */,
+  K extends Json,
+  V extends Json,
 > {
   instantiate(
     collections: Collections,
     context: Context,
-  ): EagerCollection<Json, Json>;
+  ): EagerCollection<K, V>;
 }
 
 export interface SkipService<
@@ -147,7 +149,7 @@ export interface SkipService<
   externalServices?: { [name: string]: ExternalService };
 
   resources: {
-    [name: string]: new (params: Json) => Resource<ResourceInputs>;
+    [name: string]: new (params: Json) => Resource<ResourceInputs, Json, Json>;
   };
 
   createGraph(inputCollections: Inputs, context: Context): ResourceInputs;
