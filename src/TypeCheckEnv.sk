@@ -55,6 +55,45 @@ mutable class TCEnv(
       callingContext => this.scope.callingContext,
     }
   }
+
+  mutable fun branch(tenv: TEnv, f: (mutable ConditionalTCEnv) -> void): void {
+    ctcenv = ConditionalTCEnv::create(this);
+    f(ctcenv);
+    ctcenv.merge(tenv)
+  }
+}
+
+mutable class ConditionalTCEnv private (
+  private tcenv: mutable TCEnv,
+  private scopeTrue: mutable Scope,
+  private scopeFalse: mutable Scope,
+) {
+  static fun create(tcenv: mutable TCEnv): mutable this {
+    scopeTrue = tcenv.mcreateSubScope{isLoop => false};
+    scopeFalse = tcenv.mcreateSubScope{isLoop => false};
+    mutable static(tcenv, scopeTrue, scopeFalse)
+  }
+
+  mutable fun withTCEnv(branch: Bool, f: (mutable TCEnv) -> void): void {
+    savedScope = this.tcenv.scope;
+    branchScope = if (branch) this.scopeTrue else this.scopeFalse;
+    this.tcenv.!scope = branchScope;
+    branchScopeId = branchScope.id;
+    f(this.tcenv);
+    if (this.tcenv.scope.id != branchScopeId) {
+      internal_error("withTCEnv scope id mismatch")
+    };
+    this.tcenv.!scope = savedScope
+  }
+
+  mutable fun merge(tenv: TEnv): void {
+    this.tcenv.mergeScope(
+      this.tcenv.subst,
+      tenv,
+      this.scopeTrue,
+      this.scopeFalse,
+    )
+  }
 }
 
 module end;
