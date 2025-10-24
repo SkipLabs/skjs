@@ -54,37 +54,22 @@ extension class TypeChecker {
     tag: String,
     target: Bool,
   ): void {
-    if (target) {
-      // Positive branch: narrow to only the matching tag
-      this.setLocal(
-        tcenv,
-        local,
-        None(),
-        _ ~> true,
-        stype ~>
-          stype match {
-          | TAlgebraic(branches, aPos) ->
-            TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
-          | x -> x
-          }
-        ,
-      )
-    } else {
-      // Negative branch: eliminate the matching tag (refinement by elimination)
-      this.setLocal(
-        tcenv,
-        local,
-        None(),
-        _ ~> true,
-        stype ~>
-          stype match {
-          | TAlgebraic(branches, aPos) ->
-            TAlgebraic(branches.filter(branch -> branch.tag != tag), aPos)
-          | x -> x
-          }
-        ,
-      )
-    }
+    this.setLocal(
+      tcenv,
+      local,
+      None(),
+      _ ~> true,
+      stype ~>
+        stype match {
+        | TAlgebraic(branches, aPos) ->
+          TAlgebraic(
+            branches.filter(branch -> (branch.tag == tag) == target),
+            aPos,
+          )
+        | x -> x
+        }
+      ,
+    )
   }
 
   fun evalTypeofEquality(
