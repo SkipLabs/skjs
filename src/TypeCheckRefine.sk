@@ -177,6 +177,10 @@ extension class TypeChecker {
   }
 
   fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
+    this.evalCondExpr(tcenv, e, target)
+  }
+
+  fun evalCondExpr(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
     e.value match {
     | Binop(BOStrictEquality(), e1, e2) ->
       this.evalEquality(tcenv, e1, e2, target)
