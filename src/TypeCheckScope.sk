@@ -28,13 +28,6 @@ mutable class Scope{
     }
   }
 
-  readonly private fun getLocal(name: Name): Name {
-    this.maybeGetLocal(name) match {
-    | None() -> typingError(Array[(name.pos, "Unbound name")])
-    | Some(x) -> x
-    }
-  }
-
   readonly private fun maybeGetRefHelper(
     throughLoop: Bool,
     name: String,
