@@ -91,6 +91,14 @@ mutable class TCEnv(
     | Some(x) -> x
     }
   }
+
+  mutable fun set(
+    name: Name,
+    ty: TType,
+    isSubType: (TType, TType) -> void,
+  ): void {
+    this.scope.set(name, ty, isSubType)
+  }
 }
 
 module end;

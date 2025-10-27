@@ -188,7 +188,7 @@ extension class TypeChecker {
       Expr(_, Var(local)),
       Expr(_, Var(Name(posArray, "Array"))),
     ) if (target) ->
-      tcenv.scope.set(
+      tcenv.set(
         local,
         TType::inst(
           Name(posArray, "Array"),
@@ -198,7 +198,7 @@ extension class TypeChecker {
       )
 
     | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
-      tcenv.scope.set(
+      tcenv.set(
         local,
         this.tenv.new(
           tcenv.context,
@@ -312,7 +312,7 @@ extension class TypeChecker {
       if (isTopOrEmpty) TType::single(d) else ty
     | _ -> ty
     };
-    tcenv.scope.set(local, localType, (_, _) -> void)
+    tcenv.set(local, localType, (_, _) -> void)
   }
 }
 

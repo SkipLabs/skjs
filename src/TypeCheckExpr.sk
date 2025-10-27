@@ -629,7 +629,7 @@ extension class TypeChecker {
           tcenv.get(thisName),
           super,
         );
-        tcenv.scope.set(thisName, thisType, (x, y) -> {
+        tcenv.set(thisName, thisType, (x, y) -> {
           this.checkSubType(tcenv, pos, "Invalid super call", x, y)
         })
       };
@@ -1215,7 +1215,7 @@ extension class TypeChecker {
     e1.value match {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2);
-      tcenv.scope.set(n, ty2, (x, y) ->
+      tcenv.set(n, ty2, (x, y) ->
         this.checkSubType(tcenv, pos, "Invalid assignment", x, y)
       );
       ty2
@@ -1288,7 +1288,7 @@ extension class TypeChecker {
         | None() -> internal_error("TODO: converting an object to an algebraic")
         | Some(f) -> f
         };
-        tcenv.scope.set(
+        tcenv.set(
           local,
           TType::single(
             TObject(
