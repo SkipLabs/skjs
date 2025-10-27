@@ -31,12 +31,8 @@ extension class TypeChecker {
     pos = pat.pos;
     pat.value match {
     | PVar(local) ->
-      if (
-        isLocalObject &&
-        !tcenv.scope.isThroughLoop(local) &&
-        !tcenv.localObjects.containsKey(local.value)
-      ) {
-        tcenv.localObjects![local.value] = LOCanGrow(None())
+      if (isLocalObject) {
+        tcenv.bindingLocalObject(local)
       };
       tcenv.scope.bind(local, type, isInitialized)
     | PArray(arrPat) ->

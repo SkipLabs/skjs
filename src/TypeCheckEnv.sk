@@ -59,6 +59,15 @@ mutable class TCEnv(
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
   }
+
+  mutable fun bindingLocalObject(local: Name): void {
+    if (
+      !this.scope.isThroughLoop(local) &&
+      !this.localObjects.containsKey(local.value)
+    ) {
+      this.localObjects![local.value] = LOCanGrow(None())
+    }
+  }
 }
 
 module end;
