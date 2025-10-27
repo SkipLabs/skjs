@@ -26,8 +26,11 @@ extension class TypeChecker {
     | Module _ -> notSupported(def.pos)
     | ToplevelExpr(e) ->
       subst = Subst::mcreate{context};
-      scope = Scope::mcreateToplevel(def.pos.fileName);
-      tcenv = mutable TCEnv(context, subst, scope);
+      tcenv = TCEnv::mcreate(
+        context,
+        subst,
+        CGNode::toplevel(def.pos.fileName),
+      );
       ty = this.expr(tcenv, e);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ FunDef _ ->
@@ -95,8 +98,11 @@ extension class TypeChecker {
       | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
       | Some(x) -> x
       };
-      scope = Scope::mcreateToplevel(varDef.pat.pos.fileName);
-      tcenv = mutable TCEnv(context, subst, scope);
+      tcenv = TCEnv::mcreate(
+        context,
+        subst,
+        CGNode::toplevel(varDef.pat.pos.fileName),
+      );
       this.checkSubType(
         tcenv,
         varDef.pat.pos,

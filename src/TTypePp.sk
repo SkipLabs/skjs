@@ -19,14 +19,6 @@ mutable class TypePp{
     static{compact => this.compact, cols => this.cols, buffer => this.buffer}
   }
 
-  static fun fromSaved(saved: TypePp): mutable this {
-    mutable static{
-      compact => saved.compact,
-      cols => saved.cols,
-      buffer => saved.buffer,
-    }
-  }
-
   mutable fun replace(saved: readonly TypePp): void {
     this.!cols = saved.cols;
     this.!buffer = saved.buffer;
