@@ -30,7 +30,7 @@ value class StmtTermination private {
   const throw_: this = StmtTermination{mayThrow => true};
   const loop_: this = StmtTermination{mayLoop => true};
   const skip: this = StmtTermination{mayFallthrough => true};
-  const unknownOperator: this = StmtTermination{
+  const throughOrThrow: this = StmtTermination{
     mayFallthrough => true,
     mayThrow => true,
   };
@@ -53,22 +53,21 @@ value class StmtTermination private {
   fun /(that: this): this {
     this.merge(that, (t1, t2) ~> t1 || t2)
   }
-  /* Unordered-and: this and that are executed but we don't know in which order.
-     It should be equivalent to if (?) { this; that } else { that; this }. */
-  fun *(that: this): this {
-    this.merge(that, (t1, t2) ~> t1 && t2)
-  }
   /* Maybe: taking either the branch or going through */
   fun maybe(): this {
     this / static::skip
   }
+  /* Then: taking this followed by after */
+  fun then(after: this): this {
+    if (!this.mayFallthrough) this else this.merge(after, (_t1, t2) ~> t2)
+  }
   /* Then: taking this followed by the continuation */
-  fun then(kafter: () -> this): this {
+  fun thenk(kafter: () -> this): this {
     if (!this.mayFallthrough) this else this.merge(kafter(), (_t1, t2) ~> t2)
   }
   /* Finally: after supersedes any non-loop exit from this */
   fun finally(after: this): this {
-    this.anyExitToFallthrough().then(() ~> after.then(() ~> this))
+    this.anyExitToFallthrough().thenk(() ~> after.then(this))
   }
   /* Converts breaks to fallThroughs. To be used on a block that may break */
   fun breakToFallthrough(): this {
@@ -108,7 +107,7 @@ value class StmtTermination private {
   static fun it<T>(it: mutable Iterator<T>, f: T ~> this): this {
     it.next() match {
     | None() -> static::skip
-    | Some(x) -> f(x).then(() -> static::it(it, f))
+    | Some(x) -> f(x).thenk(() -> static::it(it, f))
     }
   }
   static fun seq<T>(s: Sequence<T>, f: T ~> this): this {
@@ -118,9 +117,6 @@ value class StmtTermination private {
     if (s.isEmpty()) internal_error("sequence should not be empty");
     s.reduce((acc, x) -> acc / f(x), static{})
   }
-  static fun and<T>(s: Sequence<T>, f: T ~> this): this {
-    s.reduce((acc, x) -> acc * f(x), static::skip)
-  }
 
   static fun stmt(st: Stmt): this {
     st.value match {
@@ -128,8 +124,8 @@ value class StmtTermination private {
     | StmtExpr(e) -> static::expr(e)
     | Break() -> static::break_
     | Continue() -> static::continue_
-    | Return(_pos, eo) -> static::exprOpt(eo).then(() ~> static::return_)
-    | Throw(e) -> static::expr(e).then(() ~> static::throw_)
+    | Return(_pos, eo) -> static::exprOpt(eo).then(static::return_)
+    | Throw(e) -> static::expr(e).then(static::throw_)
     | If(cond, bl1, bl2o) ->
       static::cond(cond).if_(
         () ~> static::block(bl1),
@@ -138,19 +134,19 @@ value class StmtTermination private {
     | ForIn(var, e, body)
     | ForOf(var, e, body) ->
       static::forVar(var);
-      static::expr(e).then(() ~>
+      static::expr(e).thenk(() ~>
         CondTermination::any.loop_(() ~> static::block(body))
       )
     | For(init, cond, incr, body) ->
-      static::stmt(init).then(() ~>
+      static::stmt(init).thenk(() ~>
         static::cond(cond).loop_(() ~>
-          static::block(body).then(() ~> static::expr(incr))
+          static::block(body).thenk(() ~> static::expr(incr))
         )
       )
     | While(cond, body) -> static::cond(cond).loop_(() ~> static::block(body))
-    | Bind(_kind, bindings) -> static::and(bindings, static::binding)
+    | Bind(_kind, bindings) -> static::seq(bindings, static::binding)
     | Switch(e, branches) ->
-      static::expr(e).then(() ~> {
+      static::expr(e).thenk(() ~> {
         branchesTerm = static::or(branches, static::branch);
         switchIsExhaustive = branches.any(branch ~> branch is Default _); // Unless exhaustiveness is proven differently?
         if (switchIsExhaustive) branchesTerm else branchesTerm.maybe();
@@ -186,44 +182,52 @@ value class StmtTermination private {
   }
 
   static fun expr(expr: Expr): this {
-    /* We make no assumptions on the order of evaluation but
-       we assume that the existence of _name is checked in the typechecker. */
+    /* Operands, array literals, object literals are always evaluated from left to right.
+       We assume that the existence of _name is checked in the typechecker.
+       We assume operators do not call custom functions. */
     expr.value match {
     | Number(_)
     | BigInt(_)
     | Var(_name)
-    | Spread(_name)
+    | Spread(_name) /* We assume the typechecker checks it's an iterable */
     | EString(_)
     | Closure(_args, _retTy, _body)
     | Regexp(_) ->
       static::skip
     | TemplateLiteral(_parts, expressions) ->
-      static::and(expressions, static::expr)
+      static::seq(expressions, static::expr)
     | TypeOf(e)
     | Await(e)
     | As(e, _ty)
     | AsConst(e) ->
       static::expr(e)
-    | Get(e1, e2)
-    | InstanceOf(e1, e2)
-    | In(e1, e2) ->
-      static::expr(e1) * static::expr(e2)
-    | New(_name, _targs, args) -> static::and(args, static::expr)
+    | New(_name, _targs, args) ->
+      static::seq(args, static::expr).then(static::unknownCall)
     | Unop(_unop, e)
     | PostOp(_postop, e) ->
-      static::expr(e).then(() ~> static::unknownOperator
-      /* TODO: refine */)
-    | Binop(_op, e1, e2) ->
-      (static::expr(e1) * static::expr(e2)).then(() ~>
-        static::unknownOperator /* TODO: refine */
+      static::expr(e) /* do not throw */
+    | Binop(BOLogicalAnd(), e1, e2)
+    | Binop(BOLogicalOr(), e1, e2) ->
+      static::expr(e1).thenk(() ~> static::expr(e2).maybe())
+    | Get(e1, e2)
+    | InstanceOf(e1, e2)
+    | In(e1, e2)
+    | Binop(BODot(), e1, e2)
+    | Binop(BOExclamationMarkDot(), e1, e2) ->
+      static::expr(e1).thenk(() ~>
+        static::expr(e2).then(static::throughOrThrow)
       )
+    | Binop(_op, e1, e2) ->
+      // We assume the typechecker checks we're not re-assigning a const
+      static::expr(e1).thenk(() ~> static::expr(e2)) /* do not throw */
     | Call(e, _targs, args) ->
-      (static::expr(e) * static::and(args, static::expr)).then(() ~>
-        static::unknownCall
+      // We assume the typechecker checks it's a function so calling does not throw
+      static::expr(e).thenk(() ->
+        static::seq(args, static::expr).then(static::unknownCall)
       )
     | Params(_) -> paramsError(expr.pos)
-    | Object(fields) -> static::and(fields, static::field)
-    | EArray(exprs) -> static::and(exprs, static::expr)
+    | Object(fields) -> static::seq(fields, static::field)
+    | EArray(exprs) -> static::seq(exprs, static::expr)
     | EIf(cond, e1, e2) ->
       static::cond(cond).if_(() ~> static::expr(e1), () ~> static::expr(e2))
     | Async(e) -> static::expr(e).maybe()
@@ -293,7 +297,7 @@ value class CondTermination private (
     ktrue: () ~> StmtTermination,
     kfalse: () ~> StmtTermination,
   ): StmtTermination {
-    this.exprTermination.then(() ~>
+    this.exprTermination.thenk(() ~>
       this.tauto match {
       | TCAlwaysTrue() -> ktrue()
       | TCAlwaysFalse() -> kfalse()
@@ -304,7 +308,11 @@ value class CondTermination private (
 
   fun loop_(kbody: () ~> StmtTermination): StmtTermination {
     this.if_(
-      () ~> kbody().then(() ~> StmtTermination::loop_).breakToFallthrough(),
+      () ~>
+        kbody()
+          .continueToFallthrough()
+          .then(StmtTermination::loop_)
+          .breakToFallthrough(),
       () ~> StmtTermination::skip,
     )
   }
