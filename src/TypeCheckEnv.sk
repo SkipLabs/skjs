@@ -15,8 +15,9 @@ mutable class TCEnv private (
   static fun mcreate(
     context: mutable SKStore.Context,
     subst: mutable Subst,
-    scope: mutable Scope,
+    callingContext: CGNode,
   ): mutable this {
+    scope = Scope::mcreateWithCallingContext(callingContext);
     mutable static(context, subst, scope)
   }
 

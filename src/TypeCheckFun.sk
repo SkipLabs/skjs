@@ -8,13 +8,12 @@ extension class TypeChecker {
     callingContext: CGNode,
   ): (this, mutable TCEnv) {
     static::checkTypeParams(fd.tparams);
-    scope = Scope::mcreateWithCallingContext(callingContext);
-    tcenv = TCEnv::mcreate(subst.context, subst, scope);
+    tcenv = TCEnv::mcreate(subst.context, subst, callingContext);
     thisTypeOpt match {
     | None() -> void
     | Some(thisType) ->
       !this.tenv.subst["this"] = (false, thisType);
-      scope.bind(Name(fd.pos, "this"), thisType, true)
+      tcenv.scope.bind(Name(fd.pos, "this"), thisType, true)
     };
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
@@ -47,6 +46,7 @@ extension class TypeChecker {
             ],
           )
         };
+        savedScope = tcenv.scope;
         paramScope = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = paramScope;
         this.checkSubType(
@@ -56,7 +56,7 @@ extension class TypeChecker {
           this.expr(tcenv, defaultExpr),
           paramType,
         );
-        tcenv.!scope = scope
+        tcenv.!scope = savedScope
       };
       paramName = param.name match {
       | PNName(n) -> n
@@ -84,7 +84,7 @@ extension class TypeChecker {
           ],
         )
       };
-      scope.bind(paramName, paramType, true)
+      tcenv.scope.bind(paramName, paramType, true)
     };
     !this.retType = fd.retType.i1.map(rty ->
       this.tenv.normalize(subst.context, rty)

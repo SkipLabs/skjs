@@ -82,8 +82,7 @@ extension class TypeChecker {
           if (!isInterface) {
             !this.super = Some((superCstr, super));
           };
-          scope = Scope::mcreateToplevel(fileName);
-          tcenv = TCEnv::mcreate(context, subst, scope);
+          tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
           this.checkSubType(
             tcenv,
             parentName.pos,
@@ -103,8 +102,7 @@ extension class TypeChecker {
           parentName,
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
-        scope = Scope::mcreateToplevel(fileName);
-        tcenv = TCEnv::mcreate(context, subst, scope);
+        tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
         this.checkSubType(
           tcenv,
           parentName.pos,
@@ -147,8 +145,7 @@ extension class TypeChecker {
         field.value match {
         | None() -> void
         | Some(e) ->
-          scope = Scope::mcreateToplevel(fileName);
-          tcenv = TCEnv::mcreate(context, subst, scope);
+          tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
           this.checkSubType(
             tcenv,
             e.pos,
