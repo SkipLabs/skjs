@@ -22,28 +22,6 @@ mutable class Scope{
     }
   }
 
-  readonly fun clone(): Scope {
-    Scope{
-      id => this.id,
-      isLoop => this.isLoop,
-      callingContext => this.callingContext,
-      up => this.up.map(x -> x.clone()),
-      locals => this.locals,
-      refs => this.refs,
-    }
-  }
-
-  static fun fromSaved(saved: Scope): mutable Scope {
-    mutable Scope{
-      id => saved.id,
-      isLoop => saved.isLoop,
-      callingContext => saved.callingContext,
-      up => saved.up.map(x -> static::fromSaved(x)),
-      locals => saved.locals,
-      refs => saved.refs,
-    }
-  }
-
   readonly private fun maybeGetLocal(name: Name): ?Name {
     this.locals.maybeGet(name.value) match {
     | None() ->
