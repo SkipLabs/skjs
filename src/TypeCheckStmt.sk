@@ -1,12 +1,11 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
-    // TODO: check unreachable
+  fun stmt(tcenv: mutable TCEnv, st: Stmt): StmtTermination {
     st.value match {
-    | Break() -> tcenv.!termination = StmtTermination::break_
-    | Continue() -> tcenv.!termination = StmtTermination::continue_
-    | StmtEmpty() -> void
+    | Break() -> StmtTermination::break_
+    | Continue() -> StmtTermination::continue_
+    | StmtEmpty() -> StmtTermination::skip
     | StmtExpr(e) ->
       ty = this.expr(tcenv, e);
       if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
@@ -22,7 +21,6 @@ extension class TypeChecker {
       | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
       | Some(e) -> (e.pos, this.expr(tcenv, e, true))
       };
-      tcenv.!termination = tcenv.termination.then(StmtTermination::return_);
       rtype = if (this.isAsync) {
         TType::single(TPromise(etype, epos))
       } else {
