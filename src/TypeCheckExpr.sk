@@ -1124,16 +1124,13 @@ extension class TypeChecker {
       tcenv.scope.callingContext,
       CGNodes::singleton(callingContext),
     );
-    savedScope = tcenv.scope.clone() with {callingContext};
+    savedScope = tcenv.scope;
+    tcenv.!scope = tcenv.scope with {callingContext};
 
-    this.closure(
-      tcenv.subst,
-      savedScope,
-      isAsync,
-      paramTypes.toArray(),
-      retType,
-      body,
-    );
+    this.closure(tcenv, isAsync, paramTypes.toArray(), retType, body);
+
+    tcenv.!scope = savedScope;
+
     TType::single(
       TFuns::singleFun(
         TFun(
@@ -1171,14 +1168,12 @@ extension class TypeChecker {
   }
 
   fun closure(
-    subst: mutable Subst,
-    scope: Scope,
+    tcenv: mutable TCEnv,
     isAsync: ?PosRange,
     params: Array<(Name, TType)>,
     retType: TType,
     body: ClosureBody,
   ): void {
-    tcenv = mutable TCEnv(subst.context, subst, Scope::fromSaved(scope));
     for (param in params) {
       tcenv.scope.bind(param.i0, param.i1, true)
     };
