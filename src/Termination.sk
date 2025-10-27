@@ -204,7 +204,7 @@ value class StmtTermination private {
       static::seq(args, static::expr).then(static::unknownCall)
     | Unop(_unop, e)
     | PostOp(_postop, e) ->
-      static::expr(e).then(static::unknownOperator /* TODO: refine */)
+      static::expr(e) /* do not throw */
     | Binop(BOLogicalAnd(), e1, e2)
     | Binop(BOLogicalOr(), e1, e2) ->
       static::expr(e1).thenk(() ~> static::expr(e2).maybe())
