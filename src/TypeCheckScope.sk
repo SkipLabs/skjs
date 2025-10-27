@@ -17,6 +17,10 @@ mutable class Scope{
     mutable static{id => 0, isLoop => false}
   }
 
+  readonly fun sub{id: Int, isLoop: Bool}: mutable this {
+    mutable static{id, isLoop, up => Some(this)}
+  }
+
   readonly private fun maybeGetLocal(name: Name): ?Name {
     this.locals.maybeGet(name.value) match {
     | None() ->
