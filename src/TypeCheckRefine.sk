@@ -3,6 +3,7 @@ module SKJS;
 extension class TypeChecker {
   fun evalEquality(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     e1: Expr,
     e2: Expr,
     target: Bool,
@@ -22,19 +23,19 @@ extension class TypeChecker {
       ),
       Expr(_, EString(tag)),
     ) if (fieldName == kAlgebraicBranchFieldName) ->
-      this.evalAlgebraicBranchEquality(tcenv, local, tag, target)
+      this.evalAlgebraicBranchEquality(tcenv, scope, local, tag, target)
 
     | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
     | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
-      this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
+      this.evalTypeofEquality(tcenv, scope, local, typeStr, typePos, target)
 
     | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
     | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
-      this.evalNullEquality(tcenv, local, target)
+      this.evalNullEquality(tcenv, scope, local, target)
 
     | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
     | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
-      this.evalUndefinedEquality(tcenv, local, target)
+      this.evalUndefinedEquality(tcenv, scope, local, target)
 
     | (Expr(pos, _), Expr(_, Var(Name(_, "null"))))
     | (Expr(_, Var(Name(_, "null"))), Expr(pos, _))
@@ -50,6 +51,7 @@ extension class TypeChecker {
 
   fun evalAlgebraicBranchEquality(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     local: Name,
     tag: String,
     target: Bool,
@@ -58,6 +60,7 @@ extension class TypeChecker {
       // Positive branch: narrow to only the matching tag
       this.setLocal(
         tcenv,
+        scope,
         local,
         None(),
         _ ~> true,
@@ -73,6 +76,7 @@ extension class TypeChecker {
       // Negative branch: eliminate the matching tag (refinement by elimination)
       this.setLocal(
         tcenv,
+        scope,
         local,
         None(),
         _ ~> true,
@@ -89,6 +93,7 @@ extension class TypeChecker {
 
   fun evalTypeofEquality(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     local: Name,
     typeStr: String,
     typePos: PosRange,
@@ -103,6 +108,7 @@ extension class TypeChecker {
       );
       this.setLocal(
         tcenv,
+        scope,
         local,
         if (target) default else None(),
         if (target) filter else x ~> !filter(x),
@@ -114,6 +120,7 @@ extension class TypeChecker {
       );
       this.setLocal(
         tcenv,
+        scope,
         local,
         if (target) default else None(),
         if (target) filter else x ~> !filter(x),
@@ -125,6 +132,7 @@ extension class TypeChecker {
       );
       this.setLocal(
         tcenv,
+        scope,
         local,
         if (target) default else None(),
         if (target) filter else x ~> !filter(x),
@@ -136,6 +144,7 @@ extension class TypeChecker {
       );
       this.setLocal(
         tcenv,
+        scope,
         local,
         if (target) default else None(),
         if (target) filter else x ~> !filter(x),
@@ -145,6 +154,7 @@ extension class TypeChecker {
         x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _);
       this.setLocal(
         tcenv,
+        scope,
         local,
         if (target) None() else None(),
         if (target) filter else x ~> !filter(x),
@@ -156,6 +166,7 @@ extension class TypeChecker {
       );
       this.setLocal(
         tcenv,
+        scope,
         local,
         if (target) default else None(),
         if (target) filter else x ~> !filter(x),
@@ -164,6 +175,7 @@ extension class TypeChecker {
       filter = x ~> x is TFuns _;
       this.setLocal(
         tcenv,
+        scope,
         local,
         if (target) None() else None(),
         if (target) filter else x ~> !filter(x),
@@ -172,35 +184,46 @@ extension class TypeChecker {
     }
   }
 
-  fun evalNullEquality(tcenv: mutable TCEnv, local: Name, target: Bool): void {
-    this.setLocal(tcenv, local, None(), x ~>
+  fun evalNullEquality(
+    tcenv: mutable TCEnv,
+    scope: mutable Scope,
+    local: Name,
+    target: Bool,
+  ): void {
+    this.setLocal(tcenv, scope, local, None(), x ~>
       x is TPrimUnit(TNull(), _) == target
     )
   }
 
   fun evalUndefinedEquality(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     local: Name,
     target: Bool,
   ): void {
-    this.setLocal(tcenv, local, None(), x ~>
+    this.setLocal(tcenv, scope, local, None(), x ~>
       (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) == target
     )
   }
 
-  fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
+  fun evalCond(
+    tcenv: mutable TCEnv,
+    scope: mutable Scope,
+    e: Expr,
+    target: Bool,
+  ): void {
     e.value match {
     | Binop(BOStrictEquality(), e1, e2) ->
-      this.evalEquality(tcenv, e1, e2, target)
+      this.evalEquality(tcenv, scope, e1, e2, target)
 
     | Binop(BOStrictInequality(), e1, e2) ->
-      this.evalEquality(tcenv, e1, e2, !target)
+      this.evalEquality(tcenv, scope, e1, e2, !target)
 
     | InstanceOf(
       Expr(_, Var(local)),
       Expr(_, Var(Name(posArray, "Array"))),
     ) if (target) ->
-      tcenv.scope.set(
+      scope.set(
         local,
         TType::inst(
           Name(posArray, "Array"),
@@ -210,7 +233,7 @@ extension class TypeChecker {
       )
 
     | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
-      tcenv.scope.set(
+      scope.set(
         local,
         this.tenv.new(
           tcenv.context,
@@ -291,15 +314,15 @@ extension class TypeChecker {
             )
             .default(stype)
         };
-      this.setLocal(tcenv, local, default, filterSType, mapSType)
+      this.setLocal(tcenv, scope, local, default, filterSType, mapSType)
 
     | Binop(BOLogicalAnd(), e1, e2) if (target) ->
-      this.evalCond(tcenv, e1, true);
-      this.evalCond(tcenv, e2, true)
+      this.evalCond(tcenv, scope, e1, true);
+      this.evalCond(tcenv, scope, e2, true)
 
     | Binop(BOLogicalOr(), e1, e2) if (!target) ->
-      this.evalCond(tcenv, e1, false);
-      this.evalCond(tcenv, e2, false)
+      this.evalCond(tcenv, scope, e1, false);
+      this.evalCond(tcenv, scope, e2, false)
 
     | _ -> void
     }
@@ -307,12 +330,13 @@ extension class TypeChecker {
 
   fun setLocal(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     local: Name,
     default: ?SType,
     filter: SType ~> Bool,
     map: SType ~> SType = x ~> x,
   ): void {
-    ty = tcenv.scope.get(local);
+    ty = scope.get(local);
     !ty = ty.expand(tcenv.subst, this.tenv, Covariant());
     !ty = (mutable FilterType()).type((filter, map), ty);
     isTopOrEmpty = ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
@@ -323,7 +347,7 @@ extension class TypeChecker {
     | Some(d) if (isTopOrEmpty) -> TType::single(d)
     | _ -> ty
     };
-    tcenv.scope.set(local, localType, (_, _) -> void)
+    scope.set(local, localType, (_, _) -> void)
   }
 }
 

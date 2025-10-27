@@ -109,7 +109,8 @@ extension class TypeChecker {
         "Invalid definition",
         literalType match {
         | None() ->
-          ty = this.expr(tcenv, e);
+          scope = Scope::mcreateToplevel();
+          ty = this.expr(tcenv, scope, e);
           ty
         | Some(litType) -> litType
         },

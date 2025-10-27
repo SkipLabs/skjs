@@ -3,25 +3,24 @@ module SKJS;
 extension class TypeChecker {
   fun block(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     stmts: Array<Stmt>,
     cond: ?(Expr, Bool) = None(),
   ): readonly Scope {
-    scopeCopy = tcenv.scope;
-    scope = tcenv.mcreateSubScope{isLoop => false};
-    tcenv.!scope = scope;
+    subScope = tcenv.mcreateSubScope{scope, isLoop => false};
     cond match {
     | None() -> void
-    | Some((c, target)) -> this.evalCond(tcenv, c, target)
+    | Some((c, target)) -> this.evalCond(tcenv, subScope, c, target)
     };
     for (st in stmts) {
       this.stmt(tcenv, st)
     };
-    tcenv.!scope = scopeCopy;
-    scope
+    subScope
   }
 
   fun bind(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     kind: BindKind,
     pat: Pattern,
     type: TType,
@@ -33,12 +32,12 @@ extension class TypeChecker {
     | PVar(local) ->
       if (
         isLocalObject &&
-        !tcenv.scope.isThroughLoop(local) &&
+        !scope.isThroughLoop(local) &&
         !tcenv.localObjects.containsKey(local.value)
       ) {
         tcenv.localObjects![local.value] = None()
       };
-      tcenv.scope.bind(local, type, isInitialized)
+      scope.bind(local, type, isInitialized)
     | PArray(arrPat) ->
       type.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
@@ -59,7 +58,7 @@ extension class TypeChecker {
           )
         };
         for (i in Range(0, arrPat.size())) {
-          this.bind(tcenv, kind, arrPat[i], tyl[i], isInitialized, false)
+          this.bind(tcenv, scope, kind, arrPat[i], tyl[i], isInitialized, false)
         }
       | _ ->
         typingError(
@@ -169,11 +168,20 @@ extension class TypeChecker {
                 ],
               )
             };
-            this.bind(tcenv, kind, fieldPat, typeForField, isInitialized, false)
+            this.bind(
+              tcenv,
+              scope,
+              kind,
+              fieldPat,
+              typeForField,
+              isInitialized,
+              false,
+            )
           };
           rest.each(name ->
             this.bind(
               tcenv,
+              scope,
               kind,
               Pattern(name.pos, PVar(name)),
               TType::single(typeForRest),
@@ -425,8 +433,13 @@ extension class TypeChecker {
     result
   }
 
-  fun nonVoidExpr(pos: PosRange, tcenv: mutable TCEnv, e: Expr): TType {
-    ty = this.expr(tcenv, e);
+  fun nonVoidExpr(
+    pos: PosRange,
+    tcenv: mutable TCEnv,
+    scope: mutable Scope,
+    e: Expr,
+  ): TType {
+    ty = this.expr(tcenv, scope, e);
     if (this.nonTopContainsVoid(tcenv, ty)) {
       typingError(
         Array[
@@ -440,7 +453,12 @@ extension class TypeChecker {
 
   /* Typechecks expression e
      If mostPrecise, use the most precise type. */
-  fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool = false): TType {
+  fun expr(
+    tcenv: mutable TCEnv,
+    scope: mutable Scope,
+    e: Expr,
+    mostPrecise: Bool = false,
+  ): TType {
     if (mostPrecise) {
       this.asConstExpr(e) match {
       | Some(ty) -> return ty
@@ -473,7 +491,7 @@ extension class TypeChecker {
       if (tcenv.localObjects.containsKey(local.value)) {
         tcenv.usedObjects![local.value] = local.pos
       };
-      tcenv.scope.maybeGet(local) match {
+      scope.maybeGet(local) match {
       | None() ->
         defs = if (this.builtins.contains(local.value)) {
           this.defMap.get(tcenv.context, this.builtinsFileName, local)
@@ -630,10 +648,10 @@ extension class TypeChecker {
         thisType = TType::inter(
           tcenv.subst,
           this.tenv,
-          tcenv.scope.get(thisName),
+          scope.get(thisName),
           super,
         );
-        tcenv.scope.set(thisName, thisType, (x, y) -> {
+        scope.set(thisName, thisType, (x, y) -> {
           this.checkSubType(tcenv, pos, "Invalid super call", x, y)
         })
       };
@@ -666,7 +684,7 @@ extension class TypeChecker {
       className,
       targsAst,
       argsAst,
-    ) if (tcenv.scope.maybeGet(className) is Some _) ->
+    ) if (scope.maybeGet(className) is Some _) ->
       cstr = this.get(
         tcenv,
         pos,
@@ -1058,22 +1076,15 @@ extension class TypeChecker {
         TType::single(TPrimValue::boolean(e1.pos)),
       );
 
-      // Create scopes for the true and false branches with type refinements
-      scopeCopy = tcenv.scope;
-
       // True branch - evaluate e2 with refinements from e1 being true
-      trueScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = trueScope;
-      this.evalCond(tcenv, e1, true);
-      left = this.expr(tcenv, e2);
-      tcenv.!scope = scopeCopy;
+      trueScope = tcenv.mcreateSubScope{scope, isLoop => false};
+      this.evalCond(tcenv, trueScope, e1, true);
+      left = this.expr(tcenv, trueScope, e2);
 
       // False branch - evaluate e3 with refinements from e1 being false
-      falseScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = falseScope;
-      this.evalCond(tcenv, e1, false);
-      right = this.expr(tcenv, e3);
-      tcenv.!scope = scopeCopy;
+      falseScope = tcenv.mcreateSubScope{scope, isLoop => false};
+      this.evalCond(tcenv, falseScope, e1, false);
+      right = this.expr(tcenv, falseScope, e3);
 
       TType::union(tcenv.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
@@ -1092,6 +1103,7 @@ extension class TypeChecker {
 
   fun anonFunction(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     isAsync: ?PosRange,
     pos: PosRange,
     c: Closure,
@@ -1124,14 +1136,12 @@ extension class TypeChecker {
       tcenv.callingContext,
       CGNodes::singleton(callingContext),
     );
-    savedScope = tcenv.scope;
     savedCallingContext = tcenv.callingContext;
-    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
     tcenv.!callingContext = callingContext;
 
-    this.closure(tcenv, isAsync, paramTypes.toArray(), retType, body);
+    subScope = tcenv.mcreateSubScope{scope, isLoop => false};
+    this.closure(tcenv, subScope, isAsync, paramTypes.toArray(), retType, body);
 
-    tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
 
     TType::single(
@@ -1214,12 +1224,18 @@ extension class TypeChecker {
     }
   }
 
-  fun assign(tcenv: mutable TCEnv, pos: PosRange, e1: Expr, e2: Expr): TType {
+  fun assign(
+    tcenv: mutable TCEnv,
+    scope: mutable Scope,
+    pos: PosRange,
+    e1: Expr,
+    e2: Expr,
+  ): TType {
     this.checkLValue(e1);
     e1.value match {
     | Var(n) ->
-      ty2 = this.expr(tcenv, e2);
-      tcenv.scope.set(n, ty2, (x, y) ->
+      ty2 = this.expr(tcenv, scope, e2);
+      scope.set(n, ty2, (x, y) ->
         this.checkSubType(tcenv, pos, "Invalid assignment", x, y)
       );
       ty2
@@ -1228,7 +1244,7 @@ extension class TypeChecker {
       Expr(_, Var(local)),
       Expr(_, Var(fieldName)),
     ) if (tcenv.localObjects.containsKey(local.value)) ->
-      fieldType = this.expr(tcenv, e2);
+      fieldType = this.expr(tcenv, scope, e2);
       tcenv.localObjects[local.value] match {
       | None() -> void
       | Some(objectType) ->
@@ -1242,8 +1258,8 @@ extension class TypeChecker {
       };
       this.assignLocalObject(tcenv, pos, local, fieldName, fieldType)
     | _ ->
-      ty1 = this.expr(tcenv, e1);
-      ty2 = this.expr(tcenv, e2);
+      ty1 = this.expr(tcenv, scope, e1);
+      ty2 = this.expr(tcenv, scope, e2);
       this.checkSubType(tcenv, e2.pos, "Invalid assignment", ty2, ty1);
       ty1
     }

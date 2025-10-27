@@ -7,7 +7,6 @@ module SKJS;
 mutable class TCEnv private (
   context: mutable SKStore.Context,
   subst: mutable Subst,
-  mutable scope: mutable Scope,
   mutable callingContext: CGNode,
   localObjects: mutable Map<String, ?TType> = mutable Map[],
   usedObjects: mutable Map<String, PosRange> = mutable Map[],
@@ -18,8 +17,7 @@ mutable class TCEnv private (
     subst: mutable Subst,
     callingContext: CGNode,
   ): mutable this {
-    scope = Scope::mcreateToplevel();
-    mutable static(context, subst, scope, callingContext)
+    mutable static(context, subst, callingContext)
   }
 
   private mutable fun next(): Int {
@@ -27,8 +25,11 @@ mutable class TCEnv private (
     this.counter
   }
 
-  mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
-    this.scope.sub{id => this.next(), isLoop}
+  mutable fun mcreateSubScope{
+    scope: mutable Scope,
+    isLoop: Bool,
+  }: mutable Scope {
+    scope.sub{id => this.next(), isLoop}
   }
 }
 

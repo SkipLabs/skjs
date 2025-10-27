@@ -1,7 +1,7 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
+  fun stmt(tcenv: mutable TCEnv, scope: mutable Scope, st: Stmt): void {
     st.value match {
     | Break() -> void
     | Continue() -> void
@@ -68,9 +68,8 @@ extension class TypeChecker {
 
     | For(initStmt, cond, incr, block) ->
       scopeCopy = tcenv.scope;
-      initScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = initScope;
-      this.stmt(tcenv, initStmt);
+      initScope = tcenv.mcreateSubScope{scope, isLoop => false};
+      this.stmt(tcenv, initScope, initStmt);
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
@@ -85,12 +84,11 @@ extension class TypeChecker {
       for (stmt in stmts) {
         this.stmt(tcenv, stmt)
       }
-    | ForInOf(kind, initStmt, iterable, block) ->
-      scopeCopy = tcenv.scope;
-      initScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = initScope;
 
-      iterableType = this.expr(tcenv, iterable, true);
+    | ForInOf(kind, initStmt, iterable, block) ->
+      initScope = tcenv.mcreateSubScope{scope, isLoop => false};
+
+      iterableType = this.expr(tcenv, initScope, iterable, true);
       ty = kind match {
       | ForIn() -> this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos)
       | ForOf() -> this.getValueType(tcenv, iterable.pos, iterableType)
@@ -98,42 +96,31 @@ extension class TypeChecker {
 
       this.bindLoopVar(tcenv, initStmt, ty);
 
-      loopScope = tcenv.mcreateSubScope{isLoop => true};
-      tcenv.!scope = loopScope;
-      loopBody = this.block(tcenv, block);
-      tcenv.scope.popReplace(loopBody);
-      tcenv.!scope = initScope;
-      tcenv.scope.popMerge(tcenv.subst, this.tenv, loopScope);
-      tcenv.!scope = scopeCopy;
-      tcenv.scope.popReplace(initScope)
-
+      loopScope = tcenv.mcreateSubScope{scope => initScope, isLoop => true};
+      loopBody = this.block(tcenv, loopScope, block);
+      loopScope.popReplace(loopBody);
+      initScope.popMerge(tcenv.subst, this.tenv, loopScope);
+      scope.popReplace(initScope)
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
-      scopeCopy = tcenv.scope;
-      loopScope = tcenv.mcreateSubScope{isLoop => true};
-      tcenv.!scope = loopScope;
-      this.checkBool(tcenv, cond);
-      loopBody = this.block(tcenv, block, Some((cond, true)));
-      tcenv.scope.popReplace(loopBody);
-      tcenv.!scope = scopeCopy;
-      tcenv.scope.popMerge(tcenv.subst, this.tenv, loopScope)
+      loopScope = tcenv.mcreateSubScope{scope, isLoop => true};
+      this.checkBool(tcenv, loopScope, cond);
+      loopBody = this.block(tcenv, loopScope, block, Some((cond, true)));
+      loopScope.popReplace(loopBody);
+      scope.popMerge(tcenv.subst, this.tenv, loopScope)
     | Switch(e, branches) ->
-      this.switchCheckExhaustiveness(tcenv, e, branches);
-      this.switch(tcenv, e, branches)
+      this.switchCheckExhaustiveness(tcenv, scope, e, branches);
+      this.switch(tcenv, scope, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
-      scopeCopy = tcenv.scope;
-      tryScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = tryScope;
+      tryScope = tcenv.mcreateSubScope{scope, isLoop => false};
       for (stmt in tryBlock) {
-        this.stmt(tcenv, stmt)
+        this.stmt(tcenv, tryScope, stmt)
       };
-      tcenv.!scope = scopeCopy;
-      tcenv.scope.popMerge(tcenv.subst, this.tenv, tryScope);
+      scope.popMerge(tcenv.subst, this.tenv, tryScope);
 
       catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
-        catchScope = tcenv.mcreateSubScope{isLoop => false};
-        tcenv.!scope = catchScope;
+        catchScope = tcenv.mcreateSubScope{scope, isLoop => false};
         param match {
         | Some(pat) ->
           errorType = type match {
@@ -148,26 +135,23 @@ extension class TypeChecker {
             )
           | None() -> TType::top(pat.pos)
           };
-          this.bind(tcenv, BKLet(), pat, errorType, true, false)
+          this.bind(tcenv, catchScope, BKLet(), pat, errorType, true, false)
         | None() -> void
         };
         for (stmt in catchBlock) {
-          this.stmt(tcenv, stmt)
+          this.stmt(tcenv, catchScope, stmt)
         };
-        tcenv.!scope = scopeCopy;
-        tcenv.scope.popMerge(tcenv.subst, this.tenv, catchScope)
+        scope.popMerge(tcenv.subst, this.tenv, catchScope)
       | None() -> void
       };
 
       finallyBlock match {
       | Some(finallyStmts) ->
-        finallyScope = tcenv.mcreateSubScope{isLoop => false};
-        tcenv.!scope = finallyScope;
+        finallyScope = tcenv.mcreateSubScope{scope, isLoop => false};
         for (stmt in finallyStmts) {
-          this.stmt(tcenv, stmt)
+          this.stmt(tcenv, finallyScope, stmt)
         };
-        tcenv.!scope = scopeCopy;
-        tcenv.scope.popMerge(tcenv.subst, this.tenv, finallyScope)
+        scope.popMerge(tcenv.subst, this.tenv, finallyScope)
       | None() -> void
       }
     }
@@ -175,6 +159,7 @@ extension class TypeChecker {
 
   fun switch(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     e: Expr,
     branches: Array<SwitchBranch>,
   ): void {
@@ -191,24 +176,24 @@ extension class TypeChecker {
         typingError(Array[(last.pos, "Missing break")])
       }
     };
-    scope = branches[0] match {
+    branchScope = branches[0] match {
     | Case(v, block) ->
       checkBreak(block);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-      this.block(tcenv, block, Some((cond, true)))
+      this.block(tcenv, scope, block, Some((cond, true)))
     | Default(_) -> typingError(Array[(e.pos, "Missing branch")])
     };
     for (i in Range(1, branches.size())) {
-      tcenv.scope.merge(
+      scope.merge(
         tcenv.subst,
         this.tenv,
-        scope,
+        branchScope,
         branches[i] match {
         | Case(v, block) ->
           checkBreak(block);
           cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-          this.block(tcenv, block, Some((cond, true)))
-        | Default(stmts) -> this.block(tcenv, stmts)
+          this.block(tcenv, scope, block, Some((cond, true)))
+        | Default(stmts) -> this.block(tcenv, scope, stmts)
         },
       )
     }
@@ -216,10 +201,11 @@ extension class TypeChecker {
 
   fun switchCheckExhaustiveness(
     tcenv: mutable TCEnv,
+    scope: mutable Scope,
     e: Expr,
     branches: Array<SwitchBranch>,
   ): void {
-    condType = this.expr(tcenv, e, true);
+    condType = this.expr(tcenv, scope, e, true);
     cases = condType
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
@@ -230,7 +216,7 @@ extension class TypeChecker {
     for (branch in branches) {
       branch match {
       | Case(v, _) ->
-        this.expr(tcenv, v, true)
+        this.expr(tcenv, scope, v, true)
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
