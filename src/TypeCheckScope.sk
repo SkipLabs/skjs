@@ -15,7 +15,7 @@ mutable class Scope{
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
   static fun mcreateToplevel(fileName: String): mutable this {
-    static::mcreateWithCallingContext(CGNode::create(Toplevel(fileName)))
+    static::mcreateWithCallingContext(CGNode::toplevel(fileName))
   }
 
   static fun mcreateWithCallingContext(callingContext: CGNode): mutable this {
