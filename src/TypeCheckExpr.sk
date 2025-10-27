@@ -34,7 +34,7 @@ extension class TypeChecker {
       if (isLocalObject) {
         tcenv.bindingLocalObject(local)
       };
-      tcenv.scope.bind(local, type, isInitialized)
+      tcenv.bind(local, type, isInitialized)
     | PArray(arrPat) ->
       type.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
@@ -1174,7 +1174,7 @@ extension class TypeChecker {
     body: ClosureBody,
   ): void {
     for (param in params) {
-      tcenv.scope.bind(param.i0, param.i1, true)
+      tcenv.bind(param.i0, param.i1, true)
     };
     body match {
     | CBExpr(e) ->

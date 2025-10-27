@@ -76,6 +76,10 @@ mutable class TCEnv(
       )
     }
   }
+
+  mutable fun bind(local: Name, type: TType, isInitialized: Bool): void {
+    this.scope.bind(local, type, isInitialized)
+  }
 }
 
 module end;

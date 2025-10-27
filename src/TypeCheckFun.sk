@@ -13,7 +13,7 @@ extension class TypeChecker {
     | None() -> void
     | Some(thisType) ->
       !this.tenv.subst["this"] = (false, thisType);
-      tcenv.scope.bind(Name(fd.pos, "this"), thisType, true)
+      tcenv.bind(Name(fd.pos, "this"), thisType, true)
     };
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
@@ -84,7 +84,7 @@ extension class TypeChecker {
           ],
         )
       };
-      tcenv.scope.bind(paramName, paramType, true)
+      tcenv.bind(paramName, paramType, true)
     };
     !this.retType = fd.retType.i1.map(rty ->
       this.tenv.normalize(subst.context, rty)
