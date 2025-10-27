@@ -66,42 +66,36 @@ extension class TypeChecker {
       }
 
     | For(initStmt, cond, incr, block) ->
-      tcenv.withSubScopeReplace{
-        isLoop => false,
-        f => () -> {
-          this.stmt(tcenv, initStmt);
-          tcenv.withLoopSubScope(this.tenv, () -> {
-            this.checkBool(tcenv, cond);
-            loopBody = this.block(tcenv, block);
-            tcenv.popScopeReplace(loopBody);
-            _ = this.expr(tcenv, incr);
-          })
-        },
-      }
+      tcenv.withSubScopeReplace(() -> {
+        this.stmt(tcenv, initStmt);
+        tcenv.withLoopSubScope(this.tenv, () -> {
+          this.checkBool(tcenv, cond);
+          loopBody = this.block(tcenv, block);
+          tcenv.popScopeReplace(loopBody);
+          _ = this.expr(tcenv, incr);
+        })
+      })
 
     | Block(stmts) ->
       for (stmt in stmts) {
         this.stmt(tcenv, stmt)
       }
     | ForInOf(kind, initStmt, iterable, block) ->
-      tcenv.withSubScopeReplace{
-        isLoop => false,
-        f => () -> {
-          iterableType = this.expr(tcenv, iterable, true);
-          ty = kind match {
-          | ForIn() ->
-            this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos)
-          | ForOf() -> this.getValueType(tcenv, iterable.pos, iterableType)
-          };
+      tcenv.withSubScopeReplace(() -> {
+        iterableType = this.expr(tcenv, iterable, true);
+        ty = kind match {
+        | ForIn() ->
+          this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos)
+        | ForOf() -> this.getValueType(tcenv, iterable.pos, iterableType)
+        };
 
-          this.bindLoopVar(tcenv, initStmt, ty);
+        this.bindLoopVar(tcenv, initStmt, ty);
 
-          tcenv.withLoopSubScope(this.tenv, () -> {
-            loopBody = this.block(tcenv, block);
-            tcenv.popScopeReplace(loopBody)
-          })
-        },
-      }
+        tcenv.withLoopSubScope(this.tenv, () -> {
+          loopBody = this.block(tcenv, block);
+          tcenv.popScopeReplace(loopBody)
+        })
+      })
 
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->

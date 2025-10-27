@@ -70,7 +70,7 @@ mutable class TCEnv(
     this.withSubScopeMerge{isLoop => true, tenv, f}
   }
 
-  mutable fun withSubScopeReplace{isLoop: Bool, f: () -> void}: void {
+  mutable fun withSubScopeReplace(f: () -> void): void {
     (_void, subScope) = this.withSubScope<void>{isLoop => false, f};
     this.popScopeReplace(subScope)
   }
