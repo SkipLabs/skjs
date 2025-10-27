@@ -131,8 +131,7 @@ value class StmtTermination private {
         () ~> static::block(bl1),
         () ~> static::blockOpt(bl2o),
       )
-    | ForIn(var, e, body)
-    | ForOf(var, e, body) ->
+    | ForInOf(_forInOfKind, var, e, body) ->
       static::forVar(var);
       static::expr(e).thenk(() ~>
         CondTermination::any.loop_(() ~> static::block(body))
