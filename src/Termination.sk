@@ -308,7 +308,11 @@ value class CondTermination private (
 
   fun loop_(kbody: () ~> StmtTermination): StmtTermination {
     this.if_(
-      () ~> kbody().then(StmtTermination::loop_).breakToFallthrough(),
+      () ~>
+        kbody()
+          .continueToFallthrough()
+          .then(StmtTermination::loop_)
+          .breakToFallthrough(),
       () ~> StmtTermination::skip,
     )
   }
