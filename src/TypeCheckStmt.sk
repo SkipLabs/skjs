@@ -70,15 +70,12 @@ extension class TypeChecker {
         isLoop => false,
         f => () -> {
           this.stmt(tcenv, initStmt);
-          tcenv.withLoopSubScope{
-            tenv => this.tenv,
-            f => () -> {
-              this.checkBool(tcenv, cond);
-              loopBody = this.block(tcenv, block);
-              tcenv.popScopeReplace(loopBody);
-              _ = this.expr(tcenv, incr);
-            },
-          }
+          tcenv.withLoopSubScope(this.tenv, () -> {
+            this.checkBool(tcenv, cond);
+            loopBody = this.block(tcenv, block);
+            tcenv.popScopeReplace(loopBody);
+            _ = this.expr(tcenv, incr);
+          })
         },
       };
       tcenv.popScopeReplace(initScope)
@@ -99,27 +96,21 @@ extension class TypeChecker {
 
           this.bindLoopVar(tcenv, initStmt, ty);
 
-          tcenv.withLoopSubScope{
-            tenv => this.tenv,
-            f => () -> {
-              loopBody = this.block(tcenv, block);
-              tcenv.popScopeReplace(loopBody)
-            },
-          }
+          tcenv.withLoopSubScope(this.tenv, () -> {
+            loopBody = this.block(tcenv, block);
+            tcenv.popScopeReplace(loopBody)
+          })
         },
       };
       tcenv.popScopeReplace(initScope)
 
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
-      tcenv.withLoopSubScope{
-        tenv => this.tenv,
-        f => () -> {
-          this.checkBool(tcenv, cond);
-          loopBody = this.block(tcenv, block, Some((cond, true)));
-          tcenv.popScopeReplace(loopBody)
-        },
-      }
+      tcenv.withLoopSubScope(this.tenv, () -> {
+        this.checkBool(tcenv, cond);
+        loopBody = this.block(tcenv, block, Some((cond, true)));
+        tcenv.popScopeReplace(loopBody)
+      })
     | Switch(e, branches) ->
       this.switchCheckExhaustiveness(tcenv, e, branches);
       this.switch(tcenv, e, branches)
