@@ -187,6 +187,27 @@ mutable class Scope{
     );
   }
 
+  mutable fun pop(
+    subst: mutable Subst,
+    tenv: TEnv,
+    scope: readonly Scope,
+  ): void {
+    if (scope.up.fromSome().id != this.id) {
+      internal_error("scope up id mismatch")
+    };
+    if (scope.callingContext != this.callingContext) {
+      internal_error("scope calling context mismatch")
+    };
+    for (nameRef in scope.escapingRefs()) {
+      (name, ref) = nameRef;
+      (_, upRef) = this.maybeGetRef(name).fromSome();
+      this.!refs[name] = LocalRef(
+        TType::union(subst, tenv, upRef.type, ref.type),
+        upRef.isInitialized,
+      )
+    }
+  }
+
   mutable fun popReplace(scope: readonly Scope): void {
     if (scope.up.fromSome().id != this.id) {
       internal_error("scope up id mismatch")
