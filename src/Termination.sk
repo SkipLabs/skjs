@@ -152,7 +152,7 @@ value class StmtTermination private {
         )
       )
     | While(cond, body) -> static::cond(cond).loop_(() ~> static::block(body))
-    | Bind(_kind, bindings) -> static::and(bindings, static::binding)
+    | Bind(_kind, bindings) -> static::seq(bindings, static::binding)
     | Switch(e, branches) ->
       static::expr(e).thenk(() ~> {
         branchesTerm = static::or(branches, static::branch);
