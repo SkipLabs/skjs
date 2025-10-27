@@ -70,8 +70,7 @@ extension class TypeChecker {
         isLoop => false,
         f => () -> {
           this.stmt(tcenv, initStmt);
-          tcenv.withSubScopeMerge{
-            isLoop => true,
+          tcenv.withLoopSubScope{
             tenv => this.tenv,
             f => () -> {
               this.checkBool(tcenv, cond);
@@ -100,8 +99,7 @@ extension class TypeChecker {
 
           this.bindLoopVar(tcenv, initStmt, ty);
 
-          tcenv.withSubScopeMerge{
-            isLoop => true,
+          tcenv.withLoopSubScope{
             tenv => this.tenv,
             f => () -> {
               loopBody = this.block(tcenv, block);
@@ -114,8 +112,7 @@ extension class TypeChecker {
 
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
-      tcenv.withSubScopeMerge{
-        isLoop => true,
+      tcenv.withLoopSubScope{
         tenv => this.tenv,
         f => () -> {
           this.checkBool(tcenv, cond);
