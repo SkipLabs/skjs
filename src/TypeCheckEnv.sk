@@ -27,14 +27,6 @@ mutable class TCEnv private (
     this.counter
   }
 
-  mutable fun popScope(
-    subst: mutable Subst,
-    tenv: TEnv,
-    scope: readonly Scope,
-  ): void {
-    this.scope.popMerge(subst, tenv, scope);
-  }
-
   mutable fun popScopeReplace(scope: readonly Scope): void {
     this.scope.popReplace(scope);
   }
