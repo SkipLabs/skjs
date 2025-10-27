@@ -66,7 +66,7 @@ extension class TypeChecker {
       }
 
     | For(initStmt, cond, incr, block) ->
-      (_void, initScope) = tcenv.withSubScope{
+      tcenv.withSubScopeReplace{
         isLoop => false,
         f => () -> {
           this.stmt(tcenv, initStmt);
@@ -77,14 +77,14 @@ extension class TypeChecker {
             _ = this.expr(tcenv, incr);
           })
         },
-      };
-      tcenv.popScopeReplace(initScope)
+      }
+
     | Block(stmts) ->
       for (stmt in stmts) {
         this.stmt(tcenv, stmt)
       }
     | ForInOf(kind, initStmt, iterable, block) ->
-      (_void, initScope) = tcenv.withSubScope{
+      tcenv.withSubScopeReplace{
         isLoop => false,
         f => () -> {
           iterableType = this.expr(tcenv, iterable, true);
@@ -101,8 +101,7 @@ extension class TypeChecker {
             tcenv.popScopeReplace(loopBody)
           })
         },
-      };
-      tcenv.popScopeReplace(initScope)
+      }
 
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
