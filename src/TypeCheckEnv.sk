@@ -41,7 +41,7 @@ mutable class TCEnv private (
     tenv: TEnv,
     scope: readonly Scope,
   ): void {
-    this.scope.merge(subst, tenv, scope, this.mcreateSubScope{isLoop => false});
+    this.scope.popMerge(subst, tenv, scope);
   }
 
   mutable fun popScopeReplace(scope: readonly Scope): void {
