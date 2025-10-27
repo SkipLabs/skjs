@@ -81,13 +81,6 @@ mutable class Scope{
     }
   }
 
-  readonly fun get(name: Name): TType {
-    this.maybeGet(name) match {
-    | None() -> typingError(Array[(name.pos, "Unbound name")])
-    | Some(x) -> x
-    }
-  }
-
   mutable fun set(
     name: Name,
     ty: TType,

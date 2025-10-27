@@ -626,7 +626,7 @@ extension class TypeChecker {
         thisType = TType::inter(
           tcenv.subst,
           this.tenv,
-          tcenv.scope.get(thisName),
+          tcenv.get(thisName),
           super,
         );
         tcenv.scope.set(thisName, thisType, (x, y) -> {
@@ -1258,7 +1258,7 @@ extension class TypeChecker {
     fieldType: TType,
     used: ?PosRange,
   ): TType {
-    objField = tcenv.scope
+    objField = tcenv
       .get(local)
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
