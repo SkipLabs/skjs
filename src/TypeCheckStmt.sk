@@ -76,10 +76,8 @@ extension class TypeChecker {
         })
       })
 
-    | Block(stmts) ->
-      for (stmt in stmts) {
-        this.stmt(tcenv, stmt)
-      }
+    | Block(stmts) -> this.stmts(tcenv, stmts)
+
     | ForInOf(kind, initStmt, iterable, block) ->
       tcenv.withSubScopeReplace(() -> {
         iterableType = this.expr(tcenv, iterable, true);
@@ -111,11 +109,7 @@ extension class TypeChecker {
       tcenv.withSubScopeMerge{
         isLoop => false,
         tenv => this.tenv,
-        f => () -> {
-          for (stmt in tryBlock) {
-            this.stmt(tcenv, stmt)
-          }
-        },
+        f => () -> this.stmts(tcenv, tryBlock),
       };
 
       catchClause match {
@@ -141,9 +135,7 @@ extension class TypeChecker {
               this.bind(tcenv, BKLet(), pat, errorType, true, false)
             | None() -> void
             };
-            for (stmt in catchBlock) {
-              this.stmt(tcenv, stmt)
-            }
+            this.stmts(tcenv, catchBlock)
           },
         }
       | None() -> void
@@ -154,11 +146,7 @@ extension class TypeChecker {
         tcenv.withSubScopeMerge{
           isLoop => false,
           tenv => this.tenv,
-          f => () -> {
-            for (stmt in finallyStmts) {
-              this.stmt(tcenv, stmt)
-            }
-          },
+          f => () -> this.stmts(tcenv, finallyStmts),
         }
       | None() -> void
       }

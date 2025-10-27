@@ -1,6 +1,12 @@
 module SKJS;
 
 extension class TypeChecker {
+  fun stmts(tcenv: mutable TCEnv, stmts: Array<Stmt>): void {
+    for (st in stmts) {
+      this.stmt(tcenv, st)
+    }
+  }
+
   fun block(
     tcenv: mutable TCEnv,
     stmts: Array<Stmt>,
@@ -13,9 +19,7 @@ extension class TypeChecker {
         | None() -> void
         | Some((c, target)) -> this.evalCond(tcenv, c, target)
         };
-        for (st in stmts) {
-          this.stmt(tcenv, st)
-        }
+        this.stmts(tcenv, stmts)
       },
     }.i1
   }

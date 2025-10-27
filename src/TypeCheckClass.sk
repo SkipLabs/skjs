@@ -230,9 +230,7 @@ extension class TypeChecker {
       _subScope = tcenv.withSubScope{
         isLoop => false,
         f => () -> {
-          for (st in body) {
-            this.stmt(tcenv, st)
-          };
+          this.stmts(tcenv, body);
           bodyThisType = tcenv.get(Name(fd.pos, "this"));
           objType = static::filterMethods(bodyThisType, tcenv.subst, this.tenv);
           fullType = static::filterMethods(thisType, tcenv.subst, this.tenv);
