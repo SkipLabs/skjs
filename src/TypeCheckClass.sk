@@ -83,7 +83,7 @@ extension class TypeChecker {
             !this.super = Some((superCstr, super));
           };
           scope = Scope::mcreateToplevel(fileName);
-          tcenv = mutable TCEnv(context, subst, scope);
+          tcenv = TCEnv::mcreate(context, subst, scope);
           this.checkSubType(
             tcenv,
             parentName.pos,
@@ -104,7 +104,7 @@ extension class TypeChecker {
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
         scope = Scope::mcreateToplevel(fileName);
-        tcenv = mutable TCEnv(context, subst, scope);
+        tcenv = TCEnv::mcreate(context, subst, scope);
         this.checkSubType(
           tcenv,
           parentName.pos,
@@ -148,7 +148,7 @@ extension class TypeChecker {
         | None() -> void
         | Some(e) ->
           scope = Scope::mcreateToplevel(fileName);
-          tcenv = mutable TCEnv(context, subst, scope);
+          tcenv = TCEnv::mcreate(context, subst, scope);
           this.checkSubType(
             tcenv,
             e.pos,

@@ -4,7 +4,7 @@
 
 module SKJS;
 
-mutable class TCEnv(
+mutable class TCEnv private (
   context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
@@ -12,6 +12,14 @@ mutable class TCEnv(
   usedObjects: mutable Map<String, PosRange> = mutable Map[],
   private mutable counter: Int = 0,
 ) {
+  static fun mcreate(
+    context: mutable SKStore.Context,
+    subst: mutable Subst,
+    scope: mutable Scope,
+  ): mutable this {
+    mutable static(context, subst, scope)
+  }
+
   private mutable fun next(): Int {
     this.!counter = this.counter + 1;
     this.counter

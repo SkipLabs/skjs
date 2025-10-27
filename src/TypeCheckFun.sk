@@ -9,7 +9,7 @@ extension class TypeChecker {
   ): (this, mutable TCEnv) {
     static::checkTypeParams(fd.tparams);
     scope = Scope::mcreateWithCallingContext(callingContext);
-    tcenv = mutable TCEnv(subst.context, subst, scope);
+    tcenv = TCEnv::mcreate(subst.context, subst, scope);
     thisTypeOpt match {
     | None() -> void
     | Some(thisType) ->

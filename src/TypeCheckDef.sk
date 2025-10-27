@@ -27,7 +27,7 @@ extension class TypeChecker {
     | ToplevelExpr(e) ->
       subst = Subst::mcreate{context};
       scope = Scope::mcreateToplevel(def.pos.fileName);
-      tcenv = mutable TCEnv(context, subst, scope);
+      tcenv = TCEnv::mcreate(context, subst, scope);
       ty = this.expr(tcenv, e);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ FunDef _ ->
@@ -96,7 +96,7 @@ extension class TypeChecker {
       | Some(x) -> x
       };
       scope = Scope::mcreateToplevel(varDef.pat.pos.fileName);
-      tcenv = mutable TCEnv(context, subst, scope);
+      tcenv = TCEnv::mcreate(context, subst, scope);
       this.checkSubType(
         tcenv,
         varDef.pat.pos,
