@@ -200,7 +200,8 @@ value class StmtTermination private {
     | As(e, _ty)
     | AsConst(e) ->
       static::expr(e)
-    | New(_name, _targs, args) -> static::seq(args, static::expr)
+    | New(_name, _targs, args) ->
+      static::seq(args, static::expr).then(static::unknownCall)
     | Unop(_unop, e)
     | PostOp(_postop, e) ->
       static::expr(e).then(static::unknownOperator /* TODO: refine */)
@@ -215,6 +216,7 @@ value class StmtTermination private {
         static::expr(e2).then(static::unknownOperator /* TODO: refine */)
       )
     | Call(e, _targs, args) ->
+      // We assume the typechecker checks it's a function so calling does not throw
       static::expr(e).thenk(() ->
         static::seq(args, static::expr).then(static::unknownCall)
       )
