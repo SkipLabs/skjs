@@ -8,6 +8,7 @@ mutable class TCEnv private (
   context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
+  mutable termination: StmtTermination,
   mutable callingContext: CGNode,
   localObjects: mutable Map<String, ?TType> = mutable Map[],
   usedObjects: mutable Map<String, PosRange> = mutable Map[],
@@ -19,7 +20,8 @@ mutable class TCEnv private (
     callingContext: CGNode,
   ): mutable this {
     scope = Scope::mcreateToplevel();
-    mutable static(context, subst, scope, callingContext)
+    termination = StmtTermination::skip;
+    mutable static(context, subst, scope, termination, callingContext)
   }
 
   private mutable fun next(): Int {
