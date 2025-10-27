@@ -1121,15 +1121,18 @@ extension class TypeChecker {
     // Register a dependency from parent context on this lambda
     this.callgraph.recordCalls(
       tcenv.context,
-      tcenv.scope.callingContext,
+      tcenv.callingContext,
       CGNodes::singleton(callingContext),
     );
     savedScope = tcenv.scope;
-    tcenv.!scope = tcenv.scope with {callingContext};
+    savedCallingContext = tcenv.callingContext;
+    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
+    tcenv.!callingContext = callingContext;
 
     this.closure(tcenv, isAsync, paramTypes.toArray(), retType, body);
 
     tcenv.!scope = savedScope;
+    tcenv.!callingContext = savedCallingContext;
 
     TType::single(
       TFuns::singleFun(
@@ -1391,7 +1394,7 @@ extension class TypeChecker {
       for (tfun in funs.values().concat(methods.values())) {
         this.callgraph.recordCalls(
           tcenv.context,
-          tcenv.scope.callingContext,
+          tcenv.callingContext,
           tfun.cgNodes,
         );
         if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {

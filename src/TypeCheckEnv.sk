@@ -8,6 +8,7 @@ mutable class TCEnv private (
   context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
+  mutable callingContext: CGNode,
   localObjects: mutable Map<String, ?TType> = mutable Map[],
   usedObjects: mutable Map<String, PosRange> = mutable Map[],
   private mutable counter: Int = 0,
@@ -17,8 +18,8 @@ mutable class TCEnv private (
     subst: mutable Subst,
     callingContext: CGNode,
   ): mutable this {
-    scope = Scope::mcreateWithCallingContext(callingContext);
-    mutable static(context, subst, scope)
+    scope = Scope::mcreateToplevel();
+    mutable static(context, subst, scope, callingContext)
   }
 
   private mutable fun next(): Int {
@@ -48,12 +49,7 @@ mutable class TCEnv private (
   }
 
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
-    mutable Scope{
-      id => this.next(),
-      isLoop,
-      up => Some(this.scope),
-      callingContext => this.scope.callingContext,
-    }
+    mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
   }
 }
 

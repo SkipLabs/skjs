@@ -9,17 +9,12 @@ value class LocalRef(type: TType, isInitialized: Bool)
 mutable class Scope{
   id: Int,
   private isLoop: Bool,
-  callingContext: CGNode,
   up: ?readonly Scope = None(),
   private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
-  static fun mcreateToplevel(fileName: String): mutable this {
-    static::mcreateWithCallingContext(CGNode::toplevel(fileName))
-  }
-
-  static fun mcreateWithCallingContext(callingContext: CGNode): mutable this {
-    mutable static{id => 0, isLoop => false, callingContext}
+  static fun mcreateToplevel(): mutable this {
+    mutable static{id => 0, isLoop => false}
   }
 
   readonly private fun maybeGetLocal(name: Name): ?Name {
@@ -130,12 +125,6 @@ mutable class Scope{
     };
     if (scope2.up.fromSome().id != this.id) {
       internal_error("scope2 up id mismatch")
-    };
-    if (scope1.callingContext != this.callingContext) {
-      internal_error("scope1 calling context mismatch");
-    };
-    if (scope2.callingContext != this.callingContext) {
-      internal_error("scope2 calling context mismatch");
     };
     _ = mapUnion(
       scope1.escapingRefs(),
