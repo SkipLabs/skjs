@@ -79,7 +79,7 @@ extension class TypeChecker {
               _ = this.expr(tcenv, incr);
             },
           };
-          tcenv.popScope(tcenv.subst, this.tenv, loopScope)
+          tcenv.popScope(this.tenv, loopScope)
         },
       };
       tcenv.popScopeReplace(initScope)
@@ -107,7 +107,7 @@ extension class TypeChecker {
               tcenv.popScopeReplace(loopBody)
             },
           };
-          tcenv.popScope(tcenv.subst, this.tenv, loopScope)
+          tcenv.popScope(this.tenv, loopScope)
         },
       };
       tcenv.popScopeReplace(initScope)
@@ -122,7 +122,7 @@ extension class TypeChecker {
           tcenv.popScopeReplace(loopBody)
         },
       };
-      tcenv.popScope(tcenv.subst, this.tenv, loopScope)
+      tcenv.popScope(this.tenv, loopScope)
     | Switch(e, branches) ->
       this.switchCheckExhaustiveness(tcenv, e, branches);
       this.switch(tcenv, e, branches)
@@ -135,7 +135,7 @@ extension class TypeChecker {
           }
         },
       };
-      tcenv.popScope(tcenv.subst, this.tenv, tryScope);
+      tcenv.popScope(this.tenv, tryScope);
 
       catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
@@ -164,7 +164,7 @@ extension class TypeChecker {
             }
           },
         };
-        tcenv.popScope(tcenv.subst, this.tenv, catchScope)
+        tcenv.popScope(this.tenv, catchScope)
       | None() -> void
       };
 
@@ -178,7 +178,7 @@ extension class TypeChecker {
             }
           },
         };
-        tcenv.popScope(tcenv.subst, this.tenv, finallyScope)
+        tcenv.popScope(this.tenv, finallyScope)
       | None() -> void
       }
     }
