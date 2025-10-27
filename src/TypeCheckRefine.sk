@@ -54,37 +54,22 @@ extension class TypeChecker {
     tag: String,
     target: Bool,
   ): void {
-    if (target) {
-      // Positive branch: narrow to only the matching tag
-      this.setLocal(
-        tcenv,
-        local,
-        None(),
-        _ ~> true,
-        stype ~>
-          stype match {
-          | TAlgebraic(branches, aPos) ->
-            TAlgebraic(branches.filter(branch -> branch.tag == tag), aPos)
-          | x -> x
-          }
-        ,
-      )
-    } else {
-      // Negative branch: eliminate the matching tag (refinement by elimination)
-      this.setLocal(
-        tcenv,
-        local,
-        None(),
-        _ ~> true,
-        stype ~>
-          stype match {
-          | TAlgebraic(branches, aPos) ->
-            TAlgebraic(branches.filter(branch -> branch.tag != tag), aPos)
-          | x -> x
-          }
-        ,
-      )
-    }
+    this.setLocal(
+      tcenv,
+      local,
+      None(),
+      _ ~> true,
+      stype ~>
+        stype match {
+        | TAlgebraic(branches, aPos) ->
+          TAlgebraic(
+            branches.filter(branch -> (branch.tag == tag) == target),
+            aPos,
+          )
+        | x -> x
+        }
+      ,
+    )
   }
 
   fun evalTypeofEquality(
@@ -168,7 +153,10 @@ extension class TypeChecker {
         if (target) None() else None(),
         if (target) filter else x ~> !filter(x),
       )
-    | _ -> void
+    | _ ->
+      typingError(
+        Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
+      )
     }
   }
 
@@ -315,12 +303,13 @@ extension class TypeChecker {
     ty = tcenv.scope.get(local);
     !ty = ty.expand(tcenv.subst, this.tenv, Covariant());
     !ty = (mutable FilterType()).type((filter, map), ty);
-    isTopOrEmpty = ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-    | None() -> true
-    | Some(stypes) -> stypes.isEmpty()
-    };
     localType = default match {
-    | Some(d) if (isTopOrEmpty) -> TType::single(d)
+    | Some(d) ->
+      isTopOrEmpty = ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+      | None() -> true
+      | Some(stypes) -> stypes.isEmpty()
+      };
+      if (isTopOrEmpty) TType::single(d) else ty
     | _ -> ty
     };
     tcenv.scope.set(local, localType, (_, _) -> void)

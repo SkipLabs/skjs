@@ -227,14 +227,19 @@ base class Stmt_ uses XXHashable {
   | Return(PosRange, ?Expr)
   | Throw(Expr)
   | If(Expr, Array<Stmt>, ?Array<Stmt>)
-  | ForIn(Stmt, Expr, Array<Stmt>)
-  | ForOf(Stmt, Expr, Array<Stmt>)
+  | ForInOf(ForInOfKind, Stmt, Expr, Array<Stmt>)
   | For(Stmt, Expr, Expr, Array<Stmt>)
   | While(Expr, Array<Stmt>)
   | Bind(BindKind, Array<Binding>)
   | Switch(Expr, Array<SwitchBranch>)
   | Block(Array<Stmt>)
   | Try(Array<Stmt>, ?CatchClause, ?Array<Stmt>)
+}
+
+base class ForInOfKind uses XXHashable {
+  children =
+  | ForIn()
+  | ForOf()
 }
 
 /***************************************************************************/

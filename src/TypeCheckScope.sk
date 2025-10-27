@@ -28,13 +28,6 @@ mutable class Scope{
     }
   }
 
-  readonly private fun getLocal(name: Name): Name {
-    this.maybeGetLocal(name) match {
-    | None() -> typingError(Array[(name.pos, "Unbound name")])
-    | Some(x) -> x
-    }
-  }
-
   readonly private fun maybeGetRefHelper(
     throughLoop: Bool,
     name: String,
@@ -152,6 +145,24 @@ mutable class Scope{
         nameRef1
       },
     );
+  }
+
+  mutable fun popMerge(
+    subst: mutable Subst,
+    tenv: TEnv,
+    scope: readonly Scope,
+  ): void {
+    if (scope.up.fromSome().id != this.id) {
+      internal_error("scope up id mismatch")
+    };
+    for (nameRef in scope.escapingRefs()) {
+      (name, ref) = nameRef;
+      (_, upRef) = this.maybeGetRef(name).fromSome();
+      this.!refs[name] = LocalRef(
+        TType::union(subst, tenv, upRef.type, ref.type),
+        upRef.isInitialized,
+      )
+    }
   }
 
   mutable fun popReplace(scope: readonly Scope): void {
