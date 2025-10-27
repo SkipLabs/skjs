@@ -62,7 +62,8 @@ extension class TypeChecker {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
       | (true, false) -> tcenv.popScopeReplace(scope2)
       | (false, true) -> tcenv.popScopeReplace(scope1)
-      | (false, false) -> tcenv.mergeScope(this.tenv, scope1, scope2)
+      | (false, false) ->
+        tcenv.scope.merge(tcenv.subst, this.tenv, scope1, scope2)
       }
 
     | For(initStmt, cond, incr, block) ->
@@ -213,7 +214,8 @@ extension class TypeChecker {
     | Default(_) -> typingError(Array[(e.pos, "Missing branch")])
     };
     for (i in Range(1, branches.size())) {
-      tcenv.mergeScope(
+      tcenv.scope.merge(
+        tcenv.subst,
         this.tenv,
         scope,
         branches[i] match {
