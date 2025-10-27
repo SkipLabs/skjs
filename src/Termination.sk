@@ -30,7 +30,7 @@ value class StmtTermination private {
   const throw_: this = StmtTermination{mayThrow => true};
   const loop_: this = StmtTermination{mayLoop => true};
   const skip: this = StmtTermination{mayFallthrough => true};
-  const unknownOperator: this = StmtTermination{
+  const throughOrThrow: this = StmtTermination{
     mayFallthrough => true,
     mayThrow => true,
   };
@@ -183,12 +183,13 @@ value class StmtTermination private {
 
   static fun expr(expr: Expr): this {
     /* Operands, array literals, object literals are always evaluated from left to right.
-       We assume that the existence of _name is checked in the typechecker. */
+       We assume that the existence of _name is checked in the typechecker.
+       We assume operators do not call custom functions. */
     expr.value match {
     | Number(_)
     | BigInt(_)
     | Var(_name)
-    | Spread(_name)
+    | Spread(_name) /* We assume the typechecker checks it's an iterable */
     | EString(_)
     | Closure(_args, _retTy, _body)
     | Regexp(_) ->
@@ -211,10 +212,14 @@ value class StmtTermination private {
     | Get(e1, e2)
     | InstanceOf(e1, e2)
     | In(e1, e2)
-    | Binop(_op, e1, e2) ->
+    | Binop(BODot(), e1, e2)
+    | Binop(BOExclamationMarkDot(), e1, e2) ->
       static::expr(e1).thenk(() ~>
-        static::expr(e2).then(static::unknownOperator /* TODO: refine */)
+        static::expr(e2).then(static::throughOrThrow)
       )
+    | Binop(_op, e1, e2) ->
+      // We assume the typechecker checks we're not re-assigning a const
+      static::expr(e1).thenk(() ~> static::expr(e2)) /* do not throw */
     | Call(e, _targs, args) ->
       // We assume the typechecker checks it's a function so calling does not throw
       static::expr(e).thenk(() ->
