@@ -18,12 +18,7 @@ mutable class TCEnv(
   }
 
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
-    mutable Scope{
-      id => this.next(),
-      isLoop,
-      up => Some(this.scope),
-      callingContext => this.scope.callingContext,
-    }
+    this.scope.sub{id => this.next(), isLoop}
   }
 }
 

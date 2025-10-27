@@ -22,6 +22,15 @@ mutable class Scope{
     mutable static{id => 0, isLoop => false, callingContext}
   }
 
+  readonly fun sub{id: Int, isLoop: Bool}: mutable this {
+    mutable static{
+      id,
+      isLoop,
+      up => Some(this),
+      callingContext => this.callingContext,
+    }
+  }
+
   readonly fun clone(): Scope {
     Scope{
       id => this.id,
