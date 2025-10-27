@@ -44,10 +44,6 @@ mutable class TCEnv(
     this.scope.merge(this.subst, tenv, scope1, scope2);
   }
 
-  mutable fun popScope(tenv: TEnv, scope: readonly Scope): void {
-    this.scope.popMerge(this.subst, tenv, scope);
-  }
-
   mutable fun popScopeReplace(scope: readonly Scope): void {
     this.scope.popReplace(scope);
   }
@@ -67,7 +63,7 @@ mutable class TCEnv(
 
   mutable fun withSubScopeMerge{isLoop: Bool, tenv: TEnv, f: () -> void}: void {
     (_void, subScope) = this.withSubScope<void>{isLoop, f};
-    this.popScope(tenv, subScope)
+    this.scope.popMerge(this.subst, tenv, subScope)
   }
 
   mutable fun bindingLocalObject(local: Name): void {
