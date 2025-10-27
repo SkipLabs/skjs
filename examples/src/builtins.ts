@@ -55,7 +55,7 @@ declare class Array<T> implements Iterable<T> {
   static from<T>(arrayLike: ArrayLike<T> | Iterable<T>): Array<T>;
   // If we have overloads:
   // static from<T, U>(arrayLike: Array<T>, mapFn: (item: T) => U): Array<U>;
-  static of<T>(elements: T): Array<T>;
+  static of<T>(...elements: T[]): Array<T>;
 }
 
 declare const Math: {
