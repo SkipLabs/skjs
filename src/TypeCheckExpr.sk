@@ -469,7 +469,7 @@ extension class TypeChecker {
       if (tcenv.localObjects.containsKey(local.value)) {
         tcenv.localObjects![local.value] = LOUsed(local.pos)
       };
-      tcenv.scope.maybeGet(local) match {
+      tcenv.maybeGet(local) match {
       | None() ->
         defs = if (this.builtins.contains(local.value)) {
           this.defMap.get(tcenv.context, this.builtinsFileName, local)
@@ -662,7 +662,7 @@ extension class TypeChecker {
       className,
       targsAst,
       argsAst,
-    ) if (tcenv.scope.maybeGet(className) is Some _) ->
+    ) if (tcenv.maybeGet(className) is Some _) ->
       cstr = this.get(
         tcenv,
         pos,
