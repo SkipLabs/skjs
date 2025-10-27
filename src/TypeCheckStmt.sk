@@ -70,16 +70,16 @@ extension class TypeChecker {
         isLoop => false,
         f => () -> {
           this.stmt(tcenv, initStmt);
-          (_void, loopScope) = tcenv.withSubScope{
+          tcenv.withSubScopeMerge{
             isLoop => true,
+            tenv => this.tenv,
             f => () -> {
               this.checkBool(tcenv, cond);
               loopBody = this.block(tcenv, block);
               tcenv.popScopeReplace(loopBody);
               _ = this.expr(tcenv, incr);
             },
-          };
-          tcenv.popScope(this.tenv, loopScope)
+          }
         },
       };
       tcenv.popScopeReplace(initScope)
@@ -100,47 +100,48 @@ extension class TypeChecker {
 
           this.bindLoopVar(tcenv, initStmt, ty);
 
-          (_void, loopScope) = tcenv.withSubScope{
+          tcenv.withSubScopeMerge{
             isLoop => true,
+            tenv => this.tenv,
             f => () -> {
               loopBody = this.block(tcenv, block);
               tcenv.popScopeReplace(loopBody)
             },
-          };
-          tcenv.popScope(this.tenv, loopScope)
+          }
         },
       };
       tcenv.popScopeReplace(initScope)
 
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
-      (_void, loopScope) = tcenv.withSubScope{
+      tcenv.withSubScopeMerge{
         isLoop => true,
+        tenv => this.tenv,
         f => () -> {
           this.checkBool(tcenv, cond);
           loopBody = this.block(tcenv, block, Some((cond, true)));
           tcenv.popScopeReplace(loopBody)
         },
-      };
-      tcenv.popScope(this.tenv, loopScope)
+      }
     | Switch(e, branches) ->
       this.switchCheckExhaustiveness(tcenv, e, branches);
       this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
-      (_void, tryScope) = tcenv.withSubScope{
+      tcenv.withSubScopeMerge{
         isLoop => false,
+        tenv => this.tenv,
         f => () -> {
           for (stmt in tryBlock) {
             this.stmt(tcenv, stmt)
           }
         },
       };
-      tcenv.popScope(this.tenv, tryScope);
 
       catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
-        (_void2, catchScope) = tcenv.withSubScope{
+        tcenv.withSubScopeMerge{
           isLoop => false,
+          tenv => this.tenv,
           f => () -> {
             param match {
             | Some(pat) ->
@@ -163,22 +164,21 @@ extension class TypeChecker {
               this.stmt(tcenv, stmt)
             }
           },
-        };
-        tcenv.popScope(this.tenv, catchScope)
+        }
       | None() -> void
       };
 
       finallyBlock match {
       | Some(finallyStmts) ->
-        (_void2, finallyScope) = tcenv.withSubScope{
+        tcenv.withSubScopeMerge{
           isLoop => false,
+          tenv => this.tenv,
           f => () -> {
             for (stmt in finallyStmts) {
               this.stmt(tcenv, stmt)
             }
           },
-        };
-        tcenv.popScope(this.tenv, finallyScope)
+        }
       | None() -> void
       }
     }

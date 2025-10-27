@@ -65,6 +65,11 @@ mutable class TCEnv(
     (res, subScope)
   }
 
+  mutable fun withSubScopeMerge{isLoop: Bool, tenv: TEnv, f: () -> void}: void {
+    (_void, subScope) = this.withSubScope<void>{isLoop, f};
+    this.popScope(tenv, subScope)
+  }
+
   mutable fun bindingLocalObject(local: Name): void {
     if (
       !this.scope.isThroughLoop(local) &&
