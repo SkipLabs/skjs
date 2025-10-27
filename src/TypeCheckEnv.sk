@@ -56,7 +56,7 @@ mutable class TCEnv(
     this.scope.popReplace(scope);
   }
 
-  mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
+  private mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
   }
 
