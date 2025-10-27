@@ -85,15 +85,18 @@ extension class TypeChecker {
       for (stmt in stmts) {
         this.stmt(tcenv, stmt)
       }
-    | ForIn(initStmt, iterable, block) ->
+    | ForInOf(kind, initStmt, iterable, block) ->
       scopeCopy = tcenv.scope;
       initScope = tcenv.mcreateSubScope{isLoop => false};
       tcenv.!scope = initScope;
 
       iterableType = this.expr(tcenv, iterable, true);
-      keyType = this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos);
+      ty = kind match {
+      | ForIn() -> this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos)
+      | ForOf() -> this.getValueType(tcenv, iterable.pos, iterableType)
+      };
 
-      this.bindLoopVar(tcenv, initStmt, keyType);
+      this.bindLoopVar(tcenv, initStmt, ty);
 
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
@@ -104,24 +107,6 @@ extension class TypeChecker {
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope)
 
-    | ForOf(initStmt, iterable, block) ->
-      scopeCopy = tcenv.scope;
-      initScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = initScope;
-
-      iterableType = this.expr(tcenv, iterable, true);
-      valueType = this.getValueType(tcenv, iterable.pos, iterableType);
-
-      this.bindLoopVar(tcenv, initStmt, valueType);
-
-      loopScope = tcenv.mcreateSubScope{isLoop => true};
-      tcenv.!scope = loopScope;
-      loopBody = this.block(tcenv, block);
-      tcenv.popScopeReplace(loopBody);
-      tcenv.!scope = initScope;
-      tcenv.popScope(tcenv.subst, this.tenv, loopScope);
-      tcenv.!scope = scopeCopy;
-      tcenv.popScopeReplace(initScope)
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
       scopeCopy = tcenv.scope;

@@ -217,16 +217,17 @@ extension class Parser {
         | Some(x) -> x
         };
         inTok.kind match {
-        | TKVar() if (this.lex.getStrTok(inTok) == "in") ->
+        | TKVar() ->
+          forInOfKind = this.lex.getStrTok(inTok) match {
+          | "in" -> ForIn()
+          | "of" -> ForOf()
+          | _ ->
+            this.error(this.lex.posStart(inTok), ExpectedTokenNot(TKSemi()))
+          };
           e = this.expr(0);
           this.expect(TKCloseParen());
           block = this.blockOrStmt();
-          Some(ForIn(st, e, block))
-        | TKVar() if (this.lex.getStrTok(inTok) == "of") ->
-          e = this.expr(0);
-          this.expect(TKCloseParen());
-          block = this.blockOrStmt();
-          Some(ForOf(st, e, block))
+          Some(ForInOf(forInOfKind, st, e, block))
         | TKSemi() ->
           cond = this.expr(0);
           this.expect(TKSemi());
