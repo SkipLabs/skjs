@@ -1,11 +1,11 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
+  fun stmt(tcenv: mutable TCEnv, st: Stmt): StmtTermination {
     st.value match {
-    | Break() -> void
-    | Continue() -> void
-    | StmtEmpty() -> void
+    | Break() -> StmtTermination::break_
+    | Continue() -> StmtTermination::continue_
+    | StmtEmpty() -> StmtTermination::skip
     | StmtExpr(e) ->
       ty = this.expr(tcenv, e);
       if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
