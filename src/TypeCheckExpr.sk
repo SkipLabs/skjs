@@ -1278,11 +1278,7 @@ extension class TypeChecker {
             ],
           )
         };
-        if (tcenv.scope.isThroughLoop(local)) {
-          typingError(
-            Array[(local.pos, "You cannot add a field to an object in a loop")],
-          )
-        };
+        tcenv.growingLocalObject(local);
         field = TField::create(
           fieldType.pos,
           fieldName.value,

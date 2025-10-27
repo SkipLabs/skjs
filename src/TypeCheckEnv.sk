@@ -68,6 +68,14 @@ mutable class TCEnv(
       this.localObjects![local.value] = LOCanGrow(None())
     }
   }
+
+  readonly fun growingLocalObject(local: Name): void {
+    if (this.scope.isThroughLoop(local)) {
+      typingError(
+        Array[(local.pos, "You cannot add a field to an object in a loop")],
+      )
+    }
+  }
 }
 
 module end;
