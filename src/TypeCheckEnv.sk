@@ -60,6 +60,15 @@ mutable class TCEnv(
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
   }
 
+  mutable fun withSubScope<T>{isLoop: Bool, f: () -> T}: (T, readonly Scope) {
+    savedScope = this.scope;
+    subScope = this.mcreateSubScope{isLoop};
+    this.!scope = subScope;
+    res = f();
+    this.!scope = savedScope;
+    (res, subScope)
+  }
+
   mutable fun bindingLocalObject(local: Name): void {
     if (
       !this.scope.isThroughLoop(local) &&

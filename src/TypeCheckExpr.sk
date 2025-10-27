@@ -6,18 +6,18 @@ extension class TypeChecker {
     stmts: Array<Stmt>,
     cond: ?(Expr, Bool) = None(),
   ): readonly Scope {
-    scopeCopy = tcenv.scope;
-    scope = tcenv.mcreateSubScope{isLoop => false};
-    tcenv.!scope = scope;
-    cond match {
-    | None() -> void
-    | Some((c, target)) -> this.evalCond(tcenv, c, target)
-    };
-    for (st in stmts) {
-      this.stmt(tcenv, st)
-    };
-    tcenv.!scope = scopeCopy;
-    scope
+    tcenv.withSubScope<void>{
+      isLoop => false,
+      f => () -> {
+        cond match {
+        | None() -> void
+        | Some((c, target)) -> this.evalCond(tcenv, c, target)
+        };
+        for (st in stmts) {
+          this.stmt(tcenv, st)
+        }
+      },
+    }.i1
   }
 
   fun bind(
@@ -1054,22 +1054,23 @@ extension class TypeChecker {
         TType::single(TPrimValue::boolean(e1.pos)),
       );
 
-      // Create scopes for the true and false branches with type refinements
-      scopeCopy = tcenv.scope;
-
       // True branch - evaluate e2 with refinements from e1 being true
-      trueScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = trueScope;
-      this.evalCond(tcenv, e1, true);
-      left = this.expr(tcenv, e2);
-      tcenv.!scope = scopeCopy;
+      (left, _trueScope) = tcenv.withSubScope{
+        isLoop => false,
+        f => () -> {
+          this.evalCond(tcenv, e1, true);
+          this.expr(tcenv, e2)
+        },
+      };
 
       // False branch - evaluate e3 with refinements from e1 being false
-      falseScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = falseScope;
-      this.evalCond(tcenv, e1, false);
-      right = this.expr(tcenv, e3);
-      tcenv.!scope = scopeCopy;
+      (right, _falseScope) = tcenv.withSubScope{
+        isLoop => false,
+        f => () -> {
+          this.evalCond(tcenv, e1, false);
+          this.expr(tcenv, e3)
+        },
+      };
 
       TType::union(tcenv.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
@@ -1120,14 +1121,15 @@ extension class TypeChecker {
       tcenv.callingContext,
       CGNodes::singleton(callingContext),
     );
-    savedScope = tcenv.scope;
     savedCallingContext = tcenv.callingContext;
-    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
-    tcenv.!callingContext = callingContext;
+    _subScope = tcenv.withSubScope{
+      isLoop => false,
+      f => () -> {
+        tcenv.!callingContext = callingContext;
+        this.closure(tcenv, isAsync, paramTypes.toArray(), retType, body)
+      },
+    };
 
-    this.closure(tcenv, isAsync, paramTypes.toArray(), retType, body);
-
-    tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
 
     TType::single(

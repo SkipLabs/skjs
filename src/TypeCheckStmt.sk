@@ -66,106 +66,118 @@ extension class TypeChecker {
       }
 
     | For(initStmt, cond, incr, block) ->
-      scopeCopy = tcenv.scope;
-      initScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = initScope;
-      this.stmt(tcenv, initStmt);
-      loopScope = tcenv.mcreateSubScope{isLoop => true};
-      tcenv.!scope = loopScope;
-      this.checkBool(tcenv, cond);
-      loopBody = this.block(tcenv, block);
-      tcenv.popScopeReplace(loopBody);
-      _ = this.expr(tcenv, incr);
-      tcenv.!scope = initScope;
-      tcenv.popScope(tcenv.subst, this.tenv, loopScope);
-      tcenv.!scope = scopeCopy;
+      (_void, initScope) = tcenv.withSubScope{
+        isLoop => false,
+        f => () -> {
+          this.stmt(tcenv, initStmt);
+          (_void, loopScope) = tcenv.withSubScope{
+            isLoop => true,
+            f => () -> {
+              this.checkBool(tcenv, cond);
+              loopBody = this.block(tcenv, block);
+              tcenv.popScopeReplace(loopBody);
+              _ = this.expr(tcenv, incr);
+            },
+          };
+          tcenv.popScope(tcenv.subst, this.tenv, loopScope)
+        },
+      };
       tcenv.popScopeReplace(initScope)
     | Block(stmts) ->
       for (stmt in stmts) {
         this.stmt(tcenv, stmt)
       }
     | ForInOf(kind, initStmt, iterable, block) ->
-      scopeCopy = tcenv.scope;
-      initScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = initScope;
+      (_void, initScope) = tcenv.withSubScope{
+        isLoop => false,
+        f => () -> {
+          iterableType = this.expr(tcenv, iterable, true);
+          ty = kind match {
+          | ForIn() ->
+            this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos)
+          | ForOf() -> this.getValueType(tcenv, iterable.pos, iterableType)
+          };
 
-      iterableType = this.expr(tcenv, iterable, true);
-      ty = kind match {
-      | ForIn() -> this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos)
-      | ForOf() -> this.getValueType(tcenv, iterable.pos, iterableType)
+          this.bindLoopVar(tcenv, initStmt, ty);
+
+          (_void, loopScope) = tcenv.withSubScope{
+            isLoop => true,
+            f => () -> {
+              loopBody = this.block(tcenv, block);
+              tcenv.popScopeReplace(loopBody)
+            },
+          };
+          tcenv.popScope(tcenv.subst, this.tenv, loopScope)
+        },
       };
-
-      this.bindLoopVar(tcenv, initStmt, ty);
-
-      loopScope = tcenv.mcreateSubScope{isLoop => true};
-      tcenv.!scope = loopScope;
-      loopBody = this.block(tcenv, block);
-      tcenv.popScopeReplace(loopBody);
-      tcenv.!scope = initScope;
-      tcenv.popScope(tcenv.subst, this.tenv, loopScope);
-      tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope)
 
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
-      scopeCopy = tcenv.scope;
-      loopScope = tcenv.mcreateSubScope{isLoop => true};
-      tcenv.!scope = loopScope;
-      this.checkBool(tcenv, cond);
-      loopBody = this.block(tcenv, block, Some((cond, true)));
-      tcenv.popScopeReplace(loopBody);
-      tcenv.!scope = scopeCopy;
+      (_void, loopScope) = tcenv.withSubScope{
+        isLoop => true,
+        f => () -> {
+          this.checkBool(tcenv, cond);
+          loopBody = this.block(tcenv, block, Some((cond, true)));
+          tcenv.popScopeReplace(loopBody)
+        },
+      };
       tcenv.popScope(tcenv.subst, this.tenv, loopScope)
     | Switch(e, branches) ->
       this.switchCheckExhaustiveness(tcenv, e, branches);
       this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
-      scopeCopy = tcenv.scope;
-      tryScope = tcenv.mcreateSubScope{isLoop => false};
-      tcenv.!scope = tryScope;
-      for (stmt in tryBlock) {
-        this.stmt(tcenv, stmt)
+      (_void, tryScope) = tcenv.withSubScope{
+        isLoop => false,
+        f => () -> {
+          for (stmt in tryBlock) {
+            this.stmt(tcenv, stmt)
+          }
+        },
       };
-      tcenv.!scope = scopeCopy;
       tcenv.popScope(tcenv.subst, this.tenv, tryScope);
 
       catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
-        catchScope = tcenv.mcreateSubScope{isLoop => false};
-        tcenv.!scope = catchScope;
-        param match {
-        | Some(pat) ->
-          errorType = type match {
-          | Some(t) -> // If we trusted user: this.tenv.normalize(tcenv.context, t)
-            typingError(
-              Array[
-                (
-                  t.pos,
-                  "Do not specify a type annotation for caught exceptions as it cannot be trusted",
-                ),
-              ],
-            )
-          | None() -> TType::top(pat.pos)
-          };
-          this.bind(tcenv, BKLet(), pat, errorType, true, false)
-        | None() -> void
+        (_void2, catchScope) = tcenv.withSubScope{
+          isLoop => false,
+          f => () -> {
+            param match {
+            | Some(pat) ->
+              errorType = type match {
+              | Some(t) -> // If we trusted user: this.tenv.normalize(tcenv.context, t)
+                typingError(
+                  Array[
+                    (
+                      t.pos,
+                      "Do not specify a type annotation for caught exceptions as it cannot be trusted",
+                    ),
+                  ],
+                )
+              | None() -> TType::top(pat.pos)
+              };
+              this.bind(tcenv, BKLet(), pat, errorType, true, false)
+            | None() -> void
+            };
+            for (stmt in catchBlock) {
+              this.stmt(tcenv, stmt)
+            }
+          },
         };
-        for (stmt in catchBlock) {
-          this.stmt(tcenv, stmt)
-        };
-        tcenv.!scope = scopeCopy;
         tcenv.popScope(tcenv.subst, this.tenv, catchScope)
       | None() -> void
       };
 
       finallyBlock match {
       | Some(finallyStmts) ->
-        finallyScope = tcenv.mcreateSubScope{isLoop => false};
-        tcenv.!scope = finallyScope;
-        for (stmt in finallyStmts) {
-          this.stmt(tcenv, stmt)
+        (_void2, finallyScope) = tcenv.withSubScope{
+          isLoop => false,
+          f => () -> {
+            for (stmt in finallyStmts) {
+              this.stmt(tcenv, stmt)
+            }
+          },
         };
-        tcenv.!scope = scopeCopy;
         tcenv.popScope(tcenv.subst, this.tenv, finallyScope)
       | None() -> void
       }

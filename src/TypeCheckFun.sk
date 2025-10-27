@@ -46,17 +46,18 @@ extension class TypeChecker {
             ],
           )
         };
-        savedScope = tcenv.scope;
-        paramScope = tcenv.mcreateSubScope{isLoop => false};
-        tcenv.!scope = paramScope;
-        this.checkSubType(
-          tcenv,
-          defaultExpr.pos,
-          "Default value doesn't have the expected type",
-          this.expr(tcenv, defaultExpr),
-          paramType,
-        );
-        tcenv.!scope = savedScope
+        _paramScope = tcenv.withSubScope{
+          isLoop => false,
+          f => () -> {
+            this.checkSubType(
+              tcenv,
+              defaultExpr.pos,
+              "Default value doesn't have the expected type",
+              this.expr(tcenv, defaultExpr),
+              paramType,
+            )
+          },
+        }
       };
       paramName = param.name match {
       | PNName(n) -> n
