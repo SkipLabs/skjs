@@ -53,11 +53,6 @@ value class StmtTermination private {
   fun /(that: this): this {
     this.merge(that, (t1, t2) ~> t1 || t2)
   }
-  /* Unordered-and: this and that are executed but we don't know in which order.
-     It should be equivalent to if (?) { this; that } else { that; this }. */
-  fun *(that: this): this {
-    this.merge(that, (t1, t2) ~> t1 && t2)
-  }
   /* Maybe: taking either the branch or going through */
   fun maybe(): this {
     this / static::skip
@@ -121,9 +116,6 @@ value class StmtTermination private {
   static fun or<T>(s: Sequence<T>, f: T ~> this): this {
     if (s.isEmpty()) internal_error("sequence should not be empty");
     s.reduce((acc, x) -> acc / f(x), static{})
-  }
-  static fun and<T>(s: Sequence<T>, f: T ~> this): this {
-    s.reduce((acc, x) -> acc * f(x), static::skip)
   }
 
   static fun stmt(st: Stmt): this {
