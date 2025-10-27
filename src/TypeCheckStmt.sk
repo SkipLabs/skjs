@@ -60,8 +60,8 @@ extension class TypeChecker {
       scope2 = this.block(tcenv, block2, Some((e, false)));
       (isTerminalBlock(false, block1), isTerminalBlock(false, block2)) match {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
-      | (true, false) -> tcenv.popScopeReplace(scope2)
-      | (false, true) -> tcenv.popScopeReplace(scope1)
+      | (true, false) -> tcenv.scope.popReplace(scope2)
+      | (false, true) -> tcenv.scope.popReplace(scope1)
       | (false, false) ->
         tcenv.scope.merge(tcenv.subst, this.tenv, scope1, scope2)
       }
@@ -75,12 +75,12 @@ extension class TypeChecker {
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
       loopBody = this.block(tcenv, block);
-      tcenv.popScopeReplace(loopBody);
+      tcenv.scope.popReplace(loopBody);
       _ = this.expr(tcenv, incr);
       tcenv.!scope = initScope;
       tcenv.scope.pop(tcenv.subst, this.tenv, loopScope);
       tcenv.!scope = scopeCopy;
-      tcenv.popScopeReplace(initScope)
+      tcenv.scope.popReplace(initScope)
     | Block(stmts) ->
       for (stmt in stmts) {
         this.stmt(tcenv, stmt)
@@ -98,11 +98,11 @@ extension class TypeChecker {
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       loopBody = this.block(tcenv, block);
-      tcenv.popScopeReplace(loopBody);
+      tcenv.scope.popReplace(loopBody);
       tcenv.!scope = initScope;
       tcenv.scope.pop(tcenv.subst, this.tenv, loopScope);
       tcenv.!scope = scopeCopy;
-      tcenv.popScopeReplace(initScope)
+      tcenv.scope.popReplace(initScope)
 
     | ForOf(initStmt, iterable, block) ->
       scopeCopy = tcenv.scope;
@@ -117,11 +117,11 @@ extension class TypeChecker {
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       loopBody = this.block(tcenv, block);
-      tcenv.popScopeReplace(loopBody);
+      tcenv.scope.popReplace(loopBody);
       tcenv.!scope = initScope;
       tcenv.scope.pop(tcenv.subst, this.tenv, loopScope);
       tcenv.!scope = scopeCopy;
-      tcenv.popScopeReplace(initScope)
+      tcenv.scope.popReplace(initScope)
     | Throw(e) -> _ = this.expr(tcenv, e)
     | While(cond, block) ->
       scopeCopy = tcenv.scope;
@@ -129,7 +129,7 @@ extension class TypeChecker {
       tcenv.!scope = loopScope;
       this.checkBool(tcenv, cond);
       loopBody = this.block(tcenv, block, Some((cond, true)));
-      tcenv.popScopeReplace(loopBody);
+      tcenv.scope.popReplace(loopBody);
       tcenv.!scope = scopeCopy;
       tcenv.scope.pop(tcenv.subst, this.tenv, loopScope)
     | Switch(e, branches) ->
