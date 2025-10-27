@@ -190,8 +190,8 @@ value class StmtTermination private {
   }
 
   static fun expr(expr: Expr): this {
-    /* We make no assumptions on the order of evaluation but
-       we assume that the existence of _name is checked in the typechecker. */
+    /* Operands are always evaluated from left to right.
+       We assume that the existence of _name is checked in the typechecker. */
     expr.value match {
     | Number(_)
     | BigInt(_)
@@ -202,30 +202,29 @@ value class StmtTermination private {
     | Regexp(_) ->
       static::skip
     | TemplateLiteral(_parts, expressions) ->
-      static::and(expressions, static::expr)
+      static::seq(expressions, static::expr)
     | TypeOf(e)
     | Await(e)
     | As(e, _ty)
     | AsConst(e) ->
       static::expr(e)
-    | Get(e1, e2)
-    | InstanceOf(e1, e2)
-    | In(e1, e2) ->
-      static::expr(e1) * static::expr(e2)
-    | New(_name, _targs, args) -> static::and(args, static::expr)
+    | New(_name, _targs, args) -> static::seq(args, static::expr)
     | Unop(_unop, e)
     | PostOp(_postop, e) ->
       static::expr(e).then(static::unknownOperator /* TODO: refine */)
     | Binop(BOLogicalAnd(), e1, e2)
     | Binop(BOLogicalOr(), e1, e2) ->
       static::expr(e1).thenk(() ~> static::expr(e2).maybe())
+    | Get(e1, e2)
+    | InstanceOf(e1, e2)
+    | In(e1, e2)
     | Binop(_op, e1, e2) ->
-      (static::expr(e1) * static::expr(e2)).then(
-        static::unknownOperator/* TODO: refine */ ,
+      static::expr(e1).thenk(() ~>
+        static::expr(e2).then(static::unknownOperator /* TODO: refine */)
       )
     | Call(e, _targs, args) ->
-      (static::expr(e) * static::and(args, static::expr)).then(
-        static::unknownCall,
+      static::expr(e).thenk(() ->
+        static::seq(args, static::expr).then(static::unknownCall)
       )
     | Params(_) -> paramsError(expr.pos)
     | Object(fields) -> static::and(fields, static::field)
