@@ -32,7 +32,7 @@ extension class TypeChecker {
         CGNode::toplevel(def.pos.fileName),
       );
       ty = this.expr(tcenv, e);
-      this.checkIsVoid(tcenv, e.pos, ty)
+      this.checkIsVoid(tcenv.subst, e.pos, ty)
     | fd @ FunDef _ ->
       cgNode = fd.name match {
       | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))

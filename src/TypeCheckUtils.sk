@@ -106,9 +106,9 @@ extension class TypeChecker {
     }
   }
 
-  fun checkIsVoid(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
+  fun checkIsVoid(subst: mutable Subst, pos: PosRange, ty: TType): void {
     this.checkSubType(
-      tcenv.subst,
+      subst,
       pos,
       "This expression was expected to be of type void",
       ty,
