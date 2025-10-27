@@ -13,7 +13,7 @@ base class LocalObjectState {
 mutable class TCEnv(
   context: mutable SKStore.Context,
   subst: mutable Subst,
-  mutable scope: mutable Scope,
+  private mutable scope: mutable Scope,
   mutable callingContext: CGNode,
   localObjects: mutable Map<String, LocalObjectState> = mutable Map[]/*
   Tracks local objects, i.e. object literals bounded to variables.
