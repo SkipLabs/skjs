@@ -190,7 +190,7 @@ value class StmtTermination private {
   }
 
   static fun expr(expr: Expr): this {
-    /* Operands are always evaluated from left to right.
+    /* Operands, array literals, object literals are always evaluated from left to right.
        We assume that the existence of _name is checked in the typechecker. */
     expr.value match {
     | Number(_)
@@ -227,8 +227,8 @@ value class StmtTermination private {
         static::seq(args, static::expr).then(static::unknownCall)
       )
     | Params(_) -> paramsError(expr.pos)
-    | Object(fields) -> static::and(fields, static::field)
-    | EArray(exprs) -> static::and(exprs, static::expr)
+    | Object(fields) -> static::seq(fields, static::field)
+    | EArray(exprs) -> static::seq(exprs, static::expr)
     | EIf(cond, e1, e2) ->
       static::cond(cond).if_(() ~> static::expr(e1), () ~> static::expr(e2))
     | Async(e) -> static::expr(e).maybe()
