@@ -74,13 +74,13 @@ extension class TypeChecker {
   }
 
   fun checkSubType(
-    tcenv: mutable TCEnv,
+    subst: mutable Subst,
     pos: PosRange,
     msg: String,
     ty1: TType,
     ty2: TType,
   ): void {
-    isSubTType(tcenv.subst, this.tenv, ty1, ty2) match {
+    isSubTType(subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
     | STRec(reason, pos1, subTy2) ->
       typingError(
@@ -89,26 +89,26 @@ extension class TypeChecker {
           (
             pos1,
             reason.toString(
-              tcenv.subst,
+              subst,
               this.tenv,
-              expandTVars(tcenv.subst, this.tenv, ty1),
+              expandTVars(subst, this.tenv, ty1),
             ),
           ),
           (
             subTy2.pos,
             "It is incompatible with: " +
-              expandTVars(tcenv.subst, this.tenv, subTy2).toString(),
+              expandTVars(subst, this.tenv, subTy2).toString(),
           ),
         ],
       )
     | err @ STError _ ->
-      typingError(Array[(pos, err.toString(tcenv.subst, this.tenv, ty1))])
+      typingError(Array[(pos, err.toString(subst, this.tenv, ty1))])
     }
   }
 
   fun checkIsVoid(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
     this.checkSubType(
-      tcenv,
+      tcenv.subst,
       pos,
       "This expression was expected to be of type void",
       ty,
@@ -129,7 +129,7 @@ extension class TypeChecker {
 
   fun checkBool(tcenv: mutable TCEnv, e: Expr): void {
     this.checkSubType(
-      tcenv,
+      tcenv.subst,
       e.pos,
       "A condition is expected to be of type boolean, not: ",
       this.expr(tcenv, e),

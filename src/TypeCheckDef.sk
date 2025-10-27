@@ -104,7 +104,7 @@ extension class TypeChecker {
         CGNode::toplevel(varDef.pat.pos.fileName),
       );
       this.checkSubType(
-        tcenv,
+        tcenv.subst,
         varDef.pat.pos,
         "Invalid definition",
         literalType match {

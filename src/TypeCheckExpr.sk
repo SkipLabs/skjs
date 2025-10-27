@@ -210,7 +210,13 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.tenv.normalize(tcenv.context, annotAst);
-        this.checkSubType(tcenv, annotAst.pos, "Invalid annotation", ty, annot);
+        this.checkSubType(
+          tcenv.subst,
+          annotAst.pos,
+          "Invalid annotation",
+          ty,
+          annot,
+        );
         (annot, true)
       }
     }
@@ -338,7 +344,7 @@ extension class TypeChecker {
             }
           | Some(index) ->
             this.checkSubType(
-              tcenv,
+              tcenv.subst,
               pos,
               "Invalid index key",
               TType::single(remainingIdxSType),
@@ -634,7 +640,7 @@ extension class TypeChecker {
           super,
         );
         tcenv.scope.set(thisName, thisType, (x, y) -> {
-          this.checkSubType(tcenv, pos, "Invalid super call", x, y)
+          this.checkSubType(tcenv.subst, pos, "Invalid super call", x, y)
         })
       };
       TType::single(TPrimUnit(TVoid(), pos))
@@ -708,7 +714,7 @@ extension class TypeChecker {
       | UOExclamationMark() ->
         bool = TType::single(TPrimValue::boolean(pos));
         this.checkSubType(
-          tcenv,
+          tcenv.subst,
           pos,
           "Invalid !",
           this.expr(tcenv, subExpr),
@@ -730,7 +736,7 @@ extension class TypeChecker {
         | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
           ty2 = this.expr(tcenv, e2);
           res = TType::single(TPrimValue::full(k, primPos));
-          this.checkSubType(tcenv, e2.pos, "Invalid + operand", ty2, res);
+          this.checkSubType(tcenv.subst, e2.pos, "Invalid + operand", ty2, res);
           res
         | _ ->
           typingError(
@@ -766,7 +772,7 @@ extension class TypeChecker {
       | BOLogicalAnd() ->
         ty1 = this.expr(tcenv, e1);
         this.checkSubType(
-          tcenv,
+          tcenv.subst,
           pos,
           "Invalid &&",
           ty1,
@@ -775,7 +781,7 @@ extension class TypeChecker {
         this.evalCond(tcenv, e1, true);
         ty2 = this.expr(tcenv, e2);
         this.checkSubType(
-          tcenv,
+          tcenv.subst,
           pos,
           "Invalid &&",
           ty2,
@@ -785,7 +791,7 @@ extension class TypeChecker {
       | BOLogicalOr() ->
         ty1 = this.expr(tcenv, e1);
         this.checkSubType(
-          tcenv,
+          tcenv.subst,
           pos,
           "Invalid ||",
           ty1,
@@ -794,7 +800,7 @@ extension class TypeChecker {
         this.evalCond(tcenv, e1, false);
         ty2 = this.expr(tcenv, e2);
         this.checkSubType(
-          tcenv,
+          tcenv.subst,
           pos,
           "Invalid ||",
           ty2,
@@ -1018,7 +1024,7 @@ extension class TypeChecker {
       | POIncr() ->
         num = TType::single(TPrimValue::number(pos));
         ty = this.expr(tcenv, subExpr);
-        this.checkSubType(tcenv, pos, "Expected integer", ty, num);
+        this.checkSubType(tcenv.subst, pos, "Expected integer", ty, num);
         num
       | POExcl() -> notSupported(pos)
       }
@@ -1051,7 +1057,7 @@ extension class TypeChecker {
     | EIf(e1, e2, e3) ->
       cond = this.expr(tcenv, e1);
       this.checkSubType(
-        tcenv,
+        tcenv.subst,
         e1.pos,
         "Invalid ? condition",
         cond,
@@ -1183,7 +1189,7 @@ extension class TypeChecker {
     body match {
     | CBExpr(e) ->
       this.checkSubType(
-        tcenv,
+        tcenv.subst,
         e.pos,
         "Invalid callback return",
         isAsync match {
@@ -1220,7 +1226,7 @@ extension class TypeChecker {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2);
       tcenv.scope.set(n, ty2, (x, y) ->
-        this.checkSubType(tcenv, pos, "Invalid assignment", x, y)
+        this.checkSubType(tcenv.subst, pos, "Invalid assignment", x, y)
       );
       ty2
     | Binop(
@@ -1233,7 +1239,7 @@ extension class TypeChecker {
       | None() -> void
       | Some(objectType) ->
         this.checkSubType(
-          tcenv,
+          tcenv.subst,
           e2.pos,
           "Invalid assignment",
           fieldType,
@@ -1244,7 +1250,7 @@ extension class TypeChecker {
     | _ ->
       ty1 = this.expr(tcenv, e1);
       ty2 = this.expr(tcenv, e2);
-      this.checkSubType(tcenv, e2.pos, "Invalid assignment", ty2, ty1);
+      this.checkSubType(tcenv.subst, e2.pos, "Invalid assignment", ty2, ty1);
       ty1
     }
   }
@@ -1304,7 +1310,13 @@ extension class TypeChecker {
             ),
           ),
           (x, y) -> {
-            this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
+            this.checkSubType(
+              tcenv.subst,
+              fieldType.pos,
+              "Invalid assignment",
+              x,
+              y,
+            )
           },
         );
         fieldType
@@ -1313,7 +1325,7 @@ extension class TypeChecker {
     | _ -> internal_error("Internal error: local object is not an object")
     };
     this.checkSubType(
-      tcenv,
+      tcenv.subst,
       fieldType.pos,
       "Invalid assignment",
       fieldType,
@@ -1437,7 +1449,7 @@ extension class TypeChecker {
               )
             };
             this.checkSubType(
-              tcenv,
+              tcenv.subst,
               pos,
               "Invalid call",
               args[i],
@@ -1448,7 +1460,7 @@ extension class TypeChecker {
             i = tfun.params.size() + j;
             if (i >= args.size()) break void;
             this.checkSubType(
-              tcenv,
+              tcenv.subst,
               pos,
               "Invalid call",
               args[i],
@@ -1476,7 +1488,7 @@ extension class TypeChecker {
               eltType = this.getArrayEltType(tcenv, object);
               for (i in Range(totalSize, args.size())) {
                 this.checkSubType(
-                  tcenv,
+                  tcenv.subst,
                   pos,
                   "Invalid argument",
                   args[i],

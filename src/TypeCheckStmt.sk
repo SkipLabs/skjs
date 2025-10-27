@@ -26,7 +26,13 @@ extension class TypeChecker {
       } else {
         etype
       };
-      this.checkSubType(tcenv, epos, "Invalid return type", rtype, retType)
+      this.checkSubType(
+        tcenv.subst,
+        epos,
+        "Invalid return type",
+        rtype,
+        retType,
+      )
 
     | Bind(BKVar(), vars) ->
       if (vars.size() == 0) internal_error("vars size should not be 0");

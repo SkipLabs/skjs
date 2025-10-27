@@ -84,7 +84,7 @@ extension class TypeChecker {
           };
           tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
           this.checkSubType(
-            tcenv,
+            tcenv.subst,
             parentName.pos,
             "Invalid extends",
             thisType,
@@ -104,7 +104,7 @@ extension class TypeChecker {
         );
         tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
         this.checkSubType(
-          tcenv,
+          tcenv.subst,
           parentName.pos,
           "Invalid implements",
           thisType,
@@ -147,7 +147,7 @@ extension class TypeChecker {
         | Some(e) ->
           tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
           this.checkSubType(
-            tcenv,
+            tcenv.subst,
             e.pos,
             "Invalid assignment",
             this.expr(tcenv, e, true),
@@ -232,7 +232,7 @@ extension class TypeChecker {
       objType = static::filterMethods(blockThisType, tcenv.subst, this.tenv);
       fullType = static::filterMethods(thisType, tcenv.subst, this.tenv);
       this.checkSubType(
-        tcenv,
+        tcenv.subst,
         fd.pos,
         "Invalid initialization",
         objType,
