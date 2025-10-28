@@ -58,7 +58,7 @@ extension class TypeChecker {
       this.checkBool(tcenv, e);
       scope1 = this.block(tcenv, block1, Some((e, true)));
       scope2 = this.block(tcenv, block2, Some((e, false)));
-      (isTerminalBlock(false, block1), isTerminalBlock(false, block2)) match {
+      (isTerminalBlock(block1), isTerminalBlock(block2)) match {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
       | (true, false) -> tcenv.popScopeReplace(scope2)
       | (false, true) -> tcenv.popScopeReplace(scope1)

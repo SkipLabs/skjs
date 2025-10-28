@@ -22,9 +22,9 @@ class TypeChecker{
 /* evaluating this statements terminates the function. */
 /***************************************************************************/
 
-fun isTerminalBlock(inTry: Bool, bl: Array<Stmt>): Bool {
+fun isTerminalBlock(bl: Array<Stmt>): Bool {
   term = StmtTermination::block(bl);
-  !term.mayFallthrough && (term.mayReturn || (!inTry && term.mayThrow))
+  !term.mayFallthrough && (term.mayReturn || term.mayThrow)
 }
 
 module end;
