@@ -74,12 +74,12 @@ mutable class TCEnv(
 
   mutable fun withinLoop(f: () -> void): void {
     (_void, subScope) = this.withSubScope<void>{isLoop => true, f};
-    this.popScopeReplace(subScope)
+    this.scope.popReplace(subScope)
   }
 
   mutable fun withSubScopeReplace(f: () -> void): void {
     (_void, subScope) = this.withSubScope<void>{isLoop => false, f};
-    this.popScopeReplace(subScope)
+    this.scope.popReplace(subScope)
   }
 
   mutable fun withForkedSubScopes<T>(
