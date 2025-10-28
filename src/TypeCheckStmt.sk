@@ -116,9 +116,7 @@ extension class TypeChecker {
       tcenv.popScopeReplace(loopBody);
       tcenv.!scope = scopeCopy;
       tcenv.popScope(tcenv.subst, this.tenv, loopScope)
-    | Switch(e, branches) ->
-      this.switchCheckExhaustiveness(tcenv, e, branches);
-      this.switch(tcenv, e, branches)
+    | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
       scopeCopy = tcenv.scope;
       tryScope = tcenv.mcreateSubScope{isLoop => false};
@@ -180,6 +178,7 @@ extension class TypeChecker {
     if (branches.size() == 0) {
       typingError(Array[(e.pos, "Missing branch")])
     };
+    this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = block -> {
       term = StmtTermination::block(block);
       if (term.mayFallthrough) {
