@@ -14,6 +14,7 @@ mutable class TCEnv(
   context: mutable SKStore.Context,
   subst: mutable Subst,
   private mutable scope: mutable Scope,
+  private mutable termination: StmtTermination,
   mutable callingContext: CGNode,
   localObjects: mutable Map<String, LocalObjectState> = mutable Map[]/*
   Tracks local objects, i.e. object literals bounded to variables.
@@ -28,7 +29,8 @@ mutable class TCEnv(
     callingContext: CGNode,
   ): mutable this {
     scope = Scope::mcreateToplevel();
-    mutable static(context, subst, scope, callingContext)
+    termination = StmtTermination::skip;
+    mutable static(context, subst, scope, termination, callingContext)
   }
 
   private mutable fun next(): Int {
