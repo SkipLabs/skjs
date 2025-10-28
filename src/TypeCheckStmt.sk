@@ -222,7 +222,7 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TPrimValue(_, Some(values), _)) ->
-      Set::mcreateFromItems(values.values.map(x -> x.i1))
+      Map::mcreateFromItems(values.values.map(x -> (x.i1, x.i0)))
     | _ -> return void
     };
     for (branch in branches) {
@@ -235,7 +235,7 @@ extension class TypeChecker {
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
-          if (!cases.contains(staticValue)) {
+          if (!cases.containsKey(staticValue)) {
             typingError(Array[(pos, "Unused branch")])
           };
           cases.remove(staticValue)
@@ -246,7 +246,7 @@ extension class TypeChecker {
       }
     };
     if (!cases.isEmpty()) {
-      typingError(Array[(e.pos, "Missing branches:\n" + cases.join("\n"))]);
+      typingError(Array[(e.pos, "Missing branches:\n" + cases.joinKeys("\n"))]);
     }
   }
 
