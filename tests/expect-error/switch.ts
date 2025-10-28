@@ -12,8 +12,8 @@ function switchUsePreciseTyping2(): void {
   switch (1) {
     case 1:
       return;
+    // @skjs-expect-error Unused branch
     default:
-      // @skjs-expect-error Unused branch
       return;
   }
 }
