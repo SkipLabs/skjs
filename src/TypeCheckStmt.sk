@@ -158,36 +158,60 @@ extension class TypeChecker {
     if (branches.size() == 1) {
       typingError(Array[(e.pos, "Useless switch")])
     };
-    _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
-    checkBreak = block -> {
-      term = StmtTermination::block(block);
-      if (term.mayFallthrough) {
-        if (block.size() == 0) {
-          internal_error("block size should not be 0")
+    exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
+    if (exhaustive) {
+      this.switchHelper(tcenv, e, Vector::createFromItems(branches), 0)
+    } else {
+      branches1 = Vector::mcreateFromItems(branches);
+      branches1.push(Default(Array[], e.pos));
+      this.switchHelper(tcenv, e, branches1, 0)
+    }
+  }
+
+  /* Interprets branches as
+     if (e == branch[i]) ... else ... */
+  private fun switchHelper(
+    tcenv: mutable TCEnv,
+    e: Expr,
+    branches: readonly Vector<SwitchBranch>,
+    i: Int,
+  ): void {
+    branches[i] match {
+    | Case(v, block, pos) ->
+      cond = Expr(pos, Binop(BOStrictEquality(), e, v));
+      if (i >= branches.size() - 1) {
+        /* Last branch: because we know there are at least 2 branches, we are already in a sub-scope */
+        this.evalCond(tcenv, cond, true);
+        this.stmts(tcenv, block)
+      } else {
+        term = StmtTermination::block(block);
+        if (term.mayFallthrough) {
+          errorPos = if (block.size() == 0) pos else {
+            block[block.size() - 1].pos
+          };
+          typingError(Array[(errorPos, "Missing break")]);
         };
-        last = block[block.size() - 1];
-        typingError(Array[(last.pos, "Missing break")])
+        scopeBranch = this.block(tcenv, block, Some((cond, true)));
+        (_void, scopeRest) = tcenv.withSubScope<void>{
+          isLoop => false,
+          f => () -> {
+            this.evalCond(tcenv, cond, false);
+            this.switchHelper(tcenv, e, branches, i + 1)
+          },
+        };
+        tcenv.mergeScope(this.tenv, scopeBranch, scopeRest)
       }
-    };
-    scope = branches[0] match {
-    | Case(v, block, _pos) ->
-      checkBreak(block);
-      cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-      this.block(tcenv, block, Some((cond, true)))
-    | Default _ -> typingError(Array[(e.pos, "Missing branch")])
-    };
-    for (i in Range(1, branches.size())) {
-      tcenv.mergeScope(
-        this.tenv,
-        scope,
-        branches[i] match {
-        | Case(v, block, _pos) ->
-          checkBreak(block);
-          cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-          this.block(tcenv, block, Some((cond, true)))
-        | Default(stmts, _pos) -> this.block(tcenv, stmts)
-        },
-      )
+    | Default(block, pos) ->
+      if (i < branches.size() - 1) {
+        typingError(
+          Array[
+            (branches[i + 1].pos, "default must be the last branch"),
+            (pos, "default branch is here"),
+          ],
+        )
+      };
+      /* Last branch: because we know there are at least 2 branches, we are already in a sub-scope */
+      this.stmts(tcenv, block)
     }
   }
 
