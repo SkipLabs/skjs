@@ -252,10 +252,10 @@ value class StmtTermination private {
 
   static fun branch(branch: SwitchBranch): this {
     branch match {
-    | Case(e, block) ->
+    | Case(e, block, _pos) ->
       static::branchCase(e);
       static::block(block).breakToFallthrough()
-    | Default(block) -> static::block(block).breakToFallthrough()
+    | Default(block, _pos) -> static::block(block).breakToFallthrough()
     }
   }
 

@@ -280,7 +280,7 @@ base class BindKind uses XXHashable {
 //   | default : <stmt>*
 /***************************************************************************/
 
-base class SwitchBranch uses XXHashable {
+base class SwitchBranch(pos: PosRange) uses XXHashable {
   children =
   | Case(Expr, Array<Stmt>)
   | Default(Array<Stmt>)

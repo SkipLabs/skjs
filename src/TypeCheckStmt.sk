@@ -191,22 +191,22 @@ extension class TypeChecker {
       }
     };
     scope = branches[0] match {
-    | Case(v, block) ->
+    | Case(v, block, _pos) ->
       checkBreak(block);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
-    | Default(_) -> typingError(Array[(e.pos, "Missing branch")])
+    | Default _ -> typingError(Array[(e.pos, "Missing branch")])
     };
     for (i in Range(1, branches.size())) {
       tcenv.mergeScope(
         this.tenv,
         scope,
         branches[i] match {
-        | Case(v, block) ->
+        | Case(v, block, _pos) ->
           checkBreak(block);
           cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
           this.block(tcenv, block, Some((cond, true)))
-        | Default(stmts) -> this.block(tcenv, stmts)
+        | Default(stmts, _pos) -> this.block(tcenv, stmts)
         },
       )
     }
@@ -227,7 +227,7 @@ extension class TypeChecker {
     };
     for (branch in branches) {
       branch match {
-      | Case(v, _) ->
+      | Case(v, _, _pos) ->
         this.expr(tcenv, v, true)
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
@@ -239,7 +239,7 @@ extension class TypeChecker {
         | None() -> void
         }
 
-      | Default(stmts) ->
+      | Default(stmts, _pos) ->
         if (cases.isEmpty()) {
           if (stmts.isEmpty()) {
             internal_error("Internal error: empty default");
