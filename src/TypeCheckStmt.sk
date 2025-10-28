@@ -68,10 +68,19 @@ extension class TypeChecker {
     | For(initStmt, cond, incr, block) ->
       tcenv.withSubScopeReplace(() -> {
         this.stmt(tcenv, initStmt);
-        tcenv.withLoopSubScope(this.tenv, () -> {
+        tcenv.withinLoop(() -> {
           this.checkBool(tcenv, cond);
-          tcenv.withSubScopeReplace(() -> this.stmts(tcenv, block));
-          _ = this.expr(tcenv, incr);
+          _ = tcenv.withForkedSubScopes<void>(
+            this.tenv,
+            () -> {
+              this.evalCond(tcenv, cond, true);
+              tcenv.withSubScopeReplace(() -> this.stmts(tcenv, block));
+              _ = this.expr(tcenv, incr)
+            },
+            () -> {
+              this.evalCond(tcenv, cond, false);
+            },
+          )
         })
       })
 
