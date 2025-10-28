@@ -203,24 +203,21 @@ extension class TypeChecker {
     };
     for (branch in branches) {
       branch match {
-      | Case(v, _, _pos) ->
+      | Case(v, _, pos) ->
         this.expr(tcenv, v, true)
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.contains(staticValue)) {
-            typingError(Array[(v.pos, "Unused branch")])
+            typingError(Array[(pos, "Unused branch")])
           };
           cases.remove(staticValue)
         | None() -> void
         }
 
-      | Default(stmts, _pos) ->
+      | Default(_stmts, pos) ->
         if (cases.isEmpty()) {
-          if (stmts.isEmpty()) {
-            internal_error("Internal error: empty default");
-          };
-          typingError(Array[(stmts[0].pos, "Unused branch")])
+          typingError(Array[(pos, "Unused branch")])
         };
         cases.clear()
       }
