@@ -67,7 +67,7 @@ extension class TypeChecker {
           this.stmts(tcenv, block2)
         },
       };
-      (isTerminalBlock(false, block1), isTerminalBlock(false, block2)) match {
+      (isTerminalBlock(block1), isTerminalBlock(block2)) match {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
       | (true, false) -> tcenv.popScopeReplace(scope2)
       | (false, true) -> tcenv.popScopeReplace(scope1)
