@@ -28,11 +28,8 @@ extension class TypeChecker {
       };
       this.checkSubType(tcenv, epos, "Invalid return type", rtype, retType)
 
-    | Bind(BKVar(), vars) ->
-      if (vars.size() == 0) internal_error("vars size should not be 0");
-      typingError(
-        Array[(vars[0].pat.pos, "Don't use var, use let or const instead")],
-      )
+    | Bind(BKVar(), _vars) ->
+      typingError(Array[(st.pos, "Don't use var, use let or const instead")])
 
     | Bind(bkind, bindings) ->
       for (binding in bindings) {
