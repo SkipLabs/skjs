@@ -100,7 +100,7 @@ mutable class Scope{
     this.refs.items().filter(x -> !this.locals.containsKey(x.i0))
   }
 
-  mutable fun merge(
+  mutable fun popMerge2(
     subst: mutable Subst,
     tenv: TEnv,
     scope1: readonly Scope,
