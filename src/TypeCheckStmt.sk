@@ -191,15 +191,17 @@ extension class TypeChecker {
           };
           typingError(Array[(errorPos, "Missing break")]);
         };
-        scopeBranch = this.block(tcenv, block, Some((cond, true)));
-        (_void, scopeRest) = tcenv.withSubScope<void>{
-          isLoop => false,
-          f => () -> {
+        tcenv.withForkedSubScopes(
+          this.tenv,
+          () -> {
+            this.evalCond(tcenv, cond, true);
+            this.stmts(tcenv, block)
+          },
+          () -> {
             this.evalCond(tcenv, cond, false);
             this.switchHelper(tcenv, e, branches, i + 1)
           },
-        };
-        tcenv.mergeScope(this.tenv, scopeBranch, scopeRest)
+        );
       }
     | Default(block, pos) ->
       if (i < branches.size() - 1) {
