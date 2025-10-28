@@ -191,7 +191,7 @@ extension class TypeChecker {
           };
           typingError(Array[(errorPos, "Missing break")]);
         };
-        tcenv.withForkedSubScopes(
+        _ = tcenv.withForkedSubScopes<void>(
           this.tenv,
           () -> {
             this.evalCond(tcenv, cond, true);
