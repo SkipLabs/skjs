@@ -222,7 +222,13 @@ extension class TypeChecker {
       }
     };
     if (!cases.isEmpty()) {
-      typingError(Array[(e.pos, "Missing branches:\n" + cases.joinKeys("\n"))]);
+      missingCases = Vector::mcreateFromIterator(
+        cases.items().map(x -> (x.i1, x.i0)),
+      );
+      missingCases.sortBy(x ~> x.i1);
+      typingError(
+        Array[(e.pos, "Missing branches")].concat(missingCases.toArray()),
+      );
     }
   }
 
