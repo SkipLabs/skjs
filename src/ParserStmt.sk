@@ -108,6 +108,11 @@ extension class Parser {
           | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
           | Some(x) -> x
           };
+          caseTokPos = PosRange::create(
+            this.lex,
+            caseTok.posStart,
+            caseTok.posEnd,
+          );
           this.lex.getStrTok(caseTok) match {
           | "case" ->
             value = this.expr(0);
@@ -126,7 +131,7 @@ extension class Parser {
               | _ -> void
               }
             };
-            cases.push(Case(value, stmts.toArray()))
+            cases.push(Case(value, stmts.toArray(), caseTokPos))
           | "default" ->
             this.expect(TKColon());
             stmts = mutable Vector[];
@@ -143,7 +148,7 @@ extension class Parser {
               | _ -> void
               }
             };
-            cases.push(Default(stmts.toArray()))
+            cases.push(Default(stmts.toArray(), caseTokPos))
           | "}" -> break void
           | _ -> this.error(this.lex.posStart(caseTok), UnexpectedToken())
           }
