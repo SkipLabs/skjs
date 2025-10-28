@@ -134,48 +134,38 @@ extension class TypeChecker {
       })
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
-      tcenv.withSubScopeMerge{
-        isLoop => false,
-        tenv => this.tenv,
-        f => () -> this.stmts(tcenv, tryBlock),
-      };
+      tcenv.withSubScopeMerge(this.tenv, () -> this.stmts(tcenv, tryBlock));
 
       catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
-        tcenv.withSubScopeMerge{
-          isLoop => false,
-          tenv => this.tenv,
-          f => () -> {
-            param match {
-            | Some(pat) ->
-              errorType = type match {
-              | Some(t) -> // If we trusted user: this.tenv.normalize(tcenv.context, t)
-                typingError(
-                  Array[
-                    (
-                      t.pos,
-                      "Do not specify a type annotation for caught exceptions as it cannot be trusted",
-                    ),
-                  ],
-                )
-              | None() -> TType::top(pat.pos)
-              };
-              this.bind(tcenv, BKLet(), pat, errorType, true, false)
-            | None() -> void
+        tcenv.withSubScopeMerge(this.tenv, () -> {
+          param match {
+          | Some(pat) ->
+            errorType = type match {
+            | Some(t) -> // If we trusted user: this.tenv.normalize(tcenv.context, t)
+              typingError(
+                Array[
+                  (
+                    t.pos,
+                    "Do not specify a type annotation for caught exceptions as it cannot be trusted",
+                  ),
+                ],
+              )
+            | None() -> TType::top(pat.pos)
             };
-            this.stmts(tcenv, catchBlock)
-          },
-        }
+            this.bind(tcenv, BKLet(), pat, errorType, true, false)
+          | None() -> void
+          };
+          this.stmts(tcenv, catchBlock)
+        })
       | None() -> void
       };
 
       finallyBlock match {
       | Some(finallyStmts) ->
-        tcenv.withSubScopeMerge{
-          isLoop => false,
-          tenv => this.tenv,
-          f => () -> this.stmts(tcenv, finallyStmts),
-        }
+        tcenv.withSubScopeMerge(this.tenv, () ->
+          this.stmts(tcenv, finallyStmts)
+        )
       | None() -> void
       }
     }
