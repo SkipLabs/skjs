@@ -7,23 +7,6 @@ extension class TypeChecker {
     }
   }
 
-  fun block(
-    tcenv: mutable TCEnv,
-    stmts: Array<Stmt>,
-    cond: ?(Expr, Bool) = None(),
-  ): readonly Scope {
-    tcenv.withSubScope<void>{
-      isLoop => false,
-      f => () -> {
-        cond match {
-        | None() -> void
-        | Some((c, target)) -> this.evalCond(tcenv, c, target)
-        };
-        this.stmts(tcenv, stmts)
-      },
-    }.i1
-  }
-
   fun bind(
     tcenv: mutable TCEnv,
     kind: BindKind,
