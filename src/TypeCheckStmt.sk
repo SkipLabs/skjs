@@ -97,7 +97,15 @@ extension class TypeChecker {
 
         this.bindLoopVar(tcenv, initStmt, ty);
 
-        tcenv.withLoopSubScope(this.tenv, () -> this.stmts(tcenv, block))
+        tcenv.withinLoop(() -> {
+          _ = tcenv.withForkedSubScopes<void>(
+            this.tenv,
+            () -> {
+              this.stmts(tcenv, block)
+            },
+            () -> void,
+          )
+        })
       })
 
     | Throw(e) -> _ = this.expr(tcenv, e)
