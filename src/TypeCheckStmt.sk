@@ -158,7 +158,7 @@ extension class TypeChecker {
     if (branches.size() == 1) {
       typingError(Array[(e.pos, "Useless switch")])
     };
-    this.switchCheckExhaustiveness(tcenv, e, branches);
+    _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = block -> {
       term = StmtTermination::block(block);
       if (term.mayFallthrough) {
@@ -195,14 +195,14 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     e: Expr,
     branches: Array<SwitchBranch>,
-  ): void {
+  ): Bool {
     condType = this.expr(tcenv, e, true);
     cases = condType
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TPrimValue(_, Some(values), _)) ->
       Map::mcreateFromItems(values.values.map(x -> (x.i1, x.i0)))
-    | _ -> return void
+    | _ -> return false
     };
     for (branch in branches) {
       if (cases.isEmpty()) {
@@ -232,7 +232,8 @@ extension class TypeChecker {
       typingError(
         Array[(e.pos, "Missing branches")].concat(missingCases.toArray()),
       );
-    }
+    };
+    true
   }
 
   fun bindLoopVar(tcenv: mutable TCEnv, initStmt: Stmt, varType: TType): void {
