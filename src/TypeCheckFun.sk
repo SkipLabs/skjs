@@ -148,7 +148,7 @@ extension class TypeChecker {
       if (thisTypeOpt is Some((CKInterface(), _))) {
         typingError(Array[(fd.pos, "An interface cannot implement a method")])
       };
-      _ = this.block(tcenv, body);
+      this.stmts(tcenv, body);
       term = StmtTermination::block(body);
       if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
         typingError(
