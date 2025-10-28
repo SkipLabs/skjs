@@ -103,6 +103,9 @@ value class StmtTermination private {
     if (this.mayLoop) return Some("loop forever");
     None()
   }
+  fun isTerminal(): Bool {
+    !this.mayFallthrough && (this.mayReturn || this.mayThrow)
+  }
 
   static fun it<T>(it: mutable Iterator<T>, f: T ~> this): this {
     it.next() match {
