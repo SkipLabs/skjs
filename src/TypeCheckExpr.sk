@@ -1179,26 +1179,31 @@ extension class TypeChecker {
     retType: TType,
     body: ClosureBody,
   ): void {
-    for (param in params) {
-      tcenv.bind(param.i0, param.i1, true)
-    };
-    body match {
-    | CBExpr(e) ->
-      this.checkSubType(
-        tcenv,
-        e.pos,
-        "Invalid callback return",
-        isAsync match {
-        | None() -> this.expr(tcenv, e)
-        | Some(asyncPos) ->
-          TType::single(TPromise(this.expr(tcenv, e), asyncPos))
-        },
-        retType,
-      )
-    | CBBlock(bl) ->
-      if (isAsync is Some _) !this.isAsync = true;
-      !this.retType = Some(retType);
-      _ = this.block(tcenv, bl)
+    _ = tcenv.withSubScope{
+      isLoop => false,
+      f => () -> {
+        for (param in params) {
+          tcenv.bind(param.i0, param.i1, true)
+        };
+        body match {
+        | CBExpr(e) ->
+          this.checkSubType(
+            tcenv,
+            e.pos,
+            "Invalid callback return",
+            isAsync match {
+            | None() -> this.expr(tcenv, e)
+            | Some(asyncPos) ->
+              TType::single(TPromise(this.expr(tcenv, e), asyncPos))
+            },
+            retType,
+          )
+        | CBBlock(bl) ->
+          if (isAsync is Some _) !this.isAsync = true;
+          !this.retType = Some(retType);
+          this.stmts(tcenv, bl)
+        }
+      },
     }
   }
 
