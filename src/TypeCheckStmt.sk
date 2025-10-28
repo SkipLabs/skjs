@@ -178,6 +178,9 @@ extension class TypeChecker {
     if (branches.size() == 0) {
       typingError(Array[(e.pos, "Missing branch")])
     };
+    if (branches.size() == 1) {
+      typingError(Array[(e.pos, "Useless switch")])
+    };
     this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = block -> {
       term = StmtTermination::block(block);
