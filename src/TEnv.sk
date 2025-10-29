@@ -828,17 +828,8 @@ class TEnv{
           )
         };
 
-        TType::inst(
-          n,
-          TArgs(
-            targs.map(x ->
-              (this with {forbiddenInsts => this.seenInstantiate}).normalize(
-                context,
-                x,
-              )
-            ),
-          ),
-        )
+        !this.forbiddenInsts = this.seenInstantiate;
+        TType::inst(n, TArgs(targs.map(x -> this.normalize(context, x))))
       }
     | TAUnion(ty1, ty2) ->
       TType::union(
