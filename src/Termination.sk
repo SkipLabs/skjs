@@ -154,7 +154,7 @@ value class StmtTermination private {
         if (switchIsExhaustive) branchesTerm else branchesTerm.maybe();
       })
     | Block(block) -> static::block(block)
-    | Try(tryBlock, catchClause, finallyBlock) ->
+    | Try(tryBlock, catchClause, finallyStmtOpt) ->
       tryTerm = static::block(tryBlock);
       afterCatchTerm = catchClause match {
       | Some(CatchClause(_, _, catchBlock, _)) ->
@@ -165,10 +165,10 @@ value class StmtTermination private {
         tryNoThrow / catchTerm
       | None() -> tryTerm
       };
-      finallyBlock match {
-      | Some(finallyStmts) ->
+      finallyStmtOpt match {
+      | Some(finallyStmt) ->
         // TODO: warning if afterCatchTerm always loops or terminates normally
-        finallyTerm = static::block(finallyStmts);
+        finallyTerm = static::stmt(finallyStmt);
         afterCatchTerm.finally(finallyTerm)
       | None() -> afterCatchTerm
       }

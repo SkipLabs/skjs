@@ -233,7 +233,7 @@ base class Stmt_ uses XXHashable {
   | Bind(BindKind, Array<Binding>)
   | Switch(Expr, Array<SwitchBranch>)
   | Block(Array<Stmt>)
-  | Try(Array<Stmt>, ?CatchClause, ?Array<Stmt>)
+  | Try(Array<Stmt>, ?CatchClause, ?Stmt)
 }
 
 base class ForInOfKind uses XXHashable {

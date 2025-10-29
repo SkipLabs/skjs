@@ -133,7 +133,7 @@ extension class TypeChecker {
         )
       })
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
-    | Try(tryBlock, catchClause, finallyBlock) ->
+    | Try(tryBlock, catchClause, finallyStmtOpt) ->
       tcenv.withSubScopeMerge(this.tenv, () -> this.stmts(tcenv, tryBlock));
 
       catchClause match {
@@ -161,11 +161,9 @@ extension class TypeChecker {
       | None() -> void
       };
 
-      finallyBlock match {
-      | Some(finallyStmts) ->
-        tcenv.withSubScopeMerge(this.tenv, () ->
-          this.stmts(tcenv, finallyStmts)
-        )
+      finallyStmtOpt match {
+      | Some(finallyStmt) ->
+        tcenv.withSubScopeMerge(this.tenv, () -> this.stmt(tcenv, finallyStmt))
       | None() -> void
       }
     }

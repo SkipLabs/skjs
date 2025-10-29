@@ -327,8 +327,8 @@ extension class Parser {
         | _ -> None()
         };
 
-        finallyBlock = this.lex.peekStr() match {
-        | Some("finally") ->
+        finallyStmt = this.lex.peek() match {
+        | Some(finallyTok) if (this.lex.getStrTok(finallyTok) == "finally") ->
           _ = this.lex.next();
           this.expect(TKOpenCurly());
           finallyStmts = mutable Vector[];
@@ -339,15 +339,21 @@ extension class Parser {
             }
           };
           this.expect(TKCloseCurly());
-          Some(finallyStmts.toArray())
+          finallyPos = PosRange::create(
+            this.lex,
+            finallyTok.posStart,
+            finallyTok.posEnd,
+          );
+
+          Some(Stmt(finallyPos, Block(finallyStmts.toArray())))
         | _ -> None()
         };
 
-        if (catchClause is None() && finallyBlock is None()) {
+        if (catchClause is None() && finallyStmt is None()) {
           this.error(this.lex.posEnd(), ExpectedCatchOrFinally())
         };
 
-        Some(Try(tryBlock.toArray(), catchClause, finallyBlock))
+        Some(Try(tryBlock.toArray(), catchClause, finallyStmt))
 
       | _ ->
         e = this.expr(0);
