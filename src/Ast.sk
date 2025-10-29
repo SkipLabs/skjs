@@ -275,6 +275,7 @@ class CatchClause(
   param: ?Pattern,
   type: ?Type,
   body: Array<Stmt>,
+  pos: PosRange,
 ) uses XXHashable
 
 /***************************************************************************/

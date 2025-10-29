@@ -288,8 +288,8 @@ extension class Parser {
         };
         this.expect(TKCloseCurly());
 
-        catchClause = this.lex.peekStr() match {
-        | Some("catch") ->
+        catchClause = this.lex.peek() match {
+        | Some(catchTok) if (this.lex.getStrTok(catchTok) == "catch") ->
           _ = this.lex.next();
           (param, type) = if (this.lex.peekKind() is Some(TKOpenParen())) {
             this.expect(TKOpenParen());
@@ -318,7 +318,12 @@ extension class Parser {
             }
           };
           this.expect(TKCloseCurly());
-          Some(CatchClause(param, type, catchBlock.toArray()))
+          catchPos = PosRange::create(
+            this.lex,
+            catchTok.posStart,
+            catchTok.posEnd,
+          );
+          Some(CatchClause(param, type, catchBlock.toArray(), catchPos))
         | _ -> None()
         };
 

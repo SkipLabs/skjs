@@ -157,7 +157,7 @@ value class StmtTermination private {
     | Try(tryBlock, catchClause, finallyBlock) ->
       tryTerm = static::block(tryBlock);
       afterCatchTerm = catchClause match {
-      | Some(CatchClause(_, _, catchBlock)) ->
+      | Some(CatchClause(_, _, catchBlock, _)) ->
         // TODO: warning if tryTerm.mayThrow is false
         // Remove mayThrow from try and combine with catch
         tryNoThrow = tryTerm with {mayThrow => false};

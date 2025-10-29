@@ -137,7 +137,7 @@ extension class TypeChecker {
       tcenv.withSubScopeMerge(this.tenv, () -> this.stmts(tcenv, tryBlock));
 
       catchClause match {
-      | Some(CatchClause(param, type, catchBlock)) ->
+      | Some(CatchClause(param, type, catchBlock, _catchPos)) ->
         tcenv.withSubScopeMerge(this.tenv, () -> {
           param match {
           | Some(pat) ->
