@@ -192,7 +192,7 @@ extension class Parser {
             if (this.lex.peekKind() != Some(TKDot())) break void;
             _ = this.lex.next();
             dotName = this.getName();
-            !name = Name(
+            !name = PString(
               name.pos.extend(dotName.pos),
               name.value + "." + dotName.value,
             );
@@ -229,7 +229,7 @@ extension class Parser {
       | "abstract" -> TANew(this.type(prec))
       | "new" -> TANew(this.type(prec))
       | className ->
-        name = Name(
+        name = PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           className,
         );
@@ -237,7 +237,7 @@ extension class Parser {
           if (this.lex.peekKind() != Some(TKDot())) break void;
           _ = this.lex.next();
           dotName = this.getName();
-          !name = Name(
+          !name = PString(
             name.pos.extend(dotName.pos),
             name.value + "." + dotName.value,
           );
@@ -446,7 +446,7 @@ extension class Parser {
       | TKOpenCurly() ->
         _ = this.lex.next();
         curlyNames = mutable Vector[];
-        spread: ?Name = None();
+        spread: ?PString = None();
         loop {
           if (this.lex.peekKind() is Some(TKDotDotDot())) {
             _ = this.lex.next();

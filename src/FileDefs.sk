@@ -76,7 +76,7 @@ mutable class FileDefsState{
   exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
   defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
-  mutable exportEq: ?Name = None(),
+  mutable exportEq: ?PString = None(),
 } {
   mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
     for (def in parsedDefs) {
@@ -423,7 +423,7 @@ class FileDefs{
   exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
   defs: Map<String, Array<Def>>,
-  exportEq: ?Name,
+  exportEq: ?PString,
 } extends S.File {
   static fun create(
     context: mutable S.Context,
@@ -445,8 +445,8 @@ class FileDefs{
 }
 
 base class IDefMap {
-  fun getType(mutable S.Context, Name): DefMapType;
-  fun get(mutable S.Context, FileName, Name): Array<Def>;
+  fun getType(mutable S.Context, PString): DefMapType;
+  fun get(mutable S.Context, FileName, PString): Array<Def>;
 }
 
 base class DefMapType {
@@ -461,11 +461,11 @@ class DefMap{
   builtins: Set<String>,
   builtinsFileName: FileName,
 } extends IDefMap {
-  private fun notFound<T>(defName: Name): T {
+  private fun notFound<T>(defName: PString): T {
     error(ParsingError(EPRange(defName.pos), NotFound(defName.value)))
   }
 
-  fun getType(context: mutable S.Context, name: Name): DefMapType {
+  fun getType(context: mutable S.Context, name: PString): DefMapType {
     for (def in this.get(context, FileName::create(name.pos.fileName), name)) {
       def.value match {
       | td @ TypeDef _ -> return TDType(td)
@@ -479,7 +479,7 @@ class DefMap{
   fun get(
     context: mutable S.Context,
     fileName: FileName,
-    defName: Name,
+    defName: PString,
   ): Array<Def> {
     fileDefs = this.fileDefsMap.get(
       context,
@@ -493,7 +493,7 @@ class DefMap{
   private fun getInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
-    defName: Name,
+    defName: PString,
   ): Array<Def> {
     if (defName.value.contains(".")) {
       arr = defName.value.split(".");
@@ -501,22 +501,30 @@ class DefMap{
       newDefName = arr.slice(1, arr.size()).join(".");
       fileDefs.importedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.get(context, fileName, Name(defName.pos, newDefName))
+        return this.get(context, fileName, PString(defName.pos, newDefName))
       | None() -> void
       };
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.get(context, fileName, Name(defName.pos, newDefName))
+        return this.get(context, fileName, PString(defName.pos, newDefName))
       | None() -> void
       };
       fileDefs.namespaces.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getInDefs(context, fileName, Name(defName.pos, newDefName))
+        return this.getInDefs(
+          context,
+          fileName,
+          PString(defName.pos, newDefName),
+        )
       | None() -> void
       };
       fileDefs.exportedNamespaces.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getInDefs(context, fileName, Name(defName.pos, newDefName))
+        return this.getInDefs(
+          context,
+          fileName,
+          PString(defName.pos, newDefName),
+        )
       | None() -> void
       };
       fileDefs.importedFrom.maybeGet(moduleName) match {
@@ -524,7 +532,7 @@ class DefMap{
         return this.get(
           context,
           newFileName,
-          Name(defName.pos, origName + newDefName),
+          PString(defName.pos, origName + newDefName),
         )
       | None() -> void
       };
@@ -533,7 +541,7 @@ class DefMap{
         return this.get(
           context,
           newFileName,
-          Name(defName.pos, origName + newDefName),
+          PString(defName.pos, origName + newDefName),
         )
       | None() -> void
       };
@@ -544,7 +552,7 @@ class DefMap{
       return this.getExported(
         context,
         importedFileName,
-        Name(defName.pos, exportedDefName),
+        PString(defName.pos, exportedDefName),
       )
     | None() -> void
     };
@@ -592,7 +600,7 @@ class DefMap{
   private fun getExported(
     context: mutable S.Context,
     fileName: FileName,
-    defName: Name,
+    defName: PString,
   ): Array<Def> {
     fileDefs = this.fileDefsMap.get(context, fileName);
     this.getExportedInDefs(context, fileDefs, defName)
@@ -601,7 +609,7 @@ class DefMap{
   private fun getExportedInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
-    defName: Name,
+    defName: PString,
   ): Array<Def> {
     if (defName.value.contains(".")) {
       arr = defName.value.split(".");
@@ -612,7 +620,7 @@ class DefMap{
         return this.getExported(
           context,
           fileName,
-          Name(defName.pos, newDefName),
+          PString(defName.pos, newDefName),
         )
       | None() -> void
       };
@@ -621,7 +629,7 @@ class DefMap{
         return this.getExported(
           context,
           fileName,
-          Name(defName.pos, newDefName),
+          PString(defName.pos, newDefName),
         )
       | None() -> void
       };
@@ -640,11 +648,15 @@ class DefMap{
 
     if (defName.value == "default" && fileDefs.default is Some _) {
       defaultName = fileDefs.default.fromSome();
-      return this.getInDefs(context, fileDefs, Name(defName.pos, defaultName))
+      return this.getInDefs(
+        context,
+        fileDefs,
+        PString(defName.pos, defaultName),
+      )
     } else {
       fileDefs.exported.maybeGet(defName.value) match {
       | Some(asName) ->
-        return this.getInDefs(context, fileDefs, Name(defName.pos, asName))
+        return this.getInDefs(context, fileDefs, PString(defName.pos, asName))
       | None() -> void
       };
       fileDefs.exportedFrom.maybeGet(defName.value) match {
@@ -652,7 +664,7 @@ class DefMap{
         return this.getExported(
           context,
           newFileName,
-          Name(defName.pos, newDefName),
+          PString(defName.pos, newDefName),
         )
       | None() -> void
       }

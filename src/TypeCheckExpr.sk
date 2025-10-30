@@ -223,7 +223,7 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     pos: PosRange,
     objType: TType,
-    fieldName: Name,
+    fieldName: PString,
     optionalChaining: Bool = false,
   ): TType {
     idx = Expr(fieldName.pos, EString(fieldName.value));
@@ -457,12 +457,12 @@ extension class TypeChecker {
       };
       strType
 
-    | Var(Name(_, "true"))
-    | Var(Name(_, "false")) ->
+    | Var(PString(_, "true"))
+    | Var(PString(_, "false")) ->
       TType::single(TPrimValue::boolean(pos))
-    | Var(Name(_, "null")) ->
+    | Var(PString(_, "null")) ->
       this.makeBoundTVar(tcenv, TType::single(TPrimUnit(TNull(), pos)))
-    | Var(Name(_, "undefined")) ->
+    | Var(PString(_, "undefined")) ->
       this.makeBoundTVar(tcenv, TType::single(TPrimUnit(TUndefined(), pos)))
     | Var(local) ->
       if (tcenv.localObjects.containsKey(local.value)) {
@@ -604,7 +604,7 @@ extension class TypeChecker {
         }
       };
       obj
-    | Call(Expr(_, Var(Name(superPos, "super"))), targs, args) ->
+    | Call(Expr(_, Var(PString(superPos, "super"))), targs, args) ->
       this.super match {
       | None() -> typingError(Array[(superPos, "'super' is not defined")])
       | Some((superCstr, super)) ->
@@ -619,7 +619,7 @@ extension class TypeChecker {
           superCstr,
           args.map(x -> this.expr(tcenv, x)),
         );
-        thisName = Name(pos, "this");
+        thisName = PString(pos, "this");
         thisType = TType::inter(
           tcenv.subst,
           this.tenv,
@@ -632,7 +632,7 @@ extension class TypeChecker {
       };
       TType::single(TPrimUnit(TVoid(), pos))
 
-    | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
+    | Call(Expr(_, Var(PString(_, "__SKJS_show"))), _, args) ->
       exprTy = this.expr(tcenv, args[0]);
       ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Covariant());
       print_error(prettyPrintType(false, ty));
@@ -648,8 +648,8 @@ extension class TypeChecker {
       f.value match {
       | Binop(
         BODot(),
-        Expr(_, Var(Name(_, "console"))),
-        Expr(_, Var(Name(_, "assert"))),
+        Expr(_, Var(PString(_, "console"))),
+        Expr(_, Var(PString(_, "assert"))),
       ) if (args.size() >= 1) ->
         this.evalCond(tcenv, args[0], true)
       | _ -> void
@@ -1088,7 +1088,7 @@ extension class TypeChecker {
     isAsync: ?PosRange,
     pos: PosRange,
     c: Closure,
-    params: Array<(Name, ?Type)>,
+    params: Array<(PString, ?Type)>,
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
@@ -1149,14 +1149,14 @@ extension class TypeChecker {
     e.value match {
     | AsConst(subExpr) ->
       typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
-    | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
-    | Var(Name(_, "undefined")) ->
+    | Var(PString(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
+    | Var(PString(_, "undefined")) ->
       Some(TType::single(TPrimUnit(TUndefined(), pos)))
     | Number(n) -> Some(TType::single(TPrimValue::single(TNum(), n, pos)))
     | BigInt(n) -> Some(TType::single(TPrimValue::single(TBigInt(), n, pos)))
-    | Var(Name(_, "true")) ->
+    | Var(PString(_, "true")) ->
       Some(TType::single(TPrimValue::single(TBool(), "true", pos)))
-    | Var(Name(_, "false")) ->
+    | Var(PString(_, "false")) ->
       Some(TType::single(TPrimValue::single(TBool(), "false", pos)))
     | EString(n) -> Some(TType::single(TPrimValue::single(TString(), n, pos)))
     | _ -> None()
@@ -1166,7 +1166,7 @@ extension class TypeChecker {
   fun closure(
     tcenv: mutable TCEnv,
     isAsync: ?PosRange,
-    params: Array<(Name, TType)>,
+    params: Array<(PString, TType)>,
     retType: TType,
     body: ClosureBody,
   ): void {
@@ -1250,8 +1250,8 @@ extension class TypeChecker {
   fun assignLocalObject(
     tcenv: mutable TCEnv,
     pos: PosRange,
-    local: Name,
-    fieldName: Name,
+    local: PString,
+    fieldName: PString,
     fieldType: TType,
     used: ?PosRange,
   ): TType {

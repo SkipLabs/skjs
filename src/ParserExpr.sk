@@ -265,7 +265,7 @@ extension class Parser {
       | "await" -> Await(this.expr(0))
       | "typeof" -> TypeOf(this.expr(typeOfPrec))
       | _ ->
-        Var(Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), str))
+        Var(PString(PosRange::create(this.lex, tok.posStart, tok.posEnd), str))
       }
     | TKQuote()
     | TKDoubleQuote() ->

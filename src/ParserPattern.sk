@@ -66,7 +66,7 @@ extension class Parser {
         return PObject{fields => Array[], rest => None()}
       };
       fields = mutable Vector[];
-      rest: ?Name = None();
+      rest: ?PString = None();
       loop {
         if (this.lex.peekKind() is Some(TKDotDotDot())) {
           _ = this.lex.next();

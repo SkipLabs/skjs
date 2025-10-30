@@ -90,7 +90,7 @@ class TType private {
   }
 
   // Unexpanded instance of a named generic type.
-  static fun inst(name: Name, targs: TArgs): this {
+  static fun inst(name: PString, targs: TArgs): this {
     x = TSInst(name, targs);
     static::create(name.pos, TInsts::single(x), Clauses::empty())
   }
@@ -596,8 +596,8 @@ class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
     static::full(TBigInt(), pos)
   }
 
-  fun asClassName(): Name {
-    Name(this.pos, this.kind.toString())
+  fun asClassName(): PString {
+    PString(this.pos, this.kind.toString())
   }
 }
 
@@ -895,7 +895,7 @@ class TVar private (
 
 /* Unexpanded named type */
 // possibly with type arguments
-class TSInst(name: Name, targs: TArgs) extends TInst {}
+class TSInst(name: PString, targs: TArgs) extends TInst {}
 
 class TArgs(targs: Array<TType>) uses XXHashable, Orderable
 
@@ -1146,7 +1146,7 @@ class Clauses private (
     Some(result)
   }
 
-  fun primKind(): ?Name {
+  fun primKind(): ?PString {
     cand: ?TPrimValue = None();
     for (clause in this.clauses) {
       clause.stypes match {

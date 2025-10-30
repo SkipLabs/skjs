@@ -69,7 +69,7 @@ class TEnv{
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
-  fun instantiate(subst: mutable Subst, name: Name, targs: TArgs): TType {
+  fun instantiate(subst: mutable Subst, name: PString, targs: TArgs): TType {
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
@@ -134,7 +134,7 @@ class TEnv{
     }
   }
 
-  fun getClass(context: mutable SKStore.Context, className: Name): Class {
+  fun getClass(context: mutable SKStore.Context, className: PString): Class {
     tdef = this.defMap.getType(context, className);
     tdef match {
     | TDType(_) -> typingError(Array[(className.pos, "Expected a class name")])
@@ -145,7 +145,7 @@ class TEnv{
   fun makeTArgs(
     context: mutable SKStore.Context,
     subst: mutable Subst,
-    className: Name,
+    className: PString,
   ): Array<TType> {
     this.getClass(context, className).tparams.map(tparam -> {
       tvar = subst.gen(className.pos);
@@ -160,7 +160,7 @@ class TEnv{
 
   fun new(
     context: mutable SKStore.Context,
-    className: Name,
+    className: PString,
     targs: Array<TType>,
     filter: FieldType ~> Bool = _ ~> true,
   ): TType {
@@ -170,7 +170,7 @@ class TEnv{
 
   fun newConstructor(
     context: mutable SKStore.Context,
-    className: Name,
+    className: PString,
     targs: Array<TType>,
   ): CstrType {
     c = this.getClass(context, className);
@@ -193,7 +193,7 @@ class TEnv{
 
   fun newObject(
     context: mutable SKStore.Context,
-    className: Name,
+    className: PString,
     targs: Array<TType>,
     filter: FieldType ~> Bool = _ ~> true,
   ): TObject {
@@ -226,14 +226,14 @@ class TEnv{
     )
   }
 
-  fun newStatic(context: mutable SKStore.Context, className: Name): TType {
+  fun newStatic(context: mutable SKStore.Context, className: PString): TType {
     obj = this.newStaticObject(context, className);
     TType::single(obj)
   }
 
   private fun newStaticObject(
     context: mutable SKStore.Context,
-    className: Name,
+    className: PString,
   ): TObject {
     c = this.getClass(context, className);
     targs = Array[];
@@ -263,12 +263,12 @@ class TEnv{
   private fun makeEmptyConstructor(
     context: mutable SKStore.Context,
     pos: PosRange,
-    className: Name,
+    className: PString,
     c: Class,
   ): TField {
     cgNode = CGNode::create(
       Method(
-        Some(FNNormal(Name(pos, cstrName))),
+        Some(FNNormal(PString(pos, cstrName))),
         className,
         c.name.pos.fileName,
         true,
@@ -316,7 +316,7 @@ class TEnv{
     context: mutable SKStore.Context,
     visitedClasses: SortedSet<String>,
     withTParams: Bool,
-    className: Name,
+    className: PString,
     targs: Array<TType>,
   ): (this, Class) {
     if (visitedClasses.contains(className.value)) {
@@ -358,7 +358,7 @@ class TEnv{
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
     isStatic: ?Array<TypeParam>,
-    className: Name,
+    className: PString,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
   ): void {
@@ -443,7 +443,7 @@ class TEnv{
         }
       | fd @ FunDef _ ->
         isConstructor = fd.name match {
-        | Some(FNNormal(name @ Name(_, "constructor"))) -> Some(name)
+        | Some(FNNormal(name @ PString(_, "constructor"))) -> Some(name)
         | _ -> None()
         };
         metIsStatic = isConstructor.isSome() || fd.isStatic();
@@ -472,7 +472,7 @@ class TEnv{
   private fun findConstructor(
     context: mutable SKStore.Context,
     visitedClasses: SortedSet<String>,
-    className: Name,
+    className: PString,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?TType {
@@ -491,7 +491,7 @@ class TEnv{
   private fun findConstructorMethod(
     context: mutable SKStore.Context,
     visitedClasses: SortedSet<String>,
-    className: Name,
+    className: PString,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?FunDef {
@@ -504,7 +504,9 @@ class TEnv{
     );
     for (fieldType in cls.fields) {
       fieldType match {
-      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
+      | fd @ FunDef _ if (
+        fd.name is Some(FNNormal(PString(_, "constructor")))
+      ) ->
         return Some(fd)
       | _ -> void
       }
@@ -533,7 +535,7 @@ class TEnv{
 
   fun makeConstructor(
     context: mutable SKStore.Context,
-    className: Name,
+    className: PString,
     tparams: Array<TypeParam>,
     fd: FunDef,
   ): TType {
@@ -550,7 +552,7 @@ class TEnv{
       Type(
         pos,
         TAInst(
-          Name(pos, className.value),
+          PString(pos, className.value),
           tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
         ),
       )
@@ -587,7 +589,7 @@ class TEnv{
         param.pos,
         TAUnion(
           ty,
-          Type(optionalPos, TAInst(Name(optionalPos, "undefined"), Array[])),
+          Type(optionalPos, TAInst(PString(optionalPos, "undefined"), Array[])),
         ),
       )
     };
@@ -603,7 +605,7 @@ class TEnv{
     isMethod: Bool,
     fd: FunDef,
     cgNode: CGNode,
-  ): (Name, TType) {
+  ): (PString, TType) {
     name = fd.name match {
     | Some(FNNormal(name)) ->
       if (name.value == "constructor") {
@@ -675,7 +677,7 @@ class TEnv{
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(ty) ->
       ty.value match {
-      | TAInst(Name(_, "undefined"), targs) ->
+      | TAInst(PString(_, "undefined"), targs) ->
         if (targs.size() != 0) {
           typingError(Array[(pos, "Unexpected type parameters for undefined")])
         };
@@ -726,42 +728,45 @@ class TEnv{
     | TAObject(fields) ->
       (algebraicBranchField, tFields) = this.createTFields(context, fields);
       createObject(pos, algebraicBranchField, tFields)
-    | TAInst(Name(p, "object"), targs) ->
+    | TAInst(PString(p, "object"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TObject(TFields::empty(), pos))
 
     | TAArray(ty) ->
-      TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(context, ty)]))
+      TType::inst(
+        PString(pos, "Array"),
+        TArgs(Array[this.normalize(context, ty)]),
+      )
 
-    | TAInst(Name(p, "void"), targs) ->
+    | TAInst(PString(p, "void"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimUnit(TVoid(), pos))
-    | TAInst(Name(p, "undefined"), targs) ->
+    | TAInst(PString(p, "undefined"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimUnit(TUndefined(), pos))
-    | TAInst(Name(p, "Promise"), targs) ->
+    | TAInst(PString(p, "Promise"), targs) ->
       if (targs.size() != 1) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPromise(this.normalize(context, targs[0]), pos))
-    | TAInst(Name(p, "unknown"), targs) ->
+    | TAInst(PString(p, "unknown"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::top(pos)
-    | TAInst(Name(p, "never"), targs) ->
+    | TAInst(PString(p, "never"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::bottom(pos)
-    | TAInst(Name(p, x @ "true"), targs)
-    | TAInst(Name(p, x @ "false"), targs) ->
+    | TAInst(PString(p, x @ "true"), targs)
+    | TAInst(PString(p, x @ "false"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };

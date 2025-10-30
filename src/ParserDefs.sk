@@ -10,13 +10,13 @@ extension class Parser {
   /***************************************************************************/
 
   // <name> ::= <string>
-  mutable fun getName(): Name {
+  mutable fun getName(): PString {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
     | Some(tok) ->
       tok.kind match {
       | TKVar() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -26,23 +26,23 @@ extension class Parser {
   }
 
   // <string> | "<string>" | '<string>'
-  mutable fun getNameOrString(): Name {
+  mutable fun getNameOrString(): PString {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
       | TKVar() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -52,18 +52,18 @@ extension class Parser {
   }
 
   // "<string>" | '<string>'
-  mutable fun getString(): Name {
+  mutable fun getString(): PString {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
@@ -73,18 +73,18 @@ extension class Parser {
   }
 
   // "<string>" | '<string>' | <int>
-  mutable fun getNameOrStringOrInt(): Name {
+  mutable fun getNameOrStringOrInt(): PString {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
@@ -94,13 +94,13 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
         | Some(x) -> x
         };
-        Name(
+        PString(
           PosRange::create(this.lex, start, nbr.posEnd),
           "-" + this.lex.getStrTok(nbr),
         )
       | TKNumber()
       | TKVar() ->
-        Name(
+        PString(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -894,7 +894,7 @@ extension class Parser {
       _ = this.lex.next();
       return Enum(isConst, name, Array[]);
     };
-    fields = mutable Vector<(Name, ?Expr)>[];
+    fields = mutable Vector<(PString, ?Expr)>[];
     loop {
       fieldName = this.getName();
       fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
@@ -982,7 +982,7 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+      | fd @ FunDef{name => Some(FNNormal(PString(_, "constructor")))} ->
         initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {
@@ -1018,7 +1018,7 @@ extension class Parser {
                   modifiers,
                 },
               );
-              eThis = Expr(pos, Var(Name(pos, "this")));
+              eThis = Expr(pos, Var(PString(pos, "this")));
               eName = Expr(pos, Var(pName));
               eThisDotName = Expr(pos, Binop(BODot(), eThis, eName));
               eAssign = Expr(pos, Binop(BOAssignment(), eThisDotName, eName));

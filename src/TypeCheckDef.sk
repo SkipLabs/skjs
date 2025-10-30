@@ -91,7 +91,7 @@ extension class TypeChecker {
       varDef.pat.value match {
       | PVar _ -> void
       | PArray _ /* (Array<Pattern>) */
-      | PObject _ /* (Array<(Name, Pattern)>) */ ->
+      | PObject _ /* (Array<(PString, Pattern)>) */ ->
         internal_error("TODO pattern varDef")
       };
       e = varDef.value match {

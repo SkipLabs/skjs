@@ -5,7 +5,9 @@ extension class TypeChecker {
     constructor: ?FunDef = None();
     for (fieldType in c.fields) {
       fieldType match {
-      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
+      | fd @ FunDef _ if (
+        fd.name is Some(FNNormal(PString(_, "constructor")))
+      ) ->
         constructor match {
         | Some(existingConstructor) ->
           typingError(
@@ -161,7 +163,7 @@ extension class TypeChecker {
           )
         }
       | fd @ FunDef _ ->
-        if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
+        if (fd.name is Some(FNNormal(PString(_, "constructor")))) {
           !hasConstructor = true;
           partialThisType = this.tenv.new(
             context,
@@ -207,7 +209,7 @@ extension class TypeChecker {
     thisType: TType,
     partialThisType: TType,
     fd: FunDef,
-    className: ?Name,
+    className: ?PString,
   ): void {
     if (fd.retType.i1 is Some _) {
       typingError(
@@ -234,7 +236,7 @@ extension class TypeChecker {
     | FDBNone(pos) -> typingError(Array[(pos, "Missing definition")])
     | FDBSome(body) ->
       blockScope = this.block(tcenv, body);
-      blockThisType = blockScope.get(Name(fd.pos, "this"));
+      blockThisType = blockScope.get(PString(fd.pos, "this"));
       objType = static::filterMethods(blockThisType, tcenv.subst, this.tenv);
       fullType = static::filterMethods(thisType, tcenv.subst, this.tenv);
       this.checkSubType(

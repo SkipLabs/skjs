@@ -12,13 +12,21 @@ extension class TypeChecker {
       Expr(_, EString(tag)),
       Expr(
         _,
-        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
+        Binop(
+          BODot(),
+          Expr(_, Var(local)),
+          Expr(_, Var(PString(_, fieldName))),
+        ),
       ),
     )
     | (
       Expr(
         _,
-        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
+        Binop(
+          BODot(),
+          Expr(_, Var(local)),
+          Expr(_, Var(PString(_, fieldName))),
+        ),
       ),
       Expr(_, EString(tag)),
     ) if (fieldName == kAlgebraicBranchFieldName) ->
@@ -28,18 +36,18 @@ extension class TypeChecker {
     | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
       this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
 
-    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
-    | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
+    | (Expr(_, Var(local)), Expr(_, Var(PString(_, "null"))))
+    | (Expr(_, Var(PString(_, "null"))), Expr(_, Var(local))) ->
       this.evalNullEquality(tcenv, local, target)
 
-    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
-    | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
+    | (Expr(_, Var(local)), Expr(_, Var(PString(_, "undefined"))))
+    | (Expr(_, Var(PString(_, "undefined"))), Expr(_, Var(local))) ->
       this.evalUndefinedEquality(tcenv, local, target)
 
-    | (Expr(pos, _), Expr(_, Var(Name(_, "null"))))
-    | (Expr(_, Var(Name(_, "null"))), Expr(pos, _))
-    | (Expr(pos, _), Expr(_, Var(Name(_, "undefined"))))
-    | (Expr(_, Var(Name(_, "undefined"))), Expr(pos, _)) ->
+    | (Expr(pos, _), Expr(_, Var(PString(_, "null"))))
+    | (Expr(_, Var(PString(_, "null"))), Expr(pos, _))
+    | (Expr(pos, _), Expr(_, Var(PString(_, "undefined"))))
+    | (Expr(_, Var(PString(_, "undefined"))), Expr(pos, _)) ->
       typingError(
         Array[(pos, "Only locals can be compared to null/undefined.")],
       )
@@ -50,7 +58,7 @@ extension class TypeChecker {
 
   fun evalAlgebraicBranchEquality(
     tcenv: mutable TCEnv,
-    local: Name,
+    local: PString,
     tag: String,
     target: Bool,
   ): void {
@@ -74,7 +82,7 @@ extension class TypeChecker {
 
   fun evalTypeofEquality(
     tcenv: mutable TCEnv,
-    local: Name,
+    local: PString,
     typeStr: String,
     typePos: PosRange,
     target: Bool,
@@ -160,7 +168,11 @@ extension class TypeChecker {
     }
   }
 
-  fun evalNullEquality(tcenv: mutable TCEnv, local: Name, target: Bool): void {
+  fun evalNullEquality(
+    tcenv: mutable TCEnv,
+    local: PString,
+    target: Bool,
+  ): void {
     this.setLocal(tcenv, local, None(), x ~>
       x is TPrimUnit(TNull(), _) == target
     )
@@ -168,7 +180,7 @@ extension class TypeChecker {
 
   fun evalUndefinedEquality(
     tcenv: mutable TCEnv,
-    local: Name,
+    local: PString,
     target: Bool,
   ): void {
     this.setLocal(tcenv, local, None(), x ~>
@@ -186,12 +198,12 @@ extension class TypeChecker {
 
     | InstanceOf(
       Expr(_, Var(local)),
-      Expr(_, Var(Name(posArray, "Array"))),
+      Expr(_, Var(PString(posArray, "Array"))),
     ) if (target) ->
       tcenv.scope.set(
         local,
         TType::inst(
-          Name(posArray, "Array"),
+          PString(posArray, "Array"),
           TArgs(Array[TType::top(posArray)]),
         ),
         (_, _) -> void,
@@ -295,7 +307,7 @@ extension class TypeChecker {
 
   fun setLocal(
     tcenv: mutable TCEnv,
-    local: Name,
+    local: PString,
     default: ?SType,
     filter: SType ~> Bool,
     map: SType ~> SType = x ~> x,

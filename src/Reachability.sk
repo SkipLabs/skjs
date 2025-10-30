@@ -7,9 +7,14 @@ module SKJS;
 base class CGNode_ uses XXHashable, Show {
   children =
   | TopLevelFunDef(name: SimpleSymbol, fileName: String)
-  | Method(name: ?SimpleSymbol, class_: Name, fileName: String, static_: Bool)
+  | Method(
+    name: ?SimpleSymbol,
+    class_: PString,
+    fileName: String,
+    static_: Bool,
+  )
   | ObjectMethod(name: SimpleSymbol, fileName: String)
-  | Constructor(class_: Name, fileName: String)
+  | Constructor(class_: PString, fileName: String)
   | Toplevel(fileName: String)
   | ArrowTypeAnnot(fileName: String)
 

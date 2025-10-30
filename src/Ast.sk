@@ -12,7 +12,10 @@ module SKJS;
 // <name> ::= <string>
 /***************************************************************************/
 
-class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
+class PString(
+  pos: PosRange,
+  value: String,
+) uses XXHashable, Hashable, Orderable {
   fun hash(): Int {
     // Custom hash that excludes position
     this.value.hash()
@@ -52,40 +55,40 @@ base class Def_ uses XXHashable {
   | Export(isType: ?PosRange, def: Def_)
   | ExportDefault(ExportDefaultable)
   | ExportEq(e: Expr)
-  | ExportAs(name: Name)
-  | ExportImport(name: Name, expr: Expr)
+  | ExportAs(name: PString)
+  | ExportImport(name: PString, expr: Expr)
   | Import(
     kind: ImportKind,
     isType: ?PosRange,
     ModuleNames,
     importFrom: ImportName,
   )
-  | ImportExpr(Name)
+  | ImportExpr(PString)
   | Declare(DeclarableDef)
 }
 
 base class DeclarableDef extends Def_ {
   children =
-  | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
+  | TypeDef{name: PString, tdefParams: Array<TypeParam>, body: Type}
   | Class{
     kind: ClassKind,
-    name: Name,
+    name: PString,
     extends_: Array<Type>,
     implements: Array<Type>,
     tparams: Array<TypeParam>,
     fields: Array<FieldType>,
   }
-  | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
-  | Namespace(name: Name, Array<Def>)
-  | Module(name: Name, ?Array<Def>)
+  | Enum(isConst: ?PosRange, name: PString, fields: Array<(PString, ?Expr)>)
+  | Namespace(name: PString, Array<Def>)
+  | Module(name: PString, ?Array<Def>)
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
   | Global(Array<Def>)
 }
 
 base class ImportName uses XXHashable {
   children =
-  | INPath(Name)
-  | INName(Name)
+  | INPath(PString)
+  | INName(PString)
 }
 
 base class ExportDefaultable extends Def_
@@ -110,9 +113,9 @@ class Pattern(pos: PosRange, value: Pattern_) uses XXHashable
 
 base class Pattern_ uses XXHashable {
   children =
-  | PVar(Name)
+  | PVar(PString)
   | PArray(Array<Pattern>)
-  | PObject{fields: Array<(Name, Pattern, ?Expr)>, rest: ?Name}
+  | PObject{fields: Array<(PString, Pattern, ?Expr)>, rest: ?PString}
 }
 
 /***************************************************************************/
@@ -151,9 +154,9 @@ base class FunDefBody uses XXHashable {
 
 base class ModuleNames uses XXHashable {
   children =
-  | MStar(?Name)
+  | MStar(?PString)
   | MCurly(Array<ModuleDefName>)
-  | MName(Name, Array<ModuleDefName>)
+  | MName(PString, Array<ModuleDefName>)
 }
 
 /***************************************************************************/
@@ -162,8 +165,8 @@ base class ModuleNames uses XXHashable {
 
 class ModuleDefName(
   isType: ?PosRange,
-  name: Name,
-  asName: ?Name,
+  name: PString,
+  asName: ?PString,
 ) uses XXHashable
 
 /***************************************************************************/
@@ -172,7 +175,7 @@ class ModuleDefName(
 
 class TypeParam(
   id: Id,
-  name: Name,
+  name: PString,
   constraint: ?Type,
   default: ?Type,
 ) uses XXHashable
@@ -200,8 +203,8 @@ class Param(
 
 base class ParamNames uses XXHashable {
   children =
-  | PNDDD(name: Name)
-  | PNName(name: Name)
+  | PNDDD(name: PString)
+  | PNName(name: PString)
   | PNSquare(Array<ParamNames>)
   | PNCurly(Array<ParamNames>)
 }
@@ -319,20 +322,20 @@ base class Expr_ uses XXHashable {
   children =
   | Number(String)
   | BigInt(String)
-  | Var(Name)
-  | Spread(Name)
+  | Var(PString)
+  | Spread(PString)
   | EString(String)
   | TypeOf(Expr)
   | Await(Expr)
   | Get(Expr, Expr)
-  | New(Name, Array<Type>, Array<Expr>)
+  | New(PString, Array<Type>, Array<Expr>)
   | Unop(UnaryOperator, Expr)
   | PostOp(PostOperator, Expr)
   | Binop(BinaryOperator, Expr, Expr)
   | Call(Expr, Array<Type>, Array<Expr>)
-  | Params(Array<(Name, ?Type)>)
+  | Params(Array<(PString, ?Type)>)
   | Object(Array<Field>)
-  | Closure(Array<(Name, ?Type)>, ?Type, ClosureBody)
+  | Closure(Array<(PString, ?Type)>, ?Type, ClosureBody)
   | EArray(Array<Expr>)
   | EIf(Expr, Expr, Expr)
   | In(Expr, Expr)
@@ -355,7 +358,7 @@ base class ClosureBody uses XXHashable {
 /***************************************************************************/
 base class Field uses XXHashable {
   children =
-  | FDNormal(name: Name, expr: Expr)
+  | FDNormal(name: PString, expr: Expr)
   | FDSpread(expr: Expr)
 }
 
@@ -387,14 +390,14 @@ base class Symbol uses XXHashable {
 
 base class SimpleSymbol extends Symbol {
   children =
-  | FNNormal(Name)
-  | FNSymbol(Name)
+  | FNNormal(PString)
+  | FNSymbol(PString)
 }
 
 base class IndexSymbol extends Symbol {
   children =
-  | FNIn(Name, Type, ?Type, ?FNOp)
-  | FNColon(indexName: Name, indexType: Type)
+  | FNIn(PString, Type, ?Type, ?FNOp)
+  | FNColon(indexName: PString, indexType: Type)
 }
 
 class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
@@ -463,7 +466,7 @@ base class Type_ uses XXHashable {
   | TATypeOf(Type)
   | TAArray(Type)
   | TAObject(Array<FieldType>)
-  | TAInst(Name, Array<Type>)
+  | TAInst(PString, Array<Type>)
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
   | TATuple(Array<TupleEltType>)
@@ -472,15 +475,15 @@ base class Type_ uses XXHashable {
   | TAExtendsQuestion(Type, Type, Type, Type)
   | TAExtends(Type, Type)
   | TAReadonly(Type)
-  | TAImport(Expr, ?Name, ?Array<Type>)
-  | TAInfer(Name)
+  | TAImport(Expr, ?PString, ?Array<Type>)
+  | TAInfer(PString)
   | TAEmptyArray()
   | TAKeyOf(Type)
   | TANew(Type)
   | TAAbstract(Type)
   | TAIs(Type, Type)
-  | TAAsserts(Name)
-  | TAAssertIs(Name, Type)
+  | TAAsserts(PString)
+  | TAAssertIs(PString, Type)
   | TAUniqueSymbol()
 }
 
@@ -490,8 +493,8 @@ base class Type_ uses XXHashable {
 
 base class TupleEltType uses XXHashable {
   children =
-  | TEType(name: ?Name, optional: ?PosRange, Type)
-  | TESpread(name: ?Name, Type)
+  | TEType(name: ?PString, optional: ?PosRange, Type)
+  | TESpread(name: ?PString, Type)
 }
 
 /***************************************************************************/
@@ -513,16 +516,16 @@ class TAFunParam(
 
 base class TAParamNames uses XXHashable {
   children =
-  | TAParamName(Name)
-  | TAParamSpread(Name)
-  | TACurlyNames(Array<CurlyName>, ?Name)
+  | TAParamName(PString)
+  | TAParamSpread(PString)
+  | TACurlyNames(Array<CurlyName>, ?PString)
 }
 
 /***************************************************************************/
 // <curly-name> ::= <name> (: <type>)?
 /***************************************************************************/
 
-class CurlyName(name: Name, type: ?Type) uses XXHashable
+class CurlyName(name: PString, type: ?Type) uses XXHashable
 
 /***************************************************************************/
 // Modifiers
