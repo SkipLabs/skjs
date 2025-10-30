@@ -278,8 +278,8 @@ declare class WeakSet<T> {
 
 declare class Date {
   constructor(
-    year: number,
-    month: number,
+    year?: number,
+    month?: number,
     day?: number,
     hour?: number,
     minute?: number,
