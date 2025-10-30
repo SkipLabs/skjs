@@ -434,5 +434,5 @@ declare class undici_Response extends undici_BodyMixin {
 declare function fetch(input: string): Promise<undici_Response>;
 
 declare const process: {
-  exit(status: number): void;
+  exit(status: number): never;
 };
