@@ -6,9 +6,9 @@ export type FastifyServerOptions = {
   logger?: boolean | (FastifyLoggerOptions & PinoLoggerOptions);
 };
 
-declare function fastify(opts: FastifyServerOptions): FastifyInstance;
+export declare function fastify(opts: FastifyServerOptions): FastifyInstance;
 
-export { fastify as default };
+// export { fastify as default };
 
 export type LogFn = (obj: unknown, msg?: string) => void;
 
