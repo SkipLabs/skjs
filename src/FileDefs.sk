@@ -76,7 +76,7 @@ mutable class FileDefsState{
   exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
   defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
-  mutable exportEq: ?PString = None(),
+  mutable exportEq: ?Name = None(),
 } {
   mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
     for (def in parsedDefs) {
@@ -423,7 +423,7 @@ class FileDefs{
   exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
   defs: Map<String, Array<Def>>,
-  exportEq: ?PString,
+  exportEq: ?Name,
 } extends S.File {
   static fun create(
     context: mutable S.Context,

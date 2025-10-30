@@ -10,14 +10,14 @@ mutable class Scope{
   id: Int,
   private isLoop: Bool,
   up: ?readonly Scope = None(),
-  private mutable locals: SortedMap<String, PString> = SortedMap[],
+  private mutable locals: SortedMap<String, Name> = SortedMap[],
   private mutable refs: SortedMap<String, LocalRef> = SortedMap[],
 } {
   static fun mcreateToplevel(): mutable this {
     mutable static{id => 0, isLoop => false}
   }
 
-  readonly private fun maybeGetLocal(name: PString): ?PString {
+  readonly private fun maybeGetLocal(name: Name): ?Name {
     this.locals.maybeGet(name.value) match {
     | None() ->
       this.up match {
@@ -47,7 +47,7 @@ mutable class Scope{
     this.maybeGetRefHelper(false, name)
   }
 
-  mutable fun bind(name: PString, ty: TType, isInitialized: Bool): void {
+  mutable fun bind(name: Name, ty: TType, isInitialized: Bool): void {
     this.maybeGetLocal(name) match {
     | None() ->
       this.!locals[name.value] = name;
@@ -62,14 +62,14 @@ mutable class Scope{
     }
   }
 
-  readonly fun isThroughLoop(name: PString): Bool {
+  readonly fun isThroughLoop(name: Name): Bool {
     this.maybeGetRef(name.value) match {
     | None() -> false
     | Some((isThroughLoop, _)) -> isThroughLoop
     }
   }
 
-  readonly fun maybeGet(name: PString): ?TType {
+  readonly fun maybeGet(name: Name): ?TType {
     this.maybeGetRef(name.value) match {
     | None() -> None()
     | Some((_, ref)) ->
@@ -81,7 +81,7 @@ mutable class Scope{
     }
   }
 
-  readonly fun get(name: PString): TType {
+  readonly fun get(name: Name): TType {
     this.maybeGet(name) match {
     | None() -> typingError(Array[(name.pos, "Unbound name")])
     | Some(x) -> x
@@ -89,7 +89,7 @@ mutable class Scope{
   }
 
   mutable fun set(
-    name: PString,
+    name: Name,
     ty: TType,
     isSubType: (TType, TType) -> void,
   ): void {

@@ -223,7 +223,7 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     pos: PosRange,
     objType: TType,
-    fieldName: PString,
+    fieldName: Name,
     optionalChaining: Bool = false,
   ): TType {
     idx = Expr(fieldName.pos, EString(fieldName.value));
@@ -1088,7 +1088,7 @@ extension class TypeChecker {
     isAsync: ?PosRange,
     pos: PosRange,
     c: Closure,
-    params: Array<(PString, ?Type)>,
+    params: Array<(Name, ?Type)>,
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
@@ -1166,7 +1166,7 @@ extension class TypeChecker {
   fun closure(
     tcenv: mutable TCEnv,
     isAsync: ?PosRange,
-    params: Array<(PString, TType)>,
+    params: Array<(Name, TType)>,
     retType: TType,
     body: ClosureBody,
   ): void {
@@ -1250,8 +1250,8 @@ extension class TypeChecker {
   fun assignLocalObject(
     tcenv: mutable TCEnv,
     pos: PosRange,
-    local: PString,
-    fieldName: PString,
+    local: Name,
+    fieldName: Name,
     fieldType: TType,
     used: ?PosRange,
   ): TType {

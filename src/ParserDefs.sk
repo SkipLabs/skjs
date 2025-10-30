@@ -894,7 +894,7 @@ extension class Parser {
       _ = this.lex.next();
       return Enum(isConst, name, Array[]);
     };
-    fields = mutable Vector<(PString, ?Expr)>[];
+    fields = mutable Vector<(Name, ?Expr)>[];
     loop {
       fieldName = this.getName();
       fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {

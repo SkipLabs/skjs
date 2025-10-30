@@ -209,7 +209,7 @@ extension class TypeChecker {
     thisType: TType,
     partialThisType: TType,
     fd: FunDef,
-    className: ?PString,
+    className: ?Name,
   ): void {
     if (fd.retType.i1 is Some _) {
       typingError(

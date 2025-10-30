@@ -58,7 +58,7 @@ extension class TypeChecker {
 
   fun evalAlgebraicBranchEquality(
     tcenv: mutable TCEnv,
-    local: PString,
+    local: Name,
     tag: String,
     target: Bool,
   ): void {
@@ -82,7 +82,7 @@ extension class TypeChecker {
 
   fun evalTypeofEquality(
     tcenv: mutable TCEnv,
-    local: PString,
+    local: Name,
     typeStr: String,
     typePos: PosRange,
     target: Bool,
@@ -168,11 +168,7 @@ extension class TypeChecker {
     }
   }
 
-  fun evalNullEquality(
-    tcenv: mutable TCEnv,
-    local: PString,
-    target: Bool,
-  ): void {
+  fun evalNullEquality(tcenv: mutable TCEnv, local: Name, target: Bool): void {
     this.setLocal(tcenv, local, None(), x ~>
       x is TPrimUnit(TNull(), _) == target
     )
@@ -180,7 +176,7 @@ extension class TypeChecker {
 
   fun evalUndefinedEquality(
     tcenv: mutable TCEnv,
-    local: PString,
+    local: Name,
     target: Bool,
   ): void {
     this.setLocal(tcenv, local, None(), x ~>
@@ -307,7 +303,7 @@ extension class TypeChecker {
 
   fun setLocal(
     tcenv: mutable TCEnv,
-    local: PString,
+    local: Name,
     default: ?SType,
     filter: SType ~> Bool,
     map: SType ~> SType = x ~> x,
