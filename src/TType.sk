@@ -372,12 +372,16 @@ class TConstr(
     static(this.tag, this.tagPos, f(this.fields))
   }
 
-  fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
-    if (fieldName.value == kAlgebraicBranchFieldName) {
-      pos = this.tagPos;
-      TType::single(TPrimValue::single(TString(), this.tag, pos))
+  fun getType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fieldName: String,
+    pos: PosRange,
+  ): TType {
+    if (fieldName == kAlgebraicBranchFieldName) {
+      TType::single(TPrimValue::single(TString(), this.tag, this.tagPos))
     } else {
-      this.fields.getType(subst, tenv, fieldName)
+      this.fields.getType(subst, tenv, fieldName, pos)
     }
   }
 
@@ -695,23 +699,28 @@ class TFields private (
     this.fields.maybeGet(fieldName)
   }
 
-  fun maybeGetType(subst: mutable Subst, tenv: TEnv, fieldName: Name): ?TType {
-    this.maybeGet(fieldName.value).map(fd -> {
+  fun maybeGetType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fieldName: String,
+    pos: PosRange,
+  ): ?TType {
+    this.maybeGet(fieldName).map(fd -> {
       ty = fd.type;
       if (fd.isOptional) {
-        ty.unionUndefined(subst, tenv, fieldName.pos)
+        ty.unionUndefined(subst, tenv, pos)
       } else {
         ty
       }
     })
   }
 
-  fun getTypeTypingError<T>(fieldName: Name): T {
+  fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
     typingError(
       Array[
-        (fieldName.pos, `Unbound field: ${fieldName.value}`),
+        (pos, `Unbound field: ${fieldName}`),
         (
-          fieldName.pos,
+          pos,
           "Possible options are:\n" +
             this.fields.filter(x -> x.name != "constructor")
               .toArray()
@@ -722,9 +731,14 @@ class TFields private (
     )
   }
 
-  fun getType(subst: mutable Subst, tenv: TEnv, fieldName: Name): TType {
-    this.maybeGetType(subst, tenv, fieldName) match {
-    | None() -> this.getTypeTypingError(fieldName)
+  fun getType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fieldName: String,
+    pos: PosRange,
+  ): TType {
+    this.maybeGetType(subst, tenv, fieldName, pos) match {
+    | None() -> this.getTypeTypingError(fieldName, pos)
     | Some(ty) -> ty
     }
   }

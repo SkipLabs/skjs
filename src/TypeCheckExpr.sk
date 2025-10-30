@@ -305,7 +305,8 @@ extension class TypeChecker {
               fields.maybeGetType(
                 tcenv.subst,
                 this.tenv,
-                Name(posAndFieldName.i0, posAndFieldName.i1),
+                posAndFieldName.i1,
+                posAndFieldName.i0,
               ) match {
               | Some(ty) ->
                 !result = TType::union(tcenv.subst, this.tenv, result, ty);
@@ -334,7 +335,7 @@ extension class TypeChecker {
                 ],
               )
             | Some(values) ->
-              fields.getTypeTypingError(Name(pos, values.toStringList()))
+              fields.getTypeTypingError(values.toStringList(), pos)
             }
           | Some(index) ->
             this.checkSubType(
@@ -351,8 +352,7 @@ extension class TypeChecker {
 
       | TAlgebraic(branches, _) ->
         idxSType match {
-        | TPrimValue(TString(), Some(values), _) ->
-          values.singleElt().map(v -> Name(v.i0, v.i1))
+        | TPrimValue(TString(), Some(values), _) -> values.singleElt()
         | _ -> None()
         } match {
         | None() ->
@@ -362,13 +362,13 @@ extension class TypeChecker {
               (pos, "An algebraic expects a static index"),
             ],
           )
-        | Some(fieldName) ->
+        | Some((p, fieldName)) ->
           for (branch in branches) {
             !result = TType::union(
               tcenv.subst,
               this.tenv,
               result,
-              branch.getType(tcenv.subst, this.tenv, fieldName),
+              branch.getType(tcenv.subst, this.tenv, fieldName, p),
             )
           }
         }
