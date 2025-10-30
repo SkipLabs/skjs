@@ -10,13 +10,13 @@ extension class Parser {
   /***************************************************************************/
 
   // <name> ::= <string>
-  mutable fun getName(): PString {
+  mutable fun getName(): Name {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
     | Some(tok) ->
       tok.kind match {
       | TKVar() ->
-        PStringAny(
+        Name::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -42,7 +42,7 @@ extension class Parser {
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
       | TKVar() ->
-        PStringAny(
+        Name::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -100,7 +100,7 @@ extension class Parser {
         )
       | TKNumber()
       | TKVar() ->
-        PStringAny(
+        Name::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -1018,7 +1018,7 @@ extension class Parser {
                   modifiers,
                 },
               );
-              eThis = Expr(pos, Var(PStringAny(pos, "this")));
+              eThis = Expr(pos, Var(Name::create(pos, "this")));
               eName = Expr(pos, Var(pName));
               eThisDotName = Expr(pos, Binop(BODot(), eThis, eName));
               eAssign = Expr(pos, Binop(BOAssignment(), eThisDotName, eName));

@@ -268,7 +268,7 @@ class TEnv{
   ): TField {
     cgNode = CGNode::create(
       Method(
-        Some(FNNormal(PStringAny(pos, cstrName))),
+        Some(FNNormal(Name::create(pos, cstrName))),
         className,
         c.name.pos.fileName,
         true,
@@ -591,7 +591,7 @@ class TEnv{
           ty,
           Type(
             optionalPos,
-            TAInst(PStringAny(optionalPos, "undefined"), Array[]),
+            TAInst(Name::create(optionalPos, "undefined"), Array[]),
           ),
         ),
       )
@@ -739,7 +739,7 @@ class TEnv{
 
     | TAArray(ty) ->
       TType::inst(
-        PStringAny(pos, "Array"),
+        Name::create(pos, "Array"),
         TArgs(Array[this.normalize(context, ty)]),
       )
 

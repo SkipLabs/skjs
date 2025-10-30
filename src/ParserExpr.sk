@@ -266,7 +266,10 @@ extension class Parser {
       | "typeof" -> TypeOf(this.expr(typeOfPrec))
       | _ ->
         Var(
-          PStringAny(PosRange::create(this.lex, tok.posStart, tok.posEnd), str),
+          Name::create(
+            PosRange::create(this.lex, tok.posStart, tok.posEnd),
+            str,
+          ),
         )
       }
     | TKQuote()

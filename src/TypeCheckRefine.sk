@@ -203,7 +203,7 @@ extension class TypeChecker {
       tcenv.scope.set(
         local,
         TType::inst(
-          PStringAny(posArray, "Array"),
+          Name::create(posArray, "Array"),
           TArgs(Array[TType::top(posArray)]),
         ),
         (_, _) -> void,

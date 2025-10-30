@@ -13,7 +13,7 @@ extension class TypeChecker {
     | None() -> void
     | Some(thisType) ->
       !this.tenv.subst["this"] = (false, thisType);
-      tcenv.scope.bind(PStringAny(fd.pos, "this"), thisType, true)
+      tcenv.scope.bind(Name::create(fd.pos, "this"), thisType, true)
     };
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {

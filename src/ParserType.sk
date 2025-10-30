@@ -187,7 +187,7 @@ extension class Parser {
         this.expect(TKCloseParen());
         if (this.lex.peekKind() is Some(TKDot())) {
           this.expect(TKDot());
-          name = this.getName();
+          name: PString = this.getName();
           loop {
             if (this.lex.peekKind() != Some(TKDot())) break void;
             _ = this.lex.next();

@@ -619,7 +619,7 @@ extension class TypeChecker {
           superCstr,
           args.map(x -> this.expr(tcenv, x)),
         );
-        thisName = PStringAny(pos, "this");
+        thisName = Name::create(pos, "this");
         thisType = TType::inter(
           tcenv.subst,
           this.tenv,

@@ -596,8 +596,8 @@ class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
     static::full(TBigInt(), pos)
   }
 
-  fun asClassName(): PString {
-    PStringAny(this.pos, this.kind.toString())
+  fun asClassName(): Name {
+    Name::create(this.pos, this.kind.toString())
   }
 }
 
@@ -1146,7 +1146,7 @@ class Clauses private (
     Some(result)
   }
 
-  fun primKind(): ?PString {
+  fun primKind(): ?Name {
     cand: ?TPrimValue = None();
     for (clause in this.clauses) {
       clause.stypes match {
