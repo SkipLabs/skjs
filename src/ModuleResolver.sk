@@ -185,18 +185,14 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
           S.DirName::create("/skjs/file/index/"),
           (_context, writer, key, _valueIter) ~> {
             fileName = key.value;
-            (for (ancestor in FileName::create(
+            for (ancestor in FileName::create(
               fileName,
             ).dirName.allAncestors()) {
               if (ancestor.endsWith("node_modules")) {
-                break Some(ancestor.toString())
+                modulePath = ancestor.toString();
+                writer.set(S.SID(modulePath), FileNameEntry::create(fileName));
+                return void
               }
-            } else {
-              None()
-            }) match {
-            | None() -> void
-            | Some(modulePath) ->
-              writer.set(S.SID(modulePath), FileNameEntry::create(fileName))
             }
           },
         )
