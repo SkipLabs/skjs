@@ -433,6 +433,14 @@ declare class undici_Response extends undici_BodyMixin {
 
 declare function fetch(input: string): Promise<undici_Response>;
 
+declare interface ProcessEnv {
+  [key: string]: string | undefined;
+  TZ?: string;
+}
+
 declare const process: {
+  argv: string[];
+  cwd(): string;
+  env: ProcessEnv;
   exit(status: number): never;
 };
