@@ -332,20 +332,21 @@ extension class Parser {
     } else {
       None()
     };
-    if (
+    fieldName match {
+    | methodName @ SimpleSymbol _ if (
       this.lex.peekKind() is Some(TKOpenParen()) ||
       this.lex.peekKind() is Some(TKLessThan())
-    ) {
+    ) ->
       this.methodDef(
         None(),
         modifiers,
         fieldGetSet,
-        (fieldNamePos, fieldName),
+        (fieldNamePos, methodName),
         true,
         isOptional,
         None(),
       )
-    } else {
+    | _ ->
       this.getNormalFieldType(
         fieldPos,
         modifiers,
@@ -1194,7 +1195,7 @@ extension class Parser {
     isAsync: ?PosRange,
     modifiers: Modifiers,
     fieldGetSet: ?FieldGetSet,
-    funName: (Pos, Symbol),
+    funName: (Pos, SimpleSymbol),
     parseBlock: Bool,
     optional: ?PosRange,
     cgNode: ?CGNode,
@@ -1215,7 +1216,7 @@ extension class Parser {
     isAsync: ?PosRange,
     methodModifiers: Modifiers,
     isGetSet: ?FieldGetSet,
-    funName: ?(Pos, Symbol),
+    funName: ?(Pos, SimpleSymbol),
     parseBlock: Bool,
     isOptional: ?PosRange,
     cgNode: ?CGNode,

@@ -119,7 +119,7 @@ class FunDef{
   pos: PosRange,
   isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
-  name: ?Symbol,
+  name: ?SimpleSymbol,
   optional: ?PosRange,
   tparams: Array<TypeParam>,
   params: Array<Param>,
