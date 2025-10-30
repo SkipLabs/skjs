@@ -169,7 +169,7 @@ fun validateNotSupported(
   }
 }
 
-const builtinsArgFileName: String = "./examples/src/builtins.ts";
+const builtinsArgFileName: String = "./examples/src/builtins.d.ts";
 
 fun expectFilesSuccess(
   checkerCreateResult: Result<SKJS.Files, String>,

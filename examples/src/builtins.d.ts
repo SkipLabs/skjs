@@ -398,3 +398,37 @@ declare function BigInt(value: number | string | boolean | bigint): bigint;
 declare class Error {
   constructor(cause?: string);
 }
+
+/* from undici-types/fetch.d.ts */
+
+declare class undici_BodyMixin {
+  // readonly body: ReadableStream | null
+  // readonly bodyUsed: boolean
+
+  // readonly arrayBuffer: () => Promise<ArrayBuffer>
+  // readonly blob: () => Promise<Blob>
+  // readonly bytes: () => Promise<Uint8Array>
+  // readonly formData: () => Promise<FormData> // deprecated
+  readonly json: () => Promise<unknown>;
+  readonly text: () => Promise<string>;
+}
+
+declare class undici_Response extends undici_BodyMixin {
+  // constructor (body?: BodyInit, init?: ResponseInit)
+
+  // readonly headers: Headers
+  readonly ok: boolean;
+  readonly status: number;
+  readonly statusText: string;
+  // readonly type: ResponseType
+  readonly url: string;
+  readonly redirected: boolean;
+
+  readonly clone: () => undici_Response;
+
+  static error(): undici_Response;
+  // static json (data: any, init?: ResponseInit): Response
+  // static redirect (url: string | URL, status: ResponseRedirectStatus): Response
+}
+
+declare function fetch(input: string): Promise<undici_Response>;
