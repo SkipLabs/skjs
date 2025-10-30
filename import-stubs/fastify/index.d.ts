@@ -13,7 +13,13 @@ export declare function fastify(opts: FastifyServerOptions): FastifyInstance;
 export type LogFn = (obj: unknown, msg?: string) => void;
 
 export interface FastifyBaseLogger_base {
+  fatal: LogFn;
+  error: LogFn;
+  warn: LogFn;
   info: LogFn;
+  debug: LogFn;
+  trace: LogFn;
+  silent: LogFn;
 }
 
 export interface FastifyBaseLogger extends FastifyBaseLogger_base {}
@@ -103,10 +109,61 @@ export type onRequestAsyncHookHandler = (
   reply: FastifyReply,
 ) => Promise<unknown>;
 
+export type FastifyPluginAsync = (instance: FastifyInstance) => Promise<void>;
+
+export type FastifyRegister = (plugin: FastifyPluginAsync) => FastifyInstance;
+
+export interface FastifySchema {
+  body?: unknown;
+  querystring?: unknown;
+  params?: unknown;
+  headers?: unknown;
+  response?: unknown;
+}
+
+export interface RouteShorthandOptions<SchemaCompiler extends FastifySchema> {
+  schema?: SchemaCompiler;
+}
+
+export type RouteHandlerMethod = (
+  /* this: FastifyInstance, */ request: FastifyRequest,
+  reply: FastifyReply,
+) => unknown | Promise<unknown> /* TODO */;
+
+export type RouteShorthandMethod = <
+  /* const */ SchemaCompiler extends FastifySchema,
+>(
+  path: string,
+  opt: RouteShorthandOptions<SchemaCompiler>,
+  handler: RouteHandlerMethod,
+) => FastifyInstance;
+
 export interface FastifyInstance {
   addHook(
     name: "onRequest" | "onResponse",
     // Luckily onRequestAsyncHookHandler and onResponseAsyncHookHandler are the same
     hook: onRequestAsyncHookHandler,
   ): FastifyInstance;
+
+  register: FastifyRegister;
+
+  delete: RouteShorthandMethod;
+  get: RouteShorthandMethod;
+  head: RouteShorthandMethod;
+  patch: RouteShorthandMethod;
+  post: RouteShorthandMethod;
+  put: RouteShorthandMethod;
+  options: RouteShorthandMethod;
+  propfind: RouteShorthandMethod;
+  proppatch: RouteShorthandMethod;
+  mkcalendar: RouteShorthandMethod;
+  mkcol: RouteShorthandMethod;
+  copy: RouteShorthandMethod;
+  move: RouteShorthandMethod;
+  lock: RouteShorthandMethod;
+  unlock: RouteShorthandMethod;
+  trace: RouteShorthandMethod;
+  report: RouteShorthandMethod;
+  search: RouteShorthandMethod;
+  all: RouteShorthandMethod;
 }
