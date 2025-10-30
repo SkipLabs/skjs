@@ -462,9 +462,7 @@ class TEnv{
         };
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
-          typingError(
-            Array[(fd.pos, `Forbidden method name '${metName.value}'`)],
-          )
+          typingError(Array[(fd.pos, `Forbidden method name '${metName}'`)])
         | Some(field) -> acc![metName.value] = field
         }
       }
@@ -610,7 +608,7 @@ class TEnv{
     | Some(FNNormal(name)) ->
       if (name.value == "constructor") {
         what = if (isMethod) "method" else "function";
-        typingError(Array[(name.pos, `Forbidden ${what} name: ${name.value}`)])
+        typingError(Array[(name.pos, `Forbidden ${what} name: ${name}`)])
       };
       name
     | None() -> notSupported(fd.pos, "anonymous function")
@@ -954,9 +952,7 @@ class TEnv{
         | FNSymbol _ -> internal_error("TODO symbol")
         | FNNormal(name) ->
           if (name.value == "constructor") {
-            typingError(
-              Array[(name.pos, `Forbidden field name: ${name.value}`)],
-            )
+            typingError(Array[(name.pos, `Forbidden field name: ${name}`)])
           };
           normalizedType = this.normalize(context, fd.type);
           optField = TField::create(
@@ -970,7 +966,7 @@ class TEnv{
             | Some((existingPos, _existingType)) ->
               typingError(
                 Array[
-                  (name.pos, `Duplicate field ${name.value}`),
+                  (name.pos, `Duplicate field ${name}`),
                   (existingPos, "Previously declared here"),
                 ],
               )
@@ -979,7 +975,7 @@ class TEnv{
             fd.optional match {
             | Some(optionalPos) ->
               typingError(
-                Array[(optionalPos, `Field ${name.value} cannot be optional`)],
+                Array[(optionalPos, `Field ${name} cannot be optional`)],
               )
             | None() -> void
             };
@@ -999,7 +995,7 @@ class TEnv{
         (name, decl) = this.funDecl(context, true, fd, cgNode);
         optField = TField::create(name.pos, name.value, false, decl);
         if (optField is None()) {
-          typingError(Array[(name.pos, `Forbidden method name ${name.value}`)])
+          typingError(Array[(name.pos, `Forbidden method name ${name}`)])
         };
         optField
       }

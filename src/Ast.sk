@@ -17,6 +17,10 @@ value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
     // Custom hash that excludes position
     this.value.hash()
   }
+
+  fun toString(): String {
+    this.value
+  }
 }
 
 /***************************************************************************/
