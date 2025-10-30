@@ -226,15 +226,15 @@ extension class Parser {
       | "abstract" -> TANew(this.type(prec))
       | "new" -> TANew(this.type(prec))
       | className ->
-        name: PString = PString::create(
+        ap: AccessPath = Name::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           className,
         );
         loop {
           if (this.lex.peekKind() != Some(TKDot())) break void;
           _ = this.lex.next();
-          dotName = this.getName();
-          !name = name.dot(dotName)
+          base = this.getName();
+          !ap = AccessPathDot::create{dir => ap, base};
         };
         targs = if (this.lex.peekKind() is Some(TKLessThan())) {
           _ = this.lex.next();
@@ -242,7 +242,7 @@ extension class Parser {
         } else {
           Array[]
         };
-        TAInst(name, targs)
+        TAInst(ap, targs)
       }
     | TKSubtraction() ->
       numTok = this.lex.next() match {

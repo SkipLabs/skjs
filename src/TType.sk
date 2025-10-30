@@ -90,7 +90,7 @@ class TType private {
   }
 
   // Unexpanded instance of a named generic type.
-  static fun inst(name: PString, targs: TArgs): this {
+  static fun inst(name: AccessPath, targs: TArgs): this {
     x = TSInst(name, targs);
     static::create(name.getPos(), TInsts::single(x), Clauses::empty())
   }
@@ -895,7 +895,7 @@ class TVar private (
 
 /* Unexpanded named type */
 // possibly with type arguments
-class TSInst(name: PString, targs: TArgs) extends TInst {}
+class TSInst(name: AccessPath, targs: TArgs) extends TInst {}
 
 class TArgs(targs: Array<TType>) uses XXHashable, Orderable
 

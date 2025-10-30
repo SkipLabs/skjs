@@ -15,7 +15,7 @@ module SKJS;
 base class PString private (
   pos: PosRange,
   value: String,
-) uses XXHashable, Hashable, Orderable {
+) uses XXHashable, Hashable {
   static overridable fun create(pos: PosRange, value: String): PString {
     Name::createPString(pos, value)
   }
@@ -28,23 +28,9 @@ base class PString private (
   fun toString(): String {
     this.value
   }
-
-  fun withPos(pos: PosRange): this;
-
-  fun getPos(): PosRange {
-    this.pos
-  }
-
-  fun dot(other: PString): PString {
-    PStringAny(this.pos.extend(other.pos), `${this.value}.${other.value}`)
-  }
 }
 
-class PStringAny() extends PString {
-  fun withPos(pos: PosRange): this {
-    this with {pos}
-  }
-}
+class PStringAny() extends PString
 
 // String with no dot
 class Name private () extends PString, AccessPath {
@@ -62,9 +48,25 @@ class Name private () extends PString, AccessPath {
   fun withPos(pos: PosRange): this {
     this with {pos}
   }
+
+  fun getPos(): PosRange {
+    this.pos
+  }
 }
 
-base class AccessPath uses XXHashable, Show
+base class AccessPath uses XXHashable, Orderable, Show {
+  fun withPos(pos: PosRange): this;
+
+  fun getPos(): PosRange;
+
+  fun dot(rhs: AccessPath): AccessPath {
+    rhs match {
+    | base @ Name _ -> AccessPathDot::create{dir => this, base}
+    | AccessPathDot{dir, base} ->
+      AccessPathDot::create{dir => this.dot(dir), base}
+    }
+  }
+}
 
 class AccessPathDot private {
   dir: AccessPath,
@@ -78,6 +80,24 @@ class AccessPathDot private {
 
   fun toString(): String {
     this.asString
+  }
+
+  fun withPos(pos: PosRange): this {
+    this with {base => this.base.withPos(pos)}
+  }
+
+  fun getPos(): PosRange {
+    this.dir.getPos().extend(this.base.pos)
+  }
+
+  /* FIXME: get rid of this expensive function */
+  fun extractModule(): (Name, AccessPath) {
+    this.dir match {
+    | mod @ Name _ -> (mod, this.base)
+    | ap @ AccessPathDot _ ->
+      (mod, dir) = ap.extractModule();
+      (mod, AccessPathDot::create{dir, base => this.base})
+    }
   }
 }
 
@@ -521,7 +541,7 @@ base class Type_ uses XXHashable {
   | TATypeOf(Type)
   | TAArray(Type)
   | TAObject(Array<FieldType>)
-  | TAInst(PString, Array<Type>)
+  | TAInst(AccessPath, Array<Type>)
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
   | TATuple(Array<TupleEltType>)

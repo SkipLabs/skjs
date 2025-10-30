@@ -69,7 +69,7 @@ class TEnv{
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
-  fun instantiate(subst: mutable Subst, name: PString, targs: TArgs): TType {
+  fun instantiate(subst: mutable Subst, name: AccessPath, targs: TArgs): TType {
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
@@ -134,7 +134,7 @@ class TEnv{
     }
   }
 
-  fun getClass(context: mutable SKStore.Context, className: PString): Class {
+  fun getClass(context: mutable SKStore.Context, className: AccessPath): Class {
     tdef = this.defMap.getType(context, className);
     tdef match {
     | TDType(_) ->
@@ -146,7 +146,7 @@ class TEnv{
   fun makeTArgs(
     context: mutable SKStore.Context,
     subst: mutable Subst,
-    className: PString,
+    className: AccessPath,
   ): Array<TType> {
     this.getClass(context, className).tparams.map(tparam -> {
       tvar = subst.gen(className.getPos());
@@ -161,7 +161,7 @@ class TEnv{
 
   fun new(
     context: mutable SKStore.Context,
-    className: PString,
+    className: AccessPath,
     targs: Array<TType>,
     filter: FieldType ~> Bool = _ ~> true,
   ): TType {
@@ -171,7 +171,7 @@ class TEnv{
 
   fun newConstructor(
     context: mutable SKStore.Context,
-    className: PString,
+    className: AccessPath,
     targs: Array<TType>,
   ): CstrType {
     c = this.getClass(context, className);
@@ -194,7 +194,7 @@ class TEnv{
 
   fun newObject(
     context: mutable SKStore.Context,
-    className: PString,
+    className: AccessPath,
     targs: Array<TType>,
     filter: FieldType ~> Bool = _ ~> true,
   ): TObject {
@@ -227,14 +227,14 @@ class TEnv{
     )
   }
 
-  fun newStatic(context: mutable SKStore.Context, className: PString): TType {
+  fun newStatic(context: mutable SKStore.Context, className: Name): TType {
     obj = this.newStaticObject(context, className);
     TType::single(obj)
   }
 
   private fun newStaticObject(
     context: mutable SKStore.Context,
-    className: PString,
+    className: Name,
   ): TObject {
     c = this.getClass(context, className);
     targs = Array[];
@@ -264,7 +264,7 @@ class TEnv{
   private fun makeEmptyConstructor(
     context: mutable SKStore.Context,
     pos: PosRange,
-    className: PString,
+    className: AccessPath,
     c: Class,
   ): TField {
     cgNode = CGNode::create(
@@ -317,7 +317,7 @@ class TEnv{
     context: mutable SKStore.Context,
     visitedClasses: SortedSet<String>,
     withTParams: Bool,
-    className: PString,
+    className: AccessPath,
     targs: Array<TType>,
   ): (this, Class) {
     if (visitedClasses.contains(className.toString())) {
@@ -359,7 +359,7 @@ class TEnv{
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
     isStatic: ?Array<TypeParam>,
-    className: PString,
+    className: AccessPath,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
   ): void {
@@ -473,7 +473,7 @@ class TEnv{
   private fun findConstructor(
     context: mutable SKStore.Context,
     visitedClasses: SortedSet<String>,
-    className: PString,
+    className: AccessPath,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?TType {
@@ -492,7 +492,7 @@ class TEnv{
   private fun findConstructorMethod(
     context: mutable SKStore.Context,
     visitedClasses: SortedSet<String>,
-    className: PString,
+    className: AccessPath,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?FunDef {
@@ -534,7 +534,7 @@ class TEnv{
 
   fun makeConstructor(
     context: mutable SKStore.Context,
-    className: PString,
+    className: AccessPath,
     tparams: Array<TypeParam>,
     fd: FunDef,
   ): TType {
@@ -774,53 +774,56 @@ class TEnv{
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
-      if (this.tparams.containsKey(n.value)) {
+      n match {
+      | name @ Name _ if (this.tparams.containsKey(name.value)) ->
         if (targs.size() != 0) {
           typingError(
             Array[
               (
-                n.pos,
+                name.pos,
                 "A bound occurrence of a type parameter cannot have type arguments",
               ),
             ],
           )
         };
-        tparam = this.tparams[n.value];
+        tparam = this.tparams[name.value];
         TType::fromTParamWithConstraint(subst, this, pos, tparam)
-      } else if (this.subst.containsKey(n.value)) {
+      | name @ Name _ if (this.subst.containsKey(name.value)) ->
         if (targs.size() != 0) {
           typingError(
             Array[
               (
-                n.pos,
+                name.pos,
                 "A bound occurrence of a type parameter cannot have type arguments",
               ),
             ],
           )
         };
-        (keepPos, ty) = this.subst[n.value];
+        (keepPos, ty) = this.subst[name.value];
         if (keepPos) ty else ty.withPos(pos)
-      } else if (this.forbiddenInsts.contains(n.toString())) {
-        typingError(Array[(n.getPos(), "Cyclic definition")])
-      } else {
-        tdef = this.defMap.getType(context, n);
-        tparams = tdef match {
-        | TDType(ta) -> ta.tdefParams
-        | TDClass(ca) -> ca.tparams
-        };
-        if (
-          targs.size() > tparams.size() ||
-          (targs.size() < tparams.size() &&
-            tparams[targs.size()].default is None())
-        ) {
-          typingError(
-            Array[
-              (
-                n.getPos(),
-                `Invalid number of type arguments: given ${targs.size()}, expected ${tparams.size()}`,
-              ),
-            ],
-          )
+      | _ ->
+        if (this.forbiddenInsts.contains(n.toString())) {
+          typingError(Array[(n.getPos(), "Cyclic definition")])
+        } else {
+          tdef = this.defMap.getType(context, n);
+          tparams = tdef match {
+          | TDType(ta) -> ta.tdefParams
+          | TDClass(ca) -> ca.tparams
+          };
+          if (
+            targs.size() > tparams.size() ||
+            (targs.size() < tparams.size() &&
+              tparams[targs.size()].default is None())
+          ) {
+            typingError(
+              Array[
+                (
+                  n.getPos(),
+                  `Invalid number of type arguments: given ${targs.size()}, expected ${tparams.size()}`,
+                ),
+              ],
+            )
+          }
         };
 
         if (this.seenInstantiate.contains(n.toString())) {

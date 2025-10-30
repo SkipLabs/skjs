@@ -9,12 +9,12 @@ base class CGNode_ uses XXHashable, Show {
   | TopLevelFunDef(name: SimpleSymbol, fileName: String)
   | Method(
     name: ?SimpleSymbol,
-    class_: PString,
+    class_: AccessPath,
     fileName: String,
     static_: Bool,
   )
   | ObjectMethod(name: SimpleSymbol, fileName: String)
-  | Constructor(class_: PString, fileName: String)
+  | Constructor(class_: AccessPath, fileName: String)
   | Toplevel(fileName: String)
   | ArrowTypeAnnot(fileName: String)
 

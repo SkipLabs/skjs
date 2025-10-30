@@ -433,8 +433,8 @@ class FileDefs{
 }
 
 base class IDefMap {
-  fun getType(mutable S.Context, PString): DefMapType;
-  fun get(mutable S.Context, FileName, PString): Array<Def>;
+  fun getType(mutable S.Context, AccessPath): DefMapType;
+  fun get(mutable S.Context, FileName, AccessPath): Array<Def>;
 }
 
 base class DefMapType {
@@ -449,11 +449,11 @@ class DefMap{
   builtins: Set<String>,
   builtinsFileName: FileName,
 } extends IDefMap {
-  private fun notFound<T>(defName: PString): T {
+  private fun notFound<T>(defName: AccessPath): T {
     error(ParsingError(EPRange(defName.getPos()), NotFound(defName.toString())))
   }
 
-  fun getType(context: mutable S.Context, name: PString): DefMapType {
+  fun getType(context: mutable S.Context, name: AccessPath): DefMapType {
     pos = name.getPos();
     for (def in this.get(context, FileName::create(pos.fileName), name)) {
       def.value match {
@@ -468,7 +468,7 @@ class DefMap{
   fun get(
     context: mutable S.Context,
     fileName: FileName,
-    defName: PString,
+    defName: AccessPath,
   ): Array<Def> {
     fileDefs = this.fileDefsMap.get(
       context,
@@ -484,122 +484,94 @@ class DefMap{
   private fun getInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
-    defName: PString,
+    defNameAP: AccessPath,
   ): Array<Def> {
-    if (defName.value.contains(".")) {
-      arr = defName.value.split(".");
-      moduleName = arr[0];
-      newDefName = arr.slice(1, arr.size()).join(".");
-      fileDefs.importedModulesFrom.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        return this.get(
-          context,
-          fileName,
-          PString::create(defName.pos, newDefName),
-        )
+    defNameAP match {
+    | ap @ AccessPathDot _ ->
+      (moduleName, newDefName) = ap.extractModule();
+      fileDefs.importedModulesFrom.maybeGet(moduleName.value) match {
+      | Some(fileName) -> return this.get(context, fileName, newDefName)
       | None() -> void
       };
-      fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        return this.get(
-          context,
-          fileName,
-          PString::create(defName.pos, newDefName),
-        )
+      fileDefs.exportedModulesFrom.maybeGet(moduleName.value) match {
+      | Some(fileName) -> return this.get(context, fileName, newDefName)
       | None() -> void
       };
-      fileDefs.namespaces.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        return this.getInDefs(
-          context,
-          fileName,
-          PString::create(defName.pos, newDefName),
-        )
+      fileDefs.namespaces.maybeGet(moduleName.value) match {
+      | Some(fileName) -> return this.getInDefs(context, fileName, newDefName)
       | None() -> void
       };
-      fileDefs.exportedNamespaces.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        return this.getInDefs(
-          context,
-          fileName,
-          PString::create(defName.pos, newDefName),
-        )
+      fileDefs.exportedNamespaces.maybeGet(moduleName.value) match {
+      | Some(fileName) -> return this.getInDefs(context, fileName, newDefName)
       | None() -> void
       };
-      fileDefs.importedFrom.maybeGet(moduleName) match {
+      fileDefs.importedFrom.maybeGet(moduleName.value) match {
       | Some((origName, newFileName)) ->
-        return this.get(
-          context,
-          newFileName,
-          PString::create(defName.pos, origName.value + newDefName),
-        )
+        return this.get(context, newFileName, origName.dot(newDefName))
       | None() -> void
       };
-      fileDefs.exportedFrom.maybeGet(moduleName) match {
+      fileDefs.exportedFrom.maybeGet(moduleName.value) match {
       | Some((origName, newFileName)) ->
-        return this.get(
+        return this.get(context, newFileName, origName.dot(newDefName))
+      | None() -> void
+      };
+      this.notFound(ap)
+    | defName @ Name _ ->
+      fileDefs.importedFrom.maybeGet(defName.value) match {
+      | Some((exportedDefName, importedFileName)) ->
+        return this.getExported(
           context,
-          newFileName,
-          PString::create(defName.pos, origName.value + newDefName),
+          importedFileName,
+          exportedDefName.withPos(defName.pos),
         )
       | None() -> void
       };
-      this.notFound(defName);
-    };
-    fileDefs.importedFrom.maybeGet(defName.value) match {
-    | Some((exportedDefName, importedFileName)) ->
-      return this.getExported(
-        context,
-        importedFileName,
-        exportedDefName.withPos(defName.pos),
-      )
-    | None() -> void
-    };
-    for (importedFileName in fileDefs.importedStar) {
-      return this.getExported(
-        context,
-        FileName::create(importedFileName),
-        defName,
-      );
-    };
-    for (exportedFileName in fileDefs.exportedStar) {
-      return this.getExported(
-        context,
-        FileName::create(exportedFileName),
-        defName,
-      );
-    };
-    fileDefs.defs.maybeGet(defName.value) match {
-    | Some(def) -> return def
-    | None() -> void
-    };
-    fileDefs.exportEq match {
-    | None() -> void
-    | Some(name) ->
-      fileDefs.namespaces.maybeGet(name.value) match {
-      | Some(fileName) -> return this.getInDefs(context, fileName, defName)
-      | None() ->
-        debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array));
-        this.notFound(defName)
-      }
-    };
-    for (exportedNamespace in fileDefs.exportedNamespaces) {
-      try {
-        Some(this.getInDefs(context, exportedNamespace, defName))
-      } catch {
-      | _ -> None()
-      } match {
+      for (importedFileName in fileDefs.importedStar) {
+        return this.getExported(
+          context,
+          FileName::create(importedFileName),
+          defName,
+        );
+      };
+      for (exportedFileName in fileDefs.exportedStar) {
+        return this.getExported(
+          context,
+          FileName::create(exportedFileName),
+          defName,
+        );
+      };
+      fileDefs.defs.maybeGet(defName.value) match {
+      | Some(def) -> return def
       | None() -> void
-      | Some(x) -> return x
-      }
-    };
-    this.notFound(defName);
+      };
+      fileDefs.exportEq match {
+      | None() -> void
+      | Some(name) ->
+        fileDefs.namespaces.maybeGet(name.value) match {
+        | Some(fileName) -> return this.getInDefs(context, fileName, defName)
+        | None() ->
+          debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array));
+          this.notFound(defName)
+        }
+      };
+      for (exportedNamespace in fileDefs.exportedNamespaces) {
+        try {
+          Some(this.getInDefs(context, exportedNamespace, defName))
+        } catch {
+        | _ -> None()
+        } match {
+        | None() -> void
+        | Some(x) -> return x
+        }
+      };
+      this.notFound(defName)
+    }
   }
 
   private fun getExported(
     context: mutable S.Context,
     fileName: FileName,
-    defName: PString,
+    defName: AccessPath,
   ): Array<Def> {
     fileDefs = this.fileDefsMap.get(context, fileName);
     this.getExportedInDefs(context, fileDefs, defName)
@@ -608,81 +580,76 @@ class DefMap{
   private fun getExportedInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
-    defName: PString,
+    defNameAP: AccessPath,
   ): Array<Def> {
-    if (defName.value.contains(".")) {
-      arr = defName.value.split(".");
-      moduleName = arr[0];
-      newDefName = arr.slice(1, arr.size()).join(".");
-      fileDefs.importedModulesFrom.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        return this.getExported(
-          context,
-          fileName,
-          PString::create(defName.pos, newDefName),
-        )
+    defNameAP match {
+    | ap @ AccessPathDot _ ->
+      (moduleName, newDefName) = ap.extractModule();
+      fileDefs.importedModulesFrom.maybeGet(moduleName.value) match {
+      | Some(fileName) -> return this.getExported(context, fileName, newDefName)
       | None() -> void
       };
-      fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        return this.getExported(
-          context,
-          fileName,
-          PString::create(defName.pos, newDefName),
-        )
+      fileDefs.exportedModulesFrom.maybeGet(moduleName.value) match {
+      | Some(fileName) -> return this.getExported(context, fileName, newDefName)
       | None() -> void
       };
-      this.notFound(defName);
-    };
-    fileDefs.exportEq match {
-    | None() -> void
-    | Some(name) ->
-      fileDefs.namespaces.maybeGet(name.value) match {
-      | Some(fileName) -> return this.getInDefs(context, fileName, defName)
-      | None() ->
-        debug(fileDefs.exportedNamespaces.containsKey(name.value));
-        this.notFound(defName)
-      }
-    };
+      this.notFound(ap)
 
-    if (defName.value == "default" && fileDefs.default is Some _) {
-      defaultName = fileDefs.default.fromSome();
-      return this.getInDefs(context, fileDefs, defaultName.withPos(defName.pos))
-    } else {
-      fileDefs.exported.maybeGet(defName.value) match {
-      | Some(asName) ->
-        return this.getInDefs(context, fileDefs, asName.withPos(defName.pos))
+    | defName @ Name _ ->
+      fileDefs.exportEq match {
       | None() -> void
+      | Some(name) ->
+        fileDefs.namespaces.maybeGet(name.value) match {
+        | Some(fileName) -> return this.getInDefs(context, fileName, defName)
+        | None() ->
+          debug(fileDefs.exportedNamespaces.containsKey(name.value));
+          this.notFound(defName)
+        }
       };
-      fileDefs.exportedFrom.maybeGet(defName.value) match {
-      | Some((newDefName, newFileName)) ->
+
+      if (defName.value == "default" && fileDefs.default is Some _) {
+        defaultName = fileDefs.default.fromSome();
+        return this.getInDefs(
+          context,
+          fileDefs,
+          defaultName.withPos(defName.pos),
+        )
+      } else {
+        fileDefs.exported.maybeGet(defName.value) match {
+        | Some(asName) ->
+          return this.getInDefs(context, fileDefs, asName.withPos(defName.pos))
+        | None() -> void
+        };
+        fileDefs.exportedFrom.maybeGet(defName.value) match {
+        | Some((newDefName, newFileName)) ->
+          return this.getExported(
+            context,
+            newFileName,
+            newDefName.withPos(defName.pos),
+          )
+        | None() -> void
+        }
+      };
+      for (exportedFileName in fileDefs.exportedStar) {
         return this.getExported(
           context,
-          newFileName,
-          newDefName.withPos(defName.pos),
-        )
-      | None() -> void
-      }
-    };
-    for (exportedFileName in fileDefs.exportedStar) {
-      return this.getExported(
-        context,
-        FileName::create(exportedFileName),
-        defName,
-      );
-    };
+          FileName::create(exportedFileName),
+          defName,
+        );
+      };
 
-    for (moduleDefs in fileDefs.modules) {
-      try {
-        Some(this.getInDefs(context, moduleDefs, defName))
-      } catch {
-      | _ -> None()
-      } match {
-      | Some(x) -> return x
-      | None() -> void
-      }
-    };
-    this.notFound(defName);
+      for (moduleDefs in fileDefs.modules) {
+        try {
+          Some(this.getInDefs(context, moduleDefs, defName))
+        } catch {
+        | _ -> None()
+        } match {
+        | Some(x) -> return x
+        | None() -> void
+        }
+      };
+      this.notFound(defName)
+    }
   }
 }
 
