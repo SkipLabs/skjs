@@ -369,18 +369,24 @@ base class PostOperator uses XXHashable {
 //   | [ <name> : <type> ]
 /***************************************************************************/
 base class Symbol uses XXHashable {
-  children =
-  | FNNormal(Name)
-  | FNSymbol(Name)
-  | FNIn(Name, Type, ?Type, ?FNOp)
-  | FNColon(indexName: Name, indexType: Type)
-
   fun getName(): String
   | FNNormal(n)
   | FNSymbol(n)
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
+}
+
+base class SimpleSymbol extends Symbol {
+  children =
+  | FNNormal(Name)
+  | FNSymbol(Name)
+}
+
+base class IndexSymbol extends Symbol {
+  children =
+  | FNIn(Name, Type, ?Type, ?FNOp)
+  | FNColon(indexName: Name, indexType: Type)
 }
 
 class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
