@@ -111,7 +111,7 @@ extension class TypeChecker {
               | None() ->
                 typingError(
                   Array[
-                    (fieldName.pos, `The field ${fieldName.value} is missing`),
+                    (fieldName.pos, `The field ${fieldName} is missing`),
                     (type.pos, `Out of ${type}`),
                   ],
                 )
@@ -305,7 +305,8 @@ extension class TypeChecker {
               fields.maybeGetType(
                 tcenv.subst,
                 this.tenv,
-                Name(posAndFieldName.i0, posAndFieldName.i1),
+                posAndFieldName.i1,
+                posAndFieldName.i0,
               ) match {
               | Some(ty) ->
                 !result = TType::union(tcenv.subst, this.tenv, result, ty);
@@ -334,7 +335,7 @@ extension class TypeChecker {
                 ],
               )
             | Some(values) ->
-              fields.getTypeTypingError(Name(pos, values.toStringList()))
+              fields.getTypeTypingError(values.toStringList(), pos)
             }
           | Some(index) ->
             this.checkSubType(
@@ -351,8 +352,7 @@ extension class TypeChecker {
 
       | TAlgebraic(branches, _) ->
         idxSType match {
-        | TPrimValue(TString(), Some(values), _) ->
-          values.singleElt().map(v -> Name(v.i0, v.i1))
+        | TPrimValue(TString(), Some(values), _) -> values.singleElt()
         | _ -> None()
         } match {
         | None() ->
@@ -362,13 +362,13 @@ extension class TypeChecker {
               (pos, "An algebraic expects a static index"),
             ],
           )
-        | Some(fieldName) ->
+        | Some((p, fieldName)) ->
           for (branch in branches) {
             !result = TType::union(
               tcenv.subst,
               this.tenv,
               result,
-              branch.getType(tcenv.subst, this.tenv, fieldName),
+              branch.getType(tcenv.subst, this.tenv, fieldName, p),
             )
           }
         }
@@ -540,9 +540,7 @@ extension class TypeChecker {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
           if (name.value == "constructor") {
-            typingError(
-              Array[(name.pos, `Forbidden field name: ${name.value}`)],
-            )
+            typingError(Array[(name.pos, `Forbidden field name: ${name}`)])
           };
           (name, this.expr(tcenv, y, name.value == kAlgebraicBranchFieldName))
 
@@ -587,7 +585,7 @@ extension class TypeChecker {
           | Some((existingPos, _existingType)) ->
             typingError(
               Array[
-                (name.pos, `Duplicate field ${name.value}`),
+                (name.pos, `Duplicate field ${name}`),
                 (existingPos, "Previously declared here"),
               ],
             )

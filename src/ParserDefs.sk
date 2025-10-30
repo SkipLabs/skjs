@@ -332,20 +332,21 @@ extension class Parser {
     } else {
       None()
     };
-    if (
+    fieldName match {
+    | methodName @ SimpleSymbol _ if (
       this.lex.peekKind() is Some(TKOpenParen()) ||
       this.lex.peekKind() is Some(TKLessThan())
-    ) {
+    ) ->
       this.methodDef(
         None(),
         modifiers,
         fieldGetSet,
-        (fieldNamePos, fieldName),
+        (fieldNamePos, methodName),
         true,
         isOptional,
         None(),
       )
-    } else {
+    | _ ->
       this.getNormalFieldType(
         fieldPos,
         modifiers,
@@ -1058,10 +1059,7 @@ extension class Parser {
   mutable fun typeDefsParams(): Array<TypeParam> {
     tdparams = mutable Vector[];
     loop {
-      tok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-      | Some(x) -> x
-      };
+      name = this.getName();
       constr = this.lex.peekStr() match {
       | Some("extends") ->
         _ = this.lex.next();
@@ -1076,11 +1074,10 @@ extension class Parser {
         None()
       };
       this.!id = this.id + 1;
-      name = this.lex.getStrTok(tok);
       tdparams.push(
         TypeParam(
-          Id::create(name, this.id, this.lex),
-          Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), name),
+          Id::create(name.value, this.id, this.lex),
+          name,
           constr,
           default,
         ),
@@ -1198,7 +1195,7 @@ extension class Parser {
     isAsync: ?PosRange,
     modifiers: Modifiers,
     fieldGetSet: ?FieldGetSet,
-    funName: (Pos, Symbol),
+    funName: (Pos, SimpleSymbol),
     parseBlock: Bool,
     optional: ?PosRange,
     cgNode: ?CGNode,
@@ -1219,7 +1216,7 @@ extension class Parser {
     isAsync: ?PosRange,
     methodModifiers: Modifiers,
     isGetSet: ?FieldGetSet,
-    funName: ?(Pos, Symbol),
+    funName: ?(Pos, SimpleSymbol),
     parseBlock: Bool,
     isOptional: ?PosRange,
     cgNode: ?CGNode,

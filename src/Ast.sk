@@ -12,13 +12,14 @@ module SKJS;
 // <name> ::= <string>
 /***************************************************************************/
 
-value class Name(
-  pos: PosRange,
-  value: String,
-) uses XXHashable, Hashable, Orderable {
+value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
   fun hash(): Int {
     // Custom hash that excludes position
     this.value.hash()
+  }
+
+  fun toString(): String {
+    this.value
   }
 }
 
@@ -118,7 +119,7 @@ class FunDef{
   pos: PosRange,
   isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
-  name: ?Symbol,
+  name: ?SimpleSymbol,
   optional: ?PosRange,
   tparams: Array<TypeParam>,
   params: Array<Param>,
@@ -367,30 +368,25 @@ base class PostOperator uses XXHashable {
 //   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
 //   | [ <name> : <type> ]
 /***************************************************************************/
-base class Symbol uses XXHashable, Hashable, Orderable {
+base class Symbol uses XXHashable {
+  fun getName(): String
+  | FNNormal(n)
+  | FNSymbol(n)
+  | FNIn(n, _, _, _)
+  | FNColon(n, _) ->
+    n.value
+}
+
+base class SimpleSymbol extends Symbol {
   children =
   | FNNormal(Name)
   | FNSymbol(Name)
+}
+
+base class IndexSymbol extends Symbol {
+  children =
   | FNIn(Name, Type, ?Type, ?FNOp)
   | FNColon(indexName: Name, indexType: Type)
-
-  fun getName(): String
-  | FNNormal(n) -> n.value
-  | FNSymbol(n) -> n.value
-  | FNIn(n, _, _, _) -> n.value
-  | FNColon(n, _) -> n.value
-
-  fun compare(other: Symbol): Order {
-    this.getName().compare(other.getName())
-  }
-
-  fun hash(): Int {
-    this.getName().hash()
-  }
-
-  fun xxhash(ignorePos: Bool = false): XXHash {
-    this.getName().xxhash(ignorePos)
-  }
 }
 
 class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable

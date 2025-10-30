@@ -286,12 +286,11 @@ class TEnv{
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
-  static private fun makeTParam(
+  private fun makeTParam(
     context: mutable SKStore.Context,
-    tenv: TEnv,
     tparam: TypeParam,
   ): TParamWithConstraint {
-    cstr = tparam.constraint.map(cstr -> tenv.normalize(context, cstr));
+    cstr = tparam.constraint.map(cstr -> this.normalize(context, cstr));
     TParamWithConstraint(
       tparam.name.value,
       tparam.name.pos.fileName,
@@ -306,7 +305,7 @@ class TEnv{
         subst,
         this,
         tparam.name.pos,
-        TEnv::makeTParam(subst.context, this, tparam),
+        this.makeTParam(subst.context, tparam),
       );
       !this.subst[tparam.name.value] = (false, ty)
     };
@@ -463,9 +462,7 @@ class TEnv{
         };
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
-          typingError(
-            Array[(fd.pos, `Forbidden method name '${metName.value}'`)],
-          )
+          typingError(Array[(fd.pos, `Forbidden method name '${metName}'`)])
         | Some(field) -> acc![metName.value] = field
         }
       }
@@ -611,7 +608,7 @@ class TEnv{
     | Some(FNNormal(name)) ->
       if (name.value == "constructor") {
         what = if (isMethod) "method" else "function";
-        typingError(Array[(name.pos, `Forbidden ${what} name: ${name.value}`)])
+        typingError(Array[(name.pos, `Forbidden ${what} name: ${name}`)])
       };
       name
     | None() -> notSupported(fd.pos, "anonymous function")
@@ -737,12 +734,9 @@ class TEnv{
 
     | TAInst(n @ Name(p, "Array"), targs) ->
       if (targs.size() != 1) {
-        typingError(Array[(n.pos, "Invalid number of type arguments")])
+        typingError(Array[(p, "Invalid number of type arguments")])
       };
-      TType::inst(
-        Name(p, "Array"),
-        TArgs(Array[this.normalize(context, targs[0])]),
-      )
+      TType::inst(n, TArgs(Array[this.normalize(context, targs[0])]))
 
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(context, ty)]))
@@ -828,17 +822,8 @@ class TEnv{
           )
         };
 
-        TType::inst(
-          n,
-          TArgs(
-            targs.map(x ->
-              (this with {forbiddenInsts => this.seenInstantiate}).normalize(
-                context,
-                x,
-              )
-            ),
-          ),
-        )
+        !this.forbiddenInsts = this.seenInstantiate;
+        TType::inst(n, TArgs(targs.map(x -> this.normalize(context, x))))
       }
     | TAUnion(ty1, ty2) ->
       TType::union(
@@ -883,7 +868,7 @@ class TEnv{
             ],
           )
         };
-        funTParam = TEnv::makeTParam(context, this, tparam);
+        funTParam = this.makeTParam(context, tparam);
         funClauses.push(funTParam);
         !this.tparams[tparam.name.value] = funTParam;
       };
@@ -967,9 +952,7 @@ class TEnv{
         | FNSymbol _ -> internal_error("TODO symbol")
         | FNNormal(name) ->
           if (name.value == "constructor") {
-            typingError(
-              Array[(name.pos, `Forbidden field name: ${name.value}`)],
-            )
+            typingError(Array[(name.pos, `Forbidden field name: ${name}`)])
           };
           normalizedType = this.normalize(context, fd.type);
           optField = TField::create(
@@ -983,7 +966,7 @@ class TEnv{
             | Some((existingPos, _existingType)) ->
               typingError(
                 Array[
-                  (name.pos, `Duplicate field ${name.value}`),
+                  (name.pos, `Duplicate field ${name}`),
                   (existingPos, "Previously declared here"),
                 ],
               )
@@ -992,7 +975,7 @@ class TEnv{
             fd.optional match {
             | Some(optionalPos) ->
               typingError(
-                Array[(optionalPos, `Field ${name.value} cannot be optional`)],
+                Array[(optionalPos, `Field ${name} cannot be optional`)],
               )
             | None() -> void
             };
@@ -1012,7 +995,7 @@ class TEnv{
         (name, decl) = this.funDecl(context, true, fd, cgNode);
         optField = TField::create(name.pos, name.value, false, decl);
         if (optField is None()) {
-          typingError(Array[(name.pos, `Forbidden method name ${name.value}`)])
+          typingError(Array[(name.pos, `Forbidden method name ${name}`)])
         };
         optField
       }

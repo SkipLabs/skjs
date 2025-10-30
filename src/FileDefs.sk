@@ -287,8 +287,6 @@ mutable class FileDefsState{
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
       | FNSymbol(n) -> "[" + n.value + "]"
-      | FNIn _ -> internal_error("TODO: invalid fundef name")
-      | FNColon _ -> internal_error("TODO: invalid fundef name")
       };
       if (isDefault is Some _) this.!default = Some(fname);
       if (isExport) this.exported![fname] = fname;
@@ -475,15 +473,6 @@ class FileDefs{
 base class IDefMap {
   fun getType(mutable S.Context, Name): DefMapType;
   fun get(mutable S.Context, FileName, Name): Array<Def>;
-}
-
-class SortedDefMap{map: SortedMap<String, TypeDef>} extends IDefMap {
-  fun getType(mutable S.Context, name: Name): DefMapType {
-    TDType(this.map[name.value])
-  }
-  fun get(mutable S.Context, FileName, Name): Array<Def> {
-    Array[]
-  }
 }
 
 base class DefMapType {
