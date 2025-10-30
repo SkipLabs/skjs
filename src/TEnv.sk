@@ -736,12 +736,9 @@ class TEnv{
 
     | TAInst(n @ Name(p, "Array"), targs) ->
       if (targs.size() != 1) {
-        typingError(Array[(n.pos, "Invalid number of type arguments")])
+        typingError(Array[(p, "Invalid number of type arguments")])
       };
-      TType::inst(
-        Name(p, "Array"),
-        TArgs(Array[this.normalize(context, targs[0])]),
-      )
+      TType::inst(n, TArgs(Array[this.normalize(context, targs[0])]))
 
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(context, ty)]))
