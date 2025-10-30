@@ -1058,10 +1058,7 @@ extension class Parser {
   mutable fun typeDefsParams(): Array<TypeParam> {
     tdparams = mutable Vector[];
     loop {
-      tok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-      | Some(x) -> x
-      };
+      name = this.getName();
       constr = this.lex.peekStr() match {
       | Some("extends") ->
         _ = this.lex.next();
@@ -1076,11 +1073,10 @@ extension class Parser {
         None()
       };
       this.!id = this.id + 1;
-      name = this.lex.getStrTok(tok);
       tdparams.push(
         TypeParam(
-          Id::create(name, this.id, this.lex),
-          Name(PosRange::create(this.lex, tok.posStart, tok.posEnd), name),
+          Id::create(name.value, this.id, this.lex),
+          name,
           constr,
           default,
         ),
