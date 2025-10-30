@@ -375,10 +375,11 @@ base class Symbol uses XXHashable, Hashable, Orderable {
   | FNColon(indexName: Name, indexType: Type)
 
   fun getName(): String
-  | FNNormal(n) -> n.value
-  | FNSymbol(n) -> n.value
-  | FNIn(n, _, _, _) -> n.value
-  | FNColon(n, _) -> n.value
+  | FNNormal(n)
+  | FNSymbol(n)
+  | FNIn(n, _, _, _)
+  | FNColon(n, _) ->
+    n.value
 
   fun compare(other: Symbol): Order {
     this.getName().compare(other.getName())
