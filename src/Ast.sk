@@ -43,7 +43,7 @@ class PStringAny() extends PString {
 }
 
 // String with no dot
-class Name private () extends PString {
+class Name private () extends PString, AccessPath {
   static fun createPString(pos: PosRange, value: String): PString {
     if (value.contains(".")) PStringAny(pos, value) else static(pos, value)
   }
@@ -57,6 +57,23 @@ class Name private () extends PString {
 
   fun withPos(pos: PosRange): this {
     this with {pos}
+  }
+}
+
+base class AccessPath uses XXHashable, Show
+
+class AccessPathDot private {
+  dir: AccessPath,
+  base: Name,
+  private asString: String,
+} extends AccessPath {
+  static fun create{dir: AccessPath, base: Name}: this {
+    asString = `${dir}.${base}`;
+    static{dir, base, asString}
+  }
+
+  fun toString(): String {
+    this.asString
   }
 }
 
