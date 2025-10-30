@@ -367,7 +367,7 @@ base class PostOperator uses XXHashable {
 //   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
 //   | [ <name> : <type> ]
 /***************************************************************************/
-base class Symbol uses XXHashable, Orderable {
+base class Symbol uses XXHashable {
   children =
   | FNNormal(Name)
   | FNSymbol(Name)
@@ -380,10 +380,6 @@ base class Symbol uses XXHashable, Orderable {
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
-
-  fun compare(other: Symbol): Order {
-    this.getName().compare(other.getName())
-  }
 
   fun xxhash(ignorePos: Bool = false): XXHash {
     this.getName().xxhash(ignorePos)
