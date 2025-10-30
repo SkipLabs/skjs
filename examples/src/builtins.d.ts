@@ -399,6 +399,10 @@ declare class Error {
   constructor(cause?: string);
 }
 
+declare type Record<K extends string, V> = {
+  [index: K]: V;
+};
+
 /* from undici-types/fetch.d.ts */
 
 declare class undici_BodyMixin {
