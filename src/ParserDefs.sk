@@ -16,7 +16,7 @@ extension class Parser {
     | Some(tok) ->
       tok.kind match {
       | TKVar() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -32,17 +32,17 @@ extension class Parser {
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
       | TKVar() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -58,12 +58,12 @@ extension class Parser {
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
@@ -79,12 +79,12 @@ extension class Parser {
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
@@ -94,13 +94,13 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
         | Some(x) -> x
         };
-        PString(
+        PStringAny(
           PosRange::create(this.lex, start, nbr.posEnd),
           "-" + this.lex.getStrTok(nbr),
         )
       | TKNumber()
       | TKVar() ->
-        PString(
+        PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
@@ -1018,7 +1018,7 @@ extension class Parser {
                   modifiers,
                 },
               );
-              eThis = Expr(pos, Var(PString(pos, "this")));
+              eThis = Expr(pos, Var(PStringAny(pos, "this")));
               eName = Expr(pos, Var(pName));
               eThisDotName = Expr(pos, Binop(BODot(), eThis, eName));
               eAssign = Expr(pos, Binop(BOAssignment(), eThisDotName, eName));

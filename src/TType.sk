@@ -597,7 +597,7 @@ class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
   }
 
   fun asClassName(): PString {
-    PString(this.pos, this.kind.toString())
+    PStringAny(this.pos, this.kind.toString())
   }
 }
 

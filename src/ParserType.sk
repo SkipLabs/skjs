@@ -192,7 +192,7 @@ extension class Parser {
             if (this.lex.peekKind() != Some(TKDot())) break void;
             _ = this.lex.next();
             dotName = this.getName();
-            !name = PString(
+            !name = PStringAny(
               name.pos.extend(dotName.pos),
               name.value + "." + dotName.value,
             );
@@ -229,7 +229,7 @@ extension class Parser {
       | "abstract" -> TANew(this.type(prec))
       | "new" -> TANew(this.type(prec))
       | className ->
-        name = PString(
+        name = PStringAny(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           className,
         );
@@ -237,7 +237,7 @@ extension class Parser {
           if (this.lex.peekKind() != Some(TKDot())) break void;
           _ = this.lex.next();
           dotName = this.getName();
-          !name = PString(
+          !name = PStringAny(
             name.pos.extend(dotName.pos),
             name.value + "." + dotName.value,
           );
