@@ -278,8 +278,8 @@ declare class WeakSet<T> {
 
 declare class Date {
   constructor(
-    year: number,
-    month: number,
+    year?: number,
+    month?: number,
     day?: number,
     hour?: number,
     minute?: number,
@@ -399,6 +399,10 @@ declare class Error {
   constructor(cause?: string);
 }
 
+declare type Record<K extends string, V> = {
+  [index: K]: V;
+};
+
 /* from undici-types/fetch.d.ts */
 
 declare class undici_BodyMixin {
@@ -433,6 +437,14 @@ declare class undici_Response extends undici_BodyMixin {
 
 declare function fetch(input: string): Promise<undici_Response>;
 
+declare interface ProcessEnv {
+  [key: string]: string | undefined;
+  TZ?: string;
+}
+
 declare const process: {
-  exit(status: number): void;
+  argv: string[];
+  cwd(): string;
+  env: ProcessEnv;
+  exit(status: number): never;
 };
