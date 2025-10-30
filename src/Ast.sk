@@ -12,7 +12,7 @@ module SKJS;
 // <name> ::= <string>
 /***************************************************************************/
 
-base class PString(
+base class PString private (
   pos: PosRange,
   value: String,
 ) uses XXHashable, Hashable, Orderable {
@@ -26,7 +26,17 @@ base class PString(
   }
 }
 
-class PStringAny extends PString
+class PStringAny() extends PString
+
+// String with no dot
+class Name private () extends PString {
+  static fun create(pos: PosRange, value: String): this {
+    if (value.contains(".")) {
+      invariant_violation(`Creating Name with a dot: ${value}`);
+    };
+    static(pos, value)
+  }
+}
 
 /***************************************************************************/
 // <def> ::=
