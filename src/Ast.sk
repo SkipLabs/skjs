@@ -380,10 +380,6 @@ base class Symbol uses XXHashable {
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
-
-  fun xxhash(ignorePos: Bool = false): XXHash {
-    this.getName().xxhash(ignorePos)
-  }
 }
 
 class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
