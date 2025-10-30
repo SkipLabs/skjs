@@ -286,12 +286,11 @@ class TEnv{
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
-  static private fun makeTParam(
+  private fun makeTParam(
     context: mutable SKStore.Context,
-    tenv: TEnv,
     tparam: TypeParam,
   ): TParamWithConstraint {
-    cstr = tparam.constraint.map(cstr -> tenv.normalize(context, cstr));
+    cstr = tparam.constraint.map(cstr -> this.normalize(context, cstr));
     TParamWithConstraint(
       tparam.name.value,
       tparam.name.pos.fileName,
@@ -306,7 +305,7 @@ class TEnv{
         subst,
         this,
         tparam.name.pos,
-        TEnv::makeTParam(subst.context, this, tparam),
+        this.makeTParam(subst.context, tparam),
       );
       !this.subst[tparam.name.value] = (false, ty)
     };
@@ -874,7 +873,7 @@ class TEnv{
             ],
           )
         };
-        funTParam = TEnv::makeTParam(context, this, tparam);
+        funTParam = this.makeTParam(context, tparam);
         funClauses.push(funTParam);
         !this.tparams[tparam.name.value] = funTParam;
       };
