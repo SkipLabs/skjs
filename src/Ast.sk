@@ -526,7 +526,7 @@ base class Type_ uses XXHashable {
   | TAExtendsQuestion(Type, Type, Type, Type)
   | TAExtends(Type, Type)
   | TAReadonly(Type)
-  | TAImport(Expr, ?PString, ?Array<Type>)
+  | TAImport(Expr, ?AccessPath, ?Array<Type>)
   | TAInfer(Name)
   | TAEmptyArray()
   | TAKeyOf(Type)

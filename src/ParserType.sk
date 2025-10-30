@@ -187,12 +187,12 @@ extension class Parser {
         this.expect(TKCloseParen());
         if (this.lex.peekKind() is Some(TKDot())) {
           this.expect(TKDot());
-          name: PString = this.getName();
+          ap: AccessPath = this.getName();
           loop {
             if (this.lex.peekKind() != Some(TKDot())) break void;
             _ = this.lex.next();
-            dotName = this.getName();
-            !name = name.dot(dotName)
+            base = this.getName();
+            !ap = AccessPathDot::create{dir => ap, base};
           };
           targs = if (this.lex.peekKind() is Some(TKLessThan())) {
             _ = this.lex.next();
@@ -200,7 +200,7 @@ extension class Parser {
           } else {
             Array[]
           };
-          TAImport(e, Some(name), Some(targs))
+          TAImport(e, Some(ap), Some(targs))
         } else {
           TAImport(e, None(), None())
         }
