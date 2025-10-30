@@ -12,10 +12,7 @@ module SKJS;
 // <name> ::= <string>
 /***************************************************************************/
 
-value class Name(
-  pos: PosRange,
-  value: String,
-) uses XXHashable, Hashable, Orderable {
+value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
   fun hash(): Int {
     // Custom hash that excludes position
     this.value.hash()
