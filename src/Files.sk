@@ -72,6 +72,7 @@ class Files(
     if (!builtinsFileName.exists()) {
       return Failure(`Builtins not found: ${builtinsFileName}`);
     };
+    !importStubs = importStubs.map(dir -> Path.resolve(dir));
     importStubsFiles = importStubs
       .map(dir ->
         FileSystem.readFilesRecursive(dir, fileName ->
