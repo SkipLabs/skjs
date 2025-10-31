@@ -106,6 +106,9 @@ jobs:
               # For development, create branch-specific link
               ln -sf "${BINARY_NAME}" "artifacts/skjs_${CIRCLE_BRANCH//\//_}_${PLATFORM}_${ARCH}_latest"
             fi
+
+            # Add import-stubs
+            cp --recursive import-stubs artifacts/
             
             # List artifacts for verification
             ls -la artifacts/
