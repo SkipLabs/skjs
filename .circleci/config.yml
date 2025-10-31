@@ -112,7 +112,7 @@ jobs:
       - run:
           name: Compress import-stubs
           command: |
-            tar -czf import-stubs.tgz import-stubs/
+            tar -czf import-stubs.tgz -C import-stubs .
             echo "Created import-stubs.tgz"
             ls -lh import-stubs.tgz
 
