@@ -106,12 +106,16 @@ jobs:
               # For development, create branch-specific link
               ln -sf "${BINARY_NAME}" "artifacts/skjs_${CIRCLE_BRANCH//\//_}_${PLATFORM}_${ARCH}_latest"
             fi
-
-            # Add import-stubs
-            cp --recursive import-stubs artifacts/
             
             # List artifacts for verification
             ls -la artifacts/
+      - run:
+          name: Compress import-stubs
+          command: |
+            tar -czf import-stubs.tgz import-stubs/
+            echo "Created import-stubs.tgz"
+            ls -lh import-stubs.tgz
+
       - run:
           name: Validate binary artifacts
           command: |
@@ -187,6 +191,8 @@ jobs:
       - store_artifacts:
           path: artifacts/
           destination: binaries
+      - store_artifacts:
+          path: import-stubs.tgz
 
 workflows:
   build_and_test:
