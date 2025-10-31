@@ -595,6 +595,10 @@ class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
   static fun bigint(pos: PosRange): this {
     static::full(TBigInt(), pos)
   }
+
+  fun asClassName(): Name {
+    Name(this.pos, this.kind.toString())
+  }
 }
 
 class TField private (
@@ -1142,22 +1146,26 @@ class Clauses private (
     Some(result)
   }
 
-  fun primKind(): ?TPrimValueKind {
-    cand: ?TPrimValueKind = None();
+  fun primKind(): ?Name {
+    cand: ?TPrimValue = None();
     for (clause in this.clauses) {
       clause.stypes match {
       | None() -> return None()
       | Some(stypes) ->
         for (stype in stypes) {
-          stype match {
-          | TPrimValue(kind, _, _) if (cand is None()) -> !cand = Some(kind)
-          | TPrimValue(kind, _, _) -> if (cand != Some(kind)) return None()
+          (stype, cand) match {
+          | (prim @ TPrimValue _, None()) -> !cand = Some(prim)
+          | (
+            TPrimValue(kind, _, _),
+            Some(TPrimValue(candKind, _, _)),
+          ) if (kind == candKind) ->
+            void
           | _ -> return None()
           }
         }
       }
     };
-    cand
+    cand.map(prim -> prim.asClassName())
   }
 
   fun getObject(): ?TObject {
