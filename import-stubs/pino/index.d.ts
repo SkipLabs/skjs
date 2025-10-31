@@ -10,3 +10,7 @@ export interface TransportSingleOptions extends TransportBaseOptions {
 export type LoggerOptions = {
   transport?: TransportSingleOptions;
 };
+
+export type Level = "fatal" | "error" | "warn" | "info" | "debug" | "trace";
+
+export type LevelWithSilent = Level | "silent";

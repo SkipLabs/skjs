@@ -1,4 +1,7 @@
-import type { LoggerOptions as PinoLoggerOptions } from "pino";
+import type {
+  LevelWithSilent as LogLevel,
+  LoggerOptions as PinoLoggerOptions,
+} from "pino";
 
 export type FastifyLoggerOptions = { level?: string };
 
@@ -109,9 +112,31 @@ export type onRequestAsyncHookHandler = (
   reply: FastifyReply,
 ) => Promise<unknown>;
 
+export type FastifyPluginOptions = Record<string, unknown>;
+
 export type FastifyPluginAsync = (instance: FastifyInstance) => Promise<void>;
 
-export type FastifyRegister = (plugin: FastifyPluginAsync) => FastifyInstance;
+export type FastifyPluginCallback<Options /*extends FastifyPluginOptions*/> = (
+  instance: FastifyInstance,
+  opts: Options,
+  done: (err?: Error) => void,
+) => void;
+
+export interface RegisterOptions {
+  prefix?: string;
+  logLevel?: LogLevel;
+  logSerializers?: Record<string, (value: unknown) => string>;
+}
+
+export type FastifyRegisterOptions<Options> =
+  | (RegisterOptions & Options)
+  | ((instance: FastifyInstance) => RegisterOptions & Options);
+
+/* Wrong approximation of overloads */
+export type FastifyRegister = <Options /*extends FastifyPluginOptions*/>(
+  plugin: FastifyPluginAsync | FastifyPluginCallback<Options>,
+  opts?: FastifyRegisterOptions<Options>,
+) => FastifyInstance;
 
 export interface FastifySchema {
   body?: unknown;
