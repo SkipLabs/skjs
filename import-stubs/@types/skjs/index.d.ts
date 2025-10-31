@@ -403,6 +403,8 @@ declare type Record<K extends string, V> = {
   [index: K]: V;
 };
 
+type NonNullable<T> = T & {};
+
 /* from undici-types/fetch.d.ts */
 
 declare class undici_BodyMixin {
