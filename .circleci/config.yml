@@ -112,9 +112,9 @@ jobs:
       - run:
           name: Compress import-stubs
           command: |
-            tar -czf import-stubs.tar.gz import-stubs/
-            echo "Created import-stubs.tar.gz"
-            ls -lh import-stubs.tar.gz
+            tar -czf import-stubs.tgz import-stubs/
+            echo "Created import-stubs.tgz"
+            ls -lh import-stubs.tgz
 
       - run:
           name: Validate binary artifacts
