@@ -191,6 +191,8 @@ jobs:
       - store_artifacts:
           path: artifacts/
           destination: binaries
+      - store_artifacts:
+          path: import-stubs.tgz
 
 workflows:
   build_and_test:
