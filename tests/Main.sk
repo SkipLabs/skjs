@@ -169,7 +169,7 @@ fun validateNotSupported(
   }
 }
 
-const builtinsArgFileName: String = "./examples/src/builtins.d.ts";
+const builtinsArgFileName: String = "./import-stubs/@types/skjs/index.d.ts";
 
 fun expectFilesSuccess(
   checkerCreateResult: Result<SKJS.Files, String>,

@@ -183,12 +183,11 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about("Base directory from which to resolve modules"),
   Cli.Arg::string("builtins-file")
     .value_name("PATH")
-    .default("./src/builtins.d.ts")
     .about(
-      "Path to the file containing type declarations for JavaScript builtins",
+      "Path to the file containing type declarations for JavaScript builtins (default: IMPORT-PATH/@types/skjs/index.d.ts)",
     ),
   Cli.Arg::string("import-stubs")
-    .value_name("PATH")
+    .value_name("IMPORT-PATH")
     .repeatable()
     .about("Path to directory containing stubs for imports"),
   Cli.Arg::bool("log-affected-files").about(
@@ -213,8 +212,24 @@ const sinkDirName: SKStore.DirName = SKStore.DirName::create("/sink/");
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
   backtrace = args.getBool("backtrace");
   baseUrlOpt = args.maybeGetString("base-url");
-  builtinsFileName = args.getString("builtins-file");
   importStubs = args.getArray("import-stubs");
+  builtinsFileName = args.maybeGetString("builtins-file") match {
+  | Some(x) -> x
+  | None() ->
+    importStubs.size() match {
+    | 0 ->
+      print_error(
+        "--builtins-file unspecified but --import-stubs unspecified as well",
+      );
+      throw Exit(2)
+    | 1 -> Path.join(importStubs[0], "@types/skjs/index.d.ts")
+    | _ ->
+      print_error(
+        "--bultins-file unspecified but more than one --import-stubs specified",
+      );
+      throw Exit(2)
+    }
+  };
   logAffectedFiles = args.getBool("log-affected-files");
   sourceDirOpt = args.maybeGetString("dir");
   if (logAffectedFiles) {
