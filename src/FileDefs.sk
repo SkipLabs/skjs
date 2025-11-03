@@ -71,7 +71,7 @@ mutable class FileDefsState{
   exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   exportedModules: mutable Set<String> = mutable Set[],
   exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
-  mutable default: ?String = None(),
+  mutable default: ?Name = None(),
   namespaces: mutable Map<String, FileDefs> = mutable Map[],
   exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
@@ -104,7 +104,7 @@ mutable class FileDefsState{
         };
         this.exportNamesFrom(names, fn)
       | ExportNames _ -> internal_error("TODO: unsupported export")
-      | ExportDefault(Expr(_, Var(n))) -> this.!default = Some(n.value)
+      | ExportDefault(Expr(_, Var(n))) -> this.!default = Some(n)
       | ExportDefault _ -> internal_error("TODO: unsupported export")
       | ExportEq(v) ->
         v.value match {
@@ -225,21 +225,21 @@ mutable class FileDefsState{
   mutable fun newDef(isDefault: Bool, isExport: Bool, def: Def): void {
     def.value match {
     | TypeDef{name} ->
-      if (isDefault) this.!default = Some(name.value);
+      if (isDefault) this.!default = Some(name);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
       this.defs[name.value].push(def)
     | Class{name} ->
-      if (isDefault) this.!default = Some(name.value);
+      if (isDefault) this.!default = Some(name);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
       this.defs[name.value].push(def)
     | Enum(_, name, _) ->
-      if (isDefault) this.!default = Some(name.value);
+      if (isDefault) this.!default = Some(name);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
@@ -264,7 +264,7 @@ mutable class FileDefsState{
           Array[(pos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
-      if (isDefault) this.!default = Some(fname.value);
+      if (isDefault) this.!default = Some(fname);
       if (isExport) this.exported![fname.value] = fname.value;
       if (!this.defs.containsKey(fname.value)) {
         this.defs![fname.value] = mutable Vector[];
@@ -278,7 +278,7 @@ mutable class FileDefsState{
         };
         this.!default = Some(
           varDefs[0].pat.value match {
-          | PVar(x) -> x.value
+          | PVar(x) -> x
           | _ -> internal_error("TODO: cannot have default base on names")
           },
         );
@@ -420,7 +420,7 @@ class FileDefs{
   exportedFrom: Map<String, (String, FileName)>,
   exportedModules: Set<String>,
   exportedModulesFrom: Map<String, FileName>,
-  default: ?String,
+  default: ?Name,
   namespaces: Map<String, FileDefs>,
   exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
@@ -661,7 +661,7 @@ class DefMap{
       return this.getInDefs(
         context,
         fileDefs,
-        PString::create(defName.pos, defaultName),
+        PString::create(defName.pos, defaultName.value),
       )
     } else {
       fileDefs.exported.maybeGet(defName.value) match {
