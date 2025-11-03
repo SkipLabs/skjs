@@ -5,9 +5,7 @@ extension class TypeChecker {
     constructor: ?FunDef = None();
     for (fieldType in c.fields) {
       fieldType match {
-      | fd @ FunDef _ if (
-        fd.name is Some(FNNormal(PString(_, "constructor")))
-      ) ->
+      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
         constructor match {
         | Some(existingConstructor) ->
           typingError(
@@ -163,7 +161,7 @@ extension class TypeChecker {
           )
         }
       | fd @ FunDef _ ->
-        if (fd.name is Some(FNNormal(PString(_, "constructor")))) {
+        if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
           !hasConstructor = true;
           partialThisType = this.tenv.new(
             context,

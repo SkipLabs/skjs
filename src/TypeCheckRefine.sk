@@ -12,21 +12,13 @@ extension class TypeChecker {
       Expr(_, EString(tag)),
       Expr(
         _,
-        Binop(
-          BODot(),
-          Expr(_, Var(local)),
-          Expr(_, Var(PString(_, fieldName))),
-        ),
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
       ),
     )
     | (
       Expr(
         _,
-        Binop(
-          BODot(),
-          Expr(_, Var(local)),
-          Expr(_, Var(PString(_, fieldName))),
-        ),
+        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
       ),
       Expr(_, EString(tag)),
     ) if (fieldName == kAlgebraicBranchFieldName) ->
@@ -36,18 +28,18 @@ extension class TypeChecker {
     | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
       this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
 
-    | (Expr(_, Var(local)), Expr(_, Var(PString(_, "null"))))
-    | (Expr(_, Var(PString(_, "null"))), Expr(_, Var(local))) ->
+    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
+    | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
       this.evalNullEquality(tcenv, local, target)
 
-    | (Expr(_, Var(local)), Expr(_, Var(PString(_, "undefined"))))
-    | (Expr(_, Var(PString(_, "undefined"))), Expr(_, Var(local))) ->
+    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
+    | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
       this.evalUndefinedEquality(tcenv, local, target)
 
-    | (Expr(pos, _), Expr(_, Var(PString(_, "null"))))
-    | (Expr(_, Var(PString(_, "null"))), Expr(pos, _))
-    | (Expr(pos, _), Expr(_, Var(PString(_, "undefined"))))
-    | (Expr(_, Var(PString(_, "undefined"))), Expr(pos, _)) ->
+    | (Expr(pos, _), Expr(_, Var(Name(_, "null"))))
+    | (Expr(_, Var(Name(_, "null"))), Expr(pos, _))
+    | (Expr(pos, _), Expr(_, Var(Name(_, "undefined"))))
+    | (Expr(_, Var(Name(_, "undefined"))), Expr(pos, _)) ->
       typingError(
         Array[(pos, "Only locals can be compared to null/undefined.")],
       )
@@ -194,7 +186,7 @@ extension class TypeChecker {
 
     | InstanceOf(
       Expr(_, Var(local)),
-      Expr(_, Var(PString(posArray, "Array"))),
+      Expr(_, Var(Name(posArray, "Array"))),
     ) if (target) ->
       tcenv.scope.set(
         local,

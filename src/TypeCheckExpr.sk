@@ -457,12 +457,12 @@ extension class TypeChecker {
       };
       strType
 
-    | Var(PString(_, "true"))
-    | Var(PString(_, "false")) ->
+    | Var(Name(_, "true"))
+    | Var(Name(_, "false")) ->
       TType::single(TPrimValue::boolean(pos))
-    | Var(PString(_, "null")) ->
+    | Var(Name(_, "null")) ->
       this.makeBoundTVar(tcenv, TType::single(TPrimUnit(TNull(), pos)))
-    | Var(PString(_, "undefined")) ->
+    | Var(Name(_, "undefined")) ->
       this.makeBoundTVar(tcenv, TType::single(TPrimUnit(TUndefined(), pos)))
     | Var(local) ->
       if (tcenv.localObjects.containsKey(local.value)) {
@@ -604,7 +604,7 @@ extension class TypeChecker {
         }
       };
       obj
-    | Call(Expr(_, Var(PString(superPos, "super"))), targs, args) ->
+    | Call(Expr(_, Var(Name(superPos, "super"))), targs, args) ->
       this.super match {
       | None() -> typingError(Array[(superPos, "'super' is not defined")])
       | Some((superCstr, super)) ->
@@ -632,7 +632,7 @@ extension class TypeChecker {
       };
       TType::single(TPrimUnit(TVoid(), pos))
 
-    | Call(Expr(_, Var(PString(_, "__SKJS_show"))), _, args) ->
+    | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       exprTy = this.expr(tcenv, args[0]);
       ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Covariant());
       print_error(prettyPrintType(false, ty));
@@ -648,8 +648,8 @@ extension class TypeChecker {
       f.value match {
       | Binop(
         BODot(),
-        Expr(_, Var(PString(_, "console"))),
-        Expr(_, Var(PString(_, "assert"))),
+        Expr(_, Var(Name(_, "console"))),
+        Expr(_, Var(Name(_, "assert"))),
       ) if (args.size() >= 1) ->
         this.evalCond(tcenv, args[0], true)
       | _ -> void
@@ -1149,14 +1149,14 @@ extension class TypeChecker {
     e.value match {
     | AsConst(subExpr) ->
       typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
-    | Var(PString(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
-    | Var(PString(_, "undefined")) ->
+    | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
+    | Var(Name(_, "undefined")) ->
       Some(TType::single(TPrimUnit(TUndefined(), pos)))
     | Number(n) -> Some(TType::single(TPrimValue::single(TNum(), n, pos)))
     | BigInt(n) -> Some(TType::single(TPrimValue::single(TBigInt(), n, pos)))
-    | Var(PString(_, "true")) ->
+    | Var(Name(_, "true")) ->
       Some(TType::single(TPrimValue::single(TBool(), "true", pos)))
-    | Var(PString(_, "false")) ->
+    | Var(Name(_, "false")) ->
       Some(TType::single(TPrimValue::single(TBool(), "false", pos)))
     | EString(n) -> Some(TType::single(TPrimValue::single(TString(), n, pos)))
     | _ -> None()

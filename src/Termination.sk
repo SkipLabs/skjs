@@ -325,8 +325,8 @@ base class TautologyCheck private () {
 
   static fun expr(expr: Expr): TautologyCheck {
     expr.value match {
-    | Var(PString(_pos, "true")) -> TCAlwaysTrue()
-    | Var(PString(_pos, "false")) -> TCAlwaysFalse()
+    | Var(Name(_pos, "true")) -> TCAlwaysTrue()
+    | Var(Name(_pos, "false")) -> TCAlwaysFalse()
     | _ -> TCTop()
     }
   }

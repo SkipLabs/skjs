@@ -982,7 +982,7 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ FunDef{name => Some(FNNormal(PString(_, "constructor")))} ->
+      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
         initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {

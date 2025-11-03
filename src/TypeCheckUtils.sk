@@ -216,7 +216,7 @@ extension class TypeChecker {
 
   fun checkLValue(e: Expr): void {
     e.value match {
-    | Var(PString(_, "super")) -> typingError(Array[(e.pos, "Invalid lvalue")])
+    | Var(Name(_, "super")) -> typingError(Array[(e.pos, "Invalid lvalue")])
     | Var _ -> void
     | Get _ -> void
     | EArray _ -> void
