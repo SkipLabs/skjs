@@ -732,12 +732,6 @@ class TEnv{
       };
       TType::single(TObject(TFields::empty(), p))
 
-    | TAInst(n @ Name(p, "Array"), targs) ->
-      if (targs.size() != 1) {
-        typingError(Array[(p, "Invalid number of type arguments")])
-      };
-      TType::inst(n, TArgs(Array[this.normalize(context, targs[0])]))
-
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(context, ty)]))
 
@@ -822,7 +816,9 @@ class TEnv{
           )
         };
 
-        !this.forbiddenInsts = this.seenInstantiate;
+        if (this.seenInstantiate.contains(n.value)) {
+          !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
+        };
         TType::inst(n, TArgs(targs.map(x -> this.normalize(context, x))))
       }
     | TAUnion(ty1, ty2) ->
