@@ -66,7 +66,7 @@ mutable class FileDefsState{
   importedStar: mutable Set<String> = mutable Set[],
   importedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   importedModulesFrom: mutable Map<String, FileName> = mutable Map[],
-  exported: mutable Map<String, String> = mutable Map[],
+  exported: mutable Map<String, Name> = mutable Map[],
   exportedStar: mutable Set<String> = mutable Set[],
   exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   exportedModules: mutable Set<String> = mutable Set[],
@@ -226,21 +226,21 @@ mutable class FileDefsState{
     def.value match {
     | TypeDef{name} ->
       if (isDefault) this.!default = Some(name);
-      if (isExport) this.exported![name.value] = name.value;
+      if (isExport) this.exported![name.value] = name;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
       this.defs[name.value].push(def)
     | Class{name} ->
       if (isDefault) this.!default = Some(name);
-      if (isExport) this.exported![name.value] = name.value;
+      if (isExport) this.exported![name.value] = name;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
       this.defs[name.value].push(def)
     | Enum(_, name, _) ->
       if (isDefault) this.!default = Some(name);
-      if (isExport) this.exported![name.value] = name.value;
+      if (isExport) this.exported![name.value] = name;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
@@ -265,7 +265,7 @@ mutable class FileDefsState{
         )
       };
       if (isDefault) this.!default = Some(fname);
-      if (isExport) this.exported![fname.value] = fname.value;
+      if (isExport) this.exported![fname.value] = fname;
       if (!this.defs.containsKey(fname.value)) {
         this.defs![fname.value] = mutable Vector[];
       };
@@ -288,7 +288,7 @@ mutable class FileDefsState{
         | PVar(x) -> x
         | _ -> internal_error("TODO: cannot have exports base on names")
         };
-        if (isExport) this.exported![exportName.value] = exportName.value;
+        if (isExport) this.exported![exportName.value] = exportName;
         if (!this.defs.containsKey(exportName.value)) {
           this.defs![exportName.value] = mutable Vector[];
         };
@@ -308,9 +308,8 @@ mutable class FileDefsState{
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
-          this.exported![moduleDefName.name.value] = moduleDefName.name.value
-        | Some(asName) ->
-          this.exported![moduleDefName.name.value] = asName.value
+          this.exported![moduleDefName.name.value] = moduleDefName.name
+        | Some(asName) -> this.exported![moduleDefName.name.value] = asName
         }
       }
     | MName(moduleName, moduleDefNames) ->
@@ -318,9 +317,8 @@ mutable class FileDefsState{
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
-          this.exported![moduleDefName.name.value] = moduleDefName.name.value
-        | Some(asName) ->
-          this.exported![moduleDefName.name.value] = asName.value
+          this.exported![moduleDefName.name.value] = moduleDefName.name
+        | Some(asName) -> this.exported![moduleDefName.name.value] = asName
         }
       }
     }
@@ -415,7 +413,7 @@ class FileDefs{
   importedStar: Set<String>,
   importedFrom: Map<String, (String, FileName)>,
   importedModulesFrom: Map<String, FileName>,
-  exported: Map<String, String>,
+  exported: Map<String, Name>,
   exportedStar: Set<String>,
   exportedFrom: Map<String, (String, FileName)>,
   exportedModules: Set<String>,
@@ -669,7 +667,7 @@ class DefMap{
         return this.getInDefs(
           context,
           fileDefs,
-          PString::create(defName.pos, asName),
+          PString::create(defName.pos, asName.value),
         )
       | None() -> void
       };
