@@ -275,44 +275,44 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         sinkDirName,
         (context, _writer, _key, _values) ~> {
           checker = Checker::create{context, files, backtrace};
-          _ = checker
-            .checkFiles(context)
-            .map(
-              SKStore.UnitID::keyType,
-              SKStore.StringFile::type,
-              context,
-              errorsDirName,
-              (context, writer, _key, valueIter) ~> {
-                (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
-                | None() ->
-                  internal_error("Unexpected missing value in print-errors")
-                | Some(CheckResult(_, x, y)) -> (x, y)
-                };
-                errors = mutable Vector[];
-                parseErrorOpt match {
-                | None() -> void
-                | Some(err) ->
-                  errors.push(
-                    SKStore.StringFile(checker.errorToString(context, err)),
-                  )
-                };
+          checked = checker.checkFiles(context);
+          _ = checked.map(
+            SKStore.UnitID::keyType,
+            SKStore.StringFile::type,
+            context,
+            errorsDirName,
+            (context, writer, _key, valueIter) ~> {
+              (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
+              | None() ->
+                internal_error("Unexpected missing value in print-errors")
+              | Some(CheckResult(_, x, y, _)) -> (x, y)
+              };
+              errors = mutable Vector[];
+              parseErrorOpt match {
+              | None() -> void
+              | Some(err) ->
+                errors.push(
+                  SKStore.StringFile(checker.errorToString(context, err)),
+                )
+              };
 
-                for (error in typeErrors) {
-                  errors.push(
-                    SKStore.StringFile(checker.errorToString(context, error)),
-                  );
-                };
-                writer.setArray(SKStore.UnitID::singleton, errors.toArray());
-              },
-            )
+              for (error in typeErrors) {
+                errors.push(
+                  SKStore.StringFile(checker.errorToString(context, error)),
+                );
+              };
+              writer.setArray(SKStore.UnitID::singleton, errors.toArray());
+            },
+          );
+          _ = CallGraph::build(context, checked);
         },
       );
-
+      context.update();
       if (logAffectedFiles) {
-        context.update();
-        callgraph = CallGraph::create(context);
-        (_addedDefs, removedDefs) = files.getChangedDefs(context);
-        callgraph.affectedFiles(context, removedDefs).each(print_string);
+        CallGraph::create(context).each(callgraph -> {
+          (_addedDefs, removedDefs) = files.getChangedDefs(context);
+          callgraph.affectedFiles(context, removedDefs).each(print_string);
+        })
       };
 
       SKStore.CStop(None())
@@ -334,6 +334,7 @@ class CheckResult(
   fileName: String,
   parseError: ?Error,
   errors: Array<Error>,
+  callgraph: ?CallGraphFile = None(),
 ) extends SKStore.File
 
 class Checker private {
@@ -364,15 +365,7 @@ class Checker private {
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
     tenv = TEnv{defMap};
-    callgraph = CallGraph::create(context);
-    checker = TypeChecker{
-      builtins,
-      backtrace,
-      defMap,
-      tenv,
-      callgraph,
-      builtinsFileName,
-    };
+    checker = TypeChecker{builtins, backtrace, defMap, tenv, builtinsFileName};
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}
   }
 
@@ -391,10 +384,16 @@ class Checker private {
         };
         parsedFile.value match {
         | PROk(defs) ->
+          initCallGraph(context);
           errors = this.checker.check(context, defs);
           writer.set(
             fileNameKey,
-            CheckResult(fileNameKey.value, None(), errors),
+            CheckResult(
+              fileNameKey.value,
+              None(),
+              errors,
+              collectCallGraph(context),
+            ),
           )
         | PRError(err) ->
           writer.set(
@@ -405,6 +404,7 @@ class Checker private {
       },
     );
   }
+
   fun errorToString(context: mutable SKStore.Context, err: Error): String {
     err.toString(context, this.newLinesMap, this.symbolsMap)
   }

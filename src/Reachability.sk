@@ -148,57 +148,70 @@ class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
   }
 }
 
+class CallGraphFile(
+  callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
+) extends SKStore.File {
+  fun recordCalls(caller: CGNode, newCallees: CGNodes): this {
+    oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
+    callees = oldCallees.foldl(
+      (nodes, node) -> nodes.set(node),
+      newCallees.nodes,
+    );
+    CallGraphFile(this.callgraph.set(caller, callees.toArray()))
+  }
+
+  fun each(fn: (CGNode, Array<CGNode>) -> void): void {
+    this.callgraph.each(fn)
+  }
+}
+
+const kCallGraphId: String = "/skjs/call-graph/";
+
 const callGraphDirName: SKStore.DirName = SKStore.DirName::create(
   "/call-graph/",
 );
 const depGraphDirName: SKStore.DirName = SKStore.DirName::create(
   "/dependency-graph/",
 );
+
 class CallGraph private (
   callgraph: SKStore.EHandle<CGNode, CGNode>,
   depgraph: SKStore.EHandle<CGNode, CGNode>,
 ) {
-  static fun create(context: mutable SKStore.Context): this {
-    context.unsafeMaybeGetEagerDir(callGraphDirName) match {
-    | None() ->
-      callgraph = context.mkdir(
-        CGNode::keyType,
-        CGNode::type,
-        callGraphDirName,
-        Array[],
-      );
-      depgraph = callgraph.map(
-        CGNode::keyType,
-        CGNode::type,
-        context,
-        depGraphDirName,
-        (_context, writer, caller, callees) ~> {
-          for (callee in callees) {
-            writer.append(callee, caller)
-          }
-        },
-      );
+  static fun build(
+    context: mutable SKStore.Context,
+    checked: SKStore.EHandle<SKStore.SID, CheckResult>,
+  ): this {
+    callgraph = checked.map(
+      CGNode::keyType,
+      CGNode::type,
+      context,
+      callGraphDirName,
+      (_context, writer, _sid, res) ~> {
+        res.first.callgraph.each(cg -> cg.each((k, v) -> writer.setArray(k, v)))
+      },
+    );
+    depgraph = callgraph.map(
+      CGNode::keyType,
+      CGNode::type,
+      context,
+      depGraphDirName,
+      (_context, writer, caller, callees) ~> {
+        for (callee in callees) {
+          writer.append(callee, caller)
+        }
+      },
+    );
+    static(callgraph, depgraph)
+  }
 
-      static(callgraph, depgraph)
-    | Some _ ->
+  static fun create(context: readonly SKStore.Context): ?this {
+    context.unsafeMaybeGetEagerDir(callGraphDirName).map(_ ->
       static(
         SKStore.EHandle(CGNode::keyType, CGNode::type, callGraphDirName),
         SKStore.EHandle(CGNode::keyType, CGNode::type, depGraphDirName),
       )
-    }
-  }
-
-  fun recordCalls(
-    context: mutable SKStore.Context,
-    caller: CGNode,
-    newCallees: CGNodes,
-  ): void {
-    oldCallees = this.callgraph.getIter(context, caller);
-    callees = oldCallees.foldl(
-      (nodes, node) -> nodes.set(node),
-      newCallees.nodes,
-    );
-    this.callgraph.writeArray(context, caller, callees.toArray())
+    )
   }
 
   private fun transitiveClosure(
@@ -270,6 +283,29 @@ class CallGraph private (
       )
   }
 }
+
+fun recordCalls(
+  context: mutable SKStore.Context,
+  caller: CGNode,
+  newCallees: CGNodes,
+): void {
+  context.getGlobal(kCallGraphId).map(CallGraphFile::type) match {
+  | Some(callgraph) ->
+    context.setGlobal(kCallGraphId, callgraph.recordCalls(caller, newCallees))
+  | _ -> void
+  }
+}
+
+fun initCallGraph(context: mutable SKStore.Context): void {
+  context.setGlobal(kCallGraphId, CallGraphFile())
+}
+
+fun collectCallGraph(context: mutable SKStore.Context): ?CallGraphFile {
+  inheritance = context.getGlobal(kCallGraphId).map(CallGraphFile::type);
+  context.removeGlobal(kCallGraphId);
+  inheritance
+}
+
 // lifted helper outside of `affectedFiles` for recursion
 private fun checkDef(
   def: Def,
