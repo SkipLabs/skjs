@@ -34,9 +34,7 @@ extension class TType {
     ty1: TType,
     ty2: TType,
   ): TType {
-    expandPrim = (pos, kind) -> {
-      static::inst(Name(pos, kind.toString()), TArgs(Array[]))
-    };
+    expandPrim = (primClassName) -> static::inst(primClassName, TArgs(Array[]));
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
     if (tenv.seenInter.contains((ty1, ty2))) {
@@ -58,7 +56,7 @@ extension class TType {
       isSubTType(
         subst,
         tenv,
-        expandPrim(ty1.pos, primKind),
+        expandPrim(primKind),
         TType::single(stype),
       ) match {
       | STOk() -> return ty1
@@ -71,7 +69,7 @@ extension class TType {
       isSubTType(
         subst,
         tenv,
-        expandPrim(ty2.pos, primKind),
+        expandPrim(primKind),
         TType::single(stype),
       ) match {
       | STOk() -> return ty2

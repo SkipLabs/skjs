@@ -431,25 +431,13 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedType())
         | Some(x) -> x
         };
-        if (this.lex.peekKind() is Some(TKQuestionMark())) {
+        optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           qm = this.lex.next().fromSome();
-          this.expect(TKColon());
-          type = this.type(0);
-          result.push(
-            TAFunParam(
-              Some(
-                TAParamSpread(
-                  Name(
-                    PosRange::create(this.lex, tok.posStart, tok.posEnd),
-                    this.lex.getStrTok(tok),
-                  ),
-                ),
-              ),
-              Some(PosRange::create(this.lex, qm.posStart, qm.posEnd)),
-              type,
-            ),
-          );
-        } else if (this.lex.peekKind() is Some(TKColon())) {
+          Some(PosRange::create(this.lex, qm.posStart, qm.posEnd))
+        } else {
+          None()
+        };
+        if (this.lex.peekKind() is Some(TKColon())) {
           _ = this.lex.next();
           type = this.type(0);
           result.push(
@@ -462,7 +450,7 @@ extension class Parser {
                   ),
                 ),
               ),
-              None(),
+              optional,
               type,
             ),
           );

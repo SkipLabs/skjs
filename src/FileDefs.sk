@@ -525,61 +525,54 @@ class DefMap{
       arr = defName.value.split(".");
       moduleName = arr[0];
       newDefName = arr.slice(1, arr.size()).join(".");
-      if (fileDefs.importedModulesFrom.containsKey(moduleName)) {
-        return this.get(
-          context,
-          fileDefs.importedModulesFrom[moduleName],
-          Name(defName.pos, newDefName),
-        );
+      fileDefs.importedModulesFrom.maybeGet(moduleName) match {
+      | Some(fileName) ->
+        return this.get(context, fileName, Name(defName.pos, newDefName))
+      | None() -> void
       };
-      if (fileDefs.exportedModulesFrom.containsKey(moduleName)) {
-        return this.get(
-          context,
-          fileDefs.exportedModulesFrom[moduleName],
-          Name(defName.pos, newDefName),
-        );
+      fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
+      | Some(fileName) ->
+        return this.get(context, fileName, Name(defName.pos, newDefName))
+      | None() -> void
       };
-      if (fileDefs.namespaces.containsKey(moduleName)) {
-        return this.getInDefs(
-          context,
-          fileDefs.namespaces[moduleName],
-          Name(defName.pos, newDefName),
-        )
+      fileDefs.namespaces.maybeGet(moduleName) match {
+      | Some(fileName) ->
+        return this.getInDefs(context, fileName, Name(defName.pos, newDefName))
+      | None() -> void
       };
-      if (fileDefs.exportedNamespaces.containsKey(moduleName)) {
-        return this.getInDefs(
-          context,
-          fileDefs.exportedNamespaces[moduleName],
-          Name(defName.pos, newDefName),
-        )
+      fileDefs.exportedNamespaces.maybeGet(moduleName) match {
+      | Some(fileName) ->
+        return this.getInDefs(context, fileName, Name(defName.pos, newDefName))
+      | None() -> void
       };
-      if (fileDefs.importedFrom.containsKey(moduleName)) {
-        (origName, newFileName) = fileDefs.importedFrom[moduleName];
+      fileDefs.importedFrom.maybeGet(moduleName) match {
+      | Some((origName, newFileName)) ->
         return this.get(
           context,
           newFileName,
           Name(defName.pos, origName + newDefName),
-        );
+        )
+      | None() -> void
       };
-      if (fileDefs.exportedFrom.containsKey(moduleName)) {
-        (origName, newFileName) = fileDefs.exportedFrom[moduleName];
+      fileDefs.exportedFrom.maybeGet(moduleName) match {
+      | Some((origName, newFileName)) ->
         return this.get(
           context,
           newFileName,
           Name(defName.pos, origName + newDefName),
-        );
+        )
+      | None() -> void
       };
       this.notFound(defName);
     };
-    if (fileDefs.importedFrom.containsKey(defName.value)) {
-      (exportedDefName, importedFileName) = fileDefs.importedFrom[
-        defName.value,
-      ];
+    fileDefs.importedFrom.maybeGet(defName.value) match {
+    | Some((exportedDefName, importedFileName)) ->
       return this.getExported(
         context,
         importedFileName,
         Name(defName.pos, exportedDefName),
-      );
+      )
+    | None() -> void
     };
     for (importedFileName in fileDefs.importedStar) {
       return this.getExported(
@@ -595,18 +588,19 @@ class DefMap{
         defName,
       );
     };
-    if (fileDefs.defs.containsKey(defName.value)) {
-      return fileDefs.defs[defName.value];
+    fileDefs.defs.maybeGet(defName.value) match {
+    | Some(def) -> return def
+    | None() -> void
     };
     fileDefs.exportEq match {
     | None() -> void
     | Some(name) ->
-      if (!fileDefs.namespaces.containsKey(name.value)) {
+      fileDefs.namespaces.maybeGet(name.value) match {
+      | Some(fileName) -> return this.getInDefs(context, fileName, defName)
+      | None() ->
         debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array));
-        this.notFound(defName);
-      };
-
-      return this.getInDefs(context, fileDefs.namespaces[name.value], defName)
+        this.notFound(defName)
+      }
     };
     for (exportedNamespace in fileDefs.exportedNamespaces) {
       try {
@@ -639,47 +633,54 @@ class DefMap{
       arr = defName.value.split(".");
       moduleName = arr[0];
       newDefName = arr.slice(1, arr.size()).join(".");
-      if (fileDefs.importedModulesFrom.containsKey(moduleName)) {
+      fileDefs.importedModulesFrom.maybeGet(moduleName) match {
+      | Some(fileName) ->
         return this.getExported(
           context,
-          fileDefs.importedModulesFrom[moduleName],
+          fileName,
           Name(defName.pos, newDefName),
-        );
+        )
+      | None() -> void
       };
-      if (fileDefs.exportedModulesFrom.containsKey(moduleName)) {
+      fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
+      | Some(fileName) ->
         return this.getExported(
           context,
-          fileDefs.exportedModulesFrom[moduleName],
+          fileName,
           Name(defName.pos, newDefName),
-        );
+        )
+      | None() -> void
       };
       this.notFound(defName);
     };
     fileDefs.exportEq match {
     | None() -> void
     | Some(name) ->
-      if (!fileDefs.namespaces.containsKey(name.value)) {
+      fileDefs.namespaces.maybeGet(name.value) match {
+      | Some(fileName) -> return this.getInDefs(context, fileName, defName)
+      | None() ->
         debug(fileDefs.exportedNamespaces.containsKey(name.value));
-        this.notFound(defName);
-      };
-      return this.getInDefs(context, fileDefs.namespaces[name.value], defName)
+        this.notFound(defName)
+      }
     };
 
     if (defName.value == "default" && fileDefs.default is Some _) {
       defaultName = fileDefs.default.fromSome();
       return this.getInDefs(context, fileDefs, Name(defName.pos, defaultName))
     } else {
-      if (fileDefs.exported.containsKey(defName.value)) {
-        asName = fileDefs.exported[defName.value];
+      fileDefs.exported.maybeGet(defName.value) match {
+      | Some(asName) ->
         return this.getInDefs(context, fileDefs, Name(defName.pos, asName))
+      | None() -> void
       };
-      if (fileDefs.exportedFrom.containsKey(defName.value)) {
-        (newDefName, newFileName) = fileDefs.exportedFrom[defName.value];
+      fileDefs.exportedFrom.maybeGet(defName.value) match {
+      | Some((newDefName, newFileName)) ->
         return this.getExported(
           context,
           newFileName,
           Name(defName.pos, newDefName),
-        );
+        )
+      | None() -> void
       }
     };
     for (exportedFileName in fileDefs.exportedStar) {

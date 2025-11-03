@@ -29,38 +29,26 @@ base class CGNode_ uses XXHashable, Show {
 
   fun toString(): String {
     this match {
-    | TopLevelFunDef(name, file) ->
-      "toplevel: " + name.getName() + " (" + file + ")"
+    | TopLevelFunDef(name, file) -> `toplevel: ${name.getName()} (${file})`
     | Method(name, class_, file, static_) ->
-      (if (static_) "static " else "") +
-        class_.value +
-        "." +
-        (name match {
-        | Some(n) -> n.getName()
-        | None() -> "__anonymous"
-        }) +
-        " (" +
-        file +
-        ")"
+      strStatic = if (static_) "static " else "";
+      strName = name match {
+      | Some(n) -> n.getName()
+      | None() -> "__anonymous"
+      };
+      `${strStatic}${class_}.${strName} (${file})`
     | ObjectMethod(name, file) -> `anonymous_object.${name.getName()} (${file})`
-    | Constructor(class_, file) ->
-      class_.value + ".constructor" + " (" + file + ")"
-    | Toplevel(file) -> "top-level expr (" + file + ")"
-    | ArrowTypeAnnot(file) -> "arrow-type annotation (" + file + ")"
+    | Constructor(class_, file) -> `${class_}.constructor (${file})`
+    | Toplevel(file) -> `top-level expr (${file}`
+    | ArrowTypeAnnot(file) -> `arrow-type annotation (${file})`
     | AnonymousLambda(pos, _closure) ->
-      "lambda (" + pos.fileName + ":" + pos.relStart.value + ")"
+      `lambda (${pos.fileName}:${pos.relStart.value})`
     | AnonymousFunDef(fd) ->
       name = fd.name match {
       | Some(n) -> "\"" + n.getName() + "\""
       | None() -> "(anonymous)"
       };
-      "function def " +
-        name +
-        " (" +
-        fd.pos.fileName +
-        ":" +
-        fd.pos.relStart.value +
-        ")"
+      `function def " ${name} (${fd.pos.fileName}:${fd.pos.relStart.value})`
     }
   }
 }
@@ -117,7 +105,7 @@ class CGNode private (
     if (ignorePos) this.precomputed_hash else this.id.xxhash(false)
   }
   fun toString(): String {
-    "CGNode[" + this.id.toString() + "]"
+    `CGNode[${this.id}]`
   }
   fun compare(other: SKStore.Key): Order {
     other match {
@@ -129,7 +117,8 @@ class CGNode private (
 
 class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
   fun toString(): String {
-    "CGNodes[" + this.nodes.collect(Vector).map((n) -> n.id).join(", ") + "]"
+    nodes = this.nodes.collect(Vector).map((n) -> n.id).join(", ");
+    `CGNodes[${nodes}]`
   }
 
   static fun singleton(node: CGNode): this {
