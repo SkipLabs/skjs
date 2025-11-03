@@ -450,18 +450,19 @@ class DefMap{
   builtinsFileName: FileName,
 } extends IDefMap {
   private fun notFound<T>(defName: PString): T {
-    error(ParsingError(EPRange(defName.pos), NotFound(defName.toString())))
+    error(ParsingError(EPRange(defName.getPos()), NotFound(defName.toString())))
   }
 
   fun getType(context: mutable S.Context, name: PString): DefMapType {
-    for (def in this.get(context, FileName::create(name.pos.fileName), name)) {
+    pos = name.getPos();
+    for (def in this.get(context, FileName::create(pos.fileName), name)) {
       def.value match {
       | td @ TypeDef _ -> return TDType(td)
       | c @ Class _ -> return TDClass(c)
       | _ -> void
       }
     };
-    typingError(Array[(name.pos, "Unbound name")])
+    typingError(Array[(pos, "Unbound name")])
   }
 
   fun get(

@@ -31,6 +31,10 @@ base class PString private (
 
   fun withPos(pos: PosRange): this;
 
+  fun getPos(): PosRange {
+    this.pos
+  }
+
   fun dot(other: PString): PString {
     PStringAny(this.pos.extend(other.pos), `${this.value}.${other.value}`)
   }

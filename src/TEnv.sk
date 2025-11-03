@@ -87,7 +87,7 @@ class TEnv{
       typingError(
         Array[
           (
-            name.pos,
+            name.getPos(),
             `Too many type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
           ),
         ],
@@ -102,7 +102,7 @@ class TEnv{
           typingError(
             Array[
               (
-                name.pos,
+                name.getPos(),
                 `Not enough type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
               ),
             ],
@@ -118,7 +118,7 @@ class TEnv{
         | STError _ ->
           typingError(
             Array[
-              (name.pos, "Constraint not satisfied"),
+              (name.getPos(), "Constraint not satisfied"),
               (targ.pos, `This is of type: ${targ}`),
               (cstr.pos, `It does not implement: ${cstrTy}`),
             ],
@@ -137,7 +137,8 @@ class TEnv{
   fun getClass(context: mutable SKStore.Context, className: PString): Class {
     tdef = this.defMap.getType(context, className);
     tdef match {
-    | TDType(_) -> typingError(Array[(className.pos, "Expected a class name")])
+    | TDType(_) ->
+      typingError(Array[(className.getPos(), "Expected a class name")])
     | TDClass(ca) -> ca
     };
   }
@@ -148,7 +149,7 @@ class TEnv{
     className: PString,
   ): Array<TType> {
     this.getClass(context, className).tparams.map(tparam -> {
-      tvar = subst.gen(className.pos);
+      tvar = subst.gen(className.getPos());
       ty = TType::var(tvar);
       tparam.constraint match {
       | None() -> ty
@@ -176,7 +177,7 @@ class TEnv{
     c = this.getClass(context, className);
     if (c.tparams.size() != targs.size()) {
       typingError(
-        Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
+        Array[(className.getPos(), `Expected ${c.tparams.size()} parameters`)],
       )
     };
     visitedClasses = SortedSet[];
@@ -200,7 +201,7 @@ class TEnv{
     c = this.getClass(context, className);
     if (c.tparams.size() != targs.size()) {
       typingError(
-        Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
+        Array[(className.getPos(), `Expected ${c.tparams.size()} parameters`)],
       )
     };
     visitedClasses = SortedSet[];
@@ -222,7 +223,7 @@ class TEnv{
     );
     TObject(
       TFields::create(fields.values().collect(Array), indexes.toArray()),
-      className.pos,
+      className.getPos(),
     )
   }
 
@@ -320,12 +321,12 @@ class TEnv{
     targs: Array<TType>,
   ): (this, Class) {
     if (visitedClasses.contains(className.toString())) {
-      typingError(Array[(className.pos, "Cyclic class definition")]);
+      typingError(Array[(className.getPos(), "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.toString());
     defs = this.defMap.get(
       context,
-      FileName::create(className.pos.fileName),
+      FileName::create(className.getPos().fileName),
       className,
     );
     cls = for (def in defs) {
@@ -334,12 +335,12 @@ class TEnv{
       | _ -> void
       }
     } else {
-      typingError(Array[(className.pos, "Unbound class")])
+      typingError(Array[(className.getPos(), "Unbound class")])
     };
     if (targs.size() != 0 && targs.size() != cls.tparams.size()) {
       typingError(
         Array[
-          (className.pos, "Invalid number of type arguments"),
+          (className.getPos(), "Invalid number of type arguments"),
           (cls.name.pos, "Class declaration is here"),
         ],
       )
@@ -800,7 +801,7 @@ class TEnv{
         (keepPos, ty) = this.subst[n.value];
         if (keepPos) ty else ty.withPos(pos)
       } else if (this.forbiddenInsts.contains(n.toString())) {
-        typingError(Array[(n.pos, "Cyclic definition")])
+        typingError(Array[(n.getPos(), "Cyclic definition")])
       } else {
         tdef = this.defMap.getType(context, n);
         tparams = tdef match {
@@ -815,7 +816,7 @@ class TEnv{
           typingError(
             Array[
               (
-                n.pos,
+                n.getPos(),
                 `Invalid number of type arguments: given ${targs.size()}, expected ${tparams.size()}`,
               ),
             ],
