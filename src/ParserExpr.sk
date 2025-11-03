@@ -775,7 +775,11 @@ extension class Parser {
       FDNormal(fieldName, this.expr(0))
     | TKComma()
     | TKCloseCurly() ->
-      FDNormal(fieldName, Expr(fieldName.pos, Var(fieldName)))
+      fieldName match {
+      | fName @ Name _ -> FDNormal(fieldName, Expr(fieldName.pos, Var(fName)))
+      | PStringAny _ ->
+        this.error(this.lex.posStart(tok), ExpectedToken(TKColon()))
+      }
     | _ -> this.error(this.lex.posStart(tok), ExpectedTokenNot(TKCloseCurly()))
     }
   }
