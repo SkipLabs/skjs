@@ -427,10 +427,7 @@ extension class Parser {
       tok.kind match {
       | TKDotDotDot() ->
         _ = this.lex.next();
-        !tok = this.lex.next() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-        | Some(x) -> x
-        };
+        spreadName = this.getName();
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           qm = this.lex.next().fromSome();
           Some(PosRange::create(this.lex, qm.posStart, qm.posEnd))
@@ -441,18 +438,7 @@ extension class Parser {
           _ = this.lex.next();
           type = this.type(0);
           result.push(
-            TAFunParam(
-              Some(
-                TAParamSpread(
-                  Name(
-                    PosRange::create(this.lex, tok.posStart, tok.posEnd),
-                    this.lex.getStrTok(tok),
-                  ),
-                ),
-              ),
-              optional,
-              type,
-            ),
+            TAFunParam(Some(TAParamSpread(spreadName)), optional, type),
           );
         } else {
           this.error(this.lex.posStart(tok), UnexpectedToken())
