@@ -822,7 +822,9 @@ class TEnv{
           )
         };
 
-        !this.forbiddenInsts = this.seenInstantiate;
+        if (this.seenInstantiate.contains(n.value)) {
+          !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
+        };
         TType::inst(n, TArgs(targs.map(x -> this.normalize(context, x))))
       }
     | TAUnion(ty1, ty2) ->
