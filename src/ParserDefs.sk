@@ -32,12 +32,12 @@ extension class Parser {
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        PStringAny(
+        PString::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        PStringAny(
+        PString::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
@@ -58,12 +58,12 @@ extension class Parser {
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        PStringAny(
+        PString::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        PStringAny(
+        PString::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
@@ -79,12 +79,12 @@ extension class Parser {
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
-        PStringAny(
+        PString::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'"),
         )
       | TKDoubleQuote() ->
-        PStringAny(
+        PString::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
@@ -94,7 +94,7 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
         | Some(x) -> x
         };
-        PStringAny(
+        PString::create(
           PosRange::create(this.lex, start, nbr.posEnd),
           "-" + this.lex.getStrTok(nbr),
         )

@@ -501,12 +501,20 @@ class DefMap{
       newDefName = arr.slice(1, arr.size()).join(".");
       fileDefs.importedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.get(context, fileName, PStringAny(defName.pos, newDefName))
+        return this.get(
+          context,
+          fileName,
+          PString::create(defName.pos, newDefName),
+        )
       | None() -> void
       };
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.get(context, fileName, PStringAny(defName.pos, newDefName))
+        return this.get(
+          context,
+          fileName,
+          PString::create(defName.pos, newDefName),
+        )
       | None() -> void
       };
       fileDefs.namespaces.maybeGet(moduleName) match {
@@ -514,7 +522,7 @@ class DefMap{
         return this.getInDefs(
           context,
           fileName,
-          PStringAny(defName.pos, newDefName),
+          PString::create(defName.pos, newDefName),
         )
       | None() -> void
       };
@@ -523,7 +531,7 @@ class DefMap{
         return this.getInDefs(
           context,
           fileName,
-          PStringAny(defName.pos, newDefName),
+          PString::create(defName.pos, newDefName),
         )
       | None() -> void
       };
@@ -532,7 +540,7 @@ class DefMap{
         return this.get(
           context,
           newFileName,
-          PStringAny(defName.pos, origName + newDefName),
+          PString::create(defName.pos, origName + newDefName),
         )
       | None() -> void
       };
@@ -541,7 +549,7 @@ class DefMap{
         return this.get(
           context,
           newFileName,
-          PStringAny(defName.pos, origName + newDefName),
+          PString::create(defName.pos, origName + newDefName),
         )
       | None() -> void
       };
@@ -552,7 +560,7 @@ class DefMap{
       return this.getExported(
         context,
         importedFileName,
-        PStringAny(defName.pos, exportedDefName),
+        PString::create(defName.pos, exportedDefName),
       )
     | None() -> void
     };
@@ -620,7 +628,7 @@ class DefMap{
         return this.getExported(
           context,
           fileName,
-          PStringAny(defName.pos, newDefName),
+          PString::create(defName.pos, newDefName),
         )
       | None() -> void
       };
@@ -629,7 +637,7 @@ class DefMap{
         return this.getExported(
           context,
           fileName,
-          PStringAny(defName.pos, newDefName),
+          PString::create(defName.pos, newDefName),
         )
       | None() -> void
       };
@@ -651,7 +659,7 @@ class DefMap{
       return this.getInDefs(
         context,
         fileDefs,
-        PStringAny(defName.pos, defaultName),
+        PString::create(defName.pos, defaultName),
       )
     } else {
       fileDefs.exported.maybeGet(defName.value) match {
@@ -659,7 +667,7 @@ class DefMap{
         return this.getInDefs(
           context,
           fileDefs,
-          PStringAny(defName.pos, asName),
+          PString::create(defName.pos, asName),
         )
       | None() -> void
       };
@@ -668,7 +676,7 @@ class DefMap{
         return this.getExported(
           context,
           newFileName,
-          PStringAny(defName.pos, newDefName),
+          PString::create(defName.pos, newDefName),
         )
       | None() -> void
       }

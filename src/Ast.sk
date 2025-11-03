@@ -16,6 +16,10 @@ base class PString private (
   pos: PosRange,
   value: String,
 ) uses XXHashable, Hashable, Orderable {
+  static overridable fun create(pos: PosRange, value: String): PString {
+    Name::createPString(pos, value)
+  }
+
   fun hash(): Int {
     // Custom hash that excludes position
     this.value.hash()
@@ -30,11 +34,15 @@ class PStringAny() extends PString
 
 // String with no dot
 class Name private () extends PString {
+  static fun createPString(pos: PosRange, value: String): PString {
+    if (value.contains(".")) PStringAny(pos, value) else static(pos, value)
+  }
+
   static fun create(pos: PosRange, value: String): this {
-    if (value.contains(".")) {
-      invariant_violation(`Creating Name with a dot: ${value}`);
-    };
-    static(pos, value)
+    static::createPString(pos, value) match {
+    | name @ Name _ -> name
+    | _ -> invariant_violation(`Creating Name with a dot: ${value}`)
+    }
   }
 }
 

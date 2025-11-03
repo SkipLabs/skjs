@@ -229,7 +229,7 @@ extension class Parser {
       | "abstract" -> TANew(this.type(prec))
       | "new" -> TANew(this.type(prec))
       | className ->
-        name = PStringAny(
+        name: PString = PString::create(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           className,
         );
