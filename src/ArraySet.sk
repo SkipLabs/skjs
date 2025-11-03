@@ -274,6 +274,10 @@ class ArrayValues private (
     XXHash(result)
   }
 
+  fun size(): Int {
+    this.values.size()
+  }
+
   fun singleElt(): ?(PosRange, String) {
     if (this.values.size() == 1) Some(this.values[0]) else None()
   }
