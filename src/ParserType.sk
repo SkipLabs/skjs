@@ -192,10 +192,7 @@ extension class Parser {
             if (this.lex.peekKind() != Some(TKDot())) break void;
             _ = this.lex.next();
             dotName = this.getName();
-            !name = PStringAny(
-              name.pos.extend(dotName.pos),
-              name.value + "." + dotName.value,
-            );
+            !name = name.dot(dotName)
           };
           targs = if (this.lex.peekKind() is Some(TKLessThan())) {
             _ = this.lex.next();
@@ -237,10 +234,7 @@ extension class Parser {
           if (this.lex.peekKind() != Some(TKDot())) break void;
           _ = this.lex.next();
           dotName = this.getName();
-          !name = PStringAny(
-            name.pos.extend(dotName.pos),
-            name.value + "." + dotName.value,
-          );
+          !name = name.dot(dotName)
         };
         targs = if (this.lex.peekKind() is Some(TKLessThan())) {
           _ = this.lex.next();
