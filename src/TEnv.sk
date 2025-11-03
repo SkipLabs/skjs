@@ -726,44 +726,44 @@ class TEnv{
     | TAObject(fields) ->
       (algebraicBranchField, tFields) = this.createTFields(context, fields);
       createObject(pos, algebraicBranchField, tFields)
-    | TAInst(n @ Name(p, "object"), targs) ->
+    | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(n.pos, "Invalid number of type arguments")])
+        typingError(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TObject(TFields::empty(), p))
+      TType::single(TObject(TFields::empty(), pos))
 
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(context, ty)]))
 
-    | TAInst(n @ Name(p, "void"), targs) ->
+    | TAInst(Name(p, "void"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(n.pos, "Invalid number of type arguments")])
+        typingError(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TPrimUnit(TVoid(), p))
-    | TAInst(n @ Name(p, "undefined"), targs) ->
+      TType::single(TPrimUnit(TVoid(), pos))
+    | TAInst(Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(n.pos, "Invalid number of type arguments")])
+        typingError(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TPrimUnit(TUndefined(), p))
-    | TAInst(n @ Name(_, "Promise"), targs) ->
+      TType::single(TPrimUnit(TUndefined(), pos))
+    | TAInst(Name(p, "Promise"), targs) ->
       if (targs.size() != 1) {
-        typingError(Array[(n.pos, "Invalid number of type arguments")])
+        typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPromise(this.normalize(context, targs[0]), pos))
     | TAInst(Name(p, "unknown"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };
-      TType::top(p)
-    | TAInst(Name(_, "never"), targs) ->
+      TType::top(pos)
+    | TAInst(Name(p, "never"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(pos, "Invalid number of type arguments")])
+        typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::bottom(pos)
-    | TAInst(Name(_, x @ "true"), targs)
-    | TAInst(Name(_, x @ "false"), targs) ->
+    | TAInst(Name(p, x @ "true"), targs)
+    | TAInst(Name(p, x @ "false"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(pos, "Invalid number of type arguments")])
+        typingError(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
