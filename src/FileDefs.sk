@@ -256,7 +256,9 @@ mutable class FileDefsState{
       this.modules![name.value] = this.createFileDefs(defs)
     | FunDef{name, pos} ->
       fname = name.fromSome() match {
-      | FNNormal(n) -> n.value
+      | FNNormal(n @ Name _) -> n.value
+      | FNNormal(n) ->
+        typingError(Array[(pos, `Invalid name for a toplevel function: ${n}`)])
       | FNSymbol(n) ->
         typingError(
           Array[(pos, `Invalid name for a toplevel function: symbol ${n}`)],
