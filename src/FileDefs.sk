@@ -548,7 +548,7 @@ class DefMap{
       return this.getExported(
         context,
         importedFileName,
-        PString::create(defName.pos, exportedDefName.value),
+        exportedDefName.withPos(defName.pos),
       )
     | None() -> void
     };
