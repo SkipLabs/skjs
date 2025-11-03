@@ -648,11 +648,7 @@ class DefMap{
     } else {
       fileDefs.exported.maybeGet(defName.value) match {
       | Some(asName) ->
-        return this.getInDefs(
-          context,
-          fileDefs,
-          PString::create(defName.pos, asName.value),
-        )
+        return this.getInDefs(context, fileDefs, asName.withPos(defName.pos))
       | None() -> void
       };
       fileDefs.exportedFrom.maybeGet(defName.value) match {
