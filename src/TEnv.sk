@@ -73,10 +73,10 @@ class TEnv{
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
-    if (this.seenInstantiate.contains(name.value)) {
+    if (this.seenInstantiate.contains(name.toString())) {
       return TType::inst(name, targs);
     };
-    !this.seenInstantiate = this.seenInstantiate.set(name.value);
+    !this.seenInstantiate = this.seenInstantiate.set(name.toString());
 
     tdef = this.defMap.getType(subst.context, name);
     clauses = tdef match {
@@ -319,10 +319,10 @@ class TEnv{
     className: PString,
     targs: Array<TType>,
   ): (this, Class) {
-    if (visitedClasses.contains(className.value)) {
+    if (visitedClasses.contains(className.toString())) {
       typingError(Array[(className.pos, "Cyclic class definition")]);
     };
-    !visitedClasses = visitedClasses.set(className.value);
+    !visitedClasses = visitedClasses.set(className.toString());
     defs = this.defMap.get(
       context,
       FileName::create(className.pos.fileName),
@@ -799,7 +799,7 @@ class TEnv{
         };
         (keepPos, ty) = this.subst[n.value];
         if (keepPos) ty else ty.withPos(pos)
-      } else if (this.forbiddenInsts.contains(n.value)) {
+      } else if (this.forbiddenInsts.contains(n.toString())) {
         typingError(Array[(n.pos, "Cyclic definition")])
       } else {
         tdef = this.defMap.getType(context, n);
@@ -822,8 +822,8 @@ class TEnv{
           )
         };
 
-        if (this.seenInstantiate.contains(n.value)) {
-          !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
+        if (this.seenInstantiate.contains(n.toString())) {
+          !this.forbiddenInsts = this.forbiddenInsts.set(n.toString())
         };
         TType::inst(n, TArgs(targs.map(x -> this.normalize(context, x))))
       }

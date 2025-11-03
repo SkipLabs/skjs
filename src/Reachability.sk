@@ -252,7 +252,7 @@ class CallGraph private (
       node.id match {
       | Method(_, class_, fileName, _)
       | Constructor(class_, fileName) ->
-        classIdent = (class_.value, fileName);
+        classIdent = (class_.toString(), fileName);
         if (affectedClasses.contains(classIdent)) {
           affectedCGNodes.insert(node)
         }

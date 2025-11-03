@@ -383,7 +383,7 @@ mutable class TypePp{
           inst match {
           | TSInst(x, targs) ->
             if (i != 0) pp.out(level, margin, " | ");
-            pp.out(level, margin, x.value);
+            pp.out(level, margin, x.toString());
             if (targs.targs.size() != 0) {
               pp.out(level, margin, "<");
               for (j => targ in targs.targs) {
@@ -422,7 +422,7 @@ mutable class TypePp{
           };
           inst match {
           | TSInst(x, targs) ->
-            pp.out(level, margin, x.value);
+            pp.out(level, margin, x.toString());
             if (targs.targs.size() != 0) {
               pp.out(level, margin, "<");
               for (i => targ in targs.targs) {
