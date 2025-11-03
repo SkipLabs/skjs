@@ -644,11 +644,7 @@ class DefMap{
 
     if (defName.value == "default" && fileDefs.default is Some _) {
       defaultName = fileDefs.default.fromSome();
-      return this.getInDefs(
-        context,
-        fileDefs,
-        PString::create(defName.pos, defaultName.value),
-      )
+      return this.getInDefs(context, fileDefs, defaultName.withPos(defName.pos))
     } else {
       fileDefs.exported.maybeGet(defName.value) match {
       | Some(asName) ->
