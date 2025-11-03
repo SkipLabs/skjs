@@ -285,7 +285,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
               (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
               | None() ->
                 internal_error("Unexpected missing value in print-errors")
-              | Some(CheckResult(_, x, y, _)) -> (x, y)
+              | Some(CheckResult(_, x, y, _, _)) -> (x, y)
               };
               errors = mutable Vector[];
               parseErrorOpt match {
@@ -335,6 +335,7 @@ class CheckResult(
   parseError: ?Error,
   errors: Array<Error>,
   callgraph: ?CallGraphFile = None(),
+  classHierarchy: ?ClassHierarchyFile = None(),
 ) extends SKStore.File
 
 class Checker private {
