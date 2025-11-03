@@ -14,7 +14,6 @@ class TypeChecker{
   backtrace: Bool,
   defMap: DefMap,
   tenv: TEnv,
-  callgraph: CallGraph,
   super: ?(CstrType, TType) = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
