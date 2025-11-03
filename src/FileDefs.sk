@@ -256,7 +256,7 @@ mutable class FileDefsState{
       this.modules![name.value] = this.createFileDefs(defs)
     | FunDef{name, pos} ->
       fname = name.fromSome() match {
-      | FNNormal(n @ Name _) -> n.value
+      | FNNormal(n @ Name _) -> n
       | FNNormal(n) ->
         typingError(Array[(pos, `Invalid name for a toplevel function: ${n}`)])
       | FNSymbol(n) ->
@@ -264,12 +264,12 @@ mutable class FileDefsState{
           Array[(pos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
-      if (isDefault) this.!default = Some(fname);
-      if (isExport) this.exported![fname] = fname;
-      if (!this.defs.containsKey(fname)) {
-        this.defs![fname] = mutable Vector[];
+      if (isDefault) this.!default = Some(fname.value);
+      if (isExport) this.exported![fname.value] = fname.value;
+      if (!this.defs.containsKey(fname.value)) {
+        this.defs![fname.value] = mutable Vector[];
       };
-      this.defs[fname].push(def)
+      this.defs[fname.value].push(def)
 
     | VarDefs(k, varDefs) ->
       if (isDefault) {
