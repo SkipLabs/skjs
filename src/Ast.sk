@@ -28,9 +28,15 @@ base class PString private (
   fun toString(): String {
     this.value
   }
+
+  fun withPos(pos: PosRange): this;
 }
 
-class PStringAny() extends PString
+class PStringAny() extends PString {
+  fun withPos(pos: PosRange): this {
+    this with {pos}
+  }
+}
 
 // String with no dot
 class Name private () extends PString {
@@ -43,6 +49,10 @@ class Name private () extends PString {
     | name @ Name _ -> name
     | _ -> invariant_violation(`Creating Name with a dot: ${value}`)
     }
+  }
+
+  fun withPos(pos: PosRange): this {
+    this with {pos}
   }
 }
 

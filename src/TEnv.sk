@@ -552,7 +552,7 @@ class TEnv{
       Type(
         pos,
         TAInst(
-          PStringAny(pos, className.value),
+          className.withPos(pos),
           tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
         ),
       )
