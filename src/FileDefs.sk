@@ -64,7 +64,7 @@ mutable class FileDefsState{
   dirName: DirName,
   importStubs: Array<DirName>,
   importedStar: mutable Set<String> = mutable Set[],
-  importedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
+  importedFrom: mutable Map<String, (Name, FileName)> = mutable Map[],
   importedModulesFrom: mutable Map<String, FileName> = mutable Map[],
   exported: mutable Map<String, Name> = mutable Map[],
   exportedStar: mutable Set<String> = mutable Set[],
@@ -373,14 +373,11 @@ mutable class FileDefsState{
         moduleDefName.asName match {
         | None() ->
           this.importedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
+            moduleDefName.name,
             fileName,
           )
         | Some(asName) ->
-          this.importedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
+          this.importedFrom![asName.value] = (moduleDefName.name, fileName)
         }
       }
     | MName(moduleName, moduleDefNames) ->
@@ -389,14 +386,11 @@ mutable class FileDefsState{
         moduleDefName.asName match {
         | None() ->
           this.importedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
+            moduleDefName.name,
             fileName,
           )
         | Some(asName) ->
-          this.importedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
+          this.importedFrom![asName.value] = (moduleDefName.name, fileName)
         }
       }
     }
@@ -405,7 +399,7 @@ mutable class FileDefsState{
 
 class FileDefs{
   importedStar: Set<String>,
-  importedFrom: Map<String, (String, FileName)>,
+  importedFrom: Map<String, (Name, FileName)>,
   importedModulesFrom: Map<String, FileName>,
   exported: Map<String, Name>,
   exportedStar: Set<String>,
@@ -534,7 +528,7 @@ class DefMap{
         return this.get(
           context,
           newFileName,
-          PString::create(defName.pos, origName + newDefName),
+          PString::create(defName.pos, origName.value + newDefName),
         )
       | None() -> void
       };
@@ -554,7 +548,7 @@ class DefMap{
       return this.getExported(
         context,
         importedFileName,
-        PString::create(defName.pos, exportedDefName),
+        PString::create(defName.pos, exportedDefName.value),
       )
     | None() -> void
     };
