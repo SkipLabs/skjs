@@ -508,8 +508,14 @@ extension class Parser {
     this.lex.getStrTok(tok) match {
     | "declare" ->
       _ = this.lex.next();
-      def = this.defHelper_();
-      Declare(def)
+      this.lex.peek() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+      | Some(nextTok) ->
+        this.defHelper_() match {
+        | def @ Declarable _ -> Declare(def)
+        | _ -> this.error(this.lex.posStart(nextTok), UnexpectedToken())
+        }
+      }
     | "global" ->
       _ = this.lex.next();
       Global(this.defs())

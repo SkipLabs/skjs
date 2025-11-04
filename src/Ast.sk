@@ -62,10 +62,10 @@ base class Def_ uses XXHashable {
     importFrom: ImportName,
   )
   | ImportExpr(Name)
-  | Declare(Def_)
+  | Declare(Declarable)
 }
 
-base class DeclarableDef extends Def_ {
+base class Declarable extends Def_ {
   children =
   | FunDef
   | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}

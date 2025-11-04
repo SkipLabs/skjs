@@ -190,7 +190,6 @@ mutable class FileDefsState{
       | Export(_, x @ Some _, Declare(d @ VarDefs _)) ->
         this.newDef(x, true, Def(def.pos, d))
 
-      | Export(_, _, Declare(Declare _))
       | Export(_, _, ExportNames _)
       | Export(_, _, Global _)
       | Export(_, _, Import _)
@@ -201,20 +200,10 @@ mutable class FileDefsState{
       | Export(_, _, ExportDefault _)
       | Export(_, _, ExportEq _)
       | Export(_, _, ExportImport _)
-      | Export(_, _, Declare(ExportNames _))
-      | Export(_, _, Declare(Global _))
-      | Export(_, _, Declare(Import _))
-      | Export(_, _, Declare(ImportExpr _))
-      | Export(_, _, Declare(ToplevelExpr _))
-      | Export(_, _, Declare(Export _))
-      | Export(_, _, Declare(ExportAs _))
-      | Export(_, _, Declare(ExportDefault _))
-      | Export(_, _, Declare(ExportEq _))
-      | Export(_, _, Declare(ExportImport _)) ->
+      | Export(_, _, Declare(Global _)) ->
         internal_error("Internal error")
 
       | Declare(Global _) -> debug(("TODO declare global"))
-      | Declare _ -> internal_error("TODO rest of declare")
       | ImportExpr _ -> void
       }
     };
