@@ -62,7 +62,7 @@ base class Def_ uses XXHashable {
     importFrom: ImportName,
   )
   | ImportExpr(Name)
-  | Declare(Def_)
+  | Declare(DeclarableDef)
 }
 
 base class DeclarableDef extends Def_ {
