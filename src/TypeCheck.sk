@@ -8,16 +8,29 @@ module SKJS;
 /* Type-checker */
 /***************************************************************************/
 
-class TypeChecker{
+mutable class TypeChecker{
   builtins: Set<String>,
   builtinsFileName: FileName,
   backtrace: Bool,
   defMap: DefMap,
-  tenv: TEnv,
-  super: ?(CstrType, TType) = None(),
-  isAsync: Bool = false,
-  retType: ?TType = None(),
-} {}
+  mutable tenv: TEnv,
+  mutable super: ?(CstrType, TType) = None(),
+  mutable isAsync: Bool = false,
+  mutable retType: ?TType = None(),
+} {
+  readonly fun mclone(): mutable TypeChecker {
+    mutable TypeChecker{
+      builtins => this.builtins,
+      builtinsFileName => this.builtinsFileName,
+      backtrace => this.backtrace,
+      defMap => this.defMap,
+      tenv => this.tenv,
+      super => this.super,
+      isAsync => this.isAsync,
+      retType => this.retType,
+    }
+  }
+}
 
 /***************************************************************************/
 /* Returns true if a statement always is "terminal", meaning if

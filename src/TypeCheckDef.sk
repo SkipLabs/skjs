@@ -1,7 +1,10 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun check(context: mutable SKStore.Context, defs: Array<Def>): Array<Error> {
+  mutable fun check(
+    context: mutable SKStore.Context,
+    defs: Array<Def>,
+  ): Array<Error> {
     errors = mutable Vector[];
     for (def in defs) {
       if (this.backtrace) this.checkDef(context, def) else {
@@ -16,7 +19,7 @@ extension class TypeChecker {
     errors.toArray()
   }
 
-  fun checkDef(context: mutable SKStore.Context, def: Def): void {
+  mutable fun checkDef(context: mutable SKStore.Context, def: Def): void {
     def.value match {
     | ExportImport _ -> notSupported(def.pos)
     | ImportExpr _ -> void
@@ -53,7 +56,7 @@ extension class TypeChecker {
     }
   }
 
-  fun varDefs(
+  mutable fun varDefs(
     context: mutable SKStore.Context,
     kind: VarDefKind,
     varDefs: Array<VarDef>,
@@ -118,7 +121,7 @@ extension class TypeChecker {
     }
   }
 
-  fun typeDef(typeDef: TypeDef): void {
+  readonly fun typeDef(typeDef: TypeDef): void {
     static::checkTypeParams(typeDef.tdefParams)
   }
 

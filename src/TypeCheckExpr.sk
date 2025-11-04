@@ -1,11 +1,11 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun block(
+  mutable fun block(
     tcenv: mutable TCEnv,
     stmts: Array<Stmt>,
     cond: ?(Expr, Bool) = None(),
-  ): readonly Scope {
+  ): mutable Scope {
     scopeCopy = tcenv.scope;
     scope = tcenv.mcreateSubScope{isLoop => false};
     tcenv.!scope = scope;
@@ -20,7 +20,7 @@ extension class TypeChecker {
     scope
   }
 
-  fun bind(
+  mutable fun bind(
     tcenv: mutable TCEnv,
     kind: BindKind,
     pat: Pattern,
@@ -186,7 +186,7 @@ extension class TypeChecker {
     }
   }
 
-  fun bindType(
+  mutable fun bindType(
     pos: PosRange,
     tcenv: mutable TCEnv,
     kind: BindKind,
@@ -219,7 +219,7 @@ extension class TypeChecker {
   /* Typechecks expression  obj.fieldName
              or expression  obj?.fieldName  if optionalChaining is true
        where obj has type objType */
-  fun dot(
+  mutable fun dot(
     tcenv: mutable TCEnv,
     pos: PosRange,
     objType: TType,
@@ -237,7 +237,7 @@ extension class TypeChecker {
 
      Try to keep in synch with TEnv#keyOfType
   */
-  fun get(
+  mutable fun get(
     tcenv: mutable TCEnv,
     pos: PosRange,
     objType: TType,
@@ -420,7 +420,7 @@ extension class TypeChecker {
     result
   }
 
-  fun nonVoidExpr(pos: PosRange, tcenv: mutable TCEnv, e: Expr): TType {
+  mutable fun nonVoidExpr(pos: PosRange, tcenv: mutable TCEnv, e: Expr): TType {
     ty = this.expr(tcenv, e);
     if (this.nonTopContainsVoid(tcenv, ty)) {
       typingError(
@@ -435,7 +435,13 @@ extension class TypeChecker {
 
   /* Typechecks expression e
      If mostPrecise, use the most precise type. */
-  fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool = false): TType {
+  mutable fun expr(
+    tcenv: mutable TCEnv,
+    e: Expr,
+    mostPrecise: Bool = false,
+  ): TType {
+    retType = this.retType;
+    isAsync = this.isAsync;
     if (mostPrecise) {
       this.asConstExpr(e) match {
       | Some(ty) -> return ty
@@ -444,7 +450,7 @@ extension class TypeChecker {
     };
 
     pos = e.pos;
-    e.value match {
+    ttype = e.value match {
     | Number(_) -> TType::single(TPrimValue::number(pos))
     | BigInt(_) -> TType::single(TPrimValue::bigint(pos))
     | EString(_) -> TType::single(TPrimValue::string(pos))
@@ -1080,10 +1086,13 @@ extension class TypeChecker {
     | Params _ -> paramsError(pos)
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
     | Spread _ -> typingError(Array[(pos, "TODO: ...")])
-    }
+    };
+    this.!retType = retType;
+    this.!isAsync = isAsync;
+    ttype
   }
 
-  fun anonFunction(
+  mutable fun anonFunction(
     tcenv: mutable TCEnv,
     isAsync: ?PosRange,
     pos: PosRange,
@@ -1144,7 +1153,7 @@ extension class TypeChecker {
   }
 
   /* Typechecks expression e as const */
-  fun asConstExpr(e: Expr): ?TType {
+  mutable fun asConstExpr(e: Expr): ?TType {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
@@ -1163,7 +1172,7 @@ extension class TypeChecker {
     }
   }
 
-  fun closure(
+  mutable fun closure(
     tcenv: mutable TCEnv,
     isAsync: ?PosRange,
     params: Array<(Name, TType)>,
@@ -1187,13 +1196,15 @@ extension class TypeChecker {
         retType,
       )
     | CBBlock(bl) ->
-      if (isAsync is Some _) !this.isAsync = true;
-      !this.retType = Some(retType);
-      _ = this.block(tcenv, bl)
+      if (isAsync is Some _) this.!isAsync = true;
+      this.!retType = Some(retType);
+      _ = this.block(tcenv, bl);
+      this.!isAsync = false;
+      this.!retType = None()
     }
   }
 
-  fun callConstructor(
+  mutable fun callConstructor(
     tcenv: mutable TCEnv,
     pos: PosRange,
     cstrType: CstrType,
@@ -1207,7 +1218,12 @@ extension class TypeChecker {
     }
   }
 
-  fun assign(tcenv: mutable TCEnv, pos: PosRange, e1: Expr, e2: Expr): TType {
+  mutable fun assign(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    e1: Expr,
+    e2: Expr,
+  ): TType {
     this.checkLValue(e1);
     e1.value match {
     | Var(n) ->
@@ -1247,7 +1263,7 @@ extension class TypeChecker {
     }
   }
 
-  fun assignLocalObject(
+  mutable fun assignLocalObject(
     tcenv: mutable TCEnv,
     pos: PosRange,
     local: Name,
@@ -1321,7 +1337,7 @@ extension class TypeChecker {
     fieldType
   }
 
-  fun getArrayEltType(tcenv: mutable TCEnv, object: TObject): TType {
+  mutable fun getArrayEltType(tcenv: mutable TCEnv, object: TObject): TType {
     object.fields.maybeGet("pop") match {
     | None() -> typingError(Array[(object.pos, "Expected an Array type")])
     | Some(popMethod) ->
@@ -1341,7 +1357,7 @@ extension class TypeChecker {
     };
   }
 
-  fun getInLhsTypeAndFields(
+  mutable fun getInLhsTypeAndFields(
     tcenv: mutable TCEnv,
     pos: PosRange,
     e1: Expr,
@@ -1378,7 +1394,7 @@ extension class TypeChecker {
     }
   }
 
-  fun call(
+  mutable fun call(
     tcenv: mutable TCEnv,
     pos: PosRange,
     fty: TType,

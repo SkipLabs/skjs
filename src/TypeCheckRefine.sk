@@ -1,7 +1,7 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun evalEquality(
+  mutable fun evalEquality(
     tcenv: mutable TCEnv,
     e1: Expr,
     e2: Expr,
@@ -48,7 +48,7 @@ extension class TypeChecker {
     }
   }
 
-  fun evalAlgebraicBranchEquality(
+  mutable fun evalAlgebraicBranchEquality(
     tcenv: mutable TCEnv,
     local: Name,
     tag: String,
@@ -72,7 +72,7 @@ extension class TypeChecker {
     )
   }
 
-  fun evalTypeofEquality(
+  mutable fun evalTypeofEquality(
     tcenv: mutable TCEnv,
     local: Name,
     typeStr: String,
@@ -160,13 +160,17 @@ extension class TypeChecker {
     }
   }
 
-  fun evalNullEquality(tcenv: mutable TCEnv, local: Name, target: Bool): void {
+  mutable fun evalNullEquality(
+    tcenv: mutable TCEnv,
+    local: Name,
+    target: Bool,
+  ): void {
     this.setLocal(tcenv, local, None(), x ~>
       x is TPrimUnit(TNull(), _) == target
     )
   }
 
-  fun evalUndefinedEquality(
+  mutable fun evalUndefinedEquality(
     tcenv: mutable TCEnv,
     local: Name,
     target: Bool,
@@ -176,7 +180,7 @@ extension class TypeChecker {
     )
   }
 
-  fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
+  mutable fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
     e.value match {
     | Binop(BOStrictEquality(), e1, e2) ->
       this.evalEquality(tcenv, e1, e2, target)
@@ -293,7 +297,7 @@ extension class TypeChecker {
     }
   }
 
-  fun setLocal(
+  mutable fun setLocal(
     tcenv: mutable TCEnv,
     local: Name,
     default: ?SType,

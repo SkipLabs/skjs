@@ -386,7 +386,8 @@ class Checker private {
         parsedFile.value match {
         | PROk(defs) ->
           initCallGraph(context);
-          errors = this.checker.check(context, defs);
+          checker = this.checker.mclone();
+          errors = checker.check(context, defs);
           writer.set(
             fileNameKey,
             CheckResult(

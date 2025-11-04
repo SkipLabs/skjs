@@ -1,7 +1,9 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun class_(context: mutable SKStore.Context, c: Class): void {
+  mutable fun class_(context: mutable SKStore.Context, c: Class): void {
+    tenv = this.tenv;
+    super_ = this.super;
     constructor: ?FunDef = None();
     for (fieldType in c.fields) {
       fieldType match {
@@ -47,7 +49,7 @@ extension class TypeChecker {
         )
       }),
     );
-    !this.tenv = this.tenv.addTParams(subst, c.tparams);
+    this.!tenv = this.tenv.addTParams(subst, c.tparams);
     fileName = c.name.pos.fileName;
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParamWithConstraint(
@@ -80,7 +82,7 @@ extension class TypeChecker {
             parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
           );
           if (!isInterface) {
-            !this.super = Some((superCstr, super));
+            this.!super = Some((superCstr, super));
           };
           tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
           recordClassHierarchy(context, c, ctx ->
@@ -199,16 +201,19 @@ extension class TypeChecker {
         | FunDef _ -> void
         }
       }
-    }
+    };
+    this.!tenv = tenv;
+    this.!super = super_;
   }
 
-  fun constructor(
+  mutable fun constructor(
     subst: mutable Subst,
     thisType: TType,
     partialThisType: TType,
     fd: FunDef,
     className: ?Name,
   ): void {
+    tenv = this.tenv;
     if (fd.retType.i1 is Some _) {
       typingError(
         Array[(fd.retType.i0, "Constructors don't have return types")],
@@ -223,7 +228,7 @@ extension class TypeChecker {
       | None() -> AnonymousFunDef(fd)
       },
     );
-    (!this, tcenv) = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
+    tcenv = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
     tcenv.localObjects!["this"] = LOCanGrow(Some(thisType));
     fd.isAsync match {
     | None() -> void
@@ -245,6 +250,7 @@ extension class TypeChecker {
         fullType,
       )
     };
+    this.!tenv = tenv;
   }
 }
 

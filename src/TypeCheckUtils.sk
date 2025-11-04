@@ -1,7 +1,7 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun isVoid(tcenv: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
+  mutable fun isVoid(tcenv: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
     clauses = ty.expand(tcenv.subst, this.tenv, Covariant());
     for (clause in clauses.clauses) {
       clause.stypes match {
@@ -21,7 +21,7 @@ extension class TypeChecker {
   }
 
   // Returns true if the type is not Top but contains void
-  fun nonTopContainsVoid(tcenv: mutable TCEnv, ty: TType): Bool {
+  mutable fun nonTopContainsVoid(tcenv: mutable TCEnv, ty: TType): Bool {
     clauses = ty.expand(tcenv.subst, this.tenv, Covariant());
     for (clause in clauses.clauses) {
       clause.stypes match {
@@ -73,7 +73,7 @@ extension class TypeChecker {
     }
   }
 
-  fun checkSubType(
+  readonly fun checkSubType(
     tcenv: mutable TCEnv,
     pos: PosRange,
     msg: String,
@@ -106,7 +106,11 @@ extension class TypeChecker {
     }
   }
 
-  fun checkIsVoid(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
+  mutable fun checkIsVoid(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    ty: TType,
+  ): void {
     this.checkSubType(
       tcenv,
       pos,
@@ -127,7 +131,7 @@ extension class TypeChecker {
     }
   }
 
-  fun checkBool(tcenv: mutable TCEnv, e: Expr): void {
+  mutable fun checkBool(tcenv: mutable TCEnv, e: Expr): void {
     this.checkSubType(
       tcenv,
       e.pos,
@@ -137,7 +141,11 @@ extension class TypeChecker {
     );
   }
 
-  fun checkStringifiable(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
+  mutable fun checkStringifiable(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    ty: TType,
+  ): void {
     // Check if the type is a primitive type that can be converted to string
     // Allowed types: string, number, bigint, boolean, null, undefined
     isStringifiable = ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
@@ -167,7 +175,7 @@ extension class TypeChecker {
     }
   }
 
-  fun checkIsNumber(
+  mutable fun checkIsNumber(
     tcenv: mutable TCEnv,
     pos: PosRange,
     msg: String,
@@ -181,7 +189,7 @@ extension class TypeChecker {
     };
   }
 
-  fun checkIsNumeric(
+  mutable fun checkIsNumeric(
     tcenv: mutable TCEnv,
     pos: PosRange,
     msg: String,
@@ -203,18 +211,18 @@ extension class TypeChecker {
     };
   }
 
-  fun makeBoundTVar(tcenv: mutable TCEnv, ty: TType): TType {
+  mutable fun makeBoundTVar(tcenv: mutable TCEnv, ty: TType): TType {
     tvar = tcenv.subst.gen(ty.pos);
     tcenv.subst.grow(this.tenv, tvar, ty, Contravariant());
     TType::var(tvar)
   }
 
-  fun newTVar(tcenv: mutable TCEnv, pos: PosRange): TType {
+  mutable fun newTVar(tcenv: mutable TCEnv, pos: PosRange): TType {
     tvar = tcenv.subst.gen(pos);
     TType::var(tvar)
   }
 
-  fun checkLValue(e: Expr): void {
+  mutable fun checkLValue(e: Expr): void {
     e.value match {
     | Var(Name(_, "super")) -> typingError(Array[(e.pos, "Invalid lvalue")])
     | Var _ -> void

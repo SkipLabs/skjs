@@ -1,7 +1,7 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
+  mutable fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
     st.value match {
     | Break() -> void
     | Continue() -> void
@@ -172,7 +172,7 @@ extension class TypeChecker {
     }
   }
 
-  fun switch(
+  mutable fun switch(
     tcenv: mutable TCEnv,
     e: Expr,
     branches: Array<SwitchBranch>,
@@ -212,7 +212,7 @@ extension class TypeChecker {
     }
   }
 
-  fun switchCheckExhaustiveness(
+  mutable fun switchCheckExhaustiveness(
     tcenv: mutable TCEnv,
     e: Expr,
     branches: Array<SwitchBranch>,
@@ -254,7 +254,11 @@ extension class TypeChecker {
     }
   }
 
-  fun bindLoopVar(tcenv: mutable TCEnv, initStmt: Stmt, varType: TType): void {
+  mutable fun bindLoopVar(
+    tcenv: mutable TCEnv,
+    initStmt: Stmt,
+    varType: TType,
+  ): void {
     initStmt.value match {
     | Bind(kind, bindings) ->
       if (bindings.size() != 1) {
@@ -274,7 +278,7 @@ extension class TypeChecker {
     }
   }
 
-  fun getValueType(
+  mutable fun getValueType(
     tcenv: mutable TCEnv,
     pos: PosRange,
     iterableType: TType,
