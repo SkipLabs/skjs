@@ -904,7 +904,7 @@ extension class Parser {
     };
     fields = mutable Vector<(Name, ?Expr)>[];
     loop {
-      fieldName = this.getNameOrString();
+      fieldName = this.getName();
       fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
         _ = this.lex.next();
         Some(this.expr(0));
