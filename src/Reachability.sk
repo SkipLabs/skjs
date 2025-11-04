@@ -148,25 +148,6 @@ class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
   }
 }
 
-class CallGraphFile(
-  callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
-) extends SKStore.File {
-  fun recordCalls(caller: CGNode, newCallees: CGNodes): this {
-    oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
-    callees = oldCallees.foldl(
-      (nodes, node) -> nodes.set(node),
-      newCallees.nodes,
-    );
-    CallGraphFile(this.callgraph.set(caller, callees.toArray()))
-  }
-
-  fun each(fn: (CGNode, Array<CGNode>) -> void): void {
-    this.callgraph.each(fn)
-  }
-}
-
-const kCallGraphId: String = "/skjs/call-graph/";
-
 const callGraphDirName: SKStore.DirName = SKStore.DirName::create(
   "/call-graph/",
 );
@@ -188,7 +169,7 @@ class CallGraph private (
       context,
       callGraphDirName,
       (_context, writer, _sid, res) ~> {
-        res.first.callgraph.each(cg -> cg.each((k, v) -> writer.setArray(k, v)))
+        res.first.callgraph.each((k, v) -> writer.setArray(k, v))
       },
     );
     depgraph = callgraph.map(
@@ -282,28 +263,6 @@ class CallGraph private (
         SortedSet<String>[],
       )
   }
-}
-
-fun recordCalls(
-  context: mutable SKStore.Context,
-  caller: CGNode,
-  newCallees: CGNodes,
-): void {
-  context.getGlobal(kCallGraphId).map(CallGraphFile::type) match {
-  | Some(callgraph) ->
-    context.setGlobal(kCallGraphId, callgraph.recordCalls(caller, newCallees))
-  | _ -> void
-  }
-}
-
-fun initCallGraph(context: mutable SKStore.Context): void {
-  context.setGlobal(kCallGraphId, CallGraphFile())
-}
-
-fun collectCallGraph(context: mutable SKStore.Context): ?CallGraphFile {
-  inheritance = context.getGlobal(kCallGraphId).map(CallGraphFile::type);
-  context.removeGlobal(kCallGraphId);
-  inheritance
 }
 
 // lifted helper outside of `affectedFiles` for recursion

@@ -17,7 +17,36 @@ mutable class TypeChecker{
   mutable super: ?(CstrType, TType) = None(),
   mutable isAsync: Bool = false,
   mutable retType: ?TType = None(),
+  mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
+  mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
 } {
+  mutable fun recordCalls(caller: CGNode, newCallees: CGNodes): void {
+    oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
+    callees = oldCallees.foldl(
+      (nodes, node) -> nodes.set(node),
+      newCallees.nodes,
+    );
+    this.!callgraph = this.callgraph.set(caller, callees.toArray())
+  }
+
+  mutable fun recordClassHierarchy(child: Class, parent: Class): void {
+    childNode = CHNode(
+      child.name.value,
+      child.kind,
+      child.name.pos.fileName,
+      child.name.pos.symbol,
+    );
+    parentNode = CHNode(
+      parent.name.value,
+      parent.kind,
+      parent.name.pos.fileName,
+      parent.name.pos.symbol,
+    );
+    current = this.classHierarchy.maybeGet(childNode).default(SortedSet[]);
+    new = current.set(parentNode);
+    this.!classHierarchy = this.classHierarchy.set(childNode, new)
+  }
+
   readonly fun mclone(): mutable TypeChecker {
     mutable TypeChecker{
       builtins => this.builtins,
@@ -28,6 +57,8 @@ mutable class TypeChecker{
       super => this.super,
       isAsync => this.isAsync,
       retType => this.retType,
+      callgraph => this.callgraph,
+      classHierarchy => this.classHierarchy,
     }
   }
 }

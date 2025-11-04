@@ -334,8 +334,8 @@ class CheckResult(
   fileName: String,
   parseError: ?Error,
   errors: Array<Error>,
-  callgraph: ?CallGraphFile = None(),
-  classHierarchy: ?ClassHierarchyFile = None(),
+  callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
+  classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
 ) extends SKStore.File
 
 class Checker private {
@@ -385,7 +385,6 @@ class Checker private {
         };
         parsedFile.value match {
         | PROk(defs) ->
-          initCallGraph(context);
           checker = this.checker.mclone();
           errors = checker.check(context, defs);
           writer.set(
@@ -394,7 +393,8 @@ class Checker private {
               fileNameKey.value,
               None(),
               errors,
-              collectCallGraph(context),
+              checker.callgraph,
+              checker.classHierarchy,
             ),
           )
         | PRError(err) ->
