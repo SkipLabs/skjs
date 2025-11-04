@@ -83,6 +83,9 @@ extension class TypeChecker {
             !this.super = Some((superCstr, super));
           };
           tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
+          recordClassHierarchy(context, c, ctx ->
+            this.tenv.getClass(ctx, parentName)
+          );
           this.checkSubType(
             tcenv,
             parentName.pos,
@@ -103,6 +106,9 @@ extension class TypeChecker {
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
         tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
+        recordClassHierarchy(context, c, ctx ->
+          this.tenv.getClass(ctx, parentName)
+        );
         this.checkSubType(
           tcenv,
           parentName.pos,

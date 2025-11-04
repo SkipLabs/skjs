@@ -83,7 +83,7 @@ fun validateParseable(
   checkResult: SKJS.CheckResult,
 ): void {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _) -> (x, y, z)
+  | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
   };
 
   SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
@@ -107,7 +107,7 @@ fun validateTSConformance(
   checkResult: SKJS.CheckResult,
 ): void {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _) -> (x, y, z)
+  | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
   };
 
   SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
@@ -157,7 +157,7 @@ fun validateNotSupported(
   checkResult: SKJS.CheckResult,
 ): void {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _) -> (x, y, z)
+  | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
   };
 
   if (parseErrorOpt is None() && typeErrors.isEmpty()) {

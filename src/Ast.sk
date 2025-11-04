@@ -581,7 +581,7 @@ base class ImportKind uses XXHashable {
   | IKEq()
 }
 
-base class ClassKind uses XXHashable {
+base class ClassKind uses XXHashable, Orderable {
   children =
   | CKInterface()
   | CKClass()

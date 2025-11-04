@@ -4,7 +4,7 @@
 
 module SKJS;
 
-base class SymbolicPos uses Orderable, Hashable {
+base class SymbolicPos uses Orderable, Hashable, XXHashable {
   children =
   | SPTopLevel()
   | SPClass(className: String)
