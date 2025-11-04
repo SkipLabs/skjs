@@ -49,6 +49,24 @@ class Def(pos: PosRange, value: Def_) uses XXHashable
 base class Def_ uses XXHashable {
   children =
   | ToplevelExpr(Expr)
+  | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Expr)
+  | Export(isType: ?PosRange, default: ?PosRange, def: Def_)
+  | ExportDefault(isType: ?PosRange, name: Expr)
+  | ExportEq(e: Expr)
+  | ExportAs(name: Name)
+  | ExportImport(name: Name, expr: Expr)
+  | Import(
+    kind: ImportKind,
+    isType: ?PosRange,
+    ModuleNames,
+    importFrom: ImportName,
+  )
+  | ImportExpr(Name)
+  | Declare(Def_)
+}
+
+base class DeclarableDef extends Def_ {
+  children =
   | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
   | Class{
     kind: ClassKind,
@@ -61,22 +79,8 @@ base class Def_ uses XXHashable {
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
   | Module(name: Name, ?Array<Def>)
-  | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Expr)
-  | Export(isType: ?PosRange, default: ?PosRange, def: Def_)
-  | ExportDefault(isType: ?PosRange, name: Expr)
-  | ExportEq(e: Expr)
-  | ExportAs(name: Name)
-  | ExportImport(name: Name, expr: Expr)
-  | Global(Array<Def>)
-  | Import(
-    kind: ImportKind,
-    isType: ?PosRange,
-    ModuleNames,
-    importFrom: ImportName,
-  )
-  | ImportExpr(Name)
-  | Declare(Def_)
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
+  | Global(Array<Def>)
 }
 
 base class ImportName uses XXHashable {
@@ -126,7 +130,7 @@ class FunDef{
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
   cgNode: ?CGNode,
-} extends Def_, FieldType, Field uses XXHashable
+} extends DeclarableDef, FieldType, Field uses XXHashable
 
 base class FunDefBody uses XXHashable {
   children =
