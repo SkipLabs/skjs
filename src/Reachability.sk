@@ -330,7 +330,7 @@ private fun checkDef(
   | Import _
   | VarDefs _ ->
     void
-  | Declare(d) -> checkDef(d, nodes, classes)
+  | Declare(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Export(_, _, d) -> checkDef(Def(def.pos, d), nodes, classes)
   | ToplevelExpr(_) -> nodes.insert(CGNode::toplevel(def.pos.fileName))
   | fd @ FunDef _ ->
