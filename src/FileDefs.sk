@@ -132,14 +132,14 @@ mutable class FileDefsState{
         | Some(fn) -> this.importNamesFrom(names, fn)
         }
 
-      | Declare(d @ Def(_, TypeDef _))
-      | Declare(d @ Def(_, Class _))
-      | Declare(d @ Def(_, Enum _))
-      | Declare(d @ Def(_, Namespace _))
-      | Declare(d @ Def(_, Module _))
-      | Declare(d @ Def(_, FunDef _))
-      | Declare(d @ Def(_, VarDefs _)) ->
-        this.newDef(None(), false, d)
+      | Declare(d @ TypeDef _)
+      | Declare(d @ Class _)
+      | Declare(d @ Enum _)
+      | Declare(d @ Namespace _)
+      | Declare(d @ Module _)
+      | Declare(d @ FunDef _)
+      | Declare(d @ VarDefs _) ->
+        this.newDef(None(), false, Def(def.pos, d))
       /*
               d match {
               | Module(_, Some(defs)) ->
@@ -172,25 +172,25 @@ mutable class FileDefsState{
       | Export(_, x @ Some _, d @ VarDefs _) ->
         this.newDef(x, true, Def(def.pos, d))
 
-      | Export(_, None(), Declare(d @ Def(_, TypeDef _)))
-      | Export(_, None(), Declare(d @ Def(_, Class _)))
-      | Export(_, None(), Declare(d @ Def(_, Enum _)))
-      | Export(_, None(), Declare(d @ Def(_, Namespace _)))
-      | Export(_, None(), Declare(d @ Def(_, Module _)))
-      | Export(_, None(), Declare(d @ Def(_, FunDef _)))
-      | Export(_, None(), Declare(d @ Def(_, VarDefs _))) ->
-        this.newDef(None(), true, d)
+      | Export(_, None(), Declare(d @ TypeDef _))
+      | Export(_, None(), Declare(d @ Class _))
+      | Export(_, None(), Declare(d @ Enum _))
+      | Export(_, None(), Declare(d @ Namespace _))
+      | Export(_, None(), Declare(d @ Module _))
+      | Export(_, None(), Declare(d @ FunDef _))
+      | Export(_, None(), Declare(d @ VarDefs _)) ->
+        this.newDef(None(), true, Def(def.pos, d))
 
-      | Export(_, x @ Some _, Declare(d @ Def(_, TypeDef _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Class _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Enum _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Namespace _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Module _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, FunDef _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, VarDefs _))) ->
-        this.newDef(x, true, d)
+      | Export(_, x @ Some _, Declare(d @ TypeDef _))
+      | Export(_, x @ Some _, Declare(d @ Class _))
+      | Export(_, x @ Some _, Declare(d @ Enum _))
+      | Export(_, x @ Some _, Declare(d @ Namespace _))
+      | Export(_, x @ Some _, Declare(d @ Module _))
+      | Export(_, x @ Some _, Declare(d @ FunDef _))
+      | Export(_, x @ Some _, Declare(d @ VarDefs _)) ->
+        this.newDef(x, true, Def(def.pos, d))
 
-      | Export(_, _, Declare(Def(_, Declare _)))
+      | Export(_, _, Declare(Declare _))
       | Export(_, _, ExportNames _)
       | Export(_, _, Global _)
       | Export(_, _, Import _)
@@ -201,19 +201,19 @@ mutable class FileDefsState{
       | Export(_, _, ExportDefault _)
       | Export(_, _, ExportEq _)
       | Export(_, _, ExportImport _)
-      | Export(_, _, Declare(Def(_, ExportNames _)))
-      | Export(_, _, Declare(Def(_, Global _)))
-      | Export(_, _, Declare(Def(_, Import _)))
-      | Export(_, _, Declare(Def(_, ImportExpr _)))
-      | Export(_, _, Declare(Def(_, ToplevelExpr _)))
-      | Export(_, _, Declare(Def(_, Export _)))
-      | Export(_, _, Declare(Def(_, ExportAs _)))
-      | Export(_, _, Declare(Def(_, ExportDefault _)))
-      | Export(_, _, Declare(Def(_, ExportEq _)))
-      | Export(_, _, Declare(Def(_, ExportImport _))) ->
+      | Export(_, _, Declare(ExportNames _))
+      | Export(_, _, Declare(Global _))
+      | Export(_, _, Declare(Import _))
+      | Export(_, _, Declare(ImportExpr _))
+      | Export(_, _, Declare(ToplevelExpr _))
+      | Export(_, _, Declare(Export _))
+      | Export(_, _, Declare(ExportAs _))
+      | Export(_, _, Declare(ExportDefault _))
+      | Export(_, _, Declare(ExportEq _))
+      | Export(_, _, Declare(ExportImport _)) ->
         internal_error("Internal error")
 
-      | Declare(Def(_, Global _)) -> debug(("TODO declare global"))
+      | Declare(Global _) -> debug(("TODO declare global"))
       | Declare _ -> internal_error("TODO rest of declare")
       | ImportExpr _ -> void
       }

@@ -75,7 +75,7 @@ base class Def_ uses XXHashable {
     importFrom: ImportName,
   )
   | ImportExpr(Name)
-  | Declare(Def)
+  | Declare(Def_)
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
 }
 

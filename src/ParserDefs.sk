@@ -508,7 +508,7 @@ extension class Parser {
     this.lex.getStrTok(tok) match {
     | "declare" ->
       _ = this.lex.next();
-      def = this.def();
+      def = this.defHelper_();
       Declare(def)
     | "global" ->
       _ = this.lex.next();
