@@ -594,7 +594,7 @@ extension class Parser {
         | _ -> void
         };
         // otherwise parse as expr
-        return ExportDefault(None(), this.expr(0))
+        return ExportDefault(this.expr(0))
       };
       isType = if (this.lex.peekStr() is Some("type")) {
         if (
