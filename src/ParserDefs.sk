@@ -578,7 +578,23 @@ extension class Parser {
       };
       isDefault = if (this.lex.peekStr() is Some("default")) {
         _ = this.lex.next();
-        true
+        this.lex.peekStr() match {
+        | Some("function")
+        | Some("class") ->
+          if (
+            this.lex.lookAhead(() -> {
+              _ = this.lex.next();
+              this.lex.peekKind() is Some(TKVar())
+            })
+          ) {
+            // Named function or class: parse as def
+            d = this.defHelper_();
+            return Export(None(), true, d)
+          }
+        | _ -> void
+        };
+        // otherwise parse as expr
+        return ExportDefault(None(), this.expr(0))
       } else {
         false
       };
