@@ -89,7 +89,7 @@ mutable class FileDefsState{
       | Module _
       | FunDef _
       | VarDefs _ ->
-        this.newDef(None(), false, def)
+        this.newDef(false, false, def)
       | ExportNames(_, names, None()) -> this.exportNames(names)
       | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
         fn = resolveName(
@@ -139,13 +139,13 @@ mutable class FileDefsState{
       | Declare(d @ Module _)
       | Declare(d @ FunDef _)
       | Declare(d @ VarDefs _) ->
-        this.newDef(None(), false, Def(def.pos, d))
+        this.newDef(false, false, Def(def.pos, d))
       /*
               d match {
               | Module(_, Some(defs)) ->
                 for (moduleDef in defs) {
                   this.newDef(
-                    None(),
+                    false,
                     false,
                     moduleDef,
                   );
@@ -161,7 +161,7 @@ mutable class FileDefsState{
       | Export(_, defaultPos, d @ Module _)
       | Export(_, defaultPos, d @ FunDef _)
       | Export(_, defaultPos, d @ VarDefs _) ->
-        this.newDef(defaultPos, true, Def(def.pos, d))
+        this.newDef(defaultPos.isSome(), true, Def(def.pos, d))
 
       | Export(_, defaultPos, Declare(d @ TypeDef _))
       | Export(_, defaultPos, Declare(d @ Class _))
@@ -170,7 +170,7 @@ mutable class FileDefsState{
       | Export(_, defaultPos, Declare(d @ Module _))
       | Export(_, defaultPos, Declare(d @ FunDef _))
       | Export(_, defaultPos, Declare(d @ VarDefs _)) ->
-        this.newDef(defaultPos, true, Def(def.pos, d))
+        this.newDef(defaultPos.isSome(), true, Def(def.pos, d))
 
       | Export(_, _, ExportNames _)
       | Export(_, _, Global _)
@@ -222,24 +222,24 @@ mutable class FileDefsState{
     state.processDefs(defs)
   }
 
-  mutable fun newDef(isDefault: ?PosRange, isExport: Bool, def: Def): void {
+  mutable fun newDef(isDefault: Bool, isExport: Bool, def: Def): void {
     def.value match {
     | TypeDef{name} ->
-      if (isDefault is Some _) this.!default = Some(name.value);
+      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
       this.defs[name.value].push(def)
     | Class{name} ->
-      if (isDefault is Some _) this.!default = Some(name.value);
+      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
       this.defs[name.value].push(def)
     | Enum(_, name, _) ->
-      if (isDefault is Some _) this.!default = Some(name.value);
+      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
@@ -262,7 +262,7 @@ mutable class FileDefsState{
           Array[(pos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
-      if (isDefault is Some _) this.!default = Some(fname);
+      if (isDefault) this.!default = Some(fname);
       if (isExport) this.exported![fname] = fname;
       if (!this.defs.containsKey(fname)) {
         this.defs![fname] = mutable Vector[];
@@ -270,7 +270,7 @@ mutable class FileDefsState{
       this.defs[fname].push(def)
 
     | VarDefs(k, varDefs) ->
-      if (isDefault is Some _) {
+      if (isDefault) {
         if (varDefs.size() > 1) {
           internal_error("TODO: more than one default");
         };
