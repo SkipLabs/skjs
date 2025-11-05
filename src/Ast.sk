@@ -51,7 +51,7 @@ base class Def_ uses XXHashable {
   | Expr
   | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Expr)
   | Export(isType: ?PosRange, default: Bool, def: Def_)
-  | ExportDefault(Expr)
+  | ExportDefault(ExportDefaultable)
   | ExportEq(e: Expr)
   | ExportAs(name: Name)
   | ExportImport(name: Name, expr: Expr)
@@ -89,6 +89,11 @@ base class ImportName uses XXHashable {
   | INPath(Name)
   | INName(Name)
 }
+
+base class ExportDefaultable extends Def_
+extension class Class extends ExportDefaultable
+extension class FunDef extends ExportDefaultable
+extension class Expr extends ExportDefaultable
 
 /***************************************************************************/
 // <var-def> ::= <pattern> (: <type>)? (= <expr>)?

@@ -578,7 +578,7 @@ extension class Parser {
       };
       if (this.lex.peekStr() is Some("default")) {
         _ = this.lex.next();
-        this.lex.peekStr() match {
+        d = this.lex.peekStr() match {
         | Some("function")
         | Some("class") ->
           if (
@@ -588,13 +588,20 @@ extension class Parser {
             })
           ) {
             // Named function or class: parse as def
-            d = this.defHelper_();
-            return Export(None(), true, d)
+            this.defHelper_() match {
+            | d @ ExportDefaultable _ -> d
+            | _ ->
+              internal_error(
+                "function and class should produce ExportDefaultable defs",
+              )
+            }
+          } else {
+            // otherwise parse as expr
+            this.expr(0)
           }
-        | _ -> void
+        | _ -> this.expr(0)
         };
-        // otherwise parse as expr
-        return ExportDefault(this.expr(0))
+        return ExportDefault(d)
       };
       isType = if (this.lex.peekStr() is Some("type")) {
         if (
