@@ -695,7 +695,7 @@ extension class Parser {
     | "let" ->
       _ = this.lex.next();
       this.varDef(VDKLet())
-    | _ -> ToplevelExpr(this.expr(0))
+    | _ -> this.expr(0)
     }
   }
 
