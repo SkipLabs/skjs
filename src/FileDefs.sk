@@ -104,7 +104,7 @@ mutable class FileDefsState{
         };
         this.exportNamesFrom(names, fn)
       | ExportNames _ -> internal_error("TODO: unsupported export")
-      | ExportDefault(_, Expr(_, Var(n))) -> this.!default = Some(n.value)
+      | ExportDefault(Expr(_, Var(n))) -> this.!default = Some(n.value)
       | ExportDefault _ -> internal_error("TODO: unsupported export")
       | ExportEq(v) ->
         v.value match {
