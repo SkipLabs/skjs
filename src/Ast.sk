@@ -48,7 +48,6 @@ class Def(pos: PosRange, value: Def_) uses XXHashable
 
 base class Def_ uses XXHashable {
   children =
-  | ToplevelExpr(Expr)
   | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Expr)
   | Export(isType: ?PosRange, default: Bool, def: Def_)
   | ExportDefault(isType: ?PosRange, name: Expr)
@@ -309,7 +308,7 @@ class CatchClause(
 //   | async <expr>
 /***************************************************************************/
 
-class Expr(pos: PosRange, value: Expr_) uses XXHashable
+class Expr(pos: PosRange, value: Expr_) extends Def_
 
 base class Expr_ uses XXHashable {
   children =

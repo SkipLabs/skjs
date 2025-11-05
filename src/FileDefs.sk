@@ -81,7 +81,7 @@ mutable class FileDefsState{
   mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
     for (def in parsedDefs) {
       def.value match {
-      | ToplevelExpr(_) -> void
+      | Expr _ -> void
       | TypeDef _
       | Class _
       | Enum _
@@ -176,7 +176,7 @@ mutable class FileDefsState{
       | Export(_, _, Global _)
       | Export(_, _, Import _)
       | Export(_, _, ImportExpr _)
-      | Export(_, _, ToplevelExpr _)
+      | Export(_, _, Expr _)
       | Export(_, _, Export _)
       | Export(_, _, ExportAs _)
       | Export(_, _, ExportDefault _)

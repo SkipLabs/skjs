@@ -24,7 +24,7 @@ extension class TypeChecker {
     | ExportAs _ -> notSupported(def.pos)
     | ExportEq _ -> notSupported(def.pos)
     | Module _ -> notSupported(def.pos)
-    | ToplevelExpr(e) ->
+    | e @ Expr _ ->
       subst = Subst::mcreate{context};
       tcenv = TCEnv::mcreate(
         context,
