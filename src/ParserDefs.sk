@@ -630,7 +630,7 @@ extension class Parser {
             _ = this.lex.next();
             Export(
               isType,
-              default,
+              default.isSome(),
               this.anonMethodDef(
                 None(),
                 Modifiers::empty(),
@@ -642,7 +642,7 @@ extension class Parser {
               ),
             )
           } else {
-            Export(isType, default, this.def().value)
+            Export(isType, default.isSome(), this.def().value)
           }
         | Some("async")
         | Some("namespace")
@@ -657,7 +657,7 @@ extension class Parser {
         | Some("abstract")
         | Some("type") ->
           def = this.def();
-          Export(isType, default, def.value)
+          Export(isType, default.isSome(), def.value)
         | _ ->
           if (default is None()) {
             this.error(this.lex.posStart(tok), UnexpectedToken())
