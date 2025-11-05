@@ -154,41 +154,23 @@ mutable class FileDefsState{
               }
       */
 
-      | Export(_, None(), d @ TypeDef _)
-      | Export(_, None(), d @ Class _)
-      | Export(_, None(), d @ Enum _)
-      | Export(_, None(), d @ Namespace _)
-      | Export(_, None(), d @ Module _)
-      | Export(_, None(), d @ FunDef _)
-      | Export(_, None(), d @ VarDefs _) ->
-        this.newDef(None(), true, Def(def.pos, d))
+      | Export(_, defaultPos, d @ TypeDef _)
+      | Export(_, defaultPos, d @ Class _)
+      | Export(_, defaultPos, d @ Enum _)
+      | Export(_, defaultPos, d @ Namespace _)
+      | Export(_, defaultPos, d @ Module _)
+      | Export(_, defaultPos, d @ FunDef _)
+      | Export(_, defaultPos, d @ VarDefs _) ->
+        this.newDef(defaultPos, true, Def(def.pos, d))
 
-      | Export(_, x @ Some _, d @ TypeDef _)
-      | Export(_, x @ Some _, d @ Class _)
-      | Export(_, x @ Some _, d @ Enum _)
-      | Export(_, x @ Some _, d @ Namespace _)
-      | Export(_, x @ Some _, d @ Module _)
-      | Export(_, x @ Some _, d @ FunDef _)
-      | Export(_, x @ Some _, d @ VarDefs _) ->
-        this.newDef(x, true, Def(def.pos, d))
-
-      | Export(_, None(), Declare(d @ TypeDef _))
-      | Export(_, None(), Declare(d @ Class _))
-      | Export(_, None(), Declare(d @ Enum _))
-      | Export(_, None(), Declare(d @ Namespace _))
-      | Export(_, None(), Declare(d @ Module _))
-      | Export(_, None(), Declare(d @ FunDef _))
-      | Export(_, None(), Declare(d @ VarDefs _)) ->
-        this.newDef(None(), true, Def(def.pos, d))
-
-      | Export(_, x @ Some _, Declare(d @ TypeDef _))
-      | Export(_, x @ Some _, Declare(d @ Class _))
-      | Export(_, x @ Some _, Declare(d @ Enum _))
-      | Export(_, x @ Some _, Declare(d @ Namespace _))
-      | Export(_, x @ Some _, Declare(d @ Module _))
-      | Export(_, x @ Some _, Declare(d @ FunDef _))
-      | Export(_, x @ Some _, Declare(d @ VarDefs _)) ->
-        this.newDef(x, true, Def(def.pos, d))
+      | Export(_, defaultPos, Declare(d @ TypeDef _))
+      | Export(_, defaultPos, Declare(d @ Class _))
+      | Export(_, defaultPos, Declare(d @ Enum _))
+      | Export(_, defaultPos, Declare(d @ Namespace _))
+      | Export(_, defaultPos, Declare(d @ Module _))
+      | Export(_, defaultPos, Declare(d @ FunDef _))
+      | Export(_, defaultPos, Declare(d @ VarDefs _)) ->
+        this.newDef(defaultPos, true, Def(def.pos, d))
 
       | Export(_, _, ExportNames _)
       | Export(_, _, Global _)
