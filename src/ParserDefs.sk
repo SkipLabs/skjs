@@ -576,7 +576,7 @@ extension class Parser {
         _ = this.lex.next();
         return ExportEq(this.expr(0));
       };
-      isDefault = if (this.lex.peekStr() is Some("default")) {
+      if (this.lex.peekStr() is Some("default")) {
         _ = this.lex.next();
         this.lex.peekStr() match {
         | Some("function")
@@ -595,8 +595,6 @@ extension class Parser {
         };
         // otherwise parse as expr
         return ExportDefault(None(), this.expr(0))
-      } else {
-        false
       };
       isType = if (this.lex.peekStr() is Some("type")) {
         if (
@@ -629,37 +627,7 @@ extension class Parser {
         ExportNames(isType, names, maybeFrom)
       } else {
         this.lex.peekStr() match {
-        | Some("function") ->
-          if (
-            this.lex.lookAhead(() -> {
-              _ = this.lex.next();
-              this.lex.peekKind() is Some(TKOpenParen()) ||
-                this.lex.peekKind() is Some(TKLessThan())
-            })
-          ) {
-            if (!isDefault) {
-              this.error(
-                this.lex.posStart(tok),
-                NonDefaultAnonymousFunctionExport(),
-              )
-            };
-            _ = this.lex.next();
-            Export(
-              isType,
-              isDefault,
-              this.anonMethodDef(
-                None(),
-                Modifiers::empty(),
-                None(),
-                None(),
-                true,
-                None(),
-                None(),
-              ),
-            )
-          } else {
-            Export(isType, isDefault, this.def().value)
-          }
+        | Some("function")
         | Some("async")
         | Some("namespace")
         | Some("declare")
@@ -673,13 +641,8 @@ extension class Parser {
         | Some("abstract")
         | Some("type") ->
           def = this.def();
-          Export(isType, isDefault, def.value)
-        | _ ->
-          if (!isDefault) {
-            this.error(this.lex.posStart(tok), UnexpectedToken())
-          };
-          e = this.expr(0);
-          ExportDefault(isType, e)
+          Export(isType, false, def.value)
+        | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
         }
       }
     | "async" ->
