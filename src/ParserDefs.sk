@@ -576,6 +576,12 @@ extension class Parser {
         _ = this.lex.next();
         return ExportEq(this.expr(0));
       };
+      default = if (this.lex.peekStr() is Some("default")) {
+        defaultTok = this.lex.next().fromSome();
+        Some(PosRange::create(this.lex, defaultTok.posStart, defaultTok.posEnd))
+      } else {
+        None()
+      };
       isType = if (this.lex.peekStr() is Some("type")) {
         if (
           this.lex.lookAhead(() -> {
@@ -606,12 +612,6 @@ extension class Parser {
         };
         ExportNames(isType, names, maybeFrom)
       } else {
-        default = if (this.lex.peekStr() is Some("default")) {
-          nextTok = this.lex.next().fromSome();
-          Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
-        } else {
-          None()
-        };
         this.lex.peekStr() match {
         | Some("function") ->
           if (

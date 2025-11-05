@@ -32,7 +32,7 @@ value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
 //   | namespace <name> { <def>* }
 //   | module <name> { <def>* }
 //   | export (type? <module-names> from <expr>?)
-//   | export (type? default?) <def>
+//   | export (default? type?) <def>
 //   | export default (type?) <expr>
 //   | export = <expr>
 //   | export as <name>
