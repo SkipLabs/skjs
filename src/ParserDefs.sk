@@ -648,7 +648,7 @@ extension class Parser {
         | Some("abstract")
         | Some("type") ->
           def = this.def();
-          Export(isType, false, def.value)
+          Export(isType, def.value)
         | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
         }
       }
