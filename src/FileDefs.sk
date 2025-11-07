@@ -132,14 +132,7 @@ mutable class FileDefsState{
       | Declare(d) -> this.newDef(false, false, Def(def.pos, d))
 
       | Export(d) -> this.newDef(false, true, Def(def.pos, d))
-
-      | ExportDeclare(d @ TypeDef _)
-      | ExportDeclare(d @ Class _)
-      | ExportDeclare(d @ Enum _)
-      | ExportDeclare(d @ Namespace _)
-      | ExportDeclare(d @ FunDef _)
-      | ExportDeclare(d @ VarDefs _) ->
-        this.newDef(false, true, Def(def.pos, d))
+      | ExportDeclare(d) -> this.newDef(false, true, Def(def.pos, d))
 
       | ImportExpr _ -> internal_error("TODO: import expr")
       }
