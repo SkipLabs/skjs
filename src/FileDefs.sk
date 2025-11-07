@@ -131,13 +131,7 @@ mutable class FileDefsState{
       | Declare(Global _) -> internal_error(("TODO declare global"))
       | Declare(d) -> this.newDef(false, false, Def(def.pos, d))
 
-      | Export(d @ TypeDef _)
-      | Export(d @ Class _)
-      | Export(d @ Enum _)
-      | Export(d @ Namespace _)
-      | Export(d @ FunDef _)
-      | Export(d @ VarDefs _) ->
-        this.newDef(false, true, Def(def.pos, d))
+      | Export(d) -> this.newDef(false, true, Def(def.pos, d))
 
       | ExportDeclare(d @ TypeDef _)
       | ExportDeclare(d @ Class _)
