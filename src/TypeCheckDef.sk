@@ -40,7 +40,9 @@ extension class TypeChecker {
       };
       subst = Subst::mcreate{context};
       this.funDef(subst, None(), fd, cgNode)
-    | Declare _ -> void
+    | Declare _
+    | ExportDeclare _ ->
+      void
     | Namespace _ -> notSupported(def.pos)
     | Export(d) -> this.checkDef(context, Def(def.pos, d))
     | ExportDefault _ -> notSupported(def.pos)

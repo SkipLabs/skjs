@@ -165,16 +165,13 @@ mutable class FileDefsState{
       | Export(d @ VarDefs _) ->
         this.newDef(false, true, Def(def.pos, d))
 
-      | Export(Declare(d @ TypeDef _))
-      | Export(Declare(d @ Class _))
-      | Export(Declare(d @ Enum _))
-      | Export(Declare(d @ Namespace _))
-      | Export(Declare(d @ Module _))
-      | Export(Declare(d @ FunDef _))
-      | Export(Declare(d @ VarDefs _)) ->
+      | ExportDeclare(d @ TypeDef _)
+      | ExportDeclare(d @ Class _)
+      | ExportDeclare(d @ Enum _)
+      | ExportDeclare(d @ Namespace _)
+      | ExportDeclare(d @ FunDef _)
+      | ExportDeclare(d @ VarDefs _) ->
         this.newDef(false, true, Def(def.pos, d))
-
-      | Export(Declare(Global _)) -> internal_error("Internal error")
 
       | Declare(Global _) -> debug(("TODO declare global"))
       | ImportExpr _ -> void
