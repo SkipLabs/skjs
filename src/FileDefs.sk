@@ -107,14 +107,8 @@ mutable class FileDefsState{
     for (def in parsedDefs) {
       def.value match {
       | Expr _ -> void
-      | TypeDef _
-      | Class _
-      | Enum _
-      | Namespace _
-      | Module _
-      | FunDef _
-      | VarDefs _ ->
-        this.newDef(false, false, def)
+      | Global _ -> internal_error("TODO: todo global")
+      | d @ Declarable _ -> this.newDef(false, false, Def(def.pos, d))
       | ExportNames(_, names, None()) -> this.exportNames(names)
       | ExportNames(_, names, Some(mname)) ->
         fn = this.resolveName(mname);
@@ -130,7 +124,6 @@ mutable class FileDefsState{
         }
       | ExportAs _ -> internal_error("TODO export as")
       | ExportImport _ -> internal_error("TODO: exportImport")
-      | Global _ -> internal_error("TODO: todo global")
       | Import(_, names, importName) ->
         fn = this.resolveName(importName);
         this.importNamesFrom(names, fn)
