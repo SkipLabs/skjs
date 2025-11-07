@@ -608,23 +608,13 @@ extension class Parser {
         ExportNames(isType, names, maybeFrom)
       } else {
         invariant(isType is None());
-        this.lex.peekStr() match {
-        | Some("function")
-        | Some("async")
-        | Some("namespace")
-        | Some("declare")
-        | Some("module")
-        | Some("enum")
-        | Some("class")
-        | Some("const")
-        | Some("interface")
-        | Some("let")
-        | Some("var")
-        | Some("abstract")
-        | Some("type") ->
-          def = this.def();
-          Export(def.value)
-        | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
+        this.lex.peek() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+        | Some(nextTok) ->
+          this.defHelper_() match {
+          | def @ Exportable _ -> Export(def)
+          | _ -> this.error(this.lex.posStart(nextTok), UnexpectedToken())
+          }
         }
       }
     | "async" ->

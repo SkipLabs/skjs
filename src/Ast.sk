@@ -51,7 +51,7 @@ base class Def_ uses XXHashable {
   | Expr
   | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Name)
   | ExportDefault(ExportDefaultable)
-  | Export(def: Def_)
+  | Export(def: Exportable)
   | ExportEq(e: Expr)
   | ExportAs(name: Name)
   | ExportImport(name: Name, expr: Expr)
@@ -60,7 +60,7 @@ base class Def_ uses XXHashable {
   | Declare(Declarable)
 }
 
-base class Declarable extends Def_ {
+base class DeclarableAndExportable extends Declarable, Exportable {
   children =
   | FunDef
   | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
@@ -74,10 +74,17 @@ base class Declarable extends Def_ {
   }
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
-  | Module(name: Name, ?Array<Def>)
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
+}
+
+base class Declarable extends Def_ {
+  children =
+  | Module(name: Name, ?Array<Def>)
   | Global(Array<Def>)
 }
+
+base class Exportable extends Def_
+extension class Declare extends Exportable
 
 base class ExportDefaultable extends Def_
 extension class Class extends ExportDefaultable
