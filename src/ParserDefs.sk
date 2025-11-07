@@ -605,7 +605,7 @@ extension class Parser {
         names = this.moduleNames();
         maybeFrom = if (this.lex.isEq("from")) {
           _ = this.lex.next();
-          Some(this.expr(0))
+          Some(this.getString())
         } else {
           None()
         };
