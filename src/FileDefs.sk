@@ -107,12 +107,18 @@ mutable class FileDefsState{
     for (def in parsedDefs) {
       def.value match {
       | Expr _ -> void
-      | Global _ -> internal_error("TODO: todo global")
-      | d @ Declarable _ -> this.newDef(false, false, Def(def.pos, d))
+
+      | d @ Declarable _
+      | Declare(d)
+      | Export(d)
+      | ExportDeclare(d) ->
+        this.newDef(false, true, def.pos, d)
+
       | ExportNames(_, names, None()) -> this.exportNames(names)
       | ExportNames(_, names, Some(mname)) ->
         fn = this.resolveName(mname);
         this.exportNamesFrom(names, fn)
+
       | ExportDefault(Expr(_, Var(n)))
       | ExportEq(Expr(_, Var(n))) ->
         this.!default = Some(n.value)
@@ -120,19 +126,13 @@ mutable class FileDefsState{
       | ExportEq _ ->
         internal_error("TODO: unsupported export")
 
-      | ExportAs _ -> internal_error("TODO export as")
-      | ExportImport _ -> internal_error("TODO: exportImport")
       | Import(_, names, importName) ->
         fn = this.resolveName(importName);
         this.importNamesFrom(names, fn)
 
-      | Declare(Global _) -> internal_error(("TODO declare global"))
-      | Declare(d) -> this.newDef(false, false, Def(def.pos, d))
-
-      | Export(d) -> this.newDef(false, true, Def(def.pos, d))
-      | ExportDeclare(d) -> this.newDef(false, true, Def(def.pos, d))
-
       | ImportExpr _ -> internal_error("TODO: import expr")
+      | ExportAs _ -> internal_error("TODO export as")
+      | ExportImport _ -> internal_error("TODO: exportImport")
       }
     };
     this.toFileDefs()
@@ -168,29 +168,34 @@ mutable class FileDefsState{
     state.processDefs(defs)
   }
 
-  mutable fun newDef(isDefault: Bool, isExport: Bool, def: Def): void {
-    def.value match {
+  mutable fun newDef(
+    isDefault: Bool,
+    isExport: Bool,
+    pos: PosRange,
+    def: Declarable,
+  ): void {
+    def match {
     | TypeDef{name} ->
       if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
+      this.defs[name.value].push(Def(pos, def))
     | Class{name} ->
       if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
+      this.defs[name.value].push(Def(pos, def))
     | Enum(_, name, _) ->
       if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
+      this.defs[name.value].push(Def(pos, def))
     | Namespace(name, defs) ->
       fileDefs = this.createFileDefs(defs);
       if (isExport) {
@@ -200,12 +205,12 @@ mutable class FileDefsState{
       }
     | Module(name, Some(defs)) ->
       this.modules![name.value] = this.createFileDefs(defs)
-    | FunDef{name, pos} ->
+    | FunDef{name, pos => funPos} ->
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
       | FNSymbol(n) ->
         typingError(
-          Array[(pos, `Invalid name for a toplevel function: symbol ${n}`)],
+          Array[(funPos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
       if (isDefault) this.!default = Some(fname);
@@ -213,7 +218,7 @@ mutable class FileDefsState{
       if (!this.defs.containsKey(fname)) {
         this.defs![fname] = mutable Vector[];
       };
-      this.defs[fname].push(def)
+      this.defs[fname].push(Def(pos, def))
 
     | VarDefs(k, varDefs) ->
       if (isDefault) {
@@ -240,7 +245,8 @@ mutable class FileDefsState{
           Def(exportName.pos, VarDefs(k, Array[varDef])),
         );
       }
-    | _ -> internal_error("Internal error: expected a definition")
+    | Global _ -> internal_error("TODO: global")
+    | Module _ -> internal_error("TODO: module")
     }
   }
 
