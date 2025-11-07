@@ -126,11 +126,11 @@ mutable class FileDefsState{
         | Var(n) -> this.!exportEq = Some(n)
         | _ ->
           debug(v);
-          debug("TODO: exportEq other than a name")
+          internal_error("TODO: exportEq other than a name")
         }
-      | ExportAs _ -> void
-      | ExportImport _ -> debug("TODO: exportImport")
-      | Global _ -> debug("TODO: todo global")
+      | ExportAs _ -> internal_error("TODO export as")
+      | ExportImport _ -> internal_error("TODO: exportImport")
+      | Global _ -> internal_error("TODO: todo global")
       | Import(_, names, importName) ->
         fn = this.resolveName(importName);
         this.importNamesFrom(names, fn)
@@ -173,8 +173,8 @@ mutable class FileDefsState{
       | ExportDeclare(d @ VarDefs _) ->
         this.newDef(false, true, Def(def.pos, d))
 
-      | Declare(Global _) -> debug(("TODO declare global"))
-      | ImportExpr _ -> void
+      | Declare(Global _) -> internal_error(("TODO declare global"))
+      | ImportExpr _ -> internal_error("TODO: import expr")
       }
     };
     this.toFileDefs()
