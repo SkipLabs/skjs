@@ -55,12 +55,7 @@ base class Def_ uses XXHashable {
   | ExportEq(e: Expr)
   | ExportAs(name: Name)
   | ExportImport(name: Name, expr: Expr)
-  | Import(
-    kind: ImportKind,
-    isType: ?PosRange,
-    ModuleNames,
-    importFrom: ImportName,
-  )
+  | Import(isType: ?PosRange, ModuleNames, importFrom: ImportName)
   | ImportExpr(Name)
   | Declare(Declarable)
 }
@@ -583,12 +578,6 @@ base class FieldGetSetKind uses XXHashable {
   children =
   | FGet()
   | FSet()
-}
-
-base class ImportKind uses XXHashable {
-  children =
-  | IKFrom()
-  | IKEq()
 }
 
 base class ClassKind uses XXHashable, Orderable {

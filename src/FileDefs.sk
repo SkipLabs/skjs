@@ -116,7 +116,7 @@ mutable class FileDefsState{
       | ExportAs _ -> void
       | ExportImport _ -> debug("TODO: exportImport")
       | Global _ -> debug("TODO: todo global")
-      | Import(_, _, names, importName) ->
+      | Import(_, names, importName) ->
         importName match {
         | INPath(mname) ->
           resolveName(

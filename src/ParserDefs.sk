@@ -549,10 +549,10 @@ extension class Parser {
             if (!importFrom.value.endsWith(".js")) {
               this.error(this.lex.posEnd(), InvalidImport())
             } else {
-              Import(IKFrom(), isType, importNames, INPath(importFrom))
+              Import(isType, importNames, INPath(importFrom))
             }
           } else {
-            Import(IKFrom(), isType, importNames, INName(importFrom))
+            Import(isType, importNames, INName(importFrom))
           }
         } else {
           this.error(this.lex.posEnd(), InvalidImport())
