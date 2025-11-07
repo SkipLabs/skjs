@@ -79,13 +79,24 @@ mutable class FileDefsState{
   mutable exportEq: ?Name = None(),
 } {
   mutable fun resolveName(mname: Name): ?FileName {
-    resolveName(
-      this.context,
-      this.index,
-      this.rootOpt,
-      this.dirName,
-      mname.value,
-    )
+    if (mname.value.startsWith("./") || mname.value.startsWith("../")) {
+      if (!mname.value.endsWith(".js")) {
+        typingError(
+          Array[
+            (mname.pos, "Invalid import: local imports must be from js files"),
+          ],
+        )
+      };
+      resolveName(
+        this.context,
+        this.index,
+        this.rootOpt,
+        this.dirName,
+        mname.value,
+      )
+    } else {
+      resolveStubs(this.importStubs, mname.value)
+    }
   }
 
   mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
@@ -120,24 +131,7 @@ mutable class FileDefsState{
       | ExportImport _ -> debug("TODO: exportImport")
       | Global _ -> debug("TODO: todo global")
       | Import(_, names, importName) ->
-        (if (
-          importName.value.startsWith("./") ||
-          importName.value.startsWith("../")
-        ) {
-          if (!importName.value.endsWith(".js")) {
-            typingError(
-              Array[
-                (
-                  def.pos,
-                  "Invalid import: local imports must be from js files",
-                ),
-              ],
-            )
-          };
-          this.resolveName(importName)
-        } else {
-          resolveStubs(this.importStubs, importName.value)
-        }) match {
+        this.resolveName(importName) match {
         | None() -> void
         | Some(fn) -> this.importNamesFrom(names, fn)
         }
