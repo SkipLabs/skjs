@@ -78,6 +78,16 @@ mutable class FileDefsState{
   defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
+  mutable fun resolveName(mname: Name): ?FileName {
+    resolveName(
+      this.context,
+      this.index,
+      this.rootOpt,
+      this.dirName,
+      mname.value,
+    )
+  }
+
   mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
     for (def in parsedDefs) {
       def.value match {
@@ -92,13 +102,7 @@ mutable class FileDefsState{
         this.newDef(false, false, def)
       | ExportNames(_, names, None()) -> this.exportNames(names)
       | ExportNames(_, names, Some(mname)) ->
-        fn = resolveName(
-          this.context,
-          this.index,
-          this.rootOpt,
-          this.dirName,
-          mname.value,
-        ) match {
+        fn = this.resolveName(mname) match {
         | None() -> continue
         | Some(x) -> x
         };
@@ -130,13 +134,7 @@ mutable class FileDefsState{
               ],
             )
           };
-          resolveName(
-            this.context,
-            this.index,
-            this.rootOpt,
-            this.dirName,
-            importName.value,
-          )
+          this.resolveName(importName)
         } else {
           resolveStubs(this.importStubs, importName.value)
         }) match {
