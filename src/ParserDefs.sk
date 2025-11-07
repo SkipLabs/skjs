@@ -611,6 +611,7 @@ extension class Parser {
         };
         ExportNames(isType, names, maybeFrom)
       } else {
+        invariant(isType is None());
         this.lex.peekStr() match {
         | Some("function")
         | Some("async")
@@ -626,7 +627,7 @@ extension class Parser {
         | Some("abstract")
         | Some("type") ->
           def = this.def();
-          Export(isType, def.value)
+          Export(def.value)
         | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
         }
       }

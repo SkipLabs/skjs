@@ -32,8 +32,8 @@ value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
 //   | namespace <name> { <def>* }
 //   | module <name> { <def>* }
 //   | export (type? <module-names> from <expr>?)
-//   | export (default? type?) <def>
 //   | export default <expr>
+//   | export <def>
 //   | export = <expr>
 //   | export as <name>
 //   | export import <name> = <expr>
@@ -50,8 +50,8 @@ base class Def_ uses XXHashable {
   children =
   | Expr
   | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Name)
-  | Export(isType: ?PosRange, def: Def_)
   | ExportDefault(ExportDefaultable)
+  | Export(def: Def_)
   | ExportEq(e: Expr)
   | ExportAs(name: Name)
   | ExportImport(name: Name, expr: Expr)

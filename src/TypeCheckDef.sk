@@ -42,7 +42,7 @@ extension class TypeChecker {
       this.funDef(subst, None(), fd, cgNode)
     | Declare _ -> void
     | Namespace _ -> notSupported(def.pos)
-    | Export(_, d) -> this.checkDef(context, Def(def.pos, d))
+    | Export(d) -> this.checkDef(context, Def(def.pos, d))
     | ExportDefault _ -> notSupported(def.pos)
     | ExportNames _ -> void
     | Import _ -> void
