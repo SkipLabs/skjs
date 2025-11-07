@@ -78,8 +78,8 @@ mutable class FileDefsState{
   defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
-  mutable fun resolveName(mname: Name): ?FileName {
-    if (mname.value.startsWith("./") || mname.value.startsWith("../")) {
+  mutable fun resolveName(mname: Name): FileName {
+    (if (mname.value.startsWith("./") || mname.value.startsWith("../")) {
       if (!mname.value.endsWith(".js")) {
         typingError(
           Array[
@@ -96,6 +96,10 @@ mutable class FileDefsState{
       )
     } else {
       resolveStubs(this.importStubs, mname.value)
+    }) match {
+    | Some(x) -> x
+    | None() ->
+      typingError(Array[(mname.pos, `Could not find module '${mname}'`)])
     }
   }
 
@@ -113,10 +117,7 @@ mutable class FileDefsState{
         this.newDef(false, false, def)
       | ExportNames(_, names, None()) -> this.exportNames(names)
       | ExportNames(_, names, Some(mname)) ->
-        fn = this.resolveName(mname) match {
-        | None() -> continue
-        | Some(x) -> x
-        };
+        fn = this.resolveName(mname);
         this.exportNamesFrom(names, fn)
       | ExportDefault(Expr(_, Var(n))) -> this.!default = Some(n.value)
       | ExportDefault _ -> internal_error("TODO: unsupported export")
@@ -131,10 +132,8 @@ mutable class FileDefsState{
       | ExportImport _ -> debug("TODO: exportImport")
       | Global _ -> debug("TODO: todo global")
       | Import(_, names, importName) ->
-        this.resolveName(importName) match {
-        | None() -> void
-        | Some(fn) -> this.importNamesFrom(names, fn)
-        }
+        fn = this.resolveName(importName);
+        this.importNamesFrom(names, fn)
 
       | Declare(d @ TypeDef _)
       | Declare(d @ Class _)
