@@ -581,20 +581,16 @@ extension class Parser {
         };
         return ExportDefault(d)
       };
-      isType = if (this.lex.peekStr() is Some("type")) {
-        if (
-          this.lex.lookAhead(() -> {
-            _ = this.lex.next();
-            this.lex.next().map(x -> x.kind) is Some(TKVar()) &&
-              (this.lex.peekKind() is Some(TKAssignment()) ||
-                this.lex.peekKind() is Some(TKLessThan()))
-          })
-        ) {
-          None()
-        } else {
-          nextTok = this.lex.next().fromSome();
-          Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
-        }
+      isType = if (
+        this.lex.isEq("type") &&
+        this.lex.lookAhead(() -> {
+          _ = this.lex.next();
+          this.lex.peekKind() is Some(TKOpenCurly()) ||
+            this.lex.peekKind() is Some(TKMultiplication())
+        })
+      ) {
+        nextTok = this.lex.next().fromSome();
+        Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
       } else {
         None()
       };
