@@ -532,21 +532,10 @@ extension class Parser {
       } else {
         None()
       };
-      if (
-        this.lex.peekKind() is Some(TKDoubleQuote()) ||
-        this.lex.peekKind() is Some(TKQuote())
-      ) {
-        this.error(this.lex.posEnd(), InvalidImport())
-      } else {
-        importNames = this.moduleNames();
-        if (this.lex.isEq("from")) {
-          _ = this.lex.next();
-          importFrom = this.getString();
-          Import(isType, importNames, importFrom)
-        } else {
-          this.error(this.lex.posEnd(), InvalidImport())
-        }
-      }
+      importNames = this.moduleNames();
+      this.expectStr("from");
+      importFrom = this.getString();
+      Import(isType, importNames, importFrom)
     | "export" ->
       _ = this.lex.next();
       if (this.lex.isEq("import")) {
