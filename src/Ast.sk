@@ -55,7 +55,7 @@ base class Def_ uses XXHashable {
   | ExportEq(e: Expr)
   | ExportAs(name: Name)
   | ExportImport(name: Name, expr: Expr)
-  | Import(isType: ?PosRange, ModuleNames, importFrom: ImportName)
+  | Import(isType: ?PosRange, ModuleNames, importFrom: Name)
   | ImportExpr(Name)
   | Declare(Declarable)
 }
@@ -77,12 +77,6 @@ base class Declarable extends Def_ {
   | Module(name: Name, ?Array<Def>)
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
   | Global(Array<Def>)
-}
-
-base class ImportName uses XXHashable {
-  children =
-  | INPath(Name)
-  | INName(Name)
 }
 
 base class ExportDefaultable extends Def_

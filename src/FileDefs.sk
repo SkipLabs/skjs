@@ -117,17 +117,30 @@ mutable class FileDefsState{
       | ExportImport _ -> debug("TODO: exportImport")
       | Global _ -> debug("TODO: todo global")
       | Import(_, names, importName) ->
-        importName match {
-        | INPath(mname) ->
+        (if (
+          importName.value.startsWith("./") ||
+          importName.value.startsWith("../")
+        ) {
+          if (!importName.value.endsWith(".js")) {
+            typingError(
+              Array[
+                (
+                  def.pos,
+                  "Invalid import: local imports must be from js files",
+                ),
+              ],
+            )
+          };
           resolveName(
             this.context,
             this.index,
             this.rootOpt,
             this.dirName,
-            mname.value,
+            importName.value,
           )
-        | INName(mname) -> resolveStubs(this.importStubs, mname.value)
-        } match {
+        } else {
+          resolveStubs(this.importStubs, importName.value)
+        }) match {
         | None() -> void
         | Some(fn) -> this.importNamesFrom(names, fn)
         }
