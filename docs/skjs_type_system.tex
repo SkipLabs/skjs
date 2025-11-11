@@ -789,6 +789,18 @@ We list the small algebra actually used by \texttt{TTypeUnion}, \texttt{Clause::
   \item Functions: $ (A_1\!\to\!B_1) \sqcup_\to (A_2\!\to\!B_2) = (A_1\wedge A_2)\!\to\!(B_1\vee B_2)$ is the \emph{LUB}. The GLB, when defined, is $(A_1\vee A_2)\!\to\!(B_1\wedge B_2)$.
   \item Algebraic (tagged) unions: exact when branches are layout-compatible (Def.~\ref{def:layout-compat}); otherwise we optionalize unmatched fields and union-match shared fields (safe over-approximation).
 \end{itemize}
+
+\paragraph*{Tempting but \emph{invalid} rewrites (explicitly avoided).}
+To prevent classic unsoundnesses, the implementation \emph{does not} apply the following equalities:
+\begin{align*}
+  (A \to C) \wedge (B \to D) &\;\not\equiv\; (A \vee B) \to (C \wedge D) \quad &\text{(overload collapse; see testlets)}\\
+  (A \to C) \vee (B \to C) &\;\not\equiv\; (A \vee B) \to C \quad &\text{(either function $\neq$ one function handling both)}\\
+  (A \vee B) \to C &\;\not\le\; A \to C \quad &\text{(domains are \emph{contra}variant, not covariant)}\\
+  (F_1 \wedge F_2) \vee (G_1 \wedge G_2) &\;\not\equiv\; (F_1 \vee G_1) \wedge (F_2 \vee G_2) \quad &\text{(unsafe factorization)}\\
+  (\forall X.\,S_1) \vee (\forall X.\,S_2) &\;\not\equiv\; \forall X.\,(S_1 \vee S_2) \quad &\text{(mono vs.\ poly confusion)}\\
+\end{align*}
+All five appear in the \emph{Tricky cases and litmus tests} below as short, in-paper TypeScript snippets that demonstrate why these rewrites are disallowed in our normalizer and subtyping.
+
 Only the distribution law that respects Def.~\ref{def:positivity} (positivity) and $\alpha$-normalized binder sets is applied across quantifiers.
 \section{Testing and Behavioral Evidence}
 Evidence that the checker enforces the documented rules comes from:
@@ -905,6 +917,92 @@ type Forall1 = <X>(x: X) => X;
 type Forall2 = <Y>(y: Y) => Y;
 // Unions over clauses keyed by {X} vs {Y} must collide (α-normalized), not duplicate.
 \end{lstlisting}
+
+\paragraph{Tricky: Union in negative (argument) position (contravariance).}
+Domains are \emph{contra}variant; treating them covariantly would be unsound (cf.\ Subtyping and Variance).
+\begin{lstlisting}[language=TypeScript]
+// Contravariance in parameters (safe and unsafe cases)
+type A = { a: number };
+type B = { b: number };
+
+declare const wider: (x: A | B) => string;
+
+// Safe: assign wider-parameter function to narrower-parameter type
+const ok: (x: A) => string = wider;
+
+// UNSAFE if allowed (should be an error):
+const bad: (x: A | B) => string = (x: A) => "a"; // expect-error
+\end{lstlisting}
+
+\paragraph{Tricky: $(A\!\to\!C)\wedge(B\!\to\!D)$ is \emph{not} $(A\vee B)\!\to\!(C\wedge D)$.}
+Overloads remain separate; a single call returns only one branch.
+\begin{lstlisting}[language=TypeScript]
+type Left  = { tag: "L"; l: number };
+type Right = { tag: "R"; r: number };
+
+declare const f: ((s: string) => Left) & ((n: number) => Right);
+declare const x: string | number;
+
+const y = f(x);
+// y cannot be both Left and Right at the same time:
+const both: Left & Right = y; // expect-error
+\end{lstlisting}
+
+\paragraph{Tricky: $(A\!\to\!C)\vee(B\!\to\!C)$ is \emph{not} $(A\vee B)\!\to\!C$.}
+A union of functions is “either function,” not “one function that handles both.”
+\begin{lstlisting}[language=TypeScript]
+declare const u: ((s: string) => number) | ((n: number) => number);
+const g: (x: string | number) => number = u; // expect-error
+\end{lstlisting}
+
+\paragraph{Tricky: unsafe factorization $(F_1\wedge F_2)\vee(G_1\wedge G_2)\not\equiv (F_1\vee G_1)\wedge(F_2\vee G_2)$.}
+\begin{lstlisting}[language=TypeScript]
+type Left  = { tag: "L"; l: number };
+type Right = { tag: "R"; r: number };
+type F = ((s: string) => Left)  & ((n: number) => Right);
+type G = ((s: string) => Right) & ((n: number) => Left);
+
+declare const pick: F | G;
+
+// We cannot assume a single function that satisfies both unions simultaneously:
+const s = pick("x");  // ok: returns Left or Right
+const n = pick(0);    // ok: returns Left or Right
+
+declare const needBoth: (z: Left & Right) => void;
+needBoth(s); // expect-error: result of a single call is not Left & Right
+\end{lstlisting}
+
+\paragraph{Tricky: moving $\forall$ across unions conflates polymorphic with monomorphic choices.}
+$(\forall X.\,X\!\to\!X)\;\not\equiv\;((\texttt{string}\!\to\!\texttt{string})\vee(\texttt{number}\!\to\!\texttt{number}))$.
+\begin{lstlisting}[language=TypeScript]
+type U = ((x: string) => string) | ((x: number) => number);
+declare const u: U;
+
+// Treating u as polymorphic is unsound:
+declare const id: <X>(x: X) => X = u; // expect-error
+\end{lstlisting}
+
+\paragraph{Tricky: control-flow merges use \emph{set} union of behaviors, not the function LUB.}
+The LUB $(A_1\wedge A_2)\to(B_1\vee B_2)$ (\S\;Lemma~1) is an internal compaction, not the meaning of a runtime join.
+\begin{lstlisting}[language=TypeScript]
+declare const f1: (s: string) => "L";
+declare const f2: (n: number) => "R";
+
+const coin: boolean = Math.random() < 0.5;
+const f = coin ? f1 : f2;
+
+// Both of these remain unsafe at the merge:
+f("x");  // expect-error
+f(0);    // expect-error
+\end{lstlisting}
+
+\paragraph{Positive law: $(A\!\to\!C)\wedge(B\!\to\!C)\ \le\ (A\vee B)\!\to\!C$.}
+\begin{lstlisting}[language=TypeScript]
+type Both = ((s: string) => number) & ((n: number) => number);
+declare const both: Both;
+const h: (x: string | number) => number = both; // ok
+\end{lstlisting}
+
 \section{Conclusion}
 SKJS combines a sophisticated Skip-based type representation (DNF types with deferred instances), a pragmatic subtyping and constraint-solving engine, and flow-sensitive refinements to implement a sound TypeScript subset. The repository structure cleanly separates build orchestration, native runtime support, and the Skip frontend. The checker enforces strict coding conventions (explicit annotations, tuple-vs-array semantics, locals-only refinements) while still handling advanced constructs such as algebraic data types, generic classes, and async functions. Its runtime and stub system allow real-world libraries to be analyzed, and its testing strategy couples curated examples with imported conformance suites. Future work includes broadening the supported TypeScript features while maintaining the soundness guarantees encoded in \texttt{TType} and the checker pipeline.
 
