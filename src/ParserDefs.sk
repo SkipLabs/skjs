@@ -602,13 +602,17 @@ extension class Parser {
         this.lex.peekKind() is Some(TKMultiplication())
       ) {
         names = this.moduleNames();
-        if (this.lex.isEq("from")) {
+        fromFollows = this.lex.isEq("from");
+        (names, fromFollows) match {
+        | (MCurly _, false) -> ExportNames(isType, names)
+        | (_, false)
+        | (MName _, _) ->
+          this.error(this.lex.posEnd(), UnexpectedToken())
+        | (_, true) ->
           _ = this.lex.next();
           from = this.getString();
           ExportNamesFrom(isType, names, from)
-        } else {
-          ExportNames(isType, names)
-        };
+        }
       } else {
         invariant(isType is None());
         this.lex.peek() match {
