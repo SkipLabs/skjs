@@ -365,7 +365,7 @@ class DefMap{
   builtinsFileName: FileName,
 } extends IDefMap {
   fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
-    for (def in this.get(context, FileName::create(name.pos.fileName), name)) {
+    for (def in this.getAll(context, name)) {
       def.value match {
       | d @ TypeOnlyDef _ -> return d
       | _ -> void
