@@ -408,47 +408,27 @@ class DefMap{
       newDefName = arr.slice(1, arr.size()).join(".");
       fileDefs.importedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.get(
-          context,
-          fileName,
-          Name(defName.pos, newDefName),
-          result,
-        )
+        this.get(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.get(
-          context,
-          fileName,
-          Name(defName.pos, newDefName),
-          result,
-        )
+        this.get(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.namespaces.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getInDefs(
-          context,
-          fileName,
-          Name(defName.pos, newDefName),
-          result,
-        )
+        this.getInDefs(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.exportedNamespaces.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getInDefs(
-          context,
-          fileName,
-          Name(defName.pos, newDefName),
-          result,
-        )
+        this.getInDefs(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.importedFrom.maybeGet(moduleName) match {
       | Some((origName, newFileName)) ->
-        return this.get(
+        this.get(
           context,
           newFileName,
           Name(defName.pos, origName + newDefName),
@@ -458,7 +438,7 @@ class DefMap{
       };
       fileDefs.exportedFrom.maybeGet(moduleName) match {
       | Some((origName, newFileName)) ->
-        return this.get(
+        this.get(
           context,
           newFileName,
           Name(defName.pos, origName + newDefName),
@@ -470,7 +450,7 @@ class DefMap{
     };
     fileDefs.importedFrom.maybeGet(defName.value) match {
     | Some((exportedDefName, importedFileName)) ->
-      return this.getExported(
+      this.getExported(
         context,
         importedFileName,
         Name(defName.pos, exportedDefName),
@@ -479,7 +459,7 @@ class DefMap{
     | None() -> void
     };
     for (exportedFileName in fileDefs.exportedStar) {
-      return this.getExported(
+      this.getExported(
         context,
         FileName::create(exportedFileName),
         defName,
@@ -487,15 +467,14 @@ class DefMap{
       );
     };
     fileDefs.defs.maybeGet(defName.value) match {
-    | Some(def) -> return result.extend(def)
+    | Some(def) -> result.extend(def)
     | None() -> void
     };
     fileDefs.exportEq match {
     | None() -> void
     | Some(name) ->
       fileDefs.namespaces.maybeGet(name.value) match {
-      | Some(fileName) ->
-        return this.getInDefs(context, fileName, defName, result)
+      | Some(fileName) -> this.getInDefs(context, fileName, defName, result)
       | None() ->
         debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array))
       }
@@ -527,7 +506,7 @@ class DefMap{
       newDefName = arr.slice(1, arr.size()).join(".");
       fileDefs.importedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getExported(
+        this.getExported(
           context,
           fileName,
           Name(defName.pos, newDefName),
@@ -537,7 +516,7 @@ class DefMap{
       };
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getExported(
+        this.getExported(
           context,
           fileName,
           Name(defName.pos, newDefName),
@@ -551,34 +530,23 @@ class DefMap{
     | None() -> void
     | Some(name) ->
       fileDefs.namespaces.maybeGet(name.value) match {
-      | Some(fileName) ->
-        return this.getInDefs(context, fileName, defName, result)
+      | Some(fileName) -> this.getInDefs(context, fileName, defName, result)
       | None() -> debug(fileDefs.exportedNamespaces.containsKey(name.value))
       }
     };
 
     if (defName.value == "default" && fileDefs.default is Some _) {
       defaultName = fileDefs.default.fromSome();
-      return this.getInDefs(
-        context,
-        fileDefs,
-        Name(defName.pos, defaultName),
-        result,
-      )
+      this.getInDefs(context, fileDefs, Name(defName.pos, defaultName), result)
     } else {
       fileDefs.exported.maybeGet(defName.value) match {
       | Some(asName) ->
-        return this.getInDefs(
-          context,
-          fileDefs,
-          Name(defName.pos, asName),
-          result,
-        )
+        this.getInDefs(context, fileDefs, Name(defName.pos, asName), result)
       | None() -> void
       };
       fileDefs.exportedFrom.maybeGet(defName.value) match {
       | Some((newDefName, newFileName)) ->
-        return this.getExported(
+        this.getExported(
           context,
           newFileName,
           Name(defName.pos, newDefName),
@@ -588,7 +556,7 @@ class DefMap{
       }
     };
     for (exportedFileName in fileDefs.exportedStar) {
-      return this.getExported(
+      this.getExported(
         context,
         FileName::create(exportedFileName),
         defName,
