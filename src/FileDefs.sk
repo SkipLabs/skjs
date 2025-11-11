@@ -110,7 +110,7 @@ mutable class FileDefsState{
       | Declare(d)
       | Export(d)
       | ExportDeclare(d) ->
-        this.newDef(false, true, def.pos, d)
+        this.newDef(false, true, d)
 
       | ExportNames(_, names) -> this.exportNames(names)
       | ExportNamesFrom(_, names, mname) ->
@@ -164,12 +164,7 @@ mutable class FileDefsState{
     state.processDefs(defs)
   }
 
-  mutable fun newDef(
-    isDefault: Bool,
-    isExport: Bool,
-    _pos: PosRange,
-    def: Declarable,
-  ): void {
+  mutable fun newDef(isDefault: Bool, isExport: Bool, def: Declarable): void {
     def match {
     | TypeDef{name} ->
       if (isDefault) this.!default = Some(name.value);
