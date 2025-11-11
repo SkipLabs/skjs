@@ -11,3 +11,5 @@ Reactive dialect of JavaScript
 ## Running tests
 
 `skargo test`
+
+test CI
