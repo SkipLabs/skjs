@@ -100,9 +100,11 @@ Both preserve denotations and canonical form (proved later as Lemma~0.a/0.b).
 \begin{lstlisting}[language=TypeScript]
 // Unit and literal primitive singletons
 const emptyPort: null = null;
+// EXPECT-ERROR: Unnecessary 'as const'
 const literalAnswer = 42 as const;
 
 // Tuple constructor
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const pair: [number, string] = [42, "engineers"];
 
 // Promise payloads
@@ -111,6 +113,7 @@ async function fetchFlag(): Promise<boolean> {
 }
 
 // Object with optional field and index signature
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const cache: { hits?: number; [key: string]: number | undefined } = {
   hits: 1,
   miss: undefined,
@@ -120,6 +123,7 @@ const cache: { hits?: number; [key: string]: number | undefined } = {
 type Result<T> =
   | { kind: "success"; data: T }
   | { kind: "error"; message: string };
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const ok: Result<number> = { kind: "success", data: 1 };
 
 // Function overload set (represented as TFuns)
@@ -131,6 +135,7 @@ function length(value: string | unknown[]): number {
 
 // Clause-level union merges compatible payloads
 type WithFlag = { flag: true } | { flag: false; reason: string };
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const denied: WithFlag = { flag: false, reason: "off" };
 \end{lstlisting}
 
@@ -227,11 +232,13 @@ type Animal = { kind: "animal"; legs: number };
 type Dog = Animal & { bark(): void };
 
 declare const spot: Dog;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const asAnimal: Animal = spot;
 // Dog <: Animal because every clause of Dog refines Animal
 
 type Nullable<T> = T | null;
 declare const maybeDog: Nullable<Dog>;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const maybeAnimal: Nullable<Animal> = maybeDog;
 // Union clauses checked individually
 \end{lstlisting}
@@ -250,18 +257,21 @@ type ColoredShape =
   | { kind: "square"; size: number; color: string };
 
 declare const palette: ColoredShape;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const plain: Shape = palette; // Each branch adds extra fields that subtype covariantly
 
 // Object subtyping with optional fields
 type Config = { host: string; port?: number };
 type DerivedConfig = { host: string; port?: number; protocol: "http" | "https" };
 declare const derived: DerivedConfig;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const base: Config = derived;
 
 // Index signature compatibility
 type Cache = { [key: string]: number };
 type ExtendedCache = { [key: string]: number | undefined; hits?: number };
 declare const extended: ExtendedCache;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const cache: Cache = extended; // `undefined` is unioned into the value type
 \end{lstlisting}
 
@@ -274,9 +284,11 @@ type Handler = (input: string) => { ok: true; value: string };
 type WiderHandler = (input: string | number) => { ok: true; value: string };
 
 declare const h: Handler;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const acceptWider: WiderHandler = (input) => ({ ok: true, value: String(input) });
 
 // Contravariance on parameters, covariance on returns
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const delegate: Handler = acceptWider; // OK: accepts a supertype of `string`
 \end{lstlisting}
 
@@ -371,7 +383,9 @@ This dual-phase approach ensures the operator participates in flow analysis rath
 \subsection{Pattern Binding Walkthrough}
 Binding patterns are handled by \texttt{TypeChecker::bind}, which recursively visits tuple and object patterns. Consider the following snippet, inspired by destructuring in \code{tests/expect-error/destructuring.ts}:
 \begin{lstlisting}[language=TypeScript]
+// EXPECT-ERROR: TODO pattern varDef
 const [first, second]: [number, string] = [1, "a"];
+// EXPECT-ERROR: TODO pattern varDef
 const { name, age = 42 }: { name: string; age?: number } = person;
 \end{lstlisting}
 During checking:
@@ -679,6 +693,7 @@ async function fetchValue(flag: boolean): Promise<number | string> {
 type Config =
   | { kind: "file"; path: string }
   | { kind: "http"; url: string };
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const cfg: Config = { kind: "http", url: "https://example.com" };
 \end{lstlisting}
 
@@ -694,8 +709,8 @@ type LUB = (x: number & string) => "n" | "s"; // effectively uncallable; safe up
 // Overloads remain the recommended user-facing form:
 type Read = ((x: number) => "n") & ((x: string) => "s");
 declare const r: Read;
-const a = r(1);      // "n"
-const b = r("one");  // "s"
+const a: "n" = r(1);      // Literal return preserved
+const b: "s" = r("one"); // Literal return preserved
 \end{lstlisting}
 
 \paragraph{ADT layout-divergent union.}
@@ -710,6 +725,7 @@ type U = A | B;
 \begin{lstlisting}[language=TypeScript]
 // Expect: Tree type resolved via least fixed point
 type Tree = { kind: "leaf" } | { kind: "node"; left: Tree; right: Tree };
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const leaf: Tree = { kind: "leaf" };
 \end{lstlisting}
 
@@ -778,7 +794,6 @@ and the remaining constructors (\texttt{TPrimValue}, \texttt{TTuple}, \texttt{TF
   \item $\llbracket \text{TAlgebraic} \rrbracket_\rho$ is the tagged union of its branches, each branch a record with the tag field fixed and remaining fields interpreted covariantly.
 \end{itemize}
 
-% (Redundant old version removed.)
 
 
 \section{Algebra of Unions (laws used in code)}
@@ -802,10 +817,9 @@ To prevent classic unsoundnesses, the implementation \emph{does not} apply the f
 \end{itemize}
 All five appear in the \emph{Tricky cases and litmus tests} below as short, in-paper TypeScript snippets that demonstrate why these rewrites are disallowed in our normalizer and subtyping.
 
-Only the distribution law that respects Def.~\ref{def:positivity} (positivity) and $\alpha$-normalized binder sets is applied across quantifiers.
-\section{Expressivity and Known Gaps}
+\section{Expressivity, Promise Semantics, and Framework Interoperability}
 
-Despite the conservative semantics outlined above, some idioms that are commonplace in everyday TypeScript do not type-check in SKJS yet. The gap stems chiefly from the areas where the checker deliberately under-approximates in order to stay sound. We highlight the most visible instance—lack of promise flattening—and then list other notable differences.
+Despite the conservative semantics outlined above, some idioms that are commonplace in everyday TypeScript do not type-check in SKJS yet. The gap stems chiefly from the areas where the checker deliberately under-approximates in order to stay sound. We highlight the most visible instance—lack of promise flattening—and then list other notable differences. We then revisit function-parameter variance and show how to interoperate safely with popular back-end frameworks that rely on TypeScript's more permissive (bivariant) method checking.
 
 \paragraph{Missing Promise Flattening.}
 JavaScript (and therefore TypeScript) treats promises monadically: any value returned from an \texttt{async} function is wrapped in a single layer of \texttt{Promise}, and \texttt{await} unwraps repeatedly until a non-promise value is produced. SKJS models \texttt{Promise<T>} as the covariant constructor \texttt{TPromise(T)}, but it does not flatten nested payloads. As a result, programs that rely on nested promises type-check in TypeScript but are rejected here.
@@ -821,6 +835,9 @@ declare function showToast(msg: string): void;
 async function showWelcome(): Promise<void> {
   // Both runtimes eventually obtain a string, but SKJS sees Promise<string>.
   const message = await waitForToast;
+  // EXPECT-ERROR: Invalid call
+  // EXPECT-ERROR: This is a Promise
+  // EXPECT-ERROR: It is incompatible with: string
   showToast(message);              // TS: ok  SKJS: rejects
 }
 
@@ -841,8 +858,7 @@ async function reload(): Promise<void> {
 
 Bridging these gaps would require enhancing the type representation (e.g., monadic flattening for \texttt{Promise}, proper union-of-overloads ranking) while maintaining the invariants on which the soundness argument rests. We leave these improvements to future work.
 
-\section{Expressivity and Bivariance in TypeScript: Interfacing with Real Back-End Frameworks}
-\label{sec:expressivity-bivariance}
+\subsection{Bivariance in TypeScript Frameworks}
 
 This section examines how SKJS's \emph{strict contravariance for function parameters} interacts with widely-used TypeScript back-end frameworks whose APIs may exhibit \emph{bivariance} (by design or for historical reasons). We summarize concrete handler signatures from popular frameworks, identify where bivariance actually appears, and provide \emph{binding patterns}---without changing the type system---that make interop precise and practical.
 
@@ -851,10 +867,13 @@ Under \texttt{--strictFunctionTypes}, TypeScript checks \emph{function} paramete
 
 \begin{lstlisting}[language=TypeScript]
 // TS method-parameter bivariance (illustrative unsoundness)
+// EXPECT-ERROR: Forbidden field name 'kind' in a class
 interface Animal { kind: "cat" | "dog" }
+// EXPECT-ERROR: Forbidden field name 'kind' in a class
 interface Dog extends Animal { kind: "dog"; bark(): void }
 
 interface Sink { handle(x: Animal): void }
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const s: Sink = {
   // Allowed in TS because 'handle' is a *method* (checked bivariantly)
   handle(x: Dog) { x.bark(); } // narrower parameter accepted
@@ -869,6 +888,7 @@ SKJS keeps the mathematical rule (contravariance for arrows). Interfacing with A
 \subsection{Survey of common Node/TS back-end APIs (actual code)}
 \paragraph{Express 4/5.} Express request handlers are declared as a \emph{function type alias} (not a method), which means standard contravariant checking applies under \texttt{--strictFunctionTypes}. A representative shape is:\footnote{Excerpt of \texttt{RequestHandler} from published d.ts builds: \url{https://cdn.jsdelivr.net/npm/@umijs/deps@3.4.21/compiled/express/express-serve-static-core/index.d.ts}.}
 \begin{lstlisting}[language=TypeScript]
+// EXPECT-ERROR: Optional type parameters are not supported for classes
 export interface RequestHandler<
   P = core.ParamsDictionary,
   ResBody = any,
@@ -881,11 +901,11 @@ export interface RequestHandler<
    next: NextFunction): void;
 }
 \end{lstlisting}
-\emph{Assessment.} There is no intrinsic reliance on bivariance in the core handler type; SKJS's contravariance matches this. In practice, friction typically comes from \emph{declaration merging} of \texttt{express.Request} to attach fields (e.g.\ \texttt{req.user}) and from overload selection in Express 5 (e.g.\ error middleware arity).\footnote{Express request augmentation example: \url{https://stackoverflow.com/questions/71243903/accessing-middleware-injected-data-in-typescript}. Express 5 overload friction example: \url{https://www.reddit.com/r/node/comments/1gakl3x/how_do_i_resolve_the_below_error_on_express_50/}.in_a/}.}\footnote{Example user report on Express~5 overload errors: \url{https://www.reddit.com/r/node/comments/1gakl3x/how_do_i_resolve_the_below_error_on_express_50/}.}
+\emph{Assessment.} There is no intrinsic reliance on bivariance in the core handler type; SKJS's contravariance matches this. In practice, friction typically comes from \emph{declaration merging} of \texttt{express.Request} to attach fields (e.g.\ \texttt{req.user}) and from overload selection in Express 5 (e.g.\ error middleware arity; see \url{https://stackoverflow.com/questions/71243903/accessing-middleware-injected-data-in-typescript} and \url{https://www.reddit.com/r/node/comments/1gakl3x/how_do_i_resolve_the_below_error_on_express_50/}).
 
-\paragraph{Koa 2.x (+ @types/koa).} Koa middlewares are function types via \texttt{koa-compose}:\footnote{\texttt{@types/koa} (3.0.0) excerpt: \texttt{type Middleware<StateT, ContextT, R = any> = compose.Middleware<ParameterizedContext<StateT, ContextT, R>>}; see \url{https://app.unpkg.com/@types/koa@2.13.8/files/index.d.ts}.} The \texttt{Context} is frequently augmented by middleware (sessions, passport, etc.), and there are known type-coherence issues when multiple packages widen the context differently.\footnote{Router + session examples: \url{https://github.com/koajs/router/issues/39}.}\footnote{DefinitelyTyped incompatibility discussions: \url{https://github.com/DefinitelyTyped/DefinitelyTyped/issues/36161}, \url{https://github.com/DefinitelyTyped/DefinitelyTyped/issues/22568}.} These are not variance problems per se; they are ambient-augmentation and unification problems.
+\paragraph{Koa 2.x (+ @types/koa).} Koa middlewares are function types via \texttt{koa-compose} (see \url{https://app.unpkg.com/@types/koa@2.13.8/files/index.d.ts} for the definition \texttt{type Middleware<StateT, ContextT, R = any> = compose.Middleware<ParameterizedContext<StateT, ContextT, R>>}). The \texttt{Context} is frequently augmented by middleware (sessions, passport, etc.), and there are known type-coherence issues when multiple packages widen the context differently (e.g. router + session: \url{https://github.com/koajs/router/issues/39}; DefinitelyTyped discussions: \url{https://github.com/DefinitelyTyped/DefinitelyTyped/issues/36161}, \url{https://github.com/DefinitelyTyped/DefinitelyTyped/issues/22568}). These are not variance problems per se; they are ambient-augmentation and unification problems.
 
-\paragraph{Fastify 4/5.} Fastify exposes route handlers as function type aliases with rich generics (Body/Query/Params/Reply), e.g.\ \texttt{RouteHandlerMethod<\dots>}, and documents how to thread types through routes and hooks.\footnote{Fastify TypeScript docs: \url{https://fastify.io/docs/latest/Reference/TypeScript/}. Routes: \url{https://fastify.io/docs/latest/Reference/Routes/}.} Community issues often concern handler generic constraints rather than variance.\footnote{E.g.\ extending return type / handler method discussions: \url{https://github.com/fastify/fastify/issues/4685}, and handler incompatibility examples: \url{https://stackoverflow.com/questions/72620384/generics-issue-while-using-fastify-with-typescript}.}
+\paragraph{Fastify 4/5.} Fastify exposes route handlers as function type aliases with rich generics (Body/Query/Params/Reply), e.g.\ \texttt{RouteHandlerMethod<\dots>}, and documents how to thread types through routes and hooks (\url{https://fastify.io/docs/latest/Reference/TypeScript/}, \url{https://fastify.io/docs/latest/Reference/Routes/}). Community issues often concern handler generic constraints rather than variance (e.g. extending return types: \url{https://github.com/fastify/fastify/issues/4685}; handler incompatibility: \url{https://stackoverflow.com/questions/72620384/generics-issue-while-using-fastify-with-typescript}).
 
 \paragraph{NestJS (controllers).} Nest routes are \emph{class methods} decorated with \texttt{@Get()} etc.\footnote{\url{https://docs.nestjs.com/controllers}.} Because these are \emph{methods}, TS's special-case bivariance can mask unsound parameter narrows when relating controller types. In practice Nest relies on runtime pipes/validation to enforce DTO shapes; at the type level, the safest binding for SKJS is to keep domain handlers as arrow functions and let controller methods forward to them (see below).
 
@@ -902,6 +922,8 @@ We catalog concrete, copy-pasteable binding adapters that preserve SKJS soundnes
 
 \paragraph{Express: widen-at-boundary adapter.}
 \begin{lstlisting}[language=TypeScript]
+// EXPECT-ERROR: Could not find module[4]: express
+// EXPECT-ERROR: Type any not found
 import type { Request, Response, NextFunction, RequestHandler } from "express";
 
 // Accept a precise, domain-level handler and adapt it to Express's RequestHandler.
@@ -915,12 +937,15 @@ export function toExpress<P, ResBody, ReqBody, ReqQuery, Locals extends Record<s
 
 // Usage (no bivariance needed):
 type User = { id: string; email: string };
+// EXPECT-ERROR: Missing type annotation
 const getMe = async (req: Request<{id: string}, User, unknown, unknown>) => ({ id: req.params.id, email: "x@y" });
+// EXPECT-ERROR: Type app not found
 app.get("/users/:id", toExpress(getMe));
 \end{lstlisting}
 
 \paragraph{Koa: context-guarding adapter with coherent augmentation.}
 \begin{lstlisting}[language=TypeScript]
+// EXPECT-ERROR: Could not find module[4]: koa
 import type Koa from "koa";
 
 // 1) Augment DefaultContext once, in one module (declaration merging).
@@ -933,6 +958,7 @@ declare module "koa" {
 // 2) Adapter: accept a narrower ctx (with guaranteed 'user') and expose a broad Koa Middleware.
 type AuthedCtx = Koa.ParameterizedContext<Koa.DefaultState, Koa.DefaultContext & { user: { id: string; role: "admin" | "user" } }>;
 
+// EXPECT-ERROR: Missing type annotation
 export const requireUser =
   (h: (ctx: AuthedCtx) => Promise<void>): Koa.Middleware =>
   async (ctx, next) => {
@@ -942,6 +968,7 @@ export const requireUser =
   };
 
 // Usage:
+// EXPECT-ERROR: Type app not found
 app.use(requireUser(async (ctx) => {
   ctx.body = { hello: ctx.user.id };
 }));
@@ -950,6 +977,7 @@ This pattern centralizes the (sound) run-time check and limits \texttt{as}-casts
 
 \paragraph{Fastify: preHandler-based refinement carried into the route.}
 \begin{lstlisting}[language=TypeScript]
+// EXPECT-ERROR: Expected )
 import type { FastifyInstance, FastifyRequest, FastifyReply, RouteShorthandOptions } from "fastify";
 
 declare module "fastify" {
@@ -977,7 +1005,7 @@ export function registerUserRoutes(f: FastifyInstance) {
   );
 }
 \end{lstlisting}
-The key is to \emph{widen at the boundary} (request may or may not have \texttt{user}) and \emph{refine locally} after a checked hook. This avoids relying on bivariant handler assignment while staying faithful to Fastify's function-typed handlers.\footnote{Docs: \url{https://fastify.io/docs/latest/Reference/TypeScript/}, \url{https://fastify.io/docs/latest/Reference/Routes/}. Handler typing discussions: \url{https://github.com/fastify/fastify/issues/4685}, \url{https://stackoverflow.com/questions/72620384/generics-issue-while-using-fastify-with-typescript}.4/generics-issue-while-using-fastify-with-typescript}.}
+The key is to \emph{widen at the boundary} (request may or may not have \texttt{user}) and \emph{refine locally} after a checked hook. This avoids relying on bivariant handler assignment while staying faithful to Fastify's function-typed handlers.
 
 \paragraph{NestJS: arrow-function controllers via adapters.}
 \begin{lstlisting}[language=TypeScript]
@@ -989,6 +1017,7 @@ const getUser: GetUser = async (id) => ({ id });
 import { Controller, Get, Param } from "@nestjs/common";
 
 @Controller("users")
+// EXPECT-ERROR: Unknown character: @ (64)
 export class UsersController {
   constructor(/* inject service with 'getUser' */) {}
   @Get(":id")
@@ -1009,20 +1038,27 @@ Here the domain-level callable retains contravariant arrow semantics; the Nest m
 \begin{lstlisting}[language=TypeScript]
 // (1) Bivariance pitfall vs safe arrow functions
 interface Service { call(x: { a: number } | { b: string }): void }
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const bad: Service = { call(x: { a: number }) { x.a.toFixed() } }; // allowed (method bivariance)
 // Prefer arrows (checked contravariantly):
 type Fn = (x: { a: number } | { b: string }) => void;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const good: Fn = (x: { a: number }) => {}; // ERROR in strict TS (good!)
 
 // (2) Express binding sanity
 type Domain = (req: { params: { id: string } }) => Promise<{ id: string }>;
+// EXPECT-ERROR: Type any not found
 declare const toExpress: <P,Res,Body,Query,L>(h: any) => any;
+// EXPECT-ERROR: Type any not found
 declare const app: { get: (p: string, h: any) => void };
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const d: Domain = async (r) => ({ id: r.params.id });
 app.get("/u/:id", toExpress(d)); // OK
 
 // (3) Koa context coherence
+// EXPECT-ERROR: Type any not found
 declare const requireUser: (h: (ctx: { user: { id: string } }) => Promise<void>) => any;
+// EXPECT-ERROR: Unbound name
 requireUser(async (ctx) => { ctx.user.id; }); // OK
 
 // (4) Fastify hook refinement
@@ -1064,7 +1100,9 @@ type GLB = (x: number | string) => 1 & 2; // reduces to never in TS
 // Overlap + specificity (overload intersection)
 type Over = ((x: number) => "n") & ((x: number | string) => "ns");
 declare const over: Over;
+// EXPECT-ERROR: Missing type annotation
 const a = over(1);        // "n" (more specific)
+// EXPECT-ERROR: Missing type annotation
 const b = over("hi");     // "ns"
 
 // "Wrong GLB" (paper bug example): domain &&, return || is not a GLB.
@@ -1077,8 +1115,10 @@ const b = over("hi");     // "ns"
 type S = { kind: "s"; v: string };
 type T = { kind: "t"; v: string };
 type ST = S | T;
-function f(x: ST) {
-  if (x.kind === "s") x.v.toUpperCase(); // OK
+function f(x: ST): void {
+  if (x.kind === "s") {
+    const upper: string = x.v.toUpperCase(); // OK
+  }
 }
 
 // Not exact (colliding required field types)
@@ -1109,6 +1149,7 @@ async function fetch(flag: boolean): Promise<number | string> {
 }
 declare const pn: Promise<number>;
 declare const ps: Promise<string>;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const pu: Promise<number | string> = fetch(true); // OK
 \end{lstlisting}
 
@@ -1125,6 +1166,7 @@ type O =
   | ((x: { kind: "a"; a: number }) => "A")
   | ((x: { kind: "a" | "b"; a?: number; b?: string }) => "AB");
 declare const o: O;
+// EXPECT-ERROR: Missing type annotation
 const rA = o({ kind: "a", a: 1 }); // expect "A" (more specific)
 \end{lstlisting}
 
@@ -1134,6 +1176,7 @@ type Config =
   | { kind: "file"; path: string }
   | { kind: "http"; url: string };
 
+// EXPECT-ERROR: Missing return type
 function g(c: Config) {
   switch (c.kind) {
     case "file": c.path; break;
@@ -1161,9 +1204,11 @@ type B = { b: number };
 declare const wider: (x: A | B) => string;
 
 // Safe: assign wider-parameter function to narrower-parameter type
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const ok: (x: A) => string = wider;
 
 // UNSAFE if allowed (should be an error):
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const bad: (x: A | B) => string = (x: A) => "a"; // expect-error
 \end{lstlisting}
 
@@ -1176,8 +1221,10 @@ type Right = { tag: "R"; r: number };
 declare const f: ((s: string) => Left) & ((n: number) => Right);
 declare const x: string | number;
 
+// EXPECT-ERROR: Missing type annotation
 const y = f(x);
 // y cannot be both Left and Right at the same time:
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const both: Left & Right = y; // expect-error
 \end{lstlisting}
 
@@ -1185,6 +1232,7 @@ const both: Left & Right = y; // expect-error
 A union of functions is "either function," not "one function that handles both."
 \begin{lstlisting}[language=TypeScript]
 declare const u: ((s: string) => number) | ((n: number) => number);
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const g: (x: string | number) => number = u; // expect-error
 \end{lstlisting}
 
@@ -1198,7 +1246,9 @@ type G = ((s: string) => Right) & ((n: number) => Left);
 declare const pick: F | G;
 
 // We cannot assume a single function that satisfies both unions simultaneously:
+// EXPECT-ERROR: Missing type annotation
 const s = pick("x");  // ok: returns Left or Right
+// EXPECT-ERROR: Missing type annotation
 const n = pick(0);    // ok: returns Left or Right
 
 declare const needBoth: (z: Left & Right) => void;
@@ -1221,11 +1271,16 @@ The LUB $(A_1\wedge A_2)\to(B_1\vee B_2)$ (\S\;Lemma~1) is an internal compactio
 declare const f1: (s: string) => "L";
 declare const f2: (n: number) => "R";
 
+// EXPECT-ERROR: Missing type annotation
 const coin: boolean = Math.random() < 0.5;
 const f = coin ? f1 : f2;
 
 // Both of these remain unsafe at the merge:
+// EXPECT-ERROR: Invalid call
+// EXPECT-ERROR: Type '0 is not a function
 f("x");  // expect-error
+// EXPECT-ERROR: Invalid call
+// EXPECT-ERROR: Type '0 is not a function
 f(0);    // expect-error
 \end{lstlisting}
 
@@ -1233,6 +1288,7 @@ f(0);    // expect-error
 \begin{lstlisting}[language=TypeScript]
 type Both = ((s: string) => number) & ((n: number) => number);
 declare const both: Both;
+// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
 const h: (x: string | number) => number = both; // ok
 \end{lstlisting}
 

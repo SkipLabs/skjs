@@ -1,5 +1,9 @@
 #!/usr/bin/env python3
-"""Extract TypeScript examples from docs/skjs_type_system.tex and type-check them with skjs."""
+"""Extract TypeScript examples from docs/skjs_type_system.tex and type-check them with skjs.
+
+Examples can mark expected failures by adding `// EXPECT-ERROR: <diagnostic substring>`
+comment lines inside the listing. Each listed substring must appear in skjs's output.
+"""
 from __future__ import annotations
 
 import argparse
@@ -16,6 +20,8 @@ SUPPORTED_LANGS = {
     "JavaScript": ".ts",
 }
 
+EXPECT_PREFIX = "// EXPECT-ERROR:"
+
 LISTING_RE = re.compile(
     r"\\begin\{lstlisting\}(?:\[language=(?P<lang>[^\]]+)\])?\s*(?P<body>.*?)\\end\{lstlisting\}",
     re.DOTALL,
@@ -27,6 +33,7 @@ class Example:
     index: int
     language: str
     code: str
+    expected_errors: List[str]
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -64,8 +71,21 @@ def load_examples(tex_path: Path) -> List[Example]:
         body = match.group("body")
         if language not in SUPPORTED_LANGS:
             continue
-        code = body.strip("\n") + "\n"
-        examples.append(Example(index=idx, language=language, code=code))
+        lines = body.splitlines()
+        expected_errors: List[str] = []
+        kept_lines: List[str] = []
+        for line in lines:
+            stripped = line.lstrip()
+            if stripped.startswith(EXPECT_PREFIX):
+                expected_errors.append(stripped[len(EXPECT_PREFIX) :].strip())
+                continue
+            kept_lines.append(line)
+        code = "\n".join(kept_lines).strip("\n")
+        if code:
+            code += "\n"
+        examples.append(
+            Example(index=idx, language=language, code=code, expected_errors=expected_errors)
+        )
     return examples
 
 
@@ -119,6 +139,21 @@ def run_example(
     return proc
 
 
+def evaluate_result(example: Example, proc: subprocess.CompletedProcess) -> List[str]:
+    combined = (proc.stdout or "") + (proc.stderr or "")
+    failure_msgs: List[str] = []
+    if example.expected_errors:
+        if proc.returncode == 0:
+            failure_msgs.append("Expected failure but command succeeded")
+        for msg in example.expected_errors:
+            if msg and msg not in combined:
+                failure_msgs.append(f"Missing expected diagnostic: {msg}")
+    else:
+        if proc.returncode != 0:
+            failure_msgs.append("Unexpected failure")
+    return failure_msgs
+
+
 def main(argv: Optional[Sequence[str]] = None) -> int:
     args = parse_args(argv)
     tex_path: Path = args.tex
@@ -154,10 +189,15 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                 import_stubs_path,
                 args.verbose,
             )
-            if proc.returncode != 0:
-                failures.append((example, proc))
+            failure_msgs = evaluate_result(example, proc)
+            if failure_msgs:
+                failures.append((example, failure_msgs, proc))
+                combined = (proc.stdout or "") + (proc.stderr or "")
                 print(
-                    f"Example #{example.index} ({example.language}) failed:\n{proc.stdout}{proc.stderr}",
+                    f"Example #{example.index} ({example.language}) issues:\n"
+                    + "\n".join(f"  - {msg}" for msg in failure_msgs)
+                    + "\n"
+                    + combined,
                     file=sys.stderr,
                 )
     total = len(examples)
