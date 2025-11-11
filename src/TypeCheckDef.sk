@@ -90,9 +90,17 @@ extension class TypeChecker {
       };
       varDef.pat.value match {
       | PVar _ -> void
-      | PArray _ /* (Array<Pattern>) */
-      | PObject _ /* (Array<(Name, Pattern)>) */ ->
-        internal_error("TODO pattern varDef")
+      | PArray _
+      | PObject _ ->
+        typingError(
+          Array[
+            (
+              varDef.pat.pos,
+              "Construction not supported: top-level const declarations cannot destructure\n" +
+                "Declare a simple const (e.g. `const tmp = ...`) and perform the destructuring inside a block/function.",
+            ),
+          ],
+        )
       };
       e = varDef.value match {
       | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
