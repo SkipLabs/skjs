@@ -323,7 +323,7 @@ class TEnv{
       typingError(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.get(
+    defs = this.defMap.getAll(
       context,
       FileName::create(className.pos.fileName),
       className,

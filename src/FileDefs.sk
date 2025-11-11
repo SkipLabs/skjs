@@ -351,7 +351,7 @@ class FileDefs{
 
 base class IDefMap {
   fun getType(mutable S.Context, Name): TypeOnlyDef;
-  fun get(mutable S.Context, FileName, Name): Array<Def>;
+  fun getAll(mutable S.Context, FileName, Name): Array<Def>;
 }
 
 base class TypeOnlyDef extends Def_
@@ -364,10 +364,6 @@ class DefMap{
   builtins: Set<String>,
   builtinsFileName: FileName,
 } extends IDefMap {
-  private fun notFound<T>(defName: Name): T {
-    error(ParsingError(EPRange(defName.pos), NotFound(defName.value)))
-  }
-
   fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
     for (def in this.get(context, FileName::create(name.pos.fileName), name)) {
       def.value match {
@@ -378,7 +374,19 @@ class DefMap{
     typingError(Array[(name.pos, "Unbound name")])
   }
 
-  fun get(
+  fun getAll(
+    context: mutable S.Context,
+    fileName: FileName,
+    name: Name,
+  ): Array<Def> {
+    this.get(context, fileName, name)
+  }
+
+  private fun notFound<T>(defName: Name): T {
+    error(ParsingError(EPRange(defName.pos), NotFound(defName.value)))
+  }
+
+  private fun get(
     context: mutable S.Context,
     fileName: FileName,
     defName: Name,

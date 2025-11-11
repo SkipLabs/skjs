@@ -470,7 +470,7 @@ extension class TypeChecker {
       };
       tcenv.scope.maybeGet(local) match {
       | None() ->
-        defs = this.defMap.get(
+        defs = this.defMap.getAll(
           tcenv.context,
           FileName::create(local.pos.fileName),
           local,
