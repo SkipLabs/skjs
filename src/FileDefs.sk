@@ -81,7 +81,7 @@ mutable class FileDefsState{
   exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
   mutable default: ?String = None(),
-  modules: mutable Map<String, FileDefs> = mutable Map[],
+  modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
 } {
   mutable fun resolveName(mname: Name): FileName {
@@ -159,7 +159,7 @@ mutable class FileDefsState{
       exportedFrom => this.exportedFrom.chill(),
       exportedModulesFrom => this.exportedModulesFrom.chill(),
       default => this.default,
-      modules => this.modules.chill(),
+      modules => this.modules.map((_, x) -> x.chill()),
       defs => this.defs.map((_, x) -> x.toArray()),
     }
   }
@@ -190,7 +190,8 @@ mutable class FileDefsState{
       if (isExport) mapPush(this.exported, name.value, name.value);
       mapPush(this.defs, name.value, FDNamespace(this.createFileDefs(defs)))
     | Module(name, Some(defs)) ->
-      this.modules![name.value] = this.createFileDefs(defs)
+      invariant(!isExport);
+      mapPush(this.modules, name.value, this.createFileDefs(defs))
     | d @ FunDef{name, pos => funPos} ->
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
@@ -299,7 +300,7 @@ class FileDefs{
   exportedFrom: Map<String, (String, FileName)>,
   exportedModulesFrom: Map<String, FileName>,
   default: ?String,
-  modules: Map<String, FileDefs>,
+  modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   defs: Map<String, Array<FileDef>>,
 } extends S.File {
   static fun create(
@@ -519,8 +520,10 @@ class DefMap{
       );
     };
 
-    for (moduleDefs in fileDefs.modules) {
-      this.getInDefs(context, moduleDefs, defName, result)
+    for (modulesDefs in fileDefs.modules) {
+      for (moduleDefs in modulesDefs) {
+        this.getInDefs(context, moduleDefs, defName, result)
+      }
     }
   }
 }
