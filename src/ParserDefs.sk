@@ -712,15 +712,7 @@ extension class Parser {
         MCurly(names)
       }
     } else {
-      name = this.getName();
-      curlyNames = if (this.lex.peekKind() is Some(TKComma())) {
-        _ = this.lex.next();
-        this.expect(TKOpenCurly());
-        this.curlyNames();
-      } else {
-        Array[]
-      };
-      MName(name, curlyNames);
+      MName(this.getName());
     }
   }
 

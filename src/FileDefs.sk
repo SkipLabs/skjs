@@ -309,22 +309,8 @@ mutable class FileDefsState{
             )
           }
         }
-      | MName(moduleName, moduleDefNames) ->
-        this.importedModulesFrom![moduleName.value] = fileName;
-        for (moduleDefName in moduleDefNames) {
-          moduleDefName.asName match {
-          | None() ->
-            this.importedFrom![moduleDefName.name.value] = (
-              moduleDefName.name.value,
-              fileName,
-            )
-          | Some(asName) ->
-            this.importedFrom![asName.value] = (
-              moduleDefName.name.value,
-              fileName,
-            )
-          }
-        }
+      | MName(moduleName) ->
+        this.importedModulesFrom![moduleName.value] = fileName
       }
     }
   }

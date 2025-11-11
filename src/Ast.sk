@@ -145,7 +145,7 @@ base class FunDefBody uses XXHashable {
 //   | *
 //   | * as <name>
 //   | { <module-def-name>* }
-//   | <name>, { <module-def-name>* }
+//   | <name>
 /***************************************************************************/
 
 base class ModuleNames uses XXHashable {
@@ -153,7 +153,7 @@ base class ModuleNames uses XXHashable {
   | MStar()
   | MStarAs(Name)
   | MCurly(Array<ModuleDefName>)
-  | MName(Name, Array<ModuleDefName>)
+  | MName(Name)
 }
 
 base class ImportModuleNames extends ModuleNames
