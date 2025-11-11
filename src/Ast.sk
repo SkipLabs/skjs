@@ -58,7 +58,7 @@ base class Def_ uses XXHashable {
   | ExportEq(e: Expr)
   | ExportAs(name: Name)
   | ExportImport(name: Name, expr: Expr)
-  | Import(isType: ?PosRange, ImportModuleNames, importFrom: Name)
+  | Import(isType: ?PosRange, Array<ImportModuleNames>, importFrom: Name)
   | ImportExpr(Name)
   | Declare(Declarable)
 }

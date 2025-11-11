@@ -532,13 +532,22 @@ extension class Parser {
       } else {
         None()
       };
-      this.moduleNames() match {
-      | importNames @ ImportModuleNames _ ->
-        this.expectStr("from");
-        importFrom = this.getString();
-        Import(isType, importNames, importFrom)
-      | MStar() -> this.error(this.lex.posEnd(), ExpectedStrNot("as"))
-      }
+      importNamesList = mutable Vector[];
+      loop {
+        importNames = this.moduleNames() match {
+        | MStar() -> this.error(this.lex.posEnd(), ExpectedStrNot("as"))
+        | importNames @ ImportModuleNames _ -> importNames
+        };
+        importNamesList.push(importNames);
+        if (this.lex.peekKind() is Some(TKComma())) {
+          _ = this.lex.next();
+        } else {
+          break void
+        }
+      };
+      this.expectStr("from");
+      importFrom = this.getString();
+      Import(isType, importNamesList.toArray(), importFrom)
     | "export" ->
       _ = this.lex.next();
       if (this.lex.isEq("import")) {
