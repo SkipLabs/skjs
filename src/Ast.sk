@@ -50,7 +50,7 @@ class Def(pos: PosRange, value: Def_) uses XXHashable
 base class Def_ uses XXHashable {
   children =
   | Expr
-  | ExportNames(isType: ?PosRange, ModuleNames)
+  | ExportNames(isType: ?PosRange, MCurly)
   | ExportNamesFrom(isType: ?PosRange, ModuleNames, from: Name)
   | ExportDeclare(Exportable)
   | ExportDefault(ExportDefaultable)

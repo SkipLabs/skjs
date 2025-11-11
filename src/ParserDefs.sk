@@ -604,7 +604,7 @@ extension class Parser {
         names = this.moduleNames();
         fromFollows = this.lex.isEq("from");
         (names, fromFollows) match {
-        | (MCurly _, false) -> ExportNames(isType, names)
+        | (n @ MCurly _, false) -> ExportNames(isType, n)
         | (_, false)
         | (MName _, _) ->
           this.error(this.lex.posEnd(), UnexpectedToken())
