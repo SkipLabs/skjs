@@ -361,10 +361,8 @@ class Checker private {
       files.importStubs,
       parsedFiles,
     );
-    builtinDefs = fileDefsMap.get(context, files.builtinsFileName);
-    builtins = builtinDefs.defs.items().map(x -> x.i0).collect(Set);
     builtinsFileName = files.builtinsFileName;
-    defMap = DefMap{index, fileDefsMap, builtins, builtinsFileName};
+    defMap = DefMap{index, fileDefsMap, builtinsFileName};
     tenv = TEnv{defMap};
     checker = TypeChecker{backtrace, defMap, tenv};
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}

@@ -361,7 +361,6 @@ extension class Class extends TypeOnlyDef
 class DefMap{
   index: FileNameIndex,
   fileDefsMap: FileDefsMap,
-  builtins: Set<String>,
   builtinsFileName: FileName,
 } extends IDefMap {
   fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
