@@ -113,6 +113,13 @@ Clauses and clause-maps (\texttt{Clauses}) maintain canonical DNF with invariant
 \equiv \forall X.\big((S_1 \wedge S_3)~\mid~(S_2 \wedge S_3)\big)
 \]
 \emph{provided} that both quantifiers range over the same $\alpha$-normalized binder set (no capture), and $X$ occurs only \emph{positively} in $S_1,S_2,S_3$ (see Def.~\ref{def:positivity}).
+\begin{lstlisting}[language=TypeScript]
+type Forall1 = <X>(x: X) => X;
+type Forall2 = <Y>(y: Y) => Y;
+// The union Forall1 | Forall2 still tracks the distinct binder names.
+// Treating the union as a single forall would be unsound.
+\end{lstlisting}
+
 We formalize the core operators:
 \begin{itemize}[leftmargin=*]
   \item Clause union $c_1 \uplus c_2$ requires equal quantified-variable sets and unions their \texttt{STypes} payloads (or yields top if either is top). Bottom payloads are omitted.
@@ -833,13 +840,38 @@ We list the small algebra actually used by \texttt{TTypeUnion}, \texttt{Clause::
 \paragraph*{Tempting but \emph{invalid} rewrites (explicitly avoided).}
 To prevent classic unsoundnesses, the implementation \emph{does not} apply the following equalities:
 \begin{itemize}[leftmargin=*]
-  \item $(A \to C) \wedge (B \to D) \not\equiv (A \vee B) \to (C \wedge D)$ (overload collapse; see testlets).
+  \item $(A \to C) \wedge (B \to D) \not\equiv (A \vee B) \to (C \wedge D)$ (overload collapse; see the examples below).
   \item $(A \to C) \vee (B \to C) \not\equiv (A \vee B) \to C$ (either function $\neq$ one function handling both domains).
   \item $(A \vee B) \to C \not\le A \to C$ (domains are \emph{contra}variant, not covariant).
   \item $(F_1 \wedge F_2) \vee (G_1 \wedge G_2) \not\equiv (F_1 \vee G_1) \wedge (F_2 \vee G_2)$ (unsafe factorization).
   \item $(\forall X.\,S_1) \vee (\forall X.\,S_2) \not\equiv \forall X.\,(S_1 \vee S_2)$ (monomorphic vs. polymorphic confusion).
 \end{itemize}
 All five appear in the \emph{Tricky cases and litmus tests} below as short, in-paper TypeScript snippets that demonstrate why these rewrites are disallowed in our normalizer and subtyping.
+
+\begin{lstlisting}[language=TypeScript]
+// (A -> C) /\ (B -> D)  vs. (A \_/ B) -> (C /\ D)
+type Left = { tag: "L"; l: number };
+type Right = { tag: "R"; r: number };
+declare const f: ((s: string) => Left) & ((n: number) => Right);
+const value = f(Math.random() < 0.5 ? 0 : "s");
+// const both: Left & Right = value; // invalid: a single call cannot return both branches
+
+// (A -> C) \_/ (B -> C)  vs. (A \_/ B) -> C
+declare const either: ((s: string) => number) | ((n: number) => number);
+// const merged: (x: string | number) => number = either; // invalid
+
+// (F1 /\ F2) \_/ (G1 /\ G2)  != (F1 \_/ G1) /\ (F2 \_/ G2)
+type F = ((s: string) => Left)  & ((n: number) => Right);
+type G = ((s: string) => Right) & ((n: number) => Left);
+declare const pick: F | G;
+// const needBoth: (z: Left & Right) => void = pick; // invalid
+
+// Control-flow merges use set union of behaviours, not the function LUB.
+declare const coin: boolean;
+const g = coin ? ((): "L" => "L") : ((): "R" => "R");
+const v = g(); // type is "L" | "R"
+\end{lstlisting}
+
 
 \section{Expressivity, Promise Semantics, and Framework Interoperability}
 
@@ -908,6 +940,38 @@ function asH(f: H1 | H2): H {
 \end{lstlisting}
 This pattern is straight-line and cheap; it is how ecosystem libraries hide overloads internally. Alternative designs (e.g., storing tagged unions of functions) work but add boilerplate. We recommend \emph{not} exposing function unions in public APIs; expose a single normalized signature.
 
+\noindent\textbf{Additional sanity checks.}
+The union machinery deliberately forms the least upper bound: domains intersect, returns union. The following snippet shows that the LUB is well typed whereas the would-be GLB collapses:
+\begin{lstlisting}[language=TypeScript]
+type F1 = (x: number) => 1;
+type F2 = (x: string) => 2;
+
+// LUB is the intersection of domains and union of codomains.
+type LUB = (x: number & string) => 1 | 2; // effectively never callable
+
+// GLB would require a union domain and intersection of codomains;
+// when the codomain meet is empty, the type collapses to never.
+type GLB = (x: number | string) => 1 & 2; // reduces to never
+
+// Overlap + specificity (safe overload intersection).
+type Over = ((x: number) => "n") & ((x: number | string) => "ns");
+declare const over: Over;
+const a: "n" = over(1);
+const b: "ns" = over("hi");
+\end{lstlisting}
+
+Overload resolution also obeys the usual rules: the overlap of two call signatures remains callable at the most precise domain. If we try to merge genuinely distinct domains, SKJS forces us to acknowledge the uncertainty:
+\begin{lstlisting}[language=TypeScript]
+type O =
+  | ((x: { kind: "a"; a: number }) => "A")
+  | ((x: { kind: "a" | "b"; a?: number; b?: string }) => "AB");
+
+declare const o: O;
+const rA: "A" = o({ kind: "a", a: 1 });
+const rAB: "AB" = o({ kind: "b", b: "" });
+\end{lstlisting}
+
+
 \subparagraph{Layout-divergent algebraic unions. \;Include? \emph{Yes} (moderate, correlated-field precision).}
 \textbf{Why it matters.} Real services return discriminated unions such as \texttt{\{kind:\,"ok", value: T\} | \{kind:\,"err", msg: string\}}. SKJS safely over-approximates object unions by matching shared fields and optionalizing unmatched ones; it does \emph{not} track correlation between the discriminator and extra fields. This keeps subtyping simple but loses precision inside branches.
 
@@ -934,6 +998,38 @@ if (isOk(r)) {
 }
 \end{lstlisting}
 In router/middleware code, prefer threading a refined \emph{local} (e.g., \texttt{const req2 = req as Req \& \{ user: U \}}) after each guard. The cost is low and explicit; it keeps the global type for \texttt{req} conservative while allowing local precision where needed.
+
+\noindent\textbf{Exact vs. layout-divergent branches.}
+\begin{lstlisting}[language=TypeScript]
+type S = { kind: "s"; v: string };
+type T = { kind: "t"; v: string };
+type ST = S | T;
+function format(x: ST): string {
+  if (x.kind === "s") return x.v.toUpperCase();
+  return x.v.toLowerCase();
+}
+
+type A = { kind: "a"; x: number };
+type B = { kind: "b"; x: string };
+type U = A | B;
+// Any merged shape must not admit { kind: "a", x: "oops" }.
+\end{lstlisting}
+
+\subparagraph{Index signatures with discriminants.}
+When record types mix index signatures and explicit discriminants we retain the
+discriminator verbatim and only optionalize fields proven to be shared:
+\begin{lstlisting}[language=TypeScript]
+type C = { kind: "c"; [k: string]: number };
+type D = { kind: "d"; flag: boolean };
+type V = C | D;
+function handle(v: V): void {
+  if (v.kind === "d") {
+    const flag: boolean = v.flag;
+    void flag;
+  }
+}
+\end{lstlisting}
+
 
 \subparagraph{Mutable class overrides. \;Include? \emph{Yes} (small but visible for OO-heavy code).}
 \textbf{Why it matters.} TypeScript treats method parameters bivariantly; SKJS keeps the mathematically sound rule: parameters are contravariant, results covariant. As a result, some overrides that compile in TS are rejected in SKJS.
@@ -1247,216 +1343,6 @@ Evidence that the checker enforces the documented rules comes from:
 Together, these sources provide both positive assurance (examples compile) and negative assurance (expect-error tests fail as intended).
 The test runner (\code{tests/Main.sk}) loads each TypeScript file, feeds it through the checker, and compares the resulting diagnostics to golden outputs stored alongside the tests. \code{tests/Helpers.sk} contains utilities for reading files, normalizing paths, and reporting diffs. Expect-error cases intentionally look for specific substrings, giving maintainers confidence that error messages stay stable even as internal representations evolve.
 
-
-\subsection*{Embedded TypeScript testlets}
-The following testlets are meant to live in the paper. They illustrate the edge-cases discussed in Sections~on functions, algebraic unions, index signatures, and positivity.
-
-\paragraph{Functions: LUB vs.\ GLB and overloads}
-\begin{lstlisting}[language=TypeScript]
-// LUB vs GLB sanity
-type F1 = (x: number) => 1;
-type F2 = (x: string) => 2;
-
-// LUB (domain &&, return ||): exists; domain is never
-type LUB = (x: number & string) => 1 | 2; // uncallable; safe upper bound
-
-// GLB (domain ||, return &&): codomain meet may be never
-type GLB = (x: number | string) => 1 & 2; // reduces to never in TS
-
-// Overlap + specificity (overload intersection)
-type Over = ((x: number) => "n") & ((x: number | string) => "ns");
-declare const over: Over;
-// EXPECT-ERROR: Missing type annotation
-const a = over(1);        // "n" (more specific)
-// EXPECT-ERROR: Missing type annotation
-const b = over("hi");     // "ns"
-
-// "Wrong GLB" (paper bug example): domain &&, return || is not a GLB.
-// It is the LUB; see Lemma 1 (fixed).
-\end{lstlisting}
-
-\paragraph{Algebraic unions: exactness vs optionalization}
-\begin{lstlisting}[language=TypeScript]
-// Exact (layout-compatible)
-type S = { kind: "s"; v: string };
-type T = { kind: "t"; v: string };
-type ST = S | T;
-function f(x: ST): void {
-  if (x.kind === "s") {
-    const upper: string = x.v.toUpperCase(); // OK
-  }
-}
-
-// Not exact (colliding required field types)
-type A = { kind: "a"; x: number };
-type B = { kind: "b"; x: string };
-type U = A | B;
-// Any merged shape must not admit { kind: "a", x: "oops" }.
-\end{lstlisting}
-
-\paragraph{Index signatures mixing with discriminants}
-\begin{lstlisting}[language=TypeScript]
-type C = { kind: "c"; [k: string]: number };
-type D = { kind: "d"; flag: boolean };
-type V = C | D;
-// Checker must not let index signature swallow the discriminant or flag type.
-\end{lstlisting}
-
-\paragraph{Positivity in recursion (reject anti-monotone)}
-\begin{lstlisting}[language=TypeScript]
-type Bad<X> = { f: (x: X) => boolean };
-// type T = Bad<T>; // should be rejected or widened explicitly by the checker
-\end{lstlisting}
-
-\paragraph{Promise covariance}
-\begin{lstlisting}[language=TypeScript]
-async function fetch(flag: boolean): Promise<number | string> {
-  return flag ? 42 : "x";
-}
-declare const pn: Promise<number>;
-declare const ps: Promise<string>;
-// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
-const pu: Promise<number | string> = fetch(true); // OK
-\end{lstlisting}
-
-\paragraph{Tuples and unions (precise projection)}
-\begin{lstlisting}[language=TypeScript]
-type P = [number, string] | [number, undefined];
-const p1: [number, string | undefined] = [1, "x"];       // OK
-const p2: [number, string | undefined] = [1, undefined]; // OK
-\end{lstlisting}
-
-\paragraph{Overload resolution with overlapping domains}
-\begin{lstlisting}[language=TypeScript]
-type O =
-  | ((x: { kind: "a"; a: number }) => "A")
-  | ((x: { kind: "a" | "b"; a?: number; b?: string }) => "AB");
-declare const o: O;
-// EXPECT-ERROR: Missing type annotation
-const rA = o({ kind: "a", a: 1 }); // expect "A" (more specific)
-\end{lstlisting}
-
-\paragraph{Exhaustiveness checks (narrowing)}
-\begin{lstlisting}[language=TypeScript]
-type Config =
-  | { kind: "file"; path: string }
-  | { kind: "http"; url: string };
-
-// EXPECT-ERROR: Missing return type
-function g(c: Config) {
-  switch (c.kind) {
-    case "file": c.path; break;
-    case "http": c.url; break;
-    default:
-      const _exhaustive: never = c; // should be unreachable
-  }
-}
-\end{lstlisting}
-
-\paragraph{Alpha-equivalent quantifier keys}
-\begin{lstlisting}[language=TypeScript]
-type Forall1 = <X>(x: X) => X;
-type Forall2 = <Y>(y: Y) => Y;
-// Unions over clauses keyed by {X} vs {Y} must collide (alpha-normalized), not duplicate.
-\end{lstlisting}
-
-\paragraph{Tricky: Union in negative (argument) position (contravariance).}
-Domains are \emph{contra}variant; treating them covariantly would be unsound (cf.\ Subtyping and Variance).
-\begin{lstlisting}[language=TypeScript]
-// Contravariance in parameters (safe and unsafe cases)
-type A = { a: number };
-type B = { b: number };
-
-declare const wider: (x: A | B) => string;
-
-// Safe: assign wider-parameter function to narrower-parameter type
-// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
-const ok: (x: A) => string = wider;
-
-// UNSAFE if allowed (should be an error):
-// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
-const bad: (x: A | B) => string = (x: A) => "a"; // expect-error
-\end{lstlisting}
-
-\paragraph{Tricky: $(A\!\to\!C)\wedge(B\!\to\!D)$ is \emph{not} $(A\vee B)\!\to\!(C\wedge D)$.}
-Overloads remain separate; a single call returns only one branch.
-\begin{lstlisting}[language=TypeScript]
-type Left  = { tag: "L"; l: number };
-type Right = { tag: "R"; r: number };
-
-declare const f: ((s: string) => Left) & ((n: number) => Right);
-declare const x: string | number;
-
-// EXPECT-ERROR: Missing type annotation
-const y = f(x);
-// y cannot be both Left and Right at the same time:
-// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
-const both: Left & Right = y; // expect-error
-\end{lstlisting}
-
-\paragraph{Tricky: $(A\!\to\!C)\vee(B\!\to\!C)$ is \emph{not} $(A\vee B)\!\to\!C$.}
-A union of functions is "either function," not "one function that handles both."
-\begin{lstlisting}[language=TypeScript]
-declare const u: ((s: string) => number) | ((n: number) => number);
-// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
-const g: (x: string | number) => number = u; // expect-error
-\end{lstlisting}
-
-\paragraph{Tricky: unsafe factorization $(F_1\wedge F_2)\vee(G_1\wedge G_2)\not\equiv (F_1\vee G_1)\wedge(F_2\vee G_2)$.}
-\begin{lstlisting}[language=TypeScript]
-type Left  = { tag: "L"; l: number };
-type Right = { tag: "R"; r: number };
-type F = ((s: string) => Left)  & ((n: number) => Right);
-type G = ((s: string) => Right) & ((n: number) => Left);
-
-declare const pick: F | G;
-
-// We cannot assume a single function that satisfies both unions simultaneously:
-// EXPECT-ERROR: Missing type annotation
-const s = pick("x");  // ok: returns Left or Right
-// EXPECT-ERROR: Missing type annotation
-const n = pick(0);    // ok: returns Left or Right
-
-declare const needBoth: (z: Left & Right) => void;
-needBoth(s); // expect-error: result of a single call is not Left & Right
-\end{lstlisting}
-
-\paragraph{Tricky: moving $\forall$ across unions conflates polymorphic with monomorphic choices.}
-$(\forall X.\,X\!\to\!X)\;\not\equiv\;((\texttt{string}\!\to\!\texttt{string})\vee(\texttt{number}\!\to\!\texttt{number}))$.
-\begin{lstlisting}[language=TypeScript]
-type U = ((x: string) => string) | ((x: number) => number);
-declare const u: U;
-
-// Treating u as polymorphic is unsound:
-declare const id: <X>(x: X) => X = u; // expect-error
-\end{lstlisting}
-
-\paragraph{Tricky: control-flow merges use \emph{set} union of behaviors, not the function LUB.}
-The LUB $(A_1\wedge A_2)\to(B_1\vee B_2)$ (\S\;Lemma~1) is an internal compaction, not the meaning of a runtime join.
-\begin{lstlisting}[language=TypeScript]
-declare const f1: (s: string) => "L";
-declare const f2: (n: number) => "R";
-
-// EXPECT-ERROR: Missing type annotation
-const coin: boolean = Math.random() < 0.5;
-const f = coin ? f1 : f2;
-
-// Both of these remain unsafe at the merge:
-// EXPECT-ERROR: Invalid call
-// EXPECT-ERROR: Type '0 is not a function
-f("x");  // expect-error
-// EXPECT-ERROR: Invalid call
-// EXPECT-ERROR: Type '0 is not a function
-f(0);    // expect-error
-\end{lstlisting}
-
-\paragraph{Positive law: $(A\!\to\!C)\wedge(B\!\to\!C)\ \le\ (A\vee B)\!\to\!C$.}
-\begin{lstlisting}[language=TypeScript]
-type Both = ((s: string) => number) & ((n: number) => number);
-declare const both: Both;
-// EXPECT-ERROR: Invalid type for constant, only primitive types (not objects) are allowed
-const h: (x: string | number) => number = both; // ok
-\end{lstlisting}
 
 \section{Conclusion}
 SKJS combines a sophisticated Skip-based type representation (DNF types with deferred instances), a pragmatic subtyping and constraint-solving engine, and flow-sensitive refinements to implement a sound TypeScript subset. The repository structure cleanly separates build orchestration, native runtime support, and the Skip frontend. The checker enforces strict coding conventions (explicit annotations, tuple-vs-array semantics, locals-only refinements) while still handling advanced constructs such as algebraic data types, generic classes, and async functions. Its runtime and stub system allow real-world libraries to be analyzed, and its testing strategy couples curated examples with imported conformance suites. Future work includes broadening the supported TypeScript features while maintaining the soundness guarantees encoded in \texttt{TType} and the checker pipeline.
