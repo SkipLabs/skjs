@@ -37,10 +37,11 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Error**: "TODO: support for method modifiers (encountered abstract)"
 - **Workaround**: Use regular classes with interfaces, or avoid abstract patterns
 
-### 5. Console.log Argument Limitations
-- **Rule**: console.log appears to have strict argument count limits
-- **Error**: "Too many arguments" when passing multiple arguments
-- **Workaround**: Use single arguments or string concatenation
+### 5. Console Surface Is Minimal
+- **Rule**: Only `console.log`, `console.assert`, and `console.error` are provided by `import-stubs/@types/skjs`; other console helpers (e.g., `console.table`) are unavailable.
+- **Behavior**: The declared methods follow their TypeScript signatures (`log` and `error` are variadic, `assert` takes a condition plus optional message).
+- **Workaround**: Create your own logging wrapper module (e.g., `logger.ts`) that exports the shapes you need, or extend `@types/skjs` locally before running the checker.
+- **Verified by**: `examples/src/console_surface.ts` covers supported calls; `tests/expect-error/console.ts` ensures unsupported helpers like `console.table` stay blocked.
 
 ### 6. Undefined Method Access
 - **Rule**: Cannot call methods on potentially undefined values
@@ -164,6 +165,12 @@ let tags = ['urgent' as const, 'priority' as const];
   ```
 
 
+### 16. Function Signatures Must Be Fully Annotated
+- **Rule**: Every function parameter requires an explicit type annotation. Named function declarations must also supply an explicit return type; arrow callbacks currently infer their return type but still need annotated parameters.
+- **Error**: `TypeCheckFun.sk` emits "Missing type annotation" for parameters without types and "Missing return type" if a named function omits its return type.
+- **Workaround**: Declare signatures like `function handler(value: string | number): Result { ... }` and annotate callback parameters, adding `: T` return annotations where needed for clarity.
+- **Verified by**: `tests/expect-error/function-args.ts`, `tests/expect-error/anonymous-function-annotations.ts`, and `tests/expect-error/missing-return-type.ts`.
+
 ### 17. The `any` Type is Not Supported
 - **CRITICAL RULE**: NEVER use the `any` type in SKJS code
 - **Explanation**: The `any` type is not implemented in the SKJS type checker
@@ -214,46 +221,17 @@ let tags = ['urgent' as const, 'priority' as const];
   let result: 'true' | 'false' = condition ? 'true' : 'false';
   ```
 
-### 20. For...of Loops Not Supported  
-- **Rule**: For...of loop syntax is not implemented
-- **Error**: "TODO: for ... of not implemented, you can use a normal for (for now)"
-- **Workaround**: Use traditional for loops with index
-- **Example**:
-  ```typescript
-  // WRONG - will cause errors
-  for (let item of items) {
-    console.log(item);
-  }
-  
-  // CORRECT - use traditional for loop
-  for (let i = 0; i < items.length; i++) {
-    const item = items[i];
-    if (item !== undefined) {
-      console.log(item);
-    }
-  }
-  ```
+### 20. `for...of` Loop Constraints
+- **Rule**: Only arrays, tuples, strings, or objects with an explicit string index signature are recognized as iterables. Plain object literals (without `[key: string]: ...`) and custom classes are rejected.
+- **Error**: `TypeCheckStmt.getValueType` raises "Invalid iterable type for for-of loop" when the iterable type falls outside those shapes (see `tests/expect-error/for-of-object.ts`).
+- **Semantics**: The element type is computed once from the iterable’s structure; there is no special flow refinement beyond the standard loop scopes. For objects with an index signature, the element type is the index value type; for strings it is `string`.
+- **Workaround**: When you need to iterate a record-like object, first expose a string index signature (e.g., type `{ [key: string]: number }`) or convert the value to an array via `Object.keys` / `Object.values`.
+- **Verified by**: `examples/src/for_in_for_of_tests.ts` (arrays, tuples, strings, index signatures) and `tests/expect-error/for-of-object.ts` (plain objects rejected).
 
-### 21. In Operator Not Supported
-- **Rule**: The `in` operator for type guards is not supported
-- **Error**: "Expected )" when using `if ("prop" in obj)`
-- **Workaround**: Use instanceof checks or explicit type assertions
-- **Example**:
-  ```typescript
-  // WRONG - will cause errors
-  if ("move" in shape) {
-    shape.move(10, 10);
-  }
-  
-  // CORRECT - use instanceof
-  if (shape instanceof Rectangle) {
-    shape.move(10, 10);
-  }
-  
-  // CORRECT - use type assertions
-  const moveable = shape as Moveable;
-  moveable.move(10, 10);
-  ```
+### 21. `in` Operator Limitations
+- **Rule**: The left-hand side must have a literal string/number type (literal or union of literals). The right-hand side must resolve to an object type; tuples, promises, functions, and primitives trigger "Invalid in" / "TODO: in" diagnostics (`tests/expect-error/in.ts`).
+- **Refinement scope**: Control-flow refinements only occur when the RHS is a local variable without index signatures. Even then, the checker merely adds/removes the specific field; it does not reason about dynamic keys or nested objects.
+- **Workaround**: To narrow on a field’s presence, ensure the RHS object is held in a local variable and the LHS key is a literal type. For dynamic keys (e.g., string variables or values produced by expressions), prefer an explicit index signature or guarded property access (`const value = obj[key]; if (value !== undefined) { ... }`).
 
 ## Coding Guidelines for SKJS
 
