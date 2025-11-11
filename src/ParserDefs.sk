@@ -680,13 +680,12 @@ extension class Parser {
   mutable fun moduleNames(): ModuleNames {
     if (this.lex.peekKind() is Some(TKMultiplication())) {
       _ = this.lex.next();
-      asName = if (this.lex.peekStr() is Some("as")) {
+      if (this.lex.peekStr() is Some("as")) {
         _ = this.lex.next();
-        Some(this.getName())
+        MStarAs(this.getName())
       } else {
-        None()
+        MStar()
       };
-      MStar(asName)
     } else if (this.lex.peekKind() is Some(TKOpenCurly())) {
       _ = this.lex.next();
       if (this.lex.peekKind() is Some(TKCloseCurly())) {

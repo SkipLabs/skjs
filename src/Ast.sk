@@ -140,14 +140,16 @@ base class FunDefBody uses XXHashable {
 
 /***************************************************************************/
 // <module-names> ::=
-//   | * (as <name>)?
+//   | *
+//   | * as <name>
 //   | { <module-def-name>* }
 //   | <name>, { <module-def-name>* }
 /***************************************************************************/
 
 base class ModuleNames uses XXHashable {
   children =
-  | MStar(?Name)
+  | MStar()
+  | MStarAs(Name)
   | MCurly(Array<ModuleDefName>)
   | MName(Name, Array<ModuleDefName>)
 }
