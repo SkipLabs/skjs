@@ -248,21 +248,9 @@ mutable class FileDefsState{
     }
   }
 
-  private mutable fun exportNames(names: ModuleNames): void {
+  private mutable fun exportNames(names: MCurly): void {
     names match {
-    | MStarAs(moduleName) -> this.exportedModules.insert(moduleName.value)
-    | MStar() -> debug("TODO error export *")
     | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          this.exported![moduleDefName.name.value] = moduleDefName.name.value
-        | Some(asName) ->
-          this.exported![moduleDefName.name.value] = asName.value
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      this.exportedModules.insert(moduleName.value);
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
