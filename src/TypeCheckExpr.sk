@@ -470,15 +470,11 @@ extension class TypeChecker {
       };
       tcenv.scope.maybeGet(local) match {
       | None() ->
-        defs = if (this.builtins.contains(local.value)) {
-          this.defMap.get(tcenv.context, this.builtinsFileName, local)
-        } else {
-          this.defMap.get(
-            tcenv.context,
-            FileName::create(local.pos.fileName),
-            local,
-          )
-        };
+        defs = this.defMap.get(
+          tcenv.context,
+          FileName::create(local.pos.fileName),
+          local,
+        );
         for (def in defs) {
           def.value match {
           | fd @ FunDef _ ->
