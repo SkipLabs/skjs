@@ -376,7 +376,11 @@ class DefMap{
 
   fun getAll(context: mutable S.Context, name: Name): Array<Def> {
     fileName = FileName::create(name.pos.fileName);
-    this.get(context, fileName, name)
+    defs = this.get(context, fileName, name);
+    if (defs.isEmpty()) {
+      this.notFound(name)
+    };
+    defs
   }
 
   private fun notFound<T>(defName: Name): T {
@@ -444,7 +448,7 @@ class DefMap{
         )
       | None() -> void
       };
-      this.notFound(defName);
+      return Array[]
     };
     fileDefs.importedFrom.maybeGet(defName.value) match {
     | Some((exportedDefName, importedFileName)) ->
@@ -472,21 +476,14 @@ class DefMap{
       fileDefs.namespaces.maybeGet(name.value) match {
       | Some(fileName) -> return this.getInDefs(context, fileName, defName)
       | None() ->
-        debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array));
-        this.notFound(defName)
+        debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array))
       }
     };
     for (exportedNamespace in fileDefs.exportedNamespaces) {
-      try {
-        Some(this.getInDefs(context, exportedNamespace, defName))
-      } catch {
-      | _ -> None()
-      } match {
-      | None() -> void
-      | Some(x) -> return x
-      }
+      defs = this.getInDefs(context, exportedNamespace, defName);
+      if (!defs.isEmpty()) return defs
     };
-    this.notFound(defName);
+    Array[]
   }
 
   private fun getExported(
@@ -525,16 +522,14 @@ class DefMap{
         )
       | None() -> void
       };
-      this.notFound(defName);
+      return Array[]
     };
     fileDefs.exportEq match {
     | None() -> void
     | Some(name) ->
       fileDefs.namespaces.maybeGet(name.value) match {
       | Some(fileName) -> return this.getInDefs(context, fileName, defName)
-      | None() ->
-        debug(fileDefs.exportedNamespaces.containsKey(name.value));
-        this.notFound(defName)
+      | None() -> debug(fileDefs.exportedNamespaces.containsKey(name.value))
       }
     };
 
@@ -566,16 +561,10 @@ class DefMap{
     };
 
     for (moduleDefs in fileDefs.modules) {
-      try {
-        Some(this.getInDefs(context, moduleDefs, defName))
-      } catch {
-      | _ -> None()
-      } match {
-      | Some(x) -> return x
-      | None() -> void
-      }
+      defs = this.getInDefs(context, moduleDefs, defName);
+      if (!defs.isEmpty()) return defs
     };
-    this.notFound(defName);
+    Array[]
   }
 }
 
