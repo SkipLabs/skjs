@@ -5,6 +5,7 @@
 \usepackage{listings}
 \usepackage{amsmath,amssymb}
 \usepackage{stmaryrd}
+\usepackage{microtype}
 \usepackage{amsthm}
 \lstdefinelanguage{JavaScript}{
   keywords={const,let,var,function,return,if,else,for,while,do,break,continue,switch,case,default,new,delete,try,catch,finally,throw,class,extends,super,this,import,from,export,as,async,await},
@@ -792,13 +793,13 @@ We list the small algebra actually used by \texttt{TTypeUnion}, \texttt{Clause::
 
 \paragraph*{Tempting but \emph{invalid} rewrites (explicitly avoided).}
 To prevent classic unsoundnesses, the implementation \emph{does not} apply the following equalities:
-\begin{align*}
-  (A \to C) \wedge (B \to D) &\;\not\equiv\; (A \vee B) \to (C \wedge D) \quad &\text{(overload collapse; see testlets)}\\
-  (A \to C) \vee (B \to C) &\;\not\equiv\; (A \vee B) \to C \quad &\text{(either function $\neq$ one function handling both)}\\
-  (A \vee B) \to C &\;\not\le\; A \to C \quad &\text{(domains are \emph{contra}variant, not covariant)}\\
-  (F_1 \wedge F_2) \vee (G_1 \wedge G_2) &\;\not\equiv\; (F_1 \vee G_1) \wedge (F_2 \vee G_2) \quad &\text{(unsafe factorization)}\\
-  (\forall X.\,S_1) \vee (\forall X.\,S_2) &\;\not\equiv\; \forall X.\,(S_1 \vee S_2) \quad &\text{(mono vs.\ poly confusion)}\\
-\end{align*}
+\begin{itemize}[leftmargin=*]
+  \item $(A \to C) \wedge (B \to D) \not\equiv (A \vee B) \to (C \wedge D)$ (overload collapse; see testlets).
+  \item $(A \to C) \vee (B \to C) \not\equiv (A \vee B) \to C$ (either function $\neq$ one function handling both domains).
+  \item $(A \vee B) \to C \not\le A \to C$ (domains are \emph{contra}variant, not covariant).
+  \item $(F_1 \wedge F_2) \vee (G_1 \wedge G_2) \not\equiv (F_1 \vee G_1) \wedge (F_2 \vee G_2)$ (unsafe factorization).
+  \item $(\forall X.\,S_1) \vee (\forall X.\,S_2) \not\equiv \forall X.\,(S_1 \vee S_2)$ (monomorphic vs. polymorphic confusion).
+\end{itemize}
 All five appear in the \emph{Tricky cases and litmus tests} below as short, in-paper TypeScript snippets that demonstrate why these rewrites are disallowed in our normalizer and subtyping.
 
 Only the distribution law that respects Def.~\ref{def:positivity} (positivity) and $\alpha$-normalized binder sets is applied across quantifiers.
@@ -822,10 +823,10 @@ The following testlets are meant to live in the paper. They illustrate the edge-
 type F1 = (x: number) => 1;
 type F2 = (x: string) => 2;
 
-// LUB (domain ∧, return ∨): exists; domain is never
+// LUB (domain &&, return ||): exists; domain is never
 type LUB = (x: number & string) => 1 | 2; // uncallable; safe upper bound
 
-// GLB (domain ∨, return ∧): codomain meet may be never
+// GLB (domain ||, return &&): codomain meet may be never
 type GLB = (x: number | string) => 1 & 2; // reduces to never in TS
 
 // Overlap + specificity (overload intersection)
@@ -834,7 +835,7 @@ declare const over: Over;
 const a = over(1);        // "n" (more specific)
 const b = over("hi");     // "ns"
 
-// "Wrong GLB" (paper bug example): domain ∧, return ∨ is not a GLB.
+// "Wrong GLB" (paper bug example): domain &&, return || is not a GLB.
 // It is the LUB; see Lemma 1 (fixed).
 \end{lstlisting}
 
@@ -915,7 +916,7 @@ function g(c: Config) {
 \begin{lstlisting}[language=TypeScript]
 type Forall1 = <X>(x: X) => X;
 type Forall2 = <Y>(y: Y) => Y;
-// Unions over clauses keyed by {X} vs {Y} must collide (α-normalized), not duplicate.
+// Unions over clauses keyed by {X} vs {Y} must collide (alpha-normalized), not duplicate.
 \end{lstlisting}
 
 \paragraph{Tricky: Union in negative (argument) position (contravariance).}
