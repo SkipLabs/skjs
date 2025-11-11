@@ -510,7 +510,7 @@ This reference complements the narrative sections by giving a concise ``cheat sh
   \item Literal array syntax creates tuples; use \texttt{new Array<T>()} for homogeneous collections (rule 2), enforced by \texttt{EArray} emitting \texttt{TTuple}.
   \item Constructor signatures must align across inheritance hierarchies (rule 3, \texttt{TypeCheckClass.sk}).
   \item Private/protected fields, abstract methods, \texttt{keyof}, function overloading, and the \texttt{any} type are unsupported (rules 4, 4b, 8, 10, 17).
-  \item Console APIs accept a single argument, matching \texttt{TypeChecker::call} rejecting over-application (rule 5).
+  \item The only builtin console helpers are \texttt{log}, \texttt{assert}, and \texttt{error} (rule 5); additional helpers must be provided by user stubs.
   \item Only locals may be compared to \texttt{null}/\texttt{undefined}/string literals (rule 15), enforced by \texttt{TypeCheckRefine}.
   \item Optional chaining and template literal corner cases emit targeted diagnostics (\code{tests/expect-error/optionalChaining.ts}, \code{tests/expect-error/template-literal-non-string.ts}).
   \item Nested function declarations are rejected; users must declare top-level helpers or closures instead (rule 12, enforced by \texttt{TypeCheckExpr.sk}).
