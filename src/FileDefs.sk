@@ -371,7 +371,7 @@ class DefMap{
       | _ -> void
       }
     };
-    typingError(Array[(name.pos, "Unbound name")])
+    typingError(Array[(name.pos, `Type ${name} not found`)])
   }
 
   fun getAll(context: mutable S.Context, name: Name): Array<Def> {
