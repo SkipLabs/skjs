@@ -73,7 +73,7 @@ mutable class FileDefsState{
   namespaces: mutable Map<String, FileDefs> = mutable Map[],
   exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
-  defs: mutable Map<String, mutable Vector<Def_>> = mutable Map[],
+  defs: mutable Map<String, mutable Vector<Exportable>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
   mutable fun resolveName(mname: Name): FileName {
@@ -320,7 +320,7 @@ class FileDefs{
   namespaces: Map<String, FileDefs>,
   exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
-  defs: Map<String, Array<Def_>>,
+  defs: Map<String, Array<Exportable>>,
   exportEq: ?Name,
 } extends S.File {
   static fun create(
