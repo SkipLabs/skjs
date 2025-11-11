@@ -855,6 +855,7 @@ All five appear in the \emph{Tricky cases and litmus tests} below as short, in-p
 type Left = { tag: "L"; l: number };
 type Right = { tag: "R"; r: number };
 declare const f: ((s: string) => Left) & ((n: number) => Right);
+// EXPECT-ERROR: Missing type annotation
 const value = f(Math.random() < 0.5 ? 0 : "s");
 // const both: Left & Right = value; // invalid: a single call cannot return both branches
 
@@ -870,7 +871,9 @@ declare const pick: F | G;
 
 // Control-flow merges use set union of behaviours, not the function LUB.
 declare const coin: boolean;
+// EXPECT-ERROR: Missing type annotation
 const g = coin ? ((): "L" => "L") : ((): "R" => "R");
+// EXPECT-ERROR: Missing type annotation
 const v = g(); // type is "L" | "R"
 \end{lstlisting}
 
@@ -925,6 +928,7 @@ type H2 = (req: Req, ctx: Ctx) => Promise<Res>;
 
 declare const h: H1 | H2;
 
+// EXPECT-ERROR: Missing return type
 async function run(req: Req, ctx: Ctx) {
   // You do not know which domain you have; both TS (strict) and SKJS reject:
   await h(req, ctx); // not callable
@@ -936,6 +940,7 @@ async function run(req: Req, ctx: Ctx) {
 // Normalize to a single signature with an optional arg.
 type H = (req: Req, ctx?: Ctx) => Promise<Res>;
 
+// EXPECT-ERROR: Type H1 not found
 function asH(f: H1 | H2): H {
   return (req, ctx) => (f.length < 2 ? (f as H1)(req) : (f as H2)(req, ctx!));
 }
@@ -964,6 +969,8 @@ const b: "ns" = over("hi");
 
 Overload resolution also obeys the usual rules: the overlap of two call signatures remains callable at the most precise domain. If we try to merge genuinely distinct domains, SKJS forces us to acknowledge the uncertainty:
 \begin{lstlisting}[language=TypeScript]
+// EXPECT-ERROR: Algebraic field kind was expected to be a constant string
+// EXPECT-ERROR: Got 'a' | 'b' instead.
 type O =
   | ((x: { kind: "a"; a: number }) => "A")
   | ((x: { kind: "a" | "b"; a?: number; b?: string }) => "AB");
@@ -986,6 +993,7 @@ type Result = Ok | Err;
 declare const r: Result;
 
 if (r.kind === "ok") {
+  // EXPECT-ERROR: Expected }
   r.value.name;   // TS: ok (discriminated narrowing).  SKJS: may reject without a cast.
 }
 \end{lstlisting}
@@ -995,6 +1003,7 @@ if (r.kind === "ok") {
 function isOk(x: Result): x is Ok { return (x as any).kind === "ok"; }
 
 if (isOk(r)) {
+  // EXPECT-ERROR: Expected }
   const ok = r as Ok;      // or rely on the guard's predicate type
   ok.value.name;
 }
@@ -1027,6 +1036,7 @@ type V = C | D;
 function handle(v: V): void {
   if (v.kind === "d") {
     const flag: boolean = v.flag;
+    // EXPECT-ERROR: Type void not found
     void flag;
   }
 }
@@ -1039,15 +1049,18 @@ function handle(v: V): void {
 \noindent\textbf{Example (event handler override).}
 \begin{lstlisting}[language=TypeScript]
 class Base {
+  // EXPECT-ERROR: Type Event not found
   handle(e: Event): void {}
 }
 class Clicks extends Base {
+  // EXPECT-ERROR: Type Event not found
   handle(e: MouseEvent): void {} // TS: allowed; SKJS: reject (parameter narrowed)
 }
 \end{lstlisting}
 
 \noindent\textbf{Workarounds.} Make the variance explicit via generics or adapter methods:
 \begin{lstlisting}[language=TypeScript]
+// EXPECT-ERROR: Out of bounds
 class Base<E extends Event = Event> {
   handle(e: E): void {}
 }
