@@ -73,7 +73,7 @@ mutable class FileDefsState{
   namespaces: mutable Map<String, FileDefs> = mutable Map[],
   exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
-  defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
+  defs: mutable Map<String, mutable Vector<Def_>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
   mutable fun resolveName(mname: Name): FileName {
@@ -167,7 +167,7 @@ mutable class FileDefsState{
   mutable fun newDef(
     isDefault: Bool,
     isExport: Bool,
-    pos: PosRange,
+    _pos: PosRange,
     def: Declarable,
   ): void {
     def match {
@@ -177,21 +177,21 @@ mutable class FileDefsState{
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(Def(pos, def))
+      this.defs[name.value].push(def)
     | Class{name} ->
       if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(Def(pos, def))
+      this.defs[name.value].push(def)
     | Enum(_, name, _) ->
       if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(Def(pos, def))
+      this.defs[name.value].push(def)
     | Namespace(name, defs) ->
       fileDefs = this.createFileDefs(defs);
       if (isExport) {
@@ -214,7 +214,7 @@ mutable class FileDefsState{
       if (!this.defs.containsKey(fname)) {
         this.defs![fname] = mutable Vector[];
       };
-      this.defs[fname].push(Def(pos, def))
+      this.defs[fname].push(def)
 
     | VarDefs(k, varDefs) ->
       if (isDefault) {
@@ -237,9 +237,7 @@ mutable class FileDefsState{
         if (!this.defs.containsKey(exportName.value)) {
           this.defs![exportName.value] = mutable Vector[];
         };
-        this.defs[exportName.value].push(
-          Def(exportName.pos, VarDefs(k, Array[varDef])),
-        );
+        this.defs[exportName.value].push(VarDefs(k, Array[varDef]));
       }
     | Global _ -> internal_error("TODO: global")
     | Module _ -> internal_error("TODO: module")
@@ -327,7 +325,7 @@ class FileDefs{
   namespaces: Map<String, FileDefs>,
   exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
-  defs: Map<String, Array<Def>>,
+  defs: Map<String, Array<Def_>>,
   exportEq: ?Name,
 } extends S.File {
   static fun create(
@@ -465,7 +463,7 @@ class DefMap{
       );
     };
     fileDefs.defs.maybeGet(defName.value) match {
-    | Some(def) -> result.extend(def.map(d -> d.value))
+    | Some(defs) -> result.extend(defs)
     | None() -> void
     };
     fileDefs.exportEq match {
