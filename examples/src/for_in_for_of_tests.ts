@@ -98,6 +98,20 @@ function testNestedForLoops(): void {
   }
 }
 
+function testForOfWithStrings(): void {
+  const greeting = "hello";
+  for (const ch of greeting) {
+    const letter: string = ch;
+  }
+}
+
+function testForOfWithIndexSignature(): void {
+  const counts: { [key: string]: number } = { a: 1, b: 2 };
+  for (const value of counts) {
+    const n: number = value;
+  }
+}
+
 function testForLoopsWithControlFlow(): void {
   // Test for-of with continue
   const items = [1, 2, 3, 4, 5];
@@ -140,3 +154,6 @@ function testForLoopsWithDifferentDeclarations(): void {
     const k: string = key;
   }
 }
+
+testForOfWithStrings();
+testForOfWithIndexSignature();
