@@ -33,9 +33,12 @@ fun main(): void {
   builder.compile("skjs_runtime");
 
   // Link the compiled library (specify full path to the static library)
-  print_string(
-    `skargo:skc-link-lib=${Environ.var("OUT_DIR")}/libskjs_runtime.a`,
-  );
+  out_dir = Environ.var("OUT_DIR");
+  runtime_lib = `${out_dir}/libskjs_runtime.a`;
+  print_string(`skargo:skc-link-lib=${runtime_lib}`);
+
+  // Also record it as an explicit linker argument so downstream binaries link it.
+  print_string(`skargo:skc-link-arg=${runtime_lib}`);
 
   // Link libbacktrace for non-release builds
   if (profile != "release") {
