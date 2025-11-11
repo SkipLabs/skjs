@@ -166,27 +166,27 @@ mutable class FileDefsState{
 
   mutable fun newDef(isDefault: Bool, isExport: Bool, def: Declarable): void {
     def match {
-    | TypeDef{name} ->
+    | d @ TypeDef{name} ->
       if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
-    | Class{name} ->
+      this.defs[name.value].push(d)
+    | d @ Class{name} ->
       if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
-    | Enum(_, name, _) ->
+      this.defs[name.value].push(d)
+    | d @ Enum(_, name, _) ->
       if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
+      this.defs[name.value].push(d)
     | Namespace(name, defs) ->
       fileDefs = this.createFileDefs(defs);
       if (isExport) {
@@ -196,7 +196,7 @@ mutable class FileDefsState{
       }
     | Module(name, Some(defs)) ->
       this.modules![name.value] = this.createFileDefs(defs)
-    | FunDef{name, pos => funPos} ->
+    | d @ FunDef{name, pos => funPos} ->
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
       | FNSymbol(n) ->
@@ -209,7 +209,7 @@ mutable class FileDefsState{
       if (!this.defs.containsKey(fname)) {
         this.defs![fname] = mutable Vector[];
       };
-      this.defs[fname].push(def)
+      this.defs[fname].push(d)
 
     | VarDefs(k, varDefs) ->
       if (isDefault) {
