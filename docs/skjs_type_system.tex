@@ -51,6 +51,30 @@
 \date{\today}
 \begin{document}
 \maketitle
+\begin{abstract}
+Static typing for JavaScript must repeatedly trade precision for soundness in the presence of
+union types, generics, and asynchronous control flow. This paper presents \emph{SKJS}, a
+sound type system that prioritizes safety while remaining usable on idiomatic JS/TS code.
+Our contributions are fourfold: (1) we formalize union normalization in negative (argument)
+positions and show that SKJS rejects exactly the unsound calls while permitting a large class
+via domain normalization; (2) we explain the conservative treatment of nested \texttt{Promise}
+values (no implicit flattening) and show that generic higher-order wrappers that try to
+unify incompatible domains must propagate \texttt{never}; (3) we enforce contravariant method
+subtyping, eliminating
+TypeScript-style method bivariance; and (4) we evaluate expressivity on representative
+real-world idioms (routing/middleware, event handlers, and result-typed APIs), distilling
+practical workarounds (local guards, adapter shims, and small facades for ambient libraries).
+The key finding is that SKJS is \emph{conservative but sound}: function unions are callable
+only when their domains coincide; generic combinators that would otherwise admit unsound
+calls collapse to \texttt{never}; and branch-based refinement cannot resurrect information
+lost to contravariance. We additionally catalogue expressivity gaps such as layout-divergent
+(union-of-record) types with correlated fields and offer low-cost patterns that recover the
+intended programs with predictable ergonomics. The accompanying examples are runnable,
+serve as regression tests, and clarify that alleged ``argument-position unsoundness''
+arises from an intentionally under-approximating normalizer designed to keep the calculus
+sound while remaining practical.
+\end{abstract}
+
 \tableofcontents
 \newpage
 
