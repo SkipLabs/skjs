@@ -63,7 +63,6 @@ mutable class FileDefsState{
   rootOpt: ?DirName,
   dirName: DirName,
   importStubs: Array<DirName>,
-  importedStar: mutable Set<String> = mutable Set[],
   importedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   importedModulesFrom: mutable Map<String, FileName> = mutable Map[],
   exported: mutable Map<String, String> = mutable Map[],
@@ -140,7 +139,6 @@ mutable class FileDefsState{
 
   private readonly fun toFileDefs(): FileDefs {
     FileDefs{
-      importedStar => this.importedStar.chill(),
       importedFrom => this.importedFrom.chill(),
       importedModulesFrom => this.importedModulesFrom.chill(),
       exported => this.exported.chill(),
@@ -361,7 +359,6 @@ mutable class FileDefsState{
 }
 
 class FileDefs{
-  importedStar: Set<String>,
   importedFrom: Map<String, (String, FileName)>,
   importedModulesFrom: Map<String, FileName>,
   exported: Map<String, String>,
@@ -498,13 +495,6 @@ class DefMap{
         Name(defName.pos, exportedDefName),
       )
     | None() -> void
-    };
-    for (importedFileName in fileDefs.importedStar) {
-      return this.getExported(
-        context,
-        FileName::create(importedFileName),
-        defName,
-      );
     };
     for (exportedFileName in fileDefs.exportedStar) {
       return this.getExported(
