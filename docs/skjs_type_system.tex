@@ -529,7 +529,7 @@ Combining both files offers a full workflow: developers follow the idioms shown 
 We summarize the ingredients used in the proof of union normalization:
 \begin{itemize}[leftmargin=*]
   \item Clause-level unions (\texttt{Clause::union}) and clause-set unions (\texttt{Clauses::union}) preserve denotation while maintaining canonical form (no bottom clauses, a single top clause, unique key per quantified-variable set) — Lemmas~0.a and 0.b.
-  \item Function “union” is a least upper bound under subtyping (domain = intersection, codomain = union) — Lemma~1.
+  \item Function "union" is a least upper bound under subtyping (domain = intersection, codomain = union) — Lemma~1.
   \item Algebraic unions are exact on layout-compatible branches and over-approximate via optionalization on layout divergence — Lemma~2.
   \item Recursive unions/intersections are handled by a monotone expansion operator whose least fixed point exists (Tarski) and is computed by the implementation (Kleene-style iteration) — Lemma~3.
 \end{itemize}
@@ -803,6 +803,44 @@ To prevent classic unsoundnesses, the implementation \emph{does not} apply the f
 All five appear in the \emph{Tricky cases and litmus tests} below as short, in-paper TypeScript snippets that demonstrate why these rewrites are disallowed in our normalizer and subtyping.
 
 Only the distribution law that respects Def.~\ref{def:positivity} (positivity) and $\alpha$-normalized binder sets is applied across quantifiers.
+\section{Expressivity and Known Gaps}
+
+Despite the conservative semantics outlined above, some idioms that are commonplace in everyday TypeScript do not type-check in SKJS yet. The gap stems chiefly from the areas where the checker deliberately under-approximates in order to stay sound. We highlight the most visible instance—lack of promise flattening—and then list other notable differences.
+
+\paragraph{Missing Promise Flattening.}
+JavaScript (and therefore TypeScript) treats promises monadically: any value returned from an \texttt{async} function is wrapped in a single layer of \texttt{Promise}, and \texttt{await} unwraps repeatedly until a non-promise value is produced. SKJS models \texttt{Promise<T>} as the covariant constructor \texttt{TPromise(T)}, but it does not flatten nested payloads. As a result, programs that rely on nested promises type-check in TypeScript but are rejected here.
+
+\begin{lstlisting}[language=TypeScript]
+declare function toastId(): string;
+declare function loadMessage(id: string): Promise<string>;
+
+declare const waitForToast: Promise<Promise<string>>;
+
+declare function showToast(msg: string): void;
+
+async function showWelcome(): Promise<void> {
+  // Both runtimes eventually obtain a string, but SKJS sees Promise<string>.
+  const message = await waitForToast;
+  showToast(message);              // TS: ok  SKJS: rejects
+}
+
+async function reload(): Promise<void> {
+  const id = toastId();
+  const text = await loadMessage(id);
+  showToast(text);                 // both checkers accept
+}
+\end{lstlisting}
+
+\paragraph{Other Notable Limitations.}
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Function unions.} As explained in Lemma~1, \texttt{TFuns::union} computes a least upper bound, intersecting parameter types. Many perfectly valid TypeScript overload unions therefore collapse to a domain of \texttt{never}, preventing calls. The checker stays sound but sacrifices expressivity.
+  \item \textbf{Layout-divergent algebraic unions.} When two branches disagree on required fields, \texttt{TConstr::union} optionalizes the conflicting members. The over-approximation keeps the program safe but rejects patterns where one branch is known to provide extra data.
+  \item \textbf{Mutable class overrides.} SKJS enforces contravariant method parameter types strictly. TypeScript allows certain bivariance escapes (historical reasons); those are rejected here, trading expressivity for soundness.
+  \item \textbf{Built-in libraries.} Only a curated set of declaration files in \texttt{import-stubs/} is available. Features outside those stubs (e.g., \texttt{Promise.allSettled}, DOM APIs) require additional modelling before they can type-check.
+\end{itemize}
+
+Bridging these gaps would require enhancing the type representation (e.g., monadic flattening for \texttt{Promise}, proper union-of-overloads ranking) while maintaining the invariants on which the soundness argument rests. We leave these improvements to future work.
+
 \section{Testing and Behavioral Evidence}
 Evidence that the checker enforces the documented rules comes from:
 \begin{itemize}[leftmargin=*]
@@ -950,7 +988,7 @@ const both: Left & Right = y; // expect-error
 \end{lstlisting}
 
 \paragraph{Tricky: $(A\!\to\!C)\vee(B\!\to\!C)$ is \emph{not} $(A\vee B)\!\to\!C$.}
-A union of functions is “either function,” not “one function that handles both.”
+A union of functions is "either function," not "one function that handles both."
 \begin{lstlisting}[language=TypeScript]
 declare const u: ((s: string) => number) | ((n: number) => number);
 const g: (x: string | number) => number = u; // expect-error
