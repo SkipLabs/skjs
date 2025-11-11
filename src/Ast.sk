@@ -154,6 +154,11 @@ base class ModuleNames uses XXHashable {
   | MName(Name, Array<ModuleDefName>)
 }
 
+base class ImportModuleNames extends ModuleNames
+extension class MStarAs extends ImportModuleNames
+extension class MCurly extends ImportModuleNames
+extension class MName extends ImportModuleNames
+
 /***************************************************************************/
 // <module-def-name> ::= (type?) <name> (as <name>)?
 /***************************************************************************/
