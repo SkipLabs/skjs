@@ -9,6 +9,12 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Error**: "Construction not supported: toplevel let"
 - **Workaround**: Use function declarations or class methods instead
 
+### 1b. No Destructuring in **Top-Level** `const` Declarations
+- **Rule**: Destructuring patterns are rejected when the `const` appears at module scope.
+- **Error**: "Construction not supported: top-level const declarations cannot destructure"
+- **Reason**: SKJS loads top-level constants as literal scalars for predictable initialization; pattern binding would require tracking object/tuple shapes in the loader.
+- **Workaround**: Bind the value to a simple `const tmp = ...` at the top level, then destructure inside a function or block (where regular `const` destructuring remains supported).
+
 ### 2. Array Literals vs Tuples
 - **Rule**: `[]` syntax creates tuples, not `Array<T>` types
 - **Array Usage**: Use `new Array<T>()` for homogeneous collections
