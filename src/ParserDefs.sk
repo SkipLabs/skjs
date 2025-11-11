@@ -532,10 +532,13 @@ extension class Parser {
       } else {
         None()
       };
-      importNames = this.moduleNames();
-      this.expectStr("from");
-      importFrom = this.getString();
-      Import(isType, importNames, importFrom)
+      this.moduleNames() match {
+      | importNames @ ImportModuleNames _ ->
+        this.expectStr("from");
+        importFrom = this.getString();
+        Import(isType, importNames, importFrom)
+      | MStar() -> this.error(this.lex.posEnd(), ExpectedStrNot("as"))
+      }
     | "export" ->
       _ = this.lex.next();
       if (this.lex.isEq("import")) {
