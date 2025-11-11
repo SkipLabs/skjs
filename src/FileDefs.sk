@@ -73,7 +73,7 @@ mutable class FileDefsState{
   namespaces: mutable Map<String, FileDefs> = mutable Map[],
   exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
-  defs: mutable Map<String, mutable Vector<Exportable>> = mutable Map[],
+  defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
   mutable fun resolveName(mname: Name): FileName {
@@ -232,7 +232,9 @@ mutable class FileDefsState{
         if (!this.defs.containsKey(exportName.value)) {
           this.defs![exportName.value] = mutable Vector[];
         };
-        this.defs[exportName.value].push(VarDefs(k, Array[varDef]));
+        this.defs[exportName.value].push(
+          FDVar(k, exportName, varDef.type, varDef.value),
+        );
       }
     | Global _ -> internal_error("TODO: global")
     | Module _ -> internal_error("TODO: module")
@@ -320,7 +322,7 @@ class FileDefs{
   namespaces: Map<String, FileDefs>,
   exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
-  defs: Map<String, Array<Exportable>>,
+  defs: Map<String, Array<FileDef>>,
   exportEq: ?Name,
 } extends S.File {
   static fun create(
@@ -344,12 +346,24 @@ class FileDefs{
 
 base class IDefMap {
   fun getType(mutable S.Context, Name): TypeOnlyDef;
-  fun getAll(mutable S.Context, Name): Array<Exportable>;
+  fun getAll(mutable S.Context, Name): Array<FileDef>;
 }
 
-base class TypeOnlyDef extends Exportable
+base class TypeOnlyDef extends FileDef
 extension class TypeDef extends TypeOnlyDef
 extension class Class extends TypeOnlyDef
+
+base class FileDef
+extension class FunDef extends FileDef
+extension class TypeDef extends FileDef
+extension class Class extends FileDef
+extension class Enum extends FileDef
+class FDVar(
+  kind: VarDefKind,
+  name: Name,
+  type: ?Type,
+  value: ?Expr,
+) extends FileDef
 
 class DefMap{
   index: FileNameIndex,
@@ -366,7 +380,7 @@ class DefMap{
     typingError(Array[(name.pos, `Type ${name} not found`)])
   }
 
-  fun getAll(context: mutable S.Context, name: Name): Array<Exportable> {
+  fun getAll(context: mutable S.Context, name: Name): Array<FileDef> {
     fileName = FileName::create(name.pos.fileName);
     result = mutable Vector[];
     this.get(context, fileName, name, result);
@@ -377,7 +391,7 @@ class DefMap{
     context: mutable S.Context,
     fileName: FileName,
     defName: Name,
-    result: mutable Vector<Exportable>,
+    result: mutable Vector<FileDef>,
   ): void {
     if (fileName != this.builtinsFileName) {
       biFileDefs = this.fileDefsMap.get(context, this.builtinsFileName);
@@ -391,7 +405,7 @@ class DefMap{
     context: mutable S.Context,
     fileDefs: FileDefs,
     defName: Name,
-    result: mutable Vector<Exportable>,
+    result: mutable Vector<FileDef>,
   ): void {
     if (defName.value.contains(".")) {
       arr = defName.value.split(".");
@@ -479,7 +493,7 @@ class DefMap{
     context: mutable S.Context,
     fileName: FileName,
     defName: Name,
-    result: mutable Vector<Exportable>,
+    result: mutable Vector<FileDef>,
   ): void {
     fileDefs = this.fileDefsMap.get(context, fileName);
     this.getExportedInDefs(context, fileDefs, defName, result)
@@ -489,7 +503,7 @@ class DefMap{
     context: mutable S.Context,
     fileDefs: FileDefs,
     defName: Name,
-    result: mutable Vector<Exportable>,
+    result: mutable Vector<FileDef>,
   ): void {
     if (defName.value.contains(".")) {
       arr = defName.value.split(".");

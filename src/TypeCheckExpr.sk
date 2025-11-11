@@ -486,24 +486,13 @@ extension class TypeChecker {
           | c @ Class _ ->
             staticClass = this.tenv.newStatic(tcenv.context, c.name);
             break staticClass
-          | VarDefs(kind, varDefArr) ->
-            if (varDefArr.size() != 1) {
-              internal_error("varDefArr size should be 1")
-            };
-            varDef = varDefArr[0];
+          | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
-              typingError(
-                Array[(varDef.pat.pos, "Construction not supported")],
-              );
+              typingError(Array[(name.pos, "Non-const not supported")]);
             };
-            if (!(varDef.pat is Pattern(_, PVar _))) {
-              typingError(
-                Array[(varDef.pat.pos, "Construction not supported")],
-              );
-            };
-            break varDef.type match {
+            break type match {
             | None() ->
-              varDef.value match {
+              value match {
               | None() -> None()
               | Some(x) -> this.asConstExpr(x)
               } match {
