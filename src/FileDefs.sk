@@ -351,7 +351,7 @@ class FileDefs{
 
 base class IDefMap {
   fun getType(mutable S.Context, Name): TypeOnlyDef;
-  fun getAll(mutable S.Context, Name): Array<Def>;
+  fun getAll(mutable S.Context, Name): Array<Def_>;
 }
 
 base class TypeOnlyDef extends Def_
@@ -365,7 +365,7 @@ class DefMap{
 } extends IDefMap {
   fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
     for (def in this.getAll(context, name)) {
-      def.value match {
+      def match {
       | d @ TypeOnlyDef _ -> return d
       | _ -> void
       }
@@ -373,11 +373,11 @@ class DefMap{
     typingError(Array[(name.pos, `Type ${name} not found`)])
   }
 
-  fun getAll(context: mutable S.Context, name: Name): Array<Def> {
+  fun getAll(context: mutable S.Context, name: Name): Array<Def_> {
     fileName = FileName::create(name.pos.fileName);
     result = mutable Vector[];
     this.get(context, fileName, name, result);
-    result.toArray()
+    result.toArray().map(d -> d.value)
   }
 
   private fun get(

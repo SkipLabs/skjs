@@ -472,7 +472,7 @@ extension class TypeChecker {
       | None() ->
         defs = this.defMap.getAll(tcenv.context, local);
         for (def in defs) {
-          def.value match {
+          def match {
           | fd @ FunDef _ ->
             break this.tenv.funDecl(
               tcenv.context,
