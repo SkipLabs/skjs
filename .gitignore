@@ -3,3 +3,14 @@ target/
 dist/
 .vscode/
 node_modules/
+# LaTeX build artifacts (keep PDFs tracked)
+*.aux
+*.bbl
+*.bcf
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc

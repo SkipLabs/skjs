@@ -1,0 +1,757 @@
+\documentclass[11pt]{article}
+\usepackage[margin=1in]{geometry}
+\usepackage{hyperref}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{amsmath,amssymb}
+\usepackage{stmaryrd}
+\usepackage{amsthm}
+\lstdefinelanguage{JavaScript}{
+  keywords={const,let,var,function,return,if,else,for,while,do,break,continue,switch,case,default,new,delete,try,catch,finally,throw,class,extends,super,this,import,from,export,as,async,await},
+  sensitive=true,
+  comment=[l]{//},
+  morecomment=[s]{/*}{*/},
+  morestring=[b]",
+  morestring=[b]'
+}
+\lstdefinelanguage{TypeScript}[]{JavaScript}{
+  keywords={const,let,var,function,return,if,else,for,while,do,break,continue,switch,case,default,new,delete,try,catch,finally,throw,class,extends,super,this,import,from,export,as,async,await,type,interface,implements},
+  morekeywords={type,interface,implements,declare}
+}
+\lstdefinelanguage{Pseudo}{
+  keywords={switch,case,break,default,const,return,if,else},
+  sensitive=true,
+  comment=[l]{//}
+}
+\usepackage{enumitem}
+\lstset{
+  basicstyle=\ttfamily\small,
+  keywordstyle=\color{blue!70!black}\bfseries,
+  commentstyle=\color{gray!70}\itshape,
+  stringstyle=\color{orange!80!black},
+  numberstyle=\scriptsize\color{gray!70},
+  backgroundcolor=\color{black!3},
+  rulecolor=\color{black!20},
+  frame=single,
+  columns=fullflexible,
+  keepspaces=true,
+  showstringspaces=false
+}
+\hypersetup{
+  colorlinks=true,
+  linkcolor=blue,
+  urlcolor=blue
+}
+\title{SKJS Type Checker Architecture and Type System}
+\author{SKJS Documentation Team}
+\date{\today}
+\begin{document}
+\maketitle
+\tableofcontents
+\newpage
+
+\section{Introduction}
+The SKJS repository hosts a Skip-based implementation of a sound subset of the TypeScript language. The project integrates a Skip frontend, a native runtime, and an extensive suite of examples and negative tests to ensure that the checker both enforces the intended restrictions and preserves developer ergonomics. This report surveys the repository structure, build process, type representation, subtyping and constraint solving, checking algorithms for expressions, statements, classes, and functions, and the runtime and testing ecosystem. The analysis is grounded directly in the Skip sources under \texttt{src/}, the language rules captured in \texttt{skjs-rules.md}, the native runtime in \texttt{runtime.cpp} and \texttt{runtime.h}, the build manifest \texttt{Skargo.toml}, build script \texttt{build.sk}, binary distribution guide \texttt{docs/binary-distribution.md}, and the examples and test suites under \texttt{examples/} and \texttt{tests/}. Inline citations point to the authoritative files (e.g., ``see \texttt{src/TypeCheckExpr.sk}'').
+
+\section{Formal Preliminaries}
+\subsection{Notation and Mathematical Background}
+We write $\mathcal{P}(X)$ for the powerset of $X$, $\times$ for Cartesian product, and $\subseteq$ for subset. A complete lattice $(L,\leq)$ admits arbitrary joins/meets; we write $\bigsqcup$ and $\bigsqcap$. If $F:L\to L$ is monotone, the least fixed point $\mu F$ exists (Tarski) and can be computed as the limit of the increasing chain $\bot \leq F(\bot) \leq F^2(\bot) \leq \dots$ (Kleene). We use $\llbracket\cdot\rrbracket_\rho$ for denotation under type-parameter valuation $\rho$, $\top$/$\bot$ for top/bottom, and $\uplus$/$\sqcup$ for clause/clauses unions.
+
+\subsection{Type Language: Syntax and Well-Formedness}\label{sec:union-syntax-wf}
+We use the abstract syntax in Section~\ref{sec:union-syntax-wf} (restated here succinctly): single-type constructors (\texttt{SType}) include units, literal primitives, tuples, promises, objects (fields and at most one index), algebraic data types (ADT branches keyed by a distinguished \texttt{kind}), and sets of functions (overloads). General types (\texttt{TType}) combine an \texttt{Insts} set (variables, named instances, deferred union/intersection) with a DNF of \texttt{Clauses}. Well-formedness invariants include: unique clause per quantified-variable set; top-canonicalization (single top clause); omission of bottom clauses; disjointness of ADTs and objects; and no instances when \texttt{Clauses}$=\top$.
+
+\subsection{Semantic Interpretation with Environments}
+Let $\rho$ map type parameters to subsets of values. We interpret \texttt{TVar} as $\rho(X)$; \texttt{TSInst} via its (possibly recursive) alias equation as $\mu F$; \texttt{TUnion}/\texttt{TInter} as set union/intersection; tuples as products; promises covariantly in their payload; objects covariantly by fields and index signatures; ADTs as tagged unions; functions contravariantly in parameters and covariantly in returns. Full definitions appear in Definition~1.
+
+\subsection{Subtyping and Variance}
+We assume standard subtyping: units and primitives form flat hierarchies; tuples are pointwise; objects are width/depth-subtyped by fields (with optionality), index signatures constrain key/value types; ADTs subtype per-tag; promises are covariant; functions are contravariant in parameters and covariant in returns. Overloads are matched by arity and parameter shapes. Importantly, \texttt{TFuns::union} computes a greatest lower bound under subtyping (intersecting domains, unioning codomains), not a set-theoretic union of behaviours.
+
+\subsection{Normalization to DNF}
+Clauses and clause-maps (\texttt{Clauses}) maintain canonical DNF with invariants enforced by constructors (top collapse, bottom omission, unique key). Normalization distributes intersections over unions and rekeys by quantified-variable sets. Lemma~0.a and Lemma~0.b (later) state denotation preservation and normal-form maintenance. A small example:
+\[
+\forall X.(S_1 \mid S_2)~\wedge~\forall X.S_3 \equiv \forall X.(S_1 \wedge S_3)~\mid~\forall X.(S_2 \wedge S_3).
+\]
+We formalize the core operators:
+\begin{itemize}[leftmargin=*]
+  \item Clause union $c_1 \uplus c_2$ requires equal quantified-variable sets and unions their \texttt{STypes} payloads (or yields top if either is top). Bottom payloads are omitted.
+  \item Clauses union $C_1 \sqcup C_2$ is key-wise: missing keys are kept; shared keys use $c_1 \uplus c_2$; a top result collapses the map to a single top clause.
+\end{itemize}
+Both preserve denotations and canonical form (proved later as Lemma~0.a/0.b).
+
+\paragraph{TypeScript Examples.}
+\begin{lstlisting}[language=TypeScript]
+// Unit and literal primitive singletons
+const emptyPort: null = null;
+const literalAnswer = 42 as const;
+
+// Tuple constructor
+const pair: [number, string] = [42, "engineers"];
+
+// Promise payloads
+async function fetchFlag(): Promise<boolean> {
+  return true;
+}
+
+// Object with optional field and index signature
+const cache: { hits?: number; [key: string]: number | undefined } = {
+  hits: 1,
+  miss: undefined,
+};
+
+// Algebraic data type (ADT) branch keyed by `kind`
+type Result<T> =
+  | { kind: "success"; data: T }
+  | { kind: "error"; message: string };
+const ok: Result<number> = { kind: "success", data: 1 };
+
+// Function overload set (represented as TFuns)
+function length(value: string): number;
+function length<T>(value: T[]): number;
+function length(value: string | unknown[]): number {
+  return value.length;
+}
+
+// Clause-level union merges compatible payloads
+type WithFlag = { flag: true } | { flag: false; reason: string };
+const denied: WithFlag = { flag: false, reason: "off" };
+\end{lstlisting}
+
+\section{Repository Composition and Build Process}
+The preceding Formal Preliminaries introduce the mathematical model; we now pivot to an implementation-oriented tour of the codebase that realizes those definitions. Subsequent sections reference the same notation without re-deriving it.
+\subsection{Workspace Layout}
+The Skip crate is declared in \texttt{Skargo.toml}, which names the \texttt{skjs} package, points to the upstream Skip standard library and CLI dependencies, and registers a binary target whose entry point is \texttt{SKJS.main} (\texttt{Skargo.toml}). Skip sources live under \texttt{src/}, where parser, environment, type, and checker modules are grouped by responsibility. Supporting assets include:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{skjs-rules.md}: documentation of the supported TypeScript surface and known limitations.
+  \item \texttt{runtime.cpp}/\texttt{runtime.h}: the native runtime linked into the binary.
+  \item \texttt{docs/binary-distribution.md}: CircleCI-based release process.
+  \item \texttt{examples/src/*.ts}: curated positive programs showcasing supported features.
+  \item \texttt{tests/expect-error}: negative cases that must be rejected.
+  \item \texttt{tests/ts-conformance}: harness for importing upstream TypeScript suites via \texttt{devtools/copy-ts-tests.sh}.
+  \item \texttt{import-stubs/}: ambient module definitions (Fastify, Pino, \texttt{@types}, etc.) resolved during checking.
+\end{itemize}
+
+\subsection{Source Module Overview}
+The Skip sources under \texttt{src/} are grouped logically:
+\begin{itemize}[leftmargin=*]
+  \item Frontend: \texttt{Lexer.sk}, \texttt{Parser*.sk}, and \texttt{Ast.sk} build the TypeScript subset AST and track source positions via \texttt{Position.sk} and \texttt{NewLines.sk}.
+  \item Dependency graph and storage: \texttt{SKStoreUtils.sk}, \texttt{ModuleResolver.sk}, \texttt{Files.sk}, \texttt{FileDefs.sk}, and \texttt{ClassHeriarchy.sk} control how files are loaded, parsed, cached, and related (e.g., inheritance graphs used by class checking).
+  \item Type machinery: \texttt{TType*.sk} (representation, unions, intersections, transformers, substitution, pretty-printing) plus \texttt{TEnv.sk} (normalization and instantiation).
+  \item Checking pipeline: \texttt{TypeCheck.sk} declares the main \texttt{TypeChecker} class, while \texttt{TypeCheckExpr.sk}, \texttt{TypeCheckStmt.sk}, \texttt{TypeCheckClass.sk}, \texttt{TypeCheckFun.sk}, \texttt{TypeCheckScope.sk}, \texttt{TypeCheckEnv.sk}, \texttt{TypeCheckRefine.sk}, \texttt{TypeCheckUtils.sk}, and \texttt{TypeCheckDef.sk} (top-level definitions) provide specialized routines. \texttt{TypeCheckDef.sk} wires parsing results into checker invocations and also enforces project-wide constraints (e.g., allowed declaration kinds).
+  \item Diagnostics: \texttt{TypingError.sk} formats multi-position errors, while \texttt{Reachability.sk} and \texttt{Termination.sk} compute control-flow summaries used to detect unreachable code and missing returns.
+\end{itemize}
+Understanding these modules clarifies where each concern lives when extending the checker.
+
+\subsection{Skip Build and Native Runtime}
+The build pipeline couples Skip compilation with a native runtime produced by \texttt{build.sk}. The script declares \texttt{runtime.cpp} as the only native source, tracks it for incremental rebuilds, configures position-independent code according to \texttt{RELOCATION\_MODEL}, and injects release or debug flags. Debug builds include libbacktrace headers to provide richer stack traces, while release builds skip the dependency and instead emit a diagnostic string when backtraces are unavailable (\texttt{runtime.cpp}, \texttt{runtime.h}). The script links the resulting static archive (\texttt{libskjs\_runtime.a}) into the Skip executable by emitting \texttt{skargo:skc-link-lib} directives (\texttt{build.sk}). This tight coupling ensures that runtime services (chiefly \texttt{SKIP\_print\_backtrace}) are always in sync with the Skip frontend.
+
+\subsection{CLI Workflow}
+\texttt{src/Main.sk} exposes two primary subcommands implemented with \texttt{skiplang/cli}: \texttt{check} (type-check files) and \texttt{run} (type-check and then execute with Bun). The CLI wires reusable arguments such as \texttt{--dir}, \texttt{--base-url}, \texttt{--import-stubs}, and persistent cache knobs (\texttt{--init}, \texttt{--data}) so teams can amortize parse and type information across runs. The \texttt{run} subcommand reuses \texttt{execCheckWithStatus} to ensure the program is type safe before delegating to Bun via \texttt{Posix.execvp}. Verbose and backtrace flags toggle additional logging and force \texttt{SKIP\_print\_backtrace} on errors. \texttt{check} defaults to scanning \texttt{src/**/*.ts} but also accepts explicit file lists, aligning the CLI with both CI pipelines and editor integrations.
+
+\subsection{Binary Distribution}
+Continuous delivery relies on CircleCI, as documented in \texttt{docs/binary-distribution.md}. Two jobs---\texttt{build\_and\_test} and \texttt{build\_binaries}---validate the code and produce platform-specific artifacts named \texttt{skjs\_\{COMMIT\}\_\{PLATFORM\}\_\{ARCH\}}. Artifacts are retained for 30 days and accessed via authenticated API calls or the convenience script \texttt{scripts/fetch-binary.sh}. GitHub Actions is reserved for presubmit testing, while CircleCI handles signed releases and metadata management. Local developers can invoke \texttt{./scripts/build-release.sh} or run \texttt{skargo build --release} (after cloning the Skip toolchain) to build the CLI offline.
+The fetch script supports selecting commits or branches, configuring output directories, skipping tests for faster iteration, and authenticating via the \texttt{CIRCLECI\_TOKEN} environment variable. By keeping binaries off-repo, SKJS avoids churn in source control while still offering deterministic builds for downstream consumers who need to integrate the checker into larger Skip programs.
+
+\section{Core Type Representation}
+This section complements the formal syntax of Section~\ref{sec:union-syntax-wf} with implementation details from \texttt{src/TType*.sk}. We refer back to the formal definitions rather than restating them.
+\subsection{Disjunctive Normal Form and Type Objects}
+The central type representation is \texttt{TType} (\texttt{src/TType.sk}). Each \texttt{TType} stores:
+\begin{enumerate}[leftmargin=*]
+  \item A position \texttt{pos} used for diagnostic attribution.
+  \item A cached hash for structural deduplication.
+  \item \texttt{insts}: an ordered set of \texttt{TInsts} (type variables, unexpanded named instances, and deferred intersections).
+  \item \texttt{clauses}: a disjunctive normal form (DNF) of conjunctions---called clauses---that mix universally quantified parameters and single-type payloads (\texttt{Clauses} and \texttt{STypes}).
+\end{enumerate}
+The interpretation is $\llbracket t \rrbracket = \llbracket t.\text{insts} \rrbracket \sqcup \llbracket t.\text{clauses} \rrbracket$. Constructors such as \texttt{TType::bottom}, \texttt{TType::top}, \texttt{TType::single}, and smart constructors for variables and class instantiations enforce canonical hashing and DNF invariants.
+
+\subsection{Clauses, STypes, and Instances}
+\texttt{Clauses} capture unions-of-intersections; each clause holds a set of universally quantified variables and an optional \texttt{STypes} payload. \texttt{STypes} lift single-type terms such as primitives (\texttt{TPrimValue}), units (\texttt{TPrimUnit}), tuples (\texttt{TTuple}), algebraic data types (\texttt{TAlgebraic}), promises, and function sets (\texttt{TFuns}). Instances include:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{TVar}: existential placeholders produced during inference.
+  \item \texttt{TSInst}: named generics awaiting expansion.
+  \item \texttt{TInter}/\texttt{TUnion}: deferred intersections or unions introduced to break cycles (\texttt{src/TTypeInter.sk}, \texttt{src/TTypeUnion.sk}).
+\end{itemize}
+Helper operations like \texttt{mapSTypes}, \texttt{mapClauses}, and \texttt{mapTParams} model variance-sensitive rewrites that rebuild union/intersection structures through the current substitution and typing environment. This is central to flow-sensitive updates, where terms are filtered or augmented without losing memoized invariants.
+
+\subsection{Primitive, Literal, and Composite Types}
+Primitive domains (string, number, bigint, boolean) are represented by \texttt{TPrimValue}, which tracks both the kind and an optional set of literal values. Units such as \texttt{null}, \texttt{undefined}, and \texttt{void} use \texttt{TPrimUnit}. Tuples are modeled via \texttt{TTuple}, arrays are thin wrappers over tuples (empty literal arrays become tuples, as enforced by \texttt{skjs-rules.md}), and object literals become \texttt{TObject} instances with named and index fields. Algebraic data types (ADTs) are \texttt{TAlgebraic} values, i.e., tagged unions whose branches are constrained by a dedicated \texttt{kind} field (\texttt{TEnv.createTFields} in \texttt{src/TEnv.sk}). Function sets are \texttt{TFuns}, which keep distinct tables for ``normal'' functions and ``methods'' to respect method receiver rules.
+
+\subsection{Type Parameters and Environments}
+\texttt{TEnv} (\texttt{src/TEnv.sk}) glues AST-level declarations to the type runtime. Its responsibilities include:
+\begin{itemize}[leftmargin=*]
+  \item Tracking type parameters in scope (\texttt{tparams}) and the instantiation-time substitution map.
+  \item Ensuring only a single expansion level for recursive types (\texttt{seenInstantiate}) and guarding against cyclic unions/intersections (\texttt{seenUnion}, \texttt{seenInter}).
+  \item Normalizing AST type expressions (\texttt{normalize}), instantiating class bodies (\texttt{new}, \texttt{newObject}, \texttt{newConstructor}), and enforcing type-parameter constraints via subtyping tests.
+  \item Generating implicit type arguments when a generic class is constructed without explicit parameters (\texttt{makeTArgs}).
+  \item Providing structural introspection for keys (\texttt{keys}, \texttt{forInKeys}) and field creation (\texttt{createTFields}), which is reused both by type declarations and literal expressions.
+\end{itemize}
+The environment is referenced by every checking pass. For example, resolving \texttt{new C<T>} constructs uses \texttt{TEnv.new} to produce an object type that incorporates field constraints declared in the class definition. Likewise, flow refinements rely on \texttt{TEnv.keys} to interpret \texttt{in}-checks on objects.
+
+Both \texttt{TType::expand} and \texttt{TType::getSTypes} rely on \texttt{TEnv} to decide when to inline instances. Expansions are variance-aware: covariant queries distribute unions and intersections differently than contravariant queries, and the mapper functions in \texttt{TTypeTransformers.sk} encapsulate this knowledge. Consequently, every time a clause is inspected, the checker knows whether it is safe to grow or shrink the type without violating previous constraints.
+
+\section{Checker Pipeline}
+\subsection{From Files to Definitions}
+\texttt{TypeCheckDef.sk} iterates over parsed AST definitions, dispatching to \texttt{TypeChecker::class\_}, \texttt{TypeChecker::funDef}, or expression-level entry points depending on the declaration kind. The module collaborates with \texttt{FileDefs.sk} and \texttt{ModuleResolver.sk} to ensure that import graphs are resolved before checking begins. Each file is associated with a \texttt{CGNode} so that function dependencies can be tracked during analysis and reused for incremental builds.
+
+\subsection{Incremental Checking and Caching}
+The combination of \texttt{SKStoreUtils.sk} and \texttt{SKStore.Context} (referenced throughout \texttt{TEnv.sk} and \texttt{TypeCheckEnv.sk}) enables memoization of parsed files, type normalizations, and call graph relationships. When \texttt{recordCalls} is invoked inside \texttt{TypeCheckExpr.sk}, the edge is stored in the context so that subsequent runs can reuse the graph unless the callees changed. Similarly, \texttt{TEnv.defMap} provides AST snapshots keyed by definition names, so once a type alias or class has been normalized it can be re-instantiated quickly.
+
+\subsection{Error Reporting and Diagnostics}
+\texttt{TypingError.sk} accepts arrays of \texttt{(PosRange, message)} pairs. Each checking routine accumulates context before calling \texttt{typingError}, ensuring that users receive both the primary failure location and any relevant witnesses (e.g., ``expected type declared here''). The pretty-printer in \texttt{TTypePp.sk} produces human-readable strings for inclusion in these errors. Additionally, \texttt{Reachability.sk} and \texttt{Termination.sk} annotate AST nodes with control-flow summaries so that diagnostics such as ``Missing return statement'' or ``Unreachable code'' can quote exact statement spans.
+
+\section{Subtyping, Unions, and Constraint Solving}
+The implementation refines the abstract subtyping rules introduced earlier. The material below focuses on algorithmic structure; refer to the Formal Preliminaries for semantic contracts.
+\subsection{Clause-Level Subtyping}
+\texttt{src/TTypeSubtyping.sk} encapsulates subtyping. The algorithm recursively descends through clause combinations. Each clause from the left-hand side must be subsumed by some clause on the right-hand side, provided they agree on universally quantified variables. When both clauses contain \texttt{STypes}, the check delegates to \texttt{STypes::isSub}, which aligns single-type lists and invokes \texttt{isSubSType} per entry. Errors such as \texttt{STTooManySType}, \texttt{STMissingField}, and \texttt{STTooManyTFun} pinpoint exact mismatches for diagnostics emitted by \texttt{TypeChecker::checkSubType} (\texttt{src/TypeCheckUtils.sk}).
+
+\paragraph{TypeScript Example.}
+\begin{lstlisting}[language=TypeScript]
+type Animal = { kind: "animal"; legs: number };
+type Dog = Animal & { bark(): void };
+
+declare const spot: Dog;
+const asAnimal: Animal = spot; // Dog <: Animal because every clause of Dog refines Animal
+
+type Nullable<T> = T | null;
+declare const maybeDog: Nullable<Dog>;
+const maybeAnimal: Nullable<Animal> = maybeDog; // Union clauses checked individually
+\end{lstlisting}
+
+\subsection{Algebraic Data Types and Objects}
+ADTs leverage \texttt{TAlgebraic::isSub} to compare branch sets: each branch in the subtype must appear in the supertype with compatible constructor fields. For objects, \texttt{TFields::isSub} checks both explicit fields and index signatures. Optional fields are widened by unioning \texttt{undefined} before comparison, mirroring how SKJS treats TypeScript optional properties (\texttt{src/TTypeSubtyping.sk}). Index signatures are validated by first ensuring key types align and then recursively checking value types; lacking optionality triggers \texttt{STMissingField}.
+
+\paragraph{TypeScript Examples.}
+\begin{lstlisting}[language=TypeScript]
+// ADT subtyping
+type Shape =
+  | { kind: "circle"; radius: number }
+  | { kind: "square"; size: number };
+type ColoredShape =
+  | { kind: "circle"; radius: number; color: string }
+  | { kind: "square"; size: number; color: string };
+
+declare const palette: ColoredShape;
+const plain: Shape = palette; // Each branch adds extra fields that subtype covariantly
+
+// Object subtyping with optional fields
+type Config = { host: string; port?: number };
+type DerivedConfig = { host: string; port?: number; protocol: "http" | "https" };
+declare const derived: DerivedConfig;
+const base: Config = derived;
+
+// Index signature compatibility
+type Cache = { [key: string]: number };
+type ExtendedCache = { [key: string]: number | undefined; hits?: number };
+declare const extended: ExtendedCache;
+const cache: Cache = extended; // `undefined` is unioned into the value type
+\end{lstlisting}
+
+\subsection{Function Variance}
+\texttt{TFuns::isSub} ensures that, for each overload in the left operand, there is an appropriately typed overload on the right. Parameters are contravariant and return types covariant, implemented by \texttt{checkSubType} calls inside \texttt{TypeChecker::call} (\texttt{src/TypeCheckExpr.sk}) and \texttt{TFuns::isSub} (\texttt{src/TTypeSubtyping.sk}). Methods and free functions are stored separately to prevent mixing receiver expectations.
+
+\paragraph{TypeScript Example.}
+\begin{lstlisting}[language=TypeScript]
+type Handler = (input: string) => { ok: true; value: string };
+type WiderHandler = (input: string | number) => { ok: true; value: string };
+
+declare const h: Handler;
+const acceptWider: WiderHandler = (input) => ({ ok: true, value: String(input) });
+
+// Contravariance on parameters, covariance on returns
+const delegate: Handler = acceptWider; // OK: accepts a supertype of `string`
+\end{lstlisting}
+
+\subsection{Constraint Solving via \texttt{TEnv}}
+Constraint solving spans multiple modules:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{TTypeSubst.sk} records substitution state. Every time a \texttt{TVar} is instantiated, it updates \texttt{subst.version}, signalling dependent routines (e.g., \texttt{TypeChecker::call}) to re-check arguments.
+  \item \texttt{TTypeTransformers.sk} contains generic mappers that rebuild types under variance annotations. These are leveraged when substituting type parameters and when narrowing locals so that variance is respected.
+  \item \texttt{TTypePp.sk} pretty-prints types for diagnostics; while not part of solving per se, it exposes enough structure that debugging constraint failures becomes tractable.
+\end{itemize}
+The aggregate effect is a lazy, memoized solver that can express recursive constraints (through unexpanded instances) while still providing precise errors.
+Type parameter constraints (\texttt{extends} clauses) are enforced during \texttt{TEnv.instantiate}: each argument is normalized and checked against the declared constraint using \texttt{isSubTType}. During function calls, \texttt{TypeChecker::call} synthesizes fresh type variables if explicit arguments are omitted, then replays parameter checking until the substitution stabilizes (tracked via \texttt{subst.version}). Intersections inject constraints into \texttt{TVar} objects by calling \texttt{TVar::addConstraint} when one side reduces to a single variable (\texttt{src/TTypeInter.sk}). This design cleanly separates symbolic constraint accumulation from concrete clause expansion.
+
+\section{Flow-Sensitive Refinement and Scopes}
+\subsection{Scope Model}
+The mutable environment \texttt{TCEnv} (\texttt{src/TypeCheckEnv.sk}) bundles the global substitution, current \texttt{Scope}, call graph context, and a map of ``local objects'' that track object literals bound to locals so that their types can grow until the value escapes. Each \texttt{Scope} maintains local bindings and references, supports hierarchical lookup, and records whether a variable is accessed through a loop to guard against unsound back edges (\texttt{src/TypeCheckScope.sk}). Scope merging operations merge or replace bindings when branching structures rejoin, using union to approximate types along both control-flow paths.
+Internally, \texttt{Scope::escapingRefs} enumerates bindings that flow out of the scope (i.e., locals defined in an inner block but referenced by outer scopes). \texttt{Scope::popMerge} unions these with the parent scope, while \texttt{Scope::popReplace} overwrites parent entries when both branches agreed on the same binding. This fine-grained control avoids needless widening. Meanwhile, \texttt{TCEnv.localObjects} stores either \texttt{LOCanGrow(bound)} or \texttt{LOUsed(pos)}, allowing the checker to detect when an object literal should stop accumulating fields (e.g., after it is passed to a function call).
+
+\subsection{Condition Evaluation}
+\texttt{TypeCheckRefine.sk} defines \texttt{TypeChecker::evalCond}, which interprets boolean expressions and refines locals accordingly. Supported refinements include:
+\begin{itemize}[leftmargin=*]
+  \item Strict equality/inequality against literal strings, \texttt{null}, or \texttt{undefined}.
+  \item Algebraic branch discrimination via the special \texttt{kind} field (\texttt{evalAlgebraicBranchEquality}), which filters \texttt{TAlgebraic} branches.
+  \item \texttt{typeof} checks that isolate primitive kinds and optionally inject default witnesses (e.g., string literal ``ready'') when narrowing to a singleton type.
+  \item \texttt{instanceof} checks that replace the local type with the instantiated class type computed by \texttt{TEnv.new}.
+  \item \texttt{in} checks that either add a field to the object type (when the branch succeeds) or remove it on the false branch, using \texttt{getInLhsTypeAndFields} from \texttt{src/TypeCheckExpr.sk}.
+\end{itemize}
+Refinements rewrite the local's \texttt{TType} via \texttt{setLocal}, which expands the current type, filters its \texttt{STypes} with predicates, optionally injects default literals, and writes the result back into the current scope. All refinements operate on locals; comparing property accesses directly triggers the ``Only locals can be compared to null/undefined'' error documented in \texttt{skjs-rules.md}.
+
+\subsection{Loop and Switch Handling}
+Loops rely on \texttt{Scope::isThroughLoop} to detect when a variable defined outside the loop is assigned within it. In that case, \texttt{Scope::set} invokes a callback that checks the new value is a subtype of the original; this prevents widening locals beyond what preceding iterations guarantee. \texttt{Scope::merge} and \texttt{Scope::popMerge} orchestrate data-flow joins for \texttt{if}, loops, and \texttt{try}-\texttt{catch} constructs. Finally blocks run in dedicated scopes so that any assignments there are merged back independently of whether the try/catch completed abruptly.
+\texttt{TypeCheckStmt.sk} creates dedicated scopes for loops so that refinements made inside a loop body do not pollute the outer environment unless the variable is guaranteed to be initialized. For example, \texttt{for} statements execute the initializer in a non-loop scope, evaluate the condition in a loop scope (refining guard locals), execute the body, and merge changes back while respecting loop-carried dependencies. \texttt{switch} statements first ensure exhaustiveness (\texttt{switchCheckExhaustiveness}) and then evaluate each branch in its own scope, inserting synthetic equality checks when a case label is constant to benefit from \texttt{evalCond}. Branch scopes are merged, but branches lacking \texttt{break} statements are rejected (\texttt{switch} in \texttt{src/TypeCheckStmt.sk}).
+
+\section{Expression Checking Algorithms}
+\subsection{Literal and Reference Evaluation}
+\texttt{TypeChecker::expr} (\texttt{src/TypeCheckExpr.sk}) is the workhorse. It handles:
+\begin{itemize}[leftmargin=*]
+  \item Literal numbers, bigints, strings, booleans, \texttt{null}, and \texttt{undefined}, using literal singleton constructors when \texttt{mostPrecise} is true (e.g., when binding a \texttt{kind} field).
+  \item Template literals: each interpolation must be ``stringifiable,'' verified via \texttt{checkStringifiable} (\texttt{src/TypeCheckUtils.sk}); the whole expression evaluates to \texttt{string}.
+  \item Variable references: locals are retrieved from \texttt{Scope}. Otherwise, the resolver looks through builtins (resolved using \texttt{defMap}) and module-level declarations; only \texttt{const} exports are eligible for inline value typing.
+\end{itemize}
+The helper \texttt{asConstExpr} recognizes literal constructs, enforces that redundant \texttt{as const} annotations are rejected, and produces singleton \texttt{TType} values.
+
+\subsection{Object and Algebraic Construction}
+Object literals are folded into \texttt{TObject} or \texttt{TAlgebraic} depending on whether a distinguished \texttt{kind} field appears. The expression checker in \texttt{TypeCheckExpr.sk} merges spread fields directly by iterating the run-time types produced for each spread expression (\texttt{TEnv.createTFields} is reserved for type annotation normalization). Embedded method declarations (\texttt{function} fields) are still type-checked by recursively invoking \texttt{TypeChecker::funDef} with a synthetic class context. Tuple literals use \texttt{EArray} but yield \texttt{TTuple} types (reflecting the ``array literals produce tuples'' rule).
+After iterating fields, \texttt{createObject}—the helper defined in \texttt{src/TType.sk}—constructs either a \texttt{TObject} or a \texttt{TAlgebraic} value. For ADTs, each branch's field set is preserved, and the checker later relies on this structure to refine by tag. Index signatures captured through \texttt{[key: K]: V} syntax are preserved in \texttt{TFields.indexes}, ensuring that loops over dictionaries or \texttt{in} checks behave predictably.
+
+\subsection{Calls, Constructors, and Templates}
+Function calls go through \texttt{TypeChecker::call}, which iterates every possible overload (functions and methods) carried by the callee's \texttt{TFuns} value. For each overload, it:
+\begin{enumerate}[leftmargin=*]
+  \item Instantiates type parameters either from explicit \texttt{targs} or fresh \texttt{TVar}s.
+  \item Repeatedly checks arguments against parameters until the substitution stops evolving (\texttt{subst.version} loop).
+  \item Validates optional and spread parameters, including tuple element extraction for \texttt{...args}.
+  \item Records call graph edges via \texttt{recordCalls}, enabling later analyses in \texttt{CGNodes}.
+\end{enumerate}
+Constructor calls (\texttt{new C(...)}) use \texttt{TEnv.newConstructor} to fetch the constructor type (\texttt{CstrType}) and then delegate to \texttt{callConstructor}. \texttt{super(...)} is only available when \texttt{TypeChecker::super} is populated (during class checking). Template strings, \texttt{await}, ternary expressions, and anonymous closures are also handled inline. \texttt{anonFunction} requires explicit parameter annotations (enforced per \texttt{skjs-rules.md}), synthesizes a \texttt{TFuns} value, and records it in the call graph.
+Special cases cover intrinsic functions: \texttt{console.assert} triggers an eager \texttt{evalCond} on its first argument so that successive code benefits from the refinement. Builtins are resolved via \texttt{TypeChecker::expr} consulting \texttt{defMap} with either the user file name or the builtins file configured via the CLI; this is how DOM-like globals can be provided through \texttt{@types/skjs}.
+
+\subsection{Assignments and Local Object Growth}
+Additional expression forms include:
+\begin{itemize}[leftmargin=*]
+  \item Arithmetic and comparison operators: numeric comparisons consult \texttt{getExprPrimKind} to ensure operands share the same primitive kind, rejecting mixed-type comparisons. Logical operators require boolean operands and feed into \texttt{evalCond} for short-circuit refinement.
+  \item The \texttt{in} operator: \texttt{TypeChecker::expr} calculates whether both true and false outcomes are possible given the operand types. If both outcomes are possible, the result is boolean; if not, a ``This expression is always \ldots'' error is raised.
+  \item \texttt{typeof}: returns the string literal type of the operand; \texttt{TypeCheckRefine} uses the operand to narrow locals when compared against literal strings.
+  \item \texttt{await}: ensures the awaited expression is a \texttt{Promise<T>} and yields \texttt{T}.
+  \item Conditional expressions: evaluate both branches in isolated scopes with condition-driven refinements, then union the resulting types.
+\end{itemize}
+The helper \texttt{TypeChecker::get} (defined in \texttt{src/TypeCheckExpr.sk}) also deserves mention: it enforces property access rules, differentiates between methods and fields, and implements optional chaining by unioning with \texttt{undefined} when necessary.
+
+\subsection{In-Operator Semantics}
+Handling \texttt{key in object} expressions spans both \texttt{TypeCheckExpr.sk} and \texttt{TypeCheckRefine.sk}. First, \texttt{expr} infers the type of the LHS and RHS. For objects, it extracts candidate field maps and tracks whether the expression can evaluate to both true and false. Arrays, tuples, and ADTs are supported by over-approximating their keys via \texttt{TEnv.keys}. Based on this analysis:
+\begin{enumerate}[leftmargin=*]
+  \item If neither outcome is possible, the checker emits ``Unexpected in'' along with type witnesses for both sides.
+  \item If only one outcome is possible, the checker raises ``This expression is always true/false,'' mirroring TypeScript's control-flow analysis.
+  \item Otherwise, the result type is boolean, and \texttt{evalCond} is called so that the RHS local is refined: on the true branch, SKJS optionally adds the field to the object's type (provided no index signature conflicts); on the false branch, it removes the field from \texttt{TFields}.
+\end{enumerate}
+This dual-phase approach ensures the operator participates in flow analysis rather than being treated as a mere boolean.
+\texttt{assign} begins by validating L-values. Assignments to locals update the scope with the RHS type after ensuring the new type is compatible with the old type (via \texttt{checkSubType}). When assigning through property accesses on tracked ``local objects,'' SKJS allows fields to grow until the object escapes. The \texttt{localObjects} map in \texttt{TCEnv} records whether a local object can still grow (\texttt{LOCanGrow}) and an optional bounding type. Once the object is observed (e.g., by reading the variable elsewhere), its state flips to \texttt{LOUsed}, freezing the field set (\texttt{src/TypeCheckExpr.sk}).
+
+\section{Statements, Functions, and Classes}
+\subsection{Statements}
+\texttt{TypeChecker::stmt} (\texttt{src/TypeCheckStmt.sk}) enforces language-level constraints:
+\begin{itemize}[leftmargin=*]
+  \item \texttt{var} declarations are forbidden; only \texttt{let} and \texttt{const} are allowed (rule 1 in \texttt{skjs-rules.md}).
+  \item Bindings require explicit types (with optional defaults). Tuple and object destructuring uses \texttt{bind}, which recursively matches patterns to tuple or object types, verifying shapes and optional defaults.
+  \item Conditionals call \texttt{checkBool}, create branch scopes, and merge them respecting liveness (terminal blocks with guaranteed \texttt{return} or \texttt{throw} do not contribute to the merged scope).
+  \item Loops establish loop scopes (\texttt{isLoop=true}) such that assignments to captured variables force subtype checks to ensure convergence.
+  \item \texttt{try/catch/finally}: the checker rejects explicit catch-type annotations (they cannot be trusted) and uses \texttt{TType::top} for the error binding unless the user omitted a parameter.
+\end{itemize}
+\texttt{switch} statements ensure each \texttt{case} either ends with a terminal statement or explicitly \texttt{break}s. A \texttt{default} branch is optional, but if the explicit cases fail to cover every reachable value the checker reports ``Missing branch'' diagnostics. Loop forms deserve special mention. \texttt{ForInOf} statements differentiate between key iteration (\texttt{for-in}) and value iteration (\texttt{for-of}). The former intersects the target's \texttt{keyof} approximation with \texttt{string} (\texttt{TEnv.forInKeys}); the latter asks \texttt{getValueType} to compute array/tuple element types or \texttt{[Symbol.iterator]} results. After each iteration, \texttt{Scope::popScopeReplace} merges the body scope back, ensuring that refinements (e.g., \texttt{if (item !== undefined)}) persist for subsequent iterations when sound.
+
+\subsection{Pattern Binding Walkthrough}
+Binding patterns are handled by \texttt{TypeChecker::bind}, which recursively visits tuple and object patterns. Consider the following snippet, inspired by destructuring in \texttt{tests/expect-error/destructuring.ts}:
+\begin{lstlisting}[language=TypeScript]
+const [first, second]: [number, string] = [1, "a"];
+const { name, age = 42 }: { name: string; age?: number } = person;
+\end{lstlisting}
+During checking:
+\begin{enumerate}[leftmargin=*]
+  \item The tuple pattern is matched against the tuple type. Size mismatches trigger an ``Invalid tuple pattern size'' error quoting both the pattern and the tuple type witness.
+  \item The object pattern collects explicit fields and (if present) a rest binding. Each field is looked up across all branches for ADTs or all shapes for \texttt{TObject}, aggregating types when multiple shapes provide the same field.
+  \item Default initializers are type-checked, but SKJS warns when a default is ``useless'' because the field cannot be \texttt{undefined}. This is implemented by comparing the field type against \texttt{undefined} via \texttt{isSubTType}.
+  \item Rest bindings receive the object type with the extracted fields removed, using \texttt{TObject.removeFields}.
+\end{enumerate}
+This walkthrough demonstrates how even seemingly simple destructuring involves DNF reasoning, optionality checks, and precise error reporting.
+
+\subsection{Function Checking}
+\texttt{TypeCheckFun.sk} orchestrates function declarations, including class methods. \texttt{funDefSetup} validates type parameters, binds \texttt{this}, requires explicit annotations for every parameter, and prohibits patterns or decorators that SKJS cannot model. Defaults are type-checked in a fresh scope so that the function body does not see uninitialized parameters. Async methods must return a \texttt{Promise} type with an explicit type argument; otherwise, \texttt{checkSubType} issues ``Async functions must return \ldots'' errors. Bodies must return on every execution path unless the return type is void. Interfaces cannot supply method bodies, whereas classes must (unless the method is marked abstract, which is currently unsupported per \texttt{skjs-rules.md}).
+Function checking proceeds through the following phases:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Parameter binding}: Each parameter name is normalized (spread parameters must be last) and inserted into the scope with its declared type. Optional parameters have \texttt{undefined} unioned in automatically.
+  \item \textbf{Default evaluation}: Default expressions run in a temporary scope, ensuring they cannot reference later parameters and that their types conform to the parameter type.
+  \item \textbf{Return tracking}: \texttt{this.retType} is set before type checking the body so that nested \texttt{return} statements can validate their expressions immediately.
+  \item \textbf{Async validation}: When \texttt{async} modifiers are present, \texttt{TypeCheckFun.sk} checks that the annotated return type is \texttt{Promise<U>} and sets \texttt{this.isAsync} so that nested control-flow utilities know they are inside an async context.
+  \item \textbf{Call graph recording}: Each function is associated with a \texttt{CGNode} that captures source span and kind (free, method, constructor). Calls emanating from the function are recorded via \texttt{recordCalls}, feeding the incremental analysis pipeline described earlier.
+\end{enumerate}
+
+\subsection{Class Checking}
+\texttt{TypeCheckClass.sk} enforces:
+\begin{itemize}[leftmargin=*]
+  \item Single inheritance for concrete classes (interfaces can extend multiple bases). Constructor signatures in derived classes must match their parents, echoing rule 3 in \texttt{skjs-rules.md}.
+  \item No optional type parameters on classes; each \texttt{tparam} must appear explicitly.
+  \item Field modifiers are largely unsupported (private/protected/readonly emit TODO diagnostics), and \texttt{static} fields are forbidden.
+  \item Constructors cannot be async, cannot have modifiers, and must not declare return types. When absent, every field without a default must be optional, otherwise ``Uninitialized field'' is reported.
+  \item Implements clauses trigger subtyping checks between the synthetic \texttt{this} parameter and the interface type returned by \texttt{TEnv.new}.
+\end{itemize}
+During constructor checking, SKJS creates a ``partial this'' type that only includes fields initialized with values. The constructor body runs in this context, and upon exit \texttt{checkSubType} ensures the constructed object matches the full class type (after filtering methods so that only data fields remain). The optional tracking of \texttt{super} allows \texttt{super(...)} calls in derived classes and merges the resulting type back into \texttt{this}.
+Class declarations also interact with the class hierarchy recorder (\texttt{ClassHierarchy.sk}). Each time a class extends another, \texttt{recordClassHierarchy} captures the relationship so tooling (e.g., language servers) can later answer ``show me subclasses'' queries. Interfaces leverage the same mechanism, allowing the checker to reuse resolution logic when verifying \texttt{implements} clauses.
+
+\section{Runtime, Stubs, and Testing}
+\subsection{Native Runtime}
+\texttt{runtime.cpp} provides \texttt{SKIP\_print\_backtrace}. In debug builds it initializes libbacktrace, walks the stack, and prints file/line/function triples. In release builds, the function emits a warning that backtraces are unavailable. The header \texttt{runtime.h} declares the function for both C and C++ consumers. Because the runtime is always built and linked via \texttt{build.sk}, the Skip checker can safely call into it when reporting fatal diagnostics or unhandled exceptions.
+Although \texttt{runtime.cpp} is concise, it is integrated deeply: \texttt{build.sk} links the resulting archive via \texttt{skargo:skc-link-lib}, and the checker can request backtraces during panic conditions stemming from \texttt{typingError}. Developers can also intentionally call \texttt{SKIP\_print\_backtrace} when debugging complex type interactions.
+
+\subsection{Import Stubs and Ambient Modules}
+The \texttt{import-stubs/} directory mirrors the module structure the checker must resolve: Fastify (\texttt{import-stubs/fastify}), Pino, \texttt{@types}, \texttt{@fastify}, and Skip runtime adapters. Each stub file exports TypeScript declarations that SKJS parses and type-checks just like project sources, allowing real-world programs to import these modules without needing their full implementations. Specialized stubs under \texttt{import-stubs/for-tests} provide fixtures for the expect-error suite, ensuring that diagnostics tied to external modules remain stable.
+
+\subsection{Examples and Expect-Error Suites}
+\texttt{examples/src/} demonstrates idiomatic code: \texttt{type\_refinement\_examples.ts} underscores the ``locals only'' refinement rule, while \texttt{class\_inheritance\_test.ts}, \texttt{try\_catch.ts}, and \texttt{test\_ternary\_refinements.ts} illustrate class semantics, exception handling, and ternary-based narrowing. Negative tests under \texttt{tests/expect-error} cover every rule in \texttt{skjs-rules.md}---for example, \texttt{control-flow-refinement.ts} asserts that post-guard assignments refine union types, \texttt{optionalChaining.ts} captures unsupported optional chaining forms, and \texttt{template-literal-non-string.ts} verifies template interpolation errors. These suites are executed by \texttt{tests/Main.sk}, which loads helpers from \texttt{tests/Helpers.sk}.
+
+\subsection{Conformance Harness}
+The repository can import upstream TypeScript conformance tests by running \texttt{devtools/copy-ts-tests.sh}. The script copies TypeScript files and their reference error baselines into \texttt{tests/ts-conformance}, ensuring that SKJS can be evaluated against real-world language edge cases. The harness enforces file layout invariants (only \texttt{.ts} files) and ensures the baseline errors accompany each copied test, enabling automated comparison.
+Conformance imports preserve directory structure, so SKJS can mirror TypeScript's categorization (e.g., \texttt{cases/compiler/}). When combined with the expect-error harness, maintainers can rapidly determine whether a change loosens or tightens type rules by diffing the produced diagnostics.
+
+\section{Module Reference Summary}
+Table~\ref{tab:modules} summarizes the most relevant modules and their responsibilities. Each entry links the conceptual role back to the concrete file paths so that future contributors can target the correct layer when extending SKJS.
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|p{0.7\linewidth}|}
+\hline
+\textbf{Module} & \textbf{Responsibility} \\
+\hline
+\texttt{src/TType.sk} & Defines the core \texttt{TType} class, clause manipulation, and smart constructors for bottom/top/single types. \\
+\hline
+\texttt{src/TEnv.sk} & Normalizes AST types, instantiates classes, maintains type-parameter scopes, and exposes key/field introspection helpers used by both declarations and expressions. \\
+\hline
+\texttt{src/TypeCheckExpr.sk} & Implements expression typing, including literals, object construction, calls, property access, optional chaining, \texttt{await}, and anonymous functions. \\
+\hline
+\texttt{src/TypeCheckStmt.sk} & Checks statements, builds and merges scopes, and enforces loop/conditional semantics as well as \texttt{switch} exhaustiveness. \\
+\hline
+\texttt{src/TypeCheckClass.sk} & Validates class declarations, inheritance, constructor correctness, and field initialization rules. \\
+\hline
+\texttt{src/TypeCheckFun.sk} & Handles free functions and methods, parameter binding, async validation, and body checking. \\
+\hline
+\texttt{src/TypeCheckRefine.sk} & Performs flow-sensitive refinements for equality, \texttt{typeof}, \texttt{instanceof}, and \texttt{in} expressions. \\
+\hline
+\texttt{src/TypeCheckScope.sk} & Provides the mutable scope lattice, including binding, lookup, and merging logic with loop-awareness. \\
+\hline
+\texttt{src/TypeCheckEnv.sk} & Encapsulates the mutable checking environment, substitution, call graph context, and local-object tracking. \\
+\hline
+\texttt{runtime.cpp}/\texttt{runtime.h} & Supplies the native backtrace helper linked into the final binary via \texttt{build.sk}. \\
+\hline
+\texttt{docs/binary-distribution.md} & Documents CI/CD flows, artifact naming, and retrieval scripts, guiding both maintainers and consumers. \\
+\hline
+\end{tabular}
+\caption{Key SKJS modules and their core responsibilities.}
+\label{tab:modules}
+\end{table}
+This reference complements the narrative sections by giving a concise ``cheat sheet'' for navigating the repository.
+
+\section{Surface Language Constraints and Future Work}
+\subsection{Current Limitations}
+\texttt{skjs-rules.md} enumerates the supported subset and open issues. Highlights include:
+\begin{itemize}[leftmargin=*]
+  \item No top-level \texttt{let} (rule 1) and no \texttt{var} anywhere (\texttt{TypeCheckStmt.sk}).
+  \item Literal array syntax creates tuples; use \texttt{new Array<T>()} for homogeneous collections (rule 2), enforced by \texttt{EArray} emitting \texttt{TTuple}.
+  \item Constructor signatures must align across inheritance hierarchies (rule 3, \texttt{TypeCheckClass.sk}).
+  \item Private/protected fields, abstract methods, \texttt{keyof}, function overloading, and the \texttt{any} type are unsupported (rules 4, 4b, 8, 10, 17).
+  \item Console APIs accept a single argument, matching \texttt{TypeChecker::call} rejecting over-application (rule 5).
+  \item Only locals may be compared to \texttt{null}/\texttt{undefined}/string literals (rule 15), enforced by \texttt{TypeCheckRefine}.
+  \item Optional chaining and template literal corner cases emit targeted diagnostics (\texttt{tests/expect-error/optionalChaining.ts}, \texttt{tests/expect-error/template-literal-non-string.ts}).
+  \item Nested function declarations are rejected; users must declare top-level helpers or closures instead (rule 12, enforced by \texttt{TypeCheckExpr.sk}).
+  \item Boolean literal casts such as \texttt{false as false} are not implemented (rule 19), resulting in ``Construction not supported'' errors originating from \texttt{ParserExpr.sk} and enforced in \texttt{TypeCheckExpr.sk}.
+  \item The import system requires relative \texttt{./path.js} specifiers (rule 14); \texttt{ModuleResolver.sk} emits errors when encountering bare specifiers to avoid ambiguous resolution.
+\end{itemize}
+These restrictions, while limiting, are intentional: they produce a sound core that can be used by other Skip-based tools without modeling the entirety of the TypeScript specification.
+
+\subsection{Future Enhancements}
+Potential work items documented in \texttt{skjs-rules.md} and implied by TODOs in the source include:
+\begin{enumerate}[leftmargin=*]
+  \item Implementing full support for field modifiers and abstract members (\texttt{src/TypeCheckClass.sk}). This would involve tracking visibility in the type environment, enforcing override rules, and emitting errors when an abstract method remains unimplemented in concrete subclasses.
+  \item Allowing \texttt{keyof} and treating it symbolically rather than as an over-approximation (\texttt{TEnv.keyOfType}). A symbolic implementation would preserve relationships between objects and their keys, enabling the compiler to reject invalid property access without enumerating every literal.
+  \item Broadening refinement targets beyond locals, potentially by tracking aliasing relationships safely. This could leverage borrow-like analysis to permit comparisons on \texttt{obj.field} when the object is provably immutable within the scope.
+  \item Enabling function overloading resolution beyond strict arity matching, perhaps by reusing TypeScript's overload ordering rules. That would require ranking overloads and rechecking arguments according to specificity, a non-trivial change to \texttt{TypeChecker::call}.
+  \item Supporting template literal inference beyond stringifiable primitives, so user-defined \texttt{toString} implementations can participate. This will likely require trait-like constraints on class definitions plus a new \texttt{Stringifiable} interface in \texttt{import-stubs/@types}.
+  \item Improving \texttt{in}-operator precision by distinguishing guaranteed vs.\ optional fields instead of the current ``can be true/false'' heuristic (\texttt{TypeCheckExpr.sk}). Doing so would eliminate some false positives in patterns involving optional chaining plus \texttt{in}.
+  \item Adding native array literal support distinct from tuples, which would require rethinking \texttt{EArray} typing rules and \texttt{TEnv.keys}. Ideally SKJS would desugar \texttt{[1,2,3]} into \texttt{Array<number>} when all elements share a type and into tuples otherwise.
+\end{enumerate}
+
+\section{Illustrative Flow Derivation}
+To illustrate how SKJS combines type representation, subtyping, and refinement, consider a \texttt{Result<T>} algebraic type:
+\[
+\text{Result}(T) = \{ \text{kind}: ``success'', \text{data}: T \} \mid \{ \text{kind}: ``error'', \text{message}: \text{string} \}.
+\]
+The following pseudo-code mirrors how \texttt{TypeCheckStmt} and \texttt{TypeCheckRefine} validate a switch that refines on \texttt{result.kind} (\texttt{src/TypeCheckStmt.sk}, \texttt{src/TypeCheckRefine.sk}):
+\begin{lstlisting}[language=Pseudo]
+switch (result.kind) {
+  case "success":
+    // evalCond with target=true filters TAlgebraic branches
+    const payload: string = result.data;
+    break;
+  case "error":
+    const msg: string = result.message;
+    break;
+  default:
+    // switchCheckExhaustiveness rejects this branch as unreachable
+}
+\end{lstlisting}
+Internally:
+\begin{enumerate}[leftmargin=*]
+  \item \texttt{switchCheckExhaustiveness} constructs synthetic equality comparisons (\texttt{result.kind === "success"}) so that \texttt{evalCond} can narrow the scope.
+  \item \texttt{evalAlgebraicBranchEquality} filters the \texttt{TAlgebraic} branches by tag, returning a type whose \texttt{branches} map only contains the matching constructor.
+  \item Property reads within the branch (\texttt{result.data}) invoke \texttt{TypeChecker::dot}, which now sees a single branch and yields the precise field type.
+  \item After each branch, \texttt{switch} merges scopes to ensure post-switch code sees the union of the branch-wise types; here both branches are terminal, so no merge occurs.
+\end{enumerate}
+This derivation demonstrates the tight interplay between DNF types, algebraic constructors, and scope-aware refinements.
+
+\section{Case Study: Refinement Workflow}
+To ground the preceding abstractions, consider \texttt{examples/src/type\_refinement\_examples.ts}. Each function demonstrates the ``locals only'' discipline enforced by \texttt{TypeCheckRefine.sk}:
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Local binding}: Before testing \texttt{obj.message}, the code assigns it to \texttt{let message = obj.message}. \texttt{bind} in \texttt{TypeCheckExpr.sk} records the local with type \texttt{string | null}.
+  \item \textbf{Guard evaluation}: When entering \texttt{if (message !== null)}, \texttt{evalCond} filters the local type to \texttt{string}, enabling method calls such as \texttt{message.toUpperCase()} without additional casts.
+  \item \textbf{Nested refinements}: Deeper nesting (e.g., \texttt{user.name}) repeats the process, highlighting that each property must be captured into a fresh local before comparison.
+\end{enumerate}
+The expect-error counterpart in \texttt{tests/expect-error/control-flow-refinement.ts} encodes the same patterns but asserts that the checker rejects illegal refinements and accepts legal ones. For example, failing to rebind \texttt{apiPort} before comparing it to \texttt{undefined} would trigger the ``Only locals can be compared \ldots'' diagnostic, ensuring that users cannot rely on property comparisons that SKJS cannot soundly track.
+
+Combining both files offers a full workflow: developers follow the idioms shown in \texttt{examples/}, while \texttt{tests/expect-error/} ensures the checker enforces the rules that make those idioms sound.
+
+\section{Union Normal Form Proof Overview}
+We summarize the ingredients used in the proof of union normalization:
+\begin{itemize}[leftmargin=*]
+  \item Clause-level unions (\texttt{Clause::union}) and clause-set unions (\texttt{Clauses::union}) preserve denotation while maintaining canonical form (no bottom clauses, a single top clause, unique key per quantified-variable set) — Lemmas~0.a and 0.b.
+  \item Function “union” is a greatest lower bound under subtyping (domains intersect, returns union) — Lemma~1.
+  \item Algebraic unions are exact on layout-compatible branches and over-approximate via optionalization on layout divergence — Lemma~2.
+  \item Recursive unions/intersections are handled by a monotone expansion operator whose least fixed point exists (Tarski) and is computed by the implementation (Kleene-style iteration) — Lemma~3.
+\end{itemize}
+
+\subsection*{Proof Prerequisites and Scope}
+We assume the well-formedness invariants in the Type Language section and the denotational semantics from Definition~1. The theorem below is stated relative to these assumptions and the case-by-case semantics captured by Lemmas~0.a, 0.b, 1, and 2.
+
+\subsubsection*{Lemma 0.a (Clause union preserves denotation and normal form).}
+For any clauses $c_1, c_2$ with identical quantified-variable sets, $\llbracket c_1 \mathbin{\uplus} c_2 \rrbracket = \llbracket c_1 \rrbracket \cup \llbracket c_2 \rrbracket$, where $\uplus$ is \texttt{Clause::union}. Moreover, if either clause denotes $\top$, the result is the canonical top-clause; if either denotes $\bot$, it is discarded. This matches \texttt{Clause::union}'s construction and \texttt{Clauses::create}'s top-collapsing invariant.
+
+\subsubsection*{Lemma 0.b (Clause-set union preserves denotation and normal form).}
+For any clause maps $C_1, C_2$, $\llbracket C_1 \sqcup C_2 \rrbracket = \llbracket C_1 \rrbracket \cup \llbracket C_2 \rrbracket$, where $\sqcup$ is \texttt{Clauses::union}. Keys absent on one side are preserved verbatim; keys present on both sides are combined via Lemma~0.a. \texttt{Clauses::create} ensures a single $\top$ clause if any merged clause is top.
+
+\subsubsection*{Lemma 1 (Function "union" is a greatest lower bound).}
+Let $f_1, f_2$ be \texttt{TFun} overloads and let $f = \texttt{unionTFun}(f_1,f_2)$. Then:
+\[
+\llbracket f \rrbracket \subseteq \llbracket f_1 \rrbracket \cap \llbracket f_2 \rrbracket \subseteq \llbracket f_1 \rrbracket \cup \llbracket f_2 \rrbracket.
+\]
+In particular, $\texttt{TFuns::union}$ computes, component-wise, a greatest lower bound under function subtyping (intersecting parameter types; unioning returns), not the set-theoretic union of callable behaviours.
+
+\emph{Proof.}
+By contravariance, intersecting parameter types yields a domain contained in both original domains; by covariance, unioning returns yields a codomain containing both original codomains. Hence any closure typed by $f$ is typed by both $f_1$ and $f_2$, establishing $\subseteq$ to the intersection; the final inclusion into the union is trivial. \qed
+
+\subsubsection*{Lemma 2 (Algebraic unions: two regimes).}
+Let $c_1, c_2$ be constructors with the same tag.
+\begin{enumerate}[leftmargin=*]
+  \item \textbf{Layout-compatible case.} If $c_1$ and $c_2$ have the same field-name set (modulo optionality), then $\llbracket \texttt{TConstr::union}(c_1,c_2) \rrbracket = \llbracket c_1 \rrbracket \cup \llbracket c_2 \rrbracket$.
+  \item \textbf{Layout-divergent case.} If field-name sets differ, \texttt{TConstr::union} optionalizes unmatched fields and unions matching fields. Then
+  \[
+  \llbracket c_1 \rrbracket \cup \llbracket c_2 \rrbracket \subseteq \llbracket \texttt{TConstr::union}(c_1,c_2) \rrbracket,
+  \]
+  and the inclusion can be strict because values combining both unmatched fields are admitted by the right-hand side but not by the left.
+\end{enumerate}
+Extending tag-wise yields the analogous statement for \texttt{TAlgebraic::union}.
+
+\emph{Proof.}
+Case (1) follows by per-field covariance and component-wise unions. Case (2) follows because optionalization admits values whose field-sets strictly contain those of either input. \qed
+
+\subsubsection*{Lemma 3 (Monotone expansion and least fixed point).}
+Let $\mathcal{L}$ be the complete lattice of clause-maps ordered by pointwise subset on denotations. Define $F:\mathcal{L}\to\mathcal{L}$ to be the one-step expansion operator that replaces a frontier set of instances by their clause expansions using \texttt{TType::union}/\texttt{TType::inter} on clause-maps and accumulates results via \texttt{Clauses::union}. Then:
+\begin{enumerate}[leftmargin=*]
+  \item $F$ is \emph{monotone}: $X\subseteq Y \Rightarrow F(X)\subseteq F(Y)$, because every constructor used is monotone in its arguments (Lemmas~0.a and 0.b and covariance/contravariance handled by the helpers).
+  \item The semantic interpretation of a (mutually) recursive type is the least fixed point $\mu F$, which exists by Tarski's theorem.
+  \item The implementation's memoized \texttt{expand\_} computes an increasing chain $X_0\subseteq X_1\subseteq \dots$ with $X_{n+1}=F(X_n)$ until it stabilizes at a post-fixpoint $X^*$; by monotonicity and the use of normal forms, $X^*=\mu F$.
+\end{enumerate}
+\emph{Proof.}
+Monotonicity is by structural induction on the constructors and Lemmas~0.a–0.b. Existence of $\mu F$ follows from Tarski. The memoized expansion simulates Kleene iteration over normal forms; stabilization implies a fixed point, and minimality follows from starting at $\bot$ and monotonicity. \qed
+
+\subsubsection*{Theorem (Union normal form semantics, by constructors).}
+For any types $T_1, T_2$ expressible in \texttt{TType}, let $U = \texttt{TType::union}(T_1, T_2)$ and write $[[\cdot]]$ for denotation. Then, component-wise by constructor:
+\begin{itemize}[leftmargin=*]
+  \item Primitives, tuples, promises, objects: $[[U]] = [[T_1]] \cup [[T_2]]$ (exact set-theoretic union).
+  \item Functions: $[[U]] \subseteq [[T_1]] \cup [[T_2]]$, and $U$ is the greatest lower bound under function subtyping (Lemma~1).
+  \item ADTs (layout-compatible branches): $[[U]] = [[T_1]] \cup [[T_2]]$.
+  \item ADTs (layout-divergent branches): $[[T_1]] \cup [[T_2]] \subseteq [[U]]$ (over-approximation by optionalization; Lemma~2).
+\end{itemize}
+In all cases, $U$ preserves the canonical invariants (no bottom clauses, a single top clause, unique quantified-variable keys). Termination and well-definedness follow from Lemma~3.
+
+\textit{Proof sketch.}
+Expand both inputs using Lemma~3. For primitives, tuples, promises, and objects, \texttt{STypes::union} implements the set-theoretic union directly; equality follows by the inductive hypothesis and Lemmas~0.a/0.b for clauses. For functions, apply Lemma~1. For ADTs, apply Lemma~2, splitting on layout compatibility. Clause-level joins remain sound because \texttt{Clause::union} and \texttt{Clauses::union} preserve denotation and normal form (Lemmas~0.a/0.b). Instances are combined by set union, which matches the denotation of instance carriers. \qed
+
+\paragraph{Case analysis for \texttt{STypes::union}.}
+For completeness we record how each constructor contributes to the proof:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Primitives (\texttt{TPrimUnit}/\texttt{TPrimValue}).} Units are singletons, so unions defer to identity; literal families widen by uniting their value sets. This matches the semantic union because literal sets are finite and tracked explicitly.
+  \item \textbf{Promises.} The helper produces a promise whose payload type is the union of the operands. Since promises are covariant in their payload, soundness follows immediately from the inductive hypothesis on the payload types.
+  \item \textbf{Tuples.} Component-wise unions preserve positional variance. Length mismatches lead to unions with \texttt{undefined} for the missing tail, modelling TypeScript's widening behaviour for tuple unions.
+  \item \textbf{Objects.} Field unions are covariant; missing fields are marked optional, preserving semantics of structural subtyping. Index signatures are joined using the same helper, yielding a safe over-approximation.
+  \item \textbf{Functions/algebraic data types.} Covered by Lemma~1 and Lemma~2.
+\end{itemize}
+
+\subsection*{Coverage Checklist}
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|l|}
+\hline
+\textbf{Constructor/Component} & \textbf{Proof Location} \\
+\hline
+\texttt{STypes} (union carrier) & Case analysis (by constructors), Def. 1 \\
+\hline
+\texttt{TPrimUnit}, \texttt{TPrimValue} & Case analysis (Primitives) \\
+\hline
+\texttt{TTuple} & Case analysis (Tuples) \\
+\hline
+\texttt{TPromise} & Case analysis (Promises) \\
+\hline
+\texttt{TObject} (fields, index) & Case analysis (Objects) \\
+\hline
+\texttt{TAlgebraic}/\texttt{TConstr} & Lemma 2 (layout-compatible/divergent) \\
+\hline
+\texttt{TFuns}/\texttt{TFun} & Lemma 1 (GLB under subtyping) \\
+\hline
+\texttt{Clause} & Lemma 0.a (denotation + normal form) \\
+\hline
+\texttt{Clauses} & Lemma 0.b (map union + top canonicalization) \\
+\hline
+\texttt{TUnion}, \texttt{TInter} (inst placeholders) & Definition 1, Lemma 3 (lfp semantics) \\
+\hline
+\texttt{TSInst} (named types) & Definition 1 (lfp by alias equation), Lemma 3 \\
+\hline
+\texttt{TVar} (type params) & Definition 1 ($\rho$ valuation) \\
+\hline
+\texttt{Top}/\texttt{Bottom} shaping & Invariants; Lemma 0.b (top collapse), Clause omission \\
+\hline
+\end{tabular}
+\caption{Constructor coverage and where each is discharged in the proof.}
+\end{table}
+
+\subsection*{Running Examples}
+\paragraph{Primitive union.}
+\begin{lstlisting}[language=TypeScript]
+// Expect: ok - union is number | string
+function f(x: number | string): string { return x.toString(); }
+\end{lstlisting}
+
+\paragraph{Tuple normalization.}
+\begin{lstlisting}[language=TypeScript]
+// Expect: ok - trailing element widens to number | undefined
+type Pair = [number, string] | [number, undefined];
+const pair: Pair = [1, undefined];
+\end{lstlisting}
+
+\paragraph{Promise covariance.}
+\begin{lstlisting}[language=TypeScript]
+// Expect: ok - Promise payload unions to number | string
+async function fetchValue(flag: boolean): Promise<number | string> {
+  return flag ? 42 : "fallback";
+}
+\end{lstlisting}
+
+\paragraph{Object optionalization.}
+\begin{lstlisting}[language=TypeScript]
+// Expect: ok - optional field present only on one branch
+type Config =
+  | { kind: "file"; path: string }
+  | { kind: "http"; url: string };
+const cfg: Config = { kind: "http", url: "https://example.com" };
+\end{lstlisting}
+
+\paragraph{Function GLB (not behaviour union).}
+\begin{lstlisting}[language=TypeScript]
+// (x: number)=>number  |  (x: string)=>number
+// Checker: GLB admits no argument that is only number or only string.
+// Use separate overloads instead of a single merged closure.
+\end{lstlisting}
+
+\paragraph{ADT layout-divergent union.}
+\begin{lstlisting}[language=TypeScript]
+// Expect: union admits optionalized fields; behaviour may be over-approximated
+type A = { kind: "a"; a: number };
+type B = { kind: "b"; b: string };
+type U = A | B;
+\end{lstlisting}
+
+\paragraph{Recursive type expansion.}
+\begin{lstlisting}[language=TypeScript]
+// Expect: Tree type resolved via least fixed point
+type Tree = { kind: "leaf" } | { kind: "node"; left: Tree; right: Tree };
+const leaf: Tree = { kind: "leaf" };
+\end{lstlisting}
+
+\subsection*{Implementation Cross-Reference (Union/Intersection/Normalization)}
+\begin{table}[h]
+\centering
+\begin{tabular}{|l|p{0.62\linewidth}|}
+\hline
+\textbf{Construct} & \textbf{Implementation sites (files / helpers)} \\
+\hline
+\texttt{TType} (union) & \texttt{src/TTypeUnion.sk}: \texttt{TType::union}, \texttt{TType::union\_}, \texttt{unexpandedUnion} \\
+\hline
+\texttt{TType} (inter) & \texttt{src/TTypeInter.sk}: \texttt{TType::inter}, \texttt{TType::inter\_}, \texttt{unexpandedInter} \\
+\hline
+\texttt{STypes} carrier & \texttt{src/TTypeUnion.sk}: \texttt{STypes::union}; \texttt{src/TTypeInter.sk}: \texttt{STypes::inter} \\
+\hline
+\texttt{Clause}/\texttt{Clauses} & \texttt{src/TTypeUnion.sk}: \texttt{Clause::union}, \texttt{Clauses::union}; \texttt{src/TTypeInter.sk}: \texttt{Clause::inter}, \texttt{Clauses::inter} \\
+\hline
+\texttt{Clauses normalization} & \texttt{src/TType.sk}: \texttt{Clauses::create}, top canonicalization; \texttt{TType::create} (instances stripping on top) \\
+\hline
+\texttt{TInsts}/placeholders & \texttt{src/TTypeUnion.sk}: \texttt{TInsts::union}, \texttt{class TUnion}; \texttt{src/TTypeInter.sk}: \texttt{class TInter} \\
+\hline
+\texttt{TPrimUnit} & \texttt{src/TTypeUnion.sk}: \texttt{unionSType} (primitive-unit branch); \texttt{src/TTypeInter.sk}: \texttt{interSType} (kind equality) \\
+\hline
+\texttt{TPrimValue} & \texttt{src/TTypeUnion.sk}: \texttt{TPrimValue::union}; \texttt{src/TTypeInter.sk}: \texttt{TPrimValue::inter} \\
+\hline
+\texttt{TPromise} & \texttt{src/TTypeUnion.sk}: \texttt{unionSType} (\texttt{TPromise}); \texttt{src/TTypeInter.sk}: \texttt{interSType} (\texttt{TPromise}) \\
+\hline
+\texttt{TTuple} & \texttt{src/TTypeUnion.sk}: \texttt{unionTTuple}; \texttt{src/TTypeInter.sk}: \texttt{interTTuple} \\
+\hline
+\texttt{TObject}/\texttt{TFields} & \texttt{src/TTypeUnion.sk}: \texttt{unionTObject}, \texttt{unionTFields}, \texttt{TField::union}, \texttt{TIndexField::union}; \texttt{src/TTypeInter.sk}: \texttt{interTObject}, \texttt{interTFields}, \texttt{TField::inter}, \texttt{TIndexField::inter} \\
+\hline
+\texttt{TAlgebraic}/\texttt{TConstr} & \texttt{src/TTypeUnion.sk}: \texttt{TAlgebraic::union}, \texttt{TConstr::union}; \texttt{src/TTypeInter.sk}: \texttt{TAlgebraic::inter}, \texttt{TConstr::inter} \\
+\hline
+\texttt{TFuns}/\texttt{TFun} & \texttt{src/TTypeUnion.sk}: \texttt{TFuns::union}, \texttt{unionTFun}; \texttt{src/TTypeInter.sk}: \texttt{TFuns::inter}, \texttt{interTFun} \\
+\hline
+\end{tabular}
+\caption{Where each union/intersection case is implemented in the codebase.}
+\end{table}
+
+\subsection*{Formal Proof}
+
+\paragraph{Definition 1 (Semantic interpretation with environments).}
+Let $\mathcal{V}$ be the set of runtime values modelled by SKJS. Let $\rho$ be a valuation mapping type parameters to subsets of $\mathcal{V}$. The denotation function $\llbracket \cdot \rrbracket_\rho$ is defined mutually as follows:
+\begin{align*}
+\llbracket \text{TType}(I, C) \rrbracket_\rho
+  &= \left(\bigcup_{i \in I} \llbracket i \rrbracket_\rho\right)
+   \cup \left(\bigcup_{c \in C} \llbracket c \rrbracket_\rho\right) \\
+\llbracket \text{Clause}(\vec{X}, S) \rrbracket_\rho
+  &= \left(\bigcap_{X \in \vec{X}} \rho(X)\right)
+     \cap
+     \begin{cases}
+       \llbracket S \rrbracket_\rho & \text{if } S \text{ present}\\
+       \mathcal{V} & \text{otherwise}
+     \end{cases} \\
+\llbracket S_1 \mid \dots \mid S_n \rrbracket_\rho
+  &= \bigcup_{i=1}^n \llbracket S_i \rrbracket_\rho \qquad\text{for $S$-types}
+\end{align*}
+and the remaining constructors (\texttt{TPrimValue}, \texttt{TTuple}, \texttt{TFuns}, \texttt{TAlgebraic}, etc.) use their standard set-theoretic interpretation parameterized by $\rho$:
+\begin{itemize}[leftmargin=*]
+  \item $\llbracket \text{TVar}(X) \rrbracket_\rho = \rho(X)$.
+  \item $\llbracket \text{TSInst}(N,\vec{T}) \rrbracket_\rho$ is defined by the (possibly recursive) type alias equation for $N$ applied to arguments $\llbracket \vec{T} \rrbracket_\rho$, interpreted as the least fixed point (see Lemma~3).
+  \item $\llbracket \text{TUnion}(T_1,T_2) \rrbracket_\rho = \llbracket T_1 \rrbracket_\rho \cup \llbracket T_2 \rrbracket_\rho$; $\llbracket \text{TInter}(T_1,T_2) \rrbracket_\rho = \llbracket T_1 \rrbracket_\rho \cap \llbracket T_2 \rrbracket_\rho$.
+  \item $\llbracket \text{TTuple}(T_1,\dots,T_n) \rrbracket_\rho = \llbracket T_1 \rrbracket_\rho \times \dots \times \llbracket T_n \rrbracket_\rho$.
+  \item $\llbracket \text{TFuns} \rrbracket_\rho$ is the set of closures whose call behaviour matches the parameter/return constraints under $\rho$ (contravariant in parameters, covariant in returns).
+  \item $\llbracket \text{TAlgebraic} \rrbracket_\rho$ is the tagged union of its branches, each branch a record with the tag field fixed and remaining fields interpreted covariantly.
+\end{itemize}
+
+% (Redundant old version removed.)
+
+\section{Testing and Behavioral Evidence}
+Evidence that the checker enforces the documented rules comes from:
+\begin{itemize}[leftmargin=*]
+  \item \textbf{Examples}: \texttt{examples/src/type\_refinement\_examples.ts} shows that declaring locals before comparison allows refinement, matching the ``locals only'' rule enforced in \texttt{TypeCheckRefine.sk}. Files such as \texttt{examples/src/class\_inheritance\_test.ts} and \texttt{examples/src/try\_catch.ts} exercise extends/implements checks and exception typing.
+  \item \textbf{Expect-Error Tests}: \texttt{tests/expect-error/control-flow-refinement.ts} ensures that SKJS refines after \texttt{if} blocks; \texttt{tests/expect-error/keyof.ts} captures the ``TODO: keyof'' diagnostic; \texttt{tests/expect-error/void.ts} enforces void-only positions; \texttt{tests/expect-error/try-catch.ts} guards against typed catches. Each test names the specific diagnostic to assert stability.
+  \item \textbf{Conformance Imports}: By copying TypeScript's conformance suites, SKJS is regularly stress-tested against upstream regression cases using \texttt{devtools/copy-ts-tests.sh}.
+\end{itemize}
+Together, these sources provide both positive assurance (examples compile) and negative assurance (expect-error tests fail as intended).
+The test runner (\texttt{tests/Main.sk}) loads each TypeScript file, feeds it through the checker, and compares the resulting diagnostics to golden outputs stored alongside the tests. \texttt{tests/Helpers.sk} contains utilities for reading files, normalizing paths, and reporting diffs. Expect-error cases intentionally look for specific substrings, giving maintainers confidence that error messages stay stable even as internal representations evolve.
+
+\section{Conclusion}
+SKJS combines a sophisticated Skip-based type representation (DNF types with deferred instances), a pragmatic subtyping and constraint-solving engine, and flow-sensitive refinements to implement a sound TypeScript subset. The repository structure cleanly separates build orchestration, native runtime support, and the Skip frontend. The checker enforces strict coding conventions (explicit annotations, tuple-vs-array semantics, locals-only refinements) while still handling advanced constructs such as algebraic data types, generic classes, and async functions. Its runtime and stub system allow real-world libraries to be analyzed, and its testing strategy couples curated examples with imported conformance suites. Future work includes broadening the supported TypeScript features while maintaining the soundness guarantees encoded in \texttt{TType} and the checker pipeline.
+
+\subsection*{Future Work Alignment}
+Two known approximation regimes merit deeper treatment: function unions (GLB domains) and ADT layout-divergent unions (optionalization). Strengthening implementations (e.g., first-class behavioural unions for functions; refined per-tag layout constraints) would allow sharpening the proof statement from inclusions to equalities. Additionally, a symbolic \texttt{keyof} and improved index-field/object interactions would reduce conservatism in normalization.
+
+\end{document}
