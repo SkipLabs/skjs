@@ -261,7 +261,7 @@ mutable class FileDefsState{
   }
 
   private mutable fun exportNamesFrom(
-    names: ModuleNames,
+    names: ExportFromModuleNames,
     fileName: FileName,
   ): void {
     names match {
@@ -269,22 +269,6 @@ mutable class FileDefsState{
       this.exportedModulesFrom![moduleName.value] = fileName
     | MStar() -> this.exportedStar.insert(fileName.toString())
     | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          this.exportedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          this.exportedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      this.exportedModulesFrom![moduleName.value] = fileName;
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
