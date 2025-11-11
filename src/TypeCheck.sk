@@ -9,7 +9,6 @@ module SKJS;
 /***************************************************************************/
 
 class TypeChecker{
-  builtinsFileName: FileName,
   backtrace: Bool,
   defMap: DefMap,
   tenv: TEnv,
