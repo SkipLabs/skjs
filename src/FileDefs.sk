@@ -319,13 +319,12 @@ mutable class FileDefsState{
   }
 
   private mutable fun importNamesFrom(
-    names: ModuleNames,
+    names: ImportModuleNames,
     fileName: FileName,
   ): void {
     names match {
     | MStarAs(moduleName) ->
       this.importedModulesFrom![moduleName.value] = fileName
-    | MStar() -> this.importedStar.insert(fileName.toString())
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
