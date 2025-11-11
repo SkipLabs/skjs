@@ -342,7 +342,22 @@ class TEnv{
     };
     if (withTParams) {
       for (i => tparam in cls.tparams) {
-        !this.subst[tparam.name.value] = (false, targs[i])
+        targ = if (i < targs.size()) {
+          targs[i]
+        } else {
+          tparam.default match {
+          | Some(defaultTy) -> this.normalize(context, defaultTy)
+          | None() ->
+            typingError(
+              Array[
+                (className.pos, "Invalid number of type arguments"),
+                (cls.name.pos, "Class declaration is here"),
+              ],
+            );
+            TType::top(className.pos)
+          }
+        };
+        !this.subst[tparam.name.value] = (false, targ)
       };
     };
     (this, cls)

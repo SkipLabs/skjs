@@ -1,21 +1,24 @@
 // Example derived from docs/skjs_type_system.tex (Mutable class overrides).
 
-// @ts-expect-error Out of bounds
+declare class Event {}
+declare class MouseEvent extends Event {}
+
+// @ts-expect-error Optional type parameters are not supported for classes
 class Base<E extends Event = Event> {
   handle(e: E): void {}
 }
 
-// @ts-expect-error Out of bounds
 class Clicks extends Base<MouseEvent> {
   handle(e: MouseEvent): void {}
 }
 
+// @ts-expect-error Expected 1 parameters
 class SafeClicks extends Base {
-  handle(e: Event) {
+  handle(e: Event): void {
     if (e instanceof MouseEvent) {
       this.onClick(e);
     }
   }
 
-  onClick(e: MouseEvent) {}
+  onClick(e: MouseEvent): void {}
 }
