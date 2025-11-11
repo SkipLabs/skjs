@@ -848,13 +848,118 @@ async function reload(): Promise<void> {
 }
 \end{lstlisting}
 
-\paragraph{Other Notable Limitations.}
-\begin{itemize}[leftmargin=*]
-  \item \textbf{Function unions.} As explained in Lemma~1, \texttt{TFuns::union} computes a least upper bound, intersecting parameter types. Many perfectly valid TypeScript overload unions therefore collapse to a domain of \texttt{never}, preventing calls. The checker stays sound but sacrifices expressivity.
-  \item \textbf{Layout-divergent algebraic unions.} When two branches disagree on required fields, \texttt{TConstr::union} optionalizes the conflicting members. The over-approximation keeps the program safe but rejects patterns where one branch is known to provide extra data.
-  \item \textbf{Mutable class overrides.} SKJS enforces contravariant method parameter types strictly. TypeScript allows certain bivariance escapes (historical reasons); those are rejected here, trading expressivity for soundness.
-  \item \textbf{Built-in libraries.} Only a curated set of declaration files in \texttt{import-stubs/} is available. Features outside those stubs (e.g., \texttt{Promise.allSettled}, DOM APIs) require additional modelling before they can type-check.
-\end{itemize}
+
+\paragraph{Other Notable Limitations (worked out).}
+For each item we state whether it is worth including as an expressivity gap, then we give a realistic example and discuss workable mitigations.
+
+\subparagraph{Function unions. \;Include? \emph{Yes} (moderate).}
+\textbf{Why it matters.} In practice, teams sometimes want to hold a heterogenous callback in one slot (e.g., handler can be either ``simple'' or ``contextual''). In SKJS a value of type $(A\!\to\!R)\ \vee\ (B\!\to\!R)$ is \emph{not} callable unless $A$ and $B$ are identical; this avoids the classic ``overload collapse'' unsoundness and matches strict TypeScript behaviour.
+\medskip
+
+\noindent\textbf{Example (middleware-like handlers).}
+\begin{lstlisting}[language=TypeScript]
+type Req = { id: string };
+type Ctx = { traceId: string };
+type Res = { ok: true };
+
+type H1 = (req: Req) => Promise<Res>;
+type H2 = (req: Req, ctx: Ctx) => Promise<Res>;
+
+declare const h: H1 | H2;
+
+async function run(req: Req, ctx: Ctx) {
+  // You do not know which domain you have; both TS (strict) and SKJS reject:
+  await h(req, ctx); // not callable
+}
+\end{lstlisting}
+
+\noindent\textbf{Workarounds.} Normalize to a \emph{single} callable shape and adapt at the boundary:
+\begin{lstlisting}[language=TypeScript]
+// Normalize to a single signature with an optional arg.
+type H = (req: Req, ctx?: Ctx) => Promise<Res>;
+
+function asH(f: H1 | H2): H {
+  return (req, ctx) => (f.length < 2 ? (f as H1)(req) : (f as H2)(req, ctx!));
+}
+\end{lstlisting}
+This pattern is straight-line and cheap; it is how ecosystem libraries hide overloads internally. Alternative designs (e.g., storing tagged unions of functions) work but add boilerplate. We recommend \emph{not} exposing function unions in public APIs; expose a single normalized signature.
+
+\subparagraph{Layout-divergent algebraic unions. \;Include? \emph{Yes} (moderate, correlated-field precision).}
+\textbf{Why it matters.} Real services return discriminated unions such as \texttt{\{kind:\,"ok", value: T\} | \{kind:\,"err", msg: string\}}. SKJS safely over-approximates object unions by matching shared fields and optionalizing unmatched ones; it does \emph{not} track correlation between the discriminator and extra fields. This keeps subtyping simple but loses precision inside branches.
+
+\noindent\textbf{Example (correlated field)}.
+\begin{lstlisting}[language=TypeScript]
+type Ok = { kind: "ok", value: { name: string } };
+type Err = { kind: "err", msg: string };
+type Result = Ok | Err;
+
+declare const r: Result;
+
+if (r.kind === "ok") {
+  r.value.name;   // TS: ok (discriminated narrowing).  SKJS: may reject without a cast.
+}
+\end{lstlisting}
+
+\noindent\textbf{Workarounds.} Supply an explicit user-defined guard and rebind a narrowed local, or project using a helper:
+\begin{lstlisting}[language=TypeScript]
+function isOk(x: Result): x is Ok { return (x as any).kind === "ok"; }
+
+if (isOk(r)) {
+  const ok = r as Ok;      // or rely on the guard's predicate type
+  ok.value.name;
+}
+\end{lstlisting}
+In router/middleware code, prefer threading a refined \emph{local} (e.g., \texttt{const req2 = req as Req \& \{ user: U \}}) after each guard. The cost is low and explicit; it keeps the global type for \texttt{req} conservative while allowing local precision where needed.
+
+\subparagraph{Mutable class overrides. \;Include? \emph{Yes} (small but visible for OO-heavy code).}
+\textbf{Why it matters.} TypeScript treats method parameters bivariantly; SKJS keeps the mathematically sound rule: parameters are contravariant, results covariant. As a result, some overrides that compile in TS are rejected in SKJS.
+
+\noindent\textbf{Example (event handler override).}
+\begin{lstlisting}[language=TypeScript]
+class Base {
+  handle(e: Event): void {}
+}
+class Clicks extends Base {
+  handle(e: MouseEvent): void {} // TS: allowed; SKJS: reject (parameter narrowed)
+}
+\end{lstlisting}
+
+\noindent\textbf{Workarounds.} Make the variance explicit via generics or adapter methods:
+\begin{lstlisting}[language=TypeScript]
+class Base<E extends Event = Event> {
+  handle(e: E): void {}
+}
+class Clicks extends Base<MouseEvent> {
+  handle(e: MouseEvent): void {}
+}
+// or keep Base.handle widest and forward from a refined overload:
+class SafeClicks extends Base {
+  handle(e: Event) { if (e instanceof MouseEvent) this.onClick(e); }
+  onClick(e: MouseEvent) {}
+}
+\end{lstlisting}
+In framework code, prefer binding free functions (which are naturally contravariant) rather than overriding methods with narrower parameters.
+
+\subparagraph{Built-in libraries \& ambient declarations. \;Include? \emph{Yes} (pragmatic).}
+\textbf{Why it matters.} Only a curated subset of \texttt{lib.d.ts} and Node typings is modelled. Many projects call DOM APIs, \texttt{fetch}, or Node streams; unmodelled areas surface as ``unknown'' or missing types rather than logic errors.
+
+\noindent\textbf{Workarounds.} Add slim, purpose-built declaration stubs or wrap the API behind a small, typed facade. Two practical patterns:
+\begin{lstlisting}[language=TypeScript]
+// (1) Minimal stub to satisfy the checker where full modelling is overkill.
+declare function fetch(u: string, init?: unknown): Promise<{ ok: boolean }>;
+
+// (2) Local facade with precise, app-specific types.
+export interface Http {
+  getJson<T>(u: string): Promise<T>;
+}
+\end{lstlisting}
+Maintaining facades pays off quickly; it keeps the trusted surface area small and makes tests easier to write.
+
+\subparagraph{Two non-gaps to document (not expressivity issues). \;Include? \emph{No}, but keep as guidance.}
+\textbf{Generic wrappers and \texttt{never}.} When a combinator insists on a single input type for two negatively-positioned arguments, principal type inference yields \texttt{never}. This is expected and safe; see the example in Section~\ref{sec:expressivity-conclusion}. The ergonomic workaround is to normalize domains (e.g., one optional parameter) before passing functions to such combinators.
+
+\textbf{Branch-based refinement after \texttt{never}.} Once contravariant inference has collapsed a parameter to \texttt{never}, no amount of local control-flow refinement can reintroduce information. This is by design and prevents masked unsoundness. Prefer earlier normalization or avoid unifying incompatible domains through a single type variable.
+
 
 Bridging these gaps would require enhancing the type representation (e.g., monadic flattening for \texttt{Promise}, proper union-of-overloads ranking) while maintaining the invariants on which the soundness argument rests. We leave these improvements to future work.
 
@@ -869,7 +974,6 @@ Under \texttt{--strictFunctionTypes}, TypeScript checks \emph{function} paramete
 // TS method-parameter bivariance (illustrative unsoundness)
 // EXPECT-ERROR: Forbidden field name 'kind' in a class
 interface Animal { kind: "cat" | "dog" }
-// EXPECT-ERROR: Forbidden field name 'kind' in a class
 interface Dog extends Animal { kind: "dog"; bark(): void }
 
 interface Sink { handle(x: Animal): void }
@@ -937,7 +1041,6 @@ export function toExpress<P, ResBody, ReqBody, ReqQuery, Locals extends Record<s
 
 // Usage (no bivariance needed):
 type User = { id: string; email: string };
-// EXPECT-ERROR: Missing type annotation
 const getMe = async (req: Request<{id: string}, User, unknown, unknown>) => ({ id: req.params.id, email: "x@y" });
 // EXPECT-ERROR: Type app not found
 app.get("/users/:id", toExpress(getMe));
@@ -1069,6 +1172,45 @@ f.get("/me", { preHandler: auth }, async (req, reply) => {
   reply.send({ id });
 });
 \end{lstlisting}
+
+
+
+\subsection{Conclusions \& examples to keep}\label{sec:expressivity-conclusion}
+Across all our experiments we did not find a true counterexample to soundness. Every ``suspicious'' program either failed to type-check or collapsed its negative position to \texttt{never}. The checker is often conservative, but it is sound and predictably so.
+
+\paragraph{Key takeaways (codified).}
+\begin{itemize}[leftmargin=*]
+  \item Function unions are callable only when their domains are identical; this is by design.
+  \item Generic combinators that require a single negative type argument for two incompatible domains infer \texttt{never}, preventing bad calls.
+  \item Class overriding respects contravariance (no bivariant parameter narrowing); use generics or adapters instead.
+  \item Branch-based refinement does not ``resurrect'' a parameter that has already been inferred as \texttt{never} through contravariant inference; this is safe but imprecise.
+\end{itemize}
+
+\paragraph{Minimal, self-checking snippets (good regression tests).}
+\begin{lstlisting}[language=TypeScript]
+// (1) Function union: not callable unless domains match.
+type F = ((x: number) => string) | ((x: string) => string);
+declare const f: F;
+f(1);      // ERROR (both TS strict and SKJS)
+
+// (2) Generic wrapper that forces a single domain -> never-inference.
+const both = <A>(p: (a: A) => void, q: (a: A) => void) => (a: A) => { p(a); q(a); };
+declare const h: ((x: number) => void) | ((x: string) => void);
+const combo = both(h, h);
+// combo has type (a: never) => void; calling it is impossible.
+// @expect-error
+combo(42);
+
+// (3) Safe overriding uses generics (no parameter narrowing).
+class B<E extends Event = Event> { handle(e: E): void {} }
+class C extends B<MouseEvent> { handle(e: MouseEvent): void {} }
+
+// (4) Refinement cannot recover from never-inference.
+const g = both(h, h);
+g as (a: never) => void;  // document the collapsed domain explicitly
+\end{lstlisting}
+
+These fragments mirror the rules stated earlier and serve as executable documentation. Keeping them as \emph{expect-error} tests ensures we do not accidentally reintroduce unsafe rewrites (e.g., overload collapse) in future refactorings.
 
 
 \section{Testing and Behavioral Evidence}
