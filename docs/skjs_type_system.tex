@@ -414,10 +414,12 @@ This dual-phase approach ensures the operator participates in flow analysis rath
 \subsection{Pattern Binding Walkthrough}
 Binding patterns are handled by \texttt{TypeChecker::bind}, which recursively visits tuple and object patterns. Consider the following snippet, inspired by destructuring in \code{tests/expect-error/destructuring.ts}:
 \begin{lstlisting}[language=TypeScript]
-// EXPECT-ERROR: TODO pattern varDef
-const [first, second]: [number, string] = [1, "a"];
-// EXPECT-ERROR: TODO pattern varDef
-const { name, age = 42 }: { name: string; age?: number } = person;
+function describePerson(person: { name: string; age?: number }): number {
+  const tuple: [number, string] = [1, "a"];
+  const [first, second]: [number, string] = tuple;
+  const { name, age = 42 }: { name: string; age?: number } = person;
+  return first + age;
+}
 \end{lstlisting}
 During checking:
 \begin{enumerate}[leftmargin=*]
