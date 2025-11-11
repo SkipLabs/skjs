@@ -608,10 +608,10 @@ extension class Parser {
         | (_, false)
         | (MName _, _) ->
           this.error(this.lex.posEnd(), UnexpectedToken())
-        | (_, true) ->
+        | (n @ ExportFromModuleNames _, true) ->
           _ = this.lex.next();
           from = this.getString();
-          ExportNamesFrom(isType, names, from)
+          ExportNamesFrom(isType, n, from)
         }
       } else {
         invariant(isType is None());
