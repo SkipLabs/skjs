@@ -376,11 +376,7 @@ class DefMap{
 
   fun getAll(context: mutable S.Context, name: Name): Array<Def> {
     fileName = FileName::create(name.pos.fileName);
-    defs = this.get(context, fileName, name);
-    if (defs.isEmpty()) {
-      typingError(Array[(name.pos, `Name ${name} not found`)])
-    };
-    defs
+    this.get(context, fileName, name)
   }
 
   private fun get(
