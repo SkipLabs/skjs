@@ -350,15 +350,13 @@ class FileDefs{
 }
 
 base class IDefMap {
-  fun getType(mutable S.Context, Name): DefMapType;
+  fun getType(mutable S.Context, Name): TypeOnlyDef;
   fun get(mutable S.Context, FileName, Name): Array<Def>;
 }
 
-base class DefMapType {
-  children =
-  | TDType(TypeDef)
-  | TDClass(Class)
-}
+base class TypeOnlyDef extends Def_
+extension class TypeDef extends TypeOnlyDef
+extension class Class extends TypeOnlyDef
 
 class DefMap{
   index: FileNameIndex,
@@ -370,11 +368,10 @@ class DefMap{
     error(ParsingError(EPRange(defName.pos), NotFound(defName.value)))
   }
 
-  fun getType(context: mutable S.Context, name: Name): DefMapType {
+  fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
     for (def in this.get(context, FileName::create(name.pos.fileName), name)) {
       def.value match {
-      | td @ TypeDef _ -> return TDType(td)
-      | c @ Class _ -> return TDClass(c)
+      | d @ TypeOnlyDef _ -> return d
       | _ -> void
       }
     };

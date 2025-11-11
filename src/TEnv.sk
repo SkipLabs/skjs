@@ -80,8 +80,8 @@ class TEnv{
 
     tdef = this.defMap.getType(subst.context, name);
     clauses = tdef match {
-    | TDType(ta) -> ta.tdefParams
-    | TDClass(ca) -> ca.tparams
+    | TypeDef{tdefParams} -> tdefParams
+    | Class{tparams} -> tparams
     };
     if (targs.targs.size() > clauses.size()) {
       typingError(
@@ -129,16 +129,16 @@ class TEnv{
     };
 
     tdef match {
-    | TDType(ta) -> this.normalize(subst.context, ta.body)
-    | TDClass(_) -> this.new(subst.context, name, targs.targs)
+    | ta @ TypeDef _ -> this.normalize(subst.context, ta.body)
+    | Class _ -> this.new(subst.context, name, targs.targs)
     }
   }
 
   fun getClass(context: mutable SKStore.Context, className: Name): Class {
     tdef = this.defMap.getType(context, className);
     tdef match {
-    | TDType(_) -> typingError(Array[(className.pos, "Expected a class name")])
-    | TDClass(ca) -> ca
+    | TypeDef _ -> typingError(Array[(className.pos, "Expected a class name")])
+    | ca @ Class _ -> ca
     };
   }
 
@@ -798,8 +798,8 @@ class TEnv{
       } else {
         tdef = this.defMap.getType(context, n);
         tparams = tdef match {
-        | TDType(ta) -> ta.tdefParams
-        | TDClass(ca) -> ca.tparams
+        | TypeDef{tdefParams} -> tdefParams
+        | Class{tparams} -> tparams
         };
         if (
           targs.size() > tparams.size() ||
