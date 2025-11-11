@@ -46,7 +46,9 @@ extension class TypeChecker {
     | Namespace _ -> notSupported(def.pos)
     | Export(d) -> this.checkDef(context, Def(def.pos, d))
     | ExportDefault _ -> notSupported(def.pos)
-    | ExportNames _ -> void
+    | ExportNames _
+    | ExportNamesFrom _ ->
+      void
     | Import _ -> void
     | c @ Class _ -> this.class_(context, c)
     | Enum _ -> notSupported(def.pos)

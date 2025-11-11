@@ -327,6 +327,7 @@ private fun checkDef(
   | ImportExpr _
   | TypeDef _
   | ExportNames _
+  | ExportNamesFrom _
   | Import _
   | VarDefs _ ->
     void

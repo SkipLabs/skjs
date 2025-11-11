@@ -113,8 +113,8 @@ mutable class FileDefsState{
       | ExportDeclare(d) ->
         this.newDef(false, true, def.pos, d)
 
-      | ExportNames(_, names, None()) -> this.exportNames(names)
-      | ExportNames(_, names, Some(mname)) ->
+      | ExportNames(_, names) -> this.exportNames(names)
+      | ExportNamesFrom(_, names, mname) ->
         fn = this.resolveName(mname);
         this.exportNamesFrom(names, fn)
 

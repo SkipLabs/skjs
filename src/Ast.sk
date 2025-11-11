@@ -31,7 +31,8 @@ value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
 //   | enum <name> { (<name> = <expr>?)* }
 //   | namespace <name> { <def>* }
 //   | module <name> { <def>* }
-//   | export (type? <module-names> from <expr>?)
+//   | export type? <module-names>
+//   | export type? <module-names> from <expr>
 //   | export default <expr>
 //   | export <def>
 //   | export = <expr>
@@ -49,7 +50,8 @@ class Def(pos: PosRange, value: Def_) uses XXHashable
 base class Def_ uses XXHashable {
   children =
   | Expr
-  | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Name)
+  | ExportNames(isType: ?PosRange, ModuleNames)
+  | ExportNamesFrom(isType: ?PosRange, ModuleNames, from: Name)
   | ExportDeclare(Exportable)
   | ExportDefault(ExportDefaultable)
   | Export(def: Exportable)
