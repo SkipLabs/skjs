@@ -377,14 +377,14 @@ class DefMap{
     fileName = FileName::create(name.pos.fileName);
     result = mutable Vector[];
     this.get(context, fileName, name, result);
-    result.toArray().map(d -> d.value)
+    result.toArray()
   }
 
   private fun get(
     context: mutable S.Context,
     fileName: FileName,
     defName: Name,
-    result: mutable Vector<Def>,
+    result: mutable Vector<Def_>,
   ): void {
     if (fileName != this.builtinsFileName) {
       biFileDefs = this.fileDefsMap.get(context, this.builtinsFileName);
@@ -398,7 +398,7 @@ class DefMap{
     context: mutable S.Context,
     fileDefs: FileDefs,
     defName: Name,
-    result: mutable Vector<Def>,
+    result: mutable Vector<Def_>,
   ): void {
     if (defName.value.contains(".")) {
       arr = defName.value.split(".");
@@ -465,7 +465,7 @@ class DefMap{
       );
     };
     fileDefs.defs.maybeGet(defName.value) match {
-    | Some(def) -> result.extend(def)
+    | Some(def) -> result.extend(def.map(d -> d.value))
     | None() -> void
     };
     fileDefs.exportEq match {
@@ -486,7 +486,7 @@ class DefMap{
     context: mutable S.Context,
     fileName: FileName,
     defName: Name,
-    result: mutable Vector<Def>,
+    result: mutable Vector<Def_>,
   ): void {
     fileDefs = this.fileDefsMap.get(context, fileName);
     this.getExportedInDefs(context, fileDefs, defName, result)
@@ -496,7 +496,7 @@ class DefMap{
     context: mutable S.Context,
     fileDefs: FileDefs,
     defName: Name,
-    result: mutable Vector<Def>,
+    result: mutable Vector<Def_>,
   ): void {
     if (defName.value.contains(".")) {
       arr = defName.value.split(".");
