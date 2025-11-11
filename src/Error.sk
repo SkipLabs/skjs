@@ -307,14 +307,4 @@ class NonDefaultAnonymousFunctionExport() extends ParsingKind {
   }
 }
 
-/***************************************************************************/
-/* Name resolution error */
-/***************************************************************************/
-
-class NotFound(name: String) extends ParsingKind {
-  fun toString(): String {
-    `Type ${this.name} not found`
-  }
-}
-
 module end;

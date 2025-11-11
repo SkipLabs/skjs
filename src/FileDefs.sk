@@ -378,13 +378,9 @@ class DefMap{
     fileName = FileName::create(name.pos.fileName);
     defs = this.get(context, fileName, name);
     if (defs.isEmpty()) {
-      this.notFound(name)
+      typingError(Array[(name.pos, `Name ${name} not found`)])
     };
     defs
-  }
-
-  private fun notFound<T>(defName: Name): T {
-    error(ParsingError(EPRange(defName.pos), NotFound(defName.value)))
   }
 
   private fun get(
