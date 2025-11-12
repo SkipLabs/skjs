@@ -303,10 +303,11 @@ mutable class FileDefsState{
         | None() -> moduleDefName.name.value
         | Some(asName) -> asName.value
         };
+        eltTypeOnly = typeOnly || moduleDefName.isType.isSome();
         mapPush(
           this.reexports,
           reexportName,
-          IModuleElement(typeOnly, moduleDefName.name.value, fileName),
+          IModuleElement(eltTypeOnly, moduleDefName.name.value, fileName),
         )
       }
     }
@@ -347,7 +348,7 @@ mutable class FileDefsState{
 
 base class IDefMap {
   fun getType(mutable S.Context, Name): TypeOnlyDef;
-  fun getAll(mutable S.Context, Name): Array<FileDef>;
+  fun getAll(mutable S.Context, Name, typeOnly: Bool = false): Array<FileDef>;
 }
 
 class DefMap{
@@ -356,19 +357,24 @@ class DefMap{
   builtinsFileName: FileName,
 } extends IDefMap {
   fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
-    for (def in this.getAll(context, name)) {
+    for (def in this.getAll(context, name, true)) {
       def match {
       | d @ TypeOnlyDef _ -> return d
-      | _ -> void
+      | _ ->
+        invariant_violation("Passing typeOnly should return only TypeOnlyDef")
       }
     };
     typingError(Array[(name.pos, `Type ${name} not found`)])
   }
 
-  fun getAll(context: mutable S.Context, name: Name): Array<FileDef> {
+  fun getAll(
+    context: mutable S.Context,
+    name: Name,
+    typeOnly: Bool = false,
+  ): Array<FileDef> {
     fileName = FileName::create(name.pos.fileName);
     result = mutable Vector[];
-    this.get(context, fileName, name.value, result);
+    this.get(context, fileName, name.value, typeOnly, result);
     result.toArray()
   }
 
@@ -376,20 +382,22 @@ class DefMap{
     context: mutable S.Context,
     fileName: FileName,
     defName: String,
+    typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
     if (fileName != this.builtinsFileName) {
       biFileDefs = this.fileDefsMap.get(context, this.builtinsFileName);
-      this.getInDefs(context, biFileDefs, defName, result)
+      this.getInDefs(context, biFileDefs, defName, typeOnly, result)
     };
     fileDefs = this.fileDefsMap.get(context, fileName);
-    this.getInDefs(context, fileDefs, defName, result)
+    this.getInDefs(context, fileDefs, defName, typeOnly, result)
   }
 
   private fun getInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
     defName: String,
+    typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
     if (defName.contains(".")) {
@@ -400,10 +408,22 @@ class DefMap{
       | Some(imports) ->
         for (import in imports) {
           import match {
-          | IWholeModule(_typeOnly, from) ->
-            this.getExported(context, from, newDefName, result)
-          | IModuleElement(_typeOnly, origName, from) ->
-            this.getExported(context, from, `${origName}.${newDefName}`, result)
+          | IWholeModule(importTypeOnly, from) ->
+            this.getExported(
+              context,
+              from,
+              newDefName,
+              typeOnly || importTypeOnly,
+              result,
+            )
+          | IModuleElement(importTypeOnly, origName, from) ->
+            this.getExported(
+              context,
+              from,
+              `${origName}.${newDefName}`,
+              typeOnly || importTypeOnly,
+              result,
+            )
           }
         }
       | None() -> void
@@ -416,14 +436,30 @@ class DefMap{
         import match {
         | IWholeModule(_typeOnly, _from) ->
           internal_error("TODO: encountering whole module")
-        | IModuleElement(_typeOnly, origName, from) ->
-          this.getExported(context, from, origName, result)
+        | IModuleElement(importTypeOnly, origName, from) ->
+          this.getExported(
+            context,
+            from,
+            origName,
+            typeOnly || importTypeOnly,
+            result,
+          )
         }
       }
     | None() -> void
     };
     fileDefs.defs.maybeGet(defName) match {
-    | Some(defs) -> result.extend(defs)
+    | Some(defs) ->
+      if (typeOnly) {
+        for (d in defs) {
+          d match {
+          | tod @ TypeOnlyDef _ -> result.push(tod)
+          | _ -> void
+          }
+        }
+      } else {
+        result.extend(defs)
+      }
     | None() -> void
     };
   }
@@ -432,21 +468,29 @@ class DefMap{
     context: mutable S.Context,
     fileName: FileName,
     defName: String,
+    typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
     fileDefs = this.fileDefsMap.get(context, fileName);
-    this.getExportedInDefs(context, fileDefs, defName, result)
+    this.getExportedInDefs(context, fileDefs, defName, typeOnly, result)
   }
 
   private fun getExportedInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
     defName: String,
+    typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
     for (wholeModuleReexport in fileDefs.wholeModuleReexports) {
-      (_typeOnly, reexportedFileName) = wholeModuleReexport;
-      this.getExported(context, reexportedFileName, defName, result);
+      (reexportTypeOnly, reexportedFileName) = wholeModuleReexport;
+      this.getExported(
+        context,
+        reexportedFileName,
+        defName,
+        reexportTypeOnly || typeOnly,
+        result,
+      );
     };
 
     if (defName.contains(".")) {
@@ -457,10 +501,22 @@ class DefMap{
       | Some(reexports) ->
         for (reexport in reexports) {
           reexport match {
-          | IWholeModule(_typeOnly, from) ->
-            this.getExported(context, from, newDefName, result)
-          | IModuleElement(_typeOnly, origName, from) ->
-            this.getExported(context, from, `${origName}.${newDefName}`, result)
+          | IWholeModule(reexportTypeOnly, from) ->
+            this.getExported(
+              context,
+              from,
+              newDefName,
+              reexportTypeOnly || typeOnly,
+              result,
+            )
+          | IModuleElement(reexportTypeOnly, origName, from) ->
+            this.getExported(
+              context,
+              from,
+              `${origName}.${newDefName}`,
+              reexportTypeOnly || typeOnly,
+              result,
+            )
           }
         }
       | None() -> void
@@ -471,7 +527,7 @@ class DefMap{
     fileDefs.exported.maybeGet(defName) match {
     | Some(asNames) ->
       for (asName in asNames) {
-        this.getInDefs(context, fileDefs, asName, result)
+        this.getInDefs(context, fileDefs, asName, typeOnly, result)
       }
     | None() -> void
     };
@@ -481,8 +537,14 @@ class DefMap{
         reexport match {
         | IWholeModule(_typeOnly, _from) ->
           internal_error("TODO: encountering whole module re-export")
-        | IModuleElement(_typeOnly, origName, from) ->
-          this.getExported(context, from, origName, result)
+        | IModuleElement(reexportTypeOnly, origName, from) ->
+          this.getExported(
+            context,
+            from,
+            origName,
+            reexportTypeOnly || typeOnly,
+            result,
+          )
         }
       }
     | None() -> void
@@ -490,7 +552,7 @@ class DefMap{
 
     for (modulesDefs in fileDefs.modules) {
       for (moduleDefs in modulesDefs) {
-        this.getInDefs(context, moduleDefs, defName, result)
+        this.getInDefs(context, moduleDefs, defName, typeOnly, result)
       }
     }
   }
