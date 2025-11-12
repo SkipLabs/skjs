@@ -61,8 +61,7 @@ class FileDefs{
   imports: Map<String, Array<Imported>>,
   exported: Map<String, Array<String>>,
   wholeModuleReexports: Array<FileName>,
-  exportedFrom: Map<String, (String, FileName)>,
-  exportedModulesFrom: Map<String, FileName>,
+  reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   defs: Map<String, Array<FileDef>>,
 } extends S.File {
@@ -128,8 +127,7 @@ mutable class FileDefsState{
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   exported: mutable Map<String, mutable Vector<String>> = mutable Map[],
   wholeModuleReexports: mutable Vector<FileName> = mutable Vector[],
-  exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
-  exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
+  reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
 } {
@@ -211,8 +209,7 @@ mutable class FileDefsState{
       imports => this.imports.map((_, x) -> x.toArray()),
       exported => this.exported.map((_, x) -> x.toArray()),
       wholeModuleReexports => this.wholeModuleReexports.toArray(),
-      exportedFrom => this.exportedFrom.chill(),
-      exportedModulesFrom => this.exportedModulesFrom.chill(),
+      reexports => this.reexports.map((_, x) -> x.toArray()),
       modules => this.modules.map((_, x) -> x.chill()),
       defs => this.defs.map((_, x) -> x.toArray()),
     }
@@ -291,21 +288,25 @@ mutable class FileDefsState{
   }
 
   private mutable fun exportNamesFrom(
-    _typeOnly: Bool,
+    typeOnly: Bool,
     names: ExportFromModuleNames,
     fileName: FileName,
   ): void {
     names match {
-    | MStarAs(moduleName) ->
-      this.exportedModulesFrom![moduleName.value] = fileName
     | MStar() -> this.wholeModuleReexports.push(fileName)
+    | MStarAs(asName) ->
+      mapPush(this.reexports, asName.value, IWholeModule(typeOnly, fileName))
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
         reexportName = moduleDefName.asName match {
         | None() -> moduleDefName.name.value
         | Some(asName) -> asName.value
         };
-        this.exportedFrom![reexportName] = (moduleDefName.name.value, fileName)
+        mapPush(
+          this.reexports,
+          reexportName,
+          IModuleElement(typeOnly, moduleDefName.name.value, fileName),
+        )
       }
     }
   }
@@ -450,9 +451,16 @@ class DefMap{
       arr = defName.split(".");
       moduleName = arr[0];
       newDefName = arr.slice(1, arr.size()).join(".");
-      fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        this.getExported(context, fileName, newDefName, result)
+      fileDefs.reexports.maybeGet(moduleName) match {
+      | Some(reexports) ->
+        for (reexport in reexports) {
+          reexport match {
+          | IWholeModule(_typeOnly, from) ->
+            this.getExported(context, from, newDefName, result)
+          | IModuleElement(_typeOnly, origName, from) ->
+            this.getExported(context, from, `${origName}.${newDefName}`, result)
+          }
+        }
       | None() -> void
       };
       return void
@@ -465,9 +473,16 @@ class DefMap{
       }
     | None() -> void
     };
-    fileDefs.exportedFrom.maybeGet(defName) match {
-    | Some((newDefName, newFileName)) ->
-      this.getExported(context, newFileName, newDefName, result)
+    fileDefs.reexports.maybeGet(defName) match {
+    | Some(reexports) ->
+      for (reexport in reexports) {
+        reexport match {
+        | IWholeModule(_typeOnly, _from) ->
+          internal_error("TODO: encountering whole module re-export")
+        | IModuleElement(_typeOnly, origName, from) ->
+          this.getExported(context, from, origName, result)
+        }
+      }
     | None() -> void
     };
 
