@@ -108,11 +108,11 @@ mutable class FileDefsState{
 
       | d @ Declarable _
       | Declare(d) ->
-        this.newDef(false, false, d)
+        this.newDef(false, d)
 
       | Export(d)
       | ExportDeclare(d) ->
-        this.newDef(false, true, d)
+        this.newDef(true, d)
 
       | ExportNames(_, names) -> this.exportNames(names)
       | ExportNamesFrom(_, names, mname) ->
@@ -166,24 +166,21 @@ mutable class FileDefsState{
     state.processDefs(defs)
   }
 
-  mutable fun newDef(isDefault: Bool, isExport: Bool, def: Declarable): void {
+  mutable fun newDef(isExport: Bool, def: Declarable): void {
     def match {
     | d @ TypeDef{name} ->
-      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
       this.defs[name.value].push(d)
     | d @ Class{name} ->
-      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
       this.defs[name.value].push(d)
     | d @ Enum(_, name, _) ->
-      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
@@ -206,7 +203,6 @@ mutable class FileDefsState{
           Array[(funPos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
-      if (isDefault) this.!default = Some(fname);
       if (isExport) this.exported![fname] = fname;
       if (!this.defs.containsKey(fname)) {
         this.defs![fname] = mutable Vector[];
@@ -214,17 +210,6 @@ mutable class FileDefsState{
       this.defs[fname].push(d)
 
     | VarDefs(k, varDefs) ->
-      if (isDefault) {
-        if (varDefs.size() > 1) {
-          internal_error("TODO: more than one default");
-        };
-        this.!default = Some(
-          varDefs[0].pat.value match {
-          | PVar(x) -> x.value
-          | _ -> internal_error("TODO: cannot have default base on names")
-          },
-        );
-      };
       for (varDef in varDefs) {
         exportName = varDefs[0].pat.value match {
         | PVar(x) -> x
