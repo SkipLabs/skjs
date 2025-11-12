@@ -406,15 +406,6 @@ class DefMap{
         }
       | None() -> void
       };
-      fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
-      | Some(fileName) -> this.get(context, fileName, newDefName, result)
-      | None() -> void
-      };
-      fileDefs.exportedFrom.maybeGet(moduleName) match {
-      | Some((origName, newFileName)) ->
-        this.get(context, newFileName, origName + newDefName, result)
-      | None() -> void
-      };
       return void
     };
     fileDefs.imports.maybeGet(defName) match {
