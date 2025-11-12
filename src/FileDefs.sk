@@ -60,7 +60,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
 class FileDefs{
   imports: Map<String, Array<Imported>>,
   exported: Map<String, Array<String>>,
-  wholeModuleReexports: Array<FileName>,
+  wholeModuleReexports: Array<(/* typeOnly */ Bool, FileName)>,
   reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   defs: Map<String, Array<FileDef>>,
@@ -126,7 +126,7 @@ mutable class FileDefsState{
   importStubs: Array<DirName>,
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   exported: mutable Map<String, mutable Vector<String>> = mutable Map[],
-  wholeModuleReexports: mutable Vector<FileName> = mutable Vector[],
+  wholeModuleReexports: mutable Vector<(Bool, FileName)> = mutable Vector[],
   reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
@@ -293,7 +293,7 @@ mutable class FileDefsState{
     fileName: FileName,
   ): void {
     names match {
-    | MStar() -> this.wholeModuleReexports.push(fileName)
+    | MStar() -> this.wholeModuleReexports.push((typeOnly, fileName))
     | MStarAs(asName) ->
       mapPush(this.reexports, asName.value, IWholeModule(typeOnly, fileName))
     | MCurly(moduleDefNames) ->
@@ -443,7 +443,8 @@ class DefMap{
     defName: String,
     result: mutable Vector<FileDef>,
   ): void {
-    for (reexportedFileName in fileDefs.wholeModuleReexports) {
+    for (wholeModuleReexport in fileDefs.wholeModuleReexports) {
+      (_typeOnly, reexportedFileName) = wholeModuleReexport;
       this.getExported(context, reexportedFileName, defName, result);
     };
 
