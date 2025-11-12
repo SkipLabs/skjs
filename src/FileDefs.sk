@@ -63,159 +63,74 @@ mutable class FileDefsState{
   rootOpt: ?DirName,
   dirName: DirName,
   importStubs: Array<DirName>,
-  importedStar: mutable Set<String> = mutable Set[],
   importedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   importedModulesFrom: mutable Map<String, FileName> = mutable Map[],
   exported: mutable Map<String, String> = mutable Map[],
   exportedStar: mutable Set<String> = mutable Set[],
   exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
-  exportedModules: mutable Set<String> = mutable Set[],
   exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
   mutable default: ?String = None(),
   namespaces: mutable Map<String, FileDefs> = mutable Map[],
   exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
-  defs: mutable Map<String, mutable Vector<Def>> = mutable Map[],
+  defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
   mutable exportEq: ?Name = None(),
 } {
+  mutable fun resolveName(mname: Name): FileName {
+    (if (mname.value.startsWith("./") || mname.value.startsWith("../")) {
+      if (!mname.value.endsWith(".js")) {
+        typingError(
+          Array[
+            (mname.pos, "Invalid import: local imports must be from js files"),
+          ],
+        )
+      };
+      resolveName(
+        this.context,
+        this.index,
+        this.rootOpt,
+        this.dirName,
+        mname.value,
+      )
+    } else {
+      resolveStubs(this.importStubs, mname.value)
+    }) match {
+    | Some(x) -> x
+    | None() ->
+      typingError(Array[(mname.pos, `Could not find module '${mname}'`)])
+    }
+  }
+
   mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
     for (def in parsedDefs) {
       def.value match {
-      | ToplevelExpr(_) -> void
-      | TypeDef _
-      | Class _
-      | Enum _
-      | Namespace _
-      | Module _
-      | FunDef _
-      | VarDefs _ ->
-        this.newDef(None(), false, def)
-      | ExportNames(_, names, None()) -> this.exportNames(names)
-      | ExportNames(_, names, Some(Expr(_, EString(mname)))) ->
-        fn = resolveName(
-          this.context,
-          this.index,
-          this.rootOpt,
-          this.dirName,
-          mname,
-        ) match {
-        | None() -> continue
-        | Some(x) -> x
-        };
+      | Expr _ -> void
+
+      | d @ Declarable _
+      | Declare(d)
+      | Export(d)
+      | ExportDeclare(d) ->
+        this.newDef(false, true, d)
+
+      | ExportNames(_, names) -> this.exportNames(names)
+      | ExportNamesFrom(_, names, mname) ->
+        fn = this.resolveName(mname);
         this.exportNamesFrom(names, fn)
-      | ExportNames _ -> internal_error("TODO: unsupported export")
-      | ExportDefault(_, Expr(_, Var(n))) -> this.!default = Some(n.value)
-      | ExportDefault _ -> internal_error("TODO: unsupported export")
-      | ExportEq(v) ->
-        v.value match {
-        | Var(n) -> this.!exportEq = Some(n)
-        | _ ->
-          debug(v);
-          debug("TODO: exportEq other than a name")
-        }
-      | ExportAs _ -> void
-      | ExportImport _ -> debug("TODO: exportImport")
-      | Global _ -> debug("TODO: todo global")
-      | Import(_, _, names, importName) ->
-        importName match {
-        | INPath(mname) ->
-          resolveName(
-            this.context,
-            this.index,
-            this.rootOpt,
-            this.dirName,
-            mname.value,
-          )
-        | INName(mname) -> resolveStubs(this.importStubs, mname.value)
-        } match {
-        | None() -> void
-        | Some(fn) -> this.importNamesFrom(names, fn)
-        }
 
-      | Declare(d @ Def(_, TypeDef _))
-      | Declare(d @ Def(_, Class _))
-      | Declare(d @ Def(_, Enum _))
-      | Declare(d @ Def(_, Namespace _))
-      | Declare(d @ Def(_, Module _))
-      | Declare(d @ Def(_, FunDef _))
-      | Declare(d @ Def(_, VarDefs _)) ->
-        this.newDef(None(), false, d)
-      /*
-              d match {
-              | Module(_, Some(defs)) ->
-                for (moduleDef in defs) {
-                  this.newDef(
-                    None(),
-                    false,
-                    moduleDef,
-                  );
-                }
-              | _ -> void
-              }
-      */
+      | ExportDefault(Expr(_, Var(n)))
+      | ExportEq(Expr(_, Var(n))) ->
+        this.!default = Some(n.value)
+      | ExportDefault _
+      | ExportEq _ ->
+        internal_error("TODO: unsupported export")
 
-      | Export(_, None(), d @ TypeDef _)
-      | Export(_, None(), d @ Class _)
-      | Export(_, None(), d @ Enum _)
-      | Export(_, None(), d @ Namespace _)
-      | Export(_, None(), d @ Module _)
-      | Export(_, None(), d @ FunDef _)
-      | Export(_, None(), d @ VarDefs _) ->
-        this.newDef(None(), true, Def(def.pos, d))
+      | Import(_, names, importName) ->
+        fn = this.resolveName(importName);
+        this.importNamesFrom(names, fn)
 
-      | Export(_, x @ Some _, d @ TypeDef _)
-      | Export(_, x @ Some _, d @ Class _)
-      | Export(_, x @ Some _, d @ Enum _)
-      | Export(_, x @ Some _, d @ Namespace _)
-      | Export(_, x @ Some _, d @ Module _)
-      | Export(_, x @ Some _, d @ FunDef _)
-      | Export(_, x @ Some _, d @ VarDefs _) ->
-        this.newDef(x, true, Def(def.pos, d))
-
-      | Export(_, None(), Declare(d @ Def(_, TypeDef _)))
-      | Export(_, None(), Declare(d @ Def(_, Class _)))
-      | Export(_, None(), Declare(d @ Def(_, Enum _)))
-      | Export(_, None(), Declare(d @ Def(_, Namespace _)))
-      | Export(_, None(), Declare(d @ Def(_, Module _)))
-      | Export(_, None(), Declare(d @ Def(_, FunDef _)))
-      | Export(_, None(), Declare(d @ Def(_, VarDefs _))) ->
-        this.newDef(None(), true, d)
-
-      | Export(_, x @ Some _, Declare(d @ Def(_, TypeDef _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Class _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Enum _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Namespace _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, Module _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, FunDef _)))
-      | Export(_, x @ Some _, Declare(d @ Def(_, VarDefs _))) ->
-        this.newDef(x, true, d)
-
-      | Export(_, _, Declare(Def(_, Declare _)))
-      | Export(_, _, ExportNames _)
-      | Export(_, _, Global _)
-      | Export(_, _, Import _)
-      | Export(_, _, ImportExpr _)
-      | Export(_, _, ToplevelExpr _)
-      | Export(_, _, Export _)
-      | Export(_, _, ExportAs _)
-      | Export(_, _, ExportDefault _)
-      | Export(_, _, ExportEq _)
-      | Export(_, _, ExportImport _)
-      | Export(_, _, Declare(Def(_, ExportNames _)))
-      | Export(_, _, Declare(Def(_, Global _)))
-      | Export(_, _, Declare(Def(_, Import _)))
-      | Export(_, _, Declare(Def(_, ImportExpr _)))
-      | Export(_, _, Declare(Def(_, ToplevelExpr _)))
-      | Export(_, _, Declare(Def(_, Export _)))
-      | Export(_, _, Declare(Def(_, ExportAs _)))
-      | Export(_, _, Declare(Def(_, ExportDefault _)))
-      | Export(_, _, Declare(Def(_, ExportEq _)))
-      | Export(_, _, Declare(Def(_, ExportImport _))) ->
-        internal_error("Internal error")
-
-      | Declare(Def(_, Global _)) -> debug(("TODO declare global"))
-      | Declare _ -> internal_error("TODO rest of declare")
-      | ImportExpr _ -> void
+      | ImportExpr _ -> internal_error("TODO: import expr")
+      | ExportAs _ -> internal_error("TODO export as")
+      | ExportImport _ -> internal_error("TODO: exportImport")
       }
     };
     this.toFileDefs()
@@ -223,13 +138,11 @@ mutable class FileDefsState{
 
   private readonly fun toFileDefs(): FileDefs {
     FileDefs{
-      importedStar => this.importedStar.chill(),
       importedFrom => this.importedFrom.chill(),
       importedModulesFrom => this.importedModulesFrom.chill(),
       exported => this.exported.chill(),
       exportedStar => this.exportedStar.chill(),
       exportedFrom => this.exportedFrom.chill(),
-      exportedModules => this.exportedModules.chill(),
       exportedModulesFrom => this.exportedModulesFrom.chill(),
       default => this.default,
       namespaces => this.namespaces.chill(),
@@ -251,29 +164,29 @@ mutable class FileDefsState{
     state.processDefs(defs)
   }
 
-  mutable fun newDef(isDefault: ?PosRange, isExport: Bool, def: Def): void {
-    def.value match {
-    | TypeDef{name} ->
-      if (isDefault is Some _) this.!default = Some(name.value);
+  mutable fun newDef(isDefault: Bool, isExport: Bool, def: Declarable): void {
+    def match {
+    | d @ TypeDef{name} ->
+      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
-    | Class{name} ->
-      if (isDefault is Some _) this.!default = Some(name.value);
+      this.defs[name.value].push(d)
+    | d @ Class{name} ->
+      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
-    | Enum(_, name, _) ->
-      if (isDefault is Some _) this.!default = Some(name.value);
+      this.defs[name.value].push(d)
+    | d @ Enum(_, name, _) ->
+      if (isDefault) this.!default = Some(name.value);
       if (isExport) this.exported![name.value] = name.value;
       if (!this.defs.containsKey(name.value)) {
         this.defs![name.value] = mutable Vector[];
       };
-      this.defs[name.value].push(def)
+      this.defs[name.value].push(d)
     | Namespace(name, defs) ->
       fileDefs = this.createFileDefs(defs);
       if (isExport) {
@@ -283,23 +196,23 @@ mutable class FileDefsState{
       }
     | Module(name, Some(defs)) ->
       this.modules![name.value] = this.createFileDefs(defs)
-    | FunDef{name, pos} ->
+    | d @ FunDef{name, pos => funPos} ->
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
       | FNSymbol(n) ->
         typingError(
-          Array[(pos, `Invalid name for a toplevel function: symbol ${n}`)],
+          Array[(funPos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
-      if (isDefault is Some _) this.!default = Some(fname);
+      if (isDefault) this.!default = Some(fname);
       if (isExport) this.exported![fname] = fname;
       if (!this.defs.containsKey(fname)) {
         this.defs![fname] = mutable Vector[];
       };
-      this.defs[fname].push(def)
+      this.defs[fname].push(d)
 
     | VarDefs(k, varDefs) ->
-      if (isDefault is Some _) {
+      if (isDefault) {
         if (varDefs.size() > 1) {
           internal_error("TODO: more than one default");
         };
@@ -320,28 +233,17 @@ mutable class FileDefsState{
           this.defs![exportName.value] = mutable Vector[];
         };
         this.defs[exportName.value].push(
-          Def(exportName.pos, VarDefs(k, Array[varDef])),
+          FDVar(k, exportName, varDef.type, varDef.value),
         );
       }
-    | _ -> internal_error("Internal error: expected a definition")
+    | Global _ -> internal_error("TODO: global")
+    | Module _ -> internal_error("TODO: module")
     }
   }
 
-  private mutable fun exportNames(names: ModuleNames): void {
+  private mutable fun exportNames(names: MCurly): void {
     names match {
-    | MStar(Some(moduleName)) -> this.exportedModules.insert(moduleName.value)
-    | MStar(None()) -> debug("TODO error export *")
     | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          this.exported![moduleDefName.name.value] = moduleDefName.name.value
-        | Some(asName) ->
-          this.exported![moduleDefName.name.value] = asName.value
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      this.exportedModules.insert(moduleName.value);
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
@@ -354,30 +256,14 @@ mutable class FileDefsState{
   }
 
   private mutable fun exportNamesFrom(
-    names: ModuleNames,
+    names: ExportFromModuleNames,
     fileName: FileName,
   ): void {
     names match {
-    | MStar(Some(moduleName)) ->
+    | MStarAs(moduleName) ->
       this.exportedModulesFrom![moduleName.value] = fileName
-    | MStar(None()) -> this.exportedStar.insert(fileName.toString())
+    | MStar() -> this.exportedStar.insert(fileName.toString())
     | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          this.exportedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          this.exportedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      this.exportedModulesFrom![moduleName.value] = fileName;
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
         | None() ->
@@ -396,62 +282,47 @@ mutable class FileDefsState{
   }
 
   private mutable fun importNamesFrom(
-    names: ModuleNames,
+    namesList: Array<ImportModuleNames>,
     fileName: FileName,
   ): void {
-    names match {
-    | MStar(Some(moduleName)) ->
-      this.importedModulesFrom![moduleName.value] = fileName
-    | MStar(None()) -> this.importedStar.insert(fileName.toString())
-    | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          this.importedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          this.importedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
+    for (names in namesList) {
+      names match {
+      | MStarAs(moduleName) ->
+        this.importedModulesFrom![moduleName.value] = fileName
+      | MCurly(moduleDefNames) ->
+        for (moduleDefName in moduleDefNames) {
+          moduleDefName.asName match {
+          | None() ->
+            this.importedFrom![moduleDefName.name.value] = (
+              moduleDefName.name.value,
+              fileName,
+            )
+          | Some(asName) ->
+            this.importedFrom![asName.value] = (
+              moduleDefName.name.value,
+              fileName,
+            )
+          }
         }
-      }
-    | MName(moduleName, moduleDefNames) ->
-      this.importedModulesFrom![moduleName.value] = fileName;
-      for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          this.importedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          this.importedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
+      | MName(moduleName) ->
+        this.importedModulesFrom![moduleName.value] = fileName
       }
     }
   }
 }
 
 class FileDefs{
-  importedStar: Set<String>,
   importedFrom: Map<String, (String, FileName)>,
   importedModulesFrom: Map<String, FileName>,
   exported: Map<String, String>,
   exportedStar: Set<String>,
   exportedFrom: Map<String, (String, FileName)>,
-  exportedModules: Set<String>,
   exportedModulesFrom: Map<String, FileName>,
   default: ?String,
   namespaces: Map<String, FileDefs>,
   exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
-  defs: Map<String, Array<Def>>,
+  defs: Map<String, Array<FileDef>>,
   exportEq: ?Name,
 } extends S.File {
   static fun create(
@@ -474,237 +345,233 @@ class FileDefs{
 }
 
 base class IDefMap {
-  fun getType(mutable S.Context, Name): DefMapType;
-  fun get(mutable S.Context, FileName, Name): Array<Def>;
+  fun getType(mutable S.Context, Name): TypeOnlyDef;
+  fun getAll(mutable S.Context, Name): Array<FileDef>;
 }
 
-base class DefMapType {
-  children =
-  | TDType(TypeDef)
-  | TDClass(Class)
-}
+base class TypeOnlyDef extends FileDef
+extension class TypeDef extends TypeOnlyDef
+extension class Class extends TypeOnlyDef
+
+base class FileDef
+extension class FunDef extends FileDef
+extension class TypeDef extends FileDef
+extension class Class extends FileDef
+extension class Enum extends FileDef
+class FDVar(
+  kind: VarDefKind,
+  name: Name,
+  type: ?Type,
+  value: ?Expr,
+) extends FileDef
 
 class DefMap{
   index: FileNameIndex,
   fileDefsMap: FileDefsMap,
-  builtins: Set<String>,
   builtinsFileName: FileName,
 } extends IDefMap {
-  private fun notFound<T>(defName: Name): T {
-    error(ParsingError(EPRange(defName.pos), NotFound(defName.value)))
-  }
-
-  fun getType(context: mutable S.Context, name: Name): DefMapType {
-    for (def in this.get(context, FileName::create(name.pos.fileName), name)) {
-      def.value match {
-      | td @ TypeDef _ -> return TDType(td)
-      | c @ Class _ -> return TDClass(c)
+  fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
+    for (def in this.getAll(context, name)) {
+      def match {
+      | d @ TypeOnlyDef _ -> return d
       | _ -> void
       }
     };
-    typingError(Array[(name.pos, "Unbound name")])
+    typingError(Array[(name.pos, `Type ${name} not found`)])
   }
 
-  fun get(
+  fun getAll(context: mutable S.Context, name: Name): Array<FileDef> {
+    fileName = FileName::create(name.pos.fileName);
+    result = mutable Vector[];
+    this.get(context, fileName, name, result);
+    result.toArray()
+  }
+
+  private fun get(
     context: mutable S.Context,
     fileName: FileName,
     defName: Name,
-  ): Array<Def> {
-    fileDefs = this.fileDefsMap.get(
-      context,
-      if (this.builtins.contains(defName.value)) this.builtinsFileName else {
-        fileName
-      },
-    );
-    this.getInDefs(context, fileDefs, defName)
+    result: mutable Vector<FileDef>,
+  ): void {
+    if (fileName != this.builtinsFileName) {
+      biFileDefs = this.fileDefsMap.get(context, this.builtinsFileName);
+      this.getInDefs(context, biFileDefs, defName, result)
+    };
+    fileDefs = this.fileDefsMap.get(context, fileName);
+    this.getInDefs(context, fileDefs, defName, result)
   }
 
   private fun getInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
     defName: Name,
-  ): Array<Def> {
+    result: mutable Vector<FileDef>,
+  ): void {
     if (defName.value.contains(".")) {
       arr = defName.value.split(".");
       moduleName = arr[0];
       newDefName = arr.slice(1, arr.size()).join(".");
       fileDefs.importedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.get(context, fileName, Name(defName.pos, newDefName))
+        this.get(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.get(context, fileName, Name(defName.pos, newDefName))
+        this.get(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.namespaces.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getInDefs(context, fileName, Name(defName.pos, newDefName))
+        this.getInDefs(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.exportedNamespaces.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getInDefs(context, fileName, Name(defName.pos, newDefName))
+        this.getInDefs(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.importedFrom.maybeGet(moduleName) match {
       | Some((origName, newFileName)) ->
-        return this.get(
+        this.get(
           context,
           newFileName,
           Name(defName.pos, origName + newDefName),
+          result,
         )
       | None() -> void
       };
       fileDefs.exportedFrom.maybeGet(moduleName) match {
       | Some((origName, newFileName)) ->
-        return this.get(
+        this.get(
           context,
           newFileName,
           Name(defName.pos, origName + newDefName),
+          result,
         )
       | None() -> void
       };
-      this.notFound(defName);
+      return void
     };
     fileDefs.importedFrom.maybeGet(defName.value) match {
     | Some((exportedDefName, importedFileName)) ->
-      return this.getExported(
+      this.getExported(
         context,
         importedFileName,
         Name(defName.pos, exportedDefName),
+        result,
       )
     | None() -> void
     };
-    for (importedFileName in fileDefs.importedStar) {
-      return this.getExported(
-        context,
-        FileName::create(importedFileName),
-        defName,
-      );
-    };
     for (exportedFileName in fileDefs.exportedStar) {
-      return this.getExported(
+      this.getExported(
         context,
         FileName::create(exportedFileName),
         defName,
+        result,
       );
     };
     fileDefs.defs.maybeGet(defName.value) match {
-    | Some(def) -> return def
+    | Some(defs) -> result.extend(defs)
     | None() -> void
     };
     fileDefs.exportEq match {
     | None() -> void
     | Some(name) ->
       fileDefs.namespaces.maybeGet(name.value) match {
-      | Some(fileName) -> return this.getInDefs(context, fileName, defName)
+      | Some(fileName) -> this.getInDefs(context, fileName, defName, result)
       | None() ->
-        debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array));
-        this.notFound(defName)
+        debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array))
       }
     };
     for (exportedNamespace in fileDefs.exportedNamespaces) {
-      try {
-        Some(this.getInDefs(context, exportedNamespace, defName))
-      } catch {
-      | _ -> None()
-      } match {
-      | None() -> void
-      | Some(x) -> return x
-      }
-    };
-    this.notFound(defName);
+      this.getInDefs(context, exportedNamespace, defName, result)
+    }
   }
 
   private fun getExported(
     context: mutable S.Context,
     fileName: FileName,
     defName: Name,
-  ): Array<Def> {
+    result: mutable Vector<FileDef>,
+  ): void {
     fileDefs = this.fileDefsMap.get(context, fileName);
-    this.getExportedInDefs(context, fileDefs, defName)
+    this.getExportedInDefs(context, fileDefs, defName, result)
   }
 
   private fun getExportedInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
     defName: Name,
-  ): Array<Def> {
+    result: mutable Vector<FileDef>,
+  ): void {
     if (defName.value.contains(".")) {
       arr = defName.value.split(".");
       moduleName = arr[0];
       newDefName = arr.slice(1, arr.size()).join(".");
       fileDefs.importedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getExported(
+        this.getExported(
           context,
           fileName,
           Name(defName.pos, newDefName),
+          result,
         )
       | None() -> void
       };
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        return this.getExported(
+        this.getExported(
           context,
           fileName,
           Name(defName.pos, newDefName),
+          result,
         )
       | None() -> void
       };
-      this.notFound(defName);
+      return void
     };
     fileDefs.exportEq match {
     | None() -> void
     | Some(name) ->
       fileDefs.namespaces.maybeGet(name.value) match {
-      | Some(fileName) -> return this.getInDefs(context, fileName, defName)
-      | None() ->
-        debug(fileDefs.exportedNamespaces.containsKey(name.value));
-        this.notFound(defName)
+      | Some(fileName) -> this.getInDefs(context, fileName, defName, result)
+      | None() -> debug(fileDefs.exportedNamespaces.containsKey(name.value))
       }
     };
 
     if (defName.value == "default" && fileDefs.default is Some _) {
       defaultName = fileDefs.default.fromSome();
-      return this.getInDefs(context, fileDefs, Name(defName.pos, defaultName))
+      this.getInDefs(context, fileDefs, Name(defName.pos, defaultName), result)
     } else {
       fileDefs.exported.maybeGet(defName.value) match {
       | Some(asName) ->
-        return this.getInDefs(context, fileDefs, Name(defName.pos, asName))
+        this.getInDefs(context, fileDefs, Name(defName.pos, asName), result)
       | None() -> void
       };
       fileDefs.exportedFrom.maybeGet(defName.value) match {
       | Some((newDefName, newFileName)) ->
-        return this.getExported(
+        this.getExported(
           context,
           newFileName,
           Name(defName.pos, newDefName),
+          result,
         )
       | None() -> void
       }
     };
     for (exportedFileName in fileDefs.exportedStar) {
-      return this.getExported(
+      this.getExported(
         context,
         FileName::create(exportedFileName),
         defName,
+        result,
       );
     };
 
     for (moduleDefs in fileDefs.modules) {
-      try {
-        Some(this.getInDefs(context, moduleDefs, defName))
-      } catch {
-      | _ -> None()
-      } match {
-      | Some(x) -> return x
-      | None() -> void
-      }
-    };
-    this.notFound(defName);
+      this.getInDefs(context, moduleDefs, defName, result)
+    }
   }
 }
 

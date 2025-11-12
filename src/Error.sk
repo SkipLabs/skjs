@@ -161,14 +161,6 @@ class UnexpectedToken() extends ParsingKind {
     `Unexpected token`
   }
 }
-class InvalidImport() extends ParsingKind {
-  fun toString(): String {
-    `Invalid import, all imports are expected to be of the form:
-import ... from './path_to_file.js';
-  or
-import ... from '../path_to_file.js';`
-  }
-}
 class UnterminatedImport() extends ParsingKind {
   fun toString(): String {
     `Unterminated import`
@@ -312,16 +304,6 @@ class MissingParameterName() extends ParsingKind {
 class NonDefaultAnonymousFunctionExport() extends ParsingKind {
   fun toString(): String {
     "An anonymous function can be exported only if it is the default export"
-  }
-}
-
-/***************************************************************************/
-/* Name resolution error */
-/***************************************************************************/
-
-class NotFound(name: String) extends ParsingKind {
-  fun toString(): String {
-    `Type ${this.name} not found`
   }
 }
 

@@ -31,9 +31,10 @@ value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
 //   | enum <name> { (<name> = <expr>?)* }
 //   | namespace <name> { <def>* }
 //   | module <name> { <def>* }
-//   | export (type? <module-names> from <expr>?)
-//   | export (type? default?) <def>
-//   | export default (type?) <expr>
+//   | export type? <module-names>
+//   | export type? <module-names> from <expr>
+//   | export default <expr>
+//   | export <def>
 //   | export = <expr>
 //   | export as <name>
 //   | export import <name> = <expr>
@@ -48,7 +49,29 @@ class Def(pos: PosRange, value: Def_) uses XXHashable
 
 base class Def_ uses XXHashable {
   children =
-  | ToplevelExpr(Expr)
+  | Expr
+  | ExportNames(isType: ?PosRange, MCurly)
+  | ExportNamesFrom(isType: ?PosRange, ExportFromModuleNames, from: Name)
+  | ExportDeclare(Exportable)
+  | ExportDefault(ExportDefaultable)
+  | Export(def: Exportable)
+  | ExportEq(e: Expr)
+  | ExportAs(name: Name)
+  | ExportImport(name: Name, expr: Expr)
+  | Import(isType: ?PosRange, Array<ImportModuleNames>, importFrom: Name)
+  | ImportExpr(Name)
+  | Declare(Declarable)
+}
+
+base class Declarable extends Def_ {
+  children =
+  | Module(name: Name, ?Array<Def>)
+  | Global(Array<Def>)
+}
+
+base class Exportable extends Declarable {
+  children =
+  | FunDef
   | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
   | Class{
     kind: ClassKind,
@@ -60,30 +83,13 @@ base class Def_ uses XXHashable {
   }
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
-  | Module(name: Name, ?Array<Def>)
-  | ExportNames(isType: ?PosRange, ModuleNames, maybeFrom: ?Expr)
-  | Export(isType: ?PosRange, default: ?PosRange, def: Def_)
-  | ExportDefault(isType: ?PosRange, name: Expr)
-  | ExportEq(e: Expr)
-  | ExportAs(name: Name)
-  | ExportImport(name: Name, expr: Expr)
-  | Global(Array<Def>)
-  | Import(
-    kind: ImportKind,
-    isType: ?PosRange,
-    ModuleNames,
-    importFrom: ImportName,
-  )
-  | ImportExpr(Name)
-  | Declare(Def)
   | VarDefs(kind: VarDefKind, varDefs: Array<VarDef>)
 }
 
-base class ImportName uses XXHashable {
-  children =
-  | INPath(Name)
-  | INName(Name)
-}
+base class ExportDefaultable extends Def_
+extension class Class extends ExportDefaultable
+extension class FunDef extends ExportDefaultable
+extension class Expr extends ExportDefaultable
 
 /***************************************************************************/
 // <var-def> ::= <pattern> (: <type>)? (= <expr>)?
@@ -115,7 +121,7 @@ base class Pattern_ uses XXHashable {
 //     <fun-def-body>
 /***************************************************************************/
 
-class FunDef{
+extension class FunDef{
   pos: PosRange,
   isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
@@ -126,7 +132,7 @@ class FunDef{
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
   cgNode: ?CGNode,
-} extends Def_, FieldType, Field uses XXHashable
+} extends FieldType, Field uses XXHashable
 
 base class FunDefBody uses XXHashable {
   children =
@@ -136,17 +142,29 @@ base class FunDefBody uses XXHashable {
 
 /***************************************************************************/
 // <module-names> ::=
-//   | * (as <name>)?
+//   | *
+//   | * as <name>
 //   | { <module-def-name>* }
-//   | <name>, { <module-def-name>* }
+//   | <name>
 /***************************************************************************/
 
 base class ModuleNames uses XXHashable {
   children =
-  | MStar(?Name)
+  | MStar()
+  | MStarAs(Name)
   | MCurly(Array<ModuleDefName>)
-  | MName(Name, Array<ModuleDefName>)
+  | MName(Name)
 }
+
+base class ImportModuleNames extends ModuleNames
+extension class MStarAs extends ImportModuleNames
+extension class MCurly extends ImportModuleNames
+extension class MName extends ImportModuleNames
+
+base class ExportFromModuleNames extends ModuleNames
+extension class MStar extends ExportFromModuleNames
+extension class MStarAs extends ExportFromModuleNames
+extension class MCurly extends ExportFromModuleNames
 
 /***************************************************************************/
 // <module-def-name> ::= (type?) <name> (as <name>)?
@@ -305,7 +323,7 @@ class CatchClause(
 //   | async <expr>
 /***************************************************************************/
 
-class Expr(pos: PosRange, value: Expr_) uses XXHashable
+extension class Expr(pos: PosRange, value: Expr_) extends Def_
 
 base class Expr_ uses XXHashable {
   children =
@@ -573,12 +591,6 @@ base class FieldGetSetKind uses XXHashable {
   children =
   | FGet()
   | FSet()
-}
-
-base class ImportKind uses XXHashable {
-  children =
-  | IKFrom()
-  | IKEq()
 }
 
 base class ClassKind uses XXHashable, Orderable {

@@ -435,18 +435,18 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse a definition
-  mutable fun def(topLevel: Bool): Def {
+  mutable fun def(): Def {
     while (this.lex.peekKind() is Some(TKSemi())) {
       _ = this.lex.next();
     };
-    this.defHelper(topLevel)
+    this.defHelper()
   }
 
   // Parse top-level definitions
   mutable fun toplevelDefs(): Array<Def> {
     defs = mutable Vector[];
     loop {
-      this.maybeDef(true) match {
+      this.maybeDef() match {
       | None() -> return defs.toArray()
       | Some(def) -> defs.push(def)
       }
@@ -454,7 +454,7 @@ extension class Parser {
   }
 
   // Parse a block of definitions
-  mutable fun defs(topLevel: Bool): Array<Def> {
+  mutable fun defs(): Array<Def> {
     this.expect(TKOpenCurly());
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
@@ -462,7 +462,7 @@ extension class Parser {
     };
     defs = mutable Vector[];
     loop {
-      def = this.def(topLevel);
+      def = this.def();
       defs.push(def);
       loop {
         if (this.lex.peekKind() is Some(TKSemi())) {
@@ -479,28 +479,28 @@ extension class Parser {
   }
 
   // Try to parse a definition, returning None if at end of input
-  mutable fun maybeDef(topLevel: Bool): ?Def {
+  mutable fun maybeDef(): ?Def {
     while (this.lex.peekKind() is Some(TKSemi())) {
       _ = this.lex.next();
     };
     if (this.lex.peekKind() is None()) return None();
-    Some(this.def(topLevel))
+    Some(this.def())
   }
 
   // Helper for parsing definitions with position tracking
-  mutable fun defHelper(topLevel: Bool): Def {
+  mutable fun defHelper(): Def {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
     };
     start = tok.posStart;
-    def_ = this.defHelper_(topLevel);
+    def_ = this.defHelper_();
     end = this.lex.lastTok.fromSome().posEnd;
     Def(PosRange::create(this.lex, start, end), def_)
   }
 
   // Internal definition parsing implementation
-  mutable fun defHelper_(topLevel: Bool): Def_ {
+  mutable fun defHelper_(): Def_ {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
@@ -508,15 +508,21 @@ extension class Parser {
     this.lex.getStrTok(tok) match {
     | "declare" ->
       _ = this.lex.next();
-      def = this.def(topLevel);
-      Declare(def)
+      this.lex.peek() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+      | Some(nextTok) ->
+        this.defHelper_() match {
+        | def @ Declarable _ -> Declare(def)
+        | _ -> this.error(this.lex.posStart(nextTok), UnexpectedToken())
+        }
+      }
     | "global" ->
       _ = this.lex.next();
-      Global(this.defs(false))
+      Global(this.defs())
     | "namespace" ->
       _ = this.lex.next();
       name = this.getName();
-      defs = this.defs(false);
+      defs = this.defs();
       Namespace(name, defs)
     | "import" ->
       _ = this.lex.next();
@@ -526,32 +532,22 @@ extension class Parser {
       } else {
         None()
       };
-      if (
-        this.lex.peekKind() is Some(TKDoubleQuote()) ||
-        this.lex.peekKind() is Some(TKQuote())
-      ) {
-        this.error(this.lex.posEnd(), InvalidImport())
-      } else {
-        importNames = this.moduleNames();
-        if (this.lex.isEq("from")) {
+      importNamesList = mutable Vector[];
+      loop {
+        importNames = this.moduleNames() match {
+        | MStar() -> this.error(this.lex.posEnd(), ExpectedStrNot("as"))
+        | importNames @ ImportModuleNames _ -> importNames
+        };
+        importNamesList.push(importNames);
+        if (this.lex.peekKind() is Some(TKComma())) {
           _ = this.lex.next();
-          importFrom = this.getString();
-          if (
-            importFrom.value.startsWith("./") ||
-            importFrom.value.startsWith("../")
-          ) {
-            if (!importFrom.value.endsWith(".js")) {
-              this.error(this.lex.posEnd(), InvalidImport())
-            } else {
-              Import(IKFrom(), isType, importNames, INPath(importFrom))
-            }
-          } else {
-            Import(IKFrom(), isType, importNames, INName(importFrom))
-          }
         } else {
-          this.error(this.lex.posEnd(), InvalidImport())
+          break void
         }
-      }
+      };
+      this.expectStr("from");
+      importFrom = this.getString();
+      Import(isType, importNamesList.toArray(), importFrom)
     | "export" ->
       _ = this.lex.next();
       if (this.lex.isEq("import")) {
@@ -570,20 +566,43 @@ extension class Parser {
         _ = this.lex.next();
         return ExportEq(this.expr(0));
       };
-      isType = if (this.lex.peekStr() is Some("type")) {
-        if (
-          this.lex.lookAhead(() -> {
-            _ = this.lex.next();
-            this.lex.next().map(x -> x.kind) is Some(TKVar()) &&
-              (this.lex.peekKind() is Some(TKAssignment()) ||
-                this.lex.peekKind() is Some(TKLessThan()))
-          })
-        ) {
-          None()
-        } else {
-          nextTok = this.lex.next().fromSome();
-          Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
-        }
+      if (this.lex.peekStr() is Some("default")) {
+        _ = this.lex.next();
+        d = this.lex.peekStr() match {
+        | Some("function")
+        | Some("class") ->
+          if (
+            this.lex.lookAhead(() -> {
+              _ = this.lex.next();
+              this.lex.peekKind() is Some(TKVar())
+            })
+          ) {
+            // Named function or class: parse as def
+            this.defHelper_() match {
+            | d @ ExportDefaultable _ -> d
+            | _ ->
+              internal_error(
+                "function and class should produce ExportDefaultable defs",
+              )
+            }
+          } else {
+            // otherwise parse as expr
+            this.expr(0)
+          }
+        | _ -> this.expr(0)
+        };
+        return ExportDefault(d)
+      };
+      isType = if (
+        this.lex.isEq("type") &&
+        this.lex.lookAhead(() -> {
+          _ = this.lex.next();
+          this.lex.peekKind() is Some(TKOpenCurly()) ||
+            this.lex.peekKind() is Some(TKMultiplication())
+        })
+      ) {
+        nextTok = this.lex.next().fromSome();
+        Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
       } else {
         None()
       };
@@ -592,72 +611,27 @@ extension class Parser {
         this.lex.peekKind() is Some(TKMultiplication())
       ) {
         names = this.moduleNames();
-        maybeFrom = if (this.lex.isEq("from")) {
+        fromFollows = this.lex.isEq("from");
+        (names, fromFollows) match {
+        | (n @ MCurly _, false) -> ExportNames(isType, n)
+        | (_, false)
+        | (MName _, _) ->
+          this.error(this.lex.posEnd(), UnexpectedToken())
+        | (n @ ExportFromModuleNames _, true) ->
           _ = this.lex.next();
-          Some(this.expr(0))
-        } else {
-          None()
-        };
-        ExportNames(isType, names, maybeFrom)
+          from = this.getString();
+          ExportNamesFrom(isType, n, from)
+        }
       } else {
-        default = if (this.lex.peekStr() is Some("default")) {
-          nextTok = this.lex.next().fromSome();
-          Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
-        } else {
-          None()
-        };
-        this.lex.peekStr() match {
-        | Some("function") ->
-          if (
-            this.lex.lookAhead(() -> {
-              _ = this.lex.next();
-              this.lex.peekKind() is Some(TKOpenParen()) ||
-                this.lex.peekKind() is Some(TKLessThan())
-            })
-          ) {
-            if (default is None()) {
-              this.error(
-                this.lex.posStart(tok),
-                NonDefaultAnonymousFunctionExport(),
-              )
-            };
-            _ = this.lex.next();
-            Export(
-              isType,
-              default,
-              this.anonMethodDef(
-                None(),
-                Modifiers::empty(),
-                None(),
-                None(),
-                true,
-                None(),
-                None(),
-              ),
-            )
-          } else {
-            Export(isType, default, this.def(false).value)
+        invariant(isType is None());
+        this.lex.peek() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+        | Some(nextTok) ->
+          this.defHelper_() match {
+          | Declare(def @ Exportable _) -> ExportDeclare(def)
+          | def @ Exportable _ -> Export(def)
+          | _ -> this.error(this.lex.posStart(nextTok), UnexpectedToken())
           }
-        | Some("async")
-        | Some("namespace")
-        | Some("declare")
-        | Some("module")
-        | Some("enum")
-        | Some("class")
-        | Some("const")
-        | Some("interface")
-        | Some("let")
-        | Some("var")
-        | Some("abstract")
-        | Some("type") ->
-          def = this.def(false);
-          Export(isType, default, def.value)
-        | _ ->
-          if (default is None()) {
-            this.error(this.lex.posStart(tok), UnexpectedToken())
-          };
-          e = this.expr(0);
-          ExportDefault(isType, e)
         }
       }
     | "async" ->
@@ -689,7 +663,7 @@ extension class Parser {
       _ = this.lex.next();
       name = this.getNameOrString();
       defs = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-        Some(this.defs(false))
+        Some(this.defs())
       } else {
         None()
       };
@@ -710,7 +684,7 @@ extension class Parser {
     | "let" ->
       _ = this.lex.next();
       this.varDef(VDKLet())
-    | _ -> ToplevelExpr(this.expr(0))
+    | _ -> this.expr(0)
     }
   }
 
@@ -722,13 +696,12 @@ extension class Parser {
   mutable fun moduleNames(): ModuleNames {
     if (this.lex.peekKind() is Some(TKMultiplication())) {
       _ = this.lex.next();
-      asName = if (this.lex.peekStr() is Some("as")) {
+      if (this.lex.peekStr() is Some("as")) {
         _ = this.lex.next();
-        Some(this.getName())
+        MStarAs(this.getName())
       } else {
-        None()
+        MStar()
       };
-      MStar(asName)
     } else if (this.lex.peekKind() is Some(TKOpenCurly())) {
       _ = this.lex.next();
       if (this.lex.peekKind() is Some(TKCloseCurly())) {
@@ -739,15 +712,7 @@ extension class Parser {
         MCurly(names)
       }
     } else {
-      name = this.getName();
-      curlyNames = if (this.lex.peekKind() is Some(TKComma())) {
-        _ = this.lex.next();
-        this.expect(TKOpenCurly());
-        this.curlyNames();
-      } else {
-        Array[]
-      };
-      MName(name, curlyNames);
+      MName(this.getName());
     }
   }
 

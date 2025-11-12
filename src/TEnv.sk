@@ -80,8 +80,8 @@ class TEnv{
 
     tdef = this.defMap.getType(subst.context, name);
     clauses = tdef match {
-    | TDType(ta) -> ta.tdefParams
-    | TDClass(ca) -> ca.tparams
+    | TypeDef{tdefParams} -> tdefParams
+    | Class{tparams} -> tparams
     };
     if (targs.targs.size() > clauses.size()) {
       typingError(
@@ -129,16 +129,16 @@ class TEnv{
     };
 
     tdef match {
-    | TDType(ta) -> this.normalize(subst.context, ta.body)
-    | TDClass(_) -> this.new(subst.context, name, targs.targs)
+    | ta @ TypeDef _ -> this.normalize(subst.context, ta.body)
+    | Class _ -> this.new(subst.context, name, targs.targs)
     }
   }
 
   fun getClass(context: mutable SKStore.Context, className: Name): Class {
     tdef = this.defMap.getType(context, className);
     tdef match {
-    | TDType(_) -> typingError(Array[(className.pos, "Expected a class name")])
-    | TDClass(ca) -> ca
+    | TypeDef _ -> typingError(Array[(className.pos, "Expected a class name")])
+    | ca @ Class _ -> ca
     };
   }
 
@@ -323,13 +323,9 @@ class TEnv{
       typingError(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.get(
-      context,
-      FileName::create(className.pos.fileName),
-      className,
-    );
+    defs = this.defMap.getAll(context, className);
     cls = for (def in defs) {
-      def.value match {
+      def match {
       | cls @ Class _ -> break cls
       | _ -> void
       }
@@ -798,8 +794,8 @@ class TEnv{
       } else {
         tdef = this.defMap.getType(context, n);
         tparams = tdef match {
-        | TDType(ta) -> ta.tdefParams
-        | TDClass(ca) -> ca.tparams
+        | TypeDef{tdefParams} -> tdefParams
+        | Class{tparams} -> tparams
         };
         if (
           targs.size() > tparams.size() ||

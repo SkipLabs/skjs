@@ -24,7 +24,7 @@ extension class TypeChecker {
     | ExportAs _ -> notSupported(def.pos)
     | ExportEq _ -> notSupported(def.pos)
     | Module _ -> notSupported(def.pos)
-    | ToplevelExpr(e) ->
+    | e @ Expr _ ->
       subst = Subst::mcreate{context};
       tcenv = TCEnv::mcreate(
         context,
@@ -40,11 +40,15 @@ extension class TypeChecker {
       };
       subst = Subst::mcreate{context};
       this.funDef(subst, None(), fd, cgNode)
-    | Declare _ -> void
+    | Declare _
+    | ExportDeclare _ ->
+      void
     | Namespace _ -> notSupported(def.pos)
-    | Export(_, _, d) -> this.checkDef(context, Def(def.pos, d))
+    | Export(d) -> this.checkDef(context, Def(def.pos, d))
     | ExportDefault _ -> notSupported(def.pos)
-    | ExportNames _ -> void
+    | ExportNames _
+    | ExportNamesFrom _ ->
+      void
     | Import _ -> void
     | c @ Class _ -> this.class_(context, c)
     | Enum _ -> notSupported(def.pos)

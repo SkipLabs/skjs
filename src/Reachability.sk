@@ -327,12 +327,14 @@ private fun checkDef(
   | ImportExpr _
   | TypeDef _
   | ExportNames _
+  | ExportNamesFrom _
   | Import _
   | VarDefs _ ->
     void
-  | Declare(d) -> checkDef(d, nodes, classes)
-  | Export(_, _, d) -> checkDef(Def(def.pos, d), nodes, classes)
-  | ToplevelExpr(_) -> nodes.insert(CGNode::toplevel(def.pos.fileName))
+  | Declare(d) -> checkDef(Def(def.pos, d), nodes, classes)
+  | ExportDeclare(d) -> checkDef(Def(def.pos, d), nodes, classes)
+  | Export(d) -> checkDef(Def(def.pos, d), nodes, classes)
+  | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
   | fd @ FunDef _ ->
     cgNode = fd.name match {
     | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
