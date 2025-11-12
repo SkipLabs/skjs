@@ -178,9 +178,8 @@ mutable class FileDefsState{
         fn = this.resolveName(mname);
         this.exportNamesFrom(names, fn)
 
-      | ExportDefault(Expr(_, Var(n)))
-      | ExportEq(Expr(_, Var(n))) ->
-        this.!default = Some(n.value)
+      | ExportDefault(Expr(_, Var(n))) -> this.!default = Some(n.value)
+
       | ExportDefault _
       | ExportEq _ ->
         internal_error("TODO: unsupported export")
