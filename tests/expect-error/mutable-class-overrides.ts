@@ -30,5 +30,5 @@ class SafeClicks2 extends Base<Event> {
     }
   }
 
-  onClick(e: MouseEvent): void { }
+  onClick(e: MouseEvent): void {}
 }
