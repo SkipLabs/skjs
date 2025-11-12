@@ -320,18 +320,11 @@ mutable class FileDefsState{
         this.importedModulesFrom![moduleName.value] = fileName
       | MCurly(moduleDefNames) ->
         for (moduleDefName in moduleDefNames) {
-          moduleDefName.asName match {
-          | None() ->
-            this.importedFrom![moduleDefName.name.value] = (
-              moduleDefName.name.value,
-              fileName,
-            )
-          | Some(asName) ->
-            this.importedFrom![asName.value] = (
-              moduleDefName.name.value,
-              fileName,
-            )
-          }
+          importName = moduleDefName.asName match {
+          | None() -> moduleDefName.name.value
+          | Some(asName) -> asName.value
+          };
+          this.importedFrom![importName] = (moduleDefName.name.value, fileName)
         }
       | MName(moduleName) ->
         this.importedFrom!["default"] = (moduleName.value, fileName)
