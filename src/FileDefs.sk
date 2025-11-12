@@ -360,14 +360,14 @@ class DefMap{
   fun getAll(context: mutable S.Context, name: Name): Array<FileDef> {
     fileName = FileName::create(name.pos.fileName);
     result = mutable Vector[];
-    this.get(context, fileName, name, result);
+    this.get(context, fileName, name.value, result);
     result.toArray()
   }
 
   private fun get(
     context: mutable S.Context,
     fileName: FileName,
-    defName: Name,
+    defName: String,
     result: mutable Vector<FileDef>,
   ): void {
     if (fileName != this.builtinsFileName) {
@@ -381,53 +381,36 @@ class DefMap{
   private fun getInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
-    defName: Name,
+    defName: String,
     result: mutable Vector<FileDef>,
   ): void {
-    if (defName.value.contains(".")) {
-      arr = defName.value.split(".");
+    if (defName.contains(".")) {
+      arr = defName.split(".");
       moduleName = arr[0];
       newDefName = arr.slice(1, arr.size()).join(".");
       fileDefs.importedModulesFrom.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        this.get(context, fileName, Name(defName.pos, newDefName), result)
+      | Some(fileName) -> this.get(context, fileName, newDefName, result)
       | None() -> void
       };
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        this.get(context, fileName, Name(defName.pos, newDefName), result)
+      | Some(fileName) -> this.get(context, fileName, newDefName, result)
       | None() -> void
       };
       fileDefs.importedFrom.maybeGet(moduleName) match {
       | Some((origName, newFileName)) ->
-        this.get(
-          context,
-          newFileName,
-          Name(defName.pos, origName + newDefName),
-          result,
-        )
+        this.get(context, newFileName, origName + newDefName, result)
       | None() -> void
       };
       fileDefs.exportedFrom.maybeGet(moduleName) match {
       | Some((origName, newFileName)) ->
-        this.get(
-          context,
-          newFileName,
-          Name(defName.pos, origName + newDefName),
-          result,
-        )
+        this.get(context, newFileName, origName + newDefName, result)
       | None() -> void
       };
       return void
     };
-    fileDefs.importedFrom.maybeGet(defName.value) match {
+    fileDefs.importedFrom.maybeGet(defName) match {
     | Some((exportedDefName, importedFileName)) ->
-      this.getExported(
-        context,
-        importedFileName,
-        Name(defName.pos, exportedDefName),
-        result,
-      )
+      this.getExported(context, importedFileName, exportedDefName, result)
     | None() -> void
     };
     for (exportedFileName in fileDefs.exportedStar) {
@@ -438,7 +421,7 @@ class DefMap{
         result,
       );
     };
-    fileDefs.defs.maybeGet(defName.value) match {
+    fileDefs.defs.maybeGet(defName) match {
     | Some(defs) -> result.extend(defs)
     | None() -> void
     };
@@ -447,7 +430,7 @@ class DefMap{
   private fun getExported(
     context: mutable S.Context,
     fileName: FileName,
-    defName: Name,
+    defName: String,
     result: mutable Vector<FileDef>,
   ): void {
     fileDefs = this.fileDefsMap.get(context, fileName);
@@ -457,51 +440,36 @@ class DefMap{
   private fun getExportedInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
-    defName: Name,
+    defName: String,
     result: mutable Vector<FileDef>,
   ): void {
-    if (defName.value.contains(".")) {
-      arr = defName.value.split(".");
+    if (defName.contains(".")) {
+      arr = defName.split(".");
       moduleName = arr[0];
       newDefName = arr.slice(1, arr.size()).join(".");
       fileDefs.importedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        this.getExported(
-          context,
-          fileName,
-          Name(defName.pos, newDefName),
-          result,
-        )
+        this.getExported(context, fileName, newDefName, result)
       | None() -> void
       };
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
-        this.getExported(
-          context,
-          fileName,
-          Name(defName.pos, newDefName),
-          result,
-        )
+        this.getExported(context, fileName, newDefName, result)
       | None() -> void
       };
       return void
     };
 
-    fileDefs.exported.maybeGet(defName.value) match {
+    fileDefs.exported.maybeGet(defName) match {
     | Some(asNames) ->
       for (asName in asNames) {
-        this.getInDefs(context, fileDefs, Name(defName.pos, asName), result)
+        this.getInDefs(context, fileDefs, asName, result)
       }
     | None() -> void
     };
-    fileDefs.exportedFrom.maybeGet(defName.value) match {
+    fileDefs.exportedFrom.maybeGet(defName) match {
     | Some((newDefName, newFileName)) ->
-      this.getExported(
-        context,
-        newFileName,
-        Name(defName.pos, newDefName),
-        result,
-      )
+      this.getExported(context, newFileName, newDefName, result)
     | None() -> void
     };
 
