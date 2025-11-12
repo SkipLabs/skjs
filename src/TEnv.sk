@@ -342,7 +342,19 @@ class TEnv{
     };
     if (withTParams) {
       for (i => tparam in cls.tparams) {
-        !this.subst[tparam.name.value] = (false, targs[i])
+        targ = if (i < targs.size()) {
+          targs[i]
+        } else {
+          // TypeChecker::class_ rejects classes with defaulted type parameters, but we
+          // still reach this code when other defs (e.g. subclasses) keep type-checking
+          typingError(
+            Array[
+              (className.pos, "Invalid number of type arguments"),
+              (cls.name.pos, "Class declaration is here"),
+            ],
+          );
+        };
+        !this.subst[tparam.name.value] = (false, targ)
       };
     };
     (this, cls)
