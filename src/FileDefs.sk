@@ -64,7 +64,6 @@ class FileDefs{
   exportedStar: Set<String>,
   exportedFrom: Map<String, (String, FileName)>,
   exportedModulesFrom: Map<String, FileName>,
-  default: ?String,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   defs: Map<String, Array<FileDef>>,
 } extends S.File {
@@ -127,7 +126,6 @@ mutable class FileDefsState{
   exportedStar: mutable Set<String> = mutable Set[],
   exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
-  mutable default: ?String = None(),
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
 } {
@@ -178,7 +176,15 @@ mutable class FileDefsState{
         fn = this.resolveName(mname);
         this.exportNamesFrom(names, fn)
 
-      | ExportDefault(Expr(_, Var(n))) -> this.!default = Some(n.value)
+      | ExportDefault(Expr(_, Var(n))) ->
+        /* Treat
+             export default x;
+           as
+             export { x as default };
+         */
+        this.exportNames(
+          MCurly(Array[ModuleDefName(None(), n, Some(Name(n.pos, "default")))]),
+        )
 
       | ExportDefault _
       | ExportEq _ ->
@@ -204,7 +210,6 @@ mutable class FileDefsState{
       exportedStar => this.exportedStar.chill(),
       exportedFrom => this.exportedFrom.chill(),
       exportedModulesFrom => this.exportedModulesFrom.chill(),
-      default => this.default,
       modules => this.modules.map((_, x) -> x.chill()),
       defs => this.defs.map((_, x) -> x.toArray()),
     }
@@ -482,28 +487,24 @@ class DefMap{
       return void
     };
 
-    if (defName.value == "default" && fileDefs.default is Some _) {
-      defaultName = fileDefs.default.fromSome();
-      this.getInDefs(context, fileDefs, Name(defName.pos, defaultName), result)
-    } else {
-      fileDefs.exported.maybeGet(defName.value) match {
-      | Some(asNames) ->
-        for (asName in asNames) {
-          this.getInDefs(context, fileDefs, Name(defName.pos, asName), result)
-        }
-      | None() -> void
-      };
-      fileDefs.exportedFrom.maybeGet(defName.value) match {
-      | Some((newDefName, newFileName)) ->
-        this.getExported(
-          context,
-          newFileName,
-          Name(defName.pos, newDefName),
-          result,
-        )
-      | None() -> void
+    fileDefs.exported.maybeGet(defName.value) match {
+    | Some(asNames) ->
+      for (asName in asNames) {
+        this.getInDefs(context, fileDefs, Name(defName.pos, asName), result)
       }
+    | None() -> void
     };
+    fileDefs.exportedFrom.maybeGet(defName.value) match {
+    | Some((newDefName, newFileName)) ->
+      this.getExported(
+        context,
+        newFileName,
+        Name(defName.pos, newDefName),
+        result,
+      )
+    | None() -> void
+    };
+
     for (exportedFileName in fileDefs.exportedStar) {
       this.getExported(
         context,
