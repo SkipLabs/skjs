@@ -85,19 +85,20 @@ class FileDefs{
 }
 
 base class FileDef
-extension class FunDef extends FileDef
-extension class TypeDef extends FileDef
-extension class Class extends FileDef
-extension class Enum extends FileDef
+base class FileDefElt extends FileDef
+extension class FunDef extends FileDefElt
+extension class TypeDef extends FileDefElt
+extension class Class extends FileDefElt
+extension class Enum extends FileDefElt
 class FDVar(
   kind: VarDefKind,
   name: Name,
   type: ?Type,
   value: ?Expr,
-) extends FileDef
+) extends FileDefElt
 class FDNamespace(FileDefs) extends FileDef
 
-base class TypeOnlyDef extends FileDef
+base class TypeOnlyDef extends FileDefElt
 extension class TypeDef extends TypeOnlyDef
 extension class Class extends TypeOnlyDef
 extension class Enum extends TypeOnlyDef
@@ -348,7 +349,11 @@ mutable class FileDefsState{
 
 base class IDefMap {
   fun getType(mutable S.Context, Name): TypeOnlyDef;
-  fun getAll(mutable S.Context, Name, typeOnly: Bool = false): Array<FileDef>;
+  fun getAll(
+    mutable S.Context,
+    Name,
+    typeOnly: Bool = false,
+  ): Array<FileDefElt>;
 }
 
 class DefMap{
@@ -371,10 +376,17 @@ class DefMap{
     context: mutable S.Context,
     name: Name,
     typeOnly: Bool = false,
-  ): Array<FileDef> {
+  ): Array<FileDefElt> {
     fileName = FileName::create(name.pos.fileName);
+    tmp = mutable Vector[];
+    this.get(context, fileName, name.value, typeOnly, tmp);
     result = mutable Vector[];
-    this.get(context, fileName, name.value, typeOnly, result);
+    for (elt in tmp) {
+      elt match {
+      | e @ FileDefElt _ -> result.push(e)
+      | FDNamespace _ -> internal_error("Encountering namespace")
+      }
+    };
     result.toArray()
   }
 
