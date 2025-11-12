@@ -106,6 +106,10 @@ mutable class FileDefsState{
       def.value match {
       | Expr _ -> void
 
+      /* module was the old syntax for namespaces */
+      | Module(name, defsOpt) ->
+        this.newDef(false, Namespace(name, defsOpt.default(Array[])))
+
       | d @ Declarable _
       | Declare(d) ->
         this.newDef(false, d)
