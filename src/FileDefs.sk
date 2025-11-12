@@ -435,14 +435,6 @@ class DefMap{
       }
     | None() -> void
     };
-    for (exportedFileName in fileDefs.wholeModuleReexports) {
-      this.getExported(
-        context,
-        FileName::create(exportedFileName),
-        defName,
-        result,
-      );
-    };
     fileDefs.defs.maybeGet(defName) match {
     | Some(defs) -> result.extend(defs)
     | None() -> void
