@@ -60,7 +60,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
 class FileDefs{
   imports: Map<String, Array<Imported>>,
   exported: Map<String, Array<String>>,
-  exportedStar: Set<String>,
+  wholeModuleReexports: Set<String>,
   exportedFrom: Map<String, (String, FileName)>,
   exportedModulesFrom: Map<String, FileName>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
@@ -127,7 +127,7 @@ mutable class FileDefsState{
   importStubs: Array<DirName>,
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   exported: mutable Map<String, mutable Vector<String>> = mutable Map[],
-  exportedStar: mutable Set<String> = mutable Set[],
+  wholeModuleReexports: mutable Set<String> = mutable Set[],
   exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
@@ -210,7 +210,7 @@ mutable class FileDefsState{
     FileDefs{
       imports => this.imports.map((_, x) -> x.toArray()),
       exported => this.exported.map((_, x) -> x.toArray()),
-      exportedStar => this.exportedStar.chill(),
+      wholeModuleReexports => this.wholeModuleReexports.chill(),
       exportedFrom => this.exportedFrom.chill(),
       exportedModulesFrom => this.exportedModulesFrom.chill(),
       modules => this.modules.map((_, x) -> x.chill()),
@@ -297,7 +297,7 @@ mutable class FileDefsState{
     names match {
     | MStarAs(moduleName) ->
       this.exportedModulesFrom![moduleName.value] = fileName
-    | MStar() -> this.exportedStar.insert(fileName.toString())
+    | MStar() -> this.wholeModuleReexports.insert(fileName.toString())
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
         moduleDefName.asName match {
@@ -435,7 +435,7 @@ class DefMap{
       }
     | None() -> void
     };
-    for (exportedFileName in fileDefs.exportedStar) {
+    for (exportedFileName in fileDefs.wholeModuleReexports) {
       this.getExported(
         context,
         FileName::create(exportedFileName),
@@ -490,7 +490,7 @@ class DefMap{
     | None() -> void
     };
 
-    for (exportedFileName in fileDefs.exportedStar) {
+    for (exportedFileName in fileDefs.wholeModuleReexports) {
       this.getExported(
         context,
         FileName::create(exportedFileName),
