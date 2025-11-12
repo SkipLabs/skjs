@@ -76,7 +76,7 @@ mutable class FileDefsState{
   importStubs: Array<DirName>,
   importedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   importedModulesFrom: mutable Map<String, FileName> = mutable Map[],
-  exported: mutable Map<String, String> = mutable Map[],
+  exported: mutable Map<String, mutable Vector<String>> = mutable Map[],
   exportedStar: mutable Set<String> = mutable Set[],
   exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
@@ -157,7 +157,7 @@ mutable class FileDefsState{
     FileDefs{
       importedFrom => this.importedFrom.chill(),
       importedModulesFrom => this.importedModulesFrom.chill(),
-      exported => this.exported.chill(),
+      exported => this.exported.map((_, x) -> x.toArray()),
       exportedStar => this.exportedStar.chill(),
       exportedFrom => this.exportedFrom.chill(),
       exportedModulesFrom => this.exportedModulesFrom.chill(),
@@ -184,13 +184,13 @@ mutable class FileDefsState{
   mutable fun newDef(isExport: Bool, def: Declarable): void {
     def match {
     | d @ TypeDef{name} ->
-      if (isExport) this.exported![name.value] = name.value;
+      if (isExport) mapPush(this.exported, name.value, name.value);
       mapPush(this.defs, name.value, d)
     | d @ Class{name} ->
-      if (isExport) this.exported![name.value] = name.value;
+      if (isExport) mapPush(this.exported, name.value, name.value);
       mapPush(this.defs, name.value, d)
     | d @ Enum(_, name, _) ->
-      if (isExport) this.exported![name.value] = name.value;
+      if (isExport) mapPush(this.exported, name.value, name.value);
       mapPush(this.defs, name.value, d)
     | Namespace(name, defs) ->
       fileDefs = this.createFileDefs(defs);
@@ -209,7 +209,7 @@ mutable class FileDefsState{
           Array[(funPos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
-      if (isExport) this.exported![fname] = fname;
+      if (isExport) mapPush(this.exported, fname, fname);
       mapPush(this.defs, fname, d)
 
     | VarDefs(k, varDefs) ->
@@ -218,7 +218,9 @@ mutable class FileDefsState{
         | PVar(x) -> x
         | _ -> internal_error("TODO: cannot have exports base on names")
         };
-        if (isExport) this.exported![exportName.value] = exportName.value;
+        if (isExport) {
+          mapPush(this.exported, exportName.value, exportName.value)
+        };
         mapPush(
           this.defs,
           exportName.value,
@@ -238,7 +240,7 @@ mutable class FileDefsState{
         | None() -> moduleDefName.name.value
         | Some(asName) -> asName.value
         };
-        this.exported![moduleDefName.name.value] = origName
+        mapPush(this.exported, moduleDefName.name.value, origName)
       }
     }
   }
@@ -302,7 +304,7 @@ mutable class FileDefsState{
 class FileDefs{
   importedFrom: Map<String, (String, FileName)>,
   importedModulesFrom: Map<String, FileName>,
-  exported: Map<String, String>,
+  exported: Map<String, Array<String>>,
   exportedStar: Set<String>,
   exportedFrom: Map<String, (String, FileName)>,
   exportedModulesFrom: Map<String, FileName>,
@@ -533,8 +535,10 @@ class DefMap{
       this.getInDefs(context, fileDefs, Name(defName.pos, defaultName), result)
     } else {
       fileDefs.exported.maybeGet(defName.value) match {
-      | Some(asName) ->
-        this.getInDefs(context, fileDefs, Name(defName.pos, asName), result)
+      | Some(asNames) ->
+        for (asName in asNames) {
+          this.getInDefs(context, fileDefs, Name(defName.pos, asName), result)
+        }
       | None() -> void
       };
       fileDefs.exportedFrom.maybeGet(defName.value) match {
