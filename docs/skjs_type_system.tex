@@ -1036,7 +1036,7 @@ type V = C | D;
 function handle(v: V): void {
   if (v.kind === "d") {
     const flag: boolean = v.flag;
-    // EXPECT-ERROR: Type void not found
+    // EXPECT-ERROR: Unbound name
     void flag;
   }
 }
@@ -1060,8 +1060,8 @@ class Clicks extends Base {
 
 \noindent\textbf{Workarounds.} Make the variance explicit via generics or adapter methods:
 \begin{lstlisting}[language=TypeScript]
-// EXPECT-ERROR: Out of bounds
-class Base<E extends Event = Event> {
+// EXPECT-ERROR: Optional type parameters are not supported for classes
+class Base<E extends Event = Event> { 
   handle(e: E): void {}
 }
 class Clicks extends Base<MouseEvent> {
