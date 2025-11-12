@@ -107,7 +107,9 @@ mutable class FileDefsState{
       | Expr _ -> void
 
       | d @ Declarable _
-      | Declare(d)
+      | Declare(d) ->
+        this.newDef(false, false, d)
+
       | Export(d)
       | ExportDeclare(d) ->
         this.newDef(false, true, d)
