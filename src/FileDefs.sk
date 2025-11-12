@@ -334,7 +334,7 @@ mutable class FileDefsState{
           }
         }
       | MName(moduleName) ->
-        this.importedModulesFrom![moduleName.value] = fileName
+        this.importedFrom!["default"] = (moduleName.value, fileName)
       }
     }
   }
