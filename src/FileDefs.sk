@@ -301,18 +301,11 @@ mutable class FileDefsState{
     | MStar() -> this.wholeModuleReexports.push(fileName)
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          this.exportedFrom![moduleDefName.name.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        | Some(asName) ->
-          this.exportedFrom![asName.value] = (
-            moduleDefName.name.value,
-            fileName,
-          )
-        }
+        reexportName = moduleDefName.asName match {
+        | None() -> moduleDefName.name.value
+        | Some(asName) -> asName.value
+        };
+        this.exportedFrom![reexportName] = (moduleDefName.name.value, fileName)
       }
     }
   }
