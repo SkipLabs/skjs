@@ -138,9 +138,9 @@ mutable class FileDefsState{
       | ExportEq _ ->
         internal_error("TODO: unsupported export")
 
-      | Import(_, names, importName) ->
+      | Import(isType, names, importName) ->
         fn = this.resolveName(importName);
-        this.importNamesFrom(names, fn)
+        this.importNamesFrom(isType.isSome(), names, fn)
 
       | ImportExpr _ -> internal_error("TODO: import expr")
       | ExportAs _ -> internal_error("TODO export as")
@@ -263,6 +263,7 @@ mutable class FileDefsState{
   }
 
   private mutable fun importNamesFrom(
+    _typeOnly: Bool,
     namesList: Array<ImportModuleNames>,
     fileName: FileName,
   ): void {
