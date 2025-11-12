@@ -457,6 +457,10 @@ class DefMap{
     defName: String,
     result: mutable Vector<FileDef>,
   ): void {
+    for (reexportedFileName in fileDefs.wholeModuleReexports) {
+      this.getExported(context, reexportedFileName, defName, result);
+    };
+
     if (defName.contains(".")) {
       arr = defName.split(".");
       moduleName = arr[0];
@@ -480,10 +484,6 @@ class DefMap{
     | Some((newDefName, newFileName)) ->
       this.getExported(context, newFileName, newDefName, result)
     | None() -> void
-    };
-
-    for (reexportedFileName in fileDefs.wholeModuleReexports) {
-      this.getExported(context, reexportedFileName, defName, result);
     };
 
     for (modulesDefs in fileDefs.modules) {
