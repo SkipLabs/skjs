@@ -234,12 +234,11 @@ mutable class FileDefsState{
     names match {
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
-        moduleDefName.asName match {
-        | None() ->
-          this.exported![moduleDefName.name.value] = moduleDefName.name.value
-        | Some(asName) ->
-          this.exported![moduleDefName.name.value] = asName.value
-        }
+        origName = moduleDefName.asName match {
+        | None() -> moduleDefName.name.value
+        | Some(asName) -> asName.value
+        };
+        this.exported![moduleDefName.name.value] = origName
       }
     }
   }
