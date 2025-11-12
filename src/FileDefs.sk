@@ -85,7 +85,6 @@ mutable class FileDefsState{
   exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
-  mutable exportEq: ?Name = None(),
 } {
   mutable fun resolveName(mname: Name): FileName {
     (if (mname.value.startsWith("./") || mname.value.startsWith("../")) {
@@ -166,7 +165,6 @@ mutable class FileDefsState{
       exportedNamespaces => this.exportedNamespaces.chill(),
       modules => this.modules.chill(),
       defs => this.defs.map((_, x) -> x.toArray()),
-      exportEq => this.exportEq,
     }
   }
 
@@ -313,7 +311,6 @@ class FileDefs{
   exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
   defs: Map<String, Array<FileDef>>,
-  exportEq: ?Name,
 } extends S.File {
   static fun create(
     context: mutable S.Context,
@@ -465,15 +462,6 @@ class DefMap{
     | Some(defs) -> result.extend(defs)
     | None() -> void
     };
-    fileDefs.exportEq match {
-    | None() -> void
-    | Some(name) ->
-      fileDefs.namespaces.maybeGet(name.value) match {
-      | Some(fileName) -> this.getInDefs(context, fileName, defName, result)
-      | None() ->
-        debug(fileDefs.namespaces.items().map(x -> x.i0).collect(Array))
-      }
-    };
     for (exportedNamespace in fileDefs.exportedNamespaces) {
       this.getInDefs(context, exportedNamespace, defName, result)
     }
@@ -520,14 +508,6 @@ class DefMap{
       | None() -> void
       };
       return void
-    };
-    fileDefs.exportEq match {
-    | None() -> void
-    | Some(name) ->
-      fileDefs.namespaces.maybeGet(name.value) match {
-      | Some(fileName) -> this.getInDefs(context, fileName, defName, result)
-      | None() -> debug(fileDefs.exportedNamespaces.containsKey(name.value))
-      }
     };
 
     if (defName.value == "default" && fileDefs.default is Some _) {
