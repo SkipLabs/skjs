@@ -176,9 +176,9 @@ mutable class FileDefsState{
         this.newDef(true, d)
 
       | ExportNames(_, names) -> this.exportNames(names)
-      | ExportNamesFrom(_, names, mname) ->
+      | ExportNamesFrom(isType, names, mname) ->
         fn = this.resolveName(mname);
-        this.exportNamesFrom(names, fn)
+        this.exportNamesFrom(isType.isSome(), names, fn)
 
       | ExportDefault(Expr(_, Var(n))) ->
         /* Treat
@@ -291,6 +291,7 @@ mutable class FileDefsState{
   }
 
   private mutable fun exportNamesFrom(
+    _typeOnly: Bool,
     names: ExportFromModuleNames,
     fileName: FileName,
   ): void {
