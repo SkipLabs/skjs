@@ -525,9 +525,10 @@ class DefMap{
     };
 
     fileDefs.exported.maybeGet(defName) match {
-    | Some(asNames) ->
-      for (asName in asNames) {
-        this.getInDefs(context, fileDefs, asName, typeOnly, result)
+    | Some(origNames) ->
+      // TODO: search in builtins as well
+      for (origName in origNames) {
+        this.getInDefs(context, fileDefs, origName, typeOnly, result)
       }
     | None() -> void
     };
