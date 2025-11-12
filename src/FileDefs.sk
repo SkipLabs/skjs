@@ -57,6 +57,53 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
   }
 }
 
+class FileDefs{
+  importedFrom: Map<String, (String, FileName)>,
+  importedModulesFrom: Map<String, FileName>,
+  exported: Map<String, Array<String>>,
+  exportedStar: Set<String>,
+  exportedFrom: Map<String, (String, FileName)>,
+  exportedModulesFrom: Map<String, FileName>,
+  default: ?String,
+  modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
+  defs: Map<String, Array<FileDef>>,
+} extends S.File {
+  static fun create(
+    context: mutable S.Context,
+    index: FileNameIndex,
+    rootOpt: ?DirName,
+    dirName: DirName,
+    importStubs: Array<DirName>,
+    parsedDefs: Array<Def>,
+  ): FileDefs {
+    state = mutable FileDefsState{
+      context,
+      index,
+      rootOpt,
+      dirName,
+      importStubs,
+    };
+    state.processDefs(parsedDefs)
+  }
+}
+
+base class FileDef
+extension class FunDef extends FileDef
+extension class TypeDef extends FileDef
+extension class Class extends FileDef
+extension class Enum extends FileDef
+class FDVar(
+  kind: VarDefKind,
+  name: Name,
+  type: ?Type,
+  value: ?Expr,
+) extends FileDef
+class FDNamespace(FileDefs) extends FileDef
+
+base class TypeOnlyDef extends FileDef
+extension class TypeDef extends TypeOnlyDef
+extension class Class extends TypeOnlyDef
+
 fun mapPush<K: Hashable & Equality, V>(
   m: mutable Map<K, mutable Vector<V>>,
   k: K,
@@ -293,57 +340,10 @@ mutable class FileDefsState{
   }
 }
 
-class FileDefs{
-  importedFrom: Map<String, (String, FileName)>,
-  importedModulesFrom: Map<String, FileName>,
-  exported: Map<String, Array<String>>,
-  exportedStar: Set<String>,
-  exportedFrom: Map<String, (String, FileName)>,
-  exportedModulesFrom: Map<String, FileName>,
-  default: ?String,
-  modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
-  defs: Map<String, Array<FileDef>>,
-} extends S.File {
-  static fun create(
-    context: mutable S.Context,
-    index: FileNameIndex,
-    rootOpt: ?DirName,
-    dirName: DirName,
-    importStubs: Array<DirName>,
-    parsedDefs: Array<Def>,
-  ): FileDefs {
-    state = mutable FileDefsState{
-      context,
-      index,
-      rootOpt,
-      dirName,
-      importStubs,
-    };
-    state.processDefs(parsedDefs)
-  }
-}
-
 base class IDefMap {
   fun getType(mutable S.Context, Name): TypeOnlyDef;
   fun getAll(mutable S.Context, Name): Array<FileDef>;
 }
-
-base class TypeOnlyDef extends FileDef
-extension class TypeDef extends TypeOnlyDef
-extension class Class extends TypeOnlyDef
-
-base class FileDef
-extension class FunDef extends FileDef
-extension class TypeDef extends FileDef
-extension class Class extends FileDef
-extension class Enum extends FileDef
-class FDVar(
-  kind: VarDefKind,
-  name: Name,
-  type: ?Type,
-  value: ?Expr,
-) extends FileDef
-class FDNamespace(FileDefs) extends FileDef
 
 class DefMap{
   index: FileNameIndex,
