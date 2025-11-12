@@ -81,7 +81,6 @@ mutable class FileDefsState{
   exportedFrom: mutable Map<String, (String, FileName)> = mutable Map[],
   exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
   mutable default: ?String = None(),
-  namespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
 } {
@@ -160,7 +159,6 @@ mutable class FileDefsState{
       exportedFrom => this.exportedFrom.chill(),
       exportedModulesFrom => this.exportedModulesFrom.chill(),
       default => this.default,
-      namespaces => this.namespaces.chill(),
       modules => this.modules.chill(),
       defs => this.defs.map((_, x) -> x.toArray()),
     }
@@ -190,7 +188,7 @@ mutable class FileDefsState{
       mapPush(this.defs, name.value, d)
     | Namespace(name, defs) ->
       if (isExport) mapPush(this.exported, name.value, name.value);
-      this.namespaces![name.value] = this.createFileDefs(defs)
+      mapPush(this.defs, name.value, FDNamespace(this.createFileDefs(defs)))
     | Module(name, Some(defs)) ->
       this.modules![name.value] = this.createFileDefs(defs)
     | d @ FunDef{name, pos => funPos} ->
@@ -301,7 +299,6 @@ class FileDefs{
   exportedFrom: Map<String, (String, FileName)>,
   exportedModulesFrom: Map<String, FileName>,
   default: ?String,
-  namespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
   defs: Map<String, Array<FileDef>>,
 } extends S.File {
@@ -344,6 +341,7 @@ class FDVar(
   type: ?Type,
   value: ?Expr,
 ) extends FileDef
+class FDNamespace(FileDefs) extends FileDef
 
 class DefMap{
   index: FileNameIndex,
@@ -399,11 +397,6 @@ class DefMap{
       fileDefs.exportedModulesFrom.maybeGet(moduleName) match {
       | Some(fileName) ->
         this.get(context, fileName, Name(defName.pos, newDefName), result)
-      | None() -> void
-      };
-      fileDefs.namespaces.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        this.getInDefs(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
       fileDefs.importedFrom.maybeGet(moduleName) match {
