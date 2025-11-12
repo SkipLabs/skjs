@@ -82,7 +82,6 @@ mutable class FileDefsState{
   exportedModulesFrom: mutable Map<String, FileName> = mutable Map[],
   mutable default: ?String = None(),
   namespaces: mutable Map<String, FileDefs> = mutable Map[],
-  exportedNamespaces: mutable Map<String, FileDefs> = mutable Map[],
   modules: mutable Map<String, FileDefs> = mutable Map[],
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
 } {
@@ -162,7 +161,6 @@ mutable class FileDefsState{
       exportedModulesFrom => this.exportedModulesFrom.chill(),
       default => this.default,
       namespaces => this.namespaces.chill(),
-      exportedNamespaces => this.exportedNamespaces.chill(),
       modules => this.modules.chill(),
       defs => this.defs.map((_, x) -> x.toArray()),
     }
@@ -191,12 +189,8 @@ mutable class FileDefsState{
       if (isExport) mapPush(this.exported, name.value, name.value);
       mapPush(this.defs, name.value, d)
     | Namespace(name, defs) ->
-      fileDefs = this.createFileDefs(defs);
-      if (isExport) {
-        this.exportedNamespaces![name.value] = fileDefs
-      } else {
-        this.namespaces![name.value] = fileDefs
-      }
+      if (isExport) mapPush(this.exported, name.value, name.value);
+      this.namespaces![name.value] = this.createFileDefs(defs)
     | Module(name, Some(defs)) ->
       this.modules![name.value] = this.createFileDefs(defs)
     | d @ FunDef{name, pos => funPos} ->
@@ -308,7 +302,6 @@ class FileDefs{
   exportedModulesFrom: Map<String, FileName>,
   default: ?String,
   namespaces: Map<String, FileDefs>,
-  exportedNamespaces: Map<String, FileDefs>,
   modules: Map<String, FileDefs>,
   defs: Map<String, Array<FileDef>>,
 } extends S.File {
@@ -413,11 +406,6 @@ class DefMap{
         this.getInDefs(context, fileName, Name(defName.pos, newDefName), result)
       | None() -> void
       };
-      fileDefs.exportedNamespaces.maybeGet(moduleName) match {
-      | Some(fileName) ->
-        this.getInDefs(context, fileName, Name(defName.pos, newDefName), result)
-      | None() -> void
-      };
       fileDefs.importedFrom.maybeGet(moduleName) match {
       | Some((origName, newFileName)) ->
         this.get(
@@ -462,9 +450,6 @@ class DefMap{
     | Some(defs) -> result.extend(defs)
     | None() -> void
     };
-    for (exportedNamespace in fileDefs.exportedNamespaces) {
-      this.getInDefs(context, exportedNamespace, defName, result)
-    }
   }
 
   private fun getExported(
