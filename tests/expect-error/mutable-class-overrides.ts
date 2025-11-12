@@ -12,7 +12,7 @@ class Clicks extends Base<MouseEvent> {
   handle(e: MouseEvent): void {}
 }
 
-// @ts-expect-error Expected 1 parameters
+// @ts-expect-error Invalid number of type arguments
 class SafeClicks extends Base {
   handle(e: Event): void {
     if (e instanceof MouseEvent) {
@@ -21,4 +21,14 @@ class SafeClicks extends Base {
   }
 
   onClick(e: MouseEvent): void {}
+}
+
+class SafeClicks2 extends Base<Event> {
+  handle(e: Event): void {
+    if (e instanceof MouseEvent) {
+      this.onClick(e);
+    }
+  }
+
+  onClick(e: MouseEvent): void { }
 }

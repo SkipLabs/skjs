@@ -345,17 +345,14 @@ class TEnv{
         targ = if (i < targs.size()) {
           targs[i]
         } else {
-          tparam.default match {
-          | Some(defaultTy) -> this.normalize(context, defaultTy)
-          | None() ->
-            typingError(
-              Array[
-                (className.pos, "Invalid number of type arguments"),
-                (cls.name.pos, "Class declaration is here"),
-              ],
-            );
-            TType::top(className.pos)
-          }
+          // TypeChecker::class_ rejects classes with defaulted type parameters, but we
+          // still reach this code when other defs (e.g. subclasses) keep type-checking
+          typingError(
+            Array[
+              (className.pos, "Invalid number of type arguments"),
+              (cls.name.pos, "Class declaration is here"),
+            ],
+          );
         };
         !this.subst[tparam.name.value] = (false, targ)
       };
