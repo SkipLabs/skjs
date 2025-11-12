@@ -82,6 +82,7 @@ class TEnv{
     clauses = tdef match {
     | TypeDef{tdefParams} -> tdefParams
     | Class{tparams} -> tparams
+    | Enum _ -> internal_error("TODO: instantiate Enum")
     };
     if (targs.targs.size() > clauses.size()) {
       typingError(
@@ -131,14 +132,17 @@ class TEnv{
     tdef match {
     | ta @ TypeDef _ -> this.normalize(subst.context, ta.body)
     | Class _ -> this.new(subst.context, name, targs.targs)
+    | Enum _ -> internal_error("TODO: instantiate Enum")
     }
   }
 
   fun getClass(context: mutable SKStore.Context, className: Name): Class {
     tdef = this.defMap.getType(context, className);
     tdef match {
-    | TypeDef _ -> typingError(Array[(className.pos, "Expected a class name")])
     | ca @ Class _ -> ca
+    | TypeDef _
+    | Enum _ ->
+      typingError(Array[(className.pos, "Expected a class name")])
     };
   }
 
@@ -808,6 +812,7 @@ class TEnv{
         tparams = tdef match {
         | TypeDef{tdefParams} -> tdefParams
         | Class{tparams} -> tparams
+        | Enum _ -> internal_error("TODO: normalize Enum")
         };
         if (
           targs.size() > tparams.size() ||
