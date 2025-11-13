@@ -16,7 +16,16 @@ module alias S = SKStore;
 
 module SKJS;
 
-class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
+base class IDefMap {
+  fun getType(mutable S.Context, Name): TypeOnlyDef;
+  fun getAll(
+    mutable S.Context,
+    Name,
+    typeOnly: Bool = false,
+  ): Array<FileDefElt>;
+}
+
+class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
     index: FileNameIndex,
@@ -57,6 +66,209 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
         },
       ),
     )
+  }
+
+  fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
+    for (def in this.getAll(context, name, true)) {
+      def match {
+      | d @ TypeOnlyDef _ -> return d
+      | _ ->
+        invariant_violation("Passing typeOnly should return only TypeOnlyDef")
+      }
+    };
+    typingError(Array[(name.pos, `Type ${name} not found`)])
+  }
+
+  fun getAll(
+    context: mutable S.Context,
+    name: Name,
+    typeOnly: Bool = false,
+  ): Array<FileDefElt> {
+    fileName = FileName::create(name.pos.fileName);
+    tmp = this.getPath(context, fileName, name.value, typeOnly);
+    result = mutable Vector[];
+    for (elt in tmp) {
+      elt match {
+      | e @ FileDefElt _ -> result.push(e)
+      | FDNamespace _ -> internal_error("Encountering namespace")
+      }
+    };
+    result.toArray()
+  }
+
+  private fun getPath(
+    context: mutable S.Context,
+    fileName: FileName,
+    path: String,
+    typeOnly: Bool,
+  ): readonly Vector<FileDef> {
+    defs: readonly Vector<FileDef> = Vector[
+      FDNamespace(false, this.getFileDefs(context, fileName)),
+    ];
+    pathElts = path.split(".");
+    for (i => pathElt in pathElts) {
+      dotTypeOnly = typeOnly && i >= pathElts.size() - 1;
+      !defs = this.dot(context, defs, pathElt, dotTypeOnly)
+    };
+    defs
+  }
+
+  private fun dot(
+    context: mutable S.Context,
+    defs: readonly Vector<FileDef>,
+    name: String,
+    typeOnly: Bool,
+  ): readonly Vector<FileDef> {
+    result = mutable Vector[];
+    for (d in defs) {
+      d match {
+      | FunDef _
+      | TypeDef _
+      | Class _
+      | Enum _
+      | FDVar _ ->
+        internal_error("TODO: DefMap#dot")
+      | FDNamespace(nsTypeOnly, nsDefs) ->
+        getTypeOnly = typeOnly || nsTypeOnly;
+        this.getInDefs(context, nsDefs, name, getTypeOnly, result)
+      }
+    };
+    result
+  }
+
+  private fun getInDefs(
+    context: mutable S.Context,
+    fileDefs: FileDefs,
+    name: String,
+    typeOnly: Bool,
+    result: mutable Vector<FileDef>,
+  ): void {
+    invariant(name != "");
+    for (fileName in fileDefs.includes) {
+      this.getInDefs(
+        context,
+        this.getFileDefs(context, fileName),
+        name,
+        typeOnly,
+        result,
+      )
+    };
+    fileDefs.imports.maybeGet(name) match {
+    | Some(imports) ->
+      this.getFromImports(
+        context,
+        imports,
+        "",
+        typeOnly,
+        fileDefs.modules,
+        result,
+      )
+    | None() -> void
+    };
+    fileDefs.defs.maybeGet(name) match {
+    | Some(defs) ->
+      if (typeOnly) {
+        for (d in defs) {
+          d match {
+          | tod @ TypeOnlyDef _ -> result.push(tod)
+          | _ -> void
+          }
+        }
+      } else {
+        result.extend(defs)
+      }
+    | None() -> void
+    };
+  }
+
+  private fun getExported(
+    context: mutable S.Context,
+    fileName: FileName,
+    name: String,
+    typeOnly: Bool,
+    result: mutable Vector<FileDef>,
+  ): void {
+    fileDefs = this.getFileDefs(context, fileName);
+    if (name == "") {
+      result.push(FDNamespace(typeOnly, fileDefs))
+    } else {
+      this.getExportedInDefs(context, fileDefs, name, typeOnly, result)
+    }
+  }
+
+  private fun getExportedInDefs(
+    context: mutable S.Context,
+    fileDefs: FileDefs,
+    name: String,
+    typeOnly: Bool,
+    result: mutable Vector<FileDef>,
+  ): void {
+    invariant(name != "");
+    fileDefs.reexports.maybeGet("") match {
+    | Some(wholeModuleReexports) ->
+      this.getFromImports(
+        context,
+        wholeModuleReexports,
+        name,
+        typeOnly,
+        fileDefs.modules,
+        result,
+      )
+    | None() -> void
+    };
+    fileDefs.exported.maybeGet(name) match {
+    | Some(origNames) ->
+      for (origName in origNames) {
+        this.getInDefs(context, fileDefs, origName, typeOnly, result)
+      }
+    | None() -> void
+    };
+    fileDefs.reexports.maybeGet(name) match {
+    | Some(reexports) ->
+      this.getFromImports(
+        context,
+        reexports,
+        "",
+        typeOnly,
+        fileDefs.modules,
+        result,
+      )
+    | None() -> void
+    }
+  }
+
+  private fun getFromImports(
+    context: mutable S.Context,
+    imports: Array<Imported>,
+    suffix: String,
+    typeOnly: Bool,
+    modules: Map<String, Vector<FileDefs>>,
+    result: mutable Vector<FileDef>,
+  ): void {
+    for (import in imports) {
+      name = import.origName + suffix;
+      getTypeOnly = typeOnly || import.typeOnly;
+      this.getExported(
+        context,
+        import.from.fileName,
+        name,
+        getTypeOnly,
+        result,
+      );
+      modules.maybeGet(import.from.name) match {
+      | Some(augmentations) ->
+        for (augmentation in augmentations) {
+          this.getExportedInDefs(
+            context,
+            augmentation,
+            name,
+            getTypeOnly,
+            result,
+          )
+        }
+      | None() -> void
+      }
+    }
   }
 
   private fun getFileDefs(context: mutable S.Context, fn: FileName): FileDefs {
@@ -333,220 +545,6 @@ mutable class FileDefsState private {
           asName.value,
           Imported{typeOnly, origName => "default", from},
         )
-      }
-    }
-  }
-}
-
-base class IDefMap {
-  fun getType(mutable S.Context, Name): TypeOnlyDef;
-  fun getAll(
-    mutable S.Context,
-    Name,
-    typeOnly: Bool = false,
-  ): Array<FileDefElt>;
-}
-
-extension class DefMap extends IDefMap {
-  fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
-    for (def in this.getAll(context, name, true)) {
-      def match {
-      | d @ TypeOnlyDef _ -> return d
-      | _ ->
-        invariant_violation("Passing typeOnly should return only TypeOnlyDef")
-      }
-    };
-    typingError(Array[(name.pos, `Type ${name} not found`)])
-  }
-
-  fun getAll(
-    context: mutable S.Context,
-    name: Name,
-    typeOnly: Bool = false,
-  ): Array<FileDefElt> {
-    fileName = FileName::create(name.pos.fileName);
-    tmp = this.getPath(context, fileName, name.value, typeOnly);
-    result = mutable Vector[];
-    for (elt in tmp) {
-      elt match {
-      | e @ FileDefElt _ -> result.push(e)
-      | FDNamespace _ -> internal_error("Encountering namespace")
-      }
-    };
-    result.toArray()
-  }
-
-  private fun getPath(
-    context: mutable S.Context,
-    fileName: FileName,
-    path: String,
-    typeOnly: Bool,
-  ): readonly Vector<FileDef> {
-    defs: readonly Vector<FileDef> = Vector[
-      FDNamespace(false, this.getFileDefs(context, fileName)),
-    ];
-    pathElts = path.split(".");
-    for (i => pathElt in pathElts) {
-      dotTypeOnly = typeOnly && i >= pathElts.size() - 1;
-      !defs = this.dot(context, defs, pathElt, dotTypeOnly)
-    };
-    defs
-  }
-
-  private fun dot(
-    context: mutable S.Context,
-    defs: readonly Vector<FileDef>,
-    name: String,
-    typeOnly: Bool,
-  ): readonly Vector<FileDef> {
-    result = mutable Vector[];
-    for (d in defs) {
-      d match {
-      | FunDef _
-      | TypeDef _
-      | Class _
-      | Enum _
-      | FDVar _ ->
-        internal_error("TODO: DefMap#dot")
-      | FDNamespace(nsTypeOnly, nsDefs) ->
-        getTypeOnly = typeOnly || nsTypeOnly;
-        this.getInDefs(context, nsDefs, name, getTypeOnly, result)
-      }
-    };
-    result
-  }
-
-  private fun getInDefs(
-    context: mutable S.Context,
-    fileDefs: FileDefs,
-    name: String,
-    typeOnly: Bool,
-    result: mutable Vector<FileDef>,
-  ): void {
-    invariant(name != "");
-    for (fileName in fileDefs.includes) {
-      this.getInDefs(
-        context,
-        this.getFileDefs(context, fileName),
-        name,
-        typeOnly,
-        result,
-      )
-    };
-    fileDefs.imports.maybeGet(name) match {
-    | Some(imports) ->
-      this.getFromImports(
-        context,
-        imports,
-        "",
-        typeOnly,
-        fileDefs.modules,
-        result,
-      )
-    | None() -> void
-    };
-    fileDefs.defs.maybeGet(name) match {
-    | Some(defs) ->
-      if (typeOnly) {
-        for (d in defs) {
-          d match {
-          | tod @ TypeOnlyDef _ -> result.push(tod)
-          | _ -> void
-          }
-        }
-      } else {
-        result.extend(defs)
-      }
-    | None() -> void
-    };
-  }
-
-  private fun getExported(
-    context: mutable S.Context,
-    fileName: FileName,
-    name: String,
-    typeOnly: Bool,
-    result: mutable Vector<FileDef>,
-  ): void {
-    fileDefs = this.getFileDefs(context, fileName);
-    if (name == "") {
-      result.push(FDNamespace(typeOnly, fileDefs))
-    } else {
-      this.getExportedInDefs(context, fileDefs, name, typeOnly, result)
-    }
-  }
-
-  private fun getExportedInDefs(
-    context: mutable S.Context,
-    fileDefs: FileDefs,
-    name: String,
-    typeOnly: Bool,
-    result: mutable Vector<FileDef>,
-  ): void {
-    invariant(name != "");
-    fileDefs.reexports.maybeGet("") match {
-    | Some(wholeModuleReexports) ->
-      this.getFromImports(
-        context,
-        wholeModuleReexports,
-        name,
-        typeOnly,
-        fileDefs.modules,
-        result,
-      )
-    | None() -> void
-    };
-    fileDefs.exported.maybeGet(name) match {
-    | Some(origNames) ->
-      for (origName in origNames) {
-        this.getInDefs(context, fileDefs, origName, typeOnly, result)
-      }
-    | None() -> void
-    };
-    fileDefs.reexports.maybeGet(name) match {
-    | Some(reexports) ->
-      this.getFromImports(
-        context,
-        reexports,
-        "",
-        typeOnly,
-        fileDefs.modules,
-        result,
-      )
-    | None() -> void
-    }
-  }
-
-  private fun getFromImports(
-    context: mutable S.Context,
-    imports: Array<Imported>,
-    suffix: String,
-    typeOnly: Bool,
-    modules: Map<String, Vector<FileDefs>>,
-    result: mutable Vector<FileDef>,
-  ): void {
-    for (import in imports) {
-      name = import.origName + suffix;
-      getTypeOnly = typeOnly || import.typeOnly;
-      this.getExported(
-        context,
-        import.from.fileName,
-        name,
-        getTypeOnly,
-        result,
-      );
-      modules.maybeGet(import.from.name) match {
-      | Some(augmentations) ->
-        for (augmentation in augmentations) {
-          this.getExportedInDefs(
-            context,
-            augmentation,
-            name,
-            getTypeOnly,
-            result,
-          )
-        }
-      | None() -> void
       }
     }
   }
