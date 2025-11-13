@@ -101,7 +101,7 @@ fun mapPush<K: Hashable & Equality, V>(
   }
 }
 
-mutable class FileDefsState{
+mutable class FileDefsState private {
   context: mutable S.Context,
   index: FileNameIndex,
   rootOpt: ?DirName,
@@ -128,7 +128,7 @@ mutable class FileDefsState{
     state.processDefs(parsedDefs)
   }
 
-  mutable fun resolveName(mname: Name): FileName {
+  private mutable fun resolveName(mname: Name): FileName {
     (if (mname.value.startsWith("./") || mname.value.startsWith("../")) {
       if (!mname.value.endsWith(".js")) {
         typingError(
@@ -153,7 +153,7 @@ mutable class FileDefsState{
     }
   }
 
-  mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
+  private mutable fun processDefs(parsedDefs: Array<Def>): FileDefs {
     for (def in parsedDefs) {
       def.value match {
       | Expr _ -> void
@@ -227,7 +227,7 @@ mutable class FileDefsState{
     state.processDefs(defs)
   }
 
-  mutable fun newDef(isExport: Bool, def: Declarable): void {
+  private mutable fun newDef(isExport: Bool, def: Declarable): void {
     def match {
     | d @ TypeDef{name} ->
       if (isExport) mapPush(this.exported, name.value, name.value);
