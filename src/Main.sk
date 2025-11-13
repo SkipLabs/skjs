@@ -363,7 +363,7 @@ class Checker private {
       files.importStubs,
       parsedFiles,
     );
-    defMap = DefMap{fileDefsMap, builtinsFileName};
+    defMap = DefMap{fileDefsMap};
     tenv = TEnv{defMap};
     checker = TypeChecker{backtrace, defMap, tenv};
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}

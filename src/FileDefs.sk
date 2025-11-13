@@ -347,10 +347,7 @@ base class IDefMap {
   ): Array<FileDefElt>;
 }
 
-class DefMap{
-  fileDefsMap: FileDefsMap,
-  builtinsFileName: FileName,
-} extends IDefMap {
+class DefMap{fileDefsMap: FileDefsMap} extends IDefMap {
   fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
     for (def in this.getAll(context, name, true)) {
       def match {
