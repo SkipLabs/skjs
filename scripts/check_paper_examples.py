@@ -3,6 +3,9 @@
 
 Examples can mark expected failures by adding `// EXPECT-ERROR: <diagnostic substring>`
 comment lines inside the listing. Each listed substring must appear in skjs's output.
+
+Examples can be skipped from type-checking by adding `// SKIP-CHECK` as a comment line
+inside the listing. This is useful for examples that are known to fail or are incomplete.
 """
 from __future__ import annotations
 
@@ -21,6 +24,7 @@ SUPPORTED_LANGS = {
 }
 
 EXPECT_PREFIX = "// EXPECT-ERROR:"
+SKIP_CHECK_PREFIX = "// SKIP-CHECK"
 
 LISTING_RE = re.compile(
     r"\\begin\{lstlisting\}(?:\[language=(?P<lang>[^\]]+)\])?\s*(?P<body>.*?)\\end\{lstlisting\}",
@@ -34,6 +38,7 @@ class Example:
     language: str
     code: str
     expected_errors: List[str]
+    skip_check: bool = False
 
 def parse_args(argv: Optional[Sequence[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -74,8 +79,12 @@ def load_examples(tex_path: Path) -> List[Example]:
         lines = body.splitlines()
         expected_errors: List[str] = []
         kept_lines: List[str] = []
+        skip_check = False
         for line in lines:
             stripped = line.lstrip()
+            if stripped.startswith(SKIP_CHECK_PREFIX):
+                skip_check = True
+                continue
             if stripped.startswith(EXPECT_PREFIX):
                 expected_errors.append(stripped[len(EXPECT_PREFIX) :].strip())
                 continue
@@ -84,7 +93,7 @@ def load_examples(tex_path: Path) -> List[Example]:
         if code:
             code += "\n"
         examples.append(
-            Example(index=idx, language=language, code=code, expected_errors=expected_errors)
+            Example(index=idx, language=language, code=code, expected_errors=expected_errors, skip_check=skip_check)
         )
     return examples
 
@@ -177,10 +186,14 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
         print(f"error: import stubs directory {import_stubs_path} not found", file=sys.stderr)
         return 1
     failures = []
+    skipped = []
     with TemporaryDirectory() as tmpdir_str:
         tmpdir = Path(tmpdir_str)
         # We run skjs from repo root but store files in tmpdir.
         for example in examples:
+            if example.skip_check:
+                skipped.append(example)
+                continue
             proc = run_example(
                 skjs,
                 example,
@@ -201,8 +214,12 @@ def main(argv: Optional[Sequence[str]] = None) -> int:
                     file=sys.stderr,
                 )
     total = len(examples)
-    passed = total - len(failures)
-    print(f"Checked {total} example(s): {passed} passed, {len(failures)} failed.")
+    checked = total - len(skipped)
+    passed = checked - len(failures)
+    status_parts = [f"Checked {checked} example(s): {passed} passed, {len(failures)} failed."]
+    if skipped:
+        status_parts.append(f"Skipped {len(skipped)} example(s).")
+    print(" ".join(status_parts))
     return 0 if not failures else 1
 
 
