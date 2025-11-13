@@ -385,9 +385,9 @@ class DefMap{
     path: String,
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
-    root = mutable Vector[];
-    root.push(FDNamespace(false, this.fileDefsMap.get(context, fileName)));
-    defs: readonly Vector<FileDef> = root;
+    defs: readonly Vector<FileDef> = Vector[
+      FDNamespace(false, this.fileDefsMap.get(context, fileName)),
+    ];
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
       dotTypeOnly = typeOnly && i >= pathElts.size() - 1;
