@@ -226,11 +226,16 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
       | ModEltRef{typeOnly => refTypeOnly, origName, from, fromView} ->
         name = origName + suffix;
         getTypeOnly = typeOnly || refTypeOnly;
-        invariant(fromView == MVOutside());
         from match {
         | MRSelf() ->
-          this.getExportedInDefs(context, self, name, getTypeOnly, result)
+          fromView match {
+          | MVInside() ->
+            this.getInDefs(context, self, name, getTypeOnly, result)
+          | MVOutside() ->
+            this.getExportedInDefs(context, self, name, getTypeOnly, result)
+          }
         | NamedModule{name => moduleName, fileName} ->
+          invariant(fromView == MVOutside());
           this.getExported(context, fileName, name, getTypeOnly, result);
           self.modules.maybeGet(moduleName) match {
           | Some(augmentations) ->
