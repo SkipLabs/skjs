@@ -155,7 +155,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     };
     fileDefs.inside.namedElts.maybeGet(name) match {
     | Some(elts) ->
-      this.getFromModElts(context, elts, "", typeOnly, fileDefs, result)
+      this.getFromModElts(context, elts, typeOnly, fileDefs, result)
     | None() -> void
     }
   }
@@ -194,7 +194,6 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
             invariant_violation("no FileDef in whole-module reexports")
           }
         }),
-        "",
         typeOnly,
         fileDefs,
         result,
@@ -203,7 +202,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     };
     fileDefs.outside.namedElts.maybeGet(name) match {
     | Some(exports) ->
-      this.getFromModElts(context, exports, "", typeOnly, fileDefs, result)
+      this.getFromModElts(context, exports, typeOnly, fileDefs, result)
     | None() -> void
     }
   }
@@ -211,7 +210,6 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
   private fun getFromModElts(
     context: mutable S.Context,
     modElts: Vector<ModElt>,
-    suffix: String,
     typeOnly: Bool,
     self: FileDefs,
     result: mutable Vector<FileDef>,
@@ -219,30 +217,28 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     for (modElt in modElts) {
       modElt match {
       | fd @ FileDef _ ->
-        invariant(suffix == "");
         if (typeOnly && !(fd is TypeOnlyDef _)) continue;
         result.push(fd)
       | ModEltRef{typeOnly => refTypeOnly, origName, from, fromView} ->
-        name = origName + suffix;
         getTypeOnly = typeOnly || refTypeOnly;
         from match {
         | MRSelf() ->
           fromView match {
           | MVInside() ->
-            this.getInDefs(context, self, name, getTypeOnly, result)
+            this.getInDefs(context, self, origName, getTypeOnly, result)
           | MVOutside() ->
-            this.getExportedInDefs(context, self, name, getTypeOnly, result)
+            this.getExportedInDefs(context, self, origName, getTypeOnly, result)
           }
         | NamedModule{name => moduleName, fileName} ->
           invariant(fromView == MVOutside());
-          this.getExported(context, fileName, name, getTypeOnly, result);
+          this.getExported(context, fileName, origName, getTypeOnly, result);
           self.modules.maybeGet(moduleName) match {
           | Some(augmentations) ->
             for (augmentation in augmentations) {
               this.getExportedInDefs(
                 context,
                 augmentation,
-                name,
+                origName,
                 getTypeOnly,
                 result,
               )
