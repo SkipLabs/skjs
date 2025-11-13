@@ -68,24 +68,24 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     )
   }
 
-  fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
-    for (def in this.getAll(context, name, true)) {
+  fun getType(context: mutable S.Context, path: Name): TypeOnlyDef {
+    for (def in this.getAll(context, path, true)) {
       def match {
       | d @ TypeOnlyDef _ -> return d
       | _ ->
         invariant_violation("Passing typeOnly should return only TypeOnlyDef")
       }
     };
-    typingError(Array[(name.pos, `Type ${name} not found`)])
+    typingError(Array[(path.pos, `Type ${path} not found`)])
   }
 
   fun getAll(
     context: mutable S.Context,
-    name: Name,
+    path: Name,
     typeOnly: Bool = false,
   ): Array<FileDefElt> {
-    fileName = FileName::create(name.pos.fileName);
-    tmp = this.getPath(context, fileName, name.value, typeOnly);
+    fileName = FileName::create(path.pos.fileName);
+    tmp = this.getPath(context, fileName, path.value, typeOnly);
     result = mutable Vector[];
     for (elt in tmp) {
       elt match {
