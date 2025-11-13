@@ -234,6 +234,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     for (import in imports) {
       name = import.origName + suffix;
       getTypeOnly = typeOnly || import.typeOnly;
+      invariant(import.fromView == MVOutside());
       import.from match {
       | MRSelf() ->
         this.getExportedInDefs(context, self, name, getTypeOnly, result)
@@ -289,10 +290,17 @@ extension class TypeDef extends TypeOnlyDef
 extension class Class extends TypeOnlyDef
 extension class Enum extends TypeOnlyDef
 
+base class ModView uses Equality {
+  children =
+  | MVInside()
+  | MVOutside()
+}
+
 value class ModEltRef{
   typeOnly: Bool,
   origName: /* Empty string = whole module */ String,
   from: ModuleReference,
+  fromView: ModView,
 }
 
 base class ModuleReference {
@@ -508,15 +516,20 @@ mutable class FileDefsState private {
     namesList: Array<ModuleNames>,
     from: ModuleReference,
   ): void {
+    fromView = MVOutside();
     for (names in namesList) {
       names match {
       | MStar() ->
-        mapPush(imports, "", ModEltRef{typeOnly, origName => "", from})
+        mapPush(
+          imports,
+          "",
+          ModEltRef{typeOnly, origName => "", from, fromView},
+        )
       | MStarAs(asName) ->
         mapPush(
           imports,
           asName.value,
-          ModEltRef{typeOnly, origName => "", from},
+          ModEltRef{typeOnly, origName => "", from, fromView},
         )
       | MCurly(moduleDefNames) ->
         for (moduleDefName in moduleDefNames) {
@@ -529,14 +542,14 @@ mutable class FileDefsState private {
           mapPush(
             imports,
             importName,
-            ModEltRef{typeOnly => eltTypeOnly, origName, from},
+            ModEltRef{typeOnly => eltTypeOnly, origName, from, fromView},
           )
         }
       | MName(asName) ->
         mapPush(
           imports,
           asName.value,
-          ModEltRef{typeOnly, origName => "default", from},
+          ModEltRef{typeOnly, origName => "default", from, fromView},
         )
       }
     }
