@@ -96,7 +96,7 @@ class FDVar(
   type: ?Type,
   value: ?Expr,
 ) extends FileDefElt
-class FDNamespace(FileDefs) extends FileDef
+class FDNamespace(typeOnly: Bool, defs: FileDefs) extends FileDef
 
 base class TypeOnlyDef extends FileDefElt
 extension class TypeDef extends TypeOnlyDef
@@ -241,7 +241,11 @@ mutable class FileDefsState{
       mapPush(this.defs, name.value, d)
     | Namespace(name, defs) ->
       if (isExport) mapPush(this.exported, name.value, name.value);
-      mapPush(this.defs, name.value, FDNamespace(this.createFileDefs(defs)))
+      mapPush(
+        this.defs,
+        name.value,
+        FDNamespace(false, this.createFileDefs(defs)),
+      )
     | Module(name, Some(defs)) ->
       invariant(!isExport);
       mapPush(this.modules, name.value, this.createFileDefs(defs))
