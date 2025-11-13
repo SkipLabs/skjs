@@ -355,7 +355,7 @@ class Checker private {
     (parsedAndSymbolsFiles, symbolsMap) = files.parse(context, newLinesMap);
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     builtinsFileName = files.builtinsFileName;
-    fileDefsMap = FileDefsMap::create(
+    defMap = DefMap::create(
       context,
       index,
       files.rootOpt,
@@ -363,7 +363,6 @@ class Checker private {
       files.importStubs,
       parsedFiles,
     );
-    defMap = DefMap{fileDefsMap};
     tenv = TEnv{defMap};
     checker = TypeChecker{backtrace, defMap, tenv};
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}

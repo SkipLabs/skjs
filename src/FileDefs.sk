@@ -16,7 +16,7 @@ module alias S = SKStore;
 
 module SKJS;
 
-class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
+class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
   static fun create(
     context: mutable S.Context,
     index: FileNameIndex,
@@ -59,7 +59,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
     )
   }
 
-  fun get(context: mutable S.Context, fileName: FileName): FileDefs {
+  private fun get(context: mutable S.Context, fileName: FileName): FileDefs {
     this.fileDefsDir.get(context, S.SID(fileName.toString()))
   }
 }
@@ -347,7 +347,7 @@ base class IDefMap {
   ): Array<FileDefElt>;
 }
 
-class DefMap{fileDefsMap: FileDefsMap} extends IDefMap {
+extension class DefMap extends IDefMap {
   fun getType(context: mutable S.Context, name: Name): TypeOnlyDef {
     for (def in this.getAll(context, name, true)) {
       def match {
@@ -383,7 +383,7 @@ class DefMap{fileDefsMap: FileDefsMap} extends IDefMap {
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
     defs: readonly Vector<FileDef> = Vector[
-      FDNamespace(false, this.fileDefsMap.get(context, fileName)),
+      FDNamespace(false, this.get(context, fileName)),
     ];
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
@@ -427,7 +427,7 @@ class DefMap{fileDefsMap: FileDefsMap} extends IDefMap {
     for (fileName in fileDefs.includes) {
       this.getInDefs(
         context,
-        this.fileDefsMap.get(context, fileName),
+        this.get(context, fileName),
         name,
         typeOnly,
         result,
@@ -468,7 +468,7 @@ class DefMap{fileDefsMap: FileDefsMap} extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
-    fileDefs = this.fileDefsMap.get(context, fileName);
+    fileDefs = this.get(context, fileName);
     if (name == "") {
       result.push(FDNamespace(typeOnly, fileDefs))
     } else {
