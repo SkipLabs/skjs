@@ -449,26 +449,7 @@ class DefMap{
     result: mutable Vector<FileDef>,
   ): void {
     fileDefs.imports.maybeGet(defName) match {
-    | Some(imports) ->
-      for (import in imports) {
-        import match {
-        | IWholeModule(importTypeOnly, from) ->
-          result.push(
-            FDNamespace(
-              typeOnly || importTypeOnly,
-              this.fileDefsMap.get(context, from),
-            ),
-          )
-        | IModuleElement(importTypeOnly, origName, from) ->
-          this.getExported(
-            context,
-            from,
-            origName,
-            typeOnly || importTypeOnly,
-            result,
-          )
-        }
-      }
+    | Some(imports) -> this.getFromImports(context, imports, typeOnly, result)
     | None() -> void
     };
     fileDefs.defs.maybeGet(defName) match {
@@ -526,31 +507,40 @@ class DefMap{
     };
     fileDefs.reexports.maybeGet(defName) match {
     | Some(reexports) ->
-      for (reexport in reexports) {
-        reexport match {
-        | IWholeModule(reexportTypeOnly, from) ->
-          result.push(
-            FDNamespace(
-              typeOnly || reexportTypeOnly,
-              this.fileDefsMap.get(context, from),
-            ),
-          )
-        | IModuleElement(reexportTypeOnly, origName, from) ->
-          this.getExported(
-            context,
-            from,
-            origName,
-            reexportTypeOnly || typeOnly,
-            result,
-          )
-        }
-      }
+      this.getFromImports(context, reexports, typeOnly, result)
     | None() -> void
     };
 
     for (modulesDefs in fileDefs.modules) {
       for (moduleDefs in modulesDefs) {
         this.getInDefs(context, moduleDefs, defName, typeOnly, result)
+      }
+    }
+  }
+
+  private fun getFromImports(
+    context: mutable S.Context,
+    imports: Array<Imported>,
+    typeOnly: Bool,
+    result: mutable Vector<FileDef>,
+  ): void {
+    for (import in imports) {
+      import match {
+      | IWholeModule(importTypeOnly, from) ->
+        result.push(
+          FDNamespace(
+            typeOnly || importTypeOnly,
+            this.fileDefsMap.get(context, from),
+          ),
+        )
+      | IModuleElement(importTypeOnly, origName, from) ->
+        this.getExported(
+          context,
+          from,
+          origName,
+          typeOnly || importTypeOnly,
+          result,
+        )
       }
     }
   }
