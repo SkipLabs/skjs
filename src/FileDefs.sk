@@ -300,12 +300,11 @@ base class ModView uses Equality {
   | MVOutside()
 }
 
+base class ModRefBase{typeOnly: Bool, from: ModuleReference, fromView: ModView}
+
 class ModEltRef{
-  typeOnly: Bool,
   origName: /* Empty string = whole module */ String,
-  from: ModuleReference,
-  fromView: ModView,
-} extends ModElt
+} extends ModRefBase, ModElt
 
 base class ModuleReference {
   children =
