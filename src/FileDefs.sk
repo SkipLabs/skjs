@@ -21,6 +21,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
     context: mutable S.Context,
     index: FileNameIndex,
     rootOpt: ?DirName,
+    _builtinsFileName: FileName,
     importStubs: Array<DirName>,
     parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
   ): this {
