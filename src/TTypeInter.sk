@@ -193,9 +193,14 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
 
 extension class Clause {
   // Returns None if the result is bottom
-  fun inter(subst: mutable Subst, tenv: TEnv, other: Clause): ?Clause {
-    vars = this.vars.union(other.vars);
-    (this.stypes, other.stypes) match {
+  static fun inter(
+    subst: mutable Subst,
+    tenv: TEnv,
+    clause1: Clause,
+    clause2: Clause,
+  ): ?Clause {
+    vars = clause1.vars.union(clause2.vars);
+    (clause1.stypes, clause2.stypes) match {
     | (None(), stypes)
     | (stypes, None()) ->
       Some(Clause(vars, stypes))
@@ -217,13 +222,18 @@ extension class Clauses {
     result = SortedMap[];
     for (clause1 in clauses1.clauses) {
       for (clause2 in clauses2.clauses) {
-        clause1.inter(subst, tenv, clause2) match {
+        Clause::inter(subst, tenv, clause1, clause2) match {
         | None() -> void
         | Some(inter) ->
           if (!result.containsKey(inter.vars)) {
             !result[inter.vars] = inter;
           } else {
-            !result[inter.vars] = result[inter.vars].union(subst, tenv, inter)
+            !result[inter.vars] = Clause::union(
+              subst,
+              tenv,
+              result[inter.vars],
+              inter,
+            )
           }
         }
       }

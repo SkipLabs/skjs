@@ -29,7 +29,12 @@ extension class TypeChecker {
       param.optional match {
       | None() -> void
       | Some(optionalPos) ->
-        !paramType = paramType.unionUndefined(subst, this.tenv, optionalPos)
+        !paramType = TType::unionUndefined(
+          subst,
+          this.tenv,
+          paramType,
+          optionalPos,
+        )
       };
       param.default match {
       | None() -> void

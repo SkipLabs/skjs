@@ -118,9 +118,10 @@ extension class TypeChecker {
               | Some(tfield) ->
                 tfieldType = tfield.type;
                 if (tfield.isOptional) {
-                  !tfieldType = tfieldType.unionUndefined(
+                  !tfieldType = TType::unionUndefined(
                     tcenv.subst,
                     this.tenv,
+                    tfieldType,
                     tfield.pos,
                   )
                 };
@@ -140,7 +141,7 @@ extension class TypeChecker {
                     ) is STOk()
                   ) {
                     !defaultIsUseless = None();
-                    !tfieldType = tfield.type.diff(undefined);
+                    !tfieldType = TType::diff(tfield.type, undefined);
                     !tfieldType = TType::union(
                       tcenv.subst,
                       this.tenv,
@@ -345,7 +346,12 @@ extension class TypeChecker {
               TType::single(remainingIdxSType),
               index.keyType,
             );
-            ty = index.valueType.unionUndefined(tcenv.subst, this.tenv, pos);
+            ty = TType::unionUndefined(
+              tcenv.subst,
+              this.tenv,
+              index.valueType,
+              pos,
+            );
             !result = TType::union(tcenv.subst, this.tenv, result, ty)
           }
         }
@@ -384,7 +390,12 @@ extension class TypeChecker {
       ) if (optionalChaining) ->
         !optionalChainingIsUseless = false;
         !optionalChainingIsAlwaysUndefinedForThisSType = true;
-        !result = result.unionUndefined(tcenv.subst, this.tenv, undefPos)
+        !result = TType::unionUndefined(
+          tcenv.subst,
+          this.tenv,
+          result,
+          undefPos,
+        )
 
       | _ ->
         typingError(
@@ -936,7 +947,7 @@ extension class TypeChecker {
           TType::single(TPrimUnit(TNull(), pos)),
           TType::single(TPrimUnit(TUndefined(), pos)),
         );
-        ty1WithoutNullish = ty1.diff(nullish);
+        ty1WithoutNullish = TType::diff(ty1, nullish);
         TType::union(tcenv.subst, this.tenv, ty1WithoutNullish, ty2)
       }
 

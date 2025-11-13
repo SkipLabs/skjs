@@ -138,7 +138,7 @@ extension class TFields {
           return STMissingField(f1.name)
         } else {
           f2type = if (f2.isOptional) {
-            f2.type.unionUndefined(subst, tenv, f2.pos)
+            TType::unionUndefined(subst, tenv, f2.type, f2.pos)
           } else {
             f2.type
           };
@@ -245,7 +245,7 @@ fun isSubTType_(
         status = isSubTType(subst, tenv, u1, cstr);
         if (status is STError _) return status;
       };
-      subst.grow(tenv, tvar, u1.diff(u2), Contravariant())
+      subst.grow(tenv, tvar, TType::diff(u1, u2), Contravariant())
     | _ -> void
     }
   };
@@ -263,7 +263,7 @@ fun isSubTType_(
         } else {
           true
         }
-      }) subst.grow(tenv, tvar, u2.diff(u1), Covariant())
+      }) subst.grow(tenv, tvar, TType::diff(u2, u1), Covariant())
     | _ -> void
     }
   };

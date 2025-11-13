@@ -153,10 +153,10 @@ class TType private {
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
-  fun diff(other: TType): TType {
-    diffInsts = this.insts.diff(other.insts);
-    diffClauses = this.clauses.diff(other.clauses);
-    TType::create(this.pos, diffInsts, diffClauses)
+  static fun diff(left: TType, right: TType): TType {
+    diffInsts = TInsts::diff(left.insts, right.insts);
+    diffClauses = Clauses::diff(left.clauses, right.clauses);
+    TType::create(left.pos, diffInsts, diffClauses)
   }
 
   // TRANSFORMERS
@@ -723,7 +723,7 @@ class TFields private (
     this.maybeGet(fieldName).map(fd -> {
       ty = fd.type;
       if (fd.isOptional) {
-        ty.unionUndefined(subst, tenv, pos)
+        TType::unionUndefined(subst, tenv, ty, pos)
       } else {
         ty
       }
@@ -850,10 +850,10 @@ class STypes private (
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
-  fun diff(other: STypes): STypes {
+  static fun diff(left: STypes, right: STypes): STypes {
     (noMatch1, _noMatch2, _present) = mapInter(
-      this.stypes.values(),
-      other.stypes.values(),
+      left.stypes.values(),
+      right.stypes.values(),
       x ~> x.project(),
       (x, _) ~> x,
     );
@@ -949,14 +949,14 @@ class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
-  fun diff(other: TInsts): TInsts {
+  static fun diff(left: TInsts, right: TInsts): TInsts {
     (noMatch1, _noMatch2, _present) = mapInter(
-      this.values(),
-      other.values(),
+      left.values(),
+      right.values(),
       x ~> x,
       (x, _) ~> x,
     );
-    static(noMatch1)
+    TInsts(noMatch1)
   }
 }
 
@@ -1065,16 +1065,16 @@ class Clause private (
     t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
     i.e. such that t3 <= 1 and t3 | t2 >= t1
     Returns None if the result is bottom */
-  fun diff(other: ?STypes): ?Clause {
-    (this.stypes, other) match {
+  static fun diff(left: Clause, right: Clause): ?Clause {
+    (left.stypes, right.stypes) match {
     | (_, None()) ->
       None() // anything - Top = bottom
     | (None(), Some(_)) ->
-      Some(this) // Top - Something <= Top (keep clause)
-    | (Some(stypesThis), Some(stypesOther)) ->
+      Some(left) // Top - Something <= Top (keep clause)
+    | (Some(stypesLeft), Some(stypesRight)) ->
       // Compute the difference of the stypes
-      diffResult = stypesThis.diff(stypesOther);
-      Clause::create(this.vars, Some(diffResult))
+      diffResult = STypes::diff(stypesLeft, stypesRight);
+      Clause::create(left.vars, Some(diffResult))
     }
   }
 }
@@ -1195,24 +1195,24 @@ class Clauses private (
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
-  fun diff(other: Clauses): Clauses {
-    noParamOtherOpt = other.clauses.maybeGet(ArraySet::empty());
+  static fun diff(left: Clauses, right: Clauses): Clauses {
+    noParamRightOpt = right.clauses.maybeGet(ArraySet::empty());
 
     // Use merge to handle the diff operation
-    diffClauses = this.clauses.merge(
-      other.clauses,
-      (clauseThisOpt, clauseOtherOpt) -> {
-        (clauseThisOpt, clauseOtherOpt, noParamOtherOpt) match {
-        | (Some(clauseThis), None(), None()) ->
-          Some(clauseThis) // Keep clause from this
+    diffClauses = left.clauses.merge(
+      right.clauses,
+      (clauseLeftOpt, clauseRightOpt) -> {
+        (clauseLeftOpt, clauseRightOpt, noParamRightOpt) match {
+        | (Some(clauseLeft), None(), None()) ->
+          Some(clauseLeft) // Keep clause from left
         | (None(), _, _) ->
-          None() // Don't include clauses only in other
-        | (Some(clauseThis), Some(another), None())
-        | (Some(clauseThis), None(), Some(another)) ->
-          clauseThis.diff(another.stypes)
-        | (Some(clauseThis), Some(clauseOther), Some(noParamOther)) ->
-          clauseThis.diff(clauseOther.stypes).flatMap(c ->
-            c.diff(noParamOther.stypes)
+          None() // Don't include clauses only in right
+        | (Some(clauseLeft), Some(clauseRight), None())
+        | (Some(clauseLeft), None(), Some(clauseRight)) ->
+          Clause::diff(clauseLeft, clauseRight)
+        | (Some(clauseLeft), Some(clauseRight), Some(noParamRight)) ->
+          Clause::diff(clauseLeft, clauseRight).flatMap(c ->
+            Clause::diff(c, noParamRight)
           )
         }
       },

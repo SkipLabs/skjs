@@ -11,9 +11,14 @@ extension class TType {
     TType::create(t1.pos, TInsts::single(u), Clauses::empty())
   }
 
-  fun unionUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
+  static fun unionUndefined(
+    subst: mutable Subst,
+    tenv: TEnv,
+    typ: TType,
+    pos: PosRange,
+  ): TType {
     undef = TType::single(TPrimUnit(TUndefined(), pos));
-    TType::union(subst, tenv, this, undef)
+    TType::union(subst, tenv, typ, undef)
   }
 
   static fun union(
@@ -165,17 +170,22 @@ extension class TInsts {
 }
 
 extension class Clause {
-  fun union(subst: mutable Subst, tenv: TEnv, other: Clause): Clause {
-    if (this.vars != other.vars) {
+  static fun union(
+    subst: mutable Subst,
+    tenv: TEnv,
+    clause1: Clause,
+    clause2: Clause,
+  ): Clause {
+    if (clause1.vars != clause2.vars) {
       internal_error("clause vars must be equal for union")
     };
-    stypesOpt = (this.stypes, other.stypes) match {
+    stypesOpt = (clause1.stypes, clause2.stypes) match {
     | (None(), _)
     | (_, None()) ->
       None()
     | (Some(x), Some(y)) -> Some(STypes::union(subst, tenv, x, y))
     };
-    Clause(this.vars, stypesOpt)
+    Clause(clause1.vars, stypesOpt)
   }
 }
 
@@ -188,7 +198,7 @@ extension class Clauses {
   ): Clauses {
     Clauses::create(
       clauses1.clauses.mapUnion(clauses2.clauses, (x, y) ->
-        x.union(subst, tenv, y)
+        Clause::union(subst, tenv, x, y)
       ),
     )
   }
