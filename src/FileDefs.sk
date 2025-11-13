@@ -103,10 +103,10 @@ extension class TypeDef extends TypeOnlyDef
 extension class Class extends TypeOnlyDef
 extension class Enum extends TypeOnlyDef
 
-base class Imported{typeOnly: Bool, from: FileName} {
-  children =
-  | IWholeModule{}
-  | IModuleElement{origName: String}
+value class Imported{
+  typeOnly: Bool,
+  origName: /* Empty string = whole module */ String,
+  from: FileName,
 }
 
 fun mapPush<K: Hashable & Equality, V>(
@@ -301,7 +301,11 @@ mutable class FileDefsState{
     names match {
     | MStar() -> this.wholeModuleReexports.push((typeOnly, from))
     | MStarAs(asName) ->
-      mapPush(this.reexports, asName.value, IWholeModule{typeOnly, from})
+      mapPush(
+        this.reexports,
+        asName.value,
+        Imported{typeOnly, origName => "", from},
+      )
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
         reexportName = moduleDefName.asName match {
@@ -313,7 +317,7 @@ mutable class FileDefsState{
         mapPush(
           this.reexports,
           reexportName,
-          IModuleElement{typeOnly => eltTypeOnly, origName, from},
+          Imported{typeOnly => eltTypeOnly, origName, from},
         )
       }
     }
@@ -327,7 +331,11 @@ mutable class FileDefsState{
     for (names in namesList) {
       names match {
       | MStarAs(asName) ->
-        mapPush(this.imports, asName.value, IWholeModule{typeOnly, from})
+        mapPush(
+          this.imports,
+          asName.value,
+          Imported{typeOnly, origName => "", from},
+        )
       | MCurly(moduleDefNames) ->
         for (moduleDefName in moduleDefNames) {
           importName = moduleDefName.asName match {
@@ -339,14 +347,14 @@ mutable class FileDefsState{
           mapPush(
             this.imports,
             importName,
-            IModuleElement{typeOnly => eltTypeOnly, origName, from},
+            Imported{typeOnly => eltTypeOnly, origName, from},
           )
         }
       | MName(asName) ->
         mapPush(
           this.imports,
           asName.value,
-          IModuleElement{typeOnly, origName => "default", from},
+          Imported{typeOnly, origName => "default", from},
         )
       }
     }
@@ -531,12 +539,13 @@ class DefMap{
     result: mutable Vector<FileDef>,
   ): void {
     for (import in imports) {
-      getTypeOnly = typeOnly || import.typeOnly;
-      origName = import match {
-      | IWholeModule _ -> ""
-      | IModuleElement{origName} -> origName
-      };
-      this.getExported(context, import.from, origName, getTypeOnly, result)
+      this.getExported(
+        context,
+        import.from,
+        import.origName,
+        typeOnly || import.typeOnly,
+        result,
+      )
     }
   }
 }
