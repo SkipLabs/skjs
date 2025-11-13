@@ -473,12 +473,16 @@ class DefMap{
   private fun getExported(
     context: mutable S.Context,
     fileName: FileName,
-    defName: String,
+    name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
     fileDefs = this.fileDefsMap.get(context, fileName);
-    this.getExportedInDefs(context, fileDefs, defName, typeOnly, result)
+    if (name == "") {
+      result.push(FDNamespace(typeOnly, fileDefs))
+    } else {
+      this.getExportedInDefs(context, fileDefs, name, typeOnly, result)
+    }
   }
 
   private fun getExportedInDefs(
@@ -527,23 +531,12 @@ class DefMap{
     result: mutable Vector<FileDef>,
   ): void {
     for (import in imports) {
-      import match {
-      | IWholeModule{typeOnly => importTypeOnly, from} ->
-        result.push(
-          FDNamespace(
-            typeOnly || importTypeOnly,
-            this.fileDefsMap.get(context, from),
-          ),
-        )
-      | IModuleElement{typeOnly => importTypeOnly, origName, from} ->
-        this.getExported(
-          context,
-          from,
-          origName,
-          typeOnly || importTypeOnly,
-          result,
-        )
-      }
+      getTypeOnly = typeOnly || import.typeOnly;
+      origName = import match {
+      | IWholeModule _ -> ""
+      | IModuleElement{origName} -> origName
+      };
+      this.getExported(context, import.from, origName, getTypeOnly, result)
     }
   }
 }
