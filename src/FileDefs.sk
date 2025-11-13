@@ -196,10 +196,8 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     | None() -> void
     };
     fileDefs.exported.maybeGet(name) match {
-    | Some(origNames) ->
-      for (origName in origNames) {
-        this.getInDefs(context, fileDefs, origName, typeOnly, result)
-      }
+    | Some(exports) ->
+      this.getFromModElts(context, exports, "", typeOnly, fileDefs, result)
     | None() -> void
     };
     fileDefs.reexports.maybeGet(name) match {
@@ -262,7 +260,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
 
 class FileDefs{
   inside: Map<String, Array<ModElt>>,
-  exported: Map<String, Array<String>>,
+  exported: Map<String, Array<ModElt>>,
   reexports: Map<String, Array<ModElt>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   includes: Array<FileName>,
@@ -328,7 +326,7 @@ mutable class FileDefsState private {
   inside: mutable Map<String, mutable Vector<ModElt>> = mutable Map[],
   exported: mutable Map<
     /* Empty string = whole module re-export */ String,
-    mutable Vector<String>,
+    mutable Vector<ModElt>,
   > = mutable Map[],
   reexports: mutable Map<String, mutable Vector<ModElt>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
@@ -445,21 +443,18 @@ mutable class FileDefsState private {
   private mutable fun newDef(isExport: Bool, def: Declarable): void {
     def match {
     | d @ TypeDef{name} ->
-      if (isExport) mapPush(this.exported, name.value, name.value);
+      if (isExport) mapPush(this.exported, name.value, d);
       mapPush(this.inside, name.value, d)
     | d @ Class{name} ->
-      if (isExport) mapPush(this.exported, name.value, name.value);
+      if (isExport) mapPush(this.exported, name.value, d);
       mapPush(this.inside, name.value, d)
     | d @ Enum(_, name, _) ->
-      if (isExport) mapPush(this.exported, name.value, name.value);
+      if (isExport) mapPush(this.exported, name.value, d);
       mapPush(this.inside, name.value, d)
     | Namespace(name, defs) ->
-      if (isExport) mapPush(this.exported, name.value, name.value);
-      mapPush(
-        this.inside,
-        name.value,
-        FDNamespace(false, this.createSubFileDefs(defs)),
-      )
+      d = FDNamespace(false, this.createSubFileDefs(defs));
+      if (isExport) mapPush(this.exported, name.value, d);
+      mapPush(this.inside, name.value, d)
     | Module(name, Some(defs)) ->
       invariant(!isExport);
       mapPush(this.modules, name.value, this.createSubFileDefs(defs))
@@ -471,7 +466,7 @@ mutable class FileDefsState private {
           Array[(funPos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
-      if (isExport) mapPush(this.exported, fname, fname);
+      if (isExport) mapPush(this.exported, fname, d);
       mapPush(this.inside, fname, d)
 
     | VarDefs(k, varDefs) ->
@@ -480,14 +475,9 @@ mutable class FileDefsState private {
         | PVar(x) -> x
         | _ -> internal_error("TODO: cannot have exports base on names")
         };
-        if (isExport) {
-          mapPush(this.exported, exportName.value, exportName.value)
-        };
-        mapPush(
-          this.inside,
-          exportName.value,
-          FDVar(k, exportName, varDef.type, varDef.value),
-        )
+        d = FDVar(k, exportName, varDef.type, varDef.value);
+        if (isExport) mapPush(this.exported, exportName.value, d);
+        mapPush(this.inside, exportName.value, d)
       }
     | Global _ -> internal_error("TODO: global")
     | Module _ -> internal_error("TODO: module")
@@ -495,6 +485,8 @@ mutable class FileDefsState private {
   }
 
   private mutable fun exportNames(names: MCurly): void {
+    from = MRSelf();
+    fromView = MVInside();
     names match {
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
@@ -502,7 +494,8 @@ mutable class FileDefsState private {
         | None() -> moduleDefName.name.value
         | Some(asName) -> asName.value
         };
-        mapPush(this.exported, moduleDefName.name.value, origName)
+        ref = ModEltRef{typeOnly => false, origName, from, fromView};
+        mapPush(this.exported, moduleDefName.name.value, ref)
       }
     }
   }
