@@ -21,7 +21,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
     context: mutable S.Context,
     index: FileNameIndex,
     rootOpt: ?DirName,
-    _builtinsFileName: FileName,
+    builtinsFileName: FileName,
     importStubs: Array<DirName>,
     parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
   ): this {
@@ -34,6 +34,11 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
         (context, _self, key) ~> {
           fileName = FileName::create(key.value);
           parsedFile = parsedFiles.get(context, key);
+          includes = if (fileName != builtinsFileName) {
+            Array[builtinsFileName]
+          } else {
+            Array[]
+          };
           parsedFile.value match {
           | PROk(defs) ->
             Array[
@@ -42,6 +47,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
                 index,
                 rootOpt,
                 fileName.dirName,
+                includes,
                 importStubs,
                 defs,
               ),
@@ -126,10 +132,12 @@ mutable class FileDefsState private {
     index: FileNameIndex,
     rootOpt: ?DirName,
     dirName: DirName,
+    includes: Array<FileName>,
     importStubs: Array<DirName>,
     parsedDefs: Array<Def>,
   ): FileDefs {
     state = mutable static{context, index, rootOpt, dirName, importStubs};
+    state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
 
@@ -378,14 +386,6 @@ class DefMap{
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
     root = mutable Vector[];
-    if (fileName != this.builtinsFileName) {
-      root.push(
-        FDNamespace(
-          false,
-          this.fileDefsMap.get(context, this.builtinsFileName),
-        ),
-      )
-    };
     root.push(FDNamespace(false, this.fileDefsMap.get(context, fileName)));
     defs: readonly Vector<FileDef> = root;
     pathElts = path.split(".");
@@ -501,7 +501,6 @@ class DefMap{
     };
     fileDefs.exported.maybeGet(name) match {
     | Some(origNames) ->
-      // TODO: search in builtins as well
       for (origName in origNames) {
         this.getInDefs(context, fileDefs, origName, typeOnly, result)
       }
