@@ -418,11 +418,12 @@ class DefMap{
   private fun getInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
-    defName: String,
+    name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
-    fileDefs.imports.maybeGet(defName) match {
+    invariant(name != "");
+    fileDefs.imports.maybeGet(name) match {
     | Some(imports) ->
       this.getFromImports(
         context,
@@ -434,7 +435,7 @@ class DefMap{
       )
     | None() -> void
     };
-    fileDefs.defs.maybeGet(defName) match {
+    fileDefs.defs.maybeGet(name) match {
     | Some(defs) ->
       if (typeOnly) {
         for (d in defs) {
@@ -468,24 +469,24 @@ class DefMap{
   private fun getExportedInDefs(
     context: mutable S.Context,
     fileDefs: FileDefs,
-    defName: String,
+    name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
+    invariant(name != "");
     fileDefs.reexports.maybeGet("") match {
     | Some(wholeModuleReexports) ->
       this.getFromImports(
         context,
         wholeModuleReexports,
-        defName,
+        name,
         typeOnly,
         fileDefs.modules,
         result,
       )
     | None() -> void
     };
-
-    fileDefs.exported.maybeGet(defName) match {
+    fileDefs.exported.maybeGet(name) match {
     | Some(origNames) ->
       // TODO: search in builtins as well
       for (origName in origNames) {
@@ -493,7 +494,7 @@ class DefMap{
       }
     | None() -> void
     };
-    fileDefs.reexports.maybeGet(defName) match {
+    fileDefs.reexports.maybeGet(name) match {
     | Some(reexports) ->
       this.getFromImports(
         context,
