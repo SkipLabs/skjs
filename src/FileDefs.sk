@@ -144,6 +144,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     result: mutable Vector<FileDef>,
   ): void {
     invariant(name != "");
+    invariant(fileDefs.inside.epsilon.isEmpty());
     for (fileName in fileDefs.includes) {
       this.getInDefs(
         context,
@@ -183,23 +184,13 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     result: mutable Vector<FileDef>,
   ): void {
     invariant(name != "");
-    fileDefs.outside.namedElts.maybeGet("") match {
-    | Some(wholeModuleReexports) ->
-      this.getFromModElts(
-        context,
-        wholeModuleReexports.map(wmr -> {
-          wmr match {
-          | mer @ ModEltRef _ -> mer with {origName => name}
-          | FileDef _ ->
-            invariant_violation("no FileDef in whole-module reexports")
-          }
-        }),
-        typeOnly,
-        fileDefs,
-        result,
-      )
-    | None() -> void
-    };
+    this.getFromModElts(
+      context,
+      fileDefs.outside.epsilon.map(wmr -> wmr.withName(name)),
+      typeOnly,
+      fileDefs,
+      result,
+    );
     fileDefs.outside.namedElts.maybeGet(name) match {
     | Some(exports) ->
       this.getFromModElts(context, exports, typeOnly, fileDefs, result)
@@ -263,13 +254,14 @@ class FileDefs{
 } extends S.File
 
 mutable class ModuleView{
-  namedElts: mutable Map<
-    /* Empty string = whole module re-export */ String,
-    mutable Vector<ModElt>,
-  > = mutable Map[],
+  namedElts: mutable Map<String, mutable Vector<ModElt>> = mutable Map[],
+  epsilon: mutable Vector<EpsilonRef> = mutable Vector[],
 } {
   readonly fun chill(): this {
-    static{namedElts => this.namedElts.map((_, x) -> x.chill())}
+    static{
+      namedElts => this.namedElts.map((_, x) -> x.chill()),
+      epsilon => this.epsilon.chill(),
+    }
   }
 }
 
@@ -302,9 +294,20 @@ base class ModView uses Equality {
 
 base class ModRefBase{typeOnly: Bool, from: ModuleReference, fromView: ModView}
 
+class EpsilonRef{} extends ModRefBase {
+  fun withName(origName: String): ModEltRef {
+    ModEltRef{
+      typeOnly => this.typeOnly,
+      from => this.from,
+      fromView => this.fromView,
+      origName,
+    }
+  }
+}
+
 class ModEltRef{
   origName: /* Empty string = whole module */ String,
-} extends ModRefBase, ModElt
+} extends ModElt, ModRefBase
 
 base class ModuleReference {
   children =
