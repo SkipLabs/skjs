@@ -146,16 +146,13 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     if (name == "") {
       result.push(FDNamespace(typeOnly, fileDefs))
     } else {
-      invariant(fileDefs.inside.epsilon.isEmpty());
-      for (fileName in fileDefs.includes) {
-        this.getInDefs(
-          context,
-          this.getFileDefs(context, fileName),
-          name,
-          typeOnly,
-          result,
-        )
-      };
+      this.getFromModElts(
+        context,
+        fileDefs.inside.epsilon.map(wmr -> wmr.withName(name)),
+        typeOnly,
+        fileDefs,
+        result,
+      );
       fileDefs.inside.namedElts.maybeGet(name) match {
       | Some(elts) ->
         this.getFromModElts(context, elts, typeOnly, fileDefs, result)
@@ -252,7 +249,6 @@ class FileDefs{
   inside: ModuleView,
   outside: ModuleView,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
-  includes: Array<FileName>,
 } extends S.File
 
 mutable class ModuleView{
@@ -337,7 +333,6 @@ mutable class FileDefsState private {
   inside: mutable ModuleView = mutable ModuleView{},
   outside: mutable ModuleView = mutable ModuleView{},
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
-  includes: mutable Vector<FileName> = mutable Vector[],
 } {
   static fun createFileDefs(
     context: mutable S.Context,
@@ -349,7 +344,15 @@ mutable class FileDefsState private {
     parsedDefs: Array<Def>,
   ): FileDefs {
     state = mutable static{context, index, rootOpt, dirName, importStubs};
-    state.includes.extend(includes);
+    state.inside.epsilon.extend(
+      includes.map(fileName ->
+        EpsilonRef{
+          typeOnly => false,
+          from => NamedModule{name => `!unnamed include ${fileName}`, fileName},
+          fromView => MVInside(),
+        }
+      ),
+    );
     state.processDefs(parsedDefs)
   }
 
@@ -436,7 +439,6 @@ mutable class FileDefsState private {
       inside => this.inside.chill(),
       outside => this.outside.chill(),
       modules => this.modules.map((_, x) -> x.chill()),
-      includes => this.includes.toArray(),
     }
   }
 
