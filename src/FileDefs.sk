@@ -187,8 +187,14 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     | Some(wholeModuleReexports) ->
       this.getFromModElts(
         context,
-        wholeModuleReexports,
-        name,
+        wholeModuleReexports.map(wmr -> {
+          wmr match {
+          | mer @ ModEltRef _ -> mer with {origName => name}
+          | FileDef _ ->
+            invariant_violation("no FileDef in whole-module reexports")
+          }
+        }),
+        "",
         typeOnly,
         fileDefs,
         result,
