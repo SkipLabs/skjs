@@ -63,7 +63,49 @@ class TType private {
   // that will be turned into T1 & T2 | T1 & T3.
   clauses: Clauses,
 } uses XXHashable, Orderable {
-  // CONSTRUCTORS
+  //
+  // identity
+  //
+
+  fun compare(other: this): Order {
+    this.h.compare(other.h)
+  }
+
+  fun xxhash(ignorePos: Bool = false): XXHash {
+    if (ignorePos) this.h else (this.insts, this.clauses).xxhash()
+  }
+
+  //
+  // private CONSTRUCTORS
+  //
+
+  static private fun create(
+    pos: PosRange,
+    insts: TInsts,
+    clauses: Clauses,
+  ): this {
+    if (clauses.isTop()) {
+      !insts = TInsts::empty();
+    };
+    h = (insts, clauses).xxhash(true);
+    static{h, pos, insts, clauses};
+  }
+
+  static private fun fromClauses(pos: PosRange, clauses: Clauses): this {
+    static::create(pos, TInsts::empty(), clauses)
+  }
+
+  static private fun fromSTypes(pos: PosRange, sTypes: STypes): this {
+    static::fromClauses(pos, Clauses::fromSTypes(sTypes))
+  }
+
+  static private fun fromTParam(pos: PosRange, tParam: TParam): this {
+    TType::fromClauses(pos, Clauses::single(tParam))
+  }
+
+  //
+  // public CONSTRUCTORS
+  //
 
   // Returns the type that is sub-type of all types. This type is
   // impossible to construct, meaning, a value of this type is always
@@ -95,14 +137,6 @@ class TType private {
     static::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
-  static private fun fromSTypes(pos: PosRange, sTypes: STypes): this {
-    static::fromClauses(pos, Clauses::fromSTypes(sTypes))
-  }
-
-  static private fun fromTParam(pos: PosRange, tParam: TParam): this {
-    TType::fromClauses(pos, Clauses::single(tParam))
-  }
-
   static fun fromTParamWithConstraint(
     subst: mutable Subst,
     tenv: TEnv,
@@ -116,23 +150,25 @@ class TType private {
     }
   }
 
-  static private fun fromClauses(pos: PosRange, clauses: Clauses): this {
-    static::create(pos, TInsts::empty(), clauses)
-  }
-
-  static private fun create(
-    pos: PosRange,
-    insts: TInsts,
-    clauses: Clauses,
-  ): this {
-    if (clauses.isTop()) {
-      !insts = TInsts::empty();
-    };
-    h = (insts, clauses).xxhash(true);
-    static{h, pos, insts, clauses};
+  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
+     i.e. such that t3 <= t1 and t3 | t2 >= t1
+   */
+  fun diff(other: TType): TType {
+    diffInsts = this.insts.diff(other.insts);
+    diffClauses = this.clauses.diff(other.clauses);
+    static::create(this.pos, diffInsts, diffClauses)
   }
 
   // TRANSFORMERS
+
+  fun withPos(pos: PosRange): this {
+    // pos is not part of the hash
+    this with {pos}
+  }
+
+  fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): this {
+    static::create(this.pos, insts(this.insts), clauses(this.clauses))
+  }
 
   // t.mapSTypes(subst, env, variance, f) is t with stypes updated by f, or
   // None() if the result is Top
@@ -188,27 +224,10 @@ class TType private {
     })
   }
 
-  fun withPos(pos: PosRange): this {
-    // pos is not part of the hash
-    this with {pos}
-  }
-
-  fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): this {
-    static::create(this.pos, insts(this.insts), clauses(this.clauses))
-  }
-
   // UTILITIES
 
   fun toString(): String {
     prettyPrintType(false, this)
-  }
-
-  fun compare(other: this): Order {
-    this.h.compare(other.h)
-  }
-
-  fun xxhash(ignorePos: Bool = false): XXHash {
-    if (ignorePos) this.h else (this.insts, this.clauses).xxhash()
   }
 
   // BOOLEAN PROPERTIES
@@ -306,15 +325,6 @@ class TType private {
     if (this.clauses.isEmpty()) this.insts.getSingleVar() else {
       None()
     }
-  }
-
-  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
-     i.e. such that t3 <= t1 and t3 | t2 >= t1
-   */
-  fun diff(other: TType): TType {
-    diffInsts = this.insts.diff(other.insts);
-    diffClauses = this.clauses.diff(other.clauses);
-    static::create(this.pos, diffInsts, diffClauses)
   }
 }
 
