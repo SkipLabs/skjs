@@ -336,7 +336,6 @@ base class IDefMap {
 }
 
 class DefMap{
-  index: FileNameIndex,
   fileDefsMap: FileDefsMap,
   builtinsFileName: FileName,
 } extends IDefMap {

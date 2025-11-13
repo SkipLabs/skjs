@@ -362,7 +362,7 @@ class Checker private {
       parsedFiles,
     );
     builtinsFileName = files.builtinsFileName;
-    defMap = DefMap{index, fileDefsMap, builtinsFileName};
+    defMap = DefMap{fileDefsMap, builtinsFileName};
     tenv = TEnv{defMap};
     checker = TypeChecker{backtrace, defMap, tenv};
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}
