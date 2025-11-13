@@ -424,7 +424,14 @@ class DefMap{
   ): void {
     fileDefs.imports.maybeGet(defName) match {
     | Some(imports) ->
-      this.getFromImports(context, imports, "", typeOnly, result)
+      this.getFromImports(
+        context,
+        imports,
+        "",
+        typeOnly,
+        fileDefs.modules,
+        result,
+      )
     | None() -> void
     };
     fileDefs.defs.maybeGet(defName) match {
@@ -472,6 +479,7 @@ class DefMap{
         wholeModuleReexports,
         defName,
         typeOnly,
+        fileDefs.modules,
         result,
       )
     | None() -> void
@@ -487,14 +495,15 @@ class DefMap{
     };
     fileDefs.reexports.maybeGet(defName) match {
     | Some(reexports) ->
-      this.getFromImports(context, reexports, "", typeOnly, result)
+      this.getFromImports(
+        context,
+        reexports,
+        "",
+        typeOnly,
+        fileDefs.modules,
+        result,
+      )
     | None() -> void
-    };
-
-    for (modulesDefs in fileDefs.modules) {
-      for (moduleDefs in modulesDefs) {
-        this.getInDefs(context, moduleDefs, defName, typeOnly, result)
-      }
     }
   }
 
@@ -503,16 +512,32 @@ class DefMap{
     imports: Array<Imported>,
     suffix: String,
     typeOnly: Bool,
+    modules: Map<String, Vector<FileDefs>>,
     result: mutable Vector<FileDef>,
   ): void {
     for (import in imports) {
+      name = import.origName + suffix;
+      getTypeOnly = typeOnly || import.typeOnly;
       this.getExported(
         context,
         import.from.fileName,
-        import.origName + suffix,
-        typeOnly || import.typeOnly,
+        name,
+        getTypeOnly,
         result,
-      )
+      );
+      modules.maybeGet(import.from.name) match {
+      | Some(augmentations) ->
+        for (augmentation in augmentations) {
+          this.getExportedInDefs(
+            context,
+            augmentation,
+            name,
+            getTypeOnly,
+            result,
+          )
+        }
+      | None() -> void
+      }
     }
   }
 }
