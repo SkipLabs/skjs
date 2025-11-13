@@ -262,9 +262,9 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
 
 class FileDefs{
   defs: Map<String, Array<FileDef>>,
-  imports: Map<String, Array<ModEltRef>>,
+  imports: Map<String, Array<ModElt>>,
   exported: Map<String, Array<String>>,
-  reexports: Map<String, Array<ModEltRef>>,
+  reexports: Map<String, Array<ModElt>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   includes: Array<FileName>,
 } extends S.File
@@ -327,12 +327,12 @@ mutable class FileDefsState private {
   dirName: DirName,
   importStubs: Array<DirName>,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
-  imports: mutable Map<String, mutable Vector<ModEltRef>> = mutable Map[],
+  imports: mutable Map<String, mutable Vector<ModElt>> = mutable Map[],
   exported: mutable Map<
     /* Empty string = whole module re-export */ String,
     mutable Vector<String>,
   > = mutable Map[],
-  reexports: mutable Map<String, mutable Vector<ModEltRef>> = mutable Map[],
+  reexports: mutable Map<String, mutable Vector<ModElt>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   includes: mutable Vector<FileName> = mutable Vector[],
 } {
@@ -511,7 +511,7 @@ mutable class FileDefsState private {
   }
 
   private static fun addImportsFrom(
-    imports: mutable Map<String, mutable Vector<ModEltRef>>,
+    imports: mutable Map<String, mutable Vector<ModElt>>,
     typeOnly: Bool,
     namesList: Array<ModuleNames>,
     from: ModuleReference,
