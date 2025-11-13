@@ -169,11 +169,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     result: mutable Vector<FileDef>,
   ): void {
     fileDefs = this.getFileDefs(context, fileName);
-    if (name == "") {
-      result.push(FDNamespace(typeOnly, fileDefs))
-    } else {
-      this.getExportedInDefs(context, fileDefs, name, typeOnly, result)
-    }
+    this.getExportedInDefs(context, fileDefs, name, typeOnly, result)
   }
 
   private fun getExportedInDefs(
@@ -183,18 +179,21 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
-    invariant(name != "");
-    this.getFromModElts(
-      context,
-      fileDefs.outside.epsilon.map(wmr -> wmr.withName(name)),
-      typeOnly,
-      fileDefs,
-      result,
-    );
-    fileDefs.outside.namedElts.maybeGet(name) match {
-    | Some(exports) ->
-      this.getFromModElts(context, exports, typeOnly, fileDefs, result)
-    | None() -> void
+    if (name == "") {
+      result.push(FDNamespace(typeOnly, fileDefs))
+    } else {
+      this.getFromModElts(
+        context,
+        fileDefs.outside.epsilon.map(wmr -> wmr.withName(name)),
+        typeOnly,
+        fileDefs,
+        result,
+      );
+      fileDefs.outside.namedElts.maybeGet(name) match {
+      | Some(exports) ->
+        this.getFromModElts(context, exports, typeOnly, fileDefs, result)
+      | None() -> void
+      }
     }
   }
 
