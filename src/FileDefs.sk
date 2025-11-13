@@ -225,7 +225,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
 
   private fun getFromImports(
     context: mutable S.Context,
-    imports: Array<Imported>,
+    imports: Array<ModEltRef>,
     suffix: String,
     typeOnly: Bool,
     self: FileDefs,
@@ -263,9 +263,9 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
 
 class FileDefs{
   defs: Map<String, Array<FileDef>>,
-  imports: Map<String, Array<Imported>>,
+  imports: Map<String, Array<ModEltRef>>,
   exported: Map<String, Array<String>>,
-  reexports: Map<String, Array<Imported>>,
+  reexports: Map<String, Array<ModEltRef>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   includes: Array<FileName>,
 } extends S.File
@@ -289,7 +289,7 @@ extension class TypeDef extends TypeOnlyDef
 extension class Class extends TypeOnlyDef
 extension class Enum extends TypeOnlyDef
 
-value class Imported{
+value class ModEltRef{
   typeOnly: Bool,
   origName: /* Empty string = whole module */ String,
   from: ModuleReference,
@@ -319,12 +319,12 @@ mutable class FileDefsState private {
   dirName: DirName,
   importStubs: Array<DirName>,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
-  imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
+  imports: mutable Map<String, mutable Vector<ModEltRef>> = mutable Map[],
   exported: mutable Map<
     /* Empty string = whole module re-export */ String,
     mutable Vector<String>,
   > = mutable Map[],
-  reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
+  reexports: mutable Map<String, mutable Vector<ModEltRef>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   includes: mutable Vector<FileName> = mutable Vector[],
 } {
@@ -503,7 +503,7 @@ mutable class FileDefsState private {
   }
 
   private static fun addImportsFrom(
-    imports: mutable Map<String, mutable Vector<Imported>>,
+    imports: mutable Map<String, mutable Vector<ModEltRef>>,
     typeOnly: Bool,
     namesList: Array<ModuleNames>,
     from: ModuleReference,
@@ -511,9 +511,13 @@ mutable class FileDefsState private {
     for (names in namesList) {
       names match {
       | MStar() ->
-        mapPush(imports, "", Imported{typeOnly, origName => "", from})
+        mapPush(imports, "", ModEltRef{typeOnly, origName => "", from})
       | MStarAs(asName) ->
-        mapPush(imports, asName.value, Imported{typeOnly, origName => "", from})
+        mapPush(
+          imports,
+          asName.value,
+          ModEltRef{typeOnly, origName => "", from},
+        )
       | MCurly(moduleDefNames) ->
         for (moduleDefName in moduleDefNames) {
           importName = moduleDefName.asName match {
@@ -525,14 +529,14 @@ mutable class FileDefsState private {
           mapPush(
             imports,
             importName,
-            Imported{typeOnly => eltTypeOnly, origName, from},
+            ModEltRef{typeOnly => eltTypeOnly, origName, from},
           )
         }
       | MName(asName) ->
         mapPush(
           imports,
           asName.value,
-          Imported{typeOnly, origName => "default", from},
+          ModEltRef{typeOnly, origName => "default", from},
         )
       }
     }
