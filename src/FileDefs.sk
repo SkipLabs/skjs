@@ -179,7 +179,12 @@ mutable class FileDefsState{
       | ExportNames(_, names) -> this.exportNames(names)
       | ExportNamesFrom(isType, names, mname) ->
         fn = this.resolveName(mname);
-        this.exportNamesFrom(isType.isSome(), names, fn)
+        static::addImportsFrom(
+          this.reexports,
+          isType.isSome(),
+          Array[names],
+          fn,
+        )
 
       | ExportDefault(Expr(_, Var(n))) ->
         /* Treat
@@ -197,7 +202,7 @@ mutable class FileDefsState{
 
       | Import(isType, names, importName) ->
         fn = this.resolveName(importName);
-        this.importNamesFrom(isType.isSome(), names, fn)
+        static::addImportsFrom(this.imports, isType.isSome(), names, fn)
 
       | ImportExpr _ -> internal_error("TODO: import expr")
       | ExportAs _ -> internal_error("TODO export as")
@@ -293,50 +298,18 @@ mutable class FileDefsState{
     }
   }
 
-  private mutable fun exportNamesFrom(
+  private static fun addImportsFrom(
+    imports: mutable Map<String, mutable Vector<Imported>>,
     typeOnly: Bool,
-    names: ExportFromModuleNames,
-    from: FileName,
-  ): void {
-    names match {
-    | MStar() ->
-      mapPush(this.reexports, "", Imported{typeOnly, origName => "", from})
-    | MStarAs(asName) ->
-      mapPush(
-        this.reexports,
-        asName.value,
-        Imported{typeOnly, origName => "", from},
-      )
-    | MCurly(moduleDefNames) ->
-      for (moduleDefName in moduleDefNames) {
-        reexportName = moduleDefName.asName match {
-        | None() -> moduleDefName.name.value
-        | Some(asName) -> asName.value
-        };
-        eltTypeOnly = typeOnly || moduleDefName.isType.isSome();
-        origName = moduleDefName.name.value;
-        mapPush(
-          this.reexports,
-          reexportName,
-          Imported{typeOnly => eltTypeOnly, origName, from},
-        )
-      }
-    }
-  }
-
-  private mutable fun importNamesFrom(
-    typeOnly: Bool,
-    namesList: Array<ImportModuleNames>,
+    namesList: Array<ModuleNames>,
     from: FileName,
   ): void {
     for (names in namesList) {
       names match {
+      | MStar() ->
+        mapPush(imports, "", Imported{typeOnly, origName => "", from})
       | MStarAs(asName) ->
-        mapPush(
-          this.imports,
-          asName.value,
-          Imported{typeOnly, origName => "", from},
-        )
+        mapPush(imports, asName.value, Imported{typeOnly, origName => "", from})
       | MCurly(moduleDefNames) ->
         for (moduleDefName in moduleDefNames) {
           importName = moduleDefName.asName match {
@@ -346,14 +319,14 @@ mutable class FileDefsState{
           eltTypeOnly = typeOnly || moduleDefName.isType.isSome();
           origName = moduleDefName.name.value;
           mapPush(
-            this.imports,
+            imports,
             importName,
             Imported{typeOnly => eltTypeOnly, origName, from},
           )
         }
       | MName(asName) ->
         mapPush(
-          this.imports,
+          imports,
           asName.value,
           Imported{typeOnly, origName => "default", from},
         )
