@@ -235,6 +235,8 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
       name = import.origName + suffix;
       getTypeOnly = typeOnly || import.typeOnly;
       import.from match {
+      | MRSelf() ->
+        this.getExportedInDefs(context, self, name, getTypeOnly, result)
       | NamedModule{name => moduleName, fileName} ->
         this.getExported(context, fileName, name, getTypeOnly, result);
         self.modules.maybeGet(moduleName) match {
@@ -296,6 +298,7 @@ value class Imported{
 base class ModuleReference {
   children =
   | NamedModule{name: String, fileName: FileName}
+  | MRSelf()
 }
 
 fun mapPush<K: Hashable & Equality, V>(
