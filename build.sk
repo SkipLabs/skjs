@@ -36,7 +36,6 @@ fun main(): void {
   out_dir = Environ.var("OUT_DIR");
   runtime_lib = `${out_dir}/libskjs_runtime.a`;
   print_string(`skargo:skc-link-lib=${runtime_lib}`);
-
   // Also record it as an explicit linker argument so downstream binaries link it.
   print_string(`skargo:skc-link-arg=${runtime_lib}`);
 
