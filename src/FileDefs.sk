@@ -58,11 +58,12 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
 }
 
 class FileDefs{
+  defs: Map<String, Array<FileDef>>,
   imports: Map<String, Array<Imported>>,
   exported: Map<String, Array<String>>,
   reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
-  defs: Map<String, Array<FileDef>>,
+  includes: Array<FileName>,
 } extends S.File
 
 base class FileDef
@@ -109,6 +110,7 @@ mutable class FileDefsState private {
   rootOpt: ?DirName,
   dirName: DirName,
   importStubs: Array<DirName>,
+  defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   exported: mutable Map<
     /* Empty string = whole module re-export */ String,
@@ -116,7 +118,7 @@ mutable class FileDefsState private {
   > = mutable Map[],
   reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
-  defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
+  includes: mutable Vector<FileName> = mutable Vector[],
 } {
   static fun createFileDefs(
     context: mutable S.Context,
@@ -210,6 +212,7 @@ mutable class FileDefsState private {
       reexports => this.reexports.map((_, x) -> x.toArray()),
       modules => this.modules.map((_, x) -> x.chill()),
       defs => this.defs.map((_, x) -> x.toArray()),
+      includes => this.includes.toArray(),
     }
   }
 
@@ -423,6 +426,15 @@ class DefMap{
     result: mutable Vector<FileDef>,
   ): void {
     invariant(name != "");
+    for (fileName in fileDefs.includes) {
+      this.getInDefs(
+        context,
+        this.fileDefsMap.get(context, fileName),
+        name,
+        typeOnly,
+        result,
+      )
+    };
     fileDefs.imports.maybeGet(name) match {
     | Some(imports) ->
       this.getFromImports(
