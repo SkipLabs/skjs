@@ -67,7 +67,7 @@ class TType private {
   // identity
   //
 
-  fun compare(other: this): Order {
+  fun compare(other: TType): Order {
     this.h.compare(other.h)
   }
 
@@ -83,23 +83,23 @@ class TType private {
     pos: PosRange,
     insts: TInsts,
     clauses: Clauses,
-  ): this {
+  ): TType {
     if (clauses.isTop()) {
       !insts = TInsts::empty();
     };
     h = (insts, clauses).xxhash(true);
-    static{h, pos, insts, clauses};
+    TType{h, pos, insts, clauses};
   }
 
-  static private fun fromClauses(pos: PosRange, clauses: Clauses): this {
-    static::create(pos, TInsts::empty(), clauses)
+  static private fun fromClauses(pos: PosRange, clauses: Clauses): TType {
+    TType::create(pos, TInsts::empty(), clauses)
   }
 
-  static private fun fromSTypes(pos: PosRange, sTypes: STypes): this {
-    static::fromClauses(pos, Clauses::fromSTypes(sTypes))
+  static private fun fromSTypes(pos: PosRange, sTypes: STypes): TType {
+    TType::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
-  static private fun fromTParam(pos: PosRange, tParam: TParam): this {
+  static private fun fromTParam(pos: PosRange, tParam: TParam): TType {
     TType::fromClauses(pos, Clauses::single(tParam))
   }
 
@@ -111,30 +111,30 @@ class TType private {
   // impossible to construct, meaning, a value of this type is always
   // unreachable code. However, that type can still be useful to
   // represent some values (like exceptions).
-  static fun bottom(pos: PosRange): this {
-    static::create(pos, TInsts::empty(), Clauses::empty())
+  static fun bottom(pos: PosRange): TType {
+    TType::create(pos, TInsts::empty(), Clauses::empty())
   }
 
   // Returns the type that represents all possible values. Every other
   // type is sub-type of top.
-  static fun top(pos: PosRange): this {
-    static::create(pos, TInsts::empty(), Clauses::top())
+  static fun top(pos: PosRange): TType {
+    TType::create(pos, TInsts::empty(), Clauses::top())
   }
 
   // A single atomic type.
-  static fun single(sType: SType): this {
-    static::fromSTypes(sType.pos, STypes::single(sType))
+  static fun single(sType: SType): TType {
+    TType::fromSTypes(sType.pos, STypes::single(sType))
   }
 
   // Type variable.
-  static fun var(v: TVar): this {
-    static::create(v.pos, TInsts::single(v), Clauses::empty())
+  static fun var(v: TVar): TType {
+    TType::create(v.pos, TInsts::single(v), Clauses::empty())
   }
 
   // Unexpanded instance of a named generic type.
-  static fun inst(name: Name, targs: TArgs): this {
+  static fun inst(name: Name, targs: TArgs): TType {
     x = TSInst(name, targs);
-    static::create(name.pos, TInsts::single(x), Clauses::empty())
+    TType::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
   static fun fromTParamWithConstraint(
@@ -142,7 +142,7 @@ class TType private {
     tenv: TEnv,
     pos: PosRange,
     tparam: TParamWithConstraint,
-  ): this {
+  ): TType {
     ty = TType::fromTParam(pos, tparam.withoutConstraint());
     tparam.cstr match {
     | None() -> ty
@@ -156,18 +156,18 @@ class TType private {
   fun diff(other: TType): TType {
     diffInsts = this.insts.diff(other.insts);
     diffClauses = this.clauses.diff(other.clauses);
-    static::create(this.pos, diffInsts, diffClauses)
+    TType::create(this.pos, diffInsts, diffClauses)
   }
 
   // TRANSFORMERS
 
-  fun withPos(pos: PosRange): this {
+  fun withPos(pos: PosRange): TType {
     // pos is not part of the hash
     this with {pos}
   }
 
-  fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): this {
-    static::create(this.pos, insts(this.insts), clauses(this.clauses))
+  fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): TType {
+    TType::create(this.pos, insts(this.insts), clauses(this.clauses))
   }
 
   // t.mapSTypes(subst, env, variance, f) is t with stypes updated by f, or
@@ -177,7 +177,7 @@ class TType private {
     env: TEnv,
     variance: Variance,
     f: (STypes) -> STypes,
-  ): ?this {
+  ): ?TType {
     this.getSTypes(subst, env, variance).map(stypes ->
       TType::fromSTypes(this.pos, f(stypes))
     )
@@ -187,7 +187,7 @@ class TType private {
     subst: mutable Subst,
     tenv: TEnv,
     f: Clause -> this,
-  ): this {
+  ): TType {
     if (this.clauses.isEmpty()) {
       this
     } else {
@@ -206,7 +206,7 @@ class TType private {
     subst: mutable Subst,
     tenv: TEnv,
     f: (TParam) -> ?TType,
-  ): this {
+  ): TType {
     this.mapClauses(subst, tenv, clause0 -> {
       clause1 = TType::top(this.pos);
       for (tparam in clause0.vars) {
@@ -312,7 +312,7 @@ class TType private {
   }
 
   fun expand(subst: mutable Subst, tenv: TEnv, variance: Variance): TType {
-    static::fromClauses(this.pos, this.expand_(subst, tenv, variance))
+    TType::fromClauses(this.pos, this.expand_(subst, tenv, variance))
   }
 
   fun getConstantString(): ?(PosRange, String) {
@@ -341,7 +341,7 @@ base class Variance {
 // Regular Typescript (open) object type
 // but disjoint from types in TAlgebraic
 class TObject(fields: TFields) extends SType {
-  fun removeFields(fieldsToRemove: SortedSet<String>): this {
+  fun removeFields(fieldsToRemove: SortedSet<String>): TObject {
     if (fieldsToRemove.isEmpty()) this else {
       this with {fields => this.fields.removeFields(fieldsToRemove)}
     }
@@ -353,11 +353,11 @@ const kAlgebraicBranchFieldName: String = "kind";
 class TAlgebraic(
   branches: InternalKeyedArrayMap<String, TConstr>,
 ) extends SType {
-  static fun single(x: TConstr, pos: PosRange): this {
-    static(InternalKeyedArrayMap::single(x), pos)
+  static fun single(x: TConstr, pos: PosRange): TAlgebraic {
+    TAlgebraic(InternalKeyedArrayMap::single(x), pos)
   }
 
-  fun removeFields(fieldsToRemove: SortedSet<String>): this {
+  fun removeFields(fieldsToRemove: SortedSet<String>): TAlgebraic {
     if (fieldsToRemove.isEmpty()) this else {
       this with {
         branches => this.branches.map(branch ->
@@ -374,8 +374,8 @@ class TConstr(
   // TODO: make fields private so that we don't try to access "kind" from fields
   fields: TFields,
 ) uses XXHashable, Orderable, Projectable<String> {
-  fun map(f: TFields -> TFields): this {
-    static(this.tag, this.tagPos, f(this.fields))
+  fun map(f: TFields -> TFields): TConstr {
+    TConstr(this.tag, this.tagPos, f(this.fields))
   }
 
   fun getType(
@@ -391,7 +391,7 @@ class TConstr(
     }
   }
 
-  fun removeFields(fieldsToRemove: SortedSet<String>): this {
+  fun removeFields(fieldsToRemove: SortedSet<String>): TConstr {
     if (fieldsToRemove.isEmpty()) this else {
       this with {fields => this.fields.removeFields(fieldsToRemove)}
     }
@@ -455,24 +455,16 @@ class TFuns private (
 ) extends SType {
   /* Invariant: funs and methods are not both empty */
 
-  static fun singleFun(x: TFun, pos: PosRange): this {
-    static(
-      InternalKeyedArrayMap::single(x),
-      InternalKeyedArrayMap::empty(),
-      pos,
-    )
+  static fun singleFun(x: TFun, pos: PosRange): TFuns {
+    TFuns(InternalKeyedArrayMap::single(x), InternalKeyedArrayMap::empty(), pos)
   }
 
-  static fun singleMethod(x: TFun, pos: PosRange): this {
-    static(
-      InternalKeyedArrayMap::empty(),
-      InternalKeyedArrayMap::single(x),
-      pos,
-    )
+  static fun singleMethod(x: TFun, pos: PosRange): TFuns {
+    TFuns(InternalKeyedArrayMap::empty(), InternalKeyedArrayMap::single(x), pos)
   }
 
-  fun mapFuns(f: TFun -> TFun): this {
-    static(this.funs.map(f), this.methods.map(f), this.pos)
+  fun mapFuns(f: TFun -> TFun): TFuns {
+    TFuns(this.funs.map(f), this.methods.map(f), this.pos)
   }
 }
 
@@ -578,28 +570,32 @@ base class SType private (
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
 class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
-  static fun single(kind: TPrimValueKind, value: String, pos: PosRange): this {
-    static(kind, Some(ArrayValues::single((pos, value))), pos)
+  static fun single(
+    kind: TPrimValueKind,
+    value: String,
+    pos: PosRange,
+  ): TPrimValue {
+    TPrimValue(kind, Some(ArrayValues::single((pos, value))), pos)
   }
 
-  static fun full(kind: TPrimValueKind, pos: PosRange): this {
-    static(kind, None(), pos)
+  static fun full(kind: TPrimValueKind, pos: PosRange): TPrimValue {
+    TPrimValue(kind, None(), pos)
   }
 
-  static fun boolean(pos: PosRange): this {
-    static::full(TBool(), pos)
+  static fun boolean(pos: PosRange): TPrimValue {
+    TPrimValue::full(TBool(), pos)
   }
 
-  static fun number(pos: PosRange): this {
-    static::full(TNum(), pos)
+  static fun number(pos: PosRange): TPrimValue {
+    TPrimValue::full(TNum(), pos)
   }
 
-  static fun string(pos: PosRange): this {
-    static::full(TString(), pos)
+  static fun string(pos: PosRange): TPrimValue {
+    TPrimValue::full(TString(), pos)
   }
 
-  static fun bigint(pos: PosRange): this {
-    static::full(TBigInt(), pos)
+  static fun bigint(pos: PosRange): TPrimValue {
+    TPrimValue::full(TBigInt(), pos)
   }
 
   fun asClassName(): Name {
@@ -618,17 +614,17 @@ class TField private (
     name: String,
     isOptional: Bool,
     type: TType,
-  ): ?this {
+  ): ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
-      Some(static(pos, name, isOptional, type))
+      Some(TField(pos, name, isOptional, type))
     }
   }
 
-  fun withOptional(): this {
+  fun withOptional(): TField {
     this with {isOptional => true}
   }
 
-  fun mapType(f: TType -> TType): this {
+  fun mapType(f: TType -> TType): TField {
     this with {type => f(this.type)}
   }
 
@@ -644,7 +640,7 @@ class TIndexField(
   keyType: TType,
   valueType: TType,
 ) uses XXHashable, Orderable {
-  fun mapTypes(f: TType -> TType): this {
+  fun mapTypes(f: TType -> TType): TIndexField {
     keyType = f(this.keyType);
     valueType = f(this.valueType);
     this with {keyType, valueType}
@@ -665,12 +661,15 @@ class TFields private (
       type must be a subtype of the index key type
   */
 ) uses XXHashable, Orderable {
-  static fun empty(): this {
-    static(InternalKeyedArrayMap::empty(), Array[])
+  static fun empty(): TFields {
+    TFields(InternalKeyedArrayMap::empty(), Array[])
   }
 
-  static fun create(fields: Array<TField>, indexes: Array<TIndexField>): this {
-    static(
+  static fun create(
+    fields: Array<TField>,
+    indexes: Array<TIndexField>,
+  ): TFields {
+    TFields(
       InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
@@ -685,12 +684,12 @@ class TFields private (
   fun map(
     fField: TField -> TField,
     fIndexField: TIndexField -> TIndexField,
-  ): this {
-    static(this.fields.map(fField), this.indexes.map(fIndexField))
+  ): TFields {
+    TFields(this.fields.map(fField), this.indexes.map(fIndexField))
   }
 
-  fun filterMap(f: TField -> ?TField): this {
-    static(this.fields.filterMap(f), this.indexes)
+  fun filterMap(f: TField -> ?TField): TFields {
+    TFields(this.fields.filterMap(f), this.indexes)
   }
 
   fun values(): mutable Iterator<TField> {
@@ -760,10 +759,10 @@ class TFields private (
   }
 
   // Returns None() if the field already exist
-  fun addField(fieldToAdd: TField): ?this {
+  fun addField(fieldToAdd: TField): ?TFields {
     if (this.fields.containsKey(fieldToAdd.name)) None() else {
       Some(
-        static(
+        TFields(
           this.fields.union(InternalKeyedArrayMap::single(fieldToAdd)),
           this.indexes,
         ),
@@ -771,7 +770,7 @@ class TFields private (
     }
   }
 
-  fun removeFields(fieldsToRemove: SortedSet<String>): this {
+  fun removeFields(fieldsToRemove: SortedSet<String>): TFields {
     if (fieldsToRemove.isEmpty()) this else {
       // TODO: better approximation of removing fields that may intersect with indexes
       this with {
@@ -786,24 +785,24 @@ class TFields private (
 class STypes private (
   private stypes: InternalKeyedArrayMap<Int, SType>,
 ) uses XXHashable, Orderable {
-  static fun empty(): this {
-    static(InternalKeyedArrayMap::empty())
+  static fun empty(): STypes {
+    STypes(InternalKeyedArrayMap::empty())
   }
 
-  static fun single(x: SType): this {
-    static(InternalKeyedArrayMap::single(x))
+  static fun single(x: SType): STypes {
+    STypes(InternalKeyedArrayMap::single(x))
   }
 
-  fun map(f: SType -> SType): this {
-    static(this.stypes.map(f))
+  fun map(f: SType -> SType): STypes {
+    STypes(this.stypes.map(f))
   }
 
-  fun filter(f: SType -> Bool): this {
-    static(this.stypes.filter(f))
+  fun filter(f: SType -> Bool): STypes {
+    STypes(this.stypes.filter(f))
   }
 
-  fun filterMap(f: SType -> ?SType): this {
-    static(this.stypes.filterMap(f))
+  fun filterMap(f: SType -> ?SType): STypes {
+    STypes(this.stypes.filterMap(f))
   }
 
   fun isEmpty(): Bool {
@@ -858,7 +857,7 @@ class STypes private (
       x ~> x.project(),
       (x, _) ~> x,
     );
-    static(InternalKeyedArrayMap::createFromSortedIterator(noMatch1.iterator()))
+    STypes(InternalKeyedArrayMap::createFromSortedIterator(noMatch1.iterator()))
   }
 }
 
@@ -878,16 +877,16 @@ class TVar private (
   id: Int,
   constraints: SortedSet<TType>,
 ) extends TInst {
-  static fun create(pos: PosRange, id: Int): this {
-    static(pos, id, SortedSet[])
+  static fun create(pos: PosRange, id: Int): TVar {
+    TVar(pos, id, SortedSet[])
   }
 
-  fun addConstraint(ty: TType): this {
+  fun addConstraint(ty: TType): TVar {
     !this.constraints = this.constraints.add(ty);
     this
   }
 
-  fun mapConstraints(f: TType -> TType): this {
+  fun mapConstraints(f: TType -> TType): TVar {
     !this.constraints = this.constraints.map(f);
     this
   }
@@ -916,16 +915,16 @@ base class TInst uses XXHashable, Orderable
 // Interpretation:
 // 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
 class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
-  static fun empty(): this {
-    static(Array[])
+  static fun empty(): TInsts {
+    TInsts(Array[])
   }
 
-  static fun single(inst: TInst): this {
+  static fun single(inst: TInst): TInsts {
     TInsts(Array[inst])
   }
 
-  fun map(f: TInst -> TInst): this {
-    static(this.insts.map(f))
+  fun map(f: TInst -> TInst): TInsts {
+    TInsts(this.insts.map(f))
   }
 
   fun isEmpty(): Bool {
@@ -962,16 +961,16 @@ class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
 }
 
 value class Id private (id: String) uses XXHashable, Orderable, Show {
-  static fun create(name: String, id: Int, lexer: readonly Lexer): this {
-    static(`${name}:${id}:${lexer.relativeFileNameHash}`)
+  static fun create(name: String, id: Int, lexer: readonly Lexer): Id {
+    Id(`${name}:${id}:${lexer.relativeFileNameHash}`)
   }
 
-  fun prefixWith(pre: String): this {
-    static(pre + this.id)
+  fun prefixWith(pre: String): Id {
+    Id(pre + this.id)
   }
 
-  static fun createThis(): this {
-    static("this")
+  static fun createThis(): Id {
+    Id("this")
   }
 
   fun toString(): String {
@@ -1015,36 +1014,36 @@ class Clause private (
   /* Invariant: Clause cannot be bottom */
 
   // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
-  static fun create(vars: ArraySet<TParam>, stypes: ?STypes): ?this {
+  static fun create(vars: ArraySet<TParam>, stypes: ?STypes): ?Clause {
     stypes match {
     | Some(s) if (s.isEmpty()) -> None()
-    | _ -> Some(static(vars, stypes))
+    | _ -> Some(Clause(vars, stypes))
     }
   }
 
   // Returns None if the result is bottom (i.e. if stypes is bottom)
-  static fun fromSTypes(stypes: STypes): ?this {
-    static::create(ArraySet::empty(), Some(stypes))
+  static fun fromSTypes(stypes: STypes): ?Clause {
+    Clause::create(ArraySet::empty(), Some(stypes))
   }
 
-  static fun undefined(pos: PosRange): this {
-    static(
+  static fun undefined(pos: PosRange): Clause {
+    Clause(
       ArraySet::empty(),
       Some(STypes::single(TPrimUnit(TUndefined(), pos))),
     )
   }
 
-  static fun top(): this {
-    static(ArraySet::empty(), None())
+  static fun top(): Clause {
+    Clause(ArraySet::empty(), None())
   }
 
   // Returns None if the result is bottom
-  fun map(fTParam: TParam -> TParam, fSTypes: STypes -> STypes): ?this {
+  fun map(fTParam: TParam -> TParam, fSTypes: STypes -> STypes): ?Clause {
     this.stypes.map(fSTypes) match {
     | Some(sTypes) if (sTypes.isEmpty()) -> None()
     | stypes ->
       vars = this.vars.map(fTParam);
-      Some(static(vars, stypes))
+      Some(Clause(vars, stypes))
     }
   }
 
@@ -1092,20 +1091,20 @@ class Clauses private (
    */
   private static fun create(
     clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
-  ): this {
-    if (clauses.any(c -> c.isTop())) static::top() else Clauses(clauses)
+  ): Clauses {
+    if (clauses.any(c -> c.isTop())) Clauses::top() else Clauses(clauses)
   }
 
-  static fun empty(): this {
+  static fun empty(): Clauses {
     Clauses(InternalKeyedArrayMap::empty())
   }
 
-  static fun top(): this {
+  static fun top(): Clauses {
     Clauses(InternalKeyedArrayMap::single(Clause::top()))
   }
 
-  fun map(f: Clause -> ?Clause): this {
-    static::create(
+  fun map(f: Clause -> ?Clause): Clauses {
+    Clauses::create(
       InternalKeyedArrayMap::createFromIterator(
         this.clauses.values().filterMap(f),
       ),
@@ -1123,21 +1122,21 @@ class Clauses private (
     }
   }
 
-  static fun singleClause(clause: Clause): this {
-    static(InternalKeyedArrayMap::single(clause))
+  static fun singleClause(clause: Clause): Clauses {
+    Clauses(InternalKeyedArrayMap::single(clause))
   }
 
-  static fun single(tparam: TParam): this {
+  static fun single(tparam: TParam): Clauses {
     Clause::create(ArraySet::single(tparam), None()) match {
-    | None() -> static::empty()
-    | Some(clause) -> static(InternalKeyedArrayMap::single(clause))
+    | None() -> Clauses::empty()
+    | Some(clause) -> Clauses(InternalKeyedArrayMap::single(clause))
     }
   }
 
-  static fun fromSTypes(stypes: STypes): this {
+  static fun fromSTypes(stypes: STypes): Clauses {
     Clause::fromSTypes(stypes) match {
-    | None() -> static::empty()
-    | Some(clause) -> static(InternalKeyedArrayMap::single(clause))
+    | None() -> Clauses::empty()
+    | Some(clause) -> Clauses(InternalKeyedArrayMap::single(clause))
     }
   }
 
@@ -1219,7 +1218,7 @@ class Clauses private (
       },
     );
 
-    static::create(diffClauses)
+    Clauses::create(diffClauses)
   }
 
   fun any(f: Clause -> Bool): Bool {

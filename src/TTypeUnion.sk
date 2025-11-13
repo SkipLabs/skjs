@@ -6,26 +6,26 @@ module SKJS;
 
 extension class TType {
   // Unexpanded union.
-  static private fun unexpandedUnion(t1: TType, t2: TType): this {
+  static private fun unexpandedUnion(t1: TType, t2: TType): TType {
     u = TUnion::create(t1, t2);
-    static::create(t1.pos, TInsts::single(u), Clauses::empty())
+    TType::create(t1.pos, TInsts::single(u), Clauses::empty())
   }
 
   fun unionUndefined(subst: mutable Subst, tenv: TEnv, pos: PosRange): this {
-    undef = static::single(TPrimUnit(TUndefined(), pos));
-    static::union(subst, tenv, this, undef)
+    undef = TType::single(TPrimUnit(TUndefined(), pos));
+    TType::union(subst, tenv, this, undef)
   }
 
   static fun union(
     subst: mutable Subst,
     tenv: TEnv,
-    ty1: this,
-    ty2: this,
-  ): this {
+    ty1: TType,
+    ty2: TType,
+  ): TType {
     if (ty1 == ty2) return ty1;
     subst.seenUnion.maybeGet((ty1, ty2)) match {
     | None() ->
-      result = static::union_(subst, tenv, ty1, ty2);
+      result = TType::union_(subst, tenv, ty1, ty2);
       subst.!seenUnion[(ty1, ty2)] = result;
       result
     | Some(ty) -> ty
@@ -35,19 +35,19 @@ extension class TType {
   private static fun union_(
     subst: mutable Subst,
     tenv: TEnv,
-    ty1: this,
-    ty2: this,
-  ): this {
+    ty1: TType,
+    ty2: TType,
+  ): TType {
     if (ty1.isTop() || ty2.isBottom()) return ty1;
     if (ty2.isTop() || ty1.isBottom()) return ty2;
     if (tenv.seenUnion.contains((ty1, ty2))) {
-      return static::unexpandedUnion(ty1, ty2);
+      return TType::unexpandedUnion(ty1, ty2);
     };
     !tenv.seenUnion = tenv.seenUnion.set((ty1, ty2));
 
     types = TInsts::union(ty1.insts, ty2.insts);
     clauses = Clauses::union(subst, tenv, ty1.clauses, ty2.clauses);
-    static::create(ty1.pos, types, clauses)
+    TType::create(ty1.pos, types, clauses)
   }
 }
 
@@ -58,7 +58,7 @@ extension class TAlgebraic {
     a1: TAlgebraic,
     a2: TAlgebraic,
   ): TAlgebraic {
-    static(
+    TAlgebraic(
       a1.branches.mapUnion(a2.branches, (x, y) ->
         TConstr::union(subst, tenv, x, y)
       ),
@@ -68,9 +68,14 @@ extension class TAlgebraic {
 }
 
 extension class TConstr {
-  static fun union(subst: mutable Subst, tenv: TEnv, x: this, y: this): this {
+  static fun union(
+    subst: mutable Subst,
+    tenv: TEnv,
+    x: TConstr,
+    y: TConstr,
+  ): TConstr {
     invariant(x.tag == y.tag);
-    static(x.tag, x.tagPos, unionTFields(subst, tenv, x.fields, y.fields))
+    TConstr(x.tag, x.tagPos, unionTFields(subst, tenv, x.fields, y.fields))
   }
 }
 
@@ -81,7 +86,7 @@ extension class TFuns {
     f1: TFuns,
     f2: TFuns,
   ): TFuns {
-    static(
+    TFuns(
       f1.funs.mapUnion(f2.funs, (x, y) -> unionTFun(subst, tenv, x, y)),
       f1.methods.mapUnion(f2.methods, (x, y) -> unionTFun(subst, tenv, x, y)),
       f1.pos,
@@ -90,9 +95,14 @@ extension class TFuns {
 }
 
 extension class TField {
-  static fun union(subst: mutable Subst, tenv: TEnv, x: this, y: this): this {
+  static fun union(
+    subst: mutable Subst,
+    tenv: TEnv,
+    x: TField,
+    y: TField,
+  ): TField {
     if (x.name != y.name) internal_error("field names must match");
-    static(
+    TField(
       x.pos,
       x.name,
       x.isOptional || y.isOptional,
@@ -102,14 +112,19 @@ extension class TField {
 }
 
 extension class TIndexField {
-  static fun union(subst: mutable Subst, tenv: TEnv, x: this, y: this): ?this {
+  static fun union(
+    subst: mutable Subst,
+    tenv: TEnv,
+    x: TIndexField,
+    y: TIndexField,
+  ): ?TIndexField {
     /* Currently over-approximating by a union
        for { [f: 0 | 1]: 4 | 5 } | { [g: 1 | 2]: 5 | 6 },
        the result would be { [f: 0]: 4 | 5, [fg: 1]: 4 | 5 | 6, [g: 2]: 5 | 6}
        but we return { [f: 0 | 1 | 2]: 4 | 5 | 6 } */
     valueType = TType::union(subst, tenv, x.valueType, y.valueType);
     keyType = TType::union(subst, tenv, x.keyType, y.keyType);
-    Some(static(x.pos, x.keyName, keyType, valueType))
+    Some(TIndexField(x.pos, x.keyName, keyType, valueType))
   }
 }
 
@@ -120,7 +135,7 @@ extension class STypes {
     stypes1: STypes,
     stypes2: STypes,
   ): STypes {
-    static(
+    STypes(
       stypes1.stypes.mapUnion(stypes2.stypes, (x, y) ->
         unionSType(subst, tenv, x, y)
       ),
@@ -133,17 +148,17 @@ extension class STypes {
 // Interpretation:
 // 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
 class TUnion private (ty1: TType, ty2: TType) extends TInst {
-  static fun create(ty1: TType, ty2: TType): this {
+  static fun create(ty1: TType, ty2: TType): TUnion {
     if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
       internal_error(`Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`)
     };
-    static(ty1, ty2)
+    TUnion(ty1, ty2)
   }
 }
 
 extension class TInsts {
-  static fun union(insts1: this, insts2: this): this {
-    static(
+  static fun union(insts1: TInsts, insts2: TInsts): TInsts {
+    TInsts(
       mapUnion(insts1.values(), insts2.values(), x ~> x, x ~> x, (x, _) ~> x),
     )
   }
@@ -171,7 +186,7 @@ extension class Clauses {
     clauses1: Clauses,
     clauses2: Clauses,
   ): Clauses {
-    static::create(
+    Clauses::create(
       clauses1.clauses.mapUnion(clauses2.clauses, (x, y) ->
         x.union(subst, tenv, y)
       ),
@@ -180,7 +195,7 @@ extension class Clauses {
 }
 
 extension class TPrimValue {
-  static fun union(t1: this, t2: this): this {
+  static fun union(t1: TPrimValue, t2: TPrimValue): TPrimValue {
     if (t1.kind != t2.kind) {
       invariant_violation(
         "Union must be called on primitive value types of same kind",
@@ -192,7 +207,7 @@ extension class TPrimValue {
     | (Some(s1), Some(s2)) ->
       u = s1.union(s2);
       v = if (t1.kind == TBool() && u.size() >= 2) None() else Some(u);
-      static(t1.kind, v, t1.pos)
+      TPrimValue(t1.kind, v, t1.pos)
     }
   }
 }

@@ -31,8 +31,8 @@ extension class TConstr {
   static fun isSub(
     subst: mutable Subst,
     tenv: TEnv,
-    x: this,
-    y: this,
+    x: TConstr,
+    y: TConstr,
   ): STResult {
     TFields::isSub(subst, tenv, x.fields, y.fields)
   }
@@ -62,12 +62,12 @@ extension class TFuns {
     funs2: TFuns,
   ): STResult {
     funs1.funs.leq(funs2.funs, (x, y) ->
-      static::isSubTFun(subst, tenv, x, y)
+      TFuns::isSubTFun(subst, tenv, x, y)
     ) match {
     | Failure(err) -> err
     | Success(void) ->
       funs1.methods.leq(funs2.methods, (x, y) ->
-        static::isSubTFun(subst, tenv, x, y)
+        TFuns::isSubTFun(subst, tenv, x, y)
       ) match {
       | Failure(err) -> err
       | Success(void) -> (STOk() : STResult)
