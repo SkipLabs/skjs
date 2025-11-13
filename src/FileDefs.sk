@@ -59,8 +59,8 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
     )
   }
 
-  private fun get(context: mutable S.Context, fileName: FileName): FileDefs {
-    this.fileDefsDir.get(context, S.SID(fileName.toString()))
+  private fun getFileDefs(context: mutable S.Context, fn: FileName): FileDefs {
+    this.fileDefsDir.get(context, S.SID(fn.toString()))
   }
 }
 
@@ -383,7 +383,7 @@ extension class DefMap extends IDefMap {
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
     defs: readonly Vector<FileDef> = Vector[
-      FDNamespace(false, this.get(context, fileName)),
+      FDNamespace(false, this.getFileDefs(context, fileName)),
     ];
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
@@ -427,7 +427,7 @@ extension class DefMap extends IDefMap {
     for (fileName in fileDefs.includes) {
       this.getInDefs(
         context,
-        this.get(context, fileName),
+        this.getFileDefs(context, fileName),
         name,
         typeOnly,
         result,
@@ -468,7 +468,7 @@ extension class DefMap extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
-    fileDefs = this.get(context, fileName);
+    fileDefs = this.getFileDefs(context, fileName);
     if (name == "") {
       result.push(FDNamespace(typeOnly, fileDefs))
     } else {
