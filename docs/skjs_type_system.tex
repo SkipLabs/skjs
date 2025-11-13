@@ -79,7 +79,7 @@ sound while remaining practical.
 \newpage
 
 \section{Introduction}
-The SKJS repository hosts a Skip-based implementation of a sound subset of the TypeScript language. The project integrates a Skip frontend, a native runtime, and an extensive suite of examples and negative tests to ensure that the checker both enforces the intended restrictions and preserves developer ergonomics. This report surveys the repository structure, build process, type representation, subtyping and constraint solving, checking algorithms for expressions, statements, classes, and functions, and the runtime and testing ecosystem. The analysis is grounded directly in the Skip sources under \code{src/}, the language rules captured in \texttt{skjs-rules.md}, the native runtime in \texttt{runtime.cpp} and \texttt{runtime.h}, the build manifest \texttt{Skargo.toml}, build script \texttt{build.sk}, binary distribution guide \code{docs/binary-distribution.md}, and the examples and test suites under \code{examples/} and \code{tests/}. Inline citations point to the authoritative files (e.g., ``see \code{src/TypeCheckExpr.sk}'').
+The SKJS repository hosts a Skip-based implementation of a sound subset of the TypeScript language. The project integrates a Skip frontend and an extensive suite of examples and negative tests to ensure that the checker both enforces the intended restrictions and preserves developer ergonomics. This report surveys the repository structure, build process, type representation, subtyping and constraint solving, checking algorithms for expressions, statements, classes, and functions, and the testing ecosystem. The analysis is grounded directly in the Skip sources under \code{src/}, the language rules captured in \texttt{skjs-rules.md}, the build manifest \texttt{Skargo.toml}, build script \texttt{build.sk}, binary distribution guide \code{docs/binary-distribution.md}, and the examples and test suites under \code{examples/} and \code{tests/}. Inline citations point to the authoritative files (e.g., ``see \code{src/TypeCheckExpr.sk}'').
 
 \section{Formal Preliminaries}
 \subsection{Notation and Mathematical Background}
@@ -106,6 +106,9 @@ We write $X$ \emph{positive} in a type $T$ if it appears only covariantly accord
 A binding $\mu X.T$ or $\forall X.T$ is \emph{well formed} only if $X$ is positive in $T$. This ensures the corresponding semantic operator is monotone, so least fixed points exist (Tarski) and are constructible by Kleene iteration over our normal forms.
 \paragraph*{Note (TypeScript methods).}
 TypeScript historically treats method parameters bivariantly; SKJS uses true contravariance. All examples below use arrow functions to avoid conflating this difference.
+
+{\color{red}\textbf{READ UP TO HERE}} 
+
 \subsection{Normalization to DNF}
 Clauses and clause-maps (\texttt{Clauses}) maintain canonical DNF with invariants enforced by constructors (top collapse, bottom omission, unique key). Normalization distributes intersections over unions and rekeys by quantified-variable sets. Lemma~0.a and Lemma~0.b (later) state denotation preservation and normal-form maintenance. A small example:
 \[
@@ -176,7 +179,6 @@ The preceding Formal Preliminaries introduce the mathematical model; we now pivo
 The Skip crate is declared in \texttt{Skargo.toml}, which names the \texttt{skjs} package, points to the upstream Skip standard library and CLI dependencies, and registers a binary target whose entry point is \texttt{SKJS.main} (\texttt{Skargo.toml}). Skip sources live under \code{src/}, where parser, environment, type, and checker modules are grouped by responsibility. Supporting assets include:
 \begin{itemize}[leftmargin=*]
   \item \texttt{skjs-rules.md}: documentation of the supported TypeScript surface and known limitations.
-  \item \texttt{runtime.cpp}/\texttt{runtime.h}: the native runtime linked into the binary.
   \item \code{docs/binary-distribution.md}: CircleCI-based release process.
   \item \code{examples/src/*.ts}: curated positive programs showcasing supported features.
   \item \code{tests/expect-error}: negative cases that must be rejected.
@@ -195,11 +197,11 @@ The Skip sources under \code{src/} are grouped logically:
 \end{itemize}
 Understanding these modules clarifies where each concern lives when extending the checker.
 
-\subsection{Skip Build and Native Runtime}
-The build pipeline couples Skip compilation with a native runtime produced by \texttt{build.sk}. The script declares \texttt{runtime.cpp} as the only native source, tracks it for incremental rebuilds, configures position-independent code according to \texttt{RELOCATION\_MODEL}, and injects release or debug flags. Debug builds include libbacktrace headers to provide richer stack traces, while release builds skip the dependency and instead emit a diagnostic string when backtraces are unavailable (\texttt{runtime.cpp}, \texttt{runtime.h}). The script links the resulting static archive (\texttt{libskjs\_runtime.a}) into the Skip executable by emitting \texttt{skargo:skc-link-lib} directives (\texttt{build.sk}). This tight coupling ensures that runtime services (chiefly \texttt{SKIP\_print\_backtrace}) are always in sync with the Skip frontend.
+\subsection{Skip Build}
+The build pipeline is configured by \texttt{build.sk}, which tracks files for incremental rebuilds, configures position-independent code according to \texttt{RELOCATION\_MODEL}, and injects release or debug flags.
 
 \subsection{CLI Workflow}
-\code{src/Main.sk} exposes two primary subcommands implemented with \code{skiplang/cli}: \texttt{check} (type-check files) and \texttt{run} (type-check and then execute with Bun). The CLI wires reusable arguments such as \texttt{--dir}, \texttt{--base-url}, \texttt{--import-stubs}, and persistent cache knobs (\texttt{--init}, \texttt{--data}) so teams can amortize parse and type information across runs. The \texttt{run} subcommand reuses \texttt{execCheckWithStatus} to ensure the program is type safe before delegating to Bun via \texttt{Posix.execvp}. Verbose and backtrace flags toggle additional logging and force \texttt{SKIP\_print\_backtrace} on errors. \texttt{check} defaults to scanning \code{src/**/*.ts} but also accepts explicit file lists, aligning the CLI with both CI pipelines and editor integrations.
+\code{src/Main.sk} exposes two primary subcommands implemented with \code{skiplang/cli}: \texttt{check} (type-check files) and \texttt{run} (type-check and then execute with Bun). The CLI wires reusable arguments such as \texttt{--dir}, \texttt{--base-url}, \texttt{--import-stubs}, and persistent cache knobs (\texttt{--init}, \texttt{--data}) so teams can amortize parse and type information across runs. The \texttt{run} subcommand reuses \texttt{execCheckWithStatus} to ensure the program is type safe before delegating to Bun via \texttt{Posix.execvp}. Verbose and backtrace flags toggle additional logging. \texttt{check} defaults to scanning \code{src/**/*.ts} but also accepts explicit file lists, aligning the CLI with both CI pipelines and editor integrations.
 
 \subsection{Binary Distribution}
 Continuous delivery relies on CircleCI, as documented in \code{docs/binary-distribution.md}. Two jobs---\texttt{build\_and\_test} and \texttt{build\_binaries}---validate the code and produce platform-specific artifacts named \texttt{skjs\_\{COMMIT\}\_\{PLATFORM\}\_\{ARCH\}}. Artifacts are retained for 30 days and accessed via authenticated API calls or the convenience script \code{scripts/fetch-binary.sh}. GitHub Actions is reserved for presubmit testing, while CircleCI handles signed releases and metadata management. Local developers can invoke \code{./scripts/build-release.sh} or run \texttt{skargo build --release} (after cloning the Skip toolchain) to build the CLI offline.
@@ -453,11 +455,7 @@ Function checking proceeds through the following phases:
 During constructor checking, SKJS creates a ``partial this'' type that only includes fields initialized with values. The constructor body runs in this context, and upon exit \texttt{checkSubType} ensures the constructed object matches the full class type (after filtering methods so that only data fields remain). The optional tracking of \texttt{super} allows \texttt{super(...)} calls in derived classes and merges the resulting type back into \texttt{this}.
 Class declarations also interact with the class hierarchy recorder (\texttt{ClassHierarchy.sk}). Each time a class extends another, \texttt{recordClassHierarchy} captures the relationship so tooling (e.g., language servers) can later answer ``show me subclasses'' queries. Interfaces leverage the same mechanism, allowing the checker to reuse resolution logic when verifying \texttt{implements} clauses.
 
-\section{Runtime, Stubs, and Testing}
-\subsection{Native Runtime}
-\texttt{runtime.cpp} provides \texttt{SKIP\_print\_backtrace}. In debug builds it initializes libbacktrace, walks the stack, and prints file/line/function triples. In release builds, the function emits a warning that backtraces are unavailable. The header \texttt{runtime.h} declares the function for both C and C++ consumers. Because the runtime is always built and linked via \texttt{build.sk}, the Skip checker can safely call into it when reporting fatal diagnostics or unhandled exceptions.
-Although \texttt{runtime.cpp} is concise, it is integrated deeply: \texttt{build.sk} links the resulting archive via \texttt{skargo:skc-link-lib}, and the checker can request backtraces during panic conditions stemming from \texttt{typingError}. Developers can also intentionally call \texttt{SKIP\_print\_backtrace} when debugging complex type interactions.
-
+\section{Stubs and Testing}
 \subsection{Import Stubs and Ambient Modules}
 The \code{import-stubs/} directory mirrors the module structure the checker must resolve: Fastify (\code{import-stubs/fastify}), Pino, \texttt{@types}, \texttt{@fastify}, and Skip runtime adapters. Each stub file exports TypeScript declarations that SKJS parses and type-checks just like project sources, allowing real-world programs to import these modules without needing their full implementations. Specialized stubs under \code{import-stubs/for-tests} provide fixtures for the expect-error suite, ensuring that diagnostics tied to external modules remain stable.
 
@@ -493,8 +491,6 @@ Table~\ref{tab:modules} summarizes the most relevant modules and their responsib
 \code{src/TypeCheckScope.sk} & Provides the mutable scope lattice, including binding, lookup, and merging logic with loop-awareness. \\
 \hline
 \code{src/TypeCheckEnv.sk} & Encapsulates the mutable checking environment, substitution, call graph context, and local-object tracking. \\
-\hline
-\texttt{runtime.cpp}/\texttt{runtime.h} & Supplies the native backtrace helper linked into the final binary via \texttt{build.sk}. \\
 \hline
 \code{docs/binary-distribution.md} & Documents CI/CD flows, artifact naming, and retrieval scripts, guiding both maintainers and consumers. \\
 \hline
@@ -1362,11 +1358,16 @@ Evidence that the checker enforces the documented rules comes from:
 Together, these sources provide both positive assurance (examples compile) and negative assurance (expect-error tests fail as intended).
 The test runner (\code{tests/Main.sk}) loads each TypeScript file, feeds it through the checker, and compares the resulting diagnostics to golden outputs stored alongside the tests. \code{tests/Helpers.sk} contains utilities for reading files, normalizing paths, and reporting diffs. Expect-error cases intentionally look for specific substrings, giving maintainers confidence that error messages stay stable even as internal representations evolve.
 
+\section{Extensions}
+This section is not a roadmap; it explores possible extensions and their consequences, in case they turn out to be necessary.
 
-\section{Conclusion}
-SKJS combines a sophisticated Skip-based type representation (DNF types with deferred instances), a pragmatic subtyping and constraint-solving engine, and flow-sensitive refinements to implement a sound TypeScript subset. The repository structure cleanly separates build orchestration, native runtime support, and the Skip frontend. The checker enforces strict coding conventions (explicit annotations, tuple-vs-array semantics, locals-only refinements) while still handling advanced constructs such as algebraic data types, generic classes, and async functions. Its runtime and stub system allow real-world libraries to be analyzed, and its testing strategy couples curated examples with imported conformance suites. Future work includes broadening the supported TypeScript features while maintaining the soundness guarantees encoded in \texttt{TType} and the checker pipeline.
 
-\subsection*{Future Work Alignment}
-Two known approximation regimes merit deeper treatment: function unions (GLB domains) and ADT layout-divergent unions (optionalization). Strengthening implementations (e.g., first-class behavioural unions for functions; refined per-tag layout constraints) would allow sharpening the proof statement from inclusions to equalities. Additionally, a symbolic \texttt{keyof} and improved index-field/object interactions would reduce conservatism in normalization.
+\subsection{Per-ADT Discriminator Names}
+\paragraph{Language design.}
+Rather than fixing a single discriminator field name (e.g., \texttt{kind}) for all algebraic data types (ADTs), each ADT may choose its own discriminator. An object/type is recognized as an ADT branch when it contains exactly one non-optional field whose type is a single string literal; that field becomes the discriminator for that ADT. Programs may mix ADTs using \texttt{kind}, \texttt{tag}, \texttt{type}, etc., in the same scope. Equality-based refinement triggers only when comparing a local's discriminator field to a string literal; if a union contains multiple ADTs with different discriminators, the refinement applies only to the matching ones. Ambiguity (multiple candidates) or optional/non-literal discriminators are rejected with precise diagnostics.
+
+\paragraph{Implementation considerations.}
+The discriminator name is stored inside the type, not as a global constant. We extend \texttt{TAlgebraic} (and branch \texttt{TConstr}) to carry a \emph{discriminatorName}. During construction (both from object literals and normalized type declarations), the checker detects the discriminator (single literal string field), excludes it from normal object fields, and records both the tag value and the field name. To avoid destructive merging, \texttt{STypes} bucketing incorporates \texttt{discriminatorName}, allowing multiple ADTs with different discriminators to coexist in unions; union/intersection/subtyping then merge branches only when discriminator names match. Property selection and equality-based refinements consult the stored \texttt{discriminatorName}, and diagnostics quote the actual field name found in the program.
+
 
 \end{document}
