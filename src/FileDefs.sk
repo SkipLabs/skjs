@@ -143,21 +143,24 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
-    invariant(name != "");
-    invariant(fileDefs.inside.epsilon.isEmpty());
-    for (fileName in fileDefs.includes) {
-      this.getInDefs(
-        context,
-        this.getFileDefs(context, fileName),
-        name,
-        typeOnly,
-        result,
-      )
-    };
-    fileDefs.inside.namedElts.maybeGet(name) match {
-    | Some(elts) ->
-      this.getFromModElts(context, elts, typeOnly, fileDefs, result)
-    | None() -> void
+    if (name == "") {
+      result.push(FDNamespace(typeOnly, fileDefs))
+    } else {
+      invariant(fileDefs.inside.epsilon.isEmpty());
+      for (fileName in fileDefs.includes) {
+        this.getInDefs(
+          context,
+          this.getFileDefs(context, fileName),
+          name,
+          typeOnly,
+          result,
+        )
+      };
+      fileDefs.inside.namedElts.maybeGet(name) match {
+      | Some(elts) ->
+        this.getFromModElts(context, elts, typeOnly, fileDefs, result)
+      | None() -> void
+      }
     }
   }
 
