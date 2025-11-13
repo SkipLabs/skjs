@@ -222,7 +222,7 @@ mutable class FileDefsState{
     }
   }
 
-  private mutable fun createFileDefs(defs: Array<Def>): FileDefs {
+  private mutable fun createSubFileDefs(defs: Array<Def>): FileDefs {
     state = mutable static{
       context => this.context,
       index => this.index,
@@ -249,11 +249,11 @@ mutable class FileDefsState{
       mapPush(
         this.defs,
         name.value,
-        FDNamespace(false, this.createFileDefs(defs)),
+        FDNamespace(false, this.createSubFileDefs(defs)),
       )
     | Module(name, Some(defs)) ->
       invariant(!isExport);
-      mapPush(this.modules, name.value, this.createFileDefs(defs))
+      mapPush(this.modules, name.value, this.createSubFileDefs(defs))
     | d @ FunDef{name, pos => funPos} ->
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
