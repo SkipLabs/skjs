@@ -248,25 +248,22 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     for (import in imports) {
       name = import.origName + suffix;
       getTypeOnly = typeOnly || import.typeOnly;
-      this.getExported(
-        context,
-        import.from.fileName,
-        name,
-        getTypeOnly,
-        result,
-      );
-      modules.maybeGet(import.from.name) match {
-      | Some(augmentations) ->
-        for (augmentation in augmentations) {
-          this.getExportedInDefs(
-            context,
-            augmentation,
-            name,
-            getTypeOnly,
-            result,
-          )
+      import.from match {
+      | NamedModule{name => moduleName, fileName} ->
+        this.getExported(context, fileName, name, getTypeOnly, result);
+        modules.maybeGet(moduleName) match {
+        | Some(augmentations) ->
+          for (augmentation in augmentations) {
+            this.getExportedInDefs(
+              context,
+              augmentation,
+              name,
+              getTypeOnly,
+              result,
+            )
+          }
+        | None() -> void
         }
-      | None() -> void
       }
     }
   }
@@ -307,10 +304,13 @@ extension class Enum extends TypeOnlyDef
 value class Imported{
   typeOnly: Bool,
   origName: /* Empty string = whole module */ String,
-  from: ModuleName,
+  from: ModuleReference,
 }
 
-value class ModuleName{name: String, fileName: FileName}
+base class ModuleReference {
+  children =
+  | NamedModule{name: String, fileName: FileName}
+}
 
 fun mapPush<K: Hashable & Equality, V>(
   m: mutable Map<K, mutable Vector<V>>,
@@ -353,7 +353,7 @@ mutable class FileDefsState private {
     state.processDefs(parsedDefs)
   }
 
-  private mutable fun resolveName(mname: Name): ModuleName {
+  private mutable fun resolveName(mname: Name): NamedModule {
     name = mname.value;
     (if (name.startsWith("./") || name.startsWith("../")) {
       if (!name.endsWith(".js")) {
@@ -367,7 +367,7 @@ mutable class FileDefsState private {
     } else {
       resolveStubs(this.importStubs, name)
     }) match {
-    | Some(fileName) -> ModuleName{name, fileName}
+    | Some(fileName) -> NamedModule{name, fileName}
     | None() ->
       typingError(Array[(mname.pos, `Could not find module '${mname}'`)])
     }
@@ -517,7 +517,7 @@ mutable class FileDefsState private {
     imports: mutable Map<String, mutable Vector<Imported>>,
     typeOnly: Bool,
     namesList: Array<ModuleNames>,
-    from: ModuleName,
+    from: ModuleReference,
   ): void {
     for (names in namesList) {
       names match {
