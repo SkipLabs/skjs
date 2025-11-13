@@ -271,7 +271,9 @@ class FileDefs{
   includes: Array<FileName>,
 } extends S.File
 
-base class FileDef
+base class ModElt
+
+base class FileDef extends ModElt
 base class FileDefElt extends FileDef
 extension class FunDef extends FileDefElt
 extension class TypeDef extends FileDefElt
@@ -296,12 +298,12 @@ base class ModView uses Equality {
   | MVOutside()
 }
 
-value class ModEltRef{
+class ModEltRef{
   typeOnly: Bool,
   origName: /* Empty string = whole module */ String,
   from: ModuleReference,
   fromView: ModView,
-}
+} extends ModElt
 
 base class ModuleReference {
   children =
