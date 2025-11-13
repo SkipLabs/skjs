@@ -183,7 +183,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     result: mutable Vector<FileDef>,
   ): void {
     invariant(name != "");
-    fileDefs.reexports.maybeGet("") match {
+    fileDefs.outside.maybeGet("") match {
     | Some(wholeModuleReexports) ->
       this.getFromModElts(
         context,
@@ -195,14 +195,9 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
       )
     | None() -> void
     };
-    fileDefs.exported.maybeGet(name) match {
+    fileDefs.outside.maybeGet(name) match {
     | Some(exports) ->
       this.getFromModElts(context, exports, "", typeOnly, fileDefs, result)
-    | None() -> void
-    };
-    fileDefs.reexports.maybeGet(name) match {
-    | Some(reexports) ->
-      this.getFromModElts(context, reexports, "", typeOnly, fileDefs, result)
     | None() -> void
     }
   }
@@ -260,8 +255,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
 
 class FileDefs{
   inside: Map<String, Array<ModElt>>,
-  exported: Map<String, Array<ModElt>>,
-  reexports: Map<String, Array<ModElt>>,
+  outside: Map<String, Array<ModElt>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   includes: Array<FileName>,
 } extends S.File
@@ -324,11 +318,10 @@ mutable class FileDefsState private {
   dirName: DirName,
   importStubs: Array<DirName>,
   inside: mutable Map<String, mutable Vector<ModElt>> = mutable Map[],
-  exported: mutable Map<
+  outside: mutable Map<
     /* Empty string = whole module re-export */ String,
     mutable Vector<ModElt>,
   > = mutable Map[],
-  reexports: mutable Map<String, mutable Vector<ModElt>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   includes: mutable Vector<FileName> = mutable Vector[],
 } {
@@ -387,7 +380,7 @@ mutable class FileDefsState private {
       | ExportNamesFrom(isType, names, mname) ->
         modName = this.resolveName(mname);
         static::addImportsFrom(
-          this.reexports,
+          this.outside,
           isType.isSome(),
           Array[names],
           modName,
@@ -422,8 +415,7 @@ mutable class FileDefsState private {
   private readonly fun toFileDefs(): FileDefs {
     FileDefs{
       inside => this.inside.map((_, x) -> x.toArray()),
-      exported => this.exported.map((_, x) -> x.toArray()),
-      reexports => this.reexports.map((_, x) -> x.toArray()),
+      outside => this.outside.map((_, x) -> x.toArray()),
       modules => this.modules.map((_, x) -> x.chill()),
       includes => this.includes.toArray(),
     }
@@ -443,17 +435,17 @@ mutable class FileDefsState private {
   private mutable fun newDef(isExport: Bool, def: Declarable): void {
     def match {
     | d @ TypeDef{name} ->
-      if (isExport) mapPush(this.exported, name.value, d);
+      if (isExport) mapPush(this.outside, name.value, d);
       mapPush(this.inside, name.value, d)
     | d @ Class{name} ->
-      if (isExport) mapPush(this.exported, name.value, d);
+      if (isExport) mapPush(this.outside, name.value, d);
       mapPush(this.inside, name.value, d)
     | d @ Enum(_, name, _) ->
-      if (isExport) mapPush(this.exported, name.value, d);
+      if (isExport) mapPush(this.outside, name.value, d);
       mapPush(this.inside, name.value, d)
     | Namespace(name, defs) ->
       d = FDNamespace(false, this.createSubFileDefs(defs));
-      if (isExport) mapPush(this.exported, name.value, d);
+      if (isExport) mapPush(this.outside, name.value, d);
       mapPush(this.inside, name.value, d)
     | Module(name, Some(defs)) ->
       invariant(!isExport);
@@ -466,7 +458,7 @@ mutable class FileDefsState private {
           Array[(funPos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
       };
-      if (isExport) mapPush(this.exported, fname, d);
+      if (isExport) mapPush(this.outside, fname, d);
       mapPush(this.inside, fname, d)
 
     | VarDefs(k, varDefs) ->
@@ -476,7 +468,7 @@ mutable class FileDefsState private {
         | _ -> internal_error("TODO: cannot have exports base on names")
         };
         d = FDVar(k, exportName, varDef.type, varDef.value);
-        if (isExport) mapPush(this.exported, exportName.value, d);
+        if (isExport) mapPush(this.outside, exportName.value, d);
         mapPush(this.inside, exportName.value, d)
       }
     | Global _ -> internal_error("TODO: global")
@@ -495,7 +487,7 @@ mutable class FileDefsState private {
         | Some(asName) -> asName.value
         };
         ref = ModEltRef{typeOnly => false, origName, from, fromView};
-        mapPush(this.exported, moduleDefName.name.value, ref)
+        mapPush(this.outside, moduleDefName.name.value, ref)
       }
     }
   }
