@@ -36,7 +36,7 @@ class FileDefsMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) {
           parsedFile.value match {
           | PROk(defs) ->
             Array[
-              FileDefs::create(
+              FileDefsState::createFileDefs(
                 context,
                 index,
                 rootOpt,
@@ -63,25 +63,7 @@ class FileDefs{
   reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   defs: Map<String, Array<FileDef>>,
-} extends S.File {
-  static fun create(
-    context: mutable S.Context,
-    index: FileNameIndex,
-    rootOpt: ?DirName,
-    dirName: DirName,
-    importStubs: Array<DirName>,
-    parsedDefs: Array<Def>,
-  ): FileDefs {
-    state = mutable FileDefsState{
-      context,
-      index,
-      rootOpt,
-      dirName,
-      importStubs,
-    };
-    state.processDefs(parsedDefs)
-  }
-}
+} extends S.File
 
 base class FileDef
 base class FileDefElt extends FileDef
@@ -134,6 +116,18 @@ mutable class FileDefsState{
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
 } {
+  static fun createFileDefs(
+    context: mutable S.Context,
+    index: FileNameIndex,
+    rootOpt: ?DirName,
+    dirName: DirName,
+    importStubs: Array<DirName>,
+    parsedDefs: Array<Def>,
+  ): FileDefs {
+    state = mutable static{context, index, rootOpt, dirName, importStubs};
+    state.processDefs(parsedDefs)
+  }
+
   mutable fun resolveName(mname: Name): FileName {
     (if (mname.value.startsWith("./") || mname.value.startsWith("../")) {
       if (!mname.value.endsWith(".js")) {
