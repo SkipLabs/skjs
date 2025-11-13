@@ -87,8 +87,10 @@ extension class Enum extends TypeOnlyDef
 value class Imported{
   typeOnly: Bool,
   origName: /* Empty string = whole module */ String,
-  from: FileName,
+  from: ModuleName,
 }
+
+value class ModuleName{name: String, fileName: FileName}
 
 fun mapPush<K: Hashable & Equality, V>(
   m: mutable Map<K, mutable Vector<V>>,
@@ -128,7 +130,7 @@ mutable class FileDefsState private {
     state.processDefs(parsedDefs)
   }
 
-  private mutable fun resolveName(mname: Name): FileName {
+  private mutable fun resolveName(mname: Name): ModuleName {
     name = mname.value;
     (if (name.startsWith("./") || name.startsWith("../")) {
       if (!name.endsWith(".js")) {
@@ -142,7 +144,7 @@ mutable class FileDefsState private {
     } else {
       resolveStubs(this.importStubs, name)
     }) match {
-    | Some(x) -> x
+    | Some(fileName) -> ModuleName{name, fileName}
     | None() ->
       typingError(Array[(mname.pos, `Could not find module '${mname}'`)])
     }
@@ -167,12 +169,12 @@ mutable class FileDefsState private {
 
       | ExportNames(_, names) -> this.exportNames(names)
       | ExportNamesFrom(isType, names, mname) ->
-        fn = this.resolveName(mname);
+        modName = this.resolveName(mname);
         static::addImportsFrom(
           this.reexports,
           isType.isSome(),
           Array[names],
-          fn,
+          modName,
         )
 
       | ExportDefault(Expr(_, Var(n))) ->
@@ -190,8 +192,8 @@ mutable class FileDefsState private {
         internal_error("TODO: unsupported export")
 
       | Import(isType, names, importName) ->
-        fn = this.resolveName(importName);
-        static::addImportsFrom(this.imports, isType.isSome(), names, fn)
+        modName = this.resolveName(importName);
+        static::addImportsFrom(this.imports, isType.isSome(), names, modName)
 
       | ImportExpr _ -> internal_error("TODO: import expr")
       | ExportAs _ -> internal_error("TODO export as")
@@ -291,7 +293,7 @@ mutable class FileDefsState private {
     imports: mutable Map<String, mutable Vector<Imported>>,
     typeOnly: Bool,
     namesList: Array<ModuleNames>,
-    from: FileName,
+    from: ModuleName,
   ): void {
     for (names in namesList) {
       names match {
@@ -507,7 +509,7 @@ class DefMap{
     for (import in imports) {
       this.getExported(
         context,
-        import.from,
+        import.from.fileName,
         import.origName + suffix,
         typeOnly || import.typeOnly,
         result,
