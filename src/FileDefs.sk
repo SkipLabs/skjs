@@ -155,14 +155,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     };
     fileDefs.imports.maybeGet(name) match {
     | Some(imports) ->
-      this.getFromImports(
-        context,
-        imports,
-        "",
-        typeOnly,
-        fileDefs.modules,
-        result,
-      )
+      this.getFromImports(context, imports, "", typeOnly, fileDefs, result)
     | None() -> void
     };
     fileDefs.defs.maybeGet(name) match {
@@ -211,7 +204,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
         wholeModuleReexports,
         name,
         typeOnly,
-        fileDefs.modules,
+        fileDefs,
         result,
       )
     | None() -> void
@@ -225,14 +218,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     };
     fileDefs.reexports.maybeGet(name) match {
     | Some(reexports) ->
-      this.getFromImports(
-        context,
-        reexports,
-        "",
-        typeOnly,
-        fileDefs.modules,
-        result,
-      )
+      this.getFromImports(context, reexports, "", typeOnly, fileDefs, result)
     | None() -> void
     }
   }
@@ -242,7 +228,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     imports: Array<Imported>,
     suffix: String,
     typeOnly: Bool,
-    modules: Map<String, Vector<FileDefs>>,
+    self: FileDefs,
     result: mutable Vector<FileDef>,
   ): void {
     for (import in imports) {
@@ -251,7 +237,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
       import.from match {
       | NamedModule{name => moduleName, fileName} ->
         this.getExported(context, fileName, name, getTypeOnly, result);
-        modules.maybeGet(moduleName) match {
+        self.modules.maybeGet(moduleName) match {
         | Some(augmentations) ->
           for (augmentation in augmentations) {
             this.getExportedInDefs(
