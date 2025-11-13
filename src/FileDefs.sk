@@ -129,23 +129,18 @@ mutable class FileDefsState private {
   }
 
   private mutable fun resolveName(mname: Name): FileName {
-    (if (mname.value.startsWith("./") || mname.value.startsWith("../")) {
-      if (!mname.value.endsWith(".js")) {
+    name = mname.value;
+    (if (name.startsWith("./") || name.startsWith("../")) {
+      if (!name.endsWith(".js")) {
         typingError(
           Array[
             (mname.pos, "Invalid import: local imports must be from js files"),
           ],
         )
       };
-      resolveName(
-        this.context,
-        this.index,
-        this.rootOpt,
-        this.dirName,
-        mname.value,
-      )
+      resolveName(this.context, this.index, this.rootOpt, this.dirName, name)
     } else {
-      resolveStubs(this.importStubs, mname.value)
+      resolveStubs(this.importStubs, name)
     }) match {
     | Some(x) -> x
     | None() ->
