@@ -14,7 +14,7 @@ check-file () {
     # select formatter based on filename extension, must transform stdin to stdout
     if [[ "$file" == *.sk ]]; then # keep in sync with fmt-sk in Makefile
         fmt="skfmt --assume-filename=$file"
-    elif [[ "$file" =~ .*\.(ts)$ ]]; then # keep in sync with .prettierignore
+    elif [[ "$file" =~ .*\.(json|ts)$ ]]; then # keep in sync with .prettierignore
         fmt="npx prettier --stdin-filepath $file"
     else
         exit 0;
