@@ -3,7 +3,7 @@
 function testForInWithPrimitive(): void {
   const num = 42;
   // @ts-expect-error for-in loop requires an object or array type
-  for (const key in num) {
+  for (const _key in num) {
   }
 }
 
@@ -16,30 +16,32 @@ function testForOfWithPrimitive(): void {
 
 function testForInWrongVariableType(): void {
   const obj = { a: 1, b: 2 };
+  let n: number;
   for (const key in obj) {
-    // @ts-expect-error Invalid annotation
-    const n: number = key; // string not assignable to number
+    // @ts-expect-error Invalid assignment
+    n = key; // string not assignable to number
   }
 }
 
 function testForOfWrongVariableType(): void {
   const arr = [1, 2, 3];
+  let s: string;
   for (const value of arr) {
-    // @ts-expect-error Invalid annotation
-    const s: string = value; // number not assignable to string
+    // @ts-expect-error Invalid assignment
+    s = value; // number not assignable to string
   }
 }
 
 function testForInWithNull(): void {
   const nullObj = null;
   // @ts-expect-error for-in loop requires an object or array type
-  for (const key in nullObj) {
+  for (const _key in nullObj) {
   }
 }
 
 function testForOfWithUndefined(): void {
   const undefinedArr = undefined;
   // @ts-expect-error for-of loop requires an array, string, or iterable type
-  for (const value of undefinedArr) {
+  for (const _value of undefinedArr) {
   }
 }
