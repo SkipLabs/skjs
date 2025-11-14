@@ -136,7 +136,7 @@ export type FastifyRegisterOptions<Options> =
 export type FastifyRegister = <Options /*extends FastifyPluginOptions*/>(
   plugin: FastifyPluginAsync | FastifyPluginCallback<Options>,
   opts?: FastifyRegisterOptions<Options>,
-) => FastifyInstance;
+) => SKJS_Ignorable<FastifyInstance>;
 
 export interface FastifySchema {
   body?: unknown;
@@ -161,14 +161,14 @@ export type RouteShorthandMethod = <
   path: string,
   opt: RouteShorthandOptions<SchemaCompiler>,
   handler: RouteHandlerMethod,
-) => FastifyInstance;
+) => SKJS_Ignorable<FastifyInstance>;
 
 export interface FastifyInstance {
   addHook(
     name: "onRequest" | "onResponse",
     // Luckily onRequestAsyncHookHandler and onResponseAsyncHookHandler are the same
     hook: onRequestAsyncHookHandler,
-  ): FastifyInstance;
+  ): SKJS_Ignorable<FastifyInstance>;
 
   register: FastifyRegister;
 

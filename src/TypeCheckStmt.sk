@@ -9,7 +9,7 @@ extension class TypeChecker {
     | StmtExpr(e) ->
       ty = this.expr(tcenv, e);
       if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
-        this.checkIsVoid(tcenv, e.pos, ty)
+        this.checkIsIgnorable(tcenv, e.pos, ty)
       }
     | Return(pos, eOpt) ->
       retType = this.retType match {

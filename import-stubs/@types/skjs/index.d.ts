@@ -405,6 +405,10 @@ declare type Record<K extends string, V> = {
 
 type NonNullable<T> = T & {};
 
+/* SKJS hacks */
+
+type SKJS_Ignorable<T> = T & { __SKJS_Ignorable: void };
+
 /* from undici-types/fetch.d.ts */
 
 declare class undici_BodyMixin {
