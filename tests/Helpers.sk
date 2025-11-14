@@ -8,7 +8,7 @@ base class ReferenceError{line: Int} {
 const kTS_EXPECT_ERROR_str: String = "ts-expect-error";
 const kTS_EXPECT_ERROR: Vector<Char> = kTS_EXPECT_ERROR_str.chars();
 
-class TSExpectError{restOfLine: String} extends ReferenceError {
+class ExpectError{restOfLine: String} extends ReferenceError {
   fun validate(fileName: String, typeError: SKJS.TypingError): void {
     if (this.restOfLine.length() > 0) {
       SKTest.expectEq(
@@ -31,7 +31,7 @@ class TSExpectError{restOfLine: String} extends ReferenceError {
  * returned line number is 2.
  *
  * Throws if the annotation is found somewhere else. */
-fun findTSExpectErrors(contents: String): mutable Iterator<TSExpectError> {
+fun findTSExpectErrors(contents: String): mutable Iterator<ExpectError> {
   /*
     Correctness is based on the fact that these are all disjoint sets:
     - '\n'
@@ -110,7 +110,7 @@ fun findTSExpectErrors(contents: String): mutable Iterator<TSExpectError> {
     restOfLine = String::fromChars(
       chars.slice(restOfLineStart, pos),
     ).trimRight();
-    yield TSExpectError{line => lineNumber + 1, restOfLine};
+    yield ExpectError{line => lineNumber + 1, restOfLine};
   };
 }
 
