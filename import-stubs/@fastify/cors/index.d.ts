@@ -54,3 +54,5 @@ export type FastifyCorsOptionsDelegate =
   | FastifyCorsOptionsDelegatePromise;
 
 export declare const fastifyCors: FastifyCorsPlugin;
+
+export { fastifyCors as default };
