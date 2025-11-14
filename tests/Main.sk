@@ -89,7 +89,7 @@ fun validateParseable(
   SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
 
   fileContents = checker.files.filesContent.get(context, SKStore.SID(fileName));
-  tsExpectErrors = findTSExpectErrors(fileContents.value);
+  tsExpectErrors = findExpectErrors(fileContents.value);
 
   validateReferenceErrors(
     context,

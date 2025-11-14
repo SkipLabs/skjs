@@ -31,7 +31,7 @@ class ExpectError{restOfLine: String} extends ReferenceError {
  * returned line number is 2.
  *
  * Throws if the annotation is found somewhere else. */
-fun findTSExpectErrors(contents: String): mutable Iterator<ExpectError> {
+fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
   /*
     Correctness is based on the fact that these are all disjoint sets:
     - '\n'
