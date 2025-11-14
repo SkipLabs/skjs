@@ -864,19 +864,10 @@ class TEnv{
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
-      TypeChecker::checkTypeParams(clauses);
+      TypeChecker::checkTypeParams(clauses, true);
       funClauses = mutable Vector[];
       for (tparam in clauses) {
-        if (tparam.default is Some _) {
-          typingError(
-            Array[
-              (
-                tparam.name.pos,
-                "Optional type parameters are not supported for functions",
-              ),
-            ],
-          )
-        };
+        invariant(tparam.default is None()); // checked in checkTypeParams
         funTParam = this.makeTParam(context, tparam);
         funClauses.push(funTParam);
         !this.tparams[tparam.name.value] = funTParam;

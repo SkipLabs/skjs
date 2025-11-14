@@ -131,13 +131,28 @@ extension class TypeChecker {
   }
 
   fun typeDef(typeDef: TypeDef): void {
-    static::checkTypeParams(typeDef.tdefParams)
+    static::checkTypeParams(typeDef.tdefParams, false)
   }
 
-  static fun checkTypeParams(tparams: Array<TypeParam>): void {
+  static fun checkTypeParams(
+    tparams: Array<TypeParam>,
+    forbidOptionalTypeParams: Bool,
+  ): void {
     firstDefaultPosOpt: ?PosRange = None();
     for (tparam in tparams) {
       (tparam.default, firstDefaultPosOpt) match {
+      | (Some _, None()) ->
+        if (forbidOptionalTypeParams) {
+          typingError(
+            Array[
+              (
+                tparam.name.pos,
+                "Optional type parameters are not supported for classes and functions",
+              ),
+            ],
+          )
+        };
+        !firstDefaultPosOpt = Some(tparam.name.pos)
       | (None(), Some(firstDefaultPos)) ->
         typingError(
           Array[
@@ -148,7 +163,6 @@ extension class TypeChecker {
             (firstDefaultPos, "First optional type parameter was here"),
           ],
         )
-      | (Some _, None()) -> !firstDefaultPosOpt = Some(tparam.name.pos)
       | (None(), None())
       | (Some _, Some _) ->
         void

@@ -3,7 +3,7 @@
 declare class Event {}
 declare class MouseEvent extends Event {}
 
-// @skjs-expect-error Optional type parameters are not supported for classes
+// @skjs-expect-error Optional type parameters are not supported for classes and functions
 class Base<E extends Event = Event> {
   handle(e: E): void {}
 }
