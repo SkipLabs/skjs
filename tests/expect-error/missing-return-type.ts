@@ -1,5 +1,5 @@
 // Functions must declare explicit return types.
-// @ts-expect-error Missing return type
+// @skjs-expect-error Missing return type
 function missingReturnType() {
   return 1;
 }

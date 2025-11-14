@@ -47,6 +47,6 @@ function testConstructorSignatureTypes(): void {
 }
 
 function testConstructorSignatureErrors(): void {
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Invalid annotation
   const badParams: new (num: number) => C = C;
 }

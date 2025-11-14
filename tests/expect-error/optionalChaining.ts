@@ -1,7 +1,7 @@
-// @ts-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const obj: { f: number } = { f: 1 };
 
-// @ts-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const obj2: { f?: number } = {};
 
 function returningVoid(): void {}
@@ -13,10 +13,10 @@ function maybeObj2(): { f?: number } | null {
   return {};
 }
 
-// @ts-expect-error Useless '?.'. Use '.' instead
+// @skjs-expect-error Useless '?.'. Use '.' instead
 const x1: number = obj?.f;
 
-// @ts-expect-error Useless '?.'. Use '.' instead
+// @skjs-expect-error Useless '?.'. Use '.' instead
 const x2: number | undefined = obj2?.f;
 
 // @ts-expect-error Result of optional chaining is always undefined

@@ -1,10 +1,10 @@
-// @ts-expect-error Missing type annotation
+// @skjs-expect-error Missing type annotation
 function paramNoType(_p): void {}
 
-// @ts-expect-error Missing type annotation
+// @skjs-expect-error Missing type annotation
 function paramNoTypeDefault(_p = 3): void {}
 
-// @ts-expect-error Missing type annotation
+// @skjs-expect-error Missing type annotation
 function paramNoTypeOptional(_p?): void {}
 
 // @ts-expect-error Missing type annotation
@@ -17,7 +17,7 @@ function callDefault(): void {
 }
 
 function callDefaultWithUndefined(): void {
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Invalid call
   paramTypeDefault(undefined);
 }
 
@@ -36,7 +36,7 @@ function paramTypeOptionalCanBeUndefined(p?: number): number {
 }
 
 function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
-  // @ts-expect-error This operator is useless
+  // @skjs-expect-error This operator is useless
   return p ?? 1;
 }
 
@@ -51,7 +51,7 @@ function paramTypeDefaultOptional(_p?: number = 3): void {}
 // @ts-expect-error Default value doesn't have the expected type
 function paramDefaultWrongType(_p: number = "3"): void {}
 
-// @ts-expect-error Missing type annotation
+// @skjs-expect-error Missing type annotation
 function restNoType(..._rest): void {}
 
 // Disabling prettier because it fixes some issues

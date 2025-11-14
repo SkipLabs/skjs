@@ -13,7 +13,7 @@ function switchUsePreciseTyping2(): void {
     case 1:
       return;
     default:
-      // @ts-expect-error Unused branch
+      // @skjs-expect-error Unused branch
       return;
   }
 }

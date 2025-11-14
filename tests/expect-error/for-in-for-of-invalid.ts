@@ -34,14 +34,14 @@ function testForOfWrongVariableType(): void {
 
 function testForInWithNull(): void {
   const nullObj = null;
-  // @ts-expect-error for-in loop requires an object or array type
+  // @skjs-expect-error for-in loop requires an object or array type
   for (const _key in nullObj) {
   }
 }
 
 function testForOfWithUndefined(): void {
   const undefinedArr = undefined;
-  // @ts-expect-error for-of loop requires an array, string, or iterable type
+  // @skjs-expect-error for-of loop requires an array, string, or iterable type
   for (const _value of undefinedArr) {
   }
 }

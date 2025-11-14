@@ -31,7 +31,7 @@ const koKind: keyof { kind: "a" } = "kind";
 const invalidObjKey: ObjKeys = "z";
 
 const koTup0: keyof [number] = 0;
-// @ts-expect-error Invalid definition
+// @skjs-expect-error Invalid definition
 const koTup1: keyof [number] = 1;
 const koTup0s: keyof [number] = "0";
 // @ts-expect-error Invalid definition
