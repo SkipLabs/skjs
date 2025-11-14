@@ -5,7 +5,7 @@ class C1 {
 
 class C2 {
   // @ts-expect-error Forbidden method name 'kind'
-  kind(): void;
+  kind(): void {}
 }
 
 // @ts-expect-error Algebraic field kind was expected to be a constant string
