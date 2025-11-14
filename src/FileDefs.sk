@@ -85,6 +85,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     typeOnly: Bool = false,
   ): Array<FileDefElt> {
     fileName = FileName::create(path.pos.fileName);
+    debug(`getAll START '${path}' in ${fileName}`);
     tmp = this.getPath(context, fileName, path.value, typeOnly);
     result = mutable Vector[];
     for (elt in tmp) {
@@ -93,6 +94,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
       | FDNamespace _ -> internal_error("Encountering namespace")
       }
     };
+    debug(`getAll END '${path}' in ${fileName} -> ${result.size()}`);
     result.toArray()
   }
 
@@ -119,6 +121,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     name: String,
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
+    debug(`dot START '${name}'`);
     result = mutable Vector[];
     for (d in defs) {
       d match {
@@ -133,6 +136,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
         this.getInDefs(context, nsDefs, name, getTypeOnly, result)
       }
     };
+    debug(`dot END '${name}' -> ${result.size()}`);
     result
   }
 
@@ -143,6 +147,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
+    debug(`getInDefs START '${name}' <- ${result.size()}`);
     invariant(name != "");
     for (fileName in fileDefs.includes) {
       this.getInDefs(
@@ -179,6 +184,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
       }
     | None() -> void
     };
+    debug(`getInDefs END '${name}' -> ${result.size()}`);
   }
 
   private fun getExported(
@@ -188,12 +194,14 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
+    debug(`getExported START '${name}' in ${fileName} <- ${result.size()}`);
     fileDefs = this.getFileDefs(context, fileName);
     if (name == "") {
       result.push(FDNamespace(typeOnly, fileDefs))
     } else {
       this.getExportedInDefs(context, fileDefs, name, typeOnly, result)
-    }
+    };
+    debug(`getExported END '${name}' in ${fileName} -> ${result.size()}`)
   }
 
   private fun getExportedInDefs(
@@ -203,6 +211,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
+    debug(`getExportedInDefs START '${name}' <- ${result.size()}`);
     invariant(name != "");
     fileDefs.reexports.maybeGet("") match {
     | Some(wholeModuleReexports) ->
@@ -234,7 +243,8 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
         result,
       )
     | None() -> void
-    }
+    };
+    debug(`getExportedInDefs END '${name}' -> ${result.size()}`);
   }
 
   private fun getFromImports(
@@ -245,6 +255,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     modules: Map<String, Vector<FileDefs>>,
     result: mutable Vector<FileDef>,
   ): void {
+    debug(`getFromImports START '${suffix}' <- ${result.size()}`);
     for (import in imports) {
       name = import.origName + suffix;
       getTypeOnly = typeOnly || import.typeOnly;
@@ -268,10 +279,12 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
         }
       | None() -> void
       }
-    }
+    };
+    debug(`getFromImports END '${suffix}' -> ${result.size()}`);
   }
 
   private fun getFileDefs(context: mutable S.Context, fn: FileName): FileDefs {
+    debug(`getFileDefs '${fn}'`);
     this.fileDefsDir.get(context, S.SID(fn.toString()))
   }
 }
