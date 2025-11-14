@@ -504,11 +504,11 @@ mutable class FileDefsState private {
     names match {
     | MCurly(moduleDefNames) ->
       for (moduleDefName in moduleDefNames) {
-        origName = moduleDefName.asName match {
+        exportName = moduleDefName.asName match {
         | None() -> moduleDefName.name.value
         | Some(asName) -> asName.value
         };
-        mapPush(this.exported, moduleDefName.name.value, origName)
+        mapPush(this.exported, exportName, moduleDefName.name.value)
       }
     }
   }
