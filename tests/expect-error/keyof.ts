@@ -15,7 +15,7 @@ const validKey2: PersonKeys = "age";
 const validKey3: PersonKeys = "email";
 
 // Invalid assignment should produce error
-// @ts-expect-error
+// @ts-expect-error Invalid definition
 const invalidKey: PersonKeys = "invalid";
 
 // keyof with empty object
@@ -27,7 +27,7 @@ const objKey: ObjKeys = "x";
 
 const koKind: keyof { kind: "a" } = "kind";
 
-// @ts-expect-error
+// @ts-expect-error Invalid definition
 const invalidObjKey: ObjKeys = "z";
 
 const koTup0: keyof [number] = 0;

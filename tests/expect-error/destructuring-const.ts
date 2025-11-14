@@ -1,5 +1,5 @@
 declare const tuple: [number, string];
-// @ts-expect-error
+// @ts-expect-error Construction not supported: top-level const declarations cannot destructure
 const [first, second]: [number, string] = tuple;
 
 declare const person: { name: string; age?: number };
