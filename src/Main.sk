@@ -354,15 +354,15 @@ class Checker private {
     index = FileNameIndex::create(context, files.filesContent);
     (parsedAndSymbolsFiles, symbolsMap) = files.parse(context, newLinesMap);
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
-    fileDefsMap = FileDefsMap::create(
+    builtinsFileName = files.builtinsFileName;
+    defMap = DefMap::create(
       context,
       index,
       files.rootOpt,
+      builtinsFileName,
       files.importStubs,
       parsedFiles,
     );
-    builtinsFileName = files.builtinsFileName;
-    defMap = DefMap{index, fileDefsMap, builtinsFileName};
     tenv = TEnv{defMap};
     checker = TypeChecker{backtrace, defMap, tenv};
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}
