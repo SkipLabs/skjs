@@ -220,7 +220,11 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
             this.getExportedInDefs(context, self, origName, getTypeOnly, result)
           }
         | NamedModule{name => moduleName, fileName} ->
-          invariant(fromView == MVOutside());
+          if (fromView != MVOutside()) {
+            invariant_violation(
+              `get inside from (typeOnly ${typeOnly}) named ${moduleName} filename ${fileName} `,
+            );
+          };
           this.getExported(context, fileName, origName, getTypeOnly, result);
           self.modules.maybeGet(moduleName) match {
           | Some(augmentations) ->
