@@ -57,11 +57,12 @@ fun validateReferenceErrors<R: ReferenceError>(
       break void
     | _ ->
       errStr = checker.errorToString(context, typeError);
-      throw SKTest.ExpectationError(
-        "Unexpected typing error",
-        "no errors",
-        errStr,
-      )
+      expected = referenceError match {
+      | Some(ref @ ReferenceError _) ->
+        `Error later (line ${ref.line}): ${ref.getMessage()}`
+      | None() -> "no errors"
+      };
+      throw SKTest.ExpectationError("Unexpected typing error", expected, errStr)
     };
   };
 
