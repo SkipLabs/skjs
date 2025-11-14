@@ -8,11 +8,24 @@ base class ReferenceError{line: Int} {
 const kTS_EXPECT_ERROR: Vector<Char> = "ts-expect-error".chars();
 const kSKJS_EXPECT_ERROR: Vector<Char> = "skjs-expect-error".chars();
 
+extension class .String {
+  fun trimForComparison(): String {
+    i = this.getEndIter();
+    // Ignore trailing whitespaces
+    i.rfind(c ~> !String.isWhitespace(c)) match {
+    | None() -> return ""
+    | Some(_) -> void
+    };
+    _ = i.next();
+    this.getIter().substring(i)
+  }
+}
+
 class ExpectError{restOfLine: String} extends ReferenceError {
   fun validate(fileName: String, typeError: SKJS.TypingError): void {
     if (this.restOfLine.length() > 0) {
       SKTest.expectEq(
-        typeError.messages[0].i1.trimRight(),
+        typeError.messages[0].i1.trimForComparison(),
         this.restOfLine,
         `${fileName}:${this.line} Wrong error message`,
       );
@@ -127,7 +140,7 @@ fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
     };
     restOfLine = String::fromChars(
       chars.slice(restOfLineStart, pos),
-    ).trimRight();
+    ).trimForComparison();
     yield ExpectError{line => lineNumber + 1, restOfLine};
   };
 }
