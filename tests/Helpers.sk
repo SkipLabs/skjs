@@ -10,7 +10,8 @@ const kSKJS_EXPECT_ERROR: Vector<Char> = "skjs-expect-error".chars();
 
 extension class .String {
   fun trimForComparison(): String {
-    i = this.getEndIter();
+    i = this.getIter();
+    _ = i.find(c ~> c == '\n'); // Keep first line only
     _ = i.rfind(c ~> !String.isWhitespace(c)); // Ignore trailing whitespaces
     _ = i.next();
     i.rfind(c ~> c != '.') match { // Ignore trailing dots
