@@ -45,14 +45,14 @@ fun validateReferenceErrors<R: ReferenceError>(
 
   linedTypeErrors = getLinedTypeErrors(context, checker, fileName, typeErrors);
 
-  for (linedTypeError in linedTypeErrors) {
-    (line, typeError) = linedTypeError;
+  i = 0;
+  while (i < linedTypeErrors.size()) {
+    (line, typeError) = linedTypeErrors[i];
     referenceError match {
     | Some(
       ref @ ReferenceError{line => expectedLine},
     ) if (line == expectedLine) ->
-      ref.validate(fileName, typeError);
-      !referenceError = referenceErrors.next()
+      ref.validate(fileName, typeError)
     | Some(ReferenceError{line => expectedLine}) if (line > expectedLine) ->
       break void
     | _ ->
@@ -64,6 +64,10 @@ fun validateReferenceErrors<R: ReferenceError>(
       };
       throw SKTest.ExpectationError("Unexpected typing error", expected, errStr)
     };
+    !i = i + 1;
+    if (i >= linedTypeErrors.size() || linedTypeErrors[i].i0 != line) {
+      !referenceError = referenceErrors.next()
+    }
   };
 
   referenceError match {
