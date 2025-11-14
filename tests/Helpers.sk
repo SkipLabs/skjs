@@ -5,8 +5,7 @@ base class ReferenceError{line: Int} {
   fun getMessage(): String;
 }
 
-const kTS_EXPECT_ERROR_str: String = "ts-expect-error";
-const kTS_EXPECT_ERROR: Vector<Char> = kTS_EXPECT_ERROR_str.chars();
+const kTS_EXPECT_ERROR: Vector<Char> = "ts-expect-error".chars();
 
 class ExpectError{restOfLine: String} extends ReferenceError {
   fun validate(fileName: String, typeError: SKJS.TypingError): void {
@@ -61,7 +60,7 @@ fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
       };
       if (posInAnnot >= kTS_EXPECT_ERROR.size()) {
         invariant_violation(
-          `Line ${lineNumber}: misplaced @${kTS_EXPECT_ERROR_str}`,
+          `Line ${lineNumber}: misplaced @${kTS_EXPECT_ERROR.join("")}`,
         );
       };
       continue;
