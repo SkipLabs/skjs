@@ -49,18 +49,24 @@ fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
     };
     if (chars[pos] == '@') {
       !pos = pos + 1;
+      if (pos >= chars.size()) {
+        break void
+      };
+      possibleAnnot = if (chars[pos] == kTS_EXPECT_ERROR[0]) {
+        kTS_EXPECT_ERROR
+      } else {
+        continue
+      };
       posInAnnot = 0;
-      while (
-        pos < chars.size() &&
-        posInAnnot < kTS_EXPECT_ERROR.size() &&
-        chars[pos] == kTS_EXPECT_ERROR[posInAnnot]
-      ) {
+      do {
         !pos = pos + 1;
         !posInAnnot = posInAnnot + 1;
-      };
-      if (posInAnnot >= kTS_EXPECT_ERROR.size()) {
+      } while (pos < chars.size() &&
+        posInAnnot < possibleAnnot.size() &&
+        chars[pos] == possibleAnnot[posInAnnot]);
+      if (posInAnnot >= possibleAnnot.size()) {
         invariant_violation(
-          `Line ${lineNumber}: misplaced @${kTS_EXPECT_ERROR.join("")}`,
+          `Line ${lineNumber}: misplaced @${possibleAnnot.join("")}`,
         );
       };
       continue;
@@ -87,16 +93,22 @@ fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
       continue;
     };
     !pos = pos + 1;
+    if (pos >= chars.size()) {
+      break void
+    };
+    possibleAnnot = if (chars[pos] == kTS_EXPECT_ERROR[0]) {
+      kTS_EXPECT_ERROR
+    } else {
+      continue
+    };
     posInAnnot = 0;
-    while (
-      pos < chars.size() &&
-      posInAnnot < kTS_EXPECT_ERROR.size() &&
-      chars[pos] == kTS_EXPECT_ERROR[posInAnnot]
-    ) {
+    do {
       !pos = pos + 1;
       !posInAnnot = posInAnnot + 1;
-    };
-    if (posInAnnot < kTS_EXPECT_ERROR.size()) {
+    } while (pos < chars.size() &&
+      posInAnnot < possibleAnnot.size() &&
+      chars[pos] == possibleAnnot[posInAnnot]);
+    if (posInAnnot < possibleAnnot.size()) {
       continue;
     };
     while (pos < chars.size() && (chars[pos] == ' ' || chars[pos] == '\t')) {
