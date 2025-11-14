@@ -1,10 +1,10 @@
 function literalInRecordAlwaysTrue(x: { f: number }): boolean {
-  // @ts-expect-error This expression is always true
+  // @skjs-expect-error This expression is always true
   return "f" in x;
 }
 
 function refineLiteralInRecordAlwaysTrue(x: { f: number }): number {
-  // @ts-expect-error This expression is always true
+  // @skjs-expect-error This expression is always true
   if ("f" in x) {
     return x.f;
   } else {
@@ -61,7 +61,7 @@ function literalInRecordIndex(x: { [f: string]: number }): boolean {
 function refineLiteralInRecordIndex(x: { [f: string]: number }): number {
   if ("a" in x) {
     // FIXME
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Invalid return type
     return x.a;
   } else {
     return 0;
@@ -74,7 +74,7 @@ function literalInRecordUnion(x: { f: number } | { g: number }): boolean {
 
 function refineLiteralInRecordUnion(x: { f: number } | { g: number }): number {
   if ("f" in x) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Invalid return type
     return x.f;
   } else {
     return 0;
@@ -123,7 +123,7 @@ function unionInRecord(s: "f" | "g", x: { f: number }): boolean {
 function refineUnionInRecord(s: "f" | "g", x: { f: number }): number {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Unbound field: g
+    // @skjs-expect-error Unbound field: g
     return x[s];
   } else {
     return 0;
@@ -133,7 +133,7 @@ function refineUnionInRecord(s: "f" | "g", x: { f: number }): number {
 function refineUnionInRecord2(s: "f" | "g", x: { f: number }): unknown {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Unbound field: g
+    // @skjs-expect-error Unbound field: g
     return x[s];
   } else {
     return 0;
@@ -147,7 +147,7 @@ function unionInRecordOpt(s: "f" | "g", x: { f?: number }): boolean {
 function refineUnionInRecordOpt(s: "f" | "g", x: { f?: number }): number {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Unbound field: g
+    // @skjs-expect-error Unbound field: g
     return x[s];
   } else {
     return 0;
@@ -160,7 +160,7 @@ function refineUnionInRecordOpt2(
 ): number | undefined {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Unbound field: g
+    // @skjs-expect-error Unbound field: g
     return x[s];
   } else {
     return 0;
@@ -170,7 +170,7 @@ function refineUnionInRecordOpt2(
 function refineUnionInRecordOpt3(s: "f" | "g", x: { f?: number }): unknown {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Unbound field: g
+    // @skjs-expect-error Unbound field: g
     return x[s];
   } else {
     return 0;
@@ -181,7 +181,7 @@ function unionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): boolean {
-  // @ts-expect-error This expression is always true
+  // @skjs-expect-error This expression is always true
   return s in x;
 }
 
@@ -189,7 +189,7 @@ function refineUnionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): number {
-  // @ts-expect-error This expression is always true
+  // @skjs-expect-error This expression is always true
   if (s in x) {
     return x[s];
   } else {
@@ -266,7 +266,7 @@ function refineUnionInRecordNotAlwaysFalse(
 ): number {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Unbound field: f | g
+    // @skjs-expect-error Unbound field: f | g
     return x[s];
   } else {
     return 0;
@@ -279,7 +279,7 @@ function refineUnionInRecordNotAlwaysFalse2(
 ): unknown {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Unbound field: f | g
+    // @skjs-expect-error Unbound field: f | g
     return x[s];
   } else {
     return 0;
@@ -293,7 +293,7 @@ function stringInRecord(s: string, x: { f: number }): boolean {
 function refineStringInRecord(s: string, x: { f: number }): number {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Invalid access
+    // @skjs-expect-error Invalid access
     return x[s];
   } else {
     return 0;
@@ -303,7 +303,7 @@ function refineStringInRecord(s: string, x: { f: number }): number {
 function refineStringInRecord2(s: string, x: { f: number }): unknown {
   if (s in x) {
     // FIXME
-    // @ts-expect-error Invalid access
+    // @skjs-expect-error Invalid access
     return x[s];
   } else {
     return 0;
@@ -311,17 +311,17 @@ function refineStringInRecord2(s: string, x: { f: number }): unknown {
 }
 
 function literalInTupleAlwaysFalse(): boolean {
-  // @ts-expect-error TODO: in
+  // @skjs-expect-error TODO: in
   return 0 in [];
 }
 
 function literalInTupleAlwaysTrue(): boolean {
-  // @ts-expect-error TODO: in
+  // @skjs-expect-error TODO: in
   return 0 in [1];
 }
 
 function literalInTupleUnion(x: [number] | [number, number]): boolean {
-  // @ts-expect-error TODO: in
+  // @skjs-expect-error TODO: in
   return 1 in x;
 }
 

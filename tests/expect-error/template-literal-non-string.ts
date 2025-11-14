@@ -7,7 +7,7 @@ function getObj(): { foo: string } {
   return { foo: "bar" };
 }
 
-// @ts-expect-error
+// @skjs-expect-error Template literal expressions must be string, number, bigint, boolean, null, or undefined
 const invalidObjectTemplate: string = `Object: ${getObj()}`;
 
 // Valid templates - should work with complex expressions now!

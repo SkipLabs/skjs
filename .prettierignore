@@ -4,6 +4,7 @@
 !/**/
 !*.*
 **/*.*
+!**/*.json
 !**/*.ts
 tests/ts-conformance/**/*.ts
 *-prettier-ignore.*

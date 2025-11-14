@@ -6,7 +6,7 @@ function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {
   const result = x[0];
   if (result === undefined) throw "Array is empty";
   // TODO: Intersection on index field is not precise enough
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Invalid return type
   return result;
 }
 

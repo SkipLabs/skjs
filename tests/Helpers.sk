@@ -5,14 +5,29 @@ base class ReferenceError{line: Int} {
   fun getMessage(): String;
 }
 
-const kTS_EXPECT_ERROR_str: String = "ts-expect-error";
-const kTS_EXPECT_ERROR: Vector<Char> = kTS_EXPECT_ERROR_str.chars();
+const kTS_EXPECT_ERROR: Vector<Char> = "ts-expect-error".chars();
+const kSKJS_EXPECT_ERROR: Vector<Char> = "skjs-expect-error".chars();
 
-class TSExpectError{restOfLine: String} extends ReferenceError {
+extension class .String {
+  fun trimForComparison(): String {
+    i = this.getIter();
+    _ = i.find(c ~> c == '\n'); // Keep first line only
+    _ = i.rfind(c ~> !String.isWhitespace(c)); // Ignore trailing whitespaces
+    _ = i.next();
+    i.rfind(c ~> c != '.') match { // Ignore trailing dots
+    | None() -> return ""
+    | Some(_) -> void
+    };
+    _ = i.next();
+    this.getIter().substring(i)
+  }
+}
+
+class ExpectError{restOfLine: String} extends ReferenceError {
   fun validate(fileName: String, typeError: SKJS.TypingError): void {
     if (this.restOfLine.length() > 0) {
       SKTest.expectEq(
-        typeError.messages[0].i1.trimRight(),
+        typeError.messages[0].i1.trimForComparison(),
         this.restOfLine,
         `${fileName}:${this.line} Wrong error message`,
       );
@@ -25,20 +40,22 @@ class TSExpectError{restOfLine: String} extends ReferenceError {
 }
 
 /* Returns an array of line numbers and rest-of-line for all lines
- * matching .*\/\/\s*(@ts-expect-error)\s+(?<rest-of-line>[^\n]*)
+ * matching .*\/\/\s*(@(skjs|ts)-expect-error)\s+(?<rest-of-line>[^\n]*)
  * The returned line numbers are the line numbers on which errors are
  * expected, i.e. if the comment is on the first line, the corresponding
  * returned line number is 2.
  *
  * Throws if the annotation is found somewhere else. */
-fun findTSExpectErrors(contents: String): mutable Iterator<TSExpectError> {
+fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
   /*
     Correctness is based on the fact that these are all disjoint sets:
     - '\n'
     - ' ', '\t'
     - '/'
     - '@'
-    - characters in kTS_EXPECT_ERROR
+    - characters in kTS_EXPECT_ERROR union kSKJS_EXPECT_ERROR
+    and on the fact that the first characters of kTS_EXPECT_ERROR and
+    kSKJS_EXPECT_ERROR differ.
    */
   chars = contents.chars().toArray();
   pos = 0;
@@ -50,18 +67,26 @@ fun findTSExpectErrors(contents: String): mutable Iterator<TSExpectError> {
     };
     if (chars[pos] == '@') {
       !pos = pos + 1;
+      if (pos >= chars.size()) {
+        break void
+      };
+      possibleAnnot = if (chars[pos] == kTS_EXPECT_ERROR[0]) {
+        kTS_EXPECT_ERROR
+      } else if (chars[pos] == kSKJS_EXPECT_ERROR[0]) {
+        kSKJS_EXPECT_ERROR
+      } else {
+        continue
+      };
       posInAnnot = 0;
-      while (
-        pos < chars.size() &&
-        posInAnnot < kTS_EXPECT_ERROR.size() &&
-        chars[pos] == kTS_EXPECT_ERROR[posInAnnot]
-      ) {
+      do {
         !pos = pos + 1;
         !posInAnnot = posInAnnot + 1;
-      };
-      if (posInAnnot >= kTS_EXPECT_ERROR.size()) {
+      } while (pos < chars.size() &&
+        posInAnnot < possibleAnnot.size() &&
+        chars[pos] == possibleAnnot[posInAnnot]);
+      if (posInAnnot >= possibleAnnot.size()) {
         invariant_violation(
-          `Line ${lineNumber}: misplaced @${kTS_EXPECT_ERROR_str}`,
+          `Line ${lineNumber}: misplaced @${possibleAnnot.join("")}`,
         );
       };
       continue;
@@ -88,16 +113,24 @@ fun findTSExpectErrors(contents: String): mutable Iterator<TSExpectError> {
       continue;
     };
     !pos = pos + 1;
+    if (pos >= chars.size()) {
+      break void
+    };
+    possibleAnnot = if (chars[pos] == kTS_EXPECT_ERROR[0]) {
+      kTS_EXPECT_ERROR
+    } else if (chars[pos] == kSKJS_EXPECT_ERROR[0]) {
+      kSKJS_EXPECT_ERROR
+    } else {
+      continue
+    };
     posInAnnot = 0;
-    while (
-      pos < chars.size() &&
-      posInAnnot < kTS_EXPECT_ERROR.size() &&
-      chars[pos] == kTS_EXPECT_ERROR[posInAnnot]
-    ) {
+    do {
       !pos = pos + 1;
       !posInAnnot = posInAnnot + 1;
-    };
-    if (posInAnnot < kTS_EXPECT_ERROR.size()) {
+    } while (pos < chars.size() &&
+      posInAnnot < possibleAnnot.size() &&
+      chars[pos] == possibleAnnot[posInAnnot]);
+    if (posInAnnot < possibleAnnot.size()) {
       continue;
     };
     while (pos < chars.size() && (chars[pos] == ' ' || chars[pos] == '\t')) {
@@ -109,8 +142,8 @@ fun findTSExpectErrors(contents: String): mutable Iterator<TSExpectError> {
     };
     restOfLine = String::fromChars(
       chars.slice(restOfLineStart, pos),
-    ).trimRight();
-    yield TSExpectError{line => lineNumber + 1, restOfLine};
+    ).trimForComparison();
+    yield ExpectError{line => lineNumber + 1, restOfLine};
   };
 }
 

@@ -77,7 +77,7 @@ function testAssignmentVsLogical(): boolean {
 
 function testPostfixVsMemberAccess(): string {
   let obj: { prop: string } | null = { prop: "hello" };
-  // @ts-expect-error Construction not supported
+  // @skjs-expect-error Construction not supported
   return obj!.prop;
 }
 

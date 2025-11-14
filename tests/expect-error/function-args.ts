@@ -1,27 +1,27 @@
-// @ts-expect-error Missing type annotation
-function paramNoType(p): void {}
+// @skjs-expect-error Missing type annotation
+function paramNoType(_p): void {}
+
+// @skjs-expect-error Missing type annotation
+function paramNoTypeDefault(_p = 3): void {}
+
+// @skjs-expect-error Missing type annotation
+function paramNoTypeOptional(_p?): void {}
 
 // @ts-expect-error Missing type annotation
-function paramNoTypeDefault(p = 3): void {}
+function paramNoTypeDefaultOptional(_p? = 3): void {}
 
-// @ts-expect-error Missing type annotation
-function paramNoTypeOptional(p?): void {}
-
-// @ts-expect-error Missing type annotation
-function paramNoTypeDefaultOptional(p? = 3): void {}
-
-function paramTypeDefault(p: number = 3): void {}
+function paramTypeDefault(_p: number = 3): void {}
 
 function callDefault(): void {
   paramTypeDefault();
 }
 
 function callDefaultWithUndefined(): void {
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Invalid call
   paramTypeDefault(undefined);
 }
 
-function paramTypeOptional(p?: number): void {}
+function paramTypeOptional(_p?: number): void {}
 
 function callOptional(): void {
   paramTypeOptional();
@@ -36,7 +36,7 @@ function paramTypeOptionalCanBeUndefined(p?: number): number {
 }
 
 function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
-  // @ts-expect-error This operator is useless
+  // @skjs-expect-error This operator is useless
   return p ?? 1;
 }
 
@@ -46,42 +46,42 @@ function paramTypeOptionalCanBeUndefined2(p?: number): number {
 }
 
 // @ts-expect-error A parameter cannot both be optional and have a default value
-function paramTypeDefaultOptional(p?: number = 3): void {}
+function paramTypeDefaultOptional(_p?: number = 3): void {}
 
 // @ts-expect-error Default value doesn't have the expected type
-function paramDefaultWrongType(p: number = "3"): void {}
+function paramDefaultWrongType(_p: number = "3"): void {}
 
-// @ts-expect-error Missing type annotation
-function restNoType(...rest): void {}
+// @skjs-expect-error Missing type annotation
+function restNoType(..._rest): void {}
 
 // Disabling prettier because it fixes some issues
 
 // prettier-ignore
 // @ts-expect-error Missing type annotation
-function restNoTypeDefault(...rest = new Array()): void {}
+function restNoTypeDefault(..._rest = new Array()): void {}
 
 // prettier-ignore
 // @ts-expect-error Missing type annotation
-function restNoTypeOptional(...rest?): void {}
+function restNoTypeOptional(..._rest?): void {}
 
 // prettier-ignore
 // @ts-expect-error Missing type annotation
-function restNoTypeDefaultOptional(...rest? = new Array()): void {}
+function restNoTypeDefaultOptional(..._rest? = new Array()): void {}
 
 // prettier-ignore
 // @ts-expect-error ... cannot have a default value
-function restTypeDefault(...rest: number[] = new Array()): void {}
+function restTypeDefault(..._rest: number[] = new Array()): void {}
 
 // prettier-ignore
 // @ts-expect-error ... cannot be optional
-function restTypeOptional(...rest?: number[]): void {}
+function restTypeOptional(..._rest?: number[]): void {}
 
 // prettier-ignore
 // @ts-expect-error A parameter cannot both be optional and have a default value
-function restTypeDefaultOptional(...rest?: number[] = new Array()): void {}
+function restTypeDefaultOptional(..._rest?: number[] = new Array()): void {}
 
 // TODO: wrong type
-function restNotArray(...rest: number): void {}
+function restNotArray(..._rest: number): void {}
 
 // @ts-expect-error ... should be the last parameter
-function restNotLast(...rest: number[], other): void {}
+function restNotLast(..._rest: number[], _other): void {}

@@ -1,16 +1,16 @@
 function uselessDefault(x: { f: number }): number {
-  // @ts-expect-error Default is useless because field cannot be undefined
+  // @skjs-expect-error Default is useless because field cannot be undefined
   const { f = 1 } = x;
   return f;
 }
 
 function uselessDefaultNull(x: { f: null }): void {
-  // @ts-expect-error Default is useless because field cannot be undefined
+  // @skjs-expect-error Default is useless because field cannot be undefined
   const { f = 1 } = x;
 }
 
 function uselessDefaultUnion(x: { f: number } | { f: string }): void {
-  // @ts-expect-error Default is useless because field cannot be undefined
+  // @skjs-expect-error Default is useless because field cannot be undefined
   const { f = true } = x;
 }
 
@@ -58,6 +58,6 @@ function optionalMeansUndefined(x: { f?: number }): number {
 
 function optionalMeansUndefinedWitness(x: { f: number }): number {
   const { f } = x;
-  // @ts-expect-error This operator is useless
+  // @skjs-expect-error This operator is useless
   return f ?? 0;
 }

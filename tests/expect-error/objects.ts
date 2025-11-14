@@ -11,12 +11,12 @@ function correctIndexReturnTypeDot(x: tIndex): number | undefined {
 }
 
 function incorrectIndexReturnTypeGet(x: tIndex): number {
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Invalid return type
   return x["a"];
 }
 
 function incorrectIndexReturnTypeDot(x: tIndex): number {
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Invalid return type
   return x.a;
 }
 
@@ -44,7 +44,7 @@ function testMixedObjectNormalFieldCorrectIndexing(
 }
 
 function testMixedObjectNormalFieldIncorrectIndexing(obj: tIndex2): boolean {
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Invalid return type
   return obj[0];
 }
 
@@ -59,32 +59,32 @@ function cannotAccessFieldConstructor(
   obj: object,
   f: "constructor" | "banana",
 ): void {
-  // @ts-expect-error Cannot access field 'constructor'
+  // @skjs-expect-error Cannot access field 'constructor'
   const whatever = obj[f];
 }
 
 function cannotUseConstructorAsFieldName(): object {
-  // @ts-expect-error Forbidden field name: constructor
+  // @skjs-expect-error Forbidden field name: constructor
   return { constructor: 1 };
 }
 
 function cannotUseConstructorAsMethodName(): object {
-  // @ts-expect-error Forbidden method name: constructor
+  // @skjs-expect-error Forbidden method name: constructor
   return { constructor() {} };
 }
 
 function cannotUseConstructorAsMethodName2(): object {
-  // @ts-expect-error Forbidden method name: constructor
+  // @skjs-expect-error Forbidden method name: constructor
   return { constructor(): void {} };
 }
 
-// @ts-expect-error Forbidden field name: constructor
+// @skjs-expect-error Forbidden field name: constructor
 function cannotHaveConstructorField(x: { constructor: string }): void {}
 
-// @ts-expect-error Forbidden method name: constructor
+// @skjs-expect-error Forbidden method name: constructor
 function cannotHaveConstructorMethod(x: { constructor(): void }): void {}
 
-// @ts-expect-error Forbidden method name: constructor
+// @skjs-expect-error Forbidden method name: constructor
 function cannotHaveConstructorMethod2(x: { constructor() }): void {}
 
 function constructor(): void {}
