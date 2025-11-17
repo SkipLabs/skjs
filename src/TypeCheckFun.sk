@@ -9,12 +9,15 @@ extension class TypeChecker {
   ): (this, mutable TCEnv) {
     static::checkTypeParams(fd.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst.context, subst, callingContext);
-    thisTypeOpt match {
-    | None() -> void
-    | Some(thisType) ->
-      !this.tenv.subst["this"] = (false, thisType);
-      tcenv.scope.bind(Name(fd.pos, "this"), thisType, true)
+    thisType = thisTypeOpt match {
+    | None() ->
+      /* Disallow this in non-methods */ TType::single(
+        TPrimUnit(TVoid(), fd.pos),
+      )
+    | Some(thisType) -> thisType
     };
+    !this.tenv.subst["this"] = (false, thisType);
+    tcenv.scope.bind(Name(fd.pos, "this"), thisType, true);
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
       param.isRest match {
