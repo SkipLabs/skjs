@@ -76,7 +76,7 @@ class Files(
     importStubs.each(dir ->
       srcFiles.extend(
         FileSystem.readFilesRecursive(dir, fileName ->
-          fileName.endsWith("index.d.ts")
+          fileName.endsWith(".ts")
         ),
       )
     );
