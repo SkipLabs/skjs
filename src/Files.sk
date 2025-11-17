@@ -80,11 +80,10 @@ class Files(
         )
       )
       .flatten();
-    srcFiles = Array[
-      srcFileSeq,
-      Array[builtinsFileName.toString()],
-      importStubsFiles,
-    ].flatten().collect(Set);
+    srcFiles = mutable Set[];
+    srcFiles.insert(builtinsFileName.toString());
+    srcFiles.extend(srcFileSeq);
+    srcFiles.extend(importStubsFiles);
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
