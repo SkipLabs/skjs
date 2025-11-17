@@ -68,10 +68,19 @@ class Files(
       );
     } else {
       for (f in srcFileSeq) {
+        !f = Path.resolve(f);
         if (!FileSystem.exists(f)) {
           return Failure(`Source file ${f} does not exist`)
         };
-        srcFiles.insert(Path.resolve(f))
+        if (FileSystem.isDirectory(f)) {
+          srcFiles.extend(
+            FileSystem.readFilesRecursive(f, fileName ->
+              fileName.endsWith(".ts")
+            ),
+          )
+        } else {
+          srcFiles.insert(f)
+        }
       }
     };
     if (srcFiles.isEmpty()) {
