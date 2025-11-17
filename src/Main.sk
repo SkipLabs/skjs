@@ -363,7 +363,7 @@ class Checker private {
     defMap = DefMap::create(
       context,
       index,
-      files.rootOpt,
+      Some(files.root),
       builtinsFileName,
       files.importStubs,
       parsedFiles,
