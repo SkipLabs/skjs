@@ -175,9 +175,6 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Change to directory dir before reading files or doing anything else.",
     ),
-  Cli.Arg::string("dir")
-    .value_name("PATH")
-    .about("Source directory to check (default: src)"),
   Cli.Arg::string("init").about("Initializes persistent cache"),
   Cli.Arg::string("data").about("Uses persistent cache"),
   Cli.Arg::bool("backtrace")
@@ -241,7 +238,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     }
   };
   logAffectedFiles = args.getBool("log-affected-files");
-  sourceDirOpt = args.maybeGetString("dir");
   if (logAffectedFiles) {
     if (args.maybeGetString("init").isSome()) {
       print_error(
@@ -268,7 +264,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         builtinsFileName,
         srcFiles,
         logAffectedFiles,
-        sourceDirOpt,
+        None(),
         importStubs,
       ) match {
       | Failure(err) ->
