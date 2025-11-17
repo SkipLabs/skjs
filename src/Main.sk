@@ -168,7 +168,7 @@ const checkArgs: Array<Cli.Arg> = Array[
   Cli.Arg::string("src-file")
     .positional()
     .repeatable()
-    .about("Source files (default: src/**/*.ts)"),
+    .about("Source files (default: **/*.ts)"),
   Cli.Arg::string("directory")
     .short("C")
     .value_name("dir")

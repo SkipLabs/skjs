@@ -48,7 +48,7 @@ class Files(
     root = Path.resolve(baseUrlOpt.default("."));
     srcFiles = mutable Set[];
     if (srcFileSeq.isEmpty()) {
-      !srcFileSeq = Array[Path.join(root, "src")]
+      !srcFileSeq = Array[root]
     };
     for (f in srcFileSeq) {
       !f = Path.resolve(f);
