@@ -90,7 +90,15 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     for (elt in tmp) {
       elt match {
       | e @ FileDefElt _ -> result.push(e)
-      | FDNamespace _ -> internal_error("Encountering namespace")
+      | FDNamespace _ ->
+        typingError(
+          Array[
+            (
+              path.pos,
+              `Internal error: encountered a namespace while getting '${path}'`,
+            ),
+          ],
+        )
       }
     };
     result.toArray()
@@ -122,12 +130,12 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     result = mutable Vector[];
     for (d in defs) {
       d match {
-      | FunDef _
-      | TypeDef _
-      | Class _
-      | Enum _
-      | FDVar _ ->
-        internal_error("TODO: DefMap#dot")
+      | FunDef{pos}
+      | TypeDef{name => Name(pos, _)}
+      | Class{name => Name(pos, _)}
+      | Enum(_isConst, Name(pos, _), _fields)
+      | FDVar(_kind, Name(pos, _), _type, _value) ->
+        typingError(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
       | FDNamespace(nsTypeOnly, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
         this.getInDefs(context, nsDefs, name, getTypeOnly, result)
@@ -410,17 +418,16 @@ mutable class FileDefsState private {
           MCurly(Array[ModuleDefName(None(), n, Some(Name(n.pos, "default")))]),
         )
 
-      | ExportDefault _
-      | ExportEq _ ->
-        internal_error("TODO: unsupported export")
-
       | Import(isType, names, importName) ->
         modName = this.resolveName(importName);
         static::addImportsFrom(this.imports, isType.isSome(), names, modName)
 
-      | ImportExpr _ -> internal_error("TODO: import expr")
-      | ExportAs _ -> internal_error("TODO export as")
-      | ExportImport _ -> internal_error("TODO: exportImport")
+      | ExportAs _
+      | ExportDefault _
+      | ExportEq _
+      | ImportExpr _
+      | ExportImport _ ->
+        typingError(Array[(def.pos, "TODO: unsupported export")])
       }
     };
     this.toFileDefs()
@@ -484,7 +491,10 @@ mutable class FileDefsState private {
       for (varDef in varDefs) {
         exportName = varDef.pat.value match {
         | PVar(x) -> x
-        | _ -> internal_error("TODO: cannot have exports base on names")
+        | _ ->
+          typingError(
+            Array[(varDef.pat.pos, "TODO: cannot have exports base on names")],
+          )
         };
         if (isExport) {
           mapPush(this.exported, exportName.value, exportName.value)
@@ -495,8 +505,14 @@ mutable class FileDefsState private {
           FDVar(k, exportName, varDef.type, varDef.value),
         )
       }
-    | Global _ -> internal_error("TODO: global")
-    | Module _ -> internal_error("TODO: module")
+    | Global(defs) ->
+      if (defs.size() > 0) {
+        typingError(Array[(defs[0].pos, "TODO: global")])
+      } else {
+        internal_error("TODO: global")
+      }
+    | Module(Name(pos, _), _defsOpt) ->
+      typingError(Array[(pos, "TODO: module")])
     }
   }
 

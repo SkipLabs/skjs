@@ -132,7 +132,7 @@ class TEnv{
     tdef match {
     | ta @ TypeDef _ -> this.normalize(subst.context, ta.body)
     | Class _ -> this.new(subst.context, name, targs.targs)
-    | Enum _ -> internal_error("TODO: instantiate Enum")
+    | Enum _ -> typingError(Array[(name.pos, "TODO: instantiate Enum")])
     }
   }
 
@@ -653,11 +653,11 @@ class TEnv{
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
-    | TAAssertIs _ -> internal_error("TODO assertIs ")
-    | TAAbstract _ -> internal_error("TODO abstract ")
-    | TAUniqueSymbol() -> internal_error("TODO uniqueSymbol ")
-    | TAAsserts _ -> internal_error("TODO asserts ")
-    | TAIs _ -> internal_error("TODO is ")
+    | TAAssertIs _ -> typingError(Array[(pos, "TODO assertIs")])
+    | TAAbstract _ -> typingError(Array[(pos, "TODO abstract")])
+    | TAUniqueSymbol() -> typingError(Array[(pos, "TODO uniqueSymbol")])
+    | TAAsserts _ -> typingError(Array[(pos, "TODO asserts")])
+    | TAIs _ -> typingError(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
       targetType = this.normalize(context, ty);
       this.keyOfType(subst, targetType, pos)
@@ -676,13 +676,13 @@ class TEnv{
         ),
       )
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
-    | TAEmptyArray _ -> internal_error("TODO emptyArray ")
-    | TAInfer _ -> internal_error("TODO infer ")
-    | TATemplate _ -> internal_error("TODO template ")
-    | TAImport _ -> internal_error("TODO import ")
-    | TAReadonly _ -> internal_error("TODO readonly ")
-    | TAExtends _ -> internal_error("TODO extends ")
-    | TAExtendsQuestion _ -> internal_error("TODO extendsQuestion ")
+    | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
+    | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
+    | TATemplate _ -> typingError(Array[(pos, "TODO template")])
+    | TAImport _ -> typingError(Array[(pos, "TODO import")])
+    | TAReadonly _ -> typingError(Array[(pos, "TODO readonly")])
+    | TAExtends _ -> typingError(Array[(pos, "TODO extends")])
+    | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(ty) ->
@@ -853,12 +853,12 @@ class TEnv{
       for (ty in tupleElts) {
         ty match {
         | TEType(n, optional, x) ->
-          if (n is Some _) internal_error("TODO named tuple");
+          if (n is Some _) typingError(Array[(pos, "TODO named tuple")]);
           if (optional is Some _) {
-            internal_error("TODO optional element tuple")
+            typingError(Array[(pos, "TODO optional element tuple")])
           };
           typeVec.push(x)
-        | TESpread _ -> internal_error("TODO tuple spread")
+        | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
         }
       };
       types = typeVec.toArray();
@@ -921,7 +921,7 @@ class TEnv{
         TFuns::singleFun(tfun, pos)
       };
       TType::single(tfuns)
-    | TAGet _ -> internal_error("TODO TAGet")
+    | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
     }
   }
 
@@ -949,7 +949,7 @@ class TEnv{
         };
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
-        | FNSymbol _ -> internal_error("TODO symbol")
+        | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
         | FNNormal(name) ->
           if (name.value == "constructor") {
             typingError(Array[(name.pos, `Forbidden field name: ${name}`)])
@@ -1085,7 +1085,7 @@ class TEnv{
         | TPrimUnit _ -> void /* bottom */
         | TPromise _
         | TFuns _ ->
-          internal_error(`TODO: keyof ${prettyPrintSType(stype)}`)
+          typingError(Array[(pos, `TODO: keyof ${prettyPrintSType(stype)}`)])
         }
       }
     };
