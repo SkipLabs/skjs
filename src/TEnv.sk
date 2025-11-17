@@ -867,6 +867,13 @@ class TEnv{
               Array[(restPos, "... must always be the last parameter")],
             );
           };
+          param.optional match {
+          | Some(optPos) ->
+            typingError(
+              Array[(optPos, "The spread parameter cannot be marked optional")],
+            )
+          | None() -> void
+          };
           !spreadParam = Some(paramType);
           continue
         | None() -> void
