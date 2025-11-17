@@ -19,20 +19,11 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    static::checkTypeParams(c.tparams);
+    static::checkTypeParams(c.tparams, OptionalTypeParamsForbidden());
     subst = Subst::mcreate{context};
     targs = TArgs(
       c.tparams.map(tparam -> {
-        if (tparam.default is Some _) {
-          typingError(
-            Array[
-              (
-                tparam.name.pos,
-                "Optional type parameters are not supported for classes",
-              ),
-            ],
-          )
-        };
+        invariant(tparam.default is None()); // checked in checkTypeParams
         ttypeParam = TParamWithConstraint(
           tparam.name.value,
           tparam.name.pos.fileName,

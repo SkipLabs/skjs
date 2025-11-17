@@ -32,13 +32,13 @@ function applyTDefaultUsePreviousParamError<X, Y>(
 // @ts-expect-error Required type parameters may not follow optional type parameters.
 type TNonLastDefault<X = boolean, Y> = X | Y;
 
-// @ts-expect-error Required type parameters may not follow optional type parameters.
+// @ts-expect-error Optional type parameters are not supported for classes and functions
 function fNonLastDefault1<X = boolean, Y>(x: X | Y): void {}
 
-// @ts-expect-error Required type parameters may not follow optional type parameters.
+// @ts-expect-error Optional type parameters are not supported for classes and functions
 function fNonLastDefault2(f: <X = boolean, Y>(x: X | Y) => void): void {}
 
-// @ts-expect-error Required type parameters may not follow optional type parameters.
+// @ts-expect-error Optional type parameters are not supported for classes and functions
 class cNonLastDefault<X = boolean, Y> {}
 
 /*
@@ -51,7 +51,7 @@ class cNonLastDefault<X = boolean, Y> {}
     Same thing for classes.
 */
 
-// @skjs-expect-error Optional type parameters are not supported for functions
+// @skjs-expect-error Optional type parameters are not supported for classes and functions
 function pair<X, Y = X>(x: X, y: Y): { x: X; y: Y } {
   return { x, y };
 }
@@ -81,5 +81,5 @@ function callpair1(): { x: 1; y: boolean } {
 //   return pair<1>(one, 2);
 // }
 
-// @skjs-expect-error Optional type parameters are not supported for classes
+// @skjs-expect-error Optional type parameters are not supported for classes and functions
 class ClassWithOptionalTypeParam<X = boolean> {}
