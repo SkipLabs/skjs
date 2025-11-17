@@ -54,33 +54,26 @@ class Files(
       | None() -> DirName::create(FileSystem.realpath("."))
       };
       !rootOpt = Some(root);
-      srcDir = sourceDirOpt match {
-      | Some(dir) -> Path.resolve(dir)
-      | None() -> Path.join(root.toString(), "src")
+      !srcFileSeq = Array[
+        sourceDirOpt match {
+        | Some(dir) -> dir
+        | None() -> Path.join(root.toString(), "src")
+        },
+      ]
+    };
+    for (f in srcFileSeq) {
+      !f = Path.resolve(f);
+      if (!FileSystem.exists(f)) {
+        return Failure(`Source file ${f} does not exist`)
       };
-      if (!FileSystem.exists(srcDir)) {
-        return Failure(`Could not find source dir: ${srcDir}`);
-      };
-      srcFiles.extend(
-        FileSystem.readFilesRecursive(srcDir, fileName ->
-          fileName.endsWith(".ts")
-        ),
-      );
-    } else {
-      for (f in srcFileSeq) {
-        !f = Path.resolve(f);
-        if (!FileSystem.exists(f)) {
-          return Failure(`Source file ${f} does not exist`)
-        };
-        if (FileSystem.isDirectory(f)) {
-          srcFiles.extend(
-            FileSystem.readFilesRecursive(f, fileName ->
-              fileName.endsWith(".ts")
-            ),
-          )
-        } else {
-          srcFiles.insert(f)
-        }
+      if (FileSystem.isDirectory(f)) {
+        srcFiles.extend(
+          FileSystem.readFilesRecursive(f, fileName ->
+            fileName.endsWith(".ts")
+          ),
+        )
+      } else {
+        srcFiles.insert(f)
       }
     };
     if (srcFiles.isEmpty()) {
