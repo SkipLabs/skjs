@@ -82,7 +82,7 @@ class TEnv{
     clauses = tdef match {
     | TypeDef{tdefParams} -> tdefParams
     | Class{tparams} -> tparams
-    | Enum _ -> internal_error("TODO: instantiate Enum")
+    | Enum _ -> Array[]
     };
     if (targs.targs.size() > clauses.size()) {
       typingError(
@@ -812,7 +812,7 @@ class TEnv{
         tparams = tdef match {
         | TypeDef{tdefParams} -> tdefParams
         | Class{tparams} -> tparams
-        | Enum _ -> internal_error("TODO: normalize Enum")
+        | Enum _ -> Array[]
         };
         if (
           targs.size() > tparams.size() ||
