@@ -45,10 +45,10 @@ class Files(
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
     builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
-    root = DirName::create(Path.resolve(baseUrlOpt.default(".")));
+    root = Path.resolve(baseUrlOpt.default("."));
     srcFiles = mutable Set[];
     if (srcFileSeq.isEmpty()) {
-      !srcFileSeq = Array[Path.join(root.toString(), "src")]
+      !srcFileSeq = Array[Path.join(root, "src")]
     };
     for (f in srcFileSeq) {
       !f = Path.resolve(f);
@@ -122,7 +122,7 @@ class Files(
     Success(
       Files(
         isInit,
-        root,
+        DirName::create(root),
         builtinsFileName,
         fileHdl,
         importStubs.map(DirName::create),
