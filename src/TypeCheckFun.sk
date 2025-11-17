@@ -7,7 +7,7 @@ extension class TypeChecker {
     fd: FunDef,
     callingContext: CGNode,
   ): (this, mutable TCEnv) {
-    static::checkTypeParams(fd.tparams, true);
+    static::checkTypeParams(fd.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst.context, subst, callingContext);
     thisTypeOpt match {
     | None() -> void

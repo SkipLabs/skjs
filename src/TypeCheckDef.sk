@@ -1,5 +1,11 @@
 module SKJS;
 
+base class OptionalTypeParamsPermission {
+  children =
+  | OptionalTypeParamsAllowed()
+  | OptionalTypeParamsForbidden()
+}
+
 extension class TypeChecker {
   fun check(context: mutable SKStore.Context, defs: Array<Def>): Array<Error> {
     errors = mutable Vector[];
@@ -131,18 +137,19 @@ extension class TypeChecker {
   }
 
   fun typeDef(typeDef: TypeDef): void {
-    static::checkTypeParams(typeDef.tdefParams, false)
+    static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
   }
 
   static fun checkTypeParams(
     tparams: Array<TypeParam>,
-    forbidOptionalTypeParams: Bool,
+    optionalTypeParamsPermission: OptionalTypeParamsPermission,
   ): void {
     firstDefaultPosOpt: ?PosRange = None();
     for (tparam in tparams) {
       (tparam.default, firstDefaultPosOpt) match {
       | (Some _, None()) ->
-        if (forbidOptionalTypeParams) {
+        optionalTypeParamsPermission match {
+        | OptionalTypeParamsForbidden() ->
           typingError(
             Array[
               (
@@ -151,6 +158,7 @@ extension class TypeChecker {
               ),
             ],
           )
+        | OptionalTypeParamsAllowed() -> void
         };
         !firstDefaultPosOpt = Some(tparam.name.pos)
       | (None(), Some(firstDefaultPos)) ->

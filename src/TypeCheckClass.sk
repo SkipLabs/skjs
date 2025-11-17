@@ -19,7 +19,7 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    static::checkTypeParams(c.tparams, true);
+    static::checkTypeParams(c.tparams, OptionalTypeParamsForbidden());
     subst = Subst::mcreate{context};
     targs = TArgs(
       c.tparams.map(tparam -> {

@@ -864,7 +864,7 @@ class TEnv{
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
-      TypeChecker::checkTypeParams(clauses, true);
+      TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
       funClauses = mutable Vector[];
       for (tparam in clauses) {
         invariant(tparam.default is None()); // checked in checkTypeParams
