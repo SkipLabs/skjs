@@ -1146,13 +1146,20 @@ extension class TypeChecker {
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
-    paramTypes = params.map(param ->
-      (param.i1 match {
+    paramTypes = params.map(param -> {
+      if (param.i0.value == "this") {
+        typingError(
+          Array[
+            (param.i0.pos, "Parameter this forbidden in anonymous functions"),
+          ],
+        )
+      };
+      param.i1 match {
       | None() ->
         typingError(Array[(param.i0.pos, "Please add a type annotation")])
       | Some(ty) -> (param.i0, this.tenv.normalize(tcenv.context, ty))
-      })
-    );
+      }
+    });
     retType = retTypeAstOpt match {
     | None() ->
       tvar = this.newTVar(tcenv, pos);
