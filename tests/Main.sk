@@ -206,7 +206,7 @@ fun testFile(
 
   srcFiles = Array[fileName];
   files =
-    SKJS.Files::create(context, None(), builtinsFileName, srcFiles, false) |>
+    SKJS.Files::create(context, ".", builtinsFileName, srcFiles, false) |>
     expectFilesSuccess;
 
   checker = SKJS.Checker::create{context, files};
@@ -238,7 +238,7 @@ fun testDirectory(
   files =
     SKJS.Files::create(
       context,
-      None(),
+      ".",
       builtinsFileName,
       srcFiles,
       false,

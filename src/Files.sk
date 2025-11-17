@@ -38,14 +38,14 @@ class Files(
 ) {
   static fun create(
     context: mutable SKStore.Context,
-    baseUrlOpt: ?String,
+    root: String,
     builtinsFileNameStr: String,
     srcFileSeq: Sequence<String>,
     trackChangedFiles: Bool = false,
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
     builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
-    root = Path.resolve(baseUrlOpt.default("."));
+    !root = Path.resolve(root);
     srcFiles = mutable Set[];
     if (srcFileSeq.isEmpty()) {
       !srcFileSeq = Array[root]
