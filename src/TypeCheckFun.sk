@@ -94,6 +94,9 @@ extension class TypeChecker {
           ],
         )
       };
+      if (paramName.value == "this") {
+        typingError(Array[(paramName.pos, "TODO: support this parameter")])
+      };
       tcenv.scope.bind(paramName, paramType, true)
     };
     !this.retType = fd.retType.i1.map(rty ->
