@@ -84,7 +84,7 @@ class Files(
       srcFileSeq,
       Array[builtinsFileName.toString()],
       importStubsFiles,
-    ].flatten().collect(SortedSet);
+    ].flatten().collect(Set);
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
