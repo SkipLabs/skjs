@@ -1146,15 +1146,13 @@ extension class TypeChecker {
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
-    paramTypes = mutable Vector[];
-    for (param in params) {
-      paramType = param.i1 match {
+    paramTypes = params.map(param ->
+      (param.i1 match {
       | None() ->
         typingError(Array[(param.i0.pos, "Please add a type annotation")])
-      | Some(ty) -> this.tenv.normalize(tcenv.context, ty)
-      };
-      paramTypes.push((param.i0, paramType));
-    };
+      | Some(ty) -> (param.i0, this.tenv.normalize(tcenv.context, ty))
+      })
+    );
     retType = retTypeAstOpt match {
     | None() ->
       tvar = this.newTVar(tcenv, pos);
@@ -1176,7 +1174,7 @@ extension class TypeChecker {
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
     tcenv.!callingContext = callingContext;
 
-    this.closure(tcenv, isAsync, paramTypes.toArray(), retType, body);
+    this.closure(tcenv, isAsync, paramTypes, retType, body);
 
     tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
@@ -1185,7 +1183,7 @@ extension class TypeChecker {
       TFuns::singleFun(
         TFun(
           Array[],
-          paramTypes.map(x -> x.i1).toArray(),
+          paramTypes.map(x -> x.i1),
           Array[],
           None(),
           pos,
