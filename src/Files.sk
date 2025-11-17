@@ -47,6 +47,7 @@ class Files(
   ): Result<Files, String> {
     builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
     rootOpt = baseUrlOpt.map(baseUrl -> DirName::create(Path.resolve(baseUrl)));
+    srcFiles = mutable Set[];
     if (srcFileSeq.isEmpty()) {
       root = rootOpt match {
       | Some(root) -> root
@@ -60,30 +61,31 @@ class Files(
       if (!FileSystem.exists(srcDir)) {
         return Failure(`Could not find source dir: ${srcDir}`);
       };
-      !srcFileSeq = FileSystem.readFilesRecursive(srcDir, fileName ->
-        fileName.endsWith(".ts")
+      srcFiles.extend(
+        FileSystem.readFilesRecursive(srcDir, fileName ->
+          fileName.endsWith(".ts")
+        ),
       );
     } else {
-      !srcFileSeq = srcFileSeq.map(f -> Path.resolve(f));
+      for (f in srcFileSeq) {
+        srcFiles.insert(Path.resolve(f))
+      }
     };
-    if (srcFileSeq.isEmpty()) {
+    if (srcFiles.isEmpty()) {
       return Failure("No source files!");
     };
     if (!builtinsFileName.exists()) {
       return Failure(`Builtins not found: ${builtinsFileName}`);
     };
+    srcFiles.insert(builtinsFileName.toString());
     !importStubs = importStubs.map(dir -> Path.resolve(dir));
-    importStubsFiles = importStubs
-      .map(dir ->
+    importStubs.each(dir ->
+      srcFiles.extend(
         FileSystem.readFilesRecursive(dir, fileName ->
           fileName.endsWith("index.d.ts")
-        )
+        ),
       )
-      .flatten();
-    srcFiles = mutable Set[];
-    srcFiles.insert(builtinsFileName.toString());
-    srcFiles.extend(srcFileSeq);
-    srcFiles.extend(importStubsFiles);
+    );
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
