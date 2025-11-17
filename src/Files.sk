@@ -143,7 +143,7 @@ class Files(
       (_context, writer, key, contentIter) ~> {
         fileName = key.value;
         content = contentIter.first.value;
-        lexer = Lexer::mcreate(fileName, content, Some(this.root));
+        lexer = Lexer::mcreate(fileName, content, this.root);
         parser = mutable Parser(lexer);
         try {
           writer.setArray(
