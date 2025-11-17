@@ -52,8 +52,13 @@ extension class TypeChecker {
                   fieldSType match {
                   | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> false
                   | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                    internal_error(
-                      "TODO: encountered both non-empty funs and methods in filterMethod",
+                    typingError(
+                      Array[
+                        (
+                          ty.pos,
+                          "TODO: encountered both non-empty funs and methods in filterMethod",
+                        ),
+                      ],
                     )
                   //Some(tfuns with {methods => Array[]})
                   | _ -> true
@@ -69,7 +74,10 @@ extension class TypeChecker {
           pos,
         ),
       )
-    | _ -> internal_error("Internal error: new should produce an object")
+    | _ ->
+      typingError(
+        Array[(ty.pos, "Internal error: new should produce an object")],
+      )
     }
   }
 

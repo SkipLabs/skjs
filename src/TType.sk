@@ -439,7 +439,7 @@ fun createObject(
 
 class TTuple(tuple: Array<TType>) extends SType {
   fun toString(): String {
-    internal_error("TODO TTuple toString")
+    `[${this.tuple.map(ty -> ty.toString()).join(", ")}]`
   }
 }
 
@@ -695,7 +695,13 @@ class TFields private (
     this.indexes.size() match {
     | 0 -> None()
     | 1 -> Some(this.indexes[0])
-    | _ -> internal_error("TODO: multiple indexes")
+    | _ ->
+      typingError(
+        Array[
+          (this.indexes[0].pos, "TODO: multiple indexes"),
+          (this.indexes[1].pos, "Second one is here"),
+        ],
+      )
     }
   }
 

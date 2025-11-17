@@ -1267,7 +1267,14 @@ extension class TypeChecker {
           false,
           fieldType,
         ) match {
-        | None() -> internal_error("TODO: converting an object to an algebraic")
+        | None() ->
+          typingError(
+            Array[
+              (pos, "TODO: converting an object to an algebraic"),
+              (fieldName.pos, `For field ${fieldName}`),
+              (fieldType.pos, `Of type ${fieldType}`),
+            ],
+          )
         | Some(f) -> f
         };
         tcenv.scope.set(
@@ -1290,7 +1297,8 @@ extension class TypeChecker {
         fieldType
       | Some(fd) -> fd.type
       }
-    | _ -> internal_error("Internal error: local object is not an object")
+    | _ ->
+      typingError(Array[(pos, "Internal error: local object is not an object")])
     };
     this.checkSubType(
       tcenv,
@@ -1314,9 +1322,16 @@ extension class TypeChecker {
         for (met in methods) {
           break met
         } else {
-          internal_error("Unexpected type for Array::pop")
+          typingError(
+            Array[
+              (object.pos, "Internal error: unexpected type for Array::pop"),
+            ],
+          )
         }
-      | _ -> internal_error("Unexpected pop method type for")
+      | _ ->
+        typingError(
+          Array[(object.pos, "Internal error: unexpected pop method type for")],
+        )
       };
       popF.retType
     };
