@@ -182,19 +182,18 @@ extension class TypeChecker {
       typingError(Array[(e.pos, "Useless switch")])
     };
     _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
-    checkBreak = block -> {
+    checkBreak = (pos, block) -> {
       term = StmtTermination::block(block);
       if (term.mayFallthrough) {
-        if (block.size() == 0) {
-          internal_error("block size should not be 0")
+        if (block.size() != 0) {
+          !pos = block[block.size() - 1].pos;
         };
-        last = block[block.size() - 1];
-        typingError(Array[(last.pos, "Missing break")])
+        typingError(Array[(pos, "Missing break")])
       }
     };
     scope = branches[0] match {
-    | Case(v, block, _pos) ->
-      checkBreak(block);
+    | Case(v, block, pos) ->
+      checkBreak(pos, block);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
     | Default _ -> typingError(Array[(e.pos, "Missing branch")])
@@ -204,8 +203,8 @@ extension class TypeChecker {
         this.tenv,
         scope,
         branches[i] match {
-        | Case(v, block, _pos) ->
-          checkBreak(block);
+        | Case(v, block, pos) ->
+          checkBreak(pos, block);
           cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
           this.block(tcenv, block, Some((cond, true)))
         | Default(stmts, _pos) -> this.block(tcenv, stmts)
