@@ -58,7 +58,7 @@ extension class TypeChecker {
       this.checkBool(tcenv, e);
       scope1 = this.block(tcenv, block1, Some((e, true)));
       scope2 = this.block(tcenv, block2, Some((e, false)));
-      (isTerminalBlock(false, block1), isTerminalBlock(false, block2)) match {
+      (isTerminalBlock(block1), isTerminalBlock(block2)) match {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
       | (true, false) -> tcenv.popScopeReplace(scope2)
       | (false, true) -> tcenv.popScopeReplace(scope1)
@@ -116,9 +116,7 @@ extension class TypeChecker {
       tcenv.popScopeReplace(loopBody);
       tcenv.!scope = scopeCopy;
       tcenv.popScope(tcenv.subst, this.tenv, loopScope)
-    | Switch(e, branches) ->
-      this.switchCheckExhaustiveness(tcenv, e, branches);
-      this.switch(tcenv, e, branches)
+    | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
       scopeCopy = tcenv.scope;
       tryScope = tcenv.mcreateSubScope{isLoop => false};
@@ -180,33 +178,36 @@ extension class TypeChecker {
     if (branches.size() == 0) {
       typingError(Array[(e.pos, "Missing branch")])
     };
-    checkBreak = block -> {
+    if (branches.size() == 1) {
+      typingError(Array[(e.pos, "Useless switch")])
+    };
+    _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
+    checkBreak = (pos, block) -> {
       term = StmtTermination::block(block);
       if (term.mayFallthrough) {
-        if (block.size() == 0) {
-          internal_error("block size should not be 0")
+        if (block.size() != 0) {
+          !pos = block[block.size() - 1].pos;
         };
-        last = block[block.size() - 1];
-        typingError(Array[(last.pos, "Missing break")])
+        typingError(Array[(pos, "Missing break")])
       }
     };
     scope = branches[0] match {
-    | Case(v, block) ->
-      checkBreak(block);
+    | Case(v, block, pos) ->
+      checkBreak(pos, block);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
-    | Default(_) -> typingError(Array[(e.pos, "Missing branch")])
+    | Default _ -> typingError(Array[(e.pos, "Missing branch")])
     };
     for (i in Range(1, branches.size())) {
       tcenv.mergeScope(
         this.tenv,
         scope,
         branches[i] match {
-        | Case(v, block) ->
-          checkBreak(block);
+        | Case(v, block, pos) ->
+          checkBreak(pos, block);
           cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
           this.block(tcenv, block, Some((cond, true)))
-        | Default(stmts) -> this.block(tcenv, stmts)
+        | Default(stmts, _pos) -> this.block(tcenv, stmts)
         },
       )
     }
@@ -216,42 +217,47 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     e: Expr,
     branches: Array<SwitchBranch>,
-  ): void {
+  ): Bool {
     condType = this.expr(tcenv, e, true);
     cases = condType
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TPrimValue(_, Some(values), _)) ->
-      Set::mcreateFromItems(values.values.map(x -> x.i1))
-    | _ -> return void
+      Map::mcreateFromItems(values.values.map(x -> (x.i1, x.i0)))
+    | _ ->
+      /* branches.size() > 1 from the caller */
+      return branches[branches.size() - 1] is Default _
     };
     for (branch in branches) {
+      if (cases.isEmpty()) {
+        typingError(Array[(branch.pos, "Unused branch")])
+      };
       branch match {
-      | Case(v, _) ->
+      | Case(v, _, pos) ->
         this.expr(tcenv, v, true)
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
-          if (!cases.contains(staticValue)) {
-            typingError(Array[(v.pos, "Unused branch")])
+          if (!cases.containsKey(staticValue)) {
+            typingError(Array[(pos, "Unused branch")])
           };
           cases.remove(staticValue)
         | None() -> void
         }
 
-      | Default(stmts) ->
-        if (cases.isEmpty()) {
-          if (stmts.isEmpty()) {
-            internal_error("Internal error: empty default");
-          };
-          typingError(Array[(stmts[0].pos, "Unused branch")])
-        };
-        cases.clear()
+      | Default(_stmts, _pos) -> cases.clear()
       }
     };
     if (!cases.isEmpty()) {
-      typingError(Array[(e.pos, "Missing branches:\n" + cases.join("\n"))]);
-    }
+      missingCases = Vector::mcreateFromIterator(
+        cases.items().map(x -> (x.i1, x.i0)),
+      );
+      missingCases.sortBy(x ~> x.i1);
+      typingError(
+        Array[(e.pos, "Missing branches")].concat(missingCases.toArray()),
+      );
+    };
+    true
   }
 
   fun bindLoopVar(tcenv: mutable TCEnv, initStmt: Stmt, varType: TType): void {
