@@ -482,7 +482,7 @@ mutable class FileDefsState private {
 
     | VarDefs(k, varDefs) ->
       for (varDef in varDefs) {
-        exportName = varDefs[0].pat.value match {
+        exportName = varDef.pat.value match {
         | PVar(x) -> x
         | _ -> internal_error("TODO: cannot have exports base on names")
         };
