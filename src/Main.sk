@@ -169,6 +169,12 @@ const checkArgs: Array<Cli.Arg> = Array[
     .positional()
     .repeatable()
     .about("Source files (default: src/**/*.ts)"),
+  Cli.Arg::string("directory")
+    .short("C")
+    .value_name("dir")
+    .about(
+      "Change to directory dir before reading files or doing anything else.",
+    ),
   Cli.Arg::string("dir")
     .value_name("PATH")
     .about("Source directory to check (default: src)"),
@@ -210,6 +216,10 @@ fun execCheck(args: Cli.ParseResults): void {
 const sinkDirName: SKStore.DirName = SKStore.DirName::create("/sink/");
 
 fun execCheckWithStatus(args: Cli.ParseResults): Int {
+  args.maybeGetString("directory") match {
+  | Some(newDirectory) -> Environ.set_current_dir(newDirectory)
+  | None() -> void
+  };
   backtrace = args.getBool("backtrace");
   baseUrlOpt = args.maybeGetString("base-url");
   importStubs = args.getArray("import-stubs");
