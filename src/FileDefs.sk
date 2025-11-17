@@ -29,7 +29,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
     index: FileNameIndex,
-    rootOpt: ?DirName,
+    root: DirName,
     builtinsFileName: FileName,
     importStubs: Array<DirName>,
     parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
@@ -54,7 +54,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
               FileDefsState::createFileDefs(
                 context,
                 index,
-                rootOpt,
+                root,
                 fileName.dirName,
                 includes,
                 importStubs,
@@ -334,7 +334,7 @@ fun mapPush<K: Hashable & Equality, V>(
 mutable class FileDefsState private {
   context: mutable S.Context,
   index: FileNameIndex,
-  rootOpt: ?DirName,
+  root: DirName,
   dirName: DirName,
   importStubs: Array<DirName>,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
@@ -350,13 +350,13 @@ mutable class FileDefsState private {
   static fun createFileDefs(
     context: mutable S.Context,
     index: FileNameIndex,
-    rootOpt: ?DirName,
+    root: DirName,
     dirName: DirName,
     includes: Array<FileName>,
     importStubs: Array<DirName>,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable static{context, index, rootOpt, dirName, importStubs};
+    state = mutable static{context, index, root, dirName, importStubs};
     state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
@@ -371,7 +371,7 @@ mutable class FileDefsState private {
           ],
         )
       };
-      resolveName(this.context, this.index, this.rootOpt, this.dirName, name)
+      resolveName(this.context, this.index, this.root, this.dirName, name)
     } else {
       resolveStubs(this.importStubs, name)
     }) match {
@@ -448,7 +448,7 @@ mutable class FileDefsState private {
     state = mutable static{
       context => this.context,
       index => this.index,
-      rootOpt => this.rootOpt,
+      root => this.root,
       dirName => this.dirName,
       importStubs => this.importStubs,
     };
