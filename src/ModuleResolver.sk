@@ -213,7 +213,7 @@ class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
   }
 }
 
-class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
+class FileNameIndex private (modules: S.EHandle<DAbsolute, NodeModuleDir>) {
   static fun create(
     context: mutable S.Context,
     fileNames: S.EHandle<FAbsolute, S.StringFile>,
@@ -221,16 +221,15 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
     static(
       fileNames
         .map(
-          S.SID::keyType,
+          DAbsolute::keyType,
           FileNameEntry::type,
           context,
           S.DirName::create("/skjs/file/index/"),
           (_context, writer, fileName, _valueIter) ~> {
             for (ancestor in fileName.dirName.allAncestors()) {
               if (ancestor.endsWith("node_modules")) {
-                modulePath = ancestor.toString();
                 writer.set(
-                  S.SID(modulePath),
+                  ancestor,
                   FileNameEntry::create(fileName.toString()),
                 );
                 return void
@@ -239,7 +238,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
           },
         )
         .map(
-          S.SID::keyType,
+          DAbsolute::keyType,
           NodeModuleDir::type,
           context,
           S.DirName::create("/skjs/node_modules/index/"),
@@ -261,7 +260,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
       for (ancestor in path.allAncestors()) {
         this.modules.maybeGet(
           context,
-          S.SID((ancestor / DRelative::node_modules).toString()),
+          ancestor / DRelative::node_modules,
         ) match {
         | None() -> continue
         | Some(mod) ->
