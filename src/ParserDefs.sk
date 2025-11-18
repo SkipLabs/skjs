@@ -538,7 +538,7 @@ extension class Parser {
       Namespace(name, defs)
     | "import" ->
       _ = this.lex.next();
-      isType = if (this.lex.peekStr() == Some("type")) {
+      isType = if (this.lex.isEq("type")) {
         nextTok = this.lex.next().fromSome();
         Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
       } else {
@@ -578,30 +578,26 @@ extension class Parser {
         _ = this.lex.next();
         return ExportEq(this.expr(0));
       };
-      if (this.lex.peekStr() is Some("default")) {
+      if (this.lex.isEq("default")) {
         _ = this.lex.next();
-        d = this.lex.peekStr() match {
-        | Some("function")
-        | Some("class") ->
-          if (
-            this.lex.lookAhead(() -> {
-              _ = this.lex.next();
-              this.lex.peekKind() is Some(TKVar())
-            })
-          ) {
-            // Named function or class: parse as def
-            this.defHelper_() match {
-            | d @ ExportDefaultable _ -> d
-            | _ ->
-              internal_error(
-                "function and class should produce ExportDefaultable defs",
-              )
-            }
-          } else {
-            // otherwise parse as expr
-            this.expr(0)
+        d = if (
+          (this.lex.isEq("function") || this.lex.isEq("class")) &&
+          this.lex.lookAhead(() -> {
+            _ = this.lex.next();
+            this.lex.peekKind() is Some(TKVar())
+          })
+        ) {
+          // Named function or class: parse as def
+          this.defHelper_() match {
+          | d @ ExportDefaultable _ -> d
+          | _ ->
+            internal_error(
+              "function and class should produce ExportDefaultable defs",
+            )
           }
-        | _ -> this.expr(0)
+        } else {
+          // otherwise parse as expr
+          this.expr(0)
         };
         return ExportDefault(d)
       };
@@ -664,7 +660,7 @@ extension class Parser {
       this.varDef(VDKVar())
     | "const" ->
       _ = this.lex.next();
-      if (this.lex.peekStr() is Some("enum")) {
+      if (this.lex.isEq("enum")) {
         enumTok = this.lex.next().fromSome();
         posRange = PosRange::create(this.lex, enumTok.posStart, enumTok.posEnd);
         this.enum(Some(posRange))
@@ -708,7 +704,7 @@ extension class Parser {
   mutable fun moduleNames(): ModuleNames {
     if (this.lex.peekKind() is Some(TKMultiplication())) {
       _ = this.lex.next();
-      if (this.lex.peekStr() is Some("as")) {
+      if (this.lex.isEq("as")) {
         _ = this.lex.next();
         MStarAs(this.getName())
       } else {
@@ -733,12 +729,10 @@ extension class Parser {
     names = mutable Vector[];
     loop {
       isType = if (
+        this.lex.isEq("type") &&
         this.lex.lookAhead(() -> {
-          this.lex.peekStr() is Some("type") &&
-            {
-              _ = this.lex.next();
-              this.lex.peekKind() is Some(TKVar())
-            }
+          _ = this.lex.next();
+          this.lex.peekKind() is Some(TKVar())
         })
       ) {
         nextTok = this.lex.next().fromSome();
@@ -941,7 +935,7 @@ extension class Parser {
     } else {
       Array[]
     };
-    implements = if (this.lex.peekStr() is Some("implements")) {
+    implements = if (this.lex.isEq("implements")) {
       _ = this.lex.next();
       implements = mutable Vector[];
       loop {
@@ -1037,11 +1031,11 @@ extension class Parser {
     tdparams = mutable Vector[];
     loop {
       name = this.getName();
-      constr = this.lex.peekStr() match {
-      | Some("extends") ->
+      constr = if (this.lex.isEq("extends")) {
         _ = this.lex.next();
         Some(this.type(0))
-      | _ -> None()
+      } else {
+        None()
       };
       default = if (this.lex.peekKind() is Some(TKAssignment())) {
         _ = this.lex.next();

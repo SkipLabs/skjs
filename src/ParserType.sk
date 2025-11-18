@@ -209,7 +209,7 @@ extension class Parser {
         }
       | "asserts" ->
         name = this.getName();
-        if (this.lex.peekStr() is Some("is")) {
+        if (this.lex.isEq("is")) {
           _ = this.lex.next();
           TAAssertIs(name, this.type(0))
         } else {
@@ -315,7 +315,7 @@ extension class Parser {
 
     loop {
       this.lex.peekKind() match {
-      | Some(TKVar()) if (this.lex.peekStr() == Some("is")) ->
+      | Some(TKVar()) if (this.lex.isEq("is")) ->
         _ = this.lex.next();
         leftRange = PosRange::create(
           this.lex,
@@ -323,7 +323,7 @@ extension class Parser {
           this.lex.getLastPos(),
         );
         !left = TAIs(Type(leftRange, left), this.type(0))
-      | Some(TKVar()) if (this.lex.peekStr() is Some("extends")) ->
+      | Some(TKVar()) if (this.lex.isEq("extends")) ->
         (_assoc, assignPrec) = precedence[TKAssignment()];
         ternaryCondPrec = assignPrec + 1;
         if (prec >= ternaryCondPrec) return left;

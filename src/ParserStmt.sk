@@ -160,11 +160,11 @@ extension class Parser {
         e = this.expr(0);
         this.expect(TKCloseParen());
         ifBlock = this.block();
-        elseBlock = this.lex.peekStr() match {
-        | Some("else") ->
+        elseBlock = if (this.lex.isEq("else")) {
           _ = this.lex.next();
           Some(this.block())
-        | _ -> None()
+        } else {
+          None()
         };
         Some(If(e, ifBlock, elseBlock))
       | "return" ->
@@ -288,8 +288,7 @@ extension class Parser {
         };
         this.expect(TKCloseCurly());
 
-        catchClause = this.lex.peekStr() match {
-        | Some("catch") ->
+        catchClause = if (this.lex.isEq("catch")) {
           _ = this.lex.next();
           (param, type) = if (this.lex.peekKind() is Some(TKOpenParen())) {
             this.expect(TKOpenParen());
@@ -319,11 +318,11 @@ extension class Parser {
           };
           this.expect(TKCloseCurly());
           Some(CatchClause(param, type, catchBlock.toArray()))
-        | _ -> None()
+        } else {
+          None()
         };
 
-        finallyBlock = this.lex.peekStr() match {
-        | Some("finally") ->
+        finallyBlock = if (this.lex.isEq("finally")) {
           _ = this.lex.next();
           this.expect(TKOpenCurly());
           finallyStmts = mutable Vector[];
@@ -335,7 +334,8 @@ extension class Parser {
           };
           this.expect(TKCloseCurly());
           Some(finallyStmts.toArray())
-        | _ -> None()
+        } else {
+          None()
         };
 
         if (catchClause is None() && finallyBlock is None()) {
