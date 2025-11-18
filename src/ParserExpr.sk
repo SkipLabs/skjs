@@ -197,7 +197,7 @@ extension class Parser {
           | Expr(_, Var(x)) -> x
           | Expr _ ->
             this.error(
-              EPChar(this.lex.fileName, tok.fromSome().posStart),
+              EPChar(this.lex.fileName.toString(), tok.fromSome().posStart),
               ExpectedVarName(),
             )
           };
@@ -829,7 +829,7 @@ extension class Parser {
         loop {
           if (pos >= templateEnd) {
             this.error(
-              EPChar(this.lex.fileName, tok.posStart),
+              EPChar(this.lex.fileName.toString(), tok.posStart),
               UnterminatedExpr(),
             );
           };

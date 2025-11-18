@@ -54,7 +54,12 @@ value class PosRange private (
     symbolPos = lexer.currentSymbolPos;
     relativeStart = Pos(start.value - symbolPos);
     relativeEnd = Pos(end.value - symbolPos);
-    static(lexer.currentSymbol, lexer.fileName, relativeStart, relativeEnd)
+    static(
+      lexer.currentSymbol,
+      lexer.fileName.toString(),
+      relativeStart,
+      relativeEnd,
+    )
   }
 
   fun extend(end: PosRange): this {

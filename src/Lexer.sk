@@ -21,7 +21,7 @@ mutable class Lexer private {
   symbolLocations: mutable Map<SymbolicPos, Int> = mutable Map[],
 
   // The name of the file that we are lexing
-  fileName: String,
+  fileName: FAbsolute,
 
   // The hash of the relative path for consistent ID generation across machines
   relativeFileNameHash: Int,
@@ -103,7 +103,7 @@ mutable class Lexer private {
     base = root.toString();
     relativeFileNameHash = Path.relativeTo{path, base}.hash();
     mutable static{
-      fileName => path,
+      fileName,
       relativeFileNameHash,
       contents => contents.chars().toArray(),
     }
@@ -118,15 +118,15 @@ mutable class Lexer private {
   }
 
   readonly fun error<T>(start: Int, errKind: LexingKind): T {
-    error(LexingError(EPChar(this.fileName, Pos(start)), errKind))
+    error(LexingError(EPChar(this.fileName.toString(), Pos(start)), errKind))
   }
 
   readonly fun posEnd(): ErrorPos {
-    EPChar(this.fileName, Pos(this.contents.size() - 1))
+    EPChar(this.fileName.toString(), Pos(this.contents.size() - 1))
   }
 
   readonly fun posStart(tok: Token): ErrorPos {
-    EPChar(this.fileName, tok.posStart)
+    EPChar(this.fileName.toString(), tok.posStart)
   }
 
   // This is the method containing the main logic of the lexer. Note
