@@ -32,19 +32,6 @@ base class DirName final (path: Array<String>) {
   children =
   | DRelative
   | DAbsolute
-
-  fun endsWith(str: String): Bool {
-    if (str == "") internal_error("str should not be empty");
-    this.path.size() > 0 && this.path[this.path.size() - 1] == str
-  }
-
-  fun basename(): String {
-    if (this.path.size() <= 0) {
-      ""
-    } else {
-      this.path[this.path.size() - 1]
-    }
-  }
 }
 
 extension class DRelative {
@@ -72,6 +59,19 @@ extension class DAbsolute extends S.Key uses Hashable, XXHashable {
 
   fun exists(): Bool {
     FileSystem.exists(this.toString())
+  }
+
+  fun endsWith(str: String): Bool {
+    if (str == "") internal_error("str should not be empty");
+    this.path.size() > 0 && this.path[this.path.size() - 1] == str
+  }
+
+  fun basename(): String {
+    if (this.path.size() <= 0) {
+      ""
+    } else {
+      this.path[this.path.size() - 1]
+    }
   }
 
   fun parent(): this {
