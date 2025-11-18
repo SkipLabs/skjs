@@ -33,10 +33,6 @@ base class DirName final (path: Array<String>) uses Show {
   | DRelative
   | DAbsolute
 
-  fun +(other: FRelative): FileName {
-    FileName(this / other.dirName, other.baseName)
-  }
-
   fun /(other: DRelative): this {
     this match {
     | DRelative(d1) -> static(d1.concat(other.path))
@@ -103,6 +99,10 @@ extension class DAbsolute extends S.Key {
       !this = this.parent();
       yield this
     }
+  }
+
+  fun +(other: FRelative): FileName {
+    FileName(this / other.dirName, other.baseName)
   }
 
   fun toString from DirName;
