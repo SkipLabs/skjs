@@ -136,7 +136,9 @@ fun validateTSConformance(
   };
   errorsFile =
     dir / SKJS.DRelative::create("../reference") +
-    SKJS.FileName::create(`${fileName.baseName.stripSuffix(".ts")}.errors.txt`);
+    SKJS.FRelative::create(
+      `${fileName.baseName.stripSuffix(".ts")}.errors.txt`,
+    );
   referenceErrors = if (errorsFile.exists()) {
     parseTSConformanceReferenceErrors(errorsFile.toString());
   } else {
