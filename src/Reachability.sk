@@ -267,11 +267,11 @@ class CallGraph private (
     if (debug) {
       print_error("[debug] Directly-affected CG nodes:");
       for (node in affectedCGNodes) {
-        print_error("[debug]   " + node.toString())
+        print_error(`[debug]   ${node}`)
       };
       print_error("[debug] Transitively-affected CG nodes:");
       for (node in closure) {
-        print_error("[debug]   " + node.toString())
+        print_error(`[debug]   ${node}`)
       }
     };
 
