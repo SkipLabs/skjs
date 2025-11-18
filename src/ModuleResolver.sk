@@ -135,7 +135,7 @@ class FileName extends FileNameBase<DirName> uses Equality {
   }
 }
 
-class FAbsolute extends FileNameBase<DAbsolute> uses Equality {
+class FAbsolute extends FileNameBase<DAbsolute>, S.Key {
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
@@ -146,6 +146,8 @@ class FAbsolute extends FileNameBase<DAbsolute> uses Equality {
     baseName = vec[vec.size() - 1];
     FAbsolute(dirName, baseName)
   }
+
+  fun toString from FileNameBase;
 }
 
 /***************************************************************************/
