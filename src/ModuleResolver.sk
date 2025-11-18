@@ -229,7 +229,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
     for (ancestor in path.allAncestors()) {
       this.modules.maybeGet(
         context,
-        S.SID((ancestor / DirName::create("node_modules/")).toString()),
+        S.SID((ancestor / DRelative::create("node_modules")).toString()),
       ) match {
       | None() -> continue
       | Some(mod) ->
@@ -385,7 +385,7 @@ fun resolveName(
 fun resolveStubs(importStubs: Array<DAbsolute>, moduleName: String): ?FileName {
   res: ?FileName = None();
   for (importStub in importStubs) {
-    path = FileName(importStub / DirName::create(moduleName), "index.d.ts");
+    path = FileName(importStub / DRelative::create(moduleName), "index.d.ts");
     if (path.exists()) {
       res match {
       | Some(existing) ->
