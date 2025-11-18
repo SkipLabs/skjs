@@ -41,8 +41,8 @@ class NewLinesMap{dir: SKStore.LHandle<FAbsolute, NewLinesFile>} {
   static fun create(context: mutable SKStore.Context, files: Files): this {
     static{dir => makeNewLinesDir(context, files.filesContent)}
   }
-  fun get(context: mutable SKStore.Context, fileName: String): Array<Int> {
-    this.dir.get(context, FAbsolute::create(fileName)).newLines
+  fun get(context: mutable SKStore.Context, fileName: FAbsolute): Array<Int> {
+    this.dir.get(context, fileName).newLines
   }
 }
 

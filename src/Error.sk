@@ -48,7 +48,7 @@ base class Error uses Equality {
     symbolsMap: SymbolsMap,
   ): PositionResolver {
     fileName = fAbsolute.toString();
-    newLines = newLinesMap.get(context, fileName);
+    newLines = newLinesMap.get(context, fAbsolute);
     symbols = symbolsMap.get(context, fileName);
     PositionResolver{fileName, newLines, symbols}
   }
