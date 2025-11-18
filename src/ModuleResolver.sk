@@ -265,7 +265,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
 fun resolveName(
   context: mutable S.Context,
   index: FileNameIndex,
-  root: DirName,
+  root: DAbsolute,
   cwd: DirName,
   moduleName: String,
 ): ?FileName {

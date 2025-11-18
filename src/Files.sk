@@ -30,7 +30,7 @@ const oldParsesDirName: SKStore.DirName = SKStore.DirName::create(
 );
 class Files(
   isInit: Bool,
-  root: DirName,
+  root: DAbsolute,
   builtinsFileName: FileName,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
   importStubs: Array<DirName>,
@@ -122,7 +122,7 @@ class Files(
     Success(
       Files(
         isInit,
-        DirName::create(root),
+        DAbsolute::create(root),
         builtinsFileName,
         fileHdl,
         importStubs.map(DirName::create),

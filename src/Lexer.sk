@@ -120,7 +120,7 @@ mutable class Lexer{
   static fun mcreate(
     fileName: String,
     contents: String,
-    root: DirName,
+    root: DAbsolute,
   ): mutable this {
     // Compute relative path for consistent ID generation across machines
     base = root.toString();

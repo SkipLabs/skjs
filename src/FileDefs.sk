@@ -29,7 +29,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
     index: FileNameIndex,
-    root: DirName,
+    root: DAbsolute,
     builtinsFileName: FileName,
     importStubs: Array<DirName>,
     parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
@@ -334,7 +334,7 @@ fun mapPush<K: Hashable & Equality, V>(
 mutable class FileDefsState private {
   context: mutable S.Context,
   index: FileNameIndex,
-  root: DirName,
+  root: DAbsolute,
   dirName: DirName,
   importStubs: Array<DirName>,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
@@ -350,7 +350,7 @@ mutable class FileDefsState private {
   static fun createFileDefs(
     context: mutable S.Context,
     index: FileNameIndex,
-    root: DirName,
+    root: DAbsolute,
     dirName: DirName,
     includes: Array<FileName>,
     importStubs: Array<DirName>,
