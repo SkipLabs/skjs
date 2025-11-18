@@ -31,7 +31,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     index: FileNameIndex,
     root: DAbsolute,
     builtinsFileName: FileName,
-    importStubs: Array<DirName>,
+    importStubs: Array<DAbsolute>,
     parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
   ): this {
     static(
@@ -336,7 +336,7 @@ mutable class FileDefsState private {
   index: FileNameIndex,
   root: DAbsolute,
   dirName: DirName,
-  importStubs: Array<DirName>,
+  importStubs: Array<DAbsolute>,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   exported: mutable Map<
@@ -353,7 +353,7 @@ mutable class FileDefsState private {
     root: DAbsolute,
     dirName: DirName,
     includes: Array<FileName>,
-    importStubs: Array<DirName>,
+    importStubs: Array<DAbsolute>,
     parsedDefs: Array<Def>,
   ): FileDefs {
     state = mutable static{context, index, root, dirName, importStubs};

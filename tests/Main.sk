@@ -233,7 +233,7 @@ fun testDirectory(
     }
   );
   builtinsFileName = Path.resolve(builtinsArgFileName);
-  importStubs = Array[Path.resolve("./import-stubs")];
+  importStubs = Array["./import-stubs"];
   context = SKStore.Context::mcreate{};
   files =
     SKJS.Files::create(

@@ -33,7 +33,7 @@ class Files(
   root: DAbsolute,
   builtinsFileName: FileName,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
-  importStubs: Array<DirName>,
+  importStubs: Array<DAbsolute>,
   changedFileOldParsedResults: ?SortedMap<String, ParsedResult>,
 ) {
   static fun create(
@@ -125,7 +125,7 @@ class Files(
         DAbsolute::create(root),
         builtinsFileName,
         fileHdl,
-        importStubs.map(DirName::create),
+        importStubs.map(DAbsolute::create),
         changedFileOldParsedResults,
       ),
     )

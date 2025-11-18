@@ -375,7 +375,7 @@ fun resolveName(
   None()
 }
 
-fun resolveStubs(importStubs: Array<DirName>, moduleName: String): ?FileName {
+fun resolveStubs(importStubs: Array<DAbsolute>, moduleName: String): ?FileName {
   res: ?FileName = None();
   for (importStub in importStubs) {
     path = FileName(importStub / DirName::create(moduleName), "index.d.ts");
