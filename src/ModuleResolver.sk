@@ -179,7 +179,7 @@ class FileNameEntry(
 }
 
 class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
-  fun lookup<D: DirName>(fileName: FileNameBase<D>): ?FAbsolute {
+  fun lookup(fileName: FAbsolute): ?FAbsolute {
     fileNameStr = fileName.toString();
     if (fileNameStr.contains("..")) {
       internal_error(
@@ -237,10 +237,10 @@ class FileNameIndex private (modules: S.EHandle<DAbsolute, NodeModuleDir>) {
     )
   }
 
-  fun lookup<D: DirName>(
+  fun lookup(
     context: mutable S.Context,
     path: DAbsolute,
-    file: FileNameBase<D>,
+    file: FAbsolute,
   ): ?FAbsolute {
     for (ancestor in path.allAncestors()) {
       this.modules.maybeGet(context, ancestor / DRelative::node_modules) match {
