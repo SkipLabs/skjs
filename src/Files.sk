@@ -34,7 +34,7 @@ class Files(
   builtinsFileName: FAbsolute,
   filesContent: SKStore.EHandle<FAbsolute, SKStore.StringFile>,
   importStubs: Array<DAbsolute>,
-  changedFileOldParsedResults: ?SortedMap<String, ParsedResult>,
+  changedFileOldParsedResults: ?SortedMap<FAbsolute, ParsedResult>,
 ) {
   static fun create(
     context: mutable SKStore.Context,
@@ -89,7 +89,7 @@ class Files(
       filesDirName,
     );
     fileDir = context.unsafeGetEagerDir(filesDirName);
-    oldParses: SortedMap<String, ParsedResult> = SortedMap::create();
+    oldParses: SortedMap<FAbsolute, ParsedResult> = SortedMap::create();
 
     for (fileName in srcFiles) {
       key = FAbsolute::create(fileName);
@@ -105,7 +105,7 @@ class Files(
             .unsafeGetEagerDir(parsesDirName)
             .getArrayRaw(key)
             .map(ParsedResultAndSymbolsFile::type)[0].value;
-          !oldParses = oldParses.set(fileName, oldParsedResult);
+          !oldParses = oldParses.set(key, oldParsedResult);
         }
       };
       fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
@@ -212,10 +212,7 @@ class Files(
       )
     };
     for ((fileName, previousParsedResult) in oldParses.items()) {
-      currentParsedResult = currentParses.get(
-        context,
-        FAbsolute::create(fileName),
-      ).value;
+      currentParsedResult = currentParses.get(context, fileName).value;
       (previousParsedResult, currentParsedResult) match {
       | (PRError(_), PRError(_)) -> continue
       | (PROk(prevDefs), PRError(_)) -> removed.extend(prevDefs)
