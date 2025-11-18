@@ -63,19 +63,6 @@ base class DirName final (path: Array<String>) uses Orderable, Show {
     this.path.size() > 0 && this.path[this.path.size() - 1] == str
   }
 
-  fun allAncestors(): mutable Iterator<DirName> {
-    this match {
-    | DRelative(_) ->
-      internal_error(
-        "Internal error: cannot call allAncestors on a relative path",
-      )
-    | DAbsolute(path) ->
-      for (i in Range(0, path.size())) {
-        yield (DAbsolute(this.path.slice(0, this.path.size() - i)))
-      }
-    }
-  }
-
   fun exists(): Bool {
     FileSystem.exists(this.toString())
   }
@@ -118,6 +105,12 @@ extension class DAbsolute {
 
   fun isRoot(): Bool {
     this.path.size() <= 0
+  }
+
+  fun allAncestors(): mutable Iterator<DirName> {
+    for (i in Range(0, this.path.size())) {
+      yield (DAbsolute(this.path.slice(0, this.path.size() - i)))
+    }
   }
 }
 
@@ -251,24 +244,27 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
 
   fun lookup(
     context: mutable S.Context,
-    path: DirName,
+    dir: DirName,
     file: FileName,
   ): ?FileName {
-    if (!(path is DAbsolute _)) internal_error("path should be DAbsolute");
-    for (ancestor in path.allAncestors()) {
-      this.modules.maybeGet(
-        context,
-        S.SID((ancestor / DRelative::node_modules).toString()),
-      ) match {
-      | None() -> continue
-      | Some(mod) ->
-        mod.lookup(file) match {
-        | None() -> void
-        | x @ Some(_) -> return x
+    dir match {
+    | DRelative _ -> internal_error("path should be DAbsolute")
+    | path @ DAbsolute _ ->
+      for (ancestor in path.allAncestors()) {
+        this.modules.maybeGet(
+          context,
+          S.SID((ancestor / DRelative::node_modules).toString()),
+        ) match {
+        | None() -> continue
+        | Some(mod) ->
+          mod.lookup(file) match {
+          | None() -> void
+          | x @ Some(_) -> return x
+          }
         }
-      }
-    };
-    None()
+      };
+      None()
+    }
   }
 }
 
