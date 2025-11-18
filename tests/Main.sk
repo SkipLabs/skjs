@@ -37,13 +37,18 @@ fun getLinedTypeErrors(
 fun validateReferenceErrors<R: ReferenceError>(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
-  fileName: String,
+  fileName: SKJS.FAbsolute,
   typeErrors: Array<SKJS.Error>,
   referenceErrors: mutable Iterator<R>,
 ): void {
   referenceError = referenceErrors.next();
 
-  linedTypeErrors = getLinedTypeErrors(context, checker, fileName, typeErrors);
+  linedTypeErrors = getLinedTypeErrors(
+    context,
+    checker,
+    fileName.toString(),
+    typeErrors,
+  );
 
   i = 0;
   while (i < linedTypeErrors.size()) {
@@ -52,7 +57,7 @@ fun validateReferenceErrors<R: ReferenceError>(
     | Some(
       ref @ ReferenceError{line => expectedLine},
     ) if (line == expectedLine) ->
-      ref.validate(fileName, typeError)
+      ref.validate(fileName.toString(), typeError)
     | Some(ReferenceError{line => expectedLine}) if (line > expectedLine) ->
       break void
     | _ ->
@@ -100,7 +105,7 @@ fun validateParseable(
   validateReferenceErrors(
     context,
     checker,
-    fileName.toString(),
+    fileName,
     typeErrors,
     tsExpectErrors,
   );
@@ -148,7 +153,7 @@ fun validateTSConformance(
   validateReferenceErrors(
     context,
     checker,
-    fileName.toString(),
+    fileName,
     typeErrors,
     referenceErrors,
   )
