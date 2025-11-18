@@ -45,7 +45,6 @@ class Files(
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
     builtinsFileName = FAbsolute::create(builtinsFileNameStr);
-    !root = Path.resolve(root);
     srcFiles = mutable Set[];
     if (srcFileSeq.isEmpty()) {
       !srcFileSeq = Array[root]
