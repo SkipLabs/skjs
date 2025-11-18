@@ -77,7 +77,7 @@ extension class DRelative {
   const node_modules: this = DRelative::create("node_modules");
 }
 
-extension class DAbsolute extends S.Key uses XXHashable {
+extension class DAbsolute extends S.Key uses Hashable, XXHashable {
   static fun create(dirNameStr: String): DAbsolute {
     DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
@@ -127,7 +127,9 @@ class FileName extends FileNameBase<DirName> {
   }
 }
 
-class FAbsolute extends FileNameBase<DAbsolute>, S.Key uses XXHashable {
+class FAbsolute
+  extends FileNameBase<DAbsolute>, S.Key
+  uses Hashable, XXHashable {
   const nil: FAbsolute = FAbsolute(DAbsolute(Array[]), "");
 
   static fun create(fileName: String): this {
