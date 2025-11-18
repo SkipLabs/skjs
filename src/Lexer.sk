@@ -97,17 +97,6 @@ mutable class Lexer{
     }
   }
 
-  // Creates a lexer from a saved point in the past.
-  static private fun mcreateFromSaved(lexer: Lexer): mutable Lexer {
-    mutable Lexer{
-      fileName => lexer.fileName,
-      relativeFileName => lexer.relativeFileName,
-      contents => lexer.contents,
-      pos => lexer.pos,
-      lastTok => lexer.lastTok,
-    }
-  }
-
   mutable fun lookAhead(f: () -> Bool): Bool {
     saved = this.save();
     result = f();
