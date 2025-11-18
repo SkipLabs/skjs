@@ -269,11 +269,9 @@ extension class Parser {
 
   // Check if current token is a getter or setter
   mutable fun isGetSet(): ?FieldGetSet {
-    if (
-      this.lex.peekStr() is Some("get") ||
-      this.lex.peekStr() is Some("set")
-    ) {
-      kind = if (this.lex.peekStr() is Some("get")) FGet() else FSet();
+    isGet = this.lex.isEq("get");
+    if (isGet || this.lex.isEq("set")) {
+      kind = if (isGet) FGet() else FSet();
       isGetterOrSetter = this.lex.lookAhead(() -> {
         _ = this.lex.next();
         this.lex.next().map(x -> x.kind) is Some(TKVar());
