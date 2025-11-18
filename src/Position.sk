@@ -102,8 +102,8 @@ value class PosRange private (
 /***************************************************************************/
 
 class PositionResolver{
-  fileName: String = "",
-  newLines: Array<Int> = Array[],
+  fileName: String,
+  newLines: Array<Int>,
   symbols: Map<SymbolicPos, Int>,
 } {
   fun relPosRange(pos: PosRange): RelPosRange {
