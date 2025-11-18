@@ -41,7 +41,14 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
         context,
         S.DirName::create("/skjs/fileDefs/"),
         (context, _self, fileName) ~> {
-          parsedFile = parsedFiles.get(context, fileName);
+          parsedFile = parsedFiles.maybeGet(context, fileName) match {
+          | Some(parsedFile) -> parsedFile
+          | None() ->
+            print_error(
+              `Cannot find file ${fileName}. Make sure it is included in the source files provided on the command line`,
+            );
+            throw Exit(2)
+          };
           includes = if (fileName != builtinsFileName) {
             Array[builtinsFileName]
           } else {
