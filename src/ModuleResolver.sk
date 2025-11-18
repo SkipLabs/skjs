@@ -28,15 +28,10 @@ fun removeDotDot(path: Array<String>): Array<String> {
   result.toArray();
 }
 
-base class DirName final (path: Array<String>) uses Show {
+base class DirName final (path: Array<String>) {
   children =
   | DRelative
   | DAbsolute
-
-  fun toString(): String {
-    if (this.path.size() == 0) return "/";
-    "/" + this.path.join("/") + "/"
-  }
 
   fun endsWith(str: String): Bool {
     if (str == "") internal_error("str should not be empty");
@@ -71,6 +66,11 @@ extension class DAbsolute extends S.Key uses Hashable, XXHashable {
     DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
 
+  fun toString(): String {
+    if (this.path.size() == 0) return "/";
+    "/" + this.path.join("/") + "/"
+  }
+
   fun isRoot(): Bool {
     this.path.size() <= 0
   }
@@ -93,8 +93,6 @@ extension class DAbsolute extends S.Key uses Hashable, XXHashable {
   fun /(other: DRelative): this {
     static(removeDotDot(this.path.concat(other.path)))
   }
-
-  fun toString from DirName;
 }
 
 trait FileNameBase<D: DirName>(dirName: D, baseName: String)
