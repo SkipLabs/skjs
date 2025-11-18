@@ -89,7 +89,7 @@ base class ErrorPos uses Equality {
   | EPChar(FAbsolute, Pos)
 
   fun fileName(): String
-  | EPRange(p) -> p.fileName
+  | EPRange(p) -> p.fileName.toString()
   | EPChar(fileName, _) -> fileName.toString()
 
   fun toString(resolver: PositionResolver): String

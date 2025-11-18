@@ -44,22 +44,22 @@ value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
 
 value class PosRange private (
   symbol: SymbolicPos,
-  fileName: String,
+  fileName: FAbsolute,
   relStart: Pos,
   relEnd: Pos,
 ) uses XXHashable, Orderable {
-  const none: this = PosRange(SPTopLevel(), "", Pos::none, Pos::none);
+  const none: this = PosRange(
+    SPTopLevel(),
+    FAbsolute::nil,
+    Pos::none,
+    Pos::none,
+  );
 
   static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {
     symbolPos = lexer.currentSymbolPos;
     relativeStart = Pos(start.value - symbolPos);
     relativeEnd = Pos(end.value - symbolPos);
-    static(
-      lexer.currentSymbol,
-      lexer.fileName.toString(),
-      relativeStart,
-      relativeEnd,
-    )
+    static(lexer.currentSymbol, lexer.fileName, relativeStart, relativeEnd)
   }
 
   fun extend(end: PosRange): this {

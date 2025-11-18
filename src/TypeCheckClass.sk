@@ -26,7 +26,7 @@ extension class TypeChecker {
         invariant(tparam.default is None()); // checked in checkTypeParams
         ttypeParam = TParamWithConstraint(
           tparam.name.value,
-          tparam.name.pos.fileName,
+          tparam.name.pos.fileName.toString(),
           tparam.id,
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
@@ -39,7 +39,7 @@ extension class TypeChecker {
       }),
     );
     !this.tenv = this.tenv.addTParams(subst, c.tparams);
-    fileName = c.name.pos.fileName;
+    fileName = c.name.pos.fileName.toString();
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParamWithConstraint(
       subst,
@@ -169,7 +169,7 @@ extension class TypeChecker {
           )
         } else {
           cgNode = CGNode::create(
-            Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
+            Method(fd.name, c.name, fd.pos.fileName.toString(), fd.isStatic()),
           );
           _ = this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
         }
@@ -210,7 +210,7 @@ extension class TypeChecker {
     };
     cgNode = CGNode::create(
       className match {
-      | Some(cname) -> Constructor(cname, fd.pos.fileName)
+      | Some(cname) -> Constructor(cname, fd.pos.fileName.toString())
       | None() -> AnonymousFunDef(fd)
       },
     );

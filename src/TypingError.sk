@@ -14,7 +14,12 @@ class TypingError(messages: Array<(PosRange, String)>) extends Error {
     for (message in this.messages) {
       pos = message.i0;
       fileName = pos.fileName;
-      resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
+      resolver = static::resolver(
+        fileName.toString(),
+        context,
+        newLinesMap,
+        symbolsMap,
+      );
       result.push(resolver.relPosRange(message.i0).toString());
       result.push(message.i1);
     };

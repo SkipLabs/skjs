@@ -24,7 +24,7 @@ base class CGNode_ uses XXHashable, Show {
       fileName
     | AnonymousLambda(pos, _)
     | AnonymousFunDef(FunDef{pos}) ->
-      pos.fileName
+      pos.fileName.toString()
     }
   }
 
@@ -62,7 +62,7 @@ class AnonymousLambda(
     XXHash(
       XXHash64.xxHash64(
         (
-          this.pos.fileName,
+          this.pos.fileName.toString(),
           this.pos.relStart.value,
           this.pos.relEnd.value,
         ).xxhash().value,
@@ -77,7 +77,7 @@ class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
     XXHash(
       XXHash64.xxHash64(
         (
-          this.funDef.pos.fileName,
+          this.funDef.pos.fileName.toString(),
           this.funDef.pos.relStart.value,
           this.funDef.pos.relEnd.value,
         ).xxhash().value,
@@ -335,14 +335,15 @@ private fun checkDef(
   | Declare(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | ExportDeclare(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Export(d) -> checkDef(Def(def.pos, d), nodes, classes)
-  | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
+  | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName.toString()))
   | fd @ FunDef _ ->
     cgNode = fd.name match {
-    | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
+    | Some(name) ->
+      CGNode::create(TopLevelFunDef(name, fd.pos.fileName.toString()))
     | None() -> CGNode::create(AnonymousFunDef(fd))
     };
     nodes.insert(cgNode)
-  | c @ Class _ -> classes.insert((c.name.value, def.pos.fileName))
+  | c @ Class _ -> classes.insert((c.name.value, def.pos.fileName.toString()))
   }
 }
 

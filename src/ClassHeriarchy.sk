@@ -13,7 +13,12 @@ class CHNode private (
   symbol: SymbolicPos,
 ) extends SKStore.File, SKStore.Key uses XXHashable {
   static fun ofClass(c: Class): this {
-    static(c.name.value, c.kind, c.name.pos.fileName, c.name.pos.symbol)
+    static(
+      c.name.value,
+      c.kind,
+      c.name.pos.fileName.toString(),
+      c.name.pos.symbol,
+    )
   }
 }
 

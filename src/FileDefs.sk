@@ -84,7 +84,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     path: Name,
     typeOnly: Bool = false,
   ): Array<FileDefElt> {
-    fileName = FAbsolute::create(path.pos.fileName);
+    fileName = path.pos.fileName;
     tmp = this.getPath(context, fileName, path.value, typeOnly);
     result = mutable Vector[];
     for (elt in tmp) {

@@ -35,13 +35,14 @@ extension class TypeChecker {
       tcenv = TCEnv::mcreate(
         context,
         subst,
-        CGNode::toplevel(def.pos.fileName),
+        CGNode::toplevel(def.pos.fileName.toString()),
       );
       ty = this.expr(tcenv, e);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ FunDef _ ->
       cgNode = fd.name match {
-      | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
+      | Some(name) ->
+        CGNode::create(TopLevelFunDef(name, fd.pos.fileName.toString()))
       | None() -> CGNode::create(AnonymousFunDef(fd))
       };
       subst = Subst::mcreate{context};
@@ -119,7 +120,7 @@ extension class TypeChecker {
       tcenv = TCEnv::mcreate(
         context,
         subst,
-        CGNode::toplevel(varDef.pat.pos.fileName),
+        CGNode::toplevel(varDef.pat.pos.fileName.toString()),
       );
       this.checkSubType(
         tcenv,

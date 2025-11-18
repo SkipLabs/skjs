@@ -16,7 +16,7 @@ fun getLinedTypeErrors(
       | e @ SKJS.TypingError(messages) ->
         invariant(!messages.isEmpty(), "Empty typing error");
         pos = messages[0].i0;
-        if (pos.fileName != fileName) {
+        if (pos.fileName.toString() != fileName) {
           errStr = checker.errorToString(context, e);
           SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
         };
