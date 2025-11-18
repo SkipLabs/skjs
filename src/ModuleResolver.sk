@@ -28,10 +28,10 @@ fun removeDotDot(path: Array<String>): Array<String> {
   result.toArray();
 }
 
-base class DirName(path: Array<String>) uses Orderable, Show {
+base class DirName final (path: Array<String>) uses Orderable, Show {
   children =
-  | DRelative()
-  | DAbsolute()
+  | DRelative
+  | DAbsolute
 
   fun +(other: FileName): FileName {
     !other.dirName = this / other.dirName;
