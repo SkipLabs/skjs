@@ -66,7 +66,7 @@ base class SinglePosError<K: ErrorKind>(
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
   ): String {
-    fileName = this.pos.fileName();
+    fileName = this.pos.fileName().toString();
     resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
     this.pos.toString(resolver) + "\n" + this.errorKind.toString()
   }
@@ -88,9 +88,9 @@ base class ErrorPos uses Equality {
   | EPRange(PosRange)
   | EPChar(FAbsolute, Pos)
 
-  fun fileName(): String
-  | EPRange(p) -> p.fileName.toString()
-  | EPChar(fileName, _) -> fileName.toString()
+  fun fileName(): FAbsolute
+  | EPRange(p) -> p.fileName
+  | EPChar(fileName, _) -> fileName
 
   fun toString(resolver: PositionResolver): String
   | EPRange(p) -> resolver.relPosRange(p).toString()
