@@ -89,7 +89,7 @@ extension class DRelative {
   const node_modules: this = DRelative::create("node_modules");
 }
 
-extension class DAbsolute uses Orderable {
+extension class DAbsolute extends S.Key {
   static fun create(dirNameStr: String): DAbsolute {
     DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
@@ -104,6 +104,8 @@ extension class DAbsolute uses Orderable {
       yield this
     }
   }
+
+  fun toString from DirName;
 }
 
 base class FileNameBase<D: DirName>(dirName: D, baseName: String) {
