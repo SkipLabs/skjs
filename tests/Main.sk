@@ -52,7 +52,7 @@ fun validateReferenceErrors<R: ReferenceError>(
     | Some(
       ref @ ReferenceError{line => expectedLine},
     ) if (line == expectedLine) ->
-      ref.validate(fileName.toString(), typeError)
+      ref.validate(fileName, typeError)
     | Some(ReferenceError{line => expectedLine}) if (line > expectedLine) ->
       break void
     | _ ->
