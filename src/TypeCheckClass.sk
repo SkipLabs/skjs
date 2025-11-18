@@ -39,7 +39,7 @@ extension class TypeChecker {
       }),
     );
     !this.tenv = this.tenv.addTParams(subst, c.tparams);
-    fileName = c.name.pos.fileName.toString();
+    fileName = c.name.pos.fileName;
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParamWithConstraint(
       subst,
@@ -47,7 +47,7 @@ extension class TypeChecker {
       c.name.pos,
       TParamWithConstraint(
         "this",
-        fileName,
+        fileName.toString(),
         Id::createThis(),
         Some(cstr.expand(subst, this.tenv, Covariant())),
       ),

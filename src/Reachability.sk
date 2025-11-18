@@ -98,8 +98,8 @@ class CGNode private (
     static(id, id.xxhash(true))
   }
 
-  static fun toplevel(fileName: String): this {
-    static::create(Toplevel(fileName))
+  static fun toplevel(fileName: FAbsolute): this {
+    static::create(Toplevel(fileName.toString()))
   }
 
   fun hash(): Int {
@@ -337,7 +337,7 @@ private fun checkDef(
   | Declare(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | ExportDeclare(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Export(d) -> checkDef(Def(def.pos, d), nodes, classes)
-  | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName.toString()))
+  | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
   | fd @ FunDef _ ->
     cgNode = fd.name match {
     | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
