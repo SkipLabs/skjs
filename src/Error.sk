@@ -49,7 +49,7 @@ base class Error uses Equality {
   ): PositionResolver {
     newLines = newLinesMap.get(context, fileName);
     symbols = symbolsMap.get(context, fileName);
-    PositionResolver{fileName => fileName.toString(), newLines, symbols}
+    PositionResolver{fileName, newLines, symbols}
   }
 }
 

@@ -8,11 +8,7 @@ fun getLinedTypeErrors(
 ): Array<(Int, SKJS.TypingError)> {
   newLines = checker.newLinesMap.get(context, fileName);
   symbols = checker.symbolsMap.get(context, fileName);
-  resolver = SKJS.PositionResolver{
-    fileName => fileName.toString(),
-    newLines,
-    symbols,
-  };
+  resolver = SKJS.PositionResolver{fileName, newLines, symbols};
 
   typeErrors
     .map(err ->
