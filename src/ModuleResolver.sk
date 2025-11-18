@@ -28,7 +28,7 @@ fun removeDotDot(path: Array<String>): Array<String> {
   result.toArray();
 }
 
-base class DirName final (path: Array<String>) uses Orderable, Show {
+base class DirName final (path: Array<String>) uses Show {
   children =
   | DRelative
   | DAbsolute
@@ -89,7 +89,7 @@ extension class DRelative {
   const node_modules: this = DRelative::create("node_modules");
 }
 
-extension class DAbsolute {
+extension class DAbsolute uses Orderable {
   static fun create(dirNameStr: String): DAbsolute {
     DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
