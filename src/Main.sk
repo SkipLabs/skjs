@@ -318,7 +318,9 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       if (logAffectedFiles) {
         CallGraph::create(context).each(callgraph -> {
           (_addedDefs, removedDefs) = files.getChangedDefs(context);
-          callgraph.affectedFiles(context, removedDefs).each(print_string);
+          callgraph.affectedFiles(context, removedDefs).each(f ->
+            print_string(f.toString())
+          );
         })
       };
 

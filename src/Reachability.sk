@@ -239,7 +239,7 @@ class CallGraph private (
     context: mutable SKStore.Context,
     changedDefs: Array<Def>,
     debug: Bool = false,
-  ): SortedSet<String> {
+  ): SortedSet<FAbsolute> {
     affectedCGNodes: mutable Set<CGNode> = mutable Set[];
     affectedClasses: mutable Set<(String, FAbsolute)> = mutable Set[]; // (className, fileName) pairs
     for (def in changedDefs) {
@@ -279,9 +279,9 @@ class CallGraph private (
       .iterator()
       .foldl(
         (affectedFiles, cgNode) -> {
-          affectedFiles.set(cgNode.id.getFileName().toString())
+          affectedFiles.set(cgNode.id.getFileName())
         },
-        SortedSet<String>[],
+        SortedSet<FAbsolute>[],
       )
   }
 }
