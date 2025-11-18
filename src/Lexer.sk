@@ -13,7 +13,7 @@ base class SymbolicPos uses Orderable, Hashable, XXHashable {
   | SPConstant(constName: String)
 }
 
-mutable class Lexer{
+mutable class Lexer private {
   mutable currentSymbol: SymbolicPos = SPTopLevel(),
   mutable currentSymbolPos: Int = -1,
 
