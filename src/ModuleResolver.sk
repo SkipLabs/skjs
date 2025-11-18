@@ -14,20 +14,6 @@ fun splitPath(dirNameStr: String): Array<String> {
   dirNameStr.splitIterator("/").filter(x -> x != "" && x != ".").collect(Array)
 }
 
-fun removeDotDot(path: Array<String>): Array<String> {
-  result = mutable Vector<String>[];
-  for (elt in path) {
-    if (elt == "..") {
-      result.maybePop() match {
-      | None() -> internal_error("Invalid path: " + path)
-      | Some(_) -> continue
-      }
-    };
-    result.push(elt)
-  };
-  result.toArray();
-}
-
 trait DirName(path: Array<String>)
 
 value class DRelative uses DirName {
@@ -87,7 +73,20 @@ class DAbsolute extends S.Key uses DirName, Hashable, XXHashable {
   }
 
   fun /(other: DRelative): this {
-    static(removeDotDot(this.path.concat(other.path)))
+    result = Vector::mcreateFromItems(this.path);
+    for (elt in other.path) {
+      if (elt == "..") {
+        result.maybePop() match {
+        | None() ->
+          internal_error(
+            `Invalid path: ${static(this.path.concat(other.path))}`,
+          )
+        | Some(_) -> continue
+        }
+      };
+      result.push(elt)
+    };
+    static(result.toArray())
   }
 }
 
