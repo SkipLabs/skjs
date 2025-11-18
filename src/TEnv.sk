@@ -297,7 +297,7 @@ class TEnv{
     cstr = tparam.constraint.map(cstr -> this.normalize(context, cstr));
     TParamWithConstraint(
       tparam.name.value,
-      tparam.name.pos.fileName.toString(),
+      tparam.name.pos.fileName,
       tparam.id,
       cstr,
     )

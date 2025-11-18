@@ -26,7 +26,7 @@ extension class TypeChecker {
         invariant(tparam.default is None()); // checked in checkTypeParams
         ttypeParam = TParamWithConstraint(
           tparam.name.value,
-          tparam.name.pos.fileName.toString(),
+          tparam.name.pos.fileName,
           tparam.id,
           tparam.constraint.map(c -> this.tenv.normalize(context, c)),
         );
@@ -47,7 +47,7 @@ extension class TypeChecker {
       c.name.pos,
       TParamWithConstraint(
         "this",
-        fileName.toString(),
+        fileName,
         Id::createThis(),
         Some(cstr.expand(subst, this.tenv, Covariant())),
       ),

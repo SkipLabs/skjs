@@ -977,7 +977,7 @@ value class Id private (id: String) uses XXHashable, Orderable, Show {
 
 class TParamWithConstraint(
   name: String,
-  fileName: String,
+  fileName: FAbsolute,
   id: Id,
   cstr: ?TType,
 ) uses XXHashable, Orderable {
@@ -987,7 +987,11 @@ class TParamWithConstraint(
   }
 }
 
-class TParam(name: String, fileName: String, id: Id) uses XXHashable, Orderable
+class TParam(
+  name: String,
+  fileName: FAbsolute,
+  id: Id,
+) uses XXHashable, Orderable
 
 /* Clause */
 //
