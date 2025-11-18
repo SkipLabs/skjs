@@ -141,7 +141,7 @@ class Files(
       parsesDirName,
       (_context, writer, fileName, contentIter) ~> {
         content = contentIter.first.value;
-        lexer = Lexer::mcreate(fileName.toString(), content, this.root);
+        lexer = Lexer::mcreate(fileName, content, this.root);
         parser = mutable Parser(lexer);
         try {
           writer.setArray(
