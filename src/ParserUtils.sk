@@ -26,24 +26,6 @@ extension class Parser {
       }
     }
   }
-
-  mutable fun expectStringValue(): void {
-    this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), ExpectedString())
-    | Some(tok) ->
-      tok.kind match {
-      | TKQuote()
-      | TKDoubleQuote()
-      | TKBackTick() ->
-        void
-      | _ ->
-        this.error(
-          this.lex.posStart(tok),
-          ExpectedStringNot(this.lex.getStrTok(tok)),
-        )
-      }
-    }
-  }
 }
 
 module end;
