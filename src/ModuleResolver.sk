@@ -305,7 +305,7 @@ fun resolveName(
   context: mutable S.Context,
   index: FileNameIndex,
   root: DAbsolute,
-  cwd: DirName,
+  cwd: DAbsolute,
   moduleName: String,
 ): ?FileName {
   if (moduleName.endsWith("-js")) {
