@@ -31,7 +31,7 @@ const oldParsesDirName: SKStore.DirName = SKStore.DirName::create(
 class Files(
   isInit: Bool,
   root: DAbsolute,
-  builtinsFileName: FileName,
+  builtinsFileName: FAbsolute,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
   importStubs: Array<DAbsolute>,
   changedFileOldParsedResults: ?SortedMap<String, ParsedResult>,
@@ -44,7 +44,7 @@ class Files(
     trackChangedFiles: Bool = false,
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
-    builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
+    builtinsFileName = FAbsolute::create(builtinsFileNameStr);
     !root = Path.resolve(root);
     srcFiles = mutable Set[];
     if (srcFileSeq.isEmpty()) {
