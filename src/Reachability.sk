@@ -62,7 +62,7 @@ class AnonymousLambda(
     XXHash(
       XXHash64.xxHash64(
         (
-          this.pos.fileName.toString(),
+          this.pos.fileName,
           this.pos.relStart.value,
           this.pos.relEnd.value,
         ).xxhash().value,
@@ -77,7 +77,7 @@ class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
     XXHash(
       XXHash64.xxHash64(
         (
-          this.funDef.pos.fileName.toString(),
+          this.funDef.pos.fileName,
           this.funDef.pos.relStart.value,
           this.funDef.pos.relEnd.value,
         ).xxhash().value,
