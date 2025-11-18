@@ -347,7 +347,7 @@ class CheckResult(
 
 class Checker private {
   files: Files,
-  parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
+  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultFile>,
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
   symbolsMap: SymbolsMap,
@@ -383,7 +383,8 @@ class Checker private {
       CheckResult::type,
       context,
       SKStore.DirName::create("/check-results/"),
-      (context, writer, fileNameKey, valueIter) ~> {
+      (context, writer, fileName, valueIter) ~> {
+        fileNameKey = SKStore.SID(fileName.toString());
         parsedFile = valueIter.getUnique() match {
         | None() -> internal_error("File not parsed")
         | Some(x) -> x

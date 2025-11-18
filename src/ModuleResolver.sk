@@ -198,7 +198,7 @@ class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
 class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
   static fun create(
     context: mutable S.Context,
-    fileNames: S.EHandle<S.SID, S.StringFile>,
+    fileNames: S.EHandle<FAbsolute, S.StringFile>,
   ): this {
     static(
       fileNames
@@ -207,14 +207,14 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
           FileNameEntry::type,
           context,
           S.DirName::create("/skjs/file/index/"),
-          (_context, writer, key, _valueIter) ~> {
-            fileName = key.value;
-            for (ancestor in FileName::create(
-              fileName,
-            ).dirName.allAncestors()) {
+          (_context, writer, fileName, _valueIter) ~> {
+            for (ancestor in fileName.dirName.allAncestors()) {
               if (ancestor.endsWith("node_modules")) {
                 modulePath = ancestor.toString();
-                writer.set(S.SID(modulePath), FileNameEntry::create(fileName));
+                writer.set(
+                  S.SID(modulePath),
+                  FileNameEntry::create(fileName.toString()),
+                );
                 return void
               }
             }

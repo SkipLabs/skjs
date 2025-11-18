@@ -32,7 +32,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     root: DAbsolute,
     builtinsFileName: FAbsolute,
     importStubs: Array<DAbsolute>,
-    parsedFiles: S.EHandle<S.SID, ParsedResultFile>,
+    parsedFiles: S.EHandle<FAbsolute, ParsedResultFile>,
   ): this {
     static(
       S.LHandle::create(
@@ -42,7 +42,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
         S.DirName::create("/skjs/fileDefs/"),
         (context, _self, key) ~> {
           fileName = FAbsolute::create(key.value);
-          parsedFile = parsedFiles.get(context, key);
+          parsedFile = parsedFiles.get(context, fileName);
           includes = if (fileName != builtinsFileName) {
             Array[builtinsFileName]
           } else {
