@@ -6,7 +6,7 @@ module SKJS;
 
 base class CGNode_ uses XXHashable, Show {
   children =
-  | TopLevelFunDef(name: SimpleSymbol, fileName: String)
+  | TopLevelFunDef(name: SimpleSymbol, fileName: FAbsolute)
   | Method(name: ?SimpleSymbol, class_: Name, fileName: String, static_: Bool)
   | ObjectMethod(name: SimpleSymbol, fileName: String)
   | Constructor(class_: Name, fileName: String)
@@ -15,7 +15,7 @@ base class CGNode_ uses XXHashable, Show {
 
   fun getFileName(): String {
     this match {
-    | TopLevelFunDef(_, fileName)
+    | TopLevelFunDef(_, fileName) -> fileName.toString()
     | Method(_, _, fileName, _)
     | ObjectMethod(_, fileName)
     | Constructor(_, fileName)
@@ -338,8 +338,7 @@ private fun checkDef(
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName.toString()))
   | fd @ FunDef _ ->
     cgNode = fd.name match {
-    | Some(name) ->
-      CGNode::create(TopLevelFunDef(name, fd.pos.fileName.toString()))
+    | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
     | None() -> CGNode::create(AnonymousFunDef(fd))
     };
     nodes.insert(cgNode)
