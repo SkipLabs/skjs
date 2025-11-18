@@ -127,7 +127,7 @@ class FAbsolute
   }
 }
 
-class FRelative uses FileNameBase<DRelative> {
+value class FRelative uses FileNameBase<DRelative> {
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
