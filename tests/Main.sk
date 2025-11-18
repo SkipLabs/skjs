@@ -3,13 +3,16 @@ module SKJSTests;
 fun getLinedTypeErrors(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
-  fAbsolute: SKJS.FAbsolute,
+  fileName: SKJS.FAbsolute,
   typeErrors: Array<SKJS.Error>,
 ): Array<(Int, SKJS.TypingError)> {
-  fileName = fAbsolute.toString();
-  newLines = checker.newLinesMap.get(context, fAbsolute);
+  newLines = checker.newLinesMap.get(context, fileName);
   symbols = checker.symbolsMap.get(context, fileName);
-  resolver = SKJS.PositionResolver{fileName, newLines, symbols};
+  resolver = SKJS.PositionResolver{
+    fileName => fileName.toString(),
+    newLines,
+    symbols,
+  };
 
   typeErrors
     .map(err ->
@@ -17,7 +20,7 @@ fun getLinedTypeErrors(
       | e @ SKJS.TypingError(messages) ->
         invariant(!messages.isEmpty(), "Empty typing error");
         pos = messages[0].i0;
-        if (pos.fileName != fAbsolute) {
+        if (pos.fileName != fileName) {
           errStr = checker.errorToString(context, e);
           SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
         };

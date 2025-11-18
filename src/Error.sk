@@ -42,15 +42,14 @@ base class Error uses Equality {
   ): String;
 
   static fun resolver(
-    fAbsolute: FAbsolute,
+    fileName: FAbsolute,
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
   ): PositionResolver {
-    fileName = fAbsolute.toString();
-    newLines = newLinesMap.get(context, fAbsolute);
+    newLines = newLinesMap.get(context, fileName);
     symbols = symbolsMap.get(context, fileName);
-    PositionResolver{fileName, newLines, symbols}
+    PositionResolver{fileName => fileName.toString(), newLines, symbols}
   }
 }
 

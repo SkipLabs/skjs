@@ -38,9 +38,9 @@ class SymbolsMap{dir: SKStore.EHandle<FAbsolute, SymbolsFile>} {
   }
   fun get(
     context: mutable SKStore.Context,
-    fileName: String,
+    fileName: FAbsolute,
   ): Map<SymbolicPos, Int> {
-    this.dir.get(context, FAbsolute::create(fileName)).symbols
+    this.dir.get(context, fileName).symbols
   }
 }
 
