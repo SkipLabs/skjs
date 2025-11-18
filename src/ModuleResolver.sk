@@ -191,7 +191,7 @@ class FileNameEntry(
 }
 
 class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
-  fun lookup(fileName: FileName): ?FileName {
+  fun lookup<D: DirName>(fileName: FileNameBase<D>): ?FileName {
     fileNameStr = fileName.toString();
     if (fileNameStr.contains("..")) {
       internal_error(
@@ -249,10 +249,10 @@ class FileNameIndex private (modules: S.EHandle<DAbsolute, NodeModuleDir>) {
     )
   }
 
-  fun lookup(
+  fun lookup<D: DirName>(
     context: mutable S.Context,
     dir: DirName,
-    file: FileName,
+    file: FileNameBase<D>,
   ): ?FileName {
     dir match {
     | DRelative _ -> internal_error("path should be DAbsolute")
