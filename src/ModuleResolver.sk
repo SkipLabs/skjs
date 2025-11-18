@@ -11,12 +11,7 @@ module SKJS;
 /***************************************************************************/
 
 fun splitPath(dirNameStr: String): Array<String> {
-  result = mutable Vector<String>[];
-  for (elt in dirNameStr.split("/").filter(x -> x != "")) {
-    if (elt == ".") continue;
-    result.push(elt)
-  };
-  result.toArray()
+  dirNameStr.splitIterator("/").filter(x -> x != "" && x != ".").collect(Array)
 }
 
 fun removeDotDot(path: Array<String>): Array<String> {
