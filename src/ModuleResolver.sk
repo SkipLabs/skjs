@@ -43,10 +43,6 @@ base class DirName final (path: Array<String>) uses Show {
     this.path.size() > 0 && this.path[this.path.size() - 1] == str
   }
 
-  fun exists(): Bool {
-    FileSystem.exists(this.toString())
-  }
-
   fun basename(): String {
     if (this.path.size() <= 0) {
       ""
@@ -77,6 +73,10 @@ extension class DAbsolute extends S.Key uses Hashable, XXHashable {
 
   fun isRoot(): Bool {
     this.path.size() <= 0
+  }
+
+  fun exists(): Bool {
+    FileSystem.exists(this.toString())
   }
 
   fun allAncestors(): mutable Iterator<DAbsolute> {
