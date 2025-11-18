@@ -860,6 +860,15 @@ class TEnv{
       spreadParam: ?TType = None();
       for (i => param in params) {
         paramType = this.normalize(context, param.type);
+        param.name.value match {
+        | PVar(Name(thisPos, "this")) ->
+          if (i > 0) {
+            typingError(
+              Array[(thisPos, "Parameter named this must be the first one")],
+            )
+          }
+        | _ -> void
+        };
         param.isRest match {
         | Some(restPos) ->
           if (i != params.size() - 1) {
