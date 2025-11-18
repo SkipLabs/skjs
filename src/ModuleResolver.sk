@@ -251,27 +251,20 @@ class FileNameIndex private (modules: S.EHandle<DAbsolute, NodeModuleDir>) {
 
   fun lookup<D: DirName>(
     context: mutable S.Context,
-    dir: DirName,
+    path: DAbsolute,
     file: FileNameBase<D>,
   ): ?FileName {
-    dir match {
-    | DRelative _ -> internal_error("path should be DAbsolute")
-    | path @ DAbsolute _ ->
-      for (ancestor in path.allAncestors()) {
-        this.modules.maybeGet(
-          context,
-          ancestor / DRelative::node_modules,
-        ) match {
-        | None() -> continue
-        | Some(mod) ->
-          mod.lookup(file) match {
-          | None() -> void
-          | x @ Some(_) -> return x
-          }
+    for (ancestor in path.allAncestors()) {
+      this.modules.maybeGet(context, ancestor / DRelative::node_modules) match {
+      | None() -> continue
+      | Some(mod) ->
+        mod.lookup(file) match {
+        | None() -> void
+        | x @ Some(_) -> return x
         }
-      };
-      None()
-    }
+      }
+    };
+    None()
   }
 }
 
