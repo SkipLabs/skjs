@@ -139,7 +139,7 @@ class Files(
       SKStore.SID::keyType,
       ParsedResultAndSymbolsFile::type,
       context,
-      SKStore.DirName::create("/skjs/parsed_with_errors/"),
+      parsesDirName,
       (_context, writer, key, contentIter) ~> {
         fileName = key.value;
         content = contentIter.first.value;
