@@ -107,7 +107,7 @@ extension class DAbsolute {
     this.path.size() <= 0
   }
 
-  fun allAncestors(): mutable Iterator<DirName> {
+  fun allAncestors(): mutable Iterator<DAbsolute> {
     while (!this.isRoot()) {
       !this = this.parent();
       yield this
