@@ -8,9 +8,13 @@ module SKJS;
 /* Position types. */
 /***************************************************************************/
 
-value class RelPos(fileName: String, line: Int, col: Int) uses Show, Equality {
+value class RelPos(
+  fileName: FAbsolute,
+  line: Int,
+  col: Int,
+) uses Show, Equality {
   fun toString(): String {
-    fileName = this.fileName.replace("\"", "\\\"");
+    fileName = this.fileName.toString().replace("\"", "\\\"");
     `File "${fileName}", line ${this.line}, character ${this.col}:`
   }
 }
@@ -22,7 +26,7 @@ value class RelPosRange(start: RelPos, end: RelPos) {
     if (this.start.line != this.end.line) {
       return this.start.toString();
     };
-    fileName = this.start.fileName.replace("\"", "\\\"");
+    fileName = this.start.fileName.toString().replace("\"", "\\\"");
     `File "${fileName}", line ${this.start.line}, character ${this.start.col}-${
       this.end.col
     }:`
@@ -121,13 +125,9 @@ class PositionResolver{
       this.newLines.size() - 1,
     );
     if (idx <= 0 || idx >= this.newLines[idx]) {
-      return RelPos(this.fileName.toString(), 1, pos.value + 1)
+      return RelPos(this.fileName, 1, pos.value + 1)
     };
-    RelPos(
-      this.fileName.toString(),
-      idx + 1,
-      pos.value - this.newLines[idx - 1],
-    )
+    RelPos(this.fileName, idx + 1, pos.value - this.newLines[idx - 1])
   }
 }
 
