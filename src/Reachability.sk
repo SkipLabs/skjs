@@ -8,7 +8,6 @@ base class CGNode_ uses XXHashable, Show {
   children =
   | TopLevelFunDef(name: SimpleSymbol, fileName: FAbsolute)
   | Method(name: ?SimpleSymbol, class_: Name, fileName: String, static_: Bool)
-  | ObjectMethod(name: SimpleSymbol, fileName: String)
   | Constructor(class_: Name, fileName: String)
   | Toplevel(fileName: String)
   | ArrowTypeAnnot(fileName: String)
@@ -17,7 +16,6 @@ base class CGNode_ uses XXHashable, Show {
     this match {
     | TopLevelFunDef(_, fileName) -> fileName.toString()
     | Method(_, _, fileName, _)
-    | ObjectMethod(_, fileName)
     | Constructor(_, fileName)
     | Toplevel(fileName)
     | ArrowTypeAnnot(fileName) ->
@@ -38,7 +36,6 @@ base class CGNode_ uses XXHashable, Show {
       | None() -> "__anonymous"
       };
       `${strStatic}${class_}.${strName} (${file})`
-    | ObjectMethod(name, file) -> `anonymous_object.${name.getName()} (${file})`
     | Constructor(class_, file) -> `${class_}.constructor (${file})`
     | Toplevel(file) -> `top-level expr (${file}`
     | ArrowTypeAnnot(file) -> `arrow-type annotation (${file})`
@@ -252,7 +249,6 @@ class CallGraph private (
         if (affectedClasses.contains(classIdent)) {
           affectedCGNodes.insert(node)
         }
-      | ObjectMethod _
       | TopLevelFunDef _
       | Toplevel _
       | ArrowTypeAnnot _
