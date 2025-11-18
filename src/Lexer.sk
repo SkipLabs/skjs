@@ -118,15 +118,15 @@ mutable class Lexer private {
   }
 
   readonly fun error<T>(start: Int, errKind: LexingKind): T {
-    error(LexingError(EPChar(this.fileName.toString(), Pos(start)), errKind))
+    error(LexingError(EPChar(this.fileName, Pos(start)), errKind))
   }
 
   readonly fun posEnd(): ErrorPos {
-    EPChar(this.fileName.toString(), Pos(this.contents.size() - 1))
+    EPChar(this.fileName, Pos(this.contents.size() - 1))
   }
 
   readonly fun posStart(tok: Token): ErrorPos {
-    EPChar(this.fileName.toString(), tok.posStart)
+    EPChar(this.fileName, tok.posStart)
   }
 
   // This is the method containing the main logic of the lexer. Note

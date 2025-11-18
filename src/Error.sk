@@ -86,11 +86,11 @@ class LexingError extends SinglePosError<LexingKind>
 base class ErrorPos uses Equality {
   children =
   | EPRange(PosRange)
-  | EPChar(String, Pos)
+  | EPChar(FAbsolute, Pos)
 
   fun fileName(): String
   | EPRange(p) -> p.fileName
-  | EPChar(fileName, _) -> fileName
+  | EPChar(fileName, _) -> fileName.toString()
 
   fun toString(resolver: PositionResolver): String
   | EPRange(p) -> resolver.relPosRange(p).toString()
