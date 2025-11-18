@@ -739,7 +739,7 @@ extension class Parser {
       e = this.expr(0);
       return FDSpread(e);
     };
-    modifiers = this.modifiers(None());
+    modifiers = this.modifiers{allowRemove => false};
     fieldGetSet = this.isGetSet();
     fieldNameTok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())

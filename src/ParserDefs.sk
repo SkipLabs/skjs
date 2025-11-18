@@ -194,25 +194,47 @@ extension class Parser {
   // Modifier parsing
   //
   // <modifier> =
-  //   | protected
-  //   | private
-  //   | public
-  //   | static
   //   | abstract
+  //   | async
+  //   | private
+  //   | protected
+  //   | public
   //   | readonly
+  //   | -readonly
+  //   | +readonly
+  //   | static
   /***************************************************************************/
 
   // Parse modifiers for class members and variables
-  mutable fun modifiers(isRemove: ?PosRange): Modifiers {
+  mutable fun modifiers{allowRemove: Bool}: Modifiers {
     modifiers = mutable Vector[];
     loop {
-      if (
-        isRemove is None() &&
-        this.lex.lookAhead(() -> {
-          _ = this.lex.next();
-          !(this.lex.peekKind() is Some(TKVar()))
-        })
-      ) break void;
+      if (allowRemove) {
+        this.lex.peekKind() match {
+        | Some(TKSubtraction()) -> Some(true)
+        | Some(TKAddition()) -> Some(false)
+        | _ -> None()
+        } match {
+        | Some(modifierRemoval) ->
+          removeTok = this.lex.next().fromSome();
+          pos = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), ExpectedStrNot("readonly"))
+          | Some(readonlyTok) ->
+            if (!this.lex.isEqTok(readonlyTok, "readonly")) {
+              this.error(
+                this.lex.posStart(readonlyTok),
+                ExpectedStrNot("readonly"),
+              )
+            };
+            PosRange::create(this.lex, removeTok.posStart, readonlyTok.posEnd)
+          };
+          modifiers.push(
+            (if (modifierRemoval) ModRemoveReadonly else ModReadonly)(pos),
+          );
+          continue
+        | None() -> void
+        }
+      };
       mod = this.lex.peekStr() match {
       | Some("abstract") -> ModAbstract
       | Some("async") -> ModAsync
@@ -228,7 +250,7 @@ extension class Parser {
         mod(PosRange::create(this.lex, nameTok.posStart, nameTok.posEnd)),
       )
     };
-    Modifiers(isRemove, modifiers.toArray())
+    Modifiers(modifiers.toArray())
   }
 
   /***************************************************************************/
@@ -365,13 +387,7 @@ extension class Parser {
     };
     fields = mutable Vector<FieldType>[];
     loop {
-      removeModifiers = if (this.lex.peekKind() is Some(TKSubtraction())) {
-        nextTok = this.lex.next().fromSome();
-        Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
-      } else {
-        None()
-      };
-      modifiers = this.modifiers(removeModifiers);
+      modifiers = this.modifiers{allowRemove => true};
       if (
         this.lex.peekKind() is Some(TKOpenParen()) ||
         this.lex.peekKind() is Some(TKLessThan())
@@ -1218,7 +1234,7 @@ extension class Parser {
       void
     | _ ->
       loop {
-        modifiers = this.modifiers(None());
+        modifiers = this.modifiers{allowRemove => false};
         start = this.lex.peek() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
         | Some(tok) -> tok.posStart
