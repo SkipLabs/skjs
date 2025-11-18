@@ -207,7 +207,7 @@ fun testFile(
 
   checker = SKJS.Checker::create{context, files};
   for (res in checker.checkFiles(context).items(context)) {
-    if (res.i0.value == builtinsFileName) {
+    if (res.i0.toString() == builtinsFileName) {
       validateParseable(context, checker, res.i1.next().fromSome());
     } else {
       validateResult(context, checker, res.i1.next().fromSome());
@@ -243,7 +243,7 @@ fun testDirectory(
 
   checker = SKJS.Checker::create{context, files};
   for (res in checker.checkFiles(context).items(context)) {
-    if (res.i0.value == builtinsFileName) {
+    if (res.i0.toString() == builtinsFileName) {
       validateParseable(context, checker, res.i1.next().fromSome());
     } else {
       validateResult(context, checker, res.i1.next().fromSome());

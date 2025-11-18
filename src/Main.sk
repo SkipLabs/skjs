@@ -377,14 +377,13 @@ class Checker private {
 
   fun checkFiles(
     context: mutable SKStore.Context,
-  ): SKStore.EHandle<SKStore.SID, CheckResult> {
+  ): SKStore.EHandle<FAbsolute, CheckResult> {
     this.parsedFiles.map(
-      SKStore.SID::keyType,
+      FAbsolute::keyType,
       CheckResult::type,
       context,
       SKStore.DirName::create("/check-results/"),
       (context, writer, fileName, valueIter) ~> {
-        fileNameKey = SKStore.SID(fileName.toString());
         parsedFile = valueIter.getUnique() match {
         | None() -> internal_error("File not parsed")
         | Some(x) -> x
@@ -394,11 +393,11 @@ class Checker private {
           initCallGraph(context);
           errors = this.checker.check(context, defs);
           writer.set(
-            fileNameKey,
+            fileName,
             CheckResult(fileName, None(), errors, collectCallGraph(context)),
           )
         | PRError(err) ->
-          writer.set(fileNameKey, CheckResult(fileName, Some(err), Array[]))
+          writer.set(fileName, CheckResult(fileName, Some(err), Array[]))
         }
       },
     );

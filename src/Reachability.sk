@@ -180,14 +180,14 @@ class CallGraph private (
 ) {
   static fun build(
     context: mutable SKStore.Context,
-    checked: SKStore.EHandle<SKStore.SID, CheckResult>,
+    checked: SKStore.EHandle<FAbsolute, CheckResult>,
   ): this {
     callgraph = checked.map(
       CGNode::keyType,
       CGNode::type,
       context,
       callGraphDirName,
-      (_context, writer, _sid, res) ~> {
+      (_context, writer, _fileName, res) ~> {
         res.first.callgraph.each(cg -> cg.each((k, v) -> writer.setArray(k, v)))
       },
     );
