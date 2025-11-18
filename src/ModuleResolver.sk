@@ -37,10 +37,10 @@ base class DirName final (path: Array<String>) uses Orderable, Show {
     FileName(this / other.dirName, other.baseName)
   }
 
-  fun /(other: DRelative): DirName {
+  fun /(other: DRelative): this {
     this match {
-    | DRelative(d1) -> DRelative(d1.concat(other.path))
-    | DAbsolute(d1) -> DAbsolute(removeDotDot(d1.concat(other.path)))
+    | DRelative(d1) -> static(d1.concat(other.path))
+    | DAbsolute(d1) -> static(removeDotDot(d1.concat(other.path)))
     }
   }
 
