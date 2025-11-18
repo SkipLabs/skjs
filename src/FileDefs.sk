@@ -41,7 +41,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
         context,
         S.DirName::create("/skjs/fileDefs/"),
         (context, _self, key) ~> {
-          fileName = FileName::create(key.value);
+          fileName = FAbsolute::create(key.value);
           parsedFile = parsedFiles.get(context, key);
           includes = if (fileName != builtinsFileName) {
             Array[builtinsFileName]
@@ -84,7 +84,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     path: Name,
     typeOnly: Bool = false,
   ): Array<FileDefElt> {
-    fileName = FileName::create(path.pos.fileName);
+    fileName = FAbsolute::create(path.pos.fileName);
     tmp = this.getPath(context, fileName, path.value, typeOnly);
     result = mutable Vector[];
     for (elt in tmp) {
@@ -106,7 +106,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
 
   private fun getPath(
     context: mutable S.Context,
-    fileName: FileName,
+    fileName: FAbsolute,
     path: String,
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
@@ -191,7 +191,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
 
   private fun getExported(
     context: mutable S.Context,
-    fileName: FileName,
+    fileName: FAbsolute,
     name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
@@ -321,7 +321,7 @@ value class Imported{
   from: ModuleName,
 }
 
-value class ModuleName{name: String, fileName: FileName}
+value class ModuleName{name: String, fileName: FAbsolute}
 
 fun mapPush<K: Hashable & Equality, V>(
   m: mutable Map<K, mutable Vector<V>>,
@@ -378,7 +378,7 @@ mutable class FileDefsState private {
     } else {
       resolveStubs(this.importStubs, name)
     }) match {
-    | Some(fileName) -> ModuleName{name, fileName}
+    | Some(fileName) -> ModuleName{name, fileName => fileName.resolve()}
     | None() ->
       typingError(Array[(mname.pos, `Could not find module '${mname}'`)])
     }

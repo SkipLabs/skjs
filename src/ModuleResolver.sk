@@ -79,6 +79,14 @@ base class DirName(path: Array<String>) uses Orderable, Show {
   fun exists(): Bool {
     FileSystem.exists(this.toString())
   }
+
+  fun resolve(): DAbsolute {
+    this match {
+    | d @ DAbsolute _ -> d
+    | d @ DRelative _ ->
+      DAbsolute::create(d.toString()) // TODO: optimize
+    }
+  }
 }
 
 extension class DRelative {
@@ -131,6 +139,10 @@ class FileName extends FileNameBase<DirName> {
     };
     baseName = vec[vec.size() - 1];
     FileName(dirName, baseName)
+  }
+
+  fun resolve(): FAbsolute {
+    FAbsolute(this.dirName.resolve(), this.baseName)
   }
 }
 
