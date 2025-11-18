@@ -271,12 +271,12 @@ extension class Parser {
   mutable fun isGetSet(): ?FieldGetSet {
     isGet = this.lex.isEq("get");
     if (isGet || this.lex.isEq("set")) {
-      kind = if (isGet) FGet() else FSet();
       isGetterOrSetter = this.lex.lookAhead(() -> {
         _ = this.lex.next();
         this.lex.next().map(x -> x.kind) is Some(TKVar());
       });
       if (isGetterOrSetter) {
+        kind = if (isGet) FGet() else FSet();
         nextTok = this.lex.next().fromSome();
         Some(
           FieldGetSet(
