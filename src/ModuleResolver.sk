@@ -86,6 +86,8 @@ extension class DRelative {
     invariant(Path.isRelative(dirNameStr));
     DRelative(splitPath(dirNameStr))
   }
+
+  const node_modules: this = DRelative::create("node_modules");
 }
 
 extension class DAbsolute {
@@ -222,7 +224,7 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
     for (ancestor in path.allAncestors()) {
       this.modules.maybeGet(
         context,
-        S.SID((ancestor / DRelative::create("node_modules")).toString()),
+        S.SID((ancestor / DRelative::node_modules).toString()),
       ) match {
       | None() -> continue
       | Some(mod) ->
