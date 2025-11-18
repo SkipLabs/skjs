@@ -374,11 +374,13 @@ mutable class FileDefsState private {
           ],
         )
       };
-      resolveName(this.context, this.index, this.root, this.dirName, name)
+      resolveName(this.context, this.index, this.root, this.dirName, name).map(
+        f -> f.resolve(),
+      )
     } else {
       resolveStubs(this.importStubs, name)
     }) match {
-    | Some(fileName) -> ModuleName{name, fileName => fileName.resolve()}
+    | Some(fileName) -> ModuleName{name, fileName}
     | None() ->
       typingError(Array[(mname.pos, `Could not find module '${mname}'`)])
     }

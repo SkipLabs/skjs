@@ -413,10 +413,13 @@ fun resolveName(
   None()
 }
 
-fun resolveStubs(importStubs: Array<DAbsolute>, moduleName: String): ?FileName {
-  res: ?FileName = None();
+fun resolveStubs(
+  importStubs: Array<DAbsolute>,
+  moduleName: String,
+): ?FAbsolute {
+  res: ?FAbsolute = None();
   for (importStub in importStubs) {
-    path = FileName(importStub / DRelative::create(moduleName), "index.d.ts");
+    path = FAbsolute(importStub / DRelative::create(moduleName), "index.d.ts");
     if (path.exists()) {
       res match {
       | Some(existing) ->
