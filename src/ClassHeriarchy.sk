@@ -6,29 +6,23 @@ const kClassHierarchyDirName: SKStore.DirName = SKStore.DirName::create(
   kClassHierarchyId,
 );
 
-class CHNode(
+class CHNode private (
   name: String,
   kind: ClassKind,
   fileName: String,
   symbol: SymbolicPos,
-) extends SKStore.File, SKStore.Key uses XXHashable
+) extends SKStore.File, SKStore.Key uses XXHashable {
+  static fun ofClass(c: Class): this {
+    static(c.name.value, c.kind, c.name.pos.fileName, c.name.pos.symbol)
+  }
+}
 
 class ClassHierarchyFile(
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
 ) extends SKStore.File {
   fun recordClassHierarchy(child: Class, parent: Class): this {
-    childNode = CHNode(
-      child.name.value,
-      child.kind,
-      child.name.pos.fileName,
-      child.name.pos.symbol,
-    );
-    parentNode = CHNode(
-      parent.name.value,
-      parent.kind,
-      parent.name.pos.fileName,
-      parent.name.pos.symbol,
-    );
+    childNode = CHNode::ofClass(child);
+    parentNode = CHNode::ofClass(parent);
     current = this.classHierarchy.maybeGet(childNode).default(SortedSet[]);
     new = current.set(parentNode);
     ClassHierarchyFile(this.classHierarchy.set(childNode, new))
