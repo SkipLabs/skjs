@@ -279,10 +279,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
     }
   }
 
-  private fun getFileDefs<D: DirName>(
-    context: mutable S.Context,
-    fn: FileNameBase<D>,
-  ): FileDefs {
+  private fun getFileDefs(context: mutable S.Context, fn: FAbsolute): FileDefs {
     this.fileDefsDir.get(context, S.SID(fn.toString()))
   }
 }
