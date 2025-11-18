@@ -162,15 +162,16 @@ class FRelative extends FileNameBase<DRelative> {
 
 class FileNameEntry(
   invertedName: String,
-  name: String,
+  name: FAbsolute,
 ) extends S.File uses Orderable {
-  static fun create(fileName: String): this {
+  static fun create(fAbsolute: FAbsolute): this {
+    fileName = fAbsolute.toString();
     inv = mutable Vector[];
     chars = fileName.chars();
     for (i in Range(0, chars.size())) {
       inv.push(chars[chars.size() - i - 1]);
     };
-    static(String::fromChars(inv.toArray()), fileName)
+    static(String::fromChars(inv.toArray()), fAbsolute)
   }
 
   fun compare(other: FileNameEntry): Order {
@@ -180,13 +181,7 @@ class FileNameEntry(
 
 class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
   fun lookup(fileName: FAbsolute): ?FAbsolute {
-    fileNameStr = fileName.toString();
-    if (fileNameStr.contains("..")) {
-      internal_error(
-        `File name '${fileNameStr}' is not expected to contain '..'`,
-      )
-    };
-    entry = FileNameEntry::create(fileNameStr);
+    entry = FileNameEntry::create(fileName);
     idx = SKStore.binSearch(
       i ~> this.entries[i].invertedName,
       entry.invertedName,
@@ -195,7 +190,7 @@ class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
     );
     if (idx < 0 || idx >= this.entries.size()) return None();
     if (this.entries[idx].invertedName.startsWith(entry.invertedName)) {
-      return Some(FAbsolute::create(this.entries[idx].name))
+      return Some(this.entries[idx].name)
     };
     None();
   }
@@ -216,10 +211,7 @@ class FileNameIndex private (modules: S.EHandle<DAbsolute, NodeModuleDir>) {
           (_context, writer, fileName, _valueIter) ~> {
             for (ancestor in fileName.dirName.allAncestors()) {
               if (ancestor.endsWith("node_modules")) {
-                writer.set(
-                  ancestor,
-                  FileNameEntry::create(fileName.toString()),
-                );
+                writer.set(ancestor, FileNameEntry::create(fileName));
                 return void
               }
             }
