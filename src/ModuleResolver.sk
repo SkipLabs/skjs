@@ -88,6 +88,13 @@ base class DirName(path: Array<String>) uses Orderable, Show {
   }
 }
 
+extension class DRelative {
+  static fun create(dirNameStr: String): DRelative {
+    invariant(Path.isRelative(dirNameStr));
+    DRelative(splitPath(dirNameStr))
+  }
+}
+
 extension class DAbsolute {
   static fun create(dirNameStr: String): DAbsolute {
     DAbsolute(splitPath(Path.resolve(dirNameStr)))
