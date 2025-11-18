@@ -25,7 +25,7 @@ base class IDefMap {
   ): Array<FileDefElt>;
 }
 
-class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
+class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
     index: FileNameIndex,
@@ -36,12 +36,11 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
   ): this {
     static(
       S.LHandle::create(
-        S.SID::keyType,
+        FAbsolute::keyType,
         FileDefs::type,
         context,
         S.DirName::create("/skjs/fileDefs/"),
-        (context, _self, key) ~> {
-          fileName = FAbsolute::create(key.value);
+        (context, _self, fileName) ~> {
           parsedFile = parsedFiles.get(context, fileName);
           includes = if (fileName != builtinsFileName) {
             Array[builtinsFileName]
@@ -280,7 +279,7 @@ class DefMap(fileDefsDir: S.LHandle<S.SID, FileDefs>) extends IDefMap {
   }
 
   private fun getFileDefs(context: mutable S.Context, fn: FAbsolute): FileDefs {
-    this.fileDefsDir.get(context, S.SID(fn.toString()))
+    this.fileDefsDir.get(context, fn)
   }
 }
 
