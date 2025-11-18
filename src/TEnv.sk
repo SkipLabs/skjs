@@ -867,7 +867,7 @@ class TEnv{
               Array[(thisPos, "Parameter named this must be the first one")],
             )
           }
-        | _ -> void
+        | _ -> checkPatternDoesNotContainThis(param.name)
         };
         param.isRest match {
         | Some(restPos) ->
@@ -1086,6 +1086,22 @@ class TEnv{
       !result = TType::union(subst, this, result, literals)
     };
     result
+  }
+}
+
+fun checkPatternDoesNotContainThis(pat: Pattern): void {
+  pat.value match {
+  | PVar(name) -> Some(name)
+  | PArray(elements, rest) ->
+    elements.each(elt -> elt.each(pe -> checkPatternDoesNotContainThis(pe.i0)));
+    rest
+  | PObject{fields, rest} ->
+    fields.each(fld -> checkPatternDoesNotContainThis(fld.i1));
+    rest
+  } match {
+  | Some(Name(thisPos, "this")) ->
+    typingError(Array[(thisPos, "this forbidden here")])
+  | _ -> void
   }
 }
 
