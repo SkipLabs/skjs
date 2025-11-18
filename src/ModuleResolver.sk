@@ -350,7 +350,7 @@ fun resolveName(
     ("./@types/", "/index.d.ts"),
     ("./@types/node/", ".d.ts"),
   ]) {
-    tryPath = FileName::create(prepost.i0 + moduleName + prepost.i1);
+    tryPath = FAbsolute::create(prepost.i0 + moduleName + prepost.i1);
     index.lookup(context, root, tryPath) match {
     | None() -> void
     | x @ Some _ -> return x
@@ -380,7 +380,7 @@ fun resolveName(
     "/types/index.d.ts",
     "/typing/index.d.ts",
   ]) {
-    index.lookup(context, cwd, FileName::create(moduleName + ext)) match {
+    index.lookup(context, cwd, FAbsolute::create(moduleName + ext)) match {
     | None() -> void
     | x @ Some _ -> return x
     }
@@ -389,21 +389,21 @@ fun resolveName(
   index.lookup(
     context,
     cwd,
-    FileName::create(moduleName.replace("/", ".").replace("@", "") + ".d.ts"),
+    FAbsolute::create(moduleName.replace("/", ".").replace("@", "") + ".d.ts"),
   ) match {
   | None() -> void
   | x @ Some _ -> return x
   };
 
   //  if (moduleName.contains("/")) {
-  index.lookup(context, cwd, FileName::create(moduleName + ".d.ts")) match {
+  index.lookup(context, cwd, FAbsolute::create(moduleName + ".d.ts")) match {
   | None() -> void
   | x @ Some _ -> return x
   };
   index.lookup(
     context,
     cwd,
-    FileName::create(moduleName + "/index.cjs"),
+    FAbsolute::create(moduleName + "/index.cjs"),
   ) match {
   | None() -> void
   | x @ Some _ -> return x
