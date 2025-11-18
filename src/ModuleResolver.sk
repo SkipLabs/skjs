@@ -100,11 +100,7 @@ extension class DAbsolute extends S.Key uses Hashable, XXHashable {
   fun toString from DirName;
 }
 
-base class FileNameBase<D: DirName>(dirName: D, baseName: String) {
-  fun toString(): String {
-    `${this.dirName}${this.baseName}`
-  }
-}
+base class FileNameBase<D: DirName>(dirName: D, baseName: String)
 
 class FAbsolute
   extends FileNameBase<DAbsolute>, S.Key
@@ -122,7 +118,9 @@ class FAbsolute
     FAbsolute(dirName, baseName)
   }
 
-  fun toString from FileNameBase;
+  fun toString(): String {
+    `${this.dirName}${this.baseName}`
+  }
 
   fun exists(): Bool {
     FileSystem.exists(this.toString())
