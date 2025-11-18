@@ -100,11 +100,11 @@ extension class DAbsolute extends S.Key uses Hashable, XXHashable {
   fun toString from DirName;
 }
 
-base class FileNameBase<D: DirName>(dirName: D, baseName: String)
+trait FileNameBase<D: DirName>(dirName: D, baseName: String)
 
 class FAbsolute
-  extends FileNameBase<DAbsolute>, S.Key
-  uses Hashable, XXHashable {
+  extends S.Key
+  uses FileNameBase<DAbsolute>, Hashable, XXHashable {
   const nil: FAbsolute = FAbsolute(DAbsolute(Array[]), "");
 
   static fun create(fileName: String): this {
@@ -127,7 +127,7 @@ class FAbsolute
   }
 }
 
-class FRelative extends FileNameBase<DRelative> {
+class FRelative uses FileNameBase<DRelative> {
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
