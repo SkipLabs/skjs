@@ -270,23 +270,21 @@ extension class Parser {
   // Check if current token is a getter or setter
   mutable fun isGetSet(): ?FieldGetSet {
     isGet = this.lex.isEq("get");
-    if (isGet || this.lex.isEq("set")) {
-      isGetterOrSetter = this.lex.lookAhead(() -> {
+    if (
+      (isGet || this.lex.isEq("set")) &&
+      this.lex.lookAhead(() -> {
         _ = this.lex.next();
         this.lex.next().map(x -> x.kind) is Some(TKVar());
-      });
-      if (isGetterOrSetter) {
-        kind = if (isGet) FGet() else FSet();
-        nextTok = this.lex.next().fromSome();
-        Some(
-          FieldGetSet(
-            kind,
-            PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd),
-          ),
-        )
-      } else {
-        None()
-      }
+      })
+    ) {
+      kind = if (isGet) FGet() else FSet();
+      nextTok = this.lex.next().fromSome();
+      Some(
+        FieldGetSet(
+          kind,
+          PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd),
+        ),
+      )
     } else {
       None()
     }
