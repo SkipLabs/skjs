@@ -33,13 +33,6 @@ base class DirName final (path: Array<String>) uses Show {
   | DRelative
   | DAbsolute
 
-  fun /(other: DRelative): this {
-    this match {
-    | DRelative(d1) -> static(d1.concat(other.path))
-    | DAbsolute(d1) -> static(removeDotDot(d1.concat(other.path)))
-    }
-  }
-
   fun toString(): String {
     if (this.path.size() == 0) return "/";
     "/" + this.path.join("/") + "/"
@@ -95,6 +88,10 @@ extension class DAbsolute extends S.Key uses Hashable, XXHashable {
 
   fun +(other: FRelative): FAbsolute {
     FAbsolute(this / other.dirName, other.baseName)
+  }
+
+  fun /(other: DRelative): this {
+    static(removeDotDot(this.path.concat(other.path)))
   }
 
   fun toString from DirName;
