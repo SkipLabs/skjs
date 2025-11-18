@@ -120,14 +120,6 @@ class FileName(dirName: DirName, baseName: String) uses Equality {
     FileSystem.exists(this.toString())
   }
 
-  fun hash(): Int {
-    hash = this.baseName.hash();
-    for (elt in this.dirName.path) {
-      !hash = 3 * hash + elt.hash();
-    };
-    hash
-  }
-
   fun ==(other: this): Bool {
     this.dirName == other.dirName && this.baseName == other.baseName
   }
