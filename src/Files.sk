@@ -19,7 +19,7 @@ class ParsedResultAndSymbolsFile(
 
 class ParsedResultFile(value: ParsedResult) extends SKStore.File
 
-const parseErrorKey: FAbsolute = FAbsolute(DAbsolute(Array[]), "");
+const parseErrorKey: FAbsolute = FAbsolute::nil;
 
 const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
 const parsesDirName: SKStore.DirName = SKStore.DirName::create(

@@ -128,6 +128,8 @@ class FileName extends FileNameBase<DirName> {
 }
 
 class FAbsolute extends FileNameBase<DAbsolute>, S.Key {
+  const nil: FAbsolute = FAbsolute(DAbsolute(Array[]), "");
+
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
