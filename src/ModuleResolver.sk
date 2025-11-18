@@ -113,7 +113,7 @@ class FileName(dirName: DirName, baseName: String) uses Equality {
   }
 
   fun toString(): String {
-    this.dirName.toString() + this.baseName
+    `${this.dirName}${this.baseName}`
   }
 
   fun exists(): Bool {
