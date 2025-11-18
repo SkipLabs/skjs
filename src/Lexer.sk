@@ -23,8 +23,8 @@ mutable class Lexer private {
   // The name of the file that we are lexing
   fileName: String,
 
-  // The relative path for consistent ID generation across machines
-  relativeFileName: String,
+  // The hash of the relative path for consistent ID generation across machines
+  relativeFileNameHash: Int,
 
   // The contents of the file
   contents: Array<Char>,
@@ -101,10 +101,10 @@ mutable class Lexer private {
     // Compute relative path for consistent ID generation across machines
     path = fileName.toString();
     base = root.toString();
-    relativeFileName = Path.relativeTo{path, base};
+    relativeFileNameHash = Path.relativeTo{path, base}.hash();
     mutable static{
       fileName => path,
-      relativeFileName,
+      relativeFileNameHash,
       contents => contents.chars().toArray(),
     }
   }

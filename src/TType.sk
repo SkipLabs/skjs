@@ -959,7 +959,7 @@ class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
 
 value class Id private (id: String) uses XXHashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): this {
-    static(`${name}:${id}:${lexer.relativeFileName.hash()}`)
+    static(`${name}:${id}:${lexer.relativeFileNameHash}`)
   }
 
   fun prefixWith(pre: String): this {
