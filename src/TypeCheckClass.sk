@@ -169,7 +169,7 @@ extension class TypeChecker {
           )
         } else {
           cgNode = CGNode::create(
-            Method(fd.name, c.name, fd.pos.fileName.toString(), fd.isStatic()),
+            Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
           );
           _ = this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
         }
@@ -210,7 +210,7 @@ extension class TypeChecker {
     };
     cgNode = CGNode::create(
       className match {
-      | Some(cname) -> Constructor(cname, fd.pos.fileName.toString())
+      | Some(cname) -> Constructor(cname, fd.pos.fileName)
       | None() -> AnonymousFunDef(fd)
       },
     );

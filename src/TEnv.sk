@@ -274,7 +274,7 @@ class TEnv{
       Method(
         Some(FNNormal(Name(pos, cstrName))),
         className,
-        c.name.pos.fileName.toString(),
+        c.name.pos.fileName,
         true,
       ),
     );
@@ -468,7 +468,7 @@ class TEnv{
           )
         | None() ->
           cgNode = CGNode::create(
-            Method(fd.name, className, fd.pos.fileName.toString(), metIsStatic),
+            Method(fd.name, className, fd.pos.fileName, metIsStatic),
           );
           this.funDecl(context, true, fd, cgNode)
         };
@@ -549,9 +549,7 @@ class TEnv{
     tparams: Array<TypeParam>,
     fd: FunDef,
   ): TType {
-    cgNode = CGNode::create(
-      Method(fd.name, className, fd.pos.fileName.toString(), true),
-    );
+    cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
       // We give the tparams a different name to make sure they are
       // not confused with the type parameters of the class

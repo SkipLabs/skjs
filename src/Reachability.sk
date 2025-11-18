@@ -7,16 +7,22 @@ module SKJS;
 base class CGNode_ uses XXHashable, Show {
   children =
   | TopLevelFunDef(name: SimpleSymbol, fileName: FAbsolute)
-  | Method(name: ?SimpleSymbol, class_: Name, fileName: String, static_: Bool)
-  | Constructor(class_: Name, fileName: String)
+  | Method(
+    name: ?SimpleSymbol,
+    class_: Name,
+    fileName: FAbsolute,
+    static_: Bool,
+  )
+  | Constructor(class_: Name, fileName: FAbsolute)
   | Toplevel(fileName: String)
   | ArrowTypeAnnot(fileName: String)
 
   fun getFileName(): String {
     this match {
-    | TopLevelFunDef(_, fileName) -> fileName.toString()
+    | TopLevelFunDef(_, fileName)
     | Method(_, _, fileName, _)
-    | Constructor(_, fileName)
+    | Constructor(_, fileName) ->
+      fileName.toString()
     | Toplevel(fileName)
     | ArrowTypeAnnot(fileName) ->
       fileName
@@ -245,7 +251,7 @@ class CallGraph private (
       node.id match {
       | Method(_, class_, fileName, _)
       | Constructor(class_, fileName) ->
-        classIdent = (class_.value, fileName);
+        classIdent = (class_.value, fileName.toString());
         if (affectedClasses.contains(classIdent)) {
           affectedCGNodes.insert(node)
         }
