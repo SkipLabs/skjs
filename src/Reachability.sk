@@ -22,8 +22,9 @@ base class CGNode_ uses XXHashable, Show {
     | Toplevel(fileName)
     | ArrowTypeAnnot(fileName) ->
       fileName
-    | AnonymousLambda(pos, _) -> pos.fileName
-    | AnonymousFunDef(fd) -> fd.pos.fileName
+    | AnonymousLambda(pos, _)
+    | AnonymousFunDef(FunDef{pos}) ->
+      pos.fileName
     }
   }
 
