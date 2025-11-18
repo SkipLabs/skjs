@@ -108,8 +108,9 @@ extension class DAbsolute {
   }
 
   fun allAncestors(): mutable Iterator<DirName> {
-    for (i in Range(0, this.path.size())) {
-      yield (DAbsolute(this.path.slice(0, this.path.size() - i)))
+    while (!this.isRoot()) {
+      !this = this.parent();
+      yield this
     }
   }
 }
