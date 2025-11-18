@@ -45,11 +45,6 @@ base class DirName final (path: Array<String>) {
       this.path[this.path.size() - 1]
     }
   }
-
-  fun parent(): this {
-    path = this.path.slice(0, -1);
-    static(path)
-  }
 }
 
 extension class DRelative {
@@ -77,6 +72,11 @@ extension class DAbsolute extends S.Key uses Hashable, XXHashable {
 
   fun exists(): Bool {
     FileSystem.exists(this.toString())
+  }
+
+  fun parent(): this {
+    path = this.path.slice(0, -1);
+    static(path)
   }
 
   fun allAncestors(): mutable Iterator<DAbsolute> {
