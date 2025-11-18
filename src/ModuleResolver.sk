@@ -110,23 +110,6 @@ base class FileNameBase<D: DirName>(dirName: D, baseName: String) {
   }
 }
 
-class FileName extends FileNameBase<DirName> {
-  static fun create(fileName: String): this {
-    if (fileName.endsWith("/")) {
-      internal_error(`File name '${fileName}' is not expected to end with /`)
-    };
-    vec = splitPath(fileName);
-    path = vec.slice(0, vec.size() - 1);
-    dirName = if (fileName.startsWith("/")) {
-      DAbsolute(path)
-    } else {
-      DRelative(path)
-    };
-    baseName = vec[vec.size() - 1];
-    FileName(dirName, baseName)
-  }
-}
-
 class FAbsolute
   extends FileNameBase<DAbsolute>, S.Key
   uses Hashable, XXHashable {
