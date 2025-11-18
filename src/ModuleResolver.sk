@@ -37,18 +37,10 @@ base class DirName final (path: Array<String>) uses Orderable, Show {
     FileName(this / other.dirName, other.baseName)
   }
 
-  fun /(other: DirName): DirName {
-    (this, other) match {
-    | (DRelative(d1), DRelative(d2)) -> DRelative(d1.concat(d2))
-    | (DRelative _, DAbsolute _) ->
-      internal_error(
-        "Internal error: cannot add an absolute path to a relative one",
-      )
-    | (DAbsolute(d1), DRelative(d2)) -> DAbsolute(removeDotDot(d1.concat(d2)))
-    | (DAbsolute _, DAbsolute _) ->
-      internal_error(
-        "Internal error: cannot add an absolute path to another absolute path",
-      )
+  fun /(other: DRelative): DirName {
+    this match {
+    | DRelative(d1) -> DRelative(d1.concat(other.path))
+    | DAbsolute(d1) -> DAbsolute(removeDotDot(d1.concat(other.path)))
     }
   }
 
