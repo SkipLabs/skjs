@@ -63,7 +63,7 @@ base class DirName(path: Array<String>) uses Orderable, Show {
     this.path.size() > 0 && this.path[this.path.size() - 1] == str
   }
 
-  static fun create(dirNameStr: String): DirName {
+  static overridable fun create(dirNameStr: String): DirName {
     path = splitPath(dirNameStr);
     if (dirNameStr.startsWith("/")) DAbsolute(removeDotDot(path)) else {
       DRelative(path)
@@ -85,6 +85,12 @@ base class DirName(path: Array<String>) uses Orderable, Show {
 
   fun exists(): Bool {
     FileSystem.exists(this.toString())
+  }
+}
+
+extension class DAbsolute {
+  static fun create(dirNameStr: String): DAbsolute {
+    DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
 }
 
