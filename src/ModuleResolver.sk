@@ -28,13 +28,9 @@ fun removeDotDot(path: Array<String>): Array<String> {
   result.toArray();
 }
 
-base class DirName final (path: Array<String>) {
-  children =
-  | DRelative
-  | DAbsolute
-}
+trait DirName(path: Array<String>)
 
-extension class DRelative {
+class DRelative uses DirName {
   static fun create(dirNameStr: String): DRelative {
     invariant(Path.isRelative(dirNameStr));
     DRelative(splitPath(dirNameStr))
@@ -43,7 +39,7 @@ extension class DRelative {
   const node_modules: this = DRelative::create("node_modules");
 }
 
-extension class DAbsolute extends S.Key uses Hashable, XXHashable {
+class DAbsolute extends S.Key uses DirName, Hashable, XXHashable {
   static fun create(dirNameStr: String): DAbsolute {
     DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
