@@ -30,7 +30,7 @@ const oldParsesDirName: SKStore.DirName = SKStore.DirName::create(
 );
 class Files(
   isInit: Bool,
-  rootOpt: ?DirName,
+  root: DirName,
   builtinsFileName: FileName,
   filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
   importStubs: Array<DirName>,
@@ -38,53 +38,48 @@ class Files(
 ) {
   static fun create(
     context: mutable SKStore.Context,
-    baseUrlOpt: ?String,
+    root: String,
     builtinsFileNameStr: String,
     srcFileSeq: Sequence<String>,
     trackChangedFiles: Bool = false,
-    sourceDirOpt: ?String = None(),
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
     builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
-    rootOpt = baseUrlOpt.map(baseUrl -> DirName::create(Path.resolve(baseUrl)));
+    !root = Path.resolve(root);
+    srcFiles = mutable Set[];
     if (srcFileSeq.isEmpty()) {
-      root = rootOpt match {
-      | Some(root) -> root
-      | None() -> DirName::create(FileSystem.realpath("."))
-      };
-      !rootOpt = Some(root);
-      srcDir = sourceDirOpt match {
-      | Some(dir) -> Path.resolve(dir)
-      | None() -> Path.join(root.toString(), "src")
-      };
-      if (!FileSystem.exists(srcDir)) {
-        return Failure(`Could not find source dir: ${srcDir}`);
-      };
-      !srcFileSeq = FileSystem.readFilesRecursive(srcDir, fileName ->
-        fileName.endsWith(".ts")
-      );
-    } else {
-      !srcFileSeq = srcFileSeq.map(f -> Path.resolve(f));
+      !srcFileSeq = Array[root]
     };
-    if (srcFileSeq.isEmpty()) {
+    for (f in srcFileSeq) {
+      !f = Path.resolve(f);
+      if (!FileSystem.exists(f)) {
+        return Failure(`Source file ${f} does not exist`)
+      };
+      if (FileSystem.isDirectory(f)) {
+        srcFiles.extend(
+          FileSystem.readFilesRecursive(f, fileName ->
+            fileName.endsWith(".ts")
+          ),
+        )
+      } else {
+        srcFiles.insert(f)
+      }
+    };
+    if (srcFiles.isEmpty()) {
       return Failure("No source files!");
     };
     if (!builtinsFileName.exists()) {
       return Failure(`Builtins not found: ${builtinsFileName}`);
     };
+    srcFiles.insert(builtinsFileName.toString());
     !importStubs = importStubs.map(dir -> Path.resolve(dir));
-    importStubsFiles = importStubs
-      .map(dir ->
+    importStubs.each(dir ->
+      srcFiles.extend(
         FileSystem.readFilesRecursive(dir, fileName ->
-          fileName.endsWith("index.d.ts")
-        )
+          fileName.endsWith(".ts")
+        ),
       )
-      .flatten();
-    srcFiles = Array[
-      srcFileSeq,
-      Array[builtinsFileName.toString()],
-      importStubsFiles,
-    ].flatten().collect(SortedSet);
+    );
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
@@ -127,7 +122,7 @@ class Files(
     Success(
       Files(
         isInit,
-        rootOpt,
+        DirName::create(root),
         builtinsFileName,
         fileHdl,
         importStubs.map(DirName::create),
@@ -148,7 +143,7 @@ class Files(
       (_context, writer, key, contentIter) ~> {
         fileName = key.value;
         content = contentIter.first.value;
-        lexer = Lexer::mcreate(fileName, content, this.rootOpt);
+        lexer = Lexer::mcreate(fileName, content, this.root);
         parser = mutable Parser(lexer);
         try {
           writer.setArray(
