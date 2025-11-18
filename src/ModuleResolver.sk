@@ -161,6 +161,20 @@ class FAbsolute extends FileNameBase<DAbsolute>, S.Key {
   fun toString from FileNameBase;
 }
 
+class FRelative extends FileNameBase<DRelative> {
+  static fun create(fileName: String): this {
+    if (fileName.endsWith("/")) {
+      internal_error(`File name '${fileName}' is not expected to end with /`)
+    };
+    invariant(Path.isRelative(fileName));
+    vec = splitPath(fileName);
+    path = vec.slice(0, vec.size() - 1);
+    dirName = DRelative(path);
+    baseName = vec[vec.size() - 1];
+    FRelative(dirName, baseName)
+  }
+}
+
 /***************************************************************************/
 /* Class to help lookup file names quickly. */
 /***************************************************************************/
