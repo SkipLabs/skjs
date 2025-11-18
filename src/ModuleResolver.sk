@@ -101,8 +101,8 @@ extension class DAbsolute extends S.Key {
     }
   }
 
-  fun +(other: FRelative): FileName {
-    FileName(this / other.dirName, other.baseName)
+  fun +(other: FRelative): FAbsolute {
+    FAbsolute(this / other.dirName, other.baseName)
   }
 
   fun toString from DirName;
@@ -191,7 +191,7 @@ class FileNameEntry(
 }
 
 class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
-  fun lookup<D: DirName>(fileName: FileNameBase<D>): ?FileName {
+  fun lookup<D: DirName>(fileName: FileNameBase<D>): ?FAbsolute {
     fileNameStr = fileName.toString();
     if (fileNameStr.contains("..")) {
       internal_error(
@@ -207,7 +207,7 @@ class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
     );
     if (idx < 0 || idx >= this.entries.size()) return None();
     if (this.entries[idx].invertedName.startsWith(entry.invertedName)) {
-      return Some(FileName::create(this.entries[idx].name))
+      return Some(FAbsolute::create(this.entries[idx].name))
     };
     None();
   }
@@ -253,7 +253,7 @@ class FileNameIndex private (modules: S.EHandle<DAbsolute, NodeModuleDir>) {
     context: mutable S.Context,
     path: DAbsolute,
     file: FileNameBase<D>,
-  ): ?FileName {
+  ): ?FAbsolute {
     for (ancestor in path.allAncestors()) {
       this.modules.maybeGet(context, ancestor / DRelative::node_modules) match {
       | None() -> continue
@@ -300,7 +300,7 @@ fun resolveName(
   root: DAbsolute,
   cwd: DAbsolute,
   moduleName: String,
-): ?FileName {
+): ?FAbsolute {
   if (moduleName.endsWith("-js")) {
     !moduleName = moduleName.stripSuffix("-js");
   };
@@ -311,7 +311,7 @@ fun resolveName(
       return None();
     };
     fullName = if (isAbsolute) {
-      FileName::create(moduleName)
+      FAbsolute::create(moduleName)
     } else {
       cwd + FRelative::create(moduleName)
     };

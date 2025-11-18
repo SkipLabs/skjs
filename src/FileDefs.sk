@@ -374,9 +374,7 @@ mutable class FileDefsState private {
           ],
         )
       };
-      resolveName(this.context, this.index, this.root, this.dirName, name).map(
-        f -> f.resolve(),
-      )
+      resolveName(this.context, this.index, this.root, this.dirName, name)
     } else {
       resolveStubs(this.importStubs, name)
     }) match {
