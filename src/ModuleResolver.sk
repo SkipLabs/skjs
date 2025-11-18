@@ -30,7 +30,7 @@ fun removeDotDot(path: Array<String>): Array<String> {
 
 trait DirName(path: Array<String>)
 
-class DRelative uses DirName {
+value class DRelative uses DirName {
   static fun create(dirNameStr: String): DRelative {
     invariant(Path.isRelative(dirNameStr));
     DRelative(splitPath(dirNameStr))
