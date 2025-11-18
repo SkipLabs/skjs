@@ -87,6 +87,19 @@ base class DirName final (path: Array<String>) uses Orderable, Show {
       DAbsolute::create(d.toString()) // TODO: optimize
     }
   }
+
+  fun basename(): String {
+    if (this.path.size() <= 0) {
+      ""
+    } else {
+      this.path[this.path.size() - 1]
+    }
+  }
+
+  fun parent(): this {
+    path = this.path.slice(0, -1);
+    static(path)
+  }
 }
 
 extension class DRelative {
@@ -101,6 +114,10 @@ extension class DRelative {
 extension class DAbsolute {
   static fun create(dirNameStr: String): DAbsolute {
     DAbsolute(splitPath(Path.resolve(dirNameStr)))
+  }
+
+  fun isRoot(): Bool {
+    this.path.size() <= 0
   }
 }
 

@@ -338,7 +338,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 }
 
 class CheckResult(
-  fileName: String,
+  fileName: FAbsolute,
   parseError: ?Error,
   errors: Array<Error>,
   callgraph: ?CallGraphFile = None(),
@@ -395,18 +395,10 @@ class Checker private {
           errors = this.checker.check(context, defs);
           writer.set(
             fileNameKey,
-            CheckResult(
-              fileNameKey.value,
-              None(),
-              errors,
-              collectCallGraph(context),
-            ),
+            CheckResult(fileName, None(), errors, collectCallGraph(context)),
           )
         | PRError(err) ->
-          writer.set(
-            fileNameKey,
-            CheckResult(fileNameKey.value, Some(err), Array[]),
-          )
+          writer.set(fileNameKey, CheckResult(fileName, Some(err), Array[]))
         }
       },
     );
