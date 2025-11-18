@@ -15,16 +15,16 @@ base class CGNode_ uses XXHashable, Show {
   )
   | Constructor(class_: Name, fileName: FAbsolute)
   | Toplevel(fileName: FAbsolute)
-  | ArrowTypeAnnot(fileName: String)
+  | ArrowTypeAnnot(fileName: FAbsolute)
 
   fun getFileName(): String {
     this match {
     | TopLevelFunDef(_, fileName)
     | Method(_, _, fileName, _)
     | Constructor(_, fileName)
-    | Toplevel(fileName) ->
+    | Toplevel(fileName)
+    | ArrowTypeAnnot(fileName) ->
       fileName.toString()
-    | ArrowTypeAnnot(fileName) -> fileName
     | AnonymousLambda(pos, _)
     | AnonymousFunDef(FunDef{pos}) ->
       pos.fileName.toString()

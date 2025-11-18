@@ -170,7 +170,7 @@ extension class Parser {
           Array[],
           params,
           retType,
-          CGNode::create(ArrowTypeAnnot(this.lex.fileName.toString())),
+          CGNode::create(ArrowTypeAnnot(this.lex.fileName)),
         )
       } else {
         res = this.type(0).value;
