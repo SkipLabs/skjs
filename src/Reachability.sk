@@ -17,17 +17,17 @@ base class CGNode_ uses XXHashable, Show {
   | Toplevel(fileName: FAbsolute)
   | ArrowTypeAnnot(fileName: FAbsolute)
 
-  fun getFileName(): String {
+  fun getFileName(): FAbsolute {
     this match {
     | TopLevelFunDef(_, fileName)
     | Method(_, _, fileName, _)
     | Constructor(_, fileName)
     | Toplevel(fileName)
     | ArrowTypeAnnot(fileName) ->
-      fileName.toString()
+      fileName
     | AnonymousLambda(pos, _)
     | AnonymousFunDef(FunDef{pos}) ->
-      pos.fileName.toString()
+      pos.fileName
     }
   }
 
@@ -279,7 +279,7 @@ class CallGraph private (
       .iterator()
       .foldl(
         (affectedFiles, cgNode) -> {
-          affectedFiles.set(cgNode.id.getFileName())
+          affectedFiles.set(cgNode.id.getFileName().toString())
         },
         SortedSet<String>[],
       )
