@@ -26,6 +26,15 @@ extension class Parser {
     }
   }
 
+  readonly fun getBigInt(tok: Token): String {
+    if (tok.kind is TKBigInt()) {
+      // TODO: check and normalize somehow
+      this.lex.getStrTok(tok)
+    } else {
+      this.error(this.lex.posStart(tok), ExpectedToken(TKBigInt()))
+    }
+  }
+
   mutable fun expect(kind: TokenKind): void {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(kind))
