@@ -186,11 +186,6 @@ class ExpectedToken(tokenKind: TokenKind) extends ParsingKind {
     `Expected token ${this.tokenKind}`
   }
 }
-class ExpectedTokenNot(tokenKind: TokenKind) extends ParsingKind {
-  fun toString(): String {
-    `Expected ${this.tokenKind}`
-  }
-}
 class ExpectedStrNot(str: String) extends ParsingKind {
   fun toString(): String {
     `Expected ${this.str}`

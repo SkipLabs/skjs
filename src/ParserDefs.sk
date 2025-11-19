@@ -760,10 +760,7 @@ extension class Parser {
           break void
         }
       | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokenNot(TKCloseCurly()),
-        )
+        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseCurly()))
       }
     };
     names.toArray()
@@ -895,10 +892,7 @@ extension class Parser {
           break void
         }
       | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokenNot(TKCloseCurly()),
-        )
+        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseCurly()))
       }
     };
     Enum(isConst, name, fields.toArray())
@@ -1065,10 +1059,7 @@ extension class Parser {
         }
       | TKGreaterThan() -> return tdparams.toArray()
       | _ ->
-        this.error(
-          this.lex.posStart(tokComma),
-          ExpectedTokenNot(TKGreaterThan()),
-        )
+        this.error(this.lex.posStart(tokComma), ExpectedToken(TKGreaterThan()))
       }
     }
   }
@@ -1112,10 +1103,7 @@ extension class Parser {
         }
       | TKGreaterThan() -> return result.toArray()
       | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokenNot(TKGreaterThan()),
-        )
+        this.error(this.lex.posStart(commaTok), ExpectedToken(TKGreaterThan()))
       }
     }
   }
@@ -1265,10 +1253,7 @@ extension class Parser {
             break void;
           }
         | _ ->
-          this.error(
-            this.lex.posStart(nextTok),
-            ExpectedTokenNot(TKCloseParen()),
-          )
+          this.error(this.lex.posStart(nextTok), ExpectedToken(TKCloseParen()))
         }
       }
     };
@@ -1362,10 +1347,7 @@ extension class Parser {
         }
       | TKCloseSquare() -> break void
       | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokenNot(TKCloseSquare()),
-        )
+        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseSquare()))
       }
     };
     names.toArray()
@@ -1389,10 +1371,7 @@ extension class Parser {
         }
       | TKCloseCurly() -> break void
       | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokenNot(TKCloseSquare()),
-        )
+        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseSquare()))
       }
     };
     names.toArray()

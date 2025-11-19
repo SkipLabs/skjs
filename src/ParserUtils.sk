@@ -13,7 +13,7 @@ extension class Parser {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(kind))
     | Some(tok) if (tok.kind == kind) -> void
-    | Some(tok) -> this.error(this.lex.posStart(tok), ExpectedTokenNot(kind))
+    | Some(tok) -> this.error(this.lex.posStart(tok), ExpectedToken(kind))
     }
   }
 

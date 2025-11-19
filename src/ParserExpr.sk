@@ -113,7 +113,7 @@ extension class Parser {
         | _ ->
           this.error(
             this.lex.posStart(commaTok),
-            ExpectedTokenNot(TKCloseSquare()),
+            ExpectedToken(TKCloseSquare()),
           )
         }
       }
@@ -145,10 +145,7 @@ extension class Parser {
             fields.push(this.field());
           }
         | _ ->
-          this.error(
-            this.lex.posStart(commaTok),
-            ExpectedTokenNot(TKCloseCurly()),
-          )
+          this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseCurly()))
         }
       }
     }
@@ -222,16 +219,13 @@ extension class Parser {
           | _ ->
             this.error(
               this.lex.posStart(closeTok),
-              ExpectedTokenNot(TKCloseParen()),
+              ExpectedToken(TKCloseParen()),
             )
           }
         };
         Params(params.toArray())
       | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokenNot(TKCloseParen()),
-        )
+        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseParen()))
       }
     }
   }
@@ -302,7 +296,7 @@ extension class Parser {
       | Some(unexpectedTok) ->
         this.error(
           this.lex.posStart(unexpectedTok),
-          ExpectedTokenNot(TKGreaterThan()),
+          ExpectedToken(TKGreaterThan()),
         )
       };
       e = this.expr(prec);
@@ -723,10 +717,7 @@ extension class Parser {
           break void
         }
       | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokenNot(TKCloseParen()),
-        )
+        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseParen()))
       }
     };
     args.toArray()
@@ -771,7 +762,7 @@ extension class Parser {
     | TKComma()
     | TKCloseCurly() ->
       FDNormal(fieldName, Expr(fieldName.pos, Var(fieldName)))
-    | _ -> this.error(this.lex.posStart(tok), ExpectedTokenNot(TKCloseCurly()))
+    | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKCloseCurly()))
     }
   }
 

@@ -226,8 +226,7 @@ extension class Parser {
           forInOfKind = this.lex.getStrTok(inTok) match {
           | "in" -> ForIn()
           | "of" -> ForOf()
-          | _ ->
-            this.error(this.lex.posStart(inTok), ExpectedTokenNot(TKSemi()))
+          | _ -> this.error(this.lex.posStart(inTok), ExpectedToken(TKSemi()))
           };
           e = this.expr(0);
           this.expect(TKCloseParen());
@@ -240,7 +239,7 @@ extension class Parser {
           this.expect(TKCloseParen());
           block = this.blockOrStmt();
           Some(For(st, cond, incr, block))
-        | _ -> this.error(this.lex.posStart(inTok), ExpectedTokenNot(TKSemi()))
+        | _ -> this.error(this.lex.posStart(inTok), ExpectedToken(TKSemi()))
         }
       | bk @ "let"
       | bk @ "const"
