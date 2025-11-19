@@ -53,10 +53,12 @@ mutable class Lexer private {
   }
 
   // Returns the string associated with a token.
+  readonly fun getTokenRawStringContent(tok: Token): String {
+    String::fromChars(this.contents.slice(tok.posStart.value, tok.posEnd.value))
+  }
+
   readonly fun getStrTok(tok: Token): String {
-    str = String::fromChars(
-      this.contents.slice(tok.posStart.value, tok.posEnd.value),
-    );
+    str = this.getTokenRawStringContent(tok);
     tok.kind match {
     | TKQuote() -> str.stripPrefix("'").stripSuffix("'").replace("\\'", "'")
     | TKDoubleQuote() ->

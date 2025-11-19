@@ -103,7 +103,7 @@ extension class Parser {
             caseTok.posStart,
             caseTok.posEnd,
           );
-          this.lex.getStrTok(caseTok) match {
+          this.lex.getTokenRawStringContent(caseTok) match {
           | "case" ->
             value = this.expr(0);
             this.expect(TKColon());

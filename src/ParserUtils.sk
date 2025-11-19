@@ -11,7 +11,7 @@ extension class Parser {
 
   readonly fun getVar(tok: Token): String {
     if (tok.kind is TKVar()) {
-      this.lex.getStrTok(tok)
+      this.lex.getTokenRawStringContent(tok)
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
     }
@@ -20,7 +20,7 @@ extension class Parser {
   readonly fun getNumber(tok: Token): String {
     if (tok.kind is TKNumber()) {
       // TODO: check and normalize somehow
-      this.lex.getStrTok(tok)
+      this.lex.getTokenRawStringContent(tok)
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKNumber()))
     }
@@ -29,7 +29,7 @@ extension class Parser {
   readonly fun getBigInt(tok: Token): String {
     if (tok.kind is TKBigInt()) {
       // TODO: check and normalize somehow
-      this.lex.getStrTok(tok)
+      this.lex.getTokenRawStringContent(tok)
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKBigInt()))
     }
@@ -38,9 +38,10 @@ extension class Parser {
   readonly fun unquoteString(tok: Token): String {
     // TODO: handle escaped sequences
     tok.kind match {
-    | TKQuote() -> this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'")
+    | TKQuote() ->
+      this.lex.getTokenRawStringContent(tok).stripPrefix("'").stripSuffix("'")
     | TKDoubleQuote() ->
-      this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\"")
+      this.lex.getTokenRawStringContent(tok).stripPrefix("\"").stripSuffix("\"")
     | _ ->
       this.error(
         this.lex.posStart(tok),

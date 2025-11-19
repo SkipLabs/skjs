@@ -62,7 +62,10 @@ extension class Parser {
     | TKQuote()
     | TKDoubleQuote() ->
       TAStringLiteral(this.unquoteString(tok))
-    | TKBackTick() -> TATemplate(this.lex.getStrTok(tok))
+    | TKBackTick() ->
+      TATemplate(
+        /* TODO: parse type template */ this.lex.getTokenRawStringContent(tok),
+      )
     | TKBigInt() -> TABigIntLiteral(this.getBigInt(tok))
     | TKNumber() -> TANumLiteral(this.getNumber(tok))
     | TKLessThan() ->

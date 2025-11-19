@@ -767,11 +767,11 @@ extension class Parser {
   mutable fun parseTemplateLiteral(tok: Token): Expr_ {
     invariant(tok.kind is TKBackTick());
 
-    rawContent = this.lex.getStrTok(tok);
+    rawContent = this.lex.getTokenRawStringContent(tok);
 
     if (!rawContent.contains("${")) {
       // Simple template literal without interpolation
-      return EString(rawContent)
+      return EString(rawContent.stripPrefix("`").stripSuffix("`"))
     };
 
     // Parse template literal with interpolation by manipulating lexer position
