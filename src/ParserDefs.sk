@@ -217,17 +217,12 @@ extension class Parser {
         } match {
         | Some(modifierRemoval) ->
           removeTok = this.lex.next().fromSome();
-          pos = this.lex.next() match {
-          | None() -> this.error(this.lex.posEnd(), ExpectedStrNot("readonly"))
-          | Some(readonlyTok) ->
-            if (!this.lex.isEqTok(readonlyTok, "readonly")) {
-              this.error(
-                this.lex.posStart(readonlyTok),
-                ExpectedStrNot("readonly"),
-              )
-            };
-            PosRange::create(this.lex, removeTok.posStart, readonlyTok.posEnd)
-          };
+          this.expectStr("readonly");
+          pos = PosRange::create(
+            this.lex,
+            removeTok.posStart,
+            this.lex.getLastPos(),
+          );
           modifiers.push(
             (if (modifierRemoval) ModRemoveReadonly else ModReadonly)(pos),
           );
