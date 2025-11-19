@@ -8,9 +8,13 @@ module SKJS;
 /* Position types. */
 /***************************************************************************/
 
-value class RelPos(fileName: String, line: Int, col: Int) uses Show, Equality {
+value class RelPos(
+  fileName: FAbsolute,
+  line: Int,
+  col: Int,
+) uses Show, Equality {
   fun toString(): String {
-    fileName = this.fileName.replace("\"", "\\\"");
+    fileName = this.fileName.toString().replace("\"", "\\\"");
     `File "${fileName}", line ${this.line}, character ${this.col}:`
   }
 }
@@ -22,7 +26,7 @@ value class RelPosRange(start: RelPos, end: RelPos) {
     if (this.start.line != this.end.line) {
       return this.start.toString();
     };
-    fileName = this.start.fileName.replace("\"", "\\\"");
+    fileName = this.start.fileName.toString().replace("\"", "\\\"");
     `File "${fileName}", line ${this.start.line}, character ${this.start.col}-${
       this.end.col
     }:`
@@ -44,11 +48,16 @@ value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
 
 value class PosRange private (
   symbol: SymbolicPos,
-  fileName: String,
+  fileName: FAbsolute,
   relStart: Pos,
   relEnd: Pos,
 ) uses XXHashable, Orderable {
-  const none: this = PosRange(SPTopLevel(), "", Pos::none, Pos::none);
+  const none: this = PosRange(
+    SPTopLevel(),
+    FAbsolute::nil,
+    Pos::none,
+    Pos::none,
+  );
 
   static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {
     symbolPos = lexer.currentSymbolPos;
@@ -97,8 +106,8 @@ value class PosRange private (
 /***************************************************************************/
 
 class PositionResolver{
-  fileName: String = "",
-  newLines: Array<Int> = Array[],
+  fileName: FAbsolute,
+  newLines: Array<Int>,
   symbols: Map<SymbolicPos, Int>,
 } {
   fun relPosRange(pos: PosRange): RelPosRange {

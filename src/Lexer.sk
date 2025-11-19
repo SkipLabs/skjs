@@ -13,7 +13,7 @@ base class SymbolicPos uses Orderable, Hashable, XXHashable {
   | SPConstant(constName: String)
 }
 
-mutable class Lexer{
+mutable class Lexer private {
   mutable currentSymbol: SymbolicPos = SPTopLevel(),
   mutable currentSymbolPos: Int = -1,
 
@@ -21,10 +21,10 @@ mutable class Lexer{
   symbolLocations: mutable Map<SymbolicPos, Int> = mutable Map[],
 
   // The name of the file that we are lexing
-  fileName: String,
+  fileName: FAbsolute,
 
-  // The relative path for consistent ID generation across machines
-  relativeFileName: String,
+  // The hash of the relative path for consistent ID generation across machines
+  relativeFileNameHash: Int,
 
   // The contents of the file
   contents: Array<Char>,
@@ -40,25 +40,6 @@ mutable class Lexer{
   // The last token that was lexed, None() if we haven't started.
   mutable lastTok: ?Token = None(),
 } {
-  // This method is useful to be able to "look ahead". There are a few
-  // constructions where determining what we are parsing is a bit
-  // complicated. For example, a call with explicit type arguments is
-  // really tricky. Consider: foo<targs>(args), we have to parse all
-  // the type arguments in "targs" to determine that we are dealing
-  // with a type argument and not a comparison. That's when this
-  // saving mechanism is used. So that we can try to parse something
-  // and then come back to where we were once we know what we are
-  // dealing with.
-  readonly private fun save(): this {
-    Lexer{
-      fileName => this.fileName,
-      relativeFileName => this.relativeFileName,
-      contents => this.contents,
-      pos => this.pos,
-      lastTok => this.lastTok,
-    }
-  }
-
   // Returns true if the token is equal to the string passed as
   // parameter. Note that we do not allocate a string for the token on
   // purpose, we want to save as many allocations as possible.
@@ -97,37 +78,33 @@ mutable class Lexer{
     }
   }
 
-  // Creates a lexer from a saved point in the past.
-  static private fun mcreateFromSaved(lexer: Lexer): mutable Lexer {
-    mutable Lexer{
-      fileName => lexer.fileName,
-      relativeFileName => lexer.relativeFileName,
-      contents => lexer.contents,
-      pos => lexer.pos,
-      lastTok => lexer.lastTok,
-    }
-  }
-
   mutable fun lookAhead(f: () -> Bool): Bool {
-    saved = this.save();
+    savedCurrentSymbol = this.currentSymbol;
+    savedCurrentSymbolPos = this.currentSymbolPos;
+    savedInType = this.inType;
+    savedPos = this.pos;
+    savedLastTok = this.lastTok;
     result = f();
-    this.!pos = saved.pos;
-    this.!lastTok = saved.lastTok;
-    this.!inType = saved.inType;
+    this.!currentSymbol = savedCurrentSymbol;
+    this.!currentSymbolPos = savedCurrentSymbolPos;
+    this.!inType = savedInType;
+    this.!pos = savedPos;
+    this.!lastTok = savedLastTok;
     result
   }
 
   static fun mcreate(
-    fileName: String,
+    fileName: FAbsolute,
     contents: String,
-    root: DirName,
+    root: DAbsolute,
   ): mutable this {
     // Compute relative path for consistent ID generation across machines
+    path = fileName.toString();
     base = root.toString();
-    relativeFileName = Path.relativeTo{path => fileName, base};
+    relativeFileNameHash = Path.relativeTo{path, base}.hash();
     mutable static{
       fileName,
-      relativeFileName,
+      relativeFileNameHash,
       contents => contents.chars().toArray(),
     }
   }

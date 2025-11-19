@@ -12,15 +12,15 @@ class SymbolsFile(symbols: Map<SymbolicPos, Int>) extends SKStore.File
 
 fun makeSymbolsDir(
   context: mutable SKStore.Context,
-  parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile>,
-): SKStore.EHandle<SKStore.SID, SymbolsFile> {
+  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+): SKStore.EHandle<FAbsolute, SymbolsFile> {
   parsedFiles.map(
-    SKStore.SID::keyType,
+    FAbsolute::keyType,
     SymbolsFile::type,
     context,
     SKStore.DirName::create("/skjs/symbols/"),
-    (_context, writer, key, values) ~> {
-      writer.set(key, SymbolsFile(values.first.symbols))
+    (_context, writer, fileName, values) ~> {
+      writer.set(fileName, SymbolsFile(values.first.symbols))
     },
   )
 }
@@ -29,18 +29,18 @@ fun makeSymbolsDir(
 /* Symbols map (associates Symbols to a filename) */
 /***************************************************************************/
 
-class SymbolsMap{dir: SKStore.EHandle<SKStore.SID, SymbolsFile>} {
+class SymbolsMap{dir: SKStore.EHandle<FAbsolute, SymbolsFile>} {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile>,
+    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
   ): this {
     static{dir => makeSymbolsDir(context, parsedFiles)}
   }
   fun get(
     context: mutable SKStore.Context,
-    fileName: String,
+    fileName: FAbsolute,
   ): Map<SymbolicPos, Int> {
-    this.dir.get(context, SKStore.SID(fileName)).symbols
+    this.dir.get(context, fileName).symbols
   }
 }
 

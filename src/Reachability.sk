@@ -6,24 +6,28 @@ module SKJS;
 
 base class CGNode_ uses XXHashable, Show {
   children =
-  | TopLevelFunDef(name: SimpleSymbol, fileName: String)
-  | Method(name: ?SimpleSymbol, class_: Name, fileName: String, static_: Bool)
-  | ObjectMethod(name: SimpleSymbol, fileName: String)
-  | Constructor(class_: Name, fileName: String)
-  | Toplevel(fileName: String)
-  | ArrowTypeAnnot(fileName: String)
+  | TopLevelFunDef(name: SimpleSymbol, fileName: FAbsolute)
+  | Method(
+    name: ?SimpleSymbol,
+    class_: Name,
+    fileName: FAbsolute,
+    static_: Bool,
+  )
+  | Constructor(class_: Name, fileName: FAbsolute)
+  | Toplevel(fileName: FAbsolute)
+  | ArrowTypeAnnot(fileName: FAbsolute)
 
-  fun getFileName(): String {
+  fun getFileName(): FAbsolute {
     this match {
     | TopLevelFunDef(_, fileName)
     | Method(_, _, fileName, _)
-    | ObjectMethod(_, fileName)
     | Constructor(_, fileName)
     | Toplevel(fileName)
     | ArrowTypeAnnot(fileName) ->
       fileName
-    | AnonymousLambda(pos, _) -> pos.fileName
-    | AnonymousFunDef(fd) -> fd.pos.fileName
+    | AnonymousLambda(pos, _)
+    | AnonymousFunDef(FunDef{pos}) ->
+      pos.fileName
     }
   }
 
@@ -37,7 +41,6 @@ base class CGNode_ uses XXHashable, Show {
       | None() -> "__anonymous"
       };
       `${strStatic}${class_}.${strName} (${file})`
-    | ObjectMethod(name, file) -> `anonymous_object.${name.getName()} (${file})`
     | Constructor(class_, file) -> `${class_}.constructor (${file})`
     | Toplevel(file) -> `top-level expr (${file}`
     | ArrowTypeAnnot(file) -> `arrow-type annotation (${file})`
@@ -94,7 +97,7 @@ class CGNode private (
     static(id, id.xxhash(true))
   }
 
-  static fun toplevel(fileName: String): this {
+  static fun toplevel(fileName: FAbsolute): this {
     static::create(Toplevel(fileName))
   }
 
@@ -180,14 +183,14 @@ class CallGraph private (
 ) {
   static fun build(
     context: mutable SKStore.Context,
-    checked: SKStore.EHandle<SKStore.SID, CheckResult>,
+    checked: SKStore.EHandle<FAbsolute, CheckResult>,
   ): this {
     callgraph = checked.map(
       CGNode::keyType,
       CGNode::type,
       context,
       callGraphDirName,
-      (_context, writer, _sid, res) ~> {
+      (_context, writer, _fileName, res) ~> {
         res.first.callgraph.each(cg -> cg.each((k, v) -> writer.setArray(k, v)))
       },
     );
@@ -236,9 +239,9 @@ class CallGraph private (
     context: mutable SKStore.Context,
     changedDefs: Array<Def>,
     debug: Bool = false,
-  ): SortedSet<String> {
+  ): SortedSet<FAbsolute> {
     affectedCGNodes: mutable Set<CGNode> = mutable Set[];
-    affectedClasses: mutable Set<(String, String)> = mutable Set[]; // (className, fileName) pairs
+    affectedClasses: mutable Set<(String, FAbsolute)> = mutable Set[]; // (className, fileName) pairs
     for (def in changedDefs) {
       checkDef(def, affectedCGNodes, affectedClasses)
     };
@@ -251,7 +254,6 @@ class CallGraph private (
         if (affectedClasses.contains(classIdent)) {
           affectedCGNodes.insert(node)
         }
-      | ObjectMethod _
       | TopLevelFunDef _
       | Toplevel _
       | ArrowTypeAnnot _
@@ -265,11 +267,11 @@ class CallGraph private (
     if (debug) {
       print_error("[debug] Directly-affected CG nodes:");
       for (node in affectedCGNodes) {
-        print_error("[debug]   " + node.toString())
+        print_error(`[debug]   ${node}`)
       };
       print_error("[debug] Transitively-affected CG nodes:");
       for (node in closure) {
-        print_error("[debug]   " + node.toString())
+        print_error(`[debug]   ${node}`)
       }
     };
 
@@ -279,7 +281,7 @@ class CallGraph private (
         (affectedFiles, cgNode) -> {
           affectedFiles.set(cgNode.id.getFileName())
         },
-        SortedSet<String>[],
+        SortedSet<FAbsolute>[],
       )
   }
 }
@@ -310,7 +312,7 @@ fun collectCallGraph(context: mutable SKStore.Context): ?CallGraphFile {
 private fun checkDef(
   def: Def,
   nodes: mutable Set<CGNode>,
-  classes: mutable Set<(String, String)>,
+  classes: mutable Set<(String, FAbsolute)>,
 ): void {
   def.value match {
   // Unsupported syntactic forms

@@ -19,7 +19,7 @@ class ParsedResultAndSymbolsFile(
 
 class ParsedResultFile(value: ParsedResult) extends SKStore.File
 
-const parseErrorKey: SKStore.SID = SKStore.SID("");
+const parseErrorKey: FAbsolute = FAbsolute::nil;
 
 const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
 const parsesDirName: SKStore.DirName = SKStore.DirName::create(
@@ -30,11 +30,11 @@ const oldParsesDirName: SKStore.DirName = SKStore.DirName::create(
 );
 class Files(
   isInit: Bool,
-  root: DirName,
-  builtinsFileName: FileName,
-  filesContent: SKStore.EHandle<SKStore.SID, SKStore.StringFile>,
-  importStubs: Array<DirName>,
-  changedFileOldParsedResults: ?SortedMap<String, ParsedResult>,
+  root: DAbsolute,
+  builtinsFileName: FAbsolute,
+  filesContent: SKStore.EHandle<FAbsolute, SKStore.StringFile>,
+  importStubs: Array<DAbsolute>,
+  changedFileOldParsedResults: ?SortedMap<FAbsolute, ParsedResult>,
 ) {
   static fun create(
     context: mutable SKStore.Context,
@@ -44,12 +44,11 @@ class Files(
     trackChangedFiles: Bool = false,
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
-    builtinsFileName = FileName::create(Path.resolve(builtinsFileNameStr));
-    !root = Path.resolve(root);
-    srcFiles = mutable Set[];
+    builtinsFileName = FAbsolute::create(builtinsFileNameStr);
     if (srcFileSeq.isEmpty()) {
       !srcFileSeq = Array[root]
     };
+    srcFiles = mutable Set[];
     for (f in srcFileSeq) {
       !f = Path.resolve(f);
       if (!FileSystem.exists(f)) {
@@ -84,15 +83,15 @@ class Files(
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
       context,
-      SKStore.SID::keyType,
+      FAbsolute::keyType,
       SKStore.StringFile::type,
       filesDirName,
     );
     fileDir = context.unsafeGetEagerDir(filesDirName);
-    oldParses: SortedMap<String, ParsedResult> = SortedMap::create();
+    oldParses: SortedMap<FAbsolute, ParsedResult> = SortedMap::create();
 
     for (fileName in srcFiles) {
-      key = SKStore.SID(fileName);
+      key = FAbsolute::create(fileName);
       content = FileSystem.readTextFile(fileName);
       if (!isInit && trackChangedFiles) {
         oldFile = fileDir.getArrayRaw(key);
@@ -105,15 +104,14 @@ class Files(
             .unsafeGetEagerDir(parsesDirName)
             .getArrayRaw(key)
             .map(ParsedResultAndSymbolsFile::type)[0].value;
-          !oldParses = oldParses.set(fileName, oldParsedResult);
+          !oldParses = oldParses.set(key, oldParsedResult);
         }
       };
       fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
-    for (kv in fileHdl.items(context)) {
-      fileName = kv.i0.value;
-      if (!srcFiles.contains(fileName)) {
-        fileHdl.writeArray(context, kv.i0, Array[]);
+    for ((fileName, _) in fileHdl.items(context)) {
+      if (!srcFiles.contains(fileName.toString())) {
+        fileHdl.writeArray(context, fileName, Array[]);
       };
     };
     changedFileOldParsedResults = if (trackChangedFiles) Some(oldParses) else {
@@ -122,10 +120,10 @@ class Files(
     Success(
       Files(
         isInit,
-        DirName::create(root),
+        DAbsolute::create(root),
         builtinsFileName,
         fileHdl,
-        importStubs.map(DirName::create),
+        importStubs.map(DAbsolute::create),
         changedFileOldParsedResults,
       ),
     )
@@ -134,20 +132,19 @@ class Files(
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
-  ): (SKStore.EHandle<SKStore.SID, ParsedResultAndSymbolsFile>, SymbolsMap) {
+  ): (SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>, SymbolsMap) {
     parsedFiles = this.filesContent.map(
-      SKStore.SID::keyType,
+      FAbsolute::keyType,
       ParsedResultAndSymbolsFile::type,
       context,
-      SKStore.DirName::create("/skjs/parsed_with_errors/"),
-      (_context, writer, key, contentIter) ~> {
-        fileName = key.value;
+      parsesDirName,
+      (_context, writer, fileName, contentIter) ~> {
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content, this.root);
         parser = mutable Parser(lexer);
         try {
           writer.setArray(
-            key,
+            fileName,
             Array[
               ParsedResultAndSymbolsFile(
                 PROk(parser.toplevelDefs()),
@@ -165,7 +162,7 @@ class Files(
           );
           // Also store the symbols under the actual filename for symbol resolution
           writer.setArray(
-            key,
+            fileName,
             Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
           )
         | exn -> throw exn
@@ -204,7 +201,7 @@ class Files(
     currentParses = context.unsafeMaybeGetEagerDir(parsesDirName) match {
     | Some _ ->
       SKStore.EHandle(
-        SKStore.SID::keyType,
+        FAbsolute::keyType,
         ParsedResultAndSymbolsFile::type,
         parsesDirName,
       )
@@ -214,10 +211,7 @@ class Files(
       )
     };
     for ((fileName, previousParsedResult) in oldParses.items()) {
-      currentParsedResult = currentParses.get(
-        context,
-        SKStore.SID(fileName),
-      ).value;
+      currentParsedResult = currentParses.get(context, fileName).value;
       (previousParsedResult, currentParsedResult) match {
       | (PRError(_), PRError(_)) -> continue
       | (PROk(prevDefs), PRError(_)) -> removed.extend(prevDefs)
@@ -244,12 +238,12 @@ class Files(
 fun removeSymbols(
   context: mutable SKStore.Context,
   parsedResultAndSymbols: SKStore.EHandle<
-    SKStore.SID,
+    FAbsolute,
     ParsedResultAndSymbolsFile,
   >,
-): SKStore.EHandle<SKStore.SID, ParsedResultFile> {
+): SKStore.EHandle<FAbsolute, ParsedResultFile> {
   parsedResultAndSymbols.map(
-    SKStore.SID::keyType,
+    FAbsolute::keyType,
     ParsedResultFile::type,
     context,
     SKStore.DirName::create("/parsed/nosymbols/"),

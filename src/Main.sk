@@ -318,7 +318,9 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       if (logAffectedFiles) {
         CallGraph::create(context).each(callgraph -> {
           (_addedDefs, removedDefs) = files.getChangedDefs(context);
-          callgraph.affectedFiles(context, removedDefs).each(print_string);
+          callgraph.affectedFiles(context, removedDefs).each(f ->
+            print_string(f.toString())
+          );
         })
       };
 
@@ -338,7 +340,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 }
 
 class CheckResult(
-  fileName: String,
+  fileName: FAbsolute,
   parseError: ?Error,
   errors: Array<Error>,
   callgraph: ?CallGraphFile = None(),
@@ -347,7 +349,7 @@ class CheckResult(
 
 class Checker private {
   files: Files,
-  parsedFiles: SKStore.EHandle<SKStore.SID, ParsedResultFile>,
+  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultFile>,
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
   symbolsMap: SymbolsMap,
@@ -377,13 +379,13 @@ class Checker private {
 
   fun checkFiles(
     context: mutable SKStore.Context,
-  ): SKStore.EHandle<SKStore.SID, CheckResult> {
+  ): SKStore.EHandle<FAbsolute, CheckResult> {
     this.parsedFiles.map(
-      SKStore.SID::keyType,
+      FAbsolute::keyType,
       CheckResult::type,
       context,
       SKStore.DirName::create("/check-results/"),
-      (context, writer, fileNameKey, valueIter) ~> {
+      (context, writer, fileName, valueIter) ~> {
         parsedFile = valueIter.getUnique() match {
         | None() -> internal_error("File not parsed")
         | Some(x) -> x
@@ -393,19 +395,11 @@ class Checker private {
           initCallGraph(context);
           errors = this.checker.check(context, defs);
           writer.set(
-            fileNameKey,
-            CheckResult(
-              fileNameKey.value,
-              None(),
-              errors,
-              collectCallGraph(context),
-            ),
+            fileName,
+            CheckResult(fileName, None(), errors, collectCallGraph(context)),
           )
         | PRError(err) ->
-          writer.set(
-            fileNameKey,
-            CheckResult(fileNameKey.value, Some(err), Array[]),
-          )
+          writer.set(fileName, CheckResult(fileName, Some(err), Array[]))
         }
       },
     );

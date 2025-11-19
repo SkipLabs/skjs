@@ -11,51 +11,23 @@ module SKJS;
 /***************************************************************************/
 
 fun splitPath(dirNameStr: String): Array<String> {
-  result = mutable Vector<String>[];
-  for (elt in dirNameStr.split("/").filter(x -> x != "")) {
-    if (elt == ".") continue;
-    result.push(elt)
-  };
-  result.toArray()
+  dirNameStr.splitIterator("/").filter(x -> x != "" && x != ".").collect(Array)
 }
 
-fun removeDotDot(path: Array<String>): Array<String> {
-  result = mutable Vector<String>[];
-  for (elt in path) {
-    if (elt == "..") {
-      result.maybePop() match {
-      | None() -> internal_error("Invalid path: " + path)
-      | Some(_) -> continue
-      }
-    };
-    result.push(elt)
-  };
-  result.toArray();
-}
+trait DirName(path: Array<String>)
 
-base class DirName(path: Array<String>) uses Orderable, Show {
-  children =
-  | DRelative()
-  | DAbsolute()
-
-  fun +(other: FileName): FileName {
-    !other.dirName = this / other.dirName;
-    other
+value class DRelative uses DirName {
+  static fun create(dirNameStr: String): DRelative {
+    invariant(Path.isRelative(dirNameStr));
+    DRelative(splitPath(dirNameStr))
   }
 
-  fun /(other: DirName): DirName {
-    (this, other) match {
-    | (DRelative(d1), DRelative(d2)) -> DRelative(d1.concat(d2))
-    | (DRelative _, DAbsolute _) ->
-      internal_error(
-        "Internal error: cannot add an absolute path to a relative one",
-      )
-    | (DAbsolute(d1), DRelative(d2)) -> DAbsolute(removeDotDot(d1.concat(d2)))
-    | (DAbsolute _, DAbsolute _) ->
-      internal_error(
-        "Internal error: cannot add an absolute path to another absolute path",
-      )
-    }
+  const node_modules: this = DRelative::create("node_modules");
+}
+
+class DAbsolute extends S.Key uses DirName, Hashable, XXHashable {
+  static fun create(dirNameStr: String): DAbsolute {
+    DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
 
   fun toString(): String {
@@ -63,29 +35,81 @@ base class DirName(path: Array<String>) uses Orderable, Show {
     "/" + this.path.join("/") + "/"
   }
 
+  fun isRoot(): Bool {
+    this.path.size() <= 0
+  }
+
+  fun exists(): Bool {
+    FileSystem.exists(this.toString())
+  }
+
   fun endsWith(str: String): Bool {
     if (str == "") internal_error("str should not be empty");
     this.path.size() > 0 && this.path[this.path.size() - 1] == str
   }
 
-  static fun create(dirNameStr: String): DirName {
-    path = splitPath(dirNameStr);
-    if (dirNameStr.startsWith("/")) DAbsolute(removeDotDot(path)) else {
-      DRelative(path)
+  fun basename(): String {
+    if (this.path.size() <= 0) {
+      ""
+    } else {
+      this.path[this.path.size() - 1]
     }
   }
 
-  fun allAncestors(): mutable Iterator<DirName> {
-    this match {
-    | DRelative(_) ->
-      internal_error(
-        "Internal error: cannot call allAncestors on a relative path",
-      )
-    | DAbsolute(path) ->
-      for (i in Range(0, path.size())) {
-        yield (DAbsolute(this.path.slice(0, this.path.size() - i)))
-      }
+  fun parent(): this {
+    path = this.path.slice(0, -1);
+    static(path)
+  }
+
+  fun allAncestors(): mutable Iterator<DAbsolute> {
+    while (!this.isRoot()) {
+      !this = this.parent();
+      yield this
     }
+  }
+
+  fun +(other: FRelative): FAbsolute {
+    FAbsolute(this / other.dirName, other.baseName)
+  }
+
+  fun /(other: DRelative): this {
+    result = Vector::mcreateFromItems(this.path);
+    for (elt in other.path) {
+      if (elt == "..") {
+        result.maybePop() match {
+        | None() ->
+          internal_error(
+            `Invalid path: ${static(this.path.concat(other.path))}`,
+          )
+        | Some(_) -> continue
+        }
+      };
+      result.push(elt)
+    };
+    static(result.toArray())
+  }
+}
+
+trait FileNameBase<D: DirName>(dirName: D, baseName: String)
+
+class FAbsolute
+  extends S.Key
+  uses FileNameBase<DAbsolute>, Hashable, XXHashable {
+  const nil: FAbsolute = FAbsolute(DAbsolute(Array[]), "");
+
+  static fun create(fileName: String): this {
+    if (fileName.endsWith("/")) {
+      internal_error(`File name '${fileName}' is not expected to end with /`)
+    };
+    vec = splitPath(Path.resolve(fileName));
+    path = vec.slice(0, vec.size() - 1);
+    dirName = DAbsolute(path);
+    baseName = vec[vec.size() - 1];
+    FAbsolute(dirName, baseName)
+  }
+
+  fun toString(): String {
+    `${this.dirName}${this.baseName}`
   }
 
   fun exists(): Bool {
@@ -93,40 +117,17 @@ base class DirName(path: Array<String>) uses Orderable, Show {
   }
 }
 
-class FileName(dirName: DirName, baseName: String) uses Equality {
+value class FRelative uses FileNameBase<DRelative> {
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
     };
+    invariant(Path.isRelative(fileName));
     vec = splitPath(fileName);
     path = vec.slice(0, vec.size() - 1);
-    dirName = if (fileName.startsWith("/")) {
-      DAbsolute(path)
-    } else {
-      DRelative(path)
-    };
+    dirName = DRelative(path);
     baseName = vec[vec.size() - 1];
-    static(dirName, baseName)
-  }
-
-  fun toString(): String {
-    this.dirName.toString() + this.baseName
-  }
-
-  fun exists(): Bool {
-    FileSystem.exists(this.toString())
-  }
-
-  fun hash(): Int {
-    hash = this.baseName.hash();
-    for (elt in this.dirName.path) {
-      !hash = 3 * hash + elt.hash();
-    };
-    hash
-  }
-
-  fun ==(other: this): Bool {
-    this.dirName == other.dirName && this.baseName == other.baseName
+    FRelative(dirName, baseName)
   }
 }
 
@@ -136,15 +137,16 @@ class FileName(dirName: DirName, baseName: String) uses Equality {
 
 class FileNameEntry(
   invertedName: String,
-  name: String,
+  name: FAbsolute,
 ) extends S.File uses Orderable {
-  static fun create(fileName: String): this {
+  static fun create(fAbsolute: FAbsolute): this {
+    fileName = fAbsolute.toString();
     inv = mutable Vector[];
     chars = fileName.chars();
     for (i in Range(0, chars.size())) {
       inv.push(chars[chars.size() - i - 1]);
     };
-    static(String::fromChars(inv.toArray()), fileName)
+    static(String::fromChars(inv.toArray()), fAbsolute)
   }
 
   fun compare(other: FileNameEntry): Order {
@@ -153,14 +155,8 @@ class FileNameEntry(
 }
 
 class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
-  fun lookup(fileName: FileName): ?FileName {
-    fileNameStr = fileName.toString();
-    if (fileNameStr.contains("..")) {
-      internal_error(
-        `File name '${fileNameStr}' is not expected to contain '..'`,
-      )
-    };
-    entry = FileNameEntry::create(fileNameStr);
+  fun lookup(fileName: FAbsolute): ?FAbsolute {
+    entry = FileNameEntry::create(fileName);
     idx = SKStore.binSearch(
       i ~> this.entries[i].invertedName,
       entry.invertedName,
@@ -169,39 +165,35 @@ class NodeModuleDir(entries: Array<FileNameEntry>) extends S.File {
     );
     if (idx < 0 || idx >= this.entries.size()) return None();
     if (this.entries[idx].invertedName.startsWith(entry.invertedName)) {
-      return Some(FileName::create(this.entries[idx].name))
+      return Some(this.entries[idx].name)
     };
     None();
   }
 }
 
-class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
+class FileNameIndex private (modules: S.EHandle<DAbsolute, NodeModuleDir>) {
   static fun create(
     context: mutable S.Context,
-    fileNames: S.EHandle<S.SID, S.StringFile>,
+    fileNames: S.EHandle<FAbsolute, S.StringFile>,
   ): this {
     static(
       fileNames
         .map(
-          S.SID::keyType,
+          DAbsolute::keyType,
           FileNameEntry::type,
           context,
           S.DirName::create("/skjs/file/index/"),
-          (_context, writer, key, _valueIter) ~> {
-            fileName = key.value;
-            for (ancestor in FileName::create(
-              fileName,
-            ).dirName.allAncestors()) {
+          (_context, writer, fileName, _valueIter) ~> {
+            for (ancestor in fileName.dirName.allAncestors()) {
               if (ancestor.endsWith("node_modules")) {
-                modulePath = ancestor.toString();
-                writer.set(S.SID(modulePath), FileNameEntry::create(fileName));
+                writer.set(ancestor, FileNameEntry::create(fileName));
                 return void
               }
             }
           },
         )
         .map(
-          S.SID::keyType,
+          DAbsolute::keyType,
           NodeModuleDir::type,
           context,
           S.DirName::create("/skjs/node_modules/index/"),
@@ -214,15 +206,11 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
 
   fun lookup(
     context: mutable S.Context,
-    path: DirName,
-    file: FileName,
-  ): ?FileName {
-    if (!(path is DAbsolute _)) internal_error("path should be DAbsolute");
+    path: DAbsolute,
+    file: FAbsolute,
+  ): ?FAbsolute {
     for (ancestor in path.allAncestors()) {
-      this.modules.maybeGet(
-        context,
-        S.SID((ancestor / DirName::create("node_modules/")).toString()),
-      ) match {
+      this.modules.maybeGet(context, ancestor / DRelative::node_modules) match {
       | None() -> continue
       | Some(mod) ->
         mod.lookup(file) match {
@@ -264,10 +252,10 @@ class FileNameIndex private (modules: S.EHandle<S.SID, NodeModuleDir>) {
 fun resolveName(
   context: mutable S.Context,
   index: FileNameIndex,
-  root: DirName,
-  cwd: DirName,
+  root: DAbsolute,
+  cwd: DAbsolute,
   moduleName: String,
-): ?FileName {
+): ?FAbsolute {
   if (moduleName.endsWith("-js")) {
     !moduleName = moduleName.stripSuffix("-js");
   };
@@ -278,9 +266,9 @@ fun resolveName(
       return None();
     };
     fullName = if (isAbsolute) {
-      FileName::create(moduleName)
+      FAbsolute::create(moduleName)
     } else {
-      cwd + FileName::create(moduleName)
+      cwd + FRelative::create(moduleName)
     };
     suffix = Path.extname(moduleName);
     suffix match {
@@ -296,7 +284,7 @@ fun resolveName(
     | _ ->
       if (!isAbsolute) {
         for (ext in Array[".d.ts", "/index.d.ts", "/index.cjs"]) {
-          tryPath = cwd + FileName::create(moduleName + ext);
+          tryPath = cwd + FRelative::create(moduleName + ext);
           if (tryPath.exists()) return Some(tryPath)
         }
       };
@@ -310,7 +298,7 @@ fun resolveName(
     ("./@types/", "/index.d.ts"),
     ("./@types/node/", ".d.ts"),
   ]) {
-    tryPath = FileName::create(prepost.i0 + moduleName + prepost.i1);
+    tryPath = FAbsolute::create(prepost.i0 + moduleName + prepost.i1);
     index.lookup(context, root, tryPath) match {
     | None() -> void
     | x @ Some _ -> return x
@@ -320,7 +308,7 @@ fun resolveName(
   if (moduleName.contains(":")) {
     requireTypesPath =
       root +
-      FileName::create(
+      FRelative::create(
         "./node_modules/@types/" + moduleName.split(":").join("/") + ".d.ts",
       );
     debug(requireTypesPath.toString());
@@ -340,7 +328,7 @@ fun resolveName(
     "/types/index.d.ts",
     "/typing/index.d.ts",
   ]) {
-    index.lookup(context, cwd, FileName::create(moduleName + ext)) match {
+    index.lookup(context, cwd, FAbsolute::create(moduleName + ext)) match {
     | None() -> void
     | x @ Some _ -> return x
     }
@@ -349,21 +337,21 @@ fun resolveName(
   index.lookup(
     context,
     cwd,
-    FileName::create(moduleName.replace("/", ".").replace("@", "") + ".d.ts"),
+    FAbsolute::create(moduleName.replace("/", ".").replace("@", "") + ".d.ts"),
   ) match {
   | None() -> void
   | x @ Some _ -> return x
   };
 
   //  if (moduleName.contains("/")) {
-  index.lookup(context, cwd, FileName::create(moduleName + ".d.ts")) match {
+  index.lookup(context, cwd, FAbsolute::create(moduleName + ".d.ts")) match {
   | None() -> void
   | x @ Some _ -> return x
   };
   index.lookup(
     context,
     cwd,
-    FileName::create(moduleName + "/index.cjs"),
+    FAbsolute::create(moduleName + "/index.cjs"),
   ) match {
   | None() -> void
   | x @ Some _ -> return x
@@ -374,10 +362,13 @@ fun resolveName(
   None()
 }
 
-fun resolveStubs(importStubs: Array<DirName>, moduleName: String): ?FileName {
-  res: ?FileName = None();
+fun resolveStubs(
+  importStubs: Array<DAbsolute>,
+  moduleName: String,
+): ?FAbsolute {
+  res: ?FAbsolute = None();
   for (importStub in importStubs) {
-    path = FileName(importStub / DirName::create(moduleName), "index.d.ts");
+    path = FAbsolute(importStub / DRelative::create(moduleName), "index.d.ts");
     if (path.exists()) {
       res match {
       | Some(existing) ->

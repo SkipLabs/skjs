@@ -42,7 +42,7 @@ base class Error uses Equality {
   ): String;
 
   static fun resolver(
-    fileName: String,
+    fileName: FAbsolute,
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
@@ -86,9 +86,9 @@ class LexingError extends SinglePosError<LexingKind>
 base class ErrorPos uses Equality {
   children =
   | EPRange(PosRange)
-  | EPChar(String, Pos)
+  | EPChar(FAbsolute, Pos)
 
-  fun fileName(): String
+  fun fileName(): FAbsolute
   | EPRange(p) -> p.fileName
   | EPChar(fileName, _) -> fileName
 
