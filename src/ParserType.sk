@@ -257,6 +257,7 @@ extension class Parser {
       };
       numTok.kind match {
       | TKNumber() -> TANumLiteral("-" + this.lex.getStrTok(numTok))
+      | TKBigInt() -> TABigIntLiteral("-" + this.lex.getStrTok(numTok))
       | _ -> this.error(this.lex.posStart(numTok), ExpectedToken(TKNumber()))
       }
     | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
