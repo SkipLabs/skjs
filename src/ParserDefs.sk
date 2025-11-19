@@ -13,11 +13,7 @@ extension class Parser {
   mutable fun getName(): Name {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
-    | Some(tok) ->
-      Name(
-        PosRange::create(this.lex, tok.posStart, tok.posEnd),
-        this.getVar(tok),
-      )
+    | Some(tok) -> Name(this.lex.posRange(tok), this.getVar(tok))
     }
   }
 
@@ -33,15 +29,8 @@ extension class Parser {
       tok.kind match {
       | TKQuote()
       | TKDoubleQuote() ->
-        Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.unquoteString(tok),
-        )
-      | TKVar() ->
-        Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.getVar(tok),
-        )
+        Name(this.lex.posRange(tok), this.unquoteString(tok))
+      | TKVar() -> Name(this.lex.posRange(tok), this.getVar(tok))
       | _ ->
         this.error(
           this.lex.posStart(tok),
@@ -63,10 +52,7 @@ extension class Parser {
       tok.kind match {
       | TKQuote()
       | TKDoubleQuote() ->
-        Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.unquoteString(tok),
-        )
+        Name(this.lex.posRange(tok), this.unquoteString(tok))
       | _ ->
         this.error(
           this.lex.posStart(tok),
@@ -96,10 +82,7 @@ extension class Parser {
       tok.kind match {
       | TKQuote()
       | TKDoubleQuote() ->
-        Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.unquoteString(tok),
-        )
+        Name(this.lex.posRange(tok), this.unquoteString(tok))
       | TKSubtraction() ->
         start = tok.posStart;
         nbrTok = this.lex.next() match {
@@ -110,16 +93,8 @@ extension class Parser {
           PosRange::create(this.lex, start, nbrTok.posEnd),
           "-" + this.getNumber(nbrTok),
         )
-      | TKNumber() ->
-        Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.getNumber(tok),
-        )
-      | TKVar() ->
-        Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.getVar(tok),
-        )
+      | TKNumber() -> Name(this.lex.posRange(tok), this.getNumber(tok))
+      | TKVar() -> Name(this.lex.posRange(tok), this.getVar(tok))
       | _ ->
         this.error(
           this.lex.posStart(tok),
@@ -174,31 +149,13 @@ extension class Parser {
           this.expect(TKCloseSquare());
           op = if (this.lex.peekKind() is Some(TKRemoveQM())) {
             tokRemove = this.lex.next().fromSome();
-            Some(
-              FNRemove(
-                PosRange::create(
-                  this.lex,
-                  tokRemove.posStart,
-                  tokRemove.posEnd,
-                ),
-              ),
-            );
+            Some(FNRemove(this.lex.posRange(tokRemove)));
           } else if (this.lex.peekKind() is Some(TKAddQM())) {
             tokAdd = this.lex.next().fromSome();
-            Some(
-              FNAdd(PosRange::create(this.lex, tokAdd.posStart, tokAdd.posEnd)),
-            );
+            Some(FNAdd(this.lex.posRange(tokAdd)));
           } else if (this.lex.peekKind() is Some(TKQuestionMark())) {
             tokQuestion = this.lex.next().fromSome();
-            Some(
-              FNQuestion(
-                PosRange::create(
-                  this.lex,
-                  tokQuestion.posStart,
-                  tokQuestion.posEnd,
-                ),
-              ),
-            )
+            Some(FNQuestion(this.lex.posRange(tokQuestion)))
           } else {
             None()
           };
@@ -269,9 +226,7 @@ extension class Parser {
       | _ -> break void
       };
       nameTok = this.lex.next().fromSome();
-      modifiers.push(
-        mod(PosRange::create(this.lex, nameTok.posStart, nameTok.posEnd)),
-      )
+      modifiers.push(mod(this.lex.posRange(nameTok)))
     };
     Modifiers(modifiers.toArray())
   }
@@ -301,13 +256,7 @@ extension class Parser {
       })
     ) {
       kind = if (isGet) FGet() else FSet();
-      nextTok = this.lex.next().fromSome();
-      Some(
-        FieldGetSet(
-          kind,
-          PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd),
-        ),
-      )
+      Some(FieldGetSet(kind, this.lex.posRange(this.lex.next().fromSome())))
     } else {
       None()
     }
@@ -369,7 +318,7 @@ extension class Parser {
     );
     isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
       tok = this.lex.next().fromSome();
-      Some(PosRange::create(this.lex, tok.posStart, tok.posEnd));
+      Some(this.lex.posRange(tok));
     } else {
       None()
     };
@@ -556,8 +505,7 @@ extension class Parser {
     | "import" ->
       _ = this.lex.next();
       isType = if (this.lex.isEq("type")) {
-        nextTok = this.lex.next().fromSome();
-        Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
+        Some(this.lex.posRange(this.lex.next().fromSome()))
       } else {
         None()
       };
@@ -626,8 +574,7 @@ extension class Parser {
             this.lex.peekKind() is Some(TKMultiplication())
         })
       ) {
-        nextTok = this.lex.next().fromSome();
-        Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
+        Some(this.lex.posRange(this.lex.next().fromSome()))
       } else {
         None()
       };
@@ -662,10 +609,7 @@ extension class Parser {
     | "async" ->
       asyncTok = this.lex.next().fromSome();
       this.expectStr("function");
-      this.funDef(
-        Some(PosRange::create(this.lex, asyncTok.posStart, asyncTok.posEnd)),
-        true,
-      )
+      this.funDef(Some(this.lex.posRange(asyncTok)), true)
     | "function" ->
       _ = this.lex.next();
       this.funDef(None(), true)
@@ -678,9 +622,7 @@ extension class Parser {
     | "const" ->
       _ = this.lex.next();
       if (this.lex.isEq("enum")) {
-        enumTok = this.lex.next().fromSome();
-        posRange = PosRange::create(this.lex, enumTok.posStart, enumTok.posEnd);
-        this.enum(Some(posRange))
+        this.enum(Some(this.lex.posRange(this.lex.next().fromSome())))
       } else {
         this.varDef(VDKConst())
       }
@@ -752,8 +694,7 @@ extension class Parser {
           this.lex.peekKind() is Some(TKVar())
         })
       ) {
-        nextTok = this.lex.next().fromSome();
-        Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
+        Some(this.lex.posRange(this.lex.next().fromSome()))
       } else {
         None()
       };
@@ -1244,8 +1185,7 @@ extension class Parser {
         modifiers = this.modifiers{allowRemove => false};
         (pos, paramName) = this.withPos(this.paramNames, UnterminatedFunDef());
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          nextTok = this.lex.next().fromSome();
-          Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
+          Some(this.lex.posRange(this.lex.next().fromSome()))
         } else {
           None()
         };
@@ -1302,12 +1242,11 @@ extension class Parser {
       };
       bodyTok.kind match {
       | TKOpenCurly() -> FDBSome(this.blockOrStmt())
-      | _ ->
-        FDBNone(PosRange::create(this.lex, bodyTok.posStart, bodyTok.posEnd))
+      | _ -> FDBNone(this.lex.posRange(bodyTok))
       }
     } else {
       lastTok = this.lex.lastTok.fromSome();
-      FDBNone(PosRange::create(this.lex, lastTok.posStart, lastTok.posEnd))
+      FDBNone(this.lex.posRange(lastTok))
     };
     funEnd = this.lex.getLastPos();
 

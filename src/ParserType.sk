@@ -114,14 +114,7 @@ extension class Parser {
           ) {
             name = this.getName();
             optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-              nextTokPos = this.lex.next().fromSome();
-              Some(
-                PosRange::create(
-                  this.lex,
-                  nextTokPos.posStart,
-                  nextTokPos.posEnd,
-                ),
-              )
+              Some(this.lex.posRange(this.lex.next().fromSome()))
             } else {
               None()
             };
@@ -131,14 +124,7 @@ extension class Parser {
           } else {
             type = this.type(0);
             optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-              nextTokPos = this.lex.next().fromSome();
-              Some(
-                PosRange::create(
-                  this.lex,
-                  nextTokPos.posStart,
-                  nextTokPos.posEnd,
-                ),
-              )
+              Some(this.lex.posRange(this.lex.next().fromSome()))
             } else {
               None()
             };
@@ -233,10 +219,7 @@ extension class Parser {
       | "abstract" -> TANew(this.type(prec))
       | "new" -> TANew(this.type(prec))
       | className ->
-        name = Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          className,
-        );
+        name = Name(this.lex.posRange(tok), className);
         loop {
           if (this.lex.peekKind() != Some(TKDot())) break void;
           _ = this.lex.next();
@@ -429,8 +412,7 @@ extension class Parser {
         _ = this.lex.next();
         spreadName = this.getName();
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          qm = this.lex.next().fromSome();
-          Some(PosRange::create(this.lex, qm.posStart, qm.posEnd))
+          Some(this.lex.posRange(this.lex.next().fromSome()))
         } else {
           None()
         };
@@ -480,10 +462,7 @@ extension class Parser {
           }
         };
         qm = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          nextTokPos = this.lex.next().fromSome();
-          Some(
-            PosRange::create(this.lex, nextTokPos.posStart, nextTokPos.posEnd),
-          )
+          Some(this.lex.posRange(this.lex.next().fromSome()))
         } else {
           None()
         };
@@ -506,15 +485,11 @@ extension class Parser {
         ) {
           paramName = this.getName();
           if (this.lex.peekKind() is Some(TKQuestionMark())) {
-            qm = this.lex.next().fromSome();
+            qmPos = this.lex.posRange(this.lex.next().fromSome());
             this.expect(TKColon());
             type = this.type(0);
             result.push(
-              TAFunParam(
-                Some(TAParamName(paramName)),
-                Some(PosRange::create(this.lex, qm.posStart, qm.posEnd)),
-                type,
-              ),
+              TAFunParam(Some(TAParamName(paramName)), Some(qmPos), type),
             );
           } else {
             if (!(this.lex.peekKind() is Some(TKColon()))) {

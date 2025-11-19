@@ -116,6 +116,10 @@ mutable class Lexer private {
     EPChar(this.fileName, tok.posStart)
   }
 
+  readonly fun posRange(tok: Token): PosRange {
+    PosRange::create(this, tok.posStart, tok.posEnd)
+  }
+
   // This is the method containing the main logic of the lexer. Note
   // that we are skipping whitespaces and comments before running the
   // actual logic.

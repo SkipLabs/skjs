@@ -98,11 +98,7 @@ extension class Parser {
           | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
           | Some(x) -> x
           };
-          caseTokPos = PosRange::create(
-            this.lex,
-            caseTok.posStart,
-            caseTok.posEnd,
-          );
+          caseTokPos = this.lex.posRange(caseTok);
           this.lex.getTokenRawStringContent(caseTok) match {
           | "case" ->
             value = this.expr(0);
@@ -167,12 +163,7 @@ extension class Parser {
         } else {
           Some(this.expr(0))
         };
-        Some(
-          Return(
-            PosRange::create(this.lex, retTok.posStart, retTok.posEnd),
-            exprOpt,
-          ),
-        )
+        Some(Return(this.lex.posRange(retTok), exprOpt))
       | "throw" ->
         _ = this.lex.next();
         Some(Throw(this.expr(0)))
