@@ -542,7 +542,7 @@ extension class Parser {
     | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
     | Some(x) -> x
     };
-    this.lex.getStrTok(tok) match {
+    this.getVar(tok) match {
     | "declare" ->
       _ = this.lex.next();
       this.lex.peek() match {
