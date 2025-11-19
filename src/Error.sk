@@ -186,6 +186,11 @@ class ExpectedToken(tokenKind: TokenKind) extends ParsingKind {
     `Expected token ${this.tokenKind}`
   }
 }
+class ExpectedTokens(kinds: Array<TokenKind>) extends ParsingKind {
+  fun toString(): String {
+    `Expected token ${this.kinds.join(", or")}`
+  }
+}
 class ExpectedStrNot(str: String) extends ParsingKind {
   fun toString(): String {
     `Expected ${this.str}`
