@@ -26,8 +26,8 @@ extension class Parser {
   //   | { <stmt>* }
   /***************************************************************************/
 
-  // Parse a block of statements
-  mutable fun block(): Array<Stmt> {
+  // Parse either a block or a single statement
+  mutable fun blockOrStmt(): Array<Stmt> {
     (this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedBlock())
     | Some(x) -> x
@@ -45,7 +45,7 @@ extension class Parser {
       }
     | _ ->
       this.stmt() match {
-      | None() -> Array[]
+      | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKOpenCurly()))
       | Some(x) -> Array[x]
       }
     }
@@ -333,19 +333,6 @@ extension class Parser {
         Some(StmtExpr(e))
       }
     | _ -> Some(StmtExpr(this.expr(0)))
-    }
-  }
-
-  // Parse either a block or a single statement
-  mutable fun blockOrStmt(): Array<Stmt> {
-    this.lex.peekKind() match {
-    | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKOpenCurly()))
-    | Some(TKOpenCurly()) -> this.block()
-    | _ ->
-      this.stmt() match {
-      | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKOpenCurly()))
-      | Some(x) -> Array[x]
-      }
     }
   }
 }

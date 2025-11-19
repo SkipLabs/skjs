@@ -1258,7 +1258,7 @@ extension class Parser {
       | Some(x) -> x
       };
       bodyTok.kind match {
-      | TKOpenCurly() -> FDBSome(this.block())
+      | TKOpenCurly() -> FDBSome(this.blockOrStmt())
       | _ ->
         FDBNone(PosRange::create(this.lex, bodyTok.posStart, bodyTok.posEnd))
       }
