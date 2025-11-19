@@ -329,10 +329,7 @@ extension class Parser {
       | ARight() ->
         Binop(binop, Expr(leftPosRange, mutableLeft), this.expr(prec))
       | ANonAssoc() ->
-        this.error(
-          this.lex.posStart(binopTok),
-          NonAssociative(this.lex.getStrTok(binopTok)),
-        )
+        this.error(this.lex.posStart(binopTok), NonAssociative(binopTok.kind))
       };
       Some(newLeft)
     } else if (bopPrec > prec) {

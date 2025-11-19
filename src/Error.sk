@@ -218,9 +218,9 @@ class DontUseInequality() extends ParsingKind {
   }
 }
 
-class NonAssociative(op: String) extends ParsingKind {
+class NonAssociative(opTokenKind: TokenKind) extends ParsingKind {
   fun toString(): String {
-    `The operator ${this.op} is not associative`
+    `The operator ${this.opTokenKind} is not associative`
   }
 }
 
