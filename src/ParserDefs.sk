@@ -1226,7 +1226,7 @@ extension class Parser {
       void // Keep current context for anonymous methods
     };
 
-    funStart = this.lex.lastTok.fromSome().posEnd;
+    funStart = this.lex.getLastPos();
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
       this.typeParams();
@@ -1288,7 +1288,7 @@ extension class Parser {
       (retPos, retType) = this.withPos(() -> this.type(0), UnterminatedType());
       (retPos, Some(retType))
     } else {
-      start = this.lex.lastTok.fromSome().posEnd;
+      start = this.lex.getLastPos();
       end = this.lex.peek() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
       | Some(x) -> x.posStart
@@ -1309,7 +1309,7 @@ extension class Parser {
       lastTok = this.lex.lastTok.fromSome();
       FDBNone(PosRange::create(this.lex, lastTok.posStart, lastTok.posEnd))
     };
-    funEnd = this.lex.lastTok.fromSome().posEnd;
+    funEnd = this.lex.getLastPos();
 
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
