@@ -259,15 +259,6 @@ extension class Parser {
       | TKNumber() -> TANumLiteral("-" + this.lex.getStrTok(numTok))
       | _ -> this.error(this.lex.posStart(numTok), ExpectedToken(TKNumber()))
       }
-    | TKAddition() ->
-      numTok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-      | Some(x) -> x
-      };
-      numTok.kind match {
-      | TKNumber() -> TANumLiteral(this.lex.getStrTok(numTok))
-      | _ -> this.error(this.lex.posStart(numTok), ExpectedToken(TKNumber()))
-      }
     | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
     };
 
