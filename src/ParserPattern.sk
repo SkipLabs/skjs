@@ -16,19 +16,8 @@ extension class Parser {
 
   // Parse a pattern (used in destructuring assignments and function parameters)
   mutable fun pattern(): Pattern {
-    start = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-    | Some(x) -> x
-    };
-    pat_ = this.pattern_();
-    Pattern(
-      PosRange::create(
-        this.lex,
-        start.posStart,
-        this.lex.lastTok.fromSome().posEnd,
-      ),
-      pat_,
-    )
+    (pos, pat) = this.withPos(this.pattern_, UnterminatedDef());
+    Pattern(pos, pat)
   }
 
   // Internal pattern parsing implementation

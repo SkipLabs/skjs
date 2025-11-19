@@ -216,12 +216,12 @@ extension class Parser {
         | _ -> None()
         } match {
         | Some(modifierRemoval) ->
-          removeTok = this.lex.next().fromSome();
-          this.expectStr("readonly");
-          pos = PosRange::create(
-            this.lex,
-            removeTok.posStart,
-            this.lex.getLastPos(),
+          (pos, _void) = this.withPos(
+            () -> {
+              _ = this.lex.next();
+              this.expectStr("readonly")
+            },
+            ExpectedStrNot("readonly"),
           );
           modifiers.push(
             (if (modifierRemoval) ModRemoveReadonly else ModReadonly)(pos),
@@ -496,14 +496,8 @@ extension class Parser {
 
   // Helper for parsing definitions with position tracking
   mutable fun defHelper(): Def {
-    tok = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-    | Some(x) -> x
-    };
-    start = tok.posStart;
-    def_ = this.defHelper_();
-    end = this.lex.lastTok.fromSome().posEnd;
-    Def(PosRange::create(this.lex, start, end), def_)
+    (pos, def_) = this.withPos(this.defHelper_, UnterminatedDef());
+    Def(pos, def_)
   }
 
   // Internal definition parsing implementation
@@ -1208,13 +1202,7 @@ extension class Parser {
     | _ ->
       loop {
         modifiers = this.modifiers{allowRemove => false};
-        start = this.lex.peek() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
-        | Some(tok) -> tok.posStart
-        };
-        paramName = this.paramNames();
-        end = this.lex.lastTok.fromSome().posEnd;
-        pos = PosRange::create(this.lex, start, end);
+        (pos, paramName) = this.withPos(this.paramNames, UnterminatedFunDef());
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           nextTok = this.lex.next().fromSome();
           Some(PosRange::create(this.lex, nextTok.posStart, nextTok.posEnd))
@@ -1254,13 +1242,7 @@ extension class Parser {
     };
     retType = if (this.lex.peekKind() is Some(TKColon())) {
       this.expect(TKColon());
-      retTypeTok = this.lex.peek();
-      retType = this.type(0);
-      retPos = PosRange::create(
-        this.lex,
-        retTypeTok.fromSome().posStart,
-        this.lex.lastTok.fromSome().posEnd,
-      );
+      (retPos, retType) = this.withPos(() -> this.type(0), UnterminatedType());
       (retPos, Some(retType))
     } else {
       start = this.lex.lastTok.fromSome().posEnd;

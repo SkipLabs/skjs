@@ -37,20 +37,20 @@ extension class Parser {
   mutable fun type(prec: Int): Type {
     inTypeCopy = this.lex.inType;
     this.lex.!inType = true;
-    start = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-    | Some(tok) -> tok.posStart
-    };
-    if (
-      this.lex.peekKind() is Some(TKBitwiseOr()) ||
-      this.lex.peekKind() is Some(TKBitwiseAnd())
-    ) {
-      _ = this.lex.next();
-    };
-    type = this.type_(prec);
-    end = this.lex.lastTok.fromSome().posEnd;
+    (pos, type) = this.withPos(
+      () -> {
+        if (
+          this.lex.peekKind() is Some(TKBitwiseOr()) ||
+          this.lex.peekKind() is Some(TKBitwiseAnd())
+        ) {
+          _ = this.lex.next();
+        };
+        this.type_(prec)
+      },
+      UnterminatedType(),
+    );
     this.lex.!inType = inTypeCopy;
-    Type(PosRange::create(this.lex, start, end), type)
+    Type(pos, type)
   }
 
   mutable fun type_(prec: Int): Type_ {

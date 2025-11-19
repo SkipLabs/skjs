@@ -39,14 +39,9 @@ extension class Parser {
   mutable fun expr(prec: Int): Expr {
     inTypeCopy = this.lex.inType;
     this.lex.!inType = false;
-    start = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(tok) -> tok.posStart
-    };
-    e_ = this.expr_(prec);
-    end = this.lex.lastTok.fromSome().posEnd;
+    (pos, e) = this.withPos(() -> this.expr_(prec), UnterminatedExpr());
     this.lex.!inType = inTypeCopy;
-    Expr(PosRange::create(this.lex, start, end), e_)
+    Expr(pos, e)
   }
 
   // Parse regular expression literals (/pattern/flags)

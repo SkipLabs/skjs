@@ -26,6 +26,16 @@ extension class Parser {
       }
     }
   }
+
+  mutable fun withPos<T>(f: () -> T, err: ParsingKind): (PosRange, T) {
+    start = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), err)
+    | Some(tok) -> tok.posStart
+    };
+    result = f();
+    end = this.lex.getLastPos();
+    (PosRange::create(this.lex, start, end), result)
+  }
 }
 
 module end;

@@ -53,16 +53,8 @@ extension class Parser {
 
   // Parse a single statement
   mutable fun stmt(): ?Stmt {
-    start = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
-    | Some(tok) -> tok.posStart
-    };
-    result = this.stmt_();
-    end = this.lex.lastTok.fromSome().posEnd;
-    result match {
-    | None() -> None()
-    | Some(x) -> Some(Stmt(PosRange::create(this.lex, start, end), x))
-    }
+    (pos, stmtOpt) = this.withPos(this.stmt_, UnterminatedStmt());
+    stmtOpt.map(stmt -> Stmt(pos, stmt))
   }
 
   // Internal statement parsing implementation
