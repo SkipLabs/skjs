@@ -114,14 +114,18 @@ extension class Parser {
         )
       | TKSubtraction() ->
         start = tok.posStart;
-        nbr = this.lex.next() match {
+        nbrTok = this.lex.next() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
         | Some(x) -> x
         };
-        Name(
-          PosRange::create(this.lex, start, nbr.posEnd),
-          "-" + this.lex.getStrTok(nbr),
-        )
+        if (nbrTok.kind is TKNumber()) {
+          Name(
+            PosRange::create(this.lex, start, nbrTok.posEnd),
+            "-" + this.lex.getStrTok(nbrTok),
+          )
+        } else {
+          this.error(this.lex.posStart(nbrTok), ExpectedToken(TKNumber()))
+        }
       | TKNumber()
       | TKVar() ->
         Name(
