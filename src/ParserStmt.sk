@@ -28,11 +28,9 @@ extension class Parser {
 
   // Parse either a block or a single statement
   mutable fun blockOrStmt(): Array<Stmt> {
-    (this.lex.peek() match {
+    this.lex.peekKind() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedBlock())
-    | Some(x) -> x
-    }).kind match {
-    | TKOpenCurly() ->
+    | Some(TKOpenCurly()) ->
       _ = this.lex.next();
       stmts = mutable Vector[];
       loop {
@@ -43,7 +41,7 @@ extension class Parser {
         | Some(st) -> stmts.push(st)
         }
       }
-    | _ ->
+    | Some(_) ->
       this.stmt() match {
       | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKOpenCurly()))
       | Some(x) -> Array[x]
