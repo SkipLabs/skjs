@@ -264,7 +264,7 @@ extension class Parser {
       }
     | TKQuote()
     | TKDoubleQuote() ->
-      EString(this.lex.getStrTok(tok))
+      EString(this.unquoteString(tok))
     | TKBackTick() -> this.parseTemplateLiteral(tok)
     | subTok @ TKAddition()
     | subTok @ TKSubtraction() ->

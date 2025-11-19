@@ -35,6 +35,20 @@ extension class Parser {
     }
   }
 
+  readonly fun unquoteString(tok: Token): String {
+    // TODO: handle escaped sequences
+    tok.kind match {
+    | TKQuote() -> this.lex.getStrTok(tok).stripPrefix("'").stripSuffix("'")
+    | TKDoubleQuote() ->
+      this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\"")
+    | _ ->
+      this.error(
+        this.lex.posStart(tok),
+        ExpectedTokens(Array[TKQuote(), TKDoubleQuote()]),
+      )
+    }
+  }
+
   mutable fun expect(kind: TokenKind): void {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(kind))
