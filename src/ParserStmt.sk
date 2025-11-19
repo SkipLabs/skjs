@@ -209,29 +209,22 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
         | Some(x) -> x
         };
-        inTok = this.lex.next() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
-        | Some(x) -> x
-        };
-        inTok.kind match {
-        | TKVar() ->
-          forInOfKind = this.lex.getStrTok(inTok) match {
-          | "in" -> ForIn()
-          | "of" -> ForOf()
-          | _ -> this.error(this.lex.posStart(inTok), ExpectedToken(TKSemi()))
-          };
+        isIn = this.lex.isEq("in");
+        if (isIn || this.lex.isEq("of")) {
+          forInOfKind = if (isIn) ForIn() else ForOf();
+          _ = this.lex.next();
           e = this.expr(0);
           this.expect(TKCloseParen());
           block = this.blockOrStmt();
           Some(ForInOf(forInOfKind, st, e, block))
-        | TKSemi() ->
+        } else {
+          this.expect(TKSemi());
           cond = this.expr(0);
           this.expect(TKSemi());
           incr = this.expr(0);
           this.expect(TKCloseParen());
           block = this.blockOrStmt();
           Some(For(st, cond, incr, block))
-        | _ -> this.error(this.lex.posStart(inTok), ExpectedToken(TKSemi()))
         }
       | bk @ "let"
       | bk @ "const"
