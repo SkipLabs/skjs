@@ -258,7 +258,7 @@ extension class Parser {
         | None() -> void
         }
       };
-      mod = this.lex.peekStr() match {
+      mod = this.lex.peekRawStr() match {
       | Some("abstract") -> ModAbstract
       | Some("async") -> ModAsync
       | Some("private") -> ModPrivate

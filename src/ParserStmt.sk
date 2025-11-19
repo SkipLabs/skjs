@@ -113,7 +113,7 @@ extension class Parser {
               | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
               | Some(st) -> stmts.push(st)
               };
-              this.lex.peekStr() match {
+              this.lex.peekRawStr() match {
               | Some("case")
               | Some("default")
               | Some("}") ->
@@ -130,7 +130,7 @@ extension class Parser {
               | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
               | Some(st) -> stmts.push(st)
               };
-              this.lex.peekStr() match {
+              this.lex.peekRawStr() match {
               | Some("case")
               | Some("default")
               | Some("}") ->

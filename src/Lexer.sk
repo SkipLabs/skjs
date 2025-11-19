@@ -110,8 +110,8 @@ mutable class Lexer private {
     this.peek().map(x -> x.kind)
   }
 
-  readonly fun peekStr(): ?String {
-    this.peek().map(x -> this.getStrTok(x))
+  readonly fun peekRawStr(): ?String {
+    this.peek().map(this.getTokenRawStringContent)
   }
 
   readonly fun error<T>(start: Int, errKind: LexingKind): T {
