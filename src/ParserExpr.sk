@@ -290,15 +290,7 @@ extension class Parser {
     | TKDivision() -> this.parseRegexpExpr()
     | TKLessThan() ->
       ty = this.type(0);
-      this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-      | Some(Token(TKGreaterThan(), _, _)) -> void
-      | Some(unexpectedTok) ->
-        this.error(
-          this.lex.posStart(unexpectedTok),
-          ExpectedToken(TKGreaterThan()),
-        )
-      };
+      this.expect(TKGreaterThan());
       e = this.expr(prec);
       return As(e, ty)
     | _ -> this.parseAtomicExpr(tok)
