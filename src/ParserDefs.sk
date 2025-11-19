@@ -267,7 +267,7 @@ extension class Parser {
 
   // Parse a normal field type (not a method)
   mutable fun getNormalFieldType(
-    fieldPos: PosRange,
+    fieldPosStart: Pos,
     modifiers: Modifiers,
     fieldGetSet: ?FieldGetSet,
     fieldName: Symbol,
@@ -289,7 +289,7 @@ extension class Parser {
       !fieldValue = Some(this.expr(0));
     };
     FieldTypeValue{
-      pos => fieldPos,
+      pos => PosRange::create(this.lex, fieldPosStart, this.lex.getLastPos()),
       setGet => fieldGetSet,
       modifiers,
       name => fieldName,
@@ -302,16 +302,11 @@ extension class Parser {
   // Parse a field type (method or normal field)
   mutable fun getFieldType(modifiers: Modifiers): FieldType {
     fieldGetSet = this.isGetSet();
-    fieldNamePos = this.lex.peek() match {
+    fieldPosStart = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
     | Some(x) -> x.posStart
     };
     fieldName = this.getSymbol();
-    fieldPos = PosRange::create(
-      this.lex,
-      this.lex.getLastPos(),
-      this.lex.getLastPos(),
-    );
     isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
       tok = this.lex.next().fromSome();
       Some(this.lex.posRange(tok));
@@ -327,14 +322,14 @@ extension class Parser {
         None(),
         modifiers,
         fieldGetSet,
-        (fieldNamePos, methodName),
+        (fieldPosStart, methodName),
         true,
         isOptional,
         None(),
       )
     | _ ->
       this.getNormalFieldType(
-        fieldPos,
+        fieldPosStart,
         modifiers,
         fieldGetSet,
         fieldName,
