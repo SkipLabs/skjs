@@ -28,7 +28,11 @@ extension class Parser {
   // <string> | "<string>" | '<string>'
   mutable fun getNameOrString(): Name {
     this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
+    | None() ->
+      this.error(
+        this.lex.posEnd(),
+        ExpectedTokens(Array[TKVar(), TKQuote(), TKDoubleQuote()]),
+      )
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
@@ -46,7 +50,11 @@ extension class Parser {
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
-      | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
+      | _ ->
+        this.error(
+          this.lex.posStart(tok),
+          ExpectedTokens(Array[TKVar(), TKQuote(), TKDoubleQuote()]),
+        )
       }
     }
   }
@@ -54,7 +62,11 @@ extension class Parser {
   // "<string>" | '<string>'
   mutable fun getString(): Name {
     this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
+    | None() ->
+      this.error(
+        this.lex.posEnd(),
+        ExpectedTokens(Array[TKQuote(), TKDoubleQuote()]),
+      )
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
@@ -67,7 +79,11 @@ extension class Parser {
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok).stripPrefix("\"").stripSuffix("\""),
         )
-      | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
+      | _ ->
+        this.error(
+          this.lex.posStart(tok),
+          ExpectedTokens(Array[TKQuote(), TKDoubleQuote()]),
+        )
       }
     }
   }
@@ -75,7 +91,19 @@ extension class Parser {
   // "<string>" | '<string>' | <int>
   mutable fun getNameOrStringOrInt(): Name {
     this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
+    | None() ->
+      this.error(
+        this.lex.posEnd(),
+        ExpectedTokens(
+          Array[
+            TKVar(),
+            TKNumber(),
+            TKSubtraction(),
+            TKQuote(),
+            TKDoubleQuote(),
+          ],
+        ),
+      )
     | Some(tok) ->
       tok.kind match {
       | TKQuote() ->
@@ -104,7 +132,19 @@ extension class Parser {
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
         )
-      | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
+      | _ ->
+        this.error(
+          this.lex.posStart(tok),
+          ExpectedTokens(
+            Array[
+              TKVar(),
+              TKNumber(),
+              TKSubtraction(),
+              TKQuote(),
+              TKDoubleQuote(),
+            ],
+          ),
+        )
       }
     }
   }
@@ -749,7 +789,10 @@ extension class Parser {
           break void
         }
       | _ ->
-        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseCurly()))
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokens(Array[TKCloseCurly(), TKComma()]),
+        )
       }
     };
     names.toArray()
@@ -881,7 +924,10 @@ extension class Parser {
           break void
         }
       | _ ->
-        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseCurly()))
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokens(Array[TKCloseCurly(), TKComma()]),
+        )
       }
     };
     Enum(isConst, name, fields.toArray())
@@ -1048,7 +1094,10 @@ extension class Parser {
         }
       | TKGreaterThan() -> return tdparams.toArray()
       | _ ->
-        this.error(this.lex.posStart(tokComma), ExpectedToken(TKGreaterThan()))
+        this.error(
+          this.lex.posStart(tokComma),
+          ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
+        )
       }
     }
   }
@@ -1092,7 +1141,10 @@ extension class Parser {
         }
       | TKGreaterThan() -> return result.toArray()
       | _ ->
-        this.error(this.lex.posStart(commaTok), ExpectedToken(TKGreaterThan()))
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
+        )
       }
     }
   }
@@ -1236,7 +1288,10 @@ extension class Parser {
             break void;
           }
         | _ ->
-          this.error(this.lex.posStart(nextTok), ExpectedToken(TKCloseParen()))
+          this.error(
+            this.lex.posStart(nextTok),
+            ExpectedTokens(Array[TKCloseParen(), TKComma()]),
+          )
         }
       }
     };
@@ -1324,7 +1379,10 @@ extension class Parser {
         }
       | TKCloseSquare() -> break void
       | _ ->
-        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseSquare()))
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
+        )
       }
     };
     names.toArray()
@@ -1348,7 +1406,10 @@ extension class Parser {
         }
       | TKCloseCurly() -> break void
       | _ ->
-        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseSquare()))
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
+        )
       }
     };
     names.toArray()

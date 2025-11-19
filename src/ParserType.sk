@@ -154,7 +154,7 @@ extension class Parser {
           | _ ->
             this.error(
               this.lex.posStart(commaTok),
-              ExpectedToken(TKCloseSquare()),
+              ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
             )
           }
         };
@@ -258,7 +258,11 @@ extension class Parser {
       numTok.kind match {
       | TKNumber() -> TANumLiteral("-" + this.lex.getStrTok(numTok))
       | TKBigInt() -> TABigIntLiteral("-" + this.lex.getStrTok(numTok))
-      | _ -> this.error(this.lex.posStart(numTok), ExpectedToken(TKNumber()))
+      | _ ->
+        this.error(
+          this.lex.posStart(numTok),
+          ExpectedTokens(Array[TKNumber(), TKBigInt()]),
+        )
       }
     | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
     };
@@ -532,7 +536,10 @@ extension class Parser {
         }
       | TKCloseParen() -> return result.toArray()
       | _ ->
-        this.error(this.lex.posStart(tokComma), ExpectedToken(TKCloseParen()))
+        this.error(
+          this.lex.posStart(tokComma),
+          ExpectedTokens(Array[TKCloseParen(), TKComma()]),
+        )
       }
     }
   }
@@ -553,7 +560,10 @@ extension class Parser {
           return result.toArray()
         }
       | _ ->
-        this.error(this.lex.posStart(commaTok), ExpectedToken(TKGreaterThan()))
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
+        )
       }
     }
   }

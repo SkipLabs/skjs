@@ -108,7 +108,7 @@ extension class Parser {
         | _ ->
           this.error(
             this.lex.posStart(commaTok),
-            ExpectedToken(TKCloseSquare()),
+            ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
           )
         }
       }
@@ -140,7 +140,10 @@ extension class Parser {
             fields.push(this.field());
           }
         | _ ->
-          this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseCurly()))
+          this.error(
+            this.lex.posStart(commaTok),
+            ExpectedTokens(Array[TKCloseCurly(), TKSemi(), TKComma()]),
+          )
         }
       }
     }
@@ -214,13 +217,16 @@ extension class Parser {
           | _ ->
             this.error(
               this.lex.posStart(closeTok),
-              ExpectedToken(TKCloseParen()),
+              ExpectedTokens(Array[TKCloseParen(), TKComma()]),
             )
           }
         };
         Params(params.toArray())
       | _ ->
-        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseParen()))
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokens(Array[TKCloseParen(), TKComma()]),
+        )
       }
     }
   }
@@ -473,7 +479,7 @@ extension class Parser {
           | _ ->
             this.error(
               this.lex.posStart(commaTok),
-              ExpectedToken(TKGreaterThan()),
+              ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
             )
           }
         };
@@ -670,7 +676,7 @@ extension class Parser {
           | _ ->
             this.error(
               this.lex.posStart(commaTok),
-              ExpectedToken(TKGreaterThan()),
+              ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
             )
           }
         };
@@ -704,7 +710,10 @@ extension class Parser {
           break void
         }
       | _ ->
-        this.error(this.lex.posStart(commaTok), ExpectedToken(TKCloseParen()))
+        this.error(
+          this.lex.posStart(commaTok),
+          ExpectedTokens(Array[TKCloseParen(), TKComma()]),
+        )
       }
     };
     args.toArray()
@@ -749,7 +758,11 @@ extension class Parser {
     | TKComma()
     | TKCloseCurly() ->
       FDNormal(fieldName, Expr(fieldName.pos, Var(fieldName)))
-    | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKCloseCurly()))
+    | _ ->
+      this.error(
+        this.lex.posStart(tok),
+        ExpectedTokens(Array[TKCloseCurly(), TKColon(), TKComma()]),
+      )
     }
   }
 
