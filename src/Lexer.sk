@@ -116,6 +116,10 @@ mutable class Lexer private {
     EPChar(this.fileName, tok.posStart)
   }
 
+  readonly fun getLastPos(): Pos {
+    this.lastTok.fromSome().posEnd
+  }
+
   readonly fun posRange(tok: Token): PosRange {
     PosRange::create(this, tok.posStart, tok.posEnd)
   }
@@ -430,10 +434,6 @@ mutable class Lexer private {
       this.!pos = tok.posEnd.value;
       tokOpt
     }
-  }
-
-  readonly fun getLastPos(): Pos {
-    this.lastTok.fromSome().posEnd
   }
 
   // Record a symbol location for tracking - only stores first occurrence
