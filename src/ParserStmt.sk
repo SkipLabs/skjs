@@ -151,10 +151,10 @@ extension class Parser {
         this.expect(TKOpenParen());
         e = this.expr(0);
         this.expect(TKCloseParen());
-        ifBlock = this.block();
+        ifBlock = this.blockOrStmt();
         elseBlock = if (this.lex.isEq("else")) {
           _ = this.lex.next();
-          Some(this.block())
+          Some(this.blockOrStmt())
         } else {
           None()
         };
