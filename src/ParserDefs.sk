@@ -84,15 +84,11 @@ extension class Parser {
       | TKDoubleQuote() ->
         Name(this.lex.posRange(tok), this.unquoteString(tok))
       | TKSubtraction() ->
-        start = tok.posStart;
         nbrTok = this.lex.next() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
         | Some(x) -> x
         };
-        Name(
-          PosRange::create(this.lex, start, nbrTok.posEnd),
-          "-" + this.getNumber(nbrTok),
-        )
+        Name(this.lex.posRange2(tok, nbrTok), "-" + this.getNumber(nbrTok))
       | TKNumber() -> Name(this.lex.posRange(tok), this.getNumber(tok))
       | TKVar() -> Name(this.lex.posRange(tok), this.getVar(tok))
       | _ ->
