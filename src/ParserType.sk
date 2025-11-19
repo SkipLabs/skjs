@@ -179,7 +179,7 @@ extension class Parser {
       }
     | TKOpenCurly() -> TAObject(this.objectFields())
     | TKVar() ->
-      this.lex.getStrTok(tok) match {
+      this.getVar(tok) match {
       | "typeof" -> TATypeOf(this.type(0))
       | "import" ->
         this.expect(TKOpenParen());

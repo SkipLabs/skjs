@@ -242,7 +242,7 @@ extension class Parser {
       Unop(UOTild(), this.expr(tildPrec))
     | TKDotDotDot() -> Spread(this.getName())
     | TKVar() ->
-      str = this.lex.getStrTok(tok);
+      str = this.getVar(tok);
       str match {
       | "function" -> this.error(this.lex.posStart(tok), FunctionInExpr())
       | "new" ->

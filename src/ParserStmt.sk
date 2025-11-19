@@ -78,7 +78,7 @@ extension class Parser {
       this.expect(TKCloseCurly());
       Some(Block(stmts.toArray()))
     | TKVar() ->
-      keyword = this.lex.getStrTok(tok);
+      keyword = this.getVar(tok);
       keyword match {
       | "break" ->
         _ = this.lex.next();

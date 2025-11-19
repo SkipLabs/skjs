@@ -44,7 +44,7 @@ extension class Parser {
       | TKVar() ->
         Name(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.lex.getStrTok(tok),
+          this.getVar(tok),
         )
       | _ ->
         this.error(
@@ -126,11 +126,15 @@ extension class Parser {
         } else {
           this.error(this.lex.posStart(nbrTok), ExpectedToken(TKNumber()))
         }
-      | TKNumber()
-      | TKVar() ->
+      | TKNumber() ->
         Name(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
           this.lex.getStrTok(tok),
+        )
+      | TKVar() ->
+        Name(
+          PosRange::create(this.lex, tok.posStart, tok.posEnd),
+          this.getVar(tok),
         )
       | _ ->
         this.error(
