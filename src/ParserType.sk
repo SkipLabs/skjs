@@ -63,7 +63,7 @@ extension class Parser {
     | TKDoubleQuote() -> TAStringLiteral(this.lex.getStrTok(tok))
     | TKBackTick() -> TATemplate(this.lex.getStrTok(tok))
     | TKBigInt() -> TABigIntLiteral(this.lex.getStrTok(tok))
-    | TKNumber() -> TANumLiteral(this.lex.getStrTok(tok))
+    | TKNumber() -> TANumLiteral(this.getNumber(tok))
     | TKLessThan() ->
       tparams = this.typeParams();
       this.type(0) match {
@@ -256,7 +256,7 @@ extension class Parser {
       | Some(x) -> x
       };
       numTok.kind match {
-      | TKNumber() -> TANumLiteral("-" + this.lex.getStrTok(numTok))
+      | TKNumber() -> TANumLiteral("-" + this.getNumber(numTok))
       | TKBigInt() -> TABigIntLiteral("-" + this.lex.getStrTok(numTok))
       | _ ->
         this.error(

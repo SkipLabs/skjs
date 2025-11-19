@@ -118,18 +118,14 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
         | Some(x) -> x
         };
-        if (nbrTok.kind is TKNumber()) {
-          Name(
-            PosRange::create(this.lex, start, nbrTok.posEnd),
-            "-" + this.lex.getStrTok(nbrTok),
-          )
-        } else {
-          this.error(this.lex.posStart(nbrTok), ExpectedToken(TKNumber()))
-        }
+        Name(
+          PosRange::create(this.lex, start, nbrTok.posEnd),
+          "-" + this.getNumber(nbrTok),
+        )
       | TKNumber() ->
         Name(
           PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.lex.getStrTok(tok),
+          this.getNumber(tok),
         )
       | TKVar() ->
         Name(

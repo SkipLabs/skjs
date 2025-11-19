@@ -235,7 +235,7 @@ extension class Parser {
   // Handles: numbers, strings, variables, typeof, await, new, unary ops
   mutable fun parseAtomicExpr(tok: Token): Expr_ {
     tok.kind match {
-    | TKNumber() -> Number(this.lex.getStrTok(tok))
+    | TKNumber() -> Number(this.getNumber(tok))
     | TKBigInt() -> BigInt(this.lex.getStrTok(tok))
     | TKTild() ->
       (_assoc, tildPrec) = precedence[TKTild()];
