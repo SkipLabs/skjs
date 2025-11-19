@@ -9,6 +9,14 @@ extension class Parser {
     error(ParsingError(pos, kind))
   }
 
+  readonly fun getVar(tok: Token): String {
+    if (tok.kind is TKVar()) {
+      this.lex.getStrTok(tok)
+    } else {
+      this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
+    }
+  }
+
   mutable fun expect(kind: TokenKind): void {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(kind))
