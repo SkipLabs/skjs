@@ -275,20 +275,12 @@ extension class Parser {
         _ = this.lex.next();
         if (this.lex.peekKind() is Some(TKCloseSquare())) {
           _ = this.lex.next();
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           !left = TAArray(Type(leftRange, left));
           continue;
         };
         ty = this.type(0);
-        leftRange = PosRange::create(
-          this.lex,
-          tok.posStart,
-          this.lex.getLastPos(),
-        );
+        leftRange = this.lex.posRangeFrom(tok);
         this.expect(TKCloseSquare());
         !left = TAGet(Type(leftRange, left), ty);
       } else {
@@ -300,11 +292,7 @@ extension class Parser {
       this.lex.peekKind() match {
       | Some(TKVar()) if (this.lex.isEq("is")) ->
         _ = this.lex.next();
-        leftRange = PosRange::create(
-          this.lex,
-          tok.posStart,
-          this.lex.getLastPos(),
-        );
+        leftRange = this.lex.posRangeFrom(tok);
         !left = TAIs(Type(leftRange, left), this.type(0))
       | Some(TKVar()) if (this.lex.isEq("extends")) ->
         (_assoc, assignPrec) = precedence[TKAssignment()];
@@ -317,18 +305,10 @@ extension class Parser {
           ty2 = this.type(0);
           this.expect(TKColon());
           ty3 = this.type(assignPrec);
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           !left = TAExtendsQuestion(Type(leftRange, left), ty1, ty2, ty3);
         } else {
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           !left = TAExtends(Type(leftRange, left), ty1);
         };
         continue
@@ -342,11 +322,7 @@ extension class Parser {
         (assoc, bopPrec) = precedence[bop];
         if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
         if (bopPrec == prec) {
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           _ = this.lex.next();
           right = this.type(prec + 1);
           !left = isType match {
@@ -356,11 +332,7 @@ extension class Parser {
           continue;
         };
         if (bopPrec > prec) {
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           _ = this.lex.next();
           right = this.type(bopPrec);
           !left = isType match {

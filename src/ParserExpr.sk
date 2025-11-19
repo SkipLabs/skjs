@@ -315,11 +315,7 @@ extension class Parser {
     | Some(x) -> x
     };
     if (bopPrec == prec) {
-      leftPosRange = PosRange::create(
-        this.lex,
-        tok.posStart,
-        this.lex.getLastPos(),
-      );
+      leftPosRange = this.lex.posRangeFrom(tok);
       _ = this.lex.next();
       newLeft = assoc match {
       | ALeft() ->
@@ -332,11 +328,7 @@ extension class Parser {
       };
       Some(newLeft)
     } else if (bopPrec > prec) {
-      leftPosRange = PosRange::create(
-        this.lex,
-        tok.posStart,
-        this.lex.getLastPos(),
-      );
+      leftPosRange = this.lex.posRangeFrom(tok);
       _ = this.lex.next();
       newLeft = Binop(
         binop,
@@ -410,11 +402,7 @@ extension class Parser {
     tok: Token,
   ): ?Expr_ {
     if (this.lex.isEqTok(binopTok, "as")) {
-      leftPosRange = PosRange::create(
-        this.lex,
-        tok.posStart,
-        this.lex.getLastPos(),
-      );
+      leftPosRange = this.lex.posRangeFrom(tok);
       _ = this.lex.next();
 
       // Check if this is 'as const'
@@ -429,13 +417,7 @@ extension class Parser {
           if (this.lex.isEq("as")) {
             _ = this.lex.next();
             type = this.type(0);
-            !result = As(
-              Expr(
-                PosRange::create(this.lex, tok.posStart, this.lex.getLastPos()),
-                result,
-              ),
-              type,
-            );
+            !result = As(Expr(this.lex.posRangeFrom(tok), result), type);
           };
           break void;
         };
@@ -483,10 +465,7 @@ extension class Parser {
       };
       args = this.arguments();
       newLeft = Call(
-        Expr(
-          PosRange::create(this.lex, tok.posStart, this.lex.getLastPos()),
-          mutableLeft,
-        ),
+        Expr(this.lex.posRangeFrom(tok), mutableLeft),
         targs.toArray(),
         args,
       );
@@ -507,11 +486,7 @@ extension class Parser {
     | TKIncr() ->
       (_assoc, opPrec) = precedence[binopTok.kind];
       if (prec <= opPrec) {
-        leftPosRange = PosRange::create(
-          this.lex,
-          tok.posStart,
-          this.lex.getLastPos(),
-        );
+        leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
         (true, PostOp(POIncr(), Expr(leftPosRange, mutableLeft)))
       } else {
@@ -520,11 +495,7 @@ extension class Parser {
     | TKDecr() ->
       (_assoc, opPrec) = precedence[binopTok.kind];
       if (prec <= opPrec) {
-        leftPosRange = PosRange::create(
-          this.lex,
-          tok.posStart,
-          this.lex.getLastPos(),
-        );
+        leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
         (true, PostOp(PODecr(), Expr(leftPosRange, mutableLeft)))
       } else {
@@ -533,11 +504,7 @@ extension class Parser {
     | TKExclamationMark() ->
       (_assoc, opPrec) = precedence[TKIncr()];
       if (prec <= opPrec) {
-        leftPosRange = PosRange::create(
-          this.lex,
-          tok.posStart,
-          this.lex.getLastPos(),
-        );
+        leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
         (true, PostOp(POExcl(), Expr(leftPosRange, mutableLeft)))
       } else {
@@ -565,11 +532,7 @@ extension class Parser {
       if (isIn || this.lex.isEqTok(binopTok, "instanceof")) {
         (_assoc, opPrec) = in_and_instanceofPrec;
         if (prec <= opPrec) {
-          leftPosRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftPosRange = this.lex.posRangeFrom(tok);
           _ = this.lex.next();
           rhs = this.expr(opPrec);
           lhs = Expr(leftPosRange, mutableLeft);
@@ -591,11 +554,7 @@ extension class Parser {
       if (binopTok.kind is TKQuestionMark()) {
         (_assoc, opPrec) = precedence[binopTok.kind];
         if (prec <= opPrec) {
-          leftPosRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftPosRange = this.lex.posRangeFrom(tok);
           _ = this.lex.next();
           e2 = this.expr(0);
           this.expect(TKColon());
@@ -611,10 +570,7 @@ extension class Parser {
         if (prec >= callPrec) return mutableLeft;
         _ = this.lex.next();
         !mutableLeft = Get(
-          Expr(
-            PosRange::create(this.lex, tok.posStart, this.lex.getLastPos()),
-            mutableLeft,
-          ),
+          Expr(this.lex.posRangeFrom(tok), mutableLeft),
           this.expr(0),
         );
         this.expect(TKCloseSquare());

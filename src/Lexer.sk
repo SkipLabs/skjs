@@ -128,6 +128,10 @@ mutable class Lexer private {
     PosRange::create(this, tokStart.posStart, tokEnd.posEnd)
   }
 
+  readonly fun posRangeFrom(tok: Token): PosRange {
+    this.posRange2(tok, this.lastTok.fromSome())
+  }
+
   // This is the method containing the main logic of the lexer. Note
   // that we are skipping whitespaces and comments before running the
   // actual logic.
