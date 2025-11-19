@@ -14,14 +14,10 @@ extension class Parser {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
     | Some(tok) ->
-      tok.kind match {
-      | TKVar() ->
-        Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          this.lex.getStrTok(tok),
-        )
-      | _ -> this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
-      }
+      Name(
+        PosRange::create(this.lex, tok.posStart, tok.posEnd),
+        this.getVar(tok),
+      )
     }
   }
 
