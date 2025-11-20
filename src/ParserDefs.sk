@@ -322,7 +322,7 @@ extension class Parser {
         None(),
         modifiers,
         fieldGetSet,
-        (fieldPosStart, methodName),
+        methodName,
         true,
         isOptional,
         None(),
@@ -1081,10 +1081,6 @@ extension class Parser {
 
   // Parse function definitions
   mutable fun funDef(isAsync: ?PosRange, parseBlock: Bool): FunDef {
-    funTok = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
-    | Some(x) -> x
-    };
     funName = this.getName();
     // Record the function definition and set context
     funcSymbol = SPFunction(funName.value);
@@ -1099,7 +1095,7 @@ extension class Parser {
       isAsync,
       Modifiers::empty(),
       None(),
-      (funTok.posStart, FNNormal(funName)),
+      FNNormal(funName),
       parseBlock,
       None(),
       cgNode,
@@ -1115,7 +1111,7 @@ extension class Parser {
     isAsync: ?PosRange,
     modifiers: Modifiers,
     fieldGetSet: ?FieldGetSet,
-    funName: (Pos, SimpleSymbol),
+    funName: SimpleSymbol,
     parseBlock: Bool,
     optional: ?PosRange,
     cgNode: ?CGNode,
@@ -1136,7 +1132,7 @@ extension class Parser {
     isAsync: ?PosRange,
     methodModifiers: Modifiers,
     isGetSet: ?FieldGetSet,
-    funName: ?(Pos, SimpleSymbol),
+    funName: ?SimpleSymbol,
     parseBlock: Bool,
     isOptional: ?PosRange,
     cgNode: ?CGNode,
@@ -1144,12 +1140,12 @@ extension class Parser {
     // Record method/function definition and set context
     (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
-    | (Some((_funPos, FNNormal(name))), SPClass(className)) ->
+    | (Some(FNNormal(name)), SPClass(className)) ->
       methodSymbol = SPMethod(className, name.value);
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinition(methodSymbol, symbolContextPos);
       this.setSymbolContext(methodSymbol, symbolContextPos)
-    | (Some((_funPos, FNNormal(name))), _) ->
+    | (Some(FNNormal(name)), _) ->
       funcSymbol = SPFunction(name.value);
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinition(funcSymbol, symbolContextPos);
@@ -1249,7 +1245,7 @@ extension class Parser {
       modifiers => methodModifiers,
       tparams => tparams,
       isGetSet,
-      name => funName.map(x -> x.i1),
+      name => funName,
       optional => isOptional,
       params => params.toArray(),
       retType,

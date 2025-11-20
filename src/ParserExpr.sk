@@ -680,10 +680,6 @@ extension class Parser {
     };
     modifiers = this.modifiers{allowRemove => false};
     fieldGetSet = this.isGetSet();
-    fieldNameTok = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(x) -> x
-    };
     fieldName = this.getNameOrStringOrInt();
     if (
       this.lex.peekKind() is Some(TKOpenParen()) ||
@@ -693,7 +689,7 @@ extension class Parser {
         None(),
         modifiers,
         fieldGetSet,
-        Some((fieldNameTok.posStart, FNNormal(fieldName))),
+        Some(FNNormal(fieldName)),
         true,
         None(),
         None(),
