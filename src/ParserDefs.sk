@@ -158,11 +158,11 @@ extension class Parser {
     loop {
       if (allowRemove) {
         this.lex.peekKind() match {
-        | Some(TKSubtraction()) -> Some(true)
-        | Some(TKAddition()) -> Some(false)
+        | Some(TKSubtraction()) -> Some(ModRemoveReadonly)
+        | Some(TKAddition()) -> Some(ModReadonly)
         | _ -> None()
         } match {
-        | Some(modifierRemoval) ->
+        | Some(mod) ->
           (pos, _void) = this.withPos(
             () -> {
               _ = this.lex.next();
@@ -170,9 +170,7 @@ extension class Parser {
             },
             ExpectedStrNot("readonly"),
           );
-          modifiers.push(
-            (if (modifierRemoval) ModRemoveReadonly else ModReadonly)(pos),
-          );
+          modifiers.push(mod(pos));
           continue
         | None() -> void
         }
