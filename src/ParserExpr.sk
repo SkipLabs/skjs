@@ -515,10 +515,9 @@ extension class Parser {
     tok: Token,
     prec: Int,
   ): Expr_ {
-    mutableLeft = left;
     loop {
       binopTok = this.lex.peek() match {
-      | None() -> return mutableLeft
+      | None() -> return left
       | Some(x) -> x
       };
       isIn = this.lex.isEqTok(binopTok, "in");
@@ -528,21 +527,21 @@ extension class Parser {
           leftPosRange = this.lex.posRangeFrom(tok);
           _ = this.lex.next();
           rhs = this.expr(opPrec);
-          lhs = Expr(leftPosRange, mutableLeft);
-          !mutableLeft = if (isIn) In(lhs, rhs) else InstanceOf(lhs, rhs);
+          lhs = Expr(leftPosRange, left);
+          !left = if (isIn) In(lhs, rhs) else InstanceOf(lhs, rhs);
           continue;
         };
-        return mutableLeft;
+        return left;
       };
       (postfixHandled, postfixResult) = this.tryParsePostfixOp(
-        mutableLeft,
+        left,
         binopTok,
         tok,
         prec,
       );
       if (postfixHandled) {
-        !mutableLeft = postfixResult;
-        return mutableLeft;
+        !left = postfixResult;
+        return left;
       };
       if (binopTok.kind is TKQuestionMark()) {
         (_assoc, opPrec) = precedence[binopTok.kind];
@@ -552,27 +551,24 @@ extension class Parser {
           e2 = this.expr(0);
           this.expect(TKColon());
           e3 = this.expr(opPrec);
-          !mutableLeft = EIf(Expr(leftPosRange, mutableLeft), e2, e3);
+          !left = EIf(Expr(leftPosRange, left), e2, e3);
         };
-        return mutableLeft;
+        return left;
       };
-      this.tryParseClosure(mutableLeft, binopTok, tok).each(closureResult ->
-        !mutableLeft = closureResult
+      this.tryParseClosure(left, binopTok, tok).each(closureResult ->
+        !left = closureResult
       );
       if (binopTok.kind is TKOpenSquare()) {
-        if (prec >= callPrec) return mutableLeft;
+        if (prec >= callPrec) return left;
         _ = this.lex.next();
-        !mutableLeft = Get(
-          Expr(this.lex.posRangeFrom(tok), mutableLeft),
-          this.expr(0),
-        );
+        !left = Get(Expr(this.lex.posRangeFrom(tok), left), this.expr(0));
         this.expect(TKCloseSquare());
         continue;
       };
-      this.tryParseFunctionCall(mutableLeft, binopTok, tok, prec) match {
+      this.tryParseFunctionCall(left, binopTok, tok, prec) match {
       | None() -> void
       | Some(callResult) ->
-        !mutableLeft = callResult;
+        !left = callResult;
         continue
       };
       if (binopTok.kind is TKEquality()) {
@@ -581,17 +577,17 @@ extension class Parser {
       if (binopTok.kind is TKInequality()) {
         this.error(this.lex.posStart(binopTok), DontUseInequality())
       };
-      this.tryParseTypeCast(mutableLeft, binopTok, tok) match {
+      this.tryParseTypeCast(left, binopTok, tok) match {
       | None() -> void
       | Some(castResult) -> return castResult
       };
-      this.tryParseBinaryOp(mutableLeft, binopTok, tok, prec) match {
+      this.tryParseBinaryOp(left, binopTok, tok, prec) match {
       | None() -> void
       | Some(binaryResult) ->
-        !mutableLeft = binaryResult;
+        !left = binaryResult;
         continue
       };
-      return mutableLeft
+      return left
     }
   }
 
