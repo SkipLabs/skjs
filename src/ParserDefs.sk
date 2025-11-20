@@ -20,23 +20,16 @@ extension class Parser {
   // <string> | "<string>" | '<string>'
   mutable fun getNameOrString(): Name {
     this.lex.next() match {
-    | None() ->
+    | Some(tok @ Token(TKVar(), _, _)) ->
+      Name(this.lex.posRange(tok), this.getVar(tok))
+    | Some(tok @ Token(TKQuote(), _, _))
+    | Some(tok @ Token(TKDoubleQuote(), _, _)) ->
+      Name(this.lex.posRange(tok), this.unquoteString(tok))
+    | _ ->
       this.error(
         this.lex.posEnd(),
         ExpectedTokens(Array[TKVar(), TKQuote(), TKDoubleQuote()]),
       )
-    | Some(tok) ->
-      tok.kind match {
-      | TKQuote()
-      | TKDoubleQuote() ->
-        Name(this.lex.posRange(tok), this.unquoteString(tok))
-      | TKVar() -> Name(this.lex.posRange(tok), this.getVar(tok))
-      | _ ->
-        this.error(
-          this.lex.posStart(tok),
-          ExpectedTokens(Array[TKVar(), TKQuote(), TKDoubleQuote()]),
-        )
-      }
     }
   }
 
