@@ -48,17 +48,7 @@ extension class Parser {
         this.lex.posEnd(),
         ExpectedTokens(Array[TKQuote(), TKDoubleQuote()]),
       )
-    | Some(tok) ->
-      tok.kind match {
-      | TKQuote()
-      | TKDoubleQuote() ->
-        Name(this.lex.posRange(tok), this.unquoteString(tok))
-      | _ ->
-        this.error(
-          this.lex.posStart(tok),
-          ExpectedTokens(Array[TKQuote(), TKDoubleQuote()]),
-        )
-      }
+    | Some(tok) -> Name(this.lex.posRange(tok), this.unquoteString(tok))
     }
   }
 
