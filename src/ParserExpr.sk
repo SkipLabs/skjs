@@ -299,7 +299,7 @@ extension class Parser {
 
   // Handle binary operators with precedence climbing
   mutable fun tryParseBinaryOp(
-    mutableLeft: Expr_,
+    left: Expr_,
     binopTok: Token,
     tok: Token,
     prec: Int,
@@ -318,9 +318,8 @@ extension class Parser {
       newLeft = assoc match {
       | ALeft() ->
         right = this.expr(prec + 1);
-        Binop(binop, Expr(leftPosRange, mutableLeft), right)
-      | ARight() ->
-        Binop(binop, Expr(leftPosRange, mutableLeft), this.expr(prec))
+        Binop(binop, Expr(leftPosRange, left), right)
+      | ARight() -> Binop(binop, Expr(leftPosRange, left), this.expr(prec))
       | ANonAssoc() ->
         this.error(this.lex.posStart(binopTok), NonAssociative(binopTok.kind))
       };
@@ -328,11 +327,7 @@ extension class Parser {
     } else if (bopPrec > prec) {
       leftPosRange = this.lex.posRangeFrom(tok);
       _ = this.lex.next();
-      newLeft = Binop(
-        binop,
-        Expr(leftPosRange, mutableLeft),
-        this.expr(bopPrec + 1),
-      );
+      newLeft = Binop(binop, Expr(leftPosRange, left), this.expr(bopPrec + 1));
       Some(newLeft)
     } else {
       if (bopPrec >= prec) {
@@ -344,7 +339,7 @@ extension class Parser {
 
   // Handle closure syntax (: type => expr and => expr)
   mutable fun tryParseClosure(
-    mutableLeft: Expr_,
+    left: Expr_,
     binopTok: Token,
     tok: Token,
   ): ?Expr_ {
@@ -364,7 +359,7 @@ extension class Parser {
       _ = this.lex.next();
       rty = this.type(0);
       this.expect(TKClosure());
-      params = mutableLeft match {
+      params = left match {
       | Params(params) -> params
       | Var(varName) -> Array[(varName, None())]
       | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
@@ -377,7 +372,7 @@ extension class Parser {
       Some(Closure(params, Some(rty), closureBody))
     } else if (binopTok.kind is TKClosure()) {
       _ = this.lex.next();
-      params = mutableLeft match {
+      params = left match {
       | Params(params) -> params
       | Var(varName) -> Array[(varName, None())]
       | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
@@ -395,7 +390,7 @@ extension class Parser {
 
   // Handle type casting with 'as' keyword and 'as const' syntax
   mutable fun tryParseTypeCast(
-    mutableLeft: Expr_,
+    left: Expr_,
     binopTok: Token,
     tok: Token,
   ): ?Expr_ {
@@ -406,11 +401,11 @@ extension class Parser {
       // Check if this is 'as const'
       if (this.lex.isEq("const")) {
         _ = this.lex.next(); // consume 'const'
-        result = AsConst(Expr(leftPosRange, mutableLeft));
+        result = AsConst(Expr(leftPosRange, left));
         Some(result)
       } else {
         ty = this.type(0);
-        result = As(Expr(leftPosRange, mutableLeft), ty);
+        result = As(Expr(leftPosRange, left), ty);
         loop {
           if (this.lex.isEq("as")) {
             _ = this.lex.next();
@@ -428,7 +423,7 @@ extension class Parser {
 
   // Handle function calls with optional type arguments
   mutable fun tryParseFunctionCall(
-    mutableLeft: Expr_,
+    left: Expr_,
     binopTok: Token,
     tok: Token,
     prec: Int,
@@ -463,7 +458,7 @@ extension class Parser {
       };
       args = this.arguments();
       newLeft = Call(
-        Expr(this.lex.posRangeFrom(tok), mutableLeft),
+        Expr(this.lex.posRangeFrom(tok), left),
         targs.toArray(),
         args,
       );
@@ -475,7 +470,7 @@ extension class Parser {
 
   // Handle postfix operators (++, --, !)
   mutable fun tryParsePostfixOp(
-    mutableLeft: Expr_,
+    left: Expr_,
     binopTok: Token,
     tok: Token,
     prec: Int,
@@ -486,29 +481,29 @@ extension class Parser {
       if (prec <= opPrec) {
         leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
-        (true, PostOp(POIncr(), Expr(leftPosRange, mutableLeft)))
+        (true, PostOp(POIncr(), Expr(leftPosRange, left)))
       } else {
-        (false, mutableLeft)
+        (false, left)
       }
     | TKDecr() ->
       (_assoc, opPrec) = precedence[binopTok.kind];
       if (prec <= opPrec) {
         leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
-        (true, PostOp(PODecr(), Expr(leftPosRange, mutableLeft)))
+        (true, PostOp(PODecr(), Expr(leftPosRange, left)))
       } else {
-        (false, mutableLeft)
+        (false, left)
       }
     | TKExclamationMark() ->
       (_assoc, opPrec) = precedence[TKIncr()];
       if (prec <= opPrec) {
         leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
-        (true, PostOp(POExcl(), Expr(leftPosRange, mutableLeft)))
+        (true, PostOp(POExcl(), Expr(leftPosRange, left)))
       } else {
-        (false, mutableLeft)
+        (false, left)
       }
-    | _ -> (false, mutableLeft)
+    | _ -> (false, left)
     }
   }
 
