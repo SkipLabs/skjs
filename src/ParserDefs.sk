@@ -113,14 +113,11 @@ extension class Parser {
           };
           this.expect(TKCloseSquare());
           op = if (this.lex.peekKind() is Some(TKRemoveQM())) {
-            tokRemove = this.lex.next().fromSome();
-            Some(FNRemove(this.lex.posRange(tokRemove)));
+            Some(FNRemove(this.lex.posRange(this.lex.next().fromSome())))
           } else if (this.lex.peekKind() is Some(TKAddQM())) {
-            tokAdd = this.lex.next().fromSome();
-            Some(FNAdd(this.lex.posRange(tokAdd)));
+            Some(FNAdd(this.lex.posRange(this.lex.next().fromSome())))
           } else if (this.lex.peekKind() is Some(TKQuestionMark())) {
-            tokQuestion = this.lex.next().fromSome();
-            Some(FNQuestion(this.lex.posRange(tokQuestion)))
+            Some(FNQuestion(this.lex.posRange(this.lex.next().fromSome())))
           } else {
             None()
           };
@@ -190,8 +187,7 @@ extension class Parser {
       | Some("static") -> ModStatic
       | _ -> break void
       };
-      nameTok = this.lex.next().fromSome();
-      modifiers.push(mod(this.lex.posRange(nameTok)))
+      modifiers.push(mod(this.lex.posRange(this.lex.next().fromSome())))
     };
     Modifiers(modifiers.toArray())
   }
@@ -277,8 +273,7 @@ extension class Parser {
     };
     fieldName = this.getSymbol();
     isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-      tok = this.lex.next().fromSome();
-      Some(this.lex.posRange(tok));
+      Some(this.lex.posRange(this.lex.next().fromSome()));
     } else {
       None()
     };
@@ -567,9 +562,9 @@ extension class Parser {
         }
       }
     | "async" ->
-      asyncTok = this.lex.next().fromSome();
+      asyncPos = this.lex.posRange(this.lex.next().fromSome());
       this.expectStr("function");
-      this.funDef(Some(this.lex.posRange(asyncTok)), true)
+      this.funDef(Some(asyncPos), true)
     | "function" ->
       _ = this.lex.next();
       this.funDef(None(), true)
@@ -1201,8 +1196,7 @@ extension class Parser {
       | _ -> FDBNone(this.lex.posRange(bodyTok))
       }
     } else {
-      lastTok = this.lex.lastTok.fromSome();
-      FDBNone(this.lex.posRange(lastTok))
+      FDBNone(this.lex.posRange(this.lex.lastTok.fromSome()))
     };
     funEnd = this.lex.getLastPos();
 

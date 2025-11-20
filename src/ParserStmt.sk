@@ -154,7 +154,7 @@ extension class Parser {
         };
         Some(If(e, ifBlock, elseBlock))
       | "return" ->
-        retTok = this.lex.next().fromSome();
+        retPos = this.lex.posRange(this.lex.next().fromSome());
         exprOpt = if (
           this.lex.peekKind() is Some(TKSemi()) ||
           this.lex.peekKind() is Some(TKCloseCurly())
@@ -163,7 +163,7 @@ extension class Parser {
         } else {
           Some(this.expr(0))
         };
-        Some(Return(this.lex.posRange(retTok), exprOpt))
+        Some(Return(retPos, exprOpt))
       | "throw" ->
         _ = this.lex.next();
         Some(Throw(this.expr(0)))
