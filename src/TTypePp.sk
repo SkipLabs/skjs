@@ -180,6 +180,10 @@ mutable class TypePp{
           pp.out(level, margin, ">");
         };
         pp.out(level, margin, "(");
+        tfun.thisParam.each(thisTy -> {
+          pp.type(level, margin, thisTy);
+          if (!tfun.params.isEmpty()) pp.out(level, margin, ", ")
+        });
         for (i => param in tfun.params) {
           if (i != 0) pp.out(level, margin, ", ");
           pp.type(level, margin, param)
@@ -213,6 +217,11 @@ mutable class TypePp{
         };
         pp.out(level, margin, "(");
         pp.newLine();
+        tfun.thisParam.each(thisTy -> {
+          pp.type(level, margin, thisTy);
+          pp.out(level, margin, ",");
+          pp.newLine();
+        });
         for (param in tfun.params) {
           pp.type(level, margin, param);
           pp.out(level, margin, ",");

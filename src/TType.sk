@@ -455,6 +455,7 @@ class TFuns private (
 
 class TFun(
   tparams: Array<TParamWithConstraint>,
+  thisParam: ?TType,
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?TType,
@@ -1230,6 +1231,7 @@ base class STError extends STResult {
   children =
   | STNoConstraint()
   | STMissingField(String)
+  | STMissingThis()
   | STMissingSpread()
   | STTooManySType(SType)
   | STTooManyTConstr(TConstr)
@@ -1241,6 +1243,7 @@ base class STError extends STResult {
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
     | STNoConstraint() -> "This type parameter does not define a constraint"
+    | STMissingThis() -> "Missing this parameter"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
       `The field '${fieldName}' is missing\n` +

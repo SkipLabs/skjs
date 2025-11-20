@@ -1190,6 +1190,7 @@ extension class TypeChecker {
       TFuns::singleFun(
         TFun(
           Array[],
+          None(),
           paramTypes.map(x -> x.i1),
           Array[],
           None(),

@@ -306,6 +306,13 @@ extension class TFun {
       clauses.push(tparam1 with {cstr});
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
+    thisParam = (f1.thisParam, f2.thisParam) match {
+    | (None(), _)
+    | (_, None()) ->
+      None()
+    | (Some(this1), Some(this2)) ->
+      Some(TType::inter(subst, tenv, this1, this2))
+    };
     params = mutable Vector[];
     for (i in Range(0, f1.params.size())) {
       params.push(TType::inter(subst, tenv, f1.params[i], f2.params[i]));
@@ -332,6 +339,7 @@ extension class TFun {
     cgNodes = f1.cgNodes.union(f2.cgNodes);
     TFun(
       clauses.toArray(),
+      thisParam,
       params.toArray(),
       optionalParams.toArray(),
       spreadParam,

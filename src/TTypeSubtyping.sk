@@ -367,6 +367,15 @@ extension class TFun {
       !tsubst[tparam2.id] = tparam1;
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
+    (f1.thisParam, f2.thisParam) match {
+    | (_, None()) -> void
+    | (None(), Some(_)) -> return STMissingThis()
+    | (Some(this1), Some(this2)) ->
+      TType::isSub(subst, tenv, this2, this1) match {
+      | STOk() -> void
+      | err @ STError _ -> return err
+      }
+    };
     params1 = f1.params;
     params2 = f2.params;
     for (i in Range(0, params1.size())) {
