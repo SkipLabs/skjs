@@ -48,7 +48,20 @@ extension class Parser {
   // "<string>" | '<string>' | <int>
   mutable fun getNameOrStringOrInt(): Name {
     this.lex.next() match {
-    | None() ->
+    | Some(tok @ Token(TKVar(), _, _)) ->
+      Name(this.lex.posRange(tok), this.getVar(tok))
+    | Some(tok @ Token(TKQuote(), _, _))
+    | Some(tok @ Token(TKDoubleQuote(), _, _)) ->
+      Name(this.lex.posRange(tok), this.unquoteString(tok))
+    | Some(tok @ Token(TKNumber(), _, _)) ->
+      Name(this.lex.posRange(tok), this.getNumber(tok))
+    | Some(tokSub @ Token(TKSubtraction(), _, _)) ->
+      nbrTok = this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+      | Some(x) -> x
+      };
+      Name(this.lex.posRange2(tokSub, nbrTok), "-" + this.getNumber(nbrTok))
+    | _ ->
       this.error(
         this.lex.posEnd(),
         ExpectedTokens(
@@ -61,33 +74,6 @@ extension class Parser {
           ],
         ),
       )
-    | Some(tok) ->
-      tok.kind match {
-      | TKQuote()
-      | TKDoubleQuote() ->
-        Name(this.lex.posRange(tok), this.unquoteString(tok))
-      | TKSubtraction() ->
-        nbrTok = this.lex.next() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-        | Some(x) -> x
-        };
-        Name(this.lex.posRange2(tok, nbrTok), "-" + this.getNumber(nbrTok))
-      | TKNumber() -> Name(this.lex.posRange(tok), this.getNumber(tok))
-      | TKVar() -> Name(this.lex.posRange(tok), this.getVar(tok))
-      | _ ->
-        this.error(
-          this.lex.posStart(tok),
-          ExpectedTokens(
-            Array[
-              TKVar(),
-              TKNumber(),
-              TKSubtraction(),
-              TKQuote(),
-              TKDoubleQuote(),
-            ],
-          ),
-        )
-      }
     }
   }
 
