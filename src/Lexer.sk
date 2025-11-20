@@ -53,21 +53,8 @@ mutable class Lexer private {
   }
 
   // Returns the string associated with a token.
-  readonly fun getStrTok(tok: Token): String {
-    str = String::fromChars(
-      this.contents.slice(tok.posStart.value, tok.posEnd.value),
-    );
-    tok.kind match {
-    | TKQuote() -> str.stripPrefix("'").stripSuffix("'").replace("\\'", "'")
-    | TKDoubleQuote() ->
-      str.stripPrefix("\"").stripSuffix("\"").replace("\\\"", "\"")
-    | _ -> str
-    }
-  }
-
-  // Returns the current token in the form a string.
-  readonly fun getStr(): ?String {
-    this.peek().map(x -> this.getStrTok(x))
+  readonly fun getTokenRawStringContent(tok: Token): String {
+    String::fromChars(this.contents.slice(tok.posStart.value, tok.posEnd.value))
   }
 
   // Returns true if the current token is equal to the string.
@@ -113,8 +100,8 @@ mutable class Lexer private {
     this.peek().map(x -> x.kind)
   }
 
-  readonly fun peekStr(): ?String {
-    this.peek().map(x -> this.getStrTok(x))
+  readonly fun peekRawStr(): ?String {
+    this.peek().map(this.getTokenRawStringContent)
   }
 
   readonly fun error<T>(start: Int, errKind: LexingKind): T {
@@ -127,6 +114,22 @@ mutable class Lexer private {
 
   readonly fun posStart(tok: Token): ErrorPos {
     EPChar(this.fileName, tok.posStart)
+  }
+
+  readonly fun getLastPos(): Pos {
+    this.lastTok.fromSome().posEnd
+  }
+
+  readonly fun posRange(tok: Token): PosRange {
+    PosRange::create(this, tok.posStart, tok.posEnd)
+  }
+
+  readonly fun posRange2(tokStart: Token, tokEnd: Token): PosRange {
+    PosRange::create(this, tokStart.posStart, tokEnd.posEnd)
+  }
+
+  readonly fun posRangeFrom(tok: Token): PosRange {
+    this.posRange2(tok, this.lastTok.fromSome())
   }
 
   // This is the method containing the main logic of the lexer. Note
@@ -435,10 +438,6 @@ mutable class Lexer private {
       this.!pos = tok.posEnd.value;
       tokOpt
     }
-  }
-
-  readonly fun getLastPos(): Pos {
-    this.lastTok.fromSome().posEnd
   }
 
   // Record a symbol location for tracking - only stores first occurrence

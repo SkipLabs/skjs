@@ -176,21 +176,6 @@ class UnterminatedExpr() extends ParsingKind {
     `Unterminated expr`
   }
 }
-class UnterminatedNamespace() extends ParsingKind {
-  fun toString(): String {
-    `Unterminated namespace`
-  }
-}
-class UnterminatedExportList() extends ParsingKind {
-  fun toString(): String {
-    `Unterminated export`
-  }
-}
-class ExpectedDefinition() extends ParsingKind {
-  fun toString(): String {
-    `Expected a definition`
-  }
-}
 class UnterminatedType() extends ParsingKind {
   fun toString(): String {
     `Unterminated type`
@@ -201,28 +186,12 @@ class ExpectedToken(tokenKind: TokenKind) extends ParsingKind {
     `Expected token ${this.tokenKind}`
   }
 }
-
-class ExpectedString() extends ParsingKind {
+class ExpectedTokens(kinds: Array<TokenKind>) extends ParsingKind {
   fun toString(): String {
-    `Expected a string`
+    `Expected token ${this.kinds.join(", or")}`
   }
 }
-class ExpectedDeclaration() extends ParsingKind {
-  fun toString(): String {
-    `Expected a string`
-  }
-}
-class ExpectedStringNot(str: String) extends ParsingKind {
-  fun toString(): String {
-    `Expected a string, not '${this.str}`
-  }
-}
-class ExpectedTokenNot(tokenKind: TokenKind) extends ParsingKind {
-  fun toString(): String {
-    `Expected ${this.tokenKind}`
-  }
-}
-class ExpectedStrNot(str: String) extends ParsingKind {
+class ExpectedStr(str: String) extends ParsingKind {
   fun toString(): String {
     `Expected ${this.str}`
   }
@@ -232,24 +201,9 @@ class ExpectedVarName() extends ParsingKind {
     `Expected a variable name`
   }
 }
-class InvalidClosure() extends ParsingKind {
-  fun toString(): String {
-    `Invalid closure`
-  }
-}
 class ExpectedParams() extends ParsingKind {
   fun toString(): String {
     `Expected params`
-  }
-}
-class DuplicateFieldNames(pos2: RelPos) extends ParsingKind {
-  fun toString(): String {
-    `Duplicate field name\n${this.pos2}\nPrevious one found here`
-  }
-}
-class TooManyTags(pos2: RelPos) extends ParsingKind {
-  fun toString(): String {
-    `Duplicate tags\n${this.pos2}\nPrevious one found here`
   }
 }
 
@@ -258,16 +212,15 @@ class DontUseEquality() extends ParsingKind {
     "Don't use ==, use === instead"
   }
 }
-
 class DontUseInequality() extends ParsingKind {
   fun toString(): String {
     "Don't use !=, use !== instead"
   }
 }
 
-class NonAssociative(op: String) extends ParsingKind {
+class NonAssociative(opTokenKind: TokenKind) extends ParsingKind {
   fun toString(): String {
-    `The operator ${this.op} is not associative`
+    `The operator ${this.opTokenKind} is not associative`
   }
 }
 
@@ -289,21 +242,9 @@ class ExpectedCatchOrFinally() extends ParsingKind {
   }
 }
 
-class MissingReturnType() extends ParsingKind {
-  fun toString(): String {
-    "Missing return type"
-  }
-}
-
 class MissingParameterName() extends ParsingKind {
   fun toString(): String {
     "Function parameter must have a name"
-  }
-}
-
-class NonDefaultAnonymousFunctionExport() extends ParsingKind {
-  fun toString(): String {
-    "An anonymous function can be exported only if it is the default export"
   }
 }
 

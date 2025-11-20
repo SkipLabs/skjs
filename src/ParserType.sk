@@ -37,20 +37,20 @@ extension class Parser {
   mutable fun type(prec: Int): Type {
     inTypeCopy = this.lex.inType;
     this.lex.!inType = true;
-    start = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-    | Some(tok) -> tok.posStart
-    };
-    if (
-      this.lex.peekKind() is Some(TKBitwiseOr()) ||
-      this.lex.peekKind() is Some(TKBitwiseAnd())
-    ) {
-      _ = this.lex.next();
-    };
-    type = this.type_(prec);
-    end = this.lex.lastTok.fromSome().posEnd;
+    (pos, type) = this.withPos(
+      () -> {
+        if (
+          this.lex.peekKind() is Some(TKBitwiseOr()) ||
+          this.lex.peekKind() is Some(TKBitwiseAnd())
+        ) {
+          _ = this.lex.next();
+        };
+        this.type_(prec)
+      },
+      UnterminatedType(),
+    );
     this.lex.!inType = inTypeCopy;
-    Type(PosRange::create(this.lex, start, end), type)
+    Type(pos, type)
   }
 
   mutable fun type_(prec: Int): Type_ {
@@ -59,11 +59,15 @@ extension class Parser {
     | Some(x) -> x
     };
     left = tok.kind match {
-    | TKQuote() -> TAStringLiteral(this.lex.getStrTok(tok))
-    | TKDoubleQuote() -> TAStringLiteral(this.lex.getStrTok(tok))
-    | TKBackTick() -> TATemplate(this.lex.getStrTok(tok))
-    | TKBigInt() -> TABigIntLiteral(this.lex.getStrTok(tok))
-    | TKNumber() -> TANumLiteral(this.lex.getStrTok(tok))
+    | TKQuote()
+    | TKDoubleQuote() ->
+      TAStringLiteral(this.unquoteString(tok))
+    | TKBackTick() ->
+      TATemplate(
+        /* TODO: parse type template */ this.lex.getTokenRawStringContent(tok),
+      )
+    | TKBigInt() -> TABigIntLiteral(this.getBigInt(tok))
+    | TKNumber() -> TANumLiteral(this.getNumber(tok))
     | TKLessThan() ->
       tparams = this.typeParams();
       this.type(0) match {
@@ -110,14 +114,7 @@ extension class Parser {
           ) {
             name = this.getName();
             optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-              nextTokPos = this.lex.next().fromSome();
-              Some(
-                PosRange::create(
-                  this.lex,
-                  nextTokPos.posStart,
-                  nextTokPos.posEnd,
-                ),
-              )
+              Some(this.lex.posRange(this.lex.next().fromSome()))
             } else {
               None()
             };
@@ -127,14 +124,7 @@ extension class Parser {
           } else {
             type = this.type(0);
             optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-              nextTokPos = this.lex.next().fromSome();
-              Some(
-                PosRange::create(
-                  this.lex,
-                  nextTokPos.posStart,
-                  nextTokPos.posEnd,
-                ),
-              )
+              Some(this.lex.posRange(this.lex.next().fromSome()))
             } else {
               None()
             };
@@ -154,7 +144,7 @@ extension class Parser {
           | _ ->
             this.error(
               this.lex.posStart(commaTok),
-              ExpectedTokenNot(TKCloseSquare()),
+              ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
             )
           }
         };
@@ -179,7 +169,7 @@ extension class Parser {
       }
     | TKOpenCurly() -> TAObject(this.objectFields())
     | TKVar() ->
-      this.lex.getStrTok(tok) match {
+      this.getVar(tok) match {
       | "typeof" -> TATypeOf(this.type(0))
       | "import" ->
         this.expect(TKOpenParen());
@@ -209,7 +199,7 @@ extension class Parser {
         }
       | "asserts" ->
         name = this.getName();
-        if (this.lex.peekStr() is Some("is")) {
+        if (this.lex.isEq("is")) {
           _ = this.lex.next();
           TAAssertIs(name, this.type(0))
         } else {
@@ -229,10 +219,7 @@ extension class Parser {
       | "abstract" -> TANew(this.type(prec))
       | "new" -> TANew(this.type(prec))
       | className ->
-        name = Name(
-          PosRange::create(this.lex, tok.posStart, tok.posEnd),
-          className,
-        );
+        name = Name(this.lex.posRange(tok), className);
         loop {
           if (this.lex.peekKind() != Some(TKDot())) break void;
           _ = this.lex.next();
@@ -256,17 +243,13 @@ extension class Parser {
       | Some(x) -> x
       };
       numTok.kind match {
-      | TKNumber() -> TANumLiteral("-" + this.lex.getStrTok(numTok))
-      | _ -> this.error(this.lex.posStart(numTok), ExpectedTokenNot(TKNumber()))
-      }
-    | TKAddition() ->
-      numTok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-      | Some(x) -> x
-      };
-      numTok.kind match {
-      | TKNumber() -> TANumLiteral(this.lex.getStrTok(numTok))
-      | _ -> this.error(this.lex.posStart(numTok), ExpectedTokenNot(TKNumber()))
+      | TKNumber() -> TANumLiteral("-" + this.getNumber(numTok))
+      | TKBigInt() -> TABigIntLiteral("-" + this.getBigInt(numTok))
+      | _ ->
+        this.error(
+          this.lex.posStart(numTok),
+          ExpectedTokens(Array[TKNumber(), TKBigInt()]),
+        )
       }
     | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
     };
@@ -292,20 +275,12 @@ extension class Parser {
         _ = this.lex.next();
         if (this.lex.peekKind() is Some(TKCloseSquare())) {
           _ = this.lex.next();
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           !left = TAArray(Type(leftRange, left));
           continue;
         };
         ty = this.type(0);
-        leftRange = PosRange::create(
-          this.lex,
-          tok.posStart,
-          this.lex.getLastPos(),
-        );
+        leftRange = this.lex.posRangeFrom(tok);
         this.expect(TKCloseSquare());
         !left = TAGet(Type(leftRange, left), ty);
       } else {
@@ -315,15 +290,11 @@ extension class Parser {
 
     loop {
       this.lex.peekKind() match {
-      | Some(TKVar()) if (this.lex.peekStr() == Some("is")) ->
+      | Some(TKVar()) if (this.lex.isEq("is")) ->
         _ = this.lex.next();
-        leftRange = PosRange::create(
-          this.lex,
-          tok.posStart,
-          this.lex.getLastPos(),
-        );
+        leftRange = this.lex.posRangeFrom(tok);
         !left = TAIs(Type(leftRange, left), this.type(0))
-      | Some(TKVar()) if (this.lex.peekStr() is Some("extends")) ->
+      | Some(TKVar()) if (this.lex.isEq("extends")) ->
         (_assoc, assignPrec) = precedence[TKAssignment()];
         ternaryCondPrec = assignPrec + 1;
         if (prec >= ternaryCondPrec) return left;
@@ -334,18 +305,10 @@ extension class Parser {
           ty2 = this.type(0);
           this.expect(TKColon());
           ty3 = this.type(assignPrec);
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           !left = TAExtendsQuestion(Type(leftRange, left), ty1, ty2, ty3);
         } else {
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           !left = TAExtends(Type(leftRange, left), ty1);
         };
         continue
@@ -359,11 +322,7 @@ extension class Parser {
         (assoc, bopPrec) = precedence[bop];
         if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
         if (bopPrec == prec) {
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           _ = this.lex.next();
           right = this.type(prec + 1);
           !left = isType match {
@@ -373,11 +332,7 @@ extension class Parser {
           continue;
         };
         if (bopPrec > prec) {
-          leftRange = PosRange::create(
-            this.lex,
-            tok.posStart,
-            this.lex.getLastPos(),
-          );
+          leftRange = this.lex.posRangeFrom(tok);
           _ = this.lex.next();
           right = this.type(bopPrec);
           !left = isType match {
@@ -429,8 +384,7 @@ extension class Parser {
         _ = this.lex.next();
         spreadName = this.getName();
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          qm = this.lex.next().fromSome();
-          Some(PosRange::create(this.lex, qm.posStart, qm.posEnd))
+          Some(this.lex.posRange(this.lex.next().fromSome()))
         } else {
           None()
         };
@@ -480,10 +434,7 @@ extension class Parser {
           }
         };
         qm = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          nextTokPos = this.lex.next().fromSome();
-          Some(
-            PosRange::create(this.lex, nextTokPos.posStart, nextTokPos.posEnd),
-          )
+          Some(this.lex.posRange(this.lex.next().fromSome()))
         } else {
           None()
         };
@@ -506,15 +457,11 @@ extension class Parser {
         ) {
           paramName = this.getName();
           if (this.lex.peekKind() is Some(TKQuestionMark())) {
-            qm = this.lex.next().fromSome();
+            qmPos = this.lex.posRange(this.lex.next().fromSome());
             this.expect(TKColon());
             type = this.type(0);
             result.push(
-              TAFunParam(
-                Some(TAParamName(paramName)),
-                Some(PosRange::create(this.lex, qm.posStart, qm.posEnd)),
-                type,
-              ),
+              TAFunParam(Some(TAParamName(paramName)), Some(qmPos), type),
             );
           } else {
             if (!(this.lex.peekKind() is Some(TKColon()))) {
@@ -542,7 +489,7 @@ extension class Parser {
       | _ ->
         this.error(
           this.lex.posStart(tokComma),
-          ExpectedTokenNot(TKCloseParen()),
+          ExpectedTokens(Array[TKCloseParen(), TKComma()]),
         )
       }
     }
@@ -566,7 +513,7 @@ extension class Parser {
       | _ ->
         this.error(
           this.lex.posStart(commaTok),
-          ExpectedTokenNot(TKGreaterThan()),
+          ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
         )
       }
     }

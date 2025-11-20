@@ -9,40 +9,73 @@ extension class Parser {
     error(ParsingError(pos, kind))
   }
 
+  readonly fun getVar(tok: Token): String {
+    if (tok.kind is TKVar()) {
+      this.lex.getTokenRawStringContent(tok)
+    } else {
+      this.error(this.lex.posStart(tok), ExpectedToken(TKVar()))
+    }
+  }
+
+  readonly fun getNumber(tok: Token): String {
+    if (tok.kind is TKNumber()) {
+      // TODO: check and normalize somehow
+      this.lex.getTokenRawStringContent(tok)
+    } else {
+      this.error(this.lex.posStart(tok), ExpectedToken(TKNumber()))
+    }
+  }
+
+  readonly fun getBigInt(tok: Token): String {
+    if (tok.kind is TKBigInt()) {
+      // TODO: check and normalize somehow
+      this.lex.getTokenRawStringContent(tok)
+    } else {
+      this.error(this.lex.posStart(tok), ExpectedToken(TKBigInt()))
+    }
+  }
+
+  readonly fun unquoteString(tok: Token): String {
+    // TODO: handle escaped sequences
+    tok.kind match {
+    | TKQuote() ->
+      this.lex.getTokenRawStringContent(tok).stripPrefix("'").stripSuffix("'")
+    | TKDoubleQuote() ->
+      this.lex.getTokenRawStringContent(tok).stripPrefix("\"").stripSuffix("\"")
+    | _ ->
+      this.error(
+        this.lex.posStart(tok),
+        ExpectedTokens(Array[TKQuote(), TKDoubleQuote()]),
+      )
+    }
+  }
+
   mutable fun expect(kind: TokenKind): void {
     this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(kind))
     | Some(tok) if (tok.kind == kind) -> void
-    | Some(tok) -> this.error(this.lex.posStart(tok), ExpectedTokenNot(kind))
+    | Some(tok) -> this.error(this.lex.posStart(tok), ExpectedToken(kind))
     }
   }
 
   mutable fun expectStr(str: String): void {
     this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), ExpectedStrNot(str))
+    | None() -> this.error(this.lex.posEnd(), ExpectedStr(str))
     | Some(tok) ->
       if (this.lex.isEqTok(tok, str)) void else {
-        this.error(this.lex.posStart(tok), ExpectedStrNot(str))
+        this.error(this.lex.posStart(tok), ExpectedStr(str))
       }
     }
   }
 
-  mutable fun expectStringValue(): void {
-    this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), ExpectedString())
-    | Some(tok) ->
-      tok.kind match {
-      | TKQuote()
-      | TKDoubleQuote()
-      | TKBackTick() ->
-        void
-      | _ ->
-        this.error(
-          this.lex.posStart(tok),
-          ExpectedStringNot(this.lex.getStrTok(tok)),
-        )
-      }
-    }
+  mutable fun withPos<T>(f: () -> T, err: ParsingKind): (PosRange, T) {
+    start = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), err)
+    | Some(tok) -> tok.posStart
+    };
+    result = f();
+    end = this.lex.getLastPos();
+    (PosRange::create(this.lex, start, end), result)
   }
 }
 
