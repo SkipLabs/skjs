@@ -474,37 +474,32 @@ extension class Parser {
     binopTok: Token,
     tok: Token,
     prec: Int,
-  ): (Bool, Expr_) {
+  ): ?Expr_ {
     binopTok.kind match {
     | TKIncr() ->
       (_assoc, opPrec) = precedence[binopTok.kind];
       if (prec <= opPrec) {
         leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
-        (true, PostOp(POIncr(), Expr(leftPosRange, left)))
-      } else {
-        (false, left)
+        return Some(PostOp(POIncr(), Expr(leftPosRange, left)))
       }
     | TKDecr() ->
       (_assoc, opPrec) = precedence[binopTok.kind];
       if (prec <= opPrec) {
         leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
-        (true, PostOp(PODecr(), Expr(leftPosRange, left)))
-      } else {
-        (false, left)
+        return Some(PostOp(PODecr(), Expr(leftPosRange, left)))
       }
     | TKExclamationMark() ->
       (_assoc, opPrec) = precedence[TKIncr()];
       if (prec <= opPrec) {
         leftPosRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
-        (true, PostOp(POExcl(), Expr(leftPosRange, left)))
-      } else {
-        (false, left)
+        return Some(PostOp(POExcl(), Expr(leftPosRange, left)))
       }
-    | _ -> (false, left)
-    }
+    | _ -> void
+    };
+    None()
   }
 
   // Handle binary and postfix operators with precedence
@@ -533,15 +528,9 @@ extension class Parser {
         };
         return left;
       };
-      (postfixHandled, postfixResult) = this.tryParsePostfixOp(
-        left,
-        binopTok,
-        tok,
-        prec,
-      );
-      if (postfixHandled) {
-        !left = postfixResult;
-        return left;
+      this.tryParsePostfixOp(left, binopTok, tok, prec) match {
+      | Some(postfixResult) -> return postfixResult
+      | None() -> void
       };
       if (binopTok.kind is TKQuestionMark()) {
         (_assoc, opPrec) = precedence[binopTok.kind];
