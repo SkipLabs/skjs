@@ -168,7 +168,7 @@ extension class Parser {
               _ = this.lex.next();
               this.expectStr("readonly")
             },
-            ExpectedStrNot("readonly"),
+            ExpectedStr("readonly"),
           );
           modifiers.push(mod(pos));
           continue
@@ -465,7 +465,7 @@ extension class Parser {
       importNamesList = mutable Vector[];
       loop {
         importNames = this.moduleNames() match {
-        | MStar() -> this.error(this.lex.posEnd(), ExpectedStrNot("as"))
+        | MStar() -> this.error(this.lex.posEnd(), ExpectedStr("as"))
         | importNames @ ImportModuleNames _ -> importNames
         };
         importNamesList.push(importNames);

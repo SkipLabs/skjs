@@ -60,10 +60,10 @@ extension class Parser {
 
   mutable fun expectStr(str: String): void {
     this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), ExpectedStrNot(str))
+    | None() -> this.error(this.lex.posEnd(), ExpectedStr(str))
     | Some(tok) ->
       if (this.lex.isEqTok(tok, str)) void else {
-        this.error(this.lex.posStart(tok), ExpectedStrNot(str))
+        this.error(this.lex.posStart(tok), ExpectedStr(str))
       }
     }
   }
