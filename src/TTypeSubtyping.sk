@@ -241,7 +241,7 @@ fun isSubTType_(
   for (inst in u2.insts) {
     inst match {
     | tvar @ TVar(_, _, constraints) ->
-      for (_ => cstr in constraints) {
+      for (cstr in constraints) {
         status = isSubTType(subst, tenv, u1, cstr);
         if (status is STError _) return status;
       };
@@ -254,7 +254,7 @@ fun isSubTType_(
     | tvar @ TVar(_, _, constraints) ->
       if ({
         substCopy = subst.save();
-        for (_ => cstr in constraints) {
+        for (cstr in constraints) {
           status = isSubTType(subst, tenv, u2, cstr);
           if (status is STError _) {
             subst.restore(substCopy);

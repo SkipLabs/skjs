@@ -870,28 +870,26 @@ class STypes private (
 class TVar private (
   pos: PosRange,
   id: Int,
-  constraints: SortedMap<Int, TType>,
+  constraints: SortedSet<TType>,
 ) extends TInst {
   static fun create(pos: PosRange, id: Int): this {
-    static(pos, id, SortedMap[])
+    static(pos, id, SortedSet[])
   }
 
   fun addConstraint(ty: TType): this {
-    !this.constraints[ty.hash()] = ty;
+    !this.constraints = this.constraints.add(ty);
     this
   }
 
   fun mapConstraints(f: TType -> TType): this {
-    !this.constraints = this.constraints.map((_id, ty) -> f(ty));
+    !this.constraints = this.constraints.map(f);
     this
   }
   fun xxhash(ignorePos: Bool = false): XXHash {
     XXHash(
-      this.constraints.items().foldl(
-        (seed, kv) -> {
-          k = kv.i0.xxhash(ignorePos).value;
-          v = kv.i1.xxhash(ignorePos).value;
-          XXHash64.xxHash64(XXHash64.xxHash64(seed, k), v)
+      this.constraints.iterator().foldl(
+        (seed, t) -> {
+          XXHash64.xxHash64(seed, t.xxhash(ignorePos).value)
         },
         XXHash64.xxHash64(this.id, this.pos.xxhash(ignorePos).value),
       ),
