@@ -207,10 +207,6 @@ class TType private {
     this.h.compare(other.h)
   }
 
-  fun hash(): Int {
-    this.h.value
-  }
-
   fun xxhash(ignorePos: Bool = false): XXHash {
     if (ignorePos) this.h else (this.insts, this.clauses).xxhash()
   }

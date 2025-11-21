@@ -139,10 +139,6 @@ class TUnion private (ty1: TType, ty2: TType) extends TInst {
     };
     static(ty1, ty2)
   }
-
-  fun hash(): Int {
-    (this.ty1.hash(), this.ty2.hash()).hash()
-  }
 }
 
 extension class TInsts {
