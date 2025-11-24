@@ -419,9 +419,9 @@ extension class Parser {
     tok: Token,
     prec: Int,
   ): ?Expr_ {
+    if (prec >= callPrec) return None();
     hasTArgs = this.hasTArgs();
     if (binopTok.kind is TKOpenParen() || hasTArgs) {
-      if (prec >= callPrec) return None();
       _ = this.lex.next();
       targs = mutable Vector[];
       if (hasTArgs) {
