@@ -492,10 +492,7 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value match {
-              | None() -> None()
-              | Some(x) -> this.asConstExpr(x)
-              } match {
+              value.flatMap(this.asConstExpr) match {
               | None() -> this.newTVar(tcenv, pos)
               | Some(ty) -> ty
               }

@@ -74,10 +74,7 @@ extension class TypeChecker {
       | VDKLet() -> notSupported(varDef.pat.pos, "toplevel let")
       | VDKVar() -> notSupported(varDef.pat.pos, "toplevel var")
       };
-      literalType = varDef.value match {
-      | None() -> None()
-      | Some(x) -> this.asConstExpr(x)
-      };
+      literalType = varDef.value.flatMap(this.asConstExpr);
       type = varDef.type match {
       | None() ->
         literalType match {
