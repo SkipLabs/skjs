@@ -614,13 +614,17 @@ base class UnaryOperator uses XXHashable {
 base class NumericUnaryOperator() extends UnaryOperator {
   children =
   | UOTild
-  | UOMinus
-  | UOPlus
 
   fun toString(): String
   | UOTild() -> "~"
   | UOMinus() -> "-"
   | UOPlus() -> "+"
+}
+
+base class ArithmeticUnaryOperator extends NumericUnaryOperator {
+  children =
+  | UOMinus
+  | UOPlus
 }
 
 base class AssignableBinaryOperator extends BinaryOperator uses XXHashable {

@@ -1163,6 +1163,32 @@ extension class TypeChecker {
         };
         typingError(Array[(pos, msg), (subE.pos, `This has type ${stype}`)])
       })
+    | Unop(UOTild(), _) -> /* TODO */ None()
+    | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
+      this.asConstExpr(subE).flatMap(stype ->
+        stype match {
+        | TPrimValue(k @ TNum(), valuesOpt, _)
+        | TPrimValue(k @ TBigInt(), valuesOpt, _) ->
+          Some(
+            nuop match {
+            | UOPlus() -> stype
+            | UOMinus() ->
+              valuesOpt.flatMap(v -> v.singleElt()) match {
+              | None() ->
+                internal_error(
+                  "asConstExpr should return literals with a single value",
+                )
+              | Some((_pos, num)) ->
+                !num = if (num.startsWith("-")) num.stripPrefix("-") else {
+                  `-${num}`
+                };
+                TPrimValue::single(k, num, pos)
+              }
+            },
+          )
+        | _ -> None()
+        }
+      )
     | _ -> None()
     }
   }
