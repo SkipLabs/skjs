@@ -609,8 +609,16 @@ base class FNOp uses XXHashable {
 base class UnaryOperator uses XXHashable {
   children =
   | UOExclamationMark()
-  | UOTild()
-  | UOMinus()
+}
+
+base class NumericUnaryOperator() extends UnaryOperator {
+  children =
+  | UOTild
+  | UOMinus
+
+  fun toString(): String
+  | UOTild() -> "~"
+  | UOMinus() -> "-"
 }
 
 base class AssignableBinaryOperator extends BinaryOperator uses XXHashable {

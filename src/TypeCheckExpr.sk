@@ -684,12 +684,12 @@ extension class TypeChecker {
         bool = TType::single(TPrimValue::boolean(pos));
         this.checkSubType(tcenv, pos, "Invalid !", ty, bool);
         bool
-      | UOMinus() ->
+      | nuop @ NumericUnaryOperator() ->
         ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
         | None() ->
           typingError(
             Array[
-              (pos, "Invalid unary operation -"),
+              (pos, `Invalid unary operation ${nuop}`),
               (subExpr.pos, `This has type ${ty}`),
             ],
           )
@@ -702,7 +702,7 @@ extension class TypeChecker {
             | _ ->
               typingError(
                 Array[
-                  (pos, "Invalid unary operation -"),
+                  (pos, `Invalid unary operation ${nuop}`),
                   (subExpr.pos, `This has type ${ty}`),
                 ],
               )
@@ -710,7 +710,6 @@ extension class TypeChecker {
           );
           TType::fromSTypes(pos, stypes)
         }
-      | _ -> typingError(Array[(pos, "TODO: unary operator")])
       }
 
     | Binop(op, e1, e2) ->
