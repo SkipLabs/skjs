@@ -517,7 +517,7 @@ extension class Parser {
       };
       isIn = this.lex.isEqTok(binopTok, "in");
       if (isIn || this.lex.isEqTok(binopTok, "instanceof")) {
-        (_assoc, opPrec) = in_and_instanceofPrec;
+        opPrec = in_and_instanceofPrec;
         if (prec <= opPrec) {
           leftPosRange = this.lex.posRangeFrom(tok);
           _ = this.lex.next();

@@ -279,7 +279,7 @@ base class Associativity {
 // Operators associativity and precedence.
 /***************************************************************************/
 
-const in_and_instanceofPrec: (Associativity, Int) = (ALeft(), 12);
+const in_and_instanceofPrec: Int = 12;
 const callPrec: Int = 20;
 const typeOfPrec: Int = 17;
 const unaryPlusMinusPrec: Int = 17;
