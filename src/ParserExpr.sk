@@ -523,9 +523,12 @@ extension class Parser {
         };
         return left;
       };
-      this.tryParseClosure(left, binopTok, tok).each(closureResult ->
-        !left = closureResult
-      );
+      this.tryParseClosure(left, binopTok, tok) match {
+      | Some(closureResult) ->
+        !left = closureResult;
+        continue
+      | None() -> void
+      };
       if (binopTok.kind is TKOpenSquare()) {
         if (prec >= callPrec) return left;
         _ = this.lex.next();
