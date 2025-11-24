@@ -678,16 +678,11 @@ extension class TypeChecker {
       TType::single(TTuple(arr.map(x -> this.expr(tcenv, x)), pos))
 
     | Unop(uop, subExpr) ->
+      ty = this.expr(tcenv, subExpr);
       uop match {
       | UOExclamationMark() ->
         bool = TType::single(TPrimValue::boolean(pos));
-        this.checkSubType(
-          tcenv,
-          pos,
-          "Invalid !",
-          this.expr(tcenv, subExpr),
-          bool,
-        );
+        this.checkSubType(tcenv, pos, "Invalid !", ty, bool);
         bool
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
       }
