@@ -95,7 +95,7 @@ class TType private {
     static::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
-  static private fun fromSTypes(pos: PosRange, sTypes: STypes): this {
+  static fun fromSTypes(pos: PosRange, sTypes: STypes): this {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 

@@ -684,6 +684,32 @@ extension class TypeChecker {
         bool = TType::single(TPrimValue::boolean(pos));
         this.checkSubType(tcenv, pos, "Invalid !", ty, bool);
         bool
+      | UOMinus() ->
+        ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+        | None() ->
+          typingError(
+            Array[
+              (pos, "Invalid unary operation -"),
+              (subExpr.pos, `This has type ${ty}`),
+            ],
+          )
+        | Some(stypes) ->
+          !stypes = stypes.map(stype ->
+            stype match {
+            | TPrimValue(k @ TNum(), _, primPos)
+            | TPrimValue(k @ TBigInt(), _, primPos) ->
+              TPrimValue(k, None(), primPos)
+            | _ ->
+              typingError(
+                Array[
+                  (pos, "Invalid unary operation -"),
+                  (subExpr.pos, `This has type ${ty}`),
+                ],
+              )
+            }
+          );
+          TType::fromSTypes(pos, stypes)
+        }
       | _ -> typingError(Array[(pos, "TODO: unary operator")])
       }
 
