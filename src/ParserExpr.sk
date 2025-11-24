@@ -265,10 +265,9 @@ extension class Parser {
     | TKDoubleQuote() ->
       EString(this.unquoteString(tok))
     | TKBackTick() -> this.parseTemplateLiteral(tok)
-    | subTok @ TKAddition()
-    | subTok @ TKSubtraction() ->
-      (_assoc, bopPrec) = precedence[subTok];
-      this.expr_(bopPrec)
+    | TKAddition()
+    | TKSubtraction() ->
+      this.expr_(unaryPlusMinusPrec)
     | subTok @ TKExclamationMark() ->
       (_, unopPrec) = precedence[subTok];
       Unop(UOExclamationMark(), this.expr(unopPrec))

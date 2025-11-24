@@ -280,6 +280,7 @@ base class Associativity {
 const in_and_instanceofPrec: (Associativity, Int) = (ANonAssoc(), 12);
 const callPrec: Int = 18;
 const typeOfPrec: Int = 13;
+const unaryPlusMinusPrec: Int = 17;
 
 const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   TKDot() => (ALeft(), 20),
