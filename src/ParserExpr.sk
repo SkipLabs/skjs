@@ -343,7 +343,7 @@ extension class Parser {
     binopTok: Token,
     tok: Token,
   ): ?Expr_ {
-    if (
+    rty = if (
       binopTok.kind is TKColon() &&
       this.lex.lookAhead(() -> {
         try {
@@ -359,33 +359,24 @@ extension class Parser {
       _ = this.lex.next();
       rty = this.type(0);
       this.expect(TKClosure());
-      params = left match {
-      | Params(params) -> params
-      | Var(varName) -> Array[(varName, None())]
-      | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
-      };
-      closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-        CBBlock(this.blockOrStmt())
-      } else {
-        CBExpr(this.expr(0))
-      };
-      Some(Closure(params, Some(rty), closureBody))
+      Some(rty)
     } else if (binopTok.kind is TKClosure()) {
       _ = this.lex.next();
-      params = left match {
-      | Params(params) -> params
-      | Var(varName) -> Array[(varName, None())]
-      | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
-      };
-      closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-        CBBlock(this.blockOrStmt())
-      } else {
-        CBExpr(this.expr(0))
-      };
-      Some(Closure(params, None(), closureBody))
-    } else {
       None()
-    }
+    } else {
+      return None()
+    };
+    params = left match {
+    | Params(params) -> params
+    | Var(varName) -> Array[(varName, None())]
+    | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
+    };
+    closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
+      CBBlock(this.blockOrStmt())
+    } else {
+      CBExpr(this.expr(0))
+    };
+    Some(Closure(params, rty, closureBody))
   }
 
   // Handle type casting with 'as' keyword and 'as const' syntax
