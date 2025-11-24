@@ -438,7 +438,7 @@ extension class TypeChecker {
   fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool = false): TType {
     if (mostPrecise) {
       this.asConstExpr(e) match {
-      | Some(ty) -> return ty
+      | Some(ty) -> return TType::single(ty)
       | None() -> void
       }
     };
@@ -494,7 +494,7 @@ extension class TypeChecker {
             | None() ->
               value.flatMap(this.asConstExpr) match {
               | None() -> this.newTVar(tcenv, pos)
-              | Some(ty) -> ty
+              | Some(ty) -> TType::single(ty)
               }
             | Some(ty) -> this.tenv.normalize(tcenv.context, ty)
             }
@@ -1069,7 +1069,7 @@ extension class TypeChecker {
       TType::union(tcenv.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
       this.asConstExpr(subExpr) match {
-      | Some(ty) -> ty
+      | Some(ty) -> TType::single(ty)
       | None() ->
         typingError(
           Array[(pos, "'as const' can only be used with string literals")],
@@ -1142,21 +1142,18 @@ extension class TypeChecker {
   }
 
   /* Typechecks expression e as const */
-  fun asConstExpr(e: Expr): ?TType {
+  fun asConstExpr(e: Expr): ?SType {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
       typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
-    | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
-    | Var(Name(_, "undefined")) ->
-      Some(TType::single(TPrimUnit(TUndefined(), pos)))
-    | Number(n) -> Some(TType::single(TPrimValue::single(TNum(), n, pos)))
-    | BigInt(n) -> Some(TType::single(TPrimValue::single(TBigInt(), n, pos)))
-    | Var(Name(_, "true")) ->
-      Some(TType::single(TPrimValue::single(TBool(), "true", pos)))
-    | Var(Name(_, "false")) ->
-      Some(TType::single(TPrimValue::single(TBool(), "false", pos)))
-    | EString(n) -> Some(TType::single(TPrimValue::single(TString(), n, pos)))
+    | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
+    | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
+    | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
+    | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n, pos))
+    | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
+    | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
+    | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
     | _ -> None()
     }
   }
