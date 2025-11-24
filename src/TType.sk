@@ -437,11 +437,7 @@ fun createObject(
 /* Tuples */
 /***************************************************************************/
 
-class TTuple(tuple: Array<TType>) extends SType {
-  fun toString(): String {
-    `[${this.tuple.map(ty -> ty.toString()).join(", ")}]`
-  }
-}
+class TTuple(tuple: Array<TType>) extends SType
 
 /***************************************************************************/
 /* Funs */
