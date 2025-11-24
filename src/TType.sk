@@ -563,6 +563,10 @@ base class SType private (
   fun project(): Int {
     this.tag()
   }
+
+  fun toString(): String {
+    prettyPrintSType(this, false)
+  }
 }
 
 class TPrimUnit(kind: TPrimUnitKind) extends SType
