@@ -428,28 +428,29 @@ extension class Parser {
         _ = this.lex.next();
         targs = mutable Vector[];
         try {
-          loop {
-            targs.push(this.type(0));
-            commaTok = this.lex.next() match {
-            | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-            | Some(tk) -> tk
-            };
-            commaTok.kind match {
-            | TKComma() ->
-              if (this.lex.peekKind() is Some(TKGreaterThan())) {
-                _ = this.lex.next();
-                break void
+          if (
+            loop {
+              targs.push(this.type(0));
+              commaTok = this.lex.next() match {
+              | None() -> break false
+              | Some(tk) -> tk
+              };
+              commaTok.kind match {
+              | TKComma() ->
+                if (this.lex.peekKind() is Some(TKGreaterThan())) {
+                  _ = this.lex.next();
+                  break true
+                }
+              | TKGreaterThan() -> break true
+              | _ -> break false
               }
-            | TKGreaterThan() -> break void
-            | _ ->
-              this.error(
-                this.lex.posStart(commaTok),
-                ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
-              )
             }
-          };
-          this.expect(TKOpenParen());
-          Some(targs.toArray())
+          ) {
+            this.expect(TKOpenParen());
+            Some(targs.toArray())
+          } else {
+            None()
+          }
         } catch {
         | ErrorExn _ -> None()
         | exn -> throw exn
