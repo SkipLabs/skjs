@@ -420,43 +420,40 @@ extension class Parser {
     prec: Int,
   ): ?Expr_ {
     if (prec >= callPrec) return None();
-    hasTArgs = this.hasTArgs();
-    if (binopTok.kind is TKOpenParen() || hasTArgs) {
+    targs = if (binopTok.kind is TKOpenParen()) {
+      _ = this.lex.next();
+      Array[]
+    } else if (this.hasTArgs()) {
       _ = this.lex.next();
       targs = mutable Vector[];
-      if (hasTArgs) {
-        loop {
-          targs.push(this.type(0));
-          commaTok = this.lex.next() match {
-          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-          | Some(tk) -> tk
-          };
-          commaTok.kind match {
-          | TKComma() ->
-            if (this.lex.peekKind() is Some(TKGreaterThan())) {
-              _ = this.lex.next();
-              break void
-            }
-          | TKGreaterThan() -> break void
-          | _ ->
-            this.error(
-              this.lex.posStart(commaTok),
-              ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
-            )
-          }
+      loop {
+        targs.push(this.type(0));
+        commaTok = this.lex.next() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+        | Some(tk) -> tk
         };
-        this.expect(TKOpenParen())
+        commaTok.kind match {
+        | TKComma() ->
+          if (this.lex.peekKind() is Some(TKGreaterThan())) {
+            _ = this.lex.next();
+            break void
+          }
+        | TKGreaterThan() -> break void
+        | _ ->
+          this.error(
+            this.lex.posStart(commaTok),
+            ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
+          )
+        }
       };
-      args = this.arguments();
-      newLeft = Call(
-        Expr(this.lex.posRangeFrom(tok), left),
-        targs.toArray(),
-        args,
-      );
-      Some(newLeft)
+      this.expect(TKOpenParen());
+      targs.toArray()
     } else {
-      None()
-    }
+      return None()
+    };
+    args = this.arguments();
+    newLeft = Call(Expr(this.lex.posRangeFrom(tok), left), targs, args);
+    Some(newLeft)
   }
 
   // Handle postfix operators (++, --, !)
