@@ -255,7 +255,7 @@ extension class Parser {
         args = this.arguments();
         New(name, targs, args)
       | "async" -> Async(this.expr(0))
-      | "await" -> Await(this.expr(0))
+      | "await" -> Await(this.expr(prefixPrec))
       | "typeof" -> TypeOf(this.expr(prefixPrec))
       | _ -> Var(Name(this.lex.posRange(tok), str))
       }
