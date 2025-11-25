@@ -250,8 +250,8 @@ extension class Parser {
     | TKLessThan() ->
       ty = this.type(0);
       this.expect(TKGreaterThan());
-      e = this.expr(prec);
-      return Expr(this.lex.posRangeFrom(tok), As(e, ty))
+      e = this.expr(asPrec);
+      As(e, ty)
     | _ -> this.parseAtomicExpr(tok)
     };
     lhs = Expr(this.lex.posRangeFrom(tok), left);
