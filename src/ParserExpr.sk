@@ -190,10 +190,7 @@ extension class Parser {
         e = this.expr(0) match {
         | Expr(_, Var(x)) -> x
         | Expr _ ->
-          this.error(
-            EPChar(this.lex.fileName, tok.fromSome().posStart),
-            ExpectedVarName(),
-          )
+          this.error(this.lex.posStart(tok.fromSome()), ExpectedVarName())
         };
         tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
           _ = this.lex.next();
