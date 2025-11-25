@@ -462,12 +462,10 @@ extension class Parser {
     | _ -> return None()
     };
     (_assoc, opPrec) = precedence[binopTok.kind];
-    if (prec <= opPrec) {
-      leftPosRange = this.lex.posRangeFrom(tok);
-      _ = this.lex.next();
-      return Some(PostOp(op, Expr(leftPosRange, left)))
-    };
-    None()
+    if (prec > opPrec) return None();
+    leftPosRange = this.lex.posRangeFrom(tok);
+    _ = this.lex.next();
+    Some(PostOp(op, Expr(leftPosRange, left)))
   }
 
   // Handle binary and postfix operators with precedence
