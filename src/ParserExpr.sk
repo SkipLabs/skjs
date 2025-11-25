@@ -255,7 +255,7 @@ extension class Parser {
     | _ -> this.parseAtomicExpr(tok)
     };
     lhs = Expr(this.lex.posRangeFrom(tok), left);
-    this.parseBinaryAndPostfixOps(lhs, tok, prec)
+    this.parseBinaryAndPostfixOps(lhs, prec)
   }
 
   // Handle binary operators with precedence climbing
@@ -437,11 +437,7 @@ extension class Parser {
   // Handle binary and postfix operators with precedence
   // Processes: function calls, array access, binary ops, ternary, in, instanceof, as casts
   // Uses precedence climbing algorithm for correct operator associativity
-  mutable fun parseBinaryAndPostfixOps(
-    left: Expr,
-    tok: Token,
-    prec: Int,
-  ): Expr {
+  mutable fun parseBinaryAndPostfixOps(left: Expr, prec: Int): Expr {
     binopTok = this.lex.peek() match {
     | None() -> return left
     | Some(x) -> x
@@ -465,8 +461,9 @@ extension class Parser {
       tryParse(left, binopTok, prec) match {
       | None() -> void
       | Some(newLeft) ->
-        newLeftExpr = Expr(this.lex.posRangeFrom(tok), newLeft);
-        return this.parseBinaryAndPostfixOps(newLeftExpr, tok, prec)
+        pos = left.pos.extendWithPos(this.lex, this.lex.getLastPos());
+        newLeftExpr = Expr(pos, newLeft);
+        return this.parseBinaryAndPostfixOps(newLeftExpr, prec)
       };
     };
     left

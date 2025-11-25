@@ -73,6 +73,13 @@ value class PosRange private (
     this with {relEnd => end.relEnd}
   }
 
+  fun extendWithPos(lexer: readonly Lexer, end: Pos): this {
+    if (this.symbol != lexer.currentSymbol) {
+      internal_error("Cannot extend a position with a different symbol");
+    };
+    this with {relEnd => Pos(end.value - lexer.currentSymbolPos)}
+  }
+
   fun xxhash(ignorePos: Bool = false): XXHash {
     if (ignorePos) {
       // Intentionally collide all PosRange hashes so that ASTs can compare as equal if they only differ in PosRange values
