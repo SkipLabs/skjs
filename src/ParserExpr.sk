@@ -299,11 +299,7 @@ extension class Parser {
     tok: Token,
     prec: Int,
   ): ?Expr_ {
-    (assoc, bopPrec) = binaryOperators.maybeGet(binopTok.kind) match {
-    | None() -> return None()
-    | Some(x) -> x
-    };
-    binop = binopTok.kind.toBinop() match {
+    (assoc, bopPrec, binop) = binaryOperators.maybeGet(binopTok.kind) match {
     | None() -> return None()
     | Some(x) -> x
     };

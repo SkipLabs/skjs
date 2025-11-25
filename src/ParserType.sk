@@ -295,7 +295,7 @@ extension class Parser {
         leftRange = this.lex.posRangeFrom(tok);
         !left = TAIs(Type(leftRange, left), this.type(0))
       | Some(TKVar()) if (this.lex.isEq("extends")) ->
-        (_assoc, assignPrec) = binaryOperators[TKAssignment()];
+        (_assoc, assignPrec, _binop) = binaryOperators[TKAssignment()];
         ternaryCondPrec = assignPrec + 1;
         if (prec >= ternaryCondPrec) return left;
         _ = this.lex.next();
@@ -319,7 +319,7 @@ extension class Parser {
         | TKBitwiseAnd() -> false
         | _ -> internal_error("Internal error")
         };
-        (assoc, bopPrec) = binaryOperators[bop];
+        (assoc, bopPrec, _binop) = binaryOperators[bop];
         if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
         if (bopPrec == prec) {
           leftRange = this.lex.posRangeFrom(tok);
