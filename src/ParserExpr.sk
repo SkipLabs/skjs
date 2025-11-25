@@ -152,11 +152,23 @@ extension class Parser {
   // Parse parenthesized expressions and parameter lists
   // Handles: (expr), (param), (param: type), (param1, param2, ...)
   mutable fun parseParenExpr(): Expr_ {
-    if (this.lex.peekKind() is Some(TKCloseParen())) {
+    firstTok = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+    | Some(x) -> x
+    };
+    if (firstTok.kind is TKCloseParen()) {
       _ = this.lex.next();
       return Params(Array[])
     };
     first = this.expr_(0);
+    if (this.lex.peekKind() is Some(TKCloseParen())) {
+      _ = this.lex.next();
+      return first
+    };
+    firstName = first match {
+    | Var(x) -> x
+    | _ -> this.error(this.lex.posStart(firstTok), ExpectedVarName())
+    };
     firstTypeOpt = if (this.lex.peekKind() is Some(TKColon())) {
       _ = this.lex.next();
       Some(this.type(0))
@@ -170,21 +182,10 @@ extension class Parser {
     commaTok.kind match {
     | TKCloseParen() ->
       _ = this.lex.next();
-      firstTypeOpt match {
-      | None() -> first
-      | Some _ ->
-        firstName = first match {
-        | Var(x) -> x
-        | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
-        };
-        Params(Array[(firstName, firstTypeOpt)])
-      }
+      invariant(firstTypeOpt is Some _);
+      Params(Array[(firstName, firstTypeOpt)])
     | TKComma() ->
       _ = this.lex.next();
-      firstName = first match {
-      | Var(x) -> x
-      | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
-      };
       params = mutable Vector[(firstName, firstTypeOpt)];
       loop {
         tok = this.lex.peek();
