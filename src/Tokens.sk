@@ -280,10 +280,9 @@ base class Associativity {
 /***************************************************************************/
 
 const postfixPrec: Int = 19;
+const prefixPrec: Int = 18;
 const in_and_instanceofPrec: Int = 12;
 const callPrec: Int = 21;
-const typeOfPrec: Int = 18;
-const unaryPlusMinusPrec: Int = 18;
 const asPrec: Int = 13;
 
 const precedence: Map<TokenKind, (Associativity, Int)> = Map[
@@ -294,9 +293,7 @@ const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   /* 21, also: x[y], new x(y), x(y) (non-assoc) */
   /* 20: new x (no argument list) (non-assoc) => not supported */
   /* 19: x++, x--, x! (postfixPrec) */
-  TKExclamationMark() => (ANonAssoc(), 18),
-  TKTild() => (ANonAssoc(), 18),
-  /* 18, also: ++x, --x, +x, -x, typeof x, void x (TODO!), delete x (TODO!), await x (non-assoc) */
+  /* 18: !x, ~x, ++x, --x, +x, -x, typeof x, void x, delete x, await x (prefixPrec) */
   /* 17: x ** y (right) */
   TKMultiplication() => (ALeft(), 16),
   TKDivision() => (ALeft(), 16),
