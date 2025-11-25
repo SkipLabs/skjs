@@ -154,80 +154,79 @@ extension class Parser {
   mutable fun parseParenExpr(): Expr_ {
     if (this.lex.peekKind() is Some(TKCloseParen())) {
       _ = this.lex.next();
-      Params(Array[])
+      return Params(Array[])
+    };
+    first = this.expr_(0);
+    firstTypeOpt = if (this.lex.peekKind() is Some(TKColon())) {
+      _ = this.lex.next();
+      Some(this.type(0))
     } else {
-      first = this.expr_(0);
-      firstTypeOpt = if (this.lex.peekKind() is Some(TKColon())) {
-        _ = this.lex.next();
-        Some(this.type(0))
-      } else {
-        None()
-      };
-      commaTok = this.lex.peek() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-      | Some(x) -> x
-      };
-      commaTok.kind match {
-      | TKCloseParen() ->
-        _ = this.lex.next();
-        firstTypeOpt match {
-        | None() -> first
-        | Some _ ->
-          firstName = first match {
-          | Var(x) -> x
-          | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
-          };
-          Params(Array[(firstName, firstTypeOpt)])
-        }
-      | TKComma() ->
-        _ = this.lex.next();
+      None()
+    };
+    commaTok = this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+    | Some(x) -> x
+    };
+    commaTok.kind match {
+    | TKCloseParen() ->
+      _ = this.lex.next();
+      firstTypeOpt match {
+      | None() -> first
+      | Some _ ->
         firstName = first match {
         | Var(x) -> x
         | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
         };
-        params = mutable Vector[(firstName, firstTypeOpt)];
-        loop {
-          tok = this.lex.peek();
-          e = this.expr(0) match {
-          | Expr(_, Var(x)) -> x
-          | Expr _ ->
-            this.error(
-              EPChar(this.lex.fileName, tok.fromSome().posStart),
-              ExpectedVarName(),
-            )
-          };
-          tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
-            _ = this.lex.next();
-            Some(this.type(0))
-          } else {
-            None()
-          };
-          params.push((e, tyOpt));
-          closeTok = this.lex.next() match {
-          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-          | Some(x) -> x
-          };
-          closeTok.kind match {
-          | TKCloseParen() -> break void
-          | TKComma() ->
-            if (this.lex.peekKind() is Some(TKCloseParen())) {
-              _ = this.lex.next();
-              break void;
-            }
-          | _ ->
-            this.error(
-              this.lex.posStart(closeTok),
-              ExpectedTokens(Array[TKCloseParen(), TKComma()]),
-            )
-          }
-        };
-        Params(params.toArray())
-      | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokens(Array[TKCloseParen(), TKComma()]),
-        )
+        Params(Array[(firstName, firstTypeOpt)])
       }
+    | TKComma() ->
+      _ = this.lex.next();
+      firstName = first match {
+      | Var(x) -> x
+      | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
+      };
+      params = mutable Vector[(firstName, firstTypeOpt)];
+      loop {
+        tok = this.lex.peek();
+        e = this.expr(0) match {
+        | Expr(_, Var(x)) -> x
+        | Expr _ ->
+          this.error(
+            EPChar(this.lex.fileName, tok.fromSome().posStart),
+            ExpectedVarName(),
+          )
+        };
+        tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
+          _ = this.lex.next();
+          Some(this.type(0))
+        } else {
+          None()
+        };
+        params.push((e, tyOpt));
+        closeTok = this.lex.next() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+        | Some(x) -> x
+        };
+        closeTok.kind match {
+        | TKCloseParen() -> break void
+        | TKComma() ->
+          if (this.lex.peekKind() is Some(TKCloseParen())) {
+            _ = this.lex.next();
+            break void;
+          }
+        | _ ->
+          this.error(
+            this.lex.posStart(closeTok),
+            ExpectedTokens(Array[TKCloseParen(), TKComma()]),
+          )
+        }
+      };
+      Params(params.toArray())
+    | _ ->
+      this.error(
+        this.lex.posStart(commaTok),
+        ExpectedTokens(Array[TKCloseParen(), TKComma()]),
+      )
     }
   }
 
