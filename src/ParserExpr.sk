@@ -455,14 +455,13 @@ extension class Parser {
     tok: Token,
     prec: Int,
   ): ?Expr_ {
+    if (prec > postfixPrec) return None();
     op = binopTok.kind match {
     | TKIncr() -> POIncr()
     | TKDecr() -> PODecr()
     | TKExclamationMark() -> POExcl()
     | _ -> return None()
     };
-    (_assoc, opPrec) = precedence[binopTok.kind];
-    if (prec > opPrec) return None();
     leftPosRange = this.lex.posRangeFrom(tok);
     _ = this.lex.next();
     Some(PostOp(op, Expr(leftPosRange, left)))
