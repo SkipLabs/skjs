@@ -39,9 +39,9 @@ extension class Parser {
   mutable fun expr(prec: Int): Expr {
     inTypeCopy = this.lex.inType;
     this.lex.!inType = false;
-    (pos, e) = this.withPos(() -> this.expr_(prec), UnterminatedExpr());
+    res = this.expr_(prec);
     this.lex.!inType = inTypeCopy;
-    Expr(pos, e.value)
+    res
   }
 
   // Parse regular expression literals (/pattern/flags)
