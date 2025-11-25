@@ -344,23 +344,20 @@ extension class Parser {
     | Var(varName) -> Array[(varName, None())]
     | _ -> return None()
     };
-    rty = if (
-      binopTok.kind is TKColon() &&
-      this.lex.lookAhead(() -> {
+    rty = if (binopTok.kind is TKColon()) {
+      rty = this.lex.tryAhead(() -> {
+        _ = this.lex.next();
         try {
-          _ = this.lex.next();
-          _ = this.type(0);
-          this.lex.peekKind() is Some(TKClosure())
+          rty = this.type(0);
+          this.expect(TKClosure());
+          Some(rty)
         } catch {
-        | ErrorExn _ -> false
+        | ErrorExn _ -> None()
         | exn -> throw exn
         }
-      })
-    ) {
-      _ = this.lex.next();
-      rty = this.type(0);
-      this.expect(TKClosure());
-      Some(rty)
+      });
+      if (rty is None()) return None();
+      rty
     } else if (prec <= closurePrec && binopTok.kind is TKClosure()) {
       _ = this.lex.next();
       None()
