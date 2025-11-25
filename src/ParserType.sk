@@ -314,11 +314,6 @@ extension class Parser {
         continue
       | Some(bop @ TKBitwiseOr())
       | Some(bop @ TKBitwiseAnd()) ->
-        isType = bop match {
-        | TKBitwiseOr() -> true
-        | TKBitwiseAnd() -> false
-        | _ -> internal_error("Internal error")
-        };
         (assoc, bopPrec, _binop) = binaryOperators[bop];
         if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
         rightPrec = if (bopPrec == prec) {
@@ -331,9 +326,10 @@ extension class Parser {
         leftRange = this.lex.posRangeFrom(tok);
         _ = this.lex.next();
         right = this.type(rightPrec);
-        !left = isType match {
-        | true -> TAUnion(Type(leftRange, left), right)
-        | false -> TAInter(Type(leftRange, left), right)
+        !left = bop match {
+        | TKBitwiseOr() -> TAUnion(Type(leftRange, left), right)
+        | TKBitwiseAnd() -> TAInter(Type(leftRange, left), right)
+        | _ -> internal_error("Internal error")
         };
         continue
       | _ -> return left
