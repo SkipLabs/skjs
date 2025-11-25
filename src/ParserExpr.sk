@@ -512,67 +512,33 @@ extension class Parser {
     tok: Token,
     prec: Int,
   ): Expr_ {
-    loop {
-      binopTok = this.lex.peek() match {
-      | None() -> return left
-      | Some(x) -> x
-      };
-      if (binopTok.kind is TKEquality()) {
-        this.error(this.lex.posStart(binopTok), DontUseEquality())
-      };
-      if (binopTok.kind is TKInequality()) {
-        this.error(this.lex.posStart(binopTok), DontUseInequality())
-      };
-      this.tryParseAccess(left, binopTok, tok, prec) match {
-      | Some(accessResult) ->
-        !left = accessResult;
-        continue
+    binopTok = this.lex.peek() match {
+    | None() -> return left
+    | Some(x) -> x
+    };
+    if (binopTok.kind is TKEquality()) {
+      this.error(this.lex.posStart(binopTok), DontUseEquality())
+    };
+    if (binopTok.kind is TKInequality()) {
+      this.error(this.lex.posStart(binopTok), DontUseInequality())
+    };
+    for (tryParse in Array[
+      this.tryParseAccess,
+      this.tryParseFunctionCall,
+      this.tryParsePostfixOp,
+      this.tryParseTypeCast,
+      this.tryParseInAndInstanceOf,
+      this.tryParseTernary,
+      this.tryParseClosure,
+      this.tryParseBinaryOp,
+    ]) {
+      tryParse(left, binopTok, tok, prec) match {
       | None() -> void
+      | Some(newLeft) ->
+        return this.parseBinaryAndPostfixOps(newLeft, tok, prec)
       };
-      this.tryParseFunctionCall(left, binopTok, tok, prec) match {
-      | None() -> void
-      | Some(callResult) ->
-        !left = callResult;
-        continue
-      };
-      this.tryParsePostfixOp(left, binopTok, tok, prec) match {
-      | Some(postfixResult) ->
-        !left = postfixResult;
-        continue
-      | None() -> void
-      };
-      this.tryParseTypeCast(left, binopTok, tok, prec) match {
-      | None() -> void
-      | Some(castResult) ->
-        !left = castResult;
-        continue
-      };
-      this.tryParseInAndInstanceOf(left, binopTok, tok, prec) match {
-      | Some(inResult) ->
-        !left = inResult;
-        continue
-      | None() -> void
-      };
-      this.tryParseTernary(left, binopTok, tok, prec) match {
-      | Some(ternaryResult) ->
-        !left = ternaryResult;
-        continue
-      | None() -> void
-      };
-      this.tryParseClosure(left, binopTok, tok, prec) match {
-      | Some(closureResult) ->
-        !left = closureResult;
-        continue
-      | None() -> void
-      };
-      this.tryParseBinaryOp(left, binopTok, tok, prec) match {
-      | None() -> void
-      | Some(binaryResult) ->
-        !left = binaryResult;
-        continue
-      };
-      return left
-    }
+    };
+    left
   }
 
   // Parse function call arguments
