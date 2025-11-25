@@ -152,22 +152,20 @@ extension class Parser {
   // Parse parenthesized expressions and parameter lists
   // Handles: (expr), (param), (param: type), (param1, param2, ...)
   mutable fun parseParenExpr(): Expr_ {
-    firstTok = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(x) -> x
-    };
-    if (firstTok.kind is TKCloseParen()) {
+    if (this.lex.peekKind() is Some(TKCloseParen())) {
       _ = this.lex.next();
       return Params(Array[])
     };
-    first = this.expr_(0);
+    firstTok = this.lex.peek();
+    e = this.expr(0);
     if (this.lex.peekKind() is Some(TKCloseParen())) {
       _ = this.lex.next();
-      return first
+      return e.value
     };
-    firstName = first match {
-    | Var(x) -> x
-    | _ -> this.error(this.lex.posStart(firstTok), ExpectedVarName())
+    firstName = e match {
+    | Expr(_, Var(x)) -> x
+    | Expr _ ->
+      this.error(this.lex.posStart(firstTok.fromSome()), ExpectedVarName())
     };
     firstTypeOpt = if (this.lex.peekKind() is Some(TKColon())) {
       _ = this.lex.next();
@@ -195,7 +193,8 @@ extension class Parser {
         )
       };
       tok = this.lex.peek();
-      e = this.expr(0) match {
+      !e = this.expr(0);
+      name = e match {
       | Expr(_, Var(x)) -> x
       | Expr _ ->
         this.error(this.lex.posStart(tok.fromSome()), ExpectedVarName())
@@ -206,7 +205,7 @@ extension class Parser {
       } else {
         None()
       };
-      params.push((e, tyOpt))
+      params.push((name, tyOpt))
     };
     Params(params.toArray())
   }
