@@ -388,12 +388,9 @@ extension class Parser {
     if (!this.lex.isEqTok(binopTok, "as")) return None();
     leftPosRange = this.lex.posRangeFrom(tok);
     _ = this.lex.next();
-
-    // Check if this is 'as const'
     if (this.lex.isEq("const")) {
-      _ = this.lex.next(); // consume 'const'
-      result = AsConst(Expr(leftPosRange, left));
-      Some(result)
+      _ = this.lex.next();
+      Some(AsConst(Expr(leftPosRange, left)))
     } else {
       ty = this.type(0);
       result = As(Expr(leftPosRange, left), ty);
