@@ -423,31 +423,41 @@ extension class Parser {
     targs = if (binopTok.kind is TKOpenParen()) {
       _ = this.lex.next();
       Array[]
-    } else if (this.hasTArgs()) {
-      _ = this.lex.next();
-      targs = mutable Vector[];
-      loop {
-        targs.push(this.type(0));
-        commaTok = this.lex.next() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-        | Some(tk) -> tk
-        };
-        commaTok.kind match {
-        | TKComma() ->
-          if (this.lex.peekKind() is Some(TKGreaterThan())) {
-            _ = this.lex.next();
-            break void
-          }
-        | TKGreaterThan() -> break void
-        | _ ->
-          this.error(
-            this.lex.posStart(commaTok),
-            ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
-          )
+    } else if (binopTok.kind is TKLessThan()) {
+      this.lex.tryAhead(() -> {
+        _ = this.lex.next();
+        targs = mutable Vector[];
+        try {
+          loop {
+            targs.push(this.type(0));
+            commaTok = this.lex.next() match {
+            | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+            | Some(tk) -> tk
+            };
+            commaTok.kind match {
+            | TKComma() ->
+              if (this.lex.peekKind() is Some(TKGreaterThan())) {
+                _ = this.lex.next();
+                break void
+              }
+            | TKGreaterThan() -> break void
+            | _ ->
+              this.error(
+                this.lex.posStart(commaTok),
+                ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
+              )
+            }
+          };
+          this.expect(TKOpenParen());
+          Some(targs.toArray())
+        } catch {
+        | ErrorExn _ -> None()
+        | exn -> throw exn
         }
-      };
-      this.expect(TKOpenParen());
-      targs.toArray()
+      }) match {
+      | None() -> return None()
+      | Some(targs) -> targs
+      }
     } else {
       return None()
     };
@@ -557,45 +567,6 @@ extension class Parser {
       };
       return left
     }
-  }
-
-  // Check if the current position starts with type arguments
-  mutable fun hasTArgs(): Bool {
-    this.lex.lookAhead(() -> {
-      binopTok = this.lex.peek() match {
-      | None() -> return false
-      | Some(x) -> x
-      };
-      if (!(binopTok.kind is TKLessThan())) return false;
-      try {
-        _ = this.lex.next();
-        loop {
-          _ = this.type(0);
-          commaTok = this.lex.next() match {
-          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-          | Some(tk) -> tk
-          };
-          commaTok.kind match {
-          | TKComma() ->
-            if (this.lex.peekKind() is Some(TKGreaterThan())) {
-              _ = this.lex.next();
-              break void
-            }
-          | TKGreaterThan() -> break void
-          | _ ->
-            this.error(
-              this.lex.posStart(commaTok),
-              ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
-            )
-          }
-        };
-        this.expect(TKOpenParen());
-        true
-      } catch {
-      | ErrorExn _ -> false
-      | exn -> throw exn
-      }
-    })
   }
 
   // Parse function call arguments
