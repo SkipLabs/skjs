@@ -280,31 +280,32 @@ base class Associativity {
 /***************************************************************************/
 
 const in_and_instanceofPrec: Int = 12;
-const callPrec: Int = 20;
-const typeOfPrec: Int = 17;
-const unaryPlusMinusPrec: Int = 17;
+const callPrec: Int = 21;
+const typeOfPrec: Int = 18;
+const unaryPlusMinusPrec: Int = 18;
 
 const precedence: Map<TokenKind, (Associativity, Int)> = Map[
-  /* 21: (x) (non-assoc) */
-  TKDot() => (ALeft(), 20),
-  TKQuestionMarkDot() => (ALeft(), 20),
-  TKExclamationMarkDot() => (ALeft(), 20),
-  /* 20, also: x[y], new x(y), x(y) (non-assoc) */
-  /* 19: new x (no argument list) (non-assoc) => not supported */
-  TKIncr() /* postfix */ => (ANonAssoc(), 18),
-  TKDecr() /* postfix */ => (ANonAssoc(), 18),
-  TKExclamationMark() => (ANonAssoc(), 17),
-  TKTild() => (ANonAssoc(), 17),
-  /* 17, also: ++x, --x, +x, -x, typeof x, void x (TODO!), delete x (TODO!), await x (non-assoc) */
-  /* 16: x ** y (right) */
-  TKMultiplication() => (ALeft(), 15),
-  TKDivision() => (ALeft(), 15),
-  TKRemainder() => (ALeft(), 15),
-  TKAddition() => (ALeft(), 14),
-  TKSubtraction() => (ALeft(), 14),
-  TKLeftShift() => (ALeft(), 13),
-  TKSignedRightShift() => (ALeft(), 13),
-  TKZeroFilledRightShift() => (ALeft(), 13),
+  /* 22: (x) (non-assoc) */
+  TKDot() => (ALeft(), 21),
+  TKQuestionMarkDot() => (ALeft(), 21),
+  TKExclamationMarkDot() => (ALeft(), 21),
+  /* 21, also: x[y], new x(y), x(y) (non-assoc) */
+  /* 20: new x (no argument list) (non-assoc) => not supported */
+  TKIncr() /* postfix */ => (ANonAssoc(), 19),
+  TKDecr() /* postfix */ => (ANonAssoc(), 19),
+  TKExclamationMark() => (ANonAssoc(), 18),
+  TKTild() => (ANonAssoc(), 18),
+  /* 18, also: ++x, --x, +x, -x, typeof x, void x (TODO!), delete x (TODO!), await x (non-assoc) */
+  /* 17: x ** y (right) */
+  TKMultiplication() => (ALeft(), 16),
+  TKDivision() => (ALeft(), 16),
+  TKRemainder() => (ALeft(), 16),
+  TKAddition() => (ALeft(), 15),
+  TKSubtraction() => (ALeft(), 15),
+  TKLeftShift() => (ALeft(), 14),
+  TKSignedRightShift() => (ALeft(), 14),
+  TKZeroFilledRightShift() => (ALeft(), 14),
+  /* 13: x as y (left) */
   TKLessThan() => (ALeft(), 12),
   TKLessThanOrEqual() => (ALeft(), 12),
   TKGreaterThan() => (ALeft(), 12),
