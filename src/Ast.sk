@@ -335,6 +335,7 @@ base class Expr_ uses XXHashable {
   | EString(String)
   | TypeOf(Expr)
   | Await(Expr)
+  | Dot(DotKind, Expr, Name)
   | Get(Expr, Expr)
   | New(Name, Array<Type>, Array<Expr>)
   | Unop(UnaryOperator, Expr)
@@ -607,6 +608,13 @@ base class FNOp uses XXHashable {
   | FNAdd(PosRange)
 }
 
+base class DotKind uses XXHashable {
+  children =
+  | NormalDot()
+  | OptionalDot()
+  | ExclamationMarkDot()
+}
+
 base class UnaryOperator uses XXHashable {
   children =
   | UOExclamationMark()
@@ -648,9 +656,6 @@ base class AssignableBinaryOperator extends BinaryOperator uses XXHashable {
 
 base class BinaryOperator uses XXHashable {
   children =
-  | BODot()
-  | BOOptionalDot()
-  | BOExclamationMarkDot()
   | BOLessThan()
   | BOLessThanOrEqual()
   | BOGreaterThan()

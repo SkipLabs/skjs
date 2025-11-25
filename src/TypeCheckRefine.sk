@@ -10,16 +10,10 @@ extension class TypeChecker {
     (e1, e2) match {
     | (
       Expr(_, EString(tag)),
-      Expr(
-        _,
-        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
-      ),
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
     )
     | (
-      Expr(
-        _,
-        Binop(BODot(), Expr(_, Var(local)), Expr(_, Var(Name(_, fieldName)))),
-      ),
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
       Expr(_, EString(tag)),
     ) if (fieldName == kAlgebraicBranchFieldName) ->
       this.evalAlgebraicBranchEquality(tcenv, local, tag, target)
