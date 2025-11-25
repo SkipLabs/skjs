@@ -384,7 +384,9 @@ extension class Parser {
     left: Expr_,
     binopTok: Token,
     tok: Token,
+    prec: Int,
   ): ?Expr_ {
+    if (prec >= asPrec) return None();
     if (!this.lex.isEqTok(binopTok, "as")) return None();
     leftPosRange = this.lex.posRangeFrom(tok);
     _ = this.lex.next();
@@ -544,7 +546,7 @@ extension class Parser {
       if (binopTok.kind is TKInequality()) {
         this.error(this.lex.posStart(binopTok), DontUseInequality())
       };
-      this.tryParseTypeCast(left, binopTok, tok) match {
+      this.tryParseTypeCast(left, binopTok, tok, prec) match {
       | None() -> void
       | Some(castResult) -> return castResult
       };

@@ -283,6 +283,7 @@ const in_and_instanceofPrec: Int = 12;
 const callPrec: Int = 21;
 const typeOfPrec: Int = 18;
 const unaryPlusMinusPrec: Int = 18;
+const asPrec: Int = 13;
 
 const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   /* 22: (x) (non-assoc) */
