@@ -424,14 +424,23 @@ extension class Parser {
     Some(EIf(left, e2, e3))
   }
 
-  // Handle x[y]
+  // Handle x[y], x.y, x?.y, x!.y
   mutable fun tryParseAccess(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
-    if (!(binopTok.kind is TKOpenSquare())) return None();
     if (prec >= callPrec) return None();
+    dotOp = binopTok.kind match {
+    | TKOpenSquare() ->
+      _ = this.lex.next();
+      rhs = this.expr(0);
+      this.expect(TKCloseSquare());
+      return Some(Get(left, rhs))
+    | TKDot() -> BODot()
+    | TKQuestionMarkDot() -> BOOptionalDot()
+    | TKExclamationMarkDot() -> BOExclamationMarkDot()
+    | _ -> return None()
+    };
     _ = this.lex.next();
-    rhs = this.expr(0);
-    this.expect(TKCloseSquare());
-    Some(Get(left, rhs))
+    rhs = this.getName();
+    Some(Binop(dotOp, left, Expr(rhs.pos, Var(rhs))))
   }
 
   // Handle binary and postfix operators with precedence

@@ -243,10 +243,7 @@ const binaryOperators: Map<
   (Associativity, Int, BinaryOperator),
 > = Map[
   /* 22: (x) (non-assoc) */
-  TKDot() => (ALeft(), 21, BODot()),
-  TKQuestionMarkDot() => (ALeft(), 21, BOOptionalDot()),
-  TKExclamationMarkDot() => (ALeft(), 21, BOExclamationMarkDot()),
-  /* 21, also: x[y], new x(y), x(y) (non-assoc) */
+  /* 21, also: x[y], x.y, x?.y, x!.y, new x(y), x(y) (non-assoc) (callPrec) */
   /* 20: new x (no argument list) (non-assoc) => not supported */
   /* 19: x++, x--, x! (postfixPrec) */
   /* 18: !x, ~x, ++x, --x, +x, -x, typeof x, void x, delete x, await x (prefixPrec) */
