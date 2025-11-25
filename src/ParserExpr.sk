@@ -337,6 +337,7 @@ extension class Parser {
     left: Expr_,
     binopTok: Token,
     _tok: Token,
+    prec: Int,
   ): ?Expr_ {
     params = left match {
     | Params(params) -> params
@@ -360,7 +361,7 @@ extension class Parser {
       rty = this.type(0);
       this.expect(TKClosure());
       Some(rty)
-    } else if (binopTok.kind is TKClosure()) {
+    } else if (prec <= closurePrec && binopTok.kind is TKClosure()) {
       _ = this.lex.next();
       None()
     } else {
@@ -369,7 +370,7 @@ extension class Parser {
     closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
       CBBlock(this.blockOrStmt())
     } else {
-      CBExpr(this.expr(0))
+      CBExpr(this.expr(closurePrec))
     };
     Some(Closure(params, rty, closureBody))
   }
@@ -543,7 +544,7 @@ extension class Parser {
         continue
       | None() -> void
       };
-      this.tryParseClosure(left, binopTok, tok) match {
+      this.tryParseClosure(left, binopTok, tok, prec) match {
       | Some(closureResult) ->
         !left = closureResult;
         continue
