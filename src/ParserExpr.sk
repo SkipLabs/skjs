@@ -505,7 +505,9 @@ extension class Parser {
       | None() -> void
       };
       this.tryParsePostfixOp(left, binopTok, tok, prec) match {
-      | Some(postfixResult) -> return postfixResult
+      | Some(postfixResult) ->
+        !left = postfixResult;
+        continue
       | None() -> void
       };
       if (binopTok.kind is TKQuestionMark()) {
