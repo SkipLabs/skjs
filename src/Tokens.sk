@@ -230,11 +230,11 @@ base class Associativity {
 // Operators associativity and precedence.
 /***************************************************************************/
 
+const callPrec: Int = 21;
 const postfixPrec: Int = 19;
 const prefixPrec: Int = 18;
-const in_and_instanceofPrec: Int = 12;
-const callPrec: Int = 21;
 const asPrec: Int = 13;
+const in_and_instanceofPrec: Int = 12;
 const ternaryPrec: Int = 4;
 const closurePrec: Int = 3;
 

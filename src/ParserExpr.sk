@@ -523,15 +523,33 @@ extension class Parser {
       if (binopTok.kind is TKInequality()) {
         this.error(this.lex.posStart(binopTok), DontUseInequality())
       };
-      this.tryParseInAndInstanceOf(left, binopTok, tok, prec) match {
-      | Some(inResult) ->
-        !left = inResult;
+      this.tryParseAccess(left, binopTok, tok, prec) match {
+      | Some(accessResult) ->
+        !left = accessResult;
         continue
       | None() -> void
+      };
+      this.tryParseFunctionCall(left, binopTok, tok, prec) match {
+      | None() -> void
+      | Some(callResult) ->
+        !left = callResult;
+        continue
       };
       this.tryParsePostfixOp(left, binopTok, tok, prec) match {
       | Some(postfixResult) ->
         !left = postfixResult;
+        continue
+      | None() -> void
+      };
+      this.tryParseTypeCast(left, binopTok, tok, prec) match {
+      | None() -> void
+      | Some(castResult) ->
+        !left = castResult;
+        continue
+      };
+      this.tryParseInAndInstanceOf(left, binopTok, tok, prec) match {
+      | Some(inResult) ->
+        !left = inResult;
         continue
       | None() -> void
       };
@@ -546,24 +564,6 @@ extension class Parser {
         !left = closureResult;
         continue
       | None() -> void
-      };
-      this.tryParseAccess(left, binopTok, tok, prec) match {
-      | Some(accessResult) ->
-        !left = accessResult;
-        continue
-      | None() -> void
-      };
-      this.tryParseFunctionCall(left, binopTok, tok, prec) match {
-      | None() -> void
-      | Some(callResult) ->
-        !left = callResult;
-        continue
-      };
-      this.tryParseTypeCast(left, binopTok, tok, prec) match {
-      | None() -> void
-      | Some(castResult) ->
-        !left = castResult;
-        continue
       };
       this.tryParseBinaryOp(left, binopTok, tok, prec) match {
       | None() -> void
