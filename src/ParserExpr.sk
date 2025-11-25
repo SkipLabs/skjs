@@ -162,19 +162,20 @@ extension class Parser {
       _ = this.lex.next();
       return e.value
     };
-    firstName = e match {
-    | Expr(_, Var(x)) -> x
-    | Expr _ ->
-      this.error(this.lex.posStart(firstTok.fromSome()), ExpectedVarName())
-    };
-    firstTypeOpt = if (this.lex.peekKind() is Some(TKColon())) {
-      _ = this.lex.next();
-      Some(this.type(0))
-    } else {
-      None()
-    };
-    params = mutable Vector[(firstName, firstTypeOpt)];
+    params = mutable Vector[];
     loop {
+      name = e match {
+      | Expr(_, Var(x)) -> x
+      | Expr _ ->
+        this.error(this.lex.posStart(firstTok.fromSome()), ExpectedVarName())
+      };
+      tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
+        _ = this.lex.next();
+        Some(this.type(0))
+      } else {
+        None()
+      };
+      params.push((name, tyOpt));
       closeTok = this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
       | Some(x) -> x
@@ -192,20 +193,8 @@ extension class Parser {
           ExpectedTokens(Array[TKCloseParen(), TKComma()]),
         )
       };
-      tok = this.lex.peek();
+      !firstTok = this.lex.peek();
       !e = this.expr(0);
-      name = e match {
-      | Expr(_, Var(x)) -> x
-      | Expr _ ->
-        this.error(this.lex.posStart(tok.fromSome()), ExpectedVarName())
-      };
-      tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
-        _ = this.lex.next();
-        Some(this.type(0))
-      } else {
-        None()
-      };
-      params.push((name, tyOpt))
     };
     Params(params.toArray())
   }
