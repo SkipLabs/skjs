@@ -284,6 +284,7 @@ const prefixPrec: Int = 18;
 const in_and_instanceofPrec: Int = 12;
 const callPrec: Int = 21;
 const asPrec: Int = 13;
+const ternaryPrec: Int = 4;
 const closurePrec: Int = 2;
 
 const precedence: Map<TokenKind, (Associativity, Int)> = Map[
@@ -320,7 +321,7 @@ const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   TKLogicalAnd() => (ALeft(), 7),
   TKLogicalOr() => (ALeft(), 6),
   TKNullishCoalescing() => (ALeft(), 5),
-  TKQuestionMark() => (ARight(), 4),
+  /* 4: x ? y : z (right) (ternaryPrec) */
   TKAssignment() => (ARight(), 3),
   TKMultiplicationAssignment() => (ARight(), 3),
   TKDivisionAssignment() => (ARight(), 3),

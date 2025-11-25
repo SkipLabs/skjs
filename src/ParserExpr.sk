@@ -486,14 +486,13 @@ extension class Parser {
     tok: Token,
     prec: Int,
   ): ?Expr_ {
+    if (prec > ternaryPrec) return None();
     if (!(binopTok.kind is TKQuestionMark())) return None();
-    (_assoc, opPrec) = precedence[binopTok.kind];
-    if (prec > opPrec) return None();
     leftPosRange = this.lex.posRangeFrom(tok);
     _ = this.lex.next();
     e2 = this.expr(0);
     this.expect(TKColon());
-    e3 = this.expr(opPrec);
+    e3 = this.expr(ternaryPrec);
     Some(EIf(Expr(leftPosRange, left), e2, e3))
   }
 
