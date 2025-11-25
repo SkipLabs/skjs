@@ -311,10 +311,9 @@ const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   TKGreaterThan() => (ALeft(), 12),
   TKGreaterThanOrEqual() => (ALeft(), 12),
   /* 12, also: x in y, x instanceof y */
-  TKEquality() => (ALeft(), 11),
-  TKInequality() => (ALeft(), 11),
   TKStrictEquality() => (ALeft(), 11),
   TKStrictInequality() => (ALeft(), 11),
+  /* 11, also x == y, x != y (banned!) */
   TKBitwiseAnd() => (ALeft(), 10),
   TKBitwiseXor() => (ALeft(), 9),
   TKBitwiseOr() => (ALeft(), 8),
