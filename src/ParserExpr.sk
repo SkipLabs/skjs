@@ -87,11 +87,10 @@ extension class Parser {
   // Parse array literal expressions [elem1, elem2, ...]
   // Handles empty arrays and trailing commas
   mutable fun parseArrayExpr(): Expr_ {
+    values = mutable Vector[];
     if (this.lex.peekKind() is Some(TKCloseSquare())) {
       _ = this.lex.next();
-      EArray(Array[])
     } else {
-      values = mutable Vector[];
       loop {
         values.push(this.expr(0));
         commaTok = this.lex.next() match {
@@ -99,11 +98,11 @@ extension class Parser {
         | Some(x) -> x
         };
         commaTok.kind match {
-        | TKCloseSquare() -> break EArray(values.toArray())
+        | TKCloseSquare() -> break void
         | TKComma() ->
           if (this.lex.peekKind() is Some(TKCloseSquare())) {
             _ = this.lex.next();
-            break EArray(values.toArray())
+            break void
           }
         | _ ->
           this.error(
@@ -112,7 +111,8 @@ extension class Parser {
           )
         }
       }
-    }
+    };
+    EArray(values.toArray())
   }
 
   // Parse object literal expressions {key: value, ...}
