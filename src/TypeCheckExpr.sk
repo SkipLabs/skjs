@@ -116,45 +116,38 @@ extension class TypeChecker {
                   ],
                 )
               | Some(tfield) ->
-                tfieldType = tfield.type;
-                if (tfield.isOptional) {
-                  !tfieldType = TType::unionUndefined(
-                    tcenv.subst,
-                    this.tenv,
-                    tfieldType,
-                    tfield.pos,
-                  )
-                };
-                defaultOpt match {
-                | None() -> void
-                | Some((defaultPos, defaultType)) ->
-                  undefined = TType::single(
-                    TPrimUnit(TUndefined(), defaultPos),
-                  );
-                  if (
-                    tfield.isOptional ||
-                    TType::isSub(
-                      tcenv.subst.clone(),
-                      this.tenv,
-                      undefined,
-                      tfieldType,
-                    ) is STOk()
-                  ) {
-                    !defaultIsUseless = None();
-                    !tfieldType = TType::diff(tfield.type, undefined);
-                    !tfieldType = TType::union(
-                      tcenv.subst,
-                      this.tenv,
-                      tfieldType,
-                      defaultType,
-                    )
-                  }
-                };
-                !typeForField = TType::union(
-                  tcenv.subst,
-                  this.tenv,
+                undefined = (pos) ->
+                  TType::single(TPrimUnit(TUndefined(), pos));
+                union = (t1, t2) ->
+                  TType::union(tcenv.subst, this.tenv, t1, t2);
+                !typeForField = union(
                   typeForField,
-                  tfieldType,
+                  defaultOpt match {
+                  | Some((defaultPos, defaultType)) ->
+                    if (
+                      tfield.isOptional ||
+                      TType::isSub(
+                        tcenv.subst.clone(),
+                        this.tenv,
+                        undefined(defaultPos),
+                        tfield.type,
+                      ) is STOk()
+                    ) {
+                      !defaultIsUseless = None();
+                      union(
+                        TType::diff(tfield.type, undefined(defaultPos)),
+                        defaultType,
+                      )
+                    } else {
+                      tfield.type
+                    }
+                  | None() ->
+                    if (tfield.isOptional) {
+                      union(tfield.type, undefined(tfield.pos))
+                    } else {
+                      tfield.type
+                    }
+                  },
                 )
               }
             };
