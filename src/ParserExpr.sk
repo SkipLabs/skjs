@@ -420,9 +420,9 @@ extension class Parser {
     prec: Int,
   ): ?Expr_ {
     if (prec >= callPrec) return None();
-    targs = if (binopTok.kind is TKOpenParen()) {
+    targsOpt = if (binopTok.kind is TKOpenParen()) {
       _ = this.lex.next();
-      Array[]
+      Some(Array[])
     } else if (binopTok.kind is TKLessThan()) {
       this.lex.tryAhead(() -> {
         _ = this.lex.next();
@@ -451,16 +451,14 @@ extension class Parser {
         | ErrorExn _ -> None()
         | exn -> throw exn
         }
-      }) match {
-      | None() -> return None()
-      | Some(targs) -> targs
-      }
+      })
     } else {
-      return None()
+      None()
     };
-    args = this.arguments();
-    newLeft = Call(Expr(this.lex.posRangeFrom(tok), left), targs, args);
-    Some(newLeft)
+    targsOpt.map(targs -> {
+      args = this.arguments();
+      Call(Expr(this.lex.posRangeFrom(tok), left), targs, args)
+    })
   }
 
   // Handle postfix operators (++, --, !)
