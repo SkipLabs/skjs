@@ -285,7 +285,7 @@ const in_and_instanceofPrec: Int = 12;
 const callPrec: Int = 21;
 const asPrec: Int = 13;
 const ternaryPrec: Int = 4;
-const closurePrec: Int = 2;
+const closurePrec: Int = 3;
 
 const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   /* 22: (x) (non-assoc) */
@@ -322,23 +322,23 @@ const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   TKLogicalOr() => (ALeft(), 6),
   TKNullishCoalescing() => (ALeft(), 5),
   /* 4: x ? y : z (right) (ternaryPrec) */
-  TKAssignment() => (ARight(), 3),
-  TKMultiplicationAssignment() => (ARight(), 3),
-  TKDivisionAssignment() => (ARight(), 3),
-  TKRemainderAssignment() => (ARight(), 3),
-  TKAdditionAssignment() => (ARight(), 3),
-  TKSubtractionAssignment() => (ARight(), 3),
-  TKLeftShiftAssignment() => (ARight(), 3),
-  TKSignedRightShiftAssignment() => (ARight(), 3),
-  TKZeroFilledRightShiftAssignment() => (ARight(), 3),
-  TKBitwiseAndAssignment() => (ARight(), 3),
-  TKBitwiseXorAssignment() => (ARight(), 3),
-  TKBitwiseOrAssignment() => (ARight(), 3),
-  TKLogicalAndAssignment() => (ARight(), 3),
-  TKLogicalOrAssignment() => (ARight(), 3),
-  TKNullishCoalescingAssignment() => (ARight(), 3),
-  /* 3, also: x **= y (right) */
-  /* 2: x => y, async x => y (right) */
+  /* 3: x => y, async x => y (right) (closurePrec) */
+  TKAssignment() => (ARight(), 2),
+  TKMultiplicationAssignment() => (ARight(), 2),
+  TKDivisionAssignment() => (ARight(), 2),
+  TKRemainderAssignment() => (ARight(), 2),
+  TKAdditionAssignment() => (ARight(), 2),
+  TKSubtractionAssignment() => (ARight(), 2),
+  TKLeftShiftAssignment() => (ARight(), 2),
+  TKSignedRightShiftAssignment() => (ARight(), 2),
+  TKZeroFilledRightShiftAssignment() => (ARight(), 2),
+  TKBitwiseAndAssignment() => (ARight(), 2),
+  TKBitwiseXorAssignment() => (ARight(), 2),
+  TKBitwiseOrAssignment() => (ARight(), 2),
+  TKLogicalAndAssignment() => (ARight(), 2),
+  TKLogicalOrAssignment() => (ARight(), 2),
+  TKNullishCoalescingAssignment() => (ARight(), 2),
+  /* 2, also: x **= y (right) */
   /* 1.5: ...x, yield x, yield* x (non-assoc) */
   /* 1: x, y (left) */
 ];
