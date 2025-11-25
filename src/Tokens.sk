@@ -286,7 +286,7 @@ const asPrec: Int = 13;
 const ternaryPrec: Int = 4;
 const closurePrec: Int = 3;
 
-const precedence: Map<TokenKind, (Associativity, Int)> = Map[
+const binaryOperators: Map<TokenKind, (Associativity, Int)> = Map[
   /* 22: (x) (non-assoc) */
   TKDot() => (ALeft(), 21),
   TKQuestionMarkDot() => (ALeft(), 21),
