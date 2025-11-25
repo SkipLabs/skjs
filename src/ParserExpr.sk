@@ -336,8 +336,13 @@ extension class Parser {
   mutable fun tryParseClosure(
     left: Expr_,
     binopTok: Token,
-    tok: Token,
+    _tok: Token,
   ): ?Expr_ {
+    params = left match {
+    | Params(params) -> params
+    | Var(varName) -> Array[(varName, None())]
+    | _ -> return None()
+    };
     rty = if (
       binopTok.kind is TKColon() &&
       this.lex.lookAhead(() -> {
@@ -360,11 +365,6 @@ extension class Parser {
       None()
     } else {
       return None()
-    };
-    params = left match {
-    | Params(params) -> params
-    | Var(varName) -> Array[(varName, None())]
-    | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
     };
     closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
       CBBlock(this.blockOrStmt())
