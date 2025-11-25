@@ -342,7 +342,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 class CheckResult(
   fileName: FAbsolute,
   parseError: ?Error,
-  errors: Array<Error>,
+  errors: Array<TypingError>,
   callgraph: ?CallGraphFile = None(),
   classHierarchy: ?ClassHierarchyFile = None(),
 ) extends SKStore.File
