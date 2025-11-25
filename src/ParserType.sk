@@ -321,30 +321,21 @@ extension class Parser {
         };
         (assoc, bopPrec, _binop) = binaryOperators[bop];
         if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
-        if (bopPrec == prec) {
-          leftRange = this.lex.posRangeFrom(tok);
-          _ = this.lex.next();
-          right = this.type(prec + 1);
-          !left = isType match {
-          | true -> TAUnion(Type(leftRange, left), right)
-          | false -> TAInter(Type(leftRange, left), right)
-          };
-          continue;
+        rightPrec = if (bopPrec == prec) {
+          prec + 1
+        } else if (bopPrec > prec) {
+          bopPrec
+        } else {
+          return left
         };
-        if (bopPrec > prec) {
-          leftRange = this.lex.posRangeFrom(tok);
-          _ = this.lex.next();
-          right = this.type(bopPrec);
-          !left = isType match {
-          | true -> TAUnion(Type(leftRange, left), right)
-          | false -> TAInter(Type(leftRange, left), right)
-          };
-          continue;
+        leftRange = this.lex.posRangeFrom(tok);
+        _ = this.lex.next();
+        right = this.type(rightPrec);
+        !left = isType match {
+        | true -> TAUnion(Type(leftRange, left), right)
+        | false -> TAInter(Type(leftRange, left), right)
         };
-        if (bopPrec >= prec) {
-          internal_error("bopPrec should be less than prec")
-        };
-        return left
+        continue
       | _ -> return left
       }
     }
