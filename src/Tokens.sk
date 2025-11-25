@@ -284,6 +284,7 @@ const prefixPrec: Int = 18;
 const in_and_instanceofPrec: Int = 12;
 const callPrec: Int = 21;
 const asPrec: Int = 13;
+const closurePrec: Int = 2;
 
 const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   /* 22: (x) (non-assoc) */
@@ -336,8 +337,8 @@ const precedence: Map<TokenKind, (Associativity, Int)> = Map[
   TKLogicalOrAssignment() => (ARight(), 3),
   TKNullishCoalescingAssignment() => (ARight(), 3),
   /* 3, also: x **= y (right) */
-  /* x => y (right) */
-  /* 2: ...x, yield x, yield* x (non-assoc) */
+  /* 2: x => y, async x => y (right) */
+  /* 1.5: ...x, yield x, yield* x (non-assoc) */
   /* 1: x, y (left) */
 ];
 
