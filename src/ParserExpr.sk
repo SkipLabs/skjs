@@ -175,17 +175,15 @@ extension class Parser {
     } else {
       None()
     };
-    commaTok = this.lex.peek() match {
+    commaTok = this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
     | Some(x) -> x
     };
     commaTok.kind match {
     | TKCloseParen() ->
-      _ = this.lex.next();
       invariant(firstTypeOpt is Some _);
       Params(Array[(firstName, firstTypeOpt)])
     | TKComma() ->
-      _ = this.lex.next();
       params = mutable Vector[(firstName, firstTypeOpt)];
       loop {
         tok = this.lex.peek();
