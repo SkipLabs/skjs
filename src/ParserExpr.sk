@@ -315,8 +315,6 @@ extension class Parser {
         right = this.expr(prec + 1);
         Binop(binop, Expr(leftPosRange, left), right)
       | ARight() -> Binop(binop, Expr(leftPosRange, left), this.expr(prec))
-      | ANonAssoc() ->
-        this.error(this.lex.posStart(binopTok), NonAssociative(binopTok.kind))
       };
       Some(newLeft)
     } else if (bopPrec > prec) {
