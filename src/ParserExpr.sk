@@ -41,7 +41,7 @@ extension class Parser {
     this.lex.!inType = false;
     (pos, e) = this.withPos(() -> this.expr_(prec), UnterminatedExpr());
     this.lex.!inType = inTypeCopy;
-    Expr(pos, e)
+    Expr(pos, e.value)
   }
 
   // Parse regular expression literals (/pattern/flags)
@@ -237,7 +237,7 @@ extension class Parser {
 
   // Internal expression parsing implementation
   // Parses primary expressions and then delegates to binary/postfix operator handling
-  mutable fun expr_(prec: Int): Expr_ {
+  mutable fun expr_(prec: Int): Expr {
     tok = this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
     | Some(x) -> x
@@ -251,7 +251,7 @@ extension class Parser {
       ty = this.type(0);
       this.expect(TKGreaterThan());
       e = this.expr(prec);
-      return As(e, ty)
+      return Expr(this.lex.posRangeFrom(tok), As(e, ty))
     | _ -> this.parseAtomicExpr(tok)
     };
     lhs = Expr(this.lex.posRangeFrom(tok), left);
@@ -441,9 +441,9 @@ extension class Parser {
     left: Expr,
     tok: Token,
     prec: Int,
-  ): Expr_ {
+  ): Expr {
     binopTok = this.lex.peek() match {
-    | None() -> return left.value
+    | None() -> return left
     | Some(x) -> x
     };
     if (binopTok.kind is TKEquality()) {
@@ -469,7 +469,7 @@ extension class Parser {
         return this.parseBinaryAndPostfixOps(newLeftExpr, tok, prec)
       };
     };
-    left.value
+    left
   }
 
   // Parse function call arguments
