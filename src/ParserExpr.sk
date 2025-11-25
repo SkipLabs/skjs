@@ -260,9 +260,9 @@ extension class Parser {
 
   // Handle binary operators with precedence climbing
   mutable fun tryParseBinaryOp(
-    left: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
+    _tok: Token,
     prec: Int,
   ): ?Expr_ {
     (assoc, bopPrec, binop) = binaryOperators.maybeGet(binopTok.kind) match {
@@ -270,19 +270,17 @@ extension class Parser {
     | Some(x) -> x
     };
     if (bopPrec == prec) {
-      leftPosRange = this.lex.posRangeFrom(tok);
       _ = this.lex.next();
       newLeft = assoc match {
       | ALeft() ->
         right = this.expr(prec + 1);
-        Binop(binop, Expr(leftPosRange, left), right)
-      | ARight() -> Binop(binop, Expr(leftPosRange, left), this.expr(prec))
+        Binop(binop, left, right)
+      | ARight() -> Binop(binop, left, this.expr(prec))
       };
       Some(newLeft)
     } else if (bopPrec > prec) {
-      leftPosRange = this.lex.posRangeFrom(tok);
       _ = this.lex.next();
-      newLeft = Binop(binop, Expr(leftPosRange, left), this.expr(bopPrec + 1));
+      newLeft = Binop(binop, left, this.expr(bopPrec + 1));
       Some(newLeft)
     } else {
       if (bopPrec >= prec) {
@@ -294,12 +292,12 @@ extension class Parser {
 
   // Handle closure syntax (: type => expr and => expr)
   mutable fun tryParseClosure(
-    left: Expr_,
+    left: Expr,
     binopTok: Token,
     _tok: Token,
     prec: Int,
   ): ?Expr_ {
-    params = left match {
+    params = left.value match {
     | Params(params) -> params
     | Var(varName) -> Array[(varName, None())]
     | _ -> return None()
@@ -334,29 +332,28 @@ extension class Parser {
 
   // Handle type casting with 'as' keyword and 'as const' syntax
   mutable fun tryParseTypeCast(
-    left: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
+    _tok: Token,
     prec: Int,
   ): ?Expr_ {
     if (prec >= asPrec) return None();
     if (!this.lex.isEqTok(binopTok, "as")) return None();
-    leftPosRange = this.lex.posRangeFrom(tok);
     _ = this.lex.next();
     if (this.lex.isEq("const")) {
       _ = this.lex.next();
-      Some(AsConst(Expr(leftPosRange, left)))
+      Some(AsConst(left))
     } else {
       ty = this.type(0);
-      Some(As(Expr(leftPosRange, left), ty))
+      Some(As(left, ty))
     }
   }
 
   // Handle function calls with optional type arguments
   mutable fun tryParseFunctionCall(
-    left: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
+    _tok: Token,
     prec: Int,
   ): ?Expr_ {
     if (prec >= callPrec) return None();
@@ -397,15 +394,15 @@ extension class Parser {
     };
     targsOpt.map(targs -> {
       args = this.arguments();
-      Call(Expr(this.lex.posRangeFrom(tok), left), targs, args)
+      Call(left, targs, args)
     })
   }
 
   // Handle postfix operators (++, --, !)
   mutable fun tryParsePostfixOp(
-    left: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
+    _tok: Token,
     prec: Int,
   ): ?Expr_ {
     if (prec > postfixPrec) return None();
@@ -415,59 +412,54 @@ extension class Parser {
     | TKExclamationMark() -> POExcl()
     | _ -> return None()
     };
-    leftPosRange = this.lex.posRangeFrom(tok);
     _ = this.lex.next();
-    Some(PostOp(op, Expr(leftPosRange, left)))
+    Some(PostOp(op, left))
   }
 
   // Handle in and instanceof
   mutable fun tryParseInAndInstanceOf(
-    left: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
+    _tok: Token,
     prec: Int,
   ): ?Expr_ {
     if (prec > in_and_instanceofPrec) return None();
     isIn = this.lex.isEqTok(binopTok, "in");
     if (!isIn && !this.lex.isEqTok(binopTok, "instanceof")) return None();
     _ = this.lex.next();
-    leftPosRange = this.lex.posRangeFrom(tok);
-    lhs = Expr(leftPosRange, left);
     rhs = this.expr(in_and_instanceofPrec);
-    Some(if (isIn) In(lhs, rhs) else InstanceOf(lhs, rhs))
+    Some(if (isIn) In(left, rhs) else InstanceOf(left, rhs))
   }
 
   // Handle x ? y : z
   mutable fun tryParseTernary(
-    left: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
+    _tok: Token,
     prec: Int,
   ): ?Expr_ {
     if (prec > ternaryPrec) return None();
     if (!(binopTok.kind is TKQuestionMark())) return None();
-    leftPosRange = this.lex.posRangeFrom(tok);
     _ = this.lex.next();
     e2 = this.expr(0);
     this.expect(TKColon());
     e3 = this.expr(ternaryPrec);
-    Some(EIf(Expr(leftPosRange, left), e2, e3))
+    Some(EIf(left, e2, e3))
   }
 
   // Handle x[y]
   mutable fun tryParseAccess(
-    left: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
+    _tok: Token,
     prec: Int,
   ): ?Expr_ {
     if (!(binopTok.kind is TKOpenSquare())) return None();
     if (prec >= callPrec) return None();
     _ = this.lex.next();
-    lhs = Expr(this.lex.posRangeFrom(tok), left);
     rhs = this.expr(0);
     this.expect(TKCloseSquare());
-    Some(Get(lhs, rhs))
+    Some(Get(left, rhs))
   }
 
   // Handle binary and postfix operators with precedence
@@ -498,7 +490,7 @@ extension class Parser {
       this.tryParseClosure,
       this.tryParseBinaryOp,
     ]) {
-      tryParse(left.value, binopTok, tok, prec) match {
+      tryParse(left, binopTok, tok, prec) match {
       | None() -> void
       | Some(newLeft) ->
         newLeftExpr = Expr(this.lex.posRangeFrom(tok), newLeft);
