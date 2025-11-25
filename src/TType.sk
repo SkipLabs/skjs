@@ -95,7 +95,7 @@ class TType private {
     static::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
-  static private fun fromSTypes(pos: PosRange, sTypes: STypes): this {
+  static fun fromSTypes(pos: PosRange, sTypes: STypes): this {
     static::fromClauses(pos, Clauses::fromSTypes(sTypes))
   }
 
@@ -437,11 +437,7 @@ fun createObject(
 /* Tuples */
 /***************************************************************************/
 
-class TTuple(tuple: Array<TType>) extends SType {
-  fun toString(): String {
-    `[${this.tuple.map(ty -> ty.toString()).join(", ")}]`
-  }
-}
+class TTuple(tuple: Array<TType>) extends SType
 
 /***************************************************************************/
 /* Funs */
@@ -566,6 +562,10 @@ base class SType private (
 
   fun project(): Int {
     this.tag()
+  }
+
+  fun toString(): String {
+    prettyPrintSType(this, false)
   }
 }
 

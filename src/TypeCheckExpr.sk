@@ -438,7 +438,7 @@ extension class TypeChecker {
   fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool = false): TType {
     if (mostPrecise) {
       this.asConstExpr(e) match {
-      | Some(ty) -> return ty
+      | Some(ty) -> return TType::single(ty)
       | None() -> void
       }
     };
@@ -492,12 +492,9 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value match {
-              | None() -> None()
-              | Some(x) -> this.asConstExpr(x)
-              } match {
+              value.flatMap(this.asConstExpr) match {
               | None() -> this.newTVar(tcenv, pos)
-              | Some(ty) -> ty
+              | Some(ty) -> TType::single(ty)
               }
             | Some(ty) -> this.tenv.normalize(tcenv.context, ty)
             }
@@ -678,18 +675,38 @@ extension class TypeChecker {
       TType::single(TTuple(arr.map(x -> this.expr(tcenv, x)), pos))
 
     | Unop(uop, subExpr) ->
+      ty = this.expr(tcenv, subExpr);
       uop match {
       | UOExclamationMark() ->
         bool = TType::single(TPrimValue::boolean(pos));
-        this.checkSubType(
-          tcenv,
-          pos,
-          "Invalid !",
-          this.expr(tcenv, subExpr),
-          bool,
-        );
+        this.checkSubType(tcenv, pos, "Invalid !", ty, bool);
         bool
-      | _ -> typingError(Array[(pos, "TODO: unary operator")])
+      | nuop @ NumericUnaryOperator() ->
+        ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+        | None() ->
+          typingError(
+            Array[
+              (pos, `Invalid unary operation ${nuop}`),
+              (subExpr.pos, `This has type ${ty}`),
+            ],
+          )
+        | Some(stypes) ->
+          !stypes = stypes.map(stype ->
+            stype match {
+            | TPrimValue(k @ TNum(), _, primPos)
+            | TPrimValue(k @ TBigInt(), _, primPos) ->
+              TPrimValue(k, None(), primPos)
+            | _ ->
+              typingError(
+                Array[
+                  (pos, `Invalid unary operation ${nuop}`),
+                  (subExpr.pos, `This has type ${ty}`),
+                ],
+              )
+            }
+          );
+          TType::fromSTypes(pos, stypes)
+        }
       }
 
     | Binop(op, e1, e2) ->
@@ -1052,7 +1069,7 @@ extension class TypeChecker {
       TType::union(tcenv.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
       this.asConstExpr(subExpr) match {
-      | Some(ty) -> ty
+      | Some(ty) -> TType::single(ty)
       | None() ->
         typingError(
           Array[(pos, "'as const' can only be used with string literals")],
@@ -1125,21 +1142,53 @@ extension class TypeChecker {
   }
 
   /* Typechecks expression e as const */
-  fun asConstExpr(e: Expr): ?TType {
+  fun asConstExpr(e: Expr): ?SType {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
       typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
-    | Var(Name(_, "null")) -> Some(TType::single(TPrimUnit(TNull(), pos)))
-    | Var(Name(_, "undefined")) ->
-      Some(TType::single(TPrimUnit(TUndefined(), pos)))
-    | Number(n) -> Some(TType::single(TPrimValue::single(TNum(), n, pos)))
-    | BigInt(n) -> Some(TType::single(TPrimValue::single(TBigInt(), n, pos)))
-    | Var(Name(_, "true")) ->
-      Some(TType::single(TPrimValue::single(TBool(), "true", pos)))
-    | Var(Name(_, "false")) ->
-      Some(TType::single(TPrimValue::single(TBool(), "false", pos)))
-    | EString(n) -> Some(TType::single(TPrimValue::single(TString(), n, pos)))
+    | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
+    | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
+    | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
+    | BigInt(n) -> Some(TPrimValue::single(TBigInt(), n, pos))
+    | Var(Name(_, "true")) -> Some(TPrimValue::single(TBool(), "true", pos))
+    | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
+    | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
+    | Unop(UOExclamationMark(), subE) ->
+      this.asConstExpr(subE).map(stype -> {
+        msg = if (stype is TPrimValue(TBool(), _, _)) {
+          "Constant expression could have been simplified"
+        } else {
+          "Invalid unary !"
+        };
+        typingError(Array[(pos, msg), (subE.pos, `This has type ${stype}`)])
+      })
+    | Unop(UOTild(), _) -> /* TODO */ None()
+    | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
+      this.asConstExpr(subE).flatMap(stype ->
+        stype match {
+        | TPrimValue(k @ TNum(), valuesOpt, _)
+        | TPrimValue(k @ TBigInt(), valuesOpt, _) ->
+          Some(
+            nuop match {
+            | UOPlus() -> stype
+            | UOMinus() ->
+              valuesOpt.flatMap(v -> v.singleElt()) match {
+              | None() ->
+                internal_error(
+                  "asConstExpr should return literals with a single value",
+                )
+              | Some((_pos, num)) ->
+                !num = if (num.startsWith("-")) num.stripPrefix("-") else {
+                  `-${num}`
+                };
+                TPrimValue::single(k, num, pos)
+              }
+            },
+          )
+        | _ -> None()
+        }
+      )
     | _ -> None()
     }
   }
