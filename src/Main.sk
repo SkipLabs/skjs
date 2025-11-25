@@ -341,7 +341,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
 class CheckResult(
   fileName: FAbsolute,
-  parseError: ?Error,
+  parseError: ?LexingOrParsingError,
   errors: Array<TypingError>,
   callgraph: ?CallGraphFile = None(),
   classHierarchy: ?ClassHierarchyFile = None(),

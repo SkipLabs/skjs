@@ -9,7 +9,7 @@ module SKJS;
 base class ParsedResult {
   children =
   | PROk(Array<Def>)
-  | PRError(Error)
+  | PRError(LexingOrParsingError)
 }
 
 class ParsedResultAndSymbolsFile(
@@ -153,7 +153,7 @@ class Files(
             ],
           )
         } catch {
-        | ErrorExn(err) ->
+        | ErrorExn(err @ LexingOrParsingError _) ->
           symbols = lexer.getAllSymbolLocations();
           // Store the error under parseErrorKey for error reporting
           writer.setArray(
