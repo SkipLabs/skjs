@@ -485,6 +485,24 @@ extension class Parser {
     Some(if (isIn) In(lhs, rhs) else InstanceOf(lhs, rhs))
   }
 
+  // Handle x ? y : z
+  mutable fun tryParseTernary(
+    left: Expr_,
+    binopTok: Token,
+    tok: Token,
+    prec: Int,
+  ): ?Expr_ {
+    if (!(binopTok.kind is TKQuestionMark())) return None();
+    (_assoc, opPrec) = precedence[binopTok.kind];
+    if (prec > opPrec) return None();
+    leftPosRange = this.lex.posRangeFrom(tok);
+    _ = this.lex.next();
+    e2 = this.expr(0);
+    this.expect(TKColon());
+    e3 = this.expr(opPrec);
+    Some(EIf(Expr(leftPosRange, left), e2, e3))
+  }
+
   // Handle binary and postfix operators with precedence
   // Processes: function calls, array access, binary ops, ternary, in, instanceof, as casts
   // Uses precedence climbing algorithm for correct operator associativity
@@ -510,17 +528,11 @@ extension class Parser {
         continue
       | None() -> void
       };
-      if (binopTok.kind is TKQuestionMark()) {
-        (_assoc, opPrec) = precedence[binopTok.kind];
-        if (prec <= opPrec) {
-          leftPosRange = this.lex.posRangeFrom(tok);
-          _ = this.lex.next();
-          e2 = this.expr(0);
-          this.expect(TKColon());
-          e3 = this.expr(opPrec);
-          !left = EIf(Expr(leftPosRange, left), e2, e3);
-        };
-        return left;
+      this.tryParseTernary(left, binopTok, tok, prec) match {
+      | Some(ternaryResult) ->
+        !left = ternaryResult;
+        continue
+      | None() -> void
       };
       this.tryParseClosure(left, binopTok, tok) match {
       | Some(closureResult) ->
