@@ -385,30 +385,27 @@ extension class Parser {
     binopTok: Token,
     tok: Token,
   ): ?Expr_ {
-    if (this.lex.isEqTok(binopTok, "as")) {
-      leftPosRange = this.lex.posRangeFrom(tok);
-      _ = this.lex.next();
+    if (!this.lex.isEqTok(binopTok, "as")) return None();
+    leftPosRange = this.lex.posRangeFrom(tok);
+    _ = this.lex.next();
 
-      // Check if this is 'as const'
-      if (this.lex.isEq("const")) {
-        _ = this.lex.next(); // consume 'const'
-        result = AsConst(Expr(leftPosRange, left));
-        Some(result)
-      } else {
-        ty = this.type(0);
-        result = As(Expr(leftPosRange, left), ty);
-        loop {
-          if (this.lex.isEq("as")) {
-            _ = this.lex.next();
-            type = this.type(0);
-            !result = As(Expr(this.lex.posRangeFrom(tok), result), type);
-          };
-          break void;
-        };
-        Some(result)
-      }
+    // Check if this is 'as const'
+    if (this.lex.isEq("const")) {
+      _ = this.lex.next(); // consume 'const'
+      result = AsConst(Expr(leftPosRange, left));
+      Some(result)
     } else {
-      None()
+      ty = this.type(0);
+      result = As(Expr(leftPosRange, left), ty);
+      loop {
+        if (this.lex.isEq("as")) {
+          _ = this.lex.next();
+          type = this.type(0);
+          !result = As(Expr(this.lex.posRangeFrom(tok), result), type);
+        };
+        break void;
+      };
+      Some(result)
     }
   }
 
