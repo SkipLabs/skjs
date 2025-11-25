@@ -175,55 +175,40 @@ extension class Parser {
     } else {
       None()
     };
-    commaTok = this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(x) -> x
-    };
-    commaTok.kind match {
-    | TKCloseParen() ->
-      invariant(firstTypeOpt is Some _);
-      Params(Array[(firstName, firstTypeOpt)])
-    | TKComma() ->
-      params = mutable Vector[(firstName, firstTypeOpt)];
-      loop {
-        tok = this.lex.peek();
-        e = this.expr(0) match {
-        | Expr(_, Var(x)) -> x
-        | Expr _ ->
-          this.error(this.lex.posStart(tok.fromSome()), ExpectedVarName())
-        };
-        tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
-          _ = this.lex.next();
-          Some(this.type(0))
-        } else {
-          None()
-        };
-        params.push((e, tyOpt));
-        closeTok = this.lex.next() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-        | Some(x) -> x
-        };
-        closeTok.kind match {
-        | TKCloseParen() -> break void
-        | TKComma() ->
-          if (this.lex.peekKind() is Some(TKCloseParen())) {
-            _ = this.lex.next();
-            break void;
-          }
-        | _ ->
-          this.error(
-            this.lex.posStart(closeTok),
-            ExpectedTokens(Array[TKCloseParen(), TKComma()]),
-          )
-        }
+    params = mutable Vector[(firstName, firstTypeOpt)];
+    loop {
+      closeTok = this.lex.next() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+      | Some(x) -> x
       };
-      Params(params.toArray())
-    | _ ->
-      this.error(
-        this.lex.posStart(commaTok),
-        ExpectedTokens(Array[TKCloseParen(), TKComma()]),
-      )
-    }
+      closeTok.kind match {
+      | TKCloseParen() -> break void
+      | TKComma() ->
+        if (this.lex.peekKind() is Some(TKCloseParen())) {
+          _ = this.lex.next();
+          break void;
+        }
+      | _ ->
+        this.error(
+          this.lex.posStart(closeTok),
+          ExpectedTokens(Array[TKCloseParen(), TKComma()]),
+        )
+      };
+      tok = this.lex.peek();
+      e = this.expr(0) match {
+      | Expr(_, Var(x)) -> x
+      | Expr _ ->
+        this.error(this.lex.posStart(tok.fromSome()), ExpectedVarName())
+      };
+      tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
+        _ = this.lex.next();
+        Some(this.type(0))
+      } else {
+        None()
+      };
+      params.push((e, tyOpt))
+    };
+    Params(params.toArray())
   }
 
   // Parse atomic expressions (literals, variables, unary operators)
