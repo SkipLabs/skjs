@@ -503,6 +503,22 @@ extension class Parser {
     Some(EIf(Expr(leftPosRange, left), e2, e3))
   }
 
+  // Handle x[y]
+  mutable fun tryParseAccess(
+    left: Expr_,
+    binopTok: Token,
+    tok: Token,
+    prec: Int,
+  ): ?Expr_ {
+    if (!(binopTok.kind is TKOpenSquare())) return None();
+    if (prec >= callPrec) return None();
+    _ = this.lex.next();
+    lhs = Expr(this.lex.posRangeFrom(tok), left);
+    rhs = this.expr(0);
+    this.expect(TKCloseSquare());
+    Some(Get(lhs, rhs))
+  }
+
   // Handle binary and postfix operators with precedence
   // Processes: function calls, array access, binary ops, ternary, in, instanceof, as casts
   // Uses precedence climbing algorithm for correct operator associativity
@@ -540,12 +556,11 @@ extension class Parser {
         continue
       | None() -> void
       };
-      if (binopTok.kind is TKOpenSquare()) {
-        if (prec >= callPrec) return left;
-        _ = this.lex.next();
-        !left = Get(Expr(this.lex.posRangeFrom(tok), left), this.expr(0));
-        this.expect(TKCloseSquare());
-        continue;
+      this.tryParseAccess(left, binopTok, tok, prec) match {
+      | Some(accessResult) ->
+        !left = accessResult;
+        continue
+      | None() -> void
       };
       this.tryParseFunctionCall(left, binopTok, tok, prec) match {
       | None() -> void
