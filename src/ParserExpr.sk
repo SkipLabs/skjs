@@ -431,17 +431,13 @@ extension class Parser {
           if (
             loop {
               targs.push(this.type(0));
-              commaTok = this.lex.next() match {
-              | None() -> break false
-              | Some(tk) -> tk
-              };
-              commaTok.kind match {
-              | TKComma() ->
+              this.lex.next().map(tok -> tok.kind) match {
+              | Some(TKComma()) ->
                 if (this.lex.peekKind() is Some(TKGreaterThan())) {
                   _ = this.lex.next();
                   break true
                 }
-              | TKGreaterThan() -> break true
+              | Some(TKGreaterThan()) -> break true
               | _ -> break false
               }
             }
