@@ -468,6 +468,23 @@ extension class Parser {
     Some(PostOp(op, Expr(leftPosRange, left)))
   }
 
+  // Handle in and instanceof
+  mutable fun tryParseInAndInstanceOf(
+    left: Expr_,
+    binopTok: Token,
+    tok: Token,
+    prec: Int,
+  ): ?Expr_ {
+    if (prec > in_and_instanceofPrec) return None();
+    isIn = this.lex.isEqTok(binopTok, "in");
+    if (!isIn && !this.lex.isEqTok(binopTok, "instanceof")) return None();
+    _ = this.lex.next();
+    leftPosRange = this.lex.posRangeFrom(tok);
+    lhs = Expr(leftPosRange, left);
+    rhs = this.expr(in_and_instanceofPrec);
+    Some(if (isIn) In(lhs, rhs) else InstanceOf(lhs, rhs))
+  }
+
   // Handle binary and postfix operators with precedence
   // Processes: function calls, array access, binary ops, ternary, in, instanceof, as casts
   // Uses precedence climbing algorithm for correct operator associativity
@@ -481,18 +498,11 @@ extension class Parser {
       | None() -> return left
       | Some(x) -> x
       };
-      isIn = this.lex.isEqTok(binopTok, "in");
-      if (isIn || this.lex.isEqTok(binopTok, "instanceof")) {
-        opPrec = in_and_instanceofPrec;
-        if (prec <= opPrec) {
-          leftPosRange = this.lex.posRangeFrom(tok);
-          _ = this.lex.next();
-          rhs = this.expr(opPrec);
-          lhs = Expr(leftPosRange, left);
-          !left = if (isIn) In(lhs, rhs) else InstanceOf(lhs, rhs);
-          continue;
-        };
-        return left;
+      this.tryParseInAndInstanceOf(left, binopTok, tok, prec) match {
+      | Some(inResult) ->
+        !left = inResult;
+        continue
+      | None() -> void
       };
       this.tryParsePostfixOp(left, binopTok, tok, prec) match {
       | Some(postfixResult) -> return postfixResult
