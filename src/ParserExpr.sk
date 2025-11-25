@@ -395,16 +395,7 @@ extension class Parser {
       Some(AsConst(Expr(leftPosRange, left)))
     } else {
       ty = this.type(0);
-      result = As(Expr(leftPosRange, left), ty);
-      loop {
-        if (this.lex.isEq("as")) {
-          _ = this.lex.next();
-          type = this.type(0);
-          !result = As(Expr(this.lex.posRangeFrom(tok), result), type);
-        };
-        break void;
-      };
-      Some(result)
+      Some(As(Expr(leftPosRange, left), ty))
     }
   }
 
@@ -548,7 +539,9 @@ extension class Parser {
       };
       this.tryParseTypeCast(left, binopTok, tok, prec) match {
       | None() -> void
-      | Some(castResult) -> return castResult
+      | Some(castResult) ->
+        !left = castResult;
+        continue
       };
       this.tryParseBinaryOp(left, binopTok, tok, prec) match {
       | None() -> void
