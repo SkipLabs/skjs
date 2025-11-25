@@ -523,6 +523,12 @@ extension class Parser {
       | None() -> return left
       | Some(x) -> x
       };
+      if (binopTok.kind is TKEquality()) {
+        this.error(this.lex.posStart(binopTok), DontUseEquality())
+      };
+      if (binopTok.kind is TKInequality()) {
+        this.error(this.lex.posStart(binopTok), DontUseInequality())
+      };
       this.tryParseInAndInstanceOf(left, binopTok, tok, prec) match {
       | Some(inResult) ->
         !left = inResult;
@@ -558,12 +564,6 @@ extension class Parser {
       | Some(callResult) ->
         !left = callResult;
         continue
-      };
-      if (binopTok.kind is TKEquality()) {
-        this.error(this.lex.posStart(binopTok), DontUseEquality())
-      };
-      if (binopTok.kind is TKInequality()) {
-        this.error(this.lex.posStart(binopTok), DontUseInequality())
       };
       this.tryParseTypeCast(left, binopTok, tok, prec) match {
       | None() -> void
