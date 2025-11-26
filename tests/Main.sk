@@ -11,17 +11,11 @@ fun getLinedTypeErrors(
   resolver = SKJS.PositionResolver{fileName, newLines, symbols};
 
   typeErrors
-    .map(err ->
-      err match {
+    .map(err -> {
+      (errPos, e) = err match {
       | e @ SKJS.TypingError(messages) ->
         invariant(!messages.isEmpty(), "Empty typing error");
-        pos = messages[0].i0;
-        if (pos.fileName != fileName) {
-          errStr = checker.errorToString(context, e);
-          SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
-        };
-        line = resolver.relPos(pos.getStart(symbols)).line;
-        (line, e)
+        (SKJS.EPRange(messages[0].i0), e)
       | e ->
         errStr = checker.errorToString(context, e);
         throw SKTest.ExpectationError(
@@ -29,8 +23,20 @@ fun getLinedTypeErrors(
           "nothing or typing errors",
           errStr,
         )
-      }
-    )
+      };
+      errFileName = errPos match {
+      | SKJS.EPRange(posRange) -> posRange.fileName
+      };
+      if (errFileName != fileName) {
+        errStr = checker.errorToString(context, e);
+        SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
+      };
+      pos = errPos match {
+      | SKJS.EPRange(posRange) -> posRange.getStart(symbols)
+      };
+      line = resolver.relPos(pos).line;
+      (line, e)
+    })
     .sortedBy(line_err ~> line_err.i0);
 }
 
