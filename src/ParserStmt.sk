@@ -99,45 +99,28 @@ extension class Parser {
           | Some(x) -> x
           };
           caseTokPos = this.lex.posRange(caseTok);
-          this.lex.getTokenRawStringContent(caseTok) match {
-          | "case" ->
-            value = this.expr(0);
-            this.expect(TKColon());
-            stmts = mutable Vector[];
-            loop {
-              this.stmt() match {
-              | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
-              | Some(st) -> stmts.push(st)
-              };
-              this.lex.peekRawStr() match {
-              | Some("case")
-              | Some("default")
-              | Some("}") ->
-                break void
-              | _ -> void
-              }
-            };
-            cases.push(SwitchBranch(Case(value), stmts.toArray(), caseTokPos))
-          | "default" ->
-            this.expect(TKColon());
-            stmts = mutable Vector[];
-            loop {
-              this.stmt() match {
-              | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
-              | Some(st) -> stmts.push(st)
-              };
-              this.lex.peekRawStr() match {
-              | Some("case")
-              | Some("default")
-              | Some("}") ->
-                break void
-              | _ -> void
-              }
-            };
-            cases.push(SwitchBranch(Default(), stmts.toArray(), caseTokPos))
+          case = this.lex.getTokenRawStringContent(caseTok) match {
+          | "case" -> Case(this.expr(0))
+          | "default" -> Default()
           | "}" -> break void
           | _ -> this.error(this.lex.posStart(caseTok), UnexpectedToken())
-          }
+          };
+          this.expect(TKColon());
+          stmts = mutable Vector[];
+          loop {
+            this.stmt() match {
+            | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+            | Some(st) -> stmts.push(st)
+            };
+            this.lex.peekRawStr() match {
+            | Some("case")
+            | Some("default")
+            | Some("}") ->
+              break void
+            | _ -> void
+            }
+          };
+          cases.push(SwitchBranch(case, stmts.toArray(), caseTokPos))
         };
         Some(Switch(e, cases.toArray()))
       | "if" ->
