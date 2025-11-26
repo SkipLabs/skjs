@@ -170,6 +170,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .repeatable()
     .about("Source files (default: **/*.ts)"),
   Cli.Arg::string("directory")
+    .long("directory")
     .short("C")
     .value_name("dir")
     .about(
