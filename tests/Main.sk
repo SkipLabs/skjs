@@ -4,28 +4,23 @@ fun getLinedErrors(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   fileName: SKJS.FAbsolute,
-  typeErrors: Array<SKJS.Error>,
+  errors: Array<SKJS.Error>,
 ): Array<(Int, SKJS.Error)> {
   newLines = checker.newLinesMap.get(context, fileName);
   symbols = checker.symbolsMap.get(context, fileName);
   resolver = SKJS.PositionResolver{fileName, newLines, symbols};
 
-  typeErrors
+  errors
     .map(err -> {
       errPos = err match {
       | SKJS.TypingError(messages) ->
         invariant(!messages.isEmpty(), "Empty typing error");
         SKJS.EPRange(messages[0].i0)
-      | e ->
-        errStr = checker.errorToString(context, e);
-        throw SKTest.ExpectationError(
-          "Unexpected non-typing error",
-          "nothing or typing errors",
-          errStr,
-        )
+      | SKJS.SinglePosError(errPos, _errKind) -> errPos
       };
       errFileName = errPos match {
       | SKJS.EPRange(posRange) -> posRange.fileName
+      | SKJS.EPChar(fn, _pos) -> fn
       };
       if (errFileName != fileName) {
         errStr = checker.errorToString(context, err);
@@ -33,6 +28,7 @@ fun getLinedErrors(
       };
       pos = errPos match {
       | SKJS.EPRange(posRange) -> posRange.getStart(symbols)
+      | SKJS.EPChar(_fileName, pos) -> pos
       };
       line = resolver.relPos(pos).line;
       (line, err)
