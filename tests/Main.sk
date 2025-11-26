@@ -1,21 +1,21 @@
 module SKJSTests;
 
-fun getLinedTypeErrors(
+fun getLinedErrors(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   fileName: SKJS.FAbsolute,
   typeErrors: Array<SKJS.Error>,
-): Array<(Int, SKJS.TypingError)> {
+): Array<(Int, SKJS.Error)> {
   newLines = checker.newLinesMap.get(context, fileName);
   symbols = checker.symbolsMap.get(context, fileName);
   resolver = SKJS.PositionResolver{fileName, newLines, symbols};
 
   typeErrors
     .map(err -> {
-      (errPos, e) = err match {
-      | e @ SKJS.TypingError(messages) ->
+      errPos = err match {
+      | SKJS.TypingError(messages) ->
         invariant(!messages.isEmpty(), "Empty typing error");
-        (SKJS.EPRange(messages[0].i0), e)
+        SKJS.EPRange(messages[0].i0)
       | e ->
         errStr = checker.errorToString(context, e);
         throw SKTest.ExpectationError(
@@ -28,14 +28,14 @@ fun getLinedTypeErrors(
       | SKJS.EPRange(posRange) -> posRange.fileName
       };
       if (errFileName != fileName) {
-        errStr = checker.errorToString(context, e);
+        errStr = checker.errorToString(context, err);
         SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
       };
       pos = errPos match {
       | SKJS.EPRange(posRange) -> posRange.getStart(symbols)
       };
       line = resolver.relPos(pos).line;
-      (line, e)
+      (line, err)
     })
     .sortedBy(line_err ~> line_err.i0);
 }
@@ -49,11 +49,11 @@ fun validateReferenceErrors<R: ReferenceError>(
 ): void {
   referenceError = referenceErrors.next();
 
-  linedTypeErrors = getLinedTypeErrors(context, checker, fileName, typeErrors);
+  linedActualErrors = getLinedErrors(context, checker, fileName, typeErrors);
 
   i = 0;
-  while (i < linedTypeErrors.size()) {
-    (line, typeError) = linedTypeErrors[i];
+  while (i < linedActualErrors.size()) {
+    (line, typeError) = linedActualErrors[i];
     referenceError match {
     | Some(
       ref @ ReferenceError{line => expectedLine},
@@ -71,7 +71,7 @@ fun validateReferenceErrors<R: ReferenceError>(
       throw SKTest.ExpectationError("Unexpected typing error", expected, errStr)
     };
     !i = i + 1;
-    if (i >= linedTypeErrors.size() || linedTypeErrors[i].i0 != line) {
+    if (i >= linedActualErrors.size() || linedActualErrors[i].i0 != line) {
       !referenceError = referenceErrors.next()
     }
   };
