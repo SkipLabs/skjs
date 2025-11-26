@@ -261,6 +261,8 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     };
   };
   srcFiles: Sequence<String> = args.getArray("src-file");
+  keepGoing = args.getBool("keep-going");
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
 
   context = SKStore.runWithGcReturnContext(
@@ -287,7 +289,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{context, files, backtrace};
+          checker = Checker::create{context, files, keepGoing, backtrace};
           checked = checker.checkFiles(context);
           _ = checked.map(
             SKStore.UnitID::keyType,
@@ -363,11 +365,16 @@ class Checker private {
   static fun create{
     context: mutable SKStore.Context,
     files: Files,
+    keepGoing: Bool,
     backtrace: Bool = false,
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
-    (parsedAndSymbolsFiles, symbolsMap) = files.parse(context, newLinesMap);
+    (parsedAndSymbolsFiles, symbolsMap) = files.parse(
+      context,
+      newLinesMap,
+      keepGoing,
+    );
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
