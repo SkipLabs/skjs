@@ -260,6 +260,8 @@ const operators: Map<String, TokenKind> = Map[
   "=>" => TKClosure(),
   "?." => TKQuestionMarkDot(),
   "!." => TKExclamationMarkDot(),
+  "?" => TKQuestionMark(),
+  "!" => TKExclamationMark(),
 ];
 
 /***************************************************************************/
