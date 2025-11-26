@@ -65,6 +65,18 @@ fun validateReferenceErrors<R: ReferenceError>(
         linedActualErrors[i].i0 != actualLine
       ) {
         !referenceErrorOpt = referenceErrors.next()
+      };
+      actualError match {
+      | SKJS.LexingOrParsingError _ ->
+        newLines = checker.newLinesMap.get(context, fileName);
+        for (line in Range(actualLine - 1, newLines.size() - 1)) {
+          if (newLines[line + 1] > newLines[line] + 1) {
+            invariant_violation(
+              `${fileName}:${actualLine} parse error must be on last non-empty line`,
+            )
+          }
+        }
+      | _ -> void
       }
     | (
       Some((actualLine, actualError)),
