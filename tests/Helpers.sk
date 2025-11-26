@@ -24,10 +24,13 @@ extension class .String {
 }
 
 class ExpectError{restOfLine: String} extends ReferenceError {
-  fun validate(fileName: SKJS.FAbsolute, typeError: SKJS.TypingError): void {
+  fun validate(fileName: SKJS.FAbsolute, error: SKJS.TypingError): void {
+    msg = error match {
+    | SKJS.TypingError(messages) -> messages[0].i1
+    };
     if (this.restOfLine.length() > 0) {
       SKTest.expectEq(
-        typeError.messages[0].i1.trimForComparison(),
+        msg.trimForComparison(),
         this.restOfLine,
         `${fileName}:${this.line} Wrong error message`,
       );
