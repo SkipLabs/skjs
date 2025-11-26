@@ -83,7 +83,7 @@ fun validateReferenceErrors<R: ReferenceError>(
 
 // Expects no parse errors, type errors must be prefixed with @ts-expect-error
 // or @skjs-expect-error
-fun validateParseable(
+fun validateExpectErrorComments(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   checkResult: SKJS.CheckResult,
@@ -197,7 +197,7 @@ type Validator = (
 
 fun testFile(
   fileName: String,
-  validateResult: Validator = validateParseable,
+  validateResult: Validator = validateExpectErrorComments,
 ): void {
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
@@ -210,7 +210,7 @@ fun testFile(
   checker = SKJS.Checker::create{context, files, keepGoing => true};
   for (res in checker.checkFiles(context).items(context)) {
     if (res.i0.toString() == builtinsFileName) {
-      validateParseable(context, checker, res.i1.next().fromSome());
+      validateExpectErrorComments(context, checker, res.i1.next().fromSome());
     } else {
       validateResult(context, checker, res.i1.next().fromSome());
     }
@@ -219,7 +219,7 @@ fun testFile(
 
 fun testDirectory(
   dirName: String,
-  validateResult: Validator = validateParseable,
+  validateResult: Validator = validateExpectErrorComments,
 ): void {
   dir = Path.resolve(dirName);
   srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
@@ -246,7 +246,7 @@ fun testDirectory(
   checker = SKJS.Checker::create{context, files, keepGoing => true};
   for (res in checker.checkFiles(context).items(context)) {
     if (res.i0.toString() == builtinsFileName) {
-      validateParseable(context, checker, res.i1.next().fromSome());
+      validateExpectErrorComments(context, checker, res.i1.next().fromSome());
     } else {
       validateResult(context, checker, res.i1.next().fromSome());
     }
