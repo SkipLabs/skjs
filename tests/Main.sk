@@ -212,44 +212,14 @@ type Validator = (
   SKJS.CheckResult,
 ) ~> void;
 
-fun testFile(
-  fileName: String,
-  validateResult: Validator = validateExpectErrorComments,
+fun testFiles(
+  srcFiles: Array<String>,
+  importStubs: Array<String>,
+  validateResult: Validator,
 ): void {
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
 
-  srcFiles = Array[fileName];
-  files =
-    SKJS.Files::create(context, ".", builtinsFileName, srcFiles, false) |>
-    expectFilesSuccess;
-
-  checker = SKJS.Checker::create{context, files, keepGoing => true};
-  for (res in checker.checkFiles(context).items(context)) {
-    if (res.i0.toString() == builtinsFileName) {
-      validateExpectErrorComments(context, checker, res.i1.next().fromSome());
-    } else {
-      validateResult(context, checker, res.i1.next().fromSome());
-    }
-  }
-}
-
-fun testDirectory(
-  dirName: String,
-  validateResult: Validator = validateExpectErrorComments,
-): void {
-  dir = Path.resolve(dirName);
-  srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
-    if (f.endsWith(".ts")) Some(Path.join(dir, f)) else {
-      if (f != "." && f != "..") {
-        invariant_violation(`Unexpected non-ts file ${f} in ${dir}`)
-      };
-      None()
-    }
-  );
-  builtinsFileName = Path.resolve(builtinsArgFileName);
-  importStubs = Array["./import-stubs"];
-  context = SKStore.Context::mcreate{};
   files =
     SKJS.Files::create(
       context,
@@ -268,6 +238,32 @@ fun testDirectory(
       validateResult(context, checker, res.i1.next().fromSome());
     }
   }
+}
+
+fun testFile(
+  fileName: String,
+  validateResult: Validator = validateExpectErrorComments,
+): void {
+  srcFiles = Array[fileName];
+  importStubs = Array[];
+  testFiles(srcFiles, importStubs, validateResult)
+}
+
+fun testDirectory(
+  dirName: String,
+  validateResult: Validator = validateExpectErrorComments,
+): void {
+  dir = Path.resolve(dirName);
+  srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
+    if (f.endsWith(".ts")) Some(Path.join(dir, f)) else {
+      if (f != "." && f != "..") {
+        invariant_violation(`Unexpected non-ts file ${f} in ${dir}`)
+      };
+      None()
+    }
+  );
+  importStubs = Array["./import-stubs"];
+  testFiles(srcFiles, importStubs, validateResult)
 }
 
 @test
