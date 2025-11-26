@@ -199,6 +199,11 @@ const checkArgs: Array<Cli.Arg> = Array[
   Cli.Arg::bool("log-affected-files").about(
     "Output a list of files potentially affected by changes since laqst run.  Requires `--data` persistent cache.",
   ),
+  Cli.Arg::bool("keep-going")
+    .long("keep-going")
+    .short("k")
+    .default(false)
+    .about("Do not stop at the first lexing/parsing error"),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
