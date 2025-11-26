@@ -117,7 +117,7 @@ extension class Parser {
               | _ -> void
               }
             };
-            cases.push(Case(value, stmts.toArray(), caseTokPos))
+            cases.push(SwitchBranch(Case(value), stmts.toArray(), caseTokPos))
           | "default" ->
             this.expect(TKColon());
             stmts = mutable Vector[];
@@ -134,7 +134,7 @@ extension class Parser {
               | _ -> void
               }
             };
-            cases.push(Default(stmts.toArray(), caseTokPos))
+            cases.push(SwitchBranch(Default(), stmts.toArray(), caseTokPos))
           | "}" -> break void
           | _ -> this.error(this.lex.posStart(caseTok), UnexpectedToken())
           }

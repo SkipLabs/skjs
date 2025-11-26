@@ -189,24 +189,22 @@ extension class TypeChecker {
       }
     };
     scope = branches[0] match {
-    | Case(v, block, pos) ->
+    | SwitchBranch(Case(v), block, pos) ->
       checkBreak(pos, block);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
-    | Default _ -> typingError(Array[(e.pos, "Missing branch")])
+    | SwitchBranch(Default(), _, _) ->
+      typingError(Array[(e.pos, "Missing branch")])
     };
     for (i in Range(1, branches.size())) {
-      tcenv.mergeScope(
-        this.tenv,
-        scope,
-        branches[i] match {
-        | Case(v, block, pos) ->
-          checkBreak(pos, block);
-          cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
-          this.block(tcenv, block, Some((cond, true)))
-        | Default(stmts, _pos) -> this.block(tcenv, stmts)
-        },
-      )
+      cond = branches[i] match {
+      | SwitchBranch(Case(v), block, pos) ->
+        checkBreak(pos, block);
+        Some((Expr(e.pos, (Binop(BOStrictEquality(), e, v))), true))
+      | SwitchBranch(Default(), _, _) -> None()
+      };
+      scopeBranch = this.block(tcenv, branches[i].block, cond);
+      tcenv.mergeScope(this.tenv, scope, scopeBranch)
     }
   }
 
@@ -223,14 +221,14 @@ extension class TypeChecker {
       Map::mcreateFromItems(values.values.map(x -> (x.i1, x.i0)))
     | _ ->
       /* branches.size() > 1 from the caller */
-      return branches[branches.size() - 1] is Default _
+      return branches[branches.size() - 1] is SwitchBranch(Default(), _, _)
     };
     for (branch in branches) {
       if (cases.isEmpty()) {
         typingError(Array[(branch.pos, "Unused branch")])
       };
       branch match {
-      | Case(v, _, pos) ->
+      | SwitchBranch(Case(v), _, pos) ->
         this.expr(tcenv, v, true)
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
@@ -242,7 +240,7 @@ extension class TypeChecker {
         | None() -> void
         }
 
-      | Default(_stmts, _pos) -> cases.clear()
+      | SwitchBranch(Default(), _stmts, _pos) -> cases.clear()
       }
     };
     if (!cases.isEmpty()) {

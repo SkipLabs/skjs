@@ -150,7 +150,9 @@ value class StmtTermination private {
     | Switch(e, branches) ->
       static::expr(e).thenk(() ~> {
         branchesTerm = static::or(branches, static::branch);
-        switchIsExhaustive = branches.any(branch ~> branch is Default _); // Unless exhaustiveness is proven differently?
+        switchIsExhaustive = branches.any(branch ~>
+          branch is SwitchBranch(Default(), _, _)
+        ); // Unless exhaustiveness is proven differently?
         if (switchIsExhaustive) branchesTerm else branchesTerm.maybe();
       })
     | Block(block) -> static::block(block)
@@ -255,10 +257,12 @@ value class StmtTermination private {
 
   static fun branch(branch: SwitchBranch): this {
     branch match {
-    | Case(e, block, _pos) ->
-      static::branchCase(e);
+    | SwitchBranch(case, block, _pos) ->
+      case match {
+      | Case(e) -> static::branchCase(e)
+      | Default() -> void
+      };
       static::block(block).breakToFallthrough()
-    | Default(block, _pos) -> static::block(block).breakToFallthrough()
     }
   }
 
