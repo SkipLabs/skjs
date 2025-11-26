@@ -1,7 +1,7 @@
 module SKJSTests;
 
 base class ReferenceError{line: Int} {
-  fun validate(fileName: SKJS.FAbsolute, typeError: SKJS.TypingError): void;
+  fun validate(fileName: SKJS.FAbsolute, error: SKJS.Error): void;
   fun getMessage(): String;
 }
 
@@ -24,8 +24,9 @@ extension class .String {
 }
 
 class ExpectError{restOfLine: String} extends ReferenceError {
-  fun validate(fileName: SKJS.FAbsolute, error: SKJS.TypingError): void {
+  fun validate(fileName: SKJS.FAbsolute, error: SKJS.Error): void {
     msg = error match {
+    | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
     | SKJS.TypingError(messages) -> messages[0].i1
     };
     if (this.restOfLine.length() > 0) {
@@ -169,7 +170,7 @@ class TSConformanceReferenceError{
   message: String,
   extraMessages: Array<String>,
 } extends ReferenceError {
-  fun validate(_fileName: SKJS.FAbsolute, _typeError: SKJS.TypingError): void {
+  fun validate(_fileName: SKJS.FAbsolute, _error: SKJS.Error): void {
     // Error messages do not match anyway, let's assume it's the same error
     void
   }
