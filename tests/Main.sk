@@ -42,45 +42,58 @@ fun validateReferenceErrors<R: ReferenceError>(
   fileName: SKJS.FAbsolute,
   actualErrors: Array<SKJS.Error>,
   referenceErrors: mutable Iterator<R>,
-): void {
-  referenceError = referenceErrors.next();
+): Array<SKTest.ExpectationError> {
+  referenceErrorOpt = referenceErrors.next();
 
   linedActualErrors = getLinedErrors(context, checker, fileName, actualErrors);
 
+  expectationErrors = mutable Vector[];
+
   i = 0;
-  while (i < linedActualErrors.size()) {
-    (line, actualError) = linedActualErrors[i];
-    referenceError match {
-    | Some(
-      ref @ ReferenceError{line => expectedLine},
-    ) if (line == expectedLine) ->
-      ref.validate(fileName, actualError)
-    | Some(ReferenceError{line => expectedLine}) if (line > expectedLine) ->
-      break void
-    | _ ->
+  loop {
+    actualErrorOpt = linedActualErrors.maybeGet(i);
+    (actualErrorOpt, referenceErrorOpt) match {
+    | (None(), None()) -> break void
+    | (
+      Some((actualLine, actualError)),
+      Some(ref @ ReferenceError{line => expectedLine}),
+    ) if (actualLine == expectedLine) ->
+      ref.validate(fileName, actualError).each(expectationErrors.push);
+      !i = i + 1;
+      if (
+        i >= linedActualErrors.size() ||
+        linedActualErrors[i].i0 != actualLine
+      ) {
+        !referenceErrorOpt = referenceErrors.next()
+      }
+    | (
+      Some((actualLine, actualError)),
+      Some(ReferenceError{line => expectedLine}),
+    ) if (actualLine < expectedLine) ->
       errStr = checker.errorToString(context, actualError);
-      expected = referenceError match {
-      | Some(ref @ ReferenceError _) ->
-        `Error later (line ${ref.line}): ${ref.getMessage()}`
-      | None() -> "no errors"
-      };
-      throw SKTest.ExpectationError("Unexpected error", expected, errStr)
-    };
-    !i = i + 1;
-    if (i >= linedActualErrors.size() || linedActualErrors[i].i0 != line) {
-      !referenceError = referenceErrors.next()
+      expectationErrors.push(
+        SKTest.ExpectationError("Unexpected error", "error later", errStr),
+      );
+      !i = i + 1
+    | (Some((_actualLine, actualError)), None()) ->
+      errStr = checker.errorToString(context, actualError);
+      expectationErrors.push(
+        SKTest.ExpectationError("Unexpected error", "no errors", errStr),
+      );
+      !i = i + 1
+    | (_, Some(ref @ ReferenceError{line => expectedLine})) ->
+      expectationErrors.push(
+        SKTest.ExpectationError(
+          "Expected error",
+          `${fileName}:${expectedLine} ${ref.getMessage()}`,
+          "no errors",
+        ),
+      );
+      !referenceErrorOpt = referenceErrors.next()
     }
   };
 
-  referenceError match {
-  | None() -> void
-  | Some(ref @ ReferenceError{line}) ->
-    throw SKTest.ExpectationError(
-      "Expected error",
-      `${fileName}:${line} ${ref.getMessage()}`,
-      "no errors",
-    )
-  }
+  expectationErrors.toArray()
 }
 
 // Errors must be prefixed with @ts-expect-error or @skjs-expect-error
@@ -107,7 +120,7 @@ fun validateExpectErrorComments(
     fileName,
     actualErrors,
     tsExpectErrors,
-  );
+  ).each(exn -> throw exn)
 }
 
 // Expects no parse errors, type errors should correspond to the reference ones
@@ -155,7 +168,7 @@ fun validateTSConformance(
     fileName,
     typeErrors,
     referenceErrors,
-  )
+  ).each(exn -> throw exn)
 }
 
 // Expects at least an error, either parsing or typing

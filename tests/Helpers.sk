@@ -1,7 +1,10 @@
 module SKJSTests;
 
 base class ReferenceError{line: Int} {
-  fun validate(fileName: SKJS.FAbsolute, error: SKJS.Error): void;
+  fun validate(
+    fileName: SKJS.FAbsolute,
+    error: SKJS.Error,
+  ): ?SKTest.ExpectationError;
   fun getMessage(): String;
 }
 
@@ -24,18 +27,27 @@ extension class .String {
 }
 
 class ExpectError{restOfLine: String} extends ReferenceError {
-  fun validate(fileName: SKJS.FAbsolute, error: SKJS.Error): void {
-    msg = error match {
-    | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
-    | SKJS.TypingError(messages) -> messages[0].i1
-    };
+  fun validate(
+    fileName: SKJS.FAbsolute,
+    error: SKJS.Error,
+  ): ?SKTest.ExpectationError {
     if (this.restOfLine.length() > 0) {
-      SKTest.expectEq(
-        msg.trimForComparison(),
-        this.restOfLine,
-        `${fileName}:${this.line} Wrong error message`,
-      );
-    }
+      msg = error match {
+      | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
+      | SKJS.TypingError(messages) -> messages[0].i1
+      };
+      !msg = msg.trimForComparison();
+      if (msg != this.restOfLine) {
+        return Some(
+          SKTest.ExpectationError(
+            `${fileName}:${this.line} Wrong error message`,
+            this.restOfLine,
+            msg,
+          ),
+        )
+      }
+    };
+    None()
   }
 
   fun getMessage(): String {
@@ -170,9 +182,12 @@ class TSConformanceReferenceError{
   message: String,
   extraMessages: Array<String>,
 } extends ReferenceError {
-  fun validate(_fileName: SKJS.FAbsolute, _error: SKJS.Error): void {
+  fun validate(
+    _fileName: SKJS.FAbsolute,
+    _error: SKJS.Error,
+  ): ?SKTest.ExpectationError {
     // Error messages do not match anyway, let's assume it's the same error
-    void
+    None()
   }
   fun getMessage(): String {
     `TS${this.errorCode} ${this.message}`
