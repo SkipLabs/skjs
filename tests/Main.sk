@@ -40,31 +40,31 @@ fun validateReferenceErrors<R: ReferenceError>(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   fileName: SKJS.FAbsolute,
-  typeErrors: Array<SKJS.Error>,
+  actualErrors: Array<SKJS.Error>,
   referenceErrors: mutable Iterator<R>,
 ): void {
   referenceError = referenceErrors.next();
 
-  linedActualErrors = getLinedErrors(context, checker, fileName, typeErrors);
+  linedActualErrors = getLinedErrors(context, checker, fileName, actualErrors);
 
   i = 0;
   while (i < linedActualErrors.size()) {
-    (line, typeError) = linedActualErrors[i];
+    (line, actualError) = linedActualErrors[i];
     referenceError match {
     | Some(
       ref @ ReferenceError{line => expectedLine},
     ) if (line == expectedLine) ->
-      ref.validate(fileName, typeError)
+      ref.validate(fileName, actualError)
     | Some(ReferenceError{line => expectedLine}) if (line > expectedLine) ->
       break void
     | _ ->
-      errStr = checker.errorToString(context, typeError);
+      errStr = checker.errorToString(context, actualError);
       expected = referenceError match {
       | Some(ref @ ReferenceError _) ->
         `Error later (line ${ref.line}): ${ref.getMessage()}`
       | None() -> "no errors"
       };
-      throw SKTest.ExpectationError("Unexpected typing error", expected, errStr)
+      throw SKTest.ExpectationError("Unexpected error", expected, errStr)
     };
     !i = i + 1;
     if (i >= linedActualErrors.size() || linedActualErrors[i].i0 != line) {
@@ -83,8 +83,7 @@ fun validateReferenceErrors<R: ReferenceError>(
   }
 }
 
-// Expects no parse errors, type errors must be prefixed with @ts-expect-error
-// or @skjs-expect-error
+// Errors must be prefixed with @ts-expect-error or @skjs-expect-error
 fun validateExpectErrorComments(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
@@ -94,16 +93,19 @@ fun validateExpectErrorComments(
   | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
   };
 
-  SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
-
   fileContents = checker.files.filesContent.get(context, fileName);
   tsExpectErrors = findExpectErrors(fileContents.value);
+
+  actualErrors = parseErrorOpt match {
+  | None() -> typeErrors
+  | Some(parseError) -> typeErrors.concat(Array[parseError])
+  };
 
   validateReferenceErrors(
     context,
     checker,
     fileName,
-    typeErrors,
+    actualErrors,
     tsExpectErrors,
   );
 }
