@@ -182,11 +182,10 @@ extension class STypes {
     stypes1: STypes,
     stypes2: STypes,
   ): ?STypes {
-    stypes1.stypes.mapInterOption(stypes2.stypes, (sty1, sty2) ->
+    stypes1.stypes.mapInterOption(stypes2.stypes, (sty1, sty2) -> {
+      invariant(sty1.tag() == sty2.tag()); // from mapInterOption
       (sty1, sty2) match {
-      | (TPrimUnit(k1, _), TPrimUnit(k2, _)) ->
-        if (k1 != k2) internal_error("primitive void kinds must match");
-        Some(sty1)
+      | (TPrimUnit _, TPrimUnit _) -> Some(sty1)
 
       | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::inter(p1, p2)
 
@@ -204,7 +203,7 @@ extension class STypes {
       | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::inter(subst, tenv, f1, f2)
       | _ -> internal_error("Internal error")
       }
-    ) match {
+    }) match {
     | Some(stypes) if (!stypes.isEmpty()) -> Some(STypes(stypes))
     | _ -> None()
     }

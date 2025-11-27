@@ -154,9 +154,10 @@ extension class STypes {
     stypes2: STypes,
   ): STypes {
     STypes(
-      stypes1.stypes.mapUnion(stypes2.stypes, (sty1, sty2) ->
+      stypes1.stypes.mapUnion(stypes2.stypes, (sty1, sty2) -> {
+        invariant(sty1.tag() == sty2.tag()); // from mapUnion
         (sty1, sty2) match {
-        | (TPrimUnit(_, _), TPrimUnit(_, _)) -> sty1
+        | (TPrimUnit _, TPrimUnit _) -> sty1
 
         | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::union(p1, p2)
 
@@ -171,7 +172,7 @@ extension class STypes {
         | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::union(subst, tenv, f1, f2)
         | _ -> internal_error("Internal error")
         }
-      ),
+      }),
     )
   }
 }

@@ -163,8 +163,9 @@ extension class STypes {
     stypes1.stypes.leq(stypes2.stypes, (sty1, sty2O) ->
       sty2O match {
       | Some(sty2) ->
+        invariant(sty1.tag() == sty2.tag()); // from leq
         (sty1, sty2) match {
-        | (TPrimUnit(_, _), TPrimUnit(_, _)) -> STOk()
+        | (TPrimUnit _, TPrimUnit _) -> STOk()
 
         | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> STOk()
         | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) ->
