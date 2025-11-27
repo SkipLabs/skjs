@@ -108,16 +108,16 @@ extension class Parser {
           this.expect(TKColon());
           stmts = mutable Vector[];
           loop {
-            this.stmt() match {
-            | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
-            | Some(st) -> stmts.push(st)
-            };
             this.lex.peekRawStr() match {
             | Some("case")
             | Some("default")
             | Some("}") ->
               break void
             | _ -> void
+            };
+            this.stmt() match {
+            | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+            | Some(st) -> stmts.push(st)
             }
           };
           cases.push(SwitchBranch(case, stmts.toArray(), caseTokPos))
