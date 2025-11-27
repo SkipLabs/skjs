@@ -33,16 +33,9 @@ function testIfElse(): void {
   } else {
   }
 
-  // Valid: empty statement (;) after if
-  if (x > 0);
-
   // Valid: empty statement (;) after else
   if (x > 0) y = 1;
   else;
-
-  // Valid: empty statement (;) after if with block else
-  if (x > 0);
-  else y = 2;
 }
 
 function testWhile(): void {

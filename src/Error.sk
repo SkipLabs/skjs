@@ -250,4 +250,10 @@ class MissingParameterName() extends ParsingKind {
   }
 }
 
+class EmptyIfStmt() extends ParsingKind {
+  fun toString(): String {
+    "The body of an 'if' statement cannot be the empty statement"
+  }
+}
+
 module end;

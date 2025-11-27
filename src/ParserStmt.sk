@@ -123,6 +123,13 @@ extension class Parser {
         this.expect(TKOpenParen());
         e = this.expr(0);
         this.expect(TKCloseParen());
+        this.lex.peek() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
+        | Some(firstBlockStmt) ->
+          if (firstBlockStmt.kind is TKSemi()) {
+            this.error(this.lex.posStart(firstBlockStmt), EmptyIfStmt())
+          }
+        };
         ifBlock = this.blockOrStmt();
         elseBlock = if (this.lex.isEq("else")) {
           _ = this.lex.next();
