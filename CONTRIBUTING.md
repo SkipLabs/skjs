@@ -37,6 +37,11 @@
 - One test case per context is sufficient - no need for many variations of the same test
 - Don't test the same thing multiple times with different values
 
+**Matching TypeScript behavior**:
+- SKJS should not be more permissive than TypeScript
+- When discovering SKJS accepts something TypeScript rejects, fix SKJS to match TypeScript's stricter behavior
+- Use TypeScript (`npx tsc --noEmit <file>`) to verify expected behavior when in doubt
+
 ### Running Tests
 ```bash
 skargo test                                                      # Run all tests
