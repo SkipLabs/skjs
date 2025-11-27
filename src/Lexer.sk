@@ -80,6 +80,23 @@ mutable class Lexer private {
     result
   }
 
+  mutable fun tryAhead<T>(f: () -> ?T): ?T {
+    savedCurrentSymbol = this.currentSymbol;
+    savedCurrentSymbolPos = this.currentSymbolPos;
+    savedInType = this.inType;
+    savedPos = this.pos;
+    savedLastTok = this.lastTok;
+    result = f();
+    if (result is None()) {
+      this.!currentSymbol = savedCurrentSymbol;
+      this.!currentSymbolPos = savedCurrentSymbolPos;
+      this.!inType = savedInType;
+      this.!pos = savedPos;
+      this.!lastTok = savedLastTok;
+    };
+    result
+  }
+
   static fun mcreate(
     fileName: FAbsolute,
     contents: String,

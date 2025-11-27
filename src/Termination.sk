@@ -208,19 +208,21 @@ value class StmtTermination private {
     | New(_name, _targs, args) ->
       static::seq(args, static::expr).then(static::unknownCall)
     | Unop(_unop, e)
-    | PostOp(_postop, e) ->
+    | PostOp(_postop, e)
+    | Dot(OptionalDot(), e, _fieldName) ->
       static::expr(e) /* do not throw */
     | Binop(BOLogicalAnd(), e1, e2)
     | Binop(BOLogicalOr(), e1, e2) ->
       static::expr(e1).thenk(() ~> static::expr(e2).maybe())
     | Get(e1, e2)
     | InstanceOf(e1, e2)
-    | In(e1, e2)
-    | Binop(BODot(), e1, e2)
-    | Binop(BOExclamationMarkDot(), e1, e2) ->
+    | In(e1, e2) ->
       static::expr(e1).thenk(() ~>
         static::expr(e2).then(static::throughOrThrow)
       )
+    | Dot(NormalDot(), e, _fieldName)
+    | Dot(ExclamationMarkDot(), e, _fieldName) ->
+      static::expr(e).then(static::throughOrThrow)
     | Binop(_op, e1, e2) ->
       // We assume the typechecker checks we're not re-assigning a const
       static::expr(e1).thenk(() ~> static::expr(e2)) /* do not throw */

@@ -39,9 +39,9 @@ extension class Parser {
   mutable fun expr(prec: Int): Expr {
     inTypeCopy = this.lex.inType;
     this.lex.!inType = false;
-    (pos, e) = this.withPos(() -> this.expr_(prec), UnterminatedExpr());
+    res = this.expr_(prec);
     this.lex.!inType = inTypeCopy;
-    Expr(pos, e)
+    res
   }
 
   // Parse regular expression literals (/pattern/flags)
@@ -87,11 +87,10 @@ extension class Parser {
   // Parse array literal expressions [elem1, elem2, ...]
   // Handles empty arrays and trailing commas
   mutable fun parseArrayExpr(): Expr_ {
+    values = mutable Vector[];
     if (this.lex.peekKind() is Some(TKCloseSquare())) {
       _ = this.lex.next();
-      EArray(Array[])
     } else {
-      values = mutable Vector[];
       loop {
         values.push(this.expr(0));
         commaTok = this.lex.next() match {
@@ -99,11 +98,11 @@ extension class Parser {
         | Some(x) -> x
         };
         commaTok.kind match {
-        | TKCloseSquare() -> break EArray(values.toArray())
+        | TKCloseSquare() -> break void
         | TKComma() ->
           if (this.lex.peekKind() is Some(TKCloseSquare())) {
             _ = this.lex.next();
-            break EArray(values.toArray())
+            break void
           }
         | _ ->
           this.error(
@@ -112,32 +111,30 @@ extension class Parser {
           )
         }
       }
-    }
+    };
+    EArray(values.toArray())
   }
 
   // Parse object literal expressions {key: value, ...}
   // Handles empty objects, method definitions, and spread syntax
   mutable fun parseObjectExpr(): Expr_ {
+    fields = mutable Vector[];
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
-      Object(Array[])
     } else {
-      fields = mutable Vector[];
-      fields.push(this.field());
       loop {
+        fields.push(this.field());
         commaTok = this.lex.next() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
         | Some(x) -> x
         };
         commaTok.kind match {
-        | TKCloseCurly() -> break Object(fields.toArray())
+        | TKCloseCurly() -> break void
         | TKSemi()
         | TKComma() ->
           if (this.lex.peekKind() is Some(TKCloseCurly())) {
             _ = this.lex.next();
-            break Object(fields.toArray())
-          } else {
-            fields.push(this.field());
+            break void
           }
         | _ ->
           this.error(
@@ -146,7 +143,8 @@ extension class Parser {
           )
         }
       }
-    }
+    };
+    Object(fields.toArray())
   }
 
   // Parse parenthesized expressions and parameter lists
@@ -154,96 +152,63 @@ extension class Parser {
   mutable fun parseParenExpr(): Expr_ {
     if (this.lex.peekKind() is Some(TKCloseParen())) {
       _ = this.lex.next();
-      Params(Array[])
-    } else {
-      first = this.expr_(0);
-      firstTypeOpt = if (this.lex.peekKind() is Some(TKColon())) {
+      return Params(Array[])
+    };
+    firstTok = this.lex.peek();
+    e = this.expr(0);
+    if (this.lex.peekKind() is Some(TKCloseParen())) {
+      _ = this.lex.next();
+      return e.value
+    };
+    params = mutable Vector[];
+    loop {
+      name = e match {
+      | Expr(_, Var(x)) -> x
+      | Expr _ ->
+        this.error(this.lex.posStart(firstTok.fromSome()), ExpectedVarName())
+      };
+      tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
         _ = this.lex.next();
         Some(this.type(0))
       } else {
         None()
       };
-      commaTok = this.lex.peek() match {
+      params.push((name, tyOpt));
+      closeTok = this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
       | Some(x) -> x
       };
-      commaTok.kind match {
-      | TKCloseParen() ->
-        _ = this.lex.next();
-        firstTypeOpt match {
-        | None() -> first
-        | Some _ ->
-          firstName = first match {
-          | Var(x) -> x
-          | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
-          };
-          Params(Array[(firstName, firstTypeOpt)])
-        }
+      closeTok.kind match {
+      | TKCloseParen() -> break void
       | TKComma() ->
-        _ = this.lex.next();
-        firstName = first match {
-        | Var(x) -> x
-        | _ -> this.error(this.lex.posStart(commaTok), ExpectedVarName())
-        };
-        params = mutable Vector[(firstName, firstTypeOpt)];
-        loop {
-          tok = this.lex.peek();
-          e = this.expr(0) match {
-          | Expr(_, Var(x)) -> x
-          | Expr _ ->
-            this.error(
-              EPChar(this.lex.fileName, tok.fromSome().posStart),
-              ExpectedVarName(),
-            )
-          };
-          tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
-            _ = this.lex.next();
-            Some(this.type(0))
-          } else {
-            None()
-          };
-          params.push((e, tyOpt));
-          closeTok = this.lex.next() match {
-          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-          | Some(x) -> x
-          };
-          closeTok.kind match {
-          | TKCloseParen() -> break void
-          | TKComma() ->
-            if (this.lex.peekKind() is Some(TKCloseParen())) {
-              _ = this.lex.next();
-              break void;
-            }
-          | _ ->
-            this.error(
-              this.lex.posStart(closeTok),
-              ExpectedTokens(Array[TKCloseParen(), TKComma()]),
-            )
-          }
-        };
-        Params(params.toArray())
+        if (this.lex.peekKind() is Some(TKCloseParen())) {
+          _ = this.lex.next();
+          break void;
+        }
       | _ ->
         this.error(
-          this.lex.posStart(commaTok),
+          this.lex.posStart(closeTok),
           ExpectedTokens(Array[TKCloseParen(), TKComma()]),
         )
-      }
-    }
+      };
+      !firstTok = this.lex.peek();
+      !e = this.expr(0);
+    };
+    Params(params.toArray())
   }
 
   // Parse atomic expressions (literals, variables, unary operators)
-  // Handles: numbers, strings, variables, typeof, await, new, unary ops
+  // Handles: numbers, strings, variables, prefix operators
   mutable fun parseAtomicExpr(tok: Token): Expr_ {
     tok.kind match {
     | TKNumber() -> Number(this.getNumber(tok))
     | TKBigInt() -> BigInt(this.getBigInt(tok))
-    | TKTild() ->
-      (_assoc, tildPrec) = precedence[TKTild()];
-      Unop(UOTild(), this.expr(tildPrec))
-    | TKDotDotDot() -> Spread(this.getName())
+    | TKQuote()
+    | TKDoubleQuote() ->
+      EString(this.unquoteString(tok))
+    | TKBackTick() -> this.parseTemplateLiteral(tok)
     | TKVar() ->
-      str = this.getVar(tok);
-      str match {
+      this.getVar(tok) match {
       | "function" -> this.error(this.lex.posStart(tok), FunctionInExpr())
       | "new" ->
         name = this.getName();
@@ -256,27 +221,23 @@ extension class Parser {
         this.expect(TKOpenParen());
         args = this.arguments();
         New(name, targs, args)
-      | "async" -> Async(this.expr(0))
-      | "await" -> Await(this.expr(0))
-      | "typeof" -> TypeOf(this.expr(typeOfPrec))
-      | _ -> Var(Name(this.lex.posRange(tok), str))
+      | "async" -> Async(this.expr(closurePrec))
+      | "await" -> Await(this.expr(prefixPrec))
+      | "typeof" -> TypeOf(this.expr(prefixPrec))
+      | str -> Var(Name(this.lex.posRange(tok), str))
       }
-    | TKQuote()
-    | TKDoubleQuote() ->
-      EString(this.unquoteString(tok))
-    | TKBackTick() -> this.parseTemplateLiteral(tok)
-    | TKAddition() -> Unop(UOPlus(), this.expr(unaryPlusMinusPrec))
-    | TKSubtraction() -> Unop(UOMinus(), this.expr(unaryPlusMinusPrec))
-    | subTok @ TKExclamationMark() ->
-      (_, unopPrec) = precedence[subTok];
-      Unop(UOExclamationMark(), this.expr(unopPrec))
+    | TKAddition() -> Unop(UOPlus(), this.expr(prefixPrec))
+    | TKSubtraction() -> Unop(UOMinus(), this.expr(prefixPrec))
+    | TKExclamationMark() -> Unop(UOExclamationMark(), this.expr(prefixPrec))
+    | TKTild() -> Unop(UOTild(), this.expr(prefixPrec))
+    | TKDotDotDot() -> Spread(this.getName())
     | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
     }
   }
 
   // Internal expression parsing implementation
   // Parses primary expressions and then delegates to binary/postfix operator handling
-  mutable fun expr_(prec: Int): Expr_ {
+  mutable fun expr_(prec: Int): Expr {
     tok = this.lex.next() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
     | Some(x) -> x
@@ -289,50 +250,32 @@ extension class Parser {
     | TKLessThan() ->
       ty = this.type(0);
       this.expect(TKGreaterThan());
-      e = this.expr(prec);
-      return As(e, ty)
+      e = this.expr(asPrec);
+      As(e, ty)
     | _ -> this.parseAtomicExpr(tok)
     };
-
-    this.parseBinaryAndPostfixOps(left, tok, prec)
+    lhs = Expr(this.lex.posRangeFrom(tok), left);
+    this.parseBinaryAndPostfixOps(lhs, prec)
   }
 
   // Handle binary operators with precedence climbing
-  mutable fun tryParseBinaryOp(
-    mutableLeft: Expr_,
-    binopTok: Token,
-    tok: Token,
-    prec: Int,
-  ): ?Expr_ {
-    (assoc, bopPrec) = precedence.maybeGet(binopTok.kind) match {
-    | None() -> return None()
-    | Some(x) -> x
-    };
-    binop = binopTok.kind.toBinop() match {
+  mutable fun tryParseBinaryOp(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
+    (assoc, bopPrec, binop) = binaryOperators.maybeGet(binopTok.kind) match {
     | None() -> return None()
     | Some(x) -> x
     };
     if (bopPrec == prec) {
-      leftPosRange = this.lex.posRangeFrom(tok);
       _ = this.lex.next();
       newLeft = assoc match {
       | ALeft() ->
         right = this.expr(prec + 1);
-        Binop(binop, Expr(leftPosRange, mutableLeft), right)
-      | ARight() ->
-        Binop(binop, Expr(leftPosRange, mutableLeft), this.expr(prec))
-      | ANonAssoc() ->
-        this.error(this.lex.posStart(binopTok), NonAssociative(binopTok.kind))
+        Binop(binop, left, right)
+      | ARight() -> Binop(binop, left, this.expr(prec))
       };
       Some(newLeft)
     } else if (bopPrec > prec) {
-      leftPosRange = this.lex.posRangeFrom(tok);
       _ = this.lex.next();
-      newLeft = Binop(
-        binop,
-        Expr(leftPosRange, mutableLeft),
-        this.expr(bopPrec + 1),
-      );
+      newLeft = Binop(binop, left, this.expr(bopPrec + 1));
       Some(newLeft)
     } else {
       if (bopPrec >= prec) {
@@ -343,300 +286,195 @@ extension class Parser {
   }
 
   // Handle closure syntax (: type => expr and => expr)
-  mutable fun tryParseClosure(
-    mutableLeft: Expr_,
-    binopTok: Token,
-    tok: Token,
-  ): ?Expr_ {
-    if (
-      binopTok.kind is TKColon() &&
-      this.lex.lookAhead(() -> {
+  mutable fun tryParseClosure(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
+    params = left.value match {
+    | Params(params) -> params
+    | Var(varName) -> Array[(varName, None())]
+    | _ -> return None()
+    };
+    rty = if (binopTok.kind is TKColon()) {
+      rty = this.lex.tryAhead(() -> {
+        _ = this.lex.next();
         try {
-          _ = this.lex.next();
-          _ = this.type(0);
-          this.lex.peekKind() is Some(TKClosure())
+          rty = this.type(0);
+          this.expect(TKClosure());
+          Some(rty)
         } catch {
-        | ErrorExn _ -> false
+        | ErrorExn _ -> None()
         | exn -> throw exn
         }
-      })
-    ) {
+      });
+      if (rty is None()) return None();
+      rty
+    } else if (prec <= closurePrec && binopTok.kind is TKClosure()) {
       _ = this.lex.next();
-      rty = this.type(0);
-      this.expect(TKClosure());
-      params = mutableLeft match {
-      | Params(params) -> params
-      | Var(varName) -> Array[(varName, None())]
-      | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
-      };
-      closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-        CBBlock(this.blockOrStmt())
-      } else {
-        CBExpr(this.expr(0))
-      };
-      Some(Closure(params, Some(rty), closureBody))
-    } else if (binopTok.kind is TKClosure()) {
-      _ = this.lex.next();
-      params = mutableLeft match {
-      | Params(params) -> params
-      | Var(varName) -> Array[(varName, None())]
-      | _ -> this.error(this.lex.posStart(tok), ExpectedParams())
-      };
-      closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-        CBBlock(this.blockOrStmt())
-      } else {
-        CBExpr(this.expr(0))
-      };
-      Some(Closure(params, None(), closureBody))
-    } else {
       None()
-    }
+    } else {
+      return None()
+    };
+    closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
+      CBBlock(this.blockOrStmt())
+    } else {
+      CBExpr(this.expr(closurePrec))
+    };
+    Some(Closure(params, rty, closureBody))
   }
 
   // Handle type casting with 'as' keyword and 'as const' syntax
-  mutable fun tryParseTypeCast(
-    mutableLeft: Expr_,
-    binopTok: Token,
-    tok: Token,
-  ): ?Expr_ {
-    if (this.lex.isEqTok(binopTok, "as")) {
-      leftPosRange = this.lex.posRangeFrom(tok);
+  mutable fun tryParseTypeCast(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
+    if (prec >= asPrec) return None();
+    if (!this.lex.isEqTok(binopTok, "as")) return None();
+    _ = this.lex.next();
+    if (this.lex.isEq("const")) {
       _ = this.lex.next();
-
-      // Check if this is 'as const'
-      if (this.lex.isEq("const")) {
-        _ = this.lex.next(); // consume 'const'
-        result = AsConst(Expr(leftPosRange, mutableLeft));
-        Some(result)
-      } else {
-        ty = this.type(0);
-        result = As(Expr(leftPosRange, mutableLeft), ty);
-        loop {
-          if (this.lex.isEq("as")) {
-            _ = this.lex.next();
-            type = this.type(0);
-            !result = As(Expr(this.lex.posRangeFrom(tok), result), type);
-          };
-          break void;
-        };
-        Some(result)
-      }
+      Some(AsConst(left))
     } else {
-      None()
+      ty = this.type(0);
+      Some(As(left, ty))
     }
   }
 
   // Handle function calls with optional type arguments
   mutable fun tryParseFunctionCall(
-    mutableLeft: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
     prec: Int,
   ): ?Expr_ {
-    hasTArgs = this.hasTArgs();
-    if (binopTok.kind is TKOpenParen() || hasTArgs) {
-      if (prec >= callPrec) return None();
+    if (prec >= callPrec) return None();
+    targsOpt = if (binopTok.kind is TKOpenParen()) {
       _ = this.lex.next();
-      targs = mutable Vector[];
-      if (hasTArgs) {
-        loop {
-          targs.push(this.type(0));
-          commaTok = this.lex.next() match {
-          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-          | Some(tk) -> tk
-          };
-          commaTok.kind match {
-          | TKComma() ->
-            if (this.lex.peekKind() is Some(TKGreaterThan())) {
-              _ = this.lex.next();
-              break void
+      Some(Array[])
+    } else if (binopTok.kind is TKLessThan()) {
+      this.lex.tryAhead(() -> {
+        _ = this.lex.next();
+        targs = mutable Vector[];
+        try {
+          if (
+            loop {
+              targs.push(this.type(0));
+              this.lex.next().map(tok -> tok.kind) match {
+              | Some(TKComma()) ->
+                if (this.lex.peekKind() is Some(TKGreaterThan())) {
+                  _ = this.lex.next();
+                  break true
+                }
+              | Some(TKGreaterThan()) -> break true
+              | _ -> break false
+              }
             }
-          | TKGreaterThan() -> break void
-          | _ ->
-            this.error(
-              this.lex.posStart(commaTok),
-              ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
-            )
+          ) {
+            this.expect(TKOpenParen());
+            Some(targs.toArray())
+          } else {
+            None()
           }
-        };
-        this.expect(TKOpenParen())
-      };
-      args = this.arguments();
-      newLeft = Call(
-        Expr(this.lex.posRangeFrom(tok), mutableLeft),
-        targs.toArray(),
-        args,
-      );
-      Some(newLeft)
+        } catch {
+        | ErrorExn _ -> None()
+        | exn -> throw exn
+        }
+      })
     } else {
       None()
-    }
+    };
+    targsOpt.map(targs -> {
+      args = this.arguments();
+      Call(left, targs, args)
+    })
   }
 
   // Handle postfix operators (++, --, !)
   mutable fun tryParsePostfixOp(
-    mutableLeft: Expr_,
+    left: Expr,
     binopTok: Token,
-    tok: Token,
     prec: Int,
-  ): (Bool, Expr_) {
-    binopTok.kind match {
-    | TKIncr() ->
-      (_assoc, opPrec) = precedence[binopTok.kind];
-      if (prec <= opPrec) {
-        leftPosRange = this.lex.posRangeFrom(tok);
-        _ = this.lex.next();
-        (true, PostOp(POIncr(), Expr(leftPosRange, mutableLeft)))
-      } else {
-        (false, mutableLeft)
-      }
-    | TKDecr() ->
-      (_assoc, opPrec) = precedence[binopTok.kind];
-      if (prec <= opPrec) {
-        leftPosRange = this.lex.posRangeFrom(tok);
-        _ = this.lex.next();
-        (true, PostOp(PODecr(), Expr(leftPosRange, mutableLeft)))
-      } else {
-        (false, mutableLeft)
-      }
-    | TKExclamationMark() ->
-      (_assoc, opPrec) = precedence[TKIncr()];
-      if (prec <= opPrec) {
-        leftPosRange = this.lex.posRangeFrom(tok);
-        _ = this.lex.next();
-        (true, PostOp(POExcl(), Expr(leftPosRange, mutableLeft)))
-      } else {
-        (false, mutableLeft)
-      }
-    | _ -> (false, mutableLeft)
-    }
+  ): ?Expr_ {
+    if (prec > postfixPrec) return None();
+    op = binopTok.kind match {
+    | TKIncr() -> POIncr()
+    | TKDecr() -> PODecr()
+    | TKExclamationMark() -> POExcl()
+    | _ -> return None()
+    };
+    _ = this.lex.next();
+    Some(PostOp(op, left))
+  }
+
+  // Handle in and instanceof
+  mutable fun tryParseInAndInstanceOf(
+    left: Expr,
+    binopTok: Token,
+    prec: Int,
+  ): ?Expr_ {
+    if (prec > in_and_instanceofPrec) return None();
+    isIn = this.lex.isEqTok(binopTok, "in");
+    if (!isIn && !this.lex.isEqTok(binopTok, "instanceof")) return None();
+    _ = this.lex.next();
+    rhs = this.expr(in_and_instanceofPrec);
+    Some(if (isIn) In(left, rhs) else InstanceOf(left, rhs))
+  }
+
+  // Handle x ? y : z
+  mutable fun tryParseTernary(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
+    if (prec > ternaryPrec) return None();
+    if (!(binopTok.kind is TKQuestionMark())) return None();
+    _ = this.lex.next();
+    e2 = this.expr(0);
+    this.expect(TKColon());
+    e3 = this.expr(ternaryPrec);
+    Some(EIf(left, e2, e3))
+  }
+
+  // Handle x[y], x.y, x?.y, x!.y
+  mutable fun tryParseAccess(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
+    if (prec >= callPrec) return None();
+    dotOp = binopTok.kind match {
+    | TKOpenSquare() ->
+      _ = this.lex.next();
+      rhs = this.expr(0);
+      this.expect(TKCloseSquare());
+      return Some(Get(left, rhs))
+    | TKDot() -> NormalDot()
+    | TKQuestionMarkDot() -> OptionalDot()
+    | TKExclamationMarkDot() -> ExclamationMarkDot()
+    | _ -> return None()
+    };
+    _ = this.lex.next();
+    Some(Dot(dotOp, left, this.getName()))
   }
 
   // Handle binary and postfix operators with precedence
   // Processes: function calls, array access, binary ops, ternary, in, instanceof, as casts
   // Uses precedence climbing algorithm for correct operator associativity
-  mutable fun parseBinaryAndPostfixOps(
-    left: Expr_,
-    tok: Token,
-    prec: Int,
-  ): Expr_ {
-    mutableLeft = left;
-    loop {
-      binopTok = this.lex.peek() match {
-      | None() -> return mutableLeft
-      | Some(x) -> x
-      };
-      isIn = this.lex.isEqTok(binopTok, "in");
-      if (isIn || this.lex.isEqTok(binopTok, "instanceof")) {
-        (_assoc, opPrec) = in_and_instanceofPrec;
-        if (prec <= opPrec) {
-          leftPosRange = this.lex.posRangeFrom(tok);
-          _ = this.lex.next();
-          rhs = this.expr(opPrec);
-          lhs = Expr(leftPosRange, mutableLeft);
-          !mutableLeft = if (isIn) In(lhs, rhs) else InstanceOf(lhs, rhs);
-          continue;
-        };
-        return mutableLeft;
-      };
-      (postfixHandled, postfixResult) = this.tryParsePostfixOp(
-        mutableLeft,
-        binopTok,
-        tok,
-        prec,
-      );
-      if (postfixHandled) {
-        !mutableLeft = postfixResult;
-        return mutableLeft;
-      };
-      if (binopTok.kind is TKQuestionMark()) {
-        (_assoc, opPrec) = precedence[binopTok.kind];
-        if (prec <= opPrec) {
-          leftPosRange = this.lex.posRangeFrom(tok);
-          _ = this.lex.next();
-          e2 = this.expr(0);
-          this.expect(TKColon());
-          e3 = this.expr(opPrec);
-          !mutableLeft = EIf(Expr(leftPosRange, mutableLeft), e2, e3);
-        };
-        return mutableLeft;
-      };
-      this.tryParseClosure(mutableLeft, binopTok, tok).each(closureResult ->
-        !mutableLeft = closureResult
-      );
-      if (binopTok.kind is TKOpenSquare()) {
-        if (prec >= callPrec) return mutableLeft;
-        _ = this.lex.next();
-        !mutableLeft = Get(
-          Expr(this.lex.posRangeFrom(tok), mutableLeft),
-          this.expr(0),
-        );
-        this.expect(TKCloseSquare());
-        continue;
-      };
-      this.tryParseFunctionCall(mutableLeft, binopTok, tok, prec) match {
+  mutable fun parseBinaryAndPostfixOps(left: Expr, prec: Int): Expr {
+    binopTok = this.lex.peek() match {
+    | None() -> return left
+    | Some(x) -> x
+    };
+    if (binopTok.kind is TKEquality()) {
+      this.error(this.lex.posStart(binopTok), DontUseEquality())
+    };
+    if (binopTok.kind is TKInequality()) {
+      this.error(this.lex.posStart(binopTok), DontUseInequality())
+    };
+    for (tryParse in Array[
+      this.tryParseAccess,
+      this.tryParseFunctionCall,
+      this.tryParsePostfixOp,
+      this.tryParseTypeCast,
+      this.tryParseInAndInstanceOf,
+      this.tryParseTernary,
+      this.tryParseClosure,
+      this.tryParseBinaryOp,
+    ]) {
+      tryParse(left, binopTok, prec) match {
       | None() -> void
-      | Some(callResult) ->
-        !mutableLeft = callResult;
-        continue
+      | Some(newLeft) ->
+        pos = left.pos.extendWithPos(this.lex, this.lex.getLastPos());
+        newLeftExpr = Expr(pos, newLeft);
+        return this.parseBinaryAndPostfixOps(newLeftExpr, prec)
       };
-      if (binopTok.kind is TKEquality()) {
-        this.error(this.lex.posStart(binopTok), DontUseEquality())
-      };
-      if (binopTok.kind is TKInequality()) {
-        this.error(this.lex.posStart(binopTok), DontUseInequality())
-      };
-      this.tryParseTypeCast(mutableLeft, binopTok, tok) match {
-      | None() -> void
-      | Some(castResult) -> return castResult
-      };
-      this.tryParseBinaryOp(mutableLeft, binopTok, tok, prec) match {
-      | None() -> void
-      | Some(binaryResult) ->
-        !mutableLeft = binaryResult;
-        continue
-      };
-      return mutableLeft
-    }
-  }
-
-  // Check if the current position starts with type arguments
-  mutable fun hasTArgs(): Bool {
-    this.lex.lookAhead(() -> {
-      binopTok = this.lex.peek() match {
-      | None() -> return false
-      | Some(x) -> x
-      };
-      if (!(binopTok.kind is TKLessThan())) return false;
-      try {
-        _ = this.lex.next();
-        loop {
-          _ = this.type(0);
-          commaTok = this.lex.next() match {
-          | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-          | Some(tk) -> tk
-          };
-          commaTok.kind match {
-          | TKComma() ->
-            if (this.lex.peekKind() is Some(TKGreaterThan())) {
-              _ = this.lex.next();
-              break void
-            }
-          | TKGreaterThan() -> break void
-          | _ ->
-            this.error(
-              this.lex.posStart(commaTok),
-              ExpectedTokens(Array[TKGreaterThan(), TKComma()]),
-            )
-          }
-        };
-        this.expect(TKOpenParen());
-        true
-      } catch {
-      | ErrorExn _ -> false
-      | exn -> throw exn
-      }
-    })
+    };
+    left
   }
 
   // Parse function call arguments

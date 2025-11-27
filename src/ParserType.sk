@@ -295,7 +295,7 @@ extension class Parser {
         leftRange = this.lex.posRangeFrom(tok);
         !left = TAIs(Type(leftRange, left), this.type(0))
       | Some(TKVar()) if (this.lex.isEq("extends")) ->
-        (_assoc, assignPrec) = precedence[TKAssignment()];
+        (_assoc, assignPrec, _binop) = binaryOperators[TKAssignment()];
         ternaryCondPrec = assignPrec + 1;
         if (prec >= ternaryCondPrec) return left;
         _ = this.lex.next();
@@ -314,37 +314,24 @@ extension class Parser {
         continue
       | Some(bop @ TKBitwiseOr())
       | Some(bop @ TKBitwiseAnd()) ->
-        isType = bop match {
-        | TKBitwiseOr() -> true
-        | TKBitwiseAnd() -> false
+        (assoc, bopPrec, _binop) = binaryOperators[bop];
+        if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
+        rightPrec = if (bopPrec == prec) {
+          prec + 1
+        } else if (bopPrec > prec) {
+          bopPrec
+        } else {
+          return left
+        };
+        leftRange = this.lex.posRangeFrom(tok);
+        _ = this.lex.next();
+        right = this.type(rightPrec);
+        !left = bop match {
+        | TKBitwiseOr() -> TAUnion(Type(leftRange, left), right)
+        | TKBitwiseAnd() -> TAInter(Type(leftRange, left), right)
         | _ -> internal_error("Internal error")
         };
-        (assoc, bopPrec) = precedence[bop];
-        if (!(assoc is ALeft())) internal_error("assoc should be ALeft");
-        if (bopPrec == prec) {
-          leftRange = this.lex.posRangeFrom(tok);
-          _ = this.lex.next();
-          right = this.type(prec + 1);
-          !left = isType match {
-          | true -> TAUnion(Type(leftRange, left), right)
-          | false -> TAInter(Type(leftRange, left), right)
-          };
-          continue;
-        };
-        if (bopPrec > prec) {
-          leftRange = this.lex.posRangeFrom(tok);
-          _ = this.lex.next();
-          right = this.type(bopPrec);
-          !left = isType match {
-          | true -> TAUnion(Type(leftRange, left), right)
-          | false -> TAInter(Type(leftRange, left), right)
-          };
-          continue;
-        };
-        if (bopPrec >= prec) {
-          internal_error("bopPrec should be less than prec")
-        };
-        return left
+        continue
       | _ -> return left
       }
     }

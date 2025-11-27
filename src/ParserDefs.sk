@@ -910,7 +910,7 @@ extension class Parser {
               );
               eThis = Expr(pos, Var(Name(pos, "this")));
               eName = Expr(pos, Var(pName));
-              eThisDotName = Expr(pos, Binop(BODot(), eThis, eName));
+              eThisDotName = Expr(pos, Dot(NormalDot(), eThis, pName));
               eAssign = Expr(pos, Binop(BOAssignment(), eThisDotName, eName));
               initializationStatements.push(Stmt(pos, StmtExpr(eAssign)))
             }

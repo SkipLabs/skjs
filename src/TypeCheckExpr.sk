@@ -628,10 +628,10 @@ extension class TypeChecker {
         args.map(x -> this.expr(tcenv, x)),
       );
       f.value match {
-      | Binop(
-        BODot(),
+      | Dot(
+        NormalDot(),
         Expr(_, Var(Name(_, "console"))),
-        Expr(_, Var(Name(_, "assert"))),
+        Name(_, "assert"),
       ) if (args.size() >= 1) ->
         this.evalCond(tcenv, args[0], true)
       | _ -> void
@@ -712,6 +712,14 @@ extension class TypeChecker {
         | Some(ty2) -> ty2
         }
       }
+
+    | Dot(dotKind, e1, fieldName) ->
+      optionalChaining = dotKind match {
+      | NormalDot() -> false
+      | OptionalDot() -> true
+      | ExclamationMarkDot() -> notSupported(pos)
+      };
+      this.dot(tcenv, e1.pos, this.expr(tcenv, e1), fieldName, optionalChaining)
 
     | Binop(op, e1, e2) ->
       op match {
@@ -796,28 +804,6 @@ extension class TypeChecker {
           TType::single(TPrimValue::boolean(e2.pos)),
         );
         TType::single(TPrimValue::boolean(pos))
-
-      | BODot() ->
-        e2.value match {
-        | Var(fieldName) ->
-          this.dot(tcenv, e1.pos, this.expr(tcenv, e1), fieldName)
-        | _ -> typingError(Array[(e2.pos, "Invalid '.'")])
-        }
-
-      | BOOptionalDot() ->
-        e2.value match {
-        | Var(fieldName) ->
-          this.dot(
-            tcenv,
-            e1.pos,
-            this.expr(tcenv, e1),
-            fieldName,
-            true/* optionalChaining */ ,
-          )
-        | _ -> typingError(Array[(e2.pos, "Invalid '?.'")])
-        }
-
-      | BOExclamationMarkDot() -> notSupported(pos)
 
       | BOLessThan()
       | BOLessThanOrEqual()
@@ -1250,10 +1236,10 @@ extension class TypeChecker {
         this.checkSubType(tcenv, pos, "Invalid assignment", x, y)
       );
       ty2
-    | Binop(
-      BODot(),
+    | Dot(
+      NormalDot(),
       Expr(_, Var(local)),
-      Expr(_, Var(fieldName)),
+      fieldName,
     ) if (tcenv.localObjects.containsKey(local.value)) ->
       fieldType = this.expr(tcenv, e2);
       used = tcenv.localObjects[local.value] match {

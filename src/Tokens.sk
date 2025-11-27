@@ -138,54 +138,6 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKVar() -> "a variable name"
   | TKZeroFilledRightShift() -> ">>>"
   | TKZeroFilledRightShiftAssignment() -> ">>>="
-
-  fun toBinop(): ?BinaryOperator {
-    this match {
-    | TKDot() -> Some(BODot())
-    | TKQuestionMarkDot() -> Some(BOOptionalDot())
-    | TKExclamationMarkDot() -> Some(BOExclamationMarkDot())
-    | TKMultiplication() -> Some(BOMultiplication())
-    | TKDivision() -> Some(BODivision())
-    | TKRemainder() -> Some(BORemainder())
-    | TKAddition() -> Some(BOAddition())
-    | TKSubtraction() -> Some(BOSubtraction())
-    | TKLeftShift() -> Some(BOLeftShift())
-    | TKSignedRightShift() -> Some(BOSignedRightShift())
-    | TKZeroFilledRightShift() -> Some(BOZeroFilledRightShift())
-    | TKLessThan() -> Some(BOLessThan())
-    | TKLessThanOrEqual() -> Some(BOLessThanOrEqual())
-    | TKGreaterThan() -> Some(BOGreaterThan())
-    | TKGreaterThanOrEqual() -> Some(BOGreaterThanOrEqual())
-    | TKStrictEquality() -> Some(BOStrictEquality())
-    | TKStrictInequality() -> Some(BOStrictInequality())
-    | TKBitwiseAnd() -> Some(BOBitwiseAnd())
-    | TKBitwiseXor() -> Some(BOBitwiseXor())
-    | TKBitwiseOr() -> Some(BOBitwiseOr())
-    | TKLogicalAnd() -> Some(BOLogicalAnd())
-    | TKLogicalOr() -> Some(BOLogicalOr())
-    | TKNullishCoalescing() -> Some(BONullishCoalescing())
-    | TKAssignment() -> Some(BOAssignment())
-    | TKMultiplicationAssignment() -> Some(BOOpAssignment(BOMultiplication()))
-    | TKDivisionAssignment() -> Some(BOOpAssignment(BODivision()))
-    | TKRemainderAssignment() -> Some(BOOpAssignment(BORemainder()))
-    | TKAdditionAssignment() -> Some(BOOpAssignment(BOAddition()))
-    | TKSubtractionAssignment() -> Some(BOOpAssignment(BOSubtraction()))
-    | TKLeftShiftAssignment() -> Some(BOOpAssignment(BOLeftShift()))
-    | TKSignedRightShiftAssignment() ->
-      Some(BOOpAssignment(BOSignedRightShift()))
-    | TKZeroFilledRightShiftAssignment() ->
-      Some(BOOpAssignment(BOZeroFilledRightShift()))
-    | TKBitwiseAndAssignment() -> Some(BOOpAssignment(BOBitwiseAnd()))
-    | TKBitwiseXorAssignment() -> Some(BOOpAssignment(BOBitwiseXor()))
-    | TKBitwiseOrAssignment() -> Some(BOOpAssignment(BOBitwiseOr()))
-    | TKLogicalAndAssignment() -> Some(BOOpAssignment(BOLogicalAnd()))
-    | TKLogicalOrAssignment() -> Some(BOOpAssignment(BOLogicalOr()))
-    | TKNullishCoalescingAssignment() ->
-      Some(BOOpAssignment(BONullishCoalescing()))
-
-    | _ -> None()
-    }
-  }
 }
 
 /***************************************************************************/
@@ -272,64 +224,89 @@ base class Associativity {
   children =
   | ALeft()
   | ARight()
-  | ANonAssoc()
 }
 
 /***************************************************************************/
 // Operators associativity and precedence.
 /***************************************************************************/
 
-const in_and_instanceofPrec: (Associativity, Int) = (ANonAssoc(), 12);
-const callPrec: Int = 18;
-const typeOfPrec: Int = 13;
-const unaryPlusMinusPrec: Int = 17;
+const callPrec: Int = 21;
+const postfixPrec: Int = 19;
+const prefixPrec: Int = 18;
+const asPrec: Int = 13;
+const in_and_instanceofPrec: Int = 12;
+const ternaryPrec: Int = 4;
+const closurePrec: Int = 3;
 
-const precedence: Map<TokenKind, (Associativity, Int)> = Map[
-  TKDot() => (ALeft(), 20),
-  TKQuestionMarkDot() => (ALeft(), 20),
-  TKExclamationMarkDot() => (ALeft(), 20),
-  TKIncr() => (ANonAssoc(), 18),
-  TKDecr() => (ANonAssoc(), 18),
-  TKExclamationMark() => (ANonAssoc(), 17),
-  TKTild() => (ANonAssoc(), 17),
-  TKMultiplication() => (ALeft(), 15),
-  TKDivision() => (ALeft(), 15),
-  TKRemainder() => (ALeft(), 15),
-  TKAddition() => (ALeft(), 14),
-  TKSubtraction() => (ALeft(), 14),
-  TKLeftShift() => (ALeft(), 13),
-  TKSignedRightShift() => (ALeft(), 13),
-  TKZeroFilledRightShift() => (ALeft(), 13),
-  TKLessThan() => (ALeft(), 12),
-  TKLessThanOrEqual() => (ALeft(), 12),
-  TKGreaterThan() => (ALeft(), 12),
-  TKGreaterThanOrEqual() => (ALeft(), 12),
-  TKEquality() => (ALeft(), 11),
-  TKInequality() => (ALeft(), 11),
-  TKStrictEquality() => (ALeft(), 11),
-  TKStrictInequality() => (ALeft(), 11),
-  TKBitwiseAnd() => (ALeft(), 10),
-  TKBitwiseXor() => (ALeft(), 9),
-  TKBitwiseOr() => (ALeft(), 8),
-  TKLogicalAnd() => (ALeft(), 7),
-  TKLogicalOr() => (ALeft(), 6),
-  TKNullishCoalescing() => (ARight(), 5),
-  TKQuestionMark() => (ARight(), 4),
-  TKAssignment() => (ARight(), 3),
-  TKMultiplicationAssignment() => (ARight(), 3),
-  TKDivisionAssignment() => (ARight(), 3),
-  TKRemainderAssignment() => (ARight(), 3),
-  TKAdditionAssignment() => (ARight(), 3),
-  TKSubtractionAssignment() => (ARight(), 3),
-  TKLeftShiftAssignment() => (ARight(), 3),
-  TKSignedRightShiftAssignment() => (ARight(), 3),
-  TKZeroFilledRightShiftAssignment() => (ARight(), 3),
-  TKBitwiseAndAssignment() => (ARight(), 3),
-  TKBitwiseXorAssignment() => (ARight(), 3),
-  TKBitwiseOrAssignment() => (ARight(), 3),
-  TKLogicalAndAssignment() => (ARight(), 3),
-  TKLogicalOrAssignment() => (ARight(), 3),
-  TKNullishCoalescingAssignment() => (ARight(), 3),
+const binaryOperators: Map<
+  TokenKind,
+  (Associativity, Int, BinaryOperator),
+> = Map[
+  /* 22: (x) (non-assoc) */
+  /* 21, also: x[y], x.y, x?.y, x!.y, new x(y), x(y) (non-assoc) (callPrec) */
+  /* 20: new x (no argument list) (non-assoc) => not supported */
+  /* 19: x++, x--, x! (postfixPrec) */
+  /* 18: !x, ~x, ++x, --x, +x, -x, typeof x, void x, delete x, await x (prefixPrec) */
+  /* 17: x ** y (right) */
+  TKMultiplication() => (ALeft(), 16, BOMultiplication()),
+  TKDivision() => (ALeft(), 16, BODivision()),
+  TKRemainder() => (ALeft(), 16, BORemainder()),
+  TKAddition() => (ALeft(), 15, BOAddition()),
+  TKSubtraction() => (ALeft(), 15, BOSubtraction()),
+  TKLeftShift() => (ALeft(), 14, BOLeftShift()),
+  TKSignedRightShift() => (ALeft(), 14, BOSignedRightShift()),
+  TKZeroFilledRightShift() => (ALeft(), 14, BOZeroFilledRightShift()),
+  /* 13: x as y (left) */
+  TKLessThan() => (ALeft(), 12, BOLessThan()),
+  TKLessThanOrEqual() => (ALeft(), 12, BOLessThanOrEqual()),
+  TKGreaterThan() => (ALeft(), 12, BOGreaterThan()),
+  TKGreaterThanOrEqual() => (ALeft(), 12, BOGreaterThanOrEqual()),
+  /* 12, also: x in y, x instanceof y */
+  TKStrictEquality() => (ALeft(), 11, BOStrictEquality()),
+  TKStrictInequality() => (ALeft(), 11, BOStrictInequality()),
+  /* 11, also x == y, x != y (banned!) */
+  TKBitwiseAnd() => (ALeft(), 10, BOBitwiseAnd()),
+  TKBitwiseXor() => (ALeft(), 9, BOBitwiseXor()),
+  TKBitwiseOr() => (ALeft(), 8, BOBitwiseOr()),
+  TKLogicalAnd() => (ALeft(), 7, BOLogicalAnd()),
+  TKLogicalOr() => (ALeft(), 6, BOLogicalOr()),
+  TKNullishCoalescing() => (ALeft(), 5, BONullishCoalescing()),
+  /* 4: x ? y : z (right) (ternaryPrec) */
+  /* 3: x => y, async x => y (right) (closurePrec) */
+  TKAssignment() => (ARight(), 2, BOAssignment()),
+  TKMultiplicationAssignment() => (
+    ARight(),
+    2,
+    BOOpAssignment(BOMultiplication()),
+  ),
+  TKDivisionAssignment() => (ARight(), 2, BOOpAssignment(BODivision())),
+  TKRemainderAssignment() => (ARight(), 2, BOOpAssignment(BORemainder())),
+  TKAdditionAssignment() => (ARight(), 2, BOOpAssignment(BOAddition())),
+  TKSubtractionAssignment() => (ARight(), 2, BOOpAssignment(BOSubtraction())),
+  TKLeftShiftAssignment() => (ARight(), 2, BOOpAssignment(BOLeftShift())),
+  TKSignedRightShiftAssignment() => (
+    ARight(),
+    2,
+    BOOpAssignment(BOSignedRightShift()),
+  ),
+  TKZeroFilledRightShiftAssignment() => (
+    ARight(),
+    2,
+    BOOpAssignment(BOZeroFilledRightShift()),
+  ),
+  TKBitwiseAndAssignment() => (ARight(), 2, BOOpAssignment(BOBitwiseAnd())),
+  TKBitwiseXorAssignment() => (ARight(), 2, BOOpAssignment(BOBitwiseXor())),
+  TKBitwiseOrAssignment() => (ARight(), 2, BOOpAssignment(BOBitwiseOr())),
+  TKLogicalAndAssignment() => (ARight(), 2, BOOpAssignment(BOLogicalAnd())),
+  TKLogicalOrAssignment() => (ARight(), 2, BOOpAssignment(BOLogicalOr())),
+  TKNullishCoalescingAssignment() => (
+    ARight(),
+    2,
+    BOOpAssignment(BONullishCoalescing()),
+  ),
+  /* 2, also: x **= y (right) */
+  /* 1.5: ...x, yield x, yield* x (non-assoc) */
+  /* 1: x, y (left) */
 ];
 
 module end;

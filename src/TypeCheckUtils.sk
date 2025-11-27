@@ -255,7 +255,7 @@ extension class TypeChecker {
     | Var _ -> void
     | Get _ -> void
     | EArray _ -> void
-    | Binop(BODot(), e1, Expr(_, Var(_))) -> this.checkLValue(e1)
+    | Dot(NormalDot(), e1, _) -> this.checkLValue(e1)
     | _ -> typingError(Array[(e.pos, "Invalid lvalue")])
     }
   }
