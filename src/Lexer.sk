@@ -397,7 +397,6 @@ mutable class Lexer private {
       mkToken(TKTild())
 
     | c ->
-      savedPos = pos;
       if (!specialChars.contains(c)) {
         this.error(pos, UnknownCharacter(c));
       };
@@ -409,22 +408,16 @@ mutable class Lexer private {
         };
         break void;
       };
-      str = String::fromChars(this.contents.slice(start, pos));
-      operators.maybeGet(str) match {
-      | None() ->
-        if (str.startsWith("?")) {
-          !pos = savedPos + 1;
-          mkToken(TKQuestionMark())
-        } else if (str.startsWith("!")) {
-          !pos = savedPos + 1;
-          mkToken(TKExclamationMark())
-        } else if (str.startsWith("/")) {
-          !pos = savedPos + 1;
-          mkToken(TKDivision())
-        } else {
-          this.error(pos, UnknownOperator(str));
+      loop {
+        str = String::fromChars(this.contents.slice(start, pos));
+        operators.maybeGet(str) match {
+        | Some(kind) -> break mkToken(kind)
+        | None() ->
+          !pos = pos - 1;
+          if (pos <= start) {
+            this.error(pos, UnknownOperator(str))
+          }
         }
-      | Some(kind) -> mkToken(kind)
       }
     }
   }
