@@ -114,7 +114,7 @@ class TEnv{
       | None() -> void
       | Some(cstr) ->
         cstrTy = this.normalize(subst.context, cstr);
-        isSubTType(subst, this, targ, cstrTy) match {
+        TType::isSub(subst, this, targ, cstrTy) match {
         | STOk() -> void
         | STError _ ->
           typingError(

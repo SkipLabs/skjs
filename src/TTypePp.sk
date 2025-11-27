@@ -15,8 +15,8 @@ mutable class TypePp{
 } {
   const MAX_COLS: Int = 80;
 
-  readonly fun chill(): this {
-    static{compact => this.compact, cols => this.cols, buffer => this.buffer}
+  readonly fun chill(): TypePp {
+    TypePp{compact => this.compact, cols => this.cols, buffer => this.buffer}
   }
 
   mutable fun replace(saved: readonly TypePp): void {
@@ -41,7 +41,7 @@ mutable class TypePp{
       this.!buffer = List.Cons(margin.str, this.buffer);
     };
     this.!cols = this.cols + str.length();
-    if (level != 0 && this.cols > static::MAX_COLS) {
+    if (level != 0 && this.cols > TypePp::MAX_COLS) {
       throw MaxSizeReached()
     };
     this.!buffer = List.Cons(str, this.buffer);
@@ -293,7 +293,7 @@ mutable class TypePp{
     for (i => field in fieldArray) {
       fieldName = field.name;
       fieldType = field.type;
-      this.out(level, margin, static::escapeName(fieldName));
+      this.out(level, margin, TypePp::escapeName(fieldName));
       if (field.isOptional) {
         this.out(level, margin, "?")
       };
@@ -308,7 +308,7 @@ mutable class TypePp{
     };
     for (i => index in indexes) {
       this.out(level, margin, "[ ");
-      this.out(level, margin, static::escapeName(index.keyName));
+      this.out(level, margin, TypePp::escapeName(index.keyName));
       this.out(level, margin, ": ");
       this.type(level, margin, index.keyType);
       this.out(level, margin, " ]: ");

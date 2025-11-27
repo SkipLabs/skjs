@@ -101,11 +101,11 @@ class CGNode private (
     static::create(Toplevel(fileName))
   }
 
-  fun hash(): Int {
-    this.precomputed_hash.value
-  }
   fun xxhash(ignorePos: Bool = false): XXHash {
     if (ignorePos) this.precomputed_hash else this.id.xxhash(false)
+  }
+  fun hash(): Int {
+    this.xxhash(true).value
   }
   fun toString(): String {
     `CGNode[${this.id}]`

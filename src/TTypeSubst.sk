@@ -24,7 +24,7 @@ mutable class Subst private {
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
   static fun mcreate{context: mutable SKStore.Context}: mutable this {
-    mutable static{context}
+    mutable Subst{context}
   }
 
   /* Use Subst#clone to create a temporary subst when there is already
@@ -32,7 +32,7 @@ mutable class Subst private {
      One would typically do this to check subtyping relations that are
      non-mandatory. */
   mutable fun clone(): mutable this {
-    mutable static{
+    mutable Subst{
       context => this.context,
       seenSub => this.seenSub,
       seenInter => this.seenInter,

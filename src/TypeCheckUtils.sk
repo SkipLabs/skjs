@@ -88,7 +88,7 @@ extension class TypeChecker {
     ty1: TType,
     ty2: TType,
   ): void {
-    isSubTType(tcenv.subst, this.tenv, ty1, ty2) match {
+    TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
     | STRec(reason, pos1, subTy2) ->
       typingError(
