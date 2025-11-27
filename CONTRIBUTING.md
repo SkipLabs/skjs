@@ -23,6 +23,7 @@
 - Use `// @ts-expect-error <exact error message>` for errors TypeScript would also produce
 - Use `// @skjs-expect-error <exact error message>` for SKJS-specific errors
 - Run tests first to see actual error messages, then add the annotations with exact wording
+- **SKJS reports only one type error per definition** - If a function has multiple issues, only the first error is reported
 
 **Parse error constraints**:
 - Parse errors must appear on the last non-empty line of the file
