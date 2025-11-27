@@ -133,7 +133,7 @@ extension class TypeChecker {
                   );
                   if (
                     tfield.isOptional ||
-                    isSubTType(
+                    TType::isSub(
                       tcenv.subst.clone(),
                       this.tenv,
                       undefined,
@@ -747,10 +747,10 @@ extension class TypeChecker {
         ty1 = this.nonVoidExpr(pos, tcenv, e1);
         ty2 = this.nonVoidExpr(pos, tcenv, e2);
         if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
-          isSubTType(tcenv.subst, this.tenv, ty1, ty2) match {
+          TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
           | STError _ ->
-            isSubTType(tcenv.subst, this.tenv, ty2, ty1) match {
+            TType::isSub(tcenv.subst, this.tenv, ty2, ty1) match {
             | STOk() -> void
             | STError _ ->
               alwaysResult = op_ match {
@@ -1341,7 +1341,7 @@ extension class TypeChecker {
           local,
           TType::single(
             TObject(
-              interTFields(
+              TFields::inter(
                 tcenv.subst,
                 this.tenv,
                 fields,

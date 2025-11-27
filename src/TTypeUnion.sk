@@ -80,7 +80,7 @@ extension class TConstr {
     y: TConstr,
   ): TConstr {
     invariant(x.tag == y.tag);
-    TConstr(x.tag, x.tagPos, unionTFields(subst, tenv, x.fields, y.fields))
+    TConstr(x.tag, x.tagPos, TFields::union(subst, tenv, x.fields, y.fields))
   }
 }
 
@@ -92,8 +92,8 @@ extension class TFuns {
     f2: TFuns,
   ): TFuns {
     TFuns(
-      f1.funs.mapUnion(f2.funs, (x, y) -> unionTFun(subst, tenv, x, y)),
-      f1.methods.mapUnion(f2.methods, (x, y) -> unionTFun(subst, tenv, x, y)),
+      f1.funs.mapUnion(f2.funs, (x, y) -> TFun::union(subst, tenv, x, y)),
+      f1.methods.mapUnion(f2.methods, (x, y) -> TFun::union(subst, tenv, x, y)),
       f1.pos,
     )
   }
@@ -141,8 +141,23 @@ extension class STypes {
     stypes2: STypes,
   ): STypes {
     STypes(
-      stypes1.stypes.mapUnion(stypes2.stypes, (x, y) ->
-        unionSType(subst, tenv, x, y)
+      stypes1.stypes.mapUnion(stypes2.stypes, (sty1, sty2) ->
+        (sty1, sty2) match {
+        | (TPrimUnit(_, _), TPrimUnit(_, _)) -> sty1
+
+        | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::union(p1, p2)
+
+        | (TPromise(ty1, pos), TPromise(ty2, _)) ->
+          TPromise(TType::union(subst, tenv, ty1, ty2), pos)
+        | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
+          TTuple::union(subst, tenv, tuple1, tuple2)
+        | (obj1 @ TObject _, obj2 @ TObject _) ->
+          TObject::union(subst, tenv, obj1, obj2)
+        | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
+          TAlgebraic::union(subst, tenv, a1, a2)
+        | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::union(subst, tenv, f1, f2)
+        | _ -> internal_error("Internal error")
+        }
       ),
     )
   }
@@ -222,165 +237,148 @@ extension class TPrimValue {
   }
 }
 
-/***************************************************************************/
-/* Unions. */
-/***************************************************************************/
-
-fun unionTFields(
-  subst: mutable Subst,
-  tenv: TEnv,
-  fields1: TFields,
-  fields2: TFields,
-): TFields {
-  (noMatch1, noMatch2, fields) = mapInter(
-    fields1.values(),
-    fields2.values(),
-    x ~> x.name,
-    (x, y) -> TField::union(subst, tenv, x, y),
-  );
-  !fields = fields
-    .concat(noMatch1.map(x -> x.withOptional()))
-    .concat(noMatch2.map(x -> x.withOptional()))
-    .sortedBy(x ~> x.name);
-  // TODO: handle intersection between normal fields and index fields
-  indexes = {
-    index1o = fields1.maybeSingleIndex();
-    index2o = fields2.maybeSingleIndex();
-    (index1o, index2o) match {
-    | (None(), None()) -> None()
-    | (Some(index), None())
-    | (None(), Some(index)) ->
-      Some(index)
-    | (Some(index1), Some(index2)) ->
-      TIndexField::union(subst, tenv, index1, index2)
-    } match {
-    | None() -> Array[]
-    | Some(index) -> Array[index]
-    }
-  };
-  TFields::create(fields, indexes)
-}
-
-fun unionTObject(
-  subst: mutable Subst,
-  tenv: TEnv,
-  obj1: TObject,
-  obj2: TObject,
-): TObject {
-  TObject(unionTFields(subst, tenv, obj1.fields, obj2.fields), obj1.pos)
-}
-
-fun unionSType(
-  subst: mutable Subst,
-  tenv: TEnv,
-  sty1: SType,
-  sty2: SType,
-): SType {
-  (sty1, sty2) match {
-  | (TPrimUnit(_, _), TPrimUnit(_, _)) -> sty1
-
-  | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::union(p1, p2)
-
-  | (TPromise(ty1, pos), TPromise(ty2, _)) ->
-    TPromise(TType::union(subst, tenv, ty1, ty2), pos)
-  | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
-    unionTTuple(subst, tenv, tuple1, tuple2)
-  | (obj1 @ TObject _, obj2 @ TObject _) ->
-    unionTObject(subst, tenv, obj1, obj2)
-  | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-    TAlgebraic::union(subst, tenv, a1, a2)
-  | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::union(subst, tenv, f1, f2)
-  | _ -> internal_error("Internal error")
+extension class TFields {
+  static fun union(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fields1: TFields,
+    fields2: TFields,
+  ): TFields {
+    (noMatch1, noMatch2, fields) = mapInter(
+      fields1.values(),
+      fields2.values(),
+      x ~> x.name,
+      (x, y) -> TField::union(subst, tenv, x, y),
+    );
+    !fields = fields
+      .concat(noMatch1.map(x -> x.withOptional()))
+      .concat(noMatch2.map(x -> x.withOptional()))
+      .sortedBy(x ~> x.name);
+    // TODO: handle intersection between normal fields and index fields
+    indexes = {
+      index1o = fields1.maybeSingleIndex();
+      index2o = fields2.maybeSingleIndex();
+      (index1o, index2o) match {
+      | (None(), None()) -> None()
+      | (Some(index), None())
+      | (None(), Some(index)) ->
+        Some(index)
+      | (Some(index1), Some(index2)) ->
+        TIndexField::union(subst, tenv, index1, index2)
+      } match {
+      | None() -> Array[]
+      | Some(index) -> Array[index]
+      }
+    };
+    TFields::create(fields, indexes)
   }
 }
 
-fun unionTFun(subst: mutable Subst, tenv: TEnv, f1: TFun, f2: TFun): TFun {
-  if (f1.tparams.size() != f2.tparams.size()) {
-    internal_error("function clause sizes must match")
-  };
-  tsubst = SortedMap[];
-  clauses = mutable Vector[];
-  for (i in Range(0, f1.tparams.size())) {
-    tparam1 = f1.tparams[i];
-    tparam2 = f2.tparams[i];
-    !tsubst[tparam2.id] = tparam1;
-    cstr = (tparam1.cstr, tparam2.cstr) match {
-    | (None(), None()) -> None()
-    | (None(), Some(x)) -> Some(x)
-    | (Some(x), None()) -> Some(x)
-    | (Some(x), Some(y)) -> Some(TType::inter(subst, tenv, x, y))
-    };
-    clauses.push(tparam1 with {cstr});
-  };
-  !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
-  params = mutable Vector[];
-  for (i in Range(0, f1.params.size())) {
-    params.push(TType::inter(subst, tenv, f1.params[i], f2.params[i]));
-  };
-  optionalParams = mutable Vector[];
-  for (i in Range(0, min(f1.optionalParams.size(), f2.optionalParams.size()))) {
-    optionalParams.push(
-      TType::inter(subst, tenv, f1.optionalParams[i], f2.optionalParams[i]),
-    );
-  };
-  spreadParam = (f1.spreadParam, f2.spreadParam) match {
-  | (Some(ty1), Some(ty2)) -> Some(TType::inter(subst, tenv, ty1, ty2))
-  | _ -> None()
-  };
-  retType = TType::union(subst, tenv, f1.retType, f2.retType);
-  totalSize1 = f1.params.size() + f1.optionalParams.size();
-  totalSize2 = f2.params.size() + f2.optionalParams.size();
-  sizeWitness = if (totalSize1 <= totalSize2) f1.minSizeWitness else {
-    f2.minSizeWitness
-  };
-  cgNodes = f1.cgNodes.union(f2.cgNodes);
-  TFun(
-    clauses.toArray(),
-    params.toArray(),
-    optionalParams.toArray(),
-    spreadParam,
-    sizeWitness,
-    retType,
-    cgNodes,
-  )
+extension class TObject {
+  static fun union(
+    subst: mutable Subst,
+    tenv: TEnv,
+    obj1: TObject,
+    obj2: TObject,
+  ): TObject {
+    TObject(TFields::union(subst, tenv, obj1.fields, obj2.fields), obj1.pos)
+  }
 }
 
-fun unionTTuple(
-  subst: mutable Subst,
-  tenv: TEnv,
-  tuple1: TTuple,
-  tuple2: TTuple,
-): TTuple {
-  result = mutable Vector[];
-  for (i in Range(0, min(tuple1.tuple.size(), tuple2.tuple.size()))) {
-    result.push(TType::union(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]));
-  };
-  if (tuple1.tuple.size() < tuple2.tuple.size()) {
-    for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
-      posEnd = tuple1.pos.atEnd();
-      result.push(
-        TType::union(
-          subst,
-          tenv,
-          TType::single(TPrimUnit(TUndefined(), posEnd)),
-          tuple2.tuple[i],
-        ),
+extension class TFun {
+  static fun union(subst: mutable Subst, tenv: TEnv, f1: TFun, f2: TFun): TFun {
+    if (f1.tparams.size() != f2.tparams.size()) {
+      internal_error("function clause sizes must match")
+    };
+    tsubst = SortedMap[];
+    clauses = mutable Vector[];
+    for (i in Range(0, f1.tparams.size())) {
+      tparam1 = f1.tparams[i];
+      tparam2 = f2.tparams[i];
+      !tsubst[tparam2.id] = tparam1;
+      cstr = (tparam1.cstr, tparam2.cstr) match {
+      | (None(), None()) -> None()
+      | (None(), Some(x)) -> Some(x)
+      | (Some(x), None()) -> Some(x)
+      | (Some(x), Some(y)) -> Some(TType::inter(subst, tenv, x, y))
+      };
+      clauses.push(tparam1 with {cstr});
+    };
+    !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
+    params = mutable Vector[];
+    for (i in Range(0, f1.params.size())) {
+      params.push(TType::inter(subst, tenv, f1.params[i], f2.params[i]));
+    };
+    optionalParams = mutable Vector[];
+    for (i in Range(
+      0,
+      min(f1.optionalParams.size(), f2.optionalParams.size()),
+    )) {
+      optionalParams.push(
+        TType::inter(subst, tenv, f1.optionalParams[i], f2.optionalParams[i]),
       );
-    }
-  } else if (tuple2.tuple.size() < tuple1.tuple.size()) {
-    for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
-      posEnd = tuple2.pos.atEnd();
-      result.push(
-        TType::union(
-          subst,
-          tenv,
-          tuple1.tuple[i],
-          TType::single(TPrimUnit(TUndefined(), posEnd)),
-        ),
-      );
-    }
-  };
-  TTuple(result.toArray(), tuple1.pos)
+    };
+    spreadParam = (f1.spreadParam, f2.spreadParam) match {
+    | (Some(ty1), Some(ty2)) -> Some(TType::inter(subst, tenv, ty1, ty2))
+    | _ -> None()
+    };
+    retType = TType::union(subst, tenv, f1.retType, f2.retType);
+    totalSize1 = f1.params.size() + f1.optionalParams.size();
+    totalSize2 = f2.params.size() + f2.optionalParams.size();
+    sizeWitness = if (totalSize1 <= totalSize2) f1.minSizeWitness else {
+      f2.minSizeWitness
+    };
+    cgNodes = f1.cgNodes.union(f2.cgNodes);
+    TFun(
+      clauses.toArray(),
+      params.toArray(),
+      optionalParams.toArray(),
+      spreadParam,
+      sizeWitness,
+      retType,
+      cgNodes,
+    )
+  }
+}
+
+extension class TTuple {
+  static fun union(
+    subst: mutable Subst,
+    tenv: TEnv,
+    tuple1: TTuple,
+    tuple2: TTuple,
+  ): TTuple {
+    result = mutable Vector[];
+    for (i in Range(0, min(tuple1.tuple.size(), tuple2.tuple.size()))) {
+      result.push(TType::union(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]));
+    };
+    if (tuple1.tuple.size() < tuple2.tuple.size()) {
+      for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
+        posEnd = tuple1.pos.atEnd();
+        result.push(
+          TType::union(
+            subst,
+            tenv,
+            TType::single(TPrimUnit(TUndefined(), posEnd)),
+            tuple2.tuple[i],
+          ),
+        );
+      }
+    } else if (tuple2.tuple.size() < tuple1.tuple.size()) {
+      for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
+        posEnd = tuple2.pos.atEnd();
+        result.push(
+          TType::union(
+            subst,
+            tenv,
+            tuple1.tuple[i],
+            TType::single(TPrimUnit(TUndefined(), posEnd)),
+          ),
+        );
+      }
+    };
+    TTuple(result.toArray(), tuple1.pos)
+  }
 }
 
 module end;
