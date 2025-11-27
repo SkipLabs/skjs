@@ -72,8 +72,10 @@ base class SinglePosError<K: ErrorKind>(
   }
 }
 
-class ParsingError extends SinglePosError<ParsingKind>
-class LexingError extends SinglePosError<LexingKind>
+base class LexingOrParsingError extends Error
+
+class ParsingError extends SinglePosError<ParsingKind>, LexingOrParsingError
+class LexingError extends SinglePosError<LexingKind>, LexingOrParsingError
 
 /***************************************************************************/
 /* There are two types of positions:

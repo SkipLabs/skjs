@@ -170,6 +170,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .repeatable()
     .about("Source files (default: **/*.ts)"),
   Cli.Arg::string("directory")
+    .long("directory")
     .short("C")
     .value_name("dir")
     .about(
@@ -198,6 +199,11 @@ const checkArgs: Array<Cli.Arg> = Array[
   Cli.Arg::bool("log-affected-files").about(
     "Output a list of files potentially affected by changes since laqst run.  Requires `--data` persistent cache.",
   ),
+  Cli.Arg::bool("keep-going")
+    .long("keep-going")
+    .short("k")
+    .default(false)
+    .about("Do not stop at the first lexing/parsing error"),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -255,6 +261,8 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     };
   };
   srcFiles: Sequence<String> = args.getArray("src-file");
+  keepGoing = args.getBool("keep-going");
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
 
   context = SKStore.runWithGcReturnContext(
@@ -281,7 +289,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{context, files, backtrace};
+          checker = Checker::create{context, files, keepGoing, backtrace};
           checked = checker.checkFiles(context);
           _ = checked.map(
             SKStore.UnitID::keyType,
@@ -341,8 +349,8 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
 class CheckResult(
   fileName: FAbsolute,
-  parseError: ?Error,
-  errors: Array<Error>,
+  parseError: ?LexingOrParsingError,
+  errors: Array<TypingError>,
   callgraph: ?CallGraphFile = None(),
   classHierarchy: ?ClassHierarchyFile = None(),
 ) extends SKStore.File
@@ -357,11 +365,16 @@ class Checker private {
   static fun create{
     context: mutable SKStore.Context,
     files: Files,
+    keepGoing: Bool,
     backtrace: Bool = false,
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
-    (parsedAndSymbolsFiles, symbolsMap) = files.parse(context, newLinesMap);
+    (parsedAndSymbolsFiles, symbolsMap) = files.parse(
+      context,
+      newLinesMap,
+      keepGoing,
+    );
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(

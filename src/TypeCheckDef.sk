@@ -7,14 +7,17 @@ base class OptionalTypeParamsPermission {
 }
 
 extension class TypeChecker {
-  fun check(context: mutable SKStore.Context, defs: Array<Def>): Array<Error> {
+  fun check(
+    context: mutable SKStore.Context,
+    defs: Array<Def>,
+  ): Array<TypingError> {
     errors = mutable Vector[];
     for (def in defs) {
       if (this.backtrace) this.checkDef(context, def) else {
         try {
           this.checkDef(context, def)
         } catch {
-        | ErrorExn(err) -> errors.push(err)
+        | ErrorExn(err @ TypingError _) -> errors.push(err)
         | exn -> throw exn
         }
       }
