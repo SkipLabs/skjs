@@ -32,60 +32,55 @@ extension class Parser {
     | None() -> this.error(this.lex.posEnd(), UnterminatedBlock())
     | Some(TKOpenCurly()) ->
       _ = this.lex.next();
-      stmts = mutable Vector[];
-      loop {
-        this.stmt() match {
-        | None() ->
-          this.expect(TKCloseCurly());
-          return stmts.toArray()
-        | Some(st) -> stmts.push(st)
-        }
-      }
+      this.block()
     | Some(_) ->
-      this.stmt() match {
-      | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKOpenCurly()))
-      | Some(x) -> Array[x]
+      st = this.stmt();
+      if (this.lex.peekKind() is Some(TKSemi())) {
+        _ = this.lex.next()
+      };
+      Array[st]
+    }
+  }
+
+  // Parse a block, after a {
+  mutable fun block(): Array<Stmt> {
+    stmts = mutable Vector[];
+    loop {
+      if (this.lex.peekKind() is Some(TKCloseCurly())) {
+        _ = this.lex.next();
+        return stmts.toArray()
+      };
+      stmts.push(this.stmt());
+      if (this.lex.peekKind() is Some(TKSemi())) {
+        _ = this.lex.next()
       }
     }
   }
 
-  // Parse a single statement
-  mutable fun stmt(): ?Stmt {
-    (pos, stmtOpt) = this.withPos(this.stmt_, UnterminatedStmt());
-    stmtOpt.map(stmt -> Stmt(pos, stmt))
+  // Parse a single statement, does not consume the semi-colon
+  mutable fun stmt(): Stmt {
+    (pos, stmt) = this.withPos(this.stmt_, UnterminatedStmt());
+    Stmt(pos, stmt)
   }
 
   // Internal statement parsing implementation
-  mutable fun stmt_(): ?Stmt_ {
+  mutable fun stmt_(): Stmt_ {
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
     | Some(x) -> x
     };
     tok.kind match {
-    | TKCloseCurly() -> None()
-    | TKSemi() ->
-      _ = this.lex.next();
-      Some(StmtEmpty())
-    | TKOpenCurly() ->
-      _ = this.lex.next();
-      stmts = mutable Vector[];
-      loop {
-        this.stmt() match {
-        | None() -> break void
-        | Some(st) -> stmts.push(st)
-        }
-      };
-      this.expect(TKCloseCurly());
-      Some(Block(stmts.toArray()))
+    | TKSemi() -> StmtEmpty()
+    | TKOpenCurly() -> Block(this.blockOrStmt())
     | TKVar() ->
       keyword = this.getVar(tok);
       keyword match {
       | "break" ->
         _ = this.lex.next();
-        Some(Break())
+        Break()
       | "continue" ->
         _ = this.lex.next();
-        Some(Continue())
+        Continue()
       | "switch" ->
         _ = this.lex.next();
         this.expect(TKOpenParen());
@@ -115,14 +110,14 @@ extension class Parser {
               break void
             | _ -> void
             };
-            this.stmt() match {
-            | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
-            | Some(st) -> stmts.push(st)
+            stmts.push(this.stmt());
+            if (this.lex.peekKind() is Some(TKSemi())) {
+              _ = this.lex.next()
             }
           };
           cases.push(SwitchBranch(case, stmts.toArray(), caseTokPos))
         };
-        Some(Switch(e, cases.toArray()))
+        Switch(e, cases.toArray())
       | "if" ->
         _ = this.lex.next();
         this.expect(TKOpenParen());
@@ -135,7 +130,7 @@ extension class Parser {
         } else {
           None()
         };
-        Some(If(e, ifBlock, elseBlock))
+        If(e, ifBlock, elseBlock)
       | "return" ->
         retPos = this.lex.posRange(this.lex.next().fromSome());
         exprOpt = if (
@@ -146,38 +141,20 @@ extension class Parser {
         } else {
           Some(this.expr(0))
         };
-        Some(Return(retPos, exprOpt))
+        Return(retPos, exprOpt)
       | "throw" ->
         _ = this.lex.next();
-        Some(Throw(this.expr(0)))
+        Throw(this.expr(0))
       | "while" ->
         _ = this.lex.next();
         this.expect(TKOpenParen());
         cond = this.expr(0);
         this.expect(TKCloseParen());
-        if (this.lex.peekKind() is Some(TKOpenCurly())) {
-          _ = this.lex.next();
-          stmts = mutable Vector[];
-          loop {
-            this.stmt() match {
-            | None() -> break void
-            | Some(st) -> stmts.push(st)
-            };
-          };
-          this.expect(TKCloseCurly());
-          return Some(While(cond, stmts.toArray()));
-        };
-        this.stmt() match {
-        | None() -> this.error(this.lex.posEnd(), ExpectedStmt())
-        | Some(st) -> Some(While(cond, Array[st]))
-        }
+        While(cond, this.blockOrStmt())
       | "for" ->
         _ = this.lex.next();
         this.expect(TKOpenParen());
-        st = this.stmt() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedStmt())
-        | Some(x) -> x
-        };
+        st = this.stmt();
         isIn = this.lex.isEq("in");
         if (isIn || this.lex.isEq("of")) {
           forInOfKind = if (isIn) ForIn() else ForOf();
@@ -185,7 +162,7 @@ extension class Parser {
           e = this.expr(0);
           this.expect(TKCloseParen());
           block = this.blockOrStmt();
-          Some(ForInOf(forInOfKind, st, e, block))
+          ForInOf(forInOfKind, st, e, block)
         } else {
           this.expect(TKSemi());
           cond = this.expr(0);
@@ -193,7 +170,7 @@ extension class Parser {
           incr = this.expr(0);
           this.expect(TKCloseParen());
           block = this.blockOrStmt();
-          Some(For(st, cond, incr, block))
+          For(st, cond, incr, block)
         }
       | bk @ "let"
       | bk @ "const"
@@ -228,18 +205,11 @@ extension class Parser {
             break void
           }
         };
-        Some(Bind(bkind, bindings.toArray()))
+        Bind(bkind, bindings.toArray())
       | "try" ->
         _ = this.lex.next();
         this.expect(TKOpenCurly());
-        tryBlock = mutable Vector[];
-        loop {
-          this.stmt() match {
-          | None() -> break void
-          | Some(st) -> tryBlock.push(st)
-          }
-        };
-        this.expect(TKCloseCurly());
+        tryStmts = this.block();
 
         catchClause = if (this.lex.isEq("catch")) {
           _ = this.lex.next();
@@ -262,46 +232,32 @@ extension class Parser {
             (None(), None())
           };
           this.expect(TKOpenCurly());
-          catchBlock = mutable Vector[];
-          loop {
-            this.stmt() match {
-            | None() -> break void
-            | Some(st) -> catchBlock.push(st)
-            }
-          };
-          this.expect(TKCloseCurly());
-          Some(CatchClause(param, type, catchBlock.toArray()))
+          catchStmts = this.block();
+          Some(CatchClause(param, type, catchStmts))
         } else {
           None()
         };
 
-        finallyBlock = if (this.lex.isEq("finally")) {
+        finallyClause = if (this.lex.isEq("finally")) {
           _ = this.lex.next();
           this.expect(TKOpenCurly());
-          finallyStmts = mutable Vector[];
-          loop {
-            this.stmt() match {
-            | None() -> break void
-            | Some(st) -> finallyStmts.push(st)
-            }
-          };
-          this.expect(TKCloseCurly());
-          Some(finallyStmts.toArray())
+          finallyStmts = this.block();
+          Some(finallyStmts)
         } else {
           None()
         };
 
-        if (catchClause is None() && finallyBlock is None()) {
+        if (catchClause is None() && finallyClause is None()) {
           this.error(this.lex.posEnd(), ExpectedCatchOrFinally())
         };
 
-        Some(Try(tryBlock.toArray(), catchClause, finallyBlock))
+        Try(tryStmts, catchClause, finallyClause)
 
       | _ ->
         e = this.expr(0);
-        Some(StmtExpr(e))
+        StmtExpr(e)
       }
-    | _ -> Some(StmtExpr(this.expr(0)))
+    | _ -> StmtExpr(this.expr(0))
     }
   }
 }
