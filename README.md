@@ -1,6 +1,6 @@
 # skjs
 
-SKJS is a reactive typechecker for TypeScript that reject programs that would fail at runtime for type reasons and restricts the type system to tractable constructs (see `skjs-rules.md`).
+SKJS is a typechecker for a dialect of TypeScript that reject programs that would fail at runtime for type reasons and restricts the type system to tractable constructs (see `skjs-rules.md`).
 
 ## Building
 
