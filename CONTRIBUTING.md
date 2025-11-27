@@ -42,6 +42,15 @@
 - When discovering SKJS accepts something TypeScript rejects, fix SKJS to match TypeScript's stricter behavior
 - Use TypeScript (`npx tsc --noEmit <file>`) to verify expected behavior when in doubt
 
+**Writing effective tests**:
+
+- Always include both positive (valid code) and negative (invalid code with errors) test cases
+- Negative tests must produce actual type errors - if the "wrong" behavior still type-checks, the test is ineffective
+- Focus on type checking, never on runtime values or expected outputs
+- Avoid SKJS-unsupported features in tests (e.g., `as` casts, `any` type)
+- Use `??` to handle potentially undefined values (e.g., `arr[i] ?? 0` for array access)
+- If testing requires specific types, use function parameters instead of complex type annotations
+
 ### Running Tests
 ```bash
 skargo test                                                      # Run all tests
