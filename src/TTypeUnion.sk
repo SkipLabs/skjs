@@ -4,6 +4,19 @@
 
 module SKJS;
 
+/* Unexpanded union */
+//
+// Interpretation:
+// 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
+class TUnion private (ty1: TType, ty2: TType) extends TInst {
+  static fun create(ty1: TType, ty2: TType): TUnion {
+    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
+      internal_error(`Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`)
+    };
+    TUnion(ty1, ty2)
+  }
+}
+
 extension class TType {
   // Unexpanded union.
   static private fun unexpandedUnion(t1: TType, t2: TType): TType {
@@ -160,19 +173,6 @@ extension class STypes {
         }
       ),
     )
-  }
-}
-
-/* Unexpanded union */
-//
-// Interpretation:
-// 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
-class TUnion private (ty1: TType, ty2: TType) extends TInst {
-  static fun create(ty1: TType, ty2: TType): TUnion {
-    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      internal_error(`Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`)
-    };
-    TUnion(ty1, ty2)
   }
 }
 

@@ -4,6 +4,19 @@
 
 module SKJS;
 
+/* Unexpanded intersection */
+//
+// Interpretation:
+// 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
+class TInter private (ty1: TType, ty2: TType) extends TInst {
+  static fun create(ty1: TType, ty2: TType): TInter {
+    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
+      internal_error(`Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`)
+    };
+    TInter(ty1, ty2)
+  }
+}
+
 extension class TType {
   // Unexpanded intersection.
   static private fun unexpandedInter(t1: TType, t2: TType): TType {
@@ -195,19 +208,6 @@ extension class STypes {
     | Some(stypes) if (!stypes.isEmpty()) -> Some(STypes(stypes))
     | _ -> None()
     }
-  }
-}
-
-/* Unexpanded intersection */
-//
-// Interpretation:
-// 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
-class TInter private (ty1: TType, ty2: TType) extends TInst {
-  static fun create(ty1: TType, ty2: TType): TInter {
-    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      internal_error(`Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`)
-    };
-    TInter(ty1, ty2)
   }
 }
 
