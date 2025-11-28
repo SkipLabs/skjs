@@ -236,20 +236,17 @@ extension class Parser {
     fieldName: Symbol,
     isOptional: ?PosRange,
   ): FieldType {
+    type = if (this.lex.peekKind() is Some(TKColon())) {
+      _ = this.lex.next();
+      Some(this.type(0))
+    } else {
+      None()
+    };
     fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
       _ = this.lex.next();
       Some(this.expr(0))
     } else {
       None()
-    };
-    this.expect(TKColon());
-    fieldType = this.type(0);
-    if (this.lex.peekKind() is Some(TKAssignment())) {
-      eqTok = this.lex.next().fromSome();
-      if (fieldValue is Some _) {
-        this.error(this.lex.posStart(eqTok), UnexpectedToken())
-      };
-      !fieldValue = Some(this.expr(0));
     };
     FieldTypeValue{
       pos => PosRange::create(this.lex, fieldPosStart, this.lex.getLastPos()),
@@ -257,7 +254,7 @@ extension class Parser {
       modifiers,
       name => fieldName,
       optional => isOptional,
-      type => Some(fieldType),
+      type,
       value => fieldValue,
     }
   }
