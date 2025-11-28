@@ -250,7 +250,30 @@ extension class Parser {
       this.expect(TKGreaterThan());
       e = this.expr(asPrec);
       As(e, ty)
-    | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
+    | _ ->
+      this.error(
+        this.lex.posStart(tok),
+        ExpectedTokens(
+          Array[
+            TKOpenParen(),
+            TKOpenCurly(),
+            TKOpenSquare(),
+            TKNumber(),
+            TKBigInt(),
+            TKQuote(),
+            TKDoubleQuote(),
+            TKBackTick(),
+            TKDivision(),
+            TKVar(),
+            TKAddition(),
+            TKSubtraction(),
+            TKExclamationMark(),
+            TKTild(),
+            TKDotDotDot(),
+            TKLessThan(),
+          ],
+        ),
+      )
     };
     Expr(this.lex.posRangeFrom(tok), e_);
   }

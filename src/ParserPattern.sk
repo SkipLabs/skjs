@@ -44,7 +44,11 @@ extension class Parser {
             break void;
           }
         | TKCloseSquare() -> break void
-        | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
+        | _ ->
+          this.error(
+            this.lex.posStart(commaTok),
+            ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
+          )
         }
       };
       PArray(pats.toArray())
@@ -100,7 +104,11 @@ extension class Parser {
             break void;
           }
         | TKCloseCurly() -> break void
-        | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
+        | _ ->
+          this.error(
+            this.lex.posStart(commaTok),
+            ExpectedTokens(Array[TKCloseCurly(), TKComma()]),
+          )
         }
       };
       PObject{fields => fields.toArray().sortedBy(x ~> x.i0.value), rest}

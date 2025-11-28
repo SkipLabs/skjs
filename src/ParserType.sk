@@ -236,7 +236,25 @@ extension class Parser {
           ExpectedTokens(Array[TKNumber(), TKBigInt()]),
         )
       }
-    | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
+    | _ ->
+      this.error(
+        this.lex.posStart(tok),
+        ExpectedTokens(
+          Array[
+            TKQuote(),
+            TKDoubleQuote(),
+            TKBackTick(),
+            TKLessThan(),
+            TKOpenSquare(),
+            TKOpenParen(),
+            TKOpenCurly(),
+            TKSubtraction(),
+            TKNumber(),
+            TKBigInt(),
+            TKVar(),
+          ],
+        ),
+      )
     };
 
     loop {
@@ -374,15 +392,9 @@ extension class Parser {
         } else {
           None()
         };
-        if (this.lex.peekKind() is Some(TKColon())) {
-          _ = this.lex.next();
-          type = this.type(0);
-          result.push(
-            TAFunParam(Some(TAParamSpread(spreadName)), optional, type),
-          );
-        } else {
-          this.error(this.lex.posStart(tok), UnexpectedToken())
-        }
+        this.expect(TKColon());
+        type = this.type(0);
+        result.push(TAFunParam(Some(TAParamSpread(spreadName)), optional, type))
       | TKOpenCurly() ->
         _ = this.lex.next();
         curlyNames = mutable Vector[];
@@ -416,7 +428,11 @@ extension class Parser {
               break void
             }
           | TKCloseCurly() -> break void
-          | _ -> this.error(this.lex.posStart(commaTok), UnexpectedToken())
+          | _ ->
+            this.error(
+              this.lex.posStart(commaTok),
+              ExpectedTokens(Array[TKCloseCurly(), TKComma()]),
+            )
           }
         };
         qm = if (this.lex.peekKind() is Some(TKQuestionMark())) {

@@ -198,6 +198,11 @@ class ExpectedStr(str: String) extends ParsingKind {
     `Expected ${this.str}`
   }
 }
+class ExpectedStrings(strs: Array<String>) extends ParsingKind {
+  fun toString(): String {
+    `Expected ${this.strs.join(" or ")}`
+  }
+}
 class ExpectedVarName() extends ParsingKind {
   fun toString(): String {
     `Expected a variable name`

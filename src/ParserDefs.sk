@@ -444,7 +444,26 @@ extension class Parser {
       | Some(nextTok) ->
         this.defHelper_() match {
         | def @ Declarable _ -> Declare(def)
-        | _ -> this.error(this.lex.posStart(nextTok), UnexpectedToken())
+        | _ ->
+          this.error(
+            this.lex.posStart(nextTok),
+            ExpectedStrings(
+              Array[
+                "abstract",
+                "async",
+                "class",
+                "const",
+                "enum",
+                "function",
+                "global",
+                "interface",
+                "let",
+                "module",
+                "namespace",
+                "type",
+              ],
+            ),
+          )
         }
       }
     | "global" ->
@@ -555,7 +574,25 @@ extension class Parser {
           this.defHelper_() match {
           | Declare(def @ Exportable _) -> ExportDeclare(def)
           | def @ Exportable _ -> Export(def)
-          | _ -> this.error(this.lex.posStart(nextTok), UnexpectedToken())
+          | _ ->
+            this.error(
+              this.lex.posStart(nextTok),
+              ExpectedStrings(
+                Array[
+                  "abstract",
+                  "async",
+                  "class",
+                  "const",
+                  "declare",
+                  "enum",
+                  "function",
+                  "interface",
+                  "let",
+                  "namespace",
+                  "type",
+                ],
+              ),
+            )
           }
         }
       }
