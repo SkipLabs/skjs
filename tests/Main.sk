@@ -71,11 +71,17 @@ fun validateReferenceErrors<R: ReferenceError>(
         newLines = checker.newLinesMap.get(context, fileName);
         for (line in Range(actualLine - 1, newLines.size() - 1)) {
           if (newLines[line + 1] > newLines[line] + 1) {
-            invariant_violation(
-              `${fileName}:${actualLine} parse error must be on last non-empty line`,
-            )
+            expectationErrors.push(
+              SKTest.ExpectationError(
+                `${fileName}:${actualLine} Parse error must be on last non-empty line`,
+                "end of file",
+                `more content on line ${line + 1}`,
+              ),
+            );
+            break void
           }
-        }
+        };
+        break void
       | _ -> void
       }
     | (
