@@ -379,22 +379,16 @@ extension class Parser {
     };
     result = mutable Vector[];
     loop {
+      isRest = if (this.lex.peekKind() is Some(TKDotDotDot())) {
+        Some(this.lex.posRange(this.lex.next().fromSome()))
+      } else {
+        None()
+      };
       tok = this.lex.peek() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedType())
       | Some(x) -> x
       };
       tok.kind match {
-      | TKDotDotDot() ->
-        _ = this.lex.next();
-        spreadName = this.getName();
-        optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          Some(this.lex.posRange(this.lex.next().fromSome()))
-        } else {
-          None()
-        };
-        this.expect(TKColon());
-        type = this.type(0);
-        result.push(TAFunParam(Some(TAParamSpread(spreadName)), optional, type))
       | TKOpenCurly() ->
         _ = this.lex.next();
         curlyNames = mutable Vector[];
@@ -444,6 +438,7 @@ extension class Parser {
         type = this.type(0);
         result.push(
           TAFunParam(
+            isRest,
             Some(TACurlyNames(curlyNames.toArray(), spread)),
             qm,
             type,
@@ -463,7 +458,12 @@ extension class Parser {
             this.expect(TKColon());
             type = this.type(0);
             result.push(
-              TAFunParam(Some(TAParamName(paramName)), Some(qmPos), type),
+              TAFunParam(
+                isRest,
+                Some(TAParamName(paramName)),
+                Some(qmPos),
+                type,
+              ),
             );
           } else {
             if (!(this.lex.peekKind() is Some(TKColon()))) {
@@ -471,7 +471,9 @@ extension class Parser {
             };
             _ = this.lex.next();
             type = this.type(0);
-            result.push(TAFunParam(Some(TAParamName(paramName)), None(), type));
+            result.push(
+              TAFunParam(isRest, Some(TAParamName(paramName)), None(), type),
+            );
           }
         } else {
           this.error(this.lex.posStart(tok), MissingParameterName())

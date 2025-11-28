@@ -581,16 +581,16 @@ class TEnv{
   }
 
   private fun convertParam(param: Param): TAFunParam {
-    (paramName, ty) = param.name match {
+    (isRest, paramName, ty) = param.name match {
     | PNName(n) ->
       param.type match {
       | None() -> typingError(Array[(n.pos, "Missing type annotation")])
-      | Some(ty) -> (TAParamName(n), ty)
+      | Some(ty) -> (None(), TAParamName(n), ty)
       }
     | PNDDD(n) ->
       param.type match {
       | None() -> typingError(Array[(n.pos, "Missing type annotation")])
-      | Some(x) -> (TAParamSpread(n), x)
+      | Some(x) -> (Some(n.pos), TAParamName(n), x)
       }
     | _ ->
       typingError(
@@ -612,7 +612,7 @@ class TEnv{
     | None() -> param.optional
     | Some(defaultExpr) -> Some(defaultExpr.pos)
     };
-    TAFunParam(Some(paramName), optional, ty)
+    TAFunParam(isRest, Some(paramName), optional, ty)
   }
 
   fun funDecl(
@@ -883,16 +883,16 @@ class TEnv{
       spreadParam: ?TType = None();
       for (i => param in params) {
         paramType = this.normalize(context, param.type);
-        param.name match {
-        | Some(TAParamSpread(spreadName)) ->
+        param.isRest match {
+        | Some(restPos) ->
           if (i != params.size() - 1) {
             typingError(
-              Array[(spreadName.pos, "... must always be the last parameter")],
+              Array[(restPos, "... must always be the last parameter")],
             );
           };
           !spreadParam = Some(paramType);
           continue
-        | _ -> void
+        | None() -> void
         };
         param.optional match {
         | None() ->

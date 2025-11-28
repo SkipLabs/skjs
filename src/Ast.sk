@@ -511,6 +511,7 @@ base class TupleEltType uses XXHashable {
 /***************************************************************************/
 
 class TAFunParam(
+  isRest: ?PosRange,
   name: ?TAParamNames,
   optional: ?PosRange,
   type: Type,
@@ -519,14 +520,12 @@ class TAFunParam(
 /***************************************************************************/
 // <ta-param-names> ::=
 //   | <name>
-//   | ... <name>
 //   | { <curly-name>* } (as <name>)?
 /***************************************************************************/
 
 base class TAParamNames uses XXHashable {
   children =
   | TAParamName(Name)
-  | TAParamSpread(Name)
   | TACurlyNames(Array<CurlyName>, ?Name)
 }
 
