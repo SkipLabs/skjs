@@ -69,15 +69,9 @@ extension class Parser {
     | TKBigInt() -> TABigIntLiteral(this.getBigInt(tok))
     | TKNumber() -> TANumLiteral(this.getNumber(tok))
     | TKLessThan() ->
-      tparams = this.typeParams();
-      this.type(0) match {
-      | Type(_, TAFun(isMethod, emptyTParams, params, retType, cgNode)) ->
-        if (emptyTParams.size() != 0) {
-          internal_error("emptyTParams should be empty")
-        };
-        TAFun(isMethod, tparams, params, retType, cgNode)
-      | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
-      }
+      tParams = this.typeParams();
+      this.expect(TKOpenParen());
+      this.typeFun{tParams}
     | TKOpenSquare() ->
       if (this.lex.peekKind() is Some(TKCloseSquare())) {
         _ = this.lex.next();
@@ -152,7 +146,7 @@ extension class Parser {
       }
     | TKOpenParen() ->
       if (this.isTypeFunParams()) {
-        this.typeFun()
+        this.typeFun{tParams => Array[]}
       } else {
         res = this.type(0).value;
         this.expect(TKCloseParen());
@@ -329,13 +323,13 @@ extension class Parser {
   }
 
   // Parse closure type after (
-  mutable fun typeFun(): TAFun {
+  mutable fun typeFun{tParams: Array<TypeParam>}: TAFun {
     params = this.typeFunParams();
     this.expect(TKClosure());
     retType = this.type(0);
     TAFun(
       false,
-      Array[],
+      tParams,
       params,
       retType,
       CGNode::create(ArrowTypeAnnot(this.lex.fileName)),
