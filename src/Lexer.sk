@@ -417,13 +417,11 @@ mutable class Lexer private {
       if (!specialChars.contains(c)) {
         this.error(pos, UnknownCharacter(c));
       };
-      loop {
-        if (pos >= this.contents.size()) break void;
-        if (specialChars.contains(this.contents[pos])) {
-          !pos = pos + 1;
-          continue;
-        };
-        break void;
+      while (
+        pos < this.contents.size() &&
+        specialChars.contains(this.contents[pos])
+      ) {
+        !pos = pos + 1
       };
       loop {
         str = String::fromChars(this.contents.slice(start, pos));
