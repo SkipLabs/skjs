@@ -60,12 +60,13 @@ extension class TypeChecker {
         };
         for (i in Range(0, arrPat.size())) {
           arrPat[i] match {
-          | (_, Some(defaultExpr)) ->
+          | None() -> /* skipped element */ void
+          | Some((_, Some(defaultExpr))) ->
             notSupported(
               defaultExpr.pos,
               "Default value in array destructuring",
             )
-          | (eltPat, None()) ->
+          | Some((eltPat, None())) ->
             this.bind(tcenv, kind, eltPat, tyl[i], isInitialized, false)
           };
         }

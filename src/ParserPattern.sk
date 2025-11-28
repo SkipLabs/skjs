@@ -30,32 +30,37 @@ extension class Parser {
         _ = this.lex.next();
         return PArray(Array[])
       };
-      pats = mutable Vector[];
+      pats = mutable Vector<?(Pattern, ?Expr)>[];
       loop {
-        pat = this.pattern();
-        default = if (this.lex.peekKind() is Some(TKAssignment())) {
+        if (this.lex.peekKind() is Some(TKComma())) {
           _ = this.lex.next();
-          Some(this.expr(0))
+          pats.push(None())
         } else {
-          None()
-        };
-        pats.push((pat, default));
-        commaTok = this.lex.next() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-        | Some(x) -> x
-        };
-        commaTok.kind match {
-        | TKComma() ->
-          if (this.lex.peekKind() is Some(TKCloseSquare())) {
+          pat = this.pattern();
+          default = if (this.lex.peekKind() is Some(TKAssignment())) {
             _ = this.lex.next();
-            break void;
+            Some(this.expr(0))
+          } else {
+            None()
+          };
+          pats.push(Some((pat, default)));
+          commaTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+          | Some(x) -> x
+          };
+          commaTok.kind match {
+          | TKComma() ->
+            if (this.lex.peekKind() is Some(TKCloseSquare())) {
+              _ = this.lex.next();
+              break void;
+            }
+          | TKCloseSquare() -> break void
+          | _ ->
+            this.error(
+              this.lex.posStart(commaTok),
+              ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
+            )
           }
-        | TKCloseSquare() -> break void
-        | _ ->
-          this.error(
-            this.lex.posStart(commaTok),
-            ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
-          )
         }
       };
       PArray(pats.toArray())
