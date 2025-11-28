@@ -152,16 +152,7 @@ extension class Parser {
       }
     | TKOpenParen() ->
       if (this.isTypeFunParams()) {
-        params = this.typeFunParams();
-        this.expect(TKClosure());
-        retType = this.type(0);
-        TAFun(
-          false,
-          Array[],
-          params,
-          retType,
-          CGNode::create(ArrowTypeAnnot(this.lex.fileName)),
-        )
+        this.typeFun()
       } else {
         res = this.type(0).value;
         this.expect(TKCloseParen());
@@ -335,6 +326,20 @@ extension class Parser {
       | _ -> return left
       }
     }
+  }
+
+  // Parse closure type after (
+  mutable fun typeFun(): TAFun {
+    params = this.typeFunParams();
+    this.expect(TKClosure());
+    retType = this.type(0);
+    TAFun(
+      false,
+      Array[],
+      params,
+      retType,
+      CGNode::create(ArrowTypeAnnot(this.lex.fileName)),
+    )
   }
 
   mutable fun isTypeFunParams(): Bool {
