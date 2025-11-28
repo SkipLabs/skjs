@@ -32,7 +32,14 @@ extension class Parser {
       };
       pats = mutable Vector[];
       loop {
-        pats.push(this.pattern());
+        pat = this.pattern();
+        default = if (this.lex.peekKind() is Some(TKAssignment())) {
+          _ = this.lex.next();
+          Some(this.expr(0))
+        } else {
+          None()
+        };
+        pats.push((pat, default));
         commaTok = this.lex.next() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
         | Some(x) -> x
