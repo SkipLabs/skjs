@@ -28,13 +28,22 @@ extension class Parser {
       _ = this.lex.next();
       if (this.lex.peekKind() is Some(TKCloseSquare())) {
         _ = this.lex.next();
-        return PArray(Array[])
+        return PArray(Array[], None())
       };
       pats = mutable Vector<?(Pattern, ?Expr)>[];
+      rest: ?Name = None();
       loop {
         if (this.lex.peekKind() is Some(TKComma())) {
           _ = this.lex.next();
           pats.push(None())
+        } else if (this.lex.peekKind() is Some(TKDotDotDot())) {
+          _ = this.lex.next();
+          !rest = Some(this.getName());
+          if (this.lex.peekKind() is Some(TKComma())) {
+            _ = this.lex.next()
+          };
+          this.expect(TKCloseSquare());
+          break void
         } else {
           pat = this.pattern();
           default = if (this.lex.peekKind() is Some(TKAssignment())) {
@@ -63,7 +72,7 @@ extension class Parser {
           }
         }
       };
-      PArray(pats.toArray())
+      PArray(pats.toArray(), rest)
     | Some(TKOpenCurly()) ->
       _ = this.lex.next();
       if (this.lex.peekKind() is Some(TKCloseCurly())) {

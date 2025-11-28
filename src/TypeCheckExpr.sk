@@ -39,7 +39,12 @@ extension class TypeChecker {
         tcenv.localObjects![local.value] = LOCanGrow(None())
       };
       tcenv.scope.bind(local, type, isInitialized)
-    | PArray(arrPat) ->
+    | PArray(arrPat, rest) ->
+      rest match {
+      | Some(restName) ->
+        notSupported(restName.pos, "Rest element in array destructuring")
+      | None() -> void
+      };
       type.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
