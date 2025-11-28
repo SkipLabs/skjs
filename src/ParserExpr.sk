@@ -39,7 +39,9 @@ extension class Parser {
   mutable fun expr(prec: Int): Expr {
     inTypeCopy = this.lex.inType;
     this.lex.!inType = false;
-    res = this.expr_(prec);
+    // Parses primary expressions and then delegates to binary/postfix operator handling
+    lhs = this.parseBeginningOfExpr();
+    res = this.parseBinaryAndPostfixOps(lhs, prec);
     this.lex.!inType = inTypeCopy;
     res
   }
@@ -251,13 +253,6 @@ extension class Parser {
     | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
     };
     Expr(this.lex.posRangeFrom(tok), e_);
-  }
-
-  // Internal expression parsing implementation
-  // Parses primary expressions and then delegates to binary/postfix operator handling
-  mutable fun expr_(prec: Int): Expr {
-    lhs = this.parseBeginningOfExpr();
-    this.parseBinaryAndPostfixOps(lhs, prec)
   }
 
   // Handle binary operators with precedence climbing
