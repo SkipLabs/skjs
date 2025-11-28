@@ -21,6 +21,9 @@ extension class .String {
     | None() -> return ""
     | Some(_) -> void
     };
+    if (i.current() is Some('!')) {
+      _ = i.next() // Do not ignore last dot following a !
+    };
     _ = i.next();
     this.getIter().substring(i)
   }
