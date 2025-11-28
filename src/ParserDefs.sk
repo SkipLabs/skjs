@@ -869,14 +869,12 @@ extension class Parser {
       Array[]
     };
     extends_ = if (this.lex.isEq("extends")) {
-      _ = this.lex.next();
       extends_ = mutable Vector[];
       loop {
+        _ = this.lex.next();
         ty = this.type(0);
         extends_.push(ty);
-        if (this.lex.peekKind() is Some(TKComma())) {
-          _ = this.lex.next();
-        } else {
+        if (!(this.lex.peekKind() is Some(TKComma()))) {
           break extends_.toArray()
         }
       }
