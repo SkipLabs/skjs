@@ -1283,7 +1283,7 @@ extension class Parser {
       | _ ->
         this.error(
           this.lex.posStart(commaTok),
-          ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
+          ExpectedTokens(Array[TKCloseCurly(), TKComma()]),
         )
       }
     };
