@@ -147,7 +147,10 @@ extension class TypeChecker {
             )
           }
         };
-        type = this.tenv.normalize(context, field.type);
+        type = field.type match {
+        | None() -> typingError(Array[(field.pos, "Type annotation expected")])
+        | Some(ty) -> this.tenv.normalize(context, ty)
+        };
         field.value match {
         | None() -> void
         | Some(e) ->

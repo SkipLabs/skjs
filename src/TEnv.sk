@@ -428,10 +428,14 @@ class TEnv{
             )
           }
         };
+        fieldTy = field.type match {
+        | None() -> typingError(Array[(field.pos, "Type annotation expected")])
+        | Some(ty) -> ty
+        };
         field.name match {
         | FNNormal(fdName) ->
           fieldName = fdName.value;
-          type = this.normalize(context, field.type);
+          type = this.normalize(context, fieldTy);
           TField::create(
             field.pos,
             fieldName,
@@ -448,7 +452,7 @@ class TEnv{
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(context, indexType);
-          valueType = this.normalize(context, field.type);
+          valueType = this.normalize(context, fieldTy);
           indexes.push(
             TIndexField(indexName.pos, indexName.value, keyType, valueType),
           )
@@ -948,6 +952,10 @@ class TEnv{
             ],
           )
         };
+        fieldTy = fd.type match {
+        | None() -> typingError(Array[(fd.pos, "Type annotation expected")])
+        | Some(ty) -> ty
+        };
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
@@ -955,7 +963,7 @@ class TEnv{
           if (name.value == "constructor") {
             typingError(Array[(name.pos, `Forbidden field name: ${name}`)])
           };
-          normalizedType = this.normalize(context, fd.type);
+          normalizedType = this.normalize(context, fieldTy);
           optField = TField::create(
             name.pos,
             name.value,
@@ -985,7 +993,7 @@ class TEnv{
           optField
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(context, indexType);
-          valueType = this.normalize(context, fd.type);
+          valueType = this.normalize(context, fieldTy);
           indexes.push(
             TIndexField(indexName.pos, indexName.value, keyType, valueType),
           );

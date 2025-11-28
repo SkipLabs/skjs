@@ -426,7 +426,7 @@ class FieldTypeValue{
   setGet: ?FieldGetSet,
   name: Symbol,
   optional: ?PosRange,
-  type: Type,
+  type: ?Type,
   value: ?Expr,
 } extends FieldType
 
