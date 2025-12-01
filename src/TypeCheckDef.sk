@@ -18,6 +18,7 @@ extension class TypeChecker {
           this.checkDef(context, def)
         } catch {
         | ErrorExn(err @ TypingError _) -> errors.push(err)
+        | TypingErrors(errs) -> errors.extend(errs)
         | exn -> throw exn
         }
       }
@@ -27,12 +28,12 @@ extension class TypeChecker {
 
   fun checkDef(context: mutable SKStore.Context, def: Def): void {
     def.value match {
-    | ExportImport _ -> notSupported(def.pos)
+    | ExportImport _ -> notSupported(def.pos, "export import")
     | ImportExpr _ -> void
-    | Global _ -> notSupported(def.pos)
-    | ExportAs _ -> notSupported(def.pos)
-    | ExportEq _ -> notSupported(def.pos)
-    | Module _ -> notSupported(def.pos)
+    | Global _ -> notSupported(def.pos, "global")
+    | ExportAs _ -> notSupported(def.pos, "export as")
+    | ExportEq _ -> notSupported(def.pos, "export =")
+    | Module _ -> notSupported(def.pos, "module")
     | e @ Expr _ ->
       subst = Subst::mcreate{context};
       tcenv = TCEnv::mcreate(
@@ -52,15 +53,15 @@ extension class TypeChecker {
     | Declare _
     | ExportDeclare _ ->
       void
-    | Namespace _ -> notSupported(def.pos)
+    | Namespace _ -> notSupported(def.pos, "namespace")
     | Export(d) -> this.checkDef(context, Def(def.pos, d))
-    | ExportDefault _ -> notSupported(def.pos)
+    | ExportDefault _ -> notSupported(def.pos, "export default")
     | ExportNames _
     | ExportNamesFrom _ ->
       void
     | Import _ -> void
     | c @ Class _ -> this.class_(context, c)
-    | Enum _ -> notSupported(def.pos)
+    | Enum _ -> notSupported(def.pos, "enum")
     | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs)
     | td @ TypeDef _ -> this.typeDef(td)
     }

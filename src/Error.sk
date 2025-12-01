@@ -190,12 +190,17 @@ class ExpectedToken(tokenKind: TokenKind) extends ParsingKind {
 }
 class ExpectedTokens(kinds: Array<TokenKind>) extends ParsingKind {
   fun toString(): String {
-    `Expected token ${this.kinds.join(", or ")}`
+    `Expected token ${this.kinds.join(" or ")}`
   }
 }
 class ExpectedStr(str: String) extends ParsingKind {
   fun toString(): String {
     `Expected ${this.str}`
+  }
+}
+class ExpectedStrings(strs: Array<String>) extends ParsingKind {
+  fun toString(): String {
+    `Expected ${this.strs.join(" or ")}`
   }
 }
 class ExpectedVarName() extends ParsingKind {

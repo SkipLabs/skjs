@@ -98,7 +98,11 @@ extension class Parser {
           | "case" -> Case(this.expr(0))
           | "default" -> Default()
           | "}" -> break void
-          | _ -> this.error(this.lex.posStart(caseTok), UnexpectedToken())
+          | _ ->
+            this.error(
+              this.lex.posStart(caseTok),
+              ExpectedStrings(Array["case", "default", "}"]),
+            )
           };
           this.expect(TKColon());
           stmts = mutable Vector[];

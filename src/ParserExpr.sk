@@ -39,7 +39,9 @@ extension class Parser {
   mutable fun expr(prec: Int): Expr {
     inTypeCopy = this.lex.inType;
     this.lex.!inType = false;
-    res = this.expr_(prec);
+    // Parses primary expressions and then delegates to binary/postfix operator handling
+    lhs = this.parseBeginningOfExpr();
+    res = this.parseBinaryAndPostfixOps(lhs, prec);
     this.lex.!inType = inTypeCopy;
     res
   }
@@ -197,16 +199,26 @@ extension class Parser {
     Params(params.toArray())
   }
 
-  // Parse atomic expressions (literals, variables, unary operators)
-  // Handles: numbers, strings, variables, prefix operators
-  mutable fun parseAtomicExpr(tok: Token): Expr_ {
-    tok.kind match {
+  // Parse beginning of expressions
+  mutable fun parseBeginningOfExpr(): Expr {
+    tok = this.lex.next() match {
+    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+    | Some(x) -> x
+    };
+    e_ = tok.kind match {
+    /* groups */
+    | TKOpenParen() -> this.parseParenExpr()
+    | TKOpenCurly() -> this.parseObjectExpr()
+    | TKOpenSquare() -> this.parseArrayExpr()
+    /* literals */
     | TKNumber() -> Number(this.getNumber(tok))
     | TKBigInt() -> BigInt(this.getBigInt(tok))
     | TKQuote()
     | TKDoubleQuote() ->
       EString(this.unquoteString(tok))
     | TKBackTick() -> this.parseTemplateLiteral(tok)
+    | TKDivision() -> this.parseRegexpExpr()
+    /* names / name-prefixes */
     | TKVar() ->
       this.getVar(tok) match {
       | "function" -> this.error(this.lex.posStart(tok), FunctionInExpr())
@@ -226,36 +238,44 @@ extension class Parser {
       | "typeof" -> TypeOf(this.expr(prefixPrec))
       | str -> Var(Name(this.lex.posRange(tok), str))
       }
+    /* prefixes */
     | TKAddition() -> Unop(UOPlus(), this.expr(prefixPrec))
     | TKSubtraction() -> Unop(UOMinus(), this.expr(prefixPrec))
     | TKExclamationMark() -> Unop(UOExclamationMark(), this.expr(prefixPrec))
     | TKTild() -> Unop(UOTild(), this.expr(prefixPrec))
     | TKDotDotDot() -> Spread(this.getName())
-    | _ -> this.error(this.lex.posStart(tok), UnexpectedToken())
-    }
-  }
-
-  // Internal expression parsing implementation
-  // Parses primary expressions and then delegates to binary/postfix operator handling
-  mutable fun expr_(prec: Int): Expr {
-    tok = this.lex.next() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(x) -> x
-    };
-    left: Expr_ = tok.kind match {
-    | TKOpenParen() -> this.parseParenExpr()
-    | TKOpenCurly() -> this.parseObjectExpr()
-    | TKOpenSquare() -> this.parseArrayExpr()
-    | TKDivision() -> this.parseRegexpExpr()
+    /* old-style as */
     | TKLessThan() ->
       ty = this.type(0);
       this.expect(TKGreaterThan());
       e = this.expr(asPrec);
       As(e, ty)
-    | _ -> this.parseAtomicExpr(tok)
+    | _ ->
+      this.error(
+        this.lex.posStart(tok),
+        ExpectedTokens(
+          Array[
+            TKOpenParen(),
+            TKOpenCurly(),
+            TKOpenSquare(),
+            TKNumber(),
+            TKBigInt(),
+            TKQuote(),
+            TKDoubleQuote(),
+            TKBackTick(),
+            TKDivision(),
+            TKVar(),
+            TKAddition(),
+            TKSubtraction(),
+            TKExclamationMark(),
+            TKTild(),
+            TKDotDotDot(),
+            TKLessThan(),
+          ],
+        ),
+      )
     };
-    lhs = Expr(this.lex.posRangeFrom(tok), left);
-    this.parseBinaryAndPostfixOps(lhs, prec)
+    Expr(this.lex.posRangeFrom(tok), e_);
   }
 
   // Handle binary operators with precedence climbing

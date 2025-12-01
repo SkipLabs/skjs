@@ -717,7 +717,7 @@ extension class TypeChecker {
       optionalChaining = dotKind match {
       | NormalDot() -> false
       | OptionalDot() -> true
-      | ExclamationMarkDot() -> notSupported(pos)
+      | ExclamationMarkDot() -> notSupported(pos, "operator !.")
       };
       this.dot(tcenv, e1.pos, this.expr(tcenv, e1), fieldName, optionalChaining)
 
@@ -1001,7 +1001,7 @@ extension class TypeChecker {
         ty = this.expr(tcenv, subExpr);
         this.checkSubType(tcenv, pos, "Expected integer", ty, num);
         num
-      | POExcl() -> notSupported(pos)
+      | POExcl() -> notSupported(pos, "postfix operator !")
       }
 
     | c @ Closure(params, retTypeAstOpt, body) ->
@@ -1016,7 +1016,7 @@ extension class TypeChecker {
         retTypeAstOpt,
         body,
       )
-    | As _ -> notSupported(pos)
+    | As _ -> notSupported(pos, "operator as")
     | Async _ -> typingError(Array[(pos, "Invalid async")])
     | Await(ae) ->
       aeType = this.expr(tcenv, ae);
