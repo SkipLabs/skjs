@@ -592,17 +592,6 @@ class TEnv{
         Array[(param.pos, "TODO: support for param pattern in typeDecl")],
       )
     };
-    param.optional match {
-    | None() -> void
-    | Some(optionalPos) ->
-      !ty = Type(
-        param.pos,
-        TAUnion(
-          ty,
-          Type(optionalPos, TAInst(Name(optionalPos, "undefined"), Array[])),
-        ),
-      )
-    };
     optional = param.default match {
     | None() -> param.optional
     | Some(defaultExpr) -> Some(defaultExpr.pos)
@@ -903,7 +892,9 @@ class TEnv{
           }
         | Some(wpos) ->
           !optionalWitness = Some(wpos);
-          optionalParams.push(paramType)
+          optionalParams.push(
+            TType::unionUndefined(subst, this, paramType, wpos),
+          )
         }
       };
       tfun = TFun(

@@ -17,7 +17,6 @@ function callDefault(): void {
 }
 
 function callDefaultWithUndefined(): void {
-  // @skjs-expect-error Invalid call
   paramTypeDefault(undefined);
 }
 
