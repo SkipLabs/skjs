@@ -581,16 +581,11 @@ class TEnv{
   }
 
   private fun convertParam(param: Param): TAFunParam {
-    (isRest, paramName, ty) = param.name match {
+    (paramName, ty) = param.name match {
     | PNName(n) ->
       param.type match {
       | None() -> typingError(Array[(n.pos, "Missing type annotation")])
-      | Some(ty) -> (None(), TAParamName(n), ty)
-      }
-    | PNDDD(n) ->
-      param.type match {
-      | None() -> typingError(Array[(n.pos, "Missing type annotation")])
-      | Some(x) -> (Some(n.pos), TAParamName(n), x)
+      | Some(ty) -> (TAParamName(n), ty)
       }
     | _ ->
       typingError(
@@ -612,7 +607,7 @@ class TEnv{
     | None() -> param.optional
     | Some(defaultExpr) -> Some(defaultExpr.pos)
     };
-    TAFunParam(isRest, Some(paramName), optional, ty)
+    TAFunParam(param.isRest, Some(paramName), optional, ty)
   }
 
   fun funDecl(

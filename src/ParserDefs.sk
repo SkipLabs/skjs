@@ -909,8 +909,9 @@ extension class Parser {
           | Param(
             pos,
             modifiers,
+            /* isRest */ None(),
             PNName(pName),
-            /*optional*/ None(),
+            /* optional */ None(),
             type,
             default,
           ) ->
@@ -1162,6 +1163,11 @@ extension class Parser {
     | _ ->
       loop {
         modifiers = this.modifiers{allowRemove => false};
+        isRest = if (this.lex.peekKind() is Some(TKDotDotDot())) {
+          Some(this.lex.posRange(this.lex.next().fromSome()))
+        } else {
+          None()
+        };
         (pos, paramName) = this.withPos(this.paramNames, UnterminatedFunDef());
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           Some(this.lex.posRange(this.lex.next().fromSome()))
@@ -1181,7 +1187,15 @@ extension class Parser {
           None()
         };
         params.push(
-          Param(pos, modifiers, paramName, optional, paramType, paramValue),
+          Param(
+            pos,
+            modifiers,
+            isRest,
+            paramName,
+            optional,
+            paramType,
+            paramValue,
+          ),
         );
         nextTok = this.lex.next() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())

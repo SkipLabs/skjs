@@ -189,6 +189,7 @@ class TypeParam(
 class Param(
   pos: PosRange,
   modifiers: Modifiers,
+  isRest: ?PosRange,
   name: ParamNames,
   optional: ?PosRange,
   type: ?Type,
