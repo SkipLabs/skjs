@@ -439,7 +439,7 @@ extension class Parser {
         result.push(
           TAFunParam(
             isRest,
-            Some(TACurlyNames(curlyNames.toArray(), spread)),
+            TACurlyNames(curlyNames.toArray(), spread),
             qm,
             type,
           ),
@@ -458,12 +458,7 @@ extension class Parser {
             this.expect(TKColon());
             type = this.type(0);
             result.push(
-              TAFunParam(
-                isRest,
-                Some(TAParamName(paramName)),
-                Some(qmPos),
-                type,
-              ),
+              TAFunParam(isRest, TAParamName(paramName), Some(qmPos), type),
             );
           } else {
             if (!(this.lex.peekKind() is Some(TKColon()))) {
@@ -472,7 +467,7 @@ extension class Parser {
             _ = this.lex.next();
             type = this.type(0);
             result.push(
-              TAFunParam(isRest, Some(TAParamName(paramName)), None(), type),
+              TAFunParam(isRest, TAParamName(paramName), None(), type),
             );
           }
         } else {

@@ -515,7 +515,7 @@ base class TupleEltType uses XXHashable {
 
 class TAFunParam(
   isRest: ?PosRange,
-  name: ?TAParamNames,
+  name: TAParamNames,
   optional: ?PosRange,
   type: Type,
 ) uses XXHashable

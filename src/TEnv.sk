@@ -607,7 +607,7 @@ class TEnv{
     | None() -> param.optional
     | Some(defaultExpr) -> Some(defaultExpr.pos)
     };
-    TAFunParam(param.isRest, Some(paramName), optional, ty)
+    TAFunParam(param.isRest, paramName, optional, ty)
   }
 
   fun funDecl(
