@@ -176,8 +176,7 @@ extension class TypeChecker {
         }
       }
     };
-    if (c.kind is CKInterface() || c.kind is CKAbstract()) return void;
-    if (!hasConstructor) {
+    if (c.kind is CKClass() && !hasConstructor) {
       for (fieldType in c.fields) {
         fieldType match {
         | field @ FieldTypeValue _ ->
