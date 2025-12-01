@@ -1,28 +1,28 @@
-// Test that multiple errors per class are now reported
+// Test multiple type errors within a single class
 
 class MultipleErrors {
-  // Error 1: Type mismatch in field
+  // Type mismatch in field
   // @ts-expect-error Invalid assignment
   field1: number = "hello";
 
-  // Error 2: Type mismatch in another field
+  // Type mismatch in another field
   // @ts-expect-error Invalid assignment
   field2: string = 42;
 
-  // Error 3: Type mismatch in method
+  // Type mismatch in method return
   method(): number {
     // @ts-expect-error Invalid return type
     return "not a number";
   }
 
-  // Error 4: Another type mismatch in different method
+  // Type mismatch in another method return
   method2(): string {
     // @ts-expect-error Invalid return type
     return 123;
   }
 }
 
-// Test that errors in different classes are also reported
+// Test multiple errors across different classes
 class AnotherClassWithErrors {
   // @ts-expect-error Invalid assignment
   x: boolean = 5;
