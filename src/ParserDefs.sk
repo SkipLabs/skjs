@@ -625,16 +625,16 @@ extension class Parser {
     | "abstract" ->
       _ = this.lex.next();
       this.expectStr("class");
-      this.class_(tok.posStart.value, CKAbstract())
+      this.class_(CKAbstract())
     | "enum" ->
       _ = this.lex.next();
       this.enum(None())
     | "interface" ->
       _ = this.lex.next();
-      this.class_(tok.posStart.value, CKInterface())
+      this.class_(CKInterface())
     | "class" ->
       _ = this.lex.next();
-      this.class_(tok.posStart.value, CKClass())
+      this.class_(CKClass())
     | "let" ->
       _ = this.lex.next();
       this.varDef(VDKLet())
@@ -850,7 +850,7 @@ extension class Parser {
   }
 
   // Parse class definitions
-  mutable fun class_(_pos: Int, kind: ClassKind): Class {
+  mutable fun class_(kind: ClassKind): Class {
     name = this.getName();
     // Record the class definition and set context
     classSymbol = SPClass(name.value);
