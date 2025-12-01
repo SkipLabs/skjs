@@ -103,8 +103,11 @@ class Pattern(pos: PosRange, value: Pattern_) uses XXHashable
 
 base class Pattern_ uses XXHashable {
   children =
-  | PVar(Name)
-  | PArray(Array</* None means a skipped element */ ?(Pattern, ?Expr)>, ?Name)
+  | PVar(name: Name)
+  | PArray(
+    elements: Array</* None means a skipped element */ ?(Pattern, ?Expr)>,
+    rest: ?Name,
+  )
   | PObject{fields: Array<(Name, Pattern, ?Expr)>, rest: ?Name}
 }
 
