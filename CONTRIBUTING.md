@@ -24,6 +24,7 @@
 - Use `// @skjs-expect-error <exact error message>` for SKJS-specific errors
 - Run tests first to see actual error messages, then add the annotations with exact wording
 - **SKJS reports only one type error per definition** - If a function has multiple issues, only the first error is reported
+- For expected errors that aren't reported due to an earlier error, use plain `// TODO:` comments (not `@ts-expect-error`)
 
 **Parse error constraints**:
 - Parse errors must appear on the last non-empty line of the file
@@ -36,11 +37,17 @@
 **Keep tests minimal**:
 - One test case per context is sufficient - no need for many variations of the same test
 - Don't test the same thing multiple times with different values
+- Avoid redundant test cases (e.g., `field1`, `field2`, `field3` that all do exactly the same thing)
 
 **Matching TypeScript behavior**:
 - SKJS should not be more permissive than TypeScript
 - When discovering SKJS accepts something TypeScript rejects, fix SKJS to match TypeScript's stricter behavior
 - Use TypeScript (`npx tsc --noEmit <file>`) to verify expected behavior when in doubt
+
+**SKJS-specific type system differences**:
+- In SKJS, tuples are not compatible with arrays - the `[...]` syntax is for tuples only, both in types and values
+- Tuple types like `[number, string]` are distinct from array types
+- SKJS requires explicit type annotations on class and object type fields (stricter than TypeScript's implicit `any`)
 
 **Writing effective tests**:
 
@@ -87,3 +94,5 @@ skargo test                                                      # Run all tests
 5. **Don't add expect-error comments before running tests** - See the actual error message first, then annotate
 6. **Don't put code after parse errors** - Parse errors must be on the last non-empty line
 7. **Don't write comments about changes** - Comments should describe the current state (e.g., "Test multiple errors per class") not changes (e.g., "Test that multiple errors per class are now reported")
+8. **Don't remove tests to fix test failures** - Fix the annotations or test logic properly instead of deleting the failing test case
+9. **Don't use `@ts-expect-error` in TODO comments** - Use plain `// TODO:` for errors that won't be reported due to an earlier error in the function
