@@ -56,7 +56,7 @@ function testStringIndexingTypeCompatibility(): void {
 
   // Should be able to use in conditionals
   if (maybeChar !== undefined) {
-    console.log(maybeChar); // Now it's narrowed to string
+    console.log(maybeChar); // Type narrowed to string
   }
 }
 
