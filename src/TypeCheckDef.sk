@@ -18,6 +18,7 @@ extension class TypeChecker {
           this.checkDef(context, def)
         } catch {
         | ErrorExn(err @ TypingError _) -> errors.push(err)
+        | TypingErrors(errs) -> errors.extend(errs)
         | exn -> throw exn
         }
       }

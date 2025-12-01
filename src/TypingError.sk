@@ -33,4 +33,41 @@ fun notSupported<T>(pos: PosRange, what: String = ""): T {
   typingError(Array[(pos, message)])
 }
 
+class TypingErrors(errors: Array<TypingError>) extends .Exception
+
+mutable class TypingErrorCollection(
+  keepGoing: Bool,
+  private typingErrors: mutable Vector<TypingError> = mutable Vector[],
+) {
+  mutable fun push(messages: Array<(PosRange, String)>): void {
+    if (this.keepGoing) {
+      this.typingErrors.push(TypingError(messages))
+    } else {
+      typingError(messages)
+    }
+  }
+
+  mutable fun collect(f: () -> void): void {
+    if (this.keepGoing) {
+      try {
+        f()
+      } catch {
+      | ErrorExn(err @ TypingError _) -> this.typingErrors.push(err)
+      | TypingErrors(errs) -> this.typingErrors.extend(errs)
+      | exn -> throw exn
+      }
+    } else {
+      f()
+    }
+  }
+
+  mutable fun emit(): void {
+    if (!this.typingErrors.isEmpty()) {
+      exn = TypingErrors(this.typingErrors.toArray());
+      this.typingErrors.clear();
+      throw exn
+    }
+  }
+}
+
 module end;
