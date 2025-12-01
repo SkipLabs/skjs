@@ -82,8 +82,8 @@ extension class TypeChecker {
         );
         tcenv.!scope = savedScope
       };
-      paramName = param.name match {
-      | PNName(n) -> n
+      paramName = param.name.value match {
+      | PVar(n) -> n
       | _ ->
         typingError(
           Array[

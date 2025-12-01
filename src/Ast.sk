@@ -193,26 +193,11 @@ class Param(
   pos: PosRange,
   modifiers: Modifiers,
   isRest: ?PosRange,
-  name: ParamNames,
+  name: Pattern,
   optional: ?PosRange,
   type: ?Type,
   default: ?Expr,
 ) uses XXHashable
-
-/***************************************************************************/
-// <param-names> ::=
-//   | ... <name>
-//   | <name>
-//   | [ <param-names>* ]
-//   | { <param-names>* }
-/***************************************************************************/
-
-base class ParamNames uses XXHashable {
-  children =
-  | PNName(name: Name)
-  | PNSquare(Array<ParamNames>)
-  | PNCurly(Array<ParamNames>)
-}
 
 /***************************************************************************/
 // <stmt_> ::=
@@ -515,28 +500,10 @@ base class TupleEltType uses XXHashable {
 
 class TAFunParam(
   isRest: ?PosRange,
-  name: TAParamNames,
+  name: Pattern,
   optional: ?PosRange,
   type: Type,
 ) uses XXHashable
-
-/***************************************************************************/
-// <ta-param-names> ::=
-//   | <name>
-//   | { <curly-name>* } (as <name>)?
-/***************************************************************************/
-
-base class TAParamNames uses XXHashable {
-  children =
-  | TAParamName(Name)
-  | TACurlyNames(Array<CurlyName>, ?Name)
-}
-
-/***************************************************************************/
-// <curly-name> ::= <name> (: <type>)?
-/***************************************************************************/
-
-class CurlyName(name: Name, type: ?Type) uses XXHashable
 
 /***************************************************************************/
 // Modifiers

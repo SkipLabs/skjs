@@ -907,10 +907,10 @@ extension class Parser {
         !fd.params = fd.params.map(param -> {
           param match {
           | Param(
-            pos,
+            _pos,
             modifiers,
             /* isRest */ None(),
-            PNName(pName),
+            Pattern(pos, PVar(pName)),
             /* optional */ None(),
             type,
             default,
@@ -1168,7 +1168,7 @@ extension class Parser {
         } else {
           None()
         };
-        (pos, paramName) = this.withPos(this.paramNames, UnterminatedFunDef());
+        paramName = this.pattern();
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           Some(this.lex.posRange(this.lex.next().fromSome()))
         } else {
@@ -1188,7 +1188,7 @@ extension class Parser {
         };
         params.push(
           Param(
-            pos,
+            paramName.pos,
             modifiers,
             isRest,
             paramName,
@@ -1257,78 +1257,6 @@ extension class Parser {
       body,
       cgNode,
     }
-  }
-
-  /***************************************************************************/
-  // Parameter name parsing
-  /***************************************************************************/
-
-  // Parse parameter names in function definitions
-  mutable fun paramNames(): ParamNames {
-    if (this.lex.peekKind() is Some(TKOpenSquare())) {
-      _ = this.lex.next();
-      PNSquare(this.squareParamNames());
-    } else if (this.lex.peekKind() is Some(TKOpenCurly())) {
-      _ = this.lex.next();
-      PNCurly(this.curlyParamNames())
-    } else {
-      name = this.getName();
-      PNName(name)
-    }
-  }
-
-  // Parse square-bracketed parameter names
-  mutable fun squareParamNames(): Array<ParamNames> {
-    if (this.lex.peekKind() is Some(TKCloseSquare())) return Array[];
-    names = mutable Vector[];
-    loop {
-      names.push(this.paramNames());
-      commaTok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-      | Some(x) -> x
-      };
-      commaTok.kind match {
-      | TKComma() ->
-        if (this.lex.peekKind() is Some(TKCloseSquare())) {
-          _ = this.lex.next();
-          break void;
-        }
-      | TKCloseSquare() -> break void
-      | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
-        )
-      }
-    };
-    names.toArray()
-  }
-
-  // Parse curly-bracketed parameter names
-  mutable fun curlyParamNames(): Array<ParamNames> {
-    if (this.lex.peekKind() is Some(TKCloseCurly())) return Array[];
-    names = mutable Vector[];
-    loop {
-      names.push(this.paramNames());
-      commaTok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-      | Some(x) -> x
-      };
-      commaTok.kind match {
-      | TKComma() ->
-        if (this.lex.peekKind() is Some(TKCloseCurly())) {
-          _ = this.lex.next();
-          break void;
-        }
-      | TKCloseCurly() -> break void
-      | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokens(Array[TKCloseCurly(), TKComma()]),
-        )
-      }
-    };
-    names.toArray()
   }
 }
 
