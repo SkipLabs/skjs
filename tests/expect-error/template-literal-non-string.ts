@@ -10,12 +10,12 @@ function getObj(): { foo: string } {
 // @skjs-expect-error Template literal expressions must be string, number, bigint, boolean, null, or undefined
 const invalidObjectTemplate: string = `Object: ${getObj()}`;
 
-// Valid templates - should work with complex expressions now!
+// Valid templates with various expression types
 const validStringTemplate: string = `Hello ${name}, you are great!`;
 const validNumberTemplate: string = `Age: ${age}`;
 const validBooleanTemplate: string = `Active: ${active}`;
 
-// Complex expressions that should now work
+// Complex expressions in templates
 const complexTemplate: string = `Name: ${name.toUpperCase()}, Age in 5 years: ${age + 5}`;
 const conditionalTemplate: string = `Status: ${age >= 18 ? "Adult" : "Minor"}`;
 
