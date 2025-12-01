@@ -1271,9 +1271,6 @@ extension class Parser {
     } else if (this.lex.peekKind() is Some(TKOpenCurly())) {
       _ = this.lex.next();
       PNCurly(this.curlyParamNames())
-    } else if (this.lex.peekKind() is Some(TKDotDotDot())) {
-      _ = this.lex.next();
-      PNDDD(this.getName())
     } else {
       name = this.getName();
       PNName(name)

@@ -206,7 +206,6 @@ class Param(
 
 base class ParamNames uses XXHashable {
   children =
-  | PNDDD(name: Name)
   | PNName(name: Name)
   | PNSquare(Array<ParamNames>)
   | PNCurly(Array<ParamNames>)
