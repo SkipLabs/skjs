@@ -17,6 +17,25 @@ extension class TypeChecker {
     };
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
+      param.isRest match {
+      | Some(restPos) ->
+        param.optional match {
+        | None() -> void
+        | Some(optionalPos) ->
+          typingError(Array[(optionalPos, "... cannot be optional")])
+        };
+        param.default match {
+        | None() -> void
+        | Some(defaultExpr) ->
+          typingError(
+            Array[(defaultExpr.pos, "... cannot have a default value")],
+          )
+        };
+        if (i != fd.params.size() - 1) {
+          typingError(Array[(restPos, "... must be the last parameter")])
+        }
+      | None() -> void
+      };
       for (modifier in param.modifiers.modifiers) {
         typingError(
           Array[(modifier.pos, `Forbidden modifier for a function parameter`)],
@@ -63,25 +82,8 @@ extension class TypeChecker {
         );
         tcenv.!scope = savedScope
       };
-      paramName = param.name match {
-      | PNName(n) -> n
-      | PNDDD(name) ->
-        param.optional match {
-        | None() -> void
-        | Some(optionalPos) ->
-          typingError(Array[(optionalPos, "... cannot be optional")])
-        };
-        param.default match {
-        | None() -> void
-        | Some(defaultExpr) ->
-          typingError(
-            Array[(defaultExpr.pos, "... cannot have a default value")],
-          )
-        };
-        if (i != fd.params.size() - 1) {
-          typingError(Array[(name.pos, "... should be the last parameter")])
-        };
-        name
+      paramName = param.name.value match {
+      | PVar(n) -> n
       | _ ->
         typingError(
           Array[

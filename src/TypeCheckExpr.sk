@@ -39,7 +39,12 @@ extension class TypeChecker {
         tcenv.localObjects![local.value] = LOCanGrow(None())
       };
       tcenv.scope.bind(local, type, isInitialized)
-    | PArray(arrPat) ->
+    | PArray(arrPat, rest) ->
+      rest match {
+      | Some(restName) ->
+        notSupported(restName.pos, "Rest element in array destructuring")
+      | None() -> void
+      };
       type.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
@@ -59,7 +64,16 @@ extension class TypeChecker {
           )
         };
         for (i in Range(0, arrPat.size())) {
-          this.bind(tcenv, kind, arrPat[i], tyl[i], isInitialized, false)
+          arrPat[i] match {
+          | None() -> /* skipped element */ void
+          | Some((_, Some(defaultExpr))) ->
+            notSupported(
+              defaultExpr.pos,
+              "Default value in array destructuring",
+            )
+          | Some((eltPat, None())) ->
+            this.bind(tcenv, kind, eltPat, tyl[i], isInitialized, false)
+          };
         }
       | _ ->
         typingError(

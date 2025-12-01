@@ -17,7 +17,6 @@ function callDefault(): void {
 }
 
 function callDefaultWithUndefined(): void {
-  // @skjs-expect-error Invalid call
   paramTypeDefault(undefined);
 }
 
@@ -57,15 +56,15 @@ function restNoType(..._rest): void {}
 // Disabling prettier because it fixes some issues
 
 // prettier-ignore
-// @ts-expect-error Missing type annotation
+// @ts-expect-error ... cannot have a default value
 function restNoTypeDefault(..._rest = new Array()): void {}
 
 // prettier-ignore
-// @ts-expect-error Missing type annotation
+// @ts-expect-error ... cannot be optional
 function restNoTypeOptional(..._rest?): void {}
 
 // prettier-ignore
-// @ts-expect-error Missing type annotation
+// @ts-expect-error ... cannot be optional
 function restNoTypeDefaultOptional(..._rest? = new Array()): void {}
 
 // prettier-ignore
@@ -77,11 +76,11 @@ function restTypeDefault(..._rest: number[] = new Array()): void {}
 function restTypeOptional(..._rest?: number[]): void {}
 
 // prettier-ignore
-// @ts-expect-error A parameter cannot both be optional and have a default value
+// @ts-expect-error ... cannot be optional
 function restTypeDefaultOptional(..._rest?: number[] = new Array()): void {}
 
 // TODO: wrong type
 function restNotArray(..._rest: number): void {}
 
-// @ts-expect-error ... should be the last parameter
+// @ts-expect-error ... must be the last parameter
 function restNotLast(..._rest: number[], _other): void {}

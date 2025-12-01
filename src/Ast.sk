@@ -95,7 +95,7 @@ class VarDef(pat: Pattern, type: ?Type, value: ?Expr) uses XXHashable
 /***************************************************************************/
 // <pattern> ::=
 //   | <name>
-//   | <pattern> ::= [ <pattern>* ]
+//   | <pattern> ::= [ (<pattern> (= <expr>)?)*, (...<name>)? ]
 //   | <pattern> ::= { (<name> : <pattern> (= <expr>)?)*, (...<name>)? }
 /***************************************************************************/
 
@@ -103,8 +103,11 @@ class Pattern(pos: PosRange, value: Pattern_) uses XXHashable
 
 base class Pattern_ uses XXHashable {
   children =
-  | PVar(Name)
-  | PArray(Array<Pattern>)
+  | PVar(name: Name)
+  | PArray(
+    elements: Array</* None means a skipped element */ ?(Pattern, ?Expr)>,
+    rest: ?Name,
+  )
   | PObject{fields: Array<(Name, Pattern, ?Expr)>, rest: ?Name}
 }
 
@@ -189,27 +192,12 @@ class TypeParam(
 class Param(
   pos: PosRange,
   modifiers: Modifiers,
-  name: ParamNames,
+  isRest: ?PosRange,
+  name: Pattern,
   optional: ?PosRange,
   type: ?Type,
   default: ?Expr,
 ) uses XXHashable
-
-/***************************************************************************/
-// <param-names> ::=
-//   | ... <name>
-//   | <name>
-//   | [ <param-names>* ]
-//   | { <param-names>* }
-/***************************************************************************/
-
-base class ParamNames uses XXHashable {
-  children =
-  | PNDDD(name: Name)
-  | PNName(name: Name)
-  | PNSquare(Array<ParamNames>)
-  | PNCurly(Array<ParamNames>)
-}
 
 /***************************************************************************/
 // <stmt_> ::=
@@ -426,7 +414,7 @@ class FieldTypeValue{
   setGet: ?FieldGetSet,
   name: Symbol,
   optional: ?PosRange,
-  type: Type,
+  type: ?Type,
   value: ?Expr,
 } extends FieldType
 
@@ -511,30 +499,11 @@ base class TupleEltType uses XXHashable {
 /***************************************************************************/
 
 class TAFunParam(
-  name: ?TAParamNames,
+  isRest: ?PosRange,
+  name: Pattern,
   optional: ?PosRange,
   type: Type,
 ) uses XXHashable
-
-/***************************************************************************/
-// <ta-param-names> ::=
-//   | <name>
-//   | ... <name>
-//   | { <curly-name>* } (as <name>)?
-/***************************************************************************/
-
-base class TAParamNames uses XXHashable {
-  children =
-  | TAParamName(Name)
-  | TAParamSpread(Name)
-  | TACurlyNames(Array<CurlyName>, ?Name)
-}
-
-/***************************************************************************/
-// <curly-name> ::= <name> (: <type>)?
-/***************************************************************************/
-
-class CurlyName(name: Name, type: ?Type) uses XXHashable
 
 /***************************************************************************/
 // Modifiers

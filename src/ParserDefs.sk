@@ -236,20 +236,17 @@ extension class Parser {
     fieldName: Symbol,
     isOptional: ?PosRange,
   ): FieldType {
+    type = if (this.lex.peekKind() is Some(TKColon())) {
+      _ = this.lex.next();
+      Some(this.type(0))
+    } else {
+      None()
+    };
     fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
       _ = this.lex.next();
       Some(this.expr(0))
     } else {
       None()
-    };
-    this.expect(TKColon());
-    fieldType = this.type(0);
-    if (this.lex.peekKind() is Some(TKAssignment())) {
-      eqTok = this.lex.next().fromSome();
-      if (fieldValue is Some _) {
-        this.error(this.lex.posStart(eqTok), UnexpectedToken())
-      };
-      !fieldValue = Some(this.expr(0));
     };
     FieldTypeValue{
       pos => PosRange::create(this.lex, fieldPosStart, this.lex.getLastPos()),
@@ -257,7 +254,7 @@ extension class Parser {
       modifiers,
       name => fieldName,
       optional => isOptional,
-      type => fieldType,
+      type,
       value => fieldValue,
     }
   }
@@ -628,16 +625,16 @@ extension class Parser {
     | "abstract" ->
       _ = this.lex.next();
       this.expectStr("class");
-      this.class_(tok.posStart.value, CKAbstract())
+      this.class_(CKAbstract())
     | "enum" ->
       _ = this.lex.next();
       this.enum(None())
     | "interface" ->
       _ = this.lex.next();
-      this.class_(tok.posStart.value, CKInterface())
+      this.class_(CKInterface())
     | "class" ->
       _ = this.lex.next();
-      this.class_(tok.posStart.value, CKClass())
+      this.class_(CKClass())
     | "let" ->
       _ = this.lex.next();
       this.varDef(VDKLet())
@@ -853,7 +850,7 @@ extension class Parser {
   }
 
   // Parse class definitions
-  mutable fun class_(_pos: Int, kind: ClassKind): Class {
+  mutable fun class_(kind: ClassKind): Class {
     name = this.getName();
     // Record the class definition and set context
     classSymbol = SPClass(name.value);
@@ -869,14 +866,12 @@ extension class Parser {
       Array[]
     };
     extends_ = if (this.lex.isEq("extends")) {
-      _ = this.lex.next();
       extends_ = mutable Vector[];
       loop {
+        _ = this.lex.next();
         ty = this.type(0);
         extends_.push(ty);
-        if (this.lex.peekKind() is Some(TKComma())) {
-          _ = this.lex.next();
-        } else {
+        if (!(this.lex.peekKind() is Some(TKComma()))) {
           break extends_.toArray()
         }
       }
@@ -884,14 +879,12 @@ extension class Parser {
       Array[]
     };
     implements = if (this.lex.isEq("implements")) {
-      _ = this.lex.next();
       implements = mutable Vector[];
       loop {
+        _ = this.lex.next();
         ty = this.type(0);
         implements.push(ty);
-        if (this.lex.peekKind() is Some(TKComma())) {
-          _ = this.lex.next();
-        } else {
+        if (!(this.lex.peekKind() is Some(TKComma()))) {
           break implements.toArray()
         }
       }
@@ -914,11 +907,12 @@ extension class Parser {
         !fd.params = fd.params.map(param -> {
           param match {
           | Param(
-            pos,
+            _pos,
             modifiers,
-            PNName(pName),
-            /*optional*/ None(),
-            Some(type),
+            /* isRest */ None(),
+            Pattern(pos, PVar(pName)),
+            /* optional */ None(),
+            type,
             default,
           ) ->
             isParameterProperty = false;
@@ -1169,7 +1163,12 @@ extension class Parser {
     | _ ->
       loop {
         modifiers = this.modifiers{allowRemove => false};
-        (pos, paramName) = this.withPos(this.paramNames, UnterminatedFunDef());
+        isRest = if (this.lex.peekKind() is Some(TKDotDotDot())) {
+          Some(this.lex.posRange(this.lex.next().fromSome()))
+        } else {
+          None()
+        };
+        paramName = this.pattern();
         optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           Some(this.lex.posRange(this.lex.next().fromSome()))
         } else {
@@ -1188,7 +1187,15 @@ extension class Parser {
           None()
         };
         params.push(
-          Param(pos, modifiers, paramName, optional, paramType, paramValue),
+          Param(
+            paramName.pos,
+            modifiers,
+            isRest,
+            paramName,
+            optional,
+            paramType,
+            paramValue,
+          ),
         );
         nextTok = this.lex.next() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedFunDef())
@@ -1250,81 +1257,6 @@ extension class Parser {
       body,
       cgNode,
     }
-  }
-
-  /***************************************************************************/
-  // Parameter name parsing
-  /***************************************************************************/
-
-  // Parse parameter names in function definitions
-  mutable fun paramNames(): ParamNames {
-    if (this.lex.peekKind() is Some(TKOpenSquare())) {
-      _ = this.lex.next();
-      PNSquare(this.squareParamNames());
-    } else if (this.lex.peekKind() is Some(TKOpenCurly())) {
-      _ = this.lex.next();
-      PNCurly(this.curlyParamNames())
-    } else if (this.lex.peekKind() is Some(TKDotDotDot())) {
-      _ = this.lex.next();
-      PNDDD(this.getName())
-    } else {
-      name = this.getName();
-      PNName(name)
-    }
-  }
-
-  // Parse square-bracketed parameter names
-  mutable fun squareParamNames(): Array<ParamNames> {
-    if (this.lex.peekKind() is Some(TKCloseSquare())) return Array[];
-    names = mutable Vector[];
-    loop {
-      names.push(this.paramNames());
-      commaTok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-      | Some(x) -> x
-      };
-      commaTok.kind match {
-      | TKComma() ->
-        if (this.lex.peekKind() is Some(TKCloseSquare())) {
-          _ = this.lex.next();
-          break void;
-        }
-      | TKCloseSquare() -> break void
-      | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
-        )
-      }
-    };
-    names.toArray()
-  }
-
-  // Parse curly-bracketed parameter names
-  mutable fun curlyParamNames(): Array<ParamNames> {
-    if (this.lex.peekKind() is Some(TKCloseCurly())) return Array[];
-    names = mutable Vector[];
-    loop {
-      names.push(this.paramNames());
-      commaTok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-      | Some(x) -> x
-      };
-      commaTok.kind match {
-      | TKComma() ->
-        if (this.lex.peekKind() is Some(TKCloseCurly())) {
-          _ = this.lex.next();
-          break void;
-        }
-      | TKCloseCurly() -> break void
-      | _ ->
-        this.error(
-          this.lex.posStart(commaTok),
-          ExpectedTokens(Array[TKCloseCurly(), TKComma()]),
-        )
-      }
-    };
-    names.toArray()
   }
 }
 

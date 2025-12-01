@@ -379,104 +379,20 @@ extension class Parser {
     };
     result = mutable Vector[];
     loop {
-      tok = this.lex.peek() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-      | Some(x) -> x
+      isRest = if (this.lex.peekKind() is Some(TKDotDotDot())) {
+        Some(this.lex.posRange(this.lex.next().fromSome()))
+      } else {
+        None()
       };
-      tok.kind match {
-      | TKDotDotDot() ->
-        _ = this.lex.next();
-        spreadName = this.getName();
-        optional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          Some(this.lex.posRange(this.lex.next().fromSome()))
-        } else {
-          None()
-        };
-        this.expect(TKColon());
-        type = this.type(0);
-        result.push(TAFunParam(Some(TAParamSpread(spreadName)), optional, type))
-      | TKOpenCurly() ->
-        _ = this.lex.next();
-        curlyNames = mutable Vector[];
-        spread: ?Name = None();
-        loop {
-          if (this.lex.peekKind() is Some(TKDotDotDot())) {
-            _ = this.lex.next();
-            !spread = Some(this.getName());
-            if (this.lex.peekKind() is Some(TKComma())) {
-              _ = this.lex.next();
-            };
-            this.expect(TKCloseCurly());
-            break void;
-          };
-          name = this.getName();
-          if (this.lex.peekKind() is Some(TKColon())) {
-            _ = this.lex.next();
-            type = this.type(0);
-            curlyNames.push(CurlyName(name, Some(type)))
-          } else {
-            curlyNames.push(CurlyName(name, None()))
-          };
-          commaTok = this.lex.next() match {
-          | None() -> this.error(this.lex.posEnd(), UnterminatedType())
-          | Some(x) -> x
-          };
-          commaTok.kind match {
-          | TKComma() ->
-            if (this.lex.peekKind() is Some(TKCloseCurly())) {
-              _ = this.lex.next();
-              break void
-            }
-          | TKCloseCurly() -> break void
-          | _ ->
-            this.error(
-              this.lex.posStart(commaTok),
-              ExpectedTokens(Array[TKCloseCurly(), TKComma()]),
-            )
-          }
-        };
-        qm = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-          Some(this.lex.posRange(this.lex.next().fromSome()))
-        } else {
-          None()
-        };
-        this.expect(TKColon());
-        type = this.type(0);
-        result.push(
-          TAFunParam(
-            Some(TACurlyNames(curlyNames.toArray(), spread)),
-            qm,
-            type,
-          ),
-        )
-      | _ ->
-        if (
-          this.lex.lookAhead(() -> {
-            _ = this.lex.next();
-            this.lex.peekKind() is Some(TKQuestionMark()) ||
-              this.lex.peekKind() is Some(TKColon())
-          })
-        ) {
-          paramName = this.getName();
-          if (this.lex.peekKind() is Some(TKQuestionMark())) {
-            qmPos = this.lex.posRange(this.lex.next().fromSome());
-            this.expect(TKColon());
-            type = this.type(0);
-            result.push(
-              TAFunParam(Some(TAParamName(paramName)), Some(qmPos), type),
-            );
-          } else {
-            if (!(this.lex.peekKind() is Some(TKColon()))) {
-              internal_error("expected TKColon")
-            };
-            _ = this.lex.next();
-            type = this.type(0);
-            result.push(TAFunParam(Some(TAParamName(paramName)), None(), type));
-          }
-        } else {
-          this.error(this.lex.posStart(tok), MissingParameterName())
-        }
+      name = this.pattern();
+      qm = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+        Some(this.lex.posRange(this.lex.next().fromSome()))
+      } else {
+        None()
       };
+      this.expect(TKColon());
+      type = this.type(0);
+      result.push(TAFunParam(isRest, name, qm, type));
       tokComma = this.lex.next() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedType())
       | Some(x) -> x

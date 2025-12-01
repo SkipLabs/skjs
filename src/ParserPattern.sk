@@ -28,30 +28,51 @@ extension class Parser {
       _ = this.lex.next();
       if (this.lex.peekKind() is Some(TKCloseSquare())) {
         _ = this.lex.next();
-        return PArray(Array[])
+        return PArray(Array[], None())
       };
-      pats = mutable Vector[];
+      pats = mutable Vector<?(Pattern, ?Expr)>[];
+      rest: ?Name = None();
       loop {
-        pats.push(this.pattern());
-        commaTok = this.lex.next() match {
-        | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
-        | Some(x) -> x
-        };
-        commaTok.kind match {
-        | TKComma() ->
-          if (this.lex.peekKind() is Some(TKCloseSquare())) {
+        if (this.lex.peekKind() is Some(TKComma())) {
+          _ = this.lex.next();
+          pats.push(None())
+        } else if (this.lex.peekKind() is Some(TKDotDotDot())) {
+          _ = this.lex.next();
+          !rest = Some(this.getName());
+          if (this.lex.peekKind() is Some(TKComma())) {
+            _ = this.lex.next()
+          };
+          this.expect(TKCloseSquare());
+          break void
+        } else {
+          pat = this.pattern();
+          default = if (this.lex.peekKind() is Some(TKAssignment())) {
             _ = this.lex.next();
-            break void;
+            Some(this.expr(0))
+          } else {
+            None()
+          };
+          pats.push(Some((pat, default)));
+          commaTok = this.lex.next() match {
+          | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
+          | Some(x) -> x
+          };
+          commaTok.kind match {
+          | TKComma() ->
+            if (this.lex.peekKind() is Some(TKCloseSquare())) {
+              _ = this.lex.next();
+              break void;
+            }
+          | TKCloseSquare() -> break void
+          | _ ->
+            this.error(
+              this.lex.posStart(commaTok),
+              ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
+            )
           }
-        | TKCloseSquare() -> break void
-        | _ ->
-          this.error(
-            this.lex.posStart(commaTok),
-            ExpectedTokens(Array[TKCloseSquare(), TKComma()]),
-          )
         }
       };
-      PArray(pats.toArray())
+      PArray(pats.toArray(), rest)
     | Some(TKOpenCurly()) ->
       _ = this.lex.next();
       if (this.lex.peekKind() is Some(TKCloseCurly())) {
