@@ -15,6 +15,7 @@ class TypeChecker{
   super: ?(CstrType, TType) = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
+  keepGoing: Bool,
 } {}
 
 /***************************************************************************/

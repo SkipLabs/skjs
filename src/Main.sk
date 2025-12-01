@@ -386,7 +386,7 @@ class Checker private {
       parsedFiles,
     );
     tenv = TEnv{defMap};
-    checker = TypeChecker{backtrace, defMap, tenv};
+    checker = TypeChecker{backtrace, defMap, tenv, keepGoing};
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}
   }
 
