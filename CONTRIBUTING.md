@@ -72,6 +72,12 @@ skargo test                                                      # Run all tests
 - Include examples for new restrictions
 - Update in the same commit or PR as the feature/restriction change
 
+### Pull Request Guidelines
+
+- Keep PR descriptions concise - focus on the summary and motivation
+- Don't list every file change in the PR description - reviewers will see the files in the diff
+- Example: "Add tests for error messages and fix comment style" is sufficient; no need to enumerate each test file
+
 ## Common Mistakes to Avoid
 
 1. **Don't use console.log or function calls in tests** - We're testing a typechecker, not a runtime
