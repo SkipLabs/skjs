@@ -264,21 +264,6 @@ class TType private {
     }
   }
 
-  fun isMethod(subst: mutable Subst, tenv: TEnv): Bool {
-    this.getSTypes(subst, tenv, Covariant()) match {
-    | None() -> false
-    | Some(stypes) ->
-      if (stypes.isEmpty()) return false;
-      for (stype in stypes) {
-        stype match {
-        | TFuns(funs, _, _) if (funs.isEmpty()) -> void
-        | _ -> return false
-        }
-      };
-      true
-    }
-  }
-
   // OTHER PROPERTIES
 
   // Returns the actual STypes after head expansion, forgetting type parameters,
