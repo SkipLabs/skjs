@@ -1000,10 +1000,10 @@ class TEnv{
      Try to keep in synch with TypeChecker#get in TypeCheckExpr
   */
   fun keyOfType(subst: mutable Subst, targetType: TType, pos: PosRange): TType {
-    this.keys(subst, targetType, pos, false)
+    this.keys(subst, targetType, pos)
   }
 
-  fun keys(subst: mutable Subst, ty: TType, pos: PosRange, forIn: Bool): TType {
+  fun keys(subst: mutable Subst, ty: TType, pos: PosRange): TType {
     clauses = ty.expand(subst, this, Covariant()).clauses;
     if (
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
@@ -1027,7 +1027,6 @@ class TEnv{
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | TObject(fields, _) ->
           for (field in fields) {
-            if (forIn && field.type.isMethod(subst, this)) continue;
             !strings = strings.set(field.name);
           };
           for (index in fields.indexes) {
@@ -1038,7 +1037,6 @@ class TEnv{
           !strings = strings.set(kAlgebraicBranchFieldName);
           for (branch in branches) {
             for (field in branch.fields) {
-              if (forIn && field.type.isMethod(subst, this)) continue;
               !strings = strings.set(field.name);
             };
             for (index in branch.fields.indexes) {
@@ -1046,10 +1044,6 @@ class TEnv{
               !result = TType::union(subst, this, result, index.keyType);
             }
           }
-        | _ if (forIn) ->
-          typingError(
-            Array[(pos, "for-in loop requires an object or array type")],
-          )
         | prim @ TPrimValue _ ->
           obj = this.newObject(subst.context, prim.asClassName(), Array[]);
           stypes.push(obj)
