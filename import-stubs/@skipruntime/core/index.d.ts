@@ -81,10 +81,13 @@ export interface ExternalService {
   shutdown(): Promise<void>;
 }
 
-export type InitialData<Inputs extends NamedCollections> = {
-  [Name in keyof Inputs]: Inputs[Name] extends EagerCollection<infer K, infer V>
-    ? Entry<K, V>[]
-    : Entry<Json, Json>[];
+// export type InitialData<Inputs extends NamedCollections> = {
+//   [Name in keyof Inputs]: Inputs[Name] extends EagerCollection<infer K, infer V>
+//     ? Entry<K, V>[]
+//     : Entry<Json, Json>[];
+// };
+export type InitialData<_Inputs extends NamedCollections> = {
+  [name: string]: Entry<Json, Json>[];
 };
 
 export type int = number;
