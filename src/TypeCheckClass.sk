@@ -175,13 +175,7 @@ extension class TypeChecker {
             fieldType ~> (fieldType is FieldTypeValue{value => Some _}),
           );
           typingErrors.collect(() -> {
-            _ = this.constructor(
-              subst,
-              thisType,
-              partialThisType,
-              fd,
-              Some(c.name),
-            )
+            this.constructor(subst, thisType, partialThisType, fd, Some(c.name))
           })
         } else {
           cgNode = CGNode::create(
