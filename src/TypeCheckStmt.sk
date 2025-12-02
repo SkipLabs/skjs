@@ -88,7 +88,9 @@ extension class TypeChecker {
 
       iterableType = this.expr(tcenv, iterable, true);
       ty = kind match {
-      | ForIn() -> this.tenv.forInKeys(tcenv.subst, iterableType, iterable.pos)
+      | ForIn() ->
+        this.checkForInIterable(tcenv, iterable.pos, iterableType);
+        TType::single(TPrimValue::string(st.pos))
       | ForOf() -> this.getValueType(tcenv, iterable.pos, iterableType)
       };
 
@@ -273,6 +275,35 @@ extension class TypeChecker {
     | _ ->
       typingError(Array[(initStmt.pos, "Invalid loop variable declaration")])
     }
+  }
+
+  fun checkForInIterable(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    iterableType: TType,
+  ): void {
+    // TypeScript error code: TS2407
+    iterableType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+    | None() -> void
+    | Some(stypes) ->
+      if (
+        !stypes.isEmpty() &&
+        stypes.all(stype ->
+          stype match {
+          | TObject _
+          | TTuple _ ->
+            true
+          | _ -> false
+          }
+        )
+      ) return void
+    };
+    typingError(
+      Array[
+        (pos, "for-in loop requires an object or array type"),
+        (iterableType.pos, `Here it has type ${iterableType}`),
+      ],
+    )
   }
 
   fun getValueType(
