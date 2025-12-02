@@ -475,7 +475,7 @@ class TEnv{
           cgNode = CGNode::create(
             Method(fd.name, className, fd.pos.fileName, metIsStatic),
           );
-          this.funDecl(context, true, fd, cgNode)
+          this.funDecl(context, !metIsStatic, fd, cgNode)
         };
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
