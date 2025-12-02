@@ -17,3 +17,15 @@ function testArrowFunction(): void {
 function takesCallback(f: (this: string, x: number) => void): void {
   // TODO: Use f when .call() is supported
 }
+
+// this parameter must be first in methods
+class MethodWithThisOrder {
+  // @skjs-expect-error Parameter named this must be the first one
+  method(x: number, this: string): void {}
+}
+
+// this parameter can be first in methods (but not yet supported)
+class MethodWithThisFirst {
+  // @skjs-expect-error TODO: support this parameter
+  method(this: string, x: number): void {}
+}
