@@ -65,13 +65,7 @@ extension class TFuns {
       TFuns::isSubTFun(subst, tenv, x, y)
     ) match {
     | Failure(err) -> err
-    | Success(void) ->
-      funs1.methods.leq(funs2.methods, (x, y) ->
-        TFuns::isSubTFun(subst, tenv, x, y)
-      ) match {
-      | Failure(err) -> err
-      | Success(void) -> (STOk() : STResult)
-      }
+    | Success(void) -> (STOk() : STResult)
     }
   }
 }

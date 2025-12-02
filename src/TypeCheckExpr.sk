@@ -1377,7 +1377,7 @@ extension class TypeChecker {
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt())
         .fromSome() match {
-      | TFuns(_, methods, _) ->
+      | TFuns(methods, _) ->
         for (met in methods) {
           break met
         } else {
@@ -1444,8 +1444,8 @@ extension class TypeChecker {
     fty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(TFuns(funs, methods, _)) ->
-      for (tfun in funs.values().concat(methods.values())) {
+    | Some(TFuns(funs, _)) ->
+      for (tfun in funs) {
         recordCalls(tcenv.context, tcenv.callingContext, tfun.cgNodes);
         if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
           typingError(
