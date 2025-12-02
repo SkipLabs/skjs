@@ -467,7 +467,13 @@ base class Type_ uses XXHashable {
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
   | TATuple(Array<TupleEltType>)
-  | TAFun(Bool, Array<TypeParam>, Array<TAFunParam>, Type, CGNode)
+  | TAFun(
+    implicitThis: ?TType,
+    Array<TypeParam>,
+    Array<TAFunParam>,
+    Type,
+    CGNode,
+  )
   | TAGet(Type, Type)
   | TAExtendsQuestion(Type, Type, Type, Type)
   | TAExtends(Type, Type)

@@ -346,7 +346,7 @@ extension class Parser {
     this.expect(TKClosure());
     retType = this.type(0);
     TAFun(
-      false,
+      None(),
       tParams,
       params,
       retType,

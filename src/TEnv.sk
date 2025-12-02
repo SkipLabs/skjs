@@ -280,7 +280,7 @@ class TEnv{
     );
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
-    ftype = Type(pos, TAFun(false, c.tparams, Array[], retType, cgNode));
+    ftype = Type(pos, TAFun(None(), c.tparams, Array[], retType, cgNode));
     TField::create(
       pos,
       "constructor",
@@ -578,7 +578,7 @@ class TEnv{
     };
     this.normalize(
       context,
-      Type(fd.pos, TAFun(false, tparams, params, retType, cgNode)),
+      Type(fd.pos, TAFun(None(), tparams, params, retType, cgNode)),
     );
   }
 
@@ -621,7 +621,7 @@ class TEnv{
       Type(
         fd.pos,
         TAFun(
-          implicitThis.isSome(),
+          implicitThis,
           fd.tparams,
           fd.params.map(this.convertParam),
           retType,
@@ -648,7 +648,7 @@ class TEnv{
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tfun = this.normalize(
         context,
-        Type(tyPos, TAFun(false, clauses, params, retType, cgNode)),
+        Type(tyPos, TAFun(None(), clauses, params, retType, cgNode)),
       );
       TType::single(
         TObject(
@@ -847,7 +847,7 @@ class TEnv{
       };
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
-    | TAFun(isMethod, clauses, params, retType, cgNode) ->
+    | TAFun(implicitThis, clauses, params, retType, cgNode) ->
       TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
       funClauses = mutable Vector[];
       for (tparam in clauses) {
@@ -918,6 +918,9 @@ class TEnv{
           )
         }
       };
+      if (thisParam is None()) {
+        !thisParam = implicitThis
+      };
       tfun = TFun(
         funClauses.toArray(),
         thisParam,
@@ -928,12 +931,7 @@ class TEnv{
         this.normalize(context, retType),
         CGNodes::singleton(cgNode),
       );
-      tfuns = if (isMethod) {
-        TFuns::singleMethod(tfun, pos)
-      } else {
-        TFuns::singleFun(tfun, pos)
-      };
-      TType::single(tfuns)
+      TType::single(TFuns::singleFun(tfun, pos))
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
     }
   }
