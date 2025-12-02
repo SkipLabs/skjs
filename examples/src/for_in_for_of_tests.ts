@@ -4,9 +4,12 @@ function testForInWithObjects(): void {
   // Test for-in with object - should iterate over property names
   const person = { name: "John", age: 30, city: "NYC" };
   for (const prop in person) {
+    // @ts-expect-error Invalid annotation
     const key: "name" | "age" | "city" = prop;
   }
+}
 
+function testforInWithEmptyObject(): void {
   // Test with empty object
   const empty = {};
   for (const key in empty) {
@@ -18,12 +21,16 @@ function testForInWithArrays(): void {
   // Test for-in with array - should iterate over indices as strings
   const numbers = [10, 20, 30, 40];
   for (const index in numbers) {
+    // @ts-expect-error Invalid annotation
     const idx: "0" | "1" | "2" | "3" = index;
   }
+}
 
+function testForInWithArrays2(): void {
   // Test with string array
   const words = ["hello", "world"];
   for (const i in words) {
+    // @ts-expect-error Invalid annotation
     const index: "0" | "1" = i;
   }
 }
@@ -32,12 +39,16 @@ function testForInWithTuples(): void {
   // Test for-in with tuple - should iterate over indices
   const coord: [number, number] = [10, 20];
   for (const index in coord) {
+    // @ts-expect-error Invalid annotation
     const idx: "0" | "1" = index;
   }
+}
 
+function testForInWithTuples2(): void {
   // Test with mixed tuple
   const mixed: [string, number, boolean] = ["test", 42, true];
   for (const i in mixed) {
+    // @ts-expect-error Invalid annotation
     const index: "0" | "1" | "2" = i;
   }
 }
@@ -91,6 +102,7 @@ function testNestedForLoops(): void {
   };
 
   for (const sectionName in data) {
+    // @ts-expect-error Invalid annotation
     const name: "section1" | "section2" = sectionName;
     for (const value of data[sectionName]) {
       const num: number = value;
