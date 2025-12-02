@@ -992,18 +992,14 @@ class TEnv{
     (algebraicBranchField, tFields)
   }
 
-  /* Over-approximates keyof targetType
+  /* Over-approximates keyof ty
      Though keyof should be treated symbolically because it is a decreasing
      function of types.
      In particular, do not use keyof to check that a key is valid.
 
      Try to keep in synch with TypeChecker#get in TypeCheckExpr
   */
-  fun keyOfType(subst: mutable Subst, targetType: TType, pos: PosRange): TType {
-    this.keys(subst, targetType, pos)
-  }
-
-  fun keys(subst: mutable Subst, ty: TType, pos: PosRange): TType {
+  fun keyOfType(subst: mutable Subst, ty: TType, pos: PosRange): TType {
     clauses = ty.expand(subst, this, Covariant()).clauses;
     if (
       clauses.any(clause -> (!clause.vars.isEmpty() || clause.stypes is None()))
