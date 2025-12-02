@@ -138,7 +138,13 @@ extension class TypeChecker {
   }
 
   fun typeDef(typeDef: TypeDef): void {
-    static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
+    typingErrors = mutable TypingErrorCollection(this.keepGoing);
+
+    typingErrors.collect(() ->
+      static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
+    );
+
+    typingErrors.emit()
   }
 
   static fun checkTypeParams(
