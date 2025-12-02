@@ -280,7 +280,7 @@ class TEnv{
     );
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
-    ftype = Type(pos, TAFun(true, c.tparams, Array[], retType, cgNode));
+    ftype = Type(pos, TAFun(false, c.tparams, Array[], retType, cgNode));
     TField::create(
       pos,
       "constructor",
@@ -576,7 +576,7 @@ class TEnv{
     };
     this.normalize(
       context,
-      Type(fd.pos, TAFun(true, tparams, params, retType, cgNode)),
+      Type(fd.pos, TAFun(false, tparams, params, retType, cgNode)),
     );
   }
 
