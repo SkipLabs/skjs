@@ -399,7 +399,8 @@ class TEnv{
       | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
     };
-    implicitThis = TType::inst(className, TArgs(targs));
+    //implicitThis = TType::inst(className, TArgs(targs));
+    implicitThis = TType::inst(Name(className.pos, "this"), TArgs(Array[]));
     for (fieldType in cls.fields) {
       fieldType match {
       | field @ FieldTypeValue _ ->
