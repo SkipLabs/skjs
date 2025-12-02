@@ -633,24 +633,39 @@ extension class TypeChecker {
       ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Covariant());
       print_error(prettyPrintType(false, ty));
       TType::single(TPrimUnit(TVoid(), pos))
-    | Call(f, targs, args) ->
+
+    | Call(Expr(dotPos, Dot(NormalDot(), obj, fieldName)), targs, args) ->
+      objTy = this.expr(tcenv, obj);
+      fTy = this.dot(
+        tcenv,
+        dotPos,
+        objTy,
+        fieldName,
+        /* optionalChaining */ false,
+      );
       rty = this.call(
+        tcenv,
+        pos,
+        fTy,
+        targs.map(ty -> this.tenv.normalize(tcenv.context, ty)),
+        args.map(x -> this.expr(tcenv, x)),
+      );
+      (obj.value, fieldName.value) match {
+      | (Var(Name(_, "console")), "assert") if (args.size() >= 1) ->
+        this.evalCond(tcenv, args[0], true)
+      | _ -> void
+      };
+      rty
+
+    | Call(f, targs, args) ->
+      this.call(
         tcenv,
         pos,
         this.expr(tcenv, f),
         targs.map(ty -> this.tenv.normalize(tcenv.context, ty)),
         args.map(x -> this.expr(tcenv, x)),
-      );
-      f.value match {
-      | Dot(
-        NormalDot(),
-        Expr(_, Var(Name(_, "console"))),
-        Name(_, "assert"),
-      ) if (args.size() >= 1) ->
-        this.evalCond(tcenv, args[0], true)
-      | _ -> void
-      };
-      rty
+      )
+
     | New(
       className,
       targsAst,
