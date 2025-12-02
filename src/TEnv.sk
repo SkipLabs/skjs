@@ -646,7 +646,7 @@ class TEnv{
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tfun = this.normalize(
         context,
-        Type(tyPos, TAFun(true, clauses, params, retType, cgNode)),
+        Type(tyPos, TAFun(false, clauses, params, retType, cgNode)),
       );
       TType::single(
         TObject(
