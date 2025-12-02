@@ -494,7 +494,7 @@ extension class TypeChecker {
           | fd @ FunDef _ ->
             break this.tenv.funDecl(
               tcenv.context,
-              false,
+              None(),
               fd,
               fd.cgNode match {
               | Some(n) -> n
@@ -568,7 +568,7 @@ extension class TypeChecker {
           continue
         | fd @ FunDef _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          this.tenv.funDecl(tcenv.context, false, fd, cgNode)
+          this.tenv.funDecl(tcenv.context, None(), fd, cgNode)
         };
         TField::create(name.pos, name.value, false, ty) match {
         | None() ->

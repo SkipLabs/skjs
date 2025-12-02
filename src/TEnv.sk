@@ -399,6 +399,7 @@ class TEnv{
       | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
     };
+    implicitThis = TType::inst(className, TArgs(targs));
     for (fieldType in cls.fields) {
       fieldType match {
       | field @ FieldTypeValue _ ->
@@ -475,7 +476,8 @@ class TEnv{
           cgNode = CGNode::create(
             Method(fd.name, className, fd.pos.fileName, metIsStatic),
           );
-          this.funDecl(context, !metIsStatic, fd, cgNode)
+          implicitThisOpt = if (metIsStatic) None() else Some(implicitThis);
+          this.funDecl(context, implicitThisOpt, fd, cgNode)
         };
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
@@ -594,14 +596,14 @@ class TEnv{
 
   fun funDecl(
     context: mutable SKStore.Context,
-    isMethod: Bool,
+    implicitThis: ?TType,
     fd: FunDef,
     cgNode: CGNode,
   ): (Name, TType) {
     name = fd.name match {
     | Some(FNNormal(name)) ->
       if (name.value == "constructor") {
-        what = if (isMethod) "method" else "function";
+        what = if (implicitThis.isSome()) "method" else "function";
         typingError(Array[(name.pos, `Forbidden ${what} name: ${name}`)])
       };
       name
@@ -619,7 +621,7 @@ class TEnv{
       Type(
         fd.pos,
         TAFun(
-          isMethod,
+          implicitThis.isSome(),
           fd.tparams,
           fd.params.map(this.convertParam),
           retType,
@@ -1007,7 +1009,7 @@ class TEnv{
         }
       | fd @ FunDef _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
-        (name, decl) = this.funDecl(context, false, fd, cgNode);
+        (name, decl) = this.funDecl(context, None(), fd, cgNode);
         optField = TField::create(name.pos, name.value, false, decl);
         if (optField is None()) {
           typingError(Array[(name.pos, `Forbidden method name ${name}`)])
