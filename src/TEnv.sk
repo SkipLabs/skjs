@@ -1003,23 +1003,6 @@ class TEnv{
     this.keys(subst, targetType, pos, false)
   }
 
-  /* Over-approximates the type of the iterated key in a loop
-      for (let key in x)  where x has type iterableType
-
-      It is basically the same as keyof iterableType without:
-      - non-enumerable properties (TODO? private members)
-      - number and symbols
-      And is allowed on arrays and objects only
-   */
-  fun forInKeys(
-    subst: mutable Subst,
-    iterableType: TType,
-    pos: PosRange,
-  ): TType {
-    keys = this.keys(subst, iterableType, pos, true);
-    TType::inter(subst, this, keys, TType::single(TPrimValue::string(pos)))
-  }
-
   fun keys(subst: mutable Subst, ty: TType, pos: PosRange, forIn: Bool): TType {
     clauses = ty.expand(subst, this, Covariant()).clauses;
     if (
