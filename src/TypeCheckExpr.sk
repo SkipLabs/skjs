@@ -643,6 +643,7 @@ extension class TypeChecker {
         fieldName,
         /* optionalChaining */ false,
       );
+      !fTy = this.bindFunction(tcenv, pos, fTy, objTy);
       rty = this.call(
         tcenv,
         pos,
@@ -1574,6 +1575,47 @@ extension class TypeChecker {
         ],
       )
     | Some(x) -> x
+    }
+  }
+
+  fun bindFunction(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    fTy: TType,
+    thisTy: TType,
+  ): TType {
+    fTy.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(funs @ TFuns _) ->
+      boundFuns = funs.mapFuns(f -> {
+        f.thisParam match {
+        | None() ->
+          typingError(
+            Array[
+              (pos, "This function did not expect a this parameter"),
+              (fTy.pos, `It has type ${fTy}`),
+            ],
+          )
+        | Some(expectedThisTy) ->
+          this.checkSubType(
+            tcenv,
+            pos,
+            "Invalid this parameter",
+            thisTy,
+            expectedThisTy,
+          )
+        };
+        f with {thisParam => None()}
+      });
+      TType::single(boundFuns)
+    | _ ->
+      typingError(
+        Array[
+          (pos, "Function expected"),
+          (fTy.pos, `But this has type ${fTy}`),
+        ],
+      )
     }
   }
 }
