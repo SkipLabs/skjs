@@ -69,22 +69,22 @@ function cannotUseConstructorAsFieldName(): object {
 }
 
 function cannotUseConstructorAsMethodName(): object {
-  // @skjs-expect-error Forbidden method name: constructor
+  // @skjs-expect-error Forbidden function name: constructor
   return { constructor() {} };
 }
 
 function cannotUseConstructorAsMethodName2(): object {
-  // @skjs-expect-error Forbidden method name: constructor
+  // @skjs-expect-error Forbidden function name: constructor
   return { constructor(): void {} };
 }
 
 // @skjs-expect-error Forbidden field name: constructor
 function cannotHaveConstructorField(x: { constructor: string }): void {}
 
-// @skjs-expect-error Forbidden method name: constructor
+// @skjs-expect-error Forbidden function name: constructor
 function cannotHaveConstructorMethod(x: { constructor(): void }): void {}
 
-// @skjs-expect-error Forbidden method name: constructor
+// @skjs-expect-error Forbidden function name: constructor
 function cannotHaveConstructorMethod2(x: { constructor() }): void {}
 
 function constructor(): void {}

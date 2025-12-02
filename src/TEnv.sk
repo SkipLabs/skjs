@@ -1007,7 +1007,7 @@ class TEnv{
         }
       | fd @ FunDef _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
-        (name, decl) = this.funDecl(context, true, fd, cgNode);
+        (name, decl) = this.funDecl(context, false, fd, cgNode);
         optField = TField::create(name.pos, name.value, false, decl);
         if (optField is None()) {
           typingError(Array[(name.pos, `Forbidden method name ${name}`)])
