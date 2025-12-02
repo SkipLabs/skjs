@@ -18,5 +18,5 @@ const config: {
 };
 
 // Type inference from object properties
-type PortType = typeof config.port;
-type TimeoutType = typeof config.timeout;
+// type PortType = typeof config.port;
+// type TimeoutType = typeof config.timeout;
