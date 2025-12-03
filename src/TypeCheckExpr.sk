@@ -1305,6 +1305,7 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
+      invariant(fields.indexes.isEmpty());
       fields.maybeGet(fieldName.value) match {
       | None() ->
         used match {
