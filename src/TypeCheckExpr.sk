@@ -548,7 +548,10 @@ extension class TypeChecker {
           | Some(spreadSTypes) ->
             for (spreadSType in spreadSTypes) {
               spreadSType match {
-              | TObject(TFields(spreadFields, spreadIndexes), _pos) ->
+              | TObject(
+                TFields{fields => spreadFields, indexes => spreadIndexes},
+                _pos,
+              ) ->
                 for (spreadField in spreadFields) {
                   fields![spreadField.name] = spreadField
                 };
@@ -969,7 +972,7 @@ extension class TypeChecker {
             typingError(
               Array[(pos, "Invalid in"), (e2.pos, `This has type ${t2}`)],
             )
-          | TObject(TFields(fields, indexes), _pos) ->
+          | TObject(TFields{fields, indexes}, _pos) ->
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||

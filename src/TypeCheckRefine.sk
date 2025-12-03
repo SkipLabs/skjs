@@ -244,7 +244,7 @@ extension class TypeChecker {
         | TFuns _
         | TPromise _ ->
           stype /* TODO */
-        | TObject(tFields @ TFields(_fields, indexes), tObjPos) ->
+        | TObject(tFields @ TFields{indexes}, tObjPos) ->
           fieldsOpt
             .flatMap(fieldsToCheck ->
               fieldsToCheck

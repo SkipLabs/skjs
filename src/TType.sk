@@ -632,7 +632,7 @@ class TIndexField(
   }
 }
 
-class TFields private (
+class TFields private {
   fields: InternalKeyedArrayMap<String, TField>,
   indexes: Array<TIndexField>,
   /* There can be several index fields.
@@ -645,21 +645,21 @@ class TFields private (
      TODO: if a field name is included an index key type, then its
       type must be a subtype of the index key type
   */
-) uses XXHashable, Orderable {
+} uses XXHashable, Orderable {
   static fun empty(): TFields {
-    TFields(InternalKeyedArrayMap::empty(), Array[])
+    TFields{fields => InternalKeyedArrayMap::empty(), indexes => Array[]}
   }
 
   static fun create{
     fields: Array<TField>,
     indexes: Array<TIndexField> = Array[],
   }: TFields {
-    TFields(
-      InternalKeyedArrayMap::createFromSortedIterator(
+    TFields{
+      fields => InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
       indexes,
-    )
+    }
   }
 
   fun isEmpty(): Bool {
@@ -670,11 +670,14 @@ class TFields private (
     fField: TField -> TField,
     fIndexField: TIndexField -> TIndexField,
   ): TFields {
-    TFields(this.fields.map(fField), this.indexes.map(fIndexField))
+    TFields{
+      fields => this.fields.map(fField),
+      indexes => this.indexes.map(fIndexField),
+    }
   }
 
   fun filterMap(f: TField -> ?TField): TFields {
-    TFields(this.fields.filterMap(f), this.indexes)
+    this with {fields => this.fields.filterMap(f)}
   }
 
   fun values(): mutable Iterator<TField> {
@@ -747,10 +750,11 @@ class TFields private (
   fun addField(fieldToAdd: TField): ?TFields {
     if (this.fields.containsKey(fieldToAdd.name)) None() else {
       Some(
-        TFields(
-          this.fields.union(InternalKeyedArrayMap::single(fieldToAdd)),
-          this.indexes,
-        ),
+        this with {
+          fields => this.fields.union(
+            InternalKeyedArrayMap::single(fieldToAdd),
+          ),
+        },
       )
     }
   }
