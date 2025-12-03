@@ -285,14 +285,7 @@ class TEnv{
     className: Name,
     c: Class,
   ): TType {
-    cgNode = CGNode::create(
-      Method(
-        Some(FNNormal(Name(pos, cstrName))),
-        className,
-        c.name.pos.fileName,
-        true,
-      ),
-    );
+    cgNode = CGNode::create(Constructor(className, c.name.pos.fileName));
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
     ftype = Type(pos, TAFun(false, c.tparams, Array[], retType, cgNode));
