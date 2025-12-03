@@ -251,7 +251,6 @@ extension class TypeChecker {
     objType: TType,
     idx: Expr,
     optionalChaining: Bool = false,
-    _allowConstructor: Bool = false,
   ): TType {
     stypes = objType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) ->
