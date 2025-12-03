@@ -676,35 +676,22 @@ class TEnv{
         TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
         c = this.getClass(context, className);
-        this.findConstructorMethod(
+        constructorField = this.findConstructorMethod(
           context,
           SortedSet[],
           className,
           c.tparams,
           targs.map(x -> this.normalize(context, x)),
         ) match {
-        | None() ->
-          TType::single(
-            TObject(
-              TFields::create(
-                Array[this.makeEmptyConstructor(context, pos, className, c)],
-                Array[],
-              ),
-              pos,
-            ),
-          )
+        | None() -> this.makeEmptyConstructor(context, pos, className, c)
         | Some(fd) ->
           tfun = this.makeConstructor(context, className, c.tparams, fd);
-          TType::single(
-            TObject(
-              TFields::create(
-                Array[TField::create(pos, cstrName, false, tfun).fromSome()],
-                Array[],
-              ),
-              pos,
-            ),
-          )
-        }
+          TField::create(pos, cstrName, false, tfun).fromSome()
+        };
+
+        TType::single(
+          TObject(TFields::create(Array[constructorField], Array[]), pos),
+        )
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
     | TAPrim(kind) ->
