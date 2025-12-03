@@ -331,7 +331,7 @@ extension class Parser {
 
   // Handle type casting with 'as' keyword and 'as const' syntax
   mutable fun tryParseTypeCast(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
-    if (prec >= asPrec) return None();
+    if (prec > asPrec) return None();
     if (!this.lex.isEqTok(binopTok, "as")) return None();
     _ = this.lex.next();
     if (this.lex.isEq("const")) {
