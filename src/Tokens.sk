@@ -35,6 +35,8 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKEquality()
   | TKExclamationMark()
   | TKExclamationMarkDot()
+  | TKExponentiation()
+  | TKExponentiationAssignment()
   | TKGreaterThan()
   | TKGreaterThanOrEqual()
   | TKIncr()
@@ -101,6 +103,8 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKEquality() -> "=="
   | TKExclamationMark() -> "!"
   | TKExclamationMarkDot() -> "!."
+  | TKExponentiation() -> "**"
+  | TKExponentiationAssignment() -> "**="
   | TKGreaterThan() -> ">"
   | TKGreaterThanOrEqual() -> ">="
   | TKIncr() -> "++"
@@ -172,6 +176,7 @@ const operators: Map<String, TokenKind> = Map[
   "--" => TKDecr(),
   "-?" => TKRemoveQM(),
   "+?" => TKAddQM(),
+  "**" => TKExponentiation(),
   "*" => TKMultiplication(),
   "/" => TKDivision(),
   "%" => TKRemainder(),
@@ -195,6 +200,7 @@ const operators: Map<String, TokenKind> = Map[
   "||" => TKLogicalOr(),
   "??" => TKNullishCoalescing(),
   "=" => TKAssignment(),
+  "**=" => TKExponentiationAssignment(),
   "*=" => TKMultiplicationAssignment(),
   "/=" => TKDivisionAssignment(),
   "%=" => TKRemainderAssignment(),
@@ -247,7 +253,7 @@ const binaryOperators: Map<
   /* 20: new x (no argument list) (non-assoc) => not supported */
   /* 19: x++, x--, x! (postfixPrec) */
   /* 18: !x, ~x, ++x, --x, +x, -x, typeof x, void x, delete x, await x (prefixPrec) */
-  /* 17: x ** y (right) */
+  TKExponentiation() => (ARight(), 17, BOExponentiation()),
   TKMultiplication() => (ALeft(), 16, BOMultiplication()),
   TKDivision() => (ALeft(), 16, BODivision()),
   TKRemainder() => (ALeft(), 16, BORemainder()),
@@ -274,6 +280,11 @@ const binaryOperators: Map<
   /* 4: x ? y : z (right) (ternaryPrec) */
   /* 3: x => y, async x => y (right) (closurePrec) */
   TKAssignment() => (ARight(), 2, BOAssignment()),
+  TKExponentiationAssignment() => (
+    ARight(),
+    2,
+    BOOpAssignment(BOExponentiation()),
+  ),
   TKMultiplicationAssignment() => (
     ARight(),
     2,
@@ -304,7 +315,6 @@ const binaryOperators: Map<
     2,
     BOOpAssignment(BONullishCoalescing()),
   ),
-  /* 2, also: x **= y (right) */
   /* 1.5: ...x, yield x, yield* x (non-assoc) */
   /* 1: x, y (left) */
 ];
