@@ -658,34 +658,27 @@ extension class TypeChecker {
       };
       rty
     | New(subExpr, targsAst, argsAst) ->
+      tArgs = targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ));
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
-        targs = if (targsAst.size() == 0) {
-          this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
-        } else {
-          targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ))
+        if (targsAst.size() == 0) {
+          !tArgs = this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
         };
-        cstr = this.tenv.newConstructor(tcenv.context, className, targs);
+        cstr = this.tenv.newConstructor(tcenv.context, className, tArgs);
         this.callConstructor(
           tcenv,
           pos,
           cstr,
           argsAst.map(e -> this.expr(tcenv, e)),
         );
-        this.tenv.new(tcenv.context, className, targs)
+        this.tenv.new(tcenv.context, className, tArgs)
       | _ ->
         subExprTy = this.expr(tcenv, subExpr);
         subExprTy
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes -> stypes.singleElt()) match {
         | Some(TObject(TFields{new => Some(f)}, _pos)) ->
-          this.call(
-            tcenv,
-            pos,
-            f,
-            targsAst.map(x -> this.tenv.normalize(tcenv.context, x)),
-            argsAst.map(x -> this.expr(tcenv, x)),
-          )
+          this.call(tcenv, pos, f, tArgs, argsAst.map(x -> this.expr(tcenv, x)))
         | Some(TObject(TFields{new => None()}, objPos)) ->
           typingError(
             Array[
