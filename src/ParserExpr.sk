@@ -349,7 +349,7 @@ extension class Parser {
     binopTok: Token,
     prec: Int,
   ): ?Expr_ {
-    if (prec >= callPrec) return None();
+    if (prec > callPrec) return None();
     targsOpt = if (binopTok.kind is TKOpenParen()) {
       _ = this.lex.next();
       Some(Array[])
