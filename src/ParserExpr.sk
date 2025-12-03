@@ -284,25 +284,14 @@ extension class Parser {
     | None() -> return None()
     | Some(x) -> x
     };
-    if (bopPrec == prec) {
-      _ = this.lex.next();
-      newLeft = assoc match {
-      | ALeft() ->
-        right = this.expr(prec + 1);
-        Binop(binop, left, right)
-      | ARight() -> Binop(binop, left, this.expr(prec))
-      };
-      Some(newLeft)
-    } else if (bopPrec > prec) {
-      _ = this.lex.next();
-      newLeft = Binop(binop, left, this.expr(bopPrec + 1));
-      Some(newLeft)
-    } else {
-      if (bopPrec >= prec) {
-        internal_error("bopPrec should be less than prec")
-      };
-      None()
-    }
+    if (prec > bopPrec) return None();
+    _ = this.lex.next();
+    newMinPrec = assoc match {
+    | ALeft() -> bopPrec + 1
+    | ARight() -> bopPrec
+    };
+    right = this.expr(newMinPrec);
+    Some(Binop(binop, left, right))
   }
 
   // Handle closure syntax (: type => expr and => expr)
@@ -342,7 +331,7 @@ extension class Parser {
 
   // Handle type casting with 'as' keyword and 'as const' syntax
   mutable fun tryParseTypeCast(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
-    if (prec >= asPrec) return None();
+    if (prec > asPrec) return None();
     if (!this.lex.isEqTok(binopTok, "as")) return None();
     _ = this.lex.next();
     if (this.lex.isEq("const")) {
@@ -360,7 +349,7 @@ extension class Parser {
     binopTok: Token,
     prec: Int,
   ): ?Expr_ {
-    if (prec >= callPrec) return None();
+    if (prec > callPrec) return None();
     targsOpt = if (binopTok.kind is TKOpenParen()) {
       _ = this.lex.next();
       Some(Array[])
@@ -446,7 +435,7 @@ extension class Parser {
 
   // Handle x[y], x.y, x?.y, x!.y
   mutable fun tryParseAccess(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
-    if (prec >= callPrec) return None();
+    if (prec > callPrec) return None();
     dotOp = binopTok.kind match {
     | TKOpenSquare() ->
       _ = this.lex.next();
