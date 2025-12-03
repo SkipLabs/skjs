@@ -863,6 +863,7 @@ extension class TypeChecker {
           Expr(pos, Binop(BOAssignment(), e1, Expr(pos, Binop(assOp, e1, e2)))),
         )
 
+      | BOExponentiation()
       | BOMultiplication()
       | BODivision()
       | BORemainder()

@@ -607,6 +607,7 @@ base class ArithmeticUnaryOperator extends NumericUnaryOperator {
 
 base class AssignableBinaryOperator extends BinaryOperator uses XXHashable {
   children =
+  | BOExponentiation()
   | BOMultiplication()
   | BODivision()
   | BORemainder()
