@@ -349,7 +349,7 @@ extension class Parser {
     binopTok: Token,
     prec: Int,
   ): ?Expr_ {
-    if (prec > callPrec) return None();
+    if (prec > callPrecLow) return None();
     targsOpt = if (binopTok.kind is TKOpenParen()) {
       _ = this.lex.next();
       Some(Array[])
@@ -435,7 +435,7 @@ extension class Parser {
 
   // Handle x[y], x.y, x?.y, x!.y
   mutable fun tryParseAccess(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
-    if (prec > callPrec) return None();
+    if (prec > callPrecHigh) return None();
     dotOp = binopTok.kind match {
     | TKOpenSquare() ->
       _ = this.lex.next();
