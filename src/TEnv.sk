@@ -7,7 +7,6 @@
 
 module SKJS;
 
-const cstrName: String = "constructor";
 value class CstrType(cstr: ?TType)
 
 class TEnv{
@@ -263,12 +262,6 @@ class TEnv{
     | Some(ty) -> ty
     | None() -> this.makeEmptyConstructor(context, pos, className, c)
     };
-    fields![cstrName] = TField::create(
-      pos,
-      "constructor",
-      false,
-      new,
-    ).fromSome();
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
@@ -647,17 +640,7 @@ class TEnv{
         context,
         Type(tyPos, TAFun(false, clauses, params, retType, cgNode)),
       );
-      TType::single(
-        TObject(
-          TFields::create{
-            fields => Array[
-              TField::create(pos, cstrName, false, tfun).fromSome(),
-            ],
-            new => Some(tfun),
-          },
-          pos,
-        ),
-      )
+      TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
@@ -687,21 +670,7 @@ class TEnv{
         | None() -> this.makeEmptyConstructor(context, pos, className, c)
         | Some(fd) -> this.makeConstructor(context, className, c.tparams, fd)
         };
-        constructorField = TField::create(
-          pos,
-          cstrName,
-          false,
-          tfun,
-        ).fromSome();
-        TType::single(
-          TObject(
-            TFields::create{
-              fields => Array[constructorField],
-              new => Some(tfun),
-            },
-            pos,
-          ),
-        )
+        TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
     | TAPrim(kind) ->
