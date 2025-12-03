@@ -927,7 +927,7 @@ extension class TypeChecker {
             typingError(
               Array[
                 (pos, "This operator is useless"),
-                (e1.pos, "This construction is never null or undefined"),
+                (e1.pos, "This expression is never null or undefined"),
               ],
             );
           };
@@ -935,7 +935,7 @@ extension class TypeChecker {
             typingError(
               Array[
                 (pos, "This operator is useless"),
-                (e.pos, "This constructor is always null or undefined"),
+                (e.pos, "This expression is always null or undefined"),
               ],
             )
           }
