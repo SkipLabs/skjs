@@ -270,7 +270,7 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    TFields::create(fields, indexes)
+    TFields::create{fields, indexes}
   }
 }
 

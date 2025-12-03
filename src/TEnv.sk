@@ -225,7 +225,10 @@ class TEnv{
       },
     );
     TObject(
-      TFields::create(fields.values().collect(Array), indexes.toArray()),
+      TFields::create{
+        fields => fields.values().collect(Array),
+        indexes => indexes.toArray(),
+      },
       className.pos,
     )
   }
@@ -259,7 +262,10 @@ class TEnv{
       fields![cstrName] = this.makeEmptyConstructor(context, pos, className, c);
     };
     TObject(
-      TFields::create(fields.values().collect(Array), indexes.toArray()),
+      TFields::create{
+        fields => fields.values().collect(Array),
+        indexes => indexes.toArray(),
+      },
       pos,
     )
   }
@@ -650,10 +656,12 @@ class TEnv{
       );
       TType::single(
         TObject(
-          TFields::create(
-            Array[TField::create(pos, cstrName, false, tfun).fromSome()],
-            Array[],
-          ),
+          TFields::create{
+            fields => Array[
+              TField::create(pos, cstrName, false, tfun).fromSome(),
+            ],
+            indexes => Array[],
+          },
           pos,
         ),
       )
@@ -690,7 +698,13 @@ class TEnv{
         };
 
         TType::single(
-          TObject(TFields::create(Array[constructorField], Array[]), pos),
+          TObject(
+            TFields::create{
+              fields => Array[constructorField],
+              indexes => Array[],
+            },
+            pos,
+          ),
         )
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
@@ -1002,7 +1016,7 @@ class TEnv{
         optField
       }
     });
-    tFields = TFields::create(fields, indexes.toArray());
+    tFields = TFields::create{fields, indexes => indexes.toArray()};
     (algebraicBranchField, tFields)
   }
 

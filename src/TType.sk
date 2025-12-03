@@ -650,10 +650,10 @@ class TFields private (
     TFields(InternalKeyedArrayMap::empty(), Array[])
   }
 
-  static fun create(
+  static fun create{
     fields: Array<TField>,
     indexes: Array<TIndexField>,
-  ): TFields {
+  }: TFields {
     TFields(
       InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),

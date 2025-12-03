@@ -589,7 +589,10 @@ extension class TypeChecker {
       obj = createObject(
         pos,
         algebraicBranchField,
-        TFields::create(fields.values().collect(Array), indexes.toArray()),
+        TFields::create{
+          fields => fields.values().collect(Array),
+          indexes => indexes.toArray(),
+        },
       );
       for (efield in efields) {
         efield match {
@@ -1343,7 +1346,7 @@ extension class TypeChecker {
                 tcenv.subst,
                 this.tenv,
                 fields,
-                TFields::create(Array[field], Array[]),
+                TFields::create{fields => Array[field], indexes => Array[]},
               ),
               objPos,
             ),

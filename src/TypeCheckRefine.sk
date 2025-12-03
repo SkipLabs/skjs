@@ -213,7 +213,10 @@ extension class TypeChecker {
               false,
               TType::top(e.pos),
             ).map(field ->
-              TObject(TFields::create(Array[field], Array[]), e1.pos)
+              TObject(
+                TFields::create{fields => Array[field], indexes => Array[]},
+                e1.pos,
+              )
             )
           )
         )
