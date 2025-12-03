@@ -674,21 +674,33 @@ extension class TypeChecker {
         );
         this.tenv.new(tcenv.context, className, targs)
       | _ ->
-        cstr = this.get(
-          tcenv,
-          pos,
-          this.expr(tcenv, subExpr),
-          Expr(pos, EString("constructor")),
-          false,
-          true,
-        );
-        this.call(
-          tcenv,
-          pos,
-          cstr,
-          targsAst.map(x -> this.tenv.normalize(tcenv.context, x)),
-          argsAst.map(x -> this.expr(tcenv, x)),
-        )
+        subExprTy = this.expr(tcenv, subExpr);
+        subExprTy
+          .getSTypes(tcenv.subst, this.tenv, Covariant())
+          .flatMap(stypes -> stypes.singleElt()) match {
+        | Some(TObject(TFields{new => Some(f)}, _pos)) ->
+          this.call(
+            tcenv,
+            pos,
+            f,
+            targsAst.map(x -> this.tenv.normalize(tcenv.context, x)),
+            argsAst.map(x -> this.expr(tcenv, x)),
+          )
+        | Some(TObject(TFields{new => None()}, objPos)) ->
+          typingError(
+            Array[
+              (pos, "Invalid new"),
+              (objPos, `${subExprTy} has no constructor`),
+            ],
+          )
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Invalid new"),
+              (subExprTy.pos, `${subExprTy} is not an object`),
+            ],
+          )
+        }
       }
 
     | Get(arr, idx) -> this.get(tcenv, pos, this.expr(tcenv, arr), idx)
