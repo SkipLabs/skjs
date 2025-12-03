@@ -259,7 +259,12 @@ class TEnv{
     );
     pos = className.pos;
     if (!fields.containsKey(cstrName)) {
-      fields![cstrName] = this.makeEmptyConstructor(context, pos, className, c);
+      fields![cstrName] = this.makeEmptyConstructorField(
+        context,
+        pos,
+        className,
+        c,
+      );
     };
     TObject(
       TFields::create{
@@ -270,12 +275,26 @@ class TEnv{
     )
   }
 
-  private fun makeEmptyConstructor(
+  private fun makeEmptyConstructorField(
     context: mutable SKStore.Context,
     pos: PosRange,
     className: Name,
     c: Class,
   ): TField {
+    TField::create(
+      pos,
+      "constructor",
+      false,
+      this.makeEmptyConstructor(context, pos, className, c),
+    ).fromSome()
+  }
+
+  private fun makeEmptyConstructor(
+    context: mutable SKStore.Context,
+    pos: PosRange,
+    className: Name,
+    c: Class,
+  ): TType {
     cgNode = CGNode::create(
       Method(
         Some(FNNormal(Name(pos, cstrName))),
@@ -287,12 +306,7 @@ class TEnv{
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
     ftype = Type(pos, TAFun(false, c.tparams, Array[], retType, cgNode));
-    TField::create(
-      pos,
-      "constructor",
-      false,
-      this.normalize(context, ftype),
-    ).fromSome()
+    this.normalize(context, ftype)
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
@@ -690,7 +704,7 @@ class TEnv{
           c.tparams,
           targs.map(x -> this.normalize(context, x)),
         ) match {
-        | None() -> this.makeEmptyConstructor(context, pos, className, c)
+        | None() -> this.makeEmptyConstructorField(context, pos, className, c)
         | Some(fd) ->
           tfun = this.makeConstructor(context, className, c.tparams, fd);
           TField::create(pos, cstrName, false, tfun).fromSome()
