@@ -651,41 +651,38 @@ extension class TypeChecker {
       | _ -> void
       };
       rty
-    | New(
-      className,
-      targsAst,
-      argsAst,
-    ) if (tcenv.scope.maybeGet(className) is Some _) ->
-      cstr = this.get(
-        tcenv,
-        pos,
-        this.expr(tcenv, Expr(pos, Var(className))),
-        Expr(pos, EString("constructor")),
-        false,
-        true,
-      );
-      this.call(
-        tcenv,
-        pos,
-        cstr,
-        targsAst.map(x -> this.tenv.normalize(tcenv.context, x)),
-        argsAst.map(x -> this.expr(tcenv, x)),
-      )
-
     | New(className, targsAst, argsAst) ->
-      targs = if (targsAst.size() == 0) {
-        this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
+      if (tcenv.scope.maybeGet(className) is Some _) {
+        cstr = this.get(
+          tcenv,
+          pos,
+          this.expr(tcenv, Expr(pos, Var(className))),
+          Expr(pos, EString("constructor")),
+          false,
+          true,
+        );
+        this.call(
+          tcenv,
+          pos,
+          cstr,
+          targsAst.map(x -> this.tenv.normalize(tcenv.context, x)),
+          argsAst.map(x -> this.expr(tcenv, x)),
+        )
       } else {
-        targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ))
-      };
-      cstr = this.tenv.newConstructor(tcenv.context, className, targs);
-      this.callConstructor(
-        tcenv,
-        pos,
-        cstr,
-        argsAst.map(e -> this.expr(tcenv, e)),
-      );
-      this.tenv.new(tcenv.context, className, targs)
+        targs = if (targsAst.size() == 0) {
+          this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
+        } else {
+          targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ))
+        };
+        cstr = this.tenv.newConstructor(tcenv.context, className, targs);
+        this.callConstructor(
+          tcenv,
+          pos,
+          cstr,
+          argsAst.map(e -> this.expr(tcenv, e)),
+        );
+        this.tenv.new(tcenv.context, className, targs)
+      }
 
     | Get(arr, idx) -> this.get(tcenv, pos, this.expr(tcenv, arr), idx)
 
