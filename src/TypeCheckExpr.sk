@@ -659,18 +659,14 @@ extension class TypeChecker {
       rty
     | New(subExpr, targsAst, argsAst) ->
       tArgs = targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ));
+      args = argsAst.map(e -> this.expr(tcenv, e));
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
         if (targsAst.size() == 0) {
           !tArgs = this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
         };
         cstr = this.tenv.newConstructor(tcenv.context, className, tArgs);
-        this.callConstructor(
-          tcenv,
-          pos,
-          cstr,
-          argsAst.map(e -> this.expr(tcenv, e)),
-        );
+        this.callConstructor(tcenv, pos, cstr, args);
         this.tenv.new(tcenv.context, className, tArgs)
       | _ ->
         subExprTy = this.expr(tcenv, subExpr);
@@ -678,7 +674,7 @@ extension class TypeChecker {
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes -> stypes.singleElt()) match {
         | Some(TObject(TFields{new => Some(f)}, _pos)) ->
-          this.call(tcenv, pos, f, tArgs, argsAst.map(x -> this.expr(tcenv, x)))
+          this.call(tcenv, pos, f, tArgs, args)
         | Some(TObject(TFields{new => None()}, objPos)) ->
           typingError(
             Array[
