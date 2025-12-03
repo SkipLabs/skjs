@@ -212,7 +212,7 @@ class TEnv{
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
-    this.addFields(
+    constructor = this.addFields(
       context,
       fields,
       indexes,
@@ -224,6 +224,7 @@ class TEnv{
         filter(fieldType) && !fieldType.isStatic()
       },
     );
+    invariant(constructor is None());
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
@@ -247,7 +248,7 @@ class TEnv{
     visitedClasses = SortedSet[];
     fields = mutable Map[];
     indexes = mutable Vector[];
-    this.addFields(
+    constructor = this.addFields(
       context,
       fields,
       indexes,
@@ -258,15 +259,16 @@ class TEnv{
       fieldType ~> fieldType.isStatic(),
     );
     pos = className.pos;
-    if (!fields.containsKey(cstrName)) {
-      fields![cstrName] = this.makeEmptyConstructorField(
-        context,
-        pos,
-        className,
-        c,
-      );
+    new = constructor match {
+    | Some(ty) -> ty
+    | None() -> this.makeEmptyConstructor(context, pos, className, c)
     };
-    new = fields[cstrName].type;
+    fields![cstrName] = TField::create(
+      pos,
+      "constructor",
+      false,
+      new,
+    ).fromSome();
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
@@ -395,7 +397,7 @@ class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
-  ): void {
+  ): /* Type of constructor */ ?TType {
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
@@ -406,7 +408,7 @@ class TEnv{
     for (extend in cls.extends_) {
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
-        this.addFields(
+        _ = this.addFields(
           context,
           acc,
           indexes,
@@ -421,6 +423,7 @@ class TEnv{
       | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
     };
+    constructor: ?TType = None();
     for (fieldType in cls.fields) {
       fieldType match {
       | field @ FieldTypeValue _ ->
@@ -480,32 +483,27 @@ class TEnv{
           )
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
+      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+        if (isStatic is None()) continue;
+        invariant(constructor is None());
+        !constructor = Some(
+          this.makeConstructor(context, className, isStatic.fromSome(), fd),
+        )
       | fd @ FunDef _ ->
-        isConstructor = fd.name match {
-        | Some(FNNormal(name @ Name(_, "constructor"))) -> Some(name)
-        | _ -> None()
-        };
-        metIsStatic = isConstructor.isSome() || fd.isStatic();
+        metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
-        (metName, metType) = isConstructor match {
-        | Some(name) ->
-          (
-            name,
-            this.makeConstructor(context, className, isStatic.fromSome(), fd),
-          )
-        | None() ->
-          cgNode = CGNode::create(
-            Method(fd.name, className, fd.pos.fileName, metIsStatic),
-          );
-          this.funDecl(context, !metIsStatic, fd, cgNode)
-        };
+        cgNode = CGNode::create(
+          Method(fd.name, className, fd.pos.fileName, metIsStatic),
+        );
+        (metName, metType) = this.funDecl(context, !metIsStatic, fd, cgNode);
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
           typingError(Array[(fd.pos, `Forbidden method name '${metName}'`)])
         | Some(field) -> acc![metName.value] = field
         }
       }
-    }
+    };
+    constructor
   }
 
   private fun findConstructor(
