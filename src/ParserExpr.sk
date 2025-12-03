@@ -284,22 +284,14 @@ extension class Parser {
     | None() -> return None()
     | Some(x) -> x
     };
-    if (bopPrec == prec) {
-      _ = this.lex.next();
-      newLeft = assoc match {
-      | ALeft() ->
-        right = this.expr(prec + 1);
-        Binop(binop, left, right)
-      | ARight() -> Binop(binop, left, this.expr(prec))
-      };
-      Some(newLeft)
-    } else if (bopPrec > prec) {
-      _ = this.lex.next();
-      newLeft = Binop(binop, left, this.expr(bopPrec + 1));
-      Some(newLeft)
-    } else {
-      None()
-    }
+    if (prec > bopPrec) return None();
+    _ = this.lex.next();
+    newMinPrec = assoc match {
+    | ALeft() -> bopPrec + 1
+    | ARight() -> bopPrec
+    };
+    right = this.expr(newMinPrec);
+    Some(Binop(binop, left, right))
   }
 
   // Handle closure syntax (: type => expr and => expr)
