@@ -280,7 +280,7 @@ class TEnv{
     );
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
-    ftype = Type(pos, TAFun(true, c.tparams, Array[], retType, cgNode));
+    ftype = Type(pos, TAFun(false, c.tparams, Array[], retType, cgNode));
     TField::create(
       pos,
       "constructor",
@@ -475,7 +475,7 @@ class TEnv{
           cgNode = CGNode::create(
             Method(fd.name, className, fd.pos.fileName, metIsStatic),
           );
-          this.funDecl(context, true, fd, cgNode)
+          this.funDecl(context, !metIsStatic, fd, cgNode)
         };
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
@@ -576,7 +576,7 @@ class TEnv{
     };
     this.normalize(
       context,
-      Type(fd.pos, TAFun(true, tparams, params, retType, cgNode)),
+      Type(fd.pos, TAFun(false, tparams, params, retType, cgNode)),
     );
   }
 
@@ -646,7 +646,7 @@ class TEnv{
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tfun = this.normalize(
         context,
-        Type(tyPos, TAFun(true, clauses, params, retType, cgNode)),
+        Type(tyPos, TAFun(false, clauses, params, retType, cgNode)),
       );
       TType::single(
         TObject(
@@ -858,14 +858,40 @@ class TEnv{
       optionalParams = mutable Vector[];
       optionalWitness: ?PosRange = None();
       spreadParam: ?TType = None();
+      thisParam: ?TType = None();
       for (i => param in params) {
         paramType = this.normalize(context, param.type);
+        param.name.value match {
+        | PVar(Name(thisPos, "this")) ->
+          if (i > 0) {
+            typingError(
+              Array[(thisPos, "Parameter named this must be the first one")],
+            )
+          };
+          invariant(thisParam is None());
+          param.isRest.each(restPos ->
+            typingError(Array[(restPos, "this cannot be a spread parameter")])
+          );
+          param.optional.each(optPos ->
+            typingError(Array[(optPos, "this cannot be optional")])
+          );
+          !thisParam = Some(paramType);
+          continue
+        | _ -> checkPatternDoesNotContainThis(param.name)
+        };
         param.isRest match {
         | Some(restPos) ->
           if (i != params.size() - 1) {
             typingError(
               Array[(restPos, "... must always be the last parameter")],
             );
+          };
+          param.optional match {
+          | Some(optPos) ->
+            typingError(
+              Array[(optPos, "The spread parameter cannot be marked optional")],
+            )
+          | None() -> void
           };
           !spreadParam = Some(paramType);
           continue
@@ -892,6 +918,7 @@ class TEnv{
       };
       tfun = TFun(
         funClauses.toArray(),
+        thisParam,
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,
@@ -980,7 +1007,7 @@ class TEnv{
         }
       | fd @ FunDef _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
-        (name, decl) = this.funDecl(context, true, fd, cgNode);
+        (name, decl) = this.funDecl(context, false, fd, cgNode);
         optField = TField::create(name.pos, name.value, false, decl);
         if (optField is None()) {
           typingError(Array[(name.pos, `Forbidden method name ${name}`)])
@@ -1070,6 +1097,22 @@ class TEnv{
       !result = TType::union(subst, this, result, literals)
     };
     result
+  }
+}
+
+fun checkPatternDoesNotContainThis(pat: Pattern): void {
+  pat.value match {
+  | PVar(name) -> Some(name)
+  | PArray(elements, rest) ->
+    elements.each(elt -> elt.each(pe -> checkPatternDoesNotContainThis(pe.i0)));
+    rest
+  | PObject{fields, rest} ->
+    fields.each(fld -> checkPatternDoesNotContainThis(fld.i1));
+    rest
+  } match {
+  | Some(Name(thisPos, "this")) ->
+    typingError(Array[(thisPos, "this forbidden here")])
+  | _ -> void
   }
 }
 

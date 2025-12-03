@@ -122,14 +122,12 @@ mutable class TypePp{
         },
       )
     | TTuple(arr, _) -> this.tuple(level, margin, arr)
-    | TFuns(tfuns, tmethods, _) ->
+    | TFuns(tfuns, _) ->
       this.tfuns(
         level,
         margin,
-        tfuns
-          .toArray()
-          .map(x -> (false, x))
-          .concat(tmethods.toArray().map(x -> (true, x))),
+        tfuns.toArray().map(x -> (false, x)),
+        // .concat(tmethods.toArray().map(x -> (true, x)))
       )
     }
   }
@@ -180,6 +178,10 @@ mutable class TypePp{
           pp.out(level, margin, ">");
         };
         pp.out(level, margin, "(");
+        tfun.thisParam.each(thisTy -> {
+          pp.type(level, margin, thisTy);
+          if (!tfun.params.isEmpty()) pp.out(level, margin, ", ")
+        });
         for (i => param in tfun.params) {
           if (i != 0) pp.out(level, margin, ", ");
           pp.type(level, margin, param)
@@ -213,6 +215,11 @@ mutable class TypePp{
         };
         pp.out(level, margin, "(");
         pp.newLine();
+        tfun.thisParam.each(thisTy -> {
+          pp.type(level, margin, thisTy);
+          pp.out(level, margin, ",");
+          pp.newLine();
+        });
         for (param in tfun.params) {
           pp.type(level, margin, param);
           pp.out(level, margin, ",");

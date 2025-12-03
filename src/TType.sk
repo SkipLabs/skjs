@@ -436,25 +436,25 @@ class TTuple(tuple: Array<TType>) extends SType
 
 class TFuns private (
   funs: InternalKeyedArrayMap<(Int, Int), TFun>,
-  methods: InternalKeyedArrayMap<(Int, Int), TFun>,
 ) extends SType {
-  /* Invariant: funs and methods are not both empty */
+  /* Invariant: funs is not empty */
 
   static fun singleFun(x: TFun, pos: PosRange): TFuns {
-    TFuns(InternalKeyedArrayMap::single(x), InternalKeyedArrayMap::empty(), pos)
+    TFuns(InternalKeyedArrayMap::single(x), pos)
   }
 
   static fun singleMethod(x: TFun, pos: PosRange): TFuns {
-    TFuns(InternalKeyedArrayMap::empty(), InternalKeyedArrayMap::single(x), pos)
+    TFuns(InternalKeyedArrayMap::single(x), pos)
   }
 
   fun mapFuns(f: TFun -> TFun): TFuns {
-    TFuns(this.funs.map(f), this.methods.map(f), this.pos)
+    TFuns(this.funs.map(f), this.pos)
   }
 }
 
 class TFun(
   tparams: Array<TParamWithConstraint>,
+  thisParam: ?TType,
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?TType,
@@ -1230,6 +1230,7 @@ base class STError extends STResult {
   children =
   | STNoConstraint()
   | STMissingField(String)
+  | STMissingThis()
   | STMissingSpread()
   | STTooManySType(SType)
   | STTooManyTConstr(TConstr)
@@ -1241,6 +1242,7 @@ base class STError extends STResult {
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
     | STNoConstraint() -> "This type parameter does not define a constraint"
+    | STMissingThis() -> "Missing this parameter"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingField(fieldName) ->
       `The field '${fieldName}' is missing\n` +

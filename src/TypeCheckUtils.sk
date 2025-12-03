@@ -37,43 +37,12 @@ extension class TypeChecker {
     ty: TType,
     subst: mutable Subst,
     tenv: TEnv,
+    methods: SortedSet<String>,
   ): TType {
-    ty.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~> {
+    ty.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
-    }) match {
-    | Some(TObject(fields, pos)) ->
-      TType::single(
-        TObject(
-          fields.filterMap(field -> {
-            fieldType = field.type;
-            fieldType
-              .mapSTypes(subst, tenv, Covariant(), fieldSTypes -> {
-                fieldSTypes.filter(fieldSType ~> {
-                  fieldSType match {
-                  | TFuns(funs, _methods, _pos) if (funs.isEmpty()) -> false
-                  | TFuns(_funs, methods, _pos) if (!methods.isEmpty()) ->
-                    typingError(
-                      Array[
-                        (
-                          ty.pos,
-                          "TODO: encountered both non-empty funs and methods in filterMethod",
-                        ),
-                      ],
-                    )
-                  //Some(tfuns with {methods => Array[]})
-                  | _ -> true
-                  }
-                })
-              })
-              .flatMap((fieldType) ->
-                if (fieldType.isBottom()) None() else {
-                  Some(field.mapType(_existingType -> fieldType))
-                }
-              )
-          }),
-          pos,
-        ),
-      )
+    ) match {
+    | Some(obj @ TObject _) -> TType::single(obj.removeFields(methods))
     | _ ->
       typingError(
         Array[(ty.pos, "Internal error: new should produce an object")],

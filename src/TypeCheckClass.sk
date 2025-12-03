@@ -174,13 +174,29 @@ extension class TypeChecker {
             targs.targs,
             fieldType ~> (fieldType is FieldTypeValue{value => Some _}),
           );
+          methods = c.fields
+            .iterator()
+            .filterMap(fieldType ->
+              fieldType match {
+              | FunDef{pos, name} ->
+                name match {
+                | Some(FNNormal(Name(_, methodName))) -> Some(methodName)
+                | _ ->
+                  typingErrors.push(Array[(pos, "Invalid method name")]);
+                  None()
+                }
+              | FieldTypeValue _ -> None()
+              }
+            )
+            .collect(SortedSet);
           typingErrors.collect(() -> {
-            _ = this.constructor(
+            this.constructor(
               subst,
               thisType,
               partialThisType,
               fd,
               Some(c.name),
+              methods,
             )
           })
         } else {
@@ -188,7 +204,7 @@ extension class TypeChecker {
             Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
           );
           typingErrors.collect(() -> {
-            _ = this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
+            this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
           })
         }
       }
@@ -217,6 +233,7 @@ extension class TypeChecker {
     partialThisType: TType,
     fd: FunDef,
     className: ?Name,
+    methods: SortedSet<String>,
   ): void {
     if (fd.retType.i1 is Some _) {
       typingError(
@@ -244,8 +261,18 @@ extension class TypeChecker {
     | FDBSome(body) ->
       blockScope = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fd.pos, "this"));
-      objType = static::filterMethods(blockThisType, tcenv.subst, this.tenv);
-      fullType = static::filterMethods(thisType, tcenv.subst, this.tenv);
+      objType = static::filterMethods(
+        blockThisType,
+        tcenv.subst,
+        this.tenv,
+        methods,
+      );
+      fullType = static::filterMethods(
+        thisType,
+        tcenv.subst,
+        this.tenv,
+        methods,
+      );
       this.checkSubType(
         tcenv,
         fd.pos,

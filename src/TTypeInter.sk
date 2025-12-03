@@ -131,11 +131,8 @@ extension class TFuns {
     f2: TFuns,
   ): ?TFuns {
     funs = f1.funs.mapInter(f2.funs, (x, y) -> TFun::inter(subst, tenv, x, y));
-    methods = f1.methods.mapInter(f2.methods, (x, y) ->
-      TFun::inter(subst, tenv, x, y)
-    );
-    if (funs.isEmpty() && methods.isEmpty()) None() else {
-      Some(TFuns(funs, methods, f1.pos))
+    if (funs.isEmpty()) None() else {
+      Some(TFuns(funs, f1.pos))
     }
   }
 }
@@ -346,6 +343,13 @@ extension class TFun {
       clauses.push(tparam1 with {cstr});
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
+    thisParam = (f1.thisParam, f2.thisParam) match {
+    | (None(), t)
+    | (t, None()) ->
+      t
+    | (Some(this1), Some(this2)) ->
+      Some(TType::union(subst, tenv, this1, this2))
+    };
     params = mutable Vector[];
     for (i in Range(0, f1.params.size())) {
       params.push(TType::union(subst, tenv, f1.params[i], f2.params[i]));
@@ -381,6 +385,7 @@ extension class TFun {
     cgNodes = f1.cgNodes.intersection(f2.cgNodes);
     TFun(
       clauses.toArray(),
+      thisParam,
       params.toArray(),
       optionalParams.toArray(),
       spreadParam,

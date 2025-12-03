@@ -568,7 +568,7 @@ extension class TypeChecker {
           continue
         | fd @ FunDef _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          this.tenv.funDecl(tcenv.context, true, fd, cgNode)
+          this.tenv.funDecl(tcenv.context, false, fd, cgNode)
         };
         TField::create(name.pos, name.value, false, ty) match {
         | None() ->
@@ -1085,66 +1085,6 @@ extension class TypeChecker {
     }
   }
 
-  fun anonFunction(
-    tcenv: mutable TCEnv,
-    isAsync: ?PosRange,
-    pos: PosRange,
-    c: Closure,
-    params: Array<(Name, ?Type)>,
-    retTypeAstOpt: ?Type,
-    body: ClosureBody,
-  ): TType {
-    paramTypes = mutable Vector[];
-    for (param in params) {
-      paramType = param.i1 match {
-      | None() ->
-        typingError(Array[(param.i0.pos, "Please add a type annotation")])
-      | Some(ty) -> this.tenv.normalize(tcenv.context, ty)
-      };
-      paramTypes.push((param.i0, paramType));
-    };
-    retType = retTypeAstOpt match {
-    | None() ->
-      tvar = this.newTVar(tcenv, pos);
-      isAsync match {
-      | None() -> tvar
-      | Some(asyncPos) -> TType::single(TPromise(tvar, asyncPos))
-      }
-    | Some(retTypeAst) -> this.tenv.normalize(tcenv.context, retTypeAst)
-    };
-    callingContext = CGNode::create(AnonymousLambda(pos, c));
-    // Register a dependency from parent context on this lambda
-    recordCalls(
-      tcenv.context,
-      tcenv.callingContext,
-      CGNodes::singleton(callingContext),
-    );
-    savedScope = tcenv.scope;
-    savedCallingContext = tcenv.callingContext;
-    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
-    tcenv.!callingContext = callingContext;
-
-    this.closure(tcenv, isAsync, paramTypes.toArray(), retType, body);
-
-    tcenv.!scope = savedScope;
-    tcenv.!callingContext = savedCallingContext;
-
-    TType::single(
-      TFuns::singleFun(
-        TFun(
-          Array[],
-          paramTypes.map(x -> x.i1).toArray(),
-          Array[],
-          None(),
-          pos,
-          retType,
-          CGNodes::singleton(callingContext),
-        ),
-        pos,
-      ),
-    )
-  }
-
   /* Typechecks expression e as const */
   fun asConstExpr(e: Expr): ?SType {
     pos = e.pos;
@@ -1195,6 +1135,72 @@ extension class TypeChecker {
       )
     | _ -> None()
     }
+  }
+
+  fun anonFunction(
+    tcenv: mutable TCEnv,
+    isAsync: ?PosRange,
+    pos: PosRange,
+    c: Closure,
+    params: Array<(Name, ?Type)>,
+    retTypeAstOpt: ?Type,
+    body: ClosureBody,
+  ): TType {
+    paramTypes = params.map(param -> {
+      if (param.i0.value == "this") {
+        typingError(
+          Array[
+            (param.i0.pos, "Parameter this forbidden in anonymous functions"),
+          ],
+        )
+      };
+      param.i1 match {
+      | None() ->
+        typingError(Array[(param.i0.pos, "Please add a type annotation")])
+      | Some(ty) -> (param.i0, this.tenv.normalize(tcenv.context, ty))
+      }
+    });
+    retType = retTypeAstOpt match {
+    | None() ->
+      tvar = this.newTVar(tcenv, pos);
+      isAsync match {
+      | None() -> tvar
+      | Some(asyncPos) -> TType::single(TPromise(tvar, asyncPos))
+      }
+    | Some(retTypeAst) -> this.tenv.normalize(tcenv.context, retTypeAst)
+    };
+    callingContext = CGNode::create(AnonymousLambda(pos, c));
+    // Register a dependency from parent context on this lambda
+    recordCalls(
+      tcenv.context,
+      tcenv.callingContext,
+      CGNodes::singleton(callingContext),
+    );
+    savedScope = tcenv.scope;
+    savedCallingContext = tcenv.callingContext;
+    tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
+    tcenv.!callingContext = callingContext;
+
+    this.closure(tcenv, isAsync, paramTypes, retType, body);
+
+    tcenv.!scope = savedScope;
+    tcenv.!callingContext = savedCallingContext;
+
+    TType::single(
+      TFuns::singleFun(
+        TFun(
+          Array[],
+          None(),
+          paramTypes.map(x -> x.i1),
+          Array[],
+          None(),
+          pos,
+          retType,
+          CGNodes::singleton(callingContext),
+        ),
+        pos,
+      ),
+    )
   }
 
   fun closure(
@@ -1371,7 +1377,7 @@ extension class TypeChecker {
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt())
         .fromSome() match {
-      | TFuns(_, methods, _) ->
+      | TFuns(methods, _) ->
         for (met in methods) {
           break met
         } else {
@@ -1438,8 +1444,8 @@ extension class TypeChecker {
     fty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(TFuns(funs, methods, _)) ->
-      for (tfun in funs.values().concat(methods.values())) {
+    | Some(TFuns(funs, _)) ->
+      for (tfun in funs) {
         recordCalls(tcenv.context, tcenv.callingContext, tfun.cgNodes);
         if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
           typingError(
