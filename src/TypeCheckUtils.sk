@@ -101,12 +101,11 @@ extension class TypeChecker {
       tyVoid,
       TType::single(
         TObject(
-          TFields::create(
-            Array[
+          TFields::create{
+            fields => Array[
               TField::create(pos, "__SKJS_Ignorable", false, tyVoid).fromSome(),
             ],
-            Array[],
-          ),
+          },
           pos,
         ),
       ),

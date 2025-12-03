@@ -205,8 +205,10 @@ value class StmtTermination private {
     | As(e, _ty)
     | AsConst(e) ->
       static::expr(e)
-    | New(_name, _targs, args) ->
-      static::seq(args, static::expr).then(static::unknownCall)
+    | New(e, _targs, args) ->
+      static::expr(e).thenk(() ->
+        static::seq(args, static::expr).then(static::unknownCall)
+      )
     | Unop(_unop, e)
     | PostOp(_postop, e)
     | Dot(OptionalDot(), e, _fieldName) ->

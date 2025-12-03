@@ -236,7 +236,8 @@ base class Associativity {
 // Operators associativity and precedence.
 /***************************************************************************/
 
-const callPrec: Int = 21;
+const callPrecHigh: Int = 22;
+const callPrecLow: Int = 21;
 const postfixPrec: Int = 19;
 const prefixPrec: Int = 18;
 const asPrec: Int = 13;
@@ -248,8 +249,9 @@ const binaryOperators: Map<
   TokenKind,
   (Associativity, Int, BinaryOperator),
 > = Map[
-  /* 22: (x) (non-assoc) */
-  /* 21, also: x[y], x.y, x?.y, x!.y, new x(y), x(y) (non-assoc) (callPrec) */
+  /* 23: (x) (non-assoc) */
+  /* 22: x[y], x.y, x?.y, x!.y, new x(y) (non-assoc) (callPrecHigh) */
+  /* 21: x[y], x.y, x?.y, x!.y, new x(y), x(y) (non-assoc) (callPrecLow) */
   /* 20: new x (no argument list) (non-assoc) => not supported */
   /* 19: x++, x--, x! (postfixPrec) */
   /* 18: !x, ~x, ++x, --x, +x, -x, typeof x, void x, delete x, await x (prefixPrec) */

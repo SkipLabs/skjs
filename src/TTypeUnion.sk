@@ -270,7 +270,13 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    TFields::create(fields, indexes)
+    new = (fields1.new, fields2.new) match {
+    | (None(), _)
+    | (_, None()) ->
+      None()
+    | (Some(new1), Some(new2)) -> Some(TType::union(subst, tenv, new1, new2))
+    };
+    TFields::create{fields, indexes, new}
   }
 }
 

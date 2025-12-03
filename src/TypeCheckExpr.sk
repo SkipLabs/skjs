@@ -251,7 +251,6 @@ extension class TypeChecker {
     objType: TType,
     idx: Expr,
     optionalChaining: Bool = false,
-    allowConstructor: Bool = false,
   ): TType {
     stypes = objType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) ->
@@ -267,10 +266,6 @@ extension class TypeChecker {
     idxSType = idxType
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(
-      TPrimValue(TString(), Some(values), _),
-    ) if (values.contains("constructor") && !allowConstructor) ->
-      typingError(Array[(idx.pos, "Cannot access field 'constructor'")])
     | Some(ty @ TPrimValue(TString(), _, _))
     | Some(ty @ TPrimValue(TNum(), _, _)) ->
       ty
@@ -530,9 +525,6 @@ extension class TypeChecker {
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
-          if (name.value == "constructor") {
-            typingError(Array[(name.pos, `Forbidden field name: ${name}`)])
-          };
           (name, this.expr(tcenv, y, name.value == kAlgebraicBranchFieldName))
 
         | FDSpread(spreadExpr) ->
@@ -548,7 +540,10 @@ extension class TypeChecker {
           | Some(spreadSTypes) ->
             for (spreadSType in spreadSTypes) {
               spreadSType match {
-              | TObject(TFields(spreadFields, spreadIndexes), _pos) ->
+              | TObject(
+                TFields{fields => spreadFields, indexes => spreadIndexes},
+                _pos,
+              ) ->
                 for (spreadField in spreadFields) {
                   fields![spreadField.name] = spreadField
                 };
@@ -589,7 +584,10 @@ extension class TypeChecker {
       obj = createObject(
         pos,
         algebraicBranchField,
-        TFields::create(fields.values().collect(Array), indexes.toArray()),
+        TFields::create{
+          fields => fields.values().collect(Array),
+          indexes => indexes.toArray(),
+        },
       );
       for (efield in efields) {
         efield match {
@@ -651,41 +649,40 @@ extension class TypeChecker {
       | _ -> void
       };
       rty
-    | New(
-      className,
-      targsAst,
-      argsAst,
-    ) if (tcenv.scope.maybeGet(className) is Some _) ->
-      cstr = this.get(
-        tcenv,
-        pos,
-        this.expr(tcenv, Expr(pos, Var(className))),
-        Expr(pos, EString("constructor")),
-        false,
-        true,
-      );
-      this.call(
-        tcenv,
-        pos,
-        cstr,
-        targsAst.map(x -> this.tenv.normalize(tcenv.context, x)),
-        argsAst.map(x -> this.expr(tcenv, x)),
-      )
-
-    | New(className, targsAst, argsAst) ->
-      targs = if (targsAst.size() == 0) {
-        this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
-      } else {
-        targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ))
-      };
-      cstr = this.tenv.newConstructor(tcenv.context, className, targs);
-      this.callConstructor(
-        tcenv,
-        pos,
-        cstr,
-        argsAst.map(e -> this.expr(tcenv, e)),
-      );
-      this.tenv.new(tcenv.context, className, targs)
+    | New(subExpr, targsAst, argsAst) ->
+      tArgs = targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ));
+      args = argsAst.map(e -> this.expr(tcenv, e));
+      subExpr.value match {
+      | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
+        if (targsAst.size() == 0) {
+          !tArgs = this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
+        };
+        cstr = this.tenv.newConstructor(tcenv.context, className, tArgs);
+        this.callConstructor(tcenv, pos, cstr, args);
+        this.tenv.new(tcenv.context, className, tArgs)
+      | _ ->
+        subExprTy = this.expr(tcenv, subExpr);
+        subExprTy
+          .getSTypes(tcenv.subst, this.tenv, Covariant())
+          .flatMap(stypes -> stypes.singleElt()) match {
+        | Some(TObject(TFields{new => Some(f)}, _pos)) ->
+          this.call(tcenv, pos, f, tArgs, args)
+        | Some(TObject(TFields{new => None()}, objPos)) ->
+          typingError(
+            Array[
+              (pos, "Invalid new"),
+              (objPos, `${subExprTy} has no constructor`),
+            ],
+          )
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Invalid new"),
+              (subExprTy.pos, `${subExprTy} is not an object`),
+            ],
+          )
+        }
+      }
 
     | Get(arr, idx) -> this.get(tcenv, pos, this.expr(tcenv, arr), idx)
 
@@ -922,7 +919,7 @@ extension class TypeChecker {
             typingError(
               Array[
                 (pos, "This operator is useless"),
-                (e1.pos, "This construction is never null or undefined"),
+                (e1.pos, "This expression is never null or undefined"),
               ],
             );
           };
@@ -930,7 +927,7 @@ extension class TypeChecker {
             typingError(
               Array[
                 (pos, "This operator is useless"),
-                (e.pos, "This constructor is always null or undefined"),
+                (e.pos, "This expression is always null or undefined"),
               ],
             )
           }
@@ -968,7 +965,7 @@ extension class TypeChecker {
             typingError(
               Array[(pos, "Invalid in"), (e2.pos, `This has type ${t2}`)],
             )
-          | TObject(TFields(fields, indexes), _pos) ->
+          | TObject(TFields{fields, indexes}, _pos) ->
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
@@ -1301,6 +1298,8 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
+      invariant(fields.indexes.isEmpty());
+      invariant(fields.new is None());
       fields.maybeGet(fieldName.value) match {
       | None() ->
         used match {
@@ -1345,7 +1344,7 @@ extension class TypeChecker {
                 tcenv.subst,
                 this.tenv,
                 fields,
-                TFields::create(Array[field], Array[]),
+                TFields::create{fields => Array[field]},
               ),
               objPos,
             ),

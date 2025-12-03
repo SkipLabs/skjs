@@ -7,7 +7,6 @@
 
 module SKJS;
 
-const cstrName: String = "constructor";
 value class CstrType(cstr: ?TType)
 
 class TEnv{
@@ -212,7 +211,7 @@ class TEnv{
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
-    this.addFields(
+    constructor = this.addFields(
       context,
       fields,
       indexes,
@@ -224,8 +223,12 @@ class TEnv{
         filter(fieldType) && !fieldType.isStatic()
       },
     );
+    invariant(constructor is None());
     TObject(
-      TFields::create(fields.values().collect(Array), indexes.toArray()),
+      TFields::create{
+        fields => fields.values().collect(Array),
+        indexes => indexes.toArray(),
+      },
       className.pos,
     )
   }
@@ -244,7 +247,7 @@ class TEnv{
     visitedClasses = SortedSet[];
     fields = mutable Map[];
     indexes = mutable Vector[];
-    this.addFields(
+    constructor = this.addFields(
       context,
       fields,
       indexes,
@@ -255,11 +258,16 @@ class TEnv{
       fieldType ~> fieldType.isStatic(),
     );
     pos = className.pos;
-    if (!fields.containsKey(cstrName)) {
-      fields![cstrName] = this.makeEmptyConstructor(context, pos, className, c);
+    new = constructor match {
+    | Some(ty) -> ty
+    | None() -> this.makeEmptyConstructor(context, pos, className, c)
     };
     TObject(
-      TFields::create(fields.values().collect(Array), indexes.toArray()),
+      TFields::create{
+        fields => fields.values().collect(Array),
+        indexes => indexes.toArray(),
+        new => Some(new),
+      },
       pos,
     )
   }
@@ -269,24 +277,12 @@ class TEnv{
     pos: PosRange,
     className: Name,
     c: Class,
-  ): TField {
-    cgNode = CGNode::create(
-      Method(
-        Some(FNNormal(Name(pos, cstrName))),
-        className,
-        c.name.pos.fileName,
-        true,
-      ),
-    );
+  ): TType {
+    cgNode = CGNode::create(Constructor(className, c.name.pos.fileName));
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
     ftype = Type(pos, TAFun(false, c.tparams, Array[], retType, cgNode));
-    TField::create(
-      pos,
-      "constructor",
-      false,
-      this.normalize(context, ftype),
-    ).fromSome()
+    this.normalize(context, ftype)
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
@@ -373,7 +369,7 @@ class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
-  ): void {
+  ): /* Type of constructor */ ?TType {
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
@@ -384,7 +380,7 @@ class TEnv{
     for (extend in cls.extends_) {
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
-        this.addFields(
+        _ = this.addFields(
           context,
           acc,
           indexes,
@@ -399,6 +395,7 @@ class TEnv{
       | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
     };
+    constructor: ?TType = None();
     for (fieldType in cls.fields) {
       fieldType match {
       | field @ FieldTypeValue _ ->
@@ -458,32 +455,27 @@ class TEnv{
           )
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
+      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+        if (isStatic is None()) continue;
+        invariant(constructor is None());
+        !constructor = Some(
+          this.makeConstructor(context, className, isStatic.fromSome(), fd),
+        )
       | fd @ FunDef _ ->
-        isConstructor = fd.name match {
-        | Some(FNNormal(name @ Name(_, "constructor"))) -> Some(name)
-        | _ -> None()
-        };
-        metIsStatic = isConstructor.isSome() || fd.isStatic();
+        metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
-        (metName, metType) = isConstructor match {
-        | Some(name) ->
-          (
-            name,
-            this.makeConstructor(context, className, isStatic.fromSome(), fd),
-          )
-        | None() ->
-          cgNode = CGNode::create(
-            Method(fd.name, className, fd.pos.fileName, metIsStatic),
-          );
-          this.funDecl(context, !metIsStatic, fd, cgNode)
-        };
+        cgNode = CGNode::create(
+          Method(fd.name, className, fd.pos.fileName, metIsStatic),
+        );
+        (metName, metType) = this.funDecl(context, !metIsStatic, fd, cgNode);
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
           typingError(Array[(fd.pos, `Forbidden method name '${metName}'`)])
         | Some(field) -> acc![metName.value] = field
         }
       }
-    }
+    };
+    constructor
   }
 
   private fun findConstructor(
@@ -599,12 +591,7 @@ class TEnv{
     cgNode: CGNode,
   ): (Name, TType) {
     name = fd.name match {
-    | Some(FNNormal(name)) ->
-      if (name.value == "constructor") {
-        what = if (isMethod) "method" else "function";
-        typingError(Array[(name.pos, `Forbidden ${what} name: ${name}`)])
-      };
-      name
+    | Some(FNNormal(name)) -> name
     | None() -> notSupported(fd.pos, "anonymous function")
     | _ -> notSupported(fd.pos, "non-normal function name")
     };
@@ -648,15 +635,7 @@ class TEnv{
         context,
         Type(tyPos, TAFun(false, clauses, params, retType, cgNode)),
       );
-      TType::single(
-        TObject(
-          TFields::create(
-            Array[TField::create(pos, cstrName, false, tfun).fromSome()],
-            Array[],
-          ),
-          pos,
-        ),
-      )
+      TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
@@ -676,35 +655,17 @@ class TEnv{
         TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
         c = this.getClass(context, className);
-        this.findConstructorMethod(
+        tfun = this.findConstructorMethod(
           context,
           SortedSet[],
           className,
           c.tparams,
           targs.map(x -> this.normalize(context, x)),
         ) match {
-        | None() ->
-          TType::single(
-            TObject(
-              TFields::create(
-                Array[this.makeEmptyConstructor(context, pos, className, c)],
-                Array[],
-              ),
-              pos,
-            ),
-          )
-        | Some(fd) ->
-          tfun = this.makeConstructor(context, className, c.tparams, fd);
-          TType::single(
-            TObject(
-              TFields::create(
-                Array[TField::create(pos, cstrName, false, tfun).fromSome()],
-                Array[],
-              ),
-              pos,
-            ),
-          )
-        }
+        | None() -> this.makeEmptyConstructor(context, pos, className, c)
+        | Some(fd) -> this.makeConstructor(context, className, c.tparams, fd)
+        };
+        TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
     | TAPrim(kind) ->
@@ -966,9 +927,6 @@ class TEnv{
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
         | FNNormal(name) ->
-          if (name.value == "constructor") {
-            typingError(Array[(name.pos, `Forbidden field name: ${name}`)])
-          };
           normalizedType = this.normalize(context, fieldTy);
           optField = TField::create(
             name.pos,
@@ -1015,7 +973,7 @@ class TEnv{
         optField
       }
     });
-    tFields = TFields::create(fields, indexes.toArray());
+    tFields = TFields::create{fields, indexes => indexes.toArray()};
     (algebraicBranchField, tFields)
   }
 

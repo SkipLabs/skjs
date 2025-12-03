@@ -213,7 +213,7 @@ extension class TypeChecker {
               false,
               TType::top(e.pos),
             ).map(field ->
-              TObject(TFields::create(Array[field], Array[]), e1.pos)
+              TObject(TFields::create{fields => Array[field]}, e1.pos)
             )
           )
         )
@@ -244,7 +244,7 @@ extension class TypeChecker {
         | TFuns _
         | TPromise _ ->
           stype /* TODO */
-        | TObject(tFields @ TFields(_fields, indexes), tObjPos) ->
+        | TObject(tFields @ TFields{indexes}, tObjPos) ->
           fieldsOpt
             .flatMap(fieldsToCheck ->
               fieldsToCheck
