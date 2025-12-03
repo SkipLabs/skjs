@@ -279,20 +279,6 @@ class TEnv{
     )
   }
 
-  private fun makeEmptyConstructorField(
-    context: mutable SKStore.Context,
-    pos: PosRange,
-    className: Name,
-    c: Class,
-  ): TField {
-    TField::create(
-      pos,
-      "constructor",
-      false,
-      this.makeEmptyConstructor(context, pos, className, c),
-    ).fromSome()
-  }
-
   private fun makeEmptyConstructor(
     context: mutable SKStore.Context,
     pos: PosRange,
@@ -698,24 +684,27 @@ class TEnv{
         TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
         c = this.getClass(context, className);
-        constructorField = this.findConstructorMethod(
+        tfun = this.findConstructorMethod(
           context,
           SortedSet[],
           className,
           c.tparams,
           targs.map(x -> this.normalize(context, x)),
         ) match {
-        | None() -> this.makeEmptyConstructorField(context, pos, className, c)
-        | Some(fd) ->
-          tfun = this.makeConstructor(context, className, c.tparams, fd);
-          TField::create(pos, cstrName, false, tfun).fromSome()
+        | None() -> this.makeEmptyConstructor(context, pos, className, c)
+        | Some(fd) -> this.makeConstructor(context, className, c.tparams, fd)
         };
-
+        constructorField = TField::create(
+          pos,
+          cstrName,
+          false,
+          tfun,
+        ).fromSome();
         TType::single(
           TObject(
             TFields::create{
               fields => Array[constructorField],
-              new => Some(constructorField.type),
+              new => Some(tfun),
             },
             pos,
           ),
