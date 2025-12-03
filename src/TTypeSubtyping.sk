@@ -77,6 +77,15 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult {
+    (fields1.new, fields2.new) match {
+    | (_, None()) -> void
+    | (None(), Some _) -> return STMissingConstructor()
+    | (Some(new1), Some(new2)) ->
+      TType::isSub(subst, tenv, new1, new2) match {
+      | err @ STError _ -> return err
+      | STOk() -> void
+      }
+    };
     index1o = fields1.maybeSingleIndex();
     index2o = fields2.maybeSingleIndex();
     (index1o, index2o) match {

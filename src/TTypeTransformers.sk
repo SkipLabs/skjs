@@ -128,7 +128,11 @@ mutable base class ApplyType(
     env: this::Env,
     fields: TFields,
   ): TFields {
-    fields.map(x -> this.field(env, x), x -> this.indexField(env, x))
+    fields.map(
+      x -> this.field(env, x),
+      x -> this.indexField(env, x),
+      x -> this.type(env, x),
+    )
   }
 
   overridable deferred mutable fun field(

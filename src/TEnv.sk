@@ -266,10 +266,12 @@ class TEnv{
         c,
       );
     };
+    new = fields[cstrName].type;
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
         indexes => indexes.toArray(),
+        new => Some(new),
       },
       pos,
     )
@@ -674,6 +676,7 @@ class TEnv{
             fields => Array[
               TField::create(pos, cstrName, false, tfun).fromSome(),
             ],
+            new => Some(tfun),
           },
           pos,
         ),
@@ -711,7 +714,13 @@ class TEnv{
         };
 
         TType::single(
-          TObject(TFields::create{fields => Array[constructorField]}, pos),
+          TObject(
+            TFields::create{
+              fields => Array[constructorField],
+              new => Some(constructorField.type),
+            },
+            pos,
+          ),
         )
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
