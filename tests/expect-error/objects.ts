@@ -55,37 +55,31 @@ function testMixedObjectNormalFieldIncorrectIndexingType(
   return obj.missing;
 }
 
-function cannotAccessFieldConstructor(
+function canAccessFieldConstructor(
   obj: object,
   f: "constructor" | "banana",
 ): void {
-  // @skjs-expect-error Cannot access field 'constructor'
   const whatever = obj[f];
 }
 
-function cannotUseConstructorAsFieldName(): object {
-  // @skjs-expect-error Forbidden field name: constructor
+function canUseConstructorAsFieldName(): object {
   return { constructor: 1 };
 }
 
-function cannotUseConstructorAsMethodName(): object {
-  // @skjs-expect-error Forbidden function name: constructor
+function canUseConstructorAsMethodName(): object {
+  // @skjs-expect-error Missing return type annotation
   return { constructor() {} };
 }
 
-function cannotUseConstructorAsMethodName2(): object {
-  // @skjs-expect-error Forbidden function name: constructor
+function canUseConstructorAsMethodName2(): object {
   return { constructor(): void {} };
 }
 
-// @skjs-expect-error Forbidden field name: constructor
-function cannotHaveConstructorField(x: { constructor: string }): void {}
+function canHaveConstructorField(x: { constructor: string }): void {}
 
-// @skjs-expect-error Forbidden function name: constructor
-function cannotHaveConstructorMethod(x: { constructor(): void }): void {}
+function canHaveConstructorMethod(x: { constructor(): void }): void {}
 
-// @skjs-expect-error Forbidden function name: constructor
-function cannotHaveConstructorMethod2(x: { constructor() }): void {}
+function canHaveConstructorMethod2(x: { constructor() }): void {}
 
 function constructor(): void {}
 

@@ -591,12 +591,7 @@ class TEnv{
     cgNode: CGNode,
   ): (Name, TType) {
     name = fd.name match {
-    | Some(FNNormal(name)) ->
-      if (name.value == "constructor") {
-        what = if (isMethod) "method" else "function";
-        typingError(Array[(name.pos, `Forbidden ${what} name: ${name}`)])
-      };
-      name
+    | Some(FNNormal(name)) -> name
     | None() -> notSupported(fd.pos, "anonymous function")
     | _ -> notSupported(fd.pos, "non-normal function name")
     };
@@ -932,9 +927,6 @@ class TEnv{
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
         | FNNormal(name) ->
-          if (name.value == "constructor") {
-            typingError(Array[(name.pos, `Forbidden field name: ${name}`)])
-          };
           normalizedType = this.normalize(context, fieldTy);
           optField = TField::create(
             name.pos,
