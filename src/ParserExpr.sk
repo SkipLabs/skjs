@@ -298,9 +298,6 @@ extension class Parser {
       newLeft = Binop(binop, left, this.expr(bopPrec + 1));
       Some(newLeft)
     } else {
-      if (bopPrec >= prec) {
-        internal_error("bopPrec should be less than prec")
-      };
       None()
     }
   }
