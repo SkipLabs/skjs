@@ -651,8 +651,9 @@ extension class TypeChecker {
       | _ -> void
       };
       rty
-    | New(className, targsAst, argsAst) ->
-      if (tcenv.scope.maybeGet(className) is None()) {
+    | New(subExpr, targsAst, argsAst) ->
+      subExpr.value match {
+      | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
         targs = if (targsAst.size() == 0) {
           this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
         } else {
@@ -666,11 +667,11 @@ extension class TypeChecker {
           argsAst.map(e -> this.expr(tcenv, e)),
         );
         this.tenv.new(tcenv.context, className, targs)
-      } else {
+      | _ ->
         cstr = this.get(
           tcenv,
           pos,
-          this.expr(tcenv, Expr(pos, Var(className))),
+          this.expr(tcenv, subExpr),
           Expr(pos, EString("constructor")),
           false,
           true,

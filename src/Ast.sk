@@ -295,7 +295,7 @@ class CatchClause(
 //   | keyof <type>
 //   | await <expr>
 //   | <expr> [ <expr> ]
-//   | new <name> ( <type>* ) ( <expr>* )
+//   | new <expr> ( <type>* ) ( <expr>* )
 //   | <unop> <expr>
 //   | <expr> <post-op>
 //   | <expr> <binop> <expr>
@@ -325,7 +325,7 @@ base class Expr_ uses XXHashable {
   | Await(Expr)
   | Dot(DotKind, Expr, Name)
   | Get(Expr, Expr)
-  | New(Name, Array<Type>, Array<Expr>)
+  | New(Expr, Array<Type>, Array<Expr>)
   | Unop(UnaryOperator, Expr)
   | PostOp(PostOperator, Expr)
   | Binop(BinaryOperator, Expr, Expr)

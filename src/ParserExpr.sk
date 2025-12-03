@@ -232,7 +232,7 @@ extension class Parser {
         };
         this.expect(TKOpenParen());
         args = this.arguments();
-        New(name, targs, args)
+        New(Expr(name.pos, Var(name)), targs, args)
       | "async" -> Async(this.expr(closurePrec))
       | "await" -> Await(this.expr(prefixPrec))
       | "typeof" -> TypeOf(this.expr(prefixPrec))
