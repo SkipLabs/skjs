@@ -660,7 +660,6 @@ class TEnv{
             fields => Array[
               TField::create(pos, cstrName, false, tfun).fromSome(),
             ],
-            indexes => Array[],
           },
           pos,
         ),
@@ -698,13 +697,7 @@ class TEnv{
         };
 
         TType::single(
-          TObject(
-            TFields::create{
-              fields => Array[constructorField],
-              indexes => Array[],
-            },
-            pos,
-          ),
+          TObject(TFields::create{fields => Array[constructorField]}, pos),
         )
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }

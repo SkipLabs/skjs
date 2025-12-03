@@ -105,7 +105,6 @@ extension class TypeChecker {
             fields => Array[
               TField::create(pos, "__SKJS_Ignorable", false, tyVoid).fromSome(),
             ],
-            indexes => Array[],
           },
           pos,
         ),

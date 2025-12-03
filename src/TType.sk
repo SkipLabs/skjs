@@ -652,7 +652,7 @@ class TFields private (
 
   static fun create{
     fields: Array<TField>,
-    indexes: Array<TIndexField>,
+    indexes: Array<TIndexField> = Array[],
   }: TFields {
     TFields(
       InternalKeyedArrayMap::createFromSortedIterator(

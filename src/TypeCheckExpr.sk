@@ -1346,7 +1346,7 @@ extension class TypeChecker {
                 tcenv.subst,
                 this.tenv,
                 fields,
-                TFields::create{fields => Array[field], indexes => Array[]},
+                TFields::create{fields => Array[field]},
               ),
               objPos,
             ),
