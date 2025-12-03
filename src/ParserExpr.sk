@@ -223,7 +223,7 @@ extension class Parser {
       this.getVar(tok) match {
       | "function" -> this.error(this.lex.posStart(tok), FunctionInExpr())
       | "new" ->
-        name = this.getName();
+        subExpr = this.expr(callPrecHigh);
         targs = if (this.lex.peekKind() is Some(TKLessThan())) {
           _ = this.lex.next();
           this.typeList()
@@ -232,7 +232,7 @@ extension class Parser {
         };
         this.expect(TKOpenParen());
         args = this.arguments();
-        New(Expr(name.pos, Var(name)), targs, args)
+        New(subExpr, targs, args)
       | "async" -> Async(this.expr(closurePrec))
       | "await" -> Await(this.expr(prefixPrec))
       | "typeof" -> TypeOf(this.expr(prefixPrec))
