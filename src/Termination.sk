@@ -193,7 +193,6 @@ value class StmtTermination private {
     | Number(_)
     | BigInt(_)
     | Var(_name)
-    | Spread(_name) /* We assume the typechecker checks it's an iterable */
     | EString(_)
     | Closure(_args, _retTy, _body)
     | Regexp(_) ->
@@ -205,6 +204,8 @@ value class StmtTermination private {
     | As(e, _ty)
     | AsConst(e) ->
       static::expr(e)
+    | Spread(e) ->
+      static::expr(e) /* We assume the typechecker checks it's an iterable */
     | New(e, _targs, args) ->
       static::expr(e).thenk(() ->
         static::seq(args, static::expr).then(static::unknownCall)

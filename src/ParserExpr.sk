@@ -11,7 +11,7 @@ extension class Parser {
   // <expr> ::=
   //   | <string-number>
   //   | <name>
-  //   | ... <name>
+  //   | ... <expr>
   //   | <string-kind> <string>
   //   | typeof <expr>
   //   | keyof <type>
@@ -243,7 +243,7 @@ extension class Parser {
     | TKSubtraction() -> Unop(UOMinus(), this.expr(prefixPrec))
     | TKExclamationMark() -> Unop(UOExclamationMark(), this.expr(prefixPrec))
     | TKTild() -> Unop(UOTild(), this.expr(prefixPrec))
-    | TKDotDotDot() -> Spread(this.getName())
+    | TKDotDotDot() -> Spread(this.expr(spreadPrec))
     /* old-style as */
     | TKLessThan() ->
       ty = this.type(0);
