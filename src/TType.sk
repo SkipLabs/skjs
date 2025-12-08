@@ -434,21 +434,17 @@ class TTuple(tuple: Array<TType>) extends SType
 /* Funs */
 /***************************************************************************/
 
-class TFuns private (
-  funs: InternalKeyedArrayMap<(Int, Int), TFun>,
-) extends SType {
-  /* Invariant: funs is not empty */
-
+class TFuns private (fun_: TFun) extends SType {
   static fun singleFun(x: TFun, pos: PosRange): TFuns {
-    TFuns(InternalKeyedArrayMap::single(x), pos)
+    TFuns(x, pos)
   }
 
   static fun singleMethod(x: TFun, pos: PosRange): TFuns {
-    TFuns(InternalKeyedArrayMap::single(x), pos)
+    TFuns(x, pos)
   }
 
   fun mapFuns(f: TFun -> TFun): TFuns {
-    TFuns(this.funs.map(f), this.pos)
+    TFuns(f(this.fun_), this.pos)
   }
 }
 
@@ -475,11 +471,7 @@ class ATFullType(fullType: TType) extends ArrayType {
         popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
           stypes.singleElt()
         ) match {
-        | Some(TFuns(methods, _)) ->
-          for (met in methods) {
-            return Some(met.retType)
-          };
-          None()
+        | Some(TFuns(met, _)) -> Some(met.retType)
         | _ -> None()
         }
       )

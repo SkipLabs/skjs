@@ -39,34 +39,13 @@ extension class TConstr {
 }
 
 extension class TFuns {
-  private static fun isSubTFun(
-    subst: mutable Subst,
-    tenv: TEnv,
-    f1: TFun,
-    f2O: ?TFun,
-  ): Result<void, STError> {
-    f2O match {
-    | Some(f2) ->
-      TFun::isSub(subst, tenv, f1, f2) match {
-      | STOk() -> Success(void)
-      | err @ STError _ -> Failure(err)
-      }
-    | None() -> Failure(STTooManyTFun(f1))
-    }
-  }
-
   static fun isSub(
     subst: mutable Subst,
     tenv: TEnv,
     funs1: TFuns,
     funs2: TFuns,
   ): STResult {
-    funs1.funs.leq(funs2.funs, (x, y) ->
-      TFuns::isSubTFun(subst, tenv, x, y)
-    ) match {
-    | Failure(err) -> err
-    | Success(void) -> (STOk() : STResult)
-    }
+    TFun::isSub(subst, tenv, funs1.fun_, funs2.fun_)
   }
 }
 

@@ -1417,104 +1417,89 @@ extension class TypeChecker {
     fty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(TFuns(funs, _)) ->
-      for (tfun in funs) {
-        recordCalls(tcenv.context, tcenv.callingContext, tfun.cgNodes);
-        if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
-          typingError(
-            Array[
-              (
-                pos,
-                `Incompatible number of type arguments: ${targs.size()} passed`,
-              ),
-              (fty.pos, `Expected: ${tfun.tparams.size()}`),
-            ],
+    | Some(TFuns(tfun, _)) ->
+      recordCalls(tcenv.context, tcenv.callingContext, tfun.cgNodes);
+      if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
+        typingError(
+          Array[
+            (
+              pos,
+              `Incompatible number of type arguments: ${targs.size()} passed`,
+            ),
+            (fty.pos, `Expected: ${tfun.tparams.size()}`),
+          ],
+        )
+      };
+      map = SortedMap[];
+      for (i => tparamDecl in tfun.tparams) {
+        !map[tparamDecl.id] = if (targs.isEmpty()) {
+          this.newTVar(tcenv, pos)
+        } else {
+          targs[i]
+        };
+      };
+      !tfun = (mutable Instantiate()).fun_(
+        (tcenv.subst, this.tenv, map.chill()),
+        tfun with {tparams => Array[]},
+      );
+      version = tcenv.subst.version;
+      loop {
+        for (i in Range(0, tfun.params.size())) {
+          if (i >= args.size()) {
+            typingError(
+              Array[
+                (pos, "Invalid call"),
+                (fty.pos, `This function has ${tfun.params.size()} parameters`),
+              ],
+            )
+          };
+          this.checkSubType(tcenv, pos, "Invalid call", args[i], tfun.params[i])
+        };
+        for (j in Range(0, tfun.optionalParams.size())) {
+          i = tfun.params.size() + j;
+          if (i >= args.size()) break void;
+          this.checkSubType(
+            tcenv,
+            pos,
+            "Invalid call",
+            args[i],
+            tfun.optionalParams[j],
           )
         };
-        map = SortedMap[];
-        for (i => tparamDecl in tfun.tparams) {
-          !map[tparamDecl.id] = if (targs.isEmpty()) {
-            this.newTVar(tcenv, pos)
-          } else {
-            targs[i]
-          };
-        };
-        !tfun = (mutable Instantiate()).fun_(
-          (tcenv.subst, this.tenv, map.chill()),
-          tfun with {tparams => Array[]},
-        );
-        version = tcenv.subst.version;
-        loop {
-          for (i in Range(0, tfun.params.size())) {
-            if (i >= args.size()) {
-              typingError(
-                Array[
-                  (pos, "Invalid call"),
-                  (
-                    fty.pos,
-                    `This function has ${tfun.params.size()} parameters`,
-                  ),
-                ],
-              )
-            };
-            this.checkSubType(
-              tcenv,
-              pos,
-              "Invalid call",
-              args[i],
-              tfun.params[i],
-            )
-          };
-          for (j in Range(0, tfun.optionalParams.size())) {
-            i = tfun.params.size() + j;
-            if (i >= args.size()) break void;
-            this.checkSubType(
-              tcenv,
-              pos,
-              "Invalid call",
-              args[i],
-              tfun.optionalParams[j],
-            )
-          };
-          if (tcenv.subst.version == version) break void;
-          !version = tcenv.subst.version;
-        };
-        totalSize = tfun.params.size() + tfun.optionalParams.size();
-        if (totalSize < args.size()) {
-          tfun.spreadParam match {
-          | None() ->
-            // Allow more ignored parameters
-            void
-          | Some(spreadType) ->
-            spreadType.getEltType(
-              tcenv.subst,
-              this.tenv,
-              Contravariant(),
-            ) match {
-            | Some(eltType) ->
-              for (i in Range(totalSize, args.size())) {
-                this.checkSubType(
-                  tcenv,
-                  pos,
-                  "Invalid argument",
-                  args[i],
-                  eltType,
-                );
-              }
-            | None() ->
-              typingError(
-                Array[
-                  (pos, "Invalid call. Unexpected type for ..."),
-                  (spreadType.getPos(), `${spreadType} is not an array`),
-                ],
-              )
+        if (tcenv.subst.version == version) break void;
+        !version = tcenv.subst.version;
+      };
+      totalSize = tfun.params.size() + tfun.optionalParams.size();
+      if (totalSize < args.size()) {
+        tfun.spreadParam match {
+        | None() ->
+          // Allow more ignored parameters
+          void
+        | Some(spreadType) ->
+          spreadType.getEltType(tcenv.subst, this.tenv, Contravariant()) match {
+          | Some(eltType) ->
+            for (i in Range(totalSize, args.size())) {
+              this.checkSubType(
+                tcenv,
+                pos,
+                "Invalid argument",
+                args[i],
+                eltType,
+              );
             }
+          | None() ->
+            typingError(
+              Array[
+                (pos, "Invalid call. Unexpected type for ..."),
+                (spreadType.getPos(), `${spreadType} is not an array`),
+              ],
+            )
           }
-        };
-        !result = result match {
-        | None() -> Some(tfun.retType)
-        | Some(r) -> Some(TType::union(tcenv.subst, this.tenv, r, tfun.retType))
-        };
+        }
+      };
+      !result = result match {
+      | None() -> Some(tfun.retType)
+      | Some(r) -> Some(TType::union(tcenv.subst, this.tenv, r, tfun.retType))
       }
     | _ -> void
     };
