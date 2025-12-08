@@ -607,12 +607,7 @@ extension class TypeChecker {
             Array[(pos, "super cannot be called with type arguments")],
           );
         };
-        this.callConstructor(
-          tcenv,
-          pos,
-          superCstr,
-          args.map(x -> this.expr(tcenv, x)),
-        );
+        this.callConstructor(tcenv, pos, superCstr, args);
         thisName = Name(pos, "this");
         thisType = TType::inter(
           tcenv.subst,
@@ -639,7 +634,7 @@ extension class TypeChecker {
         pos,
         this.expr(tcenv, f),
         targs.map(ty -> this.tenv.normalize(tcenv.context, ty)),
-        args.map(x -> this.expr(tcenv, x)),
+        args,
       );
       f.value match {
       | Dot(
@@ -651,9 +646,8 @@ extension class TypeChecker {
       | _ -> void
       };
       rty
-    | New(subExpr, targsAst, argsAst) ->
+    | New(subExpr, targsAst, args) ->
       tArgs = targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ));
-      args = argsAst.map(e -> this.expr(tcenv, e));
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
         if (targsAst.size() == 0) {
@@ -1237,7 +1231,7 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     pos: PosRange,
     cstrType: CstrType,
-    args: Array<TType>,
+    args: Array<Expr>,
   ): void {
     cstrType.cstr match {
     | None() ->
@@ -1413,8 +1407,10 @@ extension class TypeChecker {
     pos: PosRange,
     fty: TType,
     targs: Array<TType>,
-    args: Array<TType>,
+    argExprs: Array<Expr>,
   ): TType {
+    args = argExprs.map(e -> this.expr(tcenv, e));
+
     result: ?TType = None();
     fty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
