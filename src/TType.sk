@@ -452,7 +452,36 @@ class TFuns private (
   }
 }
 
-class ArrayType(fullType: TType) uses XXHashable, Orderable
+class ArrayType(fullType: TType) uses XXHashable, Orderable {
+  fun getPos(): PosRange {
+    this.fullType.pos
+  }
+
+  fun toString(): String {
+    this.fullType.toString()
+  }
+
+  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): ?TType {
+    this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(object @ TObject _) ->
+      object.fields.maybeGet("pop").flatMap(popMethod ->
+        popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
+          stypes.singleElt()
+        ) match {
+        | Some(TFuns(methods, _)) ->
+          for (met in methods) {
+            return Some(met.retType)
+          };
+          None()
+        | _ -> None()
+        }
+      )
+    | _ -> None()
+    }
+  }
+}
 
 class TFun(
   tparams: Array<TParamWithConstraint>,
