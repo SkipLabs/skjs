@@ -818,7 +818,7 @@ class TEnv{
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
       optionalWitness: ?PosRange = None();
-      spreadParam: ?TType = None();
+      spreadParam: ?ArrayType = None();
       thisParam: ?TType = None();
       for (i => param in params) {
         paramType = this.normalize(context, param.type);
@@ -854,7 +854,7 @@ class TEnv{
             )
           | None() -> void
           };
-          !spreadParam = Some(paramType);
+          !spreadParam = Some(ArrayType(paramType));
           continue
         | None() -> void
         };

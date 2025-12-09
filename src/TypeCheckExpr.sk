@@ -1518,7 +1518,7 @@ extension class TypeChecker {
                 (tfun.minSizeWitness, "For this function"),
               ],
             )
-          | Some(spreadType) ->
+          | Some(ArrayType(spreadType)) ->
             spreadType
               .getSTypes(tcenv.subst, this.tenv, Contravariant())
               .flatMap(stypes ~> stypes.singleElt()) match {

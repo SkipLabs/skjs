@@ -452,12 +452,14 @@ class TFuns private (
   }
 }
 
+class ArrayType(fullType: TType) uses XXHashable, Orderable
+
 class TFun(
   tparams: Array<TParamWithConstraint>,
   thisParam: ?TType,
   params: Array<TType>,
   optionalParams: Array<TType>,
-  spreadParam: ?TType,
+  spreadParam: ?ArrayType,
   minSizeWitness: PosRange,
   retType: TType,
   cgNodes: CGNodes,

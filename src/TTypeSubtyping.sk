@@ -393,13 +393,24 @@ extension class TFun {
       f1.spreadParam match {
       | None() -> return STMissingSpread()
       | Some(spread1) ->
-        TType::isSub(subst, tenv, spread1, spread2) match {
+        ArrayType::isSub(subst, tenv, spread1, spread2) match {
         | STOk() -> void
         | err @ STError _ -> return err
         }
       }
     };
     TType::isSub(subst, tenv, f1.retType, f2.retType)
+  }
+}
+
+extension class ArrayType {
+  static fun isSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arr1: ArrayType,
+    arr2: ArrayType,
+  ): STResult {
+    TType::isSub(subst, tenv, arr1.fullType, arr2.fullType)
   }
 }
 

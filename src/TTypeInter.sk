@@ -385,7 +385,7 @@ extension class TFun {
     | (None(), None()) -> None()
     | (ty @ Some _, None()) -> ty
     | (None(), ty @ Some _) -> ty
-    | (Some(ty1), Some(ty2)) -> Some(TType::union(subst, tenv, ty1, ty2))
+    | (Some(ty1), Some(ty2)) -> Some(ArrayType::union(subst, tenv, ty1, ty2))
     };
     retType = TType::inter(subst, tenv, f1.retType, f2.retType);
     cgNodes = f1.cgNodes.intersection(f2.cgNodes);
@@ -399,6 +399,17 @@ extension class TFun {
       retType,
       cgNodes,
     )
+  }
+}
+
+extension class ArrayType {
+  static fun inter(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arr1: ArrayType,
+    arr2: ArrayType,
+  ): ArrayType {
+    ArrayType(TType::inter(subst, tenv, arr1.fullType, arr2.fullType))
   }
 }
 
