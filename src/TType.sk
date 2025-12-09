@@ -493,7 +493,7 @@ class TFun(
   thisParam: ?TType,
   params: Array<TType>,
   optionalParams: Array<TType>,
-  spreadParam: ?ArrayType,
+  spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   minSizeWitness: PosRange,
   retType: TType,
   cgNodes: CGNodes,

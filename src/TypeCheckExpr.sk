@@ -1483,12 +1483,8 @@ extension class TypeChecker {
         if (totalSize < args.size()) {
           tfun.spreadParam match {
           | None() ->
-            typingError(
-              Array[
-                (pos, "Too many arguments"),
-                (tfun.minSizeWitness, "For this function"),
-              ],
-            )
+            // Allow more ignored parameters
+            void
           | Some(spreadType) ->
             spreadType.getEltType(
               tcenv.subst,
