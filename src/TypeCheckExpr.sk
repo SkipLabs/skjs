@@ -1425,11 +1425,9 @@ extension class TypeChecker {
             Array[
               (
                 pos,
-                "Incompatible number of type arguments: " +
-                  targs.size() +
-                  " passed",
+                `Incompatible number of type arguments: ${targs.size()} passed`,
               ),
-              (fty.pos, "Expected: " + tfun.tparams.size()),
+              (fty.pos, `Expected: ${tfun.tparams.size()}`),
             ],
           )
         };
@@ -1454,7 +1452,7 @@ extension class TypeChecker {
                   (pos, "Invalid call"),
                   (
                     fty.pos,
-                    "This function has " + tfun.params.size() + " parameters",
+                    `This function has ${tfun.params.size()} parameters`,
                   ),
                 ],
               )
