@@ -355,14 +355,17 @@ extension class TFun {
   }
 }
 
-extension class ArrayType {
+extension base class ArrayType {
   static fun union(
     subst: mutable Subst,
     tenv: TEnv,
     arr1: ArrayType,
     arr2: ArrayType,
   ): ArrayType {
-    ArrayType(TType::union(subst, tenv, arr1.fullType, arr2.fullType))
+    (arr1, arr2) match {
+    | (ATFullType(full1), ATFullType(full2)) ->
+      ATFullType(TType::union(subst, tenv, full1, full2))
+    }
   }
 }
 

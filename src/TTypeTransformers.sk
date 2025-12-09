@@ -128,7 +128,9 @@ mutable base class ApplyType(
     env: this::Env,
     arr: ArrayType,
   ): ArrayType {
-    ArrayType(this.type(env, arr.fullType))
+    arr match {
+    | ATFullType(fullType) -> ATFullType(this.type(env, fullType))
+    }
   }
 
   overridable deferred mutable fun fields(

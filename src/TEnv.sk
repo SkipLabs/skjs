@@ -854,7 +854,7 @@ class TEnv{
             )
           | None() -> void
           };
-          !spreadParam = Some(ArrayType(paramType));
+          !spreadParam = Some(ATFullType(paramType));
           continue
         | None() -> void
         };

@@ -452,7 +452,12 @@ class TFuns private (
   }
 }
 
-class ArrayType(fullType: TType) uses XXHashable, Orderable {
+base class ArrayType uses XXHashable, Orderable, Show {
+  fun getPos(): PosRange;
+  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): ?TType;
+}
+
+class ATFullType(fullType: TType) extends ArrayType {
   fun getPos(): PosRange {
     this.fullType.pos
   }
