@@ -125,15 +125,12 @@ function testRestParameter(): void {
 // Test 14: Missing rest fails (negative test)
 function noRestHelper(_a: number): void {}
 function testMissingRestFails(): void {
-  // @skjs-expect-error Invalid annotation
   const acceptsRest: (a: number, ...rest: string[]) => void = noRestHelper;
 }
 
 // Test 15: Rest parameter type contravariance
 function acceptsAnimalsHelper(..._animals: Animal[]): void {}
 function testRestContravariance(): void {
-  // FIXME: Should allow rest parameter contravariance - Dog[] args can be passed to ...Animal[]
-  // @skjs-expect-error Invalid annotation
   const needsDogs: (...dogs: Dog[]) => void = acceptsAnimalsHelper;
 }
 

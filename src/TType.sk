@@ -1279,18 +1279,22 @@ base class STError extends STResult {
   | STMissingField(String)
   | STMissingConstructor()
   | STMissingThis()
+  | STMissingParameter()
   | STMissingSpread()
   | STTooManySType(SType)
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
   | STTooManyTFun(TFun)
+  | STTypeParameterMismatch()
   | STInvalidClause(Clause)
+  | STInvalidSpread(ArrayType)
   | STRec(STError, PosRange, TType)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingThis() -> "Missing this parameter"
+    | STMissingParameter() -> "Missing parameter"
     | STMissingSpread() -> "Missing ... parameter"
     | STMissingConstructor() -> "Missing constructor"
     | STMissingField(fieldName) ->
@@ -1324,7 +1328,9 @@ base class STError extends STResult {
           false,
           TType::single(TFuns::singleFun(f, f.minSizeWitness)),
         )
+    | STTypeParameterMismatch() -> "Type parameter mismatch"
     | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
+    | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`
     | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
     }
   }

@@ -351,7 +351,7 @@ extension class TFun {
     f2: TFun,
   ): STResult {
     if (f1.tparams.size() != f2.tparams.size()) {
-      internal_error("function clause sizes must match")
+      return STTypeParameterMismatch()
     };
     tsubst = SortedMap[];
     for (i in Range(0, f1.tparams.size())) {
@@ -379,21 +379,84 @@ extension class TFun {
       | err @ STError _ -> return err
       }
     };
-    params1 = f1.params;
-    params2 = f2.params;
-    for (i in Range(0, params1.size())) {
-      TType::isSub(subst, tenv, params2[i], params1[i]) match {
+
+    if (f1.params.size() > f2.params.size()) {
+      return STMissingParameter()
+    };
+
+    spread1elt = f1.spreadParam match {
+    | None() -> None()
+    | Some(spread1) ->
+      spread1.getEltType(subst, tenv, Contravariant()) match {
+      | None() -> return STInvalidSpread(spread1)
+      | some @ Some _ -> some
+      }
+    };
+
+    for (i => p2 in f2.params) {
+      io1 = i - f1.params.size();
+      p1 = if (io1 < 0) {
+        f1.params[i]
+      } else if (io1 < f1.optionalParams.size()) {
+        f1.optionalParams[io1]
+      } else {
+        spread1elt match {
+        | None() -> break void
+        | Some(p) -> p
+        }
+      };
+      TType::isSub(subst, tenv, p2, p1) match {
       | STOk() -> void
       | err @ STError _ -> return err
       }
     };
+
+    for (io2 => p2 in f2.optionalParams) {
+      i = io2 + f2.params.size();
+      io1 = i - f1.params.size();
+      p1 = if (io1 < 0) {
+        internal_error("f1.params.size() <= f2.params.size() checked above")
+      } else if (io1 < f1.optionalParams.size()) {
+        f1.optionalParams[io1]
+      } else {
+        spread1elt match {
+        | None() -> break void
+        | Some(p) -> p
+        }
+      };
+      TType::isSub(subst, tenv, p2, p1) match {
+      | STOk() -> void
+      | err @ STError _ -> return err
+      }
+    };
+
     f2.spreadParam match {
-    | None() -> void
+    | None() ->
+      if (
+        f1.params.size() + f1.optionalParams.size() >
+          f2.params.size() + f2.optionalParams.size() ||
+        f1.spreadParam.isSome()
+      ) {
+        return STMissingParameter()
+      }
     | Some(spread2) ->
-      f1.spreadParam match {
-      | None() -> return STMissingSpread()
-      | Some(spread1) ->
-        ArrayType::isSub(subst, tenv, spread1, spread2) match {
+      spread2elt = spread2.getEltType(subst, tenv, Covariant()) match {
+      | None() -> return STInvalidSpread(spread2)
+      | Some(spread2elt) -> spread2elt
+      };
+      for (io1 in Range(
+        f2.params.size() + f2.optionalParams.size() - f1.params.size(),
+        f1.optionalParams.size(),
+      )) {
+        TType::isSub(subst, tenv, spread2elt, f1.optionalParams[io1]) match {
+        | STOk() -> void
+        | err @ STError _ -> return err
+        }
+      };
+      spread1elt match {
+      | None() -> void
+      | Some(s1) ->
+        TType::isSub(subst, tenv, spread2elt, s1) match {
         | STOk() -> void
         | err @ STError _ -> return err
         }
