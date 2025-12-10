@@ -454,9 +454,7 @@ base class ArrayType uses XXHashable, Orderable, Show {
   fun full(): TType;
 
   static fun createFromElt(eltType: TType, pos: PosRange): ArrayType {
-    ArrayType::createFromFull(
-      TType::inst(Name(pos, "Array"), TArgs(Array[eltType])),
-    )
+    ATArrayOf(eltType, pos)
   }
 
   static fun createFromFull(fullType: TType): ArrayType {
