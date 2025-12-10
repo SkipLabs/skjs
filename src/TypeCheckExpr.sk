@@ -607,12 +607,7 @@ extension class TypeChecker {
             Array[(pos, "super cannot be called with type arguments")],
           );
         };
-        this.callConstructor(
-          tcenv,
-          pos,
-          superCstr,
-          args.map(x -> this.expr(tcenv, x)),
-        );
+        this.callConstructor(tcenv, pos, superCstr, args);
         thisName = Name(pos, "this");
         thisType = TType::inter(
           tcenv.subst,
@@ -627,9 +622,11 @@ extension class TypeChecker {
       TType::single(TPrimUnit(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
-      exprTy = this.expr(tcenv, args[0]);
-      ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Covariant());
-      print_error(prettyPrintType(false, ty));
+      for (arg in args) {
+        exprTy = this.expr(tcenv, arg);
+        ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Covariant());
+        print_error(prettyPrintType(false, ty))
+      };
       TType::single(TPrimUnit(TVoid(), pos))
     | Call(f, targs, args) ->
       rty = this.call(
@@ -637,7 +634,7 @@ extension class TypeChecker {
         pos,
         this.expr(tcenv, f),
         targs.map(ty -> this.tenv.normalize(tcenv.context, ty)),
-        args.map(x -> this.expr(tcenv, x)),
+        args,
       );
       f.value match {
       | Dot(
@@ -649,9 +646,8 @@ extension class TypeChecker {
       | _ -> void
       };
       rty
-    | New(subExpr, targsAst, argsAst) ->
+    | New(subExpr, targsAst, args) ->
       tArgs = targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ));
-      args = argsAst.map(e -> this.expr(tcenv, e));
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
         if (targsAst.size() == 0) {
@@ -1235,7 +1231,7 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     pos: PosRange,
     cstrType: CstrType,
-    args: Array<TType>,
+    args: Array<Expr>,
   ): void {
     cstrType.cstr match {
     | None() ->
@@ -1411,8 +1407,66 @@ extension class TypeChecker {
     pos: PosRange,
     fty: TType,
     targs: Array<TType>,
-    args: Array<TType>,
+    argExprs: Array<Expr>,
   ): TType {
+    args = mutable Vector<TType>[];
+    moreArgs: ?TType = None();
+
+    for (argExpr in argExprs) {
+      argExpr.value match {
+      | Spread(spreadExpr) ->
+        spreadTy = this.expr(tcenv, spreadExpr);
+        spreadTy
+          .getSTypes(tcenv.subst, this.tenv, Covariant())
+          .flatMap(stypes ~> stypes.singleElt()) match {
+        | Some(object @ TObject _) ->
+          ATFullType::getArrayObjectEltType(
+            object,
+            tcenv.subst,
+            this.tenv,
+          ) match {
+          | None() ->
+            typingError(
+              Array[
+                (argExpr.pos, "Invalid spread argument"),
+                (spreadTy.pos, `It has type ${spreadTy}`),
+              ],
+            )
+          | Some(eltType) ->
+            !moreArgs = Some(
+              moreArgs match {
+              | None() -> eltType
+              | Some(ma) -> TType::union(tcenv.subst, this.tenv, ma, eltType)
+              },
+            )
+          }
+        | Some(TTuple(tupElts, _)) ->
+          moreArgs match {
+          | None() -> args.extend(tupElts)
+          | Some(ma) ->
+            for (tupElt in tupElts) {
+              !ma = TType::union(tcenv.subst, this.tenv, ma, tupElt)
+            };
+            !moreArgs = Some(ma)
+          }
+        | _ ->
+          typingError(
+            Array[
+              (argExpr.pos, "Invalid spread argument"),
+              (spreadTy.pos, `It has type ${spreadTy}`),
+            ],
+          )
+        }
+      | _ ->
+        argTy = this.expr(tcenv, argExpr);
+        moreArgs match {
+        | None() -> args.push(argTy)
+        | Some(ma) ->
+          !moreArgs = Some(TType::union(tcenv.subst, this.tenv, ma, argTy))
+        }
+      }
+    };
+
     result: ?TType = None();
     fty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
@@ -1442,6 +1496,14 @@ extension class TypeChecker {
         (tcenv.subst, this.tenv, map.chill()),
         tfun with {tparams => Array[]},
       );
+      totalSize = tfun.params.size() + tfun.optionalParams.size();
+      moreArgs match {
+      | None() -> void
+      | Some(ma) ->
+        while (args.size() < totalSize) {
+          args.push(ma)
+        }
+      };
       version = tcenv.subst.version;
       loop {
         for (i in Range(0, tfun.params.size())) {
@@ -1469,8 +1531,7 @@ extension class TypeChecker {
         if (tcenv.subst.version == version) break void;
         !version = tcenv.subst.version;
       };
-      totalSize = tfun.params.size() + tfun.optionalParams.size();
-      if (totalSize < args.size()) {
+      if (args.size() > totalSize || moreArgs.isSome()) {
         tfun.spreadParam match {
         | None() ->
           // Allow more ignored parameters
@@ -1486,6 +1547,11 @@ extension class TypeChecker {
                 args[i],
                 eltType,
               );
+            };
+            moreArgs match {
+            | None() -> void
+            | Some(ma) ->
+              this.checkSubType(tcenv, pos, "Invalid argument", ma, eltType)
             }
           | None() ->
             typingError(

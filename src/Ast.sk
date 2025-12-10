@@ -289,7 +289,7 @@ class CatchClause(
 // <expr> ::=
 //   | <string-number>
 //   | <name>
-//   | ... <name>
+//   | ... <expr>
 //   | <string-kind> <string>
 //   | typeof <expr>
 //   | keyof <type>
@@ -319,7 +319,7 @@ base class Expr_ uses XXHashable {
   | Number(String)
   | BigInt(String)
   | Var(Name)
-  | Spread(Name)
+  | Spread(Expr)
   | EString(String)
   | TypeOf(Expr)
   | Await(Expr)
