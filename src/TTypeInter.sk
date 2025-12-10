@@ -130,10 +130,7 @@ extension class TFuns {
     f1: TFuns,
     f2: TFuns,
   ): ?TFuns {
-    funs = f1.funs.mapInter(f2.funs, (x, y) -> TFun::inter(subst, tenv, x, y));
-    if (funs.isEmpty()) None() else {
-      Some(TFuns(funs, f1.pos))
-    }
+    Some(TFuns(TFun::inter(subst, tenv, f1.fun_, f2.fun_), f1.pos))
   }
 }
 

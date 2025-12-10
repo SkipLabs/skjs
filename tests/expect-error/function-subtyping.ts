@@ -70,8 +70,6 @@ function testMixedVariance(): void {
 // Test 8: Fewer parameters is subtype (extra params ignored)
 function testFewerParamsIsSubtype(): void {
   const oneParam: (a: number) => void = (_a: number) => {};
-  // FIXME: Should allow function with fewer params to be assigned to one with more params
-  // @skjs-expect-error Invalid annotation
   const acceptsTwoParams: (a: number, b: string) => void = oneParam;
 }
 
@@ -104,12 +102,11 @@ function testFewerParamsWithOptional(): void {
   const acceptsOptionalSecond: (a: number, b?: string) => void = oneParam;
 }
 
-// Test 12: Optional param for required fails (negative test)
-function testOptionalForRequiredFails(): void {
+// Test 12: Optional param for required works
+function testOptionalForRequired(): void {
   const oneRequiredOneOptional: (a: number, b?: string) => void = (
     _a: number,
   ) => {};
-  // @skjs-expect-error Invalid annotation
   const acceptsTwoRequired: (a: number, b: string) => void =
     oneRequiredOneOptional;
 }

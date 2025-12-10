@@ -104,10 +104,8 @@ extension class TFuns {
     f1: TFuns,
     f2: TFuns,
   ): TFuns {
-    TFuns(
-      f1.funs.mapUnion(f2.funs, (x, y) -> TFun::union(subst, tenv, x, y)),
-      f1.pos,
-    )
+    f = TFun::union(subst, tenv, f1.fun_, f2.fun_);
+    TFuns(f, f1.pos)
   }
 }
 
