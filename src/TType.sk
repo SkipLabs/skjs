@@ -453,6 +453,12 @@ base class ArrayType uses XXHashable, Orderable, Show {
   fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): ?TType;
   fun full(): TType;
 
+  static fun createFromElt(eltType: TType, pos: PosRange): ArrayType {
+    ArrayType::createFromFull(
+      TType::inst(Name(pos, "Array"), TArgs(Array[eltType])),
+    )
+  }
+
   static fun createFromFull(fullType: TType): ArrayType {
     ATFullType(fullType)
   }
