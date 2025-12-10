@@ -297,6 +297,7 @@ extension class TFun {
     if (f1.tparams.size() != f2.tparams.size()) {
       internal_error("function clause sizes must match")
     };
+
     tsubst = SortedMap[];
     clauses = mutable Vector[];
     for (i in Range(0, f1.tparams.size())) {
@@ -312,6 +313,7 @@ extension class TFun {
       clauses.push(tparam1 with {cstr});
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
+
     thisParam = (f1.thisParam, f2.thisParam) match {
     | (None(), _)
     | (_, None()) ->
@@ -319,22 +321,76 @@ extension class TFun {
     | (Some(this1), Some(this2)) ->
       Some(TType::inter(subst, tenv, this1, this2))
     };
+
+    spread1elt = f1.spreadParam match {
+    | None() -> None()
+    | Some(spread1) -> Some(spread1.getEltType(subst, tenv, Contravariant()))
+    };
+    spread2elt = f2.spreadParam match {
+    | None() -> None()
+    | Some(spread2) -> Some(spread2.getEltType(subst, tenv, Contravariant()))
+    };
     params = mutable Vector[];
-    for (i in Range(0, f1.params.size())) {
-      params.push(TType::inter(subst, tenv, f1.params[i], f2.params[i]));
+    for (i in Range(0, max(f1.params.size(), f2.params.size()))) {
+      p1opt = if (i < f1.params.size()) Some(f1.params[i]) else {
+        io1 = i - f1.params.size();
+        if (io1 < f1.optionalParams.size()) Some(f1.optionalParams[io1]) else {
+          spread1elt
+        }
+      };
+      p2opt = if (i < f2.params.size()) Some(f2.params[i]) else {
+        io2 = i - f2.params.size();
+        if (io2 < f2.optionalParams.size()) Some(f2.optionalParams[io2]) else {
+          spread2elt
+        }
+      };
+      p = (p1opt, p2opt) match {
+      | (Some(p1), Some(p2)) -> TType::inter(subst, tenv, p1, p2)
+      | (Some(p), None())
+      | (None(), Some(p)) ->
+        p
+      | (None(), None()) ->
+        internal_error("TFun::union: iteration over required params")
+      };
+      params.push(p)
     };
     optionalParams = mutable Vector[];
     for (i in Range(
-      0,
-      min(f1.optionalParams.size(), f2.optionalParams.size()),
+      params.size(),
+      max(
+        f1.params.size() + f1.optionalParams.size(),
+        f2.params.size() + f2.optionalParams.size(),
+      ),
     )) {
-      optionalParams.push(
-        TType::inter(subst, tenv, f1.optionalParams[i], f2.optionalParams[i]),
-      );
+      io1 = i - f1.params.size();
+      invariant(io1 >= 0, "TFun::union: io1 >= 0");
+      p1opt = if (io1 < f1.optionalParams.size()) {
+        Some(f1.optionalParams[io1])
+      } else {
+        spread1elt
+      };
+      io2 = i - f2.params.size();
+      invariant(io2 >= 0, "TFun::union: io2 >= 0");
+      p2opt = if (io2 < f2.optionalParams.size()) {
+        Some(f2.optionalParams[io2])
+      } else {
+        spread2elt
+      };
+      p = (p1opt, p2opt) match {
+      | (Some(p1), Some(p2)) -> TType::inter(subst, tenv, p1, p2)
+      | (Some(p), None())
+      | (None(), Some(p)) ->
+        p
+      | (None(), None()) ->
+        internal_error("TFun::union: iteration over required params")
+      };
+      optionalParams.push(p)
     };
     spreadParam = (f1.spreadParam, f2.spreadParam) match {
     | (Some(ty1), Some(ty2)) -> Some(ArrayType::inter(subst, tenv, ty1, ty2))
-    | _ -> None()
+    | (spread @ Some _, None())
+    | (None(), spread) ->
+      spread
     };
     retType = TType::union(subst, tenv, f1.retType, f2.retType);
     cgNodes = f1.cgNodes.union(f2.cgNodes);
