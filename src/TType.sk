@@ -551,13 +551,9 @@ class TFun(
   minSizeWitness: PosRange,
   retType: TType,
   cgNodes: CGNodes,
-) uses XXHashable, Orderable, Projectable<(Int, Int)> {
+) uses XXHashable, Orderable {
   fun toString(): String {
     prettyPrintSType(TFuns::singleFun(this, PosRange::none))
-  }
-
-  fun project(): (Int, Int) {
-    (this.tparams.size(), this.params.size())
   }
 }
 
