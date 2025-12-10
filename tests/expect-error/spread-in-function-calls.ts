@@ -25,7 +25,6 @@ function testSpreadWithRestParams(): void {
   const nums = new Array<number>();
   nums.push(1);
   nums.push(2);
-  // @skjs-expect-error TODO: ...
   takesRestNumbers(...nums);
 }
 
@@ -35,7 +34,7 @@ function testSpreadArray(): void {
   args.push(1);
   args.push(2);
   args.push(3);
-  // @skjs-expect-error TODO: ...
+  // @skjs-expect-error Invalid call
   takesThreeNumbers(...args);
 }
 
@@ -59,7 +58,6 @@ function testSpreadAfterRegular(): void {
   const rest = new Array<string>();
   rest.push("hello");
   rest.push("world");
-  // @skjs-expect-error TODO: ...
   takesOneAndRest(1, ...rest);
 }
 
@@ -73,7 +71,6 @@ function testSpreadTuple(): void {
 // Test 8: Empty spread with rest parameters
 function testEmptySpread(): void {
   const empty: number[] = new Array<number>();
-  // @skjs-expect-error TODO: ...
   takesRestNumbers(...empty);
 }
 
@@ -128,9 +125,8 @@ function testSpreadNonArray(): void {
 // Test 15: Spread object (not array)
 function testSpreadObject(): void {
   const obj: { a: number; b: number; c: number } = { a: 1, b: 2, c: 3 };
-  // @skjs-expect-error TODO: ...
+  // @skjs-expect-error Invalid spread argument
   takesThreeNumbers(...obj);
-  // TODO: Should also error - cannot spread object
 }
 
 // Test 16: Mixed types with wrong spread type
@@ -192,6 +188,6 @@ function testSpreadWithArrayMethods(): void {
   arr.push(1);
   arr.push(2);
   arr.push(3);
-  // @skjs-expect-error TODO: ...
+  // @skjs-expect-error Invalid call
   takesThreeNumbers(...arr);
 }

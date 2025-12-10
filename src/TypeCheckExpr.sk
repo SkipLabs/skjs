@@ -1409,7 +1409,56 @@ extension class TypeChecker {
     targs: Array<TType>,
     argExprs: Array<Expr>,
   ): TType {
-    args = argExprs.map(e -> this.expr(tcenv, e));
+    args = mutable Vector<TType>[];
+    moreArgs: ?TType = None();
+
+    for (argExpr in argExprs) {
+      argExpr.value match {
+      | Spread(spreadExpr) ->
+        spreadTy = this.expr(tcenv, spreadExpr);
+        spreadTy
+          .getSTypes(tcenv.subst, this.tenv, Covariant())
+          .flatMap(stypes ~> stypes.singleElt()) match {
+        | Some(object @ TObject _) ->
+          ATFullType::getArrayObjectEltType(
+            object,
+            tcenv.subst,
+            this.tenv,
+          ) match {
+          | None() ->
+            typingError(
+              Array[
+                (argExpr.pos, "Invalid spread argument"),
+                (spreadTy.pos, `It has type ${spreadTy}`),
+              ],
+            )
+          | Some(eltType) ->
+            !moreArgs = Some(
+              moreArgs match {
+              | None() -> eltType
+              | Some(ma) -> TType::union(tcenv.subst, this.tenv, ma, eltType)
+              },
+            )
+          }
+        // TODO: tuples
+        | _ ->
+          typingError(
+            Array[
+              (pos, "TODO: ..."),
+              (argExpr.pos, "Invalid spread argument"),
+              (spreadTy.pos, `It has type ${spreadTy}`),
+            ],
+          )
+        }
+      | _ ->
+        argTy = this.expr(tcenv, argExpr);
+        moreArgs match {
+        | None() -> args.push(argTy)
+        | Some(ma) ->
+          !moreArgs = Some(TType::union(tcenv.subst, this.tenv, ma, argTy))
+        }
+      }
+    };
 
     result: ?TType = None();
     fty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
@@ -1440,6 +1489,14 @@ extension class TypeChecker {
         (tcenv.subst, this.tenv, map.chill()),
         tfun with {tparams => Array[]},
       );
+      totalSize = tfun.params.size() + tfun.optionalParams.size();
+      moreArgs match {
+      | None() -> void
+      | Some(ma) ->
+        while (args.size() < totalSize) {
+          args.push(ma)
+        }
+      };
       version = tcenv.subst.version;
       loop {
         for (i in Range(0, tfun.params.size())) {
@@ -1467,8 +1524,7 @@ extension class TypeChecker {
         if (tcenv.subst.version == version) break void;
         !version = tcenv.subst.version;
       };
-      totalSize = tfun.params.size() + tfun.optionalParams.size();
-      if (totalSize < args.size()) {
+      if (args.size() > totalSize || moreArgs.isSome()) {
         tfun.spreadParam match {
         | None() ->
           // Allow more ignored parameters
@@ -1484,6 +1540,11 @@ extension class TypeChecker {
                 args[i],
                 eltType,
               );
+            };
+            moreArgs match {
+            | None() -> void
+            | Some(ma) ->
+              this.checkSubType(tcenv, pos, "Invalid argument", ma, eltType)
             }
           | None() ->
             typingError(
