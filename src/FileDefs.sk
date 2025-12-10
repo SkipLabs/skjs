@@ -157,7 +157,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
-    invariant(name != "");
+    invariant(name != "", "getInDefs expects a non-empty name");
     for (fileName in fileDefs.includes) {
       this.getInDefs(
         context,
@@ -217,7 +217,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
-    invariant(name != "");
+    invariant(name != "", "getExportedInDefs expects a non-empty name");
     fileDefs.reexports.maybeGet("") match {
     | Some(wholeModuleReexports) ->
       this.getFromImports(
@@ -480,7 +480,7 @@ mutable class FileDefsState private {
         FDNamespace(false, this.createSubFileDefs(defs)),
       )
     | Module(name, Some(defs)) ->
-      invariant(!isExport);
+      invariant(!isExport, "export module does not exist");
       mapPush(this.modules, name.value, this.createSubFileDefs(defs))
     | d @ FunDef{name, pos => funPos} ->
       fname = name.fromSome() match {

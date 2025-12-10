@@ -223,7 +223,11 @@ class TEnv{
         filter(fieldType) && !fieldType.isStatic()
       },
     );
-    invariant(constructor is None());
+    constructor match {
+    | Some(constructorTy) ->
+      notSupported(constructorTy.pos, "new returning a constructor")
+    | None() -> void
+    };
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
@@ -457,7 +461,16 @@ class TEnv{
         }
       | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
         if (isStatic is None()) continue;
-        invariant(constructor is None());
+        constructor match {
+        | Some(constructorTy) ->
+          typingError(
+            Array[
+              (fd.pos, "Unexpected multiple constructors"),
+              (constructorTy.pos, "Previous constructor was here"),
+            ],
+          )
+        | None() -> void
+        };
         !constructor = Some(
           this.makeConstructor(context, className, isStatic.fromSome(), fd),
         )
@@ -810,7 +823,10 @@ class TEnv{
       TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
       funClauses = mutable Vector[];
       for (tparam in clauses) {
-        invariant(tparam.default is None()); // checked in checkTypeParams
+        invariant(
+          tparam.default is None(),
+          "no-default type parameter (already checked in checkTypeParams)",
+        );
         funTParam = this.makeTParam(context, tparam);
         funClauses.push(funTParam);
         !this.tparams[tparam.name.value] = funTParam;
@@ -829,7 +845,7 @@ class TEnv{
               Array[(thisPos, "Parameter named this must be the first one")],
             )
           };
-          invariant(thisParam is None());
+          invariant(thisParam is None(), "Assigning thisParam multiple times");
           param.isRest.each(restPos ->
             typingError(Array[(restPos, "this cannot be a spread parameter")])
           );
@@ -1000,7 +1016,7 @@ class TEnv{
     maxRange = -1;
     strings = SortedSet[];
     for (clause in clauses) {
-      invariant(clause.vars.isEmpty());
+      invariant(clause.vars.isEmpty(), "keyof with non-empty variables");
       stypes = Vector::mcreateFromIterator(clause.stypes.fromSome().values());
       while (!stypes.isEmpty()) {
         stype = stypes.pop();

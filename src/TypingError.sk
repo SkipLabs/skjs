@@ -26,11 +26,8 @@ fun typingError<T>(messages: Array<(PosRange, String)>): T {
   throw ErrorExn(TypingError(messages))
 }
 
-fun notSupported<T>(pos: PosRange, what: String = ""): T {
-  message = if (what == "") "Construction not supported" else {
-    `Construction not supported: ${what}`
-  };
-  typingError(Array[(pos, message)])
+fun notSupported<T>(pos: PosRange, what: String): T {
+  typingError(Array[(pos, `Construction not supported: ${what}`)])
 }
 
 class TypingErrors(errors: Array<TypingError>) extends .Exception

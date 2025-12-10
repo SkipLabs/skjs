@@ -1294,8 +1294,8 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
-      invariant(fields.indexes.isEmpty());
-      invariant(fields.new is None());
+      invariant(fields.indexes.isEmpty(), "Local objects have no indexes");
+      invariant(fields.new is None(), "Local objects have no constructors");
       fields.maybeGet(fieldName.value) match {
       | None() ->
         used match {

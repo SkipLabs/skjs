@@ -174,7 +174,7 @@ class Files(
     symbolsMap = SymbolsMap::create(context, parsedFiles);
     errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
     if (errors.size() != 0) {
-      invariant(!keepGoing);
+      invariant(!keepGoing, "No errors expected when using --keep-going");
       for (error in errors) {
         error.value match {
         | PRError(err) ->

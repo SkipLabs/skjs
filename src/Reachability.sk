@@ -324,7 +324,7 @@ private fun checkDef(
   | Namespace _
   | ExportDefault _
   | Enum _ ->
-    notSupported(def.pos)
+    notSupported(def.pos, "this kind of definition (for reachability)")
   // Syntactic forms which can't be called
   | ImportExpr _
   | TypeDef _
