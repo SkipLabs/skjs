@@ -1452,7 +1452,6 @@ extension class TypeChecker {
         | _ ->
           typingError(
             Array[
-              (pos, "TODO: ..."),
               (argExpr.pos, "Invalid spread argument"),
               (spreadTy.pos, `It has type ${spreadTy}`),
             ],

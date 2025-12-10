@@ -109,9 +109,8 @@ function testTooManyArguments(): void {
 // Test 14: Spread non-array type
 function testSpreadNonArray(): void {
   const notArray: number = 42;
-  // @skjs-expect-error TODO: ...
+  // @ts-expect-error Invalid spread argument
   takesThreeNumbers(...notArray);
-  // TODO: Should also error - cannot spread non-iterable
 }
 
 // Test 15: Spread object (not array)
