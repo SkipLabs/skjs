@@ -1440,7 +1440,15 @@ extension class TypeChecker {
               },
             )
           }
-        // TODO: tuples
+        | Some(TTuple(tupElts, _)) ->
+          moreArgs match {
+          | None() -> args.extend(tupElts)
+          | Some(ma) ->
+            for (tupElt in tupElts) {
+              !ma = TType::union(tcenv.subst, this.tenv, ma, tupElt)
+            };
+            !moreArgs = Some(ma)
+          }
         | _ ->
           typingError(
             Array[
