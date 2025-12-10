@@ -223,7 +223,11 @@ class TEnv{
         filter(fieldType) && !fieldType.isStatic()
       },
     );
-    invariant(constructor is None());
+    constructor match {
+    | Some(constructorTy) ->
+      notSupported(constructorTy.pos, "new returning a constructor")
+    | None() -> void
+    };
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
@@ -457,7 +461,16 @@ class TEnv{
         }
       | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
         if (isStatic is None()) continue;
-        invariant(constructor is None());
+        constructor match {
+        | Some(constructorTy) ->
+          typingError(
+            Array[
+              (fd.pos, "Unexpected multiple constructors"),
+              (constructorTy.pos, "Previous constructor was here"),
+            ],
+          )
+        | None() -> void
+        };
         !constructor = Some(
           this.makeConstructor(context, className, isStatic.fromSome(), fd),
         )
