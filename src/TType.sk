@@ -1376,7 +1376,7 @@ base class STError extends STResult {
       "This is a function: " +
         prettyPrintType(
           false,
-          TType::single(TFuns::singleFun(f, f.minSizeWitness)),
+          TType::single(TFuns::singleFun(f, PosRange::none)),
         )
     | STTypeParameterMismatch() -> "Type parameter mismatch"
     | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
