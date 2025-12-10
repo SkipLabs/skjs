@@ -129,6 +129,7 @@ mutable base class ApplyType(
     arr: ArrayType,
   ): ArrayType {
     arr match {
+    | ATArrayOf(eltType, pos) -> ATArrayOf(this.type(env, eltType), pos)
     | ATFullType(fullType) -> ATFullType(this.type(env, fullType))
     }
   }

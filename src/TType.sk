@@ -464,6 +464,28 @@ base class ArrayType uses XXHashable, Orderable, Show {
   }
 }
 
+class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
+  fun getPos(): PosRange {
+    this.pos
+  }
+
+  fun toString(): String {
+    `Array<${this.eltType}>`
+  }
+
+  fun getEltType(
+    _subst: mutable Subst,
+    _tenv: TEnv,
+    _variance: Variance,
+  ): ?TType {
+    Some(this.eltType)
+  }
+
+  fun full(): TType {
+    TType::inst(Name(this.pos, "Array"), TArgs(Array[this.eltType]))
+  }
+}
+
 class ATFullType(fullType: TType) extends ArrayType {
   fun getPos(): PosRange {
     this.fullType.pos
