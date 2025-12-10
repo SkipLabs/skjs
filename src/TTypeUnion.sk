@@ -363,9 +363,19 @@ extension base class ArrayType {
     arr1: ArrayType,
     arr2: ArrayType,
   ): ArrayType {
-    (arr1, arr2) match {
-    | (ATFullType(full1), ATFullType(full2)) ->
-      ATFullType(TType::union(subst, tenv, full1, full2))
+    (
+      arr1.getEltType(subst, tenv, Contravariant()),
+      arr2.getEltType(subst, tenv, Contravariant()),
+    ) match {
+    | (Some(elt1), Some(elt2)) ->
+      ArrayType::createFromElt(
+        TType::union(subst, tenv, elt1, elt2),
+        arr1.getPos(),
+      )
+    | _ ->
+      ArrayType::createFromFull(
+        TType::union(subst, tenv, arr1.full(), arr2.full()),
+      )
     }
   }
 }
