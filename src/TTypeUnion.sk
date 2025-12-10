@@ -332,7 +332,7 @@ extension class TFun {
       );
     };
     spreadParam = (f1.spreadParam, f2.spreadParam) match {
-    | (Some(ty1), Some(ty2)) -> Some(TType::inter(subst, tenv, ty1, ty2))
+    | (Some(ty1), Some(ty2)) -> Some(ArrayType::inter(subst, tenv, ty1, ty2))
     | _ -> None()
     };
     retType = TType::union(subst, tenv, f1.retType, f2.retType);
@@ -352,6 +352,20 @@ extension class TFun {
       retType,
       cgNodes,
     )
+  }
+}
+
+extension base class ArrayType {
+  static fun union(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arr1: ArrayType,
+    arr2: ArrayType,
+  ): ArrayType {
+    (arr1, arr2) match {
+    | (ATFullType(full1), ATFullType(full2)) ->
+      ATFullType(TType::union(subst, tenv, full1, full2))
+    }
   }
 }
 

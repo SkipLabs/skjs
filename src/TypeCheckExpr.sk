@@ -1369,33 +1369,6 @@ extension class TypeChecker {
     fieldType
   }
 
-  fun getArrayEltType(tcenv: mutable TCEnv, object: TObject): TType {
-    object.fields.maybeGet("pop") match {
-    | None() -> typingError(Array[(object.pos, "Expected an Array type")])
-    | Some(popMethod) ->
-      popF = popMethod.type
-        .getSTypes(tcenv.subst, this.tenv, Covariant())
-        .flatMap(stypes ~> stypes.singleElt())
-        .fromSome() match {
-      | TFuns(methods, _) ->
-        for (met in methods) {
-          break met
-        } else {
-          typingError(
-            Array[
-              (object.pos, "Internal error: unexpected type for Array::pop"),
-            ],
-          )
-        }
-      | _ ->
-        typingError(
-          Array[(object.pos, "Internal error: unexpected pop method type for")],
-        )
-      };
-      popF.retType
-    };
-  }
-
   fun getInLhsTypeAndFields(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -1519,11 +1492,12 @@ extension class TypeChecker {
               ],
             )
           | Some(spreadType) ->
-            spreadType
-              .getSTypes(tcenv.subst, this.tenv, Contravariant())
-              .flatMap(stypes ~> stypes.singleElt()) match {
-            | Some(object @ TObject _) ->
-              eltType = this.getArrayEltType(tcenv, object);
+            spreadType.getEltType(
+              tcenv.subst,
+              this.tenv,
+              Contravariant(),
+            ) match {
+            | Some(eltType) ->
               for (i in Range(totalSize, args.size())) {
                 this.checkSubType(
                   tcenv,
@@ -1533,11 +1507,11 @@ extension class TypeChecker {
                   eltType,
                 );
               }
-            | _ ->
+            | None() ->
               typingError(
                 Array[
                   (pos, "Invalid call. Unexpected type for ..."),
-                  (spreadType.pos, `${spreadType} is not an array`),
+                  (spreadType.getPos(), `${spreadType} is not an array`),
                 ],
               )
             }
