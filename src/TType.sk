@@ -451,6 +451,7 @@ class TFuns private (fun_: TFun) extends SType {
 base class ArrayType uses XXHashable, Orderable, Show {
   fun getPos(): PosRange;
   fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): ?TType;
+  fun full(): TType;
 
   static fun createFromFull(fullType: TType): ArrayType {
     ATFullType(fullType)
@@ -489,6 +490,10 @@ class ATFullType(fullType: TType) extends ArrayType {
       ATFullType::getArrayObjectEltType(object, subst, tenv)
     | _ -> None()
     }
+  }
+
+  fun full(): TType {
+    this.fullType
   }
 }
 
