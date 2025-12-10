@@ -18,7 +18,10 @@ trait DirName(path: Array<String>)
 
 value class DRelative uses DirName {
   static fun create(dirNameStr: String): DRelative {
-    invariant(Path.isRelative(dirNameStr));
+    invariant(
+      Path.isRelative(dirNameStr),
+      "Trying to create a relative directory from an absolute path",
+    );
     DRelative(splitPath(dirNameStr))
   }
 
@@ -122,7 +125,10 @@ value class FRelative uses FileNameBase<DRelative> {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
     };
-    invariant(Path.isRelative(fileName));
+    invariant(
+      Path.isRelative(fileName),
+      "Trying to create a relative file from an absolute path",
+    );
     vec = splitPath(fileName);
     path = vec.slice(0, vec.size() - 1);
     dirName = DRelative(path);

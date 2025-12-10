@@ -118,7 +118,7 @@ extension class TConstr {
     x: TConstr,
     y: TConstr,
   ): TConstr {
-    invariant(x.tag == y.tag);
+    invariant(x.tag == y.tag, "TConstr::inter expects identical tags");
     TConstr(x.tag, x.tagPos, TFields::inter(subst, tenv, x.fields, y.fields))
   }
 }
@@ -177,7 +177,10 @@ extension class STypes {
     stypes2: STypes,
   ): ?STypes {
     stypes1.stypes.mapInterOption(stypes2.stypes, (sty1, sty2) -> {
-      invariant(sty1.tag() == sty2.tag()); // from mapInterOption
+      invariant(
+        sty1.tag() == sty2.tag(),
+        "mapInterOption ensures iteration with identical tags",
+      );
       (sty1, sty2) match {
       | (TPrimUnit _, TPrimUnit _) -> Some(sty1)
 

@@ -561,7 +561,10 @@ extension class Parser {
 
   // Parse template literals with interpolation: `text ${expr} more text`
   mutable fun parseTemplateLiteral(tok: Token): Expr_ {
-    invariant(tok.kind is TKBackTick());
+    invariant(
+      tok.kind is TKBackTick(),
+      "parseTemplateLiteral expects a TKBackTick",
+    );
 
     rawContent = this.lex.getTokenRawStringContent(tok);
 

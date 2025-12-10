@@ -564,7 +564,7 @@ extension class Parser {
           ExportNamesFrom(isType, n, from)
         }
       } else {
-        invariant(isType is None());
+        invariant(isType is None(), "Unexpected form of export type");
         this.lex.peek() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedDef())
         | Some(nextTok) ->

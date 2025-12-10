@@ -145,7 +145,10 @@ extension class STypes {
     stypes1.stypes.leq(stypes2.stypes, (sty1, sty2O) ->
       sty2O match {
       | Some(sty2) ->
-        invariant(sty1.tag() == sty2.tag()); // from leq
+        invariant(
+          sty1.tag() == sty2.tag(),
+          "leq ensures iteration with identical tags",
+        );
         (sty1, sty2) match {
         | (TPrimUnit _, TPrimUnit _) -> STOk()
 
