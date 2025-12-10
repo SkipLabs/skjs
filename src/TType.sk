@@ -548,7 +548,6 @@ class TFun(
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
-  minSizeWitness: PosRange,
   retType: TType,
   cgNodes: CGNodes,
 ) uses XXHashable, Orderable {

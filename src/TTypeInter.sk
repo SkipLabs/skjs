@@ -376,11 +376,6 @@ extension class TFun {
         optionalParams.push(f1.optionalParams[i]);
       }
     };
-    totalSize1 = f1.params.size() + f1.optionalParams.size();
-    totalSize2 = f2.params.size() + f2.optionalParams.size();
-    sizeWitness = if (totalSize1 >= totalSize2) f1.minSizeWitness else {
-      f2.minSizeWitness
-    };
     spreadParam = (f1.spreadParam, f2.spreadParam) match {
     | (None(), None()) -> None()
     | (ty @ Some _, None()) -> ty
@@ -395,7 +390,6 @@ extension class TFun {
       params.toArray(),
       optionalParams.toArray(),
       spreadParam,
-      sizeWitness,
       retType,
       cgNodes,
     )

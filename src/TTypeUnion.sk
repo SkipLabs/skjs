@@ -337,11 +337,6 @@ extension class TFun {
     | _ -> None()
     };
     retType = TType::union(subst, tenv, f1.retType, f2.retType);
-    totalSize1 = f1.params.size() + f1.optionalParams.size();
-    totalSize2 = f2.params.size() + f2.optionalParams.size();
-    sizeWitness = if (totalSize1 <= totalSize2) f1.minSizeWitness else {
-      f2.minSizeWitness
-    };
     cgNodes = f1.cgNodes.union(f2.cgNodes);
     TFun(
       clauses.toArray(),
@@ -349,7 +344,6 @@ extension class TFun {
       params.toArray(),
       optionalParams.toArray(),
       spreadParam,
-      sizeWitness,
       retType,
       cgNodes,
     )

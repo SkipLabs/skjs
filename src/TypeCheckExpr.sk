@@ -1188,7 +1188,6 @@ extension class TypeChecker {
           paramTypes.map(x -> x.i1),
           Array[],
           None(),
-          pos,
           retType,
           CGNodes::singleton(callingContext),
         ),
