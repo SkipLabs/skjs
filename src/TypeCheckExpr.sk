@@ -1537,7 +1537,11 @@ extension class TypeChecker {
           // Allow more ignored parameters
           void
         | Some(spreadType) ->
-          spreadType.getEltType(tcenv.subst, this.tenv, Contravariant()) match {
+          spreadType.maybeGetEltType(
+            tcenv.subst,
+            this.tenv,
+            Contravariant(),
+          ) match {
           | Some(eltType) ->
             for (i in Range(totalSize, args.size())) {
               this.checkSubType(

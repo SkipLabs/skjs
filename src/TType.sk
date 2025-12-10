@@ -450,7 +450,11 @@ class TFuns private (fun_: TFun) extends SType {
 
 base class ArrayType uses XXHashable, Orderable, Show {
   fun getPos(): PosRange;
-  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): ?TType;
+  fun maybeGetEltType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    variance: Variance,
+  ): ?TType;
   fun full(): TType;
 
   static fun createFromElt(eltType: TType, pos: PosRange): ArrayType {
@@ -471,7 +475,7 @@ class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
     `Array<${this.eltType}>`
   }
 
-  fun getEltType(
+  fun maybeGetEltType(
     _subst: mutable Subst,
     _tenv: TEnv,
     _variance: Variance,
@@ -508,7 +512,11 @@ class ATFullType(fullType: TType) extends ArrayType {
     )
   }
 
-  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): ?TType {
+  fun maybeGetEltType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    variance: Variance,
+  ): ?TType {
     this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
       stypes.singleElt()
     ) match {

@@ -410,8 +410,8 @@ extension base class ArrayType {
     arr2: ArrayType,
   ): ArrayType {
     (
-      arr1.getEltType(subst, tenv, Contravariant()),
-      arr2.getEltType(subst, tenv, Contravariant()),
+      arr1.maybeGetEltType(subst, tenv, Contravariant()),
+      arr2.maybeGetEltType(subst, tenv, Contravariant()),
     ) match {
     | (Some(elt1), Some(elt2)) ->
       ArrayType::createFromElt(
