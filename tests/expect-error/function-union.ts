@@ -246,6 +246,18 @@ function testDiscriminatedUnion(): void {
   };
 }
 
+// Test 17bis: Discriminated union of functions
+type Action1b = { kind: "add"; fn: (a: number, b: number) => number };
+type Action2b = { kind: "concat"; fn: (a: string, b: string) => string };
+type Actionb = Action1b | Action2b;
+
+function testDiscriminatedUnionb(): void {
+  const action: Actionb = {
+    kind: "add",
+    fn: addFn,
+  };
+}
+
 // Test 18: Union assignment with different arities
 function f0(): string {
   return "hello";
