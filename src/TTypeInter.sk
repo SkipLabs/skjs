@@ -336,73 +336,31 @@ extension class TFun {
     f1: TFun,
     f2: TFun,
   ): ?TFun {
-    if (f1.tparams.size() != f2.tparams.size()) {
-      internal_error("function clause sizes must match")
-    };
-
-    tsubst = SortedMap[];
-    clauses = mutable Vector[];
-    for (i in Range(0, f1.tparams.size())) {
-      tparam1 = f1.tparams[i];
-      tparam2 = f2.tparams[i];
-      !tsubst[tparam2.id] = tparam1;
-      cstr = (tparam1.cstr, tparam2.cstr) match {
-      | (None(), None()) -> None()
-      | (None(), Some(x)) -> Some(x)
-      | (Some(x), None()) -> Some(x)
-      | (Some(x), Some(y)) -> Some(TType::union(subst, tenv, x, y))
+    subst1 = subst.clone();
+    TFun::isSub(subst1, tenv, f1, f2) match {
+    | STOk() ->
+      if (subst1.version != subst.version) {
+        invariant(
+          TFun::isSub(subst, tenv, f1, f2) is STOk(),
+          "TFun::inter: reapplying isSub (1)",
+        );
       };
-      clauses.push(tparam1 with {cstr});
+      return Some(f1)
+    | STError _ -> void
     };
-    !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
-
-    thisParam = (f1.thisParam, f2.thisParam) match {
-    | (None(), t)
-    | (t, None()) ->
-      t
-    | (Some(this1), Some(this2)) ->
-      Some(TType::union(subst, tenv, this1, this2))
+    subst2 = subst.clone();
+    TFun::isSub(subst2, tenv, f2, f1) match {
+    | STOk() ->
+      if (subst2.version != subst.version) {
+        invariant(
+          TFun::isSub(subst, tenv, f2, f1) is STOk(),
+          "TFun::inter: reapplying isSub (2)",
+        );
+      };
+      return Some(f2)
+    | STError _ -> void
     };
-
-    params = mutable Vector[];
-    for (i in Range(0, f1.params.size())) {
-      params.push(TType::union(subst, tenv, f1.params[i], f2.params[i]));
-    };
-    optionalSize = min(f1.optionalParams.size(), f2.optionalParams.size());
-    optionalParams = mutable Vector[];
-    for (i in Range(0, optionalSize)) {
-      optionalParams.push(
-        TType::union(subst, tenv, f1.optionalParams[i], f2.optionalParams[i]),
-      );
-    };
-    if (f1.optionalParams.size() < f2.optionalParams.size()) {
-      for (i in Range(f1.optionalParams.size(), f2.optionalParams.size())) {
-        optionalParams.push(f2.optionalParams[i]);
-      }
-    } else if (f2.optionalParams.size() < f1.optionalParams.size()) {
-      for (i in Range(f2.optionalParams.size(), f1.optionalParams.size())) {
-        optionalParams.push(f1.optionalParams[i]);
-      }
-    };
-    spreadParam = (f1.spreadParam, f2.spreadParam) match {
-    | (None(), None()) -> None()
-    | (ty @ Some _, None()) -> ty
-    | (None(), ty @ Some _) -> ty
-    | (Some(ty1), Some(ty2)) -> Some(ArrayType::union(subst, tenv, ty1, ty2))
-    };
-    retType = TType::inter(subst, tenv, f1.retType, f2.retType);
-    cgNodes = f1.cgNodes.intersection(f2.cgNodes);
-    Some(
-      TFun(
-        clauses.toArray(),
-        thisParam,
-        params.toArray(),
-        optionalParams.toArray(),
-        spreadParam,
-        retType,
-        cgNodes,
-      ),
-    )
+    None()
   }
 }
 
