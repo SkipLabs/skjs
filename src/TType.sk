@@ -457,6 +457,17 @@ base class ArrayType uses XXHashable, Orderable, Show {
   ): ?TType;
   fun full(): TType;
 
+  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): TType {
+    this.maybeGetEltType(subst, tenv, variance) match {
+    | Some(res) -> res
+    | None() ->
+      variance match {
+      | Covariant() -> TType::top(this.getPos())
+      | Contravariant() -> TType::bottom(this.getPos())
+      }
+    }
+  }
+
   static fun createFromElt(eltType: TType, pos: PosRange): ArrayType {
     ATArrayOf(eltType, pos)
   }
