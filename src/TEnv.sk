@@ -819,7 +819,21 @@ class TEnv{
       };
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
+    | tafun @ TAFun _ ->
+      tfuns = this.normalizeFun(context, pos, tafun);
+      TType::single(tfuns)
+    | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
+    }
+  }
+
+  fun normalizeFun(
+    context: mutable SKStore.Context,
+    pos: PosRange,
+    tafun: TAFun,
+  ): TFuns {
+    tafun match {
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
+      subst = Subst::mcreate{context};
       TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
       funClauses = mutable Vector[];
       for (tparam in clauses) {
@@ -902,13 +916,11 @@ class TEnv{
         this.normalize(context, retType),
         CGNodes::singleton(cgNode),
       );
-      tfuns = if (isMethod) {
+      if (isMethod) {
         TFuns::singleMethod(tfun, pos)
       } else {
         TFuns::singleFun(tfun, pos)
-      };
-      TType::single(tfuns)
-    | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
+      }
     }
   }
 
