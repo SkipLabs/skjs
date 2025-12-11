@@ -130,7 +130,7 @@ extension class TFuns {
     f1: TFuns,
     f2: TFuns,
   ): ?TFuns {
-    Some(TFuns(TFun::inter(subst, tenv, f1.fun_, f2.fun_), f1.pos))
+    TFun::inter(subst, tenv, f1.fun_, f2.fun_).map(f -> TFuns(f, f1.pos))
   }
 }
 
@@ -330,75 +330,37 @@ extension class TObject {
 }
 
 extension class TFun {
-  static fun inter(subst: mutable Subst, tenv: TEnv, f1: TFun, f2: TFun): TFun {
-    if (f1.tparams.size() != f2.tparams.size()) {
-      internal_error("function clause sizes must match")
-    };
-    tsubst = SortedMap[];
-    clauses = mutable Vector[];
-    for (i in Range(0, f1.tparams.size())) {
-      tparam1 = f1.tparams[i];
-      tparam2 = f2.tparams[i];
-      !tsubst[tparam2.id] = tparam1;
-      cstr = (tparam1.cstr, tparam2.cstr) match {
-      | (None(), None()) -> None()
-      | (None(), Some(x)) -> Some(x)
-      | (Some(x), None()) -> Some(x)
-      | (Some(x), Some(y)) -> Some(TType::union(subst, tenv, x, y))
+  static fun inter(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1: TFun,
+    f2: TFun,
+  ): ?TFun {
+    subst1 = subst.clone();
+    TFun::isSub(subst1, tenv, f1, f2) match {
+    | STOk() ->
+      if (subst1.version != subst.version) {
+        invariant(
+          TFun::isSub(subst, tenv, f1, f2) is STOk(),
+          "TFun::inter: reapplying isSub (1)",
+        );
       };
-      clauses.push(tparam1 with {cstr});
+      return Some(f1)
+    | STError _ -> void
     };
-    !f2 = (mutable RenameClauses()).fun_(tsubst.chill(), f2);
-    thisParam = (f1.thisParam, f2.thisParam) match {
-    | (None(), t)
-    | (t, None()) ->
-      t
-    | (Some(this1), Some(this2)) ->
-      Some(TType::union(subst, tenv, this1, this2))
+    subst2 = subst.clone();
+    TFun::isSub(subst2, tenv, f2, f1) match {
+    | STOk() ->
+      if (subst2.version != subst.version) {
+        invariant(
+          TFun::isSub(subst, tenv, f2, f1) is STOk(),
+          "TFun::inter: reapplying isSub (2)",
+        );
+      };
+      return Some(f2)
+    | STError _ -> void
     };
-    params = mutable Vector[];
-    for (i in Range(0, f1.params.size())) {
-      params.push(TType::union(subst, tenv, f1.params[i], f2.params[i]));
-    };
-    optionalSize = min(f1.optionalParams.size(), f2.optionalParams.size());
-    optionalParams = mutable Vector[];
-    for (i in Range(0, optionalSize)) {
-      optionalParams.push(
-        TType::union(subst, tenv, f1.optionalParams[i], f2.optionalParams[i]),
-      );
-    };
-    if (f1.optionalParams.size() < f2.optionalParams.size()) {
-      for (i in Range(f1.optionalParams.size(), f2.optionalParams.size())) {
-        optionalParams.push(f2.optionalParams[i]);
-      }
-    } else if (f2.optionalParams.size() < f1.optionalParams.size()) {
-      for (i in Range(f2.optionalParams.size(), f1.optionalParams.size())) {
-        optionalParams.push(f1.optionalParams[i]);
-      }
-    };
-    totalSize1 = f1.params.size() + f1.optionalParams.size();
-    totalSize2 = f2.params.size() + f2.optionalParams.size();
-    sizeWitness = if (totalSize1 >= totalSize2) f1.minSizeWitness else {
-      f2.minSizeWitness
-    };
-    spreadParam = (f1.spreadParam, f2.spreadParam) match {
-    | (None(), None()) -> None()
-    | (ty @ Some _, None()) -> ty
-    | (None(), ty @ Some _) -> ty
-    | (Some(ty1), Some(ty2)) -> Some(ArrayType::union(subst, tenv, ty1, ty2))
-    };
-    retType = TType::inter(subst, tenv, f1.retType, f2.retType);
-    cgNodes = f1.cgNodes.intersection(f2.cgNodes);
-    TFun(
-      clauses.toArray(),
-      thisParam,
-      params.toArray(),
-      optionalParams.toArray(),
-      spreadParam,
-      sizeWitness,
-      retType,
-      cgNodes,
-    )
+    None()
   }
 }
 
@@ -409,9 +371,19 @@ extension base class ArrayType {
     arr1: ArrayType,
     arr2: ArrayType,
   ): ArrayType {
-    (arr1, arr2) match {
-    | (ATFullType(full1), ATFullType(full2)) ->
-      ATFullType(TType::inter(subst, tenv, full1, full2))
+    (
+      arr1.maybeGetEltType(subst, tenv, Contravariant()),
+      arr2.maybeGetEltType(subst, tenv, Contravariant()),
+    ) match {
+    | (Some(elt1), Some(elt2)) ->
+      ArrayType::createFromElt(
+        TType::inter(subst, tenv, elt1, elt2),
+        arr1.getPos(),
+      )
+    | _ ->
+      ArrayType::createFromFull(
+        TType::inter(subst, tenv, arr1.full(), arr2.full()),
+      )
     }
   }
 }

@@ -369,7 +369,7 @@ extension class TFun {
     spread1elt = f1.spreadParam match {
     | None() -> None()
     | Some(spread1) ->
-      spread1.getEltType(subst, tenv, Contravariant()) match {
+      spread1.maybeGetEltType(subst, tenv, Contravariant()) match {
       | None() -> return STInvalidSpread(spread1)
       | some @ Some _ -> some
       }
@@ -422,7 +422,7 @@ extension class TFun {
         return STMissingParameter()
       }
     | Some(spread2) ->
-      spread2elt = spread2.getEltType(subst, tenv, Covariant()) match {
+      spread2elt = spread2.maybeGetEltType(subst, tenv, Covariant()) match {
       | None() -> return STInvalidSpread(spread2)
       | Some(spread2elt) -> spread2elt
       };
@@ -456,15 +456,11 @@ extension base class ArrayType {
     arr2: ArrayType,
   ): STResult {
     (
-      arr1.getEltType(subst, tenv, Covariant()),
-      arr2.getEltType(subst, tenv, Contravariant()),
+      arr1.maybeGetEltType(subst, tenv, Covariant()),
+      arr2.maybeGetEltType(subst, tenv, Contravariant()),
     ) match {
     | (Some(elt1), Some(elt2)) -> TType::isSub(subst, tenv, elt1, elt2)
-    | _ ->
-      (arr1, arr2) match {
-      | (ATFullType(full1), ATFullType(full2)) ->
-        TType::isSub(subst, tenv, full1, full2)
-      }
+    | _ -> TType::isSub(subst, tenv, arr1.full(), arr2.full())
     }
   }
 }

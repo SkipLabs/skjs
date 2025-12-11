@@ -450,7 +450,53 @@ class TFuns private (fun_: TFun) extends SType {
 
 base class ArrayType uses XXHashable, Orderable, Show {
   fun getPos(): PosRange;
-  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): ?TType;
+  fun maybeGetEltType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    variance: Variance,
+  ): ?TType;
+  fun full(): TType;
+
+  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): TType {
+    this.maybeGetEltType(subst, tenv, variance) match {
+    | Some(res) -> res
+    | None() ->
+      variance match {
+      | Covariant() -> TType::top(this.getPos())
+      | Contravariant() -> TType::bottom(this.getPos())
+      }
+    }
+  }
+
+  static fun createFromElt(eltType: TType, pos: PosRange): ArrayType {
+    ATArrayOf(eltType, pos)
+  }
+
+  static fun createFromFull(fullType: TType): ArrayType {
+    ATFullType(fullType)
+  }
+}
+
+class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
+  fun getPos(): PosRange {
+    this.pos
+  }
+
+  fun toString(): String {
+    `Array<${this.eltType}>`
+  }
+
+  fun maybeGetEltType(
+    _subst: mutable Subst,
+    _tenv: TEnv,
+    _variance: Variance,
+  ): ?TType {
+    Some(this.eltType)
+  }
+
+  fun full(): TType {
+    TType::inst(Name(this.pos, "Array"), TArgs(Array[this.eltType]))
+  }
 }
 
 class ATFullType(fullType: TType) extends ArrayType {
@@ -477,7 +523,11 @@ class ATFullType(fullType: TType) extends ArrayType {
     )
   }
 
-  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): ?TType {
+  fun maybeGetEltType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    variance: Variance,
+  ): ?TType {
     this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
@@ -485,6 +535,10 @@ class ATFullType(fullType: TType) extends ArrayType {
       ATFullType::getArrayObjectEltType(object, subst, tenv)
     | _ -> None()
     }
+  }
+
+  fun full(): TType {
+    this.fullType
   }
 }
 
@@ -494,16 +548,11 @@ class TFun(
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
-  minSizeWitness: PosRange,
   retType: TType,
   cgNodes: CGNodes,
-) uses XXHashable, Orderable, Projectable<(Int, Int)> {
+) uses XXHashable, Orderable {
   fun toString(): String {
     prettyPrintSType(TFuns::singleFun(this, PosRange::none))
-  }
-
-  fun project(): (Int, Int) {
-    (this.tparams.size(), this.params.size())
   }
 }
 
@@ -1326,7 +1375,7 @@ base class STError extends STResult {
       "This is a function: " +
         prettyPrintType(
           false,
-          TType::single(TFuns::singleFun(f, f.minSizeWitness)),
+          TType::single(TFuns::singleFun(f, PosRange::none)),
         )
     | STTypeParameterMismatch() -> "Type parameter mismatch"
     | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
