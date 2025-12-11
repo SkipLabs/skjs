@@ -1467,7 +1467,6 @@ extension class TypeChecker {
       }
     };
 
-    result: ?TType = None();
     fty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
@@ -1567,21 +1566,14 @@ extension class TypeChecker {
           }
         }
       };
-      !result = result match {
-      | None() -> Some(tfun.retType)
-      | Some(r) -> Some(TType::union(tcenv.subst, this.tenv, r, tfun.retType))
-      }
-    | _ -> void
-    };
-    result match {
-    | None() ->
+      tfun.retType
+    | _ ->
       typingError(
         Array[
           (pos, "Invalid call"),
           (fty.pos, `Type ${fty} is not a function`),
         ],
       )
-    | Some(x) -> x
     }
   }
 }
