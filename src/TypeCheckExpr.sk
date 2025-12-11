@@ -662,7 +662,7 @@ extension class TypeChecker {
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes -> stypes.singleElt()) match {
         | Some(TObject(TFields{new => Some(f)}, _pos)) ->
-          this.call(tcenv, pos, f, tArgs, args)
+          this.call(tcenv, pos, TType::single(f), tArgs, args)
         | Some(TObject(TFields{new => None()}, objPos)) ->
           typingError(
             Array[

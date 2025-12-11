@@ -270,7 +270,7 @@ class TEnv{
       TFields::create{
         fields => fields.values().collect(Array),
         indexes => indexes.toArray(),
-        new => Some(TType::single(new)),
+        new => Some(new),
       },
       pos,
     )
@@ -639,8 +639,7 @@ class TEnv{
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(context, tyPos, tafun);
-      tfun = TType::single(tfuns);
-      TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
+      TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
@@ -670,8 +669,7 @@ class TEnv{
         | None() -> this.makeEmptyConstructor(context, pos, className, c)
         | Some(fd) -> this.makeConstructor(context, className, c.tparams, fd)
         };
-        tfun = TType::single(tfuns);
-        TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
+        TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
     | TAPrim(kind) ->

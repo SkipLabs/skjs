@@ -140,7 +140,7 @@ mutable base class ApplyType(
     fields.map(
       x -> this.field(env, x),
       x -> this.indexField(env, x),
-      x -> this.type(env, x),
+      x -> this.funs(env, x),
     )
   }
 
