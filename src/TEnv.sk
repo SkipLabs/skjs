@@ -263,15 +263,14 @@ class TEnv{
     );
     pos = className.pos;
     new = constructor match {
-    | Some(tfuns) -> TType::single(tfuns)
-    | None() ->
-      TType::single(this.makeEmptyConstructor(context, pos, className, c))
+    | Some(tfuns) -> tfuns
+    | None() -> this.makeEmptyConstructor(context, pos, className, c)
     };
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
         indexes => indexes.toArray(),
-        new => Some(new),
+        new => Some(TType::single(new)),
       },
       pos,
     )
