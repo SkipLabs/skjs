@@ -263,7 +263,7 @@ class TEnv{
     );
     pos = className.pos;
     new = constructor match {
-    | Some(ty) -> ty
+    | Some(tfuns) -> TType::single(tfuns)
     | None() ->
       TType::single(this.makeEmptyConstructor(context, pos, className, c))
     };
@@ -374,7 +374,7 @@ class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
-  ): /* Type of constructor */ ?TType {
+  ): /* Type of constructor */ ?TFuns {
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
@@ -400,7 +400,7 @@ class TEnv{
       | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
     };
-    constructor: ?TType = None();
+    constructor: ?TFuns = None();
     for (fieldType in cls.fields) {
       fieldType match {
       | field @ FieldTypeValue _ ->
@@ -473,9 +473,7 @@ class TEnv{
         | None() -> void
         };
         !constructor = Some(
-          TType::single(
-            this.makeConstructor(context, className, isStatic.fromSome(), fd),
-          ),
+          this.makeConstructor(context, className, isStatic.fromSome(), fd),
         )
       | fd @ FunDef _ ->
         metIsStatic = fd.isStatic();
