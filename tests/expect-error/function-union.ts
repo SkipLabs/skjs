@@ -311,18 +311,20 @@ function testIntersectionOfUnions(): void {
 
 // Test 23: Union with different this parameters
 // FIXME: SKJS doesn't support 'this' parameter yet
-// function f1(this: Dog, _x: number): string {
-//   return this.name;
-// }
-//
-// function f2(this: Cat, _x: number): string {
-//   return this.name;
-// }
-//
-// function testUnionWithThisParam(): void {
-//   const union1: UnionWithThisParam = f1;
-//   const union2: UnionWithThisParam = f2;
-// }
+// @skjs-expect-error TODO: support this parameter
+function f1(this: Dog, _x: number): string {
+  return this.name;
+}
+
+// @skjs-expect-error TODO: support this parameter
+function f2(this: Cat, _x: number): string {
+  return this.name;
+}
+
+function testUnionWithThisParam(): void {
+  const union1: UnionWithThisParam = f1;
+  const union2: UnionWithThisParam = f2;
+}
 
 // Test 24: Multiple unions combined
 function testMultipleUnionsCombined(): void {
