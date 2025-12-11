@@ -7,7 +7,7 @@
 
 module SKJS;
 
-value class CstrType(cstr: ?TType)
+value class CstrType(cstr: ?TFuns)
 
 class TEnv{
   // The defMap associates an AST to a type name.
@@ -190,7 +190,7 @@ class TEnv{
         className,
         c.tparams,
         targs,
-      ).map(TType::single),
+      ),
     )
   }
 
