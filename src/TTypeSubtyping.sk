@@ -60,7 +60,7 @@ extension class TFields {
     | (_, None()) -> void
     | (None(), Some _) -> return STMissingConstructor()
     | (Some(new1), Some(new2)) ->
-      TType::isSub(subst, tenv, new1, new2) match {
+      TFuns::isSub(subst, tenv, new1, new2) match {
       | err @ STError _ -> return err
       | STOk() -> void
       }

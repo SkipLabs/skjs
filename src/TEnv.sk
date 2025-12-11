@@ -7,7 +7,7 @@
 
 module SKJS;
 
-value class CstrType(cstr: ?TType)
+value class CstrType(cstr: ?TFuns)
 
 class TEnv{
   // The defMap associates an AST to a type name.
@@ -263,7 +263,7 @@ class TEnv{
     );
     pos = className.pos;
     new = constructor match {
-    | Some(ty) -> ty
+    | Some(tfuns) -> tfuns
     | None() -> this.makeEmptyConstructor(context, pos, className, c)
     };
     TObject(
@@ -281,12 +281,12 @@ class TEnv{
     pos: PosRange,
     className: Name,
     c: Class,
-  ): TType {
+  ): TFuns {
     cgNode = CGNode::create(Constructor(className, c.name.pos.fileName));
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
-    ftype = Type(pos, TAFun(false, c.tparams, Array[], retType, cgNode));
-    this.normalize(context, ftype)
+    tafun = TAFun(false, c.tparams, Array[], retType, cgNode);
+    this.normalizeFun(context, pos, tafun)
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
@@ -373,7 +373,7 @@ class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: FieldType ~> Bool,
-  ): /* Type of constructor */ ?TType {
+  ): /* Type of constructor */ ?TFuns {
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
@@ -399,7 +399,7 @@ class TEnv{
       | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
     };
-    constructor: ?TType = None();
+    constructor: ?TFuns = None();
     for (fieldType in cls.fields) {
       fieldType match {
       | field @ FieldTypeValue _ ->
@@ -497,7 +497,7 @@ class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?TType {
+  ): ?TFuns {
     this.findConstructorMethod(
       context,
       visitedClasses,
@@ -558,7 +558,7 @@ class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     fd: FunDef,
-  ): TType {
+  ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
       // We give the tparams a different name to make sure they are
@@ -579,10 +579,8 @@ class TEnv{
     | (_, Some(x)) ->
       typingError(Array[(x.pos, "Unexpected annotation for constructor")])
     };
-    this.normalize(
-      context,
-      Type(fd.pos, TAFun(false, tparams, params, retType, cgNode)),
-    );
+    tafun = TAFun(false, tparams, params, retType, cgNode);
+    this.normalizeFun(context, fd.pos, tafun)
   }
 
   private fun convertParam(param: Param): TAFunParam {
@@ -614,19 +612,14 @@ class TEnv{
       typingError(Array[(pos, "Missing return type annotation")])
     | (_, Some(x)) -> x
     };
-    fty = this.normalize(
-      context,
-      Type(
-        fd.pos,
-        TAFun(
-          isMethod,
-          fd.tparams,
-          fd.params.map(this.convertParam),
-          retType,
-          cgNode,
-        ),
-      ),
+    tafun = TAFun(
+      isMethod,
+      fd.tparams,
+      fd.params.map(this.convertParam),
+      retType,
+      cgNode,
     );
+    fty = TType::single(this.normalizeFun(context, fd.pos, tafun));
     (name, fty)
   }
 
@@ -644,11 +637,9 @@ class TEnv{
       targetType = this.normalize(context, ty);
       this.keyOfType(subst, targetType, pos)
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
-      tfun = this.normalize(
-        context,
-        Type(tyPos, TAFun(false, clauses, params, retType, cgNode)),
-      );
-      TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
+      tafun = TAFun(false, clauses, params, retType, cgNode);
+      tfuns = this.normalizeFun(context, tyPos, tafun);
+      TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
@@ -668,7 +659,7 @@ class TEnv{
         TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
         c = this.getClass(context, className);
-        tfun = this.findConstructorMethod(
+        tfuns = this.findConstructorMethod(
           context,
           SortedSet[],
           className,
@@ -678,7 +669,7 @@ class TEnv{
         | None() -> this.makeEmptyConstructor(context, pos, className, c)
         | Some(fd) -> this.makeConstructor(context, className, c.tparams, fd)
         };
-        TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
+        TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
     | TAPrim(kind) ->
@@ -819,7 +810,21 @@ class TEnv{
       };
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
+    | tafun @ TAFun _ ->
+      tfuns = this.normalizeFun(context, pos, tafun);
+      TType::single(tfuns)
+    | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
+    }
+  }
+
+  fun normalizeFun(
+    context: mutable SKStore.Context,
+    pos: PosRange,
+    tafun: TAFun,
+  ): TFuns {
+    tafun match {
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
+      subst = Subst::mcreate{context};
       TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
       funClauses = mutable Vector[];
       for (tparam in clauses) {
@@ -902,13 +907,11 @@ class TEnv{
         this.normalize(context, retType),
         CGNodes::singleton(cgNode),
       );
-      tfuns = if (isMethod) {
+      if (isMethod) {
         TFuns::singleMethod(tfun, pos)
       } else {
         TFuns::singleFun(tfun, pos)
-      };
-      TType::single(tfuns)
-    | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
+      }
     }
   }
 

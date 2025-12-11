@@ -629,10 +629,23 @@ extension class TypeChecker {
       };
       TType::single(TPrimUnit(TVoid(), pos))
     | Call(f, targs, args) ->
+      fty = this.expr(tcenv, f);
+      tfuns = fty
+        .getSTypes(tcenv.subst, this.tenv, Covariant())
+        .flatMap(stypes ~> stypes.singleElt()) match {
+      | Some(tfuns @ TFuns _) -> tfuns
+      | _ ->
+        typingError(
+          Array[
+            (pos, "Invalid call"),
+            (fty.pos, `Type ${fty} is not a function`),
+          ],
+        )
+      };
       rty = this.call(
         tcenv,
         pos,
-        this.expr(tcenv, f),
+        tfuns,
         targs.map(ty -> this.tenv.normalize(tcenv.context, ty)),
         args,
       );
@@ -1404,7 +1417,7 @@ extension class TypeChecker {
   fun call(
     tcenv: mutable TCEnv,
     pos: PosRange,
-    fty: TType,
+    tfuns: TFuns,
     targs: Array<TType>,
     argExprs: Array<Expr>,
   ): TType {
@@ -1466,11 +1479,8 @@ extension class TypeChecker {
       }
     };
 
-    result: ?TType = None();
-    fty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
-      stypes.singleElt()
-    ) match {
-    | Some(TFuns(tfun, _)) ->
+    tfuns match {
+    | TFuns(tfun, fPos) ->
       recordCalls(tcenv.context, tcenv.callingContext, tfun.cgNodes);
       if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
         typingError(
@@ -1479,7 +1489,7 @@ extension class TypeChecker {
               pos,
               `Incompatible number of type arguments: ${targs.size()} passed`,
             ),
-            (fty.pos, `Expected: ${tfun.tparams.size()}`),
+            (fPos, `Expected: ${tfun.tparams.size()}`),
           ],
         )
       };
@@ -1510,7 +1520,7 @@ extension class TypeChecker {
             typingError(
               Array[
                 (pos, "Invalid call"),
-                (fty.pos, `This function has ${tfun.params.size()} parameters`),
+                (fPos, `This function has ${tfun.params.size()} parameters`),
               ],
             )
           };
@@ -1566,21 +1576,7 @@ extension class TypeChecker {
           }
         }
       };
-      !result = result match {
-      | None() -> Some(tfun.retType)
-      | Some(r) -> Some(TType::union(tcenv.subst, this.tenv, r, tfun.retType))
-      }
-    | _ -> void
-    };
-    result match {
-    | None() ->
-      typingError(
-        Array[
-          (pos, "Invalid call"),
-          (fty.pos, `Type ${fty} is not a function`),
-        ],
-      )
-    | Some(x) -> x
+      tfun.retType
     }
   }
 }

@@ -730,7 +730,7 @@ class TFields private {
      TODO: if a field name is included an index key type, then its
       type must be a subtype of the index key type
   */
-  new: ?TType,
+  new: ?TFuns,
   /*  */
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
@@ -744,7 +744,7 @@ class TFields private {
   static fun create{
     fields: Array<TField> = Array[],
     indexes: Array<TIndexField> = Array[],
-    new: ?TType = None(),
+    new: ?TFuns = None(),
   }: TFields {
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
@@ -762,12 +762,12 @@ class TFields private {
   fun map(
     fField: TField -> TField,
     fIndexField: TIndexField -> TIndexField,
-    fType: TType -> TType,
+    fTFuns: TFuns -> TFuns,
   ): TFields {
     TFields{
       fields => this.fields.map(fField),
       indexes => this.indexes.map(fIndexField),
-      new => this.new.map(fType),
+      new => this.new.map(fTFuns),
     }
   }
 
