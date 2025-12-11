@@ -264,7 +264,8 @@ class TEnv{
     pos = className.pos;
     new = constructor match {
     | Some(ty) -> ty
-    | None() -> this.makeEmptyConstructor(context, pos, className, c)
+    | None() ->
+      TType::single(this.makeEmptyConstructor(context, pos, className, c))
     };
     TObject(
       TFields::create{
@@ -281,12 +282,12 @@ class TEnv{
     pos: PosRange,
     className: Name,
     c: Class,
-  ): TType {
+  ): TFuns {
     cgNode = CGNode::create(Constructor(className, c.name.pos.fileName));
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
     tafun = TAFun(false, c.tparams, Array[], retType, cgNode);
-    TType::single(this.normalizeFun(context, pos, tafun))
+    this.normalizeFun(context, pos, tafun)
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
@@ -472,7 +473,9 @@ class TEnv{
         | None() -> void
         };
         !constructor = Some(
-          this.makeConstructor(context, className, isStatic.fromSome(), fd),
+          TType::single(
+            this.makeConstructor(context, className, isStatic.fromSome(), fd),
+          ),
         )
       | fd @ FunDef _ ->
         metIsStatic = fd.isStatic();
@@ -506,7 +509,8 @@ class TEnv{
       targs,
     ) match {
     | None() -> None()
-    | Some(fd) -> Some(this.makeConstructor(context, className, tparams, fd))
+    | Some(fd) ->
+      Some(TType::single(this.makeConstructor(context, className, tparams, fd)))
     }
   }
 
@@ -558,7 +562,7 @@ class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     fd: FunDef,
-  ): TType {
+  ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
       // We give the tparams a different name to make sure they are
@@ -580,7 +584,7 @@ class TEnv{
       typingError(Array[(x.pos, "Unexpected annotation for constructor")])
     };
     tafun = TAFun(false, tparams, params, retType, cgNode);
-    TType::single(this.normalizeFun(context, fd.pos, tafun))
+    this.normalizeFun(context, fd.pos, tafun)
   }
 
   private fun convertParam(param: Param): TAFunParam {
@@ -660,7 +664,7 @@ class TEnv{
         TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
         c = this.getClass(context, className);
-        tfun = this.findConstructorMethod(
+        tfuns = this.findConstructorMethod(
           context,
           SortedSet[],
           className,
@@ -670,6 +674,7 @@ class TEnv{
         | None() -> this.makeEmptyConstructor(context, pos, className, c)
         | Some(fd) -> this.makeConstructor(context, className, c.tparams, fd)
         };
+        tfun = TType::single(tfuns);
         TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
