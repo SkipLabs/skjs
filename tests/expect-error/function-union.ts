@@ -277,7 +277,8 @@ function wrongFn1(_x: string): string {
 }
 
 function testIncompatibleAssignment(): void {
-  // FIXME: Should reject - wrongFn1 takes string but union requires number or boolean
+  // wrongFn1 takes string but union requires number & boolean
+  // Actually OK because we can't call it
   const union: IncompatibleUnion1 = wrongFn1;
 }
 
@@ -297,7 +298,8 @@ function wrongParam(_x: Animal): string {
 }
 
 function testWrongParamType(): void {
-  // FIXME: Should reject - wrongParam takes Animal but union needs Dog or Cat (more specific types)
+  // wrongParam takes Animal but union needs Dog & Cat (more specific types)
+  // Actually OK: there can be a { breed: string, meow: () => void, name: string }
   const union: IncompatibleUnion3 = wrongParam;
 }
 
