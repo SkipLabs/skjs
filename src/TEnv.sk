@@ -285,8 +285,8 @@ class TEnv{
     cgNode = CGNode::create(Constructor(className, c.name.pos.fileName));
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
-    ftype = Type(pos, TAFun(false, c.tparams, Array[], retType, cgNode));
-    this.normalize(context, ftype)
+    tafun = TAFun(false, c.tparams, Array[], retType, cgNode);
+    TType::single(this.normalizeFun(context, pos, tafun))
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
@@ -579,10 +579,8 @@ class TEnv{
     | (_, Some(x)) ->
       typingError(Array[(x.pos, "Unexpected annotation for constructor")])
     };
-    this.normalize(
-      context,
-      Type(fd.pos, TAFun(false, tparams, params, retType, cgNode)),
-    );
+    tafun = TAFun(false, tparams, params, retType, cgNode);
+    TType::single(this.normalizeFun(context, fd.pos, tafun))
   }
 
   private fun convertParam(param: Param): TAFunParam {
@@ -614,19 +612,14 @@ class TEnv{
       typingError(Array[(pos, "Missing return type annotation")])
     | (_, Some(x)) -> x
     };
-    fty = this.normalize(
-      context,
-      Type(
-        fd.pos,
-        TAFun(
-          isMethod,
-          fd.tparams,
-          fd.params.map(this.convertParam),
-          retType,
-          cgNode,
-        ),
-      ),
+    tafun = TAFun(
+      isMethod,
+      fd.tparams,
+      fd.params.map(this.convertParam),
+      retType,
+      cgNode,
     );
+    fty = TType::single(this.normalizeFun(context, fd.pos, tafun));
     (name, fty)
   }
 
@@ -644,10 +637,9 @@ class TEnv{
       targetType = this.normalize(context, ty);
       this.keyOfType(subst, targetType, pos)
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
-      tfun = this.normalize(
-        context,
-        Type(tyPos, TAFun(false, clauses, params, retType, cgNode)),
-      );
+      tafun = TAFun(false, clauses, params, retType, cgNode);
+      tfuns = this.normalizeFun(context, tyPos, tafun);
+      tfun = TType::single(tfuns);
       TType::single(TObject(TFields::create{new => Some(tfun)}, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
