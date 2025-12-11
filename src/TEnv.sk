@@ -190,7 +190,7 @@ class TEnv{
         className,
         c.tparams,
         targs,
-      ),
+      ).map(TType::single),
     )
   }
 
@@ -497,7 +497,7 @@ class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?TType {
+  ): ?TFuns {
     this.findConstructorMethod(
       context,
       visitedClasses,
@@ -506,8 +506,7 @@ class TEnv{
       targs,
     ) match {
     | None() -> None()
-    | Some(fd) ->
-      Some(TType::single(this.makeConstructor(context, className, tparams, fd)))
+    | Some(fd) -> Some(this.makeConstructor(context, className, tparams, fd))
     }
   }
 
