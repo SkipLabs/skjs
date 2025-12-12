@@ -287,7 +287,30 @@ extension class Parser {
             ExpectedAccessorDefinition(),
           );
         };
-        this.getNormalFieldType(fieldPosStart, modifiers, fieldName, isOptional)
+        type = if (this.lex.peekKind() is Some(TKColon())) {
+          _ = this.lex.next();
+          Some(this.type(0))
+        } else {
+          None()
+        };
+        fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
+          _ = this.lex.next();
+          Some(this.expr(0))
+        } else {
+          None()
+        };
+        FieldTypeValue{
+          pos => PosRange::create(
+            this.lex,
+            fieldPosStart,
+            this.lex.getLastPos(),
+          ),
+          modifiers,
+          name => fieldName,
+          optional => isOptional,
+          type,
+          value => fieldValue,
+        }
       };
       fields.push(field);
       semiTok = this.lex.peek() match {
