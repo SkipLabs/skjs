@@ -530,7 +530,7 @@ extension class Parser {
       this.lex.peekKind() is Some(TKOpenParen()) ||
       this.lex.peekKind() is Some(TKLessThan())
     ) {
-      return this.anonMethodDef(
+      return this.methodDef(
         None(),
         modifiers,
         fieldGetSet,

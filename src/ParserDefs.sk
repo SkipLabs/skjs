@@ -281,7 +281,7 @@ extension class Parser {
         None(),
         modifiers,
         fieldGetSet,
-        methodName,
+        Some(methodName),
         true,
         isOptional,
         None(),
@@ -310,7 +310,7 @@ extension class Parser {
         this.lex.peekKind() is Some(TKOpenParen()) ||
         this.lex.peekKind() is Some(TKLessThan())
       ) {
-        method = this.anonMethodDef(
+        method = this.methodDef(
           None(),
           modifiers,
           None(),
@@ -1088,7 +1088,7 @@ extension class Parser {
       isAsync,
       Modifiers::empty(),
       None(),
-      FNNormal(funName),
+      Some(FNNormal(funName)),
       parseBlock,
       None(),
       cgNode,
@@ -1101,27 +1101,6 @@ extension class Parser {
 
   // Parse method definitions
   mutable fun methodDef(
-    isAsync: ?PosRange,
-    modifiers: Modifiers,
-    fieldGetSet: ?FieldGetSet,
-    funName: SimpleSymbol,
-    parseBlock: Bool,
-    optional: ?PosRange,
-    cgNode: ?CGNode,
-  ): FunDef {
-    this.anonMethodDef(
-      isAsync,
-      modifiers,
-      fieldGetSet,
-      Some(funName),
-      parseBlock,
-      optional,
-      cgNode,
-    )
-  }
-
-  // Parse anonymous method definitions
-  mutable fun anonMethodDef(
     isAsync: ?PosRange,
     methodModifiers: Modifiers,
     isGetSet: ?FieldGetSet,
