@@ -349,7 +349,6 @@ extension class Parser {
       | TKCloseCurly() ->
         _ = this.lex.next();
         break void
-      | TKComma()
       | TKSemi() ->
         _ = this.lex.next();
         if (this.lex.peekKind() is Some(TKCloseCurly())) {
