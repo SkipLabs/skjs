@@ -523,7 +523,7 @@ extension class Parser {
       e = this.expr(0);
       return FDSpread(e);
     };
-    modifiers = this.modifiers{allowRemove => false};
+    modifiers = this.modifiers();
     fieldGetSet = this.isGetSet();
     fieldName = this.getNameOrStringOrNumber();
     if (
