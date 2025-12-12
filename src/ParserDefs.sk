@@ -211,7 +211,8 @@ extension class Parser {
       (isGet || this.lex.isEq("set")) &&
       this.lex.lookAhead(() -> {
         _ = this.lex.next();
-        this.lex.peekKind() is Some(TKVar())
+        this.lex.peekKind() is Some(TKVar()) ||
+          this.lex.peekKind() is Some(TKOpenSquare())
       })
     ) {
       kind = if (isGet) FGet() else FSet();
