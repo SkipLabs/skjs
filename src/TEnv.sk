@@ -516,7 +516,7 @@ class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?FunDef {
+  ): ?FieldTypeMethod {
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
