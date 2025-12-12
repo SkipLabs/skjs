@@ -297,7 +297,7 @@ extension class Parser {
     }
   }
 
-  // Parse object fields (used in object types and object literals)
+  // Parse object fields (used in object types and classes)
   mutable fun objectFields(): Array<FieldType> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
