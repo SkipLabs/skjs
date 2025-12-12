@@ -4,7 +4,7 @@ extension class TypeChecker {
   fun class_(context: mutable SKStore.Context, c: Class): void {
     typingErrors = mutable TypingErrorCollection(this.keepGoing);
 
-    constructor: ?FunDef = None();
+    constructor: ?FieldTypeMethod = None();
     for (fieldType in c.fields) {
       fieldType match {
       | fd @ FieldTypeMethod _ if (
@@ -233,7 +233,7 @@ extension class TypeChecker {
     subst: mutable Subst,
     thisType: TType,
     partialThisType: TType,
-    fd: FunDef,
+    fd: FieldTypeMethod,
     className: ?Name,
     methods: SortedSet<String>,
   ): void {

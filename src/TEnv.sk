@@ -559,7 +559,7 @@ class TEnv{
     context: mutable SKStore.Context,
     className: Name,
     tparams: Array<TypeParam>,
-    fd: FunDef,
+    fd: FieldTypeMethod,
   ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
