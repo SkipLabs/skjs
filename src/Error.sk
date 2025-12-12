@@ -183,6 +183,11 @@ class UnterminatedType() extends ParsingKind {
     `Unterminated type`
   }
 }
+class ExpectedAccessorDefinition() extends ParsingKind {
+  fun toString(): String {
+    `Expected accessor definition`
+  }
+}
 class ExpectedToken(tokenKind: TokenKind) extends ParsingKind {
   fun toString(): String {
     `Expected token ${this.tokenKind}`

@@ -297,6 +297,12 @@ extension class Parser {
         true,
       )
     | _ ->
+      if (fieldGetSet.isSome()) {
+        this.error(
+          this.lex.posStart(this.lex.peek().fromSome()),
+          ExpectedAccessorDefinition(),
+        );
+      };
       this.getNormalFieldType(
         fieldPosStart,
         modifiers,
