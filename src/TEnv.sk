@@ -475,7 +475,8 @@ class TEnv{
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
-        (metName, metType) = this.funDecl(context, !metIsStatic, fd, cgNode);
+        (metName, metTFuns) = this.funDecl(context, !metIsStatic, fd, cgNode);
+        metType = TType::single(metTFuns);
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
           typingError(Array[(fd.pos, `Forbidden method name '${metName}'`)])
@@ -597,7 +598,7 @@ class TEnv{
     isMethod: Bool,
     fd: FunDef,
     cgNode: CGNode,
-  ): (Name, TType) {
+  ): (Name, TFuns) {
     name = fd.name match {
     | Some(FNNormal(name)) -> name
     | None() -> notSupported(fd.pos, "anonymous function")
@@ -616,8 +617,8 @@ class TEnv{
       retType,
       cgNode,
     );
-    fty = TType::single(this.normalizeFun(context, fd.pos, tafun));
-    (name, fty)
+    tfuns = this.normalizeFun(context, fd.pos, tafun);
+    (name, tfuns)
   }
 
   fun normalize(context: mutable SKStore.Context, typeAst: Type): TType {
@@ -970,7 +971,8 @@ class TEnv{
         }
       | fd @ FieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
-        (name, decl) = this.funDecl(context, false, fd, cgNode);
+        (name, tfuns) = this.funDecl(context, false, fd, cgNode);
+        decl = TType::single(tfuns);
         optField = TField::create(name.pos, name.value, false, decl);
         if (optField is None()) {
           typingError(Array[(name.pos, `Forbidden method name ${name}`)])
