@@ -258,8 +258,8 @@ extension class Parser {
     }
   }
 
-  // Parse object fields (used in object types and classes)
-  mutable fun objectFields(): Array<FieldType> {
+  // Parse class fields
+  mutable fun classFields(): Array<FieldType> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
       return Array[];
@@ -909,7 +909,7 @@ extension class Parser {
       Array[]
     };
     this.expect(TKOpenCurly());
-    fields = this.objectFields();
+    fields = this.classFields();
 
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
