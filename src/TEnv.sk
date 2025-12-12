@@ -922,6 +922,8 @@ class TEnv{
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     indexes = mutable Vector[];
+    new: ?TFuns = None();
+
     fields = fieldTypes.filterMap(elt -> {
       elt match {
       | fd @ ObjectFieldTypeValue _ ->
@@ -971,16 +973,21 @@ class TEnv{
         }
       | fd @ FieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
-        (name, tfuns) = this.funDecl(context, false, fd, cgNode);
-        decl = TType::single(tfuns);
-        optField = TField::create(name.pos, name.value, false, decl);
-        if (optField is None()) {
-          typingError(Array[(name.pos, `Forbidden method name ${name}`)])
-        };
-        optField
+        (name, tFuns) = this.funDecl(context, false, fd, cgNode);
+        if (name.value == "new") {
+          !new = Some(tFuns);
+          None()
+        } else {
+          decl = TType::single(tFuns);
+          optField = TField::create(name.pos, name.value, false, decl);
+          if (optField is None()) {
+            typingError(Array[(name.pos, `Forbidden method name ${name}`)])
+          };
+          optField
+        }
       }
     });
-    tFields = TFields::create{fields, indexes => indexes.toArray()};
+    tFields = TFields::create{fields, indexes => indexes.toArray(), new};
     (algebraicBranchField, tFields)
   }
 

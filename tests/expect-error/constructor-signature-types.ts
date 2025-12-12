@@ -54,6 +54,5 @@ function testConstructorSignatureErrors(): void {
 type newInObjectType = { new (): D };
 
 function useNewInObjectType(c: newInObjectType): D {
-  // @skjs-expect-error Invalid new
   return new c();
 }
