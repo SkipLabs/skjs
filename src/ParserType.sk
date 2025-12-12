@@ -437,6 +437,36 @@ extension class Parser {
     }
   }
 
+  mutable fun objectTypeFieldModifiers(): Modifiers {
+    roMod = this.lex.peekKind() match {
+    | Some(TKSubtraction()) -> ModRemoveReadonly
+    | Some(TKAddition()) -> ModReadonly
+    | Some(TKVar()) ->
+      if (this.lex.isEq("readonly")) {
+        pos = this.lex.posRange(this.lex.next().fromSome());
+        return Modifiers(Array[ModReadonly(pos)])
+      };
+      return Modifiers::empty()
+    | _ -> return Modifiers::empty()
+    };
+    this.withPos(
+      () ->
+        this.lex.tryAhead(() -> {
+          _ = this.lex.next();
+          if (this.lex.isEq("readonly")) {
+            _ = this.lex.next();
+            Some(void)
+          } else {
+            None()
+          }
+        }),
+      UnterminatedExpr(),
+    ) match {
+    | (pos, Some(_void)) -> Modifiers(Array[roMod(pos)])
+    | (_, None()) -> Modifiers::empty()
+    }
+  }
+
   // Parse object type fields
   mutable fun objectTypeFields(): Array<ObjectFieldType> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
@@ -469,7 +499,7 @@ extension class Parser {
         );
         fields.push(method);
       } else {
-        modifiers = this.modifiers{allowRemove => true};
+        modifiers = this.objectTypeFieldModifiers();
         fieldGetSet = this.isGetSet();
         fieldPosStart = this.lex.peek() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
