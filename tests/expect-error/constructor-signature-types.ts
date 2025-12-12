@@ -50,3 +50,10 @@ function testConstructorSignatureErrors(): void {
   // @skjs-expect-error Invalid annotation
   const badParams: new (num: number) => C = C;
 }
+
+type newInObjectType = { new (): D };
+
+function useNewInObjectType(c: newInObjectType): D {
+  // @skjs-expect-error Invalid new
+  return new c();
+}
