@@ -6,7 +6,7 @@ module SKJS;
 
 base class CGNode_ uses XXHashable, Show {
   children =
-  | TopLevelFunDef(name: SimpleSymbol, fileName: FAbsolute)
+  | TopLevelFunction(name: SimpleSymbol, fileName: FAbsolute)
   | Method(
     name: ?SimpleSymbol,
     class_: Name,
@@ -19,7 +19,7 @@ base class CGNode_ uses XXHashable, Show {
 
   fun getFileName(): FAbsolute {
     this match {
-    | TopLevelFunDef(_, fileName)
+    | TopLevelFunction(_, fileName)
     | Method(_, _, fileName, _)
     | Constructor(_, fileName)
     | Toplevel(fileName)
@@ -33,7 +33,7 @@ base class CGNode_ uses XXHashable, Show {
 
   fun toString(): String {
     this match {
-    | TopLevelFunDef(name, file) -> `toplevel: ${name.getName()} (${file})`
+    | TopLevelFunction(name, file) -> `toplevel: ${name.getName()} (${file})`
     | Method(name, class_, file, static_) ->
       strStatic = if (static_) "static " else "";
       strName = name match {
@@ -254,7 +254,7 @@ class CallGraph private (
         if (affectedClasses.contains(classIdent)) {
           affectedCGNodes.insert(node)
         }
-      | TopLevelFunDef _
+      | TopLevelFunction _
       | Toplevel _
       | ArrowTypeAnnot _
       | AnonymousLambda _
@@ -339,7 +339,7 @@ private fun checkDef(
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
   | fd @ FunDef _ ->
     cgNode = fd.name match {
-    | Some(name) -> CGNode::create(TopLevelFunDef(name, fd.pos.fileName))
+    | Some(name) -> CGNode::create(TopLevelFunction(name, fd.pos.fileName))
     | None() -> CGNode::create(AnonymousFunDef(fd))
     };
     nodes.insert(cgNode)
