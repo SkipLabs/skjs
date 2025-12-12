@@ -278,13 +278,22 @@ extension class Parser {
       this.lex.peekKind() is Some(TKLessThan())
     ) ->
       this.methodDef(
-        None(),
-        modifiers,
-        fieldGetSet,
+        {pos, tparams, params, retType, body} ->
+          FunDef{
+            pos,
+            isAsync => None(),
+            modifiers,
+            isGetSet => fieldGetSet,
+            name => Some(methodName),
+            optional => isOptional,
+            tparams,
+            params,
+            retType,
+            body,
+            cgNode => None(),
+          },
         Some(methodName),
         true,
-        isOptional,
-        None(),
       )
     | _ ->
       this.getNormalFieldType(
@@ -311,13 +320,22 @@ extension class Parser {
         this.lex.peekKind() is Some(TKLessThan())
       ) {
         method = this.methodDef(
-          None(),
-          modifiers,
-          None(),
+          {pos, tparams, params, retType, body} ->
+            FunDef{
+              pos,
+              isAsync => None(),
+              modifiers,
+              isGetSet => None(),
+              name => None(),
+              optional => None(),
+              tparams,
+              params,
+              retType,
+              body,
+              cgNode => None(),
+            },
           None(),
           false,
-          None(),
-          None(),
         );
         fields.push(method);
       } else {
@@ -1085,13 +1103,22 @@ extension class Parser {
     cgNode = None(); // TODO: Add call graph support back
 
     result = this.methodDef(
-      isAsync,
-      Modifiers::empty(),
-      None(),
+      {pos, tparams, params, retType, body} ->
+        FunDef{
+          pos,
+          isAsync,
+          modifiers => Modifiers::empty(),
+          isGetSet => None(),
+          name => Some(FNNormal(funName)),
+          optional => None(),
+          tparams,
+          params,
+          retType,
+          body,
+          cgNode,
+        },
       Some(FNNormal(funName)),
       parseBlock,
-      None(),
-      cgNode,
     );
 
     // Restore previous context
@@ -1100,15 +1127,17 @@ extension class Parser {
   }
 
   // Parse method definitions
-  mutable fun methodDef(
-    isAsync: ?PosRange,
-    methodModifiers: Modifiers,
-    isGetSet: ?FieldGetSet,
+  mutable fun methodDef<T>(
+    mk: {
+      pos: PosRange,
+      tparams: Array<TypeParam>,
+      params: Array<Param>,
+      retType: (PosRange, ?Type),
+      body: FunDefBody,
+    } -> T,
     funName: ?SimpleSymbol,
     parseBlock: Bool,
-    isOptional: ?PosRange,
-    cgNode: ?CGNode,
-  ): FunDef {
+  ): T {
     // Record method/function definition and set context
     (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
@@ -1223,18 +1252,12 @@ extension class Parser {
 
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
-    FunDef{
+    mk{
       pos => PosRange::create(this.lex, funStart, funEnd),
-      isAsync,
-      modifiers => methodModifiers,
       tparams => tparams,
-      isGetSet,
-      name => funName,
-      optional => isOptional,
       params => params.toArray(),
       retType,
       body,
-      cgNode,
     }
   }
 }

@@ -531,13 +531,22 @@ extension class Parser {
       this.lex.peekKind() is Some(TKLessThan())
     ) {
       return this.methodDef(
-        None(),
-        modifiers,
-        fieldGetSet,
+        {pos, tparams, params, retType, body} ->
+          FunDef{
+            pos,
+            isAsync => None(),
+            modifiers,
+            isGetSet => fieldGetSet,
+            name => Some(FNNormal(fieldName)),
+            optional => None(),
+            tparams,
+            params,
+            retType,
+            body,
+            cgNode => None(),
+          },
         Some(FNNormal(fieldName)),
         true,
-        None(),
-        None(),
       )
     };
     tok = this.lex.peek() match {
