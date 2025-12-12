@@ -165,7 +165,7 @@ class TEnv{
     context: mutable SKStore.Context,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldType ~> Bool = _ ~> true,
+    filter: ClassFieldTypeValue ~> Bool = _ ~> true,
   ): TType {
     obj = this.newObject(context, className, targs, filter);
     TType::single(obj)
@@ -198,7 +198,7 @@ class TEnv{
     context: mutable SKStore.Context,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldType ~> Bool = _ ~> true,
+    filter: ClassFieldTypeValue ~> Bool = _ ~> true,
   ): TObject {
     c = this.getClass(context, className);
     if (c.tparams.size() != targs.size()) {
@@ -372,7 +372,7 @@ class TEnv{
     isStatic: ?Array<TypeParam>,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldType ~> Bool,
+    filter: ClassFieldTypeValue ~> Bool,
   ): /* Type of constructor */ ?TFuns {
     (!this, cls) = this.processClassSetup(
       context,
@@ -403,7 +403,7 @@ class TEnv{
     for (fieldType in cls.fields) {
       fieldType match {
       | field @ ClassFieldTypeValue _ ->
-        if (!filter(fieldType)) continue;
+        if (!filter(field)) continue;
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic(pos) ->
