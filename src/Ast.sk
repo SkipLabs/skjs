@@ -403,11 +403,7 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /***************************************************************************/
-base class FieldType{modifiers: Modifiers} uses XXHashable {
-  fun isStatic(): Bool {
-    this.modifiers.modifiers.any(mod -> mod is ModStatic _)
-  }
-}
+base class FieldType extends WithModifiers
 
 class FieldTypeValue{
   pos: PosRange,
@@ -417,6 +413,12 @@ class FieldTypeValue{
   type: ?Type,
   value: ?Expr,
 } extends FieldType
+
+base class WithModifiers{modifiers: Modifiers} uses XXHashable {
+  fun isStatic(): Bool {
+    this.modifiers.modifiers.any(mod -> mod is ModStatic _)
+  }
+}
 
 /***************************************************************************/
 // <type_> ::=
