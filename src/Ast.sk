@@ -422,11 +422,9 @@ base class FieldTypeValue{
   type: ?Type,
 }
 
-class ObjectFieldTypeValue extends
-  ObjectFieldType,
-  FieldTypeValue,
-  WithModifiers,
-{}
+class ObjectFieldTypeValue{
+  readonly_: ?ObjectFieldReadonly,
+} extends ObjectFieldType, FieldTypeValue {}
 
 class ClassFieldTypeValue{
   value: ?Expr,
@@ -530,6 +528,16 @@ class TAFunParam(
 /***************************************************************************/
 // Modifiers
 /***************************************************************************/
+
+base class ObjectFieldReadonly final (pos: PosRange) uses XXHashable, Equality {
+  children =
+  | OFReadonly
+  | OFRemoveReadonly
+
+  fun toString(): String
+  | OFReadonly _ -> "readonly"
+  | OFRemoveReadonly _ -> "-readonly"
+}
 
 base class Modifier final (pos: PosRange) uses XXHashable {
   children =

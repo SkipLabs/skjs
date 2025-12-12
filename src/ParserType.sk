@@ -437,17 +437,17 @@ extension class Parser {
     }
   }
 
-  mutable fun objectTypeFieldModifiers(): Modifiers {
-    roMod = this.lex.peekKind() match {
-    | Some(TKSubtraction()) -> ModRemoveReadonly
-    | Some(TKAddition()) -> ModReadonly
+  mutable fun objectTypeFieldModifiers(): ?ObjectFieldReadonly {
+    ro = this.lex.peekKind() match {
+    | Some(TKSubtraction()) -> OFRemoveReadonly
+    | Some(TKAddition()) -> OFReadonly
     | Some(TKVar()) ->
       if (this.lex.isEq("readonly")) {
         pos = this.lex.posRange(this.lex.next().fromSome());
-        return Modifiers(Array[ModReadonly(pos)])
+        return Some(OFReadonly(pos))
       };
-      return Modifiers::empty()
-    | _ -> return Modifiers::empty()
+      return None()
+    | _ -> return None()
     };
     this.withPos(
       () ->
@@ -462,8 +462,8 @@ extension class Parser {
         }),
       UnterminatedExpr(),
     ) match {
-    | (pos, Some(_void)) -> Modifiers(Array[roMod(pos)])
-    | (_, None()) -> Modifiers::empty()
+    | (pos, Some(_void)) -> Some(ro(pos))
+    | (_, None()) -> None()
     }
   }
 
@@ -499,7 +499,7 @@ extension class Parser {
         );
         fields.push(method);
       } else {
-        modifiers = this.objectTypeFieldModifiers();
+        readonly_ = this.objectTypeFieldModifiers();
         fieldGetSet = this.isGetSet();
         fieldPosStart = this.lex.peek() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
@@ -516,12 +516,20 @@ extension class Parser {
           this.lex.peekKind() is Some(TKOpenParen()) ||
           this.lex.peekKind() is Some(TKLessThan())
         ) ->
+          readonly_ match {
+          | Some(ro) ->
+            this.error(
+              this.lex.posStart(this.lex.peek().fromSome()),
+              UnexpectedObjectTypeMethodReadonly(ro),
+            )
+          | None() -> void
+          };
           this.methodDef(
             {pos, tparams, params, retType, body} ->
               FieldTypeMethod{
                 pos,
                 isAsync => None(),
-                modifiers,
+                modifiers => Modifiers::empty(),
                 isGetSet => fieldGetSet,
                 name => Some(methodName),
                 optional => isOptional,
@@ -553,7 +561,7 @@ extension class Parser {
               fieldPosStart,
               this.lex.getLastPos(),
             ),
-            modifiers,
+            readonly_,
             name => fieldName,
             optional => isOptional,
             type,
