@@ -203,39 +203,7 @@ extension class Parser {
 
   /***************************************************************************/
   // Field parsing
-  //
-  // Parses fields that are not methods.
-  // <field> ::= <name> : <expr> | ... <expr>
   /***************************************************************************/
-
-  // Parse a normal field type (not a method)
-  mutable fun getNormalFieldType(
-    fieldPosStart: Pos,
-    modifiers: Modifiers,
-    fieldName: Symbol,
-    isOptional: ?PosRange,
-  ): FieldTypeValue {
-    type = if (this.lex.peekKind() is Some(TKColon())) {
-      _ = this.lex.next();
-      Some(this.type(0))
-    } else {
-      None()
-    };
-    fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
-      _ = this.lex.next();
-      Some(this.expr(0))
-    } else {
-      None()
-    };
-    FieldTypeValue{
-      pos => PosRange::create(this.lex, fieldPosStart, this.lex.getLastPos()),
-      modifiers,
-      name => fieldName,
-      optional => isOptional,
-      type,
-      value => fieldValue,
-    }
-  }
 
   // Parse class fields
   mutable fun classFields(): Array<ClassFieldType> {
