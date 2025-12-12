@@ -918,7 +918,7 @@ class TEnv{
    */
   private fun createTFields(
     context: mutable SKStore.Context,
-    fieldTypes: Array<FieldType>,
+    fieldTypes: Array<ObjectFieldType>,
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     indexes = mutable Vector[];
