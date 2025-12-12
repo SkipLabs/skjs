@@ -235,7 +235,7 @@ extension class Parser {
     fieldGetSet: ?FieldGetSet,
     fieldName: Symbol,
     isOptional: ?PosRange,
-  ): FieldType {
+  ): FieldTypeValue {
     type = if (this.lex.peekKind() is Some(TKColon())) {
       _ = this.lex.next();
       Some(this.type(0))
