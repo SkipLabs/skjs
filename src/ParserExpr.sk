@@ -553,6 +553,9 @@ extension class Parser {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
     | Some(x) -> x
     };
+    if (fieldGetSet.isSome()) {
+      this.error(this.lex.posStart(tok), ExpectedAccessorDefinition())
+    };
     tok.kind match {
     | TKColon() ->
       _ = this.lex.next();
