@@ -45,8 +45,8 @@ extension class Parser {
     }
   }
 
-  // "<string>" | '<string>' | <int>
-  mutable fun getNameOrStringOrInt(): Name {
+  // "<string>" | '<string>' | <number>
+  mutable fun getNameOrStringOrNumber(): Name {
     this.lex.next() match {
     | Some(tok @ Token(TKVar(), _, _)) ->
       Name(this.lex.posRange(tok), this.getVar(tok))
@@ -97,7 +97,7 @@ extension class Parser {
         this.lex.peekKind() is Some(TKSubtraction()) ||
         this.lex.peekKind() is Some(TKAddition())
       ) {
-        name = this.getNameOrStringOrInt();
+        name = this.getNameOrStringOrNumber();
         this.expect(TKCloseSquare());
         FNNormal(name);
       } else {
@@ -133,7 +133,7 @@ extension class Parser {
         }
       }
     } else {
-      FNNormal(this.getNameOrStringOrInt())
+      FNNormal(this.getNameOrStringOrNumber())
     }
   }
 

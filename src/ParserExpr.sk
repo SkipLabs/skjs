@@ -525,7 +525,7 @@ extension class Parser {
     };
     modifiers = this.modifiers{allowRemove => false};
     fieldGetSet = this.isGetSet();
-    fieldName = this.getNameOrStringOrInt();
+    fieldName = this.getNameOrStringOrNumber();
     if (
       this.lex.peekKind() is Some(TKOpenParen()) ||
       this.lex.peekKind() is Some(TKLessThan())
