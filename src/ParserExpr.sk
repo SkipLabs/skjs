@@ -523,26 +523,38 @@ extension class Parser {
       e = this.expr(0);
       return FDSpread(e);
     };
-    modifiers = this.modifiers{allowRemove => false};
+    modifiers = this.modifiers();
     fieldGetSet = this.isGetSet();
-    fieldName = this.getNameOrStringOrInt();
+    fieldName = this.getNameOrStringOrNumber();
     if (
       this.lex.peekKind() is Some(TKOpenParen()) ||
       this.lex.peekKind() is Some(TKLessThan())
     ) {
-      return this.anonMethodDef(
-        None(),
-        modifiers,
-        fieldGetSet,
+      return this.methodDef(
+        {pos, tparams, params, retType, body} ->
+          FDMethod{
+            pos,
+            isAsync => None(),
+            modifiers,
+            isGetSet => fieldGetSet,
+            name => Some(FNNormal(fieldName)),
+            optional => None(),
+            tparams,
+            params,
+            retType,
+            body,
+            cgNode => None(),
+          },
         Some(FNNormal(fieldName)),
         true,
-        None(),
-        None(),
       )
     };
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
     | Some(x) -> x
+    };
+    if (fieldGetSet.isSome()) {
+      this.error(this.lex.posStart(tok), ExpectedAccessorDefinition())
     };
     tok.kind match {
     | TKColon() ->

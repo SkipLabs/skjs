@@ -4,10 +4,12 @@ extension class TypeChecker {
   fun class_(context: mutable SKStore.Context, c: Class): void {
     typingErrors = mutable TypingErrorCollection(this.keepGoing);
 
-    constructor: ?FunDef = None();
+    constructor: ?FieldTypeMethod = None();
     for (fieldType in c.fields) {
       fieldType match {
-      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
+      | fd @ FieldTypeMethod _ if (
+        fd.name is Some(FNNormal(Name(_, "constructor")))
+      ) ->
         constructor match {
         | Some(existingConstructor) ->
           typingErrors.push(
@@ -121,11 +123,7 @@ extension class TypeChecker {
     hasConstructor = false;
     for (fieldType in c.fields) {
       fieldType match {
-      | field @ FieldTypeValue _ ->
-        field.setGet match {
-        | None() -> void
-        | Some(FieldGetSet(_, pos)) -> notSupported(pos, "field getter/setter")
-        };
+      | field @ ClassFieldTypeValue _ ->
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic(pos) ->
@@ -133,8 +131,7 @@ extension class TypeChecker {
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _
-          | ModReadonly _
-          | ModRemoveReadonly _ ->
+          | ModReadonly _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
             typingErrors.push(
@@ -165,27 +162,27 @@ extension class TypeChecker {
             )
           )
         }
-      | fd @ FunDef _ ->
+      | fd @ FieldTypeMethod _ ->
         if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
           !hasConstructor = true;
           partialThisType = this.tenv.new(
             context,
             c.name,
             targs.targs,
-            fieldType ~> (fieldType is FieldTypeValue{value => Some _}),
+            fieldType ~> (fieldType is ClassFieldTypeValue{value => Some _}),
           );
           methods = c.fields
             .iterator()
             .filterMap(fieldType ->
               fieldType match {
-              | FunDef{pos, name} ->
+              | FieldTypeMethod{pos, name} ->
                 name match {
                 | Some(FNNormal(Name(_, methodName))) -> Some(methodName)
                 | _ ->
                   typingErrors.push(Array[(pos, "Invalid method name")]);
                   None()
                 }
-              | FieldTypeValue _ -> None()
+              | ClassFieldTypeValue _ -> None()
               }
             )
             .collect(SortedSet);
@@ -212,7 +209,7 @@ extension class TypeChecker {
     if (c.kind is CKClass() && !hasConstructor) {
       for (fieldType in c.fields) {
         fieldType match {
-        | field @ FieldTypeValue _ ->
+        | field @ ClassFieldTypeValue _ ->
           field.value match {
           | None() ->
             if (field.optional is None()) {
@@ -220,7 +217,7 @@ extension class TypeChecker {
             }
           | Some(_) -> void
           }
-        | FunDef _ -> void
+        | FieldTypeMethod _ -> void
         }
       }
     };
@@ -231,7 +228,7 @@ extension class TypeChecker {
     subst: mutable Subst,
     thisType: TType,
     partialThisType: TType,
-    fd: FunDef,
+    fd: FieldTypeMethod,
     className: ?Name,
     methods: SortedSet<String>,
   ): void {

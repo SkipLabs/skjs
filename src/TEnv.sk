@@ -165,7 +165,7 @@ class TEnv{
     context: mutable SKStore.Context,
     className: Name,
     targs: Array<TType>,
-    filter: FieldType ~> Bool = _ ~> true,
+    filter: ClassFieldTypeValue ~> Bool = _ ~> true,
   ): TType {
     obj = this.newObject(context, className, targs, filter);
     TType::single(obj)
@@ -198,7 +198,7 @@ class TEnv{
     context: mutable SKStore.Context,
     className: Name,
     targs: Array<TType>,
-    filter: FieldType ~> Bool = _ ~> true,
+    filter: ClassFieldTypeValue ~> Bool = _ ~> true,
   ): TObject {
     c = this.getClass(context, className);
     if (c.tparams.size() != targs.size()) {
@@ -372,7 +372,7 @@ class TEnv{
     isStatic: ?Array<TypeParam>,
     className: Name,
     targs: Array<TType>,
-    filter: FieldType ~> Bool,
+    filter: ClassFieldTypeValue ~> Bool,
   ): /* Type of constructor */ ?TFuns {
     (!this, cls) = this.processClassSetup(
       context,
@@ -402,12 +402,8 @@ class TEnv{
     constructor: ?TFuns = None();
     for (fieldType in cls.fields) {
       fieldType match {
-      | field @ FieldTypeValue _ ->
-        if (!filter(fieldType)) continue;
-        field.setGet match {
-        | None() -> void
-        | Some(FieldGetSet(_, pos)) -> notSupported(pos, "field getter/setter")
-        };
+      | field @ ClassFieldTypeValue _ ->
+        if (!filter(field)) continue;
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic(pos) ->
@@ -415,8 +411,7 @@ class TEnv{
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _
-          | ModReadonly _
-          | ModRemoveReadonly _ ->
+          | ModReadonly _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
             typingError(
@@ -459,7 +454,7 @@ class TEnv{
           )
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
-      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+      | fd @ FieldTypeMethod{name => Some(FNNormal(Name(_, "constructor")))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
@@ -474,7 +469,7 @@ class TEnv{
         !constructor = Some(
           this.makeConstructor(context, className, isStatic.fromSome(), fd),
         )
-      | fd @ FunDef _ ->
+      | fd @ FieldTypeMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(
@@ -516,7 +511,7 @@ class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?FunDef {
+  ): ?FieldTypeMethod {
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
@@ -526,7 +521,9 @@ class TEnv{
     );
     for (fieldType in cls.fields) {
       fieldType match {
-      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
+      | fd @ FieldTypeMethod _ if (
+        fd.name is Some(FNNormal(Name(_, "constructor")))
+      ) ->
         return Some(fd)
       | _ -> void
       }
@@ -557,7 +554,7 @@ class TEnv{
     context: mutable SKStore.Context,
     className: Name,
     tparams: Array<TypeParam>,
-    fd: FunDef,
+    fd: FieldTypeMethod,
   ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
@@ -920,23 +917,13 @@ class TEnv{
    */
   private fun createTFields(
     context: mutable SKStore.Context,
-    fieldTypes: Array<FieldType>,
+    fieldTypes: Array<ObjectFieldType>,
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     indexes = mutable Vector[];
     fields = fieldTypes.filterMap(elt -> {
       elt match {
-      | fd @ FieldTypeValue _ ->
-        for (modifier in fd.modifiers.modifiers) {
-          typingError(
-            Array[
-              (
-                modifier.pos,
-                `'${modifier}' modifier cannot appear on a type member.`,
-              ),
-            ],
-          )
-        };
+      | fd @ ObjectFieldTypeValue _ ->
         fieldTy = fd.type match {
         | None() -> typingError(Array[(fd.pos, "Type annotation expected")])
         | Some(ty) -> ty
@@ -981,7 +968,7 @@ class TEnv{
           );
           None()
         }
-      | fd @ FunDef _ ->
+      | fd @ FieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
         (name, decl) = this.funDecl(context, false, fd, cgNode);
         optField = TField::create(name.pos, name.value, false, decl);

@@ -66,7 +66,7 @@ base class Declarable extends Def_ {
 
 base class Exportable extends Declarable {
   children =
-  | FunDef
+  | TopLevelFunDef
   | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
   | Class{
     kind: ClassKind,
@@ -74,7 +74,7 @@ base class Exportable extends Declarable {
     extends_: Array<Type>,
     implements: Array<Type>,
     tparams: Array<TypeParam>,
-    fields: Array<FieldType>,
+    fields: Array<ClassFieldType>,
   }
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
@@ -83,8 +83,10 @@ base class Exportable extends Declarable {
 
 base class ExportDefaultable extends Def_
 extension class Class extends ExportDefaultable
-extension class FunDef extends ExportDefaultable
+extension class TopLevelFunDef extends ExportDefaultable
 extension class Expr extends ExportDefaultable
+
+extension class TopLevelFunDef extends FunDef
 
 /***************************************************************************/
 // <var-def> ::= <pattern> (: <type>)? (= <expr>)?
@@ -119,7 +121,7 @@ base class Pattern_ uses XXHashable {
 //     <fun-def-body>
 /***************************************************************************/
 
-extension class FunDef{
+base class FunDef{
   pos: PosRange,
   isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
@@ -130,7 +132,7 @@ extension class FunDef{
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
   cgNode: ?CGNode,
-} extends FieldType, Field uses XXHashable
+} extends WithModifiers uses XXHashable
 
 base class FunDefBody uses XXHashable {
   children =
@@ -357,7 +359,10 @@ base class Field uses XXHashable {
   children =
   | FDNormal(name: Name, expr: Expr)
   | FDSpread(expr: Expr)
+  | FDMethod
 }
+
+extension class FDMethod extends FunDef
 
 /***************************************************************************/
 // <post-op> ::= -- | ++ | !
@@ -403,20 +408,35 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /***************************************************************************/
-base class FieldType{modifiers: Modifiers} uses XXHashable {
+base class FieldType uses XXHashable
+
+base class ObjectFieldType extends FieldType
+base class ClassFieldType extends FieldType {
+  fun isStatic(): Bool;
+}
+
+base class FieldTypeValue{
+  pos: PosRange,
+  name: Symbol,
+  optional: ?PosRange,
+  type: ?Type,
+}
+
+class ObjectFieldTypeValue{
+  readonly_: ?ObjectFieldReadonly,
+} extends ObjectFieldType, FieldTypeValue {}
+
+class ClassFieldTypeValue{
+  value: ?Expr,
+} extends ClassFieldType, FieldTypeValue, WithModifiers
+
+class FieldTypeMethod extends FunDef, ObjectFieldType, ClassFieldType
+
+base class WithModifiers{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
     this.modifiers.modifiers.any(mod -> mod is ModStatic _)
   }
 }
-
-class FieldTypeValue{
-  pos: PosRange,
-  setGet: ?FieldGetSet,
-  name: Symbol,
-  optional: ?PosRange,
-  type: ?Type,
-  value: ?Expr,
-} extends FieldType
 
 /***************************************************************************/
 // <type_> ::=
@@ -462,7 +482,7 @@ base class Type_ uses XXHashable {
   | TAPrim(TPrimKind)
   | TATypeOf(Type)
   | TAArray(Type)
-  | TAObject(Array<FieldType>)
+  | TAObject(Array<ObjectFieldType>)
   | TAInst(Name, Array<Type>)
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
@@ -509,6 +529,16 @@ class TAFunParam(
 // Modifiers
 /***************************************************************************/
 
+base class ObjectFieldReadonly final (pos: PosRange) uses XXHashable, Equality {
+  children =
+  | OFReadonly
+  | OFRemoveReadonly
+
+  fun toString(): String
+  | OFReadonly _ -> "readonly"
+  | OFRemoveReadonly _ -> "-readonly"
+}
+
 base class Modifier final (pos: PosRange) uses XXHashable {
   children =
   | ModAbstract
@@ -517,7 +547,6 @@ base class Modifier final (pos: PosRange) uses XXHashable {
   | ModProtected
   | ModPublic
   | ModReadonly
-  | ModRemoveReadonly
   | ModStatic
 
   fun toString(): String
@@ -527,7 +556,6 @@ base class Modifier final (pos: PosRange) uses XXHashable {
   | ModProtected _ -> "protected"
   | ModPublic _ -> "public"
   | ModReadonly _ -> "readonly"
-  | ModRemoveReadonly _ -> "-readonly"
   | ModStatic _ -> "static"
 }
 

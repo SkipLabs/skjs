@@ -152,7 +152,7 @@ extension class Parser {
         this.expect(TKCloseParen());
         res
       }
-    | TKOpenCurly() -> TAObject(this.objectFields())
+    | TKOpenCurly() -> TAObject(this.objectTypeFields())
     | TKVar() ->
       this.getVar(tok) match {
       | "typeof" -> TATypeOf(this.type(0))
@@ -435,6 +435,159 @@ extension class Parser {
         )
       }
     }
+  }
+
+  mutable fun objectTypeFieldModifiers(): ?ObjectFieldReadonly {
+    ro = this.lex.peekKind() match {
+    | Some(TKSubtraction()) -> OFRemoveReadonly
+    | Some(TKAddition()) -> OFReadonly
+    | Some(TKVar()) ->
+      if (this.lex.isEq("readonly")) {
+        pos = this.lex.posRange(this.lex.next().fromSome());
+        return Some(OFReadonly(pos))
+      };
+      return None()
+    | _ -> return None()
+    };
+    this.withPos(
+      () ->
+        this.lex.tryAhead(() -> {
+          _ = this.lex.next();
+          if (this.lex.isEq("readonly")) {
+            _ = this.lex.next();
+            Some(void)
+          } else {
+            None()
+          }
+        }),
+      UnterminatedExpr(),
+    ) match {
+    | (pos, Some(_void)) -> Some(ro(pos))
+    | (_, None()) -> None()
+    }
+  }
+
+  // Parse object type fields
+  mutable fun objectTypeFields(): Array<ObjectFieldType> {
+    if (this.lex.peekKind() is Some(TKCloseCurly())) {
+      _ = this.lex.next();
+      return Array[];
+    };
+    fields = mutable Vector<ObjectFieldType>[];
+    loop {
+      if (
+        this.lex.peekKind() is Some(TKOpenParen()) ||
+        this.lex.peekKind() is Some(TKLessThan())
+      ) {
+        method = this.methodDef(
+          {pos, tparams, params, retType, body} ->
+            FieldTypeMethod{
+              pos,
+              isAsync => None(),
+              modifiers => Modifiers::empty(),
+              isGetSet => None(),
+              name => None(),
+              optional => None(),
+              tparams,
+              params,
+              retType,
+              body,
+              cgNode => None(),
+            },
+          None(),
+          false,
+        );
+        fields.push(method);
+      } else {
+        readonly_ = this.objectTypeFieldModifiers();
+        fieldGetSet = this.isGetSet();
+        fieldPosStart = this.lex.peek() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+        | Some(x) -> x.posStart
+        };
+        fieldName = this.getSymbol();
+        isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+          Some(this.lex.posRange(this.lex.next().fromSome()));
+        } else {
+          None()
+        };
+        field = fieldName match {
+        | methodName @ SimpleSymbol _ if (
+          this.lex.peekKind() is Some(TKOpenParen()) ||
+          this.lex.peekKind() is Some(TKLessThan())
+        ) ->
+          readonly_ match {
+          | Some(ro) ->
+            this.error(
+              this.lex.posStart(this.lex.peek().fromSome()),
+              UnexpectedObjectTypeMethodReadonly(ro),
+            )
+          | None() -> void
+          };
+          this.methodDef(
+            {pos, tparams, params, retType, body} ->
+              FieldTypeMethod{
+                pos,
+                isAsync => None(),
+                modifiers => Modifiers::empty(),
+                isGetSet => fieldGetSet,
+                name => Some(methodName),
+                optional => isOptional,
+                tparams,
+                params,
+                retType,
+                body,
+                cgNode => None(),
+              },
+            Some(methodName),
+            true,
+          )
+        | _ ->
+          if (fieldGetSet.isSome()) {
+            this.error(
+              this.lex.posStart(this.lex.peek().fromSome()),
+              ExpectedAccessorDefinition(),
+            );
+          };
+          type = if (this.lex.peekKind() is Some(TKColon())) {
+            _ = this.lex.next();
+            Some(this.type(0))
+          } else {
+            None()
+          };
+          ObjectFieldTypeValue{
+            pos => PosRange::create(
+              this.lex,
+              fieldPosStart,
+              this.lex.getLastPos(),
+            ),
+            readonly_,
+            name => fieldName,
+            optional => isOptional,
+            type,
+          }
+        };
+        fields.push(field)
+      };
+      semiTok = this.lex.peek() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedType())
+      | Some(x) -> x
+      };
+      semiTok.kind match {
+      | TKCloseCurly() ->
+        _ = this.lex.next();
+        break void
+      | TKComma()
+      | TKSemi() ->
+        _ = this.lex.next();
+        if (this.lex.peekKind() is Some(TKCloseCurly())) {
+          _ = this.lex.next();
+          break void
+        }
+      | _ -> void
+      }
+    };
+    fields.toArray()
   }
 }
 

@@ -143,6 +143,13 @@ class UnterminatedComment() extends LexingKind {
 /* Parsing errors */
 /***************************************************************************/
 
+class UnexpectedObjectTypeMethodReadonly(
+  ro: ObjectFieldReadonly,
+) extends ParsingKind {
+  fun toString(): String {
+    `Unexpected modifier on object literal method: ${this.ro}`
+  }
+}
 class UnterminatedFunDef() extends ParsingKind {
   fun toString(): String {
     `Unterminated function definition`
@@ -181,6 +188,11 @@ class UnterminatedExpr() extends ParsingKind {
 class UnterminatedType() extends ParsingKind {
   fun toString(): String {
     `Unterminated type`
+  }
+}
+class ExpectedAccessorDefinition() extends ParsingKind {
+  fun toString(): String {
+    `Expected accessor definition`
   }
 }
 class ExpectedToken(tokenKind: TokenKind) extends ParsingKind {

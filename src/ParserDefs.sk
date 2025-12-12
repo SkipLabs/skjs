@@ -45,8 +45,8 @@ extension class Parser {
     }
   }
 
-  // "<string>" | '<string>' | <int>
-  mutable fun getNameOrStringOrInt(): Name {
+  // "<string>" | '<string>' | <number>
+  mutable fun getNameOrStringOrNumber(): Name {
     this.lex.next() match {
     | Some(tok @ Token(TKVar(), _, _)) ->
       Name(this.lex.posRange(tok), this.getVar(tok))
@@ -97,7 +97,7 @@ extension class Parser {
         this.lex.peekKind() is Some(TKSubtraction()) ||
         this.lex.peekKind() is Some(TKAddition())
       ) {
-        name = this.getNameOrStringOrInt();
+        name = this.getNameOrStringOrNumber();
         this.expect(TKCloseSquare());
         FNNormal(name);
       } else {
@@ -133,7 +133,7 @@ extension class Parser {
         }
       }
     } else {
-      FNNormal(this.getNameOrStringOrInt())
+      FNNormal(this.getNameOrStringOrNumber())
     }
   }
 
@@ -147,34 +147,13 @@ extension class Parser {
   //   | protected
   //   | public
   //   | readonly
-  //   | -readonly
-  //   | +readonly
   //   | static
   /***************************************************************************/
 
   // Parse modifiers for class members and variables
-  mutable fun modifiers{allowRemove: Bool}: Modifiers {
+  mutable fun modifiers(): Modifiers {
     modifiers = mutable Vector[];
     loop {
-      if (allowRemove) {
-        this.lex.peekKind() match {
-        | Some(TKSubtraction()) -> Some(ModRemoveReadonly)
-        | Some(TKAddition()) -> Some(ModReadonly)
-        | _ -> None()
-        } match {
-        | Some(mod) ->
-          (pos, _void) = this.withPos(
-            () -> {
-              _ = this.lex.next();
-              this.expectStr("readonly")
-            },
-            ExpectedStr("readonly"),
-          );
-          modifiers.push(mod(pos));
-          continue
-        | None() -> void
-        }
-      };
       mod = this.lex.peekRawStr() match {
       | Some("abstract") -> ModAbstract
       | Some("async") -> ModAsync
@@ -211,7 +190,8 @@ extension class Parser {
       (isGet || this.lex.isEq("set")) &&
       this.lex.lookAhead(() -> {
         _ = this.lex.next();
-        this.lex.peekKind() is Some(TKVar())
+        this.lex.peekKind() is Some(TKVar()) ||
+          this.lex.peekKind() is Some(TKOpenSquare())
       })
     ) {
       kind = if (isGet) FGet() else FSet();
@@ -223,107 +203,84 @@ extension class Parser {
 
   /***************************************************************************/
   // Field parsing
-  //
-  // Parses fields that are not methods.
-  // <field> ::= <name> : <expr> | ... <expr>
   /***************************************************************************/
 
-  // Parse a normal field type (not a method)
-  mutable fun getNormalFieldType(
-    fieldPosStart: Pos,
-    modifiers: Modifiers,
-    fieldGetSet: ?FieldGetSet,
-    fieldName: Symbol,
-    isOptional: ?PosRange,
-  ): FieldType {
-    type = if (this.lex.peekKind() is Some(TKColon())) {
-      _ = this.lex.next();
-      Some(this.type(0))
-    } else {
-      None()
-    };
-    fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
-      _ = this.lex.next();
-      Some(this.expr(0))
-    } else {
-      None()
-    };
-    FieldTypeValue{
-      pos => PosRange::create(this.lex, fieldPosStart, this.lex.getLastPos()),
-      setGet => fieldGetSet,
-      modifiers,
-      name => fieldName,
-      optional => isOptional,
-      type,
-      value => fieldValue,
-    }
-  }
-
-  // Parse a field type (method or normal field)
-  mutable fun getFieldType(modifiers: Modifiers): FieldType {
-    fieldGetSet = this.isGetSet();
-    fieldPosStart = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(x) -> x.posStart
-    };
-    fieldName = this.getSymbol();
-    isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-      Some(this.lex.posRange(this.lex.next().fromSome()));
-    } else {
-      None()
-    };
-    fieldName match {
-    | methodName @ SimpleSymbol _ if (
-      this.lex.peekKind() is Some(TKOpenParen()) ||
-      this.lex.peekKind() is Some(TKLessThan())
-    ) ->
-      this.methodDef(
-        None(),
-        modifiers,
-        fieldGetSet,
-        methodName,
-        true,
-        isOptional,
-        None(),
-      )
-    | _ ->
-      this.getNormalFieldType(
-        fieldPosStart,
-        modifiers,
-        fieldGetSet,
-        fieldName,
-        isOptional,
-      )
-    }
-  }
-
-  // Parse object fields (used in object types and object literals)
-  mutable fun objectFields(): Array<FieldType> {
+  // Parse class fields
+  mutable fun classFields(): Array<ClassFieldType> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
       return Array[];
     };
-    fields = mutable Vector<FieldType>[];
+    fields = mutable Vector<ClassFieldType>[];
     loop {
-      modifiers = this.modifiers{allowRemove => true};
-      if (
+      modifiers = this.modifiers();
+      fieldGetSet = this.isGetSet();
+      fieldPosStart = this.lex.peek() match {
+      | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+      | Some(x) -> x.posStart
+      };
+      fieldName = this.getSymbol();
+      isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+        Some(this.lex.posRange(this.lex.next().fromSome()));
+      } else {
+        None()
+      };
+      field = fieldName match {
+      | methodName @ SimpleSymbol _ if (
         this.lex.peekKind() is Some(TKOpenParen()) ||
         this.lex.peekKind() is Some(TKLessThan())
-      ) {
-        method = this.anonMethodDef(
-          None(),
+      ) ->
+        this.methodDef(
+          {pos, tparams, params, retType, body} ->
+            FieldTypeMethod{
+              pos,
+              isAsync => None(),
+              modifiers,
+              isGetSet => fieldGetSet,
+              name => Some(methodName),
+              optional => isOptional,
+              tparams,
+              params,
+              retType,
+              body,
+              cgNode => None(),
+            },
+          Some(methodName),
+          true,
+        )
+      | _ ->
+        if (fieldGetSet.isSome()) {
+          this.error(
+            this.lex.posStart(this.lex.peek().fromSome()),
+            ExpectedAccessorDefinition(),
+          );
+        };
+        type = if (this.lex.peekKind() is Some(TKColon())) {
+          _ = this.lex.next();
+          Some(this.type(0))
+        } else {
+          None()
+        };
+        fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
+          _ = this.lex.next();
+          Some(this.expr(0))
+        } else {
+          None()
+        };
+        ClassFieldTypeValue{
+          pos => PosRange::create(
+            this.lex,
+            fieldPosStart,
+            this.lex.getLastPos(),
+          ),
           modifiers,
-          None(),
-          None(),
-          false,
-          None(),
-          None(),
-        );
-        fields.push(method);
-      } else {
-        field = this.getFieldType(modifiers);
-        fields.push(field)
+          name => fieldName,
+          optional => isOptional,
+          type,
+          value => fieldValue,
+        }
       };
+      fields.push(field);
       semiTok = this.lex.peek() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedType())
       | Some(x) -> x
@@ -332,7 +289,6 @@ extension class Parser {
       | TKCloseCurly() ->
         _ = this.lex.next();
         break void
-      | TKComma()
       | TKSemi() ->
         _ = this.lex.next();
         if (this.lex.peekKind() is Some(TKCloseCurly())) {
@@ -596,10 +552,10 @@ extension class Parser {
     | "async" ->
       asyncPos = this.lex.posRange(this.lex.next().fromSome());
       this.expectStr("function");
-      this.funDef(Some(asyncPos), true)
+      this.topLevelFunDef(Some(asyncPos), true)
     | "function" ->
       _ = this.lex.next();
-      this.funDef(None(), true)
+      this.topLevelFunDef(None(), true)
     | "type" ->
       _ = this.lex.next();
       this.typeDef()
@@ -892,7 +848,7 @@ extension class Parser {
       Array[]
     };
     this.expect(TKOpenCurly());
-    fields = this.objectFields();
+    fields = this.classFields();
 
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
@@ -902,7 +858,7 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+      | fd @ FieldTypeMethod{name => Some(FNNormal(Name(_, "constructor")))} ->
         initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {
@@ -929,9 +885,8 @@ extension class Parser {
             );
             if (isParameterProperty) {
               parameterProperties.push(
-                FieldTypeValue{
+                ClassFieldTypeValue{
                   pos,
-                  setGet => None(),
                   name => FNNormal(pName),
                   optional => None(),
                   type,
@@ -1073,7 +1028,10 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse function definitions
-  mutable fun funDef(isAsync: ?PosRange, parseBlock: Bool): FunDef {
+  mutable fun topLevelFunDef(
+    isAsync: ?PosRange,
+    parseBlock: Bool,
+  ): TopLevelFunDef {
     funName = this.getName();
     // Record the function definition and set context
     funcSymbol = SPFunction(funName.value);
@@ -1085,13 +1043,22 @@ extension class Parser {
     cgNode = None(); // TODO: Add call graph support back
 
     result = this.methodDef(
-      isAsync,
-      Modifiers::empty(),
-      None(),
-      FNNormal(funName),
+      {pos, tparams, params, retType, body} ->
+        TopLevelFunDef{
+          pos,
+          isAsync,
+          modifiers => Modifiers::empty(),
+          isGetSet => None(),
+          name => Some(FNNormal(funName)),
+          optional => None(),
+          tparams,
+          params,
+          retType,
+          body,
+          cgNode,
+        },
+      Some(FNNormal(funName)),
       parseBlock,
-      None(),
-      cgNode,
     );
 
     // Restore previous context
@@ -1100,36 +1067,17 @@ extension class Parser {
   }
 
   // Parse method definitions
-  mutable fun methodDef(
-    isAsync: ?PosRange,
-    modifiers: Modifiers,
-    fieldGetSet: ?FieldGetSet,
-    funName: SimpleSymbol,
-    parseBlock: Bool,
-    optional: ?PosRange,
-    cgNode: ?CGNode,
-  ): FunDef {
-    this.anonMethodDef(
-      isAsync,
-      modifiers,
-      fieldGetSet,
-      Some(funName),
-      parseBlock,
-      optional,
-      cgNode,
-    )
-  }
-
-  // Parse anonymous method definitions
-  mutable fun anonMethodDef(
-    isAsync: ?PosRange,
-    methodModifiers: Modifiers,
-    isGetSet: ?FieldGetSet,
+  mutable fun methodDef<T>(
+    mk: {
+      pos: PosRange,
+      tparams: Array<TypeParam>,
+      params: Array<Param>,
+      retType: (PosRange, ?Type),
+      body: FunDefBody,
+    } -> T,
     funName: ?SimpleSymbol,
     parseBlock: Bool,
-    isOptional: ?PosRange,
-    cgNode: ?CGNode,
-  ): FunDef {
+  ): T {
     // Record method/function definition and set context
     (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
@@ -1162,7 +1110,7 @@ extension class Parser {
       void
     | _ ->
       loop {
-        modifiers = this.modifiers{allowRemove => false};
+        modifiers = this.modifiers();
         isRest = if (this.lex.peekKind() is Some(TKDotDotDot())) {
           Some(this.lex.posRange(this.lex.next().fromSome()))
         } else {
@@ -1244,18 +1192,12 @@ extension class Parser {
 
     // Restore previous context
     this.setSymbolContext(prevSymbol, prevPos);
-    FunDef{
+    mk{
       pos => PosRange::create(this.lex, funStart, funEnd),
-      isAsync,
-      modifiers => methodModifiers,
       tparams => tparams,
-      isGetSet,
-      name => funName,
-      optional => isOptional,
       params => params.toArray(),
       retType,
       body,
-      cgNode,
     }
   }
 }
