@@ -412,7 +412,6 @@ base class FieldType extends WithModifiers uses XXHashable {
   children =
   | FieldTypeValue{
     pos: PosRange,
-    setGet: ?FieldGetSet,
     name: Symbol,
     optional: ?PosRange,
     type: ?Type,

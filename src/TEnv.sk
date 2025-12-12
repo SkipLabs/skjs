@@ -404,10 +404,6 @@ class TEnv{
       fieldType match {
       | field @ FieldTypeValue _ ->
         if (!filter(fieldType)) continue;
-        field.setGet match {
-        | None() -> void
-        | Some(FieldGetSet(_, pos)) -> notSupported(pos, "field getter/setter")
-        };
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic(pos) ->

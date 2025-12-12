@@ -233,7 +233,6 @@ extension class Parser {
   mutable fun getNormalFieldType(
     fieldPosStart: Pos,
     modifiers: Modifiers,
-    fieldGetSet: ?FieldGetSet,
     fieldName: Symbol,
     isOptional: ?PosRange,
   ): FieldTypeValue {
@@ -251,7 +250,6 @@ extension class Parser {
     };
     FieldTypeValue{
       pos => PosRange::create(this.lex, fieldPosStart, this.lex.getLastPos()),
-      setGet => fieldGetSet,
       modifiers,
       name => fieldName,
       optional => isOptional,
@@ -303,13 +301,7 @@ extension class Parser {
           ExpectedAccessorDefinition(),
         );
       };
-      this.getNormalFieldType(
-        fieldPosStart,
-        modifiers,
-        fieldGetSet,
-        fieldName,
-        isOptional,
-      )
+      this.getNormalFieldType(fieldPosStart, modifiers, fieldName, isOptional)
     }
   }
 
@@ -956,7 +948,6 @@ extension class Parser {
               parameterProperties.push(
                 FieldTypeValue{
                   pos,
-                  setGet => None(),
                   name => FNNormal(pName),
                   optional => None(),
                   type,
