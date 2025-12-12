@@ -258,53 +258,6 @@ extension class Parser {
     }
   }
 
-  // Parse a field type (method or normal field)
-  mutable fun getFieldType(modifiers: Modifiers): FieldType {
-    fieldGetSet = this.isGetSet();
-    fieldPosStart = this.lex.peek() match {
-    | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-    | Some(x) -> x.posStart
-    };
-    fieldName = this.getSymbol();
-    isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
-      Some(this.lex.posRange(this.lex.next().fromSome()));
-    } else {
-      None()
-    };
-    fieldName match {
-    | methodName @ SimpleSymbol _ if (
-      this.lex.peekKind() is Some(TKOpenParen()) ||
-      this.lex.peekKind() is Some(TKLessThan())
-    ) ->
-      this.methodDef(
-        {pos, tparams, params, retType, body} ->
-          FieldTypeMethod{
-            pos,
-            isAsync => None(),
-            modifiers,
-            isGetSet => fieldGetSet,
-            name => Some(methodName),
-            optional => isOptional,
-            tparams,
-            params,
-            retType,
-            body,
-            cgNode => None(),
-          },
-        Some(methodName),
-        true,
-      )
-    | _ ->
-      if (fieldGetSet.isSome()) {
-        this.error(
-          this.lex.posStart(this.lex.peek().fromSome()),
-          ExpectedAccessorDefinition(),
-        );
-      };
-      this.getNormalFieldType(fieldPosStart, modifiers, fieldName, isOptional)
-    }
-  }
-
   // Parse object fields (used in object types and classes)
   mutable fun objectFields(): Array<FieldType> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
@@ -338,7 +291,54 @@ extension class Parser {
         );
         fields.push(method);
       } else {
-        field = this.getFieldType(modifiers);
+        fieldGetSet = this.isGetSet();
+        fieldPosStart = this.lex.peek() match {
+        | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
+        | Some(x) -> x.posStart
+        };
+        fieldName = this.getSymbol();
+        isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
+          Some(this.lex.posRange(this.lex.next().fromSome()));
+        } else {
+          None()
+        };
+        field = fieldName match {
+        | methodName @ SimpleSymbol _ if (
+          this.lex.peekKind() is Some(TKOpenParen()) ||
+          this.lex.peekKind() is Some(TKLessThan())
+        ) ->
+          this.methodDef(
+            {pos, tparams, params, retType, body} ->
+              FieldTypeMethod{
+                pos,
+                isAsync => None(),
+                modifiers,
+                isGetSet => fieldGetSet,
+                name => Some(methodName),
+                optional => isOptional,
+                tparams,
+                params,
+                retType,
+                body,
+                cgNode => None(),
+              },
+            Some(methodName),
+            true,
+          )
+        | _ ->
+          if (fieldGetSet.isSome()) {
+            this.error(
+              this.lex.posStart(this.lex.peek().fromSome()),
+              ExpectedAccessorDefinition(),
+            );
+          };
+          this.getNormalFieldType(
+            fieldPosStart,
+            modifiers,
+            fieldName,
+            isOptional,
+          )
+        };
         fields.push(field)
       };
       semiTok = this.lex.peek() match {
