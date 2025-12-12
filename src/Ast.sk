@@ -130,7 +130,7 @@ extension class FunDef{
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
   cgNode: ?CGNode,
-} extends FieldType, Field uses XXHashable
+} extends FieldType, Field, WithModifiers uses XXHashable
 
 base class FunDefBody uses XXHashable {
   children =
