@@ -7,7 +7,9 @@ extension class TypeChecker {
     constructor: ?FunDef = None();
     for (fieldType in c.fields) {
       fieldType match {
-      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
+      | fd @ FieldTypeMethod _ if (
+        fd.name is Some(FNNormal(Name(_, "constructor")))
+      ) ->
         constructor match {
         | Some(existingConstructor) ->
           typingErrors.push(
@@ -165,7 +167,7 @@ extension class TypeChecker {
             )
           )
         }
-      | fd @ FunDef _ ->
+      | fd @ FieldTypeMethod _ ->
         if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
           !hasConstructor = true;
           partialThisType = this.tenv.new(
@@ -178,7 +180,7 @@ extension class TypeChecker {
             .iterator()
             .filterMap(fieldType ->
               fieldType match {
-              | FunDef{pos, name} ->
+              | FieldTypeMethod{pos, name} ->
                 name match {
                 | Some(FNNormal(Name(_, methodName))) -> Some(methodName)
                 | _ ->
@@ -220,7 +222,7 @@ extension class TypeChecker {
             }
           | Some(_) -> void
           }
-        | FunDef _ -> void
+        | FieldTypeMethod _ -> void
         }
       }
     };

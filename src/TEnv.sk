@@ -459,7 +459,7 @@ class TEnv{
           )
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
-      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+      | fd @ FieldTypeMethod{name => Some(FNNormal(Name(_, "constructor")))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
@@ -474,7 +474,7 @@ class TEnv{
         !constructor = Some(
           this.makeConstructor(context, className, isStatic.fromSome(), fd),
         )
-      | fd @ FunDef _ ->
+      | fd @ FieldTypeMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(
@@ -526,7 +526,9 @@ class TEnv{
     );
     for (fieldType in cls.fields) {
       fieldType match {
-      | fd @ FunDef _ if (fd.name is Some(FNNormal(Name(_, "constructor")))) ->
+      | fd @ FieldTypeMethod _ if (
+        fd.name is Some(FNNormal(Name(_, "constructor")))
+      ) ->
         return Some(fd)
       | _ -> void
       }
@@ -981,7 +983,7 @@ class TEnv{
           );
           None()
         }
-      | fd @ FunDef _ ->
+      | fd @ FieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
         (name, decl) = this.funDecl(context, false, fd, cgNode);
         optField = TField::create(name.pos, name.value, false, decl);
