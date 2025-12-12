@@ -266,7 +266,7 @@ extension class Parser {
     };
     fields = mutable Vector<ClassFieldType>[];
     loop {
-      modifiers = this.modifiers{allowRemove => true};
+      modifiers = this.modifiers{allowRemove => false};
       fieldGetSet = this.isGetSet();
       fieldPosStart = this.lex.peek() match {
       | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
