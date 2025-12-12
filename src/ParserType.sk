@@ -445,7 +445,6 @@ extension class Parser {
     };
     fields = mutable Vector<ObjectFieldType>[];
     loop {
-      modifiers = this.modifiers{allowRemove => true};
       if (
         this.lex.peekKind() is Some(TKOpenParen()) ||
         this.lex.peekKind() is Some(TKLessThan())
@@ -455,7 +454,7 @@ extension class Parser {
             FieldTypeMethod{
               pos,
               isAsync => None(),
-              modifiers,
+              modifiers => Modifiers::empty(),
               isGetSet => None(),
               name => None(),
               optional => None(),
@@ -470,6 +469,7 @@ extension class Parser {
         );
         fields.push(method);
       } else {
+        modifiers = this.modifiers{allowRemove => true};
         fieldGetSet = this.isGetSet();
         fieldPosStart = this.lex.peek() match {
         | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
