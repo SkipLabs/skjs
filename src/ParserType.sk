@@ -553,7 +553,7 @@ extension class Parser {
           } else {
             None()
           };
-          FieldTypeValue{
+          ObjectFieldTypeValue{
             pos => PosRange::create(
               this.lex,
               fieldPosStart,

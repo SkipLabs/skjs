@@ -267,7 +267,7 @@ extension class Parser {
         } else {
           None()
         };
-        FieldTypeValue{
+        ClassFieldTypeValue{
           pos => PosRange::create(
             this.lex,
             fieldPosStart,
@@ -885,7 +885,7 @@ extension class Parser {
             );
             if (isParameterProperty) {
               parameterProperties.push(
-                FieldTypeValue{
+                ClassFieldTypeValue{
                   pos,
                   name => FNNormal(pName),
                   optional => None(),

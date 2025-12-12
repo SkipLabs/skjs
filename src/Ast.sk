@@ -413,13 +413,16 @@ base class FieldType extends WithModifiers uses XXHashable
 base class ObjectFieldType extends FieldType
 base class ClassFieldType extends FieldType
 
-class FieldTypeValue{
+base class FieldTypeValue{
   pos: PosRange,
   name: Symbol,
   optional: ?PosRange,
   type: ?Type,
   value: ?Expr,
-} extends ObjectFieldType, ClassFieldType
+}
+
+class ObjectFieldTypeValue extends ObjectFieldType, FieldTypeValue
+class ClassFieldTypeValue extends ClassFieldType, FieldTypeValue
 
 class FieldTypeMethod extends FunDef, ObjectFieldType, ClassFieldType
 

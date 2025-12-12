@@ -402,7 +402,7 @@ class TEnv{
     constructor: ?TFuns = None();
     for (fieldType in cls.fields) {
       fieldType match {
-      | field @ FieldTypeValue _ ->
+      | field @ ClassFieldTypeValue _ ->
         if (!filter(fieldType)) continue;
         for (modifier in field.modifiers.modifiers) {
           modifier match {
@@ -924,7 +924,7 @@ class TEnv{
     indexes = mutable Vector[];
     fields = fieldTypes.filterMap(elt -> {
       elt match {
-      | fd @ FieldTypeValue _ ->
+      | fd @ ObjectFieldTypeValue _ ->
         for (modifier in fd.modifiers.modifiers) {
           typingError(
             Array[
