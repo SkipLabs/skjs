@@ -337,7 +337,7 @@ private fun checkDef(
   | ExportDeclare(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Export(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
-  | fd @ FunDef _ ->
+  | fd @ TopLevelFunDef _ ->
     cgNode = fd.name match {
     | Some(name) -> CGNode::create(TopLevelFunction(name, fd.pos.fileName))
     | None() -> CGNode::create(AnonymousFunDef(fd))

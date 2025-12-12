@@ -532,7 +532,7 @@ extension class Parser {
     ) {
       return this.methodDef(
         {pos, tparams, params, retType, body} ->
-          FunDef{
+          FDMethod{
             pos,
             isAsync => None(),
             modifiers,

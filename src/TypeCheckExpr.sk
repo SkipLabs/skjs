@@ -486,7 +486,7 @@ extension class TypeChecker {
         defs = this.defMap.getAll(tcenv.context, local);
         for (def in defs) {
           def match {
-          | fd @ FunDef _ ->
+          | fd @ TopLevelFunDef _ ->
             break this.tenv.funDecl(
               tcenv.context,
               false,
@@ -561,7 +561,7 @@ extension class TypeChecker {
             }
           };
           continue
-        | fd @ FunDef _ ->
+        | fd @ FDMethod _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           this.tenv.funDecl(tcenv.context, false, fd, cgNode)
         };
@@ -591,7 +591,7 @@ extension class TypeChecker {
       );
       for (efield in efields) {
         efield match {
-        | fd @ FunDef _ ->
+        | fd @ FDMethod _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           this.funDef(tcenv.subst, Some((CKClass(), obj)), fd, cgNode)
         | _ -> void

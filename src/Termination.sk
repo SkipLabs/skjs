@@ -256,7 +256,7 @@ value class StmtTermination private {
     | FDNormal(_name, e)
     | FDSpread(e) ->
       static::expr(e)
-    | FunDef _ -> static::skip
+    | FDMethod _ -> static::skip
     }
   }
 

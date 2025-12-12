@@ -136,7 +136,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     result = mutable Vector[];
     for (d in defs) {
       d match {
-      | FunDef{pos}
+      | TopLevelFunDef{pos}
       | TypeDef{name => Name(pos, _)}
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields)
@@ -301,7 +301,7 @@ class FileDefs{
 
 base class FileDef
 base class FileDefElt extends FileDef
-extension class FunDef extends FileDefElt
+extension class TopLevelFunDef extends FileDefElt
 extension class TypeDef extends FileDefElt
 extension class Class extends FileDefElt
 extension class Enum extends FileDefElt
@@ -482,7 +482,7 @@ mutable class FileDefsState private {
     | Module(name, Some(defs)) ->
       invariant(!isExport, "export module does not exist");
       mapPush(this.modules, name.value, this.createSubFileDefs(defs))
-    | d @ FunDef{name, pos => funPos} ->
+    | d @ TopLevelFunDef{name, pos => funPos} ->
       fname = name.fromSome() match {
       | FNNormal(n) -> n.value
       | FNSymbol(n) ->

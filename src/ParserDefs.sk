@@ -279,7 +279,7 @@ extension class Parser {
     ) ->
       this.methodDef(
         {pos, tparams, params, retType, body} ->
-          FunDef{
+          FieldTypeMethod{
             pos,
             isAsync => None(),
             modifiers,
@@ -321,7 +321,7 @@ extension class Parser {
       ) {
         method = this.methodDef(
           {pos, tparams, params, retType, body} ->
-            FunDef{
+            FieldTypeMethod{
               pos,
               isAsync => None(),
               modifiers,
@@ -920,7 +920,7 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ FunDef{name => Some(FNNormal(Name(_, "constructor")))} ->
+      | fd @ FieldTypeMethod{name => Some(FNNormal(Name(_, "constructor")))} ->
         initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {
@@ -1091,7 +1091,10 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse function definitions
-  mutable fun topLevelFunDef(isAsync: ?PosRange, parseBlock: Bool): FunDef {
+  mutable fun topLevelFunDef(
+    isAsync: ?PosRange,
+    parseBlock: Bool,
+  ): TopLevelFunDef {
     funName = this.getName();
     // Record the function definition and set context
     funcSymbol = SPFunction(funName.value);
@@ -1104,7 +1107,7 @@ extension class Parser {
 
     result = this.methodDef(
       {pos, tparams, params, retType, body} ->
-        FunDef{
+        TopLevelFunDef{
           pos,
           isAsync,
           modifiers => Modifiers::empty(),

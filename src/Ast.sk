@@ -66,7 +66,7 @@ base class Declarable extends Def_ {
 
 base class Exportable extends Declarable {
   children =
-  | FunDef
+  | TopLevelFunDef
   | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
   | Class{
     kind: ClassKind,
@@ -83,8 +83,10 @@ base class Exportable extends Declarable {
 
 base class ExportDefaultable extends Def_
 extension class Class extends ExportDefaultable
-extension class FunDef extends ExportDefaultable
+extension class TopLevelFunDef extends ExportDefaultable
 extension class Expr extends ExportDefaultable
+
+extension class TopLevelFunDef extends FunDef
 
 /***************************************************************************/
 // <var-def> ::= <pattern> (: <type>)? (= <expr>)?
@@ -119,7 +121,7 @@ base class Pattern_ uses XXHashable {
 //     <fun-def-body>
 /***************************************************************************/
 
-extension class FunDef{
+base class FunDef{
   pos: PosRange,
   isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
@@ -130,7 +132,7 @@ extension class FunDef{
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
   cgNode: ?CGNode,
-} extends FieldType, Field, WithModifiers uses XXHashable
+} extends WithModifiers uses XXHashable
 
 base class FunDefBody uses XXHashable {
   children =
@@ -357,7 +359,10 @@ base class Field uses XXHashable {
   children =
   | FDNormal(name: Name, expr: Expr)
   | FDSpread(expr: Expr)
+  | FDMethod
 }
+
+extension class FDMethod extends FunDef
 
 /***************************************************************************/
 // <post-op> ::= -- | ++ | !
@@ -413,7 +418,10 @@ base class FieldType extends WithModifiers uses XXHashable {
     type: ?Type,
     value: ?Expr,
   }
+  | FieldTypeMethod
 }
+
+extension class FieldTypeMethod extends FunDef
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
