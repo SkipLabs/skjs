@@ -74,7 +74,7 @@ base class Exportable extends Declarable {
     extends_: Array<Type>,
     implements: Array<Type>,
     tparams: Array<TypeParam>,
-    fields: Array<FieldType>,
+    fields: Array<ClassFieldType>,
   }
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
@@ -408,19 +408,20 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /***************************************************************************/
-base class FieldType extends WithModifiers uses XXHashable {
-  children =
-  | FieldTypeValue{
-    pos: PosRange,
-    name: Symbol,
-    optional: ?PosRange,
-    type: ?Type,
-    value: ?Expr,
-  }
-  | FieldTypeMethod
-}
+base class FieldType extends WithModifiers uses XXHashable
 
-extension class FieldTypeMethod extends FunDef
+base class ObjectFieldType extends FieldType
+base class ClassFieldType extends FieldType
+
+class FieldTypeValue{
+  pos: PosRange,
+  name: Symbol,
+  optional: ?PosRange,
+  type: ?Type,
+  value: ?Expr,
+} extends ObjectFieldType, ClassFieldType
+
+class FieldTypeMethod extends FunDef, ObjectFieldType, ClassFieldType
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
@@ -472,7 +473,7 @@ base class Type_ uses XXHashable {
   | TAPrim(TPrimKind)
   | TATypeOf(Type)
   | TAArray(Type)
-  | TAObject(Array<FieldType>)
+  | TAObject(Array<ObjectFieldType>)
   | TAInst(Name, Array<Type>)
   | TAUnion(Type, Type)
   | TAInter(Type, Type)

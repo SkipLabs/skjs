@@ -438,12 +438,12 @@ extension class Parser {
   }
 
   // Parse object type fields
-  mutable fun objectTypeFields(): Array<FieldType> {
+  mutable fun objectTypeFields(): Array<ObjectFieldType> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
       return Array[];
     };
-    fields = mutable Vector<FieldType>[];
+    fields = mutable Vector<ObjectFieldType>[];
     loop {
       modifiers = this.modifiers{allowRemove => true};
       if (
