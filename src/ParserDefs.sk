@@ -596,10 +596,10 @@ extension class Parser {
     | "async" ->
       asyncPos = this.lex.posRange(this.lex.next().fromSome());
       this.expectStr("function");
-      this.funDef(Some(asyncPos), true)
+      this.topLevelFunDef(Some(asyncPos), true)
     | "function" ->
       _ = this.lex.next();
-      this.funDef(None(), true)
+      this.topLevelFunDef(None(), true)
     | "type" ->
       _ = this.lex.next();
       this.typeDef()
@@ -1073,7 +1073,7 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse function definitions
-  mutable fun funDef(isAsync: ?PosRange, parseBlock: Bool): FunDef {
+  mutable fun topLevelFunDef(isAsync: ?PosRange, parseBlock: Bool): FunDef {
     funName = this.getName();
     // Record the function definition and set context
     funcSymbol = SPFunction(funName.value);
