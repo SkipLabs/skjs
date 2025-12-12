@@ -418,11 +418,10 @@ base class FieldTypeValue{
   name: Symbol,
   optional: ?PosRange,
   type: ?Type,
-  value: ?Expr,
 }
 
 class ObjectFieldTypeValue extends ObjectFieldType, FieldTypeValue
-class ClassFieldTypeValue extends ClassFieldType, FieldTypeValue
+class ClassFieldTypeValue{value: ?Expr} extends ClassFieldType, FieldTypeValue
 
 class FieldTypeMethod extends FunDef, ObjectFieldType, ClassFieldType
 

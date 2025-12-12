@@ -547,12 +547,6 @@ extension class Parser {
           } else {
             None()
           };
-          fieldValue = if (this.lex.peekKind() is Some(TKAssignment())) {
-            _ = this.lex.next();
-            Some(this.expr(0))
-          } else {
-            None()
-          };
           ObjectFieldTypeValue{
             pos => PosRange::create(
               this.lex,
@@ -563,7 +557,6 @@ extension class Parser {
             name => fieldName,
             optional => isOptional,
             type,
-            value => fieldValue,
           }
         };
         fields.push(field)
