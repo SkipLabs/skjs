@@ -547,7 +547,6 @@ base class Modifier final (pos: PosRange) uses XXHashable {
   | ModProtected
   | ModPublic
   | ModReadonly
-  | ModRemoveReadonly
   | ModStatic
 
   fun toString(): String
@@ -557,7 +556,6 @@ base class Modifier final (pos: PosRange) uses XXHashable {
   | ModProtected _ -> "protected"
   | ModPublic _ -> "public"
   | ModReadonly _ -> "readonly"
-  | ModRemoveReadonly _ -> "-readonly"
   | ModStatic _ -> "static"
 }
 

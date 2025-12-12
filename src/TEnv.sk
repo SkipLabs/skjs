@@ -411,8 +411,7 @@ class TEnv{
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _
-          | ModReadonly _
-          | ModRemoveReadonly _ ->
+          | ModReadonly _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
             typingError(
