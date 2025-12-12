@@ -403,16 +403,17 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /***************************************************************************/
-base class FieldType extends WithModifiers
-
-class FieldTypeValue{
-  pos: PosRange,
-  setGet: ?FieldGetSet,
-  name: Symbol,
-  optional: ?PosRange,
-  type: ?Type,
-  value: ?Expr,
-} extends FieldType
+base class FieldType extends WithModifiers uses XXHashable {
+  children =
+  | FieldTypeValue{
+    pos: PosRange,
+    setGet: ?FieldGetSet,
+    name: Symbol,
+    optional: ?PosRange,
+    type: ?Type,
+    value: ?Expr,
+  }
+}
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
