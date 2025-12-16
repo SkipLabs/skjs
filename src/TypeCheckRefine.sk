@@ -140,7 +140,7 @@ extension class TypeChecker {
         if (target) filter else x ~> !filter(x),
       )
     | "function" ->
-      filter = x ~> x is TFuns _;
+      filter = x ~> x is TFuns _ || x is TObject(TFields{call => Some _}, _);
       this.setLocal(
         tcenv,
         local,
