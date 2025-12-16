@@ -101,12 +101,14 @@ extension class TAlgebraic {
     tenv: TEnv,
     a1: TAlgebraic,
     a2: TAlgebraic,
-  ): TAlgebraic {
-    TAlgebraic(
-      a1.branches.mapInter(a2.branches, (x, y) ->
-        TConstr::inter(subst, tenv, x, y)
+  ): ?TAlgebraic {
+    Some(
+      TAlgebraic(
+        a1.branches.mapInter(a2.branches, (x, y) ->
+          TConstr::inter(subst, tenv, x, y)
+        ),
+        a1.pos,
       ),
-      a1.pos,
     )
   }
 }
@@ -195,7 +197,7 @@ extension class STypes {
       | (obj1 @ TObject _, obj2 @ TObject _) ->
         TObject::inter(subst, tenv, obj1, obj2)
       | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-        Some(TAlgebraic::inter(subst, tenv, a1, a2))
+        TAlgebraic::inter(subst, tenv, a1, a2)
 
       | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::inter(subst, tenv, f1, f2)
       | _ -> internal_error("Internal error")
