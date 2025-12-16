@@ -78,17 +78,17 @@ extension class Parser {
   }
 
   /***************************************************************************/
-  // Symbol parsing
+  // Field name parsing
   //
-  // <symbol> ::=
+  // <field-name> ::=
   //   | <name>
   //   | [ <name> ]
   //   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
   //   | [ <name> : <type> ]
   /***************************************************************************/
 
-  // Parse a symbol (used in function names and computed property names)
-  mutable fun getSymbol(): Symbol {
+  // Parse a field name
+  mutable fun getSymbol(): NonEmptyFieldName {
     if (this.lex.peekKind() is Some(TKOpenSquare())) {
       _ = this.lex.next();
       if (

@@ -375,13 +375,13 @@ base class PostOperator uses XXHashable {
 }
 
 /***************************************************************************/
-// <symbol> ::=
+// <field-name> ::=
 //   | <name>
 //   | [ <name> ]
 //   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
 //   | [ <name> : <type> ]
 /***************************************************************************/
-base class Symbol uses XXHashable {
+base class NonEmptyFieldName uses XXHashable {
   fun getName(): String
   | FNNormal(n)
   | FNSymbol(n)
@@ -390,13 +390,13 @@ base class Symbol uses XXHashable {
     n.value
 }
 
-base class SimpleSymbol extends Symbol {
+base class SimpleSymbol extends NonEmptyFieldName {
   children =
   | FNNormal(Name)
   | FNSymbol(Name)
 }
 
-base class IndexSymbol extends Symbol {
+base class IndexSymbol extends NonEmptyFieldName {
   children =
   | FNIn(Name, Type, ?Type, ?FNOp)
   | FNColon(indexName: Name, indexType: Type)
@@ -417,7 +417,7 @@ base class ClassFieldType extends FieldType {
 
 base class FieldTypeValue{
   pos: PosRange,
-  name: Symbol,
+  name: NonEmptyFieldName,
   optional: ?PosRange,
   type: ?Type,
 }
