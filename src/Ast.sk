@@ -381,16 +381,18 @@ base class PostOperator uses XXHashable {
 //   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
 //   | [ <name> : <type> ]
 /***************************************************************************/
-base class FieldName uses XXHashable
-
-base class NonEmptyFieldName extends FieldName {
+base class FieldName uses XXHashable {
   fun getName(): String
   | FNNormal(n)
   | FNSymbol(n)
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
+  | FNEmpty() -> "(anonymous)"
 }
+
+base class NonEmptyFieldName extends FieldName
+class FNEmpty() extends FieldName
 
 base class SimpleSymbol extends NonEmptyFieldName {
   children =
