@@ -108,7 +108,7 @@ extension class TypeChecker {
   fun funDef(
     subst: mutable Subst,
     thisTypeOpt: ?(ClassKind, TType),
-    fd: FunDef<FunDefName>,
+    fd: FunDef<SimpleFieldName>,
     cgNode: CGNode,
   ): void {
     for (modifier in fd.modifiers.modifiers) {
