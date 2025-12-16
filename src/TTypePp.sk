@@ -162,6 +162,17 @@ mutable class TypePp{
           pp.out(level, margin, "_?:");
           pp.type(level, margin, param)
         };
+        tfun.spreadParam.each(at -> {
+          if (
+            tfun.optionalParams.size() != 0 ||
+            tfun.params.size() != 0 ||
+            tfun.thisParam.isSome()
+          ) {
+            pp.out(level, margin, ", ")
+          };
+          pp.out(level, margin, "..._: ");
+          pp.arrayType(level, margin, at)
+        });
         if (isMethod) {
           pp.out(level, margin, "): ");
         } else {
@@ -198,11 +209,16 @@ mutable class TypePp{
           pp.newLine();
         };
         for (param in tfun.optionalParams) {
-          pp.out(level, margin, "_?:");
+          pp.out(level, margin, "_?: ");
           pp.type(level, margin, param);
           pp.out(level, margin, ",");
           pp.newLine();
         };
+        tfun.spreadParam.each(at -> {
+          pp.out(level, margin, "..._: ");
+          pp.arrayType(level, margin, at);
+          pp.newLine();
+        });
         if (isMethod) {
           pp.out(level, prevMargin, "): ");
         } else {
@@ -439,6 +455,10 @@ mutable class TypePp{
         }
       },
     );
+  }
+
+  mutable fun arrayType(level: Int, margin: Margin, arrayTy: ArrayType): void {
+    this.type(level, margin, arrayTy.full())
   }
 }
 
