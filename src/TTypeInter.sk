@@ -116,8 +116,8 @@ extension class TConstr {
     y: TConstr,
   ): ?TConstr {
     invariant(x.tag == y.tag, "TConstr::inter expects identical tags");
-    Some(
-      TConstr(x.tag, x.tagPos, TFields::inter(subst, tenv, x.fields, y.fields)),
+    TFields::inter(subst, tenv, x.fields, y.fields).map(fields ->
+      TConstr(x.tag, x.tagPos, fields)
     )
   }
 }
@@ -283,7 +283,7 @@ extension class TFields {
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
-  ): TFields {
+  ): ?TFields {
     fields = mapUnion(
       fields1.values(),
       fields2.values(),
@@ -313,7 +313,7 @@ extension class TFields {
       new
     | (Some(new1), Some(new2)) -> TFuns::inter(subst, tenv, new1, new2)
     };
-    TFields::create{fields, indexes, new}
+    Some(TFields::create{fields, indexes, new})
   }
 }
 
@@ -324,8 +324,8 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): ?TObject {
-    Some(
-      TObject(TFields::inter(subst, tenv, obj1.fields, obj2.fields), obj1.pos),
+    TFields::inter(subst, tenv, obj1.fields, obj2.fields).map(fields ->
+      TObject(fields, obj1.pos)
     )
   }
 }
