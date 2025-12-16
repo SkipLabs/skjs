@@ -921,6 +921,7 @@ class TEnv{
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     indexes = mutable Vector[];
+    call: ?TFuns = None();
     new: ?TFuns = None();
 
     fields = fieldTypes.filterMap(elt -> {
@@ -977,7 +978,9 @@ class TEnv{
         | FNNormal(Name(_, "new")) ->
           !new = Some(tFuns);
           None()
-        | FNEmpty() -> notSupported(fd.pos, "anonymous function")
+        | FNEmpty() ->
+          !call = Some(tFuns);
+          None()
         | FNSymbol _ ->
           notSupported(fd.pos, "symbol-named method in literal object type")
         | FNNormal(name) ->
@@ -990,7 +993,7 @@ class TEnv{
         }
       }
     });
-    tFields = TFields::create{fields, indexes => indexes.toArray(), new};
+    tFields = TFields::create{fields, indexes => indexes.toArray(), new, call};
     (algebraicBranchField, tFields)
   }
 
