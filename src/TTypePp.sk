@@ -331,7 +331,7 @@ mutable class TypePp{
 
   mutable fun type(level: Int, margin: Margin, ty: TType): void {
     !margin.depth = margin.depth + 1;
-    if (margin.depth >= 2) {
+    if (margin.depth >= 3) {
       this.out(level, margin, "...");
       return void;
     };
