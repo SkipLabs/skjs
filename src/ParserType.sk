@@ -505,7 +505,7 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
         | Some(x) -> x.posStart
         };
-        fieldName = this.getSymbol();
+        fieldName = this.getFieldName();
         isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           Some(this.lex.posRange(this.lex.next().fromSome()));
         } else {

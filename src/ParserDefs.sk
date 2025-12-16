@@ -88,7 +88,7 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse a field name
-  mutable fun getSymbol(): NonEmptyFieldName {
+  mutable fun getFieldName(): NonEmptyFieldName {
     if (this.lex.peekKind() is Some(TKOpenSquare())) {
       _ = this.lex.next();
       if (
@@ -219,7 +219,7 @@ extension class Parser {
       | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
       | Some(x) -> x.posStart
       };
-      fieldName = this.getSymbol();
+      fieldName = this.getFieldName();
       isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
         Some(this.lex.posRange(this.lex.next().fromSome()));
       } else {
