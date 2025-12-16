@@ -56,6 +56,15 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult {
+    (fields1.call, fields2.call) match {
+    | (_, None()) -> void
+    | (None(), Some _) -> return STMissingCall()
+    | (Some(call1), Some(call2)) ->
+      TFuns::isSub(subst, tenv, call1, call2) match {
+      | err @ STError _ -> return err
+      | STOk() -> void
+      }
+    };
     (fields1.new, fields2.new) match {
     | (_, None()) -> void
     | (None(), Some _) -> return STMissingConstructor()

@@ -284,6 +284,16 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): ?TFields {
+    call = (fields1.call, fields2.call) match {
+    | (None(), call)
+    | (call, None()) ->
+      call
+    | (Some(call1), Some(call2)) ->
+      TFuns::inter(subst, tenv, call1, call2) match {
+      | None() -> return None()
+      | some @ Some _ -> some
+      }
+    };
     new = (fields1.new, fields2.new) match {
     | (None(), new)
     | (new, None()) ->
@@ -317,7 +327,7 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    Some(TFields::create{fields, indexes, new})
+    Some(TFields::create{fields, indexes, call, new})
   }
 }
 

@@ -731,13 +731,14 @@ class TFields private {
       type must be a subtype of the index key type
   */
   new: ?TFuns,
-  /*  */
+  call: ?TFuns,
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{
       fields => InternalKeyedArrayMap::empty(),
       indexes => Array[],
       new => None(),
+      call => None(),
     }
   }
 
@@ -745,6 +746,7 @@ class TFields private {
     fields: Array<TField> = Array[],
     indexes: Array<TIndexField> = Array[],
     new: ?TFuns = None(),
+    call: ?TFuns = None(),
   }: TFields {
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
@@ -752,6 +754,7 @@ class TFields private {
       ),
       indexes,
       new,
+      call,
     }
   }
 
@@ -768,6 +771,7 @@ class TFields private {
       fields => this.fields.map(fField),
       indexes => this.indexes.map(fIndexField),
       new => this.new.map(fTFuns),
+      call => this.call.map(fTFuns),
     }
   }
 
@@ -1326,6 +1330,7 @@ base class STError extends STResult {
   children =
   | STNoConstraint()
   | STMissingField(String)
+  | STMissingCall()
   | STMissingConstructor()
   | STMissingThis()
   | STMissingParameter()
@@ -1344,6 +1349,7 @@ base class STError extends STResult {
     | STMissingThis() -> "Missing this parameter"
     | STMissingParameter() -> "Missing parameter"
     | STMissingSpread() -> "Missing ... parameter"
+    | STMissingCall() -> "Missing call signature"
     | STMissingConstructor() -> "Missing constructor"
     | STMissingField(fieldName) ->
       `The field '${fieldName}' is missing\n` +

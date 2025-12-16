@@ -285,8 +285,9 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
+    call = TFuns::unionOpt(subst, tenv, fields1.call, fields2.call);
     new = TFuns::unionOpt(subst, tenv, fields1.new, fields2.new);
-    TFields::create{fields, indexes, new}
+    TFields::create{fields, indexes, call, new}
   }
 }
 
