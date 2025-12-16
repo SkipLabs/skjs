@@ -537,7 +537,7 @@ extension class Parser {
             isAsync => None(),
             modifiers,
             isGetSet => fieldGetSet,
-            name => Some(FNNormal(fieldName)),
+            name => FNNormal(fieldName),
             optional => None(),
             tparams,
             params,

@@ -237,7 +237,7 @@ extension class Parser {
               isAsync => None(),
               modifiers,
               isGetSet => fieldGetSet,
-              name => Some(methodName),
+              name => methodName,
               optional => isOptional,
               tparams,
               params,
@@ -858,9 +858,7 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ ClassFieldTypeMethod{
-        name => Some(FNNormal(Name(_, "constructor"))),
-      } ->
+      | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
         initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {
@@ -1051,7 +1049,7 @@ extension class Parser {
           isAsync,
           modifiers => Modifiers::empty(),
           isGetSet => None(),
-          name => Some(FNNormal(funName)),
+          name => FNNormal(funName),
           optional => None(),
           tparams,
           params,

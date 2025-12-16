@@ -8,7 +8,7 @@ extension class TypeChecker {
     for (fieldType in c.fields) {
       fieldType match {
       | fd @ ClassFieldTypeMethod _ if (
-        fd.name is Some(FNNormal(Name(_, "constructor")))
+        fd.name is FNNormal(Name(_, "constructor"))
       ) ->
         constructor match {
         | Some(existingConstructor) ->
@@ -163,7 +163,7 @@ extension class TypeChecker {
           )
         }
       | fd @ ClassFieldTypeMethod _ ->
-        if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
+        if (fd.name is FNNormal(Name(_, "constructor"))) {
           !hasConstructor = true;
           partialThisType = this.tenv.new(
             context,
@@ -177,7 +177,7 @@ extension class TypeChecker {
               fieldType match {
               | ClassFieldTypeMethod{pos, name} ->
                 name match {
-                | Some(FNNormal(Name(_, methodName))) -> Some(methodName)
+                | FNNormal(Name(_, methodName)) -> Some(methodName)
                 | _ ->
                   typingErrors.push(Array[(pos, "Invalid method name")]);
                   None()

@@ -483,12 +483,13 @@ mutable class FileDefsState private {
       invariant(!isExport, "export module does not exist");
       mapPush(this.modules, name.value, this.createSubFileDefs(defs))
     | d @ TopLevelFunDef{name, pos => funPos} ->
-      fname = name.fromSome() match {
+      fname = name match {
       | FNNormal(n) -> n.value
       | FNSymbol(n) ->
         typingError(
           Array[(funPos, `Invalid name for a toplevel function: symbol ${n}`)],
         )
+      | FNEmpty() -> internal_error("PR-temporary dead branch")
       };
       if (isExport) mapPush(this.exported, fname, fname);
       mapPush(this.defs, fname, d)

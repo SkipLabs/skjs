@@ -454,9 +454,7 @@ class TEnv{
           )
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
-      | fd @ ClassFieldTypeMethod{
-        name => Some(FNNormal(Name(_, "constructor"))),
-      } ->
+      | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
@@ -525,7 +523,7 @@ class TEnv{
     for (fieldType in cls.fields) {
       fieldType match {
       | fd @ ClassFieldTypeMethod _ if (
-        fd.name is Some(FNNormal(Name(_, "constructor")))
+        fd.name is FNNormal(Name(_, "constructor"))
       ) ->
         return Some(fd)
       | _ -> void
@@ -602,8 +600,8 @@ class TEnv{
     cgNode: CGNode,
   ): (Name, TFuns) {
     name = fd.name match {
-    | Some(FNNormal(name)) -> name
-    | None() -> notSupported(fd.pos, "anonymous function")
+    | FNNormal(name) -> name
+    | FNEmpty() -> notSupported(fd.pos, "anonymous function")
     | _ -> notSupported(fd.pos, "non-normal function name")
     };
     retType = fd.retType match {

@@ -125,7 +125,7 @@ base class FunDef{
   pos: PosRange,
   isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
-  name: ?SimpleFieldName,
+  name: FunDefName,
   optional: ?PosRange,
   tparams: Array<TypeParam>,
   params: Array<Param>,
@@ -405,6 +405,10 @@ base class IndexFieldName extends NonEmptyFieldName {
   | FNIn(Name, Type, ?Type, ?FNOp)
   | FNColon(indexName: Name, indexType: Type)
 }
+
+base class FunDefName extends FieldName
+extension base class SimpleFieldName extends FunDefName
+extension class FNEmpty extends FunDefName
 
 class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 
