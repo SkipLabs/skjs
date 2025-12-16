@@ -441,10 +441,7 @@ class ClassFieldTypeValue{
   value: ?Expr,
 } extends ClassFieldType, FieldTypeValue, WithModifiers
 
-class ObjectFieldTypeMethod extends
-  FunDefWithModifiers<FunDefName>,
-  ObjectFieldType,
-
+class ObjectFieldTypeMethod extends FunDef<FunDefName>, ObjectFieldType
 
 class ClassFieldTypeMethod extends
   FunDefWithModifiers<SimpleFieldName>,

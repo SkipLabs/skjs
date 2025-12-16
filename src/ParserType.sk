@@ -483,8 +483,6 @@ extension class Parser {
           {pos, tparams, params, retType, body} ->
             ObjectFieldTypeMethod{
               pos,
-              isAsync => None(),
-              modifiers => Modifiers::empty(),
               isGetSet => None(),
               name => FNEmpty(),
               optional => None(),
@@ -528,8 +526,6 @@ extension class Parser {
             {pos, tparams, params, retType, body} ->
               ObjectFieldTypeMethod{
                 pos,
-                isAsync => None(),
-                modifiers => Modifiers::empty(),
                 isGetSet => fieldGetSet,
                 name => methodName,
                 optional => isOptional,
