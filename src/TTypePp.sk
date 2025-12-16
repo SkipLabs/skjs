@@ -275,7 +275,11 @@ mutable class TypePp{
       };
       this.out(level, margin, ": ");
       this.type(level, margin, fieldType);
-      if (i != fieldArray.size() - 1 || !indexes.isEmpty()) {
+      if (
+        i != fieldArray.size() - 1 ||
+        !indexes.isEmpty() ||
+        fields.new.isSome()
+      ) {
         this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
@@ -289,12 +293,18 @@ mutable class TypePp{
       this.type(level, margin, index.keyType);
       this.out(level, margin, " ]: ");
       this.type(level, margin, index.valueType);
-      if (i != indexes.size() - 1) {
+      if (i != indexes.size() - 1 || fields.new.isSome()) {
         this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         }
       }
+    };
+    fields.new match {
+    | None() -> void
+    | Some(TFuns(tfun, _pos)) ->
+      this.out(level, margin, "new ");
+      this.tfun(level, margin, (true, tfun))
     }
   }
 
