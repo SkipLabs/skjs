@@ -419,10 +419,9 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /***************************************************************************/
-base class FieldType uses XXHashable
 
-base class ObjectFieldType extends FieldType
-base class ClassFieldType extends FieldType {
+base class ObjectFieldType uses XXHashable
+base class ClassFieldType uses XXHashable {
   fun isStatic(): Bool;
 }
 
