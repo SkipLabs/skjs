@@ -239,23 +239,29 @@ mutable class TypePp{
   }
 
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
-    this.out(level, margin, "{");
-    this.branch(
-      level,
-      margin,
-      (pp, level, margin) ~> {
-        pp.out(level, margin, " ");
-        pp.fields(level, margin, fields, false);
-        pp.out(level, margin, " }");
-      },
-      (pp, level, prevMargin, margin) -> {
-        pp.newLine();
-        pp.fields(level, margin, fields, true);
-        pp.newLine();
-        pp.out(level, prevMargin, "}");
-        pp.newLine();
-      },
-    )
+    (fields.fields.isEmpty(), fields.indexes.isEmpty(), fields.new) match {
+    | (true, true, Some(TFuns(tfun, _pos))) ->
+      this.out(level, margin, "new ");
+      this.tfun(level, margin, (false, tfun))
+    | _ ->
+      this.out(level, margin, "{");
+      this.branch(
+        level,
+        margin,
+        (pp, level, margin) ~> {
+          pp.out(level, margin, " ");
+          pp.fields(level, margin, fields, false);
+          pp.out(level, margin, " }");
+        },
+        (pp, level, prevMargin, margin) -> {
+          pp.newLine();
+          pp.fields(level, margin, fields, true);
+          pp.newLine();
+          pp.out(level, prevMargin, "}");
+          pp.newLine();
+        },
+      )
+    }
   }
 
   mutable fun fields(
