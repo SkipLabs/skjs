@@ -439,7 +439,7 @@ class ClassFieldTypeValue{
 } extends ClassFieldType, FieldTypeValue, WithModifiers
 
 class ObjectFieldTypeMethod extends FunDef<FunDefName>, ObjectFieldType
-class ClassFieldTypeMethod extends FunDef<FunDefName>, ClassFieldType
+class ClassFieldTypeMethod extends FunDef<SimpleFieldName>, ClassFieldType
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
