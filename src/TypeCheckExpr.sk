@@ -635,7 +635,9 @@ extension class TypeChecker {
       tfuns = fty
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {
-      | Some(tfuns @ TFuns _) -> tfuns
+      | Some(tfuns @ TFuns _)
+      | Some(TObject(TFields{call => Some(tfuns)}, _)) ->
+        tfuns
       | _ ->
         typingError(
           Array[
