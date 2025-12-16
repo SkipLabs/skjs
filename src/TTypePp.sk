@@ -148,6 +148,7 @@ mutable class TypePp{
         };
         pp.out(level, margin, "(");
         tfun.thisParam.each(thisTy -> {
+          pp.out(level, margin, "this: ");
           pp.type(level, margin, thisTy);
           if (!tfun.params.isEmpty()) pp.out(level, margin, ", ")
         });
@@ -185,6 +186,7 @@ mutable class TypePp{
         pp.out(level, margin, "(");
         pp.newLine();
         tfun.thisParam.each(thisTy -> {
+          pp.out(level, margin, "this: ");
           pp.type(level, margin, thisTy);
           pp.out(level, margin, ",");
           pp.newLine();
