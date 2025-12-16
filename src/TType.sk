@@ -517,7 +517,8 @@ class ATFullType(fullType: TType) extends ArrayType {
       popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(TFuns(met, _)) -> Some(met.retType)
+      | Some(TObject(TFields{call => Some(TFuns(met, _))}, _)) ->
+        Some(met.retType)
       | _ -> None()
       }
     )

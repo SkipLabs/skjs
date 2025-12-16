@@ -496,7 +496,9 @@ extension class TypeChecker {
               | None() -> CGNode::create(AnonymousFunDef(fd))
               },
             );
-            break TType::single(tFuns)
+            break TType::single(
+              TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
+            )
           | c @ Class _ ->
             staticClass = this.tenv.newStatic(tcenv.context, c.name);
             break staticClass
@@ -565,7 +567,12 @@ extension class TypeChecker {
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           tFuns = this.tenv.funDecl(tcenv.context, false, fd, cgNode);
-          (name, TType::single(tFuns))
+          (
+            name,
+            TType::single(
+              TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
+            ),
+          )
         };
         TField::create(name.pos, name.value, false, ty) match {
         | None() ->
@@ -1198,16 +1205,23 @@ extension class TypeChecker {
     tcenv.!callingContext = savedCallingContext;
 
     TType::single(
-      TFuns::singleFun(
-        TFun(
-          Array[],
-          None(),
-          paramTypes.map(x -> x.i1),
-          Array[],
-          None(),
-          retType,
-          CGNodes::singleton(callingContext),
-        ),
+      TObject(
+        TFields::create{
+          call => Some(
+            TFuns::singleFun(
+              TFun(
+                Array[],
+                None(),
+                paramTypes.map(x -> x.i1),
+                Array[],
+                None(),
+                retType,
+                CGNodes::singleton(callingContext),
+              ),
+              pos,
+            ),
+          ),
+        },
         pos,
       ),
     )
