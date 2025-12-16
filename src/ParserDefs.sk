@@ -245,7 +245,7 @@ extension class Parser {
               body,
               cgNode => None(),
             },
-          Some(methodName),
+          methodName,
           true,
         )
       | _ ->
@@ -1057,7 +1057,7 @@ extension class Parser {
           body,
           cgNode,
         },
-      Some(FNNormal(funName)),
+      FNNormal(funName),
       parseBlock,
     );
 
@@ -1075,18 +1075,18 @@ extension class Parser {
       retType: (PosRange, ?Type),
       body: FunDefBody,
     } -> T,
-    funName: ?SimpleFieldName,
+    funName: FunDefName,
     parseBlock: Bool,
   ): T {
     // Record method/function definition and set context
     (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
-    | (Some(FNNormal(name)), SPClass(className)) ->
+    | (FNNormal(name), SPClass(className)) ->
       methodSymbol = SPMethod(className, name.value);
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinition(methodSymbol, symbolContextPos);
       this.setSymbolContext(methodSymbol, symbolContextPos)
-    | (Some(FNNormal(name)), _) ->
+    | (FNNormal(name), _) ->
       funcSymbol = SPFunction(name.value);
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinition(funcSymbol, symbolContextPos);
