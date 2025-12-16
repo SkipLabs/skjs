@@ -62,7 +62,7 @@ class AnonymousLambda(
     )
   }
 }
-class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
+class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
   fun xxhash(ignorePos: Bool = false): XXHash {
     //always hash the pos to be more conservative
     XXHash(

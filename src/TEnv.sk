@@ -596,7 +596,7 @@ class TEnv{
   fun funDecl(
     context: mutable SKStore.Context,
     isMethod: Bool,
-    fd: FunDef,
+    fd: FunDef<FunDefName>,
     cgNode: CGNode,
   ): (Name, TFuns) {
     name = fd.name match {

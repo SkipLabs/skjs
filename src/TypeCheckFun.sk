@@ -4,7 +4,7 @@ extension class TypeChecker {
   fun funDefSetup(
     subst: mutable Subst,
     thisTypeOpt: ?TType,
-    fd: FunDef,
+    fd: FunDef<FunDefName>,
     callingContext: CGNode,
   ): (this, mutable TCEnv) {
     static::checkTypeParams(fd.tparams, OptionalTypeParamsForbidden());
@@ -108,7 +108,7 @@ extension class TypeChecker {
   fun funDef(
     subst: mutable Subst,
     thisTypeOpt: ?(ClassKind, TType),
-    fd: FunDef,
+    fd: FunDef<FunDefName>,
     cgNode: CGNode,
   ): void {
     for (modifier in fd.modifiers.modifiers) {
