@@ -1333,7 +1333,6 @@ base class STError extends STResult {
   | STTooManySType(SType)
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
-  | STTooManyTFun(TFun)
   | STTypeParameterMismatch()
   | STInvalidClause(Clause)
   | STInvalidSpread(ArrayType)
@@ -1371,12 +1370,6 @@ base class STError extends STResult {
       }
     | STTooManyTConstr(_) -> "This is a constructor"
     | STTooManyTTuple(tuple) -> "This is a tuple of size " + tuple.tuple.size()
-    | STTooManyTFun(f) ->
-      "This is a function: " +
-        prettyPrintType(
-          false,
-          TType::single(TFuns::singleFun(f, PosRange::none)),
-        )
     | STTypeParameterMismatch() -> "Type parameter mismatch"
     | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
     | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`
