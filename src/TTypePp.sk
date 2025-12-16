@@ -150,14 +150,15 @@ mutable class TypePp{
         tfun.thisParam.each(thisTy -> {
           pp.out(level, margin, "this: ");
           pp.type(level, margin, thisTy);
-          if (!tfun.params.isEmpty()) pp.out(level, margin, ", ")
         });
         for (i => param in tfun.params) {
-          if (i != 0) pp.out(level, margin, ", ");
+          if (i != 0 || tfun.thisParam.isSome()) pp.out(level, margin, ", ");
           pp.type(level, margin, param)
         };
         for (i => param in tfun.optionalParams) {
-          if (tfun.params.size() != 0 || i != 0) pp.out(level, margin, ", ");
+          if (i != 0 || tfun.params.size() != 0 || tfun.thisParam.isSome()) {
+            pp.out(level, margin, ", ")
+          };
           pp.out(level, margin, "_?:");
           pp.type(level, margin, param)
         };
