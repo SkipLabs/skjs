@@ -86,7 +86,7 @@ extension class Class extends ExportDefaultable
 extension class TopLevelFunDef extends ExportDefaultable
 extension class Expr extends ExportDefaultable
 
-extension class TopLevelFunDef extends FunDef
+extension class TopLevelFunDef extends FunDefWithModifiers<FNNormal>
 
 /***************************************************************************/
 // <var-def> ::= <pattern> (: <type>)? (= <expr>)?
@@ -121,18 +121,21 @@ base class Pattern_ uses XXHashable {
 //     <fun-def-body>
 /***************************************************************************/
 
-base class FunDef{
+base class FunDef<+N: FunDefName>{
   pos: PosRange,
-  isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
-  name: ?SimpleSymbol,
+  name: N,
   optional: ?PosRange,
   tparams: Array<TypeParam>,
   params: Array<Param>,
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
   cgNode: ?CGNode,
-} extends WithModifiers uses XXHashable
+} uses XXHashable
+
+base class FunDefWithModifiers<+N: FunDefName>{
+  isAsync: ?PosRange,
+} extends FunDef<N>, WithModifiers
 
 base class FunDefBody uses XXHashable {
   children =
@@ -362,7 +365,7 @@ base class Field uses XXHashable {
   | FDMethod
 }
 
-extension class FDMethod extends FunDef
+extension class FDMethod extends FunDefWithModifiers<FNNormal>
 
 /***************************************************************************/
 // <post-op> ::= -- | ++ | !
@@ -375,32 +378,40 @@ base class PostOperator uses XXHashable {
 }
 
 /***************************************************************************/
-// <symbol> ::=
+// <field-name> ::=
 //   | <name>
 //   | [ <name> ]
 //   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
 //   | [ <name> : <type> ]
 /***************************************************************************/
-base class Symbol uses XXHashable {
+base class FieldName uses XXHashable {
   fun getName(): String
   | FNNormal(n)
   | FNSymbol(n)
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
+  | FNEmpty() -> "(anonymous)"
 }
 
-base class SimpleSymbol extends Symbol {
+base class NonEmptyFieldName extends FieldName
+class FNEmpty() extends FieldName
+
+base class SimpleFieldName extends NonEmptyFieldName {
   children =
   | FNNormal(Name)
   | FNSymbol(Name)
 }
 
-base class IndexSymbol extends Symbol {
+base class IndexFieldName extends NonEmptyFieldName {
   children =
   | FNIn(Name, Type, ?Type, ?FNOp)
   | FNColon(indexName: Name, indexType: Type)
 }
+
+base class FunDefName extends FieldName
+extension base class SimpleFieldName extends FunDefName
+extension class FNEmpty extends FunDefName
 
 class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 
@@ -408,29 +419,34 @@ class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 // <field-type-value> ::=
 //    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
 /***************************************************************************/
-base class FieldType uses XXHashable
-
-base class ObjectFieldType extends FieldType
-base class ClassFieldType extends FieldType {
-  fun isStatic(): Bool;
-}
 
 base class FieldTypeValue{
   pos: PosRange,
-  name: Symbol,
+  name: NonEmptyFieldName,
   optional: ?PosRange,
   type: ?Type,
 }
+
+base class ObjectFieldType uses XXHashable
 
 class ObjectFieldTypeValue{
   readonly_: ?ObjectFieldReadonly,
 } extends ObjectFieldType, FieldTypeValue {}
 
+class ObjectFieldTypeMethod extends FunDef<FunDefName>, ObjectFieldType
+
+base class ClassFieldType uses XXHashable {
+  fun isStatic(): Bool;
+}
+
 class ClassFieldTypeValue{
   value: ?Expr,
 } extends ClassFieldType, FieldTypeValue, WithModifiers
 
-class FieldTypeMethod extends FunDef, ObjectFieldType, ClassFieldType
+class ClassFieldTypeMethod extends
+  FunDefWithModifiers<SimpleFieldName>,
+  ClassFieldType,
+{}
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {

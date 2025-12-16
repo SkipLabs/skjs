@@ -78,17 +78,17 @@ extension class Parser {
   }
 
   /***************************************************************************/
-  // Symbol parsing
+  // Field name parsing
   //
-  // <symbol> ::=
+  // <field-name> ::=
   //   | <name>
   //   | [ <name> ]
   //   | [ <name> in <type> (? <type>)? (<fn-op>)? ]
   //   | [ <name> : <type> ]
   /***************************************************************************/
 
-  // Parse a symbol (used in function names and computed property names)
-  mutable fun getSymbol(): Symbol {
+  // Parse a field name
+  mutable fun getFieldName(): NonEmptyFieldName {
     if (this.lex.peekKind() is Some(TKOpenSquare())) {
       _ = this.lex.next();
       if (
@@ -219,25 +219,25 @@ extension class Parser {
       | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
       | Some(x) -> x.posStart
       };
-      fieldName = this.getSymbol();
+      fieldName = this.getFieldName();
       isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
         Some(this.lex.posRange(this.lex.next().fromSome()));
       } else {
         None()
       };
       field = fieldName match {
-      | methodName @ SimpleSymbol _ if (
+      | methodName @ SimpleFieldName _ if (
         this.lex.peekKind() is Some(TKOpenParen()) ||
         this.lex.peekKind() is Some(TKLessThan())
       ) ->
         this.methodDef(
           {pos, tparams, params, retType, body} ->
-            FieldTypeMethod{
+            ClassFieldTypeMethod{
               pos,
               isAsync => None(),
               modifiers,
               isGetSet => fieldGetSet,
-              name => Some(methodName),
+              name => methodName,
               optional => isOptional,
               tparams,
               params,
@@ -245,7 +245,7 @@ extension class Parser {
               body,
               cgNode => None(),
             },
-          Some(methodName),
+          methodName,
           true,
         )
       | _ ->
@@ -858,7 +858,7 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ FieldTypeMethod{name => Some(FNNormal(Name(_, "constructor")))} ->
+      | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
         initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {
@@ -1049,7 +1049,7 @@ extension class Parser {
           isAsync,
           modifiers => Modifiers::empty(),
           isGetSet => None(),
-          name => Some(FNNormal(funName)),
+          name => FNNormal(funName),
           optional => None(),
           tparams,
           params,
@@ -1057,7 +1057,7 @@ extension class Parser {
           body,
           cgNode,
         },
-      Some(FNNormal(funName)),
+      FNNormal(funName),
       parseBlock,
     );
 
@@ -1075,18 +1075,18 @@ extension class Parser {
       retType: (PosRange, ?Type),
       body: FunDefBody,
     } -> T,
-    funName: ?SimpleSymbol,
+    funName: FunDefName,
     parseBlock: Bool,
   ): T {
     // Record method/function definition and set context
     (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
-    | (Some(FNNormal(name)), SPClass(className)) ->
+    | (FNNormal(name), SPClass(className)) ->
       methodSymbol = SPMethod(className, name.value);
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinition(methodSymbol, symbolContextPos);
       this.setSymbolContext(methodSymbol, symbolContextPos)
-    | (Some(FNNormal(name)), _) ->
+    | (FNNormal(name), _) ->
       funcSymbol = SPFunction(name.value);
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinition(funcSymbol, symbolContextPos);

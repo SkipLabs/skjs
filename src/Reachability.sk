@@ -6,13 +6,8 @@ module SKJS;
 
 base class CGNode_ uses XXHashable, Show {
   children =
-  | TopLevelFunction(name: SimpleSymbol, fileName: FAbsolute)
-  | Method(
-    name: ?SimpleSymbol,
-    class_: Name,
-    fileName: FAbsolute,
-    static_: Bool,
-  )
+  | TopLevelFunction(name: SimpleFieldName, fileName: FAbsolute)
+  | Method(name: FunDefName, class_: Name, fileName: FAbsolute, static_: Bool)
   | Constructor(class_: Name, fileName: FAbsolute)
   | Toplevel(fileName: FAbsolute)
   | ArrowTypeAnnot(fileName: FAbsolute)
@@ -36,22 +31,16 @@ base class CGNode_ uses XXHashable, Show {
     | TopLevelFunction(name, file) -> `toplevel: ${name.getName()} (${file})`
     | Method(name, class_, file, static_) ->
       strStatic = if (static_) "static " else "";
-      strName = name match {
-      | Some(n) -> n.getName()
-      | None() -> "__anonymous"
-      };
-      `${strStatic}${class_}.${strName} (${file})`
+      `${strStatic}${class_}.${name.getName()} (${file})`
     | Constructor(class_, file) -> `${class_}.constructor (${file})`
     | Toplevel(file) -> `top-level expr (${file}`
     | ArrowTypeAnnot(file) -> `arrow-type annotation (${file})`
     | AnonymousLambda(pos, _closure) ->
       `lambda (${pos.fileName}:${pos.relStart.value})`
     | AnonymousFunDef(fd) ->
-      name = fd.name match {
-      | Some(n) -> "\"" + n.getName() + "\""
-      | None() -> "(anonymous)"
-      };
-      `function def " ${name} (${fd.pos.fileName}:${fd.pos.relStart.value})`
+      `function ${fd.name.getName()} (${fd.pos.fileName}:${
+        fd.pos.relStart.value
+      })`
     }
   }
 }
@@ -73,7 +62,7 @@ class AnonymousLambda(
     )
   }
 }
-class AnonymousFunDef(funDef: FunDef) extends CGNode_ {
+class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
   fun xxhash(ignorePos: Bool = false): XXHash {
     //always hash the pos to be more conservative
     XXHash(
@@ -338,10 +327,7 @@ private fun checkDef(
   | Export(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
   | fd @ TopLevelFunDef _ ->
-    cgNode = fd.name match {
-    | Some(name) -> CGNode::create(TopLevelFunction(name, fd.pos.fileName))
-    | None() -> CGNode::create(AnonymousFunDef(fd))
-    };
+    cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
     nodes.insert(cgNode)
   | c @ Class _ -> classes.insert((c.name.value, def.pos.fileName))
   }

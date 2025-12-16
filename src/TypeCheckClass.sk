@@ -4,11 +4,11 @@ extension class TypeChecker {
   fun class_(context: mutable SKStore.Context, c: Class): void {
     typingErrors = mutable TypingErrorCollection(this.keepGoing);
 
-    constructor: ?FieldTypeMethod = None();
+    constructor: ?ClassFieldTypeMethod = None();
     for (fieldType in c.fields) {
       fieldType match {
-      | fd @ FieldTypeMethod _ if (
-        fd.name is Some(FNNormal(Name(_, "constructor")))
+      | fd @ ClassFieldTypeMethod _ if (
+        fd.name is FNNormal(Name(_, "constructor"))
       ) ->
         constructor match {
         | Some(existingConstructor) ->
@@ -162,8 +162,8 @@ extension class TypeChecker {
             )
           )
         }
-      | fd @ FieldTypeMethod _ ->
-        if (fd.name is Some(FNNormal(Name(_, "constructor")))) {
+      | fd @ ClassFieldTypeMethod _ ->
+        if (fd.name is FNNormal(Name(_, "constructor"))) {
           !hasConstructor = true;
           partialThisType = this.tenv.new(
             context,
@@ -175,9 +175,9 @@ extension class TypeChecker {
             .iterator()
             .filterMap(fieldType ->
               fieldType match {
-              | FieldTypeMethod{pos, name} ->
+              | ClassFieldTypeMethod{pos, name} ->
                 name match {
-                | Some(FNNormal(Name(_, methodName))) -> Some(methodName)
+                | FNNormal(Name(_, methodName)) -> Some(methodName)
                 | _ ->
                   typingErrors.push(Array[(pos, "Invalid method name")]);
                   None()
@@ -217,7 +217,7 @@ extension class TypeChecker {
             }
           | Some(_) -> void
           }
-        | FieldTypeMethod _ -> void
+        | ClassFieldTypeMethod _ -> void
         }
       }
     };
@@ -228,7 +228,7 @@ extension class TypeChecker {
     subst: mutable Subst,
     thisType: TType,
     partialThisType: TType,
-    fd: FieldTypeMethod,
+    fd: ClassFieldTypeMethod,
     className: ?Name,
     methods: SortedSet<String>,
   ): void {

@@ -481,12 +481,10 @@ extension class Parser {
       ) {
         method = this.methodDef(
           {pos, tparams, params, retType, body} ->
-            FieldTypeMethod{
+            ObjectFieldTypeMethod{
               pos,
-              isAsync => None(),
-              modifiers => Modifiers::empty(),
               isGetSet => None(),
-              name => None(),
+              name => FNEmpty(),
               optional => None(),
               tparams,
               params,
@@ -494,7 +492,7 @@ extension class Parser {
               body,
               cgNode => None(),
             },
-          None(),
+          FNEmpty(),
           false,
         );
         fields.push(method);
@@ -505,14 +503,14 @@ extension class Parser {
         | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
         | Some(x) -> x.posStart
         };
-        fieldName = this.getSymbol();
+        fieldName = this.getFieldName();
         isOptional = if (this.lex.peekKind() is Some(TKQuestionMark())) {
           Some(this.lex.posRange(this.lex.next().fromSome()));
         } else {
           None()
         };
         field = fieldName match {
-        | methodName @ SimpleSymbol _ if (
+        | methodName @ SimpleFieldName _ if (
           this.lex.peekKind() is Some(TKOpenParen()) ||
           this.lex.peekKind() is Some(TKLessThan())
         ) ->
@@ -526,12 +524,10 @@ extension class Parser {
           };
           this.methodDef(
             {pos, tparams, params, retType, body} ->
-              FieldTypeMethod{
+              ObjectFieldTypeMethod{
                 pos,
-                isAsync => None(),
-                modifiers => Modifiers::empty(),
                 isGetSet => fieldGetSet,
-                name => Some(methodName),
+                name => methodName,
                 optional => isOptional,
                 tparams,
                 params,
@@ -539,7 +535,7 @@ extension class Parser {
                 body,
                 cgNode => None(),
               },
-            Some(methodName),
+            methodName,
             true,
           )
         | _ ->
