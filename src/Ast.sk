@@ -86,7 +86,7 @@ extension class Class extends ExportDefaultable
 extension class TopLevelFunDef extends ExportDefaultable
 extension class Expr extends ExportDefaultable
 
-extension class TopLevelFunDef extends FunDef<FNNormal>
+extension class TopLevelFunDef extends FunDefWithModifiers<FNNormal>
 
 /***************************************************************************/
 // <var-def> ::= <pattern> (: <type>)? (= <expr>)?
@@ -123,7 +123,6 @@ base class Pattern_ uses XXHashable {
 
 base class FunDef<+N: FunDefName>{
   pos: PosRange,
-  isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
   name: N,
   optional: ?PosRange,
@@ -132,7 +131,11 @@ base class FunDef<+N: FunDefName>{
   retType: (PosRange, ?(Type)),
   body: FunDefBody,
   cgNode: ?CGNode,
-} extends WithModifiers uses XXHashable
+} uses XXHashable
+
+base class FunDefWithModifiers<+N: FunDefName>{
+  isAsync: ?PosRange,
+} extends FunDef<N>, WithModifiers
 
 base class FunDefBody uses XXHashable {
   children =
@@ -362,7 +365,7 @@ base class Field uses XXHashable {
   | FDMethod
 }
 
-extension class FDMethod extends FunDef<FNNormal>
+extension class FDMethod extends FunDefWithModifiers<FNNormal>
 
 /***************************************************************************/
 // <post-op> ::= -- | ++ | !
@@ -438,8 +441,15 @@ class ClassFieldTypeValue{
   value: ?Expr,
 } extends ClassFieldType, FieldTypeValue, WithModifiers
 
-class ObjectFieldTypeMethod extends FunDef<FunDefName>, ObjectFieldType
-class ClassFieldTypeMethod extends FunDef<SimpleFieldName>, ClassFieldType
+class ObjectFieldTypeMethod extends
+  FunDefWithModifiers<FunDefName>,
+  ObjectFieldType,
+
+
+class ClassFieldTypeMethod extends
+  FunDefWithModifiers<SimpleFieldName>,
+  ClassFieldType,
+
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
   fun isStatic(): Bool {
