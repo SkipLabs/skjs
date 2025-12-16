@@ -182,8 +182,6 @@ extension class STypes {
 
         | (TPromise(ty1, _), TPromise(ty2, _)) ->
           TType::isSub(subst, tenv, ty1, ty2)
-        | (funs1 @ TFuns _, funs2 @ TFuns _) ->
-          TFuns::isSub(subst, tenv, funs1, funs2)
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::isSub(subst, tenv, obj1, obj2)
         | (TAlgebraic _, TObject _)

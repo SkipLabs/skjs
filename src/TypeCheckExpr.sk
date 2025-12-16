@@ -642,9 +642,7 @@ extension class TypeChecker {
       tfuns = fty
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {
-      | Some(tfuns @ TFuns _)
-      | Some(TObject(TFields{call => Some(tfuns)}, _)) ->
-        tfuns
+      | Some(TObject(TFields{call => Some(tfuns)}, _)) -> tfuns
       | _ ->
         typingError(
           Array[
@@ -1002,8 +1000,7 @@ extension class TypeChecker {
               }
           | TTuple _
           | TPromise _
-          | TAlgebraic _
-          | TFuns _ ->
+          | TAlgebraic _ ->
             typingError(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)])
           }
         };

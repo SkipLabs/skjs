@@ -196,7 +196,6 @@ extension class STypes {
       | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
         TAlgebraic::inter(subst, tenv, a1, a2)
 
-      | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::inter(subst, tenv, f1, f2)
       | _ -> internal_error("Internal error")
       }
     }) match {

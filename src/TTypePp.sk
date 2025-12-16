@@ -122,7 +122,6 @@ mutable class TypePp{
         },
       )
     | TTuple(arr, _) -> this.tuple(level, margin, arr)
-    | TFuns(tfun, _) -> this.tfun(level, margin, (false, tfun))
     }
   }
 
