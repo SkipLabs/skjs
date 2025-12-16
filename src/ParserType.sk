@@ -481,7 +481,7 @@ extension class Parser {
       ) {
         method = this.methodDef(
           {pos, tparams, params, retType, body} ->
-            FieldTypeMethod{
+            ObjectFieldTypeMethod{
               pos,
               isAsync => None(),
               modifiers => Modifiers::empty(),
@@ -526,7 +526,7 @@ extension class Parser {
           };
           this.methodDef(
             {pos, tparams, params, retType, body} ->
-              FieldTypeMethod{
+              ObjectFieldTypeMethod{
                 pos,
                 isAsync => None(),
                 modifiers => Modifiers::empty(),

@@ -232,7 +232,7 @@ extension class Parser {
       ) ->
         this.methodDef(
           {pos, tparams, params, retType, body} ->
-            FieldTypeMethod{
+            ClassFieldTypeMethod{
               pos,
               isAsync => None(),
               modifiers,
@@ -858,7 +858,9 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ FieldTypeMethod{name => Some(FNNormal(Name(_, "constructor")))} ->
+      | fd @ ClassFieldTypeMethod{
+        name => Some(FNNormal(Name(_, "constructor"))),
+      } ->
         initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {

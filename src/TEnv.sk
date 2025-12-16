@@ -454,7 +454,9 @@ class TEnv{
           )
         | _ -> typingError(Array[(field.pos, "Unsupported field name")])
         }
-      | fd @ FieldTypeMethod{name => Some(FNNormal(Name(_, "constructor")))} ->
+      | fd @ ClassFieldTypeMethod{
+        name => Some(FNNormal(Name(_, "constructor"))),
+      } ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
@@ -469,7 +471,7 @@ class TEnv{
         !constructor = Some(
           this.makeConstructor(context, className, isStatic.fromSome(), fd),
         )
-      | fd @ FieldTypeMethod _ ->
+      | fd @ ClassFieldTypeMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(
@@ -512,7 +514,7 @@ class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?FieldTypeMethod {
+  ): ?ClassFieldTypeMethod {
     (!this, cls) = this.processClassSetup(
       context,
       visitedClasses,
@@ -522,7 +524,7 @@ class TEnv{
     );
     for (fieldType in cls.fields) {
       fieldType match {
-      | fd @ FieldTypeMethod _ if (
+      | fd @ ClassFieldTypeMethod _ if (
         fd.name is Some(FNNormal(Name(_, "constructor")))
       ) ->
         return Some(fd)
@@ -555,7 +557,7 @@ class TEnv{
     context: mutable SKStore.Context,
     className: Name,
     tparams: Array<TypeParam>,
-    fd: FieldTypeMethod,
+    fd: ClassFieldTypeMethod,
   ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
@@ -971,7 +973,7 @@ class TEnv{
           );
           None()
         }
-      | fd @ FieldTypeMethod _ ->
+      | fd @ ObjectFieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
         (name, tFuns) = this.funDecl(context, false, fd, cgNode);
         if (name.value == "new") {
