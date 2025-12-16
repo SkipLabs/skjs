@@ -472,10 +472,15 @@ class TEnv{
       | fd @ ClassFieldTypeMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
+        metName = fd.name match {
+        | FNNormal(name) -> name
+        | FNSymbol(symbolName) ->
+          notSupported(symbolName.pos, "symbol-named method")
+        };
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
-        (metName, metTFuns) = this.funDecl(context, !metIsStatic, fd, cgNode);
+        (_, metTFuns) = this.funDecl(context, !metIsStatic, fd, cgNode);
         metType = TType::single(metTFuns);
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
