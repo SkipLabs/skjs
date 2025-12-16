@@ -551,11 +551,7 @@ class TFun(
   spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   retType: TType,
   cgNodes: CGNodes,
-) uses XXHashable, Orderable {
-  fun toString(): String {
-    prettyPrintSType(TFuns::singleFun(this, PosRange::none))
-  }
-}
+) uses XXHashable, Orderable
 
 /***************************************************************************/
 /* Single types */
