@@ -125,7 +125,7 @@ base class FunDef{
   pos: PosRange,
   isAsync: ?PosRange,
   isGetSet: ?FieldGetSet,
-  name: ?SimpleSymbol,
+  name: ?SimpleFieldName,
   optional: ?PosRange,
   tparams: Array<TypeParam>,
   params: Array<Param>,
@@ -394,7 +394,7 @@ base class FieldName uses XXHashable {
 base class NonEmptyFieldName extends FieldName
 class FNEmpty() extends FieldName
 
-base class SimpleSymbol extends NonEmptyFieldName {
+base class SimpleFieldName extends NonEmptyFieldName {
   children =
   | FNNormal(Name)
   | FNSymbol(Name)

@@ -226,7 +226,7 @@ extension class Parser {
         None()
       };
       field = fieldName match {
-      | methodName @ SimpleSymbol _ if (
+      | methodName @ SimpleFieldName _ if (
         this.lex.peekKind() is Some(TKOpenParen()) ||
         this.lex.peekKind() is Some(TKLessThan())
       ) ->
@@ -1077,7 +1077,7 @@ extension class Parser {
       retType: (PosRange, ?Type),
       body: FunDefBody,
     } -> T,
-    funName: ?SimpleSymbol,
+    funName: ?SimpleFieldName,
     parseBlock: Bool,
   ): T {
     // Record method/function definition and set context

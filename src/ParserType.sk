@@ -512,7 +512,7 @@ extension class Parser {
           None()
         };
         field = fieldName match {
-        | methodName @ SimpleSymbol _ if (
+        | methodName @ SimpleFieldName _ if (
           this.lex.peekKind() is Some(TKOpenParen()) ||
           this.lex.peekKind() is Some(TKLessThan())
         ) ->
