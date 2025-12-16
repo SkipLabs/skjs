@@ -107,6 +107,20 @@ extension class TFuns {
     f = TFun::union(subst, tenv, f1.fun_, f2.fun_);
     TFuns(f, f1.pos)
   }
+
+  static fun unionOpt(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1opt: ?TFuns,
+    f2opt: ?TFuns,
+  ): ?TFuns {
+    (f1opt, f2opt) match {
+    | (None(), _)
+    | (_, None()) ->
+      None()
+    | (Some(f1), Some(f2)) -> Some(TFuns::union(subst, tenv, f1, f2))
+    }
+  }
 }
 
 extension class TField {
@@ -271,12 +285,7 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    new = (fields1.new, fields2.new) match {
-    | (None(), _)
-    | (_, None()) ->
-      None()
-    | (Some(new1), Some(new2)) -> Some(TFuns::union(subst, tenv, new1, new2))
-    };
+    new = TFuns::unionOpt(subst, tenv, fields1.new, fields2.new);
     TFields::create{fields, indexes, new}
   }
 }
