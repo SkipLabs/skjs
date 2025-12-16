@@ -86,7 +86,7 @@ extension class Class extends ExportDefaultable
 extension class TopLevelFunDef extends ExportDefaultable
 extension class Expr extends ExportDefaultable
 
-extension class TopLevelFunDef extends FunDef<FunDefName>
+extension class TopLevelFunDef extends FunDef<FNNormal>
 
 /***************************************************************************/
 // <var-def> ::= <pattern> (: <type>)? (= <expr>)?

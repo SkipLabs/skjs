@@ -44,11 +44,7 @@ extension class TypeChecker {
       ty = this.expr(tcenv, e);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ TopLevelFunDef _ ->
-      cgNode = fd.name match {
-      | name @ SimpleFieldName _ ->
-        CGNode::create(TopLevelFunction(name, fd.pos.fileName))
-      | FNEmpty() -> CGNode::create(AnonymousFunDef(fd))
-      };
+      cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
       subst = Subst::mcreate{context};
       this.funDef(subst, None(), fd, cgNode)
     | Declare _

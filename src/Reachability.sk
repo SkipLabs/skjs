@@ -327,11 +327,7 @@ private fun checkDef(
   | Export(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
   | fd @ TopLevelFunDef _ ->
-    cgNode = fd.name match {
-    | name @ SimpleFieldName _ ->
-      CGNode::create(TopLevelFunction(name, fd.pos.fileName))
-    | FNEmpty() -> CGNode::create(AnonymousFunDef(fd))
-    };
+    cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
     nodes.insert(cgNode)
   | c @ Class _ -> classes.insert((c.name.value, def.pos.fileName))
   }
