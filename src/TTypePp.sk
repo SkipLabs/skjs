@@ -126,31 +126,6 @@ mutable class TypePp{
     }
   }
 
-  mutable fun tfuns(
-    level: Int,
-    margin: Margin,
-    tfuns: Array<(Bool, TFun)>,
-  ): void {
-    this.branch(
-      level,
-      margin,
-      (pp, level, margin) ~> {
-        for (i => tfun in tfuns) {
-          if (i != 0) pp.out(level, margin, " | ");
-          pp.tfun(level, margin, tfun);
-        }
-      },
-      (pp, level, _, margin) ~> {
-        pp.newLine();
-        for (tfun in tfuns) {
-          pp.out(level, margin, "| ");
-          pp.tfun(level, margin, tfun);
-          pp.newLine()
-        }
-      },
-    )
-  }
-
   mutable fun tfun(level: Int, margin: Margin, arg: (Bool, TFun)): void {
     (isMethod, tfun) = arg;
     this.branch(
