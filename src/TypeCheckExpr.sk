@@ -562,9 +562,9 @@ extension class TypeChecker {
             }
           };
           continue
-        | fd @ FDMethod _ ->
+        | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          (name, tFuns) = this.tenv.funDecl(tcenv.context, false, fd, cgNode);
+          (_, tFuns) = this.tenv.funDecl(tcenv.context, false, fd, cgNode);
           (name, TType::single(tFuns))
         };
         TField::create(name.pos, name.value, false, ty) match {
