@@ -480,7 +480,7 @@ class TEnv{
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
-        (_, metTFuns) = this.funDecl(context, !metIsStatic, fd, cgNode);
+        metTFuns = this.funDecl(context, !metIsStatic, fd, cgNode);
         metType = TType::single(metTFuns);
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
@@ -603,12 +603,7 @@ class TEnv{
     isMethod: Bool,
     fd: FunDef<FunDefName>,
     cgNode: CGNode,
-  ): (Name, TFuns) {
-    name = fd.name match {
-    | FNNormal(name) -> name
-    | FNEmpty() -> notSupported(fd.pos, "anonymous function")
-    | _ -> notSupported(fd.pos, "non-normal function name")
-    };
+  ): TFuns {
     retType = fd.retType match {
     | (pos, None()) ->
       // constructors must use makeConstructor
@@ -622,8 +617,7 @@ class TEnv{
       retType,
       cgNode,
     );
-    tfuns = this.normalizeFun(context, fd.pos, tafun);
-    (name, tfuns)
+    this.normalizeFun(context, fd.pos, tafun)
   }
 
   fun normalize(context: mutable SKStore.Context, typeAst: Type): TType {
@@ -978,7 +972,7 @@ class TEnv{
         }
       | fd @ ObjectFieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
-        (_, tFuns) = this.funDecl(context, false, fd, cgNode);
+        tFuns = this.funDecl(context, false, fd, cgNode);
         fd.name match {
         | FNNormal(Name(_, "new")) ->
           !new = Some(tFuns);
