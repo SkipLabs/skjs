@@ -633,6 +633,9 @@ class TEnv{
     | TAKeyOf(ty) ->
       targetType = this.normalize(context, ty);
       this.keyOfType(subst, targetType, pos)
+    | tafun @ TAFun _ ->
+      tfuns = this.normalizeFun(context, pos, tafun);
+      TType::single(tfuns)
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(context, tyPos, tafun);
@@ -807,9 +810,6 @@ class TEnv{
       };
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
-    | tafun @ TAFun _ ->
-      tfuns = this.normalizeFun(context, pos, tafun);
-      TType::single(tfuns)
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
     }
   }
