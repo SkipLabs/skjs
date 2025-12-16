@@ -102,14 +102,9 @@ extension class TAlgebraic {
     a1: TAlgebraic,
     a2: TAlgebraic,
   ): ?TAlgebraic {
-    Some(
-      TAlgebraic(
-        a1.branches.mapInter(a2.branches, (x, y) ->
-          TConstr::inter(subst, tenv, x, y)
-        ),
-        a1.pos,
-      ),
-    )
+    a1.branches
+      .mapInterOption(a2.branches, (x, y) -> TConstr::inter(subst, tenv, x, y))
+      .map(branches -> TAlgebraic(branches, a1.pos))
   }
 }
 
@@ -119,9 +114,11 @@ extension class TConstr {
     tenv: TEnv,
     x: TConstr,
     y: TConstr,
-  ): TConstr {
+  ): ?TConstr {
     invariant(x.tag == y.tag, "TConstr::inter expects identical tags");
-    TConstr(x.tag, x.tagPos, TFields::inter(subst, tenv, x.fields, y.fields))
+    Some(
+      TConstr(x.tag, x.tagPos, TFields::inter(subst, tenv, x.fields, y.fields)),
+    )
   }
 }
 
