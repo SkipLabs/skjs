@@ -362,7 +362,7 @@ base class Field uses XXHashable {
   | FDMethod
 }
 
-extension class FDMethod extends FunDef<FunDefName>
+extension class FDMethod extends FunDef<FNNormal>
 
 /***************************************************************************/
 // <post-op> ::= -- | ++ | !
