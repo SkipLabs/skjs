@@ -132,7 +132,7 @@ class Files(
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
-    keepGoing: Bool,
+    errorHandling: ErrorHandling,
   ): (SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>, SymbolsMap) {
     parsedFiles = this.filesContent.map(
       FAbsolute::keyType,
@@ -143,21 +143,30 @@ class Files(
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content, this.root);
         parser = mutable Parser(lexer);
-        parsingResult = try {
-          PROk(parser.toplevelDefs())
-        } catch {
-        | ErrorExn(err @ LexingOrParsingError _) ->
-          symbols = lexer.getAllSymbolLocations();
-          res = PRError(err);
-          if (!keepGoing) {
+        parsingResult = errorHandling match {
+        | EHBacktrace() -> PROk(parser.toplevelDefs())
+        | EHKeepGoing() ->
+          try {
+            PROk(parser.toplevelDefs())
+          } catch {
+          | ErrorExn(err @ LexingOrParsingError _) -> PRError(err)
+          | exn -> throw exn
+          }
+        | EHDefault() ->
+          try {
+            PROk(parser.toplevelDefs())
+          } catch {
+          | ErrorExn(err @ LexingOrParsingError _) ->
+            symbols = lexer.getAllSymbolLocations();
+            res = PRError(err);
             // Store the error under parseErrorKey for immediate error reporting
             writer.setArray(
               parseErrorKey,
               Array[ParsedResultAndSymbolsFile(res, symbols)],
-            )
-          };
-          res
-        | exn -> throw exn
+            );
+            res
+          | exn -> throw exn
+          }
         };
         writer.setArray(
           fileName,
@@ -173,7 +182,10 @@ class Files(
     symbolsMap = SymbolsMap::create(context, parsedFiles);
     errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
     if (errors.size() != 0) {
-      invariant(!keepGoing, "No errors expected when using --keep-going");
+      invariant(
+        !(errorHandling is EHKeepGoing()),
+        "No errors expected when using --keep-going",
+      );
       for (error in errors) {
         error.value match {
         | PRError(err) ->

@@ -13,7 +13,10 @@ extension class TypeChecker {
   ): Array<TypingError> {
     errors = mutable Vector[];
     for (def in defs) {
-      if (this.backtrace) this.checkDef(context, def) else {
+      this.errorHandling match {
+      | EHBacktrace() -> this.checkDef(context, def)
+      | EHDefault()
+      | EHKeepGoing() ->
         try {
           this.checkDef(context, def)
         } catch {
@@ -135,7 +138,7 @@ extension class TypeChecker {
   }
 
   fun typeDef(context: mutable SKStore.Context, typeDef: TypeDef): void {
-    typingErrors = mutable TypingErrorCollection(this.keepGoing);
+    typingErrors = mutable TypingErrorCollection(this.errorHandling);
 
     typingErrors.collect(() ->
       static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())

@@ -2,7 +2,7 @@ module SKJS;
 
 extension class TypeChecker {
   fun class_(context: mutable SKStore.Context, c: Class): void {
-    typingErrors = mutable TypingErrorCollection(this.keepGoing);
+    typingErrors = mutable TypingErrorCollection(this.errorHandling);
 
     constructor: ?ClassFieldTypeMethod = None();
     for (fieldType in c.fields) {

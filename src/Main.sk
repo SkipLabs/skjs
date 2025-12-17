@@ -225,13 +225,18 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | Some(newDirectory) -> Environ.set_current_dir(newDirectory)
   | None() -> void
   };
-  backtrace = args.getBool("backtrace");
-  keepGoing = args.getBool("keep-going");
-  if (backtrace && keepGoing) {
+  errorHandling = (
+    args.getBool("backtrace"),
+    args.getBool("keep-going"),
+  ) match {
+  | (true, true) ->
     print_error(
       "--backtrace and --keep-going cannot both be used at the same time",
     );
     throw Exit(2)
+  | (true, false) -> EHBacktrace()
+  | (false, true) -> EHKeepGoing()
+  | (false, false) -> EHDefault()
   };
   root = args.maybeGetString("base-url").default(".");
   importStubs = args.getArray("import-stubs");
@@ -295,7 +300,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{context, files, keepGoing, backtrace};
+          checker = Checker::create{context, files, errorHandling};
           checked = checker.checkFiles(context);
           _ = checked.map(
             SKStore.UnitID::keyType,
@@ -371,15 +376,14 @@ class Checker private {
   static fun create{
     context: mutable SKStore.Context,
     files: Files,
-    keepGoing: Bool,
-    backtrace: Bool = false,
+    errorHandling: ErrorHandling,
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
     (parsedAndSymbolsFiles, symbolsMap) = files.parse(
       context,
       newLinesMap,
-      keepGoing,
+      errorHandling,
     );
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     builtinsFileName = files.builtinsFileName;
@@ -392,7 +396,7 @@ class Checker private {
       parsedFiles,
     );
     tenv = TEnv{defMap};
-    checker = TypeChecker{backtrace, defMap, tenv, keepGoing};
+    checker = TypeChecker{defMap, tenv, errorHandling};
     static{files, parsedFiles, checker, newLinesMap, symbolsMap}
   }
 
@@ -427,6 +431,13 @@ class Checker private {
   fun errorToString(context: mutable SKStore.Context, err: Error): String {
     err.toString(context, this.newLinesMap, this.symbolsMap)
   }
+}
+
+base class ErrorHandling {
+  children =
+  | EHDefault()
+  | EHBacktrace()
+  | EHKeepGoing()
 }
 
 module end;

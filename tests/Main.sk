@@ -265,7 +265,11 @@ fun testFiles(
       importStubs,
     ) |> expectFilesSuccess;
 
-  checker = SKJS.Checker::create{context, files, keepGoing => true};
+  checker = SKJS.Checker::create{
+    context,
+    files,
+    errorHandling => SKJS.EHKeepGoing(),
+  };
   expectationErrors = checker
     .checkFiles(context)
     .items(context)

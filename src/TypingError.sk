@@ -33,19 +33,21 @@ fun notSupported<T>(pos: PosRange, what: String): T {
 class TypingErrors(errors: Array<TypingError>) extends .Exception
 
 mutable class TypingErrorCollection(
-  keepGoing: Bool,
+  errorHandling: ErrorHandling,
   private typingErrors: mutable Vector<TypingError> = mutable Vector[],
 ) {
   mutable fun push(messages: Array<(PosRange, String)>): void {
-    if (this.keepGoing) {
-      this.typingErrors.push(TypingError(messages))
-    } else {
+    this.errorHandling match {
+    | EHKeepGoing() -> this.typingErrors.push(TypingError(messages))
+    | EHBacktrace()
+    | EHDefault() ->
       typingError(messages)
     }
   }
 
   mutable fun collect(f: () -> void): void {
-    if (this.keepGoing) {
+    this.errorHandling match {
+    | EHKeepGoing() ->
       try {
         f()
       } catch {
@@ -53,7 +55,8 @@ mutable class TypingErrorCollection(
       | TypingErrors(errs) -> this.typingErrors.extend(errs)
       | exn -> throw exn
       }
-    } else {
+    | EHBacktrace()
+    | EHDefault() ->
       f()
     }
   }
