@@ -34,10 +34,11 @@ class ClassHierarchyFile(
 }
 
 fun recordClassHierarchy(
-  context: mutable SKStore.Context,
+  tcenv: mutable TCEnv,
   child: Class,
   parent: mutable SKStore.Context -> Class,
 ): void {
+  context = tcenv.context;
   context.getGlobal(kClassHierarchyId).map(ClassHierarchyFile::type) match {
   | Some(classHierarchy) ->
     context.setGlobal(
