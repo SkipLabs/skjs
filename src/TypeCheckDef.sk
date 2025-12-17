@@ -68,7 +68,7 @@ extension class TypeChecker {
     | c @ Class _ -> this.class_(context, c, results)
     | Enum _ -> notSupported(def.pos, "enum")
     | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs, results)
-    | td @ TypeDef _ -> this.typeDef(context, td)
+    | td @ TypeDef _ -> this.typeDef(context, td, results)
     }
   }
 
@@ -144,7 +144,11 @@ extension class TypeChecker {
     }
   }
 
-  fun typeDef(context: mutable SKStore.Context, typeDef: TypeDef): void {
+  fun typeDef(
+    context: mutable SKStore.Context,
+    typeDef: TypeDef,
+    results: mutable TCResults,
+  ): void {
     typingErrors = mutable TypingErrorCollection(this.errorHandling);
 
     typingErrors.collect(() ->
@@ -156,7 +160,7 @@ extension class TypeChecker {
 
     typingErrors.collect(() -> _ = this.tenv.normalize(context, typeDef.body));
 
-    typingErrors.emit()
+    typingErrors.emit(results)
   }
 
   static fun checkTypeParams(

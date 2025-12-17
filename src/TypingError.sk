@@ -61,11 +61,10 @@ mutable class TypingErrorCollection(
     }
   }
 
-  mutable fun emit(): void {
+  mutable fun emit(results: mutable TCResults): void {
     if (!this.typingErrors.isEmpty()) {
-      exn = TypingErrors(this.typingErrors.toArray());
+      results.errors.extend(this.typingErrors);
       this.typingErrors.clear();
-      throw exn
     }
   }
 }
