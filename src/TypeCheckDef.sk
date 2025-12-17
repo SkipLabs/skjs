@@ -125,7 +125,7 @@ extension class TypeChecker {
         "Invalid definition",
         literalType match {
         | None() ->
-          ty = this.expr(tcenv, e);
+          ty = this.expr(tcenv, e, kind is VDKConst());
           ty
         | Some(litType) -> litType
         },
