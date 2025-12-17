@@ -10,7 +10,7 @@ base class LocalObjectState {
   | LOUsed(PosRange)
 }
 
-mutable class TCEnv(
+mutable class TCEnv private (
   context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
