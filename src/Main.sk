@@ -420,14 +420,7 @@ class Checker private {
           errors = results.errors.toArray();
           writer.set(
             fileName,
-            CheckResult(
-              fileName,
-              None(),
-              errors,
-              collectCallGraph(context)
-                .map(cgf -> cgf.callgraph)
-                .default(SortedMap[]),
-            ),
+            CheckResult(fileName, None(), errors, results.callgraph),
           )
         | PRError(err) ->
           writer.set(fileName, CheckResult(fileName, Some(err), Array[]))

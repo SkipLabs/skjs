@@ -65,9 +65,19 @@ mutable class TCEnv private (
 
 mutable class TCResults private {
   errors: mutable Vector<TypingError> = mutable Vector[],
+  mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
 } {
   static fun mcreate{}: mutable TCResults {
     mutable TCResults{}
+  }
+
+  mutable fun recordCalls(caller: CGNode, newCallees: CGNodes): void {
+    oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
+    callees = oldCallees.foldl(
+      (nodes, node) -> nodes.set(node),
+      newCallees.nodes,
+    );
+    this.!callgraph[caller] = callees.toArray();
   }
 }
 
