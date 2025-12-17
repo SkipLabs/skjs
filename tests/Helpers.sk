@@ -172,12 +172,21 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     restOfLine = String::fromChars(
       chars.slice(restOfLineStart, pos),
     ).trimForComparison();
-    result.push(
-      ExpectError{
+    lastResultI = result.size() - 1;
+    result.maybeGet(lastResultI) match {
+    | Some(lastResult) if (lastResult.line == lineNumber) ->
+      result![lastResultI] = lastResult with {
         line => lineNumber + 1,
-        expectedErrors => SortedSet[restOfLine],
-      },
-    )
+        expectedErrors => lastResult.expectedErrors.add(restOfLine),
+      }
+    | _ ->
+      result.push(
+        ExpectError{
+          line => lineNumber + 1,
+          expectedErrors => SortedSet[restOfLine],
+        },
+      )
+    }
   };
   result
 }
