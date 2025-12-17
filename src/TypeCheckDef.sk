@@ -87,24 +87,28 @@ extension class TypeChecker {
         results.error(Array[(varDef.pat.pos, "Missing definition")])
       };
       literalType = varDef.value.flatMap(this.asConstExpr).map(TType::single);
-      type = varDef.type match {
+      typeOpt = varDef.type match {
       | None() ->
-        literalType match {
-        | Some(ty) -> ty
-        | _ -> typingError(Array[(varDef.pat.pos, "Missing type annotation")])
-        }
-      | Some(x) -> this.tenv.normalize(context, x)
+        if (literalType is None()) {
+          results.error(Array[(varDef.pat.pos, "Missing type annotation")])
+        };
+        literalType
+      | Some(x) -> Some(this.tenv.normalize(context, x))
       };
       subst = Subst::mcreate{context};
-      if (!type.isPrimitiveType(subst, this.tenv)) {
-        typingError(
-          Array[
-            (
-              varDef.pat.pos,
-              "Invalid type for constant, only primitive types (not objects) are allowed",
-            ),
-          ],
-        );
+      typeOpt match {
+      | Some(type) ->
+        if (!type.isPrimitiveType(subst, this.tenv)) {
+          typingError(
+            Array[
+              (
+                varDef.pat.pos,
+                "Invalid type for constant, only primitive types (not objects) are allowed",
+              ),
+            ],
+          )
+        }
+      | _ -> void
       };
       varDef.pat.value match {
       | PVar _ -> void
@@ -120,9 +124,8 @@ extension class TypeChecker {
           ],
         )
       };
-      varDef.value match {
-      | None() -> void
-      | Some(e) ->
+      (varDef.value, typeOpt) match {
+      | (Some(e), Some(type)) ->
         tcenv = TCEnv::mcreate(
           context,
           subst,
@@ -139,6 +142,7 @@ extension class TypeChecker {
           },
           type,
         )
+      | _ -> void
       }
     }
   }
