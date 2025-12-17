@@ -226,6 +226,13 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | None() -> void
   };
   backtrace = args.getBool("backtrace");
+  keepGoing = args.getBool("keep-going");
+  if (backtrace && keepGoing) {
+    print_error(
+      "--backtrace and --keep-going cannot both be used at the same time",
+    );
+    throw Exit(2)
+  };
   root = args.maybeGetString("base-url").default(".");
   importStubs = args.getArray("import-stubs");
   builtinsFileName = args.maybeGetString("builtins-file") match {
@@ -261,7 +268,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     };
   };
   srcFiles: Sequence<String> = args.getArray("src-file");
-  keepGoing = args.getBool("keep-going");
 
   errorsDirName = SKStore.DirName::create("/check/errors/");
 
