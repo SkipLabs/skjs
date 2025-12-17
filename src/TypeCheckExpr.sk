@@ -433,8 +433,13 @@ extension class TypeChecker {
     result
   }
 
-  fun nonVoidExpr(pos: PosRange, tcenv: mutable TCEnv, e: Expr): TType {
-    ty = this.expr(tcenv, e);
+  fun nonVoidExpr(
+    pos: PosRange,
+    tcenv: mutable TCEnv,
+    e: Expr,
+    mostPrecise: Bool,
+  ): TType {
+    ty = this.expr(tcenv, e, mostPrecise);
     if (this.nonTopContainsVoid(tcenv, ty)) {
       typingError(
         Array[
@@ -774,8 +779,8 @@ extension class TypeChecker {
         }
       | BOAssignment() -> this.assign(tcenv, pos, e1, e2)
       | op_ @ BOStrictComparison() ->
-        ty1 = this.nonVoidExpr(pos, tcenv, e1);
-        ty2 = this.nonVoidExpr(pos, tcenv, e2);
+        ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
+        ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
         if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
           TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
           | STOk() -> void
@@ -908,7 +913,7 @@ extension class TypeChecker {
         TType::single(TPrimValue::full(kind1, pos))
 
       | BONullishCoalescing() ->
-        ty1 = this.nonVoidExpr(pos, tcenv, e1);
+        ty1 = this.nonVoidExpr(pos, tcenv, e1, false);
         ty2 = this.expr(tcenv, e2);
         ty1.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
         | None() -> void
@@ -1019,7 +1024,7 @@ extension class TypeChecker {
         }
       }
     | TypeOf(subExpr) ->
-      _ = this.nonVoidExpr(pos, tcenv, subExpr);
+      _ = this.nonVoidExpr(pos, tcenv, subExpr, true);
       TType::single(TPrimValue::string(pos))
 
     | PostOp(pop, subExpr) ->
