@@ -275,11 +275,9 @@ class CallGraph private (
   }
 }
 
-fun recordCalls(
-  context: mutable SKStore.Context,
-  caller: CGNode,
-  newCallees: CGNodes,
-): void {
+fun recordCalls(tcenv: mutable TCEnv, newCallees: CGNodes): void {
+  context = tcenv.context;
+  caller = tcenv.callingContext;
   context.getGlobal(kCallGraphId).map(CallGraphFile::type) match {
   | Some(callgraph) ->
     context.setGlobal(kCallGraphId, callgraph.recordCalls(caller, newCallees))
