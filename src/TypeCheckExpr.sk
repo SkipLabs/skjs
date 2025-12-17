@@ -1241,14 +1241,14 @@ extension class TypeChecker {
     };
     body match {
     | CBExpr(e) ->
+      retTy = this.expr(tcenv, e);
       this.checkSubType(
         tcenv,
         e.pos,
         "Invalid callback return",
         isAsync match {
-        | None() -> this.expr(tcenv, e)
-        | Some(asyncPos) ->
-          TType::single(TPromise(this.expr(tcenv, e), asyncPos))
+        | None() -> retTy
+        | Some(asyncPos) -> TType::single(TPromise(retTy, asyncPos))
         },
         retType,
       )
