@@ -143,32 +143,31 @@ class Files(
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content, this.root);
         parser = mutable Parser(lexer);
-        try {
-          writer.setArray(
-            fileName,
-            Array[
-              ParsedResultAndSymbolsFile(
-                PROk(parser.toplevelDefs()),
-                lexer.getAllSymbolLocations(),
-              ),
-            ],
-          )
+        parsingResult = try {
+          PROk(parser.toplevelDefs())
         } catch {
         | ErrorExn(err @ LexingOrParsingError _) ->
           symbols = lexer.getAllSymbolLocations();
-          writer.setArray(
-            fileName,
-            Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
-          );
+          res = PRError(err);
           if (!keepGoing) {
             // Store the error under parseErrorKey for immediate error reporting
             writer.setArray(
               parseErrorKey,
-              Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
+              Array[ParsedResultAndSymbolsFile(res, symbols)],
             )
-          }
+          };
+          res
         | exn -> throw exn
-        }
+        };
+        writer.setArray(
+          fileName,
+          Array[
+            ParsedResultAndSymbolsFile(
+              parsingResult,
+              lexer.getAllSymbolLocations(),
+            ),
+          ],
+        )
       },
     );
     symbolsMap = SymbolsMap::create(context, parsedFiles);
