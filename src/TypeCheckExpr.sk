@@ -453,7 +453,7 @@ extension class TypeChecker {
 
   /* Typechecks expression e
      If mostPrecise, use the most precise type. */
-  fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool = false): TType {
+  fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool): TType {
     if (mostPrecise) {
       this.asConstExpr(e) match {
       | Some(ty) -> return TType::single(ty)
@@ -1328,7 +1328,7 @@ extension class TypeChecker {
       };
       this.assignLocalObject(tcenv, pos, local, fieldName, fieldType, used)
     | _ ->
-      ty1 = this.expr(tcenv, e1);
+      ty1 = this.expr(tcenv, e1, false);
       ty2 = this.expr(tcenv, e2, mostPrecise);
       this.checkSubType(tcenv, e2.pos, "Invalid assignment", ty2, ty1);
       ty1
