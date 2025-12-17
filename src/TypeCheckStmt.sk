@@ -7,7 +7,7 @@ extension class TypeChecker {
     | Continue() -> void
     | StmtEmpty() -> void
     | StmtExpr(e) ->
-      ty = this.expr(tcenv, e);
+      ty = this.expr(tcenv, e, false);
       if (!static::isPossiblyNonVoidExpressionAllowedAsStatement(e)) {
         this.checkIsIgnorable(tcenv, e.pos, ty)
       }
@@ -72,7 +72,7 @@ extension class TypeChecker {
       this.checkBool(tcenv, cond);
       loopBody = this.block(tcenv, block);
       tcenv.popScopeReplace(loopBody);
-      _ = this.expr(tcenv, incr);
+      _ = this.expr(tcenv, incr, false);
       tcenv.!scope = initScope;
       tcenv.popScope(tcenv.subst, this.tenv, loopScope);
       tcenv.!scope = scopeCopy;
@@ -105,7 +105,7 @@ extension class TypeChecker {
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope)
 
-    | Throw(e) -> _ = this.expr(tcenv, e)
+    | Throw(e) -> _ = this.expr(tcenv, e, false)
     | While(cond, block) ->
       scopeCopy = tcenv.scope;
       loopScope = tcenv.mcreateSubScope{isLoop => true};

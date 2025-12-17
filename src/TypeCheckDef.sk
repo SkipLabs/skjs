@@ -41,7 +41,7 @@ extension class TypeChecker {
         subst,
         CGNode::toplevel(def.pos.fileName),
       );
-      ty = this.expr(tcenv, e);
+      ty = this.expr(tcenv, e, true);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ TopLevelFunDef _ ->
       cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
@@ -125,7 +125,7 @@ extension class TypeChecker {
         "Invalid definition",
         literalType match {
         | None() ->
-          ty = this.expr(tcenv, e);
+          ty = this.expr(tcenv, e, kind is VDKConst());
           ty
         | Some(litType) -> litType
         },

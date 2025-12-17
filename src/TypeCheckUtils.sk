@@ -135,7 +135,7 @@ extension class TypeChecker {
       tcenv,
       e.pos,
       "A condition is expected to be of type boolean, not: ",
-      this.expr(tcenv, e),
+      this.expr(tcenv, e, true),
       TType::single(TPrimValue::boolean(e.pos)),
     );
   }

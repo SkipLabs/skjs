@@ -80,7 +80,7 @@ extension class TypeChecker {
           tcenv,
           defaultExpr.pos,
           "Default value doesn't have the expected type",
-          this.expr(tcenv, defaultExpr),
+          this.expr(tcenv, defaultExpr, true),
           paramType,
         );
         tcenv.!scope = savedScope
