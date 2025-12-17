@@ -1346,23 +1346,18 @@ extension class TypeChecker {
           )
         | Some(f) -> f
         };
-        tcenv.scope.set(
-          local,
-          TType::single(
-            TObject(
-              TFields::inter(
-                tcenv.subst,
-                this.tenv,
-                fields,
-                TFields::create{fields => Array[field]},
-              ),
-              objPos,
-            ),
-          ),
-          (x, y) -> {
-            this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
-          },
-        );
+        newTy = TFields::inter(
+          tcenv.subst,
+          this.tenv,
+          fields,
+          TFields::create{fields => Array[field]},
+        ) match {
+        | None() -> TType::bottom(objPos)
+        | Some(newFields) -> TType::single(TObject(newFields, objPos))
+        };
+        tcenv.scope.set(local, newTy, (x, y) -> {
+          this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
+        });
         fieldType
       | Some(fd) -> fd.type
       }

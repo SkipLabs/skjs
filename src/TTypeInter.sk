@@ -101,13 +101,10 @@ extension class TAlgebraic {
     tenv: TEnv,
     a1: TAlgebraic,
     a2: TAlgebraic,
-  ): TAlgebraic {
-    TAlgebraic(
-      a1.branches.mapInter(a2.branches, (x, y) ->
-        TConstr::inter(subst, tenv, x, y)
-      ),
-      a1.pos,
-    )
+  ): ?TAlgebraic {
+    a1.branches
+      .mapInterOption(a2.branches, (x, y) -> TConstr::inter(subst, tenv, x, y))
+      .map(branches -> TAlgebraic(branches, a1.pos))
   }
 }
 
@@ -117,9 +114,11 @@ extension class TConstr {
     tenv: TEnv,
     x: TConstr,
     y: TConstr,
-  ): TConstr {
+  ): ?TConstr {
     invariant(x.tag == y.tag, "TConstr::inter expects identical tags");
-    TConstr(x.tag, x.tagPos, TFields::inter(subst, tenv, x.fields, y.fields))
+    TFields::inter(subst, tenv, x.fields, y.fields).map(fields ->
+      TConstr(x.tag, x.tagPos, fields)
+    )
   }
 }
 
@@ -193,9 +192,9 @@ extension class STypes {
         Some(TPromise(TType::inter(subst, tenv, ty1, ty2), pos1))
 
       | (obj1 @ TObject _, obj2 @ TObject _) ->
-        Some(TObject::inter(subst, tenv, obj1, obj2))
+        TObject::inter(subst, tenv, obj1, obj2)
       | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-        Some(TAlgebraic::inter(subst, tenv, a1, a2))
+        TAlgebraic::inter(subst, tenv, a1, a2)
 
       | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::inter(subst, tenv, f1, f2)
       | _ -> internal_error("Internal error")
@@ -284,7 +283,17 @@ extension class TFields {
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
-  ): TFields {
+  ): ?TFields {
+    new = (fields1.new, fields2.new) match {
+    | (None(), new)
+    | (new, None()) ->
+      new
+    | (Some(new1), Some(new2)) ->
+      TFuns::inter(subst, tenv, new1, new2) match {
+      | None() -> return None()
+      | some @ Some _ -> some
+      }
+    };
     fields = mapUnion(
       fields1.values(),
       fields2.values(),
@@ -308,13 +317,7 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    new = (fields1.new, fields2.new) match {
-    | (None(), new)
-    | (new, None()) ->
-      new
-    | (Some(new1), Some(new2)) -> TFuns::inter(subst, tenv, new1, new2)
-    };
-    TFields::create{fields, indexes, new}
+    Some(TFields::create{fields, indexes, new})
   }
 }
 
@@ -324,8 +327,10 @@ extension class TObject {
     tenv: TEnv,
     obj1: TObject,
     obj2: TObject,
-  ): TObject {
-    TObject(TFields::inter(subst, tenv, obj1.fields, obj2.fields), obj1.pos)
+  ): ?TObject {
+    TFields::inter(subst, tenv, obj1.fields, obj2.fields).map(fields ->
+      TObject(fields, obj1.pos)
+    )
   }
 }
 
