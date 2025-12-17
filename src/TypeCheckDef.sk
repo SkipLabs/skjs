@@ -98,8 +98,7 @@ extension class TypeChecker {
           Array[
             (
               varDef.pat.pos,
-              "Invalid type for constant, " +
-                "only primitive types (not objects) are allowed",
+              "Invalid type for constant, only primitive types (not objects) are allowed",
             ),
           ],
         );
