@@ -140,25 +140,6 @@ class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
   }
 }
 
-class CallGraphFile(
-  callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
-) extends SKStore.File {
-  fun recordCalls(caller: CGNode, newCallees: CGNodes): this {
-    oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
-    callees = oldCallees.foldl(
-      (nodes, node) -> nodes.set(node),
-      newCallees.nodes,
-    );
-    CallGraphFile(this.callgraph.set(caller, callees.toArray()))
-  }
-
-  fun each(fn: (CGNode, Array<CGNode>) -> void): void {
-    this.callgraph.each(fn)
-  }
-}
-
-const kCallGraphId: String = "/skjs/call-graph/";
-
 const callGraphDirName: SKStore.DirName = SKStore.DirName::create(
   "/call-graph/",
 );
@@ -278,16 +259,6 @@ class CallGraph private (
 fun recordCalls(tcenv: mutable TCEnv, newCallees: CGNodes): void {
   caller = tcenv.callingContext;
   tcenv.results.recordCalls(caller, newCallees)
-}
-
-fun initCallGraph(context: mutable SKStore.Context): void {
-  context.setGlobal(kCallGraphId, CallGraphFile())
-}
-
-fun collectCallGraph(context: mutable SKStore.Context): ?CallGraphFile {
-  inheritance = context.getGlobal(kCallGraphId).map(CallGraphFile::type);
-  context.removeGlobal(kCallGraphId);
-  inheritance
 }
 
 // lifted helper outside of `affectedFiles` for recursion

@@ -415,7 +415,6 @@ class Checker private {
         };
         parsedFile.value match {
         | PROk(defs) ->
-          initCallGraph(context);
           results = this.checker.check(context, defs);
           errors = results.errors.toArray();
           writer.set(
