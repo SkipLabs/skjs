@@ -306,35 +306,47 @@ declare class Date {
   getUTCMinutes(): number;
   getUTCMonth(): number;
   getUTCSeconds(): number;
-  setDate(date: number): number;
-  setFullYear(year: number, month?: number, date?: number): number;
+  setDate(date: number): SKJS_Ignorable<number>;
+  setFullYear(
+    year: number,
+    month?: number,
+    date?: number,
+  ): SKJS_Ignorable<number>;
   setHours(
     hours: number,
     minutes?: number,
     seconds?: number,
     milliseconds?: number,
-  ): number;
-  setMilliseconds(milliseconds: number): number;
-  setMinutes(minutes: number, seconds?: number, milliseconds?: number): number;
-  setMonth(month: number, date?: number): number;
-  setSeconds(seconds: number, milliseconds?: number): number;
-  setTime(time: number): number;
-  setUTCDate(date: number): number;
-  setUTCFullYear(year: number, month?: number, date?: number): number;
+  ): SKJS_Ignorable<number>;
+  setMilliseconds(milliseconds: number): SKJS_Ignorable<number>;
+  setMinutes(
+    minutes: number,
+    seconds?: number,
+    milliseconds?: number,
+  ): SKJS_Ignorable<number>;
+  setMonth(month: number, date?: number): SKJS_Ignorable<number>;
+  setSeconds(seconds: number, milliseconds?: number): SKJS_Ignorable<number>;
+  setTime(time: number): SKJS_Ignorable<number>;
+  setUTCDate(date: number): SKJS_Ignorable<number>;
+  setUTCFullYear(
+    year: number,
+    month?: number,
+    date?: number,
+  ): SKJS_Ignorable<number>;
   setUTCHours(
     hours: number,
     minutes?: number,
     seconds?: number,
     milliseconds?: number,
-  ): number;
-  setUTCMilliseconds(milliseconds: number): number;
+  ): SKJS_Ignorable<number>;
+  setUTCMilliseconds(milliseconds: number): SKJS_Ignorable<number>;
   setUTCMinutes(
     minutes: number,
     seconds?: number,
     milliseconds?: number,
-  ): number;
-  setUTCMonth(month: number, date?: number): number;
-  setUTCSeconds(seconds: number, milliseconds?: number): number;
+  ): SKJS_Ignorable<number>;
+  setUTCMonth(month: number, date?: number): SKJS_Ignorable<number>;
+  setUTCSeconds(seconds: number, milliseconds?: number): SKJS_Ignorable<number>;
   toDateString(): string;
   toISOString(): string;
   toJSON(): string;
