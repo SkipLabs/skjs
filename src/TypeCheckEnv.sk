@@ -10,11 +10,12 @@ base class LocalObjectState {
   | LOUsed(PosRange)
 }
 
-mutable class TCEnv(
+mutable class TCEnv private (
   context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
+  results: mutable TCResults,
   localObjects: mutable Map<String, LocalObjectState> = mutable Map[]/*
   Tracks local objects, i.e. object literals bounded to variables.
   Those are allowed to grow if they haven't been used.
@@ -26,9 +27,10 @@ mutable class TCEnv(
     context: mutable SKStore.Context,
     subst: mutable Subst,
     callingContext: CGNode,
+    results: mutable TCResults,
   ): mutable this {
     scope = Scope::mcreateToplevel();
-    mutable static(context, subst, scope, callingContext)
+    mutable static(context, subst, scope, callingContext, results)
   }
 
   private mutable fun next(): Int {
@@ -58,6 +60,43 @@ mutable class TCEnv(
 
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
+  }
+
+  /* On results */
+  mutable fun recordCalls(newCallees: CGNodes): void {
+    caller = this.callingContext;
+    this.results.recordCalls(caller, newCallees)
+  }
+
+  mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
+    this.results.recordClassHierarchy{child, parent}
+  }
+}
+
+mutable class TCResults private {
+  errors: mutable Vector<TypingError> = mutable Vector[],
+  mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
+  mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
+} {
+  static fun mcreate{}: mutable TCResults {
+    mutable TCResults{}
+  }
+
+  mutable fun recordCalls(caller: CGNode, newCallees: CGNodes): void {
+    oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
+    callees = oldCallees.foldl(
+      (nodes, node) -> nodes.set(node),
+      newCallees.nodes,
+    );
+    this.!callgraph[caller] = callees.toArray();
+  }
+
+  mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
+    childNode = CHNode::ofClass(child);
+    parentNode = CHNode::ofClass(parent);
+    current = this.classHierarchy.maybeGet(childNode).default(SortedSet[]);
+    new = current.set(parentNode);
+    this.!classHierarchy[childNode] = new;
   }
 }
 

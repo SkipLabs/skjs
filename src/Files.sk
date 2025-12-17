@@ -132,7 +132,7 @@ class Files(
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
-    keepGoing: Bool,
+    errorHandling: ErrorHandling,
   ): (SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>, SymbolsMap) {
     parsedFiles = this.filesContent.map(
       FAbsolute::keyType,
@@ -143,38 +143,49 @@ class Files(
         content = contentIter.first.value;
         lexer = Lexer::mcreate(fileName, content, this.root);
         parser = mutable Parser(lexer);
-        try {
-          writer.setArray(
-            fileName,
-            Array[
-              ParsedResultAndSymbolsFile(
-                PROk(parser.toplevelDefs()),
-                lexer.getAllSymbolLocations(),
-              ),
-            ],
-          )
-        } catch {
-        | ErrorExn(err @ LexingOrParsingError _) ->
-          symbols = lexer.getAllSymbolLocations();
-          writer.setArray(
-            fileName,
-            Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
-          );
-          if (!keepGoing) {
+        parsingResult = errorHandling match {
+        | EHBacktrace() -> PROk(parser.toplevelDefs())
+        | EHKeepGoing() ->
+          try {
+            PROk(parser.toplevelDefs())
+          } catch {
+          | ErrorExn(err @ LexingOrParsingError _) -> PRError(err)
+          | exn -> throw exn
+          }
+        | EHDefault() ->
+          try {
+            PROk(parser.toplevelDefs())
+          } catch {
+          | ErrorExn(err @ LexingOrParsingError _) ->
+            symbols = lexer.getAllSymbolLocations();
+            res = PRError(err);
             // Store the error under parseErrorKey for immediate error reporting
             writer.setArray(
               parseErrorKey,
-              Array[ParsedResultAndSymbolsFile(PRError(err), symbols)],
-            )
+              Array[ParsedResultAndSymbolsFile(res, symbols)],
+            );
+            res
+          | exn -> throw exn
           }
-        | exn -> throw exn
-        }
+        };
+        writer.setArray(
+          fileName,
+          Array[
+            ParsedResultAndSymbolsFile(
+              parsingResult,
+              lexer.getAllSymbolLocations(),
+            ),
+          ],
+        )
       },
     );
     symbolsMap = SymbolsMap::create(context, parsedFiles);
     errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
     if (errors.size() != 0) {
-      invariant(!keepGoing, "No errors expected when using --keep-going");
+      invariant(
+        !(errorHandling is EHKeepGoing()),
+        "No errors expected when using --keep-going",
+      );
       for (error in errors) {
         error.value match {
         | PRError(err) ->

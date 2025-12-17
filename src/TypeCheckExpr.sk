@@ -614,7 +614,13 @@ extension class TypeChecker {
         efield match {
         | fd @ FDMethod _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          this.funDef(tcenv.subst, Some((CKClass(), obj)), fd, cgNode)
+          this.funDef(
+            tcenv.subst,
+            Some((CKClass(), obj)),
+            fd,
+            cgNode,
+            tcenv.results,
+          )
         | _ -> void
         }
       };
@@ -1207,11 +1213,7 @@ extension class TypeChecker {
     };
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
-    recordCalls(
-      tcenv.context,
-      tcenv.callingContext,
-      CGNodes::singleton(callingContext),
-    );
+    tcenv.recordCalls(CGNodes::singleton(callingContext));
     savedScope = tcenv.scope;
     savedCallingContext = tcenv.callingContext;
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
@@ -1519,7 +1521,7 @@ extension class TypeChecker {
 
     tfuns match {
     | TFuns(tfun, fPos) ->
-      recordCalls(tcenv.context, tcenv.callingContext, tfun.cgNodes);
+      tcenv.recordCalls(tfun.cgNodes);
       if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
         typingError(
           Array[

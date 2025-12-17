@@ -9,13 +9,12 @@ module SKJS;
 /***************************************************************************/
 
 class TypeChecker{
-  backtrace: Bool,
+  errorHandling: ErrorHandling,
   defMap: DefMap,
   tenv: TEnv,
   super: ?(CstrType, TType) = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
-  keepGoing: Bool,
 } {}
 
 /***************************************************************************/

@@ -1,0 +1,34 @@
+module SKJS;
+
+const kClassHierarchyDirName: SKStore.DirName = SKStore.DirName::create(
+  "/skjs/class-hierarchy/",
+);
+
+class CHNode private (
+  name: String,
+  kind: ClassKind,
+  fileName: FAbsolute,
+  symbol: SymbolicPos,
+) extends SKStore.File, SKStore.Key uses XXHashable {
+  static fun ofClass(c: Class): this {
+    static(c.name.value, c.kind, c.name.pos.fileName, c.name.pos.symbol)
+  }
+}
+
+fun buildClassHierarchy(
+  context: mutable SKStore.Context,
+  checked: SKStore.EHandle<SKStore.SID, CheckResult>,
+  dirName: SKStore.DirName = kClassHierarchyDirName,
+): SKStore.EHandle<CHNode, CHNode> {
+  checked.map(
+    CHNode::keyType,
+    CHNode::type,
+    context,
+    dirName,
+    (_context, writer, _sid, res) ~> {
+      res.first.classHierarchy.each((k, v) -> writer.setArray(k, v.toArray()))
+    },
+  );
+}
+
+module end;
