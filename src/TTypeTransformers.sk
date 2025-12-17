@@ -80,7 +80,6 @@ mutable base class ApplyType(
       x
     | TPromise(ty, pos) -> TPromise(this.type(env, ty), pos)
     | algs @ TAlgebraic _ -> this.algebraic(env, algs)
-    | funs @ TFuns _ -> this.funs(env, funs)
     | obj @ TObject _ -> this.object(env, obj)
     | tuples @ TTuple _ -> this.tuple(env, tuples)
     }

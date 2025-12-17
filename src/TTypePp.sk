@@ -122,7 +122,6 @@ mutable class TypePp{
         },
       )
     | TTuple(arr, _) -> this.tuple(level, margin, arr)
-    | TFuns(tfun, _) -> this.tfun(level, margin, (false, tfun))
     }
   }
 
@@ -258,8 +257,15 @@ mutable class TypePp{
   }
 
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
-    (fields.fields.isEmpty(), fields.indexes.isEmpty(), fields.new) match {
-    | (true, true, Some(TFuns(tfun, _pos))) ->
+    (
+      fields.fields.isEmpty(),
+      fields.indexes.isEmpty(),
+      fields.call,
+      fields.new,
+    ) match {
+    | (true, true, Some(TFuns(tfun, _pos)), None()) ->
+      this.tfun(level, margin, (false, tfun))
+    | (true, true, None(), Some(TFuns(tfun, _pos))) ->
       this.out(level, margin, "new ");
       this.tfun(level, margin, (false, tfun))
     | _ ->
@@ -303,6 +309,7 @@ mutable class TypePp{
       if (
         i != fieldArray.size() - 1 ||
         !indexes.isEmpty() ||
+        fields.call.isSome() ||
         fields.new.isSome()
       ) {
         this.out(level, margin, ",");
@@ -318,7 +325,22 @@ mutable class TypePp{
       this.type(level, margin, index.keyType);
       this.out(level, margin, " ]: ");
       this.type(level, margin, index.valueType);
-      if (i != indexes.size() - 1 || fields.new.isSome()) {
+      if (
+        i != indexes.size() - 1 ||
+        fields.call.isSome() ||
+        fields.new.isSome()
+      ) {
+        this.out(level, margin, ",");
+        if (multiLine) this.newLine() else {
+          this.out(level, margin, " ")
+        }
+      }
+    };
+    fields.call match {
+    | None() -> void
+    | Some(TFuns(tfun, _pos)) ->
+      this.tfun(level, margin, (true, tfun));
+      if (fields.new.isSome()) {
         this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")

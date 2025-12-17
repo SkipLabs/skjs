@@ -254,7 +254,6 @@ class TType private {
             if (!ty.isPrimitiveType(subst, tenv)) return false
           }
         | TAlgebraic _
-        | TFuns _
         | TObject _
         | TPromise _ ->
           return false
@@ -434,7 +433,7 @@ class TTuple(tuple: Array<TType>) extends SType
 /* Funs */
 /***************************************************************************/
 
-class TFuns private (fun_: TFun) extends SType {
+class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
   static fun singleFun(x: TFun, pos: PosRange): TFuns {
     TFuns(x, pos)
   }
@@ -517,7 +516,8 @@ class ATFullType(fullType: TType) extends ArrayType {
       popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(TFuns(met, _)) -> Some(met.retType)
+      | Some(TObject(TFields{call => Some(TFuns(met, _))}, _)) ->
+        Some(met.retType)
       | _ -> None()
       }
     )
@@ -550,11 +550,7 @@ class TFun(
   spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   retType: TType,
   cgNodes: CGNodes,
-) uses XXHashable, Orderable {
-  fun toString(): String {
-    prettyPrintSType(TFuns::singleFun(this, PosRange::none))
-  }
-}
+) uses XXHashable, Orderable
 
 /***************************************************************************/
 /* Single types */
@@ -624,7 +620,6 @@ base class SType private (
     | TPromise _ -> 8
     | TObject _ -> 9
     | TAlgebraic _ -> 10
-    | TFuns _ -> 11
     }
   }
 
@@ -731,13 +726,14 @@ class TFields private {
       type must be a subtype of the index key type
   */
   new: ?TFuns,
-  /*  */
+  call: ?TFuns,
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{
       fields => InternalKeyedArrayMap::empty(),
       indexes => Array[],
       new => None(),
+      call => None(),
     }
   }
 
@@ -745,6 +741,7 @@ class TFields private {
     fields: Array<TField> = Array[],
     indexes: Array<TIndexField> = Array[],
     new: ?TFuns = None(),
+    call: ?TFuns = None(),
   }: TFields {
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
@@ -752,6 +749,7 @@ class TFields private {
       ),
       indexes,
       new,
+      call,
     }
   }
 
@@ -768,6 +766,7 @@ class TFields private {
       fields => this.fields.map(fField),
       indexes => this.indexes.map(fIndexField),
       new => this.new.map(fTFuns),
+      call => this.call.map(fTFuns),
     }
   }
 
@@ -1326,6 +1325,7 @@ base class STError extends STResult {
   children =
   | STNoConstraint()
   | STMissingField(String)
+  | STMissingCall()
   | STMissingConstructor()
   | STMissingThis()
   | STMissingParameter()
@@ -1333,7 +1333,6 @@ base class STError extends STResult {
   | STTooManySType(SType)
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
-  | STTooManyTFun(TFun)
   | STTypeParameterMismatch()
   | STInvalidClause(Clause)
   | STInvalidSpread(ArrayType)
@@ -1345,6 +1344,7 @@ base class STError extends STResult {
     | STMissingThis() -> "Missing this parameter"
     | STMissingParameter() -> "Missing parameter"
     | STMissingSpread() -> "Missing ... parameter"
+    | STMissingCall() -> "Missing call signature"
     | STMissingConstructor() -> "Missing constructor"
     | STMissingField(fieldName) ->
       `The field '${fieldName}' is missing\n` +
@@ -1363,20 +1363,11 @@ base class STError extends STResult {
       | TPromise _ -> "This is a Promise"
       | TAlgebraic _ ->
         "This is a constructor (the field kind is a static string)"
-      | TFuns _ ->
-        "This is a function of type: " +
-          prettyPrintType(false, TType::single(sty))
       | TObject _ -> "This is an object"
       | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
       }
     | STTooManyTConstr(_) -> "This is a constructor"
     | STTooManyTTuple(tuple) -> "This is a tuple of size " + tuple.tuple.size()
-    | STTooManyTFun(f) ->
-      "This is a function: " +
-        prettyPrintType(
-          false,
-          TType::single(TFuns::singleFun(f, PosRange::none)),
-        )
     | STTypeParameterMismatch() -> "Type parameter mismatch"
     | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
     | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`

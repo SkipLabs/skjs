@@ -107,6 +107,20 @@ extension class TFuns {
     f = TFun::union(subst, tenv, f1.fun_, f2.fun_);
     TFuns(f, f1.pos)
   }
+
+  static fun unionOpt(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1opt: ?TFuns,
+    f2opt: ?TFuns,
+  ): ?TFuns {
+    (f1opt, f2opt) match {
+    | (None(), _)
+    | (_, None()) ->
+      None()
+    | (Some(f1), Some(f2)) -> Some(TFuns::union(subst, tenv, f1, f2))
+    }
+  }
 }
 
 extension class TField {
@@ -169,7 +183,6 @@ extension class STypes {
           TObject::union(subst, tenv, obj1, obj2)
         | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
           TAlgebraic::union(subst, tenv, a1, a2)
-        | (f1 @ TFuns _, f2 @ TFuns _) -> TFuns::union(subst, tenv, f1, f2)
         | _ -> internal_error("Internal error")
         }
       }),
@@ -271,13 +284,9 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    new = (fields1.new, fields2.new) match {
-    | (None(), _)
-    | (_, None()) ->
-      None()
-    | (Some(new1), Some(new2)) -> Some(TFuns::union(subst, tenv, new1, new2))
-    };
-    TFields::create{fields, indexes, new}
+    call = TFuns::unionOpt(subst, tenv, fields1.call, fields2.call);
+    new = TFuns::unionOpt(subst, tenv, fields1.new, fields2.new);
+    TFields::create{fields, indexes, call, new}
   }
 }
 

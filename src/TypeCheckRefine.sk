@@ -140,7 +140,7 @@ extension class TypeChecker {
         if (target) filter else x ~> !filter(x),
       )
     | "function" ->
-      filter = x ~> x is TFuns _;
+      filter = x ~> x is TObject(TFields{call => Some _}, _);
       this.setLocal(
         tcenv,
         local,
@@ -227,7 +227,6 @@ extension class TypeChecker {
           !target
         | TTuple _
         | TAlgebraic _
-        | TFuns _
         | TPromise _ ->
           true /* TODO */
         | TObject _ -> true
@@ -241,7 +240,6 @@ extension class TypeChecker {
           }
         | TTuple _
         | TAlgebraic _
-        | TFuns _
         | TPromise _ ->
           stype /* TODO */
         | TObject(tFields @ TFields{indexes}, tObjPos) ->

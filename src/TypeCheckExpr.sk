@@ -487,7 +487,7 @@ extension class TypeChecker {
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
-            (_name, tFuns) = this.tenv.funDecl(
+            tFuns = this.tenv.funDecl(
               tcenv.context,
               false,
               fd,
@@ -496,7 +496,9 @@ extension class TypeChecker {
               | None() -> CGNode::create(AnonymousFunDef(fd))
               },
             );
-            break TType::single(tFuns)
+            break TType::single(
+              TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
+            )
           | c @ Class _ ->
             staticClass = this.tenv.newStatic(tcenv.context, c.name);
             break staticClass
@@ -562,10 +564,15 @@ extension class TypeChecker {
             }
           };
           continue
-        | fd @ FDMethod _ ->
+        | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          (name, tFuns) = this.tenv.funDecl(tcenv.context, false, fd, cgNode);
-          (name, TType::single(tFuns))
+          tFuns = this.tenv.funDecl(tcenv.context, false, fd, cgNode);
+          (
+            name,
+            TType::single(
+              TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
+            ),
+          )
         };
         TField::create(name.pos, name.value, false, ty) match {
         | None() ->
@@ -635,7 +642,7 @@ extension class TypeChecker {
       tfuns = fty
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {
-      | Some(tfuns @ TFuns _) -> tfuns
+      | Some(TObject(TFields{call => Some(tfuns)}, _)) -> tfuns
       | _ ->
         typingError(
           Array[
@@ -993,8 +1000,7 @@ extension class TypeChecker {
               }
           | TTuple _
           | TPromise _
-          | TAlgebraic _
-          | TFuns _ ->
+          | TAlgebraic _ ->
             typingError(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)])
           }
         };
@@ -1196,16 +1202,23 @@ extension class TypeChecker {
     tcenv.!callingContext = savedCallingContext;
 
     TType::single(
-      TFuns::singleFun(
-        TFun(
-          Array[],
-          None(),
-          paramTypes.map(x -> x.i1),
-          Array[],
-          None(),
-          retType,
-          CGNodes::singleton(callingContext),
-        ),
+      TObject(
+        TFields::create{
+          call => Some(
+            TFuns::singleFun(
+              TFun(
+                Array[],
+                None(),
+                paramTypes.map(x -> x.i1),
+                Array[],
+                None(),
+                retType,
+                CGNodes::singleton(callingContext),
+              ),
+              pos,
+            ),
+          ),
+        },
         pos,
       ),
     )
