@@ -67,6 +67,13 @@ mutable class TCEnv private (
     caller = this.callingContext;
     this.results.recordCalls(caller, newCallees)
   }
+
+  mutable fun recordClassHierarchy(
+    child: Class,
+    parent: mutable SKStore.Context -> Class,
+  ): void {
+    this.results.recordClassHierarchy(child, parent(this.context))
+  }
 }
 
 mutable class TCResults private {

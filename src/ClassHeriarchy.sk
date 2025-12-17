@@ -15,14 +15,6 @@ class CHNode private (
   }
 }
 
-fun recordClassHierarchy(
-  tcenv: mutable TCEnv,
-  child: Class,
-  parent: mutable SKStore.Context -> Class,
-): void {
-  tcenv.results.recordClassHierarchy(child, parent(tcenv.context))
-}
-
 fun buildClassHierarchy(
   context: mutable SKStore.Context,
   checked: SKStore.EHandle<SKStore.SID, CheckResult>,
