@@ -180,7 +180,7 @@ class CallGraph private (
       context,
       callGraphDirName,
       (_context, writer, _fileName, res) ~> {
-        res.first.callgraph.each(cg -> cg.each((k, v) -> writer.setArray(k, v)))
+        res.first.callgraph.each((k, v) -> writer.setArray(k, v))
       },
     );
     depgraph = callgraph.map(
