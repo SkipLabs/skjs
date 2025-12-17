@@ -363,7 +363,7 @@ class CheckResult(
   parseError: ?LexingOrParsingError,
   errors: Array<TypingError>,
   callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
-  classHierarchy: ?ClassHierarchyFile = None(),
+  classHierarchy: ?SortedMap<CHNode, SortedSet<CHNode>> = None(),
 ) extends SKStore.File
 
 class Checker private {
