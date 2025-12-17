@@ -69,7 +69,7 @@ mutable class TCEnv private (
   }
 
   mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
-    this.results.recordClassHierarchy(child, parent)
+    this.results.recordClassHierarchy{child, parent}
   }
 }
 
@@ -91,7 +91,7 @@ mutable class TCResults private {
     this.!callgraph[caller] = callees.toArray();
   }
 
-  mutable fun recordClassHierarchy(child: Class, parent: Class): void {
+  mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
     childNode = CHNode::ofClass(child);
     parentNode = CHNode::ofClass(parent);
     current = this.classHierarchy.maybeGet(childNode).default(SortedSet[]);
