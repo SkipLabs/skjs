@@ -149,18 +149,14 @@ extension class TypeChecker {
     typeDef: TypeDef,
     results: mutable TCResults,
   ): void {
-    typingErrors = mutable TypingErrorCollection(this.errorHandling);
-
-    typingErrors.collect(() ->
+    results.collectErrors(() ->
       static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
     );
 
     subst = Subst::mcreate{context};
     !this.tenv = this.tenv.addTParams(subst, typeDef.tdefParams);
 
-    typingErrors.collect(() -> _ = this.tenv.normalize(context, typeDef.body));
-
-    typingErrors.emit(results)
+    results.collectErrors(() -> _ = this.tenv.normalize(context, typeDef.body));
   }
 
   static fun checkTypeParams(

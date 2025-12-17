@@ -6,8 +6,6 @@ extension class TypeChecker {
     c: Class,
     results: mutable TCResults,
   ): void {
-    typingErrors = mutable TypingErrorCollection(this.errorHandling);
-
     constructor: ?ClassFieldTypeMethod = None();
     for (fieldType in c.fields) {
       fieldType match {
@@ -16,7 +14,7 @@ extension class TypeChecker {
       ) ->
         constructor match {
         | Some(existingConstructor) ->
-          typingErrors.push(
+          results.error(
             Array[
               (fd.pos, "Multiple constructor implementations are not allowed."),
               (existingConstructor.pos, "Previous implementation"),
@@ -27,7 +25,7 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    typingErrors.collect(() ->
+    results.collectErrors(() ->
       static::checkTypeParams(c.tparams, OptionalTypeParamsForbidden())
     );
     subst = Subst::mcreate{context};
@@ -93,7 +91,7 @@ extension class TypeChecker {
             child => c,
             parent => this.tenv.getClass(context, parentName),
           };
-          typingErrors.collect(() ->
+          results.collectErrors(() ->
             this.checkSubType(
               tcenv,
               parentName.pos,
@@ -102,7 +100,7 @@ extension class TypeChecker {
               super,
             )
           )
-        | _ -> typingErrors.push(Array[(c.name.pos, "Invalid extend")])
+        | _ -> results.error(Array[(c.name.pos, "Invalid extend")])
         }
       }
     };
@@ -124,7 +122,7 @@ extension class TypeChecker {
           child => c,
           parent => this.tenv.getClass(context, parentName),
         };
-        typingErrors.collect(() ->
+        results.collectErrors(() ->
           this.checkSubType(
             tcenv,
             parentName.pos,
@@ -133,7 +131,7 @@ extension class TypeChecker {
             super,
           )
         )
-      | _ -> typingErrors.push(Array[(c.name.pos, "Invalid implements")])
+      | _ -> results.error(Array[(c.name.pos, "Invalid implements")])
       }
     };
     hasConstructor = false;
@@ -143,14 +141,14 @@ extension class TypeChecker {
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic(pos) ->
-            typingErrors.push(Array[(pos, "static fields are forbidden")])
+            results.error(Array[(pos, "static fields are forbidden")])
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _
           | ModReadonly _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
-            typingErrors.push(
+            results.error(
               Array[
                 (
                   modifier.pos,
@@ -173,7 +171,7 @@ extension class TypeChecker {
             CGNode::toplevel(fileName),
             results,
           );
-          typingErrors.collect(() ->
+          results.collectErrors(() ->
             this.checkSubType(
               tcenv,
               e.pos,
@@ -200,14 +198,14 @@ extension class TypeChecker {
                 name match {
                 | FNNormal(Name(_, methodName)) -> Some(methodName)
                 | _ ->
-                  typingErrors.push(Array[(pos, "Invalid method name")]);
+                  results.error(Array[(pos, "Invalid method name")]);
                   None()
                 }
               | ClassFieldTypeValue _ -> None()
               }
             )
             .collect(SortedSet);
-          typingErrors.collect(() -> {
+          results.collectErrors(() -> {
             this.constructor(
               subst,
               thisType,
@@ -222,7 +220,7 @@ extension class TypeChecker {
           cgNode = CGNode::create(
             Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
           );
-          typingErrors.collect(() -> {
+          results.collectErrors(() -> {
             this.funDef(subst, Some((c.kind, thisType)), fd, cgNode, results)
           })
         }
@@ -235,15 +233,14 @@ extension class TypeChecker {
           field.value match {
           | None() ->
             if (field.optional is None()) {
-              typingErrors.push(Array[(field.pos, "Uninitialized field")])
+              results.error(Array[(field.pos, "Uninitialized field")])
             }
           | Some(_) -> void
           }
         | ClassFieldTypeMethod _ -> void
         }
       }
-    };
-    typingErrors.emit(results)
+    }
   }
 
   fun constructor(

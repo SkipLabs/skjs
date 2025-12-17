@@ -83,6 +83,31 @@ mutable class TCResults private {
     mutable TCResults{errorHandling}
   }
 
+  mutable fun error(messages: Array<(PosRange, String)>): void {
+    this.errorHandling match {
+    | EHKeepGoing() -> this.errors.push(TypingError(messages))
+    | EHBacktrace()
+    | EHDefault() ->
+      typingError(messages)
+    }
+  }
+
+  mutable fun collectErrors(f: () -> void): void {
+    this.errorHandling match {
+    | EHKeepGoing() ->
+      try {
+        f()
+      } catch {
+      | ErrorExn(err @ TypingError _) -> this.errors.push(err)
+      | TypingErrors(errs) -> this.errors.extend(errs)
+      | exn -> throw exn
+      }
+    | EHBacktrace()
+    | EHDefault() ->
+      f()
+    }
+  }
+
   mutable fun recordCalls(caller: CGNode, newCallees: CGNodes): void {
     oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
     callees = oldCallees.foldl(
