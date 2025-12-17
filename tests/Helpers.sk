@@ -65,7 +65,7 @@ class ExpectError{restOfLine: String} extends ReferenceError {
  * returned line number is 2.
  *
  * Throws if the annotation is found somewhere else. */
-fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
+fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
   /*
     Correctness is based on the fact that these are all disjoint sets:
     - '\n'
@@ -76,6 +76,7 @@ fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
     and on the fact that the first characters of kTS_EXPECT_ERROR and
     kSKJS_EXPECT_ERROR differ.
    */
+  result = mutable Vector[];
   chars = contents.chars().toArray();
   pos = 0;
   // Do not trust the lexer's newLinesMap, as a way to double-check it
@@ -162,8 +163,9 @@ fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
     restOfLine = String::fromChars(
       chars.slice(restOfLineStart, pos),
     ).trimForComparison();
-    yield ExpectError{line => lineNumber + 1, restOfLine};
+    result.push(ExpectError{line => lineNumber + 1, restOfLine})
   };
+  result
 }
 
 fun isDigit(c: Char): Bool {

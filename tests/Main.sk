@@ -125,7 +125,7 @@ fun validateExpectErrorComments(
   };
 
   fileContents = checker.files.filesContent.get(context, fileName);
-  tsExpectErrors = findExpectErrors(fileContents.value);
+  tsExpectErrors = findExpectErrors(fileContents.value).iterator();
 
   actualErrors = parseErrorOpt match {
   | None() -> typeErrors
