@@ -543,7 +543,7 @@ extension class TypeChecker {
           )
 
         | FDSpread(spreadExpr) ->
-          spreadTy = this.expr(tcenv, spreadExpr);
+          spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
           spreadTy.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
           | None() ->
             typingError(
@@ -650,7 +650,7 @@ extension class TypeChecker {
       };
       TType::single(TPrimUnit(TVoid(), pos))
     | Call(f, targs, args) ->
-      fty = this.expr(tcenv, f);
+      fty = this.expr(tcenv, f, mostPrecise);
       tfuns = fty
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {
@@ -692,7 +692,7 @@ extension class TypeChecker {
         this.callConstructor(tcenv, pos, cstr, args);
         this.tenv.new(tcenv.context, className, tArgs)
       | _ ->
-        subExprTy = this.expr(tcenv, subExpr);
+        subExprTy = this.expr(tcenv, subExpr, mostPrecise);
         subExprTy
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes -> stypes.singleElt()) match {
@@ -715,10 +715,11 @@ extension class TypeChecker {
         }
       }
 
-    | Get(arr, idx) -> this.get(tcenv, pos, this.expr(tcenv, arr), idx)
+    | Get(arr, idx) ->
+      this.get(tcenv, pos, this.expr(tcenv, arr, mostPrecise), idx)
 
     | EArray(arr) ->
-      TType::single(TTuple(arr.map(x -> this.expr(tcenv, x)), pos))
+      TType::single(TTuple(arr.map(x -> this.expr(tcenv, x, mostPrecise)), pos))
 
     | Unop(uop, subExpr) ->
       ty = this.expr(tcenv, subExpr, true);
@@ -761,7 +762,13 @@ extension class TypeChecker {
       | OptionalDot() -> true
       | ExclamationMarkDot() -> notSupported(pos, "operator !.")
       };
-      this.dot(tcenv, e1.pos, this.expr(tcenv, e1), fieldName, optionalChaining)
+      this.dot(
+        tcenv,
+        e1.pos,
+        this.expr(tcenv, e1, mostPrecise),
+        fieldName,
+        optionalChaining,
+      )
 
     | Binop(op, e1, e2) ->
       op match {
