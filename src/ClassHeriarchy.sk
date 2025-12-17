@@ -53,16 +53,6 @@ fun initClassHierarchy(context: mutable SKStore.Context): void {
   context.setGlobal(kClassHierarchyId, ClassHierarchyFile())
 }
 
-fun collectClassHierarchy(
-  context: mutable SKStore.Context,
-): ?ClassHierarchyFile {
-  classHierarchy = context
-    .getGlobal(kClassHierarchyId)
-    .map(ClassHierarchyFile::type);
-  context.removeGlobal(kClassHierarchyId);
-  classHierarchy
-}
-
 fun buildClassHierarchy(
   context: mutable SKStore.Context,
   checked: SKStore.EHandle<SKStore.SID, CheckResult>,
