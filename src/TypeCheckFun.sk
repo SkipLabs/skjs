@@ -6,9 +6,10 @@ extension class TypeChecker {
     thisTypeOpt: ?TType,
     fd: FunDef<SimpleFieldName>,
     callingContext: CGNode,
+    results: mutable TCResults,
   ): (this, mutable TCEnv) {
     static::checkTypeParams(fd.tparams, OptionalTypeParamsForbidden());
-    tcenv = TCEnv::mcreate(subst.context, subst, callingContext);
+    tcenv = TCEnv::mcreate(subst.context, subst, callingContext, results);
     thisType = thisTypeOpt match {
     | None() ->
       /* Disallow this in non-methods */ TType::single(
@@ -110,6 +111,7 @@ extension class TypeChecker {
     thisTypeOpt: ?(ClassKind, TType),
     fd: FunDefWithModifiers<SimpleFieldName>,
     cgNode: CGNode,
+    results: mutable TCResults,
   ): void {
     for (modifier in fd.modifiers.modifiers) {
       modifier match {
@@ -132,6 +134,7 @@ extension class TypeChecker {
       thisTypeOpt.map(x -> x.i1),
       fd,
       cgNode,
+      results,
     );
     if (this.retType is None()) {
       typingError(Array[(fd.retType.i0, "Missing return type")])

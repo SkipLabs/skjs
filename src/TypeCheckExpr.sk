@@ -614,7 +614,13 @@ extension class TypeChecker {
         efield match {
         | fd @ FDMethod _ ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          this.funDef(tcenv.subst, Some((CKClass(), obj)), fd, cgNode)
+          this.funDef(
+            tcenv.subst,
+            Some((CKClass(), obj)),
+            fd,
+            cgNode,
+            tcenv.results,
+          )
         | _ -> void
         }
       };

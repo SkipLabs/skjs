@@ -1,7 +1,11 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun class_(context: mutable SKStore.Context, c: Class): void {
+  fun class_(
+    context: mutable SKStore.Context,
+    c: Class,
+    results: mutable TCResults,
+  ): void {
     typingErrors = mutable TypingErrorCollection(this.errorHandling);
 
     constructor: ?ClassFieldTypeMethod = None();
@@ -79,7 +83,12 @@ extension class TypeChecker {
           if (!isInterface) {
             !this.super = Some((superCstr, super));
           };
-          tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
+          tcenv = TCEnv::mcreate(
+            context,
+            subst,
+            CGNode::toplevel(fileName),
+            results,
+          );
           recordClassHierarchy(context, c, ctx ->
             this.tenv.getClass(ctx, parentName)
           );
@@ -104,7 +113,12 @@ extension class TypeChecker {
           parentName,
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
-        tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
+        tcenv = TCEnv::mcreate(
+          context,
+          subst,
+          CGNode::toplevel(fileName),
+          results,
+        );
         recordClassHierarchy(context, c, ctx ->
           this.tenv.getClass(ctx, parentName)
         );
@@ -151,7 +165,12 @@ extension class TypeChecker {
         field.value match {
         | None() -> void
         | Some(e) ->
-          tcenv = TCEnv::mcreate(context, subst, CGNode::toplevel(fileName));
+          tcenv = TCEnv::mcreate(
+            context,
+            subst,
+            CGNode::toplevel(fileName),
+            results,
+          );
           typingErrors.collect(() ->
             this.checkSubType(
               tcenv,
@@ -194,6 +213,7 @@ extension class TypeChecker {
               fd,
               Some(c.name),
               methods,
+              results,
             )
           })
         } else {
@@ -201,7 +221,7 @@ extension class TypeChecker {
             Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
           );
           typingErrors.collect(() -> {
-            this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
+            this.funDef(subst, Some((c.kind, thisType)), fd, cgNode, results)
           })
         }
       }
@@ -231,6 +251,7 @@ extension class TypeChecker {
     fd: ClassFieldTypeMethod,
     className: ?Name,
     methods: SortedSet<String>,
+    results: mutable TCResults,
   ): void {
     if (fd.retType.i1 is Some _) {
       typingError(
@@ -246,7 +267,13 @@ extension class TypeChecker {
       | None() -> AnonymousFunDef(fd)
       },
     );
-    (!this, tcenv) = this.funDefSetup(subst, Some(partialThisType), fd, cgNode);
+    (!this, tcenv) = this.funDefSetup(
+      subst,
+      Some(partialThisType),
+      fd,
+      cgNode,
+      results,
+    );
     tcenv.localObjects!["this"] = LOCanGrow(Some(thisType));
     fd.isAsync match {
     | None() -> void

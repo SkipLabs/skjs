@@ -11,14 +11,15 @@ extension class TypeChecker {
     context: mutable SKStore.Context,
     defs: Array<Def>,
   ): Array<TypingError> {
+    results = mutable TCResults{};
     errors = mutable Vector[];
     for (def in defs) {
       this.errorHandling match {
-      | EHBacktrace() -> this.checkDef(context, def)
+      | EHBacktrace() -> this.checkDef(context, def, results)
       | EHDefault()
       | EHKeepGoing() ->
         try {
-          this.checkDef(context, def)
+          this.checkDef(context, def, results)
         } catch {
         | ErrorExn(err @ TypingError _) -> errors.push(err)
         | TypingErrors(errs) -> errors.extend(errs)
@@ -29,7 +30,11 @@ extension class TypeChecker {
     errors.toArray()
   }
 
-  fun checkDef(context: mutable SKStore.Context, def: Def): void {
+  fun checkDef(
+    context: mutable SKStore.Context,
+    def: Def,
+    results: mutable TCResults,
+  ): void {
     def.value match {
     | ExportImport _ -> notSupported(def.pos, "export import")
     | ImportExpr _ -> void
@@ -43,26 +48,27 @@ extension class TypeChecker {
         context,
         subst,
         CGNode::toplevel(def.pos.fileName),
+        results,
       );
       ty = this.expr(tcenv, e, true);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ TopLevelFunDef _ ->
       cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
       subst = Subst::mcreate{context};
-      this.funDef(subst, None(), fd, cgNode)
+      this.funDef(subst, None(), fd, cgNode, results)
     | Declare _
     | ExportDeclare _ ->
       void
     | Namespace _ -> notSupported(def.pos, "namespace")
-    | Export(d) -> this.checkDef(context, Def(def.pos, d))
+    | Export(d) -> this.checkDef(context, Def(def.pos, d), results)
     | ExportDefault _ -> notSupported(def.pos, "export default")
     | ExportNames _
     | ExportNamesFrom _ ->
       void
     | Import _ -> void
-    | c @ Class _ -> this.class_(context, c)
+    | c @ Class _ -> this.class_(context, c, results)
     | Enum _ -> notSupported(def.pos, "enum")
-    | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs)
+    | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs, results)
     | td @ TypeDef _ -> this.typeDef(context, td)
     }
   }
@@ -71,6 +77,7 @@ extension class TypeChecker {
     context: mutable SKStore.Context,
     kind: VarDefKind,
     varDefs: Array<VarDef>,
+    results: mutable TCResults,
   ): void {
     for (varDef in varDefs) {
       kind match {
@@ -121,6 +128,7 @@ extension class TypeChecker {
         context,
         subst,
         CGNode::toplevel(varDef.pat.pos.fileName),
+        results,
       );
       this.checkSubType(
         tcenv,
