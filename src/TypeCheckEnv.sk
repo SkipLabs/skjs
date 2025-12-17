@@ -63,6 +63,12 @@ mutable class TCEnv private (
   }
 }
 
-mutable class TCResults{} {}
+mutable class TCResults private {
+  errors: mutable Vector<TypingError> = mutable Vector[],
+} {
+  static fun mcreate{}: mutable TCResults {
+    mutable TCResults{}
+  }
+}
 
 module end;

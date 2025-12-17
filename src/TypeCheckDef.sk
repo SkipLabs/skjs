@@ -11,8 +11,7 @@ extension class TypeChecker {
     context: mutable SKStore.Context,
     defs: Array<Def>,
   ): Array<TypingError> {
-    results = mutable TCResults{};
-    errors = mutable Vector[];
+    results = TCResults::mcreate{};
     for (def in defs) {
       this.errorHandling match {
       | EHBacktrace() -> this.checkDef(context, def, results)
@@ -21,13 +20,13 @@ extension class TypeChecker {
         try {
           this.checkDef(context, def, results)
         } catch {
-        | ErrorExn(err @ TypingError _) -> errors.push(err)
-        | TypingErrors(errs) -> errors.extend(errs)
+        | ErrorExn(err @ TypingError _) -> results.errors.push(err)
+        | TypingErrors(errs) -> results.errors.extend(errs)
         | exn -> throw exn
         }
       }
     };
-    errors.toArray()
+    results.errors.toArray()
   }
 
   fun checkDef(
