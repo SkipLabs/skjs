@@ -61,6 +61,12 @@ mutable class TCEnv private (
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
   }
+
+  /* On results */
+  mutable fun recordCalls(newCallees: CGNodes): void {
+    caller = this.callingContext;
+    this.results.recordCalls(caller, newCallees)
+  }
 }
 
 mutable class TCResults private {

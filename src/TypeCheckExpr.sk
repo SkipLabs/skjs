@@ -1213,7 +1213,7 @@ extension class TypeChecker {
     };
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
-    recordCalls(tcenv, CGNodes::singleton(callingContext));
+    tcenv.recordCalls(CGNodes::singleton(callingContext));
     savedScope = tcenv.scope;
     savedCallingContext = tcenv.callingContext;
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
@@ -1521,7 +1521,7 @@ extension class TypeChecker {
 
     tfuns match {
     | TFuns(tfun, fPos) ->
-      recordCalls(tcenv, tfun.cgNodes);
+      tcenv.recordCalls(tfun.cgNodes);
       if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
         typingError(
           Array[

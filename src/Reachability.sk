@@ -256,11 +256,6 @@ class CallGraph private (
   }
 }
 
-fun recordCalls(tcenv: mutable TCEnv, newCallees: CGNodes): void {
-  caller = tcenv.callingContext;
-  tcenv.results.recordCalls(caller, newCallees)
-}
-
 // lifted helper outside of `affectedFiles` for recursion
 private fun checkDef(
   def: Def,
