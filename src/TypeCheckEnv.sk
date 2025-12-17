@@ -68,11 +68,8 @@ mutable class TCEnv private (
     this.results.recordCalls(caller, newCallees)
   }
 
-  mutable fun recordClassHierarchy(
-    child: Class,
-    parent: mutable SKStore.Context -> Class,
-  ): void {
-    this.results.recordClassHierarchy(child, parent(this.context))
+  mutable fun recordClassHierarchy(child: Class, parent: Class): void {
+    this.results.recordClassHierarchy(child, parent)
   }
 }
 
