@@ -72,6 +72,7 @@ mutable class TCEnv private (
 mutable class TCResults private {
   errors: mutable Vector<TypingError> = mutable Vector[],
   mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
+  mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
 } {
   static fun mcreate{}: mutable TCResults {
     mutable TCResults{}
@@ -84,6 +85,14 @@ mutable class TCResults private {
       newCallees.nodes,
     );
     this.!callgraph[caller] = callees.toArray();
+  }
+
+  mutable fun recordClassHierarchy(child: Class, parent: Class): void {
+    childNode = CHNode::ofClass(child);
+    parentNode = CHNode::ofClass(parent);
+    current = this.classHierarchy.maybeGet(childNode).default(SortedSet[]);
+    new = current.set(parentNode);
+    this.!classHierarchy[childNode] = new;
   }
 }
 

@@ -38,15 +38,7 @@ fun recordClassHierarchy(
   child: Class,
   parent: mutable SKStore.Context -> Class,
 ): void {
-  context = tcenv.context;
-  context.getGlobal(kClassHierarchyId).map(ClassHierarchyFile::type) match {
-  | Some(classHierarchy) ->
-    context.setGlobal(
-      kClassHierarchyId,
-      classHierarchy.recordClassHierarchy(child, parent(context)),
-    )
-  | _ -> void
-  }
+  tcenv.results.recordClassHierarchy(child, parent(tcenv.context))
 }
 
 fun initClassHierarchy(context: mutable SKStore.Context): void {
