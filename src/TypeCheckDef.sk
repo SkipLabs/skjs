@@ -83,6 +83,9 @@ extension class TypeChecker {
       | VDKLet() -> notSupported(varDef.pat.pos, "toplevel let")
       | VDKVar() -> notSupported(varDef.pat.pos, "toplevel var")
       };
+      if (varDef.value is None()) {
+        results.error(Array[(varDef.pat.pos, "Missing definition")])
+      };
       literalType = varDef.value.flatMap(this.asConstExpr).map(TType::single);
       type = varDef.type match {
       | None() ->
@@ -117,28 +120,26 @@ extension class TypeChecker {
           ],
         )
       };
-      e = varDef.value match {
-      | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
-      | Some(x) -> x
-      };
-      tcenv = TCEnv::mcreate(
-        context,
-        subst,
-        CGNode::toplevel(varDef.pat.pos.fileName),
-        results,
-      );
-      this.checkSubType(
-        tcenv,
-        varDef.pat.pos,
-        "Invalid definition",
-        literalType match {
-        | None() ->
-          ty = this.expr(tcenv, e, kind is VDKConst());
-          ty
-        | Some(litType) -> litType
-        },
-        type,
-      )
+      varDef.value match {
+      | None() -> void
+      | Some(e) ->
+        tcenv = TCEnv::mcreate(
+          context,
+          subst,
+          CGNode::toplevel(varDef.pat.pos.fileName),
+          results,
+        );
+        this.checkSubType(
+          tcenv,
+          varDef.pat.pos,
+          "Invalid definition",
+          literalType match {
+          | None() -> this.expr(tcenv, e, kind is VDKConst())
+          | Some(litType) -> litType
+          },
+          type,
+        )
+      }
     }
   }
 
