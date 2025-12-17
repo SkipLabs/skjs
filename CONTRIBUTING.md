@@ -29,6 +29,7 @@
 **Parse error constraints**:
 - Parse errors must appear on the last non-empty line of the file
 - Files with intentional parse errors must be named `*-prettier-ignore.ts` to skip prettier formatting
+- The error line should end with closing braces/brackets if needed (e.g., `error_here; }` not `error_here;\n}`)
 
 **No top-level statements**:
 - SKJS disallows top-level `let` and standalone statements
@@ -43,6 +44,8 @@
 - SKJS should not be more permissive than TypeScript
 - When discovering SKJS accepts something TypeScript rejects, fix SKJS to match TypeScript's stricter behavior
 - Use TypeScript (`npx tsc --noEmit <file>`) to verify expected behavior when in doubt
+- When SKJS differs from TypeScript, document the discrepancy with a `// FIXME:` comment explaining what TypeScript does
+- Create regression tests for known discrepancies between SKJS and TypeScript using `@skjs-expect-error` and FIXME comments
 
 **SKJS-specific type system differences**:
 - In SKJS, tuples are not compatible with arrays - the `[...]` syntax is for tuples only, both in types and values
@@ -85,6 +88,21 @@ skargo test                                                      # Run all tests
 - Don't list every file change in the PR description - reviewers will see the files in the diff
 - Example: "Add tests for error messages and fix comment style" is sufficient; no need to enumerate each test file
 
+## Testing Regression and Edge Cases
+
+When adding tests for parser or type system changes:
+
+**Testing syntax restrictions**:
+- Test edge cases across all relevant contexts: classes, interfaces, type aliases, and object literals
+- Consider whether modifier keywords can be used as field/method names in each context
+- Example: If restricting syntax in classes, verify the same keyword works in object types
+- Add FIXME tests documenting where SKJS behavior differs from TypeScript
+
+**Verifying with TypeScript**:
+- Always check TypeScript's behavior with `npx tsc --noEmit <file>` when creating regression tests
+- Create temporary test files in `/tmp` for quick verification without polluting the test suite
+- Don't assume SKJS and TypeScript have the same restrictions - verify each case
+
 ## Common Mistakes to Avoid
 
 1. **Don't use console.log or function calls in tests** - We're testing a typechecker, not a runtime
@@ -96,3 +114,5 @@ skargo test                                                      # Run all tests
 7. **Don't write comments about changes** - Comments should describe the current state (e.g., "Test multiple errors per class") not changes (e.g., "Test that multiple errors per class are now reported")
 8. **Don't remove tests to fix test failures** - Fix the annotations or test logic properly instead of deleting the failing test case
 9. **Don't use `@ts-expect-error` in TODO comments** - Use plain `// TODO:` for errors that won't be reported due to an earlier error in the function
+10. **Don't assume SKJS matches TypeScript** - When creating regression tests, verify TypeScript's actual behavior first
+11. **Don't forget to test across contexts** - A syntax restriction in one context (classes) may need tests in others (interfaces, types, object literals)
