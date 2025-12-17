@@ -89,10 +89,10 @@ extension class TypeChecker {
             CGNode::toplevel(fileName),
             results,
           );
-          tcenv.recordClassHierarchy(
-            c,
-            this.tenv.getClass(context, parentName),
-          );
+          tcenv.recordClassHierarchy{
+            child => c,
+            parent => this.tenv.getClass(context, parentName),
+          };
           typingErrors.collect(() ->
             this.checkSubType(
               tcenv,
@@ -120,7 +120,10 @@ extension class TypeChecker {
           CGNode::toplevel(fileName),
           results,
         );
-        tcenv.recordClassHierarchy(c, this.tenv.getClass(context, parentName));
+        tcenv.recordClassHierarchy{
+          child => c,
+          parent => this.tenv.getClass(context, parentName),
+        };
         typingErrors.collect(() ->
           this.checkSubType(
             tcenv,

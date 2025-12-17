@@ -68,7 +68,7 @@ mutable class TCEnv private (
     this.results.recordCalls(caller, newCallees)
   }
 
-  mutable fun recordClassHierarchy(child: Class, parent: Class): void {
+  mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
     this.results.recordClassHierarchy(child, parent)
   }
 }
