@@ -93,8 +93,8 @@ skargo test                                                      # Run all tests
 When adding tests for parser or type system changes:
 
 **Testing syntax restrictions**:
-- Test edge cases across all relevant contexts: classes, interfaces, type aliases, and object literals
-- Consider whether modifier keywords can be used as field/method names in each context
+- Test edge cases across all relevant contexts: classes, interfaces, type aliases, object literals, functions, ...
+- Consider whether modifier or other keywords can be used as field/method/variable names in each context
 - Example: If restricting syntax in classes, verify the same keyword works in object types
 - Add FIXME tests documenting where SKJS behavior differs from TypeScript
 
