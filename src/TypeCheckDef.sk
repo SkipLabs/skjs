@@ -11,7 +11,7 @@ extension class TypeChecker {
     context: mutable SKStore.Context,
     defs: Array<Def>,
   ): readonly TCResults {
-    results = TCResults::mcreate{};
+    results = TCResults::mcreate{errorHandling => this.errorHandling};
     for (def in defs) {
       this.errorHandling match {
       | EHBacktrace() -> this.checkDef(context, def, results)

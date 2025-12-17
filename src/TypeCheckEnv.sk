@@ -74,12 +74,13 @@ mutable class TCEnv private (
 }
 
 mutable class TCResults private {
+  errorHandling: ErrorHandling,
   errors: mutable Vector<TypingError> = mutable Vector[],
   mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
 } {
-  static fun mcreate{}: mutable TCResults {
-    mutable TCResults{}
+  static fun mcreate{errorHandling: ErrorHandling}: mutable TCResults {
+    mutable TCResults{errorHandling}
   }
 
   mutable fun recordCalls(caller: CGNode, newCallees: CGNodes): void {
