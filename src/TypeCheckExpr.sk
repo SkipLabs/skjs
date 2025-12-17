@@ -533,7 +533,14 @@ extension class TypeChecker {
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
-          (name, this.expr(tcenv, y, name.value == kAlgebraicBranchFieldName))
+          (
+            name,
+            this.expr(
+              tcenv,
+              y,
+              mostPrecise || name.value == kAlgebraicBranchFieldName,
+            ),
+          )
 
         | FDSpread(spreadExpr) ->
           spreadTy = this.expr(tcenv, spreadExpr);

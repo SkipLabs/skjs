@@ -239,7 +239,6 @@ function addFn(a: number, b: number): number {
 }
 
 function testDiscriminatedUnion(): void {
-  // @skjs-expect-error Invalid annotation
   const action: Action = {
     type: "add",
     fn: addFn,
