@@ -10,7 +10,7 @@ extension class TypeChecker {
   fun check(
     context: mutable SKStore.Context,
     defs: Array<Def>,
-  ): Array<TypingError> {
+  ): readonly TCResults {
     results = TCResults::mcreate{};
     for (def in defs) {
       this.errorHandling match {
@@ -26,7 +26,7 @@ extension class TypeChecker {
         }
       }
     };
-    results.errors.toArray()
+    results
   }
 
   fun checkDef(
