@@ -785,7 +785,7 @@ extension class TypeChecker {
             ],
           )
         }
-      | BOAssignment() -> this.assign(tcenv, pos, e1, e2)
+      | BOAssignment() -> this.assign(tcenv, pos, e1, e2, mostPrecise)
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
@@ -1282,11 +1282,17 @@ extension class TypeChecker {
     }
   }
 
-  fun assign(tcenv: mutable TCEnv, pos: PosRange, e1: Expr, e2: Expr): TType {
+  fun assign(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    e1: Expr,
+    e2: Expr,
+    mostPrecise: Bool,
+  ): TType {
     this.checkLValue(e1);
     e1.value match {
     | Var(n) ->
-      ty2 = this.expr(tcenv, e2);
+      ty2 = this.expr(tcenv, e2, mostPrecise);
       tcenv.scope.set(n, ty2, (x, y) ->
         this.checkSubType(tcenv, pos, "Invalid assignment", x, y)
       );
@@ -1296,7 +1302,7 @@ extension class TypeChecker {
       Expr(_, Var(local)),
       fieldName,
     ) if (tcenv.localObjects.containsKey(local.value)) ->
-      fieldType = this.expr(tcenv, e2);
+      fieldType = this.expr(tcenv, e2, mostPrecise);
       used = tcenv.localObjects[local.value] match {
       | LOCanGrow(bound) ->
         bound match {
@@ -1316,7 +1322,7 @@ extension class TypeChecker {
       this.assignLocalObject(tcenv, pos, local, fieldName, fieldType, used)
     | _ ->
       ty1 = this.expr(tcenv, e1);
-      ty2 = this.expr(tcenv, e2);
+      ty2 = this.expr(tcenv, e2, mostPrecise);
       this.checkSubType(tcenv, e2.pos, "Invalid assignment", ty2, ty1);
       ty1
     }
