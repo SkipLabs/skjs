@@ -1,9 +1,7 @@
 module SKJS;
 
-const kClassHierarchyId: String = "/skjs/class-hierarchy/";
-
 const kClassHierarchyDirName: SKStore.DirName = SKStore.DirName::create(
-  kClassHierarchyId,
+  "/skjs/class-hierarchy/",
 );
 
 class CHNode private (
@@ -17,32 +15,12 @@ class CHNode private (
   }
 }
 
-class ClassHierarchyFile(
-  classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
-) extends SKStore.File {
-  fun recordClassHierarchy(child: Class, parent: Class): this {
-    childNode = CHNode::ofClass(child);
-    parentNode = CHNode::ofClass(parent);
-    current = this.classHierarchy.maybeGet(childNode).default(SortedSet[]);
-    new = current.set(parentNode);
-    ClassHierarchyFile(this.classHierarchy.set(childNode, new))
-  }
-
-  fun each(fn: (CHNode, SortedSet<CHNode>) -> void): void {
-    this.classHierarchy.each(fn)
-  }
-}
-
 fun recordClassHierarchy(
   tcenv: mutable TCEnv,
   child: Class,
   parent: mutable SKStore.Context -> Class,
 ): void {
   tcenv.results.recordClassHierarchy(child, parent(tcenv.context))
-}
-
-fun initClassHierarchy(context: mutable SKStore.Context): void {
-  context.setGlobal(kClassHierarchyId, ClassHierarchyFile())
 }
 
 fun buildClassHierarchy(
