@@ -74,9 +74,7 @@ fun buildClassHierarchy(
     context,
     dirName,
     (_context, writer, _sid, res) ~> {
-      res.first.classHierarchy.each(ih ->
-        ih.each((k, v) -> writer.setArray(k, v.toArray()))
-      )
+      res.first.classHierarchy.each((k, v) -> writer.setArray(k, v.toArray()))
     },
   );
 }
