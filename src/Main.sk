@@ -419,7 +419,13 @@ class Checker private {
           errors = results.errors.toArray();
           writer.set(
             fileName,
-            CheckResult(fileName, None(), errors, results.callgraph),
+            CheckResult(
+              fileName,
+              None(),
+              errors,
+              results.callgraph,
+              results.classHierarchy,
+            ),
           )
         | PRError(err) ->
           writer.set(fileName, CheckResult(fileName, Some(err), Array[]))
