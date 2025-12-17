@@ -12,6 +12,7 @@ const config: {
   timeout: 3000;
   offset: -100n;
 } = {
+  // @skjs-expect-error Unnecessary 'as const'
   port: -8080 as const,
   timeout: +3000 as const,
   offset: -100n as const,

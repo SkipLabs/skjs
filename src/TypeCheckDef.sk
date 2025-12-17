@@ -99,7 +99,7 @@ extension class TypeChecker {
       typeOpt match {
       | Some(type) ->
         if (!type.isPrimitiveType(subst, this.tenv)) {
-          typingError(
+          results.error(
             Array[
               (
                 varDef.pat.pos,
