@@ -284,6 +284,16 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): ?TFields {
+    new = (fields1.new, fields2.new) match {
+    | (None(), new)
+    | (new, None()) ->
+      new
+    | (Some(new1), Some(new2)) ->
+      TFuns::inter(subst, tenv, new1, new2) match {
+      | None() -> return None()
+      | some @ Some _ -> some
+      }
+    };
     fields = mapUnion(
       fields1.values(),
       fields2.values(),
@@ -306,12 +316,6 @@ extension class TFields {
       | None() -> Array[]
       | Some(index) -> Array[index]
       }
-    };
-    new = (fields1.new, fields2.new) match {
-    | (None(), new)
-    | (new, None()) ->
-      new
-    | (Some(new1), Some(new2)) -> TFuns::inter(subst, tenv, new1, new2)
     };
     Some(TFields::create{fields, indexes, new})
   }
