@@ -362,7 +362,7 @@ class CheckResult(
   fileName: FAbsolute,
   parseError: ?LexingOrParsingError,
   errors: Array<TypingError>,
-  callgraph: ?CallGraphFile = None(),
+  callgraph: ?SortedMap<CGNode, Array<CGNode>> = None(),
   classHierarchy: ?ClassHierarchyFile = None(),
 ) extends SKStore.File
 
@@ -420,7 +420,12 @@ class Checker private {
           errors = results.errors.toArray();
           writer.set(
             fileName,
-            CheckResult(fileName, None(), errors, collectCallGraph(context)),
+            CheckResult(
+              fileName,
+              None(),
+              errors,
+              collectCallGraph(context).map(cgf -> cgf.callgraph),
+            ),
           )
         | PRError(err) ->
           writer.set(fileName, CheckResult(fileName, Some(err), Array[]))
