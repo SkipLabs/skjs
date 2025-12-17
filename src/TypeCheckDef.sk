@@ -21,7 +21,6 @@ extension class TypeChecker {
           this.checkDef(context, def, results)
         } catch {
         | ErrorExn(err @ TypingError _) -> results.errors.push(err)
-        | TypingErrors(errs) -> results.errors.extend(errs)
         | exn -> throw exn
         }
       }

@@ -30,6 +30,4 @@ fun notSupported<T>(pos: PosRange, what: String): T {
   typingError(Array[(pos, `Construction not supported: ${what}`)])
 }
 
-class TypingErrors(errors: Array<TypingError>) extends .Exception
-
 module end;
