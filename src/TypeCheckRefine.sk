@@ -278,6 +278,8 @@ extension class TypeChecker {
         };
       this.setLocal(tcenv, local, default, filterSType, mapSType)
 
+    | Unop(UOExclamationMark(), subE) -> this.evalCond(tcenv, subE, !target)
+
     | Binop(BOLogicalAnd(), e1, e2) if (target) ->
       this.evalCond(tcenv, e1, true);
       this.evalCond(tcenv, e2, true)

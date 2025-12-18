@@ -685,10 +685,8 @@ function testTypeofToVariable(x: number | string, type: string): number {
   }
 }
 
-// FIXME: Double negation with typeof doesn't refine correctly in SKJS
 function testDoubleNegation(x: number | string): number {
   if (!(typeof x !== "number")) {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return 0;
