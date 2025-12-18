@@ -10,30 +10,35 @@ fun getLinedErrors(
   symbols = checker.symbolsMap.get(context, fileName);
   resolver = SKJS.PositionResolver{fileName, newLines, symbols};
 
-  errors
-    .map(err -> {
-      errPos = err match {
-      | SKJS.TypingError(messages) ->
-        invariant(!messages.isEmpty(), "Empty typing error");
-        SKJS.EPRange(messages[0].i0)
-      | SKJS.SinglePosError(errPos, _errKind) -> errPos
-      };
-      errFileName = errPos match {
-      | SKJS.EPRange(posRange) -> posRange.fileName
-      | SKJS.EPChar(fn, _pos) -> fn
-      };
-      if (errFileName != fileName) {
-        errStr = checker.errorToString(context, err);
-        SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
-      };
-      pos = errPos match {
-      | SKJS.EPRange(posRange) -> posRange.getStart(symbols)
-      | SKJS.EPChar(_fileName, pos) -> pos
-      };
-      line = resolver.relPos(pos).line;
-      (line, Array[err])
-    })
-    .sortedBy(line_err ~> line_err.i0);
+  m = mutable Map[];
+  for (err in errors) {
+    errPos = err match {
+    | SKJS.TypingError(messages) ->
+      invariant(!messages.isEmpty(), "Empty typing error");
+      SKJS.EPRange(messages[0].i0)
+    | SKJS.SinglePosError(errPos, _errKind) -> errPos
+    };
+    errFileName = errPos match {
+    | SKJS.EPRange(posRange) -> posRange.fileName
+    | SKJS.EPChar(fn, _pos) -> fn
+    };
+    if (errFileName != fileName) {
+      errStr = checker.errorToString(context, err);
+      SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
+    };
+    pos = errPos match {
+    | SKJS.EPRange(posRange) -> posRange.getStart(symbols)
+    | SKJS.EPChar(_fileName, pos) -> pos
+    };
+    line = resolver.relPos(pos).line;
+    errs_at_line = m.getOrAdd(line, () -> Vector::mcreate(0));
+    errs_at_line.push(err)
+  };
+  m
+    .iterator()
+    .map(line_errs -> (line_errs.i0, line_errs.i1.toArray()))
+    .collect(Array)
+    .sortedBy(line_errs ~> line_errs.i0)
 }
 
 fun validateReferenceErrors<R: ReferenceError>(
