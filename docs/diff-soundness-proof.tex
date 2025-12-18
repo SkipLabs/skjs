@@ -142,6 +142,9 @@ The semantic interpretation of simple types agrees with runtime tags:
 \label{def:stypes}
 $\STypes$ is a finite partial map $\Tags \rightharpoonup \SType$ 
 with at most one entry per tag: if $S(k) = s$ then $\tagfn(s) = k$.
+\paragraph{Partial-map conventions.}
+We write $\mathrm{dom}(S)$ for the domain of defined keys.
+When a definition returns ``undefined'' at a key $k$, that means precisely $k \notin \mathrm{dom}(S)$ (i.e. the partial map has no entry at $k$).
 \[
 \sem{S} = \bigcup_{k \in \mathrm{dom}(S)} \sem{S(k)}
 \]
@@ -239,6 +242,16 @@ $\TType = (\insts, \clauses)$ where $\insts \in \TInsts$ and $\clauses \in \Clau
 \[
 \sem{(\insts, \clauses)} = \sem{\insts} \cup \sem{\clauses}
 \]
+\paragraph{Schematic.}
+It is helpful to keep the following picture in mind:
+\[
+\underbrace{(\insts,\clauses)}_{\TType}
+\quad=\quad
+\underbrace{\insts}_{\text{``instance'' part}}
+\;\;\cup\;\;
+\underbrace{\clauses}_{\text{``conditional'' part}}
+\]
+and later $\diff_{\TType}$ simply applies $\diff$ componentwise to these two parts.
 \paragraph{Example.}
 Let $I = \{\texttt{Promise}\langle \texttt{number} \rangle\} \in \TInsts$ and let $C$ be the clauses map from the previous example.
 Then $t = (I,C)$ denotes the type whose semantics is:
@@ -258,20 +271,30 @@ An operation $\diff : X \times X \to X$ is \emph{sound} (with respect to $\sem{\
 \text{(P2)} \quad & \sem{x_3} \cup \sem{x_2} \supseteq \sem{x_1} \tag{coverage}
 \end{align}
 In this document we instantiate $X$ with $\STypes$, $\Clause$, $\Clauses$, and $\TType$.
+\paragraph{Reader's guide.}
+These two properties imply that $\sem{x_3}$ is always a refinement of $\sem{x_1}$, and that it still covers all of $\sem{x_1}$ once $\sem{x_2}$ is added back.
+Equivalently (Lemma~\ref{lem:diff-equiv-char}), $\sem{x_3}$ is an \emph{over-approximation} of the true set difference $\sem{x_1}\setminus\sem{x_2}$ while staying within $\sem{x_1}$.
 \end{definition}
 
 \begin{lemma}[Equivalent Characterization]
-(P1) $\land$ (P2) $\iff$ $\sem{t_1} \setminus \sem{t_2} \subseteq \sem{t_3} \subseteq \sem{t_1}$.
+\label{lem:diff-equiv-char}
+For all $x_1,x_2,x_3 \in X$, (P1) $\land$ (P2) holds if and only if
+\[
+\sem{x_1} \setminus \sem{x_2} \subseteq \sem{x_3} \subseteq \sem{x_1}.
+\]
 \end{lemma}
 
 \begin{proof}
-($\Rightarrow$) Let $x \in \sem{t_1} \setminus \sem{t_2}$. By (P2), 
-$x \in \sem{t_3} \cup \sem{t_2}$. Since $x \notin \sem{t_2}$, $x \in \sem{t_3}$.
-Thus $\sem{t_1} \setminus \sem{t_2} \subseteq \sem{t_3}$. Combined with (P1): 
-$\sem{t_1} \setminus \sem{t_2} \subseteq \sem{t_3} \subseteq \sem{t_1}$.
+($\Rightarrow$) Let $v \in \sem{x_1} \setminus \sem{x_2}$. By (P2),
+$v \in \sem{x_3} \cup \sem{x_2}$. Since $v \notin \sem{x_2}$, we have $v \in \sem{x_3}$.
+Thus $\sem{x_1} \setminus \sem{x_2} \subseteq \sem{x_3}$. Combined with (P1):
+$\sem{x_1} \setminus \sem{x_2} \subseteq \sem{x_3} \subseteq \sem{x_1}$.
 
-($\Leftarrow$) (P1) is immediate. For (P2): 
-$\sem{t_3} \cup \sem{t_2} \supseteq (\sem{t_1} \setminus \sem{t_2}) \cup \sem{t_2} = \sem{t_1} \cup \sem{t_2} \supseteq \sem{t_1}$.
+($\Leftarrow$) The right-hand inclusion $\sem{x_3} \subseteq \sem{x_1}$ is exactly (P1).
+For (P2),
+\[
+\sem{x_3} \cup \sem{x_2} \supseteq (\sem{x_1} \setminus \sem{x_2}) \cup \sem{x_2} \supseteq \sem{x_1}.
+\]
 \end{proof}
 
 \begin{definition}[Completeness]
@@ -287,6 +310,7 @@ Completeness additionally requires the reverse: $\sem{\diff(t_1, t_2)} \subseteq
 \subsection{STypes Diff}
 
 \begin{definition}[STypes Diff]
+\label{def:stypes-diff}
 \[
 \diff_{\STypes}(L, R)(k) =
 \begin{cases}
@@ -294,9 +318,13 @@ L(k) & \text{if } k \in \tags(L) \setminus \tags(R) \\
 \text{undefined} & \text{otherwise}
 \end{cases}
 \]
+\paragraph{Intuition.}
+Since an $\STypes$ value stores at most one representative per runtime tag, this diff only removes whole tags:
+it preserves exactly the tags present on the left but absent on the right.
 \end{definition}
 
 \begin{lemma}[STypes Diff Satisfies (P1)]
+\label{lem:stypes-diff-p1}
 $\sem{\diff_{\STypes}(L, R)} \subseteq \sem{L}$.
 \end{lemma}
 
@@ -320,6 +348,7 @@ For $L, R \in \STypes$, define:
 \end{definition}
 
 \begin{lemma}[STypes Diff Satisfies (P2) under STC]
+\label{lem:stypes-diff-p2-under-stc}
 If $\mathsf{STC}(L, R)$ holds, then $\sem{\diff_{\STypes}(L, R)} \cup \sem{R} \supseteq \sem{L}$.
 \end{lemma}
 
@@ -331,12 +360,14 @@ Let $x \in \sem{L}$. Then $x \in \sem{L(k)}$ for some $k \in \tags(L)$.
 \end{itemize}
 \end{proof}
 
-\begin{corollary}[STypes Diff with Tag Disjointness]
+\begin{corollary}[STypes Diff under STC]
+\label{cor:stypes-diff-under-stc}
 If $\mathsf{STC}(L, R)$ holds, then (P2) holds.
 In particular, if $L(k) = R(k)$ for all $k \in \tags(L) \cap \tags(R)$, then (P2) holds.
 \end{corollary}
 
 \begin{lemma}[STypes Diff Completeness]
+\label{lem:stypes-diff-complete-iff-stc}
 $\diff_{\STypes}$ is complete (i.e., $\sem{\diff_{\STypes}(L, R)} = \sem{L} \setminus \sem{R}$) 
 if and only if $\mathsf{STC}(L, R)$.
 \end{lemma}
@@ -365,6 +396,7 @@ but $\sem{\texttt{number}} \setminus \sem{\texttt{1}} \neq \emptyset$.
 \subsection{TInsts Diff}
 
 \begin{definition}[TInsts Diff]
+\label{def:tinsts-diff}
 \[
 \diff_{\TInsts}(L, R) = L \setminus R = \{ i \in L \mid i \notin R \}
 \]
@@ -374,6 +406,7 @@ In this paper, that corresponds exactly to the usual mathematical set difference
 \end{definition}
 
 \begin{lemma}[TInsts Diff Satisfies (P1) and (P2)]
+\label{lem:tinsts-diff-sound}
 $\sem{\diff_{\TInsts}(L, R)} \subseteq \sem{L}$ and 
 $\sem{\diff_{\TInsts}(L, R)} \cup \sem{R} \supseteq \sem{L}$.
 \end{lemma}
@@ -389,6 +422,7 @@ $\sem{\diff_{\TInsts}(L, R)} \cup \sem{R} \supseteq \sem{L}$.
 \end{proof}
 
 \begin{lemma}[TInsts Diff Completeness]
+\label{lem:tinsts-diff-complete}
 $\diff_{\TInsts}$ is complete if and only if for all $i \in L \setminus R$ and $j \in R$:
 $\sem{i} \cap \sem{j} = \emptyset$.
 \end{lemma}
@@ -411,6 +445,7 @@ If $i \in R$, then $x \in \sem{R}$, contradiction. So $i \in L \setminus R = \di
 \subsection{Clause Diff}
 
 \begin{definition}[Clause Diff]
+\label{def:clause-diff}
 For clauses $c_1 = (\vars_1, \stypes_1)$ and $c_2 = (\vars_2, \stypes_2)$:
 \[
 \diff_{\Clause}(c_1, c_2) = 
@@ -424,6 +459,7 @@ where $\bot$ represents the empty type (dropped from results) with $\sem{\bot} =
 \end{definition}
 
 \begin{lemma}[Clause Diff Satisfies (P1)]
+\label{lem:clause-diff-p1}
 $\sem{\diff_{\Clause}(c_1, c_2)} \subseteq \sem{c_1}$.
 \end{lemma}
 
@@ -440,6 +476,7 @@ $\sem{(\vars_1, \mathsf{Some}(\diff_{\STypes}(S_1, S_2)))} =
 \end{proof}
 
 \begin{lemma}[Clause Diff Satisfies (P2) Conditionally]
+\label{lem:clause-diff-p2-conditional}
 $\diff_{\Clause}$ satisfies (P2) when:
 \begin{itemize}
 \item Case $\stypes_2 = \mathsf{None}$: Always for well-formed clauses (since then $c_2$ is the unique top clause and $\sem{c_2} = \Val \supseteq \sem{c_1}$).
@@ -451,6 +488,7 @@ $\diff_{\Clause}$ satisfies (P2) when:
 \subsection{Clauses Diff}
 
 \begin{definition}[Clauses Diff]
+\label{def:clauses-diff}
 For $C_1, C_2 \in \Clauses$, let $c_{\emptyset} = C_2(\emptyset)$ if $\emptyset \in \mathrm{dom}(C_2)$, else undefined.
 \[
 \diff_{\Clauses}(C_1, C_2)(k) = 
@@ -465,9 +503,13 @@ for $k \in \mathrm{dom}(C_1)$. Clauses mapped to $\bot$ are dropped.
 \paragraph{Note.}
 Whenever $k \in \mathrm{dom}(C_2)$, the call $\diff_{\Clause}(C_1(k), C_2(k))$ compares clauses stored under the \emph{same key} $k$, so their variable-sets match by the $\Clauses$ well-formedness condition (keys agree with clause variables).
 The only subtraction that may use a different key is via $c_{\emptyset}=C_2(\emptyset)$, which is deliberately applied to every $C_1(k)$; this corresponds to the implementation behavior and explains why the right-hand clause's variables are not used by $\diff_{\Clause}$.
+\paragraph{Why the $\emptyset$-clause matters.}
+The distinguished key $\emptyset$ corresponds to clauses that do not require any type parameters.
+When present on the right, subtracting $c_{\emptyset}$ from every left clause models a ``global'' elimination that should apply regardless of which type-parameter constraints produced the left clause.
 \end{definition}
 
 \begin{lemma}[Clauses Diff Satisfies (P1)]
+\label{lem:clauses-diff-p1}
 $\sem{\diff_{\Clauses}(C_1, C_2)} \subseteq \sem{C_1}$.
 \end{lemma}
 
@@ -478,6 +520,7 @@ Each output clause is derived from $C_1(k)$ via $\diff_{\Clause}$, which satisfi
 \subsection{TType Diff}
 
 \begin{definition}[TType Diff]
+\label{def:ttype-diff}
 For $t_1 = (\insts_1, \clauses_1)$ and $t_2 = (\insts_2, \clauses_2)$:
 \[
 \diff_{\TType}(t_1, t_2) = (\diff_{\TInsts}(\insts_1, \insts_2), \diff_{\Clauses}(\clauses_1, \clauses_2))
@@ -485,6 +528,7 @@ For $t_1 = (\insts_1, \clauses_1)$ and $t_2 = (\insts_2, \clauses_2)$:
 \end{definition}
 
 \begin{theorem}[TType Diff Satisfies (P1)]
+\label{thm:ttype-diff-p1}
 $\sem{\diff_{\TType}(t_1, t_2)} \subseteq \sem{t_1}$.
 \end{theorem}
 
@@ -493,7 +537,7 @@ $\sem{\diff_{\TType}(t_1, t_2)} \subseteq \sem{t_1}$.
 \sem{\diff_{\TType}(t_1, t_2)} &= \sem{\diff_{\TInsts}(\insts_1, \insts_2)} \cup \sem{\diff_{\Clauses}(\clauses_1, \clauses_2)} \\
 &\subseteq \sem{\insts_1} \cup \sem{\clauses_1} = \sem{t_1}
 \end{align*}
-by Lemmas 4 and 8.
+by Lemmas~\ref{lem:tinsts-diff-sound} and~\ref{lem:clauses-diff-p1}.
 \end{proof}
 
 \begin{theorem}[TType Diff Satisfies (P2) Conditionally]
@@ -540,15 +584,15 @@ type inference is sound regardless of whether $\diff$ satisfies (P2).
 \end{theorem}
 
 \begin{proof}
-The $\diff$ result only affects inference hints (bound accumulation). 
-The final subtyping decision is made by $\mathsf{isSub}$ on expanded types, 
-which does not depend on $\diff$ correctness.
+The $\diff$ result is used only to guide inference (e.g. by accumulating bounds or hints about $T$).
+The acceptance/rejection decision is made solely by $\mathsf{isSub}$ on expanded types.
+Therefore, an imprecise $\diff$ can at worst cause incompleteness (e.g. by failing to discover a useful bound, leading to a later rejection), but it cannot cause an unsound acceptance when $\mathsf{isSub}$ is correct.
 \end{proof}
 
 \section{Examples of Incompleteness}
 
 We present two concrete examples where $\diff$ is incomplete, i.e., 
-$\sem{\diff(t_1, t_2)} \neq \sem{t_1} \setminus \sem{t_2}$ (it may be a strict subset or strict superset).
+$\sem{\diff(t_1, t_2)} \neq \sem{t_1} \setminus \sem{t_2}$ (it may be a strict subset or a strict superset of the true set difference).
 
 \subsection{Example 1: Same-Tag Literal Types}
 
