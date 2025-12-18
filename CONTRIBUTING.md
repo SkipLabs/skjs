@@ -99,9 +99,22 @@ When adding tests for parser or type system changes:
 - Add FIXME tests documenting where SKJS behavior differs from TypeScript
 
 **Verifying with TypeScript**:
-- Always check TypeScript's behavior with `npx tsc --noEmit <file>` when creating regression tests
+- Always check TypeScript's behavior with `npx tsc --strict --noEmit <file>` when creating regression tests
+- Use `--strict` mode to catch errors TypeScript would normally miss (e.g., null checks)
 - Create temporary test files in `/tmp` for quick verification without polluting the test suite
 - Don't assume SKJS and TypeScript have the same restrictions - verify each case
+
+**Parse errors hide type errors**:
+- SKJS stops checking after encountering a parse error - subsequent type errors won't be reported
+- If many error annotations aren't triggering, check for parse errors first in the test output
+- Fix parse errors before debugging missing type errors
+- Common culprits: unsupported syntax, typos in keywords, wrong operators
+
+**Negative tests that don't error**:
+- Not all incorrect code produces errors in SKJS - some checks aren't implemented yet
+- When a negative test doesn't error, document it with FIXME rather than removing it
+- Example: `// FIXME: TypeScript catches this error but SKJS doesn't`
+- These tests document gaps and guide future improvements
 
 ## Common Mistakes to Avoid
 
