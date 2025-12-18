@@ -5,6 +5,7 @@
 \usepackage{amsthm}
 \usepackage{mathtools}
 \usepackage{stmaryrd}
+\usepackage{mathpartir}
 \usepackage[margin=1in]{geometry}
 
 \newtheorem{theorem}{Theorem}
@@ -36,6 +37,7 @@
 \newcommand{\rtag}{\mathsf{rtag}}
 \newcommand{\Val}{\mathsf{Val}}
 \newcommand{\Payload}{\mathsf{Payload}}
+\newcommand{\Env}{\Gamma}
 
 \title{Refinement and Type Difference in SKJS}
 \author{}
@@ -394,6 +396,76 @@ Hence $v \in \sem{\refineop_{\STypes}^{f,g}(S)}$, so $v$ is contained in the ref
 \end{itemize}
 Combining cases yields the desired inclusion.
 \end{proof}
+
+\subsection{Algorithmic Refinement Judgements (Inference-Rule Style)}
+
+To present refinement in the idiomatic style used in type-system research, we write judgements that update a typing environment.
+Let $\Env$ range over environments mapping local variables to $\TType$.
+We write $\Env(x)$ for lookup and $\Env[x \mapsto t]$ for pointwise update.
+
+\paragraph{True/false refinements.}
+We define two refinement judgements:
+\[
+\Env \vdash e \Rightarrow \Env'
+\qquad\text{and}\qquad
+\Env \vdash e \Leftarrow \Env'
+\]
+to mean ``refine under the assumption that $e$ evaluates to \texttt{true}/\texttt{false}'' respectively.
+In this note we only give rules for the refinement forms implemented in SKJS; all other expressions leave the environment unchanged.
+
+\paragraph{Local update helper.}
+Given a local $x$ and a refinement transformer $R : \TType \to \TType$, define:
+\[
+\mathsf{upd}(\Env,x,R) \triangleq \Env[x \mapsto R(\Env(x))].
+\]
+When a rule refines a non-local expression, it produces $\Env$.
+
+\begin{mathpar}
+\inferrule*[right=R-OtherT]{ }{\Env \vdash e \Rightarrow \Env}
+\and
+\inferrule*[right=R-OtherF]{ }{\Env \vdash e \Leftarrow \Env}
+\end{mathpar}
+
+\paragraph{Nullish equality.}
+\begin{mathpar}
+\inferrule*[right=R-NullT]{ }{\Env \vdash (x === \texttt{null}) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}(t))}
+\and
+\inferrule*[right=R-NullF]{ }{\Env \vdash (x === \texttt{null}) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{null}},g_{\mathsf{null}}}(t))}
+\and
+\inferrule*[right=R-UndefT]{ }{\Env \vdash (x === \texttt{undefined}) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{undef}},g_{\mathsf{undef}}}(t))}
+\and
+\inferrule*[right=R-UndefF]{ }{\Env \vdash (x === \texttt{undefined}) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}(t))}
+\end{mathpar}
+
+\paragraph{\texttt{typeof}.}
+\begin{mathpar}
+\inferrule*[right=R-TypeofT]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{P_k},g_{P_k}}(t))}
+\and
+\inferrule*[right=R-TypeofF]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_{P_k},g_{P_k}}(t))}
+\end{mathpar}
+where $P_k$ is the corresponding predicate from Definition~\ref{def:typeof-predicates}.
+
+\paragraph{\texttt{in}.}
+\begin{mathpar}
+\inferrule*[right=R-InT]{ }{\Env \vdash (\texttt{"}p\texttt{" in }x) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}(t))}
+\and
+\inferrule*[right=R-InF]{ }{\Env \vdash (\texttt{"}p\texttt{" in }x) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{false}}_p,g^{\mathsf{false}}_p}(t))}
+\end{mathpar}
+
+\paragraph{Boolean connectives.}
+The implementation composes refinements sequentially. For example:
+\begin{mathpar}
+\inferrule*[right=R-AndT]
+{\Env \vdash e_1 \Rightarrow \Env_1 \\ \Env_1 \vdash e_2 \Rightarrow \Env_2}
+{\Env \vdash (e_1 \ \&\&\ e_2) \Rightarrow \Env_2}
+\and
+\inferrule*[right=R-OrF]
+{\Env \vdash e_1 \Leftarrow \Env_1 \\ \Env_1 \vdash e_2 \Leftarrow \Env_2}
+{\Env \vdash (e_1 \ ||\ e_2) \Leftarrow \Env_2}
+\end{mathpar}
+
+\paragraph{Soundness connection.}
+Each of the case-study lemmas in the following subsections proves that the corresponding rule is branch-sound, via Lemma~\ref{lem:filter-map-branch-sound}.
 
 \subsection{Refinement Case Study: the \texttt{in} Operator}
 
