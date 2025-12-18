@@ -818,3 +818,323 @@ function testArrayIsArray(
     return arr;
   }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// typeof with tuples
+///////////////////////////////////////////////////////////////////////////////
+
+// FIXME: SKJS typeof refinement doesn't preserve tuple types, becomes generic object
+function testTupleIsObject(
+  x: [number, string] | number,
+  def: [number, string],
+): [number, string] {
+  if (typeof x === "object") {
+    // @skjs-expect-error Invalid return type
+    return x;
+  } else {
+    return def;
+  }
+}
+
+// Tuple vs object with fields
+function testTupleVsObject(
+  x: [number, string] | { a: number; b: string },
+): [number, string] {
+  if (typeof x === "object") {
+    // Both are objects, typeof can't distinguish
+    return [0, ""];
+  } else {
+    return [0, ""];
+  }
+}
+
+// Tuple vs array (both are objects)
+function testTupleVsArray(
+  x: [number, string] | number[],
+  arr: number[],
+): [number, string] | number[] {
+  if (typeof x === "object") {
+    // Both tuples and arrays are typeof "object"
+    return x;
+  } else {
+    return arr;
+  }
+}
+
+// Tuple in union with primitives
+function testTupleWithPrimitives(
+  x: [number, string] | number | string,
+): [number, string] {
+  if (typeof x === "object") {
+    // @skjs-expect-error Invalid return type
+    return x;
+  } else if (typeof x === "number") {
+    return [x, ""];
+  } else {
+    return [0, x];
+  }
+}
+
+// Empty tuple vs non-empty tuple
+// FIXME: SKJS doesn't support empty tuple syntax yet
+// @skjs-expect-error TODO emptyArray
+function testEmptyTuple(x: [] | [number]): [] | [number] {
+  if (typeof x === "object") {
+    return x;
+  } else {
+    // TODO: This error won't be reported due to earlier error
+    return [];
+  }
+}
+
+// Tuple with optional elements
+// FIXME: SKJS doesn't support optional tuple elements yet
+function testTupleOptional(
+  // @skjs-expect-error TODO optional element tuple
+  x: [number, string?] | number,
+): [number, string?] {
+  if (typeof x === "object") {
+    return x;
+  } else {
+    return [0];
+  }
+}
+
+// Tuple vs null
+function testTupleVsNull(
+  x: [number, string] | null | string,
+  def: [number, string],
+): [number, string] {
+  if (typeof x === "object") {
+    // Both tuple and null are typeof "object"
+    // @skjs-expect-error This operator is useless
+    return x ?? def;
+  } else {
+    return [0, x];
+  }
+}
+
+// Nested tuples
+function testNestedTuples(
+  x: [number, [string, boolean]] | number,
+): [number, [string, boolean]] {
+  if (typeof x === "object") {
+    // @skjs-expect-error Invalid return type
+    return x;
+  } else {
+    return [x, ["", false]];
+  }
+}
+
+// Tuple with union element types
+function testTupleWithUnion(
+  x: [number | string, boolean] | number,
+): [number | string, boolean] {
+  if (typeof x === "object") {
+    // @skjs-expect-error Invalid return type
+    return x;
+  } else {
+    return [x, false];
+  }
+}
+
+// Rest elements in tuple
+// FIXME: SKJS doesn't support tuple rest elements yet
+function testTupleWithRest(
+  // @skjs-expect-error TODO tuple spread
+  x: [number, ...string[]] | number,
+  arr: string[],
+): [number, ...string[]] {
+  if (typeof x === "object") {
+    return x;
+  } else {
+    return [x, ...arr];
+  }
+}
+
+// Tuple accessing elements after typeof
+function testTupleElementAccess(x: [number, string] | number): number {
+  if (typeof x === "object") {
+    // @skjs-expect-error Invalid return type
+    return x[0];
+  } else {
+    return x;
+  }
+}
+
+// Tuple destructuring after typeof
+function testTupleDestructuring(x: [number, string] | number): string {
+  if (typeof x === "object") {
+    // @skjs-expect-error Invalid tuple pattern
+    const [_n, s] = x;
+    return s;
+  } else {
+    return "";
+  }
+}
+
+// Multiple tuple types in union
+// FIXME: SKJS infers [false] as a 2-element tuple instead of 1-element tuple
+function testMultipleTuples(
+  x: [number, string] | [boolean] | number,
+): [number, string] | [boolean] {
+  if (typeof x === "number") {
+    // @skjs-expect-error Invalid return type
+    return [false];
+  } else {
+    // TODO: This error won't be reported due to earlier error
+    return x;
+  }
+}
+
+// Tuple vs function
+function testTupleVsFunction(
+  x: [number, string] | (() => void),
+): [number, string] {
+  if (typeof x === "function") {
+    return [0, ""];
+  } else {
+    return x;
+  }
+}
+
+// Labeled tuple elements
+// FIXME: SKJS doesn't support labeled tuple elements yet
+function testLabeledTuple(
+  // @skjs-expect-error TODO named tuple
+  x: [first: number, second: string] | number,
+): [first: number, second: string] {
+  if (typeof x === "object") {
+    return x;
+  } else {
+    return [x, ""];
+  }
+}
+
+// Readonly tuple
+// FIXME: SKJS doesn't support readonly tuples yet
+function testReadonlyTuple(
+  // @skjs-expect-error TODO readonly
+  x: readonly [number, string] | number,
+): readonly [number, string] {
+  if (typeof x === "object") {
+    return x;
+  } else {
+    return [x, ""];
+  }
+}
+
+// Tuple with typeof check on element
+function testTupleElementTypeof(x: [number | string, boolean]): number {
+  const [first, _second] = x;
+  if (typeof first === "number") {
+    return first;
+  } else {
+    return 0;
+  }
+}
+
+// Complex tuple union after typeof refinement
+function testComplexTupleUnion(
+  x: [number, string] | [boolean, number] | string,
+): [number, string] | [boolean, number] {
+  if (typeof x === "string") {
+    return [0, x];
+  } else {
+    return x;
+  }
+}
+
+// Tuple in intersection (unusual but valid)
+function testTupleIntersection(
+  x: ([number, string] & { length: 2 }) | number,
+): number {
+  if (typeof x === "number") {
+    return x;
+  } else {
+    // @skjs-expect-error Invalid access for type never
+    return x[0];
+  }
+}
+
+// Wrong tuple element access after typeof
+function testWrongTupleAccess(x: [number, string] | string): string {
+  if (typeof x === "string") {
+    return x;
+  } else {
+    // Accessing tuple[1] is valid, returns string
+    return x[1];
+  }
+}
+
+// Tuple with never elements
+function testTupleWithNever(x: [number, never] | string): string {
+  if (typeof x === "string") {
+    return x;
+  } else {
+    // tuple with never is essentially unreachable
+    return "";
+  }
+}
+
+// Tuple spread in return
+// FIXME: SKJS doesn't support tuple spread syntax yet
+function testTupleSpread(
+  x: [number, string] | number,
+): [number, string, boolean] {
+  if (typeof x === "object") {
+    // @skjs-expect-error TODO: ...
+    return [...x, false];
+  } else {
+    return [x, "", false];
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// typeof with tuples - negative tests
+///////////////////////////////////////////////////////////////////////////////
+
+// Wrong index access
+function testTupleWrongIndex(x: [number, string] | number): boolean {
+  if (typeof x === "object") {
+    // Accessing out of bounds
+    // @skjs-expect-error Invalid return type
+    return x[2];
+  } else {
+    return false;
+  }
+}
+
+// Wrong destructuring count
+function testTupleWrongDestructure(x: [number, string] | number): boolean {
+  if (typeof x === "object") {
+    // @skjs-expect-error Invalid tuple pattern
+    const [_a, _b, c] = x;
+    return c;
+  } else {
+    return false;
+  }
+}
+
+// Treating tuple as array with methods
+function testTupleArrayMethod(x: [number, string] | number): number {
+  if (typeof x === "object") {
+    // Tuples don't have array methods in SKJS
+    // @skjs-expect-error Invalid call
+    return x.map((v) => v).length;
+  } else {
+    return x;
+  }
+}
+
+// Wrong tuple element type
+function testWrongTupleElementType(
+  x: [number, string] | string,
+): [string, string] {
+  if (typeof x === "object") {
+    // @ts-expect-error Invalid return type
+    return x;
+  } else {
+    return [x, x];
+  }
+}
