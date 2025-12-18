@@ -28,10 +28,10 @@ function returningVoid7(): void {
 
 const x: void = returningVoid();
 
-// @skjs-expect-error Invalid definition
+// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 const x2: void = undefined;
 
-// @ts-expect-error Invalid definition
+// @ts-expect-error Invalid definition: value type is not compatible with type annotation
 const x3: void = {};
 
 // @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed

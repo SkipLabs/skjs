@@ -25,24 +25,24 @@ const x3: undefined = undefined?.f;
 // @ts-expect-error Result of optional chaining is always undefined
 const x4: undefined = null?.f;
 
-// @ts-expect-error Invalid definition
+// @ts-expect-error Invalid definition: value type is not compatible with type annotation
 const x5: null = maybeObj()?.f;
 
 // @ts-expect-error Type cannot be accessed
 const x6: undefined = returningVoid()?.f;
 
-// @ts-expect-error Invalid definition
+// @ts-expect-error Invalid definition: value type is not compatible with type annotation
 const x7: undefined = maybeObj()?.f;
 
-// @ts-expect-error Invalid definition
+// @ts-expect-error Invalid definition: value type is not compatible with type annotation
 const x8: number = maybeObj()?.f;
 
 const x9: number | undefined = maybeObj()?.f;
 
-// @ts-expect-error Invalid definition
+// @ts-expect-error Invalid definition: value type is not compatible with type annotation
 const x10: undefined = maybeObj2()?.f;
 
-// @ts-expect-error Invalid definition
+// @ts-expect-error Invalid definition: value type is not compatible with type annotation
 const x11: number = maybeObj2()?.f;
 
 const x12: number | undefined = maybeObj2()?.f;
