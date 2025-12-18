@@ -270,12 +270,12 @@ declare class WeakMap<K, V> {
   delete(key: K): boolean;
   get(key: K): V | undefined;
   has(key: K): boolean;
-  set(key: K, value: V): WeakMap<K, V>;
+  set(key: K, value: V): SKJS_Ignorable<WeakMap<K, V>>;
 }
 
 declare class WeakSet<T> {
   constructor();
-  add(value: T): WeakSet<T>;
+  add(value: T): SKJS_Ignorable<WeakSet<T>>;
   delete(value: T): boolean;
   has(value: T): boolean;
 }
