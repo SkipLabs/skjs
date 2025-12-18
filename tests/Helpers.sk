@@ -3,7 +3,7 @@ module SKJSTests;
 base class ReferenceError{line: Int} {
   fun validate(
     fileName: SKJS.FAbsolute,
-    error: SKJS.Error,
+    errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError;
   fun getMessage(): String;
 }
@@ -29,23 +29,27 @@ extension class .String {
   }
 }
 
-class ExpectError{restOfLine: String} extends ReferenceError {
+class ExpectError{expectedErrors: SortedSet<String>} extends ReferenceError {
   fun validate(
     fileName: SKJS.FAbsolute,
-    error: SKJS.Error,
+    errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {
-    if (this.restOfLine.length() > 0) {
-      msg = error match {
-      | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
-      | SKJS.TypingError(messages) -> messages[0].i1
-      };
-      !msg = msg.trimForComparison();
-      if (msg != this.restOfLine) {
+    if (this.expectedErrors.size() > 0) {
+      actuals = errors
+        .map(error -> {
+          msg = error match {
+          | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
+          | SKJS.TypingError(messages) -> messages[0].i1
+          };
+          msg.trimForComparison()
+        })
+        .collect(SortedSet);
+      if (actuals != this.expectedErrors) {
         return Some(
           SKTest.ExpectationError(
-            `${fileName}:${this.line} Wrong error message`,
-            this.restOfLine,
-            msg,
+            `${fileName}:${this.line} Wrong error message(s)`,
+            this.getMessage(),
+            actuals.toArray().join(" / "),
           ),
         )
       }
@@ -54,7 +58,7 @@ class ExpectError{restOfLine: String} extends ReferenceError {
   }
 
   fun getMessage(): String {
-    this.restOfLine
+    `${this.expectedErrors.toArray().join(" / ")}`
   }
 }
 
@@ -65,7 +69,7 @@ class ExpectError{restOfLine: String} extends ReferenceError {
  * returned line number is 2.
  *
  * Throws if the annotation is found somewhere else. */
-fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
+fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
   /*
     Correctness is based on the fact that these are all disjoint sets:
     - '\n'
@@ -76,6 +80,7 @@ fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
     and on the fact that the first characters of kTS_EXPECT_ERROR and
     kSKJS_EXPECT_ERROR differ.
    */
+  result = mutable Vector[];
   chars = contents.chars().toArray();
   pos = 0;
   // Do not trust the lexer's newLinesMap, as a way to double-check it
@@ -162,8 +167,23 @@ fun findExpectErrors(contents: String): mutable Iterator<ExpectError> {
     restOfLine = String::fromChars(
       chars.slice(restOfLineStart, pos),
     ).trimForComparison();
-    yield ExpectError{line => lineNumber + 1, restOfLine};
+    lastResultI = result.size() - 1;
+    result.maybeGet(lastResultI) match {
+    | Some(lastResult) if (lastResult.line == lineNumber) ->
+      result![lastResultI] = lastResult with {
+        line => lineNumber + 1,
+        expectedErrors => lastResult.expectedErrors.add(restOfLine),
+      }
+    | _ ->
+      result.push(
+        ExpectError{
+          line => lineNumber + 1,
+          expectedErrors => SortedSet[restOfLine],
+        },
+      )
+    }
   };
+  result
 }
 
 fun isDigit(c: Char): Bool {
@@ -187,8 +207,9 @@ class TSConformanceReferenceError{
 } extends ReferenceError {
   fun validate(
     _fileName: SKJS.FAbsolute,
-    _error: SKJS.Error,
+    _errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {
+    // Maybe TODO: check errors contains a single error?
     // Error messages do not match anyway, let's assume it's the same error
     None()
   }
@@ -347,6 +368,19 @@ fun parseTSConformanceReferenceErrors(
   fileName: String,
 ): mutable Iterator<TSConformanceReferenceError> {
   TSConformanceReferenceErrorsParser::parse(fileName)
+}
+
+module end;
+
+module SKJS;
+
+extension class Checker {
+  fun errorsToString(
+    context: mutable SKStore.Context,
+    errs: Sequence<Error>,
+  ): String {
+    errs.map(err -> this.errorToString(context, err)).join(" / ")
+  }
 }
 
 module end;

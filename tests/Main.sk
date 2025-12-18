@@ -5,60 +5,70 @@ fun getLinedErrors(
   checker: SKJS.Checker,
   fileName: SKJS.FAbsolute,
   errors: Array<SKJS.Error>,
-): Array<(Int, SKJS.Error)> {
+): Array<(Int, Sequence<SKJS.Error>)> {
   newLines = checker.newLinesMap.get(context, fileName);
   symbols = checker.symbolsMap.get(context, fileName);
   resolver = SKJS.PositionResolver{fileName, newLines, symbols};
 
-  errors
-    .map(err -> {
-      errPos = err match {
-      | SKJS.TypingError(messages) ->
-        invariant(!messages.isEmpty(), "Empty typing error");
-        SKJS.EPRange(messages[0].i0)
-      | SKJS.SinglePosError(errPos, _errKind) -> errPos
-      };
-      errFileName = errPos match {
-      | SKJS.EPRange(posRange) -> posRange.fileName
-      | SKJS.EPChar(fn, _pos) -> fn
-      };
-      if (errFileName != fileName) {
-        errStr = checker.errorToString(context, err);
-        SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
-      };
-      pos = errPos match {
-      | SKJS.EPRange(posRange) -> posRange.getStart(symbols)
-      | SKJS.EPChar(_fileName, pos) -> pos
-      };
-      line = resolver.relPos(pos).line;
-      (line, err)
-    })
-    .sortedBy(line_err ~> line_err.i0);
+  m = mutable Map[];
+  for (err in errors) {
+    errPos = err match {
+    | SKJS.TypingError(messages) ->
+      invariant(!messages.isEmpty(), "Empty typing error");
+      SKJS.EPRange(messages[0].i0)
+    | SKJS.SinglePosError(errPos, _errKind) -> errPos
+    };
+    errFileName = errPos match {
+    | SKJS.EPRange(posRange) -> posRange.fileName
+    | SKJS.EPChar(fn, _pos) -> fn
+    };
+    if (errFileName != fileName) {
+      errStr = checker.errorToString(context, err);
+      SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
+    };
+    pos = errPos match {
+    | SKJS.EPRange(posRange) -> posRange.getStart(symbols)
+    | SKJS.EPChar(_fileName, pos) -> pos
+    };
+    line = resolver.relPos(pos).line;
+    errs_at_line = m.getOrAdd(line, () -> Vector::mcreate(0));
+    errs_at_line.push(err)
+  };
+  m
+    .iterator()
+    .map(line_errs -> (line_errs.i0, line_errs.i1.toArray()))
+    .collect(Array)
+    .sortedBy(line_errs ~> line_errs.i0)
 }
 
 fun validateReferenceErrors<R: ReferenceError>(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   fileName: SKJS.FAbsolute,
-  actualErrors: Array<SKJS.Error>,
+  allActualErrors: Array<SKJS.Error>,
   referenceErrors: mutable Iterator<R>,
 ): Array<SKTest.ExpectationError> {
   referenceErrorOpt = referenceErrors.next();
 
-  linedActualErrors = getLinedErrors(context, checker, fileName, actualErrors);
+  linedActualErrors = getLinedErrors(
+    context,
+    checker,
+    fileName,
+    allActualErrors,
+  );
 
   expectationErrors = mutable Vector[];
 
   i = 0;
   loop {
-    actualErrorOpt = linedActualErrors.maybeGet(i);
-    (actualErrorOpt, referenceErrorOpt) match {
+    actualErrorsOpt = linedActualErrors.maybeGet(i);
+    (actualErrorsOpt, referenceErrorOpt) match {
     | (None(), None()) -> break void
     | (
-      Some((actualLine, actualError)),
+      Some((actualLine, actualErrors)),
       Some(ref @ ReferenceError{line => expectedLine}),
     ) if (actualLine == expectedLine) ->
-      ref.validate(fileName, actualError).each(expectationErrors.push);
+      ref.validate(fileName, actualErrors).each(expectationErrors.push);
       !i = i + 1;
       if (
         i >= linedActualErrors.size() ||
@@ -66,8 +76,7 @@ fun validateReferenceErrors<R: ReferenceError>(
       ) {
         !referenceErrorOpt = referenceErrors.next()
       };
-      actualError match {
-      | SKJS.LexingOrParsingError _ ->
+      if (actualErrors.any(e -> e is SKJS.LexingOrParsingError _)) {
         newLines = checker.newLinesMap.get(context, fileName);
         for (line in Range(actualLine - 1, newLines.size() - 1)) {
           if (newLines[line + 1] > newLines[line] + 1) {
@@ -82,19 +91,18 @@ fun validateReferenceErrors<R: ReferenceError>(
           }
         };
         break void
-      | _ -> void
       }
     | (
-      Some((actualLine, actualError)),
+      Some((actualLine, actualErrors)),
       Some(ReferenceError{line => expectedLine}),
     ) if (actualLine < expectedLine) ->
-      errStr = checker.errorToString(context, actualError);
+      errStr = checker.errorsToString(context, actualErrors);
       expectationErrors.push(
         SKTest.ExpectationError("Unexpected error", "error later", errStr),
       );
       !i = i + 1
-    | (Some((_actualLine, actualError)), None()) ->
-      errStr = checker.errorToString(context, actualError);
+    | (Some((_actualLine, actualErrors)), None()) ->
+      errStr = checker.errorsToString(context, actualErrors);
       expectationErrors.push(
         SKTest.ExpectationError("Unexpected error", "no errors", errStr),
       );
@@ -125,7 +133,7 @@ fun validateExpectErrorComments(
   };
 
   fileContents = checker.files.filesContent.get(context, fileName);
-  tsExpectErrors = findExpectErrors(fileContents.value);
+  tsExpectErrors = findExpectErrors(fileContents.value).iterator();
 
   actualErrors = parseErrorOpt match {
   | None() -> typeErrors
