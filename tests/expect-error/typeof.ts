@@ -371,12 +371,12 @@ function testClassInstanceVsFunction(x: MyClass | (() => void)): MyClass {
 // typeof incorrect refinements (should produce errors)
 ///////////////////////////////////////////////////////////////////////////////
 
-// FIXME: TypeScript refines typeof correctly and catches this error, but SKJS doesn't
+// SKJS correctly refines typeof and catches incorrect return type
 function testIncorrectRefinement(x: number | string): number {
   if (typeof x === "number") {
     return x;
   } else {
-    // This should error - x is string here, not number
+    // This correctly errors - x is string here, not number
     // @skjs-expect-error Invalid return type
     return x;
   }
