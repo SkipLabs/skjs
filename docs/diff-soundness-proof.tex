@@ -65,11 +65,11 @@ explicitly documenting the intended sources of incompleteness.
 \textbf{Symbol} & \textbf{Defined In} \\
 \hline
 $\Tags$ & Definition~\ref{def:runtime-tags} \\
-$\Payload, \Val, \rtag$ & Definition~\ref{def:runtime-values-tags} \\
+$(\Payload_k)_{k\in\Tags}, \Val, \rtag$ & Definition~\ref{def:runtime-values-tags} \\
 $\SType$ & Definition~\ref{def:simple-types} \\
 $\tagfn$ & Definition~\ref{def:simple-types-and-tags} \\
-\textbf{A0} & Definition~\ref{ax:A0} \\
-\textbf{A1} & Definition~\ref{ax:A1} \\
+\textbf{A0} & Lemma~\ref{ax:A0} \\
+\textbf{A1} & Lemma~\ref{ax:A1} \\
 $\STypes, \tags(\cdot)$ & Definition~\ref{def:stypes} \\
 $\mathsf{STC}(\cdot,\cdot)$ & Definition~\ref{def:stc} \\
 $\TInst$ & Definition~\ref{def:type-instances} \\
@@ -93,14 +93,23 @@ Let $\Tags$ be the set of runtime tags (the coarse runtime kind of a value). In 
 
 \begin{definition}[Runtime Values and Tags]
 \label{def:runtime-values-tags}
-Assume runtime values carry their tag as part of the representation: let $\Payload$ be an abstract set of payloads and define
+Assume runtime values carry their tag as part of the representation.
+We fix a family of payload sets $(\Payload_k)_{k \in \Tags}$ and define
 \[
-\Val = \Tags \times \Payload.
+\Val \triangleq \{\, (k,p) \mid k \in \Tags \ \land\ p \in \Payload_k \,\}.
 \]
 Define the runtime tag function $\rtag : \Val \to \Tags$ as the first projection:
 \[
 \rtag((k,p)) = k.
 \]
+\paragraph{Concrete payloads (for this document).}
+We make primitive payloads concrete and leave structured payloads abstract:
+\begin{align*}
+\Payload_0 &= \{\star\} & \Payload_1 &= \{\star\} & \Payload_2 &= \{\star\} \\
+\Payload_3 &= \{\mathsf{true},\mathsf{false}\} & \Payload_4 &= \mathbb{R} & \Payload_5 &= \String \\
+\Payload_6 &= \mathbb{Z} & \Payload_{10} &= \String \times \Payload_{10}' \text{ (for some set $\Payload_{10}'$)}.
+\end{align*}
+For the remaining tags $k \in \{7,8,9,11\}$ we leave $\Payload_k$ as arbitrary sets.
 \end{definition}
 
 \begin{definition}[Simple Types]
@@ -130,27 +139,54 @@ The function $\tagfn : \SType \to \Tags$ assigns tags:
 \tagfn(\texttt{Promise}(\ldots)) &= 8 & \tagfn(\texttt{object}(\ldots)) &= 9 \\
 \tagfn(\texttt{algebraic}(\ldots)) &= 10 & \tagfn(\texttt{function}(\ldots)) &= 11
 \end{align*}
-The semantic interpretation $\sem{\cdot} : \SType \to \mathcal{P}(\Val)$ 
-maps each simple type to its set of inhabitants.
-\paragraph{Note.}
-We do \emph{not} define $\sem{\cdot}$ in this document; it is treated as an abstract interpretation function.
-Instead, we state explicit assumptions about its behavior as axioms (A0--A1).
+The semantic interpretation $\sem{\cdot} : \SType \to \mathcal{P}(\Val)$ maps each simple type to its set of inhabitants.
+We define $\sem{\cdot}$ concretely for primitive types and literals, and define the remaining structured cases at tag level
+(with the \texttt{object} and \texttt{algebraic} cases further constrained in Definitions~\ref{def:object-semantics} and~\ref{def:algebraic-semantics}):
+\begin{align*}
+\sem{\texttt{undefined}} &\triangleq \{(0,\star)\} &
+\sem{\texttt{void}} &\triangleq \{(1,\star)\} &
+\sem{\texttt{null}} &\triangleq \{(2,\star)\} \\
+\sem{\texttt{boolean}} &\triangleq \{(3,b) \mid b \in \{\mathsf{true},\mathsf{false}\}\} &
+\sem{\texttt{true}} &\triangleq \{(3,\mathsf{true})\} &
+\sem{\texttt{false}} &\triangleq \{(3,\mathsf{false})\} \\
+\sem{\texttt{number}} &\triangleq \{(4,n) \mid n \in \mathbb{R}\} &
+\sem{n} &\triangleq \{(4,n)\} & (n \in \mathbb{R}) \\
+\sem{\texttt{string}} &\triangleq \{(5,x) \mid x \in \String\} &
+\sem{\text{``}x\text{''}} &\triangleq \{(5,x)\} & (x \in \String) \\
+\sem{\texttt{bigint}} &\triangleq \{(6,z) \mid z \in \mathbb{Z}\} \\
+\sem{\texttt{tuple}(\ldots)} &\triangleq \{ v \in \Val \mid \rtag(v)=7\} \\
+\sem{\texttt{Promise}(\ldots)} &\triangleq \{ v \in \Val \mid \rtag(v)=8\} \\
+\sem{\texttt{function}(\ldots)} &\triangleq \{ v \in \Val \mid \rtag(v)=11\}.
+\end{align*}
 \end{definition}
 
-\begin{definition}[\textbf{A0} (Runtime Tag Consistency)]
+\begin{lemma}[\textbf{A0} (Runtime Tag Consistency)]
 \label{ax:A0}
 The semantic interpretation of simple types agrees with runtime tags:
 \[
 \forall s \in \SType.\; \forall v \in \Val.\; v \in \sem{s} \implies \rtag(v) = \tagfn(s).
 \]
-\end{definition}
+\end{lemma}
 
-\begin{definition}[\textbf{A1} (Tag Disjointness)]
+\begin{proof}
+By case analysis on $s$.
+For primitives and literals, the definition of $\sem{s}$ contains only values of the form $(\tagfn(s),p)$, so $\rtag(v)=\tagfn(s)$.
+For the tag-level structured cases (\texttt{tuple}, \texttt{Promise}, \texttt{function}), $\sem{s}$ is defined as $\{v \mid \rtag(v)=k\}$ where $k=\tagfn(s)$.
+For \texttt{object} and \texttt{algebraic}, Definitions~\ref{def:object-semantics} and~\ref{def:algebraic-semantics} explicitly require membership in $\ObjVal$ (tag $9$) and $\AlgVal$ (tag $10$) respectively, and these tags agree with $\tagfn$.
+\end{proof}
+
+\begin{lemma}[\textbf{A1} (Tag Disjointness)]
 \label{ax:A1}
 \[
 \forall s_1, s_2 \in \SType.\; \tagfn(s_1) \neq \tagfn(s_2) \implies \sem{s_1} \cap \sem{s_2} = \emptyset
 \]
-\end{definition}
+\end{lemma}
+
+\begin{proof}
+Let $k_1=\tagfn(s_1)$ and $k_2=\tagfn(s_2)$ with $k_1\neq k_2$.
+By Lemma~\ref{ax:A0}, every $v \in \sem{s_1}$ satisfies $\rtag(v)=k_1$ and every $v \in \sem{s_2}$ satisfies $\rtag(v)=k_2$.
+No value can have two different tags, so $\sem{s_1}\cap \sem{s_2}=\emptyset$.
+\end{proof}
 
 \begin{definition}[Object Values and Object-Type Semantics]
 \label{def:object-semantics}
@@ -198,9 +234,10 @@ Let $\AlgVal \subseteq \Val$ be the set of algebraic-tagged runtime values:
 \[
 \AlgVal \triangleq \{ v \in \Val \mid \rtag(v)=10\}.
 \]
-Assume algebraic values carry a runtime discriminant (constructor tag) as a string:
+Recall that $\Payload_{10}=\String \times \Payload_{10}'$ (Definition~\ref{def:runtime-values-tags}).
+Define the runtime discriminant function $\mathsf{atag} : \AlgVal \to \String$ by projection:
 \[
-\mathsf{atag} : \AlgVal \to \String.
+\mathsf{atag}((10,(\ell,p))) \triangleq \ell.
 \]
 \paragraph{Semantics of \texttt{algebraic}$(T)$.}
 We assume the algebraic constructor in $\SType$ can carry a finite set of tags $T \subseteq_{\mathrm{fin}} \String$,
@@ -338,6 +375,47 @@ Then $t = (I,C)$ denotes the type whose semantics is:
 \sem{t} = \sem{\texttt{Promise}\langle \texttt{number} \rangle} \cup \sem{C}.
 \]
 \end{definition}
+
+\section{Subtyping (Skeleton)}
+\label{sec:subtyping-skeleton}
+
+We introduce a subtyping judgement on internal types,
+written $t_1 \leq t_2$ for $t_1,t_2 \in \TType$.
+In this document, $\leq$ is intended to be a faithful mathematical model of the
+subtyping \emph{validator} implemented by SKJS (the accept/reject check used by the type checker),
+rather than an abstract, complete, semantic inclusion relation.
+
+\paragraph{Soundness theorem (to be proved).}
+The central meta-theoretic property we ultimately want from the validator-model judgement $\leq$
+is semantic soundness:
+\[
+t_1 \leq t_2 \quad\Longrightarrow\quad \sem{t_1} \subseteq \sem{t_2}.
+\]
+In a full development, this is proved from the subtyping rules/algorithm that define $\leq$.
+
+\paragraph{Incompleteness.}
+The converse implication is intentionally \emph{not} assumed: SKJS may reject some valid
+semantic inclusions, so $\leq$ can be incomplete.
+
+\paragraph{Note (expansion and substitution effects).}
+In the implementation, the validator operates on expanded/normalized views of types using the current substitution
+and a variance parameter, and it may update the substitution while checking (as part of inference).
+We do not model these mechanisms explicitly here; they are absorbed into the meaning of the judgement $t_1 \leq t_2$.
+
+\paragraph{Example obligations (singleton literal types).}
+Once $\leq$ is defined by the validator's rules, it should validate the expected singleton-to-primitive
+subtypings for primitive literals (these are representative, actually-implemented cases).
+(In examples we write \texttt{1}, \texttt{"x"}, \texttt{number}, \texttt{string} for the corresponding internal types,
+by abuse of notation.) For example:
+\[
+\texttt{1} \leq \texttt{number}
+\qquad
+\texttt{number} \not\leq \texttt{1}.
+\]
+Similarly, a string literal is a subtype of \texttt{string}:
+\[
+\texttt{"x"} \leq \texttt{string}.
+\]
 
 \section{Refinement (Predicate-Driven Narrowing)}
 
