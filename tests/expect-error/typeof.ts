@@ -823,13 +823,12 @@ function testArrayIsArray(
 // typeof with tuples
 ///////////////////////////////////////////////////////////////////////////////
 
-// FIXME: SKJS typeof refinement doesn't preserve tuple types, becomes generic object
+// Tuples are typeof "object" and refinement preserves tuple type
 function testTupleIsObject(
   x: [number, string] | number,
   def: [number, string],
 ): [number, string] {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return def;
@@ -866,7 +865,6 @@ function testTupleWithPrimitives(
   x: [number, string] | number | string,
 ): [number, string] {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid return type
     return x;
   } else if (typeof x === "number") {
     return [x, ""];
@@ -906,8 +904,7 @@ function testTupleVsNull(
   def: [number, string],
 ): [number, string] {
   if (typeof x === "object") {
-    // Both tuple and null are typeof "object"
-    // @skjs-expect-error This operator is useless
+    // Both tuple and null are typeof "object", need ?? to handle null
     return x ?? def;
   } else {
     return [0, x];
@@ -919,7 +916,6 @@ function testNestedTuples(
   x: [number, [string, boolean]] | number,
 ): [number, [string, boolean]] {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [x, ["", false]];
@@ -931,7 +927,6 @@ function testTupleWithUnion(
   x: [number | string, boolean] | number,
 ): [number | string, boolean] {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [x, false];
@@ -955,7 +950,6 @@ function testTupleWithRest(
 // Tuple accessing elements after typeof
 function testTupleElementAccess(x: [number, string] | number): number {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid return type
     return x[0];
   } else {
     return x;
@@ -965,7 +959,6 @@ function testTupleElementAccess(x: [number, string] | number): number {
 // Tuple destructuring after typeof
 function testTupleDestructuring(x: [number, string] | number): string {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid tuple pattern
     const [_n, s] = x;
     return s;
   } else {
@@ -1108,7 +1101,7 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
 // Wrong destructuring count
 function testTupleWrongDestructure(x: [number, string] | number): boolean {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid tuple pattern
+    // @skjs-expect-error Invalid tuple pattern size, it is of size 3
     const [_a, _b, c] = x;
     return c;
   } else {
@@ -1117,10 +1110,11 @@ function testTupleWrongDestructure(x: [number, string] | number): boolean {
 }
 
 // Treating tuple as array with methods
+// FIXME: map method for tuples
 function testTupleArrayMethod(x: [number, string] | number): number {
   if (typeof x === "object") {
     // Tuples don't have array methods in SKJS
-    // @skjs-expect-error Invalid call
+    // @skjs-expect-error Invalid index
     return x.map((v) => v).length;
   } else {
     return x;

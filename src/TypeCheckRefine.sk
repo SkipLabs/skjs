@@ -130,7 +130,11 @@ extension class TypeChecker {
       )
     | "object" ->
       (filter, default) = (
-        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimUnit(TNull(), _),
+        x ~>
+          x is TObject _ ||
+            x is TAlgebraic _ ||
+            x is TPrimUnit(TNull(), _) ||
+            x is TTuple _,
         Some(TObject(TFields::empty(), typePos)),
       );
       this.setLocal(
