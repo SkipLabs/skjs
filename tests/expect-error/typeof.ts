@@ -403,3 +403,418 @@ function testIncorrectFunctionRefinement(x: (() => number) | string): string {
     return x;
   }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// More negative tests - should detect errors
+///////////////////////////////////////////////////////////////////////////////
+
+// Accessing properties on wrong branch
+function testAccessWrongBranch(x: { a: number } | string): number {
+  if (typeof x === "string") {
+    // @ts-expect-error Invalid index key
+    return x.a;
+  } else {
+    return x.a;
+  }
+}
+
+// Wrong property in refined type
+function testWrongProperty(x: { a: number } | { b: string }): number {
+  if (typeof x === "object") {
+    // Both branches are objects, can't distinguish with typeof
+    // @ts-expect-error Invalid return type
+    return x.a;
+  } else {
+    return 0;
+  }
+}
+
+// Trying to call non-function
+function testCallNonFunction(x: number | (() => void)): void {
+  if (typeof x === "number") {
+    // @ts-expect-error Invalid call
+    x();
+  }
+}
+
+// Wrong assumption about typeof undefined vs null
+function testNullVsUndefined(x: null | undefined): null {
+  if (typeof x === "undefined") {
+    // @ts-expect-error Invalid return type
+    return x;
+  } else {
+    return x;
+  }
+}
+
+// Multiple typeof checks with wrong return
+function testMultipleChecksWrong(
+  x: number | string | boolean,
+): string | boolean {
+  if (typeof x === "number") {
+    // @ts-expect-error Invalid return type
+    return x;
+  } else {
+    return x;
+  }
+}
+
+// Forgetting to handle all cases
+function testMissingCase(x: number | string | undefined): number {
+  if (typeof x === "number") {
+    return x;
+  } else if (typeof x === "string") {
+    return 0;
+  }
+  // Missing undefined case
+  // @ts-expect-error Invalid return type
+  return x;
+}
+
+// Wrong type in object branch with null
+function testObjectWithNullWrong(x: { a: number } | null | string): number {
+  if (typeof x === "object") {
+    // x could be { a: number } or null
+    // @ts-expect-error Type cannot be accessed
+    return x.a;
+  } else {
+    return 0;
+  }
+}
+
+// Array method on non-array
+function testArrayMethodWrong(x: number[] | number): number {
+  if (typeof x === "number") {
+    // @ts-expect-error Unbound field: length
+    return x.length;
+  } else {
+    return x.length;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Tricky cases with multiple branches
+///////////////////////////////////////////////////////////////////////////////
+
+// Three-way typeof check
+function testThreeWay(x: number | string | boolean): number | string {
+  if (typeof x === "number") {
+    return x;
+  } else if (typeof x === "string") {
+    return x;
+  } else {
+    // x is boolean here
+    return x ? "true" : "false";
+  }
+}
+
+// Four-way typeof check
+function testFourWay(
+  x: number | string | boolean | undefined,
+): number | string {
+  if (typeof x === "number") {
+    return x;
+  } else if (typeof x === "string") {
+    return x;
+  } else if (typeof x === "boolean") {
+    return 0;
+  } else {
+    return "";
+  }
+}
+
+// Nested typeof with different variable
+function testNestedDifferentVar(
+  x: number | string,
+  y: boolean | string,
+): number | boolean {
+  if (typeof x === "number") {
+    if (typeof y === "boolean") {
+      return x;
+    } else {
+      return 0;
+    }
+  } else {
+    if (typeof y === "boolean") {
+      return y;
+    } else {
+      return 0;
+    }
+  }
+}
+
+// typeof in both branches with different checks
+function testBothBranches(
+  x: number | string | boolean,
+  y: number | string,
+): number {
+  if (typeof x === "number") {
+    if (typeof y === "number") {
+      return x;
+    } else {
+      return 0;
+    }
+  } else {
+    if (typeof y === "number") {
+      return y;
+    } else {
+      return 0;
+    }
+  }
+}
+
+// Refinement with early return
+function testEarlyReturn(x: number | string | undefined): number {
+  if (typeof x === "undefined") {
+    return 0;
+  }
+  if (typeof x === "string") {
+    return 0;
+  }
+  // x must be number here
+  return x;
+}
+
+// Multiple variables refined together
+function testMultipleVars(
+  x: number | string,
+  y: number | string,
+): [number, number] {
+  if (typeof x === "number" && typeof y === "number") {
+    return [x, y];
+  }
+  return [0, 0];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Tricky cases with unions and intersections
+///////////////////////////////////////////////////////////////////////////////
+
+// Union of objects with typeof
+function testObjectUnion(
+  x: { a: number } | { b: string } | number,
+): { a: number } | { b: string } {
+  if (typeof x === "object") {
+    return x;
+  } else {
+    return { a: 0 };
+  }
+}
+
+// Intersection with typeof (unusual but valid)
+function testIntersectionTypeof(
+  x: ({ a: number } & { b: string }) | number,
+): number {
+  if (typeof x === "number") {
+    return x;
+  } else {
+    return x.a;
+  }
+}
+
+// Union with never (after exhaustive checks)
+function testExhaustiveCheck(x: number | string): never | number | string {
+  if (typeof x === "number") {
+    return x;
+  } else if (typeof x === "string") {
+    return x;
+  } else {
+    // x is never here - all cases covered
+    return x;
+  }
+}
+
+// Complex union with overlapping typeof results
+function testOverlappingTypeof(
+  x: (() => void) | { a: number } | number[] | null,
+): (() => void) | { a: number } | number[] | null {
+  if (typeof x === "function") {
+    return x;
+  } else if (typeof x === "object") {
+    // x is { a: number } | number[] | null
+    return x;
+  } else {
+    // Unreachable - all are object or function
+    return null;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Edge cases with never type
+///////////////////////////////////////////////////////////////////////////////
+
+// Never type after impossible refinement
+function testNeverAfterRefinement(x: never): number {
+  if (typeof x === "number") {
+    return x;
+  } else {
+    return 0;
+  }
+}
+
+// Union that becomes never after refinement
+function testBecomesNever(x: number): string {
+  if (typeof x === "string") {
+    // This branch is never taken since x is number
+    return x;
+  } else {
+    // @ts-expect-error Invalid return type
+    return x;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Incorrect typeof patterns (common mistakes)
+///////////////////////////////////////////////////////////////////////////////
+
+// Using typeof with wrong value
+function testWrongTypeofValue(x: number | string): number {
+  // @ts-expect-error Unexpected typeof check against "array"
+  if (typeof x === "array") {
+    return 0;
+  } else {
+    return 0;
+  }
+}
+
+// Comparing typeof to variable instead of literal
+function testTypeofToVariable(x: number | string, type: string): number {
+  // SKJS probably won't refine this
+  if (typeof x === type) {
+    return 0;
+  } else {
+    return 0;
+  }
+}
+
+// FIXME: Double negation with typeof doesn't refine correctly in SKJS
+function testDoubleNegation(x: number | string): number {
+  if (!(typeof x !== "number")) {
+    // @skjs-expect-error Invalid return type
+    return x;
+  } else {
+    return 0;
+  }
+}
+
+// typeof with strict equality vs loose equality
+function testStrictEquality(x: number | string): number {
+  // SKJS should only refine with ===
+  if (typeof x === "number") {
+    return x;
+  } else {
+    return 0;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Complex real-world scenarios
+///////////////////////////////////////////////////////////////////////////////
+
+// Discriminated union with typeof check first
+type Action =
+  | { type: "increment"; by: number }
+  | { type: "decrement"; by: number }
+  | number;
+
+function testDiscriminatedWithTypeof(action: Action): number {
+  if (typeof action === "number") {
+    return action;
+  } else if (action.type === "increment") {
+    return action.by;
+  } else {
+    return -action.by;
+  }
+}
+
+// Optional chaining with typeof
+function testOptionalChaining(x: { a?: number } | string): number {
+  if (typeof x === "object") {
+    return x.a ?? 0;
+  } else {
+    return 0;
+  }
+}
+
+// Typeof with destructuring
+function testDestructuring(x: { a: number; b: string } | number): number {
+  if (typeof x === "object") {
+    const { a } = x;
+    return a;
+  } else {
+    return x;
+  }
+}
+
+// Generic function with typeof
+function testGenericTypeof<T extends number | string>(x: T): number {
+  if (typeof x === "number") {
+    return x;
+  } else {
+    return 0;
+  }
+}
+
+// Typeof in callback
+function testTypeofInCallback(x: number | string): (y: number) => number {
+  return (y: number) => {
+    if (typeof x === "number") {
+      return x;
+    } else {
+      return y;
+    }
+  };
+}
+
+// Mixed typeof and property checks
+function testMixedChecks(
+  x: { kind: "a"; value: number } | { kind: "b"; value: string } | number,
+): number {
+  if (typeof x === "number") {
+    return x;
+  } else if (x.kind === "a") {
+    return x.value;
+  } else {
+    return 0;
+  }
+}
+
+// FIXME: 'as' operator not supported in SKJS
+function testWithAssertion(x: number | string): number {
+  if (typeof x === "number") {
+    return x;
+  } else {
+    // SKJS doesn't support 'as' operator
+    // @skjs-expect-error Construction not supported: operator as
+    return (x as string).length;
+  }
+}
+
+// Recursive typeof checks
+function testRecursiveTypeof(x: number | string | boolean | null): string {
+  if (typeof x === "object") {
+    return "null";
+  } else if (typeof x === "number") {
+    return "number";
+  } else if (typeof x === "string") {
+    return "string";
+  } else {
+    return "boolean";
+  }
+}
+
+// Array.isArray with typeof (different from typeof)
+// FIXME: 'as' operator not supported in SKJS
+function testArrayIsArray(
+  x: number[] | { a: number },
+  arr: number[],
+): number[] {
+  if (typeof x === "object") {
+    // Both are objects, typeof can't distinguish
+    // Would need Array.isArray for real discrimination
+    // @skjs-expect-error Construction not supported: operator as
+    return x as number[];
+  } else {
+    return arr;
+  }
+}
