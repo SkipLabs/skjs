@@ -455,6 +455,23 @@ In SKJS, control-flow narrowing is implemented by rewriting the internal type fo
 filter/map on simple types (see the \texttt{FilterType} transformer and \texttt{setLocal} in the implementation).
 This motivates defining refinements compositionally by lifting a transformation on $\SType$ values to $\STypes$, $\Clause$, $\Clauses$, and finally $\TType$.
 
+\begin{definition}[\texttt{typeof} Predicates (Tag-Level)]
+\label{def:typeof-predicates}
+Define the following tag-level predicates:
+\begin{align*}
+P_{\mathsf{typeof}=\texttt{"string"}} &\triangleq \{ v \in \Val \mid \rtag(v)=5 \} \\
+P_{\mathsf{typeof}=\texttt{"number"}} &\triangleq \{ v \in \Val \mid \rtag(v)=4 \} \\
+P_{\mathsf{typeof}=\texttt{"bigint"}} &\triangleq \{ v \in \Val \mid \rtag(v)=6 \} \\
+P_{\mathsf{typeof}=\texttt{"boolean"}} &\triangleq \{ v \in \Val \mid \rtag(v)=3 \} \\
+P_{\mathsf{typeof}=\texttt{"function"}} &\triangleq \{ v \in \Val \mid \rtag(v)=11 \} \\
+P_{\mathsf{typeof}=\texttt{"undefined"}} &\triangleq \{ v \in \Val \mid \rtag(v)\in\{0,1\} \} \\
+P_{\mathsf{typeof}=\texttt{"object"}} &\triangleq \ObjVal.
+\end{align*}
+\paragraph{Note.}
+This definition models the predicate used for refinement soundness; the implementation's filter for \texttt{"object"} may conservatively retain other same-tag alternatives.
+The \texttt{"symbol"} case is intentionally omitted because SKJS performs no refinement for it.
+\end{definition}
+
 \begin{definition}[Evaluation for Refinement Tests]
 \label{def:refine-eval}
 We define a partial evaluation relation for the refinement-test fragment:
@@ -604,19 +621,57 @@ If no rule applies to $e$ (i.e. $e$ is not one of the supported refinement-test 
 The implementation treats strict inequality \texttt{!==} by flipping the target (i.e. refining for \texttt{false} of the corresponding strict equality).
 Accordingly, the refinement rules for $(x \ !== \ y)$ are the same as for $(x===y)$, with $\Rightarrow$ and $\Leftarrow$ swapped.
 
+\paragraph{Nullish filters and mappers.}
+\begin{definition}[Nullish Filters and Mappers]
+\label{def:nullish-filters-mappers}
+Define the following filter/map functions on simple types:
+\[
+g_{\mathrm{id}}(s) \triangleq s.
+\]
+\[
+f_{\mathsf{null}}(s) \triangleq (\tagfn(s)=2),
+\qquad
+f_{\neg\mathsf{null}}(s) \triangleq (\tagfn(s)\neq 2).
+\]
+\[
+f_{\mathsf{undef}}(s) \triangleq (\tagfn(s)\in\{0,1\}),
+\qquad
+f_{\neg\mathsf{undef}}(s) \triangleq (\tagfn(s)\notin\{0,1\}).
+\]
+\end{definition}
+
 \paragraph{Nullish equality.}
 \begin{mathpar}
-\inferrule*[right=R-NullT]{ }{\RefineT{\Env}{(x === \texttt{null})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}(t))}}
+\inferrule*[right=R-NullT]{ }{\RefineT{\Env}{(x === \texttt{null})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{null}},g_{\mathrm{id}}}(t))}}
 \and
-\inferrule*[right=R-NullF]{ }{\RefineF{\Env}{(x === \texttt{null})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{null}},g_{\mathsf{null}}}(t))}}
+\inferrule*[right=R-NullF]{ }{\RefineF{\Env}{(x === \texttt{null})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{null}},g_{\mathrm{id}}}(t))}}
 \and
-\inferrule*[right=R-UndefT]{ }{\RefineT{\Env}{(x === \texttt{undefined})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{undef}},g_{\mathsf{undef}}}(t))}}
+\inferrule*[right=R-UndefT]{ }{\RefineT{\Env}{(x === \texttt{undefined})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{undef}},g_{\mathrm{id}}}(t))}}
 \and
-\inferrule*[right=R-UndefF]{ }{\RefineF{\Env}{(x === \texttt{undefined})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}(t))}}
+\inferrule*[right=R-UndefF]{ }{\RefineF{\Env}{(x === \texttt{undefined})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{undef}},g_{\mathrm{id}}}(t))}}
 \end{mathpar}
+where $f_{\mathsf{null}}, f_{\neg\mathsf{null}}, f_{\mathsf{undef}}, f_{\neg\mathsf{undef}}, g_{\mathrm{id}}$ are as in Definition~\ref{def:nullish-filters-mappers}.
 \paragraph{Side condition (locals only).}
 In the implementation, comparisons against \texttt{null}/\texttt{undefined} are only permitted when the compared expression is a local variable; otherwise a typing error is raised.
 Accordingly, the rules above are intended only for tests where $x$ is a local.
+
+\paragraph{\texttt{typeof} filters and defaults.}
+\begin{definition}[\texttt{typeof} Filters and Defaults]
+\label{def:typeof-filters-defaults}
+For each $k$ in Definition~\ref{def:typeof-predicates}, we define a filter/map pair and an optional default $d_k$ matching the implementation.
+\begin{itemize}
+\item For $k \in \{\texttt{"string"},\texttt{"number"},\texttt{"bigint"},\texttt{"boolean"},\texttt{"function"},\texttt{"undefined"}\}$, let $f_k(s)$ be true iff $\tagfn(s)$ is the corresponding tag (or tag-set), and let $g_k \triangleq g_{\mathrm{id}}$.
+\item For $k=\texttt{"object"}$, let $f_{\texttt{"object"}}(s)$ be true iff $\tagfn(s)\in\{2,9,10\}$ (object, null, or algebraic alternatives retained), and let $g_{\texttt{"object"}} \triangleq g_{\mathrm{id}}$.
+\end{itemize}
+Define defaults:
+\begin{itemize}
+\item $d_{\texttt{"string"}}=\mathsf{Some}(\texttt{string})$, $d_{\texttt{"number"}}=\mathsf{Some}(\texttt{number})$, $d_{\texttt{"bigint"}}=\mathsf{Some}(\texttt{bigint})$, $d_{\texttt{"boolean"}}=\mathsf{Some}(\texttt{boolean})$.
+\item Let $F_{\emptyset}$ be the empty object field specification (no required/optional fields, no index signature), and set $d_{\texttt{"object"}}=\mathsf{Some}(\texttt{object}(F_{\emptyset}))$.
+\item $d_{\texttt{"function"}}=\mathsf{None}$ and $d_{\texttt{"undefined"}}=\mathsf{None}$.
+\end{itemize}
+\paragraph{Symbol.}
+For $k=\texttt{"symbol"}$, SKJS performs no refinement, so we omit $f_k,g_k,d_k$.
+\end{definition}
 
 \paragraph{\texttt{typeof}.}
 \begin{mathpar}
@@ -820,30 +875,30 @@ We also write $\neg P$ for $\Val \setminus P$.
 
 \begin{lemma}[Null Refinement is Predicate-Sound]
 \label{lem:null-refine-predicate-sound}
-Let $f_{\mathsf{null}}(s) \triangleq (\tagfn(s)=2)$ and let $g_{\mathsf{null}}(s)\triangleq s$.
-Then $\refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}$ is predicate-sound for $P_{\mathsf{null}}$.
-Moreover, letting $f_{\neg\mathsf{null}}(s)\triangleq (\tagfn(s)\neq 2)$, $\refineop^{f_{\neg\mathsf{null}},g_{\mathsf{null}}}$ is predicate-sound for $\neg P_{\mathsf{null}}$.
+Let $f_{\mathsf{null}}$ and $g_{\mathrm{id}}$ be as in Definition~\ref{def:nullish-filters-mappers}.
+Then $\refineop^{f_{\mathsf{null}},g_{\mathrm{id}}}$ is predicate-sound for $P_{\mathsf{null}}$.
+Moreover, letting $f_{\neg\mathsf{null}}$ be as in Definition~\ref{def:nullish-filters-mappers}, $\refineop^{f_{\neg\mathsf{null}},g_{\mathrm{id}}}$ is predicate-sound for $\neg P_{\mathsf{null}}$.
 \end{lemma}
 
 \begin{proof}
-We show $(f_{\mathsf{null}},g_{\mathsf{null}})$ is sound for $P_{\mathsf{null}}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
+We show $(f_{\mathsf{null}},g_{\mathrm{id}})$ is sound for $P_{\mathsf{null}}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
 Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{null}}$.
 Then $\rtag(v)=2$, and by A0 we have $\tagfn(s)=2$, hence $f_{\mathsf{null}}(s)=\mathsf{true}$.
-Since $g_{\mathsf{null}}$ is the identity, $v \in \sem{g_{\mathsf{null}}(s)}$ is immediate.
+Since $g_{\mathrm{id}}$ is the identity, $v \in \sem{g_{\mathrm{id}}(s)}$ is immediate.
 The $\neg P_{\mathsf{null}}$ case is analogous: if $v \in \neg P_{\mathsf{null}}$ then $\rtag(v) \neq 2$, so by A0 $\tagfn(s) \neq 2$ and $f_{\neg\mathsf{null}}(s)=\mathsf{true}$.
 \end{proof}
 
 \begin{lemma}[Undefined/Void Refinement is Predicate-Sound]
 \label{lem:undef-refine-predicate-sound}
-Let $f_{\mathsf{undef}}(s) \triangleq (\tagfn(s)\in\{0,1\})$ and $g_{\mathsf{undef}}(s)\triangleq s$.
-Then $\refineop^{f_{\mathsf{undef}},g_{\mathsf{undef}}}$ is predicate-sound for $P_{\mathsf{undef}}$.
-Moreover, letting $f_{\neg\mathsf{undef}}(s)\triangleq (\tagfn(s)\notin\{0,1\})$, $\refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}$ is predicate-sound for $\neg P_{\mathsf{undef}}$.
+Let $f_{\mathsf{undef}}$ and $g_{\mathrm{id}}$ be as in Definition~\ref{def:nullish-filters-mappers}.
+Then $\refineop^{f_{\mathsf{undef}},g_{\mathrm{id}}}$ is predicate-sound for $P_{\mathsf{undef}}$.
+Moreover, letting $f_{\neg\mathsf{undef}}$ be as in Definition~\ref{def:nullish-filters-mappers}, $\refineop^{f_{\neg\mathsf{undef}},g_{\mathrm{id}}}$ is predicate-sound for $\neg P_{\mathsf{undef}}$.
 \end{lemma}
 
 \begin{proof}
-We show $(f_{\mathsf{undef}},g_{\mathsf{undef}})$ is sound for $P_{\mathsf{undef}}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
+We show $(f_{\mathsf{undef}},g_{\mathrm{id}})$ is sound for $P_{\mathsf{undef}}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
 Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{undef}}$, i.e., $\rtag(v)\in\{0,1\}$.
-By A0, $\tagfn(s)=\rtag(v)\in\{0,1\}$, so $f_{\mathsf{undef}}(s)=\mathsf{true}$ and $v\in\sem{g_{\mathsf{undef}}(s)}$.
+By A0, $\tagfn(s)=\rtag(v)\in\{0,1\}$, so $f_{\mathsf{undef}}(s)=\mathsf{true}$ and $v\in\sem{g_{\mathrm{id}}(s)}$.
 The $\neg P_{\mathsf{undef}}$ case is analogous.
 \end{proof}
 
@@ -853,40 +908,8 @@ We model the refinements performed for tests of the form \texttt{typeof x === "k
 The implementation refines based on the internal tag/classification of the current $\SType$ alternatives.
 \paragraph{Note.}
 The predicate modeled here is the one used by the checker for narrowing; it may be a conservative approximation of JavaScript runtime \texttt{typeof}.
-
-\begin{definition}[\texttt{typeof} Predicates (Tag-Level)]
-\label{def:typeof-predicates}
-Define the following tag-level predicates:
-\begin{align*}
-P_{\mathsf{typeof}=\texttt{"string"}} &\triangleq \{ v \in \Val \mid \rtag(v)=5 \} \\
-P_{\mathsf{typeof}=\texttt{"number"}} &\triangleq \{ v \in \Val \mid \rtag(v)=4 \} \\
-P_{\mathsf{typeof}=\texttt{"bigint"}} &\triangleq \{ v \in \Val \mid \rtag(v)=6 \} \\
-P_{\mathsf{typeof}=\texttt{"boolean"}} &\triangleq \{ v \in \Val \mid \rtag(v)=3 \} \\
-P_{\mathsf{typeof}=\texttt{"function"}} &\triangleq \{ v \in \Val \mid \rtag(v)=11 \} \\
-P_{\mathsf{typeof}=\texttt{"undefined"}} &\triangleq \{ v \in \Val \mid \rtag(v)\in\{0,1\} \} \\
-P_{\mathsf{typeof}=\texttt{"object"}} &\triangleq \ObjVal.
-\end{align*}
-\paragraph{Note.}
-This definition models the predicate used for refinement soundness; the implementation's filter for \texttt{"object"} may conservatively retain other same-tag alternatives.
-The \texttt{"symbol"} case is intentionally omitted because SKJS performs no refinement for it.
-\end{definition}
-
-\begin{definition}[\texttt{typeof} Filters and Defaults]
-\label{def:typeof-filters-defaults}
-For each $k$ in Definition~\ref{def:typeof-predicates}, we define a filter/map pair and an optional default $d_k$ matching the implementation.
-\begin{itemize}
-\item For $k \in \{\texttt{"string"},\texttt{"number"},\texttt{"bigint"},\texttt{"boolean"},\texttt{"function"},\texttt{"undefined"}\}$, let $f_k(s)$ be true iff $\tagfn(s)$ is the corresponding tag (or tag-set), and let $g_k$ be the identity.
-\item For $k=\texttt{"object"}$, let $f_{\texttt{"object"}}(s)$ be true iff $\tagfn(s)\in\{2,9,10\}$ (object, null, or algebraic alternatives retained), and let $g_{\texttt{"object"}}$ be the identity.
-\end{itemize}
-Define defaults:
-\begin{itemize}
-\item $d_{\texttt{"string"}}=\mathsf{Some}(\texttt{string})$, $d_{\texttt{"number"}}=\mathsf{Some}(\texttt{number})$, $d_{\texttt{"bigint"}}=\mathsf{Some}(\texttt{bigint})$, $d_{\texttt{"boolean"}}=\mathsf{Some}(\texttt{boolean})$.
-\item Let $F_{\emptyset}$ be the empty object field specification (no required/optional fields, no index signature), and set $d_{\texttt{"object"}}=\mathsf{Some}(\texttt{object}(F_{\emptyset}))$.
-\item $d_{\texttt{"function"}}=\mathsf{None}$ and $d_{\texttt{"undefined"}}=\mathsf{None}$.
-\end{itemize}
-\paragraph{Symbol.}
-For $k=\texttt{"symbol"}$, SKJS performs no refinement, so we omit $f_k,g_k,d_k$.
-\end{definition}
+The predicates and the corresponding filter/default choices are defined in
+Definitions~\ref{def:typeof-predicates} and~\ref{def:typeof-filters-defaults}.
 
 \begin{lemma}[\texttt{typeof} Refinement is Predicate-Sound (with Defaults)]
 \label{lem:typeof-refine-predicate-sound}
@@ -905,7 +928,7 @@ We first show $(f_k,g_k)$ is sound for $P_{\mathsf{typeof}=k}$ (Definition~\ref{
 Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{typeof}=k}$.
 By definition of $P_{\mathsf{typeof}=k}$, $\rtag(v)$ matches the tag-set associated with $k$.
 By A0, $\tagfn(s)=\rtag(v)$, so $f_k(s)=\mathsf{true}$ (noting that for $k=\texttt{"object"}$, $\{2,9,10\}$ covers tag $9$ in particular),
-and since $g_k$ is the identity, $v \in \sem{g_k(s)}$.
+and since $g_k \triangleq g_{\mathrm{id}}$ is the identity, $v \in \sem{g_k(s)}$.
 Thus $(f_k,g_k)$ is sound and by Lemma~\ref{lem:filter-map-predicate-sound}, $R_k$ is predicate-sound for $P_{\mathsf{typeof}=k}$.
 
 For defaults, note that for each $k$ with $d_k=\mathsf{Some}(s_k)$, we have $P_{\mathsf{typeof}=k} \subseteq \sem{\mathsf{single}(s_k)}$ by construction (e.g. string values inhabit \texttt{string}, and $\ObjVal \subseteq \sem{\texttt{object}(F_{\emptyset})}$).
