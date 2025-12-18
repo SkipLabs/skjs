@@ -551,6 +551,32 @@ Thus $\sigma(x) \in \sem{\Env(x)} \cap P \subseteq \sem{R(\Env(x))} = \sem{\Env'
 Hence $\sigma \models \Env'$.
 \end{proof}
 
+\begin{lemma}[Connective Rules are Branch-Sound]
+\label{lem:connectives-branch-sound}
+Assume that for every derivation $\Env \vdash e_1 \Rightarrow \Env_1$, the rule is branch-sound for the true branch in the sense of Definition~\ref{def:refinement}.
+Assume likewise that for every derivation $\Env_1 \vdash e_2 \Rightarrow \Env_2$, the rule is branch-sound for the true branch.
+Then the connective rule \textbf{R-AndT} is branch-sound for the true branch.
+
+Dually, assume that for every derivation $\Env \vdash e_1 \Leftarrow \Env_1$ and $\Env_1 \vdash e_2 \Leftarrow \Env_2$, the rules are branch-sound for the false branch.
+Then the connective rule \textbf{R-OrF} is branch-sound for the false branch.
+\end{lemma}
+
+\begin{proof}
+\textbf{R-AndT.}
+Suppose $\sigma \models \Env$ and $\sigma \models_{\mathsf{true}} (e_1 \ \&\&\ e_2)$.
+By Definition~\ref{def:refine-eval}, we have $\sigma \models_{\mathsf{true}} e_1$ and $\sigma \models_{\mathsf{true}} e_2$.
+Consider a derivation of $\Env \vdash (e_1 \ \&\&\ e_2) \Rightarrow \Env_2$ via \textbf{R-AndT}; it contains premises
+$\Env \vdash e_1 \Rightarrow \Env_1$ and $\Env_1 \vdash e_2 \Rightarrow \Env_2$.
+By branch-soundness of the first premise and $\sigma \models_{\mathsf{true}} e_1$, from $\sigma \models \Env$ we obtain $\sigma \models \Env_1$.
+Then by branch-soundness of the second premise and $\sigma \models_{\mathsf{true}} e_2$, we obtain $\sigma \models \Env_2$.
+This is exactly branch-soundness of \textbf{R-AndT}.
+
+\textbf{R-OrF.}
+Suppose $\sigma \models \Env$ and $\sigma \models_{\mathsf{false}} (e_1 \ ||\ e_2)$.
+By Definition~\ref{def:refine-eval}, we have $\sigma \models_{\mathsf{false}} e_1$ and $\sigma \models_{\mathsf{false}} e_2$.
+For a derivation of $\Env \vdash (e_1 \ ||\ e_2) \Leftarrow \Env_2$ via \textbf{R-OrF}, we similarly obtain $\sigma \models \Env_1$ from the first premise and then $\sigma \models \Env_2$ from the second premise.
+\end{proof}
+
 \paragraph{Soundness connection.}
 Each of the case-study lemmas in the following subsections establishes that the filter/map pair $(f,g)$ is sound for the corresponding runtime predicate $P$, 
 which by Lemma~\ref{lem:filter-map-predicate-sound} implies predicate-soundness of $\refineop^{f,g}$,
