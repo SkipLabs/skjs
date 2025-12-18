@@ -318,24 +318,58 @@ Then $t = (I,C)$ denotes the type whose semantics is:
 
 \begin{definition}[Refinement]
 \label{def:refinement}
-Let $t \in \TType$ and let $P \in \Pred$ be a predicate (a set of runtime values).
-A \emph{refinement operator} is a function
+Let $\Env$ range over environments mapping local variables to $\TType$.
+Let $\sigma$ range over runtime environments mapping local variables to runtime values in $\Val$.
+We write $\Env(x)$ for lookup and $\Env[x \mapsto t]$ for pointwise update.
+
+\paragraph{Satisfaction.}
+Define $\sigma \models \Env$ to mean: for every local $x$, we have $\sigma(x) \in \sem{\Env(x)}$.
+
+\paragraph{Refinement judgements.}
+We write:
 \[
-\refineop : \TType \times \Pred \to \TType.
+\Env \vdash e \Rightarrow \Env'
+\qquad\text{and}\qquad
+\Env \vdash e \Leftarrow \Env'
 \]
-We call $\refineop$ \emph{branch-sound} if for all $t \in \TType$ and $P \in \Pred$:
-\[
-\sem{t} \cap P \subseteq \sem{\refineop(t,P)}.
-\]
-\paragraph{Remark (precision vs soundness).}
-Branch-soundness only requires that the refined type \emph{over-approximates} the values that can occur in the branch.
-It does not require $\sem{\refineop(t,P)} \subseteq \sem{t}$, so the refinement is allowed to be conservative (lose information) while remaining sound.
+to mean ``refine under the assumption that $e$ evaluates to \texttt{true}/\texttt{false}'' respectively.
+These judgements are defined by the inference rules in Section~\ref{sec:refine-rules}, and are intentionally partial: they only model the refinement patterns implemented in SKJS.
+
+\paragraph{Soundness.}
+We call the judgement system \emph{branch-sound} if:
+\begin{itemize}
+\item whenever $\sigma \models \Env$ and $e$ evaluates to \texttt{true} under $\sigma$ (according to the evaluation relation for refinement tests in Definition~\ref{def:refine-eval}),
+then $\sigma \models \Env'$ holds for every derivation $\Env \vdash e \Rightarrow \Env'$;
+\item whenever $\sigma \models \Env$ and $e$ evaluates to \texttt{false} under $\sigma$,
+then $\sigma \models \Env'$ holds for every derivation $\Env \vdash e \Leftarrow \Env'$.
+\end{itemize}
 \end{definition}
 
 \paragraph{Implementation correspondence.}
 In SKJS, control-flow narrowing is implemented by rewriting the internal type for a local variable using a tag-indexed
 filter/map on simple types (see the \texttt{FilterType} transformer and \texttt{setLocal} in the implementation).
 This motivates defining refinements compositionally by lifting a transformation on $\SType$ values to $\STypes$, $\Clause$, $\Clauses$, and finally $\TType$.
+
+\begin{definition}[Evaluation for Refinement Tests]
+\label{def:refine-eval}
+We define a partial evaluation relation for the refinement-test fragment:
+\[
+\sigma \models_{\mathsf{true}} e
+\qquad\text{and}\qquad
+\sigma \models_{\mathsf{false}} e.
+\]
+It is defined only for the supported test forms:
+\begin{itemize}
+\item \textbf{Nullish:} $\sigma \models_{\mathsf{true}} (x===\texttt{null})$ iff $\rtag(\sigma(x))=2$; $\sigma \models_{\mathsf{false}}$ is the negation.
+Similarly for \texttt{undefined}, with $\rtag(\sigma(x))\in\{0,1\}$.
+\item \textbf{\texttt{typeof}:} $\sigma \models_{\mathsf{true}} (\texttt{typeof}\ x===k)$ iff $\sigma(x)\in P_{\mathsf{typeof}=k}$ where $P_{\mathsf{typeof}=k}$ is as in Definition~\ref{def:typeof-predicates}; the false relation is negation.
+\item \textbf{\texttt{in}:} $\sigma \models_{\mathsf{true}} (\texttt{"}p\texttt{" in }x)$ iff $\sigma(x)\in\ObjVal$ and $\mathsf{has}(\sigma(x),p)$; the false relation is negation.
+\item \textbf{Connectives:}
+  $\sigma \models_{\mathsf{true}} (e_1 \ \&\&\ e_2)$ iff $\sigma \models_{\mathsf{true}} e_1$ and $\sigma \models_{\mathsf{true}} e_2$.
+  $\sigma \models_{\mathsf{false}} (e_1 \ ||\ e_2)$ iff $\sigma \models_{\mathsf{false}} e_1$ and $\sigma \models_{\mathsf{false}} e_2$.
+  (Other combinations are omitted, since SKJS only uses these connective cases for refinement in the current implementation.)
+\end{itemize}
+\end{definition}
 
 \begin{definition}[Filter/Map Refinement (Implementation Model)]
 \label{def:filter-map-refinement}
@@ -398,20 +432,7 @@ Combining cases yields the desired inclusion.
 \end{proof}
 
 \subsection{Algorithmic Refinement Judgements (Inference-Rule Style)}
-
-To present refinement in the idiomatic style used in type-system research, we write judgements that update a typing environment.
-Let $\Env$ range over environments mapping local variables to $\TType$.
-We write $\Env(x)$ for lookup and $\Env[x \mapsto t]$ for pointwise update.
-
-\paragraph{True/false refinements.}
-We define two refinement judgements:
-\[
-\Env \vdash e \Rightarrow \Env'
-\qquad\text{and}\qquad
-\Env \vdash e \Leftarrow \Env'
-\]
-to mean ``refine under the assumption that $e$ evaluates to \texttt{true}/\texttt{false}'' respectively.
-In this note we only give rules for the refinement forms implemented in SKJS; all other expressions leave the environment unchanged.
+\label{sec:refine-rules}
 
 \paragraph{Local update helper.}
 Given a local $x$ and a refinement transformer $R : \TType \to \TType$, define:
@@ -419,12 +440,8 @@ Given a local $x$ and a refinement transformer $R : \TType \to \TType$, define:
 \mathsf{upd}(\Env,x,R) \triangleq \Env[x \mapsto R(\Env(x))].
 \]
 When a rule refines a non-local expression, it produces $\Env$.
-
-\begin{mathpar}
-\inferrule*[right=R-OtherT]{ }{\Env \vdash e \Rightarrow \Env}
-\and
-\inferrule*[right=R-OtherF]{ }{\Env \vdash e \Leftarrow \Env}
-\end{mathpar}
+\paragraph{Default behavior.}
+If no rule applies to $e$ (i.e. $e$ is not one of the supported refinement-test forms), then refinement leaves the environment unchanged.
 
 \paragraph{Nullish equality.}
 \begin{mathpar}
@@ -443,7 +460,7 @@ When a rule refines a non-local expression, it produces $\Env$.
 \and
 \inferrule*[right=R-TypeofF]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_{P_k},g_{P_k}}(t))}
 \end{mathpar}
-where $P_k$ is the corresponding predicate from Definition~\ref{def:typeof-predicates}.
+where $P_k$ is the corresponding predicate $P_{\mathsf{typeof}=k}$ from Definition~\ref{def:typeof-predicates}.
 
 \paragraph{\texttt{in}.}
 \begin{mathpar}
@@ -465,7 +482,8 @@ The implementation composes refinements sequentially. For example:
 \end{mathpar}
 
 \paragraph{Soundness connection.}
-Each of the case-study lemmas in the following subsections proves that the corresponding rule is branch-sound, via Lemma~\ref{lem:filter-map-branch-sound}.
+Each of the case-study lemmas in the following subsections proves that the corresponding rule is branch-sound (in the sense of Definition~\ref{def:refinement}),
+via Lemma~\ref{lem:filter-map-branch-sound} and the evaluation relation of Definition~\ref{def:refine-eval}.
 
 \subsection{Refinement Case Study: the \texttt{in} Operator}
 
