@@ -78,7 +78,8 @@ $\TParam$ & Definition~\ref{def:type-parameters} \\
 $\Clause$ & Definition~\ref{def:clause} \\
 $\Clauses$ & Definition~\ref{def:clauses} \\
 $\TType$ & Definition~\ref{def:ttype} \\
-$\refineop$ (predicate-driven refinement) & Definition~\ref{def:refinement} \\
+$\refineop$ (predicate-driven refinement) & Definition~\ref{def:filter-map-refinement} \\
+Predicate-soundness & Definition~\ref{def:predicate-sound-transformer} \\
 $\diff$ (soundness P1/P2) & Definition~\ref{def:diff-soundness} \\
 \end{tabular}
 \end{center}
@@ -388,7 +389,7 @@ It is defined only for the supported test forms:
 Similarly for \texttt{undefined}, with $\rtag(\sigma(x))\in\{0,1\}$.
 \item \textbf{\texttt{typeof}:} $\sigma \models_{\mathsf{true}} (\texttt{typeof}\ x===k)$ iff $\sigma(x)\in P_{\mathsf{typeof}=k}$ where $P_{\mathsf{typeof}=k}$ is as in Definition~\ref{def:typeof-predicates}; the false relation is negation.
 \item \textbf{\texttt{in}:} $\sigma \models_{\mathsf{true}} (\texttt{"}p\texttt{" in }x)$ iff $\sigma(x)\in\ObjVal$ and $\mathsf{has}(\sigma(x),p)$; the false relation is negation.
-\item \textbf{Algebraic tag equality:} $\sigma \models_{\mathsf{true}} (x.\texttt{\_tag}===t)$ iff $\sigma(x)\in\AlgVal$ and $\mathsf{atag}(\sigma(x))=t$; the false relation is negation.
+\item \textbf{Algebraic tag equality:} $\sigma \models_{\mathsf{true}} (x.\texttt{\_tag}===\ell)$ iff $\sigma(x)\in\AlgVal$ and $\mathsf{atag}(\sigma(x))=\ell$, where $\ell \in \String$ is a string literal; the false relation is negation.
 \item \textbf{\texttt{instanceof}:} $\sigma \models_{\mathsf{true}} (x\ \texttt{instanceof}\ C)$ iff $\sigma(x)\in P_{\mathsf{inst}}(C)$ for a predicate $P_{\mathsf{inst}}(C)\subseteq \Val$ (see Definition~\ref{def:instanceof-semantics}); the false relation is negation.
 \item \textbf{Connectives:}
   $\sigma \models_{\mathsf{true}} (e_1 \ \&\&\ e_2)$ iff $\sigma \models_{\mathsf{true}} e_1$ and $\sigma \models_{\mathsf{true}} e_2$.
@@ -445,7 +446,7 @@ We say $R$ is \emph{predicate-sound for $P$} if for all $t \in \TType$:
 \end{definition}
 
 \begin{lemma}[Filter/Map Refinement is Predicate-Sound]
-\label{lem:filter-map-branch-sound}
+\label{lem:filter-map-predicate-sound}
 If $(f,g)$ is sound for $P$, then the transformer $t \mapsto \refineop^{f,g}(t)$ is predicate-sound for $P$ (Definition~\ref{def:predicate-sound-transformer}).
 \end{lemma}
 
@@ -455,10 +456,13 @@ We prove $\sem{t}\cap P \subseteq \sem{\refineop^{f,g}(t)}$ by cases on membersh
 \begin{itemize}
 \item If $v \in \sem{\insts}\cap P$, then $v \in \sem{\insts} \subseteq \sem{\refineop^{f,g}(t)}$ since refinement leaves $\insts$ unchanged.
 \item If $v \in \sem{\clauses}\cap P$, then $v \in \sem{(\vars,\stypes)}$ for some clause $(\vars,\stypes)$ in $\clauses$.
+By clause semantics (Definition~\ref{def:clause}), $v \in \bigcap_{w \in \vars} \sem{w}$ and $v \in \sem{\stypes}$.
 If $\stypes=\mathsf{None}$, then $\refineop_{\Clause}^{f,g}(\vars,\mathsf{None})=(\vars,\mathsf{None})$ and the clause remains top, so $v$ is still included.
-If $\stypes=\mathsf{Some}(S)$, then $v \in \sem{S(k)}$ for some $k \in \mathrm{dom}(S)$.
+If $\stypes=\mathsf{Some}(S)$, then $v \in \sem{S} = \bigcup_{k \in \mathrm{dom}(S)} \sem{S(k)}$, so $v \in \sem{S(k)}$ for some $k \in \mathrm{dom}(S)$.
 By soundness of $(f,g)$ for $P$ and $v\in P$, we have $f(S(k))=\mathsf{true}$ and $v\in \sem{g(S(k))}$.
-Hence $v \in \sem{\refineop_{\STypes}^{f,g}(S)}$, so $v$ is contained in the refined clause and therefore in $\sem{\refineop_{\Clauses}^{f,g}(\clauses)}$.
+Hence $v \in \sem{\refineop_{\STypes}^{f,g}(S)}$.
+The refined clause is $(\vars, \mathsf{Some}(\refineop_{\STypes}^{f,g}(S)))$, and since $\vars$ is unchanged and $v \in \bigcap_{w \in \vars} \sem{w}$, we have $v \in \sem{(\vars, \mathsf{Some}(\refineop_{\STypes}^{f,g}(S)))}$.
+Therefore $v \in \sem{\refineop_{\Clauses}^{f,g}(\clauses)}$.
 \end{itemize}
 Combining cases yields the desired inclusion.
 \end{proof}
@@ -493,7 +497,7 @@ If no rule applies to $e$ (i.e. $e$ is not one of the supported refinement-test 
 \inferrule*[right=R-TypeofF]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_{P_k},g_{P_k}}(t))}
 \end{mathpar}
 where $P_k$ is the corresponding predicate $P_{\mathsf{typeof}=k}$ from Definition~\ref{def:typeof-predicates},
-and $f_{P_k},g_{P_k}$ are the filter/map pair induced by $P_k$ as described in Lemma~\ref{lem:typeof-refine-branch-sound} (with $g_{P_k}$ being the identity).
+and $f_{P_k},g_{P_k}$ are the filter/map pair induced by $P_k$ as described in Lemma~\ref{lem:typeof-refine-predicate-sound} (with $g_{P_k}$ being the identity).
 
 \paragraph{\texttt{in}.}
 \begin{mathpar}
@@ -504,10 +508,11 @@ and $f_{P_k},g_{P_k}$ are the filter/map pair induced by $P_k$ as described in L
 
 \paragraph{Algebraic tag equality.}
 \begin{mathpar}
-\inferrule*[right=R-AlgTagT]{ }{\Env \vdash (x.\texttt{\_tag}===t) \Rightarrow \mathsf{upd}(\Env,x,\,t' \mapsto \refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,true}}_t}(t'))}
+\inferrule*[right=R-AlgTagT]{ }{\Env \vdash (x.\texttt{\_tag}===\ell) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,true}}_\ell}(t))}
 \and
-\inferrule*[right=R-AlgTagF]{ }{\Env \vdash (x.\texttt{\_tag}===t) \Leftarrow \mathsf{upd}(\Env,x,\,t' \mapsto \refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,false}}_t}(t'))}
+\inferrule*[right=R-AlgTagF]{ }{\Env \vdash (x.\texttt{\_tag}===\ell) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,false}}_\ell}(t))}
 \end{mathpar}
+where $\ell \in \String$ is a string literal.
 
 \paragraph{\texttt{instanceof}.}
 \begin{mathpar}
@@ -529,10 +534,27 @@ The implementation composes refinements sequentially. For example:
 {\Env \vdash (e_1 \ ||\ e_2) \Leftarrow \Env_2}
 \end{mathpar}
 
+\begin{lemma}[Predicate-Sound Transformers Yield Branch-Sound Rules]
+\label{lem:predicate-to-branch-sound}
+Let $R : \TType \to \TType$ be predicate-sound for predicate $P \subseteq \Val$.
+Suppose the inference rule for expression $e$ updates the environment via $\mathsf{upd}(\Env, x, R)$.
+If $\sigma \models_{\mathsf{true}} e$ implies $\sigma(x) \in P$, then the rule is branch-sound for the true branch.
+Analogously for the false branch with $\sigma \models_{\mathsf{false}} e$.
+\end{lemma}
+
+\begin{proof}
+Suppose $\sigma \models \Env$ and $\sigma \models_{\mathsf{true}} e$.
+Let $\Env' = \mathsf{upd}(\Env, x, R)$.
+For any local $y \neq x$, $\Env'(y) = \Env(y)$ and $\sigma(y) \in \sem{\Env(y)} = \sem{\Env'(y)}$.
+For $x$: by hypothesis $\sigma(x) \in P$, and by $\sigma \models \Env$ we have $\sigma(x) \in \sem{\Env(x)}$.
+Thus $\sigma(x) \in \sem{\Env(x)} \cap P \subseteq \sem{R(\Env(x))} = \sem{\Env'(x)}$ by predicate-soundness of $R$.
+Hence $\sigma \models \Env'$.
+\end{proof}
+
 \paragraph{Soundness connection.}
-Each of the case-study lemmas in the following subsections proves that the corresponding rule is branch-sound (in the sense of Definition~\ref{def:refinement}),
-via predicate-soundness of the underlying transformer (Definition~\ref{def:predicate-sound-transformer} and Lemma~\ref{lem:filter-map-branch-sound})
-and the evaluation relation of Definition~\ref{def:refine-eval}.
+Each of the case-study lemmas in the following subsections establishes that the filter/map pair $(f,g)$ is sound for the corresponding runtime predicate $P$, 
+which by Lemma~\ref{lem:filter-map-predicate-sound} implies predicate-soundness of $\refineop^{f,g}$,
+and by Lemma~\ref{lem:predicate-to-branch-sound} implies branch-soundness of the inference rule.
 
 \subsection{Refinement Case Study: the \texttt{in} Operator}
 
@@ -558,10 +580,15 @@ Define a mapper $g^{\mathsf{true}}_p : \SType \to \SType$ as follows:
 \item If $s$ is an object type $s=\texttt{object}(F)$ and $F_{\mathrm{idx}}=\mathsf{None}$ and $p \notin \mathrm{dom}(F_{\mathrm{req}})$, then $g^{\mathsf{true}}_p(s)$ is $\texttt{object}(F')$ where $F'$ is $F$ except that $F'_{\mathrm{req}}$ additionally maps $p \mapsto \top_{\TType}$.
 \item Otherwise, $g^{\mathsf{true}}_p(s)=s$.
 \end{itemize}
-Let $f^{\mathsf{true}}_p : \SType \to \{\mathsf{true},\mathsf{false}\}$ be the filter that keeps object-tagged structured types and drops primitive atoms and primitive values (matching the implementation's conservative approximation); for the purpose of this note it suffices that:
+Let $f^{\mathsf{true}}_p : \SType \to \{\mathsf{true},\mathsf{false}\}$ be the filter defined by:
 \[
-f^{\mathsf{true}}_p(s)=\mathsf{false} \text{ for primitive/unit/value } s,\quad\text{and}\quad f^{\mathsf{true}}_p(\texttt{object}(F))=\mathsf{true}.
+f^{\mathsf{true}}_p(s) = 
+\begin{cases}
+\mathsf{true} & \text{if } \tagfn(s) = 9 \text{ (i.e., $s$ is an object type)} \\
+\mathsf{false} & \text{otherwise (primitives, tuples, functions, etc.)}
+\end{cases}
 \]
+This matches the implementation's conservative approximation: only object-tagged types can satisfy the \texttt{in} predicate.
 
 Define a mapper $g^{\mathsf{false}}_p : \SType \to \SType$ by:
 \begin{itemize}
@@ -571,35 +598,36 @@ Define a mapper $g^{\mathsf{false}}_p : \SType \to \SType$ by:
 Let $f^{\mathsf{false}}_p(s)=\mathsf{true}$ for all $s$ (the implementation does not attempt to exclude non-objects in the false branch).
 \end{definition}
 
-\begin{lemma}[\texttt{in}-True Branch is Branch-Sound]
-\label{lem:in-true-branch-sound}
-For every $p \in \String$, the refinement $\refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}$ is branch-sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$.
+\begin{lemma}[\texttt{in}-True Branch is Predicate-Sound]
+\label{lem:in-true-predicate-sound}
+For every $p \in \String$, the refinement $\refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}$ is predicate-sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$.
 \end{lemma}
 
 \begin{proof}
-We show that $(f^{\mathsf{true}}_p,g^{\mathsf{true}}_p)$ is sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$ in the sense of Definition~\ref{def:filter-map-refinement}, and conclude by Lemma~\ref{lem:filter-map-branch-sound}.
+We show that $(f^{\mathsf{true}}_p,g^{\mathsf{true}}_p)$ is sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$ (Definition~\ref{def:filter-map-refinement}), and conclude by Lemma~\ref{lem:filter-map-predicate-sound}.
 Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathrm{in}}^{\mathsf{true}}(p)$.
 Then $v \in \ObjVal$, so $\rtag(v)=9$.
 By A0, $\rtag(v)=\tagfn(s)$, hence $\tagfn(s)=9$ and therefore $s$ must be an object type of the form $\texttt{object}(F)$.
 By definition of $P_{\mathrm{in}}^{\mathsf{true}}(p)$, $\mathsf{has}(v,p)$.
 The filter keeps object types, so $f^{\mathsf{true}}_p(s)=\mathsf{true}$.
-If $g^{\mathsf{true}}_p$ adds the required field $p \mapsto \top_{\TType}$, then $v$ satisfies the added requirement because it already has $p$ and $\sem{\top_{\TType}}=\Val$.
+If $g^{\mathsf{true}}_p$ adds the required field $p \mapsto \top_{\TType}$, then $v$ satisfies the added requirement because it already has $p$ and $\mathsf{get}(v,p) \in \sem{\top_{\TType}}=\Val$.
 Otherwise $g^{\mathsf{true}}_p(s)=s$ and membership is immediate.
 Thus $v \in \sem{g^{\mathsf{true}}_p(s)}$ and soundness holds.
 \end{proof}
 
-\begin{lemma}[\texttt{in}-False Branch is Branch-Sound]
-\label{lem:in-false-branch-sound}
-For every $p \in \String$, the refinement $\refineop^{f^{\mathsf{false}}_p,g^{\mathsf{false}}_p}$ is branch-sound for $P_{\mathrm{in}}^{\mathsf{false}}(p)$.
+\begin{lemma}[\texttt{in}-False Branch is Predicate-Sound]
+\label{lem:in-false-predicate-sound}
+For every $p \in \String$, the refinement $\refineop^{f^{\mathsf{false}}_p,g^{\mathsf{false}}_p}$ is predicate-sound for $P_{\mathrm{in}}^{\mathsf{false}}(p)$.
 \end{lemma}
 
 \begin{proof}
-As above, it suffices to show $(f^{\mathsf{false}}_p,g^{\mathsf{false}}_p)$ is sound for $P_{\mathrm{in}}^{\mathsf{false}}(p)$.
+We show $(f^{\mathsf{false}}_p,g^{\mathsf{false}}_p)$ is sound for $P_{\mathrm{in}}^{\mathsf{false}}(p)$ (Definition~\ref{def:filter-map-refinement}), and conclude by Lemma~\ref{lem:filter-map-predicate-sound}.
 Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathrm{in}}^{\mathsf{false}}(p)$.
 We have $f^{\mathsf{false}}_p(s)=\mathsf{true}$ by definition.
 If $s$ is not an object type, then $g^{\mathsf{false}}_p(s)=s$ so $v \in \sem{g^{\mathsf{false}}_p(s)}$.
-If $s=\texttt{object}(F)$, then $g^{\mathsf{false}}_p(s)=\texttt{object}(F\setminus p)$ which removes constraints.
-By Definition~\ref{def:object-semantics}, dropping field constraints can only enlarge the set of inhabitants, so $\sem{\texttt{object}(F)} \subseteq \sem{\texttt{object}(F\setminus p)}$ and hence $v \in \sem{g^{\mathsf{false}}_p(s)}$.
+If $s=\texttt{object}(F)$, then $g^{\mathsf{false}}_p(s)=\texttt{object}(F\setminus p)$ which removes $p$ from field constraints.
+By Definition~\ref{def:object-semantics}, the semantics only imposes constraints on listed fields, so removing a field from the specification can only enlarge (or preserve) the set of inhabitants: $\sem{\texttt{object}(F)} \subseteq \sem{\texttt{object}(F\setminus p)}$.
+Hence $v \in \sem{g^{\mathsf{false}}_p(s)}$.
 \end{proof}
 
 \subsection{Refinement Case Study: Nullish Checks}
@@ -618,31 +646,31 @@ P_{\mathsf{undef}} \triangleq \{ v \in \Val \mid \rtag(v)\in\{0,1\} \}.
 We also write $\neg P$ for $\Val \setminus P$.
 \end{definition}
 
-\begin{lemma}[Null Refinement is Branch-Sound]
-\label{lem:null-refine-branch-sound}
+\begin{lemma}[Null Refinement is Predicate-Sound]
+\label{lem:null-refine-predicate-sound}
 Let $f_{\mathsf{null}}(s) \triangleq (\tagfn(s)=2)$ and let $g_{\mathsf{null}}(s)\triangleq s$.
-Then $\refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}$ is branch-sound for $P_{\mathsf{null}}$.
-Moreover, letting $f_{\neg\mathsf{null}}(s)\triangleq (\tagfn(s)\neq 2)$, $\refineop^{f_{\neg\mathsf{null}},g_{\mathsf{null}}}$ is branch-sound for $\neg P_{\mathsf{null}}$.
+Then $\refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}$ is predicate-sound for $P_{\mathsf{null}}$.
+Moreover, letting $f_{\neg\mathsf{null}}(s)\triangleq (\tagfn(s)\neq 2)$, $\refineop^{f_{\neg\mathsf{null}},g_{\mathsf{null}}}$ is predicate-sound for $\neg P_{\mathsf{null}}$.
 \end{lemma}
 
 \begin{proof}
-We prove soundness of $(f_{\mathsf{null}},g_{\mathsf{null}})$ for $P_{\mathsf{null}}$ and apply Lemma~\ref{lem:filter-map-branch-sound}.
+We show $(f_{\mathsf{null}},g_{\mathsf{null}})$ is sound for $P_{\mathsf{null}}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
 Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{null}}$.
 Then $\rtag(v)=2$, and by A0 we have $\tagfn(s)=2$, hence $f_{\mathsf{null}}(s)=\mathsf{true}$.
 Since $g_{\mathsf{null}}$ is the identity, $v \in \sem{g_{\mathsf{null}}(s)}$ is immediate.
-The $\neg P_{\mathsf{null}}$ case is analogous.
+The $\neg P_{\mathsf{null}}$ case is analogous: if $v \in \neg P_{\mathsf{null}}$ then $\rtag(v) \neq 2$, so by A0 $\tagfn(s) \neq 2$ and $f_{\neg\mathsf{null}}(s)=\mathsf{true}$.
 \end{proof}
 
-\begin{lemma}[Undefined/Void Refinement is Branch-Sound]
-\label{lem:undef-refine-branch-sound}
+\begin{lemma}[Undefined/Void Refinement is Predicate-Sound]
+\label{lem:undef-refine-predicate-sound}
 Let $f_{\mathsf{undef}}(s) \triangleq (\tagfn(s)\in\{0,1\})$ and $g_{\mathsf{undef}}(s)\triangleq s$.
-Then $\refineop^{f_{\mathsf{undef}},g_{\mathsf{undef}}}$ is branch-sound for $P_{\mathsf{undef}}$.
-Moreover, letting $f_{\neg\mathsf{undef}}(s)\triangleq (\tagfn(s)\notin\{0,1\})$, $\refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}$ is branch-sound for $\neg P_{\mathsf{undef}}$.
+Then $\refineop^{f_{\mathsf{undef}},g_{\mathsf{undef}}}$ is predicate-sound for $P_{\mathsf{undef}}$.
+Moreover, letting $f_{\neg\mathsf{undef}}(s)\triangleq (\tagfn(s)\notin\{0,1\})$, $\refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}$ is predicate-sound for $\neg P_{\mathsf{undef}}$.
 \end{lemma}
 
 \begin{proof}
-As above, we show $(f_{\mathsf{undef}},g_{\mathsf{undef}})$ is sound for $P_{\mathsf{undef}}$.
-Let $s \in \SType$ and $v \in \sem{s}$ with $\rtag(v)\in\{0,1\}$.
+We show $(f_{\mathsf{undef}},g_{\mathsf{undef}})$ is sound for $P_{\mathsf{undef}}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
+Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{undef}}$, i.e., $\rtag(v)\in\{0,1\}$.
 By A0, $\tagfn(s)=\rtag(v)\in\{0,1\}$, so $f_{\mathsf{undef}}(s)=\mathsf{true}$ and $v\in\sem{g_{\mathsf{undef}}(s)}$.
 The $\neg P_{\mathsf{undef}}$ case is analogous.
 \end{proof}
@@ -667,18 +695,20 @@ P_{\mathsf{typeof}=\texttt{"undefined"}} &\triangleq \{ v \in \Val \mid \rtag(v)
 \end{align*}
 \end{definition}
 
-\begin{lemma}[\texttt{typeof} Refinement is Branch-Sound (Tag-Level)]
-\label{lem:typeof-refine-branch-sound}
+\begin{lemma}[\texttt{typeof} Refinement is Predicate-Sound (Tag-Level)]
+\label{lem:typeof-refine-predicate-sound}
 For each predicate $P$ in Definition~\ref{def:typeof-predicates}, define
 $f_P(s)\triangleq (\tagfn(s)\in \tags_P)$ where $\tags_P$ is the corresponding set of tags (e.g. $\{5\}$ for \texttt{"string"}, $\{0,1\}$ for \texttt{"undefined"}), and let $g_P(s)\triangleq s$.
-Then $\refineop^{f_P,g_P}$ is branch-sound for $P$, and $\refineop^{\neg f_P,g_P}$ is branch-sound for $\neg P$.
+Then $\refineop^{f_P,g_P}$ is predicate-sound for $P$, and $\refineop^{\neg f_P,g_P}$ is predicate-sound for $\neg P$.
 \end{lemma}
 
 \begin{proof}
-Fix $P$ and let $s \in \SType$ and $v \in \sem{s}$ with $v \in P$.
-By A0, $\tagfn(s)=\rtag(v)\in\tags_P$, so $f_P(s)=\mathsf{true}$ and $v\in\sem{g_P(s)}$.
-Apply Lemma~\ref{lem:filter-map-branch-sound}.
-The $\neg P$ case is analogous.
+We show $(f_P, g_P)$ is sound for $P$ (Definition~\ref{def:filter-map-refinement}).
+Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P$.
+By definition of the predicates, $\rtag(v) \in \tags_P$.
+By A0, $\tagfn(s)=\rtag(v)\in\tags_P$, so $f_P(s)=\mathsf{true}$ and $v\in\sem{g_P(s)}=\sem{s}$.
+By Lemma~\ref{lem:filter-map-predicate-sound}, $\refineop^{f_P,g_P}$ is predicate-sound for $P$.
+The $\neg P$ case is analogous: if $v \in \neg P$ then $\rtag(v) \notin \tags_P$, so by A0 $f_P(s)=\mathsf{false}$ and $(\neg f_P)(s)=\mathsf{true}$.
 \end{proof}
 
 \subsection{Refinement Case Study: Algebraic Tag Equality}
@@ -688,42 +718,49 @@ and the checker refines algebraic types by filtering the set of possible constru
 
 \begin{definition}[Algebraic-Tag Predicate]
 \label{def:alg-tag-predicate}
-Fix $t \in \String$ and define:
+Fix $\ell \in \String$ (a tag label) and define:
 \[
-P_{\mathsf{algTag}=t} \triangleq \{ v \in \Val \mid v \in \AlgVal \land \mathsf{atag}(v)=t \}.
+P_{\mathsf{algTag}=\ell} \triangleq \{ v \in \Val \mid v \in \AlgVal \land \mathsf{atag}(v)=\ell \}.
 \]
 \end{definition}
 
 \begin{definition}[Algebraic Tag Filter/Map Pairs]
 \label{def:alg-tag-filter-map}
-Fix $t \in \String$.
-Let $f^{\mathsf{alg}}_t(s)=\mathsf{true}$ for all $s$ (the implementation does not drop non-algebraic alternatives for this refinement).
+Fix $\ell \in \String$.
+Let $f^{\mathsf{alg}}_\ell(s)=\mathsf{true}$ for all $s$ (the implementation does not drop non-algebraic alternatives for this refinement).
 Define mappers:
 \begin{itemize}
-\item $g^{\mathsf{alg,true}}_t(\texttt{algebraic}(T)) \triangleq \texttt{algebraic}(T \cap \{t\})$, and $g^{\mathsf{alg,true}}_t(s)\triangleq s$ for all other $s$.
-\item $g^{\mathsf{alg,false}}_t(\texttt{algebraic}(T)) \triangleq \texttt{algebraic}(T \setminus \{t\})$, and $g^{\mathsf{alg,false}}_t(s)\triangleq s$ for all other $s$.
+\item $g^{\mathsf{alg,true}}_\ell(\texttt{algebraic}(T)) \triangleq \texttt{algebraic}(T \cap \{\ell\})$, and $g^{\mathsf{alg,true}}_\ell(s)\triangleq s$ for all other $s$.
+\item $g^{\mathsf{alg,false}}_\ell(\texttt{algebraic}(T)) \triangleq \texttt{algebraic}(T \setminus \{\ell\})$, and $g^{\mathsf{alg,false}}_\ell(s)\triangleq s$ for all other $s$.
 \end{itemize}
 \end{definition}
 
-\begin{lemma}[Algebraic Tag Equality is Branch-Sound]
-\label{lem:alg-tag-branch-sound}
-For every $t \in \String$:
+\begin{lemma}[Algebraic Tag Equality is Predicate-Sound]
+\label{lem:alg-tag-predicate-sound}
+For every $\ell \in \String$:
 \[
-\refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,true}}_t} \text{ is branch-sound for } P_{\mathsf{algTag}=t},
+\refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,true}}_\ell} \text{ is predicate-sound for } P_{\mathsf{algTag}=\ell},
 \qquad
-\refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,false}}_t} \text{ is branch-sound for } \neg P_{\mathsf{algTag}=t}.
+\refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,false}}_\ell} \text{ is predicate-sound for } \neg P_{\mathsf{algTag}=\ell}.
 \]
 \end{lemma}
 
 \begin{proof}
-For the true branch, we show $(f^{\mathsf{alg}}_t,g^{\mathsf{alg,true}}_t)$ is sound for $P_{\mathsf{algTag}=t}$ and apply Lemma~\ref{lem:filter-map-branch-sound}.
-Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{algTag}=t}$.
+For the true branch, we show $(f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,true}}_\ell)$ is sound for $P_{\mathsf{algTag}=\ell}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
+Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{algTag}=\ell}$.
 Then $v \in \AlgVal$, so $\rtag(v)=10$.
 By A0, $\tagfn(s)=10$, hence $s$ must be of the form $\texttt{algebraic}(T)$ for some finite $T$.
 By Definition~\ref{def:algebraic-semantics}, $v \in \sem{\texttt{algebraic}(T)}$ implies $\mathsf{atag}(v)\in T$.
-Since $\mathsf{atag}(v)=t$, we have $t\in T$, hence $v \in \sem{\texttt{algebraic}(T \cap \{t\})} = \sem{g^{\mathsf{alg,true}}_t(s)}$.
-Also $f^{\mathsf{alg}}_t(s)=\mathsf{true}$.
-The false-branch statement follows similarly: if $v \notin P_{\mathsf{algTag}=t}$, then either $v \notin \AlgVal$ (in which case $g^{\mathsf{alg,false}}_t$ leaves $s$ unchanged) or $\mathsf{atag}(v)\neq t$, which is preserved by removing $t$ from the allowed-tag set.
+Since $\mathsf{atag}(v)=\ell$, we have $\ell\in T$, hence $v \in \sem{\texttt{algebraic}(T \cap \{\ell\})} = \sem{g^{\mathsf{alg,true}}_\ell(s)}$.
+Also $f^{\mathsf{alg}}_\ell(s)=\mathsf{true}$ by definition.
+
+For the false branch, we show $(f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,false}}_\ell)$ is sound for $\neg P_{\mathsf{algTag}=\ell}$.
+Let $s \in \SType$ and $v \in \sem{s}$ with $v \notin P_{\mathsf{algTag}=\ell}$.
+We have $f^{\mathsf{alg}}_\ell(s)=\mathsf{true}$ by definition.
+If $v \notin \AlgVal$, then $\tagfn(s) \neq 10$ by A0, so $s$ is not an algebraic type and $g^{\mathsf{alg,false}}_\ell(s)=s$; hence $v \in \sem{g^{\mathsf{alg,false}}_\ell(s)}$.
+If $v \in \AlgVal$ but $\mathsf{atag}(v) \neq \ell$, then $\tagfn(s)=10$ by A0, so $s=\texttt{algebraic}(T)$ for some finite $T$.
+By Definition~\ref{def:algebraic-semantics}, $\mathsf{atag}(v) \in T$.
+Since $\mathsf{atag}(v) \neq \ell$, we have $\mathsf{atag}(v) \in T \setminus \{\ell\}$, hence $v \in \sem{\texttt{algebraic}(T \setminus \{\ell\})} = \sem{g^{\mathsf{alg,false}}_\ell(s)}$.
 \end{proof}
 
 \subsection{Refinement Case Study: \texttt{instanceof}}
@@ -749,15 +786,17 @@ v \in P_{\mathsf{inst}}(C) \implies v \in \sem{\texttt{Inst}(C)}.
 Define $\refineop_{\mathsf{inst}}(C,(\insts,\clauses))$ to be the $\TType$ whose instance-set is replaced by $\{\texttt{Inst}(C)\}$ and whose clauses are left unchanged.
 \end{definition}
 
-\begin{lemma}[\texttt{instanceof}-True is Branch-Sound]
-\label{lem:instanceof-branch-sound}
-For each class $C$, the update $u \mapsto \refineop_{\mathsf{inst}}(C,u)$ is branch-sound for $P_{\mathsf{inst}}(C)$.
+\begin{lemma}[\texttt{instanceof}-True is Predicate-Sound]
+\label{lem:instanceof-predicate-sound}
+For each class $C$, the update $u \mapsto \refineop_{\mathsf{inst}}(C,u)$ is predicate-sound for $P_{\mathsf{inst}}(C)$.
 \end{lemma}
 
 \begin{proof}
+We must show $\sem{t} \cap P_{\mathsf{inst}}(C) \subseteq \sem{\refineop_{\mathsf{inst}}(C,t)}$ for all $t \in \TType$.
 Let $t=(\insts,\clauses)$ and let $v \in \sem{t}\cap P_{\mathsf{inst}}(C)$.
-Then $v \in P_{\mathsf{inst}}(C)$, so by the axiom in Definition~\ref{def:instanceof-semantics}, $v \in \sem{\texttt{Inst}(C)}$.
-Since $\refineop_{\mathsf{inst}}(C,t)$ includes $\texttt{Inst}(C)$ in its instance component, we have $v \in \sem{\refineop_{\mathsf{inst}}(C,t)}$.
+Since $v \in P_{\mathsf{inst}}(C)$, by the axiom in Definition~\ref{def:instanceof-semantics} we have $v \in \sem{\texttt{Inst}(C)}$.
+The refined type $\refineop_{\mathsf{inst}}(C,t) = (\{\texttt{Inst}(C)\}, \clauses)$ has $\texttt{Inst}(C)$ in its instance component, so $\sem{\texttt{Inst}(C)} \subseteq \sem{\refineop_{\mathsf{inst}}(C,t)}$.
+Hence $v \in \sem{\refineop_{\mathsf{inst}}(C,t)}$.
 \end{proof}
 
 \section{Type Difference (Diff)}
