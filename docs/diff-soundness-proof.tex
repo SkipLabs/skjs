@@ -435,12 +435,18 @@ For $t=(\insts,\clauses)$ define:
 This matches the current implementation: refinement rewrites the clause part but does not filter the instance part.
 \end{definition}
 
-\begin{lemma}[Branch-Soundness of Filter/Map Refinement]
-\label{lem:filter-map-branch-sound}
-If $(f,g)$ is sound for $P$, then for all $t \in \TType$:
+\begin{definition}[Predicate-Sound Type Transformer]
+\label{def:predicate-sound-transformer}
+Let $P \in \Pred$ and let $R : \TType \to \TType$.
+We say $R$ is \emph{predicate-sound for $P$} if for all $t \in \TType$:
 \[
-\sem{t} \cap P \subseteq \sem{\refineop^{f,g}(t)}.
+\sem{t} \cap P \subseteq \sem{R(t)}.
 \]
+\end{definition}
+
+\begin{lemma}[Filter/Map Refinement is Predicate-Sound]
+\label{lem:filter-map-branch-sound}
+If $(f,g)$ is sound for $P$, then the transformer $t \mapsto \refineop^{f,g}(t)$ is predicate-sound for $P$ (Definition~\ref{def:predicate-sound-transformer}).
 \end{lemma}
 
 \begin{proof}
@@ -486,7 +492,8 @@ If no rule applies to $e$ (i.e. $e$ is not one of the supported refinement-test 
 \and
 \inferrule*[right=R-TypeofF]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_{P_k},g_{P_k}}(t))}
 \end{mathpar}
-where $P_k$ is the corresponding predicate $P_{\mathsf{typeof}=k}$ from Definition~\ref{def:typeof-predicates}.
+where $P_k$ is the corresponding predicate $P_{\mathsf{typeof}=k}$ from Definition~\ref{def:typeof-predicates},
+and $f_{P_k},g_{P_k}$ are the filter/map pair induced by $P_k$ as described in Lemma~\ref{lem:typeof-refine-branch-sound} (with $g_{P_k}$ being the identity).
 
 \paragraph{\texttt{in}.}
 \begin{mathpar}
@@ -497,14 +504,14 @@ where $P_k$ is the corresponding predicate $P_{\mathsf{typeof}=k}$ from Definiti
 
 \paragraph{Algebraic tag equality.}
 \begin{mathpar}
-\inferrule*[right=R-AlgTagT]{ }{\Env \vdash (x.\texttt{\_tag}===t) \Rightarrow \mathsf{upd}(\Env,x,\,u \mapsto \refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,true}}_t}(u))}
+\inferrule*[right=R-AlgTagT]{ }{\Env \vdash (x.\texttt{\_tag}===t) \Rightarrow \mathsf{upd}(\Env,x,\,t' \mapsto \refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,true}}_t}(t'))}
 \and
-\inferrule*[right=R-AlgTagF]{ }{\Env \vdash (x.\texttt{\_tag}===t) \Leftarrow \mathsf{upd}(\Env,x,\,u \mapsto \refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,false}}_t}(u))}
+\inferrule*[right=R-AlgTagF]{ }{\Env \vdash (x.\texttt{\_tag}===t) \Leftarrow \mathsf{upd}(\Env,x,\,t' \mapsto \refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,false}}_t}(t'))}
 \end{mathpar}
 
 \paragraph{\texttt{instanceof}.}
 \begin{mathpar}
-\inferrule*[right=R-InstT]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Rightarrow \mathsf{upd}(\Env,x,\,u \mapsto \refineop_{\mathsf{inst}}(C,u))}
+\inferrule*[right=R-InstT]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Rightarrow \mathsf{upd}(\Env,x,\,t' \mapsto \refineop_{\mathsf{inst}}(C,t'))}
 \and
 \inferrule*[right=R-InstF]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Leftarrow \Env}
 \end{mathpar}
@@ -524,7 +531,8 @@ The implementation composes refinements sequentially. For example:
 
 \paragraph{Soundness connection.}
 Each of the case-study lemmas in the following subsections proves that the corresponding rule is branch-sound (in the sense of Definition~\ref{def:refinement}),
-via Lemma~\ref{lem:filter-map-branch-sound} and the evaluation relation of Definition~\ref{def:refine-eval}.
+via predicate-soundness of the underlying transformer (Definition~\ref{def:predicate-sound-transformer} and Lemma~\ref{lem:filter-map-branch-sound})
+and the evaluation relation of Definition~\ref{def:refine-eval}.
 
 \subsection{Refinement Case Study: the \texttt{in} Operator}
 
