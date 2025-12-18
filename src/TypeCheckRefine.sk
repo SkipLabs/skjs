@@ -131,7 +131,7 @@ extension class TypeChecker {
     | "object" ->
       (filter, default) = (
         x ~>
-          x is TObject _ ||
+          x is TObject(TFields{call => None()}, _) ||
             x is TAlgebraic _ ||
             x is TPrimUnit(TNull(), _) ||
             x is TTuple _ ||
