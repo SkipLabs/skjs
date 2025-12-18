@@ -292,6 +292,66 @@ In SKJS, control-flow narrowing is implemented by rewriting the internal type fo
 filter/map on simple types (see the \texttt{FilterType} transformer and \texttt{setLocal} in the implementation).
 This motivates defining refinements compositionally by lifting a transformation on $\SType$ values to $\STypes$, $\Clause$, $\Clauses$, and finally $\TType$.
 
+\begin{definition}[Filter/Map Refinement (Implementation Model)]
+\label{def:filter-map-refinement}
+Let $P \in \Pred$ be a predicate.
+Let $f : \SType \to \{\mathsf{true},\mathsf{false}\}$ be a filter and $g : \SType \to \SType$ be a mapper.
+We say $(f,g)$ is \emph{sound for $P$} if for every $s \in \SType$ and every $v \in \sem{s}$:
+\[
+v \in P \implies (f(s) = \mathsf{true} \ \land\  v \in \sem{g(s)}).
+\]
+\paragraph{Remark (tag preservation).}
+In the implementation, the mapper $g$ used for refinement preserves runtime tags:
+$\tagfn(g(s))=\tagfn(s)$.
+We do not require this for the semantic statement below, but it ensures the lifted $\STypes$ transformation does not merge distinct tags.
+\paragraph{Lift to $\STypes$.}
+Define:
+\[
+\refineop_{\STypes}^{f,g}(S) \triangleq \{\, \tagfn(g(S(k))) \mapsto g(S(k)) \mid k \in \mathrm{dom}(S),\ f(S(k))=\mathsf{true}\,\}.
+\]
+Operationally, this is exactly the ``filter-map'' over the unique representative per tag.
+\paragraph{Lift to $\Clause$.}
+For a clause $c=(\vars,\stypes)$ define:
+\[
+\refineop_{\Clause}^{f,g}(c) \triangleq
+\begin{cases}
+(\vars,\mathsf{None}) & \text{if } \stypes=\mathsf{None} \\
+(\vars,\mathsf{Some}(\refineop_{\STypes}^{f,g}(S))) & \text{if } \stypes=\mathsf{Some}(S)
+\end{cases}
+\]
+and interpret the special case $\mathsf{Some}(\emptyset)$ as $\bot$ (dropped), matching the implementation invariant that bottom clauses are not stored.
+\paragraph{Lift to $\Clauses$.}
+For $C \in \Clauses$, define $\refineop_{\Clauses}^{f,g}(C)$ by applying $\refineop_{\Clause}^{f,g}$ to every clause and dropping $\bot$ results.
+\paragraph{Lift to $\TType$.}
+For $t=(\insts,\clauses)$ define:
+\[
+\refineop^{f,g}(t) \triangleq (\insts,\refineop_{\Clauses}^{f,g}(\clauses)).
+\]
+This matches the current implementation: refinement rewrites the clause part but does not filter the instance part.
+\end{definition}
+
+\begin{lemma}[Branch-Soundness of Filter/Map Refinement]
+\label{lem:filter-map-branch-sound}
+If $(f,g)$ is sound for $P$, then for all $t \in \TType$:
+\[
+\sem{t} \cap P \subseteq \sem{\refineop^{f,g}(t)}.
+\]
+\end{lemma}
+
+\begin{proof}
+Let $t=(\insts,\clauses)$.
+We prove $\sem{t}\cap P \subseteq \sem{\refineop^{f,g}(t)}$ by cases on membership in $\sem{\insts} \cup \sem{\clauses}$.
+\begin{itemize}
+\item If $v \in \sem{\insts}\cap P$, then $v \in \sem{\insts} \subseteq \sem{\refineop^{f,g}(t)}$ since refinement leaves $\insts$ unchanged.
+\item If $v \in \sem{\clauses}\cap P$, then $v \in \sem{(\vars,\stypes)}$ for some clause $(\vars,\stypes)$ in $\clauses$.
+If $\stypes=\mathsf{None}$, then $\refineop_{\Clause}^{f,g}(\vars,\mathsf{None})=(\vars,\mathsf{None})$ and the clause remains top, so $v$ is still included.
+If $\stypes=\mathsf{Some}(S)$, then $v \in \sem{S(k)}$ for some $k \in \mathrm{dom}(S)$.
+By soundness of $(f,g)$ for $P$ and $v\in P$, we have $f(S(k))=\mathsf{true}$ and $v\in \sem{g(S(k))}$.
+Hence $v \in \sem{\refineop_{\STypes}^{f,g}(S)}$, so $v$ is contained in the refined clause and therefore in $\sem{\refineop_{\Clauses}^{f,g}(\clauses)}$.
+\end{itemize}
+Combining cases yields the desired inclusion.
+\end{proof}
+
 \section{Type Difference (Diff)}
 
 \begin{definition}[Diff Soundness Properties]
