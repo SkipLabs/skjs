@@ -436,6 +436,31 @@ For $t=(\insts,\clauses)$ define:
 This matches the current implementation: refinement rewrites the clause part but does not filter the instance part.
 \end{definition}
 
+\begin{definition}[Defaulting Refinement (Model of \texttt{setLocal})]
+\label{def:defaulting-refinement}
+Some refinements in SKJS provide a \emph{default} type when the current type is too imprecise to refine (notably when it is top or has no informative alternatives).
+This is modeled by a \emph{defaulting refinement} operator.
+
+Let $R : \TType \to \TType$ be a transformer and let $d$ be an \emph{optional} default simple type ($d \in \{\mathsf{None}\} \cup \{\mathsf{Some}(s)\mid s\in \SType\}$).
+\paragraph{Singleton constructor.}
+Write $\mathsf{single}(s)$ for the $\TType$ value consisting of a single clause with $\STypes=\{\tagfn(s)\mapsto s\}$ and no instances.
+\paragraph{Top/empty test.}
+We say a $\TType$ value is \emph{syntactically top} if its clause component is the unique top clause $(\emptyset,\mathsf{None})$,
+and \emph{syntactically empty} if its clause component is empty (bottom).
+\paragraph{Definition.}
+Define $\mathsf{def}(R,d) : \TType \to \TType$ by:
+\[
+\mathsf{def}(R,d)(t) \triangleq
+\begin{cases}
+R(t) & \text{if } d=\mathsf{None} \\
+\mathsf{single}(s) & \text{if } d=\mathsf{Some}(s) \text{ and } R(t) \text{ is syntactically top or empty} \\
+R(t) & \text{otherwise}
+\end{cases}
+\]
+\paragraph{Note.}
+This abstracts the implementation check in \texttt{setLocal} based on \texttt{getSTypes} (after expansion): it injects a default when refinement would otherwise leave a top/empty shape.
+\end{definition}
+
 \begin{definition}[Predicate-Sound Type Transformer]
 \label{def:predicate-sound-transformer}
 Let $P \in \Pred$ and let $R : \TType \to \TType$.
@@ -467,6 +492,22 @@ Therefore $v \in \sem{\refineop_{\Clauses}^{f,g}(\clauses)}$.
 Combining cases yields the desired inclusion.
 \end{proof}
 
+\begin{lemma}[Defaulting Preserves Predicate-Soundness]
+\label{lem:defaulting-preserves-predicate-sound}
+Let $R:\TType \to \TType$ be predicate-sound for $P \subseteq \Val$.
+Let $d$ be an optional default.
+If $d=\mathsf{None}$, then $\mathsf{def}(R,d)$ is predicate-sound for $P$.
+If $d=\mathsf{Some}(s)$ and $P \subseteq \sem{\mathsf{single}(s)}$, then $\mathsf{def}(R,d)$ is predicate-sound for $P$.
+\end{lemma}
+
+\begin{proof}
+If $d=\mathsf{None}$, then $\mathsf{def}(R,d)=R$ by Definition~\ref{def:defaulting-refinement}, so predicate-soundness is immediate.
+If $d=\mathsf{Some}(s)$, let $t \in \TType$ and let $v \in \sem{t}\cap P$.
+If $R(t)$ is not syntactically top/empty, then $\mathsf{def}(R,d)(t)=R(t)$ and $v \in \sem{R(t)}$ by predicate-soundness of $R$.
+If $R(t)$ is syntactically top/empty, then $\mathsf{def}(R,d)(t)=\mathsf{single}(s)$, and by hypothesis $v \in P \subseteq \sem{\mathsf{single}(s)}$.
+Thus $\sem{t}\cap P \subseteq \sem{\mathsf{def}(R,d)(t)}$ for all $t$.
+\end{proof}
+
 \subsection{Algorithmic Refinement Judgements (Inference-Rule Style)}
 \label{sec:refine-rules}
 
@@ -479,6 +520,10 @@ When a rule refines a non-local expression, it produces $\Env$.
 \paragraph{Default behavior.}
 If no rule applies to $e$ (i.e. $e$ is not one of the supported refinement-test forms), then refinement leaves the environment unchanged.
 
+\paragraph{Strict inequality.}
+The implementation treats strict inequality \texttt{!==} by flipping the target (i.e. refining for \texttt{false} of the corresponding strict equality).
+Accordingly, the refinement rules for $(x \ !== \ y)$ are the same as for $(x===y)$, with $\Rightarrow$ and $\Leftarrow$ swapped.
+
 \paragraph{Nullish equality.}
 \begin{mathpar}
 \inferrule*[right=R-NullT]{ }{\Env \vdash (x === \texttt{null}) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}(t))}
@@ -489,22 +534,29 @@ If no rule applies to $e$ (i.e. $e$ is not one of the supported refinement-test 
 \and
 \inferrule*[right=R-UndefF]{ }{\Env \vdash (x === \texttt{undefined}) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}(t))}
 \end{mathpar}
+\paragraph{Side condition (locals only).}
+In the implementation, comparisons against \texttt{null}/\texttt{undefined} are only permitted when the compared expression is a local variable; otherwise a typing error is raised.
+Accordingly, the rules above are intended only for tests where $x$ is a local.
 
 \paragraph{\texttt{typeof}.}
 \begin{mathpar}
-\inferrule*[right=R-TypeofT]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{P_k},g_{P_k}}(t))}
+\inferrule*[right=R-TypeofT]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \mathsf{def}(t' \mapsto \refineop^{f_k,g_k}(t'),\,d_k)(t))}
 \and
-\inferrule*[right=R-TypeofF]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_{P_k},g_{P_k}}(t))}
+\inferrule*[right=R-TypeofF]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_k,g_k}(t))}
 \end{mathpar}
-where $P_k$ is the corresponding predicate $P_{\mathsf{typeof}=k}$ from Definition~\ref{def:typeof-predicates},
-and $f_{P_k},g_{P_k}$ are the filter/map pair induced by $P_k$ as described in Lemma~\ref{lem:typeof-refine-predicate-sound} (with $g_{P_k}$ being the identity).
+where $f_k,g_k,d_k$ are as in Definition~\ref{def:typeof-filters-defaults}.
+
+\paragraph{\texttt{typeof} \texttt{"symbol"}.}
+The implementation performs no refinement for \texttt{typeof x === "symbol"}; both branches leave the environment unchanged.
 
 \paragraph{\texttt{in}.}
 \begin{mathpar}
-\inferrule*[right=R-InT]{ }{\Env \vdash (\texttt{"}p\texttt{" in }x) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}(t))}
+\inferrule*[right=R-InT]{ }{\Env \vdash (\texttt{"}p\texttt{" in }x) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \mathsf{def}(t' \mapsto \refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}(t'),\,d^{\mathsf{in}}_p)(t))}
 \and
 \inferrule*[right=R-InF]{ }{\Env \vdash (\texttt{"}p\texttt{" in }x) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{false}}_p,g^{\mathsf{false}}_p}(t))}
 \end{mathpar}
+where $d^{\mathsf{in}}_p=\mathsf{Some}(\texttt{object}(F_p))$ is a default object type requiring property $p$ with top value type (Definition~\ref{def:object-semantics}).
+This corresponds to the implementation's behavior when the left-hand side is a single string literal.
 
 \paragraph{Algebraic tag equality.}
 \begin{mathpar}
@@ -516,11 +568,16 @@ where $\ell \in \String$ is a string literal.
 
 \paragraph{\texttt{instanceof}.}
 \begin{mathpar}
-\inferrule*[right=R-InstT]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Rightarrow \mathsf{upd}(\Env,x,\,t' \mapsto \refineop_{\mathsf{inst}}(C,t'))}
+\inferrule*[right=R-InstT]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto T_{\mathsf{inst}}(C))}
 \and
 \inferrule*[right=R-InstF]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Leftarrow \Env}
 \end{mathpar}
-where $\refineop_{\mathsf{inst}}$ is the implementation-modeled update described in Definition~\ref{def:instanceof-semantics}.
+where $T_{\mathsf{inst}}(C)$ is the instance type produced by the implementation (Definition~\ref{def:instanceof-semantics}).
+
+\begin{mathpar}
+\inferrule*[right=R-InstArrayT]{ }{\Env \vdash (x\ \texttt{instanceof}\ \texttt{Array}) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto T_{\mathsf{array}})}
+\end{mathpar}
+where $T_{\mathsf{array}}$ is the implementation's chosen array instance type (e.g. \texttt{Array}$\langle\top\rangle$).
 
 \paragraph{Boolean connectives.}
 The implementation composes refinements sequentially. For example:
@@ -601,6 +658,7 @@ P_{\mathrm{in}}^{\mathsf{false}}(p) \triangleq \Val \setminus P_{\mathrm{in}}^{\
 \begin{definition}[\texttt{in} Filter/Map Pair]
 \label{def:in-filter-map}
 Fix $p \in \String$ and let $\top_{\TType}$ be any type with $\sem{\top_{\TType}}=\Val$ (e.g. the unique top clause).
+Let $F_p$ be the object field specification with $F_{\mathrm{req}}$ mapping $p \mapsto \top_{\TType}$, $F_{\mathrm{opt}}$ empty, and $F_{\mathrm{idx}}=\mathsf{None}$.
 Define a mapper $g^{\mathsf{true}}_p : \SType \to \SType$ as follows:
 \begin{itemize}
 \item If $s$ is an object type $s=\texttt{object}(F)$ and $F_{\mathrm{idx}}=\mathsf{None}$ and $p \notin \mathrm{dom}(F_{\mathrm{req}})$, then $g^{\mathsf{true}}_p(s)$ is $\texttt{object}(F')$ where $F'$ is $F$ except that $F'_{\mathrm{req}}$ additionally maps $p \mapsto \top_{\TType}$.
@@ -622,15 +680,19 @@ Define a mapper $g^{\mathsf{false}}_p : \SType \to \SType$ by:
 \item Otherwise $g^{\mathsf{false}}_p(s)=s$.
 \end{itemize}
 Let $f^{\mathsf{false}}_p(s)=\mathsf{true}$ for all $s$ (the implementation does not attempt to exclude non-objects in the false branch).
+\paragraph{Default.}
+Define $d^{\mathsf{in}}_p \triangleq \mathsf{Some}(\texttt{object}(F_p))$.
 \end{definition}
 
-\begin{lemma}[\texttt{in}-True Branch is Predicate-Sound]
+\begin{lemma}[\texttt{in}-True Branch (with Default) is Predicate-Sound]
 \label{lem:in-true-predicate-sound}
-For every $p \in \String$, the refinement $\refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}$ is predicate-sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$.
+For every $p \in \String$, the transformer $t \mapsto \mathsf{def}(t' \mapsto \refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}(t'), d^{\mathsf{in}}_p)(t)$
+is predicate-sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$.
 \end{lemma}
 
 \begin{proof}
-We show that $(f^{\mathsf{true}}_p,g^{\mathsf{true}}_p)$ is sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$ (Definition~\ref{def:filter-map-refinement}), and conclude by Lemma~\ref{lem:filter-map-predicate-sound}.
+Let $R_p(t)\triangleq \refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}(t)$.
+We first show that $(f^{\mathsf{true}}_p,g^{\mathsf{true}}_p)$ is sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$ (Definition~\ref{def:filter-map-refinement}), and conclude that $R_p$ is predicate-sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$ by Lemma~\ref{lem:filter-map-predicate-sound}.
 Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathrm{in}}^{\mathsf{true}}(p)$.
 Then $v \in \ObjVal$, so $\rtag(v)=9$.
 By A0, $\rtag(v)=\tagfn(s)$, hence $\tagfn(s)=9$ and therefore $s$ must be an object type of the form $\texttt{object}(F)$.
@@ -639,6 +701,10 @@ The filter keeps object types, so $f^{\mathsf{true}}_p(s)=\mathsf{true}$.
 If $g^{\mathsf{true}}_p$ adds the required field $p \mapsto \top_{\TType}$, then $v$ satisfies the added requirement because it already has $p$ and $\mathsf{get}(v,p) \in \sem{\top_{\TType}}=\Val$.
 Otherwise $g^{\mathsf{true}}_p(s)=s$ and membership is immediate.
 Thus $v \in \sem{g^{\mathsf{true}}_p(s)}$ and soundness holds.
+
+Finally, by Definition~\ref{def:object-semantics}, every $v \in P_{\mathrm{in}}^{\mathsf{true}}(p)$ is in $\sem{\texttt{object}(F_p)}=\sem{\mathsf{single}(\texttt{object}(F_p))}$, so
+$P_{\mathrm{in}}^{\mathsf{true}}(p) \subseteq \sem{\mathsf{single}(\texttt{object}(F_p))}$.
+By Lemma~\ref{lem:defaulting-preserves-predicate-sound}, $\mathsf{def}(R_p,d^{\mathsf{in}}_p)$ is predicate-sound for $P_{\mathrm{in}}^{\mathsf{true}}(p)$.
 \end{proof}
 
 \begin{lemma}[\texttt{in}-False Branch is Predicate-Sound]
@@ -717,24 +783,55 @@ P_{\mathsf{typeof}=\texttt{"number"}} &\triangleq \{ v \in \Val \mid \rtag(v)=4 
 P_{\mathsf{typeof}=\texttt{"bigint"}} &\triangleq \{ v \in \Val \mid \rtag(v)=6 \} \\
 P_{\mathsf{typeof}=\texttt{"boolean"}} &\triangleq \{ v \in \Val \mid \rtag(v)=3 \} \\
 P_{\mathsf{typeof}=\texttt{"function"}} &\triangleq \{ v \in \Val \mid \rtag(v)=11 \} \\
-P_{\mathsf{typeof}=\texttt{"undefined"}} &\triangleq \{ v \in \Val \mid \rtag(v)\in\{0,1\} \}.
+P_{\mathsf{typeof}=\texttt{"undefined"}} &\triangleq \{ v \in \Val \mid \rtag(v)\in\{0,1\} \} \\
+P_{\mathsf{typeof}=\texttt{"object"}} &\triangleq \ObjVal.
 \end{align*}
+\paragraph{Note.}
+This definition models the predicate used for refinement soundness; the implementation's filter for \texttt{"object"} may conservatively retain other same-tag alternatives.
+The \texttt{"symbol"} case is intentionally omitted because SKJS performs no refinement for it.
 \end{definition}
 
-\begin{lemma}[\texttt{typeof} Refinement is Predicate-Sound (Tag-Level)]
+\begin{definition}[\texttt{typeof} Filters and Defaults]
+\label{def:typeof-filters-defaults}
+For each $k$ in Definition~\ref{def:typeof-predicates}, we define a filter/map pair and an optional default $d_k$ matching the implementation.
+\begin{itemize}
+\item For $k \in \{\texttt{"string"},\texttt{"number"},\texttt{"bigint"},\texttt{"boolean"},\texttt{"function"},\texttt{"undefined"}\}$, let $f_k(s)$ be true iff $\tagfn(s)$ is the corresponding tag (or tag-set), and let $g_k$ be the identity.
+\item For $k=\texttt{"object"}$, let $f_{\texttt{"object"}}(s)$ be true iff $\tagfn(s)\in\{2,9,10\}$ (object, null, or algebraic alternatives retained), and let $g_{\texttt{"object"}}$ be the identity.
+\end{itemize}
+Define defaults:
+\begin{itemize}
+\item $d_{\texttt{"string"}}=\mathsf{Some}(\texttt{string})$, $d_{\texttt{"number"}}=\mathsf{Some}(\texttt{number})$, $d_{\texttt{"bigint"}}=\mathsf{Some}(\texttt{bigint})$, $d_{\texttt{"boolean"}}=\mathsf{Some}(\texttt{boolean})$.
+\item Let $F_{\emptyset}$ be the empty object field specification (no required/optional fields, no index signature), and set $d_{\texttt{"object"}}=\mathsf{Some}(\texttt{object}(F_{\emptyset}))$.
+\item $d_{\texttt{"function"}}=\mathsf{None}$ and $d_{\texttt{"undefined"}}=\mathsf{None}$.
+\end{itemize}
+\paragraph{Symbol.}
+For $k=\texttt{"symbol"}$, SKJS performs no refinement, so we omit $f_k,g_k,d_k$.
+\end{definition}
+
+\begin{lemma}[\texttt{typeof} Refinement is Predicate-Sound (with Defaults)]
 \label{lem:typeof-refine-predicate-sound}
-For each predicate $P$ in Definition~\ref{def:typeof-predicates}, define
-$f_P(s)\triangleq (\tagfn(s)\in \tags_P)$ where $\tags_P$ is the corresponding set of tags (e.g. $\{5\}$ for \texttt{"string"}, $\{0,1\}$ for \texttt{"undefined"}), and let $g_P(s)\triangleq s$.
-Then $\refineop^{f_P,g_P}$ is predicate-sound for $P$, and $\refineop^{\neg f_P,g_P}$ is predicate-sound for $\neg P$.
+For each $k$ in Definition~\ref{def:typeof-predicates}, the transformer
+\[
+t \mapsto \mathsf{def}(t' \mapsto \refineop^{f_k,g_k}(t'), d_k)(t)
+\]
+is predicate-sound for $P_{\mathsf{typeof}=k}$.
+Moreover, the false-branch transformer $t \mapsto \refineop^{\neg f_k,g_k}(t)$ is predicate-sound for $\neg P_{\mathsf{typeof}=k}$.
 \end{lemma}
 
 \begin{proof}
-We show $(f_P, g_P)$ is sound for $P$ (Definition~\ref{def:filter-map-refinement}).
-Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P$.
-By definition of the predicates, $\rtag(v) \in \tags_P$.
-By A0, $\tagfn(s)=\rtag(v)\in\tags_P$, so $f_P(s)=\mathsf{true}$ and $v\in\sem{g_P(s)}=\sem{s}$.
-By Lemma~\ref{lem:filter-map-predicate-sound}, $\refineop^{f_P,g_P}$ is predicate-sound for $P$.
-The $\neg P$ case is analogous: if $v \in \neg P$ then $\rtag(v) \notin \tags_P$, so by A0 $f_P(s)=\mathsf{false}$ and $(\neg f_P)(s)=\mathsf{true}$.
+Fix $k$.
+Let $R_k(t)\triangleq \refineop^{f_k,g_k}(t)$.
+We first show $(f_k,g_k)$ is sound for $P_{\mathsf{typeof}=k}$ (Definition~\ref{def:filter-map-refinement}).
+Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{typeof}=k}$.
+By definition of $P_{\mathsf{typeof}=k}$, $\rtag(v)$ matches the tag-set associated with $k$.
+By A0, $\tagfn(s)=\rtag(v)$, so $f_k(s)=\mathsf{true}$ (noting that for $k=\texttt{"object"}$, $\{2,9,10\}$ covers tag $9$ in particular),
+and since $g_k$ is the identity, $v \in \sem{g_k(s)}$.
+Thus $(f_k,g_k)$ is sound and by Lemma~\ref{lem:filter-map-predicate-sound}, $R_k$ is predicate-sound for $P_{\mathsf{typeof}=k}$.
+
+For defaults, note that for each $k$ with $d_k=\mathsf{Some}(s_k)$, we have $P_{\mathsf{typeof}=k} \subseteq \sem{\mathsf{single}(s_k)}$ by construction (e.g. string values inhabit \texttt{string}, and $\ObjVal \subseteq \sem{\texttt{object}(F_{\emptyset})}$).
+By Lemma~\ref{lem:defaulting-preserves-predicate-sound}, $\mathsf{def}(R_k,d_k)$ is predicate-sound for $P_{\mathsf{typeof}=k}$.
+
+For the false branch, the argument is analogous using $\neg f_k$ and $\neg P_{\mathsf{typeof}=k}$.
 \end{proof}
 
 \subsection{Refinement Case Study: Algebraic Tag Equality}
@@ -801,28 +898,29 @@ Assume a set of runtime class names $\mathsf{Class}$ and a predicate family
 P_{\mathsf{inst}} : \mathsf{Class} \to \Pred
 \]
 capturing the runtime truth of \texttt{instanceof} for each class.
-We assume the type system's instance forms in $\TInst$ include a corresponding constructor $\texttt{Inst}(C)$ (with implementation-chosen type arguments).
+We assume the type system's instance forms in $\TType$ include a corresponding instance type $T_{\mathsf{inst}}(C)$ (with implementation-chosen type arguments), and a distinguished array instance type $T_{\mathsf{array}}$.
 
 \paragraph{Axiom (\texttt{instanceof} inclusion).}
 For each class $C$ we assume:
 \[
-v \in P_{\mathsf{inst}}(C) \implies v \in \sem{\texttt{Inst}(C)}.
+v \in P_{\mathsf{inst}}(C) \implies v \in \sem{T_{\mathsf{inst}}(C)}.
 \]
-\paragraph{Refinement operator.}
-Define $\refineop_{\mathsf{inst}}(C,(\insts,\clauses))$ to be the $\TType$ whose instance-set is replaced by $\{\texttt{Inst}(C)\}$ and whose clauses are left unchanged.
+\paragraph{Array special case.}
+We assume $P_{\mathsf{inst}}(\texttt{Array}) \subseteq \sem{T_{\mathsf{array}}}$.
 \end{definition}
 
-\begin{lemma}[\texttt{instanceof}-True is Predicate-Sound]
+\begin{lemma}[\texttt{instanceof}-True Overwrite is Predicate-Sound]
 \label{lem:instanceof-predicate-sound}
-For each class $C$, the update $u \mapsto \refineop_{\mathsf{inst}}(C,u)$ is predicate-sound for $P_{\mathsf{inst}}(C)$.
+For each class $C$, the constant transformer $R_C(t)\triangleq T_{\mathsf{inst}}(C)$ is predicate-sound for $P_{\mathsf{inst}}(C)$.
+Similarly, the constant transformer $R_{\mathsf{array}}(t)\triangleq T_{\mathsf{array}}$ is predicate-sound for $P_{\mathsf{inst}}(\texttt{Array})$.
 \end{lemma}
 
 \begin{proof}
-We must show $\sem{t} \cap P_{\mathsf{inst}}(C) \subseteq \sem{\refineop_{\mathsf{inst}}(C,t)}$ for all $t \in \TType$.
-Let $t=(\insts,\clauses)$ and let $v \in \sem{t}\cap P_{\mathsf{inst}}(C)$.
-Since $v \in P_{\mathsf{inst}}(C)$, by the axiom in Definition~\ref{def:instanceof-semantics} we have $v \in \sem{\texttt{Inst}(C)}$.
-The refined type $\refineop_{\mathsf{inst}}(C,t) = (\{\texttt{Inst}(C)\}, \clauses)$ has $\texttt{Inst}(C)$ in its instance component, so $\sem{\texttt{Inst}(C)} \subseteq \sem{\refineop_{\mathsf{inst}}(C,t)}$.
-Hence $v \in \sem{\refineop_{\mathsf{inst}}(C,t)}$.
+Fix $C$ and let $t \in \TType$.
+If $v \in \sem{t}\cap P_{\mathsf{inst}}(C)$, then $v \in P_{\mathsf{inst}}(C)$.
+By the axiom in Definition~\ref{def:instanceof-semantics}, $v \in \sem{T_{\mathsf{inst}}(C)} = \sem{R_C(t)}$.
+Thus $\sem{t}\cap P_{\mathsf{inst}}(C) \subseteq \sem{R_C(t)}$.
+The array case is identical using $P_{\mathsf{inst}}(\texttt{Array}) \subseteq \sem{T_{\mathsf{array}}}$.
 \end{proof}
 
 \section{Type Difference (Diff)}
