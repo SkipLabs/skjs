@@ -39,6 +39,8 @@
 \newcommand{\Val}{\mathsf{Val}}
 \newcommand{\Payload}{\mathsf{Payload}}
 \newcommand{\Env}{\Gamma}
+\newcommand{\RefineT}[3]{#1 \vdash #2 \Rightarrow #3}
+\newcommand{\RefineF}[3]{#1 \vdash #2 \Leftarrow #3}
 
 \title{Refinement and Type Difference in SKJS}
 \author{}
@@ -431,9 +433,9 @@ Define $\sigma \models \Env$ to mean: for every local $x$, we have $\sigma(x) \i
 \paragraph{Refinement judgements.}
 We write:
 \[
-\Env \vdash e \Rightarrow \Env'
+\RefineT{\Env}{e}{\Env'}
 \qquad\text{and}\qquad
-\Env \vdash e \Leftarrow \Env'
+\RefineF{\Env}{e}{\Env'}
 \]
 to mean ``refine under the assumption that $e$ evaluates to \texttt{true}/\texttt{false}'' respectively.
 These judgements are defined by the inference rules in Section~\ref{sec:refine-rules}, and are intentionally partial: they only model the refinement patterns implemented in SKJS.
@@ -442,9 +444,9 @@ These judgements are defined by the inference rules in Section~\ref{sec:refine-r
 We call the judgement system \emph{branch-sound} if:
 \begin{itemize}
 \item whenever $\sigma \models \Env$ and $e$ evaluates to \texttt{true} under $\sigma$ (according to the evaluation relation for refinement tests in Definition~\ref{def:refine-eval}),
-then $\sigma \models \Env'$ holds for every derivation $\Env \vdash e \Rightarrow \Env'$;
+then $\sigma \models \Env'$ holds for every derivation $\RefineT{\Env}{e}{\Env'}$;
 \item whenever $\sigma \models \Env$ and $e$ evaluates to \texttt{false} under $\sigma$,
-then $\sigma \models \Env'$ holds for every derivation $\Env \vdash e \Leftarrow \Env'$.
+then $\sigma \models \Env'$ holds for every derivation $\RefineF{\Env}{e}{\Env'}$.
 \end{itemize}
 \end{definition}
 
@@ -604,13 +606,13 @@ Accordingly, the refinement rules for $(x \ !== \ y)$ are the same as for $(x===
 
 \paragraph{Nullish equality.}
 \begin{mathpar}
-\inferrule*[right=R-NullT]{ }{\Env \vdash (x === \texttt{null}) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}(t))}
+\inferrule*[right=R-NullT]{ }{\RefineT{\Env}{(x === \texttt{null})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}(t))}}
 \and
-\inferrule*[right=R-NullF]{ }{\Env \vdash (x === \texttt{null}) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{null}},g_{\mathsf{null}}}(t))}
+\inferrule*[right=R-NullF]{ }{\RefineF{\Env}{(x === \texttt{null})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{null}},g_{\mathsf{null}}}(t))}}
 \and
-\inferrule*[right=R-UndefT]{ }{\Env \vdash (x === \texttt{undefined}) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{undef}},g_{\mathsf{undef}}}(t))}
+\inferrule*[right=R-UndefT]{ }{\RefineT{\Env}{(x === \texttt{undefined})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\mathsf{undef}},g_{\mathsf{undef}}}(t))}}
 \and
-\inferrule*[right=R-UndefF]{ }{\Env \vdash (x === \texttt{undefined}) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}(t))}
+\inferrule*[right=R-UndefF]{ }{\RefineF{\Env}{(x === \texttt{undefined})}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}(t))}}
 \end{mathpar}
 \paragraph{Side condition (locals only).}
 In the implementation, comparisons against \texttt{null}/\texttt{undefined} are only permitted when the compared expression is a local variable; otherwise a typing error is raised.
@@ -618,9 +620,9 @@ Accordingly, the rules above are intended only for tests where $x$ is a local.
 
 \paragraph{\texttt{typeof}.}
 \begin{mathpar}
-\inferrule*[right=R-TypeofT]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \mathsf{def}(t' \mapsto \refineop^{f_k,g_k}(t'),\,d_k)(t))}
+\inferrule*[right=R-TypeofT]{ }{\RefineT{\Env}{(\texttt{typeof}\ x === k)}{\mathsf{upd}(\Env,x,\,t \mapsto \mathsf{def}(t' \mapsto \refineop^{f_k,g_k}(t'),\,d_k)(t))}}
 \and
-\inferrule*[right=R-TypeofF]{ }{\Env \vdash (\texttt{typeof}\ x === k) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_k,g_k}(t))}
+\inferrule*[right=R-TypeofF]{ }{\RefineF{\Env}{(\texttt{typeof}\ x === k)}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_k,g_k}(t))}}
 \end{mathpar}
 where $f_k,g_k,d_k$ are as in Definition~\ref{def:typeof-filters-defaults}.
 
@@ -629,31 +631,31 @@ The implementation performs no refinement for \texttt{typeof x === "symbol"}; bo
 
 \paragraph{\texttt{in}.}
 \begin{mathpar}
-\inferrule*[right=R-InT]{ }{\Env \vdash (\texttt{"}p\texttt{" in }x) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \mathsf{def}(t' \mapsto \refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}(t'),\,d^{\mathsf{in}}_p)(t))}
+\inferrule*[right=R-InT]{ }{\RefineT{\Env}{(\texttt{"}p\texttt{" in }x)}{\mathsf{upd}(\Env,x,\,t \mapsto \mathsf{def}(t' \mapsto \refineop^{f^{\mathsf{true}}_p,g^{\mathsf{true}}_p}(t'),\,d^{\mathsf{in}}_p)(t))}}
 \and
-\inferrule*[right=R-InF]{ }{\Env \vdash (\texttt{"}p\texttt{" in }x) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{false}}_p,g^{\mathsf{false}}_p}(t))}
+\inferrule*[right=R-InF]{ }{\RefineF{\Env}{(\texttt{"}p\texttt{" in }x)}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{false}}_p,g^{\mathsf{false}}_p}(t))}}
 \end{mathpar}
 where $d^{\mathsf{in}}_p=\mathsf{Some}(\texttt{object}(F_p))$ is a default object type requiring property $p$ with top value type (Definition~\ref{def:object-semantics}).
 This corresponds to the implementation's behavior when the left-hand side is a single string literal.
 
 \paragraph{Algebraic tag equality.}
 \begin{mathpar}
-\inferrule*[right=R-AlgTagT]{ }{\Env \vdash (x.\texttt{\_tag}===\ell) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,true}}_\ell}(t))}
+\inferrule*[right=R-AlgTagT]{ }{\RefineT{\Env}{(x.\texttt{\_tag}===\ell)}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,true}}_\ell}(t))}}
 \and
-\inferrule*[right=R-AlgTagF]{ }{\Env \vdash (x.\texttt{\_tag}===\ell) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,false}}_\ell}(t))}
+\inferrule*[right=R-AlgTagF]{ }{\RefineF{\Env}{(x.\texttt{\_tag}===\ell)}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,false}}_\ell}(t))}}
 \end{mathpar}
 where $\ell \in \String$ is a string literal.
 
 \paragraph{\texttt{instanceof}.}
 \begin{mathpar}
-\inferrule*[right=R-InstT]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto T_{\mathsf{inst}}(C))}
+\inferrule*[right=R-InstT]{ }{\RefineT{\Env}{(x\ \texttt{instanceof}\ C)}{\mathsf{upd}(\Env,x,\,t \mapsto T_{\mathsf{inst}}(C))}}
 \and
-\inferrule*[right=R-InstF]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Leftarrow \Env}
+\inferrule*[right=R-InstF]{ }{\RefineF{\Env}{(x\ \texttt{instanceof}\ C)}{\Env}}
 \end{mathpar}
 where $T_{\mathsf{inst}}(C)$ is the instance type produced by the implementation (Definition~\ref{def:instanceof-semantics}).
 
 \begin{mathpar}
-\inferrule*[right=R-InstArrayT]{ }{\Env \vdash (x\ \texttt{instanceof}\ \texttt{Array}) \Rightarrow \mathsf{upd}(\Env,x,\,t \mapsto T_{\mathsf{array}})}
+\inferrule*[right=R-InstArrayT]{ }{\RefineT{\Env}{(x\ \texttt{instanceof}\ \texttt{Array})}{\mathsf{upd}(\Env,x,\,t \mapsto T_{\mathsf{array}})}}
 \end{mathpar}
 where $T_{\mathsf{array}}$ is the implementation's chosen array instance type (e.g. \texttt{Array}$\langle\top\rangle$).
 
@@ -661,12 +663,12 @@ where $T_{\mathsf{array}}$ is the implementation's chosen array instance type (e
 The implementation composes refinements sequentially. For example:
 \begin{mathpar}
 \inferrule*[right=R-AndT]
-{\Env \vdash e_1 \Rightarrow \Env_1 \\ \Env_1 \vdash e_2 \Rightarrow \Env_2}
-{\Env \vdash (e_1 \ \&\&\ e_2) \Rightarrow \Env_2}
+{\RefineT{\Env}{e_1}{\Env_1} \\ \RefineT{\Env_1}{e_2}{\Env_2}}
+{\RefineT{\Env}{(e_1 \ \&\&\ e_2)}{\Env_2}}
 \and
 \inferrule*[right=R-OrF]
-{\Env \vdash e_1 \Leftarrow \Env_1 \\ \Env_1 \vdash e_2 \Leftarrow \Env_2}
-{\Env \vdash (e_1 \ ||\ e_2) \Leftarrow \Env_2}
+{\RefineF{\Env}{e_1}{\Env_1} \\ \RefineF{\Env_1}{e_2}{\Env_2}}
+{\RefineF{\Env}{(e_1 \ ||\ e_2)}{\Env_2}}
 \end{mathpar}
 
 \begin{lemma}[Predicate-Sound Transformers Yield Branch-Sound Rules]
@@ -688,11 +690,11 @@ Hence $\sigma \models \Env'$.
 
 \begin{lemma}[Connective Rules are Branch-Sound]
 \label{lem:connectives-branch-sound}
-Assume that for every derivation $\Env \vdash e_1 \Rightarrow \Env_1$, the rule is branch-sound for the true branch in the sense of Definition~\ref{def:refinement}.
-Assume likewise that for every derivation $\Env_1 \vdash e_2 \Rightarrow \Env_2$, the rule is branch-sound for the true branch.
+Assume that for every derivation $\RefineT{\Env}{e_1}{\Env_1}$, the rule is branch-sound for the true branch in the sense of Definition~\ref{def:refinement}.
+Assume likewise that for every derivation $\RefineT{\Env_1}{e_2}{\Env_2}$, the rule is branch-sound for the true branch.
 Then the connective rule \textbf{R-AndT} is branch-sound for the true branch.
 
-Dually, assume that for every derivation $\Env \vdash e_1 \Leftarrow \Env_1$ and $\Env_1 \vdash e_2 \Leftarrow \Env_2$, the rules are branch-sound for the false branch.
+Dually, assume that for every derivation $\RefineF{\Env}{e_1}{\Env_1}$ and $\RefineF{\Env_1}{e_2}{\Env_2}$, the rules are branch-sound for the false branch.
 Then the connective rule \textbf{R-OrF} is branch-sound for the false branch.
 \end{lemma}
 
@@ -700,8 +702,8 @@ Then the connective rule \textbf{R-OrF} is branch-sound for the false branch.
 \textbf{R-AndT.}
 Suppose $\sigma \models \Env$ and $\sigma \models_{\mathsf{true}} (e_1 \ \&\&\ e_2)$.
 By Definition~\ref{def:refine-eval}, we have $\sigma \models_{\mathsf{true}} e_1$ and $\sigma \models_{\mathsf{true}} e_2$.
-Consider a derivation of $\Env \vdash (e_1 \ \&\&\ e_2) \Rightarrow \Env_2$ via \textbf{R-AndT}; it contains premises
-$\Env \vdash e_1 \Rightarrow \Env_1$ and $\Env_1 \vdash e_2 \Rightarrow \Env_2$.
+Consider a derivation of $\RefineT{\Env}{(e_1 \ \&\&\ e_2)}{\Env_2}$ via \textbf{R-AndT}; it contains premises
+$\RefineT{\Env}{e_1}{\Env_1}$ and $\RefineT{\Env_1}{e_2}{\Env_2}$.
 By branch-soundness of the first premise and $\sigma \models_{\mathsf{true}} e_1$, from $\sigma \models \Env$ we obtain $\sigma \models \Env_1$.
 Then by branch-soundness of the second premise and $\sigma \models_{\mathsf{true}} e_2$, we obtain $\sigma \models \Env_2$.
 This is exactly branch-soundness of \textbf{R-AndT}.
@@ -709,7 +711,7 @@ This is exactly branch-soundness of \textbf{R-AndT}.
 \textbf{R-OrF.}
 Suppose $\sigma \models \Env$ and $\sigma \models_{\mathsf{false}} (e_1 \ ||\ e_2)$.
 By Definition~\ref{def:refine-eval}, we have $\sigma \models_{\mathsf{false}} e_1$ and $\sigma \models_{\mathsf{false}} e_2$.
-For a derivation of $\Env \vdash (e_1 \ ||\ e_2) \Leftarrow \Env_2$ via \textbf{R-OrF}, we similarly obtain $\sigma \models \Env_1$ from the first premise and then $\sigma \models \Env_2$ from the second premise.
+For a derivation of $\RefineF{\Env}{(e_1 \ ||\ e_2)}{\Env_2}$ via \textbf{R-OrF}, we similarly obtain $\sigma \models \Env_1$ from the first premise and then $\sigma \models \Env_2$ from the second premise.
 \end{proof}
 
 \paragraph{Soundness connection.}
