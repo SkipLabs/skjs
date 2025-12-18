@@ -463,6 +463,85 @@ If $s=\texttt{object}(F)$, then $g^{\mathsf{false}}_p(s)=\texttt{object}(F\setmi
 By Definition~\ref{def:object-semantics}, dropping field constraints can only enlarge the set of inhabitants, so $\sem{\texttt{object}(F)} \subseteq \sem{\texttt{object}(F\setminus p)}$ and hence $v \in \sem{g^{\mathsf{false}}_p(s)}$.
 \end{proof}
 
+\subsection{Refinement Case Study: Nullish Checks}
+
+We model the refinements performed for comparisons of a local variable against \texttt{null} and \texttt{undefined}.
+In the implementation, \texttt{undefined} and \texttt{void} are treated equivalently for refinement.
+
+\begin{definition}[Nullish Predicates]
+\label{def:nullish-predicates}
+Define the following predicates on runtime values:
+\[
+P_{\mathsf{null}} \triangleq \{ v \in \Val \mid \rtag(v)=2 \}
+\qquad
+P_{\mathsf{undef}} \triangleq \{ v \in \Val \mid \rtag(v)\in\{0,1\} \}.
+\]
+We also write $\neg P$ for $\Val \setminus P$.
+\end{definition}
+
+\begin{lemma}[Null Refinement is Branch-Sound]
+\label{lem:null-refine-branch-sound}
+Let $f_{\mathsf{null}}(s) \triangleq (\tagfn(s)=2)$ and let $g_{\mathsf{null}}(s)\triangleq s$.
+Then $\refineop^{f_{\mathsf{null}},g_{\mathsf{null}}}$ is branch-sound for $P_{\mathsf{null}}$.
+Moreover, letting $f_{\neg\mathsf{null}}(s)\triangleq (\tagfn(s)\neq 2)$, $\refineop^{f_{\neg\mathsf{null}},g_{\mathsf{null}}}$ is branch-sound for $\neg P_{\mathsf{null}}$.
+\end{lemma}
+
+\begin{proof}
+We prove soundness of $(f_{\mathsf{null}},g_{\mathsf{null}})$ for $P_{\mathsf{null}}$ and apply Lemma~\ref{lem:filter-map-branch-sound}.
+Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{null}}$.
+Then $\rtag(v)=2$, and by A0 we have $\tagfn(s)=2$, hence $f_{\mathsf{null}}(s)=\mathsf{true}$.
+Since $g_{\mathsf{null}}$ is the identity, $v \in \sem{g_{\mathsf{null}}(s)}$ is immediate.
+The $\neg P_{\mathsf{null}}$ case is analogous.
+\end{proof}
+
+\begin{lemma}[Undefined/Void Refinement is Branch-Sound]
+\label{lem:undef-refine-branch-sound}
+Let $f_{\mathsf{undef}}(s) \triangleq (\tagfn(s)\in\{0,1\})$ and $g_{\mathsf{undef}}(s)\triangleq s$.
+Then $\refineop^{f_{\mathsf{undef}},g_{\mathsf{undef}}}$ is branch-sound for $P_{\mathsf{undef}}$.
+Moreover, letting $f_{\neg\mathsf{undef}}(s)\triangleq (\tagfn(s)\notin\{0,1\})$, $\refineop^{f_{\neg\mathsf{undef}},g_{\mathsf{undef}}}$ is branch-sound for $\neg P_{\mathsf{undef}}$.
+\end{lemma}
+
+\begin{proof}
+As above, we show $(f_{\mathsf{undef}},g_{\mathsf{undef}})$ is sound for $P_{\mathsf{undef}}$.
+Let $s \in \SType$ and $v \in \sem{s}$ with $\rtag(v)\in\{0,1\}$.
+By A0, $\tagfn(s)=\rtag(v)\in\{0,1\}$, so $f_{\mathsf{undef}}(s)=\mathsf{true}$ and $v\in\sem{g_{\mathsf{undef}}(s)}$.
+The $\neg P_{\mathsf{undef}}$ case is analogous.
+\end{proof}
+
+\subsection{Refinement Case Study: \texttt{typeof} Checks}
+
+We model the refinements performed for tests of the form \texttt{typeof x === "k"} for a subset of strings $k$.
+The implementation refines based on the internal tag/classification of the current $\SType$ alternatives.
+\paragraph{Note.}
+The predicate modeled here is the one used by the checker for narrowing; it may be a conservative approximation of JavaScript runtime \texttt{typeof}.
+
+\begin{definition}[\texttt{typeof} Predicates (Tag-Level)]
+\label{def:typeof-predicates}
+Define the following tag-level predicates:
+\begin{align*}
+P_{\mathsf{typeof}=\texttt{"string"}} &\triangleq \{ v \in \Val \mid \rtag(v)=5 \} \\
+P_{\mathsf{typeof}=\texttt{"number"}} &\triangleq \{ v \in \Val \mid \rtag(v)=4 \} \\
+P_{\mathsf{typeof}=\texttt{"bigint"}} &\triangleq \{ v \in \Val \mid \rtag(v)=6 \} \\
+P_{\mathsf{typeof}=\texttt{"boolean"}} &\triangleq \{ v \in \Val \mid \rtag(v)=3 \} \\
+P_{\mathsf{typeof}=\texttt{"function"}} &\triangleq \{ v \in \Val \mid \rtag(v)=11 \} \\
+P_{\mathsf{typeof}=\texttt{"undefined"}} &\triangleq \{ v \in \Val \mid \rtag(v)\in\{0,1\} \}.
+\end{align*}
+\end{definition}
+
+\begin{lemma}[\texttt{typeof} Refinement is Branch-Sound (Tag-Level)]
+\label{lem:typeof-refine-branch-sound}
+For each predicate $P$ in Definition~\ref{def:typeof-predicates}, define
+$f_P(s)\triangleq (\tagfn(s)\in \tags_P)$ where $\tags_P$ is the corresponding set of tags (e.g. $\{5\}$ for \texttt{"string"}, $\{0,1\}$ for \texttt{"undefined"}), and let $g_P(s)\triangleq s$.
+Then $\refineop^{f_P,g_P}$ is branch-sound for $P$, and $\refineop^{\neg f_P,g_P}$ is branch-sound for $\neg P$.
+\end{lemma}
+
+\begin{proof}
+Fix $P$ and let $s \in \SType$ and $v \in \sem{s}$ with $v \in P$.
+By A0, $\tagfn(s)=\rtag(v)\in\tags_P$, so $f_P(s)=\mathsf{true}$ and $v\in\sem{g_P(s)}$.
+Apply Lemma~\ref{lem:filter-map-branch-sound}.
+The $\neg P$ case is analogous.
+\end{proof}
+
 \section{Type Difference (Diff)}
 
 \begin{definition}[Diff Soundness Properties]
