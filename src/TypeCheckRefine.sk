@@ -134,7 +134,8 @@ extension class TypeChecker {
           x is TObject _ ||
             x is TAlgebraic _ ||
             x is TPrimUnit(TNull(), _) ||
-            x is TTuple _,
+            x is TTuple _ ||
+            x is TPromise _,
         Some(TObject(TFields::empty(), typePos)),
       );
       this.setLocal(

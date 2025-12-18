@@ -277,14 +277,12 @@ function testComplexUnion2(
 // typeof with promises - tricky case
 ///////////////////////////////////////////////////////////////////////////////
 
-// Promises are objects
-// FIXME: SKJS typeof refinement doesn't narrow x correctly for Promise
+// Promises are objects and typeof "object" refinement preserves Promise type
 function testPromiseAsObject(
   x: Promise<number> | string,
   def: Promise<number>,
 ): Promise<number> {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return def;
