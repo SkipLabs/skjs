@@ -130,7 +130,12 @@ extension class TypeChecker {
       )
     | "object" ->
       (filter, default) = (
-        x ~> x is TObject _ || x is TAlgebraic _ || x is TPrimUnit(TNull(), _),
+        x ~>
+          x is TObject(TFields{call => None()}, _) ||
+            x is TAlgebraic _ ||
+            x is TPrimUnit(TNull(), _) ||
+            x is TTuple _ ||
+            x is TPromise _,
         Some(TObject(TFields::empty(), typePos)),
       );
       this.setLocal(
@@ -272,6 +277,8 @@ extension class TypeChecker {
             .default(stype)
         };
       this.setLocal(tcenv, local, default, filterSType, mapSType)
+
+    | Unop(UOExclamationMark(), subE) -> this.evalCond(tcenv, subE, !target)
 
     | Binop(BOLogicalAnd(), e1, e2) if (target) ->
       this.evalCond(tcenv, e1, true);
