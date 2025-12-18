@@ -5,6 +5,7 @@
 - SKJS is written in the Skip language.
 - When changing the TypeScript support surface, update [skjs-rules.md](skjs-rules.md) in the same commit or PR so the documented subset matches reality (include new restrictions, lifted gaps, and workarounds).
 - Add or adjust tests whenever diagnostics, typing rules, or code generation changes—`skargo test` must stay green.
+- **Update this document** - When you learn something useful while contributing, add it here! This guide grows from real experience. Common pitfalls, debugging tricks, and workflow tips belong here.
 
 ## Writing Tests
 
