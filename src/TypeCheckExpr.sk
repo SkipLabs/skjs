@@ -294,7 +294,11 @@ extension class TypeChecker {
           )
         | Some(x) -> x
         };
-        !result = TType::union(tcenv.subst, this.tenv, result, tyArr[n])
+        tyAtN = tyArr.maybeGet(n) match {
+        | Some(tyAtN) -> tyAtN
+        | None() -> TType::single(TPrimUnit(TUndefined(), pos))
+        };
+        !result = TType::union(tcenv.subst, this.tenv, result, tyAtN)
 
       | TObject(fields, objectPos) if (fields.isEmpty()) ->
         !result = TType::top(objectPos)
