@@ -19,6 +19,7 @@
 \newcommand{\Pred}{\mathcal{P}(\Val)}
 \newcommand{\ObjVal}{\mathsf{ObjVal}}
 \newcommand{\String}{\mathsf{String}}
+\newcommand{\AlgVal}{\mathsf{AlgVal}}
 \newcommand{\SType}{\mathsf{SType}}
 \newcommand{\Tags}{\mathsf{Tags}}
 \newcommand{\TType}{\mathsf{TType}}
@@ -188,6 +189,29 @@ if the runtime string value $\text{``}p\text{''}$ is in $\sem{K}$, then $\mathsf
 \end{itemize}
 \paragraph{Note.}
 This semantics is intentionally \emph{open}: objects may have properties not mentioned in $F_{\mathrm{req}}$ or $F_{\mathrm{opt}}$.
+\end{definition}
+
+\begin{definition}[Algebraic Values and Tag-Based Algebraic-Type Semantics]
+\label{def:algebraic-semantics}
+Let $\AlgVal \subseteq \Val$ be the set of algebraic-tagged runtime values:
+\[
+\AlgVal \triangleq \{ v \in \Val \mid \rtag(v)=10\}.
+\]
+Assume algebraic values carry a runtime discriminant (constructor tag) as a string:
+\[
+\mathsf{atag} : \AlgVal \to \String.
+\]
+\paragraph{Semantics of \texttt{algebraic}$(T)$.}
+We assume the algebraic constructor in $\SType$ can carry a finite set of tags $T \subseteq_{\mathrm{fin}} \String$,
+and define:
+\[
+v \in \sem{\texttt{algebraic}(T)}
+\quad\text{iff}\quad
+v \in \AlgVal \ \land\  \mathsf{atag}(v) \in T.
+\]
+\paragraph{Note.}
+This intentionally models only the discriminant-level behavior needed for refinement;
+field/constructor payload constraints are left abstract.
 \end{definition}
 
 \section{Internal Type Representation}
@@ -364,6 +388,8 @@ It is defined only for the supported test forms:
 Similarly for \texttt{undefined}, with $\rtag(\sigma(x))\in\{0,1\}$.
 \item \textbf{\texttt{typeof}:} $\sigma \models_{\mathsf{true}} (\texttt{typeof}\ x===k)$ iff $\sigma(x)\in P_{\mathsf{typeof}=k}$ where $P_{\mathsf{typeof}=k}$ is as in Definition~\ref{def:typeof-predicates}; the false relation is negation.
 \item \textbf{\texttt{in}:} $\sigma \models_{\mathsf{true}} (\texttt{"}p\texttt{" in }x)$ iff $\sigma(x)\in\ObjVal$ and $\mathsf{has}(\sigma(x),p)$; the false relation is negation.
+\item \textbf{Algebraic tag equality:} $\sigma \models_{\mathsf{true}} (x.\texttt{\_tag}===t)$ iff $\sigma(x)\in\AlgVal$ and $\mathsf{atag}(\sigma(x))=t$; the false relation is negation.
+\item \textbf{\texttt{instanceof}:} $\sigma \models_{\mathsf{true}} (x\ \texttt{instanceof}\ C)$ iff $\sigma(x)\in P_{\mathsf{inst}}(C)$ for a predicate $P_{\mathsf{inst}}(C)\subseteq \Val$ (see Definition~\ref{def:instanceof-semantics}); the false relation is negation.
 \item \textbf{Connectives:}
   $\sigma \models_{\mathsf{true}} (e_1 \ \&\&\ e_2)$ iff $\sigma \models_{\mathsf{true}} e_1$ and $\sigma \models_{\mathsf{true}} e_2$.
   $\sigma \models_{\mathsf{false}} (e_1 \ ||\ e_2)$ iff $\sigma \models_{\mathsf{false}} e_1$ and $\sigma \models_{\mathsf{false}} e_2$.
@@ -468,6 +494,21 @@ where $P_k$ is the corresponding predicate $P_{\mathsf{typeof}=k}$ from Definiti
 \and
 \inferrule*[right=R-InF]{ }{\Env \vdash (\texttt{"}p\texttt{" in }x) \Leftarrow \mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\mathsf{false}}_p,g^{\mathsf{false}}_p}(t))}
 \end{mathpar}
+
+\paragraph{Algebraic tag equality.}
+\begin{mathpar}
+\inferrule*[right=R-AlgTagT]{ }{\Env \vdash (x.\texttt{\_tag}===t) \Rightarrow \mathsf{upd}(\Env,x,\,u \mapsto \refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,true}}_t}(u))}
+\and
+\inferrule*[right=R-AlgTagF]{ }{\Env \vdash (x.\texttt{\_tag}===t) \Leftarrow \mathsf{upd}(\Env,x,\,u \mapsto \refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,false}}_t}(u))}
+\end{mathpar}
+
+\paragraph{\texttt{instanceof}.}
+\begin{mathpar}
+\inferrule*[right=R-InstT]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Rightarrow \mathsf{upd}(\Env,x,\,u \mapsto \refineop_{\mathsf{inst}}(C,u))}
+\and
+\inferrule*[right=R-InstF]{ }{\Env \vdash (x\ \texttt{instanceof}\ C) \Leftarrow \Env}
+\end{mathpar}
+where $\refineop_{\mathsf{inst}}$ is the implementation-modeled update described in Definition~\ref{def:instanceof-semantics}.
 
 \paragraph{Boolean connectives.}
 The implementation composes refinements sequentially. For example:
@@ -630,6 +671,85 @@ Fix $P$ and let $s \in \SType$ and $v \in \sem{s}$ with $v \in P$.
 By A0, $\tagfn(s)=\rtag(v)\in\tags_P$, so $f_P(s)=\mathsf{true}$ and $v\in\sem{g_P(s)}$.
 Apply Lemma~\ref{lem:filter-map-branch-sound}.
 The $\neg P$ case is analogous.
+\end{proof}
+
+\subsection{Refinement Case Study: Algebraic Tag Equality}
+
+This corresponds to the implementation case where a discriminant field (written as \texttt{\_tag} here) is compared to a string literal,
+and the checker refines algebraic types by filtering the set of possible constructor tags.
+
+\begin{definition}[Algebraic-Tag Predicate]
+\label{def:alg-tag-predicate}
+Fix $t \in \String$ and define:
+\[
+P_{\mathsf{algTag}=t} \triangleq \{ v \in \Val \mid v \in \AlgVal \land \mathsf{atag}(v)=t \}.
+\]
+\end{definition}
+
+\begin{definition}[Algebraic Tag Filter/Map Pairs]
+\label{def:alg-tag-filter-map}
+Fix $t \in \String$.
+Let $f^{\mathsf{alg}}_t(s)=\mathsf{true}$ for all $s$ (the implementation does not drop non-algebraic alternatives for this refinement).
+Define mappers:
+\begin{itemize}
+\item $g^{\mathsf{alg,true}}_t(\texttt{algebraic}(T)) \triangleq \texttt{algebraic}(T \cap \{t\})$, and $g^{\mathsf{alg,true}}_t(s)\triangleq s$ for all other $s$.
+\item $g^{\mathsf{alg,false}}_t(\texttt{algebraic}(T)) \triangleq \texttt{algebraic}(T \setminus \{t\})$, and $g^{\mathsf{alg,false}}_t(s)\triangleq s$ for all other $s$.
+\end{itemize}
+\end{definition}
+
+\begin{lemma}[Algebraic Tag Equality is Branch-Sound]
+\label{lem:alg-tag-branch-sound}
+For every $t \in \String$:
+\[
+\refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,true}}_t} \text{ is branch-sound for } P_{\mathsf{algTag}=t},
+\qquad
+\refineop^{f^{\mathsf{alg}}_t,g^{\mathsf{alg,false}}_t} \text{ is branch-sound for } \neg P_{\mathsf{algTag}=t}.
+\]
+\end{lemma}
+
+\begin{proof}
+For the true branch, we show $(f^{\mathsf{alg}}_t,g^{\mathsf{alg,true}}_t)$ is sound for $P_{\mathsf{algTag}=t}$ and apply Lemma~\ref{lem:filter-map-branch-sound}.
+Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{algTag}=t}$.
+Then $v \in \AlgVal$, so $\rtag(v)=10$.
+By A0, $\tagfn(s)=10$, hence $s$ must be of the form $\texttt{algebraic}(T)$ for some finite $T$.
+By Definition~\ref{def:algebraic-semantics}, $v \in \sem{\texttt{algebraic}(T)}$ implies $\mathsf{atag}(v)\in T$.
+Since $\mathsf{atag}(v)=t$, we have $t\in T$, hence $v \in \sem{\texttt{algebraic}(T \cap \{t\})} = \sem{g^{\mathsf{alg,true}}_t(s)}$.
+Also $f^{\mathsf{alg}}_t(s)=\mathsf{true}$.
+The false-branch statement follows similarly: if $v \notin P_{\mathsf{algTag}=t}$, then either $v \notin \AlgVal$ (in which case $g^{\mathsf{alg,false}}_t$ leaves $s$ unchanged) or $\mathsf{atag}(v)\neq t$, which is preserved by removing $t$ from the allowed-tag set.
+\end{proof}
+
+\subsection{Refinement Case Study: \texttt{instanceof}}
+
+The implementation refines \texttt{instanceof} tests only on the true branch, by assigning the local variable a (possibly generic) instance type.
+This refinement updates the \emph{instance} component of $\TType$ rather than filtering $\STypes$.
+
+\begin{definition}[\texttt{instanceof} Semantics and Implementation-Modeled Refinement]
+\label{def:instanceof-semantics}
+Assume a set of runtime class names $\mathsf{Class}$ and a predicate family
+\[
+P_{\mathsf{inst}} : \mathsf{Class} \to \Pred
+\]
+capturing the runtime truth of \texttt{instanceof} for each class.
+We assume the type system's instance forms in $\TInst$ include a corresponding constructor $\texttt{Inst}(C)$ (with implementation-chosen type arguments).
+
+\paragraph{Axiom (\texttt{instanceof} inclusion).}
+For each class $C$ we assume:
+\[
+v \in P_{\mathsf{inst}}(C) \implies v \in \sem{\texttt{Inst}(C)}.
+\]
+\paragraph{Refinement operator.}
+Define $\refineop_{\mathsf{inst}}(C,(\insts,\clauses))$ to be the $\TType$ whose instance-set is replaced by $\{\texttt{Inst}(C)\}$ and whose clauses are left unchanged.
+\end{definition}
+
+\begin{lemma}[\texttt{instanceof}-True is Branch-Sound]
+\label{lem:instanceof-branch-sound}
+For each class $C$, the update $u \mapsto \refineop_{\mathsf{inst}}(C,u)$ is branch-sound for $P_{\mathsf{inst}}(C)$.
+\end{lemma}
+
+\begin{proof}
+Let $t=(\insts,\clauses)$ and let $v \in \sem{t}\cap P_{\mathsf{inst}}(C)$.
+Then $v \in P_{\mathsf{inst}}(C)$, so by the axiom in Definition~\ref{def:instanceof-semantics}, $v \in \sem{\texttt{Inst}(C)}$.
+Since $\refineop_{\mathsf{inst}}(C,t)$ includes $\texttt{Inst}(C)$ in its instance component, we have $v \in \sem{\refineop_{\mathsf{inst}}(C,t)}$.
 \end{proof}
 
 \section{Type Difference (Diff)}
