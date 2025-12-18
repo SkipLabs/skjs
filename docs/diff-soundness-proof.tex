@@ -14,6 +14,8 @@
 
 \newcommand{\sem}[1]{\llbracket #1 \rrbracket}
 \newcommand{\diff}{\mathsf{diff}}
+\newcommand{\refineop}{\mathsf{refine}}
+\newcommand{\Pred}{\mathcal{P}(\Val)}
 \newcommand{\SType}{\mathsf{SType}}
 \newcommand{\Tags}{\mathsf{Tags}}
 \newcommand{\TType}{\mathsf{TType}}
@@ -33,7 +35,7 @@
 \newcommand{\Val}{\mathsf{Val}}
 \newcommand{\Payload}{\mathsf{Payload}}
 
-\title{Soundness of Type Difference in SKJS}
+\title{Refinement and Type Difference in SKJS}
 \author{}
 \date{}
 
@@ -42,8 +44,12 @@
 \maketitle
 
 \begin{abstract}
-We prove that the type difference ($\diff$) operation in SKJS satisfies 
-properties ensuring sound type inference.
+We formalize the internal type representation used by SKJS and study two related
+type transformations:
+(1) predicate-driven \emph{refinement} (control-flow narrowing), and
+(2) the type-difference operation ($\diff$) used during type inference.
+We state and prove soundness properties for these transformations, while
+explicitly documenting the intended sources of incompleteness.
 \end{abstract}
 
 \section{Definitions Index}
@@ -67,11 +73,12 @@ $\TParam$ & Definition~\ref{def:type-parameters} \\
 $\Clause$ & Definition~\ref{def:clause} \\
 $\Clauses$ & Definition~\ref{def:clauses} \\
 $\TType$ & Definition~\ref{def:ttype} \\
+$\refineop$ (predicate-driven refinement) & Definition~\ref{def:refinement} \\
 $\diff$ (soundness P1/P2) & Definition~\ref{def:diff-soundness} \\
 \end{tabular}
 \end{center}
 
-\section{Type Representation}
+\section{Runtime Model and Semantic Interface}
 
 \begin{definition}[Runtime Tags]
 \label{def:runtime-tags}
@@ -137,6 +144,8 @@ The semantic interpretation of simple types agrees with runtime tags:
 \forall s_1, s_2 \in \SType.\; \tagfn(s_1) \neq \tagfn(s_2) \implies \sem{s_1} \cap \sem{s_2} = \emptyset
 \]
 \end{definition}
+
+\section{Internal Type Representation}
 
 \begin{definition}[STypes]
 \label{def:stypes}
@@ -260,7 +269,30 @@ Then $t = (I,C)$ denotes the type whose semantics is:
 \]
 \end{definition}
 
-\section{The Diff Operation}
+\section{Refinement (Predicate-Driven Narrowing)}
+
+\begin{definition}[Refinement]
+\label{def:refinement}
+Let $t \in \TType$ and let $P \in \Pred$ be a predicate (a set of runtime values).
+A \emph{refinement operator} is a function
+\[
+\refineop : \TType \times \Pred \to \TType.
+\]
+We call $\refineop$ \emph{branch-sound} if for all $t \in \TType$ and $P \in \Pred$:
+\[
+\sem{t} \cap P \subseteq \sem{\refineop(t,P)}.
+\]
+\paragraph{Remark (precision vs soundness).}
+Branch-soundness only requires that the refined type \emph{over-approximates} the values that can occur in the branch.
+It does not require $\sem{\refineop(t,P)} \subseteq \sem{t}$, so the refinement is allowed to be conservative (lose information) while remaining sound.
+\end{definition}
+
+\paragraph{Implementation correspondence.}
+In SKJS, control-flow narrowing is implemented by rewriting the internal type for a local variable using a tag-indexed
+filter/map on simple types (see the \texttt{FilterType} transformer and \texttt{setLocal} in the implementation).
+This motivates defining refinements compositionally by lifting a transformation on $\SType$ values to $\STypes$, $\Clause$, $\Clauses$, and finally $\TType$.
+
+\section{Type Difference (Diff)}
 
 \begin{definition}[Diff Soundness Properties]
 \label{def:diff-soundness}
