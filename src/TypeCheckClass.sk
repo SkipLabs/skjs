@@ -199,7 +199,6 @@ extension class TypeChecker {
             fd,
             Some(c.name),
             methods,
-            results,
           )
         } else {
           cgNode = CGNode::create(
@@ -235,8 +234,8 @@ extension class TypeChecker {
     fd: ClassFieldTypeMethod,
     className: ?Name,
     methods: SortedSet<String>,
-    results: mutable TCResults,
   ): void {
+    results = subst.results;
     if (fd.retType.i1 is Some _) {
       results.error(
         Array[(fd.retType.i0, "Constructors don't have return types")],
