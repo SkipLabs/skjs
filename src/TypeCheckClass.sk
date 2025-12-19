@@ -253,12 +253,14 @@ extension class TypeChecker {
     results: mutable TCResults,
   ): void {
     if (fd.retType.i1 is Some _) {
-      typingError(
+      results.error(
         Array[(fd.retType.i0, "Constructors don't have return types")],
       );
     };
     for (modifier in fd.modifiers.modifiers) {
-      typingError(Array[(modifier.pos, "Constructors cannot have modifiers")]);
+      results.error(
+        Array[(modifier.pos, "Constructors cannot have modifiers")],
+      );
     };
     cgNode = CGNode::create(
       className match {
@@ -277,10 +279,10 @@ extension class TypeChecker {
     fd.isAsync match {
     | None() -> void
     | Some(asyncPos) ->
-      typingError(Array[(asyncPos, "Constructors cannot be async")])
+      results.error(Array[(asyncPos, "Constructors cannot be async")])
     };
     fd.body match {
-    | FDBNone(pos) -> typingError(Array[(pos, "Missing definition")])
+    | FDBNone(pos) -> results.error(Array[(pos, "Missing definition")])
     | FDBSome(body) ->
       blockScope = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fd.pos, "this"));
@@ -296,12 +298,14 @@ extension class TypeChecker {
         this.tenv,
         methods,
       );
-      this.checkSubType(
-        tcenv,
-        fd.pos,
-        "Invalid initialization",
-        objType,
-        fullType,
+      results.collectErrors(() ->
+        this.checkSubType(
+          tcenv,
+          fd.pos,
+          "Invalid initialization",
+          objType,
+          fullType,
+        )
       )
     };
   }
