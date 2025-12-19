@@ -675,39 +675,59 @@ Similarly, a string literal is a subtype of \texttt{string}:
 
 \section{Refinement (Predicate-Driven Narrowing)}
 
-\begin{definition}[Refinement]
+\subsection{Implemented Refinements}
+\label{sec:refine-list}
+
+This section enumerates all control-flow refinements implemented in SKJS.
+When the implementation adds a new refinement, add it to this list.
+
+\begin{keydef}
+\textbf{Master list of implemented refinements.}
+
+\smallskip
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}l@{\;\;}l@{\;\;}l@{\;\;}l@{}}
+\toprule
+\textbf{Category} & \textbf{Test Form} & \textbf{Refines?} & \textbf{Proof} \\
+\midrule
+Nullish & \texttt{x === null} & Both branches & Lem.~\ref{lem:nullish-predicate-sound} \\
+        & \texttt{x === undefined} & Both branches & Lem.~\ref{lem:nullish-predicate-sound} \\
+\midrule
+\texttt{typeof} & \texttt{typeof x === "string"} & Both + default & Lem.~\ref{lem:typeof-refine-predicate-sound} \\
+        & \texttt{typeof x === "number"} & Both + default & Lem.~\ref{lem:typeof-refine-predicate-sound} \\
+        & \texttt{typeof x === "boolean"} & Both + default & Lem.~\ref{lem:typeof-refine-predicate-sound} \\
+        & \texttt{typeof x === "bigint"} & Both + default & Lem.~\ref{lem:typeof-refine-predicate-sound} \\
+        & \texttt{typeof x === "undefined"} & Both branches & Lem.~\ref{lem:typeof-refine-predicate-sound} \\
+        & \texttt{typeof x === "object"} & Both + default & Lem.~\ref{lem:typeof-refine-predicate-sound} \\
+        & \texttt{typeof x === "function"} & Both branches & Lem.~\ref{lem:typeof-refine-predicate-sound} \\
+        & \texttt{typeof x === "symbol"} & \emph{Not refined} & --- \\
+\midrule
+Property & \texttt{"p" in x} & Both + default & Lem.~\ref{lem:in-true-predicate-sound}, \ref{lem:in-false-predicate-sound} \\
+\midrule
+Discriminant & \texttt{x.\_tag === $\ell$} & Both branches & Lem.~\ref{lem:alg-tag-predicate-sound} \\
+\midrule
+\texttt{instanceof} & \texttt{x instanceof C} & True only & Lem.~\ref{lem:instanceof-predicate-sound} \\
+\midrule
+Connectives & \texttt{$e_1$ \&\& $e_2$} & Compositional & Lem.~\ref{lem:connectives-branch-sound} \\
+            & \texttt{$e_1$ || $e_2$} & Compositional & Lem.~\ref{lem:connectives-branch-sound} \\
+\bottomrule
+\end{tabular}
+
+\smallskip
+\emph{``Both + default''}: refines both branches; provides a default type when input is top.
+\end{keydef}
+
+\subsection{Soundness Framework}
+\label{sec:refine-framework}
+
+\begin{definition}[Refinement Judgements and Soundness]
 \label{def:refinement}
-Let $\Env$ range over environments mapping local variables to $\TType$.
-Let $\sigma$ range over runtime environments mapping local variables to runtime values in $\Val$.
-We write $\Env(x)$ for lookup and $\Env[x \mapsto t]$ for pointwise update.
+Let $\Env$ map local variables to $\TType$; let $\sigma$ map locals to $\Val$.
+Write $\sigma \models \Env$ when $\sigma(x) \in \sem{\Env(x)}$ for all $x$.
 
-\paragraph{Satisfaction.}
-Define $\sigma \models \Env$ to mean: for every local $x$, we have $\sigma(x) \in \sem{\Env(x)}$.
-
-\paragraph{Refinement judgements.}
-We write:
-\[
-\RefineT{\Env}{e}{\Env'}
-\qquad\text{and}\qquad
-\RefineF{\Env}{e}{\Env'}
-\]
-to mean ``refine under the assumption that $e$ evaluates to \texttt{true}/\texttt{false}'' respectively.
-These judgements are defined by the inference rules in Section~\ref{sec:refine-rules}, and are intentionally partial: they only model the refinement patterns implemented in SKJS.
-
-\paragraph{Soundness.}
-We call the judgement system \emph{branch-sound} if:
-\begin{itemize}
-\item whenever $\sigma \models \Env$ and $e$ evaluates to \texttt{true} under $\sigma$ (according to the evaluation relation for refinement tests in Definition~\ref{def:refine-eval}),
-then $\sigma \models \Env'$ holds for every derivation $\RefineT{\Env}{e}{\Env'}$;
-\item whenever $\sigma \models \Env$ and $e$ evaluates to \texttt{false} under $\sigma$,
-then $\sigma \models \Env'$ holds for every derivation $\RefineF{\Env}{e}{\Env'}$.
-\end{itemize}
+The judgements $\RefineT{\Env}{e}{\Env'}$ and $\RefineF{\Env}{e}{\Env'}$ refine $\Env$ under the assumption that $e$ is true/false.
+The system is \emph{branch-sound} if: whenever $\sigma \models \Env$ and $e$ evaluates to $b \in \{\mathsf{true}, \mathsf{false}\}$, then $\sigma \models \Env'$ for the corresponding derivation.
 \end{definition}
-
-\paragraph{Implementation correspondence.}
-In SKJS, control-flow narrowing is implemented by rewriting the internal type for a local variable using a tag-indexed
-filter/map on simple types (see the \texttt{FilterType} transformer and \texttt{setLocal} in the implementation).
-This motivates defining refinements compositionally by lifting a transformation on $\SType$ values to $\STypes$, $\Clause$, $\Clauses$, and finally $\TType$.
 
 \begin{definition}[\texttt{typeof} Predicates]
 \label{def:typeof-predicates}
@@ -854,18 +874,18 @@ If $R(t)$ is syntactically top/empty, then $\mathsf{def}(R,d)(t)=\mathsf{single}
 Thus $\sem{t}\cap P \subseteq \sem{\mathsf{def}(R,d)(t)}$ for all $t$.
 \end{proof}
 
-\subsection{Algorithmic Refinement Judgements}
+\subsection{Inference Rules}
 \label{sec:refine-rules}
 
 \begin{keydef}
-\textbf{Refinement summary.} Each test form has a filter $f$, mapper $g$, and optional default $d$.
-The true branch applies $\mathsf{def}(\refineop^{f,g}, d)$; the false branch applies $\refineop^{f',g'}$.
+\textbf{Filter/Mapper summary.} Each test form uses filter $f$, mapper $g$, optional default $d$.
+True branch: $\mathsf{def}(\refineop^{f,g}, d)$; false branch: $\refineop^{f',g'}$.
 
 \smallskip
-\renewcommand{\arraystretch}{1.2}
-\begin{tabular}{@{}l@{\quad}l@{\quad}l@{\quad}l@{}}
+\renewcommand{\arraystretch}{1.15}
+\begin{tabular}{@{}l@{\;\;}l@{\;\;}l@{\;\;}l@{}}
 \toprule
-\textbf{Test} & \textbf{True-branch filter} & \textbf{Mapper} & \textbf{Default} \\
+\textbf{Test} & \textbf{Filter (true)} & \textbf{Mapper} & \textbf{Default} \\
 \midrule
 \texttt{x === null} & $\tagfn(s)=2$ & identity & --- \\
 \texttt{x === undefined} & $\tagfn(s)\in\{0,1\}$ & identity & --- \\
@@ -873,8 +893,8 @@ The true branch applies $\mathsf{def}(\refineop^{f,g}, d)$; the false branch app
 \texttt{typeof x === "number"} & $\tagfn(s)=4$ & identity & \texttt{number} \\
 \texttt{typeof x === "function"} & callable object & $\mathsf{Maybe}\to\mathsf{Definite}$ & --- \\
 \texttt{typeof x === "object"} & $\tagfn(s)\in\{2,9,10\}$ & identity & \texttt{object}$(\emptyset)$ \\
-\texttt{"p" in x} & has property $p$ & add required $p$ & \texttt{object}$(\{p\})$ \\
-\texttt{x.\_tag === $\ell$} & $\mathsf{atag}=\ell$ & filter to $\{\ell\}$ & --- \\
+\texttt{"p" in x} & tags 7--10 & add required $p$ & \texttt{object}$(\{p\})$ \\
+\texttt{x.\_tag === $\ell$} & always true & filter to $\{\ell\}$ & --- \\
 \texttt{x instanceof C} & (overwrite) & $\to T_{\mathsf{inst}}(C)$ & --- \\
 \bottomrule
 \end{tabular}
@@ -1056,10 +1076,16 @@ Each of the case-study lemmas in the following subsections establishes that the 
 which by Lemma~\ref{lem:filter-map-predicate-sound} implies predicate-soundness of $\refineop^{f,g}$,
 and by Lemma~\ref{lem:predicate-to-branch-sound} implies branch-soundness of the inference rule.
 
-\subsection{Refinement Case Study: the \texttt{in} Operator}
+\subsection{Soundness Proofs}
+\label{sec:refine-proofs}
 
-We formalize the refinement performed for conditions of the form \texttt{"p" in x} in SKJS.
-The implementation refines only local variables and updates object types by either (a) adding a required field on the true branch, or (b) forgetting a field on the false branch.
+The following subsections prove soundness for each refinement category.
+Each proof shows that the filter/map pair $(f,g)$ is sound for the runtime predicate $P$,
+then applies Lemmas~\ref{lem:filter-map-predicate-sound} and~\ref{lem:predicate-to-branch-sound}.
+
+\subsubsection{Property Check (\texttt{in})}
+
+The \texttt{"p" in x} refinement adds a required field on the true branch, or removes the field constraint on the false branch.
 
 \begin{definition}[\texttt{in} Predicates]
 \label{def:in-predicate}
@@ -1141,10 +1167,7 @@ By Definition~\ref{def:object-semantics}, the semantics only constrains listed f
 Hence $v \in \sem{g^{\mathsf{false}}_p(s)}$.
 \end{proof}
 
-\subsection{Refinement Case Study: Nullish Checks}
-
-We model the refinements performed for comparisons of a local variable against \texttt{null} and \texttt{undefined}.
-In the implementation, \texttt{undefined} and \texttt{void} are treated equivalently for refinement.
+\subsubsection{Nullish Checks}
 
 \begin{definition}[Nullish Predicates]
 \label{def:nullish-predicates}
@@ -1158,8 +1181,7 @@ We also write $\neg P$ for $\Val \setminus P$.
 \end{definition}
 
 \begin{lemma}[Nullish Refinement is Predicate-Sound]
-\label{lem:null-refine-predicate-sound}
-\label{lem:undef-refine-predicate-sound}
+\label{lem:nullish-predicate-sound}
 The refinements for null and undefined (Definition~\ref{def:nullish-filters-mappers}) are predicate-sound for their respective predicates.
 \end{lemma}
 
@@ -1168,14 +1190,9 @@ By A0: if $v \in P_{\mathsf{null}}$ then $\rtag(v)=2$, so $\tagfn(s)=2$ and $f_{
 Apply Lemma~\ref{lem:filter-map-predicate-sound}. The undefined and negated cases are analogous.
 \end{proof}
 
-\subsection{Refinement Case Study: \texttt{typeof} Checks}
+\subsubsection{\texttt{typeof} Checks}
 
-We model the refinements performed for tests of the form \texttt{typeof x === "k"} for a subset of strings $k$.
-The implementation refines based on the internal tag/classification of the current $\SType$ alternatives.
-\paragraph{Note.}
-The predicate modeled here is the one used by the checker for narrowing; it may be a conservative approximation of JavaScript runtime \texttt{typeof}.
-The predicates and the corresponding filter/default choices are defined in
-Definitions~\ref{def:typeof-predicates} and~\ref{def:typeof-filters-defaults}.
+Predicates are in Definition~\ref{def:typeof-predicates}; filters/defaults in Definition~\ref{def:typeof-filters-defaults}.
 
 \begin{lemma}[\texttt{typeof} Refinement is Predicate-Sound]
 \label{lem:typeof-refine-predicate-sound}
@@ -1201,10 +1218,9 @@ For the false branch of \texttt{"function"}: $\mathsf{callable}(v)=\mathsf{false
 Defaults follow from Lemma~\ref{lem:defaulting-preserves-predicate-sound}.
 \end{proof}
 
-\subsection{Refinement Case Study: Algebraic Tag Equality}
+\subsubsection{Discriminant (\texttt{\_tag}) Checks}
 
-This corresponds to the implementation case where a discriminant field (written as \texttt{\_tag} here) is compared to a string literal,
-and the checker refines algebraic types by filtering the set of possible constructor tags.
+Refines algebraic types by filtering the constructor tag set.
 
 \begin{definition}[Algebraic-Tag Predicate]
 \label{def:alg-tag-predicate}
@@ -1240,10 +1256,9 @@ True branch: If $v \in P_{\mathsf{algTag}=\ell}$ then $\mathsf{atag}(v)=\ell$, s
 False branch: If $\mathsf{atag}(v) \neq \ell$, then $\mathsf{atag}(v) \in T \setminus \{\ell\}$, so the mapper removing $\ell$ preserves $v$. Non-algebraic types pass through unchanged.
 \end{proof}
 
-\subsection{Refinement Case Study: \texttt{instanceof}}
+\subsubsection{\texttt{instanceof} Checks}
 
-The implementation refines \texttt{instanceof} tests only on the true branch, by assigning the local variable a (possibly generic) instance type.
-This refinement updates the \emph{instance} component of $\TType$ rather than filtering $\STypes$.
+Refines the true branch by overwriting with the instance type $T_{\mathsf{inst}}(C)$.
 
 \begin{definition}[\texttt{instanceof} Semantics and Implementation-Modeled Refinement]
 \label{def:instanceof-semantics}
