@@ -120,9 +120,9 @@ extension class TypeChecker {
   }
 
   fun evalNullEquality(tcenv: mutable TCEnv, local: Name, target: Bool): void {
-    this.setLocal(tcenv, local, None(), x ~>
-      x is TPrimUnit(TNull(), _) == target
-    )
+    filter = x ~> (x is TPrimUnit(TNull(), _)) == target;
+    default = None();
+    this.setLocal(tcenv, local, default, filter)
   }
 
   fun evalUndefinedEquality(
