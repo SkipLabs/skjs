@@ -25,7 +25,7 @@ declare class Array<T> implements Iterable<T> {
   find(filter: (item: T) => boolean): undefined | T;
   push(elt: T): void;
   indexOf(x: T): number;
-  sort(f?: (a: object, b: object) => number): Array<T>;
+  sort(f?: (a: object, b: object) => number): SKJS_Ignorable<Array<T>>;
   map<T2>(f: (item: T) => T2): Array<T2>;
   filter(f: (item: T) => boolean): Array<T>;
   reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
@@ -37,17 +37,21 @@ declare class Array<T> implements Iterable<T> {
   pop(): T | undefined;
   shift(): T | undefined;
   unshift(element: T): number;
-  splice(start: number, deleteCount?: number): Array<T>;
+  splice(start: number, deleteCount?: number): SKJS_Ignorable<Array<T>>;
   concat(other: Array<T>): Array<T>;
-  reverse(): Array<T>;
+  reverse(): SKJS_Ignorable<Array<T>>;
   includes(element: T): boolean;
   lastIndexOf(element: T): number;
   every(predicate: (item: T) => boolean): boolean;
   some(predicate: (item: T) => boolean): boolean;
   forEach(callback: (item: T, index: number) => void): void;
   findIndex(predicate: (item: T) => boolean): number;
-  fill(value: T, start?: number, end?: number): Array<T>;
-  copyWithin(target: number, start: number, end?: number): Array<T>;
+  fill(value: T, start?: number, end?: number): SKJS_Ignorable<Array<T>>;
+  copyWithin(
+    target: number,
+    start: number,
+    end?: number,
+  ): SKJS_Ignorable<Array<T>>;
   flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
   reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 
@@ -266,12 +270,12 @@ declare class WeakMap<K, V> {
   delete(key: K): boolean;
   get(key: K): V | undefined;
   has(key: K): boolean;
-  set(key: K, value: V): WeakMap<K, V>;
+  set(key: K, value: V): SKJS_Ignorable<WeakMap<K, V>>;
 }
 
 declare class WeakSet<T> {
   constructor();
-  add(value: T): WeakSet<T>;
+  add(value: T): SKJS_Ignorable<WeakSet<T>>;
   delete(value: T): boolean;
   has(value: T): boolean;
 }
@@ -306,35 +310,47 @@ declare class Date {
   getUTCMinutes(): number;
   getUTCMonth(): number;
   getUTCSeconds(): number;
-  setDate(date: number): number;
-  setFullYear(year: number, month?: number, date?: number): number;
+  setDate(date: number): SKJS_Ignorable<number>;
+  setFullYear(
+    year: number,
+    month?: number,
+    date?: number,
+  ): SKJS_Ignorable<number>;
   setHours(
     hours: number,
     minutes?: number,
     seconds?: number,
     milliseconds?: number,
-  ): number;
-  setMilliseconds(milliseconds: number): number;
-  setMinutes(minutes: number, seconds?: number, milliseconds?: number): number;
-  setMonth(month: number, date?: number): number;
-  setSeconds(seconds: number, milliseconds?: number): number;
-  setTime(time: number): number;
-  setUTCDate(date: number): number;
-  setUTCFullYear(year: number, month?: number, date?: number): number;
+  ): SKJS_Ignorable<number>;
+  setMilliseconds(milliseconds: number): SKJS_Ignorable<number>;
+  setMinutes(
+    minutes: number,
+    seconds?: number,
+    milliseconds?: number,
+  ): SKJS_Ignorable<number>;
+  setMonth(month: number, date?: number): SKJS_Ignorable<number>;
+  setSeconds(seconds: number, milliseconds?: number): SKJS_Ignorable<number>;
+  setTime(time: number): SKJS_Ignorable<number>;
+  setUTCDate(date: number): SKJS_Ignorable<number>;
+  setUTCFullYear(
+    year: number,
+    month?: number,
+    date?: number,
+  ): SKJS_Ignorable<number>;
   setUTCHours(
     hours: number,
     minutes?: number,
     seconds?: number,
     milliseconds?: number,
-  ): number;
-  setUTCMilliseconds(milliseconds: number): number;
+  ): SKJS_Ignorable<number>;
+  setUTCMilliseconds(milliseconds: number): SKJS_Ignorable<number>;
   setUTCMinutes(
     minutes: number,
     seconds?: number,
     milliseconds?: number,
-  ): number;
-  setUTCMonth(month: number, date?: number): number;
-  setUTCSeconds(seconds: number, milliseconds?: number): number;
+  ): SKJS_Ignorable<number>;
+  setUTCMonth(month: number, date?: number): SKJS_Ignorable<number>;
+  setUTCSeconds(seconds: number, milliseconds?: number): SKJS_Ignorable<number>;
   toDateString(): string;
   toISOString(): string;
   toJSON(): string;
