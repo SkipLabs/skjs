@@ -205,13 +205,27 @@ Write $\mathsf{has}(o,p)$ for $p \in \mathsf{props}(o)$.
 
 \paragraph{Object field specifications.}
 Assume predicates $\mathsf{callable} : \ObjVal \to \{\mathsf{true},\mathsf{false}\}$ and $\mathsf{constructible} : \ObjVal \to \{\mathsf{true},\mathsf{false}\}$.
+
+\paragraph{Three-valued signature modes.}
+To support precise refinement after normalization, we use a three-valued mode for call and constructor signatures:
+\[
+\mathsf{SigMode} \triangleq \{\mathsf{None},\, \mathsf{Maybe}(\sigma),\, \mathsf{Definite}(\sigma)\}
+\]
+where $\sigma$ ranges over abstract signatures (we treat signatures opaquely in this document).
+Intuitively:
+\begin{itemize}
+\item $\mathsf{Definite}(\sigma)$: the object is definitely callable/constructible with signature $\sigma$.
+\item $\mathsf{Maybe}(\sigma)$: the object may or may not be callable/constructible; if it is, it has signature $\sigma$.
+\item $\mathsf{None}$: the object is definitely not callable/constructible.
+\end{itemize}
+
 An \emph{object field specification} is a tuple $F=(F_{\mathrm{req}},F_{\mathrm{opt}},F_{\mathrm{idx}},F_{\mathrm{new}},F_{\mathrm{call}})$ where:
 \begin{itemize}
 \item $F_{\mathrm{req}} : \String \rightharpoonup \TType$ is a finite partial map of required fields,
 \item $F_{\mathrm{opt}} : \String \rightharpoonup \TType$ is a finite partial map of optional fields,
 \item $F_{\mathrm{idx}}$ is either $\mathsf{None}$ or $\mathsf{Some}(K,V)$ for $K,V \in \TType$ (an index signature),
-\item $F_{\mathrm{new}}$ is either $\mathsf{None}$ or $\mathsf{Some}(\nu)$ for an abstract constructor signature $\nu$,
-\item $F_{\mathrm{call}}$ is either $\mathsf{None}$ or $\mathsf{Some}(\kappa)$ for an abstract call signature $\kappa$.
+\item $F_{\mathrm{new}} \in \mathsf{SigMode}$ for constructor signatures,
+\item $F_{\mathrm{call}} \in \mathsf{SigMode}$ for call signatures.
 \end{itemize}
 
 \paragraph{Semantics of \texttt{object}$(F)$.}
@@ -227,11 +241,22 @@ $\mathsf{has}(o,p)$ and $\mathsf{get}(o,p) \in \sem{F_{\mathrm{req}}(p)}$.
 if $\mathsf{has}(o,p)$ then $\mathsf{get}(o,p) \in \sem{F_{\mathrm{opt}}(p)}$ (and if not, no constraint).
 \item \textbf{Index signature (open objects):} if $F_{\mathrm{idx}}=\mathsf{Some}(K,V)$ then for every $p \in \mathsf{props}(o)$:
 if the runtime string value $\text{``}p\text{''}$ is in $\sem{K}$, then $\mathsf{get}(o,p) \in \sem{V}$.
-\item \textbf{Constructor signature:} $\mathsf{constructible}(o)=\mathsf{true}$ iff $F_{\mathrm{new}} \neq \mathsf{None}$.
-\item \textbf{Call signature:} $\mathsf{callable}(o)=\mathsf{true}$ iff $F_{\mathrm{call}} \neq \mathsf{None}$.
+\item \textbf{Constructor signature:}
+\begin{itemize}
+\item if $F_{\mathrm{new}} = \mathsf{Definite}(\nu)$ then $\mathsf{constructible}(o)=\mathsf{true}$;
+\item if $F_{\mathrm{new}} = \mathsf{Maybe}(\nu)$ then no constraint (object may or may not be constructible);
+\item if $F_{\mathrm{new}} = \mathsf{None}$ then $\mathsf{constructible}(o)=\mathsf{false}$.
+\end{itemize}
+\item \textbf{Call signature:}
+\begin{itemize}
+\item if $F_{\mathrm{call}} = \mathsf{Definite}(\kappa)$ then $\mathsf{callable}(o)=\mathsf{true}$;
+\item if $F_{\mathrm{call}} = \mathsf{Maybe}(\kappa)$ then no constraint (object may or may not be callable);
+\item if $F_{\mathrm{call}} = \mathsf{None}$ then $\mathsf{callable}(o)=\mathsf{false}$.
+\end{itemize}
 \end{itemize}
 \paragraph{Note.}
 This semantics is intentionally \emph{open}: objects may have properties not mentioned in $F_{\mathrm{req}}$ or $F_{\mathrm{opt}}$.
+The three-valued signature modes ensure that normalization (merging callable with non-callable objects) is sound, while still permitting precise refinement via \texttt{typeof}.
 \end{definition}
 
 \begin{definition}[Algebraic Values and Tag-Based Algebraic-Type Semantics]
@@ -262,27 +287,78 @@ field/constructor payload constraints are left abstract.
 
 \begin{definition}[STypes]
 \label{def:stypes}
-$\STypes$ is a finite partial map $\Tags \rightharpoonup \SType$ 
-with at most one entry per tag: if $S(k) = s$ then $\tagfn(s) = k$.
-\paragraph{Partial-map conventions.}
-We write $\mathrm{dom}(S)$ for the domain of defined keys.
-When a definition returns ``undefined'' at a key $k$, that means precisely $k \notin \mathrm{dom}(S)$ (i.e. the partial map has no entry at $k$).
+\(\STypes\) is a finite set \(S \subseteq_{\mathrm{fin}} \SType\) such that its elements have pairwise distinct runtime tags:
 \[
-\sem{S} = \bigcup_{k \in \mathrm{dom}(S)} \sem{S(k)}
+\forall s_1,s_2 \in S.\; s_1 \neq s_2 \implies \tagfn(s_1) \neq \tagfn(s_2).
 \]
-We write $\tags(S) = \mathrm{dom}(S)$.
-We write $\{k \mapsto s\}$ for the singleton partial map with domain $\{k\}$.
+\paragraph{Semantics.}
+\[
+\sem{S} = \bigcup_{s \in S} \sem{s}.
+\]
+\paragraph{Tags and tag-based lookup.}
+Define \(\tags(S) \triangleq \{\, \tagfn(s) \mid s \in S \,\}\).
+When \(k \in \tags(S)\), we write \(S[k]\) for the unique \(s \in S\) with \(\tagfn(s)=k\).
+\paragraph{Singleton.}
+We write \(\{s\}\) for the singleton \(\STypes\) value (a set containing one \(\SType\)).
 \paragraph{Intuition.}
 An $\STypes$ value represents the \emph{tag-level} part of a union type: it records, for each runtime tag $k$ that may occur, a single representative simple type $s$ of that tag.
-The map shape enforces a normalization invariant (``at most one entry per tag''), which matches the implementation: many operations reason by tags and intentionally do not keep multiple alternatives of the same tag.
+\paragraph{Implementation note.}
+In SKJS, this set is stored and manipulated in a tag-indexed representation for efficiency, but the mathematical model here treats it as a set with the above distinct-tag invariant.
 \paragraph{Example.}
 The union \texttt{number | string} is represented as:
 \[
-S = \{4 \mapsto \texttt{number},\; 5 \mapsto \texttt{string}\}
+S = \{\texttt{number},\; \texttt{string}\}
 \]
 and has semantics $\sem{S} = \sem{\texttt{number}} \cup \sem{\texttt{string}}$.
 In contrast, \texttt{number} and the numeric literal \texttt{1} share the same tag $4$, so an $\STypes$ value cannot simultaneously store both; this is why, for example, a tag-based ``diff'' cannot precisely express \texttt{number \textbackslash{} 1}.
 \end{definition}
+
+\subsection{Normal-Form Operations on $\STypes$}
+\label{sec:stypes-ops}
+
+\paragraph{Operations (API).}
+We treat \(\STypes\) as a normal-form ADT and highlight the operations used by the implementation:
+\begin{itemize}
+\item \textbf{Constructors:} \(\emptyset \in \STypes\) and \(\{s\} \in \STypes\) for \(s\in\SType\).
+\item \textbf{Filter-map (refinement primitive):} for tag-preserving \(g\) and filter \(f\),
+\[
+\mathsf{filterMap}^{f,g}(S) \triangleq \{\, g(s) \mid s \in S,\ f(s)=\mathsf{true}\,\}.
+\]
+\item \textbf{Union (implementation union):} \(S_1 \sqcup_{\STypes} S_2\) is the normal-form union operation used by SKJS, which merges same-tag alternatives into a single representative per tag (while keeping other tags unchanged).
+\item \textbf{Intersection (over-approximate meet):} the implementation provides a partial operation \(S_1 \sqcap_{\STypes} S_2\) (it may return no result when the intersection is bottom). We model it abstractly below via its soundness property.
+\item \textbf{Difference (tag-elimination):} \(\diff_{\STypes}(S_1,S_2)\) is defined in Section~\ref{def:stypes-diff}.
+\end{itemize}
+
+\paragraph{Soundness summary.}
+All operations above are intended to be sound with respect to \(\sem{\cdot}\):
+\begin{itemize}
+\item \textbf{Empty/singleton (exact):} \(\sem{\emptyset}=\emptyset\) and \(\sem{\{s\}}=\sem{s}\).
+\item \textbf{Filter-map (predicate-sound):} if \((f,g)\) is sound for predicate \(P\) (Definition~\ref{def:filter-map-refinement}) and \(g\) preserves tags, then
+\[
+\sem{S} \cap P \subseteq \sem{\mathsf{filterMap}^{f,g}(S)}.
+\]
+\item \textbf{Union (over-approximate union):}
+\[
+\sem{S_1} \cup \sem{S_2} \subseteq \sem{S_1 \sqcup_{\STypes} S_2}.
+\]
+\item \textbf{Intersection (over-approximate intersection):} when \(S_1 \sqcap_{\STypes} S_2\) is defined,
+\[
+\sem{S_1} \cap \sem{S_2} \subseteq \sem{S_1 \sqcap_{\STypes} S_2}.
+\]
+\item \textbf{Difference:} (P1) always holds (Lemma~\ref{lem:stypes-diff-p1}); (P2) holds under \(\mathsf{STC}\) (Lemma~\ref{lem:stypes-diff-p2-under-stc}).
+\end{itemize}
+
+\begin{lemma}[Union Soundness for \(\STypes\)]
+\label{lem:stypes-union-sound}
+For all \(S_1,S_2 \in \STypes\),
+\[
+\sem{S_1} \cup \sem{S_2} \subseteq \sem{S_1 \sqcup_{\STypes} S_2}.
+\]
+\end{lemma}
+
+\begin{proof}
+This is an explicit soundness property of the implementation's union on normal forms: it merges same-tag alternatives conservatively (never dropping inhabitants), and leaves other tags unchanged.
+\end{proof}
 
 \begin{definition}[Type Instances]
 \label{def:type-instances}
@@ -336,7 +412,7 @@ with at most one clause per key, and such that keys agree with clause variables:
 \sem{C} = \bigcup_{k \in \mathrm{dom}(C)} \sem{C(k)}
 \]
 \paragraph{Example.}
-Let $S_{\mathsf{num}} = \{4 \mapsto \texttt{number}\}$ and $S_{\mathsf{str}} = \{5 \mapsto \texttt{string}\}$.
+Let $S_{\mathsf{num}} = \{\texttt{number}\}$ and $S_{\mathsf{str}} = \{\texttt{string}\}$.
 Let $A,B \in \TParam$ be two type parameters.
 Consider the clauses map $C$ with two entries:
 \[
@@ -509,11 +585,11 @@ v \in P \implies (f(s) = \mathsf{true} \ \land\  v \in \sem{g(s)}).
 \paragraph{Remark (tag preservation).}
 In the implementation, the mapper $g$ used for refinement preserves runtime tags:
 $\tagfn(g(s))=\tagfn(s)$.
-We do not require this for the semantic statement below, but it ensures the lifted $\STypes$ transformation does not merge distinct tags.
+In this document we assume tag preservation when defining $\refineop_{\STypes}^{f,g}$, so that the result is again a well-formed $\STypes$ set (pairwise distinct tags). This matches SKJS's \texttt{FilterType} implementation.
 \paragraph{Lift to $\STypes$.}
 Define:
 \[
-\refineop_{\STypes}^{f,g}(S) \triangleq \{\, \tagfn(g(S(k))) \mapsto g(S(k)) \mid k \in \mathrm{dom}(S),\ f(S(k))=\mathsf{true}\,\}.
+\refineop_{\STypes}^{f,g}(S) \triangleq \{\, g(s) \mid s \in S,\ f(s)=\mathsf{true}\,\}.
 \]
 Operationally, this is exactly the ``filter-map'' over the unique representative per tag.
 \paragraph{Lift to $\Clause$.}
@@ -543,7 +619,7 @@ This is modeled by a \emph{defaulting refinement} operator.
 
 Let $R : \TType \to \TType$ be a transformer and let $d$ be an \emph{optional} default simple type ($d \in \{\mathsf{None}\} \cup \{\mathsf{Some}(s)\mid s\in \SType\}$).
 \paragraph{Singleton constructor.}
-Write $\mathsf{single}(s)$ for the $\TType$ value consisting of a single clause with $\STypes=\{\tagfn(s)\mapsto s\}$ and no instances.
+Write $\mathsf{single}(s)$ for the $\TType$ value consisting of a single clause with $\STypes=\{s\}$ and no instances.
 \paragraph{Top/empty test.}
 We say a $\TType$ value is \emph{syntactically top} if its clause component is the unique top clause $(\emptyset,\mathsf{None})$,
 and \emph{syntactically empty} if its clause component is empty (bottom).
@@ -583,8 +659,8 @@ We prove $\sem{t}\cap P \subseteq \sem{\refineop^{f,g}(t)}$ by cases on membersh
 \item If $v \in \sem{\clauses}\cap P$, then $v \in \sem{(\vars,\stypes)}$ for some clause $(\vars,\stypes)$ in $\clauses$.
 By clause semantics (Definition~\ref{def:clause}), $v \in \bigcap_{w \in \vars} \sem{w}$ and $v \in \sem{\stypes}$.
 If $\stypes=\mathsf{None}$, then $\refineop_{\Clause}^{f,g}(\vars,\mathsf{None})=(\vars,\mathsf{None})$ and the clause remains top, so $v$ is still included.
-If $\stypes=\mathsf{Some}(S)$, then $v \in \sem{S} = \bigcup_{k \in \mathrm{dom}(S)} \sem{S(k)}$, so $v \in \sem{S(k)}$ for some $k \in \mathrm{dom}(S)$.
-By soundness of $(f,g)$ for $P$ and $v\in P$, we have $f(S(k))=\mathsf{true}$ and $v\in \sem{g(S(k))}$.
+If $\stypes=\mathsf{Some}(S)$, then $v \in \sem{S} = \bigcup_{s \in S} \sem{s}$, so $v \in \sem{s}$ for some $s \in S$.
+By soundness of $(f,g)$ for $P$ and $v\in P$, we have $f(s)=\mathsf{true}$ and $v\in \sem{g(s)}$.
 Hence $v \in \sem{\refineop_{\STypes}^{f,g}(S)}$.
 The refined clause is $(\vars, \mathsf{Some}(\refineop_{\STypes}^{f,g}(S)))$, and since $\vars$ is unchanged and $v \in \bigcap_{w \in \vars} \sem{w}$, we have $v \in \sem{(\vars, \mathsf{Some}(\refineop_{\STypes}^{f,g}(S)))}$.
 Therefore $v \in \sem{\refineop_{\Clauses}^{f,g}(\clauses)}$.
@@ -665,8 +741,21 @@ For each $k$ in Definition~\ref{def:typeof-predicates}, we define a filter/map p
 \begin{itemize}
 \item For $k \in \{\texttt{"string"},\texttt{"number"},\texttt{"bigint"},\texttt{"boolean"},\texttt{"undefined"}\}$, let $f_k(s)$ be true iff $\tagfn(s)$ is the corresponding tag (or tag-set), and let $g_k \triangleq g_{\mathrm{id}}$.
 \item For $k=\texttt{"object"}$, let $f_{\texttt{"object"}}(s)$ be true iff $\tagfn(s)\in\{2,9,10\}$ (object, null, or algebraic alternatives retained), and let $g_{\texttt{"object"}} \triangleq g_{\mathrm{id}}$.
-\item For $k=\texttt{"function"}$, let $f_{\texttt{"function"}}(s)$ be true iff $s=\texttt{object}(F)$ for some $F$ with $F_{\mathrm{call}} \neq \mathsf{None}$, and let $g_{\texttt{"function"}} \triangleq g_{\mathrm{id}}$.
+\item For $k=\texttt{"function"}$:
+\begin{itemize}
+\item $f_{\texttt{"function"}}(s) = \mathsf{true}$ iff $s=\texttt{object}(F)$ for some $F$ with $F_{\mathrm{call}} \in \{\mathsf{Definite}(\kappa), \mathsf{Maybe}(\kappa)\}$ for some $\kappa$;
+\item $g_{\texttt{"function"}}(s)$ is defined for $s=\texttt{object}(F)$ with $F_{\mathrm{call}} \neq \mathsf{None}$: if $F_{\mathrm{call}} = \mathsf{Maybe}(\kappa)$, return $\texttt{object}(F')$ where $F' = F$ except $F'_{\mathrm{call}} = \mathsf{Definite}(\kappa)$; otherwise return $s$ unchanged.
 \end{itemize}
+\end{itemize}
+\paragraph{False-branch filter and mapper for \texttt{"function"}.}
+For the false branch of \texttt{typeof x === "function"}, we use a different filter/mapper pair:
+\begin{itemize}
+\item $f_{\neg\texttt{"function"}}(s) = \mathsf{true}$ iff $s$ is not an object type, OR $s=\texttt{object}(F)$ with $F_{\mathrm{call}} \in \{\mathsf{None}, \mathsf{Maybe}(\kappa)\}$ for some $\kappa$.
+\item $g_{\neg\texttt{"function"}}(s)$: if $s=\texttt{object}(F)$ with $F_{\mathrm{call}} = \mathsf{Maybe}(\kappa)$, return $\texttt{object}(F')$ where $F' = F$ except $F'_{\mathrm{call}} = \mathsf{None}$; otherwise return $s$ unchanged.
+\end{itemize}
+\paragraph{Note.}
+The key insight is that $\mathsf{Maybe}(\kappa)$ types are kept in \emph{both} branches: the true branch refines them to $\mathsf{Definite}(\kappa)$, and the false branch refines them to $\mathsf{None}$.
+This ensures predicate-soundness for both branches after normalization.
 Define defaults:
 \begin{itemize}
 \item $d_{\texttt{"string"}}=\mathsf{Some}(\texttt{string})$, $d_{\texttt{"number"}}=\mathsf{Some}(\texttt{number})$, $d_{\texttt{"bigint"}}=\mathsf{Some}(\texttt{bigint})$, $d_{\texttt{"boolean"}}=\mathsf{Some}(\texttt{boolean})$.
@@ -681,9 +770,9 @@ For $k=\texttt{"symbol"}$, SKJS performs no refinement, so we omit $f_k,g_k,d_k$
 \begin{mathpar}
 \inferrule*[right=R-TypeofT]{ }{\RefineT{\Env}{(\texttt{typeof}\ x === k)}{\mathsf{upd}(\Env,x,\,t \mapsto \mathsf{def}(t' \mapsto \refineop^{f_k,g_k}(t'),\,d_k)(t))}}
 \and
-\inferrule*[right=R-TypeofF]{ }{\RefineF{\Env}{(\texttt{typeof}\ x === k)}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{\neg f_k,g_k}(t))}}
+\inferrule*[right=R-TypeofF]{ }{\RefineF{\Env}{(\texttt{typeof}\ x === k)}{\mathsf{upd}(\Env,x,\,t \mapsto \refineop^{f^{\neg}_k,g^{\neg}_k}(t))}}
 \end{mathpar}
-where $f_k,g_k,d_k$ are as in Definition~\ref{def:typeof-filters-defaults}.
+where $f_k,g_k,d_k$ are as in Definition~\ref{def:typeof-filters-defaults}, and $(f^{\neg}_k, g^{\neg}_k) = (\neg f_k, g_{\mathrm{id}})$ for most $k$, except for $k=\texttt{"function"}$ where $(f^{\neg}_{\texttt{"function"}}, g^{\neg}_{\texttt{"function"}}) = (f_{\neg\texttt{"function"}}, g_{\neg\texttt{"function"}})$ as defined in Definition~\ref{def:typeof-filters-defaults}.
 
 \paragraph{\texttt{typeof} \texttt{"symbol"}.}
 The implementation performs no refinement for \texttt{typeof x === "symbol"}; both branches leave the environment unchanged.
@@ -920,7 +1009,8 @@ Definitions~\ref{def:typeof-predicates} and~\ref{def:typeof-filters-defaults}.
 \begin{lemma}[\texttt{typeof} Refinement is Predicate-Sound]
 \label{lem:typeof-refine-predicate-sound}
 For each $k$ in Definition~\ref{def:typeof-predicates}, the transformer $t \mapsto \refineop^{f_k,g_k}(t)$ is predicate-sound for $P_{\mathsf{typeof}=k}$,
-and the false-branch transformer $t \mapsto \refineop^{\neg f_k,g_k}(t)$ is predicate-sound for $\neg P_{\mathsf{typeof}=k}$.
+and the false-branch transformer $t \mapsto \refineop^{f^{\neg}_k,g^{\neg}_k}(t)$ is predicate-sound for $\neg P_{\mathsf{typeof}=k}$,
+where $(f^{\neg}_k, g^{\neg}_k) = (\neg f_k, g_{\mathrm{id}})$ for most $k$, except for $k=\texttt{"function"}$ where $(f^{\neg}_{\texttt{"function"}}, g^{\neg}_{\texttt{"function"}}) = (f_{\neg\texttt{"function"}}, g_{\neg\texttt{"function"}})$ as in Definition~\ref{def:typeof-filters-defaults}.
 \paragraph{Defaults.}
 If $d_k=\mathsf{Some}(s_k)$ satisfies $P_{\mathsf{typeof}=k} \subseteq \sem{\mathsf{single}(s_k)}$, then the defaulted transformer
 \[
@@ -943,12 +1033,35 @@ Since $g_k \triangleq g_{\mathrm{id}}$ is the identity, $v \in \sem{g_k(s)}$ is 
 Again $v \in \sem{g_k(s)}$ is immediate since $g_k$ is the identity.
 \item If $k=\texttt{"function"}$, then $v \in P_{\mathsf{typeof}=\texttt{"function"}}$ means $v \in \ObjVal$ and $\mathsf{callable}(v)=\mathsf{true}$.
 By A0, $\tagfn(s)=\rtag(v)=9$, so $s=\texttt{object}(F)$ for some $F$.
-By Definition~\ref{def:object-semantics}, $v \in \sem{\texttt{object}(F)}$ implies that if $\mathsf{callable}(v)=\mathsf{true}$ then $F_{\mathrm{call}} \neq \mathsf{None}$.
-Thus $f_{\texttt{"function"}}(s)=\mathsf{true}$, and since $g_k$ is the identity, $v \in \sem{g_k(s)}$.
+By Definition~\ref{def:object-semantics}, $v \in \sem{\texttt{object}(F)}$ and $\mathsf{callable}(v)=\mathsf{true}$ implies $F_{\mathrm{call}} \neq \mathsf{None}$ (since $\mathsf{None}$ requires $\mathsf{callable}(v)=\mathsf{false}$).
+Thus $F_{\mathrm{call}} \in \{\mathsf{Definite}(\kappa), \mathsf{Maybe}(\kappa)\}$ for some $\kappa$, so $f_{\texttt{"function"}}(s)=\mathsf{true}$.
+
+For the mapper, we show $v \in \sem{g_{\texttt{"function"}}(s)}$:
+\begin{itemize}
+\item If $F_{\mathrm{call}} = \mathsf{Definite}(\kappa)$, then $g_{\texttt{"function"}}(s) = s$, so $v \in \sem{s}$ immediately.
+\item If $F_{\mathrm{call}} = \mathsf{Maybe}(\kappa)$, then $g_{\texttt{"function"}}(s) = \texttt{object}(F')$ with $F'_{\mathrm{call}} = \mathsf{Definite}(\kappa)$.
+Since $\mathsf{callable}(v) = \mathsf{true}$, the constraint for $\mathsf{Definite}(\kappa)$ is satisfied.
+The field constraints are unchanged, so $v \in \sem{\texttt{object}(F')}$.
+\end{itemize}
 \end{itemize}
 Thus $(f_k,g_k)$ is sound and by Lemma~\ref{lem:filter-map-predicate-sound}, $R_k$ is predicate-sound for $P_{\mathsf{typeof}=k}$.
 
-For the false branch, the argument is analogous using $\neg f_k$ and $\neg P_{\mathsf{typeof}=k}$.
+\paragraph{False branch.}
+For most $k$, the false-branch uses $(\neg f_k, g_{\mathrm{id}})$, and soundness follows analogously.
+For $k=\texttt{"function"}$, we use $(f_{\neg\texttt{"function"}}, g_{\neg\texttt{"function"}})$.
+Let $v \in \neg P_{\mathsf{typeof}=\texttt{"function"}}$ and $v \in \sem{s}$.
+If $s$ is not an object type, $f_{\neg\texttt{"function"}}(s) = \mathsf{true}$ and $v \in \sem{g_{\neg\texttt{"function"}}(s)} = \sem{s}$.
+If $s = \texttt{object}(F)$, then $v \in \ObjVal$ (by A0) and $\mathsf{callable}(v) = \mathsf{false}$ (since $v \notin P_{\mathsf{typeof}=\texttt{"function"}}$).
+By Definition~\ref{def:object-semantics}, $F_{\mathrm{call}} \neq \mathsf{Definite}(\kappa)$ (since that would require $\mathsf{callable}(v) = \mathsf{true}$).
+Thus $F_{\mathrm{call}} \in \{\mathsf{None}, \mathsf{Maybe}(\kappa)\}$, so $f_{\neg\texttt{"function"}}(s) = \mathsf{true}$.
+For the mapper:
+\begin{itemize}
+\item If $F_{\mathrm{call}} = \mathsf{None}$, then $g_{\neg\texttt{"function"}}(s) = s$, so $v \in \sem{s}$.
+\item If $F_{\mathrm{call}} = \mathsf{Maybe}(\kappa)$, then $g_{\neg\texttt{"function"}}(s) = \texttt{object}(F')$ with $F'_{\mathrm{call}} = \mathsf{None}$.
+Since $\mathsf{callable}(v) = \mathsf{false}$, the constraint for $\mathsf{None}$ is satisfied.
+The field constraints are unchanged, so $v \in \sem{\texttt{object}(F')}$.
+\end{itemize}
+
 \paragraph{Defaults.}
 If $d_k=\mathsf{Some}(s_k)$ and $P_{\mathsf{typeof}=k} \subseteq \sem{\mathsf{single}(s_k)}$, then by Lemma~\ref{lem:defaulting-preserves-predicate-sound}, $\mathsf{def}(R_k,d_k)$ is predicate-sound for $P_{\mathsf{typeof}=k}$.
 \end{proof}
@@ -1094,11 +1207,7 @@ Completeness additionally requires the reverse: $\sem{\diff(t_1, t_2)} \subseteq
 \begin{definition}[STypes Diff]
 \label{def:stypes-diff}
 \[
-\diff_{\STypes}(L, R)(k) =
-\begin{cases}
-L(k) & \text{if } k \in \tags(L) \setminus \tags(R) \\
-\text{undefined} & \text{otherwise}
-\end{cases}
+\diff_{\STypes}(L, R) \triangleq \{\, s \in L \mid \tagfn(s) \notin \tags(R)\,\}.
 \]
 \paragraph{Intuition.}
 Since an $\STypes$ value stores at most one representative per runtime tag, this diff only removes whole tags:
@@ -1111,12 +1220,11 @@ $\sem{\diff_{\STypes}(L, R)} \subseteq \sem{L}$.
 \end{lemma}
 
 \begin{proof}
-By definition, $\tags(\diff_{\STypes}(L,R)) = \tags(L) \setminus \tags(R) \subseteq \tags(L)$, and for all $k \in \tags(\diff_{\STypes}(L,R))$ we have $\diff_{\STypes}(L,R)(k)=L(k)$.
-Therefore:
+\(\diff_{\STypes}(L,R) \subseteq L\) by definition, so:
 \[
 \sem{\diff_{\STypes}(L,R)}
-= \bigcup_{k \in \tags(\diff_{\STypes}(L,R))} \sem{L(k)}
-\subseteq \bigcup_{k \in \tags(L)} \sem{L(k)}
+= \bigcup_{s \in \diff_{\STypes}(L,R)} \sem{s}
+\subseteq \bigcup_{s \in L} \sem{s}
 = \sem{L}.
 \]
 \end{proof}
@@ -1125,7 +1233,7 @@ Therefore:
 \label{def:stc}
 For $L, R \in \STypes$, define:
 \[
-\mathsf{STC}(L, R) \iff \forall k \in \tags(L) \cap \tags(R).\; \sem{L(k)} \subseteq \sem{R(k)}
+\mathsf{STC}(L, R) \iff \forall k \in \tags(L) \cap \tags(R).\; \sem{L[k]} \subseteq \sem{R[k]}.
 \]
 \end{definition}
 
@@ -1135,17 +1243,17 @@ If $\mathsf{STC}(L, R)$ holds, then $\sem{\diff_{\STypes}(L, R)} \cup \sem{R} \s
 \end{lemma}
 
 \begin{proof}
-Let $x \in \sem{L}$. Then $x \in \sem{L(k)}$ for some $k \in \tags(L)$.
+Let $x \in \sem{L}$. Then $x \in \sem{L[k]}$ for some $k \in \tags(L)$.
 \begin{itemize}
-\item Case $k \notin \tags(R)$: Then $k \in \tags(\diff_{\STypes}(L,R))$ and $\diff_{\STypes}(L,R)(k)=L(k)$, so $x \in \sem{\diff_{\STypes}(L,R)}$.
-\item Case $k \in \tags(R)$: By $\mathsf{STC}$, $\sem{L(k)} \subseteq \sem{R(k)} \subseteq \sem{R}$, so $x \in \sem{R}$.
+\item Case $k \notin \tags(R)$: Let \(s=L[k]\). Then \(\tagfn(s)=k\) and \(s \in \diff_{\STypes}(L,R)\), so \(x \in \sem{s} \subseteq \sem{\diff_{\STypes}(L,R)}\).
+\item Case $k \in \tags(R)$: By $\mathsf{STC}$, \(\sem{L[k]} \subseteq \sem{R[k]} \subseteq \sem{R}\), so \(x \in \sem{R}\).
 \end{itemize}
 \end{proof}
 
 \begin{corollary}[STypes Diff under STC]
 \label{cor:stypes-diff-under-stc}
 If $\mathsf{STC}(L, R)$ holds, then (P2) holds.
-In particular, if $L(k) = R(k)$ for all $k \in \tags(L) \cap \tags(R)$, then (P2) holds.
+In particular, if $L[k] = R[k]$ for all $k \in \tags(L) \cap \tags(R)$, then (P2) holds.
 \end{corollary}
 
 \begin{lemma}[STypes Diff Completeness]
@@ -1156,22 +1264,24 @@ if and only if $\mathsf{STC}(L, R)$.
 
 \begin{proof}
 ($\Rightarrow$) Suppose completeness holds and let $k \in \tags(L) \cap \tags(R)$.
-Since $k \notin \tags(\diff_{\STypes}(L,R))$, the component $L(k)$ contributes no value to $\sem{L} \setminus \sem{R}$ under completeness, hence $\sem{L(k)} \subseteq \sem{R}$.
-By A1 and the ``at most one entry per tag'' invariant for $\STypes$, $\sem{L(k)}$ can only overlap with $\sem{R(k)}$, so $\sem{L(k)} \subseteq \sem{R(k)}$.
+Let \(s_L=L[k]\) and \(s_R=R[k]\).
+Since \(k \in \tags(R)\), we have \(s_L \notin \diff_{\STypes}(L,R)\), so by completeness \(\sem{s_L} \subseteq \sem{R}\).
+By A1 and the distinct-tag invariant for \(\STypes\), \(\sem{s_L}\) can only overlap with the unique same-tag alternative \(\sem{s_R}\), hence \(\sem{s_L} \subseteq \sem{s_R}\), i.e. \(\sem{L[k]} \subseteq \sem{R[k]}\).
 
 ($\Leftarrow$) We show $\sem{\diff_{\STypes}(L, R)} = \sem{L} \setminus \sem{R}$.
 
-($\subseteq$) Let $x \in \sem{\diff_{\STypes}(L, R)}$. Then $x \in \sem{L(k)}$ for some $k \in \tags(L) \setminus \tags(R)$.
-By A1, $x \notin \sem{R}$ (no type in $R$ has tag $k$), so $x \in \sem{L} \setminus \sem{R}$.
+($\subseteq$) Let $x \in \sem{\diff_{\STypes}(L, R)}$. Then $x \in \sem{s}$ for some $s \in \diff_{\STypes}(L,R)$.
+Let \(k=\tagfn(s)\). Then \(k \notin \tags(R)\), so by A1 no element of \(R\) has tag \(k\), hence \(x \notin \sem{R}\).
+Also \(s \in L\), so \(x \in \sem{L}\). Therefore \(x \in \sem{L} \setminus \sem{R}\).
 
-($\supseteq$) Let $x \in \sem{L} \setminus \sem{R}$. Then $x \in \sem{L(k)}$ for some $k \in \tags(L)$ and $x \notin \sem{R}$.
-If $k \in \tags(R)$, then by hypothesis $\sem{L(k)} \subseteq \sem{R(k)} \subseteq \sem{R}$, contradicting $x \notin \sem{R}$.
-So $k \notin \tags(R)$, meaning $k \in \tags(\diff_{\STypes}(L,R))$ and $x \in \sem{\diff_{\STypes}(L, R)}$.
+($\supseteq$) Let $x \in \sem{L} \setminus \sem{R}$. Then \(x \in \sem{L[k]}\) for some \(k \in \tags(L)\).
+If \(k \in \tags(R)\), then by hypothesis \(\sem{L[k]} \subseteq \sem{R[k]} \subseteq \sem{R}\), contradicting \(x \notin \sem{R}\).
+So \(k \notin \tags(R)\), hence \(L[k] \in \diff_{\STypes}(L,R)\) and \(x \in \sem{\diff_{\STypes}(L, R)}\).
 \end{proof}
 
 \begin{corollary}[When STypes Diff is Incomplete]
-$\diff_{\STypes}(L, R)$ is incomplete when there exists $k \in \tags(L) \cap \tags(R)$ with $\sem{L(k)} \not\subseteq \sem{R(k)}$.
-Example: $\diff_{\STypes}(\{4 \mapsto \texttt{number}\}, \{4 \mapsto \texttt{1}\}) = \emptyset$, 
+$\diff_{\STypes}(L, R)$ is incomplete when there exists $k \in \tags(L) \cap \tags(R)$ with $\sem{L[k]} \not\subseteq \sem{R[k]}$.
+Example: $\diff_{\STypes}(\{\texttt{number}\}, \{\texttt{1}\}) = \emptyset$, 
 but $\sem{\texttt{number}} \setminus \sem{\texttt{1}} \neq \emptyset$.
 \end{corollary}
 
@@ -1396,7 +1506,7 @@ Since $\tagfn(\texttt{1}) = \tagfn(\texttt{2}) = 4$ and $\STypes$ stores at most
 $\diff_{\STypes}$ cannot distinguish between literals of the same tag.
 For a simpler illustration:
 \[
-\diff_{\STypes}(\{4 \mapsto \texttt{number}\}, \{4 \mapsto \texttt{1}\}) = \emptyset
+\diff_{\STypes}(\{\texttt{number}\}, \{\texttt{1}\}) = \emptyset
 \]
 But $\sem{\texttt{number}} \setminus \sem{\texttt{1}} = \text{all numbers except 1} \neq \emptyset$.
 
@@ -1417,7 +1527,7 @@ function f(x: unknown): {} {
 \textbf{Mathematical setup:}
 The type \texttt{unknown} is represented as a clause with $\stypes = \mathsf{None}$ (top).
 Let $c_1 = (\emptyset, \mathsf{None})$ represent \texttt{unknown}.
-Let $c_2$ represent \texttt{null | undefined}: $c_2 = (\emptyset, \mathsf{Some}(\{0 \mapsto \texttt{undefined}, 2 \mapsto \texttt{null}\}))$.
+Let $c_2$ represent \texttt{null | undefined}: $c_2 = (\emptyset, \mathsf{Some}(\{\texttt{undefined}, \texttt{null}\}))$.
 
 \textbf{Incompleteness:}
 By definition of $\diff_{\Clause}$:
