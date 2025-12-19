@@ -4,6 +4,8 @@
 
 module SKJS;
 
+mutable base class TCEnvBase private {} {}
+
 base class LocalObjectState {
   children =
   | LOCanGrow(bound: ?TType)
@@ -22,7 +24,7 @@ mutable class TCEnv private {
   Growth is limited by the provided type, if any.
   */ ,
   private mutable counter: Int = 0,
-} {
+} extends TCEnvBase {
   static fun mcreate(
     context: mutable SKStore.Context,
     subst: mutable Subst,
