@@ -21,6 +21,8 @@ mutable base class TCEnvBase private {
   }
 }
 
+mutable class TCEnvLight{} extends TCEnvBase {}
+
 base class LocalObjectState {
   children =
   | LOCanGrow(bound: ?TType)
