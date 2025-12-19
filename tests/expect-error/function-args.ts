@@ -57,14 +57,18 @@ function restNoType(..._rest): void {}
 
 // prettier-ignore
 // @ts-expect-error ... cannot have a default value
+// @skjs-expect-error Missing type annotation
 function restNoTypeDefault(..._rest = new Array()): void {}
 
 // prettier-ignore
 // @ts-expect-error ... cannot be optional
+// @skjs-expect-error Missing type annotation
 function restNoTypeOptional(..._rest?): void {}
 
 // prettier-ignore
 // @ts-expect-error ... cannot be optional
+// @ts-expect-error ... cannot have a default value
+// @skjs-expect-error Missing type annotation
 function restNoTypeDefaultOptional(..._rest? = new Array()): void {}
 
 // prettier-ignore
@@ -77,10 +81,12 @@ function restTypeOptional(..._rest?: number[]): void {}
 
 // prettier-ignore
 // @ts-expect-error ... cannot be optional
+// @ts-expect-error ... cannot have a default value
+// @ts-expect-error A parameter cannot both be optional and have a default value
 function restTypeDefaultOptional(..._rest?: number[] = new Array()): void {}
 
 // TODO: wrong type
 function restNotArray(..._rest: number): void {}
 
 // @ts-expect-error ... must be the last parameter
-function restNotLast(..._rest: number[], _other): void {}
+function restNotLast(..._rest: number[], _other: string): void {}
