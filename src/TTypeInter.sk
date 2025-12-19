@@ -303,12 +303,8 @@ extension class TFields {
       | some @ Some _ -> some
       }
     };
-    fields = mapUnion(
-      fields1.values(),
-      fields2.values(),
-      x ~> x.name,
-      x ~> x,
-      (x, y) -> TField::inter(subst, tenv, x, y),
+    fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
+      TField::inter(subst, tenv, x, y)
     );
     // TODO: handle intersection between normal fields and index fields
     indexes = {
@@ -326,7 +322,7 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    Some(TFields::create{fields, indexes, call, new})
+    Some(TFields{fields, indexes, call, new})
   }
 }
 
