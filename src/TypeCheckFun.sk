@@ -111,8 +111,8 @@ extension class TypeChecker {
     thisTypeOpt: ?(ClassKind, TType),
     fd: FunDefWithModifiers<SimpleFieldName>,
     cgNode: CGNode,
-    results: mutable TCResults,
   ): void {
+    results = subst.results;
     for (modifier in fd.modifiers.modifiers) {
       modifier match {
       | ModAsync(pos) -> !fd.isAsync = Some(pos)

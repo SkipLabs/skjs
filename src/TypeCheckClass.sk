@@ -206,7 +206,7 @@ extension class TypeChecker {
             Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
           );
           results.collectErrors(() -> {
-            this.funDef(subst, Some((c.kind, thisType)), fd, cgNode, results)
+            this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
           })
         }
       }

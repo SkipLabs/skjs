@@ -47,7 +47,7 @@ extension class TypeChecker {
     | fd @ TopLevelFunDef _ ->
       cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
       subst = Subst::mcreate{context, results};
-      this.funDef(subst, None(), fd, cgNode, results)
+      this.funDef(subst, None(), fd, cgNode)
     | Declare _
     | ExportDeclare _ ->
       void
