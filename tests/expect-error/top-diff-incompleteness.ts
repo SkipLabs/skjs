@@ -12,7 +12,7 @@
 // PART 1: Typeof narrowing on unknown IS supported
 function typeofNarrowingWorks(x: unknown): number {
   if (typeof x === "number") {
-    return x;  // OK: x narrowed to number
+    return x; // OK: x narrowed to number
   }
   return 0;
 }
@@ -23,7 +23,8 @@ function nullCheckFails(x: unknown): {} {
   if (x !== null && x !== undefined) {
     // TypeScript: x narrowed to {} (non-nullish top)
     // SKJS: x still unknown (⊤ has no tags to subtract from)
-    return x;  // SKJS ERROR: 'unknown' not assignable to '{}'
+    // @skjs-expect-error Invalid return type
+    return x;
   }
   return {};
 }

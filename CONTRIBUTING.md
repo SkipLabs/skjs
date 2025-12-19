@@ -65,9 +65,15 @@
 - If testing requires specific types, use function parameters instead of complex type annotations
 
 ### Running Tests
+
+**Prerequisites:** The [Skip repository](https://github.com/SkipLabs/skip) must be checked out as a sibling directory (`../skip`).
+
 ```bash
-skargo test                                                      # Run all tests
-./target/host/dev/skjs check --import-stubs import-stubs <file>  # Check specific file
+# Run all tests
+docker run --rm -v "$(pwd):/work/skjs" -v "$(pwd)/../skip:/work/skip" -w /work/skjs skiplabs/skip:latest skargo test
+
+# Check a specific file
+docker run --rm -v "$(pwd):/work/skjs" -v "$(pwd)/../skip:/work/skip" -w /work/skjs skiplabs/skip:latest skargo check <file>
 ```
 
 ## Commit Guidelines
