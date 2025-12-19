@@ -61,7 +61,7 @@ extension class TypeChecker {
     | c @ Class _ -> this.class_(tcenvl, c)
     | Enum _ -> results.notSupported(def.pos, "enum")
     | VarDefs(kind, varDefs) -> this.varDefs(tcenvl, kind, varDefs)
-    | td @ TypeDef _ -> this.typeDef(context, td, results)
+    | td @ TypeDef _ -> this.typeDef(tcenvl, td)
     }
   }
 
@@ -142,11 +142,9 @@ extension class TypeChecker {
     }
   }
 
-  fun typeDef(
-    context: mutable SKStore.Context,
-    typeDef: TypeDef,
-    results: mutable TCResults,
-  ): void {
+  fun typeDef(tcenvl: mutable TCEnvLight, typeDef: TypeDef): void {
+    context = tcenvl.context;
+    results = tcenvl.results;
     results.collectErrors(() ->
       static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
     );
