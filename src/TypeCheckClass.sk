@@ -28,7 +28,7 @@ extension class TypeChecker {
     results.collectErrors(() ->
       static::checkTypeParams(c.tparams, OptionalTypeParamsForbidden())
     );
-    subst = Subst::mcreate{context};
+    subst = Subst::mcreate{context, results};
     targs = TArgs(
       c.tparams.map(tparam -> {
         // invariant(tparam.default is None()); // checked in checkTypeParams
@@ -36,7 +36,7 @@ extension class TypeChecker {
           tparam.name.value,
           tparam.name.pos.fileName,
           tparam.id,
-          tparam.constraint.map(c -> this.tenv.normalize(context, c)),
+          tparam.constraint.map(c -> this.tenv.normalize(subst, c)),
         );
         TType::fromTParamWithConstraint(
           subst,
@@ -69,19 +69,19 @@ extension class TypeChecker {
         ext.value match {
         | TAInst(parentName, parentTArgs) ->
           superCstr = this.tenv.newConstructor(
-            context,
+            subst,
             parentName,
-            parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+            parentTArgs.map(ty -> this.tenv.normalize(subst, ty)),
           );
           super = this.tenv.new(
-            context,
+            subst,
             parentName,
-            parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+            parentTArgs.map(ty -> this.tenv.normalize(subst, ty)),
           );
           if (!isInterface) {
             !this.super = Some((superCstr, super));
           };
-          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName), results);
+          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
           tcenv.recordClassHierarchy{
             child => c,
             parent => this.tenv.getClass(context, parentName),
@@ -103,11 +103,11 @@ extension class TypeChecker {
       interface.value match {
       | TAInst(parentName, parentTArgs) ->
         super = this.tenv.new(
-          context,
+          subst,
           parentName,
-          parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
+          parentTArgs.map(ty -> this.tenv.normalize(subst, ty)),
         );
-        tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName), results);
+        tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
         tcenv.recordClassHierarchy{
           child => c,
           parent => this.tenv.getClass(context, parentName),
@@ -152,14 +152,14 @@ extension class TypeChecker {
         | None() ->
           results.error(Array[(field.pos, "Type annotation expected")]);
           None()
-        | Some(ty) -> Some(this.tenv.normalize(context, ty))
+        | Some(ty) -> Some(this.tenv.normalize(subst, ty))
         };
         (field.value, typeOpt) match {
         | (None(), _)
         | (_, None()) ->
           void
         | (Some(e), Some(type)) ->
-          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName), results);
+          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
           results.collectErrors(() ->
             this.checkSubType(
               tcenv,
@@ -174,7 +174,7 @@ extension class TypeChecker {
         if (fd.name is FNNormal(Name(_, "constructor"))) {
           !hasConstructor = true;
           partialThisType = this.tenv.new(
-            context,
+            subst,
             c.name,
             targs.targs,
             fieldType ~> (fieldType is ClassFieldTypeValue{value => Some _}),

@@ -41,17 +41,13 @@ extension class TypeChecker {
     | ExportEq _ -> results.notSupported(def.pos, "export =")
     | Module _ -> results.notSupported(def.pos, "module")
     | e @ Expr _ ->
-      subst = Subst::mcreate{context};
-      tcenv = TCEnv::mcreate(
-        subst,
-        CGNode::toplevel(def.pos.fileName),
-        results,
-      );
+      subst = Subst::mcreate{context, results};
+      tcenv = TCEnv::mcreate(subst, CGNode::toplevel(def.pos.fileName));
       ty = this.expr(tcenv, e, true);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ TopLevelFunDef _ ->
       cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
-      subst = Subst::mcreate{context};
+      subst = Subst::mcreate{context, results};
       this.funDef(subst, None(), fd, cgNode, results)
     | Declare _
     | ExportDeclare _ ->
@@ -86,15 +82,15 @@ extension class TypeChecker {
         results.error(Array[(varDef.pat.pos, "Missing definition")])
       };
       literalType = varDef.value.flatMap(this.asConstExpr).map(TType::single);
+      subst = Subst::mcreate{context, results};
       typeOpt = varDef.type match {
       | None() ->
         if (literalType is None()) {
           results.error(Array[(varDef.pat.pos, "Missing type annotation")])
         };
         literalType
-      | Some(x) -> Some(this.tenv.normalize(context, x))
+      | Some(x) -> Some(this.tenv.normalize(subst, x))
       };
-      subst = Subst::mcreate{context};
       typeOpt match {
       | Some(type) ->
         if (!type.isPrimitiveType(subst, this.tenv)) {
@@ -128,7 +124,6 @@ extension class TypeChecker {
         tcenv = TCEnv::mcreate(
           subst,
           CGNode::toplevel(varDef.pat.pos.fileName),
-          results,
         );
         results.collectErrors(() ->
           this.checkSubType(
@@ -156,10 +151,10 @@ extension class TypeChecker {
       static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
     );
 
-    subst = Subst::mcreate{context};
+    subst = Subst::mcreate{context, results};
     !this.tenv = this.tenv.addTParams(subst, typeDef.tdefParams);
 
-    results.collectErrors(() -> _ = this.tenv.normalize(context, typeDef.body));
+    results.collectErrors(() -> _ = this.tenv.normalize(subst, typeDef.body));
   }
 
   static fun checkTypeParams(

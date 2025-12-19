@@ -209,7 +209,7 @@ extension class TypeChecker {
       type match {
       | None() -> typingError(Array[(pos, "Was expecting a type or a value")])
       | Some(annotAst) ->
-        ty = this.tenv.normalize(tcenv.context, annotAst);
+        ty = this.tenv.normalize(tcenv, annotAst);
         (ty, false)
       }
     | Some(e) ->
@@ -217,7 +217,7 @@ extension class TypeChecker {
       type match {
       | None() -> (ty, true)
       | Some(annotAst) ->
-        annot = this.tenv.normalize(tcenv.context, annotAst);
+        annot = this.tenv.normalize(tcenv, annotAst);
         this.checkSubType(tcenv, annotAst.pos, "Invalid annotation", ty, annot);
         (annot, true)
       }
@@ -386,7 +386,7 @@ extension class TypeChecker {
         }
 
       | prim @ TPrimValue _ ->
-        obj = this.tenv.newObject(tcenv.context, prim.asClassName(), Array[]);
+        obj = this.tenv.newObject(tcenv, prim.asClassName(), Array[]);
         stypes.push(obj)
 
       | TPrimUnit(TUndefined(), undefPos)
@@ -497,7 +497,7 @@ extension class TypeChecker {
           def match {
           | fd @ TopLevelFunDef _ ->
             tFuns = this.tenv.funDecl(
-              tcenv.context,
+              tcenv,
               false,
               fd,
               fd.cgNode match {
@@ -509,7 +509,7 @@ extension class TypeChecker {
               TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
             )
           | c @ Class _ ->
-            staticClass = this.tenv.newStatic(tcenv.context, c.name);
+            staticClass = this.tenv.newStatic(tcenv, c.name);
             break staticClass
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
@@ -521,7 +521,7 @@ extension class TypeChecker {
               | None() -> this.newTVar(tcenv, pos)
               | Some(ty) -> TType::single(ty)
               }
-            | Some(ty) -> this.tenv.normalize(tcenv.context, ty)
+            | Some(ty) -> this.tenv.normalize(tcenv, ty)
             }
           | _ -> void
           }
@@ -582,7 +582,7 @@ extension class TypeChecker {
           continue
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          tFuns = this.tenv.funDecl(tcenv.context, false, fd, cgNode);
+          tFuns = this.tenv.funDecl(tcenv, false, fd, cgNode);
           (
             name,
             TType::single(
@@ -684,7 +684,7 @@ extension class TypeChecker {
         tcenv,
         pos,
         tfuns,
-        targs.map(ty -> this.tenv.normalize(tcenv.context, ty)),
+        targs.map(ty -> this.tenv.normalize(tcenv, ty)),
         args,
         mostPrecise,
       );
@@ -699,15 +699,15 @@ extension class TypeChecker {
       };
       rty
     | New(subExpr, targsAst, args) ->
-      tArgs = targsAst.map(targ -> this.tenv.normalize(tcenv.context, targ));
+      tArgs = targsAst.map(targ -> this.tenv.normalize(tcenv, targ));
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
         if (targsAst.size() == 0) {
           !tArgs = this.tenv.makeTArgs(tcenv, className)
         };
-        cstr = this.tenv.newConstructor(tcenv.context, className, tArgs);
+        cstr = this.tenv.newConstructor(tcenv, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
-        this.tenv.new(tcenv.context, className, tArgs)
+        this.tenv.new(tcenv, className, tArgs)
       | _ ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
         subExprTy
@@ -1217,7 +1217,7 @@ extension class TypeChecker {
       param.i1 match {
       | None() ->
         typingError(Array[(param.i0.pos, "Please add a type annotation")])
-      | Some(ty) -> (param.i0, this.tenv.normalize(tcenv.context, ty))
+      | Some(ty) -> (param.i0, this.tenv.normalize(tcenv, ty))
       }
     });
     retType = retTypeAstOpt match {
@@ -1227,7 +1227,7 @@ extension class TypeChecker {
       | None() -> tvar
       | Some(asyncPos) -> TType::single(TPromise(tvar, asyncPos))
       }
-    | Some(retTypeAst) -> this.tenv.normalize(tcenv.context, retTypeAst)
+    | Some(retTypeAst) -> this.tenv.normalize(tcenv, retTypeAst)
     };
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda

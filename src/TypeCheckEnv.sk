@@ -43,9 +43,9 @@ mutable class TCEnv private {
   static fun mcreate(
     subst: mutable Subst,
     callingContext: CGNode,
-    results: mutable TCResults,
   ): mutable this {
     context = subst.context;
+    results = subst.results;
     scope = Scope::mcreateToplevel();
     mutable static{context, subst, scope, callingContext, results}
   }
