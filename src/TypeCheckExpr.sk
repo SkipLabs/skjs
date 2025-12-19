@@ -204,7 +204,7 @@ extension class TypeChecker {
     value match {
     | None() ->
       if (kind is BKConst()) {
-        typingError(Array[(pos, "Const must be bound to a value")]);
+        tcenv.error(Array[(pos, "Const must be bound to a value")]);
       };
       type match {
       | None() -> typingError(Array[(pos, "Was expecting a type or a value")])
