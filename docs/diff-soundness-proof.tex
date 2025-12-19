@@ -7,16 +7,31 @@
 \usepackage{stmaryrd}
 \usepackage{mathpartir}
 \usepackage[margin=1in]{geometry}
+\usepackage{tcolorbox}
+\usepackage{booktabs}
+\usepackage{array}
 
 \newtheorem{theorem}{Theorem}
 \newtheorem{lemma}[theorem]{Lemma}
 \newtheorem{definition}[theorem]{Definition}
 \newtheorem{corollary}[theorem]{Corollary}
 
+% Summary box for key definitions
+\newtcolorbox{keydef}{
+  colback=gray!5,
+  colframe=gray!50,
+  boxrule=0.5pt,
+  arc=2pt,
+  left=4pt,right=4pt,top=2pt,bottom=2pt
+}
+
+% Core semantic notation
 \newcommand{\sem}[1]{\llbracket #1 \rrbracket}
 \newcommand{\diff}{\mathsf{diff}}
 \newcommand{\refineop}{\mathsf{refine}}
 \newcommand{\Pred}{\mathcal{P}(\Val)}
+
+% Type domains
 \newcommand{\ObjVal}{\mathsf{ObjVal}}
 \newcommand{\String}{\mathsf{String}}
 \newcommand{\AlgVal}{\mathsf{AlgVal}}
@@ -29,18 +44,29 @@
 \newcommand{\TInst}{\mathsf{TInst}}
 \newcommand{\TInsts}{\mathsf{TInsts}}
 \newcommand{\TParam}{\mathsf{TParam}}
+
+% Type components
 \newcommand{\vars}{\mathsf{vars}}
 \newcommand{\stypes}{\mathsf{stypes}}
 \newcommand{\insts}{\mathsf{insts}}
 \newcommand{\clauses}{\mathsf{clauses}}
+
+% Tag functions
 \newcommand{\tagfn}{\mathsf{tag}}
 \newcommand{\tags}{\mathsf{tags}}
 \newcommand{\rtag}{\mathsf{rtag}}
+
+% Values
 \newcommand{\Val}{\mathsf{Val}}
 \newcommand{\Payload}{\mathsf{Payload}}
+
+% Environments and refinement
 \newcommand{\Env}{\Gamma}
 \newcommand{\RefineT}[3]{#1 \vdash #2 \stackrel{\mathsf{t}}{\rightsquigarrow} #3}
 \newcommand{\RefineF}[3]{#1 \vdash #2 \stackrel{\mathsf{f}}{\rightsquigarrow} #3}
+
+% Clause notation: \clause{V}{S} produces ⟨V | S⟩
+\newcommand{\clause}[2]{\langle #1 \mid #2 \rangle}
 
 \title{Refinement and Type Difference in SKJS}
 \author{}
@@ -74,17 +100,46 @@ $\tagfn$ & Definition~\ref{def:simple-types-and-tags} \\
 \textbf{A1} & Lemma~\ref{ax:A1} \\
 $\STypes, \tags(\cdot)$ & Definition~\ref{def:stypes} \\
 $\mathsf{STC}(\cdot,\cdot)$ & Definition~\ref{def:stc} \\
-$\TInst$ & Definition~\ref{def:type-instances} \\
-$\TInsts$ & Definition~\ref{def:type-instance-sets} \\
-$\TParam$ & Definition~\ref{def:type-parameters} \\
-$\Clause$ & Definition~\ref{def:clause} \\
-$\Clauses$ & Definition~\ref{def:clauses} \\
+$\TInst$, $\TInsts$, $\TParam$ & Definitions~\ref{def:type-instances}--\ref{def:type-parameters} \\
+$\Clause$, $\Clauses$ & Definition~\ref{def:clause-clauses} \\
 $\TType$ & Definition~\ref{def:ttype} \\
 $\refineop$ (predicate-driven refinement) & Definition~\ref{def:filter-map-refinement} \\
 Predicate-soundness & Definition~\ref{def:predicate-sound-transformer} \\
 $\diff$ (soundness P1/P2) & Definition~\ref{def:diff-soundness} \\
 \end{tabular}
 \end{center}
+
+\subsection*{Type Hierarchy and Notation Summary}
+
+\begin{keydef}
+\textbf{Type representation hierarchy} (each level builds on the previous):
+\begin{align*}
+\underbrace{\SType}_{\text{single tag}}
+&\;\xrightarrow{\;\text{set}\;}\;
+\underbrace{\STypes}_{\text{tag-distinct}}
+\;\xrightarrow{\;\text{+ params}\;}\;
+\underbrace{\Clause}_{\clause{V}{S}} \\
+&\;\xrightarrow{\;\text{map}\;}\;
+\underbrace{\Clauses}_{V \mapsto \clause{V}{S}}
+\;\xrightarrow{\;\text{+ insts}\;}\;
+\underbrace{\TType}_{(I, C)}
+\end{align*}
+
+\medskip
+\textbf{Semantic interpretation} $\sem{\cdot} : X \to \mathcal{P}(\Val)$:
+\begin{align*}
+\sem{\STypes} &= \textstyle\bigcup_{s \in S} \sem{s}
+&\sem{\clause{V}{S}} &= \textstyle\left(\bigcap_{v \in V} \sem{v}\right) \cap \sem{S}
+&\sem{(I,C)} &= \sem{I} \cup \sem{C}
+\end{align*}
+
+\medskip
+\textbf{Soundness contracts}:
+\begin{itemize}
+\item \emph{Predicate soundness} (refinement): $\sem{t} \cap P \subseteq \sem{R(t)}$
+\item \emph{Diff soundness} (P1+P2): $\sem{t_1}\setminus\sem{t_2} \subseteq \sem{\diff(t_1,t_2)} \subseteq \sem{t_1}$
+\end{itemize}
+\end{keydef}
 
 \section{Runtime Model and Semantic Interface}
 
@@ -299,30 +354,24 @@ This models only the discriminant-level behavior needed for refinement; field/co
 
 \begin{definition}[STypes]
 \label{def:stypes}
-\(\STypes\) is a finite set \(S \subseteq_{\mathrm{fin}} \SType\) such that its elements have pairwise distinct runtime tags:
-\[
-\forall s_1,s_2 \in S.\; s_1 \neq s_2 \implies \tagfn(s_1) \neq \tagfn(s_2).
-\]
-\paragraph{Semantics.}
-\[
-\sem{S} = \bigcup_{s \in S} \sem{s}.
-\]
-\paragraph{Tags and tag-based lookup.}
-Define \(\tags(S) \triangleq \{\, \tagfn(s) \mid s \in S \,\}\).
-When \(k \in \tags(S)\), we write \(S[k]\) for the unique \(s \in S\) with \(\tagfn(s)=k\).
-\paragraph{Singleton.}
-We write \(\{s\}\) for the singleton \(\STypes\) value (a set containing one \(\SType\)).
-\paragraph{Intuition.}
-An $\STypes$ value represents the \emph{tag-level} part of a union type: it records, for each runtime tag $k$ that may occur, a single representative simple type $s$ of that tag.
-\paragraph{Implementation note.}
-In SKJS, this set is stored and manipulated in a tag-indexed representation for efficiency, but the mathematical model here treats it as a set with the above distinct-tag invariant.
-\paragraph{Example.}
-The union \texttt{number | string} is represented as:
-\[
-S = \{\texttt{number},\; \texttt{string}\}
-\]
-and has semantics $\sem{S} = \sem{\texttt{number}} \cup \sem{\texttt{string}}$.
-In contrast, \texttt{number} and the numeric literal \texttt{1} share the same tag $4$, so an $\STypes$ value cannot simultaneously store both; this is why, for example, a tag-based ``diff'' cannot precisely express \texttt{number \textbackslash{} 1}.
+\leavevmode
+\begin{keydef}
+\(\STypes\) is a finite set \(S \subseteq_{\mathrm{fin}} \SType\) with pairwise distinct tags.
+
+\smallskip
+\textbf{Semantics}: $\sem{S} = \bigcup_{s \in S} \sem{s}$.
+\end{keydef}
+
+\begin{enumerate}
+\item \textbf{Tag-distinctness}: $s_1 \neq s_2 \implies \tagfn(s_1) \neq \tagfn(s_2)$.
+
+\item \textbf{Lookup}: $\tags(S) = \{\tagfn(s) \mid s \in S\}$. Write $S[k]$ for the unique $s \in S$ with $\tagfn(s)=k$.
+
+\item \textbf{Intuition}: An $\STypes$ value represents the \emph{tag-level} part of a union type---one representative $\SType$ per runtime tag.
+
+\item \textbf{Example}: \texttt{number | string} is $\{\texttt{number}, \texttt{string}\}$.
+  But \texttt{number} and literal \texttt{1} share tag $4$, so they cannot both appear in an $\STypes$.
+\end{enumerate}
 \end{definition}
 
 \subsection{Normal-Form Operations on $\STypes$}
@@ -526,53 +575,37 @@ Let $\TParam$ be the set of \emph{type parameters} (generic binders), i.e.\ name
 Type parameters differ from type-variable instances: parameters are binders whose meaning is fixed by the caller, whereas instances are inference unknowns solved by the type checker.
 \end{definition}
 
-\begin{definition}[Clause]
-\label{def:clause}
-A clause $c = (\vars, \stypes)$ consists of:
-\begin{itemize}
-\item $\vars \subseteq \TParam$: a finite set of type parameters
-\item $\stypes \in \{\mathsf{None}\} \cup \{\mathsf{Some}(S) \mid S \in \STypes\}$
-\end{itemize}
-Each type parameter $v \in \TParam$ has an interpretation $\sem{v} \subseteq \Val$.
-Semantics:
-\[
-\sem{(\vars, \stypes)} = \left(\bigcap_{v \in \vars} \sem{v}\right) \cap \sem{\stypes}
-\]
-where $\sem{\mathsf{None}} = \Val$ (top) and $\sem{\mathsf{Some}(S)} = \sem{S}$.
-For $\vars = \emptyset$, $\bigcap_{v \in \emptyset} \sem{v} = \Val$.
-\[
-\text{Well-formedness: } \stypes = \mathsf{None} \implies \vars = \emptyset \quad (\text{i.e., } (\emptyset,\mathsf{None}) \text{ is the unique top clause}).
-\]
-\end{definition}
+\begin{definition}[Clause and Clauses]
+\label{def:clause-clauses}
+\leavevmode
+\begin{keydef}
+A \emph{clause} $\clause{V}{S}$ pairs type parameters $V \subseteq \TParam$ with $S \in \STypes \cup \{\top\}$.
 
-\begin{definition}[Clauses]
-\label{def:clauses}
-$\Clauses$ is a finite map from $\mathcal{P}_{\mathrm{fin}}(\TParam)$ to $\Clause$, 
-with at most one clause per key, and such that keys agree with clause variables: if $C(k) = (\vars,\stypes)$ then $\vars = k$.
+\smallskip
+$\Clauses$ is a map from finite subsets of $\TParam$ to clauses, at most one per key.
+\end{keydef}
+
+\begin{enumerate}
+\item \textbf{Notation}: We write $\clause{V}{S}$ for a clause with parameters $V$ and simple-types $S$.
+  The symbol $\top$ denotes the ``top'' case (no type constraint); $\clause{\emptyset}{\top}$ is the unique top clause.
+
+\item \textbf{Semantics}:
+\begin{align*}
+\sem{\clause{V}{S}} &= \textstyle\left(\bigcap_{v \in V} \sem{v}\right) \cap \sem{S}
+& \text{where } \sem{\top} = \Val \\
+\sem{C} &= \textstyle\bigcup_{k \in \mathrm{dom}(C)} \sem{C(k)}
+\end{align*}
+
+\item \textbf{Well-formedness}: Keys agree with clause parameters: $C(k) = \clause{V}{S} \implies V = k$.
+  Top implies empty parameters: $S = \top \implies V = \emptyset$.
+
+\item \textbf{Example}: Let $A, B \in \TParam$.
+  The clauses map $C = \{A \mapsto \clause{\{A\}}{\texttt{number}},\; B \mapsto \clause{\{B\}}{\texttt{string}}\}$ has:
 \[
-\sem{C} = \bigcup_{k \in \mathrm{dom}(C)} \sem{C(k)}
+\sem{C} = (\sem{A} \cap \sem{\texttt{number}}) \cup (\sem{B} \cap \sem{\texttt{string}}).
 \]
-\paragraph{Example.}
-Let $S_{\mathsf{num}} = \{\texttt{number}\}$ and $S_{\mathsf{str}} = \{\texttt{string}\}$.
-Let $A,B \in \TParam$ be two type parameters.
-Consider the clauses map $C$ with two entries:
-\[
-C(\{A\}) = (\{A\}, \mathsf{Some}(S_{\mathsf{num}}))
-\qquad
-C(\{B\}) = (\{B\}, \mathsf{Some}(S_{\mathsf{str}})).
-\]
-Then
-\[
-\sem{C} =
-\bigl(\sem{A} \cap \sem{\texttt{number}}\bigr)
-\cup
-\bigl(\sem{B} \cap \sem{\texttt{string}}\bigr).
-\]
-To illustrate a non-singleton key, consider instead the single-entry map $C'$ defined by:
-\[
-C'(\{A,B\}) = (\{A,B\}, \mathsf{Some}(S_{\mathsf{num}})).
-\]
-Then $\sem{C'} = \sem{A} \cap \sem{B} \cap \sem{\texttt{number}}$, i.e. the clause requires \emph{both} parameters.
+A clause $\clause{\{A,B\}}{\texttt{number}}$ requires \emph{both} parameters: $\sem{A} \cap \sem{B} \cap \sem{\texttt{number}}$.
+\end{enumerate}
 \end{definition}
 
 \begin{definition}[TType]
@@ -734,23 +767,19 @@ Define:
 \]
 Operationally, this is exactly the ``filter-map'' over the unique representative per tag.
 \paragraph{Lift to $\Clause$.}
-For a clause $c=(\vars,\stypes)$ define:
+For a clause $c = \clause{V}{S}$ define:
 \[
-\refineop_{\Clause}^{f,g}(c) \triangleq
+\refineop_{\Clause}^{f,g}(\clause{V}{S}) \triangleq
 \begin{cases}
-(\vars,\mathsf{None}) & \text{if } \stypes=\mathsf{None} \\
-(\vars,\mathsf{Some}(\refineop_{\STypes}^{f,g}(S))) & \text{if } \stypes=\mathsf{Some}(S)
+\clause{V}{\top} & \text{if } S = \top \\
+\clause{V}{\refineop_{\STypes}^{f,g}(S)} & \text{otherwise}
 \end{cases}
 \]
-and interpret the special case $\mathsf{Some}(\emptyset)$ as $\bot$ (dropped), matching the implementation invariant that bottom clauses are not stored.
-\paragraph{Lift to $\Clauses$.}
-For $C \in \Clauses$, define $\refineop_{\Clauses}^{f,g}(C)$ by applying $\refineop_{\Clause}^{f,g}$ to every clause and dropping $\bot$ results.
-\paragraph{Lift to $\TType$.}
-For $t=(\insts,\clauses)$ define:
-\[
-\refineop^{f,g}(t) \triangleq (\insts,\refineop_{\Clauses}^{f,g}(\clauses)).
-\]
-This matches the current implementation: refinement rewrites the clause part but does not filter the instance part.
+If the result is $\clause{V}{\emptyset}$, treat it as $\bot$ (dropped).
+
+\paragraph{Lift to $\Clauses$ and $\TType$.}
+Apply $\refineop_{\Clause}^{f,g}$ to each clause, dropping $\bot$ results.
+For $t=(I,C)$: $\refineop^{f,g}(t) \triangleq (I,\refineop_{\Clauses}^{f,g}(C))$.
 \end{definition}
 
 \begin{definition}[Defaulting Refinement (Model of \texttt{setLocal})]
@@ -762,7 +791,7 @@ Let $R : \TType \to \TType$ be a transformer and let $d$ be an \emph{optional} d
 \paragraph{Singleton constructor.}
 Write $\mathsf{single}(s)$ for the $\TType$ value consisting of a single clause with $\STypes=\{s\}$ and no instances.
 \paragraph{Top/empty test.}
-We say a $\TType$ value is \emph{syntactically top} if its clause component is the unique top clause $(\emptyset,\mathsf{None})$,
+We say a $\TType$ value is \emph{syntactically top} if its clause component is $\clause{\emptyset}{\top}$,
 and \emph{syntactically empty} if its clause component is empty (bottom).
 \paragraph{Definition.}
 Define $\mathsf{def}(R,d) : \TType \to \TType$ by:
@@ -798,7 +827,7 @@ We prove $\sem{t}\cap P \subseteq \sem{\refineop^{f,g}(t)}$ by cases on membersh
 \begin{itemize}
 \item If $v \in \sem{\insts}\cap P$, then $v \in \sem{\insts} \subseteq \sem{\refineop^{f,g}(t)}$ since refinement leaves $\insts$ unchanged.
 \item If $v \in \sem{\clauses}\cap P$, then $v \in \sem{(\vars,\stypes)}$ for some clause $(\vars,\stypes)$ in $\clauses$.
-By clause semantics (Definition~\ref{def:clause}), $v \in \bigcap_{w \in \vars} \sem{w}$ and $v \in \sem{\stypes}$.
+By clause semantics (Definition~\ref{def:clause-clauses}), $v \in \bigcap_{w \in \vars} \sem{w}$ and $v \in \sem{\stypes}$.
 If $\stypes=\mathsf{None}$, then $\refineop_{\Clause}^{f,g}(\vars,\mathsf{None})=(\vars,\mathsf{None})$ and the clause remains top, so $v$ is still included.
 If $\stypes=\mathsf{Some}(S)$, then $v \in \sem{S} = \bigcup_{s \in S} \sem{s}$, so $v \in \sem{s}$ for some $s \in S$.
 By soundness of $(f,g)$ for $P$ and $v\in P$, we have $f(s)=\mathsf{true}$ and $v\in \sem{g(s)}$.
@@ -825,21 +854,36 @@ If $R(t)$ is syntactically top/empty, then $\mathsf{def}(R,d)(t)=\mathsf{single}
 Thus $\sem{t}\cap P \subseteq \sem{\mathsf{def}(R,d)(t)}$ for all $t$.
 \end{proof}
 
-\subsection{Algorithmic Refinement Judgements (Inference-Rule Style)}
+\subsection{Algorithmic Refinement Judgements}
 \label{sec:refine-rules}
 
-\paragraph{Local update helper.}
-Given a local $x$ and a refinement transformer $R : \TType \to \TType$, define:
-\[
-\mathsf{upd}(\Env,x,R) \triangleq \Env[x \mapsto R(\Env(x))].
-\]
-When a rule refines a non-local expression, it produces $\Env$.
-\paragraph{Default behavior.}
-If no rule applies to $e$ (i.e. $e$ is not one of the supported refinement-test forms), then refinement leaves the environment unchanged.
+\begin{keydef}
+\textbf{Refinement summary.} Each test form has a filter $f$, mapper $g$, and optional default $d$.
+The true branch applies $\mathsf{def}(\refineop^{f,g}, d)$; the false branch applies $\refineop^{f',g'}$.
 
-\paragraph{Strict inequality.}
-The implementation treats strict inequality \texttt{!==} by flipping the target (i.e. refining for \texttt{false} of the corresponding strict equality).
-Accordingly, the refinement rules for $(x \ !== \ y)$ are the same as for $(x===y)$, with $\Rightarrow$ and $\Leftarrow$ swapped.
+\smallskip
+\renewcommand{\arraystretch}{1.2}
+\begin{tabular}{@{}l@{\quad}l@{\quad}l@{\quad}l@{}}
+\toprule
+\textbf{Test} & \textbf{True-branch filter} & \textbf{Mapper} & \textbf{Default} \\
+\midrule
+\texttt{x === null} & $\tagfn(s)=2$ & identity & --- \\
+\texttt{x === undefined} & $\tagfn(s)\in\{0,1\}$ & identity & --- \\
+\texttt{typeof x === "string"} & $\tagfn(s)=5$ & identity & \texttt{string} \\
+\texttt{typeof x === "number"} & $\tagfn(s)=4$ & identity & \texttt{number} \\
+\texttt{typeof x === "function"} & callable object & $\mathsf{Maybe}\to\mathsf{Definite}$ & --- \\
+\texttt{typeof x === "object"} & $\tagfn(s)\in\{2,9,10\}$ & identity & \texttt{object}$(\emptyset)$ \\
+\texttt{"p" in x} & has property $p$ & add required $p$ & \texttt{object}$(\{p\})$ \\
+\texttt{x.\_tag === $\ell$} & $\mathsf{atag}=\ell$ & filter to $\{\ell\}$ & --- \\
+\texttt{x instanceof C} & (overwrite) & $\to T_{\mathsf{inst}}(C)$ & --- \\
+\bottomrule
+\end{tabular}
+\end{keydef}
+
+\paragraph{Local update.}
+$\mathsf{upd}(\Env,x,R) \triangleq \Env[x \mapsto R(\Env(x))]$.
+If no rule applies, refinement leaves $\Env$ unchanged.
+Strict inequality \texttt{!==} swaps true/false branches.
 
 \paragraph{Nullish filters and mappers.}
 \begin{definition}[Nullish Filters and Mappers]
@@ -1113,33 +1157,15 @@ P_{\mathsf{undef}} \triangleq \{ v \in \Val \mid \rtag(v)\in\{0,1\} \}.
 We also write $\neg P$ for $\Val \setminus P$.
 \end{definition}
 
-\begin{lemma}[Null Refinement is Predicate-Sound]
+\begin{lemma}[Nullish Refinement is Predicate-Sound]
 \label{lem:null-refine-predicate-sound}
-Let $f_{\mathsf{null}}$ and $g_{\mathrm{id}}$ be as in Definition~\ref{def:nullish-filters-mappers}.
-Then $\refineop^{f_{\mathsf{null}},g_{\mathrm{id}}}$ is predicate-sound for $P_{\mathsf{null}}$.
-Moreover, letting $f_{\neg\mathsf{null}}$ be as in Definition~\ref{def:nullish-filters-mappers}, $\refineop^{f_{\neg\mathsf{null}},g_{\mathrm{id}}}$ is predicate-sound for $\neg P_{\mathsf{null}}$.
-\end{lemma}
-
-\begin{proof}
-We show $(f_{\mathsf{null}},g_{\mathrm{id}})$ is sound for $P_{\mathsf{null}}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
-Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{null}}$.
-Then $\rtag(v)=2$, and by A0 we have $\tagfn(s)=2$, hence $f_{\mathsf{null}}(s)=\mathsf{true}$.
-Since $g_{\mathrm{id}}$ is the identity, $v \in \sem{g_{\mathrm{id}}(s)}$ is immediate.
-The $\neg P_{\mathsf{null}}$ case is analogous: if $v \in \neg P_{\mathsf{null}}$ then $\rtag(v) \neq 2$, so by A0 $\tagfn(s) \neq 2$ and $f_{\neg\mathsf{null}}(s)=\mathsf{true}$.
-\end{proof}
-
-\begin{lemma}[Undefined/Void Refinement is Predicate-Sound]
 \label{lem:undef-refine-predicate-sound}
-Let $f_{\mathsf{undef}}$ and $g_{\mathrm{id}}$ be as in Definition~\ref{def:nullish-filters-mappers}.
-Then $\refineop^{f_{\mathsf{undef}},g_{\mathrm{id}}}$ is predicate-sound for $P_{\mathsf{undef}}$.
-Moreover, letting $f_{\neg\mathsf{undef}}$ be as in Definition~\ref{def:nullish-filters-mappers}, $\refineop^{f_{\neg\mathsf{undef}},g_{\mathrm{id}}}$ is predicate-sound for $\neg P_{\mathsf{undef}}$.
+The refinements for null and undefined (Definition~\ref{def:nullish-filters-mappers}) are predicate-sound for their respective predicates.
 \end{lemma}
 
 \begin{proof}
-We show $(f_{\mathsf{undef}},g_{\mathrm{id}})$ is sound for $P_{\mathsf{undef}}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
-Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{undef}}$, i.e., $\rtag(v)\in\{0,1\}$.
-By A0, $\tagfn(s)=\rtag(v)\in\{0,1\}$, so $f_{\mathsf{undef}}(s)=\mathsf{true}$ and $v\in\sem{g_{\mathrm{id}}(s)}$.
-The $\neg P_{\mathsf{undef}}$ case is analogous.
+By A0: if $v \in P_{\mathsf{null}}$ then $\rtag(v)=2$, so $\tagfn(s)=2$ and $f_{\mathsf{null}}(s)=\mathsf{true}$.
+Apply Lemma~\ref{lem:filter-map-predicate-sound}. The undefined and negated cases are analogous.
 \end{proof}
 
 \subsection{Refinement Case Study: \texttt{typeof} Checks}
@@ -1165,50 +1191,14 @@ is predicate-sound for $P_{\mathsf{typeof}=k}$.
 \end{lemma}
 
 \begin{proof}
-Fix $k$.
-Let $R_k(t)\triangleq \refineop^{f_k,g_k}(t)$.
-We first show $(f_k,g_k)$ is sound for $P_{\mathsf{typeof}=k}$ (Definition~\ref{def:filter-map-refinement}).
-Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{typeof}=k}$.
-We distinguish cases on $k$.
-\begin{itemize}
-\item If $k \in \{\texttt{"string"},\texttt{"number"},\texttt{"bigint"},\texttt{"boolean"}\}$ then $P_{\mathsf{typeof}=k}$ is a single tag-class, so by A0 we have $\tagfn(s)=\rtag(v)$, hence $f_k(s)=\mathsf{true}$ by definition of $f_k$.
-Since $g_k \triangleq g_{\mathrm{id}}$ is the identity, $v \in \sem{g_k(s)}$ is immediate.
-\item If $k=\texttt{"undefined"}$, then $v \in P_{\mathsf{typeof}=\texttt{"undefined"}}$ means $\rtag(v)\in\{0,1\}$, and by A0 $\tagfn(s)\in\{0,1\}$, hence $f_k(s)=\mathsf{true}$; again $v \in \sem{g_k(s)}$ is immediate since $g_k$ is the identity.
-\item If $k=\texttt{"object"}$, then $v \in P_{\mathsf{typeof}=\texttt{"object"}}$ implies $\rtag(v)\in\{2,9,10\}$ by definition, so by A0 we have $\tagfn(s)\in\{2,9,10\}$, hence $f_k(s)=\mathsf{true}$ by definition of $f_{\texttt{"object"}}$.
-Again $v \in \sem{g_k(s)}$ is immediate since $g_k$ is the identity.
-\item If $k=\texttt{"function"}$, then $v \in P_{\mathsf{typeof}=\texttt{"function"}}$ means $v \in \ObjVal$ and $\mathsf{callable}(v)=\mathsf{true}$.
-By A0, $\tagfn(s)=\rtag(v)=9$, so $s=\texttt{object}(F)$ for some $F$.
-By Definition~\ref{def:object-semantics}, $v \in \sem{\texttt{object}(F)}$ and $\mathsf{callable}(v)=\mathsf{true}$ implies $F_{\mathrm{call}} \neq \mathsf{None}$ (since $\mathsf{None}$ requires $\mathsf{callable}(v)=\mathsf{false}$).
-Thus $F_{\mathrm{call}} \in \{\mathsf{Definite}(\kappa), \mathsf{Maybe}(\kappa)\}$ for some $\kappa$, so $f_{\texttt{"function"}}(s)=\mathsf{true}$.
+For tag-based cases ($k \in \{\texttt{"string"}, \texttt{"number"}, \ldots\}$): by A0, $v \in P_{\mathsf{typeof}=k}$ implies $\tagfn(s)$ matches the predicate's tag-set, so $f_k(s)=\mathsf{true}$.
+Since $g_k = g_{\mathrm{id}}$, apply Lemma~\ref{lem:filter-map-predicate-sound}.
 
-For the mapper, we show $v \in \sem{g_{\texttt{"function"}}(s)}$:
-\begin{itemize}
-\item If $F_{\mathrm{call}} = \mathsf{Definite}(\kappa)$, then $g_{\texttt{"function"}}(s) = s$, so $v \in \sem{s}$ immediately.
-\item If $F_{\mathrm{call}} = \mathsf{Maybe}(\kappa)$, then $g_{\texttt{"function"}}(s) = \texttt{object}(F')$ with $F'_{\mathrm{call}} = \mathsf{Definite}(\kappa)$.
-Since $\mathsf{callable}(v) = \mathsf{true}$, the constraint for $\mathsf{Definite}(\kappa)$ is satisfied.
-The field constraints are unchanged, so $v \in \sem{\texttt{object}(F')}$.
-\end{itemize}
-\end{itemize}
-Thus $(f_k,g_k)$ is sound and by Lemma~\ref{lem:filter-map-predicate-sound}, $R_k$ is predicate-sound for $P_{\mathsf{typeof}=k}$.
+For $k=\texttt{"function"}$: the key is that $\mathsf{callable}(v)=\mathsf{true}$ forces $F_{\mathrm{call}} \neq \mathsf{None}$, so the mapper upgrading $\mathsf{Maybe}(\kappa) \to \mathsf{Definite}(\kappa)$ preserves $v$.
 
-\paragraph{False branch.}
-For most $k$, the false-branch uses $(\neg f_k, g_{\mathrm{id}})$, and soundness follows analogously.
-For $k=\texttt{"function"}$, we use $(f_{\neg\texttt{"function"}}, g_{\neg\texttt{"function"}})$.
-Let $v \in \neg P_{\mathsf{typeof}=\texttt{"function"}}$ and $v \in \sem{s}$.
-If $s$ is not an object type, $f_{\neg\texttt{"function"}}(s) = \mathsf{true}$ and $v \in \sem{g_{\neg\texttt{"function"}}(s)} = \sem{s}$.
-If $s = \texttt{object}(F)$, then $v \in \ObjVal$ (by A0) and $\mathsf{callable}(v) = \mathsf{false}$ (since $v \notin P_{\mathsf{typeof}=\texttt{"function"}}$).
-By Definition~\ref{def:object-semantics}, $F_{\mathrm{call}} \neq \mathsf{Definite}(\kappa)$ (since that would require $\mathsf{callable}(v) = \mathsf{true}$).
-Thus $F_{\mathrm{call}} \in \{\mathsf{None}, \mathsf{Maybe}(\kappa)\}$, so $f_{\neg\texttt{"function"}}(s) = \mathsf{true}$.
-For the mapper:
-\begin{itemize}
-\item If $F_{\mathrm{call}} = \mathsf{None}$, then $g_{\neg\texttt{"function"}}(s) = s$, so $v \in \sem{s}$.
-\item If $F_{\mathrm{call}} = \mathsf{Maybe}(\kappa)$, then $g_{\neg\texttt{"function"}}(s) = \texttt{object}(F')$ with $F'_{\mathrm{call}} = \mathsf{None}$.
-Since $\mathsf{callable}(v) = \mathsf{false}$, the constraint for $\mathsf{None}$ is satisfied.
-The field constraints are unchanged, so $v \in \sem{\texttt{object}(F')}$.
-\end{itemize}
+For the false branch of \texttt{"function"}: $\mathsf{callable}(v)=\mathsf{false}$ implies $F_{\mathrm{call}} \in \{\mathsf{None}, \mathsf{Maybe}(\kappa)\}$, and the mapper downgrading to $\mathsf{None}$ preserves $v$.
 
-\paragraph{Defaults.}
-If $d_k=\mathsf{Some}(s_k)$ and $P_{\mathsf{typeof}=k} \subseteq \sem{\mathsf{single}(s_k)}$, then by Lemma~\ref{lem:defaulting-preserves-predicate-sound}, $\mathsf{def}(R_k,d_k)$ is predicate-sound for $P_{\mathsf{typeof}=k}$.
+Defaults follow from Lemma~\ref{lem:defaulting-preserves-predicate-sound}.
 \end{proof}
 
 \subsection{Refinement Case Study: Algebraic Tag Equality}
@@ -1242,25 +1232,12 @@ For every $\ell \in \String$:
 &\refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,true}}_\ell} \text{ is predicate-sound for } P_{\mathsf{algTag}=\ell}, \\
 &\refineop^{f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,false}}_\ell} \text{ is predicate-sound for } \neg P_{\mathsf{algTag}=\ell}.
 \end{align*}
-\]
 \end{lemma}
 
 \begin{proof}
-For the true branch, we show $(f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,true}}_\ell)$ is sound for $P_{\mathsf{algTag}=\ell}$ (Definition~\ref{def:filter-map-refinement}) and apply Lemma~\ref{lem:filter-map-predicate-sound}.
-Let $s \in \SType$ and $v \in \sem{s}$ with $v \in P_{\mathsf{algTag}=\ell}$.
-Then $v \in \AlgVal$, so $\rtag(v)=10$.
-By A0, $\tagfn(s)=10$, hence $s$ must be of the form $\texttt{algebraic}(T)$ for some finite $T$.
-By Definition~\ref{def:algebraic-semantics}, $v \in \sem{\texttt{algebraic}(T)}$ implies $\mathsf{atag}(v)\in T$.
-Since $\mathsf{atag}(v)=\ell$, we have $\ell\in T$, hence $v \in \sem{\texttt{algebraic}(T \cap \{\ell\})} = \sem{g^{\mathsf{alg,true}}_\ell(s)}$.
-Also $f^{\mathsf{alg}}_\ell(s)=\mathsf{true}$ by definition.
+True branch: If $v \in P_{\mathsf{algTag}=\ell}$ then $\mathsf{atag}(v)=\ell$, so $\ell \in T$ for $s=\texttt{algebraic}(T)$, and the mapper restricting to $\{ell\}$ preserves $v$.
 
-For the false branch, we show $(f^{\mathsf{alg}}_\ell,g^{\mathsf{alg,false}}_\ell)$ is sound for $\neg P_{\mathsf{algTag}=\ell}$.
-Let $s \in \SType$ and $v \in \sem{s}$ with $v \notin P_{\mathsf{algTag}=\ell}$.
-We have $f^{\mathsf{alg}}_\ell(s)=\mathsf{true}$ by definition.
-If $v \notin \AlgVal$, then $\tagfn(s) \neq 10$ by A0, so $s$ is not an algebraic type and $g^{\mathsf{alg,false}}_\ell(s)=s$; hence $v \in \sem{g^{\mathsf{alg,false}}_\ell(s)}$.
-If $v \in \AlgVal$ but $\mathsf{atag}(v) \neq \ell$, then $\tagfn(s)=10$ by A0, so $s=\texttt{algebraic}(T)$ for some finite $T$.
-By Definition~\ref{def:algebraic-semantics}, $\mathsf{atag}(v) \in T$.
-Since $\mathsf{atag}(v) \neq \ell$, we have $\mathsf{atag}(v) \in T \setminus \{\ell\}$, hence $v \in \sem{\texttt{algebraic}(T \setminus \{\ell\})} = \sem{g^{\mathsf{alg,false}}_\ell(s)}$.
+False branch: If $\mathsf{atag}(v) \neq \ell$, then $\mathsf{atag}(v) \in T \setminus \{\ell\}$, so the mapper removing $\ell$ preserves $v$. Non-algebraic types pass through unchanged.
 \end{proof}
 
 \subsection{Refinement Case Study: \texttt{instanceof}}
@@ -1483,16 +1460,16 @@ If $i \in R$, then $x \in \sem{R}$, contradiction. So $i \in L \setminus R = \di
 
 \begin{definition}[Clause Diff]
 \label{def:clause-diff}
-For clauses $c_1 = (\vars_1, \stypes_1)$ and $c_2 = (\vars_2, \stypes_2)$:
+For clauses $c_1 = \clause{V_1}{S_1}$ and $c_2 = \clause{V_2}{S_2}$:
 \[
 \diff_{\Clause}(c_1, c_2) = 
 \begin{cases}
-\bot & \text{if } \stypes_2 = \mathsf{None} \\
-c_1 & \text{if } \stypes_1 = \mathsf{None} \\
-(\vars_1, \mathsf{Some}(\diff_{\STypes}(S_1, S_2))) & \text{if } \stypes_1 = \mathsf{Some}(S_1), \stypes_2 = \mathsf{Some}(S_2)
+\bot & \text{if } S_2 = \top \\
+c_1 & \text{if } S_1 = \top \\
+\clause{V_1}{\diff_{\STypes}(S_1, S_2)} & \text{otherwise}
 \end{cases}
 \]
-where $\bot$ represents the empty type (dropped from results) with $\sem{\bot} = \emptyset$.
+where $\bot$ (empty type) has $\sem{\bot} = \emptyset$.
 \end{definition}
 
 \begin{lemma}[Clause Diff Satisfies (P1)]
@@ -1501,27 +1478,17 @@ $\sem{\diff_{\Clause}(c_1, c_2)} \subseteq \sem{c_1}$.
 \end{lemma}
 
 \begin{proof}
-Case analysis:
-\begin{itemize}
-\item $\stypes_2 = \mathsf{None}$: Result is $\bot$. $\sem{\bot} = \emptyset \subseteq \sem{c_1}$.
-\item $\stypes_1 = \mathsf{None}$: Result is $c_1$. $\sem{c_1} \subseteq \sem{c_1}$.
-\item Both $\mathsf{Some}$:
-\begin{align*}
-\sem{(\vars_1, \mathsf{Some}(\diff_{\STypes}(S_1, S_2)))}
-&= \textstyle\left(\bigcap_{v \in \vars_1} \sem{v}\right) \cap \sem{\diff_{\STypes}(S_1, S_2)} \\
-&\subseteq \textstyle\left(\bigcap_{v \in \vars_1} \sem{v}\right) \cap \sem{S_1} = \sem{c_1}.
-\end{align*}
-\end{itemize}
+By case analysis on $S_1, S_2$. The non-trivial case uses Lemma~\ref{lem:stypes-diff-p1}.
 \end{proof}
 
 \begin{lemma}[Clause Diff Satisfies (P2) Conditionally]
 \label{lem:clause-diff-p2-conditional}
 $\diff_{\Clause}$ satisfies (P2) when:
-\begin{itemize}
-\item Case $\stypes_2 = \mathsf{None}$: Always for well-formed clauses (since then $c_2$ is the unique top clause and $\sem{c_2} = \Val \supseteq \sem{c_1}$).
-\item Case $\stypes_1 = \mathsf{None}$: Always (since result is $c_1$).
-\item Case both $\mathsf{Some}$: When $\diff_{\STypes}(S_1, S_2)$ satisfies (P2).
-\end{itemize}
+\begin{enumerate}
+\item $S_2 = \top$: Always (since $\sem{c_2} = \Val \supseteq \sem{c_1}$).
+\item $S_1 = \top$: Always (result is $c_1$).
+\item Otherwise: When $\diff_{\STypes}(S_1, S_2)$ satisfies (P2).
+\end{enumerate}
 \end{lemma}
 
 \subsection{Clauses Diff}
@@ -1600,13 +1567,11 @@ Then $\diff_{\TType}(t_1,t_2)$ is complete (i.e. $\sem{\diff_{\TType}(t_1,t_2)}=
   For all $i\in\insts_1$ and $j\in\insts_2$ with $i\neq j$, we have $\sem{i}\cap\sem{j}=\emptyset$.
 
 \item \textbf{Top-clause alignment:}
-  If $\clauses_1$ is top (i.e.\ contains the unique top clause $(\emptyset,\mathsf{None})$), then $\clauses_2$ is also top.
+  If $\clauses_1$ contains $\clause{\emptyset}{\top}$, then $\clauses_2$ also contains it.
 
 \item \textbf{Same-tag coverage for clause subtractions:}
-  \begin{enumerate}
-  \item For $k \in \mathrm{dom}(\clauses_1)\cap \mathrm{dom}(\clauses_2)$ with $\clauses_i(k)=(k,\mathsf{Some}(S_i))$: $\mathsf{STC}(S_1,S_2)$.
-  \item If $\clauses_2(\emptyset)=(\emptyset,\mathsf{Some}(S_0))$: for all $k$ with $\clauses_1(k)=(k,\mathsf{Some}(S_1))$, we require $\mathsf{STC}(S_1,S_0)$.
-  \end{enumerate}
+  For each $k \in \mathrm{dom}(\clauses_1)\cap \mathrm{dom}(\clauses_2)$ with $\clauses_i(k)=\clause{k}{S_i}$: $\mathsf{STC}(S_1,S_2)$.
+  Similarly for the empty-key clause if present in $\clauses_2$.
 \end{enumerate}
 \end{corollary}
 
@@ -1688,13 +1653,13 @@ function f(x: unknown): {} {
 \end{verbatim}
 
 \textbf{Mathematical setup:}
-The type \texttt{unknown} is represented as a clause with $\stypes = \mathsf{None}$ (top).
-Let $c_1 = (\emptyset, \mathsf{None})$ represent \texttt{unknown}, and let $c_2 = (\emptyset, \mathsf{Some}(\{\texttt{undefined}, \texttt{null}\}))$ represent \texttt{null | undefined}.
+The type \texttt{unknown} is represented as $\clause{\emptyset}{\top}$.
+Let $c_1 = \clause{\emptyset}{\top}$ represent \texttt{unknown}, and $c_2 = \clause{\emptyset}{\{\texttt{undefined}, \texttt{null}\}}$ represent \texttt{null | undefined}.
 
 \textbf{Incompleteness:}
 By definition of $\diff_{\Clause}$:
 \[
-\diff_{\Clause}(c_1, c_2) = c_1 \quad \text{(since } \stypes_1 = \mathsf{None}\text{)}
+\diff_{\Clause}(c_1, c_2) = c_1 \quad \text{(since } S_1 = \top\text{)}
 \]
 So $\sem{\diff_{\Clause}(c_1, c_2)} = \sem{c_1} = \Val$ (all values).
 But the true set difference is:
@@ -1712,5 +1677,40 @@ The current SKJS implementation chooses neither approach and leaves top unchange
 
 \paragraph{Making this example work in SKJS.}
 To express this pattern in SKJS, one would need a surface spelling for non-nullish types (such as \texttt{NonNullable<T>}) and an internal representation that can express ``remove null/undefined'' from an arbitrary type, including top.
+
+\appendix
+
+\section{Implementation Correspondences}
+\label{app:impl}
+
+This appendix summarizes the correspondence between the mathematical model and SKJS implementation.
+
+\begin{keydef}
+\renewcommand{\arraystretch}{1.3}
+\begin{tabular}{@{}l@{\quad}l@{}}
+\toprule
+\textbf{Mathematical Concept} & \textbf{SKJS Implementation} \\
+\midrule
+$\SType$ (simple type) & \texttt{SType} enum with tag-indexed variants \\
+$\STypes$ (tag-distinct set) & \texttt{STypes} struct, one entry per tag \\
+$\clause{V}{S}$ (clause) & \texttt{Clause} record with \texttt{vars} and \texttt{stypes} \\
+$\Clauses$ (clauses map) & \texttt{Clauses} keyed by variable-set \\
+$\TType = (I, C)$ & \texttt{TType} with \texttt{insts} and \texttt{clauses} \\
+$\refineop^{f,g}$ (filter-map) & \texttt{FilterType} transformer \\
+$\diff$ (type difference) & \texttt{TType::diff}, \texttt{Clause::diff}, etc. \\
+$\mathsf{single}(s)$ & Single-clause \texttt{TType} with one $\SType$ \\
+$\mathsf{def}(R, d)$ (defaulting) & \texttt{setLocal} with \texttt{getSTypes} check \\
+\bottomrule
+\end{tabular}
+\end{keydef}
+
+\paragraph{Key implementation behaviors modeled.}
+\begin{enumerate}
+\item \textbf{Tag-indexed storage}: $\STypes$ stores at most one $\SType$ per runtime tag.
+\item \textbf{Same-tag merge}: Union/intersection on $\STypes$ merge same-tag alternatives (Definition~\ref{def:stypes-union-inter}).
+\item \textbf{Tag-elimination diff}: $\diff_{\STypes}$ removes whole tags, not same-tag subsets.
+\item \textbf{Top-clause behavior}: Refinement and diff on $\clause{\emptyset}{\top}$ behave specially.
+\item \textbf{Call-signature modes}: $\mathsf{None}$/$\mathsf{Maybe}$/$\mathsf{Definite}$ for callable objects.
+\end{enumerate}
 
 \end{document}
