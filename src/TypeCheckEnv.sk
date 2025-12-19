@@ -71,6 +71,14 @@ mutable class TCEnv private (
   mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
     this.results.recordClassHierarchy{child, parent}
   }
+
+  mutable fun error(messages: Array<(PosRange, String)>): void {
+    this.results.error(messages)
+  }
+
+  mutable fun notSupported(pos: PosRange, what: String): void {
+    this.results.notSupported(pos, what)
+  }
 }
 
 mutable class TCResults private {

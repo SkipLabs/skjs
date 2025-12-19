@@ -1108,7 +1108,7 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
 // Wrong destructuring count
 function testTupleWrongDestructure(x: [number, string] | number): boolean {
   if (typeof x === "object") {
-    // @skjs-expect-error Invalid tuple pattern size, it is of size 3
+    // @ts-expect-error Invalid tuple pattern size, it is of size 3
     const [_a, _b, c] = x;
     return c;
   } else {

@@ -49,6 +49,18 @@ extension class TypeChecker {
         stypes.singleElt()
       ) match {
       | Some(TTuple(tyl, _)) ->
+        for (i in Range(0, min(arrPat.size(), tyl.size()))) {
+          arrPat[i] match {
+          | None() -> /* skipped element */ void
+          | Some((_, Some(defaultExpr))) ->
+            tcenv.notSupported(
+              defaultExpr.pos,
+              "Default value in array destructuring",
+            )
+          | Some((eltPat, None())) ->
+            this.bind(tcenv, kind, eltPat, tyl[i], isInitialized, false)
+          };
+        };
         if (arrPat.size() != tyl.size()) {
           typingError(
             Array[
@@ -62,18 +74,6 @@ extension class TypeChecker {
               ),
             ],
           )
-        };
-        for (i in Range(0, arrPat.size())) {
-          arrPat[i] match {
-          | None() -> /* skipped element */ void
-          | Some((_, Some(defaultExpr))) ->
-            notSupported(
-              defaultExpr.pos,
-              "Default value in array destructuring",
-            )
-          | Some((eltPat, None())) ->
-            this.bind(tcenv, kind, eltPat, tyl[i], isInitialized, false)
-          };
         }
       | _ ->
         typingError(
@@ -123,7 +123,7 @@ extension class TypeChecker {
             for (fields in branches) {
               fields.maybeGet(fieldName.value) match {
               | None() ->
-                typingError(
+                tcenv.error(
                   Array[
                     (fieldName.pos, `The field ${fieldName} is missing`),
                     (type.pos, `Out of ${type}`),
@@ -168,7 +168,7 @@ extension class TypeChecker {
             defaultIsUseless match {
             | None() -> void
             | Some(defaultPos) ->
-              typingError(
+              tcenv.error(
                 Array[
                   (
                     defaultPos,
