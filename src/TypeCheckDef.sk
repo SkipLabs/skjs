@@ -12,13 +12,14 @@ extension class TypeChecker {
     defs: Array<Def>,
   ): readonly TCResults {
     results = TCResults::mcreate{errorHandling => this.errorHandling};
+    tcenvl = mutable TCEnvLight{context, results};
     for (def in defs) {
       this.errorHandling match {
-      | EHBacktrace() -> this.checkDef(context, def, results)
+      | EHBacktrace() -> this.checkDef(tcenvl, def)
       | EHDefault()
       | EHKeepGoing() ->
         try {
-          this.checkDef(context, def, results)
+          this.checkDef(tcenvl, def)
         } catch {
         | ErrorExn(err @ TypingError _) -> results.errors.push(err)
         | exn -> throw exn
@@ -28,11 +29,9 @@ extension class TypeChecker {
     results
   }
 
-  fun checkDef(
-    context: mutable SKStore.Context,
-    def: Def,
-    results: mutable TCResults,
-  ): void {
+  fun checkDef(tcenvl: mutable TCEnvLight, def: Def): void {
+    context = tcenvl.context;
+    results = tcenvl.results;
     def.value match {
     | ExportImport _ -> results.notSupported(def.pos, "export import")
     | ImportExpr _ -> void
@@ -53,7 +52,7 @@ extension class TypeChecker {
     | ExportDeclare _ ->
       void
     | Namespace _ -> results.notSupported(def.pos, "namespace")
-    | Export(d) -> this.checkDef(context, Def(def.pos, d), results)
+    | Export(d) -> this.checkDef(tcenvl, Def(def.pos, d))
     | ExportDefault _ -> results.notSupported(def.pos, "export default")
     | ExportNames _
     | ExportNamesFrom _ ->
