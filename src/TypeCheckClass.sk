@@ -63,7 +63,7 @@ extension class TypeChecker {
     if (c.extends_.size() != 0) {
       isInterface = c.kind is CKInterface();
       if (c.extends_.size() > 1 && !isInterface) {
-        typingError(Array[(c.name.pos, "Cannot extend more than one class")])
+        results.error(Array[(c.name.pos, "Cannot extend more than one class")])
       };
       for (ext in c.extends_) {
         ext.value match {
