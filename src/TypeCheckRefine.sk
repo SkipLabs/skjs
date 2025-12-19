@@ -130,9 +130,10 @@ extension class TypeChecker {
     local: Name,
     target: Bool,
   ): void {
-    this.setLocal(tcenv, local, None(), x ~>
-      (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) == target
-    )
+    filter = x ~>
+      (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) == target;
+    default = None();
+    this.setLocal(tcenv, local, default, filter)
   }
 
   fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
