@@ -30,13 +30,11 @@ extension class TypeChecker {
     | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
       this.evalUndefinedEquality(tcenv, local, target)
 
-    | (Expr(pos, _), Expr(_, Var(Name(_, "null"))))
-    | (Expr(_, Var(Name(_, "null"))), Expr(pos, _))
-    | (Expr(pos, _), Expr(_, Var(Name(_, "undefined"))))
-    | (Expr(_, Var(Name(_, "undefined"))), Expr(pos, _)) ->
-      typingError(
-        Array[(pos, "Only locals can be compared to null/undefined.")],
-      )
+    | (Expr(pos, _), Expr(_, Var(Name(_, v @ "null"))))
+    | (Expr(_, Var(Name(_, v @ "null"))), Expr(pos, _))
+    | (Expr(pos, _), Expr(_, Var(Name(_, v @ "undefined"))))
+    | (Expr(_, Var(Name(_, v @ "undefined"))), Expr(pos, _)) ->
+      typingError(Array[(pos, `Only locals can be compared to ${v}`)])
 
     | _ -> void
     }
