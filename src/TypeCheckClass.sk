@@ -158,13 +158,17 @@ extension class TypeChecker {
             )
           }
         };
-        type = field.type match {
-        | None() -> typingError(Array[(field.pos, "Type annotation expected")])
-        | Some(ty) -> this.tenv.normalize(context, ty)
+        typeOpt = field.type match {
+        | None() ->
+          results.error(Array[(field.pos, "Type annotation expected")]);
+          None()
+        | Some(ty) -> Some(this.tenv.normalize(context, ty))
         };
-        field.value match {
-        | None() -> void
-        | Some(e) ->
+        (field.value, typeOpt) match {
+        | (None(), _)
+        | (_, None()) ->
+          void
+        | (Some(e), Some(type)) ->
           tcenv = TCEnv::mcreate(
             context,
             subst,
