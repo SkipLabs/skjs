@@ -107,20 +107,6 @@ extension class TFuns {
     f = TFun::union(subst, tenv, f1.fun_, f2.fun_);
     TFuns(f, f1.pos)
   }
-
-  static fun unionOpt(
-    subst: mutable Subst,
-    tenv: TEnv,
-    f1opt: ?TFuns,
-    f2opt: ?TFuns,
-  ): ?TFuns {
-    (f1opt, f2opt) match {
-    | (None(), _)
-    | (_, None()) ->
-      None()
-    | (Some(f1), Some(f2)) -> Some(TFuns::union(subst, tenv, f1, f2))
-    }
-  }
 }
 
 extension class TField {
@@ -258,16 +244,15 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): TFields {
-    (noMatch1, noMatch2, fields) = mapInter(
-      fields1.values(),
-      fields2.values(),
-      x ~> x.name,
-      (x, y) -> TField::union(subst, tenv, x, y),
+    fields = fields1.fields.merge(fields2.fields, (xo, yo) ->
+      (xo, yo) match {
+      | (Some(z), None())
+      | (None(), Some(z)) ->
+        Some(z.withOptional())
+      | (Some(x), Some(y)) -> Some(TField::union(subst, tenv, x, y))
+      | (None(), None()) -> None()
+      }
     );
-    !fields = fields
-      .concat(noMatch1.map(x -> x.withOptional()))
-      .concat(noMatch2.map(x -> x.withOptional()))
-      .sortedBy(x ~> x.name);
     // TODO: handle intersection between normal fields and index fields
     indexes = {
       index1o = fields1.maybeSingleIndex();
@@ -284,9 +269,25 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    call = TFuns::unionOpt(subst, tenv, fields1.call, fields2.call);
-    new = TFuns::unionOpt(subst, tenv, fields1.new, fields2.new);
-    TFields::create{fields, indexes, call, new}
+    call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
+    new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
+    TFields{fields, indexes, call, new}
+  }
+
+  static fun unionOptTFuns(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1opt: ?(Bool, TFuns),
+    f2opt: ?(Bool, TFuns),
+  ): ?(Bool, TFuns) {
+    (f1opt, f2opt) match {
+    | (None(), Some((_, f)))
+    | (Some((_, f)), None()) ->
+      Some((true, f))
+    | (Some((opt1, f1)), Some((opt2, f2))) ->
+      Some((opt1 || opt2, TFuns::union(subst, tenv, f1, f2)))
+    | (None(), None()) -> None()
+    }
   }
 }
 

@@ -56,23 +56,25 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult {
-    (fields1.call, fields2.call) match {
-    | (_, None()) -> void
-    | (None(), Some _) -> return STMissingCall()
-    | (Some(call1), Some(call2)) ->
-      TFuns::isSub(subst, tenv, call1, call2) match {
-      | err @ STError _ -> return err
-      | STOk() -> void
-      }
+    TFields::isSubOptTFuns(
+      subst,
+      tenv,
+      fields1.call,
+      fields2.call,
+      STMissingCall,
+    ) match {
+    | STOk() -> void
+    | err @ STError _ -> return err
     };
-    (fields1.new, fields2.new) match {
-    | (_, None()) -> void
-    | (None(), Some _) -> return STMissingConstructor()
-    | (Some(new1), Some(new2)) ->
-      TFuns::isSub(subst, tenv, new1, new2) match {
-      | err @ STError _ -> return err
-      | STOk() -> void
-      }
+    TFields::isSubOptTFuns(
+      subst,
+      tenv,
+      fields1.new,
+      fields2.new,
+      STMissingConstructor,
+    ) match {
+    | STOk() -> void
+    | err @ STError _ -> return err
     };
     index1o = fields1.maybeSingleIndex();
     index2o = fields2.maybeSingleIndex();
@@ -141,6 +143,25 @@ extension class TFields {
       }
     };
     STOk()
+  }
+
+  static fun isSubOptTFuns(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1opt: ?(Bool, TFuns),
+    f2opt: ?(Bool, TFuns),
+    missing: Concrete<STErrorNoArg>,
+  ): STResult {
+    (f1opt, f2opt) match {
+    | (_, None())
+    | (None(), Some((true, _))) ->
+      STOk()
+    | (None(), Some((false, _)))
+    | (Some((true, _)), Some((false, _))) ->
+      missing()
+    | (Some((_opt1, call1)), Some((_opt2, call2))) ->
+      TFuns::isSub(subst, tenv, call1, call2)
+    }
   }
 }
 

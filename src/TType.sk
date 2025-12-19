@@ -516,7 +516,7 @@ class ATFullType(fullType: TType) extends ArrayType {
       popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(TObject(TFields{call => Some(TFuns(met, _))}, _)) ->
+      | Some(TObject(TFields{call => Some((_, TFuns(met, _)))}, _)) ->
         Some(met.retType)
       | _ -> None()
       }
@@ -712,7 +712,7 @@ class TIndexField(
   }
 }
 
-class TFields private {
+class TFields{
   fields: InternalKeyedArrayMap<String, TField>,
   indexes: Array<TIndexField>,
   /* There can be several index fields.
@@ -725,8 +725,8 @@ class TFields private {
      TODO: if a field name is included an index key type, then its
       type must be a subtype of the index key type
   */
-  new: ?TFuns,
-  call: ?TFuns,
+  new: ?(/* optional */ Bool, TFuns),
+  call: ?(/* optional */ Bool, TFuns),
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{
@@ -748,8 +748,8 @@ class TFields private {
         fields.sortedBy(x ~> x.name).values(),
       ),
       indexes,
-      new,
-      call,
+      new => new.map(tfuns ~> (false, tfuns)),
+      call => call.map(tfuns ~> (false, tfuns)),
     }
   }
 
@@ -765,8 +765,8 @@ class TFields private {
     TFields{
       fields => this.fields.map(fField),
       indexes => this.indexes.map(fIndexField),
-      new => this.new.map(fTFuns),
-      call => this.call.map(fTFuns),
+      new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
+      call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
     }
   }
 
@@ -1325,8 +1325,6 @@ base class STError extends STResult {
   children =
   | STNoConstraint()
   | STMissingField(String)
-  | STMissingCall()
-  | STMissingConstructor()
   | STMissingThis()
   | STMissingParameter()
   | STMissingSpread()
@@ -1374,6 +1372,12 @@ base class STError extends STResult {
     | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
     }
   }
+}
+
+base class STErrorNoArg final () extends STError {
+  children =
+  | STMissingCall
+  | STMissingConstructor
 }
 
 module end;

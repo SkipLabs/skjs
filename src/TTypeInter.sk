@@ -287,28 +287,24 @@ extension class TFields {
     | (None(), call)
     | (call, None()) ->
       call
-    | (Some(call1), Some(call2)) ->
+    | (Some((opt1, call1)), Some((opt2, call2))) ->
       TFuns::inter(subst, tenv, call1, call2) match {
       | None() -> return None()
-      | some @ Some _ -> some
+      | Some(f) -> Some((opt1 && opt2, f))
       }
     };
     new = (fields1.new, fields2.new) match {
     | (None(), new)
     | (new, None()) ->
       new
-    | (Some(new1), Some(new2)) ->
+    | (Some((opt1, new1)), Some((opt2, new2))) ->
       TFuns::inter(subst, tenv, new1, new2) match {
       | None() -> return None()
-      | some @ Some _ -> some
+      | Some(f) -> Some((opt1 && opt2, f))
       }
     };
-    fields = mapUnion(
-      fields1.values(),
-      fields2.values(),
-      x ~> x.name,
-      x ~> x,
-      (x, y) -> TField::inter(subst, tenv, x, y),
+    fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
+      TField::inter(subst, tenv, x, y)
     );
     // TODO: handle intersection between normal fields and index fields
     indexes = {
@@ -326,7 +322,7 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    Some(TFields::create{fields, indexes, call, new})
+    Some(TFields{fields, indexes, call, new})
   }
 }
 

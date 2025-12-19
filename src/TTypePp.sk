@@ -263,9 +263,9 @@ mutable class TypePp{
       fields.call,
       fields.new,
     ) match {
-    | (true, true, Some(TFuns(tfun, _pos)), None()) ->
+    | (true, true, Some((false, TFuns(tfun, _pos))), None()) ->
       this.tfun(level, margin, (false, tfun))
-    | (true, true, None(), Some(TFuns(tfun, _pos))) ->
+    | (true, true, None(), Some((false, TFuns(tfun, _pos)))) ->
       this.out(level, margin, "new ");
       this.tfun(level, margin, (false, tfun))
     | _ ->
@@ -338,7 +338,8 @@ mutable class TypePp{
     };
     fields.call match {
     | None() -> void
-    | Some(TFuns(tfun, _pos)) ->
+    | Some((opt, TFuns(tfun, _pos))) ->
+      if (opt) this.out(level, margin, "?");
       this.tfun(level, margin, (true, tfun));
       if (fields.new.isSome()) {
         this.out(level, margin, ",");
@@ -349,7 +350,8 @@ mutable class TypePp{
     };
     fields.new match {
     | None() -> void
-    | Some(TFuns(tfun, _pos)) ->
+    | Some((opt, TFuns(tfun, _pos))) ->
+      if (opt) this.out(level, margin, "?");
       this.out(level, margin, "new ");
       this.tfun(level, margin, (true, tfun))
     }

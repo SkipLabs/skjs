@@ -664,7 +664,14 @@ extension class TypeChecker {
       tfuns = fty
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {
-      | Some(TObject(TFields{call => Some(tfuns)}, _)) -> tfuns
+      | Some(TObject(TFields{call => Some((false, tfuns))}, _)) -> tfuns
+      | Some(TObject(TFields{call => Some((true, _))}, _)) ->
+        typingError(
+          Array[
+            (pos, "Invalid call"),
+            (fty.pos, `Type ${fty} may not be a function`),
+          ],
+        )
       | _ ->
         typingError(
           Array[
@@ -706,8 +713,15 @@ extension class TypeChecker {
         subExprTy
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes -> stypes.singleElt()) match {
-        | Some(TObject(TFields{new => Some(f)}, _pos)) ->
+        | Some(TObject(TFields{new => Some((false, f))}, _pos)) ->
           this.call(tcenv, pos, f, tArgs, args, mostPrecise)
+        | Some(TObject(TFields{new => Some((true, _))}, objPos)) ->
+          typingError(
+            Array[
+              (pos, "Invalid new"),
+              (objPos, `${subExprTy} may not have a constructor`),
+            ],
+          )
         | Some(TObject(TFields{new => None()}, objPos)) ->
           typingError(
             Array[
