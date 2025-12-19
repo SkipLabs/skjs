@@ -97,17 +97,25 @@ extension class TypeChecker {
       this.setLocal(tcenv, local, default, filter)
     | "object" ->
       filter = x ~>
-        (x is TObject(TFields{call => None()}, _) ||
-          x is TAlgebraic _ ||
-          x is TPrimUnit(TNull(), _) ||
-          x is TTuple _ ||
-          x is TPromise _) == target;
+        x match {
+        | TObject(TFields{call => None()}, _)
+        | TAlgebraic _
+        | TPrimUnit(TNull(), _)
+        | TTuple _
+        | TPromise _ ->
+          target
+        | _ -> !target
+        };
       default = if (target) Some(TObject(TFields::empty(), typePos)) else {
         None()
       };
       this.setLocal(tcenv, local, default, filter)
     | "function" ->
-      filter = x ~> (x is TObject(TFields{call => Some _}, _)) == target;
+      filter = x ~>
+        x match {
+        | TObject(TFields{call => Some _}, _) -> target
+        | _ -> !target
+        };
       default = None();
       this.setLocal(tcenv, local, default, filter)
     | _ ->
