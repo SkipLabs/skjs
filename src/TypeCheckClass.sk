@@ -209,17 +209,15 @@ extension class TypeChecker {
               }
             )
             .collect(SortedSet);
-          results.collectErrors(() -> {
-            this.constructor(
-              subst,
-              thisType,
-              partialThisType,
-              fd,
-              Some(c.name),
-              methods,
-              results,
-            )
-          })
+          this.constructor(
+            subst,
+            thisType,
+            partialThisType,
+            fd,
+            Some(c.name),
+            methods,
+            results,
+          )
         } else {
           cgNode = CGNode::create(
             Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
