@@ -19,6 +19,10 @@ mutable base class TCEnvBase private {
   mutable fun notSupported(pos: PosRange, what: String): void {
     this.results.notSupported(pos, what)
   }
+
+  mutable fun collectErrors(f: () -> void): void {
+    this.results.collectErrors(f)
+  }
 }
 
 mutable class TCEnvLight{} extends TCEnvBase {}

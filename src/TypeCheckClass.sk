@@ -3,7 +3,6 @@ module SKJS;
 extension class TypeChecker {
   fun class_(tcenvl: mutable TCEnvLight, c: Class): void {
     context = tcenvl.context;
-    results = tcenvl.results;
     constructor: ?ClassFieldTypeMethod = None();
     for (fieldType in c.fields) {
       fieldType match {
@@ -12,7 +11,7 @@ extension class TypeChecker {
       ) ->
         constructor match {
         | Some(existingConstructor) ->
-          results.error(
+          tcenvl.error(
             Array[
               (fd.pos, "Multiple constructor implementations are not allowed."),
               (existingConstructor.pos, "Previous implementation"),
@@ -23,7 +22,7 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    results.collectErrors(() ->
+    tcenvl.collectErrors(() ->
       static::checkTypeParams(c.tparams, OptionalTypeParamsForbidden())
     );
     subst = Subst::mcreate(tcenvl);
@@ -61,7 +60,7 @@ extension class TypeChecker {
     if (c.extends_.size() != 0) {
       isInterface = c.kind is CKInterface();
       if (c.extends_.size() > 1 && !isInterface) {
-        results.error(Array[(c.name.pos, "Cannot extend more than one class")])
+        tcenvl.error(Array[(c.name.pos, "Cannot extend more than one class")])
       };
       for (ext in c.extends_) {
         ext.value match {
@@ -84,7 +83,7 @@ extension class TypeChecker {
             child => c,
             parent => this.tenv.getClass(context, parentName),
           };
-          results.collectErrors(() ->
+          tcenvl.collectErrors(() ->
             this.checkSubType(
               tcenv,
               parentName.pos,
@@ -93,7 +92,7 @@ extension class TypeChecker {
               super,
             )
           )
-        | _ -> results.error(Array[(c.name.pos, "Invalid extend")])
+        | _ -> tcenvl.error(Array[(c.name.pos, "Invalid extend")])
         }
       }
     };
@@ -110,7 +109,7 @@ extension class TypeChecker {
           child => c,
           parent => this.tenv.getClass(context, parentName),
         };
-        results.collectErrors(() ->
+        tcenvl.collectErrors(() ->
           this.checkSubType(
             tcenv,
             parentName.pos,
@@ -119,7 +118,7 @@ extension class TypeChecker {
             super,
           )
         )
-      | _ -> results.error(Array[(c.name.pos, "Invalid implements")])
+      | _ -> tcenvl.error(Array[(c.name.pos, "Invalid implements")])
       }
     };
     hasConstructor = false;
@@ -129,14 +128,14 @@ extension class TypeChecker {
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic(pos) ->
-            results.error(Array[(pos, "static fields are forbidden")])
+            tcenvl.error(Array[(pos, "static fields are forbidden")])
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _
           | ModReadonly _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
-            results.error(
+            tcenvl.error(
               Array[
                 (
                   modifier.pos,
@@ -148,7 +147,7 @@ extension class TypeChecker {
         };
         typeOpt = field.type match {
         | None() ->
-          results.error(Array[(field.pos, "Type annotation expected")]);
+          tcenvl.error(Array[(field.pos, "Type annotation expected")]);
           None()
         | Some(ty) -> Some(this.tenv.normalize(subst, ty))
         };
@@ -158,7 +157,7 @@ extension class TypeChecker {
           void
         | (Some(e), Some(type)) ->
           tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
-          results.collectErrors(() ->
+          tcenvl.collectErrors(() ->
             this.checkSubType(
               tcenv,
               e.pos,
@@ -185,7 +184,7 @@ extension class TypeChecker {
                 name match {
                 | FNNormal(Name(_, methodName)) -> Some(methodName)
                 | _ ->
-                  results.error(Array[(pos, "Invalid method name")]);
+                  tcenvl.error(Array[(pos, "Invalid method name")]);
                   None()
                 }
               | ClassFieldTypeValue _ -> None()
@@ -204,7 +203,7 @@ extension class TypeChecker {
           cgNode = CGNode::create(
             Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
           );
-          results.collectErrors(() -> {
+          tcenvl.collectErrors(() -> {
             this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
           })
         }
@@ -217,7 +216,7 @@ extension class TypeChecker {
           field.value match {
           | None() ->
             if (field.optional is None()) {
-              results.error(Array[(field.pos, "Uninitialized field")])
+              tcenvl.error(Array[(field.pos, "Uninitialized field")])
             }
           | Some(_) -> void
           }
@@ -235,16 +234,13 @@ extension class TypeChecker {
     className: ?Name,
     methods: SortedSet<String>,
   ): void {
-    results = subst.results;
     if (fd.retType.i1 is Some _) {
-      results.error(
+      subst.error(
         Array[(fd.retType.i0, "Constructors don't have return types")],
       );
     };
     for (modifier in fd.modifiers.modifiers) {
-      results.error(
-        Array[(modifier.pos, "Constructors cannot have modifiers")],
-      );
+      subst.error(Array[(modifier.pos, "Constructors cannot have modifiers")]);
     };
     cgNode = CGNode::create(
       className match {
@@ -257,10 +253,10 @@ extension class TypeChecker {
     fd.isAsync match {
     | None() -> void
     | Some(asyncPos) ->
-      results.error(Array[(asyncPos, "Constructors cannot be async")])
+      subst.error(Array[(asyncPos, "Constructors cannot be async")])
     };
     fd.body match {
-    | FDBNone(pos) -> results.error(Array[(pos, "Missing definition")])
+    | FDBNone(pos) -> subst.error(Array[(pos, "Missing definition")])
     | FDBSome(body) ->
       blockScope = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fd.pos, "this"));
@@ -276,7 +272,7 @@ extension class TypeChecker {
         this.tenv,
         methods,
       );
-      results.collectErrors(() ->
+      subst.collectErrors(() ->
         this.checkSubType(
           tcenv,
           fd.pos,

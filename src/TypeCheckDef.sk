@@ -30,14 +30,13 @@ extension class TypeChecker {
   }
 
   fun checkDef(tcenvl: mutable TCEnvLight, def: Def): void {
-    results = tcenvl.results;
     def.value match {
-    | ExportImport _ -> results.notSupported(def.pos, "export import")
+    | ExportImport _ -> tcenvl.notSupported(def.pos, "export import")
     | ImportExpr _ -> void
-    | Global _ -> results.notSupported(def.pos, "global")
-    | ExportAs _ -> results.notSupported(def.pos, "export as")
-    | ExportEq _ -> results.notSupported(def.pos, "export =")
-    | Module _ -> results.notSupported(def.pos, "module")
+    | Global _ -> tcenvl.notSupported(def.pos, "global")
+    | ExportAs _ -> tcenvl.notSupported(def.pos, "export as")
+    | ExportEq _ -> tcenvl.notSupported(def.pos, "export =")
+    | Module _ -> tcenvl.notSupported(def.pos, "module")
     | e @ Expr _ ->
       subst = Subst::mcreate(tcenvl);
       tcenv = TCEnv::mcreate(subst, CGNode::toplevel(def.pos.fileName));
@@ -50,15 +49,15 @@ extension class TypeChecker {
     | Declare _
     | ExportDeclare _ ->
       void
-    | Namespace _ -> results.notSupported(def.pos, "namespace")
+    | Namespace _ -> tcenvl.notSupported(def.pos, "namespace")
     | Export(d) -> this.checkDef(tcenvl, Def(def.pos, d))
-    | ExportDefault _ -> results.notSupported(def.pos, "export default")
+    | ExportDefault _ -> tcenvl.notSupported(def.pos, "export default")
     | ExportNames _
     | ExportNamesFrom _ ->
       void
     | Import _ -> void
     | c @ Class _ -> this.class_(tcenvl, c)
-    | Enum _ -> results.notSupported(def.pos, "enum")
+    | Enum _ -> tcenvl.notSupported(def.pos, "enum")
     | VarDefs(kind, varDefs) -> this.varDefs(tcenvl, kind, varDefs)
     | td @ TypeDef _ -> this.typeDef(tcenvl, td)
     }
@@ -69,22 +68,21 @@ extension class TypeChecker {
     kind: VarDefKind,
     varDefs: Array<VarDef>,
   ): void {
-    results = tcenvl.results;
     for (varDef in varDefs) {
       kind match {
       | VDKConst() -> void
-      | VDKLet() -> results.notSupported(varDef.pat.pos, "toplevel let")
-      | VDKVar() -> results.notSupported(varDef.pat.pos, "toplevel var")
+      | VDKLet() -> tcenvl.notSupported(varDef.pat.pos, "toplevel let")
+      | VDKVar() -> tcenvl.notSupported(varDef.pat.pos, "toplevel var")
       };
       if (varDef.value is None()) {
-        results.error(Array[(varDef.pat.pos, "Missing definition")])
+        tcenvl.error(Array[(varDef.pat.pos, "Missing definition")])
       };
       literalType = varDef.value.flatMap(this.asConstExpr).map(TType::single);
       subst = Subst::mcreate(tcenvl);
       typeOpt = varDef.type match {
       | None() ->
         if (literalType is None()) {
-          results.error(Array[(varDef.pat.pos, "Missing type annotation")])
+          tcenvl.error(Array[(varDef.pat.pos, "Missing type annotation")])
         };
         literalType
       | Some(x) -> Some(this.tenv.normalize(subst, x))
@@ -92,7 +90,7 @@ extension class TypeChecker {
       typeOpt match {
       | Some(type) ->
         if (!type.isPrimitiveType(subst, this.tenv)) {
-          results.error(
+          tcenvl.error(
             Array[
               (
                 varDef.pat.pos,
@@ -123,7 +121,7 @@ extension class TypeChecker {
           subst,
           CGNode::toplevel(varDef.pat.pos.fileName),
         );
-        results.collectErrors(() ->
+        tcenvl.collectErrors(() ->
           this.checkSubType(
             tcenv,
             varDef.pat.pos,
@@ -141,15 +139,14 @@ extension class TypeChecker {
   }
 
   fun typeDef(tcenvl: mutable TCEnvLight, typeDef: TypeDef): void {
-    results = tcenvl.results;
-    results.collectErrors(() ->
+    tcenvl.collectErrors(() ->
       static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
     );
 
     subst = Subst::mcreate(tcenvl);
     !this.tenv = this.tenv.addTParams(subst, typeDef.tdefParams);
 
-    results.collectErrors(() -> _ = this.tenv.normalize(subst, typeDef.body));
+    tcenvl.collectErrors(() -> _ = this.tenv.normalize(subst, typeDef.body));
   }
 
   static fun checkTypeParams(
