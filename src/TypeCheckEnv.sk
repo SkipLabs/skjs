@@ -41,11 +41,11 @@ mutable class TCEnv private {
   private mutable counter: Int = 0,
 } extends TCEnvBase {
   static fun mcreate(
-    context: mutable SKStore.Context,
     subst: mutable Subst,
     callingContext: CGNode,
     results: mutable TCResults,
   ): mutable this {
+    context = subst.context;
     scope = Scope::mcreateToplevel();
     mutable static{context, subst, scope, callingContext, results}
   }

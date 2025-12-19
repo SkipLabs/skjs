@@ -43,7 +43,6 @@ extension class TypeChecker {
     | e @ Expr _ ->
       subst = Subst::mcreate{context};
       tcenv = TCEnv::mcreate(
-        context,
         subst,
         CGNode::toplevel(def.pos.fileName),
         results,
@@ -127,7 +126,6 @@ extension class TypeChecker {
       (varDef.value, typeOpt) match {
       | (Some(e), Some(type)) ->
         tcenv = TCEnv::mcreate(
-          context,
           subst,
           CGNode::toplevel(varDef.pat.pos.fileName),
           results,

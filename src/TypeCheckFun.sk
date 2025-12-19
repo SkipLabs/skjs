@@ -9,7 +9,7 @@ extension class TypeChecker {
     results: mutable TCResults,
   ): (this, mutable TCEnv) {
     static::checkTypeParams(fd.tparams, OptionalTypeParamsForbidden());
-    tcenv = TCEnv::mcreate(subst.context, subst, callingContext, results);
+    tcenv = TCEnv::mcreate(subst, callingContext, results);
     thisType = thisTypeOpt match {
     | None() ->
       /* Disallow this in non-methods */ TType::single(

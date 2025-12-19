@@ -81,12 +81,7 @@ extension class TypeChecker {
           if (!isInterface) {
             !this.super = Some((superCstr, super));
           };
-          tcenv = TCEnv::mcreate(
-            context,
-            subst,
-            CGNode::toplevel(fileName),
-            results,
-          );
+          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName), results);
           tcenv.recordClassHierarchy{
             child => c,
             parent => this.tenv.getClass(context, parentName),
@@ -112,12 +107,7 @@ extension class TypeChecker {
           parentName,
           parentTArgs.map(ty -> this.tenv.normalize(context, ty)),
         );
-        tcenv = TCEnv::mcreate(
-          context,
-          subst,
-          CGNode::toplevel(fileName),
-          results,
-        );
+        tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName), results);
         tcenv.recordClassHierarchy{
           child => c,
           parent => this.tenv.getClass(context, parentName),
@@ -169,12 +159,7 @@ extension class TypeChecker {
         | (_, None()) ->
           void
         | (Some(e), Some(type)) ->
-          tcenv = TCEnv::mcreate(
-            context,
-            subst,
-            CGNode::toplevel(fileName),
-            results,
-          );
+          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName), results);
           results.collectErrors(() ->
             this.checkSubType(
               tcenv,
