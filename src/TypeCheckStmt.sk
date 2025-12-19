@@ -74,7 +74,7 @@ extension class TypeChecker {
       tcenv.popScopeReplace(loopBody);
       _ = this.expr(tcenv, incr, false);
       tcenv.!scope = initScope;
-      tcenv.popScope(tcenv.subst, this.tenv, loopScope);
+      tcenv.popScope(this.tenv, loopScope);
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope)
     | Block(stmts) ->
@@ -101,7 +101,7 @@ extension class TypeChecker {
       loopBody = this.block(tcenv, block);
       tcenv.popScopeReplace(loopBody);
       tcenv.!scope = initScope;
-      tcenv.popScope(tcenv.subst, this.tenv, loopScope);
+      tcenv.popScope(this.tenv, loopScope);
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope)
 
@@ -114,7 +114,7 @@ extension class TypeChecker {
       loopBody = this.block(tcenv, block, Some((cond, true)));
       tcenv.popScopeReplace(loopBody);
       tcenv.!scope = scopeCopy;
-      tcenv.popScope(tcenv.subst, this.tenv, loopScope)
+      tcenv.popScope(this.tenv, loopScope)
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
       scopeCopy = tcenv.scope;
@@ -124,7 +124,7 @@ extension class TypeChecker {
         this.stmt(tcenv, stmt)
       };
       tcenv.!scope = scopeCopy;
-      tcenv.popScope(tcenv.subst, this.tenv, tryScope);
+      tcenv.popScope(this.tenv, tryScope);
 
       catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
@@ -151,7 +151,7 @@ extension class TypeChecker {
           this.stmt(tcenv, stmt)
         };
         tcenv.!scope = scopeCopy;
-        tcenv.popScope(tcenv.subst, this.tenv, catchScope)
+        tcenv.popScope(this.tenv, catchScope)
       | None() -> void
       };
 
@@ -163,7 +163,7 @@ extension class TypeChecker {
           this.stmt(tcenv, stmt)
         };
         tcenv.!scope = scopeCopy;
-        tcenv.popScope(tcenv.subst, this.tenv, finallyScope)
+        tcenv.popScope(this.tenv, finallyScope)
       | None() -> void
       }
     }
