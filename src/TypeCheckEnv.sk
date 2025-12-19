@@ -10,7 +10,7 @@ base class LocalObjectState {
   | LOUsed(PosRange)
 }
 
-mutable class TCEnv private (
+mutable class TCEnv private {
   context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
@@ -22,7 +22,7 @@ mutable class TCEnv private (
   Growth is limited by the provided type, if any.
   */ ,
   private mutable counter: Int = 0,
-) {
+} {
   static fun mcreate(
     context: mutable SKStore.Context,
     subst: mutable Subst,
@@ -30,7 +30,7 @@ mutable class TCEnv private (
     results: mutable TCResults,
   ): mutable this {
     scope = Scope::mcreateToplevel();
-    mutable static(context, subst, scope, callingContext, results)
+    mutable static{context, subst, scope, callingContext, results}
   }
 
   private mutable fun next(): Int {
