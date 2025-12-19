@@ -4,7 +4,22 @@
 
 module SKJS;
 
-mutable base class TCEnvBase private {} {}
+mutable base class TCEnvBase private {
+  context: mutable SKStore.Context,
+  results: mutable TCResults,
+} {
+  mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
+    this.results.recordClassHierarchy{child, parent}
+  }
+
+  mutable fun error(messages: Array<(PosRange, String)>): void {
+    this.results.error(messages)
+  }
+
+  mutable fun notSupported(pos: PosRange, what: String): void {
+    this.results.notSupported(pos, what)
+  }
+}
 
 base class LocalObjectState {
   children =
@@ -13,11 +28,9 @@ base class LocalObjectState {
 }
 
 mutable class TCEnv private {
-  context: mutable SKStore.Context,
   subst: mutable Subst,
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
-  results: mutable TCResults,
   localObjects: mutable Map<String, LocalObjectState> = mutable Map[]/*
   Tracks local objects, i.e. object literals bounded to variables.
   Those are allowed to grow if they haven't been used.
@@ -68,18 +81,6 @@ mutable class TCEnv private {
   mutable fun recordCalls(newCallees: CGNodes): void {
     caller = this.callingContext;
     this.results.recordCalls(caller, newCallees)
-  }
-
-  mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
-    this.results.recordClassHierarchy{child, parent}
-  }
-
-  mutable fun error(messages: Array<(PosRange, String)>): void {
-    this.results.error(messages)
-  }
-
-  mutable fun notSupported(pos: PosRange, what: String): void {
-    this.results.notSupported(pos, what)
   }
 }
 
