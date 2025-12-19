@@ -1,11 +1,9 @@
 module SKJS;
 
 extension class TypeChecker {
-  fun class_(
-    context: mutable SKStore.Context,
-    c: Class,
-    results: mutable TCResults,
-  ): void {
+  fun class_(tcenvl: mutable TCEnvLight, c: Class): void {
+    context = tcenvl.context;
+    results = tcenvl.results;
     constructor: ?ClassFieldTypeMethod = None();
     for (fieldType in c.fields) {
       fieldType match {

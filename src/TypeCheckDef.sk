@@ -58,7 +58,7 @@ extension class TypeChecker {
     | ExportNamesFrom _ ->
       void
     | Import _ -> void
-    | c @ Class _ -> this.class_(context, c, results)
+    | c @ Class _ -> this.class_(tcenvl, c)
     | Enum _ -> results.notSupported(def.pos, "enum")
     | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs, results)
     | td @ TypeDef _ -> this.typeDef(context, td, results)
