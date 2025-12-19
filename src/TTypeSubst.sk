@@ -22,11 +22,8 @@ mutable class Subst private {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
-  static fun mcreate{
-    context: mutable SKStore.Context,
-    results: mutable TCResults,
-  }: mutable Subst {
-    mutable Subst{context, results}
+  static fun mcreate(tcenvb: mutable TCEnvBase): mutable Subst {
+    mutable Subst{context => tcenvb.context, results => tcenvb.results}
   }
 
   /* Use Subst#clone to create a temporary subst when there is already

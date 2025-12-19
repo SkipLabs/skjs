@@ -614,7 +614,7 @@ class TEnv{
 
   fun normalize(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
     context = tcenvb.context;
-    subst = Subst::mcreate{context, results => tcenvb.results};
+    subst = Subst::mcreate(tcenvb);
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
@@ -812,10 +812,9 @@ class TEnv{
     pos: PosRange,
     tafun: TAFun,
   ): TFuns {
-    context = tcenvb.context;
     tafun match {
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
-      subst = Subst::mcreate{context, results => tcenvb.results};
+      subst = Subst::mcreate(tcenvb);
       TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
       funClauses = mutable Vector[];
       for (tparam in clauses) {

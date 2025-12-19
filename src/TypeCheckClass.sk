@@ -26,7 +26,7 @@ extension class TypeChecker {
     results.collectErrors(() ->
       static::checkTypeParams(c.tparams, OptionalTypeParamsForbidden())
     );
-    subst = Subst::mcreate{context, results};
+    subst = Subst::mcreate(tcenvl);
     targs = TArgs(
       c.tparams.map(tparam -> {
         // invariant(tparam.default is None()); // checked in checkTypeParams

@@ -30,7 +30,6 @@ extension class TypeChecker {
   }
 
   fun checkDef(tcenvl: mutable TCEnvLight, def: Def): void {
-    context = tcenvl.context;
     results = tcenvl.results;
     def.value match {
     | ExportImport _ -> results.notSupported(def.pos, "export import")
@@ -40,13 +39,13 @@ extension class TypeChecker {
     | ExportEq _ -> results.notSupported(def.pos, "export =")
     | Module _ -> results.notSupported(def.pos, "module")
     | e @ Expr _ ->
-      subst = Subst::mcreate{context, results};
+      subst = Subst::mcreate(tcenvl);
       tcenv = TCEnv::mcreate(subst, CGNode::toplevel(def.pos.fileName));
       ty = this.expr(tcenv, e, true);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ TopLevelFunDef _ ->
       cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
-      subst = Subst::mcreate{context, results};
+      subst = Subst::mcreate(tcenvl);
       this.funDef(subst, None(), fd, cgNode)
     | Declare _
     | ExportDeclare _ ->
@@ -70,7 +69,6 @@ extension class TypeChecker {
     kind: VarDefKind,
     varDefs: Array<VarDef>,
   ): void {
-    context = tcenvl.context;
     results = tcenvl.results;
     for (varDef in varDefs) {
       kind match {
@@ -82,7 +80,7 @@ extension class TypeChecker {
         results.error(Array[(varDef.pat.pos, "Missing definition")])
       };
       literalType = varDef.value.flatMap(this.asConstExpr).map(TType::single);
-      subst = Subst::mcreate{context, results};
+      subst = Subst::mcreate(tcenvl);
       typeOpt = varDef.type match {
       | None() ->
         if (literalType is None()) {
@@ -143,13 +141,12 @@ extension class TypeChecker {
   }
 
   fun typeDef(tcenvl: mutable TCEnvLight, typeDef: TypeDef): void {
-    context = tcenvl.context;
     results = tcenvl.results;
     results.collectErrors(() ->
       static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
     );
 
-    subst = Subst::mcreate{context, results};
+    subst = Subst::mcreate(tcenvl);
     !this.tenv = this.tenv.addTParams(subst, typeDef.tdefParams);
 
     results.collectErrors(() -> _ = this.tenv.normalize(subst, typeDef.body));
