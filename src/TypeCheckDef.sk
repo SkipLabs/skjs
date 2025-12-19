@@ -34,12 +34,12 @@ extension class TypeChecker {
     results: mutable TCResults,
   ): void {
     def.value match {
-    | ExportImport _ -> notSupported(def.pos, "export import")
+    | ExportImport _ -> results.notSupported(def.pos, "export import")
     | ImportExpr _ -> void
-    | Global _ -> notSupported(def.pos, "global")
-    | ExportAs _ -> notSupported(def.pos, "export as")
-    | ExportEq _ -> notSupported(def.pos, "export =")
-    | Module _ -> notSupported(def.pos, "module")
+    | Global _ -> results.notSupported(def.pos, "global")
+    | ExportAs _ -> results.notSupported(def.pos, "export as")
+    | ExportEq _ -> results.notSupported(def.pos, "export =")
+    | Module _ -> results.notSupported(def.pos, "module")
     | e @ Expr _ ->
       subst = Subst::mcreate{context};
       tcenv = TCEnv::mcreate(
@@ -57,15 +57,15 @@ extension class TypeChecker {
     | Declare _
     | ExportDeclare _ ->
       void
-    | Namespace _ -> notSupported(def.pos, "namespace")
+    | Namespace _ -> results.notSupported(def.pos, "namespace")
     | Export(d) -> this.checkDef(context, Def(def.pos, d), results)
-    | ExportDefault _ -> notSupported(def.pos, "export default")
+    | ExportDefault _ -> results.notSupported(def.pos, "export default")
     | ExportNames _
     | ExportNamesFrom _ ->
       void
     | Import _ -> void
     | c @ Class _ -> this.class_(context, c, results)
-    | Enum _ -> notSupported(def.pos, "enum")
+    | Enum _ -> results.notSupported(def.pos, "enum")
     | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs, results)
     | td @ TypeDef _ -> this.typeDef(context, td, results)
     }
@@ -80,8 +80,8 @@ extension class TypeChecker {
     for (varDef in varDefs) {
       kind match {
       | VDKConst() -> void
-      | VDKLet() -> notSupported(varDef.pat.pos, "toplevel let")
-      | VDKVar() -> notSupported(varDef.pat.pos, "toplevel var")
+      | VDKLet() -> results.notSupported(varDef.pat.pos, "toplevel let")
+      | VDKVar() -> results.notSupported(varDef.pat.pos, "toplevel var")
       };
       if (varDef.value is None()) {
         results.error(Array[(varDef.pat.pos, "Missing definition")])

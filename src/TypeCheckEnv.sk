@@ -92,6 +92,10 @@ mutable class TCResults private {
     }
   }
 
+  mutable fun notSupported(pos: PosRange, what: String): void {
+    this.error(Array[(pos, `Construction not supported: ${what} (ignored)`)])
+  }
+
   mutable fun collectErrors(f: () -> void): void {
     this.errorHandling match {
     | EHKeepGoing() ->
