@@ -132,15 +132,17 @@ extension class TypeChecker {
           CGNode::toplevel(varDef.pat.pos.fileName),
           results,
         );
-        this.checkSubType(
-          tcenv,
-          varDef.pat.pos,
-          "Invalid definition: value type is not compatible with type annotation",
-          literalType match {
-          | None() -> this.expr(tcenv, e, kind is VDKConst())
-          | Some(litType) -> litType
-          },
-          type,
+        results.collectErrors(() ->
+          this.checkSubType(
+            tcenv,
+            varDef.pat.pos,
+            "Invalid definition: value type is not compatible with type annotation",
+            literalType match {
+            | None() -> this.expr(tcenv, e, kind is VDKConst())
+            | Some(litType) -> litType
+            },
+            type,
+          )
         )
       | _ -> void
       }
