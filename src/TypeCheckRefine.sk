@@ -185,7 +185,7 @@ extension class TypeChecker {
         this.tenv.new(
           tcenv.context,
           className,
-          this.tenv.makeTArgs(tcenv.context, tcenv.subst, className),
+          this.tenv.makeTArgs(tcenv, className),
         ),
         (x, y) -> this.checkSubType(tcenv, e.pos, "Invalid instanceof", x, y),
       )

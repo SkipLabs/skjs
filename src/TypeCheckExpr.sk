@@ -703,7 +703,7 @@ extension class TypeChecker {
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
         if (targsAst.size() == 0) {
-          !tArgs = this.tenv.makeTArgs(tcenv.context, tcenv.subst, className)
+          !tArgs = this.tenv.makeTArgs(tcenv, className)
         };
         cstr = this.tenv.newConstructor(tcenv.context, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);

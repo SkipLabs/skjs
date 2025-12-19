@@ -145,18 +145,14 @@ class TEnv{
     };
   }
 
-  fun makeTArgs(
-    context: mutable SKStore.Context,
-    subst: mutable Subst,
-    className: Name,
-  ): Array<TType> {
-    this.getClass(context, className).tparams.map(tparam -> {
-      tvar = subst.gen(className.pos);
+  fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
+    this.getClass(tcenv.context, className).tparams.map(tparam -> {
+      tvar = tcenv.subst.gen(className.pos);
       ty = TType::var(tvar);
       tparam.constraint match {
       | None() -> ty
       | Some(cstr) ->
-        TType::union(subst, this, this.normalize(context, cstr), ty)
+        TType::union(tcenv.subst, this, this.normalize(tcenv.context, cstr), ty)
       }
     })
   }
