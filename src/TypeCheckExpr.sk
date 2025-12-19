@@ -713,8 +713,15 @@ extension class TypeChecker {
         subExprTy
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes -> stypes.singleElt()) match {
-        | Some(TObject(TFields{new => Some(f)}, _pos)) ->
+        | Some(TObject(TFields{new => Some((false, f))}, _pos)) ->
           this.call(tcenv, pos, f, tArgs, args, mostPrecise)
+        | Some(TObject(TFields{new => Some((true, _))}, objPos)) ->
+          typingError(
+            Array[
+              (pos, "Invalid new"),
+              (objPos, `${subExprTy} may not have a constructor`),
+            ],
+          )
         | Some(TObject(TFields{new => None()}, objPos)) ->
           typingError(
             Array[

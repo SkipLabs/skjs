@@ -725,7 +725,7 @@ class TFields{
      TODO: if a field name is included an index key type, then its
       type must be a subtype of the index key type
   */
-  new: ?TFuns,
+  new: ?(/* optional */ Bool, TFuns),
   call: ?(/* optional */ Bool, TFuns),
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
@@ -748,7 +748,7 @@ class TFields{
         fields.sortedBy(x ~> x.name).values(),
       ),
       indexes,
-      new,
+      new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
     }
   }
@@ -765,7 +765,7 @@ class TFields{
     TFields{
       fields => this.fields.map(fField),
       indexes => this.indexes.map(fIndexField),
-      new => this.new.map(fTFuns),
+      new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
     }
   }

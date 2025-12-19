@@ -284,7 +284,7 @@ extension class TFields {
       }
     };
     call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
-    new = TFuns::unionOpt(subst, tenv, fields1.new, fields2.new);
+    new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
     TFields{fields, indexes, call, new}
   }
 

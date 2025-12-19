@@ -297,10 +297,10 @@ extension class TFields {
     | (None(), new)
     | (new, None()) ->
       new
-    | (Some(new1), Some(new2)) ->
+    | (Some((opt1, new1)), Some((opt2, new2))) ->
       TFuns::inter(subst, tenv, new1, new2) match {
       | None() -> return None()
-      | some @ Some _ -> some
+      | Some(f) -> Some((opt1 && opt2, f))
       }
     };
     fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->

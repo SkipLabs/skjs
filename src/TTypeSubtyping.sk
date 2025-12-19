@@ -66,14 +66,15 @@ extension class TFields {
     | STOk() -> void
     | err @ STError _ -> return err
     };
-    (fields1.new, fields2.new) match {
-    | (_, None()) -> void
-    | (None(), Some _) -> return STMissingConstructor()
-    | (Some(new1), Some(new2)) ->
-      TFuns::isSub(subst, tenv, new1, new2) match {
-      | err @ STError _ -> return err
-      | STOk() -> void
-      }
+    TFields::isSubOptTFuns(
+      subst,
+      tenv,
+      fields1.new,
+      fields2.new,
+      STMissingConstructor,
+    ) match {
+    | STOk() -> void
+    | err @ STError _ -> return err
     };
     index1o = fields1.maybeSingleIndex();
     index2o = fields2.maybeSingleIndex();
