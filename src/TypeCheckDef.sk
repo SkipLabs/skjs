@@ -60,17 +60,18 @@ extension class TypeChecker {
     | Import _ -> void
     | c @ Class _ -> this.class_(tcenvl, c)
     | Enum _ -> results.notSupported(def.pos, "enum")
-    | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs, results)
+    | VarDefs(kind, varDefs) -> this.varDefs(tcenvl, kind, varDefs)
     | td @ TypeDef _ -> this.typeDef(context, td, results)
     }
   }
 
   fun varDefs(
-    context: mutable SKStore.Context,
+    tcenvl: mutable TCEnvLight,
     kind: VarDefKind,
     varDefs: Array<VarDef>,
-    results: mutable TCResults,
   ): void {
+    context = tcenvl.context;
+    results = tcenvl.results;
     for (varDef in varDefs) {
       kind match {
       | VDKConst() -> void
