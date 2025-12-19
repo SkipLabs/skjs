@@ -1,9 +1,13 @@
-// INCOMPLETENESS: SKJS does not narrow unknown after null/undefined checks
+// INCOMPLETENESS: Cannot subtract from top (unknown)
 //
-// Root cause: diff(Top, nullish) = Top (unchanged)
-// The diff operation returns Top unchanged when left.stypes = None.
+// This is a REPRESENTATION LIMITATION, not a missing implementation case.
+// The clause ⟨∅ | ⊤⟩ (top) has no finite tag-set to subtract from.
+// diff(⟨∅|⊤⟩, ⟨∅|{null,undefined}⟩) = ⟨∅|⊤⟩ (unchanged)
 //
-// Note: TypeScript requires --strictNullChecks to narrow unknown to {}.
+// Note: TypeScript's {} means "non-nullish top" (all values except null/undefined).
+// In SKJS, {} means an empty object type (tag 9 only).
+//
+// See: docs/skjs-type-soundness.tex, Section 7.2
 
 // PART 1: Typeof narrowing on unknown IS supported
 function typeofNarrowingWorks(x: unknown): number {
@@ -13,15 +17,15 @@ function typeofNarrowingWorks(x: unknown): number {
   return 0;
 }
 
-// PART 2: Null/undefined narrowing on unknown is NOT supported (the incompleteness)
-// This is a valid TypeScript program that SKJS incorrectly rejects.
+// PART 2: Subtracting null/undefined from unknown is NOT supported
+// This is a valid TypeScript program (--strictNullChecks) that SKJS rejects.
 function nullCheckFails(x: unknown): {} {
   if (x !== null && x !== undefined) {
-    // TypeScript (with --strictNullChecks): x is narrowed to {} here
-    // SKJS: x is still unknown (diff cannot remove from Top)
+    // TypeScript: x narrowed to {} (non-nullish top)
+    // SKJS: x still unknown (⊤ has no tags to subtract from)
     return x;  // SKJS ERROR: 'unknown' not assignable to '{}'
   }
   return {};
 }
 
-// This program is valid TypeScript (with --strictNullChecks) but rejected by SKJS.
+// Could be implemented: add excluded-tag or non-nullish flag to representation.

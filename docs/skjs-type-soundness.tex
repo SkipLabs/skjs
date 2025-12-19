@@ -846,14 +846,11 @@ Let $t=(\insts,\clauses)$.
 We prove $\sem{t}\cap P \subseteq \sem{\refineop^{f,g}(t)}$ by cases on membership in $\sem{\insts} \cup \sem{\clauses}$.
 \begin{itemize}
 \item If $v \in \sem{\insts}\cap P$, then $v \in \sem{\insts} \subseteq \sem{\refineop^{f,g}(t)}$ since refinement leaves $\insts$ unchanged.
-\item If $v \in \sem{\clauses}\cap P$, then $v \in \sem{(\vars,\stypes)}$ for some clause $(\vars,\stypes)$ in $\clauses$.
-By clause semantics (Definition~\ref{def:clause-clauses}), $v \in \bigcap_{w \in \vars} \sem{w}$ and $v \in \sem{\stypes}$.
-If $\stypes=\mathsf{None}$, then $\refineop_{\Clause}^{f,g}(\vars,\mathsf{None})=(\vars,\mathsf{None})$ and the clause remains top, so $v$ is still included.
-If $\stypes=\mathsf{Some}(S)$, then $v \in \sem{S} = \bigcup_{s \in S} \sem{s}$, so $v \in \sem{s}$ for some $s \in S$.
-By soundness of $(f,g)$ for $P$ and $v\in P$, we have $f(s)=\mathsf{true}$ and $v\in \sem{g(s)}$.
-Hence $v \in \sem{\refineop_{\STypes}^{f,g}(S)}$.
-The refined clause is $(\vars, \mathsf{Some}(\refineop_{\STypes}^{f,g}(S)))$, and since $\vars$ is unchanged and $v \in \bigcap_{w \in \vars} \sem{w}$, we have $v \in \sem{(\vars, \mathsf{Some}(\refineop_{\STypes}^{f,g}(S)))}$.
-Therefore $v \in \sem{\refineop_{\Clauses}^{f,g}(\clauses)}$.
+\item If $v \in \sem{\clauses}\cap P$, then $v \in \sem{\clause{V}{S}}$ for some clause in $\clauses$.
+By clause semantics, $v \in \bigcap_{w \in V} \sem{w}$ and $v \in \sem{S}$.
+If $S=\top$, refinement leaves the clause unchanged and $v$ is still included.
+Otherwise $v \in \sem{s}$ for some $s \in S$; by soundness of $(f,g)$, $f(s)=\mathsf{true}$ and $v\in \sem{g(s)}$.
+Hence $v \in \sem{\refineop_{\STypes}^{f,g}(S)}$ and $v \in \sem{\clause{V}{\refineop_{\STypes}^{f,g}(S)}}$.
 \end{itemize}
 Combining cases yields the desired inclusion.
 \end{proof}
@@ -1682,8 +1679,8 @@ But the true set difference is:
 \sem{c_1} \setminus \sem{c_2} = \Val \setminus (\sem{\texttt{null}} \cup \sem{\texttt{undefined}}) \neq \Val
 \]
 The result is incomplete: $\diff$ returns \texttt{unknown} instead of the narrowed non-nullish type.
-The clause diff cannot ``subtract from top'' because $\mathsf{None}$ does not enumerate tags---there is no finite set from which to remove the subtracted alternatives.
-The implementation in \texttt{Clause::diff} simply returns the left clause unchanged when $\stypes_1 = \mathsf{None}$.
+The clause diff cannot ``subtract from top'' because $\top$ does not enumerate tags---there is no finite set from which to remove the subtracted alternatives.
+The implementation in \texttt{Clause::diff} returns the left clause unchanged when $S_1 = \top$.
 
 \paragraph{Could it be implemented?}
 Yes, but it requires a representation extension.
