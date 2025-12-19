@@ -1325,8 +1325,6 @@ base class STError extends STResult {
   children =
   | STNoConstraint()
   | STMissingField(String)
-  | STMissingCall()
-  | STMissingConstructor()
   | STMissingThis()
   | STMissingParameter()
   | STMissingSpread()
@@ -1374,6 +1372,12 @@ base class STError extends STResult {
     | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
     }
   }
+}
+
+base class STErrorNoArg final () extends STError {
+  children =
+  | STMissingCall
+  | STMissingConstructor
 }
 
 module end;
