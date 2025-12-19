@@ -287,10 +287,10 @@ extension class TFields {
     | (None(), call)
     | (call, None()) ->
       call
-    | (Some(call1), Some(call2)) ->
+    | (Some((opt1, call1)), Some((opt2, call2))) ->
       TFuns::inter(subst, tenv, call1, call2) match {
       | None() -> return None()
-      | some @ Some _ -> some
+      | Some(f) -> Some((opt1 && opt2, f))
       }
     };
     new = (fields1.new, fields2.new) match {

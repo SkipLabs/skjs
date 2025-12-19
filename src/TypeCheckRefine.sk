@@ -98,6 +98,7 @@ extension class TypeChecker {
     | "object" ->
       filter = x ~>
         x match {
+        | TObject(TFields{call => Some((true, _))}, _) -> true
         | TObject(TFields{call => None()}, _)
         | TAlgebraic _
         | TPrimUnit(TNull(), _)
@@ -106,18 +107,33 @@ extension class TypeChecker {
           target
         | _ -> !target
         };
+      map = x ~>
+        x match {
+        | TObject(tFields @ TFields{call => Some((true, f))}, pos) ->
+          call = if (target) None() else Some((false, f));
+          TObject(tFields with {call}, pos)
+        | _ -> x
+        };
       default = if (target) Some(TObject(TFields::empty(), typePos)) else {
         None()
       };
-      this.setLocal(tcenv, local, default, filter)
+      this.setLocal(tcenv, local, default, filter, map)
     | "function" ->
       filter = x ~>
         x match {
-        | TObject(TFields{call => Some _}, _) -> target
+        | TObject(TFields{call => Some((true, _))}, _) -> true
+        | TObject(TFields{call => Some((false, _))}, _) -> target
         | _ -> !target
         };
+      map = x ~>
+        x match {
+        | TObject(tFields @ TFields{call => Some((true, f))}, pos) ->
+          call = if (target) Some((false, f)) else None();
+          TObject(tFields with {call}, pos)
+        | _ -> x
+        };
       default = None();
-      this.setLocal(tcenv, local, default, filter)
+      this.setLocal(tcenv, local, default, filter, map)
     | _ ->
       typingError(
         Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],

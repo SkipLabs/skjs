@@ -516,7 +516,7 @@ class ATFullType(fullType: TType) extends ArrayType {
       popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(TObject(TFields{call => Some(TFuns(met, _))}, _)) ->
+      | Some(TObject(TFields{call => Some((_, TFuns(met, _)))}, _)) ->
         Some(met.retType)
       | _ -> None()
       }
@@ -712,7 +712,7 @@ class TIndexField(
   }
 }
 
-class TFields private {
+class TFields{
   fields: InternalKeyedArrayMap<String, TField>,
   indexes: Array<TIndexField>,
   /* There can be several index fields.
@@ -726,7 +726,7 @@ class TFields private {
       type must be a subtype of the index key type
   */
   new: ?TFuns,
-  call: ?TFuns,
+  call: ?(/* optional */ Bool, TFuns),
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{
@@ -749,7 +749,7 @@ class TFields private {
       ),
       indexes,
       new,
-      call,
+      call => call.map(tfuns ~> (false, tfuns)),
     }
   }
 
@@ -766,7 +766,7 @@ class TFields private {
       fields => this.fields.map(fField),
       indexes => this.indexes.map(fIndexField),
       new => this.new.map(fTFuns),
-      call => this.call.map(fTFuns),
+      call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
     }
   }
 

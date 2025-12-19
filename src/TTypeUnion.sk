@@ -283,9 +283,25 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    call = TFuns::unionOpt(subst, tenv, fields1.call, fields2.call);
+    call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
     new = TFuns::unionOpt(subst, tenv, fields1.new, fields2.new);
     TFields{fields, indexes, call, new}
+  }
+
+  static fun unionOptTFuns(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1opt: ?(Bool, TFuns),
+    f2opt: ?(Bool, TFuns),
+  ): ?(Bool, TFuns) {
+    (f1opt, f2opt) match {
+    | (None(), Some((_, f)))
+    | (Some((_, f)), None()) ->
+      Some((true, f))
+    | (Some((opt1, f1)), Some((opt2, f2))) ->
+      Some((opt1 || opt2, TFuns::union(subst, tenv, f1, f2)))
+    | (None(), None()) -> None()
+    }
   }
 }
 
