@@ -6,10 +6,9 @@ extension class TypeChecker {
     thisTypeOpt: ?TType,
     fd: FunDef<SimpleFieldName>,
     callingContext: CGNode,
-    results: mutable TCResults,
   ): (this, mutable TCEnv) {
     static::checkTypeParams(fd.tparams, OptionalTypeParamsForbidden());
-    tcenv = TCEnv::mcreate(subst.context, subst, callingContext, results);
+    tcenv = TCEnv::mcreate(subst, callingContext);
     thisType = thisTypeOpt match {
     | None() ->
       /* Disallow this in non-methods */ TType::single(
@@ -26,28 +25,28 @@ extension class TypeChecker {
         param.optional match {
         | None() -> void
         | Some(optionalPos) ->
-          typingError(Array[(optionalPos, "... cannot be optional")])
+          subst.error(Array[(optionalPos, "... cannot be optional")])
         };
         param.default match {
         | None() -> void
         | Some(defaultExpr) ->
-          typingError(
+          subst.error(
             Array[(defaultExpr.pos, "... cannot have a default value")],
           )
         };
         if (i != fd.params.size() - 1) {
-          typingError(Array[(restPos, "... must be the last parameter")])
+          subst.error(Array[(restPos, "... must be the last parameter")])
         }
       | None() -> void
       };
       for (modifier in param.modifiers.modifiers) {
-        typingError(
+        subst.error(
           Array[(modifier.pos, `Forbidden modifier for a function parameter`)],
         )
       };
       paramType = param.type match {
       | None() -> typingError(Array[(param.pos, "Missing type annotation")])
-      | Some(ty) -> this.tenv.normalize(subst.context, ty)
+      | Some(ty) -> this.tenv.normalize(subst, ty)
       };
       param.optional match {
       | None() -> void
@@ -65,7 +64,7 @@ extension class TypeChecker {
         param.optional match {
         | None() -> void
         | Some(optionalPos) ->
-          typingError(
+          subst.error(
             Array[
               (
                 optionalPos,
@@ -77,12 +76,14 @@ extension class TypeChecker {
         savedScope = tcenv.scope;
         paramScope = tcenv.mcreateSubScope{isLoop => false};
         tcenv.!scope = paramScope;
-        this.checkSubType(
-          tcenv,
-          defaultExpr.pos,
-          "Default value doesn't have the expected type",
-          this.expr(tcenv, defaultExpr, true),
-          paramType,
+        subst.collectErrors(() ->
+          this.checkSubType(
+            tcenv,
+            defaultExpr.pos,
+            "Default value doesn't have the expected type",
+            this.expr(tcenv, defaultExpr, true),
+            paramType,
+          )
         );
         tcenv.!scope = savedScope
       };
@@ -100,9 +101,7 @@ extension class TypeChecker {
       };
       tcenv.scope.bind(paramName, paramType, true)
     };
-    !this.retType = fd.retType.i1.map(rty ->
-      this.tenv.normalize(subst.context, rty)
-    );
+    !this.retType = fd.retType.i1.map(rty -> this.tenv.normalize(subst, rty));
     (this, tcenv)
   }
 
@@ -111,7 +110,6 @@ extension class TypeChecker {
     thisTypeOpt: ?(ClassKind, TType),
     fd: FunDefWithModifiers<SimpleFieldName>,
     cgNode: CGNode,
-    results: mutable TCResults,
   ): void {
     for (modifier in fd.modifiers.modifiers) {
       modifier match {
@@ -119,7 +117,7 @@ extension class TypeChecker {
       | ModStatic(_) -> !thisTypeOpt = None()
       | unsupported ->
         // TODO: protected, private, public, abstract, readonly
-        typingError(
+        subst.error(
           Array[
             (
               modifier.pos,
@@ -134,41 +132,49 @@ extension class TypeChecker {
       thisTypeOpt.map(x -> x.i1),
       fd,
       cgNode,
-      results,
     );
     if (this.retType is None()) {
-      typingError(Array[(fd.retType.i0, "Missing return type")])
+      subst.error(Array[(fd.retType.i0, "Missing return type")])
     };
-    retType = this.retType.fromSome();
     fd.isAsync match {
     | None() -> !this.isAsync = false
     | Some(asyncPos) ->
       !this.isAsync = true;
-      tvar = tcenv.subst.gen(asyncPos);
-      type = TType::var(tvar);
-      this.checkSubType(
-        tcenv,
-        asyncPos,
-        "Async functions must return an object of type Promise<_>",
-        retType,
-        TType::single(TPromise(type, asyncPos)),
-      )
+      this.retType match {
+      | None() -> void
+      | Some(retType) ->
+        tvar = tcenv.subst.gen(asyncPos);
+        type = TType::var(tvar);
+        subst.collectErrors(() ->
+          this.checkSubType(
+            tcenv,
+            asyncPos,
+            "Async functions must return an object of type Promise<_>",
+            retType,
+            TType::single(TPromise(type, asyncPos)),
+          )
+        )
+      }
     };
     fd.body match {
     | FDBNone(pos) ->
       if (thisTypeOpt is Some((CKClass(), _))) {
-        typingError(Array[(pos, "Missing definition")])
+        subst.error(Array[(pos, "Missing definition")])
       }
     | FDBSome(body) ->
       if (thisTypeOpt is Some((CKInterface(), _))) {
-        typingError(Array[(fd.pos, "An interface cannot implement a method")])
+        subst.error(Array[(fd.pos, "An interface cannot implement a method")])
       };
-      _ = this.block(tcenv, body);
-      term = StmtTermination::block(body);
-      if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
-        typingError(
-          Array[(fd.pos, "This function may not always return a value")],
-        )
+      this.retType match {
+      | None() -> void
+      | Some(retType) ->
+        _ = this.block(tcenv, body);
+        term = StmtTermination::block(body);
+        if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
+          subst.error(
+            Array[(fd.pos, "This function may not always return a value")],
+          )
+        }
       }
     };
   }

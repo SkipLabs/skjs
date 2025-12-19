@@ -97,7 +97,7 @@ class TEnv{
     for (i => tparam in clauses) {
       targ = if (i < targs.targs.size()) targs.targs[i] else {
         tparam.default match {
-        | Some(default) -> this.normalize(subst.context, default)
+        | Some(default) -> this.normalize(subst, default)
         | None() ->
           typingError(
             Array[
@@ -112,7 +112,7 @@ class TEnv{
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
-        cstrTy = this.normalize(subst.context, cstr);
+        cstrTy = this.normalize(subst, cstr);
         TType::isSub(subst, this, targ, cstrTy) match {
         | STOk() -> void
         | STError _ ->
@@ -129,8 +129,8 @@ class TEnv{
     };
 
     tdef match {
-    | ta @ TypeDef _ -> this.normalize(subst.context, ta.body)
-    | Class _ -> this.new(subst.context, name, targs.targs)
+    | ta @ TypeDef _ -> this.normalize(subst, ta.body)
+    | Class _ -> this.new(subst, name, targs.targs)
     | Enum _ -> typingError(Array[(name.pos, "TODO: instantiate Enum")])
     }
   }
@@ -145,38 +145,34 @@ class TEnv{
     };
   }
 
-  fun makeTArgs(
-    context: mutable SKStore.Context,
-    subst: mutable Subst,
-    className: Name,
-  ): Array<TType> {
-    this.getClass(context, className).tparams.map(tparam -> {
-      tvar = subst.gen(className.pos);
+  fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
+    this.getClass(tcenv.context, className).tparams.map(tparam -> {
+      tvar = tcenv.subst.gen(className.pos);
       ty = TType::var(tvar);
       tparam.constraint match {
       | None() -> ty
       | Some(cstr) ->
-        TType::union(subst, this, this.normalize(context, cstr), ty)
+        TType::union(tcenv.subst, this, this.normalize(tcenv, cstr), ty)
       }
     })
   }
 
   fun new(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldTypeValue ~> Bool = _ ~> true,
   ): TType {
-    obj = this.newObject(context, className, targs, filter);
+    obj = this.newObject(tcenvb, className, targs, filter);
     TType::single(obj)
   }
 
   fun newConstructor(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
   ): CstrType {
-    c = this.getClass(context, className);
+    c = this.getClass(tcenvb.context, className);
     if (c.tparams.size() != targs.size()) {
       typingError(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
@@ -184,23 +180,17 @@ class TEnv{
     };
     visitedClasses = SortedSet[];
     CstrType(
-      this.findConstructor(
-        context,
-        visitedClasses,
-        className,
-        c.tparams,
-        targs,
-      ),
+      this.findConstructor(tcenvb, visitedClasses, className, c.tparams, targs),
     )
   }
 
   fun newObject(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldTypeValue ~> Bool = _ ~> true,
   ): TObject {
-    c = this.getClass(context, className);
+    c = this.getClass(tcenvb.context, className);
     if (c.tparams.size() != targs.size()) {
       typingError(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
@@ -212,7 +202,7 @@ class TEnv{
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
     constructor = this.addFields(
-      context,
+      tcenvb,
       fields,
       indexes,
       visitedClasses,
@@ -237,22 +227,22 @@ class TEnv{
     )
   }
 
-  fun newStatic(context: mutable SKStore.Context, className: Name): TType {
-    obj = this.newStaticObject(context, className);
+  fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {
+    obj = this.newStaticObject(tcenvb, className);
     TType::single(obj)
   }
 
   private fun newStaticObject(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     className: Name,
   ): TObject {
-    c = this.getClass(context, className);
+    c = this.getClass(tcenvb.context, className);
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
     indexes = mutable Vector[];
     constructor = this.addFields(
-      context,
+      tcenvb,
       fields,
       indexes,
       visitedClasses,
@@ -264,7 +254,7 @@ class TEnv{
     pos = className.pos;
     new = constructor match {
     | Some(tfuns) -> tfuns
-    | None() -> this.makeEmptyConstructor(context, pos, className, c)
+    | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
     TObject(
       TFields::create{
@@ -277,7 +267,7 @@ class TEnv{
   }
 
   private fun makeEmptyConstructor(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     pos: PosRange,
     className: Name,
     c: Class,
@@ -286,15 +276,15 @@ class TEnv{
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
     tafun = TAFun(false, c.tparams, Array[], retType, cgNode);
-    this.normalizeFun(context, pos, tafun)
+    this.normalizeFun(tcenvb, pos, tafun)
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
   private fun makeTParam(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     tparam: TypeParam,
   ): TParamWithConstraint {
-    cstr = tparam.constraint.map(cstr -> this.normalize(context, cstr));
+    cstr = tparam.constraint.map(cstr -> this.normalize(tcenvb, cstr));
     TParamWithConstraint(
       tparam.name.value,
       tparam.name.pos.fileName,
@@ -309,7 +299,7 @@ class TEnv{
         subst,
         this,
         tparam.name.pos,
-        this.makeTParam(subst.context, tparam),
+        this.makeTParam(subst, tparam),
       );
       !this.subst[tparam.name.value] = (false, ty)
     };
@@ -365,7 +355,7 @@ class TEnv{
   }
 
   private fun addFields(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     acc: mutable Map<String, TField>,
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
@@ -375,7 +365,7 @@ class TEnv{
     filter: ClassFieldTypeValue ~> Bool,
   ): /* Type of constructor */ ?TFuns {
     (!this, cls) = this.processClassSetup(
-      context,
+      tcenvb.context,
       visitedClasses,
       isStatic is None(),
       className,
@@ -385,14 +375,14 @@ class TEnv{
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
         _ = this.addFields(
-          context,
+          tcenvb,
           acc,
           indexes,
           visitedClasses,
           isStatic,
           parentName,
           if (isStatic is Some _) Array[] else {
-            paramTArgs.map(targ -> this.normalize(context, targ))
+            paramTArgs.map(targ -> this.normalize(tcenvb, targ))
           },
           filter,
         )
@@ -431,7 +421,7 @@ class TEnv{
         field.name match {
         | FNNormal(fdName) ->
           fieldName = fdName.value;
-          type = this.normalize(context, fieldTy);
+          type = this.normalize(tcenvb, fieldTy);
           TField::create(
             field.pos,
             fieldName,
@@ -447,8 +437,8 @@ class TEnv{
           | Some(f) -> acc![fieldName] = f
           }
         | FNColon(indexName, indexType) ->
-          keyType = this.normalize(context, indexType);
-          valueType = this.normalize(context, fieldTy);
+          keyType = this.normalize(tcenvb, indexType);
+          valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             TIndexField(indexName.pos, indexName.value, keyType, valueType),
           )
@@ -467,7 +457,7 @@ class TEnv{
         | None() -> void
         };
         !constructor = Some(
-          this.makeConstructor(context, className, isStatic.fromSome(), fd),
+          this.makeConstructor(tcenvb, className, isStatic.fromSome(), fd),
         )
       | fd @ ClassFieldTypeMethod _ ->
         metIsStatic = fd.isStatic();
@@ -480,7 +470,7 @@ class TEnv{
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
-        metTFuns = this.funDecl(context, !metIsStatic, fd, cgNode);
+        metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(
           TObject(TFields::create{call => Some(metTFuns)}, metTFuns.pos),
         );
@@ -495,33 +485,33 @@ class TEnv{
   }
 
   private fun findConstructor(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?TFuns {
     this.findConstructorMethod(
-      context,
+      tcenvb,
       visitedClasses,
       className,
       tparams,
       targs,
     ) match {
     | None() -> None()
-    | Some(fd) -> Some(this.makeConstructor(context, className, tparams, fd))
+    | Some(fd) -> Some(this.makeConstructor(tcenvb, className, tparams, fd))
     }
   }
 
   private fun findConstructorMethod(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?ClassFieldTypeMethod {
     (!this, cls) = this.processClassSetup(
-      context,
+      tcenvb.context,
       visitedClasses,
       true,
       className,
@@ -540,11 +530,11 @@ class TEnv{
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
         return this.findConstructorMethod(
-          context,
+          tcenvb,
           visitedClasses,
           parentName,
           tparams,
-          paramTArgs.map(targ -> this.normalize(context, targ)),
+          paramTArgs.map(targ -> this.normalize(tcenvb, targ)),
         )
       | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
       }
@@ -559,7 +549,7 @@ class TEnv{
   // class's type parameters and return type.
 
   fun makeConstructor(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     className: Name,
     tparams: Array<TypeParam>,
     fd: ClassFieldTypeMethod,
@@ -585,7 +575,7 @@ class TEnv{
       typingError(Array[(x.pos, "Unexpected annotation for constructor")])
     };
     tafun = TAFun(false, tparams, params, retType, cgNode);
-    this.normalizeFun(context, fd.pos, tafun)
+    this.normalizeFun(tcenvb, fd.pos, tafun)
   }
 
   private fun convertParam(param: Param): TAFunParam {
@@ -601,7 +591,7 @@ class TEnv{
   }
 
   fun funDecl(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     isMethod: Bool,
     fd: FunDef<FunDefName>,
     cgNode: CGNode,
@@ -619,11 +609,11 @@ class TEnv{
       retType,
       cgNode,
     );
-    this.normalizeFun(context, fd.pos, tafun)
+    this.normalizeFun(tcenvb, fd.pos, tafun)
   }
 
-  fun normalize(context: mutable SKStore.Context, typeAst: Type): TType {
-    subst = Subst::mcreate{context};
+  fun normalize(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
+    subst = Subst::mcreate(tcenvb);
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
@@ -633,14 +623,14 @@ class TEnv{
     | TAAsserts _ -> typingError(Array[(pos, "TODO asserts")])
     | TAIs _ -> typingError(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
-      targetType = this.normalize(context, ty);
+      targetType = this.normalize(tcenvb, ty);
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
-      tfuns = this.normalizeFun(context, pos, tafun);
+      tfuns = this.normalizeFun(tcenvb, pos, tafun);
       TType::single(TObject(TFields::create{call => Some(tfuns)}, pos))
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
-      tfuns = this.normalizeFun(context, tyPos, tafun);
+      tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
       TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
@@ -660,16 +650,16 @@ class TEnv{
         };
         TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
-        c = this.getClass(context, className);
+        c = this.getClass(tcenvb.context, className);
         tfuns = this.findConstructorMethod(
-          context,
+          tcenvb,
           SortedSet[],
           className,
           c.tparams,
-          targs.map(x -> this.normalize(context, x)),
+          targs.map(x -> this.normalize(tcenvb, x)),
         ) match {
-        | None() -> this.makeEmptyConstructor(context, pos, className, c)
-        | Some(fd) -> this.makeConstructor(context, className, c.tparams, fd)
+        | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
+        | Some(fd) -> this.makeConstructor(tcenvb, className, c.tparams, fd)
         };
         TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
@@ -685,7 +675,7 @@ class TEnv{
         },
       )
     | TAObject(fields) ->
-      (algebraicBranchField, tFields) = this.createTFields(context, fields);
+      (algebraicBranchField, tFields) = this.createTFields(tcenvb, fields);
       createObject(pos, algebraicBranchField, tFields)
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
@@ -694,7 +684,7 @@ class TEnv{
       TType::single(TObject(TFields::empty(), pos))
 
     | TAArray(ty) ->
-      TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(context, ty)]))
+      TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(tcenvb, ty)]))
 
     | TAInst(Name(p, "void"), targs) ->
       if (targs.size() != 0) {
@@ -710,7 +700,7 @@ class TEnv{
       if (targs.size() != 1) {
         typingError(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TPromise(this.normalize(context, targs[0]), pos))
+      TType::single(TPromise(this.normalize(tcenvb, targs[0]), pos))
     | TAInst(Name(p, "unknown"), targs) ->
       if (targs.size() != 0) {
         typingError(Array[(p, "Invalid number of type arguments")])
@@ -757,7 +747,7 @@ class TEnv{
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.pos, "Cyclic definition")])
       } else {
-        tdef = this.defMap.getType(context, n);
+        tdef = this.defMap.getType(tcenvb.context, n);
         tparams = tdef match {
         | TypeDef{tdefParams} -> tdefParams
         | Class{tparams} -> tparams
@@ -781,21 +771,21 @@ class TEnv{
         if (this.seenInstantiate.contains(n.value)) {
           !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
         };
-        TType::inst(n, TArgs(targs.map(x -> this.normalize(context, x))))
+        TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
       }
     | TAUnion(ty1, ty2) ->
       TType::union(
         subst,
         this,
-        this.normalize(context, ty1),
-        this.normalize(context, ty2),
+        this.normalize(tcenvb, ty1),
+        this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | TAInter(ty1, ty2) ->
       TType::inter(
         subst,
         this,
-        this.normalize(context, ty1),
-        this.normalize(context, ty2),
+        this.normalize(tcenvb, ty1),
+        this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | TATuple(tupleElts) ->
       typeVec = mutable Vector[];
@@ -811,19 +801,19 @@ class TEnv{
         }
       };
       types = typeVec.toArray();
-      TType::single(TTuple(types.map(ty -> this.normalize(context, ty)), pos))
+      TType::single(TTuple(types.map(ty -> this.normalize(tcenvb, ty)), pos))
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
     }
   }
 
   fun normalizeFun(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     pos: PosRange,
     tafun: TAFun,
   ): TFuns {
     tafun match {
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
-      subst = Subst::mcreate{context};
+      subst = Subst::mcreate(tcenvb);
       TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
       funClauses = mutable Vector[];
       for (tparam in clauses) {
@@ -831,7 +821,7 @@ class TEnv{
           tparam.default is None(),
           "no-default type parameter (already checked in checkTypeParams)",
         );
-        funTParam = this.makeTParam(context, tparam);
+        funTParam = this.makeTParam(tcenvb, tparam);
         funClauses.push(funTParam);
         !this.tparams[tparam.name.value] = funTParam;
       };
@@ -841,7 +831,7 @@ class TEnv{
       spreadParam: ?ArrayType = None();
       thisParam: ?TType = None();
       for (i => param in params) {
-        paramType = this.normalize(context, param.type);
+        paramType = this.normalize(tcenvb, param.type);
         param.name.value match {
         | PVar(Name(thisPos, "this")) ->
           if (i > 0) {
@@ -903,7 +893,7 @@ class TEnv{
         normalParams.toArray(),
         optionalParams.toArray(),
         spreadParam,
-        this.normalize(context, retType),
+        this.normalize(tcenvb, retType),
         CGNodes::singleton(cgNode),
       );
       if (isMethod) {
@@ -918,7 +908,7 @@ class TEnv{
     The first element is the position and the type of the algebraic branch field if it is present.
    */
   private fun createTFields(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
@@ -937,7 +927,7 @@ class TEnv{
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
         | FNNormal(name) ->
-          normalizedType = this.normalize(context, fieldTy);
+          normalizedType = this.normalize(tcenvb, fieldTy);
           optField = TField::create(
             name.pos,
             name.value,
@@ -966,8 +956,8 @@ class TEnv{
           };
           optField
         | FNColon(indexName, indexType) ->
-          keyType = this.normalize(context, indexType);
-          valueType = this.normalize(context, fieldTy);
+          keyType = this.normalize(tcenvb, indexType);
+          valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             TIndexField(indexName.pos, indexName.value, keyType, valueType),
           );
@@ -975,7 +965,7 @@ class TEnv{
         }
       | fd @ ObjectFieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
-        tFuns = this.funDecl(context, false, fd, cgNode);
+        tFuns = this.funDecl(tcenvb, false, fd, cgNode);
         fd.name match {
         | FNNormal(Name(_, "new")) ->
           !new = Some(tFuns);
@@ -1050,7 +1040,7 @@ class TEnv{
             }
           }
         | prim @ TPrimValue _ ->
-          obj = this.newObject(subst.context, prim.asClassName(), Array[]);
+          obj = this.newObject(subst, prim.asClassName(), Array[]);
           stypes.push(obj)
         | TPrimUnit _ -> void /* bottom */
         | TPromise _ ->

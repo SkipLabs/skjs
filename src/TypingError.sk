@@ -30,44 +30,4 @@ fun notSupported<T>(pos: PosRange, what: String): T {
   typingError(Array[(pos, `Construction not supported: ${what}`)])
 }
 
-class TypingErrors(errors: Array<TypingError>) extends .Exception
-
-mutable class TypingErrorCollection(
-  errorHandling: ErrorHandling,
-  private typingErrors: mutable Vector<TypingError> = mutable Vector[],
-) {
-  mutable fun push(messages: Array<(PosRange, String)>): void {
-    this.errorHandling match {
-    | EHKeepGoing() -> this.typingErrors.push(TypingError(messages))
-    | EHBacktrace()
-    | EHDefault() ->
-      typingError(messages)
-    }
-  }
-
-  mutable fun collect(f: () -> void): void {
-    this.errorHandling match {
-    | EHKeepGoing() ->
-      try {
-        f()
-      } catch {
-      | ErrorExn(err @ TypingError _) -> this.typingErrors.push(err)
-      | TypingErrors(errs) -> this.typingErrors.extend(errs)
-      | exn -> throw exn
-      }
-    | EHBacktrace()
-    | EHDefault() ->
-      f()
-    }
-  }
-
-  mutable fun emit(): void {
-    if (!this.typingErrors.isEmpty()) {
-      exn = TypingErrors(this.typingErrors.toArray());
-      this.typingErrors.clear();
-      throw exn
-    }
-  }
-}
-
 module end;

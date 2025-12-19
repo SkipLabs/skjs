@@ -13,18 +13,17 @@ base class SubstValue {
 class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
 
 mutable class Subst private {
-  context: mutable SKStore.Context,
   mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
   mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
   private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
-} {
+} extends TCEnvBase {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
-  static fun mcreate{context: mutable SKStore.Context}: mutable this {
-    mutable Subst{context}
+  static fun mcreate(tcenvb: mutable TCEnvBase): mutable Subst {
+    mutable Subst{context => tcenvb.context, results => tcenvb.results}
   }
 
   /* Use Subst#clone to create a temporary subst when there is already
@@ -34,6 +33,7 @@ mutable class Subst private {
   mutable fun clone(): mutable this {
     mutable Subst{
       context => this.context,
+      results => this.results,
       seenSub => this.seenSub,
       seenInter => this.seenInter,
       seenUnion => this.seenUnion,

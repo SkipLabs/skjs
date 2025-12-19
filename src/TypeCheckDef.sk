@@ -11,17 +11,17 @@ extension class TypeChecker {
     context: mutable SKStore.Context,
     defs: Array<Def>,
   ): readonly TCResults {
-    results = TCResults::mcreate{};
+    results = TCResults::mcreate{errorHandling => this.errorHandling};
+    tcenvl = mutable TCEnvLight{context, results};
     for (def in defs) {
       this.errorHandling match {
-      | EHBacktrace() -> this.checkDef(context, def, results)
+      | EHBacktrace() -> this.checkDef(tcenvl, def)
       | EHDefault()
       | EHKeepGoing() ->
         try {
-          this.checkDef(context, def, results)
+          this.checkDef(tcenvl, def)
         } catch {
         | ErrorExn(err @ TypingError _) -> results.errors.push(err)
-        | TypingErrors(errs) -> results.errors.extend(errs)
         | exn -> throw exn
         }
       }
@@ -29,81 +29,77 @@ extension class TypeChecker {
     results
   }
 
-  fun checkDef(
-    context: mutable SKStore.Context,
-    def: Def,
-    results: mutable TCResults,
-  ): void {
+  fun checkDef(tcenvl: mutable TCEnvLight, def: Def): void {
     def.value match {
-    | ExportImport _ -> notSupported(def.pos, "export import")
+    | ExportImport _ -> tcenvl.notSupported(def.pos, "export import")
     | ImportExpr _ -> void
-    | Global _ -> notSupported(def.pos, "global")
-    | ExportAs _ -> notSupported(def.pos, "export as")
-    | ExportEq _ -> notSupported(def.pos, "export =")
-    | Module _ -> notSupported(def.pos, "module")
+    | Global _ -> tcenvl.notSupported(def.pos, "global")
+    | ExportAs _ -> tcenvl.notSupported(def.pos, "export as")
+    | ExportEq _ -> tcenvl.notSupported(def.pos, "export =")
+    | Module _ -> tcenvl.notSupported(def.pos, "module")
     | e @ Expr _ ->
-      subst = Subst::mcreate{context};
-      tcenv = TCEnv::mcreate(
-        context,
-        subst,
-        CGNode::toplevel(def.pos.fileName),
-        results,
-      );
+      subst = Subst::mcreate(tcenvl);
+      tcenv = TCEnv::mcreate(subst, CGNode::toplevel(def.pos.fileName));
       ty = this.expr(tcenv, e, true);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ TopLevelFunDef _ ->
       cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
-      subst = Subst::mcreate{context};
-      this.funDef(subst, None(), fd, cgNode, results)
+      subst = Subst::mcreate(tcenvl);
+      this.funDef(subst, None(), fd, cgNode)
     | Declare _
     | ExportDeclare _ ->
       void
-    | Namespace _ -> notSupported(def.pos, "namespace")
-    | Export(d) -> this.checkDef(context, Def(def.pos, d), results)
-    | ExportDefault _ -> notSupported(def.pos, "export default")
+    | Namespace _ -> tcenvl.notSupported(def.pos, "namespace")
+    | Export(d) -> this.checkDef(tcenvl, Def(def.pos, d))
+    | ExportDefault _ -> tcenvl.notSupported(def.pos, "export default")
     | ExportNames _
     | ExportNamesFrom _ ->
       void
     | Import _ -> void
-    | c @ Class _ -> this.class_(context, c, results)
-    | Enum _ -> notSupported(def.pos, "enum")
-    | VarDefs(kind, varDefs) -> this.varDefs(context, kind, varDefs, results)
-    | td @ TypeDef _ -> this.typeDef(context, td)
+    | c @ Class _ -> this.class_(tcenvl, c)
+    | Enum _ -> tcenvl.notSupported(def.pos, "enum")
+    | VarDefs(kind, varDefs) -> this.varDefs(tcenvl, kind, varDefs)
+    | td @ TypeDef _ -> this.typeDef(tcenvl, td)
     }
   }
 
   fun varDefs(
-    context: mutable SKStore.Context,
+    tcenvl: mutable TCEnvLight,
     kind: VarDefKind,
     varDefs: Array<VarDef>,
-    results: mutable TCResults,
   ): void {
     for (varDef in varDefs) {
       kind match {
       | VDKConst() -> void
-      | VDKLet() -> notSupported(varDef.pat.pos, "toplevel let")
-      | VDKVar() -> notSupported(varDef.pat.pos, "toplevel var")
+      | VDKLet() -> tcenvl.notSupported(varDef.pat.pos, "toplevel let")
+      | VDKVar() -> tcenvl.notSupported(varDef.pat.pos, "toplevel var")
+      };
+      if (varDef.value is None()) {
+        tcenvl.error(Array[(varDef.pat.pos, "Missing definition")])
       };
       literalType = varDef.value.flatMap(this.asConstExpr).map(TType::single);
-      type = varDef.type match {
+      subst = Subst::mcreate(tcenvl);
+      typeOpt = varDef.type match {
       | None() ->
-        literalType match {
-        | Some(ty) -> ty
-        | _ -> typingError(Array[(varDef.pat.pos, "Missing type annotation")])
-        }
-      | Some(x) -> this.tenv.normalize(context, x)
+        if (literalType is None()) {
+          tcenvl.error(Array[(varDef.pat.pos, "Missing type annotation")])
+        };
+        literalType
+      | Some(x) -> Some(this.tenv.normalize(subst, x))
       };
-      subst = Subst::mcreate{context};
-      if (!type.isPrimitiveType(subst, this.tenv)) {
-        typingError(
-          Array[
-            (
-              varDef.pat.pos,
-              "Invalid type for constant, " +
-                "only primitive types (not objects) are allowed",
-            ),
-          ],
-        );
+      typeOpt match {
+      | Some(type) ->
+        if (!type.isPrimitiveType(subst, this.tenv)) {
+          tcenvl.error(
+            Array[
+              (
+                varDef.pat.pos,
+                "Invalid type for constant, only primitive types (not objects) are allowed",
+              ),
+            ],
+          )
+        }
+      | _ -> void
       };
       varDef.pat.value match {
       | PVar _ -> void
@@ -119,44 +115,38 @@ extension class TypeChecker {
           ],
         )
       };
-      e = varDef.value match {
-      | None() -> typingError(Array[(varDef.pat.pos, "Missing definition")])
-      | Some(x) -> x
-      };
-      tcenv = TCEnv::mcreate(
-        context,
-        subst,
-        CGNode::toplevel(varDef.pat.pos.fileName),
-        results,
-      );
-      this.checkSubType(
-        tcenv,
-        varDef.pat.pos,
-        "Invalid definition",
-        literalType match {
-        | None() ->
-          ty = this.expr(tcenv, e, kind is VDKConst());
-          ty
-        | Some(litType) -> litType
-        },
-        type,
-      )
+      (varDef.value, typeOpt) match {
+      | (Some(e), Some(type)) ->
+        tcenv = TCEnv::mcreate(
+          subst,
+          CGNode::toplevel(varDef.pat.pos.fileName),
+        );
+        tcenvl.collectErrors(() ->
+          this.checkSubType(
+            tcenv,
+            varDef.pat.pos,
+            "Invalid definition: value type is not compatible with type annotation",
+            literalType match {
+            | None() -> this.expr(tcenv, e, kind is VDKConst())
+            | Some(litType) -> litType
+            },
+            type,
+          )
+        )
+      | _ -> void
+      }
     }
   }
 
-  fun typeDef(context: mutable SKStore.Context, typeDef: TypeDef): void {
-    typingErrors = mutable TypingErrorCollection(this.errorHandling);
-
-    typingErrors.collect(() ->
+  fun typeDef(tcenvl: mutable TCEnvLight, typeDef: TypeDef): void {
+    tcenvl.collectErrors(() ->
       static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
     );
 
-    subst = Subst::mcreate{context};
+    subst = Subst::mcreate(tcenvl);
     !this.tenv = this.tenv.addTParams(subst, typeDef.tdefParams);
 
-    typingErrors.collect(() -> _ = this.tenv.normalize(context, typeDef.body));
-
-    typingErrors.emit()
+    tcenvl.collectErrors(() -> _ = this.tenv.normalize(subst, typeDef.body));
   }
 
   static fun checkTypeParams(
