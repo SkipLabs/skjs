@@ -2,7 +2,6 @@ module SKJS;
 
 extension class TypeChecker {
   fun class_(tcenvl: mutable TCEnvLight, c: Class): void {
-    context = tcenvl.context;
     constructor: ?ClassFieldTypeMethod = None();
     for (fieldType in c.fields) {
       fieldType match {
@@ -81,7 +80,7 @@ extension class TypeChecker {
           tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
           tcenv.recordClassHierarchy{
             child => c,
-            parent => this.tenv.getClass(context, parentName),
+            parent => this.tenv.getClass(tcenvl.context, parentName),
           };
           tcenvl.collectErrors(() ->
             this.checkSubType(
@@ -107,7 +106,7 @@ extension class TypeChecker {
         tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
         tcenv.recordClassHierarchy{
           child => c,
-          parent => this.tenv.getClass(context, parentName),
+          parent => this.tenv.getClass(tcenvl.context, parentName),
         };
         tcenvl.collectErrors(() ->
           this.checkSubType(

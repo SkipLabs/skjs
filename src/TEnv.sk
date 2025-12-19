@@ -613,7 +613,6 @@ class TEnv{
   }
 
   fun normalize(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
-    context = tcenvb.context;
     subst = Subst::mcreate(tcenvb);
     pos = typeAst.pos;
     typeAst.value match {
@@ -748,7 +747,7 @@ class TEnv{
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.pos, "Cyclic definition")])
       } else {
-        tdef = this.defMap.getType(context, n);
+        tdef = this.defMap.getType(tcenvb.context, n);
         tparams = tdef match {
         | TypeDef{tdefParams} -> tdefParams
         | Class{tparams} -> tparams
