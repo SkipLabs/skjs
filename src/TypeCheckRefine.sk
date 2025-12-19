@@ -76,82 +76,42 @@ extension class TypeChecker {
     typeStr match {
     | "symbol" -> void
     | "string" ->
-      (filter, default) = (
-        x ~> (x is TPrimValue(TString(), _, _)),
-        Some(TPrimValue::string(typePos)),
-      );
-      this.setLocal(
-        tcenv,
-        local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
-      )
+      filter = x ~> (x is TPrimValue(TString(), _, _)) == target;
+      default = if (target) Some(TPrimValue::string(typePos)) else None();
+      this.setLocal(tcenv, local, default, filter)
     | "number" ->
-      (filter, default) = (
-        x ~> x is TPrimValue(TNum(), _, _),
-        Some(TPrimValue::number(typePos)),
-      );
-      this.setLocal(
-        tcenv,
-        local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
-      )
+      filter = x ~> (x is TPrimValue(TNum(), _, _)) == target;
+      default = if (target) Some(TPrimValue::number(typePos)) else None();
+      this.setLocal(tcenv, local, default, filter)
     | "bigint" ->
-      (filter, default) = (
-        x ~> x is TPrimValue(TBigInt(), _, _),
-        Some(TPrimValue::bigint(typePos)),
-      );
-      this.setLocal(
-        tcenv,
-        local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
-      )
+      filter = x ~> (x is TPrimValue(TBigInt(), _, _)) == target;
+      default = if (target) Some(TPrimValue::bigint(typePos)) else None();
+      this.setLocal(tcenv, local, default, filter)
     | "boolean" ->
-      (filter, default) = (
-        x ~> x is TPrimValue(TBool(), _, _),
-        Some(TPrimValue::boolean(typePos)),
-      );
-      this.setLocal(
-        tcenv,
-        local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
-      )
+      filter = x ~> (x is TPrimValue(TBool(), _, _)) == target;
+      default = if (target) Some(TPrimValue::boolean(typePos)) else None();
+      this.setLocal(tcenv, local, default, filter)
     | "undefined" ->
       filter = x ~>
-        x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _);
-      this.setLocal(
-        tcenv,
-        local,
-        if (target) None() else None(),
-        if (target) filter else x ~> !filter(x),
-      )
+        (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) ==
+          target;
+      default = None();
+      this.setLocal(tcenv, local, default, filter)
     | "object" ->
-      (filter, default) = (
-        x ~>
-          x is TObject(TFields{call => None()}, _) ||
-            x is TAlgebraic _ ||
-            x is TPrimUnit(TNull(), _) ||
-            x is TTuple _ ||
-            x is TPromise _,
-        Some(TObject(TFields::empty(), typePos)),
-      );
-      this.setLocal(
-        tcenv,
-        local,
-        if (target) default else None(),
-        if (target) filter else x ~> !filter(x),
-      )
+      filter = x ~>
+        (x is TObject(TFields{call => None()}, _) ||
+          x is TAlgebraic _ ||
+          x is TPrimUnit(TNull(), _) ||
+          x is TTuple _ ||
+          x is TPromise _) == target;
+      default = if (target) Some(TObject(TFields::empty(), typePos)) else {
+        None()
+      };
+      this.setLocal(tcenv, local, default, filter)
     | "function" ->
-      filter = x ~> x is TObject(TFields{call => Some _}, _);
-      this.setLocal(
-        tcenv,
-        local,
-        if (target) None() else None(),
-        if (target) filter else x ~> !filter(x),
-      )
+      filter = x ~> (x is TObject(TFields{call => Some _}, _)) == target;
+      default = None();
+      this.setLocal(tcenv, local, default, filter)
     | _ ->
       typingError(
         Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
