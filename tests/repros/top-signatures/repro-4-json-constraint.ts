@@ -29,9 +29,9 @@ type Collections = {
 };
 
 // Force the constraint to be checked:
-declare function useCollections<C extends { [name: string]: EagerCollection<Json, Json> }>(
-  c: C,
-): void;
+declare function useCollections<
+  C extends { [name: string]: EagerCollection<Json, Json> },
+>(c: C): void;
 
 function test(): void {
   // Avoid SKJS top-level constant restrictions: keep object literals inside a function.
@@ -48,5 +48,3 @@ function test(): void {
 }
 
 test();
-
-

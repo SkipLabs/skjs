@@ -11,12 +11,5 @@
       "@skipruntime/core": ["import-stubs/@skipruntime/core/index.d.ts"]
     }
   },
-  "files": [
-    "repro-1-postfix-nonnull.ts",
-    "repro-2-invalid-implements-variance.ts",
-    "repro-3-namedcollections-constraint.ts",
-    "repro-4-json-constraint.ts"
-  ]
+  "include": ["*.ts"]
 }
-
-

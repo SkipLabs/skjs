@@ -7,5 +7,3 @@ function f(x: string | null): string {
   // non-null assertion
   return x!;
 }
-
-

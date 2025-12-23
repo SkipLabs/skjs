@@ -36,5 +36,3 @@ class BadResource implements Resource {
     };
   }
 }
-
-
