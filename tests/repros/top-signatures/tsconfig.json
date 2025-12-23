@@ -1,0 +1,22 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "noEmit": true,
+    "target": "ES2021",
+    "module": "node16",
+    "moduleResolution": "Node16",
+    "verbatimModuleSyntax": true,
+    "baseUrl": "../../..",
+    "paths": {
+      "@skipruntime/core": ["import-stubs/@skipruntime/core/index.d.ts"]
+    }
+  },
+  "files": [
+    "repro-1-postfix-nonnull.ts",
+    "repro-2-invalid-implements-variance.ts",
+    "repro-3-namedcollections-constraint.ts",
+    "repro-4-json-constraint.ts"
+  ]
+}
+
+
