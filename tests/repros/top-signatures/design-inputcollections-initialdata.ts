@@ -33,10 +33,32 @@
 // - This sketch: resources are typed against the concrete output record `ResourceInputs` and return
 //   an `AbstractEagerCollection` (or more specific `EagerCollection<K,V>`), so K/V is not forced to Json/Json.
 //
-// IMPORTANT: "brand trick" motivation (TypeScript is structural).
-// If base types were empty structural interfaces, many unrelated values (arrays/tuples/plain objects)
-// would accidentally type-check as "collections". We use abstract base classes with protected brand
-// fields to make these types effectively nominal: only actual collections/wrappers can inhabit them.
+// ---------------------------------------------------------------------------
+// Modeling existential types with branded abstract base classes
+// ---------------------------------------------------------------------------
+//
+// The core challenge: we have *heterogeneous* collections — each `EagerCollection<K,V>` has its
+// own specific K and V. When storing them in a record `{ [name: string]: ??? }`, we can't use
+// `EagerCollection<Json,Json>` (unsound due to variance), but TypeScript has no direct way to
+// express "there exist some K and V such that this is an `EagerCollection<K,V>`".
+//
+// In type theory, this is an *existential type*: `∃K,V. EagerCollection<K,V>` means "some K and V
+// exist, but we don't know (have forgotten) what they are". This is exactly what we need at the
+// record level.
+//
+// The standard OOP encoding of existentials uses abstract base classes:
+// - `AbstractEagerCollection` represents `∃K,V. EagerCollection<K,V>`
+// - Concrete `EagerCollection<K,V>` extends the abstract base, "packaging" the witness (K,V)
+// - At the record level, we've "forgotten" K and V, but each slot still holds a real collection
+//
+// The *brand* (a protected field) makes the type nominal in TypeScript's structural system,
+// ensuring only actual collections can inhabit `AbstractEagerCollection` — not arbitrary objects,
+// arrays, or tuples that happen to match structurally.
+//
+// This pattern is well-known:
+// - Scala: abstract type members (`trait Collection { type K; type V }`)
+// - Haskell: explicit existential quantification (`data SomeCollection = forall k v. MkSome ...`)
+// - Java/TypeScript: abstract base classes for "type erasure with safety"
 //
 // This sketch matches the generated-service presentation:
 // - a `class Service` implementing a service interface with `resources` + `createGraph`

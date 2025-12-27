@@ -28,6 +28,17 @@ From repo root:
 
 ### Design sketches (not repros)
 
-- **`design-inputcollections-initialdata.ts`**: design sketch: each named input is an `InputCollection<K,V>` wrapper containing a collection handle plus optional initial data (`Entry<K,V>[]`), avoiding the need to derive `InitialData<Inputs>` via mapped/conditional types.
+- **`design-inputcollections-initialdata.ts`**: design sketch proposing a sound API for named input collections + initial data.
 
+#### Key technique: modeling existential types
+
+The core challenge is handling *heterogeneous* collections — each `EagerCollection<K,V>` has its own K and V. We can't store them in `{ [name: string]: EagerCollection<Json,Json> }` (unsound due to variance), but TypeScript can't directly express "∃K,V. EagerCollection<K,V>" (there exist some K and V).
+
+The design sketch uses **branded abstract base classes** to model existential types:
+
+- `AbstractEagerCollection` represents `∃K,V. EagerCollection<K,V>` — "some collection with forgotten K,V"
+- Concrete `EagerCollection<K,V>` extends the base, "packaging" the type witness
+- The brand (protected field) makes the type nominal, so only real collections match
+
+This is a standard OOP encoding of existentials, seen in Scala (abstract type members), Haskell (explicit `forall`), and Java/TypeScript (abstract base classes).
 
