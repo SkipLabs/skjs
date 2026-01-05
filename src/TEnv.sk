@@ -843,16 +843,17 @@ class TEnv{
         param.name.value match {
         | PVar(Name(thisPos, "this")) ->
           if (i > 0) {
-            typingError(
+            tcenvb.error(
               Array[(thisPos, "Parameter named this must be the first one")],
-            )
+            );
+            continue
           };
           invariant(thisParam is None(), "Assigning thisParam multiple times");
           param.isRest.each(restPos ->
-            typingError(Array[(restPos, "this cannot be a spread parameter")])
+            tcenvb.error(Array[(restPos, "this cannot be a spread parameter")])
           );
           param.optional.each(optPos ->
-            typingError(Array[(optPos, "this cannot be optional")])
+            tcenvb.error(Array[(optPos, "this cannot be optional")])
           );
           !thisParam = Some(paramType);
           continue
@@ -860,34 +861,36 @@ class TEnv{
         };
         param.isRest match {
         | Some(restPos) ->
-          if (i != params.size() - 1) {
-            typingError(
-              Array[(restPos, "... must always be the last parameter")],
-            );
-          };
           param.optional match {
           | Some(optPos) ->
-            typingError(
+            tcenvb.error(
               Array[(optPos, "The spread parameter cannot be marked optional")],
             )
           | None() -> void
           };
           !spreadParam = Some(ArrayType::createFromFull(paramType));
+          if (i != params.size() - 1) {
+            tcenvb.error(
+              Array[(restPos, "... must always be the last parameter")],
+            );
+            break void
+          };
           continue
         | None() -> void
         };
         param.optional match {
         | None() ->
           optionalWitness match {
-          | None() -> normalParams.push(paramType)
+          | None() -> void
           | Some(wpos) ->
-            typingError(
+            tcenvb.error(
               Array[
                 (param.type.pos, "This parameter is not optional"),
                 (wpos, "It appears after this parameter that is optional"),
               ],
             )
-          }
+          };
+          normalParams.push(paramType)
         | Some(wpos) ->
           !optionalWitness = Some(wpos);
           optionalParams.push(
