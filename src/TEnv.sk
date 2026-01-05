@@ -193,7 +193,7 @@ class TEnv{
   ): TObject {
     c = this.getClass(tcenvb.context, className);
     if (c.tparams.size() != targs.size()) {
-      typingError(
+      tcenvb.error(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
       )
     };
@@ -216,7 +216,7 @@ class TEnv{
     );
     constructor match {
     | Some(constructorTy) ->
-      notSupported(constructorTy.pos, "new returning a constructor")
+      tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
     TObject(
