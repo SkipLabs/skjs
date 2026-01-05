@@ -387,7 +387,7 @@ class TEnv{
           },
           filter,
         )
-      | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
+      | _ -> tcenvb.error(Array[(extend.pos, "Unexpected extend")])
       }
     };
     constructor: ?TFuns = None();
@@ -398,14 +398,14 @@ class TEnv{
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic(pos) ->
-            typingError(Array[(pos, "static fields are forbidden")])
+            tcenvb.error(Array[(pos, "static fields are forbidden")])
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _
           | ModReadonly _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
-            typingError(
+            tcenvb.error(
               Array[
                 (
                   modifier.pos,
@@ -430,7 +430,7 @@ class TEnv{
             type,
           ) match {
           | None() ->
-            typingError(
+            tcenvb.error(
               Array[
                 (field.pos, `Forbidden field name '${fieldName}' in a class`),
               ],
@@ -443,13 +443,13 @@ class TEnv{
           indexes.push(
             TIndexField(indexName.pos, indexName.value, keyType, valueType),
           )
-        | _ -> typingError(Array[(field.pos, "Unsupported field name")])
+        | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
-          typingError(
+          tcenvb.error(
             Array[
               (fd.pos, "Unexpected multiple constructors"),
               (constructorTy.pos, "Previous constructor was here"),
@@ -477,7 +477,7 @@ class TEnv{
         );
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
-          typingError(Array[(fd.pos, `Forbidden method name '${metName}'`)])
+          tcenvb.error(Array[(fd.pos, `Forbidden method name '${metName}'`)])
         | Some(field) -> acc![metName.value] = field
         }
       }
