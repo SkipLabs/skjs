@@ -948,17 +948,18 @@ class TEnv{
           if (optField is None()) {
             algebraicBranchField match {
             | Some((existingPos, _existingType)) ->
-              typingError(
+              tcenvb.error(
                 Array[
                   (name.pos, `Duplicate field ${name}`),
                   (existingPos, "Previously declared here"),
                 ],
-              )
+              );
+              return None()
             | None() -> void
             };
             fd.optional match {
             | Some(optionalPos) ->
-              typingError(
+              tcenvb.error(
                 Array[(optionalPos, `Field ${name} cannot be optional`)],
               )
             | None() -> void
@@ -992,7 +993,7 @@ class TEnv{
           );
           optField = TField::create(name.pos, name.value, false, decl);
           if (optField is None()) {
-            typingError(Array[(name.pos, `Forbidden method name ${name}`)])
+            tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
           };
           optField
         }
