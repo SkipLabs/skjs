@@ -563,18 +563,20 @@ class TEnv{
       x
     });
     params = fd.params.map(this.convertParam);
-    retType = fd.retType match {
-    | (pos, None()) -> // constructor
-      Type(
-        pos,
-        TAInst(
-          Name(pos, className.value),
-          tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
-        ),
-      )
-    | (_, Some(x)) ->
-      typingError(Array[(x.pos, "Unexpected annotation for constructor")])
+    fd.retType.i1 match {
+    | None() -> // constructor
+      void
+    | Some(x) ->
+      tcenvb.error(Array[(x.pos, "Unexpected annotation for constructor")])
     };
+    retTypePos = fd.retType.i0;
+    retType = Type(
+      retTypePos,
+      TAInst(
+        Name(retTypePos, className.value),
+        tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
+      ),
+    );
     tafun = TAFun(false, tparams, params, retType, cgNode);
     this.normalizeFun(tcenvb, fd.pos, tafun)
   }
