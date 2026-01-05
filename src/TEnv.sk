@@ -84,7 +84,7 @@ class TEnv{
     | Enum _ -> Array[]
     };
     if (targs.targs.size() > clauses.size()) {
-      typingError(
+      subst.error(
         Array[
           (
             name.pos,
@@ -99,14 +99,15 @@ class TEnv{
         tparam.default match {
         | Some(default) -> this.normalize(subst, default)
         | None() ->
-          typingError(
+          subst.error(
             Array[
               (
                 name.pos,
                 `Not enough type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
               ),
             ],
-          )
+          );
+          break void
         }
       };
       tparam.constraint match {
@@ -116,7 +117,7 @@ class TEnv{
         TType::isSub(subst, this, targ, cstrTy) match {
         | STOk() -> void
         | STError _ ->
-          typingError(
+          subst.error(
             Array[
               (name.pos, "Constraint not satisfied"),
               (targ.pos, `This is of type: ${targ}`),
