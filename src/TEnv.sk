@@ -679,7 +679,7 @@ class TEnv{
       )
     | TAObject(fields) ->
       (algebraicBranchField, tFields) = this.createTFields(tcenvb, fields);
-      createObject(pos, algebraicBranchField, tFields)
+      createObject(tcenvb, pos, algebraicBranchField, tFields)
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])

@@ -387,6 +387,7 @@ class TConstr(
 }
 
 fun createObject(
+  tcenvb: mutable TCEnvBase,
   pos: PosRange,
   algebraicBranchField: ?(PosRange, TType),
   fields: TFields,
@@ -394,9 +395,10 @@ fun createObject(
   seen = mutable Set<String>[];
   for (field in fields) {
     if (seen.contains(field.name)) {
-      typingError(Array[(field.pos, "Duplicate field")])
-    };
-    seen.insert(field.name);
+      tcenvb.error(Array[(field.pos, "Duplicate field")])
+    } else {
+      seen.insert(field.name)
+    }
   };
   algebraicBranchField match {
   | Some((algebraicBranchFieldPos, algebraicBranchFieldType)) ->

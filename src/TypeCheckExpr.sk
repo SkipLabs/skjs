@@ -607,6 +607,7 @@ extension class TypeChecker {
         }
       };
       obj = createObject(
+        tcenv,
         pos,
         algebraicBranchField,
         TFields::create{
