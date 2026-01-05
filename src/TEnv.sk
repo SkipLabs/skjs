@@ -537,7 +537,7 @@ class TEnv{
           tparams,
           paramTArgs.map(targ -> this.normalize(tcenvb, targ)),
         )
-      | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
+      | _ -> tcenvb.error(Array[(extend.pos, "Unexpected extend")])
       }
     };
     None()
