@@ -139,8 +139,10 @@ extension class TypeChecker {
   }
 
   fun typeDef(tcenvl: mutable TCEnvLight, typeDef: TypeDef): void {
-    tcenvl.collectErrors(() ->
-      static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
+    static::checkTypeParams(
+      tcenvl,
+      typeDef.tdefParams,
+      OptionalTypeParamsAllowed(),
     );
 
     subst = Subst::mcreate(tcenvl);
@@ -150,6 +152,7 @@ extension class TypeChecker {
   }
 
   static fun checkTypeParams(
+    tcenvb: mutable TCEnvBase,
     tparams: Array<TypeParam>,
     optionalTypeParamsPermission: OptionalTypeParamsPermission,
   ): void {
@@ -159,7 +162,7 @@ extension class TypeChecker {
       | (Some _, None()) ->
         optionalTypeParamsPermission match {
         | OptionalTypeParamsForbidden() ->
-          typingError(
+          tcenvb.error(
             Array[
               (
                 tparam.name.pos,
@@ -171,7 +174,7 @@ extension class TypeChecker {
         };
         !firstDefaultPosOpt = Some(tparam.name.pos)
       | (None(), Some(firstDefaultPos)) ->
-        typingError(
+        tcenvb.error(
           Array[
             (
               tparam.name.pos,

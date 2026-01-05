@@ -822,13 +822,17 @@ class TEnv{
     tafun match {
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
       subst = Subst::mcreate(tcenvb);
-      TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
+      TypeChecker::checkTypeParams(
+        tcenvb,
+        clauses,
+        OptionalTypeParamsForbidden(),
+      );
       funClauses = mutable Vector[];
       for (tparam in clauses) {
-        invariant(
-          tparam.default is None(),
-          "no-default type parameter (already checked in checkTypeParams)",
-        );
+        // invariant(
+        //   tparam.default is None(),
+        //   "no-default type parameter (already checked in checkTypeParams)",
+        // );
         funTParam = this.makeTParam(tcenvb, tparam);
         funClauses.push(funTParam);
         !this.tparams[tparam.name.value] = funTParam;

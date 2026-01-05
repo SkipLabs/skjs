@@ -21,9 +21,7 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    tcenvl.collectErrors(() ->
-      static::checkTypeParams(c.tparams, OptionalTypeParamsForbidden())
-    );
+    static::checkTypeParams(tcenvl, c.tparams, OptionalTypeParamsForbidden());
     subst = Subst::mcreate(tcenvl);
     targs = TArgs(
       c.tparams.map(tparam -> {
