@@ -649,7 +649,7 @@ class TEnv{
       ty.value match {
       | TAInst(Name(_, "undefined"), targs) ->
         if (targs.size() != 0) {
-          typingError(Array[(pos, "Unexpected type parameters for undefined")])
+          tcenvb.error(Array[(pos, "Unexpected type parameters for undefined")])
         };
         TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
@@ -682,7 +682,7 @@ class TEnv{
       createObject(pos, algebraicBranchField, tFields)
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TObject(TFields::empty(), pos))
 
@@ -691,39 +691,44 @@ class TEnv{
 
     | TAInst(Name(p, "void"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimUnit(TVoid(), pos))
     | TAInst(Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimUnit(TUndefined(), pos))
     | TAInst(Name(p, "Promise"), targs) ->
       if (targs.size() != 1) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TPromise(this.normalize(tcenvb, targs[0]), pos))
+      tArg = if (targs.size() >= 1) {
+        this.normalize(tcenvb, targs[0])
+      } else {
+        TType::top(pos)
+      };
+      TType::single(TPromise(tArg, pos))
     | TAInst(Name(p, "unknown"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::top(pos)
     | TAInst(Name(p, "never"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::bottom(pos)
     | TAInst(Name(p, x @ "true"), targs)
     | TAInst(Name(p, x @ "false"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
       if (this.tparams.containsKey(n.value)) {
         if (targs.size() != 0) {
-          typingError(
+          tcenvb.error(
             Array[
               (
                 n.pos,
@@ -736,7 +741,7 @@ class TEnv{
         TType::fromTParamWithConstraint(subst, this, pos, tparam)
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
-          typingError(
+          tcenvb.error(
             Array[
               (
                 n.pos,
@@ -761,7 +766,7 @@ class TEnv{
           (targs.size() < tparams.size() &&
             tparams[targs.size()].default is None())
         ) {
-          typingError(
+          tcenvb.error(
             Array[
               (
                 n.pos,
@@ -795,9 +800,9 @@ class TEnv{
       for (ty in tupleElts) {
         ty match {
         | TEType(n, optional, x) ->
-          if (n is Some _) typingError(Array[(pos, "TODO named tuple")]);
+          if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
           if (optional is Some _) {
-            typingError(Array[(pos, "TODO optional element tuple")])
+            tcenvb.error(Array[(pos, "TODO optional element tuple")])
           };
           typeVec.push(x)
         | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
