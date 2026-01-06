@@ -308,7 +308,7 @@ class TEnv{
   }
 
   private fun processClassSetup(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     withTParams: Bool,
     className: Name,
@@ -318,7 +318,7 @@ class TEnv{
       typingError(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.getAll(context, className);
+    defs = this.defMap.getAll(tcenvb.context, className);
     cls = for (def in defs) {
       def match {
       | cls @ Class _ -> break cls
@@ -366,7 +366,7 @@ class TEnv{
     filter: ClassFieldTypeValue ~> Bool,
   ): /* Type of constructor */ ?TFuns {
     (!this, cls) = this.processClassSetup(
-      tcenvb.context,
+      tcenvb,
       visitedClasses,
       isStatic is None(),
       className,
@@ -512,7 +512,7 @@ class TEnv{
     targs: Array<TType>,
   ): ?ClassFieldTypeMethod {
     (!this, cls) = this.processClassSetup(
-      tcenvb.context,
+      tcenvb,
       visitedClasses,
       true,
       className,
