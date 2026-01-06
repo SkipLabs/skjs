@@ -266,7 +266,7 @@ extension class TypeChecker {
     initStmt.value match {
     | Bind(kind, bindings) ->
       if (bindings.size() != 1) {
-        typingError(
+        tcenv.error(
           Array[
             (
               initStmt.pos,
@@ -275,10 +275,11 @@ extension class TypeChecker {
           ],
         )
       };
-      binding = bindings[0];
-      this.bind(tcenv, kind, binding.pat, varType, true, false)
+      for (binding in bindings) {
+        this.bind(tcenv, kind, binding.pat, varType, true, false)
+      }
     | _ ->
-      typingError(Array[(initStmt.pos, "Invalid loop variable declaration")])
+      tcenv.error(Array[(initStmt.pos, "Invalid loop variable declaration")])
     }
   }
 
