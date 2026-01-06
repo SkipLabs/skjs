@@ -165,7 +165,7 @@ extension class TypeChecker {
       | None() -> void
       | Some(retType) ->
         _ = this.block(tcenv, body);
-        term = StmtTermination::block(body);
+        term = StmtTermination::block(tcenv, body);
         if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
           subst.error(
             Array[(fd.pos, "This function may not always return a value")],
