@@ -317,17 +317,20 @@ extension class TypeChecker {
     pos: PosRange,
     iterableType: TType,
   ): TType {
+    result = TType::bottom(pos);
+
     stypes = iterableType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> stypes
-    | _ -> typingError(Array[(pos, "Invalid iterable type for for-of loop")])
+    | _ ->
+      tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")]);
+      return result
     };
 
-    result = TType::bottom(pos);
     for (stype in stypes) {
       stype match {
       | TObject(fields, _objectPos) ->
         if (fields.indexes.isEmpty()) {
-          typingError(Array[(pos, "Invalid iterable type for for-of loop")])
+          tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
         };
         for (index in fields.indexes) {
           !result = TType::union(
@@ -349,7 +352,7 @@ extension class TypeChecker {
           TType::single(TPrimValue::string(pos)),
         )
       | _ ->
-        typingError(
+        tcenv.error(
           Array[
             (pos, "for-of loop requires an array, string, or iterable type"),
           ],
