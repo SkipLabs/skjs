@@ -459,7 +459,7 @@ extension class TypeChecker {
      If mostPrecise, use the most precise type. */
   fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool): TType {
     if (mostPrecise) {
-      this.asConstExpr(e) match {
+      this.asConstExpr(tcenv, e) match {
       | Some(ty) -> return TType::single(ty)
       | None() -> void
       }
@@ -517,7 +517,7 @@ extension class TypeChecker {
             };
             break type match {
             | None() ->
-              value.flatMap(this.asConstExpr) match {
+              value.flatMap(e -> this.asConstExpr(tcenv, e)) match {
               | None() -> this.newTVar(tcenv, pos)
               | Some(ty) -> TType::single(ty)
               }
@@ -1135,7 +1135,7 @@ extension class TypeChecker {
 
       TType::union(tcenv.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
-      this.asConstExpr(subExpr) match {
+      this.asConstExpr(tcenv, subExpr) match {
       | Some(ty) -> TType::single(ty)
       | None() ->
         tcenv.error(
@@ -1150,7 +1150,7 @@ extension class TypeChecker {
   }
 
   /* Typechecks expression e as const */
-  fun asConstExpr(e: Expr): ?SType {
+  fun asConstExpr(tcenvb: mutable TCEnvBase, e: Expr): ?SType {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
@@ -1163,7 +1163,7 @@ extension class TypeChecker {
     | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
     | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
     | Unop(UOExclamationMark(), subE) ->
-      this.asConstExpr(subE).map(stype -> {
+      this.asConstExpr(tcenvb, subE).map(stype -> {
         msg = if (stype is TPrimValue(TBool(), _, _)) {
           "Constant expression could have been simplified"
         } else {
@@ -1173,7 +1173,7 @@ extension class TypeChecker {
       })
     | Unop(UOTild(), _) -> /* TODO */ None()
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
-      this.asConstExpr(subE).flatMap(stype ->
+      this.asConstExpr(tcenvb, subE).flatMap(stype ->
         stype match {
         | TPrimValue(k @ TNum(), valuesOpt, _)
         | TPrimValue(k @ TBigInt(), valuesOpt, _) ->

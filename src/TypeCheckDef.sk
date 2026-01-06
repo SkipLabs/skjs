@@ -77,7 +77,9 @@ extension class TypeChecker {
       if (varDef.value is None()) {
         tcenvl.error(Array[(varDef.pat.pos, "Missing definition")])
       };
-      literalType = varDef.value.flatMap(this.asConstExpr).map(TType::single);
+      literalType = varDef.value
+        .flatMap((e) -> this.asConstExpr(tcenvl, e))
+        .map(TType::single);
       subst = Subst::mcreate(tcenvl);
       typeOpt = varDef.type match {
       | None() ->
