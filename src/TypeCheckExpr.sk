@@ -827,7 +827,7 @@ extension class TypeChecker {
               | BOStrictInequality() -> "true"
               };
               typingError(
-                Array[(pos, "This is equality is always " + alwaysResult)],
+                Array[(pos, `This equality is always ${alwaysResult}`)],
               )
             }
           }
