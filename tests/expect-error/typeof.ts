@@ -420,6 +420,7 @@ function testIncorrectFunctionRefinement(x: (() => number) | string): string {
 // Accessing properties on wrong branch
 function testAccessWrongBranch(x: { a: number } | string): number {
   if (typeof x === "string") {
+    // @skjs-expect-error Invalid return type
     // @ts-expect-error Invalid index key
     return x.a;
   } else {
@@ -897,10 +898,12 @@ function testEmptyTuple(x: [] | [number]): [] | [number] {
 function testTupleOptional(
   // @skjs-expect-error TODO optional element tuple
   x: [number, string?] | number,
+  // @skjs-expect-error TODO optional element tuple
 ): [number, string?] {
   if (typeof x === "object") {
     return x;
   } else {
+    // @skjs-expect-error Invalid return type
     return [0];
   }
 }
@@ -1003,6 +1006,7 @@ function testTupleVsFunction(
 function testLabeledTuple(
   // @skjs-expect-error TODO named tuple
   x: [first: number, second: string] | number,
+  // @skjs-expect-error TODO named tuple
 ): [first: number, second: string] {
   if (typeof x === "object") {
     return x;

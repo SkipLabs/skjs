@@ -1,6 +1,6 @@
 class C1 {
   // @skjs-expect-error Forbidden field name 'kind' in a class
-  kind: string;
+  kind: string = "a";
 }
 
 class C2 {

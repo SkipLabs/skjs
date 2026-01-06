@@ -32,7 +32,9 @@ function testTupleDefaults(): void {
   // @skjs-expect-error TODO optional element tuple
   const arr: [number?, string?] = [1, "hello"];
 
+  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
   const [a = 0, b = "default"] = arr;
+  // @skjs-expect-error Unbound name
   const x: number = a;
   const y: string = b;
 }
@@ -42,7 +44,9 @@ function testTupleDefaultsTypeInference(): void {
   const arr: [number?, string?] = [1, "hello"];
 
   // Default value types should combine with tuple element types
+  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
   const [a = 99, b = "fallback"] = arr;
+  // @skjs-expect-error Unbound name
   const x: number = a;
   const y: string = b;
 }
@@ -51,8 +55,10 @@ function testTupleDefaultsTypeError(): void {
   // @skjs-expect-error TODO optional element tuple
   const arr: [number?, string?] = [1, "hello"];
 
+  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
   const [a = 0, b = "default"] = arr;
   // TODO: Invalid assignment (not reported due to earlier error in function)
+  // @skjs-expect-error Unbound name
   const x: string = a;
 }
 
@@ -62,7 +68,9 @@ function testSkippedWithDefaults(): void {
   // @skjs-expect-error TODO optional element tuple
   const arr: [number?, string?, boolean?] = [1, "hello", true];
 
+  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
   const [, second = "default", third = false] = arr;
+  // @skjs-expect-error Unbound name
   const x: string = second;
   const y: boolean = third;
 }
@@ -71,8 +79,10 @@ function testComplexPattern(): void {
   // @skjs-expect-error TODO optional element tuple
   const arr: [number, string?, boolean?, number?] = [1, "a", true, 42];
 
+  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
   const [first, , third = false, fourth = 0] = arr;
   const a: number = first;
+  // @skjs-expect-error Unbound name
   const b: boolean = third;
   const c: number = fourth;
 }

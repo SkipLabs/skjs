@@ -77,7 +77,9 @@ extension class TypeChecker {
       if (varDef.value is None()) {
         tcenvl.error(Array[(varDef.pat.pos, "Missing definition")])
       };
-      literalType = varDef.value.flatMap(this.asConstExpr).map(TType::single);
+      literalType = varDef.value
+        .flatMap((e) -> this.asConstExpr(tcenvl, e))
+        .map(TType::single);
       subst = Subst::mcreate(tcenvl);
       typeOpt = varDef.type match {
       | None() ->
@@ -121,17 +123,15 @@ extension class TypeChecker {
           subst,
           CGNode::toplevel(varDef.pat.pos.fileName),
         );
-        tcenvl.collectErrors(() ->
-          this.checkSubType(
-            tcenv,
-            varDef.pat.pos,
-            "Invalid definition: value type is not compatible with type annotation",
-            literalType match {
-            | None() -> this.expr(tcenv, e, kind is VDKConst())
-            | Some(litType) -> litType
-            },
-            type,
-          )
+        this.checkSubType(
+          tcenv,
+          varDef.pat.pos,
+          "Invalid definition: value type is not compatible with type annotation",
+          literalType match {
+          | None() -> this.expr(tcenv, e, kind is VDKConst())
+          | Some(litType) -> litType
+          },
+          type,
         )
       | _ -> void
       }
@@ -139,8 +139,10 @@ extension class TypeChecker {
   }
 
   fun typeDef(tcenvl: mutable TCEnvLight, typeDef: TypeDef): void {
-    tcenvl.collectErrors(() ->
-      static::checkTypeParams(typeDef.tdefParams, OptionalTypeParamsAllowed())
+    static::checkTypeParams(
+      tcenvl,
+      typeDef.tdefParams,
+      OptionalTypeParamsAllowed(),
     );
 
     subst = Subst::mcreate(tcenvl);
@@ -150,6 +152,7 @@ extension class TypeChecker {
   }
 
   static fun checkTypeParams(
+    tcenvb: mutable TCEnvBase,
     tparams: Array<TypeParam>,
     optionalTypeParamsPermission: OptionalTypeParamsPermission,
   ): void {
@@ -159,7 +162,7 @@ extension class TypeChecker {
       | (Some _, None()) ->
         optionalTypeParamsPermission match {
         | OptionalTypeParamsForbidden() ->
-          typingError(
+          tcenvb.error(
             Array[
               (
                 tparam.name.pos,
@@ -171,7 +174,7 @@ extension class TypeChecker {
         };
         !firstDefaultPosOpt = Some(tparam.name.pos)
       | (None(), Some(firstDefaultPos)) ->
-        typingError(
+        tcenvb.error(
           Array[
             (
               tparam.name.pos,

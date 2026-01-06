@@ -21,9 +21,7 @@ extension class TypeChecker {
       | _ -> void
       }
     };
-    tcenvl.collectErrors(() ->
-      static::checkTypeParams(c.tparams, OptionalTypeParamsForbidden())
-    );
+    static::checkTypeParams(tcenvl, c.tparams, OptionalTypeParamsForbidden());
     subst = Subst::mcreate(tcenvl);
     targs = TArgs(
       c.tparams.map(tparam -> {
@@ -82,14 +80,12 @@ extension class TypeChecker {
             child => c,
             parent => this.tenv.getClass(tcenvl.context, parentName),
           };
-          tcenvl.collectErrors(() ->
-            this.checkSubType(
-              tcenv,
-              parentName.pos,
-              "Invalid extends",
-              thisType,
-              super,
-            )
+          this.checkSubType(
+            tcenv,
+            parentName.pos,
+            "Invalid extends",
+            thisType,
+            super,
           )
         | _ -> tcenvl.error(Array[(c.name.pos, "Invalid extend")])
         }
@@ -108,14 +104,12 @@ extension class TypeChecker {
           child => c,
           parent => this.tenv.getClass(tcenvl.context, parentName),
         };
-        tcenvl.collectErrors(() ->
-          this.checkSubType(
-            tcenv,
-            parentName.pos,
-            "Invalid implements",
-            thisType,
-            super,
-          )
+        this.checkSubType(
+          tcenv,
+          parentName.pos,
+          "Invalid implements",
+          thisType,
+          super,
         )
       | _ -> tcenvl.error(Array[(c.name.pos, "Invalid implements")])
       }
@@ -156,14 +150,12 @@ extension class TypeChecker {
           void
         | (Some(e), Some(type)) ->
           tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
-          tcenvl.collectErrors(() ->
-            this.checkSubType(
-              tcenv,
-              e.pos,
-              "Invalid assignment",
-              this.expr(tcenv, e, true),
-              type,
-            )
+          this.checkSubType(
+            tcenv,
+            e.pos,
+            "Invalid assignment",
+            this.expr(tcenv, e, true),
+            type,
           )
         }
       | fd @ ClassFieldTypeMethod _ ->
@@ -271,14 +263,12 @@ extension class TypeChecker {
         this.tenv,
         methods,
       );
-      subst.collectErrors(() ->
-        this.checkSubType(
-          tcenv,
-          fd.pos,
-          "Invalid initialization",
-          objType,
-          fullType,
-        )
+      this.checkSubType(
+        tcenv,
+        fd.pos,
+        "Invalid initialization",
+        objType,
+        fullType,
       )
     };
   }

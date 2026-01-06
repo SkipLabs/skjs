@@ -84,7 +84,7 @@ class TEnv{
     | Enum _ -> Array[]
     };
     if (targs.targs.size() > clauses.size()) {
-      typingError(
+      subst.error(
         Array[
           (
             name.pos,
@@ -99,14 +99,15 @@ class TEnv{
         tparam.default match {
         | Some(default) -> this.normalize(subst, default)
         | None() ->
-          typingError(
+          subst.error(
             Array[
               (
                 name.pos,
                 `Not enough type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
               ),
             ],
-          )
+          );
+          break void
         }
       };
       tparam.constraint match {
@@ -116,7 +117,7 @@ class TEnv{
         TType::isSub(subst, this, targ, cstrTy) match {
         | STOk() -> void
         | STError _ ->
-          typingError(
+          subst.error(
             Array[
               (name.pos, "Constraint not satisfied"),
               (targ.pos, `This is of type: ${targ}`),
@@ -174,7 +175,7 @@ class TEnv{
   ): CstrType {
     c = this.getClass(tcenvb.context, className);
     if (c.tparams.size() != targs.size()) {
-      typingError(
+      tcenvb.error(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
       )
     };
@@ -192,7 +193,7 @@ class TEnv{
   ): TObject {
     c = this.getClass(tcenvb.context, className);
     if (c.tparams.size() != targs.size()) {
-      typingError(
+      tcenvb.error(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
       )
     };
@@ -215,7 +216,7 @@ class TEnv{
     );
     constructor match {
     | Some(constructorTy) ->
-      notSupported(constructorTy.pos, "new returning a constructor")
+      tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
     TObject(
@@ -307,7 +308,7 @@ class TEnv{
   }
 
   private fun processClassSetup(
-    context: mutable SKStore.Context,
+    tcenvb: mutable TCEnvBase,
     visitedClasses: SortedSet<String>,
     withTParams: Bool,
     className: Name,
@@ -317,17 +318,29 @@ class TEnv{
       typingError(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.getAll(context, className);
-    cls = for (def in defs) {
+    defs = this.defMap.getAll(tcenvb.context, className);
+    defsCls = defs.filterMap(def ->
       def match {
-      | cls @ Class _ -> break cls
-      | _ -> void
+      | cls @ Class _ -> Some(cls)
+      | _ -> None()
       }
-    } else {
-      typingError(Array[(className.pos, "Unbound class")])
+    );
+    defsCls.size() match {
+    | 0 -> typingError(Array[(className.pos, "Unbound class")])
+    | 1 -> void
+    | _ ->
+      tcenvb.error(
+        Array[
+          (className.pos, `Found multiple definitions for class ${className}`),
+        ],
+      )
     };
-    if (targs.size() != 0 && targs.size() != cls.tparams.size()) {
-      typingError(
+    cls = defsCls[0];
+    if (
+      (withTParams || targs.size() != 0) &&
+      targs.size() != cls.tparams.size()
+    ) {
+      tcenvb.error(
         Array[
           (className.pos, "Invalid number of type arguments"),
           (cls.name.pos, "Class declaration is here"),
@@ -341,15 +354,13 @@ class TEnv{
         } else {
           // TypeChecker::class_ rejects classes with defaulted type parameters, but we
           // still reach this code when other defs (e.g. subclasses) keep type-checking
-          typingError(
-            Array[
-              (className.pos, "Invalid number of type arguments"),
-              (cls.name.pos, "Class declaration is here"),
-            ],
-          );
+          tparam.default match {
+          | None() -> break void
+          | Some(d) -> this.normalize(tcenvb, d)
+          }
         };
         !this.subst[tparam.name.value] = (false, targ)
-      };
+      }
     };
     (this, cls)
   }
@@ -365,7 +376,7 @@ class TEnv{
     filter: ClassFieldTypeValue ~> Bool,
   ): /* Type of constructor */ ?TFuns {
     (!this, cls) = this.processClassSetup(
-      tcenvb.context,
+      tcenvb,
       visitedClasses,
       isStatic is None(),
       className,
@@ -386,7 +397,7 @@ class TEnv{
           },
           filter,
         )
-      | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
+      | _ -> tcenvb.error(Array[(extend.pos, "Unexpected extend")])
       }
     };
     constructor: ?TFuns = None();
@@ -397,14 +408,14 @@ class TEnv{
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic(pos) ->
-            typingError(Array[(pos, "static fields are forbidden")])
+            tcenvb.error(Array[(pos, "static fields are forbidden")])
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _
           | ModReadonly _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
-            typingError(
+            tcenvb.error(
               Array[
                 (
                   modifier.pos,
@@ -429,7 +440,7 @@ class TEnv{
             type,
           ) match {
           | None() ->
-            typingError(
+            tcenvb.error(
               Array[
                 (field.pos, `Forbidden field name '${fieldName}' in a class`),
               ],
@@ -442,13 +453,13 @@ class TEnv{
           indexes.push(
             TIndexField(indexName.pos, indexName.value, keyType, valueType),
           )
-        | _ -> typingError(Array[(field.pos, "Unsupported field name")])
+        | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
-          typingError(
+          tcenvb.error(
             Array[
               (fd.pos, "Unexpected multiple constructors"),
               (constructorTy.pos, "Previous constructor was here"),
@@ -476,7 +487,7 @@ class TEnv{
         );
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
-          typingError(Array[(fd.pos, `Forbidden method name '${metName}'`)])
+          tcenvb.error(Array[(fd.pos, `Forbidden method name '${metName}'`)])
         | Some(field) -> acc![metName.value] = field
         }
       }
@@ -511,7 +522,7 @@ class TEnv{
     targs: Array<TType>,
   ): ?ClassFieldTypeMethod {
     (!this, cls) = this.processClassSetup(
-      tcenvb.context,
+      tcenvb,
       visitedClasses,
       true,
       className,
@@ -536,7 +547,7 @@ class TEnv{
           tparams,
           paramTArgs.map(targ -> this.normalize(tcenvb, targ)),
         )
-      | _ -> typingError(Array[(extend.pos, "Unexpected extend")])
+      | _ -> tcenvb.error(Array[(extend.pos, "Unexpected extend")])
       }
     };
     None()
@@ -562,18 +573,20 @@ class TEnv{
       x
     });
     params = fd.params.map(this.convertParam);
-    retType = fd.retType match {
-    | (pos, None()) -> // constructor
-      Type(
-        pos,
-        TAInst(
-          Name(pos, className.value),
-          tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
-        ),
-      )
-    | (_, Some(x)) ->
-      typingError(Array[(x.pos, "Unexpected annotation for constructor")])
+    fd.retType.i1 match {
+    | None() -> // constructor
+      void
+    | Some(x) ->
+      tcenvb.error(Array[(x.pos, "Unexpected annotation for constructor")])
     };
+    retTypePos = fd.retType.i0;
+    retType = Type(
+      retTypePos,
+      TAInst(
+        Name(retTypePos, className.value),
+        tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[]))),
+      ),
+    );
     tafun = TAFun(false, tparams, params, retType, cgNode);
     this.normalizeFun(tcenvb, fd.pos, tafun)
   }
@@ -646,7 +659,7 @@ class TEnv{
       ty.value match {
       | TAInst(Name(_, "undefined"), targs) ->
         if (targs.size() != 0) {
-          typingError(Array[(pos, "Unexpected type parameters for undefined")])
+          tcenvb.error(Array[(pos, "Unexpected type parameters for undefined")])
         };
         TType::single(TPrimUnit(TUndefined(), pos))
       | TAInst(className, targs) ->
@@ -676,10 +689,10 @@ class TEnv{
       )
     | TAObject(fields) ->
       (algebraicBranchField, tFields) = this.createTFields(tcenvb, fields);
-      createObject(pos, algebraicBranchField, tFields)
+      createObject(tcenvb, pos, algebraicBranchField, tFields)
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TObject(TFields::empty(), pos))
 
@@ -688,39 +701,44 @@ class TEnv{
 
     | TAInst(Name(p, "void"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimUnit(TVoid(), pos))
     | TAInst(Name(p, "undefined"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimUnit(TUndefined(), pos))
     | TAInst(Name(p, "Promise"), targs) ->
       if (targs.size() != 1) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TPromise(this.normalize(tcenvb, targs[0]), pos))
+      tArg = if (targs.size() >= 1) {
+        this.normalize(tcenvb, targs[0])
+      } else {
+        TType::top(pos)
+      };
+      TType::single(TPromise(tArg, pos))
     | TAInst(Name(p, "unknown"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::top(pos)
     | TAInst(Name(p, "never"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::bottom(pos)
     | TAInst(Name(p, x @ "true"), targs)
     | TAInst(Name(p, x @ "false"), targs) ->
       if (targs.size() != 0) {
-        typingError(Array[(p, "Invalid number of type arguments")])
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
       if (this.tparams.containsKey(n.value)) {
         if (targs.size() != 0) {
-          typingError(
+          tcenvb.error(
             Array[
               (
                 n.pos,
@@ -733,7 +751,7 @@ class TEnv{
         TType::fromTParamWithConstraint(subst, this, pos, tparam)
       } else if (this.subst.containsKey(n.value)) {
         if (targs.size() != 0) {
-          typingError(
+          tcenvb.error(
             Array[
               (
                 n.pos,
@@ -758,7 +776,7 @@ class TEnv{
           (targs.size() < tparams.size() &&
             tparams[targs.size()].default is None())
         ) {
-          typingError(
+          tcenvb.error(
             Array[
               (
                 n.pos,
@@ -792,9 +810,9 @@ class TEnv{
       for (ty in tupleElts) {
         ty match {
         | TEType(n, optional, x) ->
-          if (n is Some _) typingError(Array[(pos, "TODO named tuple")]);
+          if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
           if (optional is Some _) {
-            typingError(Array[(pos, "TODO optional element tuple")])
+            tcenvb.error(Array[(pos, "TODO optional element tuple")])
           };
           typeVec.push(x)
         | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
@@ -814,13 +832,17 @@ class TEnv{
     tafun match {
     | TAFun(isMethod, clauses, params, retType, cgNode) ->
       subst = Subst::mcreate(tcenvb);
-      TypeChecker::checkTypeParams(clauses, OptionalTypeParamsForbidden());
+      TypeChecker::checkTypeParams(
+        tcenvb,
+        clauses,
+        OptionalTypeParamsForbidden(),
+      );
       funClauses = mutable Vector[];
       for (tparam in clauses) {
-        invariant(
-          tparam.default is None(),
-          "no-default type parameter (already checked in checkTypeParams)",
-        );
+        // invariant(
+        //   tparam.default is None(),
+        //   "no-default type parameter (already checked in checkTypeParams)",
+        // );
         funTParam = this.makeTParam(tcenvb, tparam);
         funClauses.push(funTParam);
         !this.tparams[tparam.name.value] = funTParam;
@@ -835,16 +857,17 @@ class TEnv{
         param.name.value match {
         | PVar(Name(thisPos, "this")) ->
           if (i > 0) {
-            typingError(
+            tcenvb.error(
               Array[(thisPos, "Parameter named this must be the first one")],
-            )
+            );
+            continue
           };
           invariant(thisParam is None(), "Assigning thisParam multiple times");
           param.isRest.each(restPos ->
-            typingError(Array[(restPos, "this cannot be a spread parameter")])
+            tcenvb.error(Array[(restPos, "this cannot be a spread parameter")])
           );
           param.optional.each(optPos ->
-            typingError(Array[(optPos, "this cannot be optional")])
+            tcenvb.error(Array[(optPos, "this cannot be optional")])
           );
           !thisParam = Some(paramType);
           continue
@@ -852,34 +875,36 @@ class TEnv{
         };
         param.isRest match {
         | Some(restPos) ->
-          if (i != params.size() - 1) {
-            typingError(
-              Array[(restPos, "... must always be the last parameter")],
-            );
-          };
           param.optional match {
           | Some(optPos) ->
-            typingError(
+            tcenvb.error(
               Array[(optPos, "The spread parameter cannot be marked optional")],
             )
           | None() -> void
           };
           !spreadParam = Some(ArrayType::createFromFull(paramType));
+          if (i != params.size() - 1) {
+            tcenvb.error(
+              Array[(restPos, "... must always be the last parameter")],
+            );
+            break void
+          };
           continue
         | None() -> void
         };
         param.optional match {
         | None() ->
           optionalWitness match {
-          | None() -> normalParams.push(paramType)
+          | None() -> void
           | Some(wpos) ->
-            typingError(
+            tcenvb.error(
               Array[
                 (param.type.pos, "This parameter is not optional"),
                 (wpos, "It appears after this parameter that is optional"),
               ],
             )
-          }
+          };
+          normalParams.push(paramType)
         | Some(wpos) ->
           !optionalWitness = Some(wpos);
           optionalParams.push(
@@ -937,17 +962,18 @@ class TEnv{
           if (optField is None()) {
             algebraicBranchField match {
             | Some((existingPos, _existingType)) ->
-              typingError(
+              tcenvb.error(
                 Array[
                   (name.pos, `Duplicate field ${name}`),
                   (existingPos, "Previously declared here"),
                 ],
-              )
+              );
+              return None()
             | None() -> void
             };
             fd.optional match {
             | Some(optionalPos) ->
-              typingError(
+              tcenvb.error(
                 Array[(optionalPos, `Field ${name} cannot be optional`)],
               )
             | None() -> void
@@ -981,7 +1007,7 @@ class TEnv{
           );
           optField = TField::create(name.pos, name.value, false, decl);
           if (optField is None()) {
-            typingError(Array[(name.pos, `Forbidden method name ${name}`)])
+            tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
           };
           optField
         }

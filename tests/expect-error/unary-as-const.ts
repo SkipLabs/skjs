@@ -14,7 +14,9 @@ const config: {
 } = {
   // @skjs-expect-error Unnecessary 'as const'
   port: -8080 as const,
+  // @skjs-expect-error Unnecessary 'as const'
   timeout: +3000 as const,
+  // @skjs-expect-error Unnecessary 'as const'
   offset: -100n as const,
 };
 

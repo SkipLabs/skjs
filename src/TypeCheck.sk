@@ -22,8 +22,8 @@ class TypeChecker{
 /* evaluating this statements terminates the function. */
 /***************************************************************************/
 
-fun isTerminalBlock(bl: Array<Stmt>): Bool {
-  StmtTermination::block(bl).isTerminal()
+fun isTerminalBlock(tcenvb: mutable TCEnvBase, bl: Array<Stmt>): Bool {
+  StmtTermination::block(tcenvb, bl).isTerminal()
 }
 
 module end;

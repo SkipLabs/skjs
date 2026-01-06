@@ -21,10 +21,12 @@ class MethodWithThisNested {
 // Spread parameter cannot be named this
 class TestSpreadParameter1 {
   // @skjs-expect-error this cannot be a spread parameter
+  // @skjs-expect-error TODO: support this parameter
   method(...this: number[]): void {}
 }
 
 class TestSpreadParameter2 {
   // @skjs-expect-error Parameter named this must be the first one
+  // @skjs-expect-error TODO: support this parameter
   method(x: number, ...this: string[]): void {}
 }

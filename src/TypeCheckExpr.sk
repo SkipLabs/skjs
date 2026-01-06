@@ -38,7 +38,7 @@ extension class TypeChecker {
       ) {
         tcenv.localObjects![local.value] = LOCanGrow(None())
       };
-      tcenv.scope.bind(local, type, isInitialized)
+      tcenv.scope.bind(tcenv, local, type, isInitialized)
     | PArray(arrPat, rest) ->
       rest match {
       | Some(restName) ->
@@ -419,7 +419,7 @@ extension class TypeChecker {
         optionalChainingIsAlwaysUndefinedForThisSType;
     };
     if (optionalChainingIsUseless) {
-      typingError(
+      tcenv.error(
         Array[
           (pos, "Useless '?.'. Use '.' instead"),
           (objType.pos, `${objType} is never null nor undefined`),
@@ -427,7 +427,7 @@ extension class TypeChecker {
       )
     };
     if (optionalChainingIsAlwaysUndefined) {
-      typingError(
+      tcenv.error(
         Array[
           (pos, "Result of optional chaining is always undefined"),
           (objType.pos, `${objType} is always null or undefined`),
@@ -445,7 +445,7 @@ extension class TypeChecker {
   ): TType {
     ty = this.expr(tcenv, e, mostPrecise);
     if (this.nonTopContainsVoid(tcenv, ty)) {
-      typingError(
+      tcenv.error(
         Array[
           (pos, "Invalid operation on type void"),
           (e.pos, `This expression has type ${ty}`),
@@ -459,7 +459,7 @@ extension class TypeChecker {
      If mostPrecise, use the most precise type. */
   fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool): TType {
     if (mostPrecise) {
-      this.asConstExpr(e) match {
+      this.asConstExpr(tcenv, e) match {
       | Some(ty) -> return TType::single(ty)
       | None() -> void
       }
@@ -513,11 +513,11 @@ extension class TypeChecker {
             break staticClass
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
-              typingError(Array[(name.pos, "Non-const not supported")]);
+              tcenv.error(Array[(name.pos, "Non-const not supported")]);
             };
             break type match {
             | None() ->
-              value.flatMap(this.asConstExpr) match {
+              value.flatMap(e -> this.asConstExpr(tcenv, e)) match {
               | None() -> this.newTVar(tcenv, pos)
               | Some(ty) -> TType::single(ty)
               }
@@ -550,7 +550,7 @@ extension class TypeChecker {
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
           spreadTy.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
           | None() ->
-            typingError(
+            tcenv.error(
               Array[
                 (spreadExpr.pos, "Invalid spread"),
                 (spreadTy.pos, "This has type unknown"),
@@ -570,7 +570,7 @@ extension class TypeChecker {
                   indexes.push(spreadIndex)
                 }
               | _ ->
-                typingError(
+                tcenv.error(
                   Array[
                     (spreadExpr.pos, "Invalid spread"),
                     (spreadTy.pos, `This has type ${spreadTy}`),
@@ -594,19 +594,19 @@ extension class TypeChecker {
         | None() ->
           algebraicBranchField match {
           | Some((existingPos, _existingType)) ->
-            typingError(
+            tcenv.error(
               Array[
                 (name.pos, `Duplicate field ${name}`),
                 (existingPos, "Previously declared here"),
               ],
             )
-          | None() -> void
-          };
-          !algebraicBranchField = Some((name.pos, ty))
+          | None() -> !algebraicBranchField = Some((name.pos, ty))
+          }
         | Some(field) -> fields![name.value] = field
         }
       };
       obj = createObject(
+        tcenv,
         pos,
         algebraicBranchField,
         TFields::create{
@@ -625,10 +625,10 @@ extension class TypeChecker {
       obj
     | Call(Expr(_, Var(Name(superPos, "super"))), targs, args) ->
       this.super match {
-      | None() -> typingError(Array[(superPos, "'super' is not defined")])
+      | None() -> tcenv.error(Array[(superPos, "'super' is not defined")])
       | Some((superCstr, super)) ->
         if (targs.size() != 0) {
-          typingError(
+          tcenv.error(
             Array[(pos, "super cannot be called with type arguments")],
           );
         };
@@ -658,14 +658,16 @@ extension class TypeChecker {
       tfuns = fty
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {
-      | Some(TObject(TFields{call => Some((false, tfuns))}, _)) -> tfuns
-      | Some(TObject(TFields{call => Some((true, _))}, _)) ->
-        typingError(
-          Array[
-            (pos, "Invalid call"),
-            (fty.pos, `Type ${fty} may not be a function`),
-          ],
-        )
+      | Some(TObject(TFields{call => Some((optional, tfuns))}, _)) ->
+        if (optional) {
+          tcenv.error(
+            Array[
+              (pos, "Invalid call"),
+              (fty.pos, `Type ${fty} may not be a function`),
+            ],
+          )
+        };
+        tfuns
       | _ ->
         typingError(
           Array[
@@ -707,15 +709,16 @@ extension class TypeChecker {
         subExprTy
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes -> stypes.singleElt()) match {
-        | Some(TObject(TFields{new => Some((false, f))}, _pos)) ->
+        | Some(TObject(TFields{new => Some((optional, f))}, objPos)) ->
+          if (optional) {
+            tcenv.error(
+              Array[
+                (pos, "Invalid new"),
+                (objPos, `${subExprTy} may not have a constructor`),
+              ],
+            )
+          };
           this.call(tcenv, pos, f, tArgs, args, mostPrecise)
-        | Some(TObject(TFields{new => Some((true, _))}, objPos)) ->
-          typingError(
-            Array[
-              (pos, "Invalid new"),
-              (objPos, `${subExprTy} may not have a constructor`),
-            ],
-          )
         | Some(TObject(TFields{new => None()}, objPos)) ->
           typingError(
             Array[
@@ -825,8 +828,8 @@ extension class TypeChecker {
               | BOStrictEquality() -> "false"
               | BOStrictInequality() -> "true"
               };
-              typingError(
-                Array[(pos, "This is equality is always " + alwaysResult)],
+              tcenv.error(
+                Array[(pos, `This equality is always ${alwaysResult}`)],
               )
             }
           }
@@ -881,9 +884,9 @@ extension class TypeChecker {
           ty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
             stypes.singleElt()
           ) match {
-          | Some(TPrimValue(k, _, _)) -> k
+          | Some(TPrimValue(k, _, _)) -> Some(k)
           | _ ->
-            typingError(
+            tcenv.error(
               Array[
                 (
                   pos,
@@ -891,22 +894,25 @@ extension class TypeChecker {
                 ),
                 (e1.pos, `This is a ${ty}`),
               ],
-            )
+            );
+            None()
           }
         };
         kind1 = getExprPrimKind(e1);
         kind2 = getExprPrimKind(e2);
-        if (kind1 != kind2) {
-          typingError(
+        (kind1, kind2) match {
+        | (Some(k1), Some(k2)) if (k1 != k2) ->
+          tcenv.error(
             Array[
               (
                 pos,
                 "Invalid comparison. Both operands must have the same type.",
               ),
-              (e1.pos, `This is a ${kind1}`),
-              (e2.pos, `This is a ${kind2}`),
+              (e1.pos, `This is a ${k1}`),
+              (e2.pos, `This is a ${k2}`),
             ],
           )
+        | _ -> void
         };
         TType::single(TPrimValue::boolean(pos))
 
@@ -965,23 +971,21 @@ extension class TypeChecker {
             }
           };
           if (hasVoid) {
-            typingError(
+            tcenv.error(
               Array[
                 (pos, "Invalid operation on type void"),
                 (e1.pos, `This expression has type ${ty1}`),
               ],
             )
-          };
-          if (!hasNullOrUndefined) {
-            typingError(
+          } else if (!hasNullOrUndefined) {
+            tcenv.error(
               Array[
                 (pos, "This operator is useless"),
                 (e1.pos, "This expression is never null or undefined"),
               ],
             );
-          };
-          if (!hasOthers) {
-            typingError(
+          } else if (!hasOthers) {
+            tcenv.error(
               Array[
                 (pos, "This operator is useless"),
                 (e.pos, "This expression is always null or undefined"),
@@ -1009,7 +1013,7 @@ extension class TypeChecker {
       t2 = this.expr(tcenv, e2, true);
       t2.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
-        typingError(
+        tcenv.error(
           Array[(pos, "Invalid in"), (e2.pos, "This has type unknown")],
         )
       | Some(stypes2) ->
@@ -1019,9 +1023,11 @@ extension class TypeChecker {
           stype2 match {
           | TPrimUnit _
           | TPrimValue _ ->
-            typingError(
+            tcenv.error(
               Array[(pos, "Invalid in"), (e2.pos, `This has type ${t2}`)],
-            )
+            );
+            !canBeTrue = true;
+            !canBeFalse = true
           | TObject(TFields{fields, indexes}, _pos) ->
             !canBeTrue = true; // object types are open
             !canBeFalse =
@@ -1040,13 +1046,15 @@ extension class TypeChecker {
           | TTuple _
           | TPromise _
           | TAlgebraic _ ->
-            typingError(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)])
+            tcenv.error(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)]);
+            !canBeTrue = true;
+            !canBeFalse = true
           }
         };
         (canBeTrue, canBeFalse) match {
-        | (true, true) -> TType::single(TPrimValue::boolean(pos))
+        | (true, true) -> void
         | (false, false) ->
-          typingError(
+          tcenv.error(
             Array[
               (pos, "Unexpected in"),
               (e1.pos, `This has type ${t1}`),
@@ -1054,9 +1062,10 @@ extension class TypeChecker {
             ],
           )
         | _ ->
-          typingError(Array[(pos, `This expression is always ${canBeTrue}`)])
+          tcenv.error(Array[(pos, `This expression is always ${canBeTrue}`)])
         }
-      }
+      };
+      TType::single(TPrimValue::boolean(pos))
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, tcenv, subExpr, true);
       TType::single(TPrimValue::string(pos))
@@ -1126,12 +1135,13 @@ extension class TypeChecker {
 
       TType::union(tcenv.subst, this.tenv, left, right)
     | AsConst(subExpr) ->
-      this.asConstExpr(subExpr) match {
+      this.asConstExpr(tcenv, subExpr) match {
       | Some(ty) -> TType::single(ty)
       | None() ->
-        typingError(
-          Array[(pos, "'as const' can only be used with string literals")],
-        )
+        tcenv.error(
+          Array[(pos, "'as const' can only be used with some literals")],
+        );
+        this.expr(tcenv, subExpr, true)
       }
     | Params _ -> paramsError(pos)
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
@@ -1140,11 +1150,12 @@ extension class TypeChecker {
   }
 
   /* Typechecks expression e as const */
-  fun asConstExpr(e: Expr): ?SType {
+  fun asConstExpr(tcenvb: mutable TCEnvBase, e: Expr): ?SType {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
-      typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
+      tcenvb.error(Array[(subExpr.pos, "Unnecessary 'as const'")]);
+      this.asConstExpr(tcenvb, subExpr)
     | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
     | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
     | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
@@ -1153,17 +1164,43 @@ extension class TypeChecker {
     | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
     | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
     | Unop(UOExclamationMark(), subE) ->
-      this.asConstExpr(subE).map(stype -> {
-        msg = if (stype is TPrimValue(TBool(), _, _)) {
-          "Constant expression could have been simplified"
-        } else {
-          "Invalid unary !"
-        };
-        typingError(Array[(pos, msg), (subE.pos, `This has type ${stype}`)])
-      })
+      this.asConstExpr(tcenvb, subE).map(stype ->
+        stype match {
+        | TPrimValue(TBool(), values, _) ->
+          values.flatMap(v -> v.singleElt()) match {
+          | Some((_vPos, v)) ->
+            tcenvb.error(
+              Array[
+                (pos, "Constant expression could have been simplified"),
+                (subE.pos, `This has type ${v}`),
+              ],
+            );
+            res = v match {
+            | "true" -> "false"
+            | "false" -> "true"
+            | _ ->
+              internal_error(
+                `asConstExpr on Unop(UOExclamationMark) encountered a non-true non-false boolean: ${v}`,
+              )
+            };
+            TPrimValue::single(TBool(), res, pos)
+          | None() ->
+            internal_error(
+              `asConstExpr returned a non-literal boolean: ${stype}`,
+            )
+          }
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Invalid unary !"),
+              (subE.pos, `This has type ${stype}`),
+            ],
+          )
+        }
+      )
     | Unop(UOTild(), _) -> /* TODO */ None()
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
-      this.asConstExpr(subE).flatMap(stype ->
+      this.asConstExpr(tcenvb, subE).flatMap(stype ->
         stype match {
         | TPrimValue(k @ TNum(), valuesOpt, _)
         | TPrimValue(k @ TBigInt(), valuesOpt, _) ->
@@ -1267,7 +1304,7 @@ extension class TypeChecker {
     body: ClosureBody,
   ): void {
     for (param in params) {
-      tcenv.scope.bind(param.i0, param.i1, true)
+      tcenv.scope.bind(tcenv, param.i0, param.i1, true)
     };
     body match {
     | CBExpr(e) ->
@@ -1298,7 +1335,7 @@ extension class TypeChecker {
     cstrType.cstr match {
     | None() ->
       if (args.size() == 0) return void;
-      typingError(Array[(pos, "Invalid new: constructor expects no arguments")])
+      tcenv.error(Array[(pos, "Invalid new: constructor expects no arguments")])
     | Some(cstr) -> _ = this.call(tcenv, pos, cstr, Array[], args, true)
     }
   }
@@ -1310,7 +1347,7 @@ extension class TypeChecker {
     e2: Expr,
     mostPrecise: Bool,
   ): TType {
-    this.checkLValue(e1);
+    this.checkLValue(tcenv, e1);
     e1.value match {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2, mostPrecise);
@@ -1357,19 +1394,19 @@ extension class TypeChecker {
     fieldType: TType,
     used: ?PosRange,
   ): TType {
-    objField = tcenv.scope
+    tcenv.scope
       .get(local)
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
       invariant(fields.indexes.isEmpty(), "Local objects have no indexes");
       invariant(fields.new is None(), "Local objects have no constructors");
-      fields.maybeGet(fieldName.value) match {
+      objField = fields.maybeGet(fieldName.value) match {
       | None() ->
         used match {
         | None() -> void
         | Some(usedPos) ->
-          typingError(
+          tcenv.error(
             Array[
               (pos, "You are trying to add a field to this object"),
               (
@@ -1380,51 +1417,46 @@ extension class TypeChecker {
           )
         };
         if (tcenv.scope.isThroughLoop(local)) {
-          typingError(
+          tcenv.error(
             Array[(local.pos, "You cannot add a field to an object in a loop")],
           )
         };
-        field = TField::create(
-          fieldType.pos,
-          fieldName.value,
-          false,
-          fieldType,
-        ) match {
+        TField::create(fieldType.pos, fieldName.value, false, fieldType) match {
         | None() ->
-          typingError(
+          tcenv.error(
             Array[
               (pos, "TODO: converting an object to an algebraic"),
               (fieldName.pos, `For field ${fieldName}`),
               (fieldType.pos, `Of type ${fieldType}`),
             ],
           )
-        | Some(f) -> f
+        | Some(field) ->
+          newTy = TFields::inter(
+            tcenv.subst,
+            this.tenv,
+            fields,
+            TFields::create{fields => Array[field]},
+          ) match {
+          | None() -> TType::bottom(objPos)
+          | Some(newFields) -> TType::single(TObject(newFields, objPos))
+          };
+          tcenv.scope.set(local, newTy, (x, y) -> {
+            this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
+          })
         };
-        newTy = TFields::inter(
-          tcenv.subst,
-          this.tenv,
-          fields,
-          TFields::create{fields => Array[field]},
-        ) match {
-        | None() -> TType::bottom(objPos)
-        | Some(newFields) -> TType::single(TObject(newFields, objPos))
-        };
-        tcenv.scope.set(local, newTy, (x, y) -> {
-          this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
-        });
         fieldType
       | Some(fd) -> fd.type
-      }
+      };
+      this.checkSubType(
+        tcenv,
+        fieldType.pos,
+        "Invalid assignment",
+        fieldType,
+        objField,
+      )
     | _ ->
-      typingError(Array[(pos, "Internal error: local object is not an object")])
+      tcenv.error(Array[(pos, "Internal error: local object is not an object")])
     };
-    this.checkSubType(
-      tcenv,
-      fieldType.pos,
-      "Invalid assignment",
-      fieldType,
-      objField,
-    );
     fieldType
   }
 
@@ -1490,7 +1522,7 @@ extension class TypeChecker {
             this.tenv,
           ) match {
           | None() ->
-            typingError(
+            tcenv.error(
               Array[
                 (argExpr.pos, "Invalid spread argument"),
                 (spreadTy.pos, `It has type ${spreadTy}`),
@@ -1514,7 +1546,7 @@ extension class TypeChecker {
             !moreArgs = Some(ma)
           }
         | _ ->
-          typingError(
+          tcenv.error(
             Array[
               (argExpr.pos, "Invalid spread argument"),
               (spreadTy.pos, `It has type ${spreadTy}`),
@@ -1535,7 +1567,7 @@ extension class TypeChecker {
     | TFuns(tfun, fPos) ->
       tcenv.recordCalls(tfun.cgNodes);
       if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
-        typingError(
+        tcenv.error(
           Array[
             (
               pos,
@@ -1547,10 +1579,10 @@ extension class TypeChecker {
       };
       map = SortedMap[];
       for (i => tparamDecl in tfun.tparams) {
-        !map[tparamDecl.id] = if (targs.isEmpty()) {
-          this.newTVar(tcenv, pos)
-        } else {
+        !map[tparamDecl.id] = if (i < targs.size()) {
           targs[i]
+        } else {
+          this.newTVar(tcenv, pos)
         };
       };
       !tfun = (mutable Instantiate()).fun_(
@@ -1569,14 +1601,22 @@ extension class TypeChecker {
       loop {
         for (i in Range(0, tfun.params.size())) {
           if (i >= args.size()) {
-            typingError(
+            tcenv.error(
               Array[
                 (pos, "Invalid call"),
                 (fPos, `This function has ${tfun.params.size()} parameters`),
               ],
+            );
+            break void
+          } else {
+            this.checkSubType(
+              tcenv,
+              pos,
+              "Invalid call",
+              args[i],
+              tfun.params[i],
             )
-          };
-          this.checkSubType(tcenv, pos, "Invalid call", args[i], tfun.params[i])
+          }
         };
         for (j in Range(0, tfun.optionalParams.size())) {
           i = tfun.params.size() + j;
@@ -1619,7 +1659,7 @@ extension class TypeChecker {
               this.checkSubType(tcenv, pos, "Invalid argument", ma, eltType)
             }
           | None() ->
-            typingError(
+            tcenv.error(
               Array[
                 (pos, "Invalid call. Unexpected type for ..."),
                 (spreadType.getPos(), `${spreadType} is not an array`),

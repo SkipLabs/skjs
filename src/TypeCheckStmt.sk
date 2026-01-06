@@ -28,10 +28,11 @@ extension class TypeChecker {
       };
       this.checkSubType(tcenv, epos, "Invalid return type", rtype, retType)
 
-    | Bind(BKVar(), _vars) ->
-      typingError(Array[(st.pos, "Don't use var, use let or const instead")])
-
     | Bind(bkind, bindings) ->
+      if (bkind is BKVar()) {
+        tcenv.error(Array[(st.pos, "Don't use var, use let or const instead")])
+      };
+
       for (binding in bindings) {
         (ty, isInitialized) = this.bindType(
           binding.pat.pos,
@@ -55,7 +56,7 @@ extension class TypeChecker {
       this.checkBool(tcenv, e);
       scope1 = this.block(tcenv, block1, Some((e, true)));
       scope2 = this.block(tcenv, block2, Some((e, false)));
-      (isTerminalBlock(block1), isTerminalBlock(block2)) match {
+      (isTerminalBlock(tcenv, block1), isTerminalBlock(tcenv, block2)) match {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
       | (true, false) -> tcenv.popScopeReplace(scope2)
       | (false, true) -> tcenv.popScopeReplace(scope1)
@@ -133,15 +134,16 @@ extension class TypeChecker {
         param match {
         | Some(pat) ->
           errorType = type match {
-          | Some(t) -> // If we trusted user: this.tenv.normalize(tcenv, t)
-            typingError(
+          | Some(t) ->
+            tcenv.error(
               Array[
                 (
                   t.pos,
                   "Do not specify a type annotation for caught exceptions as it cannot be trusted",
                 ),
               ],
-            )
+            );
+            this.tenv.normalize(tcenv, t)
           | None() -> TType::top(pat.pos)
           };
           this.bind(tcenv, BKLet(), pat, errorType, true, false)
@@ -175,19 +177,20 @@ extension class TypeChecker {
     branches: Array<SwitchBranch>,
   ): void {
     if (branches.size() == 0) {
-      typingError(Array[(e.pos, "Missing branch")])
+      tcenv.error(Array[(e.pos, "Missing branch")]);
+      return void
     };
     if (branches.size() == 1) {
-      typingError(Array[(e.pos, "Useless switch")])
+      tcenv.error(Array[(e.pos, "Useless switch")])
     };
     _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = (pos, block) -> {
-      term = StmtTermination::block(block);
+      term = StmtTermination::block(tcenv, block);
       if (term.mayFallthrough) {
         if (block.size() != 0) {
           !pos = block[block.size() - 1].pos;
         };
-        typingError(Array[(pos, "Missing break")])
+        tcenv.error(Array[(pos, "Missing break")])
       }
     };
     scope = branches[0] match {
@@ -195,8 +198,9 @@ extension class TypeChecker {
       checkBreak(pos, block);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
-    | SwitchBranch(Default(), _, _) ->
-      typingError(Array[(e.pos, "Missing branch")])
+    | SwitchBranch(Default(), block, _) ->
+      tcenv.error(Array[(e.pos, "Missing branch")]);
+      this.block(tcenv, block, None())
     };
     for (i in Range(1, branches.size())) {
       cond = branches[i] match {
@@ -227,7 +231,8 @@ extension class TypeChecker {
     };
     for (branch in branches) {
       if (cases.isEmpty()) {
-        typingError(Array[(branch.pos, "Unused branch")])
+        tcenv.error(Array[(branch.pos, "Unused branch")]);
+        break void
       };
       branch match {
       | SwitchBranch(Case(v), _, pos) ->
@@ -236,12 +241,12 @@ extension class TypeChecker {
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.containsKey(staticValue)) {
-            typingError(Array[(pos, "Unused branch")])
-          };
-          cases.remove(staticValue)
+            tcenv.error(Array[(pos, "Unused branch")])
+          } else {
+            cases.remove(staticValue)
+          }
         | None() -> void
         }
-
       | SwitchBranch(Default(), _stmts, _pos) -> cases.clear()
       }
     };
@@ -250,7 +255,7 @@ extension class TypeChecker {
         cases.items().map(x -> (x.i1, x.i0)),
       );
       missingCases.sortBy(x ~> x.i1);
-      typingError(
+      tcenv.error(
         Array[(e.pos, "Missing branches")].concat(missingCases.toArray()),
       );
     };
@@ -261,7 +266,7 @@ extension class TypeChecker {
     initStmt.value match {
     | Bind(kind, bindings) ->
       if (bindings.size() != 1) {
-        typingError(
+        tcenv.error(
           Array[
             (
               initStmt.pos,
@@ -270,10 +275,11 @@ extension class TypeChecker {
           ],
         )
       };
-      binding = bindings[0];
-      this.bind(tcenv, kind, binding.pat, varType, true, false)
+      for (binding in bindings) {
+        this.bind(tcenv, kind, binding.pat, varType, true, false)
+      }
     | _ ->
-      typingError(Array[(initStmt.pos, "Invalid loop variable declaration")])
+      tcenv.error(Array[(initStmt.pos, "Invalid loop variable declaration")])
     }
   }
 
@@ -298,7 +304,7 @@ extension class TypeChecker {
         )
       ) return void
     };
-    typingError(
+    tcenv.error(
       Array[
         (pos, "for-in loop requires an object or array type"),
         (iterableType.pos, `Here it has type ${iterableType}`),
@@ -311,17 +317,20 @@ extension class TypeChecker {
     pos: PosRange,
     iterableType: TType,
   ): TType {
+    result = TType::bottom(pos);
+
     stypes = iterableType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> stypes
-    | _ -> typingError(Array[(pos, "Invalid iterable type for for-of loop")])
+    | _ ->
+      tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")]);
+      return result
     };
 
-    result = TType::bottom(pos);
     for (stype in stypes) {
       stype match {
       | TObject(fields, _objectPos) ->
         if (fields.indexes.isEmpty()) {
-          typingError(Array[(pos, "Invalid iterable type for for-of loop")])
+          tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
         };
         for (index in fields.indexes) {
           !result = TType::union(
@@ -343,7 +352,7 @@ extension class TypeChecker {
           TType::single(TPrimValue::string(pos)),
         )
       | _ ->
-        typingError(
+        tcenv.error(
           Array[
             (pos, "for-of loop requires an array, string, or iterable type"),
           ],

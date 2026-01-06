@@ -44,9 +44,10 @@ extension class TypeChecker {
     ) match {
     | Some(obj @ TObject _) -> TType::single(obj.removeFields(methods))
     | _ ->
-      typingError(
+      subst.error(
         Array[(ty.pos, "Internal error: new should produce an object")],
-      )
+      );
+      ty
     }
   }
 
@@ -60,7 +61,7 @@ extension class TypeChecker {
     TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
     | STRec(reason, pos1, subTy2) ->
-      typingError(
+      tcenv.error(
         Array[
           (pos, msg),
           (
@@ -79,7 +80,7 @@ extension class TypeChecker {
         ],
       )
     | err @ STError _ ->
-      typingError(Array[(pos, err.toString(tcenv.subst, this.tenv, ty1))])
+      tcenv.error(Array[(pos, err.toString(tcenv.subst, this.tenv, ty1))])
     }
   }
 
@@ -159,7 +160,7 @@ extension class TypeChecker {
     };
 
     if (!isStringifiable) {
-      typingError(
+      tcenv.error(
         Array[
           (
             pos,
@@ -180,7 +181,7 @@ extension class TypeChecker {
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(TNum(), _, _)) -> void
-    | _ -> typingError(Array[(pos, msg), (ty.pos, "This is not a number")])
+    | _ -> tcenv.error(Array[(pos, msg), (ty.pos, "This is not a number")])
     };
   }
 
@@ -217,14 +218,14 @@ extension class TypeChecker {
     TType::var(tvar)
   }
 
-  fun checkLValue(e: Expr): void {
+  fun checkLValue(tcenvb: mutable TCEnvBase, e: Expr): void {
     e.value match {
-    | Var(Name(_, "super")) -> typingError(Array[(e.pos, "Invalid lvalue")])
+    | Var(Name(_, "super")) -> tcenvb.error(Array[(e.pos, "Invalid lvalue")])
     | Var _ -> void
     | Get _ -> void
     | EArray _ -> void
-    | Dot(NormalDot(), e1, _) -> this.checkLValue(e1)
-    | _ -> typingError(Array[(e.pos, "Invalid lvalue")])
+    | Dot(NormalDot(), e1, _) -> this.checkLValue(tcenvb, e1)
+    | _ -> tcenvb.error(Array[(e.pos, "Invalid lvalue")])
     }
   }
 }

@@ -107,21 +107,21 @@ value class StmtTermination private {
     !this.mayFallthrough && (this.mayReturn || this.mayThrow)
   }
 
-  static fun it<T>(it: mutable Iterator<T>, f: T ~> this): this {
+  static fun it<T>(it: mutable Iterator<T>, f: T -> this): this {
     it.next() match {
     | None() -> static::skip
     | Some(x) -> f(x).thenk(() -> static::it(it, f))
     }
   }
-  static fun seq<T>(s: Sequence<T>, f: T ~> this): this {
+  static fun seq<T>(s: Sequence<T>, f: T -> this): this {
     static::it(s.iterator(), f)
   }
-  static fun or<T>(s: Sequence<T>, f: T ~> this): this {
+  static fun or<T>(s: Sequence<T>, f: T -> this): this {
     if (s.isEmpty()) internal_error("sequence should not be empty");
     s.reduce((acc, x) -> acc / f(x), static{})
   }
 
-  static fun stmt(st: Stmt): this {
+  static fun stmt(tcenvb: mutable TCEnvBase, st: Stmt): this {
     st.value match {
     | StmtEmpty() -> static::skip
     | StmtExpr(e) -> static::expr(e)
@@ -131,58 +131,59 @@ value class StmtTermination private {
     | Throw(e) -> static::expr(e).then(static::throw_)
     | If(cond, bl1, bl2o) ->
       static::cond(cond).if_(
-        () ~> static::block(bl1),
-        () ~> static::blockOpt(bl2o),
+        () -> static::block(tcenvb, bl1),
+        () -> static::blockOpt(tcenvb, bl2o),
       )
     | ForInOf(_forInOfKind, var, e, body) ->
-      static::forVar(var);
-      static::expr(e).thenk(() ~>
-        CondTermination::any.loop_(() ~> static::block(body))
+      static::forVar(tcenvb, var);
+      static::expr(e).thenk(() ->
+        CondTermination::any.loop_(() -> static::block(tcenvb, body))
       )
     | For(init, cond, incr, body) ->
-      static::stmt(init).thenk(() ~>
-        static::cond(cond).loop_(() ~>
-          static::block(body).thenk(() ~> static::expr(incr))
+      static::stmt(tcenvb, init).thenk(() ->
+        static::cond(cond).loop_(() ->
+          static::block(tcenvb, body).thenk(() ~> static::expr(incr))
         )
       )
-    | While(cond, body) -> static::cond(cond).loop_(() ~> static::block(body))
+    | While(cond, body) ->
+      static::cond(cond).loop_(() -> static::block(tcenvb, body))
     | Bind(_kind, bindings) -> static::seq(bindings, static::binding)
     | Switch(e, branches) ->
-      static::expr(e).thenk(() ~> {
-        branchesTerm = static::or(branches, static::branch);
+      static::expr(e).thenk(() -> {
+        branchesTerm = static::or(branches, b -> static::branch(tcenvb, b));
         switchIsExhaustive = branches.any(branch ~>
           branch is SwitchBranch(Default(), _, _)
         ); // Unless exhaustiveness is proven differently?
         if (switchIsExhaustive) branchesTerm else branchesTerm.maybe();
       })
-    | Block(block) -> static::block(block)
+    | Block(block) -> static::block(tcenvb, block)
     | Try(tryBlock, catchClause, finallyBlock) ->
-      tryTerm = static::block(tryBlock);
+      tryTerm = static::block(tcenvb, tryBlock);
       afterCatchTerm = catchClause match {
       | Some(CatchClause(_, _, catchBlock)) ->
         // TODO: warning if tryTerm.mayThrow is false
         // Remove mayThrow from try and combine with catch
         tryNoThrow = tryTerm with {mayThrow => false};
-        catchTerm = static::block(catchBlock);
+        catchTerm = static::block(tcenvb, catchBlock);
         tryNoThrow / catchTerm
       | None() -> tryTerm
       };
       finallyBlock match {
       | Some(finallyStmts) ->
         // TODO: warning if afterCatchTerm always loops or terminates normally
-        finallyTerm = static::block(finallyStmts);
+        finallyTerm = static::block(tcenvb, finallyStmts);
         afterCatchTerm.finally(finallyTerm)
       | None() -> afterCatchTerm
       }
     }
   }
 
-  static fun block(stmts: Sequence<Stmt>): this {
-    static::seq(stmts, static::stmt)
+  static fun block(tcenvb: mutable TCEnvBase, stmts: Sequence<Stmt>): this {
+    static::seq(stmts, s -> static::stmt(tcenvb, s))
   }
 
-  static fun blockOpt(so: ?Sequence<Stmt>): this {
-    static::block(so.default(Array[]))
+  static fun blockOpt(tcenvb: mutable TCEnvBase, so: ?Sequence<Stmt>): this {
+    static::block(tcenvb, so.default(Array[]))
   }
 
   static fun expr(expr: Expr): this {
@@ -260,20 +261,20 @@ value class StmtTermination private {
     }
   }
 
-  static fun branch(branch: SwitchBranch): this {
+  static fun branch(tcenvb: mutable TCEnvBase, branch: SwitchBranch): this {
     branch match {
     | SwitchBranch(case, block, _pos) ->
       case match {
-      | Case(e) -> static::branchCase(e)
+      | Case(e) -> static::branchCase(tcenvb, e)
       | Default() -> void
       };
-      static::block(block).breakToFallthrough()
+      static::block(tcenvb, block).breakToFallthrough()
     }
   }
 
-  static fun branchCase(e: Expr): void {
+  static fun branchCase(tcenvb: mutable TCEnvBase, e: Expr): void {
     static::expr(e).mayNonThrough().each(term ->
-      typingError(
+      tcenvb.error(
         Array[
           (e.pos, `Invalid switch branch case expression, it may ${term}.`),
         ],
@@ -285,9 +286,9 @@ value class StmtTermination private {
     static::exprOpt(binding.value)
   }
 
-  static fun forVar(stmt: Stmt): void {
-    static::stmt(stmt).mayNonThrough().each(term ->
-      typingError(
+  static fun forVar(tcenvb: mutable TCEnvBase, stmt: Stmt): void {
+    static::stmt(tcenvb, stmt).mayNonThrough().each(term ->
+      tcenvb.error(
         Array[(stmt.pos, `Invalid for variable initializer, it may ${term}.`)],
       )
     )
@@ -305,10 +306,10 @@ value class CondTermination private (
   }
 
   fun if_(
-    ktrue: () ~> StmtTermination,
-    kfalse: () ~> StmtTermination,
+    ktrue: () -> StmtTermination,
+    kfalse: () -> StmtTermination,
   ): StmtTermination {
-    this.exprTermination.thenk(() ~>
+    this.exprTermination.thenk(() ->
       this.tauto match {
       | TCAlwaysTrue() -> ktrue()
       | TCAlwaysFalse() -> kfalse()
@@ -317,9 +318,9 @@ value class CondTermination private (
     )
   }
 
-  fun loop_(kbody: () ~> StmtTermination): StmtTermination {
+  fun loop_(kbody: () -> StmtTermination): StmtTermination {
     this.if_(
-      () ~>
+      () ->
         kbody()
           .continueToFallthrough()
           .then(StmtTermination::loop_)

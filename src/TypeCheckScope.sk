@@ -47,19 +47,24 @@ mutable class Scope{
     this.maybeGetRefHelper(false, name)
   }
 
-  mutable fun bind(name: Name, ty: TType, isInitialized: Bool): void {
+  mutable fun bind(
+    tcenvb: mutable TCEnvBase,
+    name: Name,
+    ty: TType,
+    isInitialized: Bool,
+  ): void {
     this.maybeGetLocal(name) match {
-    | None() ->
-      this.!locals[name.value] = name;
-      this.!refs[name.value] = LocalRef(ty, isInitialized)
+    | None() -> void
     | Some(otherDef) ->
-      typingError(
+      tcenvb.error(
         Array[
-          (name.pos, name.value + " is already defined"),
+          (name.pos, `${name} is already defined`),
           (otherDef.pos, "Previous definition was here"),
         ],
       )
-    }
+    };
+    this.!locals[name.value] = name;
+    this.!refs[name.value] = LocalRef(ty, isInitialized)
   }
 
   readonly fun isThroughLoop(name: Name): Bool {
