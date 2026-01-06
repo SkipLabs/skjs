@@ -1394,19 +1394,19 @@ extension class TypeChecker {
     fieldType: TType,
     used: ?PosRange,
   ): TType {
-    objField = tcenv.scope
+    tcenv.scope
       .get(local)
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
       invariant(fields.indexes.isEmpty(), "Local objects have no indexes");
       invariant(fields.new is None(), "Local objects have no constructors");
-      fields.maybeGet(fieldName.value) match {
+      objField = fields.maybeGet(fieldName.value) match {
       | None() ->
         used match {
         | None() -> void
         | Some(usedPos) ->
-          typingError(
+          tcenv.error(
             Array[
               (pos, "You are trying to add a field to this object"),
               (
@@ -1417,51 +1417,46 @@ extension class TypeChecker {
           )
         };
         if (tcenv.scope.isThroughLoop(local)) {
-          typingError(
+          tcenv.error(
             Array[(local.pos, "You cannot add a field to an object in a loop")],
           )
         };
-        field = TField::create(
-          fieldType.pos,
-          fieldName.value,
-          false,
-          fieldType,
-        ) match {
+        TField::create(fieldType.pos, fieldName.value, false, fieldType) match {
         | None() ->
-          typingError(
+          tcenv.error(
             Array[
               (pos, "TODO: converting an object to an algebraic"),
               (fieldName.pos, `For field ${fieldName}`),
               (fieldType.pos, `Of type ${fieldType}`),
             ],
           )
-        | Some(f) -> f
+        | Some(field) ->
+          newTy = TFields::inter(
+            tcenv.subst,
+            this.tenv,
+            fields,
+            TFields::create{fields => Array[field]},
+          ) match {
+          | None() -> TType::bottom(objPos)
+          | Some(newFields) -> TType::single(TObject(newFields, objPos))
+          };
+          tcenv.scope.set(local, newTy, (x, y) -> {
+            this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
+          })
         };
-        newTy = TFields::inter(
-          tcenv.subst,
-          this.tenv,
-          fields,
-          TFields::create{fields => Array[field]},
-        ) match {
-        | None() -> TType::bottom(objPos)
-        | Some(newFields) -> TType::single(TObject(newFields, objPos))
-        };
-        tcenv.scope.set(local, newTy, (x, y) -> {
-          this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
-        });
         fieldType
       | Some(fd) -> fd.type
-      }
+      };
+      this.checkSubType(
+        tcenv,
+        fieldType.pos,
+        "Invalid assignment",
+        fieldType,
+        objField,
+      )
     | _ ->
-      typingError(Array[(pos, "Internal error: local object is not an object")])
+      tcenv.error(Array[(pos, "Internal error: local object is not an object")])
     };
-    this.checkSubType(
-      tcenv,
-      fieldType.pos,
-      "Invalid assignment",
-      fieldType,
-      objField,
-    );
     fieldType
   }
 
