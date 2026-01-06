@@ -1138,9 +1138,10 @@ extension class TypeChecker {
       this.asConstExpr(subExpr) match {
       | Some(ty) -> TType::single(ty)
       | None() ->
-        typingError(
-          Array[(pos, "'as const' can only be used with string literals")],
-        )
+        tcenv.error(
+          Array[(pos, "'as const' can only be used with some literals")],
+        );
+        this.expr(tcenv, subExpr, true)
       }
     | Params _ -> paramsError(pos)
     | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
