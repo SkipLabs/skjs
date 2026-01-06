@@ -231,7 +231,8 @@ extension class TypeChecker {
     };
     for (branch in branches) {
       if (cases.isEmpty()) {
-        typingError(Array[(branch.pos, "Unused branch")])
+        tcenv.error(Array[(branch.pos, "Unused branch")]);
+        break void
       };
       branch match {
       | SwitchBranch(Case(v), _, pos) ->
@@ -240,12 +241,12 @@ extension class TypeChecker {
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.containsKey(staticValue)) {
-            typingError(Array[(pos, "Unused branch")])
-          };
-          cases.remove(staticValue)
+            tcenv.error(Array[(pos, "Unused branch")])
+          } else {
+            cases.remove(staticValue)
+          }
         | None() -> void
         }
-
       | SwitchBranch(Default(), _stmts, _pos) -> cases.clear()
       }
     };
@@ -254,7 +255,7 @@ extension class TypeChecker {
         cases.items().map(x -> (x.i1, x.i0)),
       );
       missingCases.sortBy(x ~> x.i1);
-      typingError(
+      tcenv.error(
         Array[(e.pos, "Missing branches")].concat(missingCases.toArray()),
       );
     };

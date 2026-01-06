@@ -7,6 +7,7 @@ function doesNotAlwaysReturnAValue(b: boolean): boolean {
   }
 }
 
+// @skjs-expect-error This function may not always return a value
 function doesNotAlwaysReturnAValue2(i: 1 | 2 | 3): boolean {
   // @skjs-expect-error Missing branches
   switch (i) {
