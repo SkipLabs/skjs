@@ -1013,7 +1013,7 @@ extension class TypeChecker {
       t2 = this.expr(tcenv, e2, true);
       t2.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
       | None() ->
-        typingError(
+        tcenv.error(
           Array[(pos, "Invalid in"), (e2.pos, "This has type unknown")],
         )
       | Some(stypes2) ->
@@ -1023,9 +1023,11 @@ extension class TypeChecker {
           stype2 match {
           | TPrimUnit _
           | TPrimValue _ ->
-            typingError(
+            tcenv.error(
               Array[(pos, "Invalid in"), (e2.pos, `This has type ${t2}`)],
-            )
+            );
+            !canBeTrue = true;
+            !canBeFalse = true
           | TObject(TFields{fields, indexes}, _pos) ->
             !canBeTrue = true; // object types are open
             !canBeFalse =
@@ -1044,13 +1046,15 @@ extension class TypeChecker {
           | TTuple _
           | TPromise _
           | TAlgebraic _ ->
-            typingError(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)])
+            tcenv.error(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)]);
+            !canBeTrue = true;
+            !canBeFalse = true
           }
         };
         (canBeTrue, canBeFalse) match {
-        | (true, true) -> TType::single(TPrimValue::boolean(pos))
+        | (true, true) -> void
         | (false, false) ->
-          typingError(
+          tcenv.error(
             Array[
               (pos, "Unexpected in"),
               (e1.pos, `This has type ${t1}`),
@@ -1058,9 +1062,10 @@ extension class TypeChecker {
             ],
           )
         | _ ->
-          typingError(Array[(pos, `This expression is always ${canBeTrue}`)])
+          tcenv.error(Array[(pos, `This expression is always ${canBeTrue}`)])
         }
-      }
+      };
+      TType::single(TPrimValue::boolean(pos))
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, tcenv, subExpr, true);
       TType::single(TPrimValue::string(pos))
