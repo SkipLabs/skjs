@@ -76,15 +76,19 @@ const x12: number | void = returningVoidOrUndefined() ?? 0;
 // @skjs-expect-error Invalid operation on type void
 const x13: number | void | null = returningVoidOrNull() ?? 0;
 
+// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 // @ts-expect-error Invalid ||
 const x14: number | undefined = returningVoid() || 0;
 
+// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 // @skjs-expect-error Invalid ||
 const x15: number | undefined = returningVoidOrNumber() || 0;
 
+// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 // @ts-expect-error Invalid ||
 const x16: number | undefined = returningVoidOrUndefined() || 0;
 
+// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 // @ts-expect-error Invalid ||
 const x17: number | void | null = returningVoidOrNull() || 0;
 
@@ -96,6 +100,7 @@ function unsafeInTypescript(
   return (b ? null : returningVoid()) ?? "a";
 }
 // @skjs-expect-error Invalid call
+// @skjs-expect-error This expression was expected to be of type void
 unsafeInTypescript(false, returningVoidOrNumber);
 
 /* With type parameters */
@@ -131,7 +136,8 @@ function invalidNullishCoalescing<T>(value: void | T): void | T | null {
 }
 
 function invalidLogicalOr<T>(value: void | T): T {
-  // @ts-expect-error Invalid ||
+  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Invalid ||
   return value || null;
 }
 

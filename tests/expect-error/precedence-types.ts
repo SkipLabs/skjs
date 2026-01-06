@@ -90,6 +90,7 @@ function testUnaryCallPositive(): boolean {
 
 function testUnaryCallNegative(): void {
   const f = (): boolean => true;
+  // @skjs-expect-error Invalid call
   // @ts-expect-error Invalid !
   const result: boolean = (!f)(); // Forcing wrong precedence: boolean is not callable
 }

@@ -104,6 +104,7 @@ function testNestedForLoops(): void {
   for (const sectionName in data) {
     // @ts-expect-error Invalid annotation
     const name: "section1" | "section2" = sectionName;
+    // @ts-expect-error Invalid access
     for (const value of data[sectionName]) {
       const num: number = value;
     }
