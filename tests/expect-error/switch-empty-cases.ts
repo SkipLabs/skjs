@@ -5,10 +5,12 @@ function testSimpleEmpty(x: number): void {
     // @skjs-expect-error Missing break
     case 1:
     case 2:
+      // @skjs-expect-error Missing break
       const y: number = 1;
   }
 }
 
+// @skjs-expect-error This function may not always return a value
 function testEmptyCases(x: number): string {
   switch (x) {
     // @skjs-expect-error Missing break
@@ -16,6 +18,7 @@ function testEmptyCases(x: number): string {
     // Empty case - falls through
     case 2:
       return "one or two";
+    // @skjs-expect-error Missing break
     case 3:
     // Empty case
     default:
@@ -27,12 +30,15 @@ function testAllEmptyCases(x: number): void {
   switch (x) {
     // @skjs-expect-error Missing break
     case 1:
+    // @skjs-expect-error Missing break
     case 2:
+    // @skjs-expect-error Missing break
     case 3:
     default:
   }
 }
 
+// @skjs-expect-error This function may not always return a value
 function testMixedCases(x: string): number {
   switch (x) {
     case "a":

@@ -1,3 +1,4 @@
+// @skjs-expect-error This function may not always return a value
 function doesNotAlwaysReturnAValue(b: boolean): boolean {
   // @skjs-expect-error Useless switch
   switch (b) {

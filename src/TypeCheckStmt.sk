@@ -177,10 +177,11 @@ extension class TypeChecker {
     branches: Array<SwitchBranch>,
   ): void {
     if (branches.size() == 0) {
-      typingError(Array[(e.pos, "Missing branch")])
+      tcenv.error(Array[(e.pos, "Missing branch")]);
+      return void
     };
     if (branches.size() == 1) {
-      typingError(Array[(e.pos, "Useless switch")])
+      tcenv.error(Array[(e.pos, "Useless switch")])
     };
     _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = (pos, block) -> {
@@ -189,7 +190,7 @@ extension class TypeChecker {
         if (block.size() != 0) {
           !pos = block[block.size() - 1].pos;
         };
-        typingError(Array[(pos, "Missing break")])
+        tcenv.error(Array[(pos, "Missing break")])
       }
     };
     scope = branches[0] match {
@@ -197,8 +198,9 @@ extension class TypeChecker {
       checkBreak(pos, block);
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
-    | SwitchBranch(Default(), _, _) ->
-      typingError(Array[(e.pos, "Missing branch")])
+    | SwitchBranch(Default(), block, _) ->
+      tcenv.error(Array[(e.pos, "Missing branch")]);
+      this.block(tcenv, block, None())
     };
     for (i in Range(1, branches.size())) {
       cond = branches[i] match {
