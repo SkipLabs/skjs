@@ -44,9 +44,10 @@ extension class TypeChecker {
     ) match {
     | Some(obj @ TObject _) -> TType::single(obj.removeFields(methods))
     | _ ->
-      typingError(
+      subst.error(
         Array[(ty.pos, "Internal error: new should produce an object")],
-      )
+      );
+      ty
     }
   }
 
