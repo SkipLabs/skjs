@@ -135,7 +135,7 @@ extension class TypeChecker {
       default = None();
       this.setLocal(tcenv, local, default, filter, map)
     | _ ->
-      typingError(
+      tcenv.error(
         Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
       )
     }
