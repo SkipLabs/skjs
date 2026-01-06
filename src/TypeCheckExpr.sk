@@ -445,7 +445,7 @@ extension class TypeChecker {
   ): TType {
     ty = this.expr(tcenv, e, mostPrecise);
     if (this.nonTopContainsVoid(tcenv, ty)) {
-      typingError(
+      tcenv.error(
         Array[
           (pos, "Invalid operation on type void"),
           (e.pos, `This expression has type ${ty}`),
