@@ -319,16 +319,28 @@ class TEnv{
     };
     !visitedClasses = visitedClasses.set(className.value);
     defs = this.defMap.getAll(tcenvb.context, className);
-    cls = for (def in defs) {
+    defsCls = defs.filterMap(def ->
       def match {
-      | cls @ Class _ -> break cls
-      | _ -> void
+      | cls @ Class _ -> Some(cls)
+      | _ -> None()
       }
-    } else {
-      typingError(Array[(className.pos, "Unbound class")])
+    );
+    defsCls.size() match {
+    | 0 -> typingError(Array[(className.pos, "Unbound class")])
+    | 1 -> void
+    | _ ->
+      tcenvb.error(
+        Array[
+          (className.pos, `Found multiple definitions for class ${className}`),
+        ],
+      )
     };
-    if (targs.size() != 0 && targs.size() != cls.tparams.size()) {
-      typingError(
+    cls = defsCls[0];
+    if (
+      (withTParams || targs.size() != 0) &&
+      targs.size() != cls.tparams.size()
+    ) {
+      tcenvb.error(
         Array[
           (className.pos, "Invalid number of type arguments"),
           (cls.name.pos, "Class declaration is here"),
@@ -342,15 +354,13 @@ class TEnv{
         } else {
           // TypeChecker::class_ rejects classes with defaulted type parameters, but we
           // still reach this code when other defs (e.g. subclasses) keep type-checking
-          typingError(
-            Array[
-              (className.pos, "Invalid number of type arguments"),
-              (cls.name.pos, "Class declaration is here"),
-            ],
-          );
+          tparam.default match {
+          | None() -> break void
+          | Some(d) -> this.normalize(tcenvb, d)
+          }
         };
         !this.subst[tparam.name.value] = (false, targ)
-      };
+      }
     };
     (this, cls)
   }
