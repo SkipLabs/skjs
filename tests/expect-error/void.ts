@@ -61,17 +61,17 @@ function returningVoidOrUndefined(): void | undefined {}
 // @ts-expect-error Type cannot be accessed
 const x8: string | undefined = returningVoid()?.toString();
 
-// @skjs-expect-error Type cannot be accessed
+// @ts-expect-error Type cannot be accessed
 const x9: string | undefined = returningVoidOrNumber()?.toString();
 
 // @skjs-expect-error Invalid operation on type void
-const x10: number | undefined = returningVoid() ?? 0;
+const x10: number | void = returningVoid() ?? 0;
 
 // @skjs-expect-error Invalid operation on type void
-const x11: number | undefined = returningVoidOrNumber() ?? 0;
+const x11: number | void = returningVoidOrNumber() ?? 0;
 
 // @skjs-expect-error Invalid operation on type void
-const x12: number | undefined = returningVoidOrUndefined() ?? 0;
+const x12: number | void = returningVoidOrUndefined() ?? 0;
 
 // @skjs-expect-error Invalid operation on type void
 const x13: number | void | null = returningVoidOrNull() ?? 0;
@@ -82,13 +82,16 @@ const x14: number | undefined = returningVoid() || 0;
 // @skjs-expect-error Invalid ||
 const x15: number | undefined = returningVoidOrNumber() || 0;
 
-// @skjs-expect-error Invalid ||
+// @ts-expect-error Invalid ||
 const x16: number | undefined = returningVoidOrUndefined() || 0;
 
-// @skjs-expect-error Invalid ||
+// @ts-expect-error Invalid ||
 const x17: number | void | null = returningVoidOrNull() || 0;
 
-function unsafeInTypescript(b: boolean, returningVoid: () => void): string {
+function unsafeInTypescript(
+  b: boolean,
+  returningVoid: () => void,
+): string | void {
   // @skjs-expect-error Invalid operation on type void
   return (b ? null : returningVoid()) ?? "a";
 }

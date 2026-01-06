@@ -971,23 +971,21 @@ extension class TypeChecker {
             }
           };
           if (hasVoid) {
-            typingError(
+            tcenv.error(
               Array[
                 (pos, "Invalid operation on type void"),
                 (e1.pos, `This expression has type ${ty1}`),
               ],
             )
-          };
-          if (!hasNullOrUndefined) {
-            typingError(
+          } else if (!hasNullOrUndefined) {
+            tcenv.error(
               Array[
                 (pos, "This operator is useless"),
                 (e1.pos, "This expression is never null or undefined"),
               ],
             );
-          };
-          if (!hasOthers) {
-            typingError(
+          } else if (!hasOthers) {
+            tcenv.error(
               Array[
                 (pos, "This operator is useless"),
                 (e.pos, "This expression is always null or undefined"),
