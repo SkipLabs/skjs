@@ -1154,7 +1154,8 @@ extension class TypeChecker {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
-      typingError(Array[(subExpr.pos, "Unnecessary 'as const'")])
+      tcenvb.error(Array[(subExpr.pos, "Unnecessary 'as const'")]);
+      this.asConstExpr(tcenvb, subExpr)
     | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
     | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
     | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
@@ -1163,14 +1164,40 @@ extension class TypeChecker {
     | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
     | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
     | Unop(UOExclamationMark(), subE) ->
-      this.asConstExpr(tcenvb, subE).map(stype -> {
-        msg = if (stype is TPrimValue(TBool(), _, _)) {
-          "Constant expression could have been simplified"
-        } else {
-          "Invalid unary !"
-        };
-        typingError(Array[(pos, msg), (subE.pos, `This has type ${stype}`)])
-      })
+      this.asConstExpr(tcenvb, subE).map(stype ->
+        stype match {
+        | TPrimValue(TBool(), values, _) ->
+          values.flatMap(v -> v.singleElt()) match {
+          | Some((_vPos, v)) ->
+            tcenvb.error(
+              Array[
+                (pos, "Constant expression could have been simplified"),
+                (subE.pos, `This has type ${v}`),
+              ],
+            );
+            res = v match {
+            | "true" -> "false"
+            | "false" -> "true"
+            | _ ->
+              internal_error(
+                `asConstExpr on Unop(UOExclamationMark) encountered a non-true non-false boolean: ${v}`,
+              )
+            };
+            TPrimValue::single(TBool(), res, pos)
+          | None() ->
+            internal_error(
+              `asConstExpr returned a non-literal boolean: ${stype}`,
+            )
+          }
+        | _ ->
+          typingError(
+            Array[
+              (pos, "Invalid unary !"),
+              (subE.pos, `This has type ${stype}`),
+            ],
+          )
+        }
+      )
     | Unop(UOTild(), _) -> /* TODO */ None()
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
       this.asConstExpr(tcenvb, subE).flatMap(stype ->
