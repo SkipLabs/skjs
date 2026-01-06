@@ -1522,7 +1522,7 @@ extension class TypeChecker {
             this.tenv,
           ) match {
           | None() ->
-            typingError(
+            tcenv.error(
               Array[
                 (argExpr.pos, "Invalid spread argument"),
                 (spreadTy.pos, `It has type ${spreadTy}`),
@@ -1546,7 +1546,7 @@ extension class TypeChecker {
             !moreArgs = Some(ma)
           }
         | _ ->
-          typingError(
+          tcenv.error(
             Array[
               (argExpr.pos, "Invalid spread argument"),
               (spreadTy.pos, `It has type ${spreadTy}`),
@@ -1567,7 +1567,7 @@ extension class TypeChecker {
     | TFuns(tfun, fPos) ->
       tcenv.recordCalls(tfun.cgNodes);
       if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
-        typingError(
+        tcenv.error(
           Array[
             (
               pos,
@@ -1579,10 +1579,10 @@ extension class TypeChecker {
       };
       map = SortedMap[];
       for (i => tparamDecl in tfun.tparams) {
-        !map[tparamDecl.id] = if (targs.isEmpty()) {
-          this.newTVar(tcenv, pos)
-        } else {
+        !map[tparamDecl.id] = if (i < targs.size()) {
           targs[i]
+        } else {
+          this.newTVar(tcenv, pos)
         };
       };
       !tfun = (mutable Instantiate()).fun_(
@@ -1601,14 +1601,22 @@ extension class TypeChecker {
       loop {
         for (i in Range(0, tfun.params.size())) {
           if (i >= args.size()) {
-            typingError(
+            tcenv.error(
               Array[
                 (pos, "Invalid call"),
                 (fPos, `This function has ${tfun.params.size()} parameters`),
               ],
+            );
+            break void
+          } else {
+            this.checkSubType(
+              tcenv,
+              pos,
+              "Invalid call",
+              args[i],
+              tfun.params[i],
             )
-          };
-          this.checkSubType(tcenv, pos, "Invalid call", args[i], tfun.params[i])
+          }
         };
         for (j in Range(0, tfun.optionalParams.size())) {
           i = tfun.params.size() + j;
@@ -1651,7 +1659,7 @@ extension class TypeChecker {
               this.checkSubType(tcenv, pos, "Invalid argument", ma, eltType)
             }
           | None() ->
-            typingError(
+            tcenv.error(
               Array[
                 (pos, "Invalid call. Unexpected type for ..."),
                 (spreadType.getPos(), `${spreadType} is not an array`),
