@@ -38,7 +38,7 @@ extension class TypeChecker {
       ) {
         tcenv.localObjects![local.value] = LOCanGrow(None())
       };
-      tcenv.scope.bind(local, type, isInitialized)
+      tcenv.scope.bind(tcenv, local, type, isInitialized)
     | PArray(arrPat, rest) ->
       rest match {
       | Some(restName) ->
@@ -1304,7 +1304,7 @@ extension class TypeChecker {
     body: ClosureBody,
   ): void {
     for (param in params) {
-      tcenv.scope.bind(param.i0, param.i1, true)
+      tcenv.scope.bind(tcenv, param.i0, param.i1, true)
     };
     body match {
     | CBExpr(e) ->

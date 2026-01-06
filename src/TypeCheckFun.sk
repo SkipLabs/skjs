@@ -17,7 +17,7 @@ extension class TypeChecker {
     | Some(thisType) -> thisType
     };
     !this.tenv.subst["this"] = (false, thisType);
-    tcenv.scope.bind(Name(fd.pos, "this"), thisType, true);
+    tcenv.scope.bind(tcenv, Name(fd.pos, "this"), thisType, true);
     !this.tenv = this.tenv.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
       param.isRest match {
@@ -99,7 +99,7 @@ extension class TypeChecker {
       if (paramName.value == "this") {
         typingError(Array[(paramName.pos, "TODO: support this parameter")])
       };
-      tcenv.scope.bind(paramName, paramType, true)
+      tcenv.scope.bind(tcenv, paramName, paramType, true)
     };
     !this.retType = fd.retType.i1.map(rty -> this.tenv.normalize(subst, rty));
     (this, tcenv)
