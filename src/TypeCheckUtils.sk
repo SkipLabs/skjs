@@ -181,7 +181,7 @@ extension class TypeChecker {
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(TNum(), _, _)) -> void
-    | _ -> typingError(Array[(pos, msg), (ty.pos, "This is not a number")])
+    | _ -> tcenv.error(Array[(pos, msg), (ty.pos, "This is not a number")])
     };
   }
 
