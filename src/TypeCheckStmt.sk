@@ -28,10 +28,11 @@ extension class TypeChecker {
       };
       this.checkSubType(tcenv, epos, "Invalid return type", rtype, retType)
 
-    | Bind(BKVar(), _vars) ->
-      typingError(Array[(st.pos, "Don't use var, use let or const instead")])
-
     | Bind(bkind, bindings) ->
+      if (bkind is BKVar()) {
+        tcenv.error(Array[(st.pos, "Don't use var, use let or const instead")])
+      };
+
       for (binding in bindings) {
         (ty, isInitialized) = this.bindType(
           binding.pat.pos,
@@ -133,15 +134,16 @@ extension class TypeChecker {
         param match {
         | Some(pat) ->
           errorType = type match {
-          | Some(t) -> // If we trusted user: this.tenv.normalize(tcenv, t)
-            typingError(
+          | Some(t) ->
+            tcenv.error(
               Array[
                 (
                   t.pos,
                   "Do not specify a type annotation for caught exceptions as it cannot be trusted",
                 ),
               ],
-            )
+            );
+            this.tenv.normalize(tcenv, t)
           | None() -> TType::top(pat.pos)
           };
           this.bind(tcenv, BKLet(), pat, errorType, true, false)
