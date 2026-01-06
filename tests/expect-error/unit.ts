@@ -1203,11 +1203,6 @@ function checkGenericClosureWithArrayParamString(
 // Generic Closure with Object Parameters
 ///////////////////////////////////////////////////////////////////////////////
 
-interface ComplexObject<T> {
-  value: T;
-  description: string;
-}
-
 function checkGenericClosureWithObjectParam<T>(
   input: ComplexObject<T>,
 ): (arg: ComplexObject<T>) => ComplexObject<T> {
