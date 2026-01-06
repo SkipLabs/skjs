@@ -419,7 +419,7 @@ extension class TypeChecker {
         optionalChainingIsAlwaysUndefinedForThisSType;
     };
     if (optionalChainingIsUseless) {
-      typingError(
+      tcenv.error(
         Array[
           (pos, "Useless '?.'. Use '.' instead"),
           (objType.pos, `${objType} is never null nor undefined`),
@@ -427,7 +427,7 @@ extension class TypeChecker {
       )
     };
     if (optionalChainingIsAlwaysUndefined) {
-      typingError(
+      tcenv.error(
         Array[
           (pos, "Result of optional chaining is always undefined"),
           (objType.pos, `${objType} is always null or undefined`),
