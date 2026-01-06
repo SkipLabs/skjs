@@ -1335,7 +1335,7 @@ extension class TypeChecker {
     cstrType.cstr match {
     | None() ->
       if (args.size() == 0) return void;
-      typingError(Array[(pos, "Invalid new: constructor expects no arguments")])
+      tcenv.error(Array[(pos, "Invalid new: constructor expects no arguments")])
     | Some(cstr) -> _ = this.call(tcenv, pos, cstr, Array[], args, true)
     }
   }
