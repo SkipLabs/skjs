@@ -160,7 +160,7 @@ extension class TypeChecker {
     };
 
     if (!isStringifiable) {
-      typingError(
+      tcenv.error(
         Array[
           (
             pos,
