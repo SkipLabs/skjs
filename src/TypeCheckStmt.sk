@@ -304,7 +304,7 @@ extension class TypeChecker {
         )
       ) return void
     };
-    typingError(
+    tcenv.error(
       Array[
         (pos, "for-in loop requires an object or array type"),
         (iterableType.pos, `Here it has type ${iterableType}`),
