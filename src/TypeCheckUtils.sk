@@ -218,14 +218,14 @@ extension class TypeChecker {
     TType::var(tvar)
   }
 
-  fun checkLValue(e: Expr): void {
+  fun checkLValue(tcenvb: mutable TCEnvBase, e: Expr): void {
     e.value match {
-    | Var(Name(_, "super")) -> typingError(Array[(e.pos, "Invalid lvalue")])
+    | Var(Name(_, "super")) -> tcenvb.error(Array[(e.pos, "Invalid lvalue")])
     | Var _ -> void
     | Get _ -> void
     | EArray _ -> void
-    | Dot(NormalDot(), e1, _) -> this.checkLValue(e1)
-    | _ -> typingError(Array[(e.pos, "Invalid lvalue")])
+    | Dot(NormalDot(), e1, _) -> this.checkLValue(tcenvb, e1)
+    | _ -> tcenvb.error(Array[(e.pos, "Invalid lvalue")])
     }
   }
 }

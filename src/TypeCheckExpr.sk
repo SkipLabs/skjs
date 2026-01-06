@@ -1347,7 +1347,7 @@ extension class TypeChecker {
     e2: Expr,
     mostPrecise: Bool,
   ): TType {
-    this.checkLValue(e1);
+    this.checkLValue(tcenv, e1);
     e1.value match {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2, mostPrecise);
