@@ -26,6 +26,8 @@
 - Run tests first to see actual error messages, then add the annotations with exact wording
 - **SKJS reports only one type error per definition** - If a function has multiple issues, only the first error is reported
 - For expected errors that aren't reported due to an earlier error, use plain `// TODO:` comments (not `@ts-expect-error`)
+- **Multiple errors on a single line**: When SKJS reports multiple errors for a single line (e.g., both "Construction not supported" and "Invalid return type"), use multiple `@skjs-expect-error` comment lines, one per error. Do NOT use slash-separated errors in a single comment.
+- **Avoid duplicate annotations**: Use `@ts-expect-error` for TypeScript-specific errors and `@skjs-expect-error` for SKJS errors. Don't duplicate the same annotation twice on consecutive lines.
 
 **Parse error constraints**:
 - Parse errors must appear on the last non-empty line of the file
