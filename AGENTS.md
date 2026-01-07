@@ -20,6 +20,9 @@ Use the standard Skip Docker container to run tests (only Linux is supported for
 **Prerequisites:** The [Skip repository](https://github.com/SkipLabs/skip) must be checked out as a sibling directory (`../skip`).
 
 ```bash
+# Build SKJS (produces ./target/host/dev/skjs)
+docker run --rm -v "$(pwd):/work/skjs" -v "$(pwd)/../skip:/work/skip" -w /work/skjs skiplabs/skip:latest skargo build
+
 # Run all tests
 docker run --rm -v "$(pwd):/work/skjs" -v "$(pwd)/../skip:/work/skip" -w /work/skjs skiplabs/skip:latest skargo test
 
