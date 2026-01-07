@@ -238,8 +238,6 @@ type NullableNumber = number | null;
 type NullableString = string | null;
 
 function testTypeAliasNonNull(x: NullableNumber): number {
-  // FIXME
-  // @skjs-expect-error Invalid return type
   // @skjs-expect-error Do not use the postfix ! operator
   return x!;
 }
@@ -247,8 +245,6 @@ function testTypeAliasNonNull(x: NullableNumber): number {
 function testNestedTypeAliasNonNull(
   x: { field: NullableString } | null,
 ): string {
-  // FIXME
-  // @skjs-expect-error Invalid return type
   // @skjs-expect-error Do not use the postfix ! operator
   return x!.field!;
 }

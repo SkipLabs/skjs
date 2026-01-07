@@ -1109,9 +1109,13 @@ extension class TypeChecker {
         this.checkSubType(tcenv, pos, "Expected integer", ty, num);
         num
       | POExcl() ->
-        ty = this.nonVoidExpr(pos, tcenv, subExpr, mostPrecise);
-        ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-        | None() ->
+        (isValid, tyWithoutNullish) = this.exprWithoutNullish(
+          pos,
+          tcenv,
+          subExpr,
+          mostPrecise,
+        );
+        if (isValid) {
           tcenv.error(
             Array[
               (pos, "Do not use the postfix ! operator"),
@@ -1121,59 +1125,8 @@ extension class TypeChecker {
               ),
             ],
           )
-        | Some(stypes) ->
-          hasVoid = false;
-          hasNullOrUndefined = false;
-          hasOthers = false;
-          for (stype in stypes) {
-            stype match {
-            | TPrimUnit(TVoid(), _) -> !hasVoid = true
-            | TPrimUnit(TNull(), _)
-            | TPrimUnit(TUndefined(), _) ->
-              !hasNullOrUndefined = true
-            | _ -> !hasOthers = true
-            }
-          };
-          if (hasVoid) {
-            tcenv.error(
-              Array[
-                (pos, "Invalid operation on type void"),
-                (subExpr.pos, `This expression has type ${ty}`),
-              ],
-            )
-          } else if (!hasNullOrUndefined) {
-            tcenv.error(
-              Array[
-                (pos, "This operator is useless"),
-                (subExpr.pos, "This expression is never null or undefined"),
-              ],
-            );
-          } else if (!hasOthers) {
-            tcenv.error(
-              Array[
-                (pos, "This operator is useless"),
-                (subExpr.pos, "This expression is always null or undefined"),
-              ],
-            )
-          } else {
-            tcenv.error(
-              Array[
-                (pos, "Do not use the postfix ! operator"),
-                (
-                  subExpr.pos,
-                  "This assertion is unsound and may cause runtime errors",
-                ),
-              ],
-            );
-          }
         };
-        nullish = TType::union(
-          tcenv.subst,
-          this.tenv,
-          TType::single(TPrimUnit(TNull(), pos)),
-          TType::single(TPrimUnit(TUndefined(), pos)),
-        );
-        TType::diff(ty, nullish)
+        tyWithoutNullish
       }
 
     | c @ Closure(params, retTypeAstOpt, body) ->
