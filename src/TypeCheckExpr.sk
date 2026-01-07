@@ -750,15 +750,12 @@ extension class TypeChecker {
         this.checkSubType(tcenv, pos, "Invalid !", ty, bool);
         bool
       | nuop @ NumericUnaryOperator() ->
-        ty.mapSTypes(tcenv.subst, this.tenv, Covariant(), stypesOpt ->
+        invalid = false;
+        res = ty.mapSTypes(tcenv.subst, this.tenv, Covariant(), stypesOpt ->
           stypesOpt match {
           | None() ->
-            typingError(
-              Array[
-                (pos, `Invalid unary operation ${nuop}`),
-                (subExpr.pos, `This has type ${ty}`),
-              ],
-            )
+            !invalid = true;
+            stypesOpt
           | Some(stypes) ->
             Some(
               stypes.map(stype ->
@@ -767,17 +764,22 @@ extension class TypeChecker {
                 | TPrimValue(k @ TBigInt(), _, primPos) ->
                   TPrimValue(k, None(), primPos)
                 | _ ->
-                  typingError(
-                    Array[
-                      (pos, `Invalid unary operation ${nuop}`),
-                      (subExpr.pos, `This has type ${ty}`),
-                    ],
-                  )
+                  !invalid = true;
+                  stype
                 }
               ),
             )
           }
-        )
+        );
+        if (invalid) {
+          typingError(
+            Array[
+              (pos, `Invalid unary operation ${nuop}`),
+              (subExpr.pos, `This has type ${ty}`),
+            ],
+          )
+        };
+        res
       }
 
     | Dot(dotKind, e1, fieldName) ->
