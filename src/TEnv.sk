@@ -650,7 +650,9 @@ class TEnv{
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
     | TATemplate _ -> typingError(Array[(pos, "TODO template")])
     | TAImport _ -> typingError(Array[(pos, "TODO import")])
-    | TAReadonly _ -> typingError(Array[(pos, "TODO readonly")])
+    | TAReadonly(x) ->
+      tcenvb.error(Array[(pos, "TODO readonly")]);
+      this.normalize(tcenvb, x)
     | TAExtends _ -> typingError(Array[(pos, "TODO extends")])
     | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
