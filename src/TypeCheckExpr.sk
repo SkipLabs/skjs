@@ -437,6 +437,72 @@ extension class TypeChecker {
     result
   }
 
+  fun exprWithoutNullish(
+    pos: PosRange,
+    tcenv: mutable TCEnv,
+    e: Expr,
+    mostPrecise: Bool,
+  ): (Bool, TType) {
+    ty = this.expr(tcenv, e, mostPrecise);
+    hasTop = false;
+    hasVoid = false;
+    hasNullOrUndefined = false;
+    hasOthers = false;
+    tyWithoutNullish = ty.mapSTypes(
+      tcenv.subst,
+      this.tenv,
+      Covariant(),
+      stypesOpt ->
+        stypesOpt match {
+        | None() ->
+          !hasTop = true;
+          stypesOpt
+        | Some(stypes) ->
+          Some(
+            stypes.filter(stype -> {
+              stype match {
+              | TPrimUnit(TNull(), _)
+              | TPrimUnit(TUndefined(), _) ->
+                !hasNullOrUndefined = true;
+                return false
+              | TPrimUnit(TVoid(), _) -> !hasVoid = true
+              | _ -> !hasOthers = true
+              };
+              true
+            }),
+          )
+        }
+      ,
+    );
+    isValid = true;
+    if (hasVoid) {
+      !isValid = false;
+      tcenv.error(
+        Array[
+          (pos, "Invalid operation on type void"),
+          (e.pos, `This expression has type ${ty}`),
+        ],
+      )
+    } else if (!hasTop && !hasNullOrUndefined) {
+      !isValid = false;
+      tcenv.error(
+        Array[
+          (pos, "This operator is useless"),
+          (e.pos, "This expression is never null or undefined"),
+        ],
+      );
+    } else if (!hasTop && !hasOthers) {
+      !isValid = false;
+      tcenv.error(
+        Array[
+          (pos, "This operator is useless"),
+          (e.pos, "This expression is always null or undefined"),
+        ],
+      )
+    };
+    (isValid, tyWithoutNullish)
+  }
+
   fun nonVoidExpr(
     pos: PosRange,
     tcenv: mutable TCEnv,
@@ -957,60 +1023,13 @@ extension class TypeChecker {
         TType::single(TPrimValue::full(kind1, pos))
 
       | BONullishCoalescing() ->
-        ty1 = this.nonVoidExpr(pos, tcenv, e1, mostPrecise);
-        ty2 = this.expr(tcenv, e2, mostPrecise);
-        hasTop = false;
-        hasVoid = false;
-        hasNullOrUndefined = false;
-        hasOthers = false;
-        ty1WithoutNullish = ty1.mapSTypes(
-          tcenv.subst,
-          this.tenv,
-          Covariant(),
-          stypesOpt ->
-            stypesOpt match {
-            | None() ->
-              !hasTop = true;
-              stypesOpt
-            | Some(stypes) ->
-              Some(
-                stypes.filter(stype -> {
-                  stype match {
-                  | TPrimUnit(TNull(), _)
-                  | TPrimUnit(TUndefined(), _) ->
-                    !hasNullOrUndefined = true;
-                    return false
-                  | TPrimUnit(TVoid(), _) -> !hasVoid = true
-                  | _ -> !hasOthers = true
-                  };
-                  true
-                }),
-              )
-            }
-          ,
+        (_isValid, ty1WithoutNullish) = this.exprWithoutNullish(
+          pos,
+          tcenv,
+          e1,
+          mostPrecise,
         );
-        if (hasVoid) {
-          tcenv.error(
-            Array[
-              (pos, "Invalid operation on type void"),
-              (e1.pos, `This expression has type ${ty1}`),
-            ],
-          )
-        } else if (!hasTop && !hasNullOrUndefined) {
-          tcenv.error(
-            Array[
-              (pos, "This operator is useless"),
-              (e1.pos, "This expression is never null or undefined"),
-            ],
-          );
-        } else if (!hasTop && !hasOthers) {
-          tcenv.error(
-            Array[
-              (pos, "This operator is useless"),
-              (e.pos, "This expression is always null or undefined"),
-            ],
-          )
-        };
+        ty2 = this.expr(tcenv, e2, mostPrecise);
         TType::union(tcenv.subst, this.tenv, ty1WithoutNullish, ty2)
       }
 
