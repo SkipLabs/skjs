@@ -173,14 +173,15 @@ class TType private {
   // t.mapSTypes(subst, env, variance, f) is t with stypes updated by f
   fun mapSTypes(
     subst: mutable Subst,
-    env: TEnv,
+    tenv: TEnv,
     variance: Variance,
     f: (?STypes) -> ?STypes,
   ): TType {
-    f(this.getSTypes(subst, env, variance)) match {
-    | None() -> TType::top(this.pos)
-    | Some(stypes) -> TType::fromSTypes(this.pos, stypes)
-    }
+    res = Clauses::empty();
+    for (clauses in this.expandedClausesIterator(subst, tenv, variance)) {
+      !res = Clauses::union(subst, tenv, res, clauses.mapSTypes(f))
+    };
+    TType::fromClauses(this.pos, res)
   }
 
   private fun mapClauses(
@@ -1160,6 +1161,15 @@ class Clause private (
     }
   }
 
+  // t.mapSTypes(f) is t with stypes updated by f
+  // Returns None if the result is bottom
+  fun mapSTypes(f: (?STypes) -> ?STypes): ?Clause {
+    f(this.stypes) match {
+    | Some(sTypes) if (sTypes.isEmpty()) -> None()
+    | stypesOpt -> Some(Clause(this.vars, stypesOpt))
+    }
+  }
+
   fun getConstantString(): ?(PosRange, String) {
     if (!this.vars.isEmpty()) None() else {
       this.stypes.flatMap(sTypes -> sTypes.getConstantString())
@@ -1255,6 +1265,11 @@ class Clauses private (
 
   fun getConstantString(): ?(PosRange, String) {
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
+  }
+
+  // t.mapSTypes(f) is t with stypes updated by f
+  fun mapSTypes(f: (?STypes) -> ?STypes): Clauses {
+    Clauses(this.clauses.filterMap(clause -> clause.mapSTypes(f)))
   }
 
   // Returns the actual STypes, forgetting type parameters,
