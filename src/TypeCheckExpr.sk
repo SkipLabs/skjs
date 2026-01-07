@@ -781,7 +781,6 @@ extension class TypeChecker {
       optionalChaining = dotKind match {
       | NormalDot() -> false
       | OptionalDot() -> true
-      | ExclamationMarkDot() -> notSupported(pos, "operator !.")
       };
       this.dot(
         tcenv,

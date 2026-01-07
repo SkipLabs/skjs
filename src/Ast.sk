@@ -625,7 +625,6 @@ base class DotKind uses XXHashable {
   children =
   | NormalDot()
   | OptionalDot()
-  | ExclamationMarkDot()
 }
 
 base class UnaryOperator uses XXHashable {

@@ -433,7 +433,7 @@ extension class Parser {
     Some(EIf(left, e2, e3))
   }
 
-  // Handle x[y], x.y, x?.y, x!.y
+  // Handle x[y], x.y, x?.y
   mutable fun tryParseAccess(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
     if (prec > callPrecHigh) return None();
     dotOp = binopTok.kind match {
@@ -444,7 +444,6 @@ extension class Parser {
       return Some(Get(left, rhs))
     | TKDot() -> NormalDot()
     | TKQuestionMarkDot() -> OptionalDot()
-    | TKExclamationMarkDot() -> ExclamationMarkDot()
     | _ -> return None()
     };
     _ = this.lex.next();

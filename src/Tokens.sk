@@ -34,7 +34,6 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKDoubleQuote()
   | TKEquality()
   | TKExclamationMark()
-  | TKExclamationMarkDot()
   | TKExponentiation()
   | TKExponentiationAssignment()
   | TKGreaterThan()
@@ -102,7 +101,6 @@ base class TokenKind uses Equality, XXHashable, Hashable, Show {
   | TKDoubleQuote() -> "\""
   | TKEquality() -> "=="
   | TKExclamationMark() -> "!"
-  | TKExclamationMarkDot() -> "!."
   | TKExponentiation() -> "**"
   | TKExponentiationAssignment() -> "**="
   | TKGreaterThan() -> ">"
@@ -217,7 +215,6 @@ const operators: Map<String, TokenKind> = Map[
   "??=" => TKNullishCoalescingAssignment(),
   "=>" => TKClosure(),
   "?." => TKQuestionMarkDot(),
-  "!." => TKExclamationMarkDot(),
   "?" => TKQuestionMark(),
   "!" => TKExclamationMark(),
 ];
@@ -251,8 +248,8 @@ const binaryOperators: Map<
   (Associativity, Int, BinaryOperator),
 > = Map[
   /* 23: (x) (non-assoc) */
-  /* 22: x[y], x.y, x?.y, x!.y, new x(y) (non-assoc) (callPrecHigh) */
-  /* 21: x[y], x.y, x?.y, x!.y, new x(y), x(y) (non-assoc) (callPrecLow) */
+  /* 22: x[y], x.y, x?.y, new x(y) (non-assoc) (callPrecHigh) */
+  /* 21: x[y], x.y, x?.y, new x(y), x(y) (non-assoc) (callPrecLow) */
   /* 20: new x (no argument list) (non-assoc) => not supported */
   /* 19: x++, x--, x! (postfixPrec) */
   /* 18: !x, ~x, ++x, --x, +x, -x, typeof x, void x, delete x, await x (prefixPrec) */

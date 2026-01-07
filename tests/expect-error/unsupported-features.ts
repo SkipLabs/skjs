@@ -11,7 +11,7 @@ class TestUnsupportedFeatures {
   // Test non-null assertion on member access (not supported)
   testNonNullAssertion(): void {
     const obj: { value: number } | null = { value: 5 };
-    // @skjs-expect-error Construction not supported: operator !.
+    // @skjs-expect-error Construction not supported: postfix operator !
     const x: number = obj!.value;
   }
 }
