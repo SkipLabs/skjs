@@ -959,51 +959,58 @@ extension class TypeChecker {
       | BONullishCoalescing() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, mostPrecise);
         ty2 = this.expr(tcenv, e2, mostPrecise);
-        ty1.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-        | None() -> void
-        | Some(stypes) ->
-          hasVoid = false;
-          hasNullOrUndefined = false;
-          hasOthers = false;
-          for (stype in stypes) {
-            stype match {
-            | TPrimUnit(TVoid(), _) -> !hasVoid = true
-            | TPrimUnit(TNull(), _)
-            | TPrimUnit(TUndefined(), _) ->
-              !hasNullOrUndefined = true
-            | _ -> !hasOthers = true
-            }
-          };
-          if (hasVoid) {
-            tcenv.error(
-              Array[
-                (pos, "Invalid operation on type void"),
-                (e1.pos, `This expression has type ${ty1}`),
-              ],
-            )
-          } else if (!hasNullOrUndefined) {
-            tcenv.error(
-              Array[
-                (pos, "This operator is useless"),
-                (e1.pos, "This expression is never null or undefined"),
-              ],
-            );
-          } else if (!hasOthers) {
-            tcenv.error(
-              Array[
-                (pos, "This operator is useless"),
-                (e.pos, "This expression is always null or undefined"),
-              ],
-            )
-          }
-        };
-        nullish = TType::union(
+        hasTop = false;
+        hasVoid = false;
+        hasNullOrUndefined = false;
+        hasOthers = false;
+        ty1WithoutNullish = ty1.mapSTypes(
           tcenv.subst,
           this.tenv,
-          TType::single(TPrimUnit(TNull(), pos)),
-          TType::single(TPrimUnit(TUndefined(), pos)),
+          Covariant(),
+          stypesOpt ->
+            stypesOpt match {
+            | None() ->
+              !hasTop = true;
+              stypesOpt
+            | Some(stypes) ->
+              Some(
+                stypes.filter(stype -> {
+                  stype match {
+                  | TPrimUnit(TNull(), _)
+                  | TPrimUnit(TUndefined(), _) ->
+                    !hasNullOrUndefined = true;
+                    return false
+                  | TPrimUnit(TVoid(), _) -> !hasVoid = true
+                  | _ -> !hasOthers = true
+                  };
+                  true
+                }),
+              )
+            }
+          ,
         );
-        ty1WithoutNullish = TType::diff(ty1, nullish);
+        if (hasVoid) {
+          tcenv.error(
+            Array[
+              (pos, "Invalid operation on type void"),
+              (e1.pos, `This expression has type ${ty1}`),
+            ],
+          )
+        } else if (!hasTop && !hasNullOrUndefined) {
+          tcenv.error(
+            Array[
+              (pos, "This operator is useless"),
+              (e1.pos, "This expression is never null or undefined"),
+            ],
+          );
+        } else if (!hasTop && !hasOthers) {
+          tcenv.error(
+            Array[
+              (pos, "This operator is useless"),
+              (e.pos, "This expression is always null or undefined"),
+            ],
+          )
+        };
         TType::union(tcenv.subst, this.tenv, ty1WithoutNullish, ty2)
       }
 
