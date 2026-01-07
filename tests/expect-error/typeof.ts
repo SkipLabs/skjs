@@ -1020,6 +1020,7 @@ function testLabeledTuple(
 function testReadonlyTuple(
   // @skjs-expect-error TODO readonly
   x: readonly [number, string] | number,
+  // @skjs-expect-error TODO readonly
 ): readonly [number, string] {
   if (typeof x === "object") {
     return x;
