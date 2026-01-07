@@ -111,6 +111,14 @@ class .ArraySet<T: Orderable> private (
     this.inner.isEmpty()
   }
 
+  fun getUnique(): ?T {
+    if (this.size() == 1) {
+      Some(this.inner[0])
+    } else {
+      None()
+    }
+  }
+
   fun toArray(): Array<T> {
     this.inner.toArray()
   }
@@ -147,6 +155,10 @@ class .ArraySet<T: Orderable> private (
       | _ -> None()
       }
     )
+  }
+
+  fun diff(that: this): this {
+    static::createFromIterator(this.iterDiff(that))
   }
 
   fun contains(that: this): Bool {

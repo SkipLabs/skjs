@@ -178,9 +178,7 @@ extension class STypes {
 
 extension class TInsts {
   static fun union(insts1: TInsts, insts2: TInsts): TInsts {
-    TInsts(
-      mapUnion(insts1.values(), insts2.values(), x ~> x, x ~> x, (x, _) ~> x),
-    )
+    TInsts(insts1.insts.union(insts2.insts))
   }
 }
 

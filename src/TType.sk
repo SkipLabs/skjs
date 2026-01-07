@@ -279,7 +279,7 @@ class TType private {
     variance: Variance,
   ): mutable Iterator<Clauses> {
     yield this.clauses;
-    insts = Vector::mcreateFromItems(this.insts.insts);
+    insts = Vector::mcreateFromIterator(this.insts.insts.values());
     seen = SortedSet::createFromItems(insts);
     while (!insts.isEmpty()) {
       inst = insts.pop();
@@ -1028,13 +1028,13 @@ base class TInst uses XXHashable, Orderable
 //
 // Interpretation:
 // 〚 tinsts 〛 = ⨆ 〚 inst 〛, for inst in tinsts.insts
-class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
+class TInsts private (insts: ArraySet<TInst>) uses XXHashable, Orderable {
   static fun empty(): TInsts {
-    TInsts(Array[])
+    TInsts(ArraySet::empty())
   }
 
   static fun single(inst: TInst): TInsts {
-    TInsts(Array[inst])
+    TInsts(ArraySet::single(inst))
   }
 
   fun map(f: TInst -> TInst): TInsts {
@@ -1050,13 +1050,9 @@ class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
   }
 
   fun getSingleVar(): ?TVar {
-    if (this.insts.size() == 1) {
-      this.insts[0] match {
-      | res @ TVar _ -> Some(res)
-      | _ -> None()
-      }
-    } else {
-      None()
+    this.insts.getUnique() match {
+    | Some(var @ TVar _) -> Some(var)
+    | _ -> None()
     }
   }
 
@@ -1064,13 +1060,7 @@ class TInsts private (insts: Array<TInst>) uses XXHashable, Orderable {
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
   static fun diff(left: TInsts, right: TInsts): TInsts {
-    (noMatch1, _noMatch2, _present) = mapInter(
-      left.values(),
-      right.values(),
-      x ~> x,
-      (x, _) ~> x,
-    );
-    TInsts(noMatch1)
+    TInsts(left.insts.diff(right.insts))
   }
 }
 
