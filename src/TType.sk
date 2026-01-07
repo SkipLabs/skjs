@@ -608,29 +608,44 @@ base class TPrimValueKind uses XXHashable, Orderable {
   }
 }
 
+base class STypeTag final () uses Orderable {
+  children =
+  | TagUndefined
+  | TagVoid
+  | TagNull
+  | TagBool
+  | TagNum
+  | TagString
+  | TagBigInt
+  | TagTuple
+  | TagPromise
+  | TagObject
+  | TagAlgebraic
+}
+
 base class SType private (
   pos: PosRange,
-) uses XXHashable, Orderable, Projectable<Int> {
+) uses XXHashable, Orderable, Projectable<STypeTag> {
   children =
   | TPromise(TType)
 
-  fun tag(): Int {
+  fun tag(): STypeTag {
     this match {
-    | TPrimUnit(TUndefined(), _) -> 0
-    | TPrimUnit(TVoid(), _) -> 1
-    | TPrimUnit(TNull(), _) -> 2
-    | TPrimValue(TBool(), _, _) -> 3
-    | TPrimValue(TNum(), _, _) -> 4
-    | TPrimValue(TString(), _, _) -> 5
-    | TPrimValue(TBigInt(), _, _) -> 6
-    | TTuple _ -> 7
-    | TPromise _ -> 8
-    | TObject _ -> 9
-    | TAlgebraic _ -> 10
+    | TPrimUnit(TUndefined(), _) -> TagUndefined()
+    | TPrimUnit(TVoid(), _) -> TagVoid()
+    | TPrimUnit(TNull(), _) -> TagNull()
+    | TPrimValue(TBool(), _, _) -> TagBool()
+    | TPrimValue(TNum(), _, _) -> TagNum()
+    | TPrimValue(TString(), _, _) -> TagString()
+    | TPrimValue(TBigInt(), _, _) -> TagBigInt()
+    | TTuple _ -> TagTuple()
+    | TPromise _ -> TagPromise()
+    | TObject _ -> TagObject()
+    | TAlgebraic _ -> TagAlgebraic()
     }
   }
 
-  fun project(): Int {
+  fun project(): STypeTag {
     this.tag()
   }
 
@@ -870,7 +885,7 @@ class TFields{
 }
 
 class STypes private (
-  private stypes: InternalKeyedArrayMap<Int, SType>,
+  private stypes: InternalKeyedArrayMap<STypeTag, SType>,
 ) uses XXHashable, Orderable {
   static fun empty(): STypes {
     STypes(InternalKeyedArrayMap::empty())
