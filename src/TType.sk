@@ -426,13 +426,8 @@ fun createObject(
 }
 
 /***************************************************************************/
-/* Tuples */
-/***************************************************************************/
-
-class TTuple(tuple: Array<TType>) extends SType
-
-/***************************************************************************/
-/* Funs */
+/* Functions */
+/* Use only as the call and new 'fields' of objects (TFields) */
 /***************************************************************************/
 
 class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
@@ -448,6 +443,20 @@ class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
     TFuns(f(this.fun_), this.pos)
   }
 }
+
+class TFun(
+  tparams: Array<TParamWithConstraint>,
+  thisParam: ?TType,
+  params: Array<TType>,
+  optionalParams: Array<TType>,
+  spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
+  retType: TType,
+  cgNodes: CGNodes,
+) uses XXHashable, Orderable
+
+/***************************************************************************/
+/* ArrayType for the spread parameter of functions */
+/***************************************************************************/
 
 base class ArrayType uses XXHashable, Orderable, Show {
   fun getPos(): PosRange;
@@ -544,15 +553,11 @@ class ATFullType(fullType: TType) extends ArrayType {
   }
 }
 
-class TFun(
-  tparams: Array<TParamWithConstraint>,
-  thisParam: ?TType,
-  params: Array<TType>,
-  optionalParams: Array<TType>,
-  spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
-  retType: TType,
-  cgNodes: CGNodes,
-) uses XXHashable, Orderable
+/***************************************************************************/
+/* Tuples */
+/***************************************************************************/
+
+class TTuple(tuple: Array<TType>) extends SType
 
 /***************************************************************************/
 /* Single types */
