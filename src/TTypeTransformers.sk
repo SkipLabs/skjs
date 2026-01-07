@@ -178,17 +178,17 @@ mutable base class ApplyType(
     env: this::Env,
     insts: TInsts,
   ): TInsts {
-    insts.map(x -> this.inst(env, x))
+    insts.filterMap(x -> this.inst(env, x))
   }
 
-  overridable deferred mutable fun inst(env: this::Env, inst: TInst): TInst {
+  overridable deferred mutable fun inst(env: this::Env, inst: TInst): ?TInst {
     inst match {
-    | TSInst(name, targs) -> TSInst(name, this.targs(env, targs))
+    | TSInst(name, targs) -> Some(TSInst(name, this.targs(env, targs)))
     | TInter(ty1, ty2) ->
       TInter::create(this.type(env, ty1), this.type(env, ty2))
     | TUnion(ty1, ty2) ->
-      TUnion::create(this.type(env, ty1), this.type(env, ty2))
-    | tvar @ TVar _ -> tvar.mapConstraints(ty -> this.type(env, ty))
+      Some(TUnion::create(this.type(env, ty1), this.type(env, ty2)))
+    | tvar @ TVar _ -> Some(tvar.mapConstraints(ty -> this.type(env, ty)))
     }
   }
 

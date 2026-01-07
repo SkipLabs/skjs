@@ -1041,6 +1041,10 @@ class TInsts private (insts: ArraySet<TInst>) uses XXHashable, Orderable {
     TInsts(this.insts.map(f))
   }
 
+  fun filterMap(f: TInst -> ?TInst): TInsts {
+    TInsts(this.insts.filterMap(f))
+  }
+
   fun isEmpty(): Bool {
     this.insts.isEmpty()
   }

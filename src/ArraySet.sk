@@ -141,6 +141,12 @@ class .ArraySet<T: Orderable> private (
     static::createFromIterator(this.values().map(f).collect(SortedSet).values())
   }
 
+  fun filterMap<U: Orderable>(f: T -> ?U): ArraySet<U> {
+    ArraySet::createFromIterator(
+      this.values().filterMap(f).collect(SortedSet).values(),
+    )
+  }
+
   // s.iterDiffInterDiff(t) contains (Some(x), None()) for every element in
   // s but not t, (None(), Some(y)) for every y in t but not s, and
   // (Some(x), Some(y)) for every pair of elements that are in both s and t.

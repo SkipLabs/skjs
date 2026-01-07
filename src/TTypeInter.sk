@@ -9,19 +9,25 @@ module SKJS;
 // Interpretation:
 // 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
 class TInter private (ty1: TType, ty2: TType) extends TInst {
-  static fun create(ty1: TType, ty2: TType): TInter {
-    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      internal_error(`Unexpected Bottom or Top in TInter: ${ty1} inter ${ty2}`)
+  static fun create(ty1: TType, ty2: TType): ?TInter {
+    if (ty1.isTop() || ty2.isTop()) {
+      internal_error(`Unexpected Top in TInter: ${ty1} inter ${ty2}`)
     };
-    TInter(ty1, ty2)
+    if (ty1.isBottom() || ty2.isBottom()) {
+      None()
+    } else {
+      Some(TInter(ty1, ty2))
+    }
   }
 }
 
 extension class TType {
   // Unexpanded intersection.
   static private fun unexpandedInter(t1: TType, t2: TType): TType {
-    i = TInter::create(t1, t2);
-    TType::create(t1.pos, TInsts::single(i), Clauses::empty())
+    TInter::create(t1, t2) match {
+    | None() -> TType::bottom(t1.pos)
+    | Some(i) -> TType::create(t1.pos, TInsts::single(i), Clauses::empty())
+    }
   }
 
   static fun inter(
