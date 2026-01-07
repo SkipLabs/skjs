@@ -170,17 +170,17 @@ class TType private {
     TType::create(this.pos, insts(this.insts), clauses(this.clauses))
   }
 
-  // t.mapSTypes(subst, env, variance, f) is t with stypes updated by f, or
-  // None() if the result is Top
+  // t.mapSTypes(subst, env, variance, f) is t with stypes updated by f
   fun mapSTypes(
     subst: mutable Subst,
     env: TEnv,
     variance: Variance,
-    f: (STypes) -> STypes,
-  ): ?TType {
-    this.getSTypes(subst, env, variance).map(stypes ->
-      TType::fromSTypes(this.pos, f(stypes))
-    )
+    f: (?STypes) -> ?STypes,
+  ): TType {
+    f(this.getSTypes(subst, env, variance)) match {
+    | None() -> TType::top(this.pos)
+    | Some(stypes) -> TType::fromSTypes(this.pos, stypes)
+    }
   }
 
   private fun mapClauses(
