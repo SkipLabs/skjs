@@ -81,7 +81,7 @@ function testAssignmentVsLogical(): boolean {
 
 function testPostfixVsMemberAccess(): string {
   let obj: { prop: string } | null = { prop: "hello" };
-  // @skjs-expect-error Construction not supported: postfix operator !
+  // @skjs-expect-error Do not use the postfix ! operator
   return obj!.prop;
 }
 
