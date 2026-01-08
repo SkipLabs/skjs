@@ -15,7 +15,6 @@ base class STError extends STResult {
   children =
   | STMissing()
   | STMissingField(String)
-  | STMissingThis()
   | STMissingParameter()
   | STMissingSpread()
   | STTooManySType(SType)
@@ -44,7 +43,7 @@ base class STError extends STResult {
     | STMissing() -> "Missing"
     | STRecFunTParam(_f1, _f2, _i, STMissing()) ->
       "This type parameter does not define a constraint"
-    | STMissingThis() -> "Missing this parameter"
+    | STRecFunThisParam(_f1, _f2, STMissing()) -> "Missing this parameter"
     | STMissingParameter() -> "Missing parameter"
     | STMissingSpread() -> "Missing ... parameter"
     | STRecFieldsCall(_fields1, _fields2_, STMissing()) ->
@@ -464,7 +463,7 @@ extension class TFun {
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
     (f1.thisParam, f2.thisParam) match {
     | (_, None()) -> void
-    | (None(), Some(_)) -> return STMissingThis()
+    | (None(), Some(_)) -> return STRecFunThisParam(f1, f2, STMissing())
     | (Some(this1), Some(this2)) ->
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
