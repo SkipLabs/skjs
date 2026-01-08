@@ -29,6 +29,8 @@ base class STError extends STResult {
   | STRecAlgebraicOnBranch(TAlgebraic, TAlgebraic, tag: String, STError)
   | STRecFieldsCall(TFields, TFields, STError)
   | STRecFieldsNew(TFields, TFields, STError)
+  | STRecFieldsIndexKey(TFields, TFields, TIndexField, TIndexField, STError)
+  | STRecFieldsIndexValue(TFields, TFields, TIndexField, TIndexField, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -67,7 +69,9 @@ base class STError extends STResult {
     | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
     | STRecAlgebraicOnBranch(_a1, _a2, _tag, err)
     | STRecFieldsCall(_fields1, _fields2, err)
-    | STRecFieldsNew(_fields1, _fields2, err) ->
+    | STRecFieldsNew(_fields1, _fields2, err)
+    | STRecFieldsIndexKey(_fields1, _fields2, _index1, _index2, err)
+    | STRecFieldsIndexValue(_fields1, _fields2, _index1, _index2, err) ->
       err.toString(subst, tenv, ty)
     }
   }
@@ -143,11 +147,13 @@ extension class TFields {
     | (_, None()) -> void
     | (Some(index1), Some(index2)) ->
       TType::isSub(subst, tenv, index2.keyType, index1.keyType) match {
-      | err @ STError _ -> return err
+      | err @ STError _ ->
+        return STRecFieldsIndexKey(fields1, fields2, index1, index2, err)
       | STOk() -> void
       };
       TType::isSub(subst, tenv, index1.valueType, index2.valueType) match {
-      | err @ STError _ -> return err
+      | err @ STError _ ->
+        return STRecFieldsIndexValue(fields1, fields2, index1, index2, err)
       | STOk() -> void
       }
     | (None(), Some(index2)) ->
