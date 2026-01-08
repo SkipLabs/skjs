@@ -437,6 +437,72 @@ extension class TypeChecker {
     result
   }
 
+  fun exprWithoutNullish(
+    pos: PosRange,
+    tcenv: mutable TCEnv,
+    e: Expr,
+    mostPrecise: Bool,
+  ): (Bool, TType) {
+    ty = this.expr(tcenv, e, mostPrecise);
+    hasTop = false;
+    hasVoid = false;
+    hasNullOrUndefined = false;
+    hasOthers = false;
+    tyWithoutNullish = ty.mapSTypes(
+      tcenv.subst,
+      this.tenv,
+      Covariant(),
+      stypesOpt ->
+        stypesOpt match {
+        | None() ->
+          !hasTop = true;
+          stypesOpt
+        | Some(stypes) ->
+          Some(
+            stypes.filter(stype -> {
+              stype match {
+              | TPrimUnit(TNull(), _)
+              | TPrimUnit(TUndefined(), _) ->
+                !hasNullOrUndefined = true;
+                return false
+              | TPrimUnit(TVoid(), _) -> !hasVoid = true
+              | _ -> !hasOthers = true
+              };
+              true
+            }),
+          )
+        }
+      ,
+    );
+    isValid = true;
+    if (hasVoid) {
+      !isValid = false;
+      tcenv.error(
+        Array[
+          (pos, "Invalid operation on type void"),
+          (e.pos, `This expression has type ${ty}`),
+        ],
+      )
+    } else if (!hasTop && !hasNullOrUndefined) {
+      !isValid = false;
+      tcenv.error(
+        Array[
+          (pos, "This operator is useless"),
+          (e.pos, "This expression is never null or undefined"),
+        ],
+      );
+    } else if (!hasTop && !hasOthers) {
+      !isValid = false;
+      tcenv.error(
+        Array[
+          (pos, "This operator is useless"),
+          (e.pos, "This expression is always null or undefined"),
+        ],
+      )
+    };
+    (isValid, tyWithoutNullish)
+  }
+
   fun nonVoidExpr(
     pos: PosRange,
     tcenv: mutable TCEnv,
@@ -750,31 +816,36 @@ extension class TypeChecker {
         this.checkSubType(tcenv, pos, "Invalid !", ty, bool);
         bool
       | nuop @ NumericUnaryOperator() ->
-        ty.mapSTypes(tcenv.subst, this.tenv, Covariant(), stypes -> {
-          stypes.map(stype ->
-            stype match {
-            | TPrimValue(k @ TNum(), _, primPos)
-            | TPrimValue(k @ TBigInt(), _, primPos) ->
-              TPrimValue(k, None(), primPos)
-            | _ ->
-              typingError(
-                Array[
-                  (pos, `Invalid unary operation ${nuop}`),
-                  (subExpr.pos, `This has type ${ty}`),
-                ],
-              )
-            }
-          )
-        }) match {
-        | None() ->
+        invalid = false;
+        res = ty.mapSTypes(tcenv.subst, this.tenv, Covariant(), stypesOpt ->
+          stypesOpt match {
+          | None() ->
+            !invalid = true;
+            stypesOpt
+          | Some(stypes) ->
+            Some(
+              stypes.map(stype ->
+                stype match {
+                | TPrimValue(k @ TNum(), _, primPos)
+                | TPrimValue(k @ TBigInt(), _, primPos) ->
+                  TPrimValue(k, None(), primPos)
+                | _ ->
+                  !invalid = true;
+                  stype
+                }
+              ),
+            )
+          }
+        );
+        if (invalid) {
           typingError(
             Array[
               (pos, `Invalid unary operation ${nuop}`),
               (subExpr.pos, `This has type ${ty}`),
             ],
           )
-        | Some(ty2) -> ty2
-        }
+        };
+        res
       }
 
     | Dot(dotKind, e1, fieldName) ->
@@ -952,53 +1023,13 @@ extension class TypeChecker {
         TType::single(TPrimValue::full(kind1, pos))
 
       | BONullishCoalescing() ->
-        ty1 = this.nonVoidExpr(pos, tcenv, e1, mostPrecise);
-        ty2 = this.expr(tcenv, e2, mostPrecise);
-        ty1.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-        | None() -> void
-        | Some(stypes) ->
-          hasVoid = false;
-          hasNullOrUndefined = false;
-          hasOthers = false;
-          for (stype in stypes) {
-            stype match {
-            | TPrimUnit(TVoid(), _) -> !hasVoid = true
-            | TPrimUnit(TNull(), _)
-            | TPrimUnit(TUndefined(), _) ->
-              !hasNullOrUndefined = true
-            | _ -> !hasOthers = true
-            }
-          };
-          if (hasVoid) {
-            tcenv.error(
-              Array[
-                (pos, "Invalid operation on type void"),
-                (e1.pos, `This expression has type ${ty1}`),
-              ],
-            )
-          } else if (!hasNullOrUndefined) {
-            tcenv.error(
-              Array[
-                (pos, "This operator is useless"),
-                (e1.pos, "This expression is never null or undefined"),
-              ],
-            );
-          } else if (!hasOthers) {
-            tcenv.error(
-              Array[
-                (pos, "This operator is useless"),
-                (e.pos, "This expression is always null or undefined"),
-              ],
-            )
-          }
-        };
-        nullish = TType::union(
-          tcenv.subst,
-          this.tenv,
-          TType::single(TPrimUnit(TNull(), pos)),
-          TType::single(TPrimUnit(TUndefined(), pos)),
+        (_isValid, ty1WithoutNullish) = this.exprWithoutNullish(
+          pos,
+          tcenv,
+          e1,
+          mostPrecise,
         );
-        ty1WithoutNullish = TType::diff(ty1, nullish);
+        ty2 = this.expr(tcenv, e2, mostPrecise);
         TType::union(tcenv.subst, this.tenv, ty1WithoutNullish, ty2)
       }
 
@@ -1078,9 +1109,13 @@ extension class TypeChecker {
         this.checkSubType(tcenv, pos, "Expected integer", ty, num);
         num
       | POExcl() ->
-        ty = this.nonVoidExpr(pos, tcenv, subExpr, mostPrecise);
-        ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-        | None() ->
+        (isValid, tyWithoutNullish) = this.exprWithoutNullish(
+          pos,
+          tcenv,
+          subExpr,
+          mostPrecise,
+        );
+        if (isValid) {
           tcenv.error(
             Array[
               (pos, "Do not use the postfix ! operator"),
@@ -1090,59 +1125,8 @@ extension class TypeChecker {
               ),
             ],
           )
-        | Some(stypes) ->
-          hasVoid = false;
-          hasNullOrUndefined = false;
-          hasOthers = false;
-          for (stype in stypes) {
-            stype match {
-            | TPrimUnit(TVoid(), _) -> !hasVoid = true
-            | TPrimUnit(TNull(), _)
-            | TPrimUnit(TUndefined(), _) ->
-              !hasNullOrUndefined = true
-            | _ -> !hasOthers = true
-            }
-          };
-          if (hasVoid) {
-            tcenv.error(
-              Array[
-                (pos, "Invalid operation on type void"),
-                (subExpr.pos, `This expression has type ${ty}`),
-              ],
-            )
-          } else if (!hasNullOrUndefined) {
-            tcenv.error(
-              Array[
-                (pos, "This operator is useless"),
-                (subExpr.pos, "This expression is never null or undefined"),
-              ],
-            );
-          } else if (!hasOthers) {
-            tcenv.error(
-              Array[
-                (pos, "This operator is useless"),
-                (subExpr.pos, "This expression is always null or undefined"),
-              ],
-            )
-          } else {
-            tcenv.error(
-              Array[
-                (pos, "Do not use the postfix ! operator"),
-                (
-                  subExpr.pos,
-                  "This assertion is unsound and may cause runtime errors",
-                ),
-              ],
-            );
-          }
         };
-        nullish = TType::union(
-          tcenv.subst,
-          this.tenv,
-          TType::single(TPrimUnit(TNull(), pos)),
-          TType::single(TPrimUnit(TUndefined(), pos)),
-        );
-        TType::diff(ty, nullish)
+        tyWithoutNullish
       }
 
     | c @ Closure(params, retTypeAstOpt, body) ->

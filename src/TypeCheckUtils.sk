@@ -147,16 +147,18 @@ extension class TypeChecker {
     isStringifiable = ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
     | None() -> false
     | Some(stypes) ->
-      stypes.singleElt() match {
-      | Some(TPrimValue(TString(), _, _)) -> true
-      | Some(TPrimValue(TNum(), _, _)) -> true
-      | Some(TPrimValue(TBigInt(), _, _)) -> true
-      | Some(TPrimValue(TBool(), _, _)) -> true
-      | Some(TPrimUnit(TNull(), _)) -> true
-      | Some(TPrimUnit(TUndefined(), _)) -> true
-      | Some(TPrimUnit(TVoid(), _)) -> true
-      | _ -> false
-      }
+      stypes.all(stype ->
+        stype match {
+        | TPrimValue(TString(), _, _) -> true
+        | TPrimValue(TNum(), _, _) -> true
+        | TPrimValue(TBigInt(), _, _) -> true
+        | TPrimValue(TBool(), _, _) -> true
+        | TPrimUnit(TNull(), _) -> true
+        | TPrimUnit(TUndefined(), _) -> true
+        | TPrimUnit(TVoid(), _) -> false
+        | _ -> false
+        }
+      )
     };
 
     if (!isStringifiable) {
