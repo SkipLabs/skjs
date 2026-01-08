@@ -37,6 +37,7 @@ base class STError extends STResult {
   | STRecType(TType, TType, STError)
   | STRecTuple(TTuple, TTuple, STError)
   | STRecFunTParam(TFun, TFun, Int, STError)
+  | STRecFunThisParam(TFun, TFun, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -90,7 +91,8 @@ base class STError extends STResult {
     )
     | STRecType(_ty1, _ty2, err)
     | STRecTuple(_tup1, _tup2, err)
-    | STRecFunTParam(_f1, _f2, _i, err) ->
+    | STRecFunTParam(_f1, _f2, _i, err)
+    | STRecFunThisParam(_f1, _f2, err) ->
       err.toString(subst, tenv, ty)
     | STRecClauses(_clauses1, _clauses2, inter1, _) ->
       "This is of type " + prettyPrintClause(inter1)
@@ -466,7 +468,7 @@ extension class TFun {
     | (Some(this1), Some(this2)) ->
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
-      | err @ STError _ -> return err
+      | err @ STError _ -> return STRecFunThisParam(f1, f2, err)
       }
     };
 
