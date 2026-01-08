@@ -36,6 +36,7 @@ base class STError extends STResult {
   | STRecSTypes(STypes, STypes, STError)
   | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError)>)
   | STRecType(TType, TType, STError)
+  | STRecTuple(TTuple, TTuple, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -86,7 +87,8 @@ base class STError extends STResult {
       _inter1,
       List.Cons((_inter2, err), List.Nil()),
     )
-    | STRecType(_ty1, _ty2, err) ->
+    | STRecType(_ty1, _ty2, err)
+    | STRecTuple(_tup1, _tup2, err) ->
       err.toString(subst, tenv, ty)
     | STRecClauses(_clauses1, _clauses2, inter1, _) ->
       "This is of type " + prettyPrintClause(inter1)
@@ -422,7 +424,7 @@ extension class TTuple {
     for (i in Range(0, tuple2.tuple.size())) {
       TType::isSub(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]) match {
       | STOk() -> void
-      | err @ STError _ -> return err
+      | err @ STError _ -> return STRecTuple(tuple1, tuple2, err)
       }
     };
     STOk()
