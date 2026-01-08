@@ -34,6 +34,7 @@ base class STError extends STResult {
   | STRecFieldsFieldIndex(TFields, TFields, TField, TIndexField, STError)
   | STRecFieldsIndexField(TFields, TFields, TIndexField, TField, STError)
   | STRecFieldsField(TFields, TFields, String, STError)
+  | STRecSTypes(STypes, STypes, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -77,7 +78,8 @@ base class STError extends STResult {
     | STRecFieldsIndexValue(_fields1, _fields2, _index1, _index2, err)
     | STRecFieldsFieldIndex(_fields1, _fields2, _field1, _index2, err)
     | STRecFieldsIndexField(_fields1, _fields2, _index1, _field2, err)
-    | STRecFieldsField(_fields1, _fields2, _fieldName, err) ->
+    | STRecFieldsField(_fields1, _fields2, _fieldName, err)
+    | STRecSTypes(_stypes1, _stypes2, err) ->
       err.toString(subst, tenv, ty)
     }
   }
@@ -288,7 +290,7 @@ extension class STypes {
         | _ -> internal_error("Internal error")
         } match {
         | STOk() -> Success(void)
-        | err @ STError _ -> Failure(err)
+        | err @ STError _ -> Failure(STRecSTypes(stypes1, stypes2, err))
         }
       | None() -> Failure(STTooManySType(sty1))
       }
