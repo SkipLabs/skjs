@@ -25,6 +25,7 @@ base class STError extends STResult {
   | STInvalidClause(Clause)
   | STInvalidSpread(ArrayType)
   | STRec(STError, PosRange, TType)
+  | STRecAlgebraicOnBranch(TAlgebraic, TAlgebraic, tag: String, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -59,6 +60,8 @@ base class STError extends STResult {
     | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
     | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`
     | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
+    | STRecAlgebraicOnBranch(_a1, _a2, _tag, err) ->
+      err.toString(subst, tenv, ty)
     }
   }
 }
@@ -81,7 +84,8 @@ extension class TAlgebraic {
       | Some(b2) ->
         TConstr::isSub(subst, tenv, b1, b2) match {
         | STOk() -> Success(void)
-        | err @ STError _ -> Failure(err)
+        | err @ STError _ ->
+          Failure(STRecAlgebraicOnBranch(a1, a2, b1.tag, err))
         }
       | None() -> Failure(STTooManyTConstr(b1))
       }
