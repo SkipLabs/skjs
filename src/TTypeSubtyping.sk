@@ -33,6 +33,7 @@ base class STError extends STResult {
   | STRecFieldsIndexValue(TFields, TFields, TIndexField, TIndexField, STError)
   | STRecFieldsFieldIndex(TFields, TFields, TField, TIndexField, STError)
   | STRecFieldsIndexField(TFields, TFields, TIndexField, TField, STError)
+  | STRecFieldsField(TFields, TFields, String, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -75,7 +76,8 @@ base class STError extends STResult {
     | STRecFieldsIndexKey(_fields1, _fields2, _index1, _index2, err)
     | STRecFieldsIndexValue(_fields1, _fields2, _index1, _index2, err)
     | STRecFieldsFieldIndex(_fields1, _fields2, _field1, _index2, err)
-    | STRecFieldsIndexField(_fields1, _fields2, _index1, _field2, err) ->
+    | STRecFieldsIndexField(_fields1, _fields2, _index1, _field2, err)
+    | STRecFieldsField(_fields1, _fields2, _fieldName, err) ->
       err.toString(subst, tenv, ty)
     }
   }
@@ -210,7 +212,8 @@ extension class TFields {
           };
           TType::isSub(subst, tenv, f1.type, f2type) match {
           | STOk() -> void
-          | err @ STError _ -> return err
+          | err @ STError _ ->
+            return STRecFieldsField(fields1, fields2, f1.name, err)
           }
         }
       }
