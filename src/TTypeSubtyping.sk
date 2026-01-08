@@ -37,6 +37,7 @@ base class STError extends STResult {
   | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError)>)
   | STRecType(TType, TType, STError)
   | STRecTuple(TTuple, TTuple, STError)
+  | STRecFunTParam(TFun, TFun, Int, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -88,7 +89,8 @@ base class STError extends STResult {
       List.Cons((_inter2, err), List.Nil()),
     )
     | STRecType(_ty1, _ty2, err)
-    | STRecTuple(_tup1, _tup2, err) ->
+    | STRecTuple(_tup1, _tup2, err)
+    | STRecFunTParam(_f1, _f2, _i, err) ->
       err.toString(subst, tenv, ty)
     | STRecClauses(_clauses1, _clauses2, inter1, _) ->
       "This is of type " + prettyPrintClause(inter1)
@@ -452,7 +454,7 @@ extension class TFun {
       | (Some(ty1), Some(ty2)) ->
         TType::isSub(subst, tenv, ty2, ty1) match {
         | STOk() -> void
-        | err @ STError _ -> return err
+        | err @ STError _ -> return STRecFunTParam(f1, f2, i, err)
         }
       };
       !tsubst[tparam2.id] = tparam1;
