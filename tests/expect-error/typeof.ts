@@ -384,9 +384,8 @@ function testIncorrectRefinement(x: number | string): number {
 
 // SKJS correctly rejects functions in typeof === "object" checks
 function testFunctionAsObject(x: (() => void) | string): () => void {
+  // TODO: warn for condition always false
   if (typeof x === "object") {
-    // This correctly errors - functions are typeof "function", not "object"
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return () => {};

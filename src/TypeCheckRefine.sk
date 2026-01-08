@@ -283,11 +283,10 @@ extension class TypeChecker {
     !ty = (mutable FilterType()).type((filter, map), ty);
     localType = default match {
     | Some(d) ->
-      isTopOrEmpty = ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-      | None() -> true
-      | Some(stypes) -> stypes.isEmpty()
-      };
-      if (isTopOrEmpty) TType::single(d) else ty
+      ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+      | None() -> TType::single(d)
+      | Some(_nonTop) -> ty
+      }
     | _ -> ty
     };
     tcenv.scope.set(local, localType, (_, _) -> void)
