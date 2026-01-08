@@ -13,6 +13,7 @@ class STOk() extends STResult
 /* All other cases: T1 ⋢ T2 */
 base class STError extends STResult {
   children =
+  | STMissing()
   | STNoConstraint()
   | STMissingField(String)
   | STMissingThis()
@@ -31,12 +32,14 @@ base class STError extends STResult {
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
+    | STMissing() -> "Missing"
     | STNoConstraint() -> "This type parameter does not define a constraint"
     | STMissingThis() -> "Missing this parameter"
     | STMissingParameter() -> "Missing parameter"
     | STMissingSpread() -> "Missing ... parameter"
-    | STMissingCall() -> "Missing call signature"
-    | STMissingConstructor() -> "Missing constructor"
+    | STRecFieldsCall(_fields1, _fields2_, STMissing()) ->
+      "Missing call signature"
+    | STRecFieldsNew(_fields1, _fields2, STMissing()) -> "Missing constructor"
     | STMissingField(fieldName) ->
       `The field '${fieldName}' is missing\n` +
         `Out of the type: ${expandTVars(subst, tenv, ty)}`
@@ -68,12 +71,6 @@ base class STError extends STResult {
       err.toString(subst, tenv, ty)
     }
   }
-}
-
-base class STErrorNoArg final () extends STError {
-  children =
-  | STMissingCall
-  | STMissingConstructor
 }
 
 extension class TAlgebraic {
@@ -132,23 +129,11 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult {
-    TFields::isSubOptTFuns(
-      subst,
-      tenv,
-      fields1.call,
-      fields2.call,
-      STMissingCall,
-    ) match {
+    TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
     | STOk() -> void
     | err @ STError _ -> return STRecFieldsCall(fields1, fields2, err)
     };
-    TFields::isSubOptTFuns(
-      subst,
-      tenv,
-      fields1.new,
-      fields2.new,
-      STMissingConstructor,
-    ) match {
+    TFields::isSubOptTFuns(subst, tenv, fields1.new, fields2.new) match {
     | STOk() -> void
     | err @ STError _ -> return STRecFieldsNew(fields1, fields2, err)
     };
@@ -226,7 +211,6 @@ extension class TFields {
     tenv: TEnv,
     f1opt: ?(Bool, TFuns),
     f2opt: ?(Bool, TFuns),
-    missing: Concrete<STErrorNoArg>,
   ): STResult {
     (f1opt, f2opt) match {
     | (_, None())
@@ -234,7 +218,7 @@ extension class TFields {
       STOk()
     | (None(), Some((false, _)))
     | (Some((true, _)), Some((false, _))) ->
-      missing()
+      STMissing()
     | (Some((_opt1, call1)), Some((_opt2, call2))) ->
       TFuns::isSub(subst, tenv, call1, call2)
     }
