@@ -1152,8 +1152,11 @@ class Clause private (
   }
 
   // Returns None if the result is bottom
-  fun map(fTParam: TParam -> TParam, fSTypes: STypes -> STypes): ?Clause {
-    this.stypes.map(fSTypes) match {
+  fun map(
+    fTParam: TParam -> TParam,
+    fSTypesOpt: (?STypes) -> ?STypes,
+  ): ?Clause {
+    fSTypesOpt(this.stypes) match {
     | Some(sTypes) if (sTypes.isEmpty()) -> None()
     | stypes ->
       vars = this.vars.map(fTParam);

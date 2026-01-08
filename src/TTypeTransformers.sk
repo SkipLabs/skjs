@@ -44,7 +44,10 @@ mutable base class ApplyType(
     env: this::Env,
     clause: Clause,
   ): ?Clause {
-    clause.map(x -> this.typeParam(env, x), x -> this.stypes(env, x))
+    clause.map(
+      x -> this.typeParam(env, x),
+      sTypesOpt -> sTypesOpt.map(sTypes -> this.stypes(env, sTypes)),
+    )
   }
 
   overridable deferred mutable fun typeParamWithConstraint(
