@@ -35,6 +35,7 @@ base class STError extends STResult {
   | STRecFieldsField(TFields, TFields, String, STError)
   | STRecSTypes(STypes, STypes, STError)
   | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError)>)
+  | STRecType(TType, TType, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -84,7 +85,8 @@ base class STError extends STResult {
       _clauses2,
       _inter1,
       List.Cons((_inter2, err), List.Nil()),
-    ) ->
+    )
+    | STRecType(_ty1, _ty2, err) ->
       err.toString(subst, tenv, ty)
     | STRecClauses(_clauses1, _clauses2, inter1, _) ->
       "This is of type " + prettyPrintClause(inter1)
@@ -400,15 +402,9 @@ extension class TType {
     clauses2 = u2.expand_(subst, tenv, Contravariant());
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
-    | err @ STRec _ ->
+    | err @ STError _ ->
       subst.restore(savedSubst);
-      err
-    | other @ STTooManySType(stype) ->
-      subst.restore(savedSubst);
-      STRec(other, stype.pos, u2)
-    | other @ STError _ ->
-      subst.restore(savedSubst);
-      STRec(other, u1.pos, u2)
+      STRecType(u1, u2, err)
     }
   }
 }
