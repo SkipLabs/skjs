@@ -919,6 +919,9 @@ extension class TypeChecker {
           ty1,
           TType::single(TPrimValue::boolean(e1.pos)),
         );
+        savedScope = tcenv.scope;
+        branch2 = tcenv.mcreateSubScope{isLoop => false};
+        tcenv.!scope = branch2;
         this.evalCond(tcenv, e1, continuationTarget);
         ty2 = this.expr(tcenv, e2, true);
         this.checkSubType(
@@ -928,6 +931,8 @@ extension class TypeChecker {
           ty2,
           TType::single(TPrimValue::boolean(e2.pos)),
         );
+        tcenv.!scope = savedScope;
+        tcenv.popScope(this.tenv, branch2);
         TType::single(TPrimValue::boolean(pos))
 
       | BOLessThan()
