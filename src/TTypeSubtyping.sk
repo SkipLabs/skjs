@@ -4,6 +4,71 @@
 
 module SKJS;
 
+/* Result for a check of subtyping of types T1 and T2 */
+base class STResult
+
+/* T1 ⊑ T2 */
+class STOk() extends STResult
+
+/* All other cases: T1 ⋢ T2 */
+base class STError extends STResult {
+  children =
+  | STNoConstraint()
+  | STMissingField(String)
+  | STMissingThis()
+  | STMissingParameter()
+  | STMissingSpread()
+  | STTooManySType(SType)
+  | STTooManyTConstr(TConstr)
+  | STTooManyTTuple(TTuple)
+  | STTypeParameterMismatch()
+  | STInvalidClause(Clause)
+  | STInvalidSpread(ArrayType)
+  | STRec(STError, PosRange, TType)
+
+  fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
+    this match {
+    | STNoConstraint() -> "This type parameter does not define a constraint"
+    | STMissingThis() -> "Missing this parameter"
+    | STMissingParameter() -> "Missing parameter"
+    | STMissingSpread() -> "Missing ... parameter"
+    | STMissingCall() -> "Missing call signature"
+    | STMissingConstructor() -> "Missing constructor"
+    | STMissingField(fieldName) ->
+      `The field '${fieldName}' is missing\n` +
+        `Out of the type: ${expandTVars(subst, tenv, ty)}`
+    | STTooManySType(sty) ->
+      sty match {
+      | TPrimUnit(kind, _) -> `This is a ${kind}`
+      | TPrimValue(TString(), None(), _) ->
+        "This is of type string. " +
+          "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
+      | TPrimValue(kind, None(), _) -> `This is of type ${kind}`
+      | TPrimValue(kind, Some(x), _) ->
+        `This is a static ${kind}: ` + x.toStringList(true)
+
+      | TPromise _ -> "This is a Promise"
+      | TAlgebraic _ ->
+        "This is a constructor (the field kind is a static string)"
+      | TObject _ -> "This is an object"
+      | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
+      }
+    | STTooManyTConstr(_) -> "This is a constructor"
+    | STTooManyTTuple(tuple) -> "This is a tuple of size " + tuple.tuple.size()
+    | STTypeParameterMismatch() -> "Type parameter mismatch"
+    | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
+    | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`
+    | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
+    }
+  }
+}
+
+base class STErrorNoArg final () extends STError {
+  children =
+  | STMissingCall
+  | STMissingConstructor
+}
+
 extension class TAlgebraic {
   static fun isSub(
     subst: mutable Subst,
