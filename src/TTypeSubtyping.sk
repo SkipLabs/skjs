@@ -14,7 +14,6 @@ class STOk() extends STResult
 base class STError extends STResult {
   children =
   | STMissing()
-  | STNoConstraint()
   | STMissingField(String)
   | STMissingThis()
   | STMissingParameter()
@@ -42,7 +41,8 @@ base class STError extends STResult {
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
     | STMissing() -> "Missing"
-    | STNoConstraint() -> "This type parameter does not define a constraint"
+    | STRecFunTParam(_f1, _f2, _i, STMissing()) ->
+      "This type parameter does not define a constraint"
     | STMissingThis() -> "Missing this parameter"
     | STMissingParameter() -> "Missing parameter"
     | STMissingSpread() -> "Missing ... parameter"
@@ -450,7 +450,7 @@ extension class TFun {
       (tparam1.cstr, tparam2.cstr) match {
       | (None(), None()) -> void
       | (Some _, None()) -> void
-      | (None(), Some _) -> return STNoConstraint()
+      | (None(), Some _) -> return STRecFunTParam(f1, f2, i, STMissing())
       | (Some(ty1), Some(ty2)) ->
         TType::isSub(subst, tenv, ty2, ty1) match {
         | STOk() -> void
