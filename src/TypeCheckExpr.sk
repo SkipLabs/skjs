@@ -906,40 +906,25 @@ extension class TypeChecker {
         };
         TType::single(TPrimValue::boolean(pos))
 
-      | BOLogicalAnd() ->
+      | op_ @ LazyLogicalOperator() ->
+        (opStr, continuationTarget) = op_ match {
+        | BOLogicalAnd() -> ("&&", true)
+        | BOLogicalOr() -> ("||", false)
+        };
         ty1 = this.expr(tcenv, e1, true);
         this.checkSubType(
           tcenv,
           pos,
-          "Invalid &&",
+          `Invalid ${opStr}`,
           ty1,
           TType::single(TPrimValue::boolean(e1.pos)),
         );
-        this.evalCond(tcenv, e1, true);
+        this.evalCond(tcenv, e1, continuationTarget);
         ty2 = this.expr(tcenv, e2, true);
         this.checkSubType(
           tcenv,
           pos,
-          "Invalid &&",
-          ty2,
-          TType::single(TPrimValue::boolean(e2.pos)),
-        );
-        TType::single(TPrimValue::boolean(pos))
-      | BOLogicalOr() ->
-        ty1 = this.expr(tcenv, e1, true);
-        this.checkSubType(
-          tcenv,
-          pos,
-          "Invalid ||",
-          ty1,
-          TType::single(TPrimValue::boolean(e1.pos)),
-        );
-        this.evalCond(tcenv, e1, false);
-        ty2 = this.expr(tcenv, e2, true);
-        this.checkSubType(
-          tcenv,
-          pos,
-          "Invalid ||",
+          `Invalid ${opStr}`,
           ty2,
           TType::single(TPrimValue::boolean(e2.pos)),
         );
