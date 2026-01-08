@@ -44,7 +44,10 @@ mutable base class ApplyType(
     env: this::Env,
     clause: Clause,
   ): ?Clause {
-    clause.map(x -> this.typeParam(env, x), x -> this.stypes(env, x))
+    clause.map(
+      x -> this.typeParam(env, x),
+      sTypesOpt -> this.sTypesOpt(env, sTypesOpt),
+    )
   }
 
   overridable deferred mutable fun typeParamWithConstraint(
@@ -64,6 +67,13 @@ mutable base class ApplyType(
     tparam: TParam,
   ): TParam {
     TParam(tparam.name, tparam.fileName, tparam.id)
+  }
+
+  overridable deferred mutable fun sTypesOpt(
+    env: this::Env,
+    sTypesOpt: ?STypes, /* None represents Top */
+  ): ?STypes {
+    sTypesOpt.map(sTypes -> this.stypes(env, sTypes))
   }
 
   overridable deferred mutable fun stypes(
@@ -211,14 +221,18 @@ mutable class RenameClauses() extends ApplyType {
 }
 
 mutable class FilterType() extends ApplyType {
-  type Env = (SType ~> Bool, SType ~> SType);
+  type Env = (SType ~> Bool, SType ~> SType, ?SType);
 
   mutable fun insts(_env: this::Env, insts: TInsts): TInsts {
     insts
   }
 
-  mutable fun stypes(env: this::Env, stypes: STypes): STypes {
-    stypes.filterMap(x -> if (env.i0(x)) Some(env.i1(x)) else None())
+  mutable fun sTypesOpt(env: this::Env, sTypesOpt: ?STypes): ?STypes {
+    sTypesOpt match {
+    | None() -> env.i2.map(STypes::single)
+    | Some(sTypes) ->
+      Some(sTypes.filterMap(x -> if (env.i0(x)) Some(env.i1(x)) else None()))
+    }
   }
 }
 

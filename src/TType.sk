@@ -1152,22 +1152,28 @@ class Clause private (
   }
 
   // Returns None if the result is bottom
-  fun map(fTParam: TParam -> TParam, fSTypes: STypes -> STypes): ?Clause {
-    this.stypes.map(fSTypes) match {
+  fun map_(
+    fVars: ArraySet<TParam> -> ArraySet<TParam>,
+    fSTypesOpt: (?STypes) -> ?STypes,
+  ): ?Clause {
+    fSTypesOpt(this.stypes) match {
     | Some(sTypes) if (sTypes.isEmpty()) -> None()
-    | stypes ->
-      vars = this.vars.map(fTParam);
-      Some(Clause(vars, stypes))
+    | sTypes -> Some(Clause(fVars(this.vars), sTypes))
     }
+  }
+
+  // Returns None if the result is bottom
+  fun map(
+    fTParam: TParam -> TParam,
+    fSTypesOpt: (?STypes) -> ?STypes,
+  ): ?Clause {
+    this.map_(vars -> vars.map(fTParam), fSTypesOpt)
   }
 
   // t.mapSTypes(f) is t with stypes updated by f
   // Returns None if the result is bottom
   fun mapSTypes(f: (?STypes) -> ?STypes): ?Clause {
-    f(this.stypes) match {
-    | Some(sTypes) if (sTypes.isEmpty()) -> None()
-    | stypesOpt -> Some(Clause(this.vars, stypesOpt))
-    }
+    this.map_(vars -> vars, f)
   }
 
   fun getConstantString(): ?(PosRange, String) {

@@ -215,8 +215,7 @@ value class StmtTermination private {
     | PostOp(_postop, e)
     | Dot(OptionalDot(), e, _fieldName) ->
       static::expr(e) /* do not throw */
-    | Binop(BOLogicalAnd(), e1, e2)
-    | Binop(BOLogicalOr(), e1, e2) ->
+    | Binop(LazyLogicalOperator(), e1, e2) ->
       static::expr(e1).thenk(() ~> static::expr(e2).maybe())
     | Get(e1, e2)
     | InstanceOf(e1, e2)

@@ -662,9 +662,13 @@ base class AssignableBinaryOperator extends BinaryOperator uses XXHashable {
   | BOBitwiseAnd()
   | BOBitwiseXor()
   | BOBitwiseOr()
+  | BONullishCoalescing()
+}
+
+base class LazyLogicalOperator() extends AssignableBinaryOperator {
+  children =
   | BOLogicalAnd()
   | BOLogicalOr()
-  | BONullishCoalescing()
 }
 
 base class BinaryOperator uses XXHashable {
