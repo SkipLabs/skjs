@@ -38,6 +38,8 @@ base class STError extends STResult {
   | STRecFunTParam(TFun, TFun, Int, STError)
   | STRecFunThisParam(TFun, TFun, STError)
   | STRecFunParam(TFun, TFun, Int, STError)
+  | STRecFunOptionalSpread(TFun, TFun, Int, STError)
+  | STRecFunSpread(TFun, TFun, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -93,7 +95,9 @@ base class STError extends STResult {
     | STRecTuple(_tup1, _tup2, err)
     | STRecFunTParam(_f1, _f2, _i, err)
     | STRecFunThisParam(_f1, _f2, err)
-    | STRecFunParam(_f1, _f2, _i, err) ->
+    | STRecFunParam(_f1, _f2, _i, err)
+    | STRecFunOptionalSpread(_f1, _f2, _i, err)
+    | STRecFunSpread(_f1, _f2, err) ->
       err.toString(subst, tenv, ty)
     | STRecClauses(_clauses1, _clauses2, inter1, _) ->
       "This is of type " + prettyPrintClause(inter1)
@@ -543,7 +547,8 @@ extension class TFun {
       )) {
         TType::isSub(subst, tenv, spread2elt, f1.optionalParams[io1]) match {
         | STOk() -> void
-        | err @ STError _ -> return err
+        | err @ STError _ ->
+          return STRecFunOptionalSpread(f1, f2, io1 + f1.params.size(), err)
         }
       };
       spread1elt match {
@@ -551,7 +556,7 @@ extension class TFun {
       | Some(s1) ->
         TType::isSub(subst, tenv, spread2elt, s1) match {
         | STOk() -> void
-        | err @ STError _ -> return err
+        | err @ STError _ -> return STRecFunSpread(f1, f2, err)
         }
       }
     };
