@@ -155,7 +155,7 @@ extension class TypeChecker {
         | TPrimValue(TBool(), _, _) -> true
         | TPrimUnit(TNull(), _) -> true
         | TPrimUnit(TUndefined(), _) -> true
-        | TPrimUnit(TVoid(), _) -> true
+        | TPrimUnit(TVoid(), _) -> false
         | _ -> false
         }
       )
