@@ -46,7 +46,7 @@ mutable base class ApplyType(
   ): ?Clause {
     clause.map(
       x -> this.typeParam(env, x),
-      sTypesOpt -> sTypesOpt.map(sTypes -> this.stypes(env, sTypes)),
+      sTypesOpt -> this.sTypesOpt(env, sTypesOpt),
     )
   }
 
@@ -67,6 +67,13 @@ mutable base class ApplyType(
     tparam: TParam,
   ): TParam {
     TParam(tparam.name, tparam.fileName, tparam.id)
+  }
+
+  overridable deferred mutable fun sTypesOpt(
+    env: this::Env,
+    sTypesOpt: ?STypes, /* None represents Top */
+  ): ?STypes {
+    sTypesOpt.map(sTypes -> this.stypes(env, sTypes))
   }
 
   overridable deferred mutable fun stypes(
