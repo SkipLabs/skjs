@@ -26,6 +26,8 @@ base class STError extends STResult {
   | STInvalidSpread(ArrayType)
   | STRec(STError, PosRange, TType)
   | STRecAlgebraicOnBranch(TAlgebraic, TAlgebraic, tag: String, STError)
+  | STRecFieldsCall(TFields, TFields, STError)
+  | STRecFieldsNew(TFields, TFields, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -60,7 +62,9 @@ base class STError extends STResult {
     | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
     | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`
     | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
-    | STRecAlgebraicOnBranch(_a1, _a2, _tag, err) ->
+    | STRecAlgebraicOnBranch(_a1, _a2, _tag, err)
+    | STRecFieldsCall(_fields1, _fields2, err)
+    | STRecFieldsNew(_fields1, _fields2, err) ->
       err.toString(subst, tenv, ty)
     }
   }
@@ -136,7 +140,7 @@ extension class TFields {
       STMissingCall,
     ) match {
     | STOk() -> void
-    | err @ STError _ -> return err
+    | err @ STError _ -> return STRecFieldsCall(fields1, fields2, err)
     };
     TFields::isSubOptTFuns(
       subst,
@@ -146,7 +150,7 @@ extension class TFields {
       STMissingConstructor,
     ) match {
     | STOk() -> void
-    | err @ STError _ -> return err
+    | err @ STError _ -> return STRecFieldsNew(fields1, fields2, err)
     };
     index1o = fields1.maybeSingleIndex();
     index2o = fields2.maybeSingleIndex();
