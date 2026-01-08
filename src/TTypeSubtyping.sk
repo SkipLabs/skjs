@@ -23,7 +23,6 @@ base class STError extends STResult {
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
   | STTypeParameterMismatch()
-  | STInvalidClause(Clause)
   | STInvalidSpread(ArrayType)
   | STRec(STError, PosRange, TType)
   | STRecAlgebraicOnBranch(TAlgebraic, TAlgebraic, tag: String, STError)
@@ -35,6 +34,7 @@ base class STError extends STResult {
   | STRecFieldsIndexField(TFields, TFields, TIndexField, TField, STError)
   | STRecFieldsField(TFields, TFields, String, STError)
   | STRecSTypes(STypes, STypes, STError)
+  | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError)>)
 
   fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
     this match {
@@ -68,7 +68,6 @@ base class STError extends STResult {
     | STTooManyTConstr(_) -> "This is a constructor"
     | STTooManyTTuple(tuple) -> "This is a tuple of size " + tuple.tuple.size()
     | STTypeParameterMismatch() -> "Type parameter mismatch"
-    | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
     | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`
     | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
     | STRecAlgebraicOnBranch(_a1, _a2, _tag, err)
@@ -79,8 +78,16 @@ base class STError extends STResult {
     | STRecFieldsFieldIndex(_fields1, _fields2, _field1, _index2, err)
     | STRecFieldsIndexField(_fields1, _fields2, _index1, _field2, err)
     | STRecFieldsField(_fields1, _fields2, _fieldName, err)
-    | STRecSTypes(_stypes1, _stypes2, err) ->
+    | STRecSTypes(_stypes1, _stypes2, err)
+    | STRecClauses(
+      _clauses1,
+      _clauses2,
+      _inter1,
+      List.Cons((_inter2, err), List.Nil()),
+    ) ->
       err.toString(subst, tenv, ty)
+    | STRecClauses(_clauses1, _clauses2, inter1, _) ->
+      "This is of type " + prettyPrintClause(inter1)
     }
   }
 }
@@ -322,15 +329,12 @@ extension class Clauses {
           STypes::isSub(subst, tenv, x1, x2) match {
           | STOk() -> break void
           | err @ STError _ ->
-            !errors = List.Cons(err, errors);
+            !errors = List.Cons((inter2, err), errors);
             continue
           }
         }
       } else {
-        return errors match {
-        | List.Cons(err, List.Nil()) -> err
-        | _ -> STInvalidClause(inter1)
-        }
+        return STRecClauses(clauses1, clauses2, inter1, errors)
       }
     };
     STOk()
