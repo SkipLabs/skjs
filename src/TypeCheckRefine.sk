@@ -280,16 +280,8 @@ extension class TypeChecker {
   ): void {
     ty = tcenv.scope.get(local);
     !ty = ty.expand(tcenv.subst, this.tenv, Covariant());
-    !ty = (mutable FilterType()).type((filter, map), ty);
-    localType = default match {
-    | Some(d) ->
-      ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-      | None() -> TType::single(d)
-      | Some(_nonTop) -> ty
-      }
-    | _ -> ty
-    };
-    tcenv.scope.set(local, localType, (_, _) -> void)
+    !ty = (mutable FilterType()).type((filter, map, default), ty);
+    tcenv.scope.set(local, ty, (_, _) -> void)
   }
 }
 
