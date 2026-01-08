@@ -371,30 +371,26 @@ fun checkNoLostTest(path: String): void {
 @test
 fun testNoLostTest(): void {
   cwd = getcwd();
-  files = FileSystem.readDirectory(cwd);
-  for (file in files) {
-    absFile = Path.join(cwd, file);
-    file match {
-    | "examples" ->
-      subFiles = FileSystem.readDirectory(absFile);
-      for (subFile in subFiles) {
-        if (subFile == "src") continue; // handled in testExamples
-        checkNoLostTest(Path.join(absFile, subFile))
-      }
-    | "tests" ->
-      subFiles = FileSystem.readDirectory(absFile);
-      for (subFile in subFiles) {
-        subFile match {
-        | "expect-error" /* handled in testExpectError */ | "ts-conformance" /* handled in testTypeScriptConformance and testNotSupportedTypeScriptConformance */ ->
-          void
-        | _ -> checkNoLostTest(Path.join(absFile, subFile))
-        }
-      }
-    | "import-stubs" /* intentionally ignored because they are not tests themselves */ ->
-      void
-    | "generated-examples" -> /* May not pass yet -> TODO */ void
-    | _ -> checkNoLostTest(absFile)
-    }
+
+  // Check examples/ - specific subdirs are covered by other tests
+  examplesDir = Path.join(cwd, "examples");
+  coveredExampleDirs = Set[
+    "src", // handled in testExamples
+  ];
+  for (subDir in FileSystem.readDirectory(examplesDir)) {
+    if (coveredExampleDirs.contains(subDir)) continue;
+    checkNoLostTest(Path.join(examplesDir, subDir))
+  };
+
+  // Check tests/ - specific subdirs are covered by other tests
+  testsDir = Path.join(cwd, "tests");
+  coveredTestDirs = Set[
+    "expect-error", // handled in testExpectError
+    "ts-conformance", // handled in testTypeScriptConformance and testNotSupportedTypeScriptConformance
+  ];
+  for (subDir in FileSystem.readDirectory(testsDir)) {
+    if (coveredTestDirs.contains(subDir)) continue;
+    checkNoLostTest(Path.join(testsDir, subDir))
   }
 }
 
