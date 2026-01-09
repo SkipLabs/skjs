@@ -464,7 +464,11 @@ class TFun(
   spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   retType: TType,
   cgNodes: CGNodes,
-) uses XXHashable, Orderable
+) uses XXHashable, Orderable {
+  fun toString(): String {
+    prettyPrintTFun(this)
+  }
+}
 
 /***************************************************************************/
 /* ArrayType for the spread parameter of functions */

@@ -546,4 +546,8 @@ fun prettyPrintClauses(clauses: Clauses, compact: Bool = false): String {
   prettyPrint(compact, pp -> pp.clauses(0, Margin(), clauses))
 }
 
+fun prettyPrintTFun(tFun: TFun, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.tfun(0, Margin(), (false, tFun)))
+}
+
 module end;
