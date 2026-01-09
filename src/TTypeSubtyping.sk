@@ -290,29 +290,28 @@ extension class TType {
     for (inst in u2.insts) {
       inst match {
       | tvar @ TVar(_, _, constraints) ->
-        for (cstr in constraints) {
-          status = TType::isSub(subst, tenv, u1, cstr);
-          if (status is STError _) return status;
-        };
-        subst.grow(tenv, tvar, TType::diff(u1, u2), Contravariant())
+        substCopy = subst.save();
+        if (
+          constraints.all(cstr -> TType::isSub(subst, tenv, u1, cstr) is STOk())
+        ) {
+          subst.grow(tenv, tvar, TType::diff(u1, u2), Contravariant())
+        } else {
+          subst.restore(substCopy)
+        }
       | _ -> void
       }
     };
     for (inst in u1.insts) {
       inst match {
       | tvar @ TVar(_, _, constraints) ->
-        if ({
-          substCopy = subst.save();
-          for (cstr in constraints) {
-            status = TType::isSub(subst, tenv, u2, cstr);
-            if (status is STError _) {
-              subst.restore(substCopy);
-              break false
-            }
-          } else {
-            true
-          }
-        }) subst.grow(tenv, tvar, TType::diff(u2, u1), Covariant())
+        substCopy = subst.save();
+        if (
+          constraints.all(cstr -> TType::isSub(subst, tenv, u2, cstr) is STOk())
+        ) {
+          subst.grow(tenv, tvar, TType::diff(u2, u1), Covariant())
+        } else {
+          subst.restore(substCopy)
+        }
       | _ -> void
       }
     };
