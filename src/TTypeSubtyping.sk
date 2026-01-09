@@ -14,7 +14,6 @@ class STOk() extends STResult
 base class STError extends STResult {
   children =
   | STMissing()
-  | STMissingField(String)
   | STMissingParameter()
   | STMissingSpread()
   | STTooManySType(SType)
@@ -52,7 +51,7 @@ base class STError extends STResult {
     | STRecFieldsCall(_fields1, _fields2_, STMissing()) ->
       "Missing call signature"
     | STRecFieldsNew(_fields1, _fields2, STMissing()) -> "Missing constructor"
-    | STMissingField(fieldName) ->
+    | STRecFieldsField(_fields1, _fields2, fieldName, STMissing()) ->
       `The field '${fieldName}' is missing\n` +
         `Out of the type: ${expandTVars(subst, tenv, ty)}`
     | STTooManySType(sty) ->
@@ -205,7 +204,7 @@ extension class TFields {
       | Left(_) -> void
       | Right(f2) ->
         if (!f2.isOptional) {
-          return STMissingField(f2.name)
+          return STRecFieldsField(fields1, fields2, f2.name, STMissing())
         };
         index1o match {
         | None() -> void
@@ -225,7 +224,7 @@ extension class TFields {
         }
       | Both(f1, f2) ->
         if (f1.isOptional && !f2.isOptional) {
-          return STMissingField(f1.name)
+          return STRecFieldsField(fields1, fields2, f1.name, STMissing())
         } else {
           f2type = if (f2.isOptional) {
             TType::unionUndefined(subst, tenv, f2.type, f2.pos)
