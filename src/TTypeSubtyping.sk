@@ -297,25 +297,61 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
   }
 }
 
-base class STErrorOnTAlgebraic extends STError<TAlgebraic> {
+base class STErrorOnTAlgebraic(
+  a1: TAlgebraic,
+  a2: TAlgebraic,
+) extends STError<TAlgebraic> {
   children =
   | STTooManyTConstr(TConstr)
-  | STRecAlgebraicOnBranch(
-    TAlgebraic,
-    TAlgebraic,
-    tag: String,
-    STError<TConstr>,
-  )
+  | STRecAlgebraicOnBranch(STError<TConstr>, TConstr)
 
   fun toError(
     pos: PosRange,
     subst: mutable Subst,
     tenv: TEnv,
-  ): List<(PosRange, String)>
-  | STTooManyTConstr(constr) -> List[(constr.tagPos, "This is a constructor")]
-  | STRecAlgebraicOnBranch(_a1, _a2, _tag, err) -> err.toError(pos, subst, tenv)
+  ): List<(PosRange, String)> {
+    (printTypes, msgs) = this match {
+    | STTooManyTConstr(constr, _a1, _a2) ->
+      (
+        true,
+        List[
+          (
+            constr.tagPos,
+            `Case field ${kAlgebraicBranchFieldName} = '${
+              constr.tag
+            }' is missing`,
+          ),
+        ],
+      )
+    | STRecAlgebraicOnBranch(err, constr, a1, a2) ->
+      msgs = err.toError(pos, subst, tenv);
+      printTypes = a1.branches.size() != 1 || a2.branches.size() != 1;
+      if (printTypes) {
+        !msgs = List.Cons(
+          (
+            constr.tagPos,
+            `They differ on case field ${kAlgebraicBranchFieldName} = '${
+              constr.tag
+            }'`,
+          ),
+          msgs,
+        );
+      };
+      (printTypes, msgs)
+    };
+    if (printTypes) {
+      List.Cons(
+        (this.a1.pos, `Type ${this.a1}`),
+        List.Cons(
+          (this.a2.pos, `is not compatible with type ${this.a2}`),
+          msgs,
+        ),
+      )
+    } else {
+      msgs
+    }
+  }
 }
-
 base class STErrorOnTContr extends STError<TConstr> {
   children =
   | STRecConstr(TConstr, TConstr, STError<TFields>)
@@ -387,10 +423,9 @@ extension class TAlgebraic {
       | Some(b2) ->
         TConstr::isSub(subst, tenv, b1, b2) match {
         | STOk() -> Success(void)
-        | err @ STError _ ->
-          Failure(STRecAlgebraicOnBranch(a1, a2, b1.tag, err))
+        | err @ STError _ -> Failure(STRecAlgebraicOnBranch(err, b1, a1, a2))
         }
-      | None() -> Failure(STTooManyTConstr(b1))
+      | None() -> Failure(STTooManyTConstr(b1, a1, a2))
       }
     ) match {
     | Success(void) -> STOk()
