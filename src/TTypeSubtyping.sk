@@ -144,6 +144,14 @@ base class STErrorOnTAlgebraic extends STError {
   | STRecAlgebraicOnBranch(_a1, _a2, _tag, err) -> err.toString(subst, tenv)
 }
 
+base class STErrorOnTContr extends STError {
+  children =
+  | STRecConstr(TConstr, TConstr, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String
+  | STRecConstr(_c1, _c2, err) -> err.toString(subst, tenv)
+}
+
 base class STErrorOnTFields extends STError {
   children =
   | STRecFieldsCall(TFields, TFields, STError)
@@ -207,7 +215,10 @@ extension class TConstr {
     if (x.tag != y.tag) {
       invariant_violation(`TConstr::isSub called on tags ${x.tag} != ${y.tag}`)
     };
-    TFields::isSub(subst, tenv, x.fields, y.fields)
+    TFields::isSub(subst, tenv, x.fields, y.fields) match {
+    | STOk() -> STOk()
+    | err @ STError _ -> STRecConstr(x, y, err)
+    }
   }
 }
 
