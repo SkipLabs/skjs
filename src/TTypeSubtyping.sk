@@ -422,7 +422,7 @@ extension class TTuple {
     tuple2: TTuple,
   ): STResult {
     if (tuple1.tuple.size() < tuple2.tuple.size()) {
-      return STTooManySType(tuple1)
+      return STTooManyTTuple(tuple1)
     };
     for (i in Range(0, tuple2.tuple.size())) {
       TType::isSub(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]) match {
