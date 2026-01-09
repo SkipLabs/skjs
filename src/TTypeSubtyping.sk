@@ -12,25 +12,87 @@ class STOk() extends STResult
 
 /* All other cases: T1 ⋢ T2 */
 base class STError extends STResult {
+  fun toString(_subst: mutable Subst, _tenv: TEnv): String;
+}
+
+class STMissing() extends STError {
+  fun toString(_subst: mutable Subst, _tenv: TEnv): String {
+    "Missing"
+  }
+}
+
+base class STErrorOnSType extends STError {
   children =
-  | STMissing()
   | STTooManySType(SType)
-  | STTooManyTConstr(TConstr)
+
+  fun toString(_subst: mutable Subst, _tenv: TEnv): String
+  | STTooManySType(sty) ->
+    sty match {
+    | TPrimUnit(kind, _) -> `This is a ${kind}`
+    | TPrimValue(TString(), None(), _) ->
+      "This is of type string. " +
+        "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
+    | TPrimValue(kind, None(), _) -> `This is of type ${kind}`
+    | TPrimValue(kind, Some(x), _) ->
+      `This is a static ${kind}: ` + x.toStringList(true)
+
+    | TPromise _ -> "This is a Promise"
+    | TAlgebraic _ ->
+      "This is a constructor (the field kind is a static string)"
+    | TObject _ -> "This is an object"
+    | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
+    }
+}
+
+base class STErrorOnTTuple extends STError {
+  children =
   | STTooManyTTuple(TTuple)
+  | STRecTuple(TTuple, TTuple, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String
+  | STTooManyTTuple(tuple) -> `This is a tuple of size ${tuple.tuple.size()}`
+  | STRecTuple(_tup1, _tup2, err) -> err.toString(subst, tenv)
+}
+
+base class STErrorOnSTypes extends STError {
+  children =
+  | STRecSTypes(STypes, STypes, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String
+  | STRecSTypes(_stypes1, _stypes2, err) -> err.toString(subst, tenv)
+}
+
+base class STErrorOnClauses extends STError {
+  children =
+  | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError)>)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    this match {
+    | STRecClauses(
+      _clauses1,
+      _clauses2,
+      _inter1,
+      List.Cons((_inter2, err), List.Nil()),
+    ) ->
+      err.toString(subst, tenv)
+    | STRecClauses(_clauses1, _clauses2, inter1, _) ->
+      "This is of type " + prettyPrintClause(inter1)
+    }
+  }
+}
+
+base class STErrorOnTType extends STError {
+  children =
+  | STRecType(TType, TType, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String
+  | STRecType(_ty1, _ty2, err) -> err.toString(subst, tenv)
+}
+
+base class STErrorOnTFun extends STError {
+  children =
   | STTypeParameterMismatch()
   | STInvalidSpread(ArrayType)
-  | STRecAlgebraicOnBranch(TAlgebraic, TAlgebraic, tag: String, STError)
-  | STRecFieldsCall(TFields, TFields, STError)
-  | STRecFieldsNew(TFields, TFields, STError)
-  | STRecFieldsIndexKey(TFields, TFields, TIndexField, TIndexField, STError)
-  | STRecFieldsIndexValue(TFields, TFields, TIndexField, TIndexField, STError)
-  | STRecFieldsFieldIndex(TFields, TFields, TField, TIndexField, STError)
-  | STRecFieldsIndexField(TFields, TFields, TIndexField, TField, STError)
-  | STRecFieldsField(TFields, TFields, String, STError)
-  | STRecSTypes(STypes, STypes, STError)
-  | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError)>)
-  | STRecType(TType, TType, STError)
-  | STRecTuple(TTuple, TTuple, STError)
   | STRecFunTParam(TFun, TFun, Int, STError)
   | STRecFunThisParam(TFun, TFun, STError)
   | STRecFunParam(TFun, TFun, Int, STError)
@@ -39,62 +101,58 @@ base class STError extends STResult {
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     this match {
-    | STMissing() -> "Missing"
     | STRecFunTParam(_f1, _f2, _i, STMissing()) ->
       "This type parameter does not define a constraint"
     | STRecFunThisParam(_f1, _f2, STMissing()) -> "Missing this parameter"
     | STRecFunParam(_f1, _f2, _i, STMissing()) -> "Missing parameter"
     | STRecFunSpread(_f1, _f2, STMissing()) -> "Missing ... parameter"
-    | STRecFieldsCall(_fields1, _fields2_, STMissing()) ->
-      "Missing call signature"
-    | STRecFieldsNew(_fields1, _fields2, STMissing()) -> "Missing constructor"
-    | STRecFieldsField(_fields1, _fields2, fieldName, STMissing()) ->
-      `The field '${fieldName}' is missing`
-    | STTooManySType(sty) ->
-      sty match {
-      | TPrimUnit(kind, _) -> `This is a ${kind}`
-      | TPrimValue(TString(), None(), _) ->
-        "This is of type string. " +
-          "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
-      | TPrimValue(kind, None(), _) -> `This is of type ${kind}`
-      | TPrimValue(kind, Some(x), _) ->
-        `This is a static ${kind}: ` + x.toStringList(true)
-
-      | TPromise _ -> "This is a Promise"
-      | TAlgebraic _ ->
-        "This is a constructor (the field kind is a static string)"
-      | TObject _ -> "This is an object"
-      | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
-      }
-    | STTooManyTConstr(_) -> "This is a constructor"
-    | STTooManyTTuple(tuple) -> "This is a tuple of size " + tuple.tuple.size()
     | STTypeParameterMismatch() -> "Type parameter mismatch"
     | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`
-    | STRecAlgebraicOnBranch(_a1, _a2, _tag, err)
-    | STRecFieldsCall(_fields1, _fields2, err)
-    | STRecFieldsNew(_fields1, _fields2, err)
-    | STRecFieldsIndexKey(_fields1, _fields2, _index1, _index2, err)
-    | STRecFieldsIndexValue(_fields1, _fields2, _index1, _index2, err)
-    | STRecFieldsFieldIndex(_fields1, _fields2, _field1, _index2, err)
-    | STRecFieldsIndexField(_fields1, _fields2, _index1, _field2, err)
-    | STRecFieldsField(_fields1, _fields2, _fieldName, err)
-    | STRecSTypes(_stypes1, _stypes2, err)
-    | STRecClauses(
-      _clauses1,
-      _clauses2,
-      _inter1,
-      List.Cons((_inter2, err), List.Nil()),
-    )
-    | STRecType(_ty1, _ty2, err)
-    | STRecTuple(_tup1, _tup2, err)
     | STRecFunTParam(_f1, _f2, _i, err)
     | STRecFunThisParam(_f1, _f2, err)
     | STRecFunParam(_f1, _f2, _i, err)
     | STRecFunOptionalSpread(_f1, _f2, _i, err)
     | STRecFunSpread(_f1, _f2, err) ->
       err.toString(subst, tenv)
-    | STRecClauses(_clauses1, _clauses2, inter1, _) ->
-      "This is of type " + prettyPrintClause(inter1)
+    }
+  }
+}
+
+base class STErrorOnTAlgebraic extends STError {
+  children =
+  | STTooManyTConstr(TConstr)
+  | STRecAlgebraicOnBranch(TAlgebraic, TAlgebraic, tag: String, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String
+  | STTooManyTConstr _ -> "This is a constructor"
+  | STRecAlgebraicOnBranch(_a1, _a2, _tag, err) -> err.toString(subst, tenv)
+}
+
+base class STErrorOnTFields extends STError {
+  children =
+  | STRecFieldsCall(TFields, TFields, STError)
+  | STRecFieldsNew(TFields, TFields, STError)
+  | STRecFieldsIndexKey(TFields, TFields, TIndexField, TIndexField, STError)
+  | STRecFieldsIndexValue(TFields, TFields, TIndexField, TIndexField, STError)
+  | STRecFieldsFieldIndex(TFields, TFields, TField, TIndexField, STError)
+  | STRecFieldsIndexField(TFields, TFields, TIndexField, TField, STError)
+  | STRecFieldsField(TFields, TFields, String, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    this match {
+    | STRecFieldsCall(_fields1, _fields2_, STMissing()) ->
+      "Missing call signature"
+    | STRecFieldsNew(_fields1, _fields2, STMissing()) -> "Missing constructor"
+    | STRecFieldsField(_fields1, _fields2, fieldName, STMissing()) ->
+      `The field '${fieldName}' is missing`
+    | STRecFieldsCall(_fields1, _fields2, err)
+    | STRecFieldsNew(_fields1, _fields2, err)
+    | STRecFieldsIndexKey(_fields1, _fields2, _index1, _index2, err)
+    | STRecFieldsIndexValue(_fields1, _fields2, _index1, _index2, err)
+    | STRecFieldsFieldIndex(_fields1, _fields2, _field1, _index2, err)
+    | STRecFieldsIndexField(_fields1, _fields2, _index1, _field2, err)
+    | STRecFieldsField(_fields1, _fields2, _fieldName, err) ->
+      err.toString(subst, tenv)
     }
   }
 }
