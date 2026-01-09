@@ -396,6 +396,10 @@ class TConstr(
   fun project(): String {
     this.tag
   }
+
+  fun toString(): String {
+    prettyPrintConstr(this)
+  }
 }
 
 fun createObject(

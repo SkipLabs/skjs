@@ -352,16 +352,23 @@ base class STErrorOnTAlgebraic(
     }
   }
 }
-base class STErrorOnTContr extends STError<TConstr> {
+base class STErrorOnTContr(c1: TConstr, c2: TConstr) extends STError<TConstr> {
   children =
-  | STRecConstr(TConstr, TConstr, STError<TFields>)
+  | STRecConstr(STError<TFields>)
 
   fun toError(
     pos: PosRange,
     subst: mutable Subst,
     tenv: TEnv,
   ): List<(PosRange, String)>
-  | STRecConstr(_c1, _c2, err) -> err.toError(pos, subst, tenv)
+  | STRecConstr(err, c1, c2) ->
+    List.Cons(
+      (c1.tagPos, `Type ${c1}`),
+      List.Cons(
+        (c2.tagPos, `is not compatible with type ${c2}`),
+        err.toError(pos, subst, tenv),
+      ),
+    )
 }
 
 base class STErrorOnTFields extends STError<TFields> {
@@ -446,7 +453,7 @@ extension class TConstr {
     };
     TFields::isSub(subst, tenv, x.fields, y.fields) match {
     | STOk() -> STOk()
-    | err @ STError _ -> STRecConstr(x, y, err)
+    | err @ STError _ -> STRecConstr(err, x, y)
     }
   }
 }
