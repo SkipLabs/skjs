@@ -27,7 +27,6 @@ function testDifferentLiteral(): void {
   takeFooOrT<"bar">("bar" as const);
 
   // "bar" doesn't match "foo", so T is inferred to include "bar"
-  // @skjs-expect-error Invalid call
   takeFooOrT("bar" as const);
 }
 
@@ -35,7 +34,6 @@ function testDifferentLiteral(): void {
 function takeTwoUnions<T, U>(a: "foo" | T, b: "bar" | U): void {}
 
 function testMultipleTypeParams(): void {
-  // @skjs-expect-error Invalid call
   takeTwoUnions("x" as const, "y" as const);
 }
 
@@ -59,7 +57,6 @@ function takeTupleOrT<T>(x: [number, string] | T): void {}
 function testTupleInUnion(): void {
   const t: [string, number] = ["a", 1];
   // Different tuple structure, so T is inferred
-  // @skjs-expect-error Invalid call
   takeTupleOrT(t);
 }
 
@@ -99,7 +96,6 @@ function takeLiteralOrT<T>(x: "foo" | T): void {}
 function testFullVsLiteral(): void {
   // string is not covered by "foo", so T must include string
   const s: string = "hello";
-  // @skjs-expect-error Invalid call
   takeLiteralOrT(s);
 }
 
@@ -119,7 +115,6 @@ function takePromiseOrT<T>(x: Promise<number> | T): void {}
 
 function testPromiseInUnion(p: Promise<string>): void {
   // Promise<string> doesn't match Promise<number>, so T is inferred
-  // @skjs-expect-error Invalid call
   takePromiseOrT(p);
 }
 

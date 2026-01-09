@@ -66,6 +66,11 @@ class PrimLiterals private (
     if (result.isEmpty()) None() else Some(PrimLiterals(result))
   }
 
+  fun diff(that: PrimLiterals): ?PrimLiterals {
+    result = this.inner.diff(that.inner);
+    if (result.isEmpty()) None() else Some(PrimLiterals(result))
+  }
+
   fun toStringList(quotes: Bool = false): String {
     this.inner.values()
       .map(lit -> if (quotes) `'${lit.val}'` else lit.val)
