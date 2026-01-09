@@ -61,8 +61,10 @@ extension class TypeChecker {
     TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
     | err @ STError _ ->
+      msgs = err.toError(tcenv.subst, this.tenv);
+      !msgs = List.Cons((Some(pos), msg), msgs);
       tcenv.error(
-        Array[(pos, msg), (pos, err.toString(tcenv.subst, this.tenv))],
+        msgs.toArray().map((posMsg) -> (posMsg.i0.default(pos), posMsg.i1)),
       )
     }
   }
