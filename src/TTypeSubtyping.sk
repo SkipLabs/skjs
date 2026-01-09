@@ -57,19 +57,34 @@ base class STErrorOnSType extends STError<SType> {
     List[(sty.pos, msg)]
 }
 
-base class STErrorOnTTuple extends STError<TTuple> {
+base class STErrorOnTTuple(tup1: TTuple, tup2: TTuple) extends STError<TTuple> {
   children =
-  | STTooManyTTuple(TTuple)
-  | STRecTuple(TTuple, TTuple, Int, STError<TType>)
+  | STTooManyTTuple()
+  | STRecTuple(STError<TType>, Int)
 
   fun toError(
-    pos: PosRange,
+    _pos: PosRange,
     subst: mutable Subst,
     tenv: TEnv,
   ): List<(PosRange, String)>
-  | STTooManyTTuple(tuple) ->
-    List[(tuple.pos, `This is a tuple of size ${tuple.tuple.size()}`)]
-  | STRecTuple(_tup1, _tup2, _i, err) -> err.toError(pos, subst, tenv)
+  | STTooManyTTuple(tup1, tup2) ->
+    List[
+      (tup1.pos, `Tuple type of size ${tup1.tuple.size()} ${tup1}`),
+      (
+        tup2.pos,
+        `is not compatible with tuple type of size ${tup2.tuple.size()} ${tup2}`,
+      ),
+    ]
+  | STRecTuple(err, i, tup1, tup2) ->
+    pos = tup1.tuple[i].pos;
+    msgs = err.toError(pos, subst, tenv);
+    if (tup1.tuple.size() > 1) {
+      !msgs = List.Cons((pos, `They differ in element ${i}`), msgs)
+    };
+    List.Cons(
+      (tup1.pos, `Tuple type ${tup1}`),
+      List.Cons((tup2.pos, `is not compatible with tuple type ${tup2}`), msgs),
+    )
 }
 
 base class STErrorOnTPromise extends STError<TPromise> {
@@ -603,12 +618,12 @@ extension class TTuple {
     tuple2: TTuple,
   ): STResult<TTuple> {
     if (tuple1.tuple.size() < tuple2.tuple.size()) {
-      return STTooManyTTuple(tuple1)
+      return STTooManyTTuple(tuple1, tuple2)
     };
     for (i in Range(0, tuple2.tuple.size())) {
       TType::isSub(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]) match {
       | STOk() -> void
-      | err @ STError _ -> return STRecTuple(tuple1, tuple2, i, err)
+      | err @ STError _ -> return STRecTuple(err, i, tuple1, tuple2)
       }
     };
     STOk()
