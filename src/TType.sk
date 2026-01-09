@@ -961,6 +961,10 @@ class STypes private (
     }
   }
 
+  fun toString(): String {
+    prettyPrintSTypes(this)
+  }
+
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */

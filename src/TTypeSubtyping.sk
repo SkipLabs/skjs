@@ -121,16 +121,32 @@ base class STErrorOnObject(o1: TObject, o2: TObject) extends STError<TObject> {
   | STRecObject(err, o1, _o2) -> err.toError(o1.pos, subst, tenv)
 }
 
-base class STErrorOnSTypes extends STError<STypes> {
+base class STErrorOnSTypes(
+  sTypes1: STypes,
+  sTypes2: STypes,
+) extends STError<STypes> {
   children =
-  | STRecSTypes(STypes, STypes, STError<SType>)
+  | STRecSTypes(STError<SType>)
 
   fun toError(
     pos: PosRange,
     subst: mutable Subst,
     tenv: TEnv,
   ): List<(PosRange, String)>
-  | STRecSTypes(_stypes1, _stypes2, err) -> err.toError(pos, subst, tenv)
+  | STRecSTypes(err, sTypes1, sTypes2) ->
+    if (sTypes1.size() != 1 || sTypes2.size() != 1) {
+      pos1 = sTypes1.singleElt().map(sType -> sType.pos).default(pos);
+      pos2 = sTypes2.singleElt().map(sType -> sType.pos).default(pos);
+      List.Cons(
+        (pos1, `Type ${sTypes1}`),
+        List.Cons(
+          (pos2, `is not compatible with type ${sTypes2}`),
+          err.toError(pos1, subst, tenv),
+        ),
+      )
+    } else {
+      err.toError(pos, subst, tenv)
+    }
 }
 
 base class STErrorOnClauses extends STError<Clauses> {
@@ -516,7 +532,7 @@ extension class STypes {
       }
     ) match {
     | Success(void) -> STOk()
-    | Failure(err) -> STRecSTypes(stypes1, stypes2, err)
+    | Failure(err) -> STRecSTypes(err, stypes1, stypes2)
     }
   }
 }

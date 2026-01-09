@@ -379,12 +379,16 @@ mutable class TypePp{
       void
     | Some(c) ->
       if (!clause.vars.isEmpty()) this.out(level, margin, " extends ");
-      for (k => sty in c) {
-        if (k != 0) {
-          this.out(level, margin, " | ");
-        };
-        this.stype(level, margin, sty);
-      }
+      this.sTypes(level, margin, c)
+    }
+  }
+
+  mutable fun sTypes(level: Int, margin: Margin, sTypes: STypes): void {
+    for (k => sty in sTypes) {
+      if (k != 0) {
+        this.out(level, margin, " | ");
+      };
+      this.stype(level, margin, sty);
     }
   }
 
@@ -512,6 +516,10 @@ fun prettyPrintType(compact: Bool, ty: TType): String {
 
 fun prettyPrintSType(stype: SType, compact: Bool = false): String {
   prettyPrintType(compact, TType::single(stype))
+}
+
+fun prettyPrintSTypes(sTypes: STypes, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.sTypes(0, Margin(), sTypes))
 }
 
 fun prettyPrintClause(clause: Clause, compact: Bool = false): String {
