@@ -37,7 +37,7 @@ base class STError extends STResult {
   | STRecFunOptionalSpread(TFun, TFun, Int, STError)
   | STRecFunSpread(TFun, TFun, STError)
 
-  fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
     this match {
     | STMissing() -> "Missing"
     | STRecFunTParam(_f1, _f2, _i, STMissing()) ->
@@ -92,7 +92,7 @@ base class STError extends STResult {
     | STRecFunParam(_f1, _f2, _i, err)
     | STRecFunOptionalSpread(_f1, _f2, _i, err)
     | STRecFunSpread(_f1, _f2, err) ->
-      err.toString(subst, tenv, ty)
+      err.toString(subst, tenv)
     | STRecClauses(_clauses1, _clauses2, inter1, _) ->
       "This is of type " + prettyPrintClause(inter1)
     }

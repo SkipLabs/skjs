@@ -62,7 +62,7 @@ extension class TypeChecker {
     | STOk() -> void
     | err @ STError _ ->
       tcenv.error(
-        Array[(pos, msg), (pos, err.toString(tcenv.subst, this.tenv, ty1))],
+        Array[(pos, msg), (pos, err.toString(tcenv.subst, this.tenv))],
       )
     }
   }
