@@ -3,10 +3,6 @@
 // the data and obtained using a projection function
 //
 
-trait Projectable<T> {
-  readonly fun project(): T;
-}
-
 module InternalKeyedArrayMap;
 
 // see iterDiffInterDiff
