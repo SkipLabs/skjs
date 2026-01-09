@@ -54,6 +54,14 @@ base class STErrorOnTTuple extends STError {
   | STRecTuple(_tup1, _tup2, _i, err) -> err.toString(subst, tenv)
 }
 
+base class STErrorOnTPromise extends STError {
+  children =
+  | STRecPromise(TPromise, TPromise, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String
+  | STRecPromise(_p1, _p2, err) -> err.toString(subst, tenv)
+}
+
 base class STErrorOnSTypes extends STError {
   children =
   | STRecSTypes(STypes, STypes, STError)
@@ -361,8 +369,11 @@ extension class STypes {
         | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
           TTuple::isSub(subst, tenv, tuple1, tuple2)
 
-        | (TPromise(ty1, _), TPromise(ty2, _)) ->
-          TType::isSub(subst, tenv, ty1, ty2)
+        | (p1 @ TPromise(ty1, _), p2 @ TPromise(ty2, _)) ->
+          TType::isSub(subst, tenv, ty1, ty2) match {
+          | STOk() -> STOk()
+          | err @ STError _ -> STRecPromise(p1, p2, err)
+          }
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::isSub(subst, tenv, obj1, obj2)
         | (TAlgebraic _, TObject _)
