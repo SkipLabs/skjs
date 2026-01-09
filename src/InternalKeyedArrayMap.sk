@@ -5,63 +5,6 @@
 
 module InternalKeyedArrayMap;
 
-// see iterDiffInterDiff
-private mutable class DiffInterDiffIterator<
-  K: Orderable,
-  T: Projectable<K>,
-> private (
-  private mutable head1: ?T,
-  private tail1: mutable Iterator<T>,
-  private mutable head2: ?T,
-  private tail2: mutable Iterator<T>,
-) extends Iterator<(?T, ?T)> {
-  static fun create(
-    iter1: mutable Iterator<T>,
-    iter2: mutable Iterator<T>,
-  ): mutable Iterator<(?T, ?T)> {
-    head1 = iter1.next();
-    head2 = iter2.next();
-    mutable static(head1, iter1, head2, iter2)
-  }
-
-  readonly fun sizeHint(): ?Int {
-    size1 = this.tail1.sizeHint().map((n) ->
-      if (this.head1.isSome()) n + 1 else n
-    );
-    size2 = this.tail2.sizeHint().map((n) ->
-      if (this.head2.isSome()) n + 1 else n
-    );
-    (size1, size2) match {
-    | (Some(m), Some(n)) ->
-      Some(m + n) // actual size will be between max and sum of sizes
-    | (Some(n), None())
-    | (None(), Some(n)) ->
-      Some(n)
-    | (None(), None()) -> None()
-    }
-  }
-
-  mutable fun next(): ?(?T, ?T) {
-    none: ?T = None();
-    go = (x, y) -> {
-      if (x.isSome()) this.!head1 = this.tail1.next();
-      if (y.isSome()) this.!head2 = this.tail2.next();
-      Some((x, y))
-    };
-    (this.head1, this.head2) match {
-    | (None(), None()) -> None()
-    | (None(), Some(_)) -> go(none, this.head2)
-    | (Some(_), None()) -> go(this.head1, none)
-    | (Some(x), Some(y)) ->
-      x.project().compare(y.project()) match {
-      | LT() -> go(this.head1, none)
-      | EQ() -> go(this.head1, this.head2)
-      | GT() -> go(none, this.head2)
-      }
-    }
-  }
-}
-
 // A map where the keys are projected from the values, backed by a sorted array
 class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   private inner: Vector<T>,
@@ -201,7 +144,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // s but not t, (None(), Some(y)) for every y in t but not s, and
   // (Some(x), Some(y)) for every pair of elements that are in both s and t.
   fun iterDiffInterDiff(that: this): mutable Iterator<(?T, ?T)> {
-    DiffInterDiffIterator::create(this.inner.values(), that.inner.values())
+    this.inner.values().zipSortedBy(that.inner.values())
   }
 
   fun iterDiff(that: this): mutable Iterator<T> {
