@@ -12,12 +12,20 @@ class STOk<+T>() extends STResult<T>
 
 /* All other cases: T1 ⋢ T2 */
 base class STError<+T> extends STResult<T> {
-  fun toError(_subst: mutable Subst, _tenv: TEnv): List<(?PosRange, String)>;
+  fun toError(
+    _pos: PosRange,
+    _subst: mutable Subst,
+    _tenv: TEnv,
+  ): List<(PosRange, String)>;
 }
 
 class STMissing<+T>() extends STError<T> {
-  fun toError(_subst: mutable Subst, _tenv: TEnv): List<(?PosRange, String)> {
-    List[(None(), "Missing")]
+  fun toError(
+    pos: PosRange,
+    _subst: mutable Subst,
+    _tenv: TEnv,
+  ): List<(PosRange, String)> {
+    List[(pos, "Missing")]
   }
 }
 
@@ -25,7 +33,11 @@ base class STErrorOnSType extends STError<SType> {
   children =
   | STTooManySType(SType)
 
-  fun toError(_subst: mutable Subst, _tenv: TEnv): List<(?PosRange, String)>
+  fun toError(
+    _pos: PosRange,
+    _subst: mutable Subst,
+    _tenv: TEnv,
+  ): List<(PosRange, String)>
   | STTooManySType(sty) ->
     msg = sty match {
     | TPrimUnit(kind, _) -> `This is a ${kind}`
@@ -42,7 +54,7 @@ base class STErrorOnSType extends STError<SType> {
     | TObject _ -> "This is an object"
     | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
     };
-    List[(Some(sty.pos), msg)]
+    List[(sty.pos, msg)]
 }
 
 base class STErrorOnTTuple extends STError<TTuple> {
@@ -50,41 +62,61 @@ base class STErrorOnTTuple extends STError<TTuple> {
   | STTooManyTTuple(TTuple)
   | STRecTuple(TTuple, TTuple, Int, STError<TType>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)>
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)>
   | STTooManyTTuple(tuple) ->
-    List[(Some(tuple.pos), `This is a tuple of size ${tuple.tuple.size()}`)]
-  | STRecTuple(_tup1, _tup2, _i, err) -> err.toError(subst, tenv)
+    List[(tuple.pos, `This is a tuple of size ${tuple.tuple.size()}`)]
+  | STRecTuple(_tup1, _tup2, _i, err) -> err.toError(pos, subst, tenv)
 }
 
 base class STErrorOnTPromise extends STError<TPromise> {
   children =
   | STRecPromise(TPromise, TPromise, STError<TType>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)>
-  | STRecPromise(_p1, _p2, err) -> err.toError(subst, tenv)
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)>
+  | STRecPromise(_p1, _p2, err) -> err.toError(pos, subst, tenv)
 }
 
 base class STErrorOnObject extends STError<TObject> {
   children =
   | STRecObject(TObject, TObject, STError<TFields>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)>
-  | STRecObject(_o1, _o2, err) -> err.toError(subst, tenv)
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)>
+  | STRecObject(_o1, _o2, err) -> err.toError(pos, subst, tenv)
 }
 
 base class STErrorOnSTypes extends STError<STypes> {
   children =
   | STRecSTypes(STypes, STypes, STError<SType>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)>
-  | STRecSTypes(_stypes1, _stypes2, err) -> err.toError(subst, tenv)
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)>
+  | STRecSTypes(_stypes1, _stypes2, err) -> err.toError(pos, subst, tenv)
 }
 
 base class STErrorOnClauses extends STError<Clauses> {
   children =
   | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError<STypes>)>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)> {
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)> {
     this match {
     | STRecClauses(
       _clauses1,
@@ -92,9 +124,9 @@ base class STErrorOnClauses extends STError<Clauses> {
       _inter1,
       List.Cons((_inter2, err), List.Nil()),
     ) ->
-      err.toError(subst, tenv)
+      err.toError(pos, subst, tenv)
     | STRecClauses(_clauses1, _clauses2, inter1, _) ->
-      List[(None(), "This is of type " + prettyPrintClause(inter1))]
+      List[(pos, "This is of type " + prettyPrintClause(inter1))]
     }
   }
 }
@@ -103,16 +135,24 @@ base class STErrorOnTType extends STError<TType> {
   children =
   | STRecType(TType, TType, STError<Clauses>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)>
-  | STRecType(_ty1, _ty2, err) -> err.toError(subst, tenv)
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)>
+  | STRecType(_ty1, _ty2, err) -> err.toError(pos, subst, tenv)
 }
 
 base class STErrorOnTFuns extends STError<TFuns> {
   children =
   | STRecTFuns(TFuns, TFuns, STError<TFun>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)>
-  | STRecTFuns(_f1, _f2, err) -> err.toError(subst, tenv)
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)>
+  | STRecTFuns(_f1, _f2, err) -> err.toError(pos, subst, tenv)
 }
 
 base class STErrorOnTFun extends STError<TFun> {
@@ -126,26 +166,29 @@ base class STErrorOnTFun extends STError<TFun> {
   | STRecFunSpread(TFun, TFun, STError<TType>)
   | STRecFunReturn(TFun, TFun, STError<TType>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)> {
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)> {
     this match {
     | STRecFunTParam(_f1, _f2, _i, STMissing()) ->
-      List[(None(), "This type parameter does not define a constraint")]
+      List[(pos, "This type parameter does not define a constraint")]
     | STRecFunThisParam(_f1, _f2, STMissing()) ->
-      List[(None(), "Missing this parameter")]
+      List[(pos, "Missing this parameter")]
     | STRecFunParam(_f1, _f2, _i, STMissing()) ->
-      List[(None(), "Missing parameter")]
+      List[(pos, "Missing parameter")]
     | STRecFunSpread(_f1, _f2, STMissing()) ->
-      List[(None(), "Missing ... parameter")]
-    | STTypeParameterMismatch() -> List[(None(), "Type parameter mismatch")]
-    | STInvalidSpread(spread) ->
-      List[(None(), `Invalid spread type: ${spread}`)]
+      List[(pos, "Missing ... parameter")]
+    | STTypeParameterMismatch() -> List[(pos, "Type parameter mismatch")]
+    | STInvalidSpread(spread) -> List[(pos, `Invalid spread type: ${spread}`)]
     | STRecFunTParam(_f1, _f2, _i, err)
     | STRecFunThisParam(_f1, _f2, err)
     | STRecFunParam(_f1, _f2, _i, err)
     | STRecFunOptionalSpread(_f1, _f2, _i, err)
     | STRecFunSpread(_f1, _f2, err)
     | STRecFunReturn(_f1, _f2, err) ->
-      err.toError(subst, tenv)
+      err.toError(pos, subst, tenv)
     }
   }
 }
@@ -160,18 +203,25 @@ base class STErrorOnTAlgebraic extends STError<TAlgebraic> {
     STError<TConstr>,
   )
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)>
-  | STTooManyTConstr(constr) ->
-    List[(Some(constr.tagPos), "This is a constructor")]
-  | STRecAlgebraicOnBranch(_a1, _a2, _tag, err) -> err.toError(subst, tenv)
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)>
+  | STTooManyTConstr(constr) -> List[(constr.tagPos, "This is a constructor")]
+  | STRecAlgebraicOnBranch(_a1, _a2, _tag, err) -> err.toError(pos, subst, tenv)
 }
 
 base class STErrorOnTContr extends STError<TConstr> {
   children =
   | STRecConstr(TConstr, TConstr, STError<TFields>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)>
-  | STRecConstr(_c1, _c2, err) -> err.toError(subst, tenv)
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)>
+  | STRecConstr(_c1, _c2, err) -> err.toError(pos, subst, tenv)
 }
 
 base class STErrorOnTFields extends STError<TFields> {
@@ -196,23 +246,27 @@ base class STErrorOnTFields extends STError<TFields> {
   | STRecFieldsIndexField(TFields, TFields, TIndexField, TField, STError<TType>)
   | STRecFieldsField(TFields, TFields, String, STError<TType>)
 
-  fun toError(subst: mutable Subst, tenv: TEnv): List<(?PosRange, String)> {
+  fun toError(
+    pos: PosRange,
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): List<(PosRange, String)> {
     this match {
     | STRecFieldsCall(_fields1, _fields2_, STMissing()) ->
-      List[(None(), "Missing call signature")]
+      List[(pos, "Missing call signature")]
     | STRecFieldsNew(_fields1, _fields2, STMissing()) ->
-      List[(None(), "Missing constructor")]
+      List[(pos, "Missing constructor")]
     | STRecFieldsField(_fields1, _fields2, fieldName, STMissing()) ->
-      List[(None(), `The field '${fieldName}' is missing`)]
+      List[(pos, `The field '${fieldName}' is missing`)]
     | STRecFieldsCall(_fields1, _fields2, err)
     | STRecFieldsNew(_fields1, _fields2, err) ->
-      err.toError(subst, tenv)
+      err.toError(pos, subst, tenv)
     | STRecFieldsIndexKey(_fields1, _fields2, _index1, _index2, err)
     | STRecFieldsIndexValue(_fields1, _fields2, _index1, _index2, err)
     | STRecFieldsFieldIndex(_fields1, _fields2, _field1, _index2, err)
     | STRecFieldsIndexField(_fields1, _fields2, _index1, _field2, err)
     | STRecFieldsField(_fields1, _fields2, _fieldName, err) ->
-      err.toError(subst, tenv)
+      err.toError(pos, subst, tenv)
     }
   }
 }
