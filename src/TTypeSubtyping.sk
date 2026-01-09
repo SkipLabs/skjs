@@ -50,8 +50,7 @@ base class STError extends STResult {
       "Missing call signature"
     | STRecFieldsNew(_fields1, _fields2, STMissing()) -> "Missing constructor"
     | STRecFieldsField(_fields1, _fields2, fieldName, STMissing()) ->
-      `The field '${fieldName}' is missing\n` +
-        `Out of the type: ${expandTVars(subst, tenv, ty)}`
+      `The field '${fieldName}' is missing`
     | STTooManySType(sty) ->
       sty match {
       | TPrimUnit(kind, _) -> `This is a ${kind}`
