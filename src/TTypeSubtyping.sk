@@ -89,6 +89,14 @@ base class STErrorOnTType extends STError {
   | STRecType(_ty1, _ty2, err) -> err.toString(subst, tenv)
 }
 
+base class STErrorOnTFuns extends STError {
+  children =
+  | STRecTFuns(TFuns, TFuns, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String
+  | STRecTFuns(_f1, _f2, err) -> err.toString(subst, tenv)
+}
+
 base class STErrorOnTFun extends STError {
   children =
   | STTypeParameterMismatch()
@@ -202,7 +210,10 @@ extension class TFuns {
     funs1: TFuns,
     funs2: TFuns,
   ): STResult {
-    TFun::isSub(subst, tenv, funs1.fun_, funs2.fun_)
+    TFun::isSub(subst, tenv, funs1.fun_, funs2.fun_) match {
+    | STOk() -> STOk()
+    | err @ STError _ -> STRecTFuns(funs1, funs2, err)
+    }
   }
 }
 
