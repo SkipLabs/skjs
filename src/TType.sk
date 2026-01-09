@@ -1205,6 +1205,10 @@ class Clause private (
     this.vars
   }
 
+  fun toString(): String {
+    prettyPrintClause(this)
+  }
+
   /*
     t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
     i.e. such that t3 <= 1 and t3 | t2 >= t1
@@ -1373,6 +1377,10 @@ class Clauses private (
 
   fun values(): mutable Iterator<Clause> {
     this.clauses.values()
+  }
+
+  fun toString(): String {
+    prettyPrintClauses(this)
   }
 }
 

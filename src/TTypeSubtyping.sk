@@ -149,27 +149,47 @@ base class STErrorOnSTypes(
     }
 }
 
-base class STErrorOnClauses extends STError<Clauses> {
+base class STErrorOnClauses(
+  clauses1: Clauses,
+  clauses2: Clauses,
+) extends STError<Clauses> {
   children =
-  | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError<STypes>)>)
+  | STRecClauses(List<(Clause, STError<STypes>)>, clause1: Clause)
 
   fun toError(
     pos: PosRange,
     subst: mutable Subst,
     tenv: TEnv,
-  ): List<(PosRange, String)> {
-    this match {
-    | STRecClauses(
-      _clauses1,
-      _clauses2,
-      _inter1,
-      List.Cons((_inter2, err), List.Nil()),
-    ) ->
-      err.toError(pos, subst, tenv)
-    | STRecClauses(_clauses1, _clauses2, inter1, _) ->
-      List[(pos, "This is of type " + prettyPrintClause(inter1))]
+  ): List<(PosRange, String)>
+  | STRecClauses(errs, clause1, clauses1, clauses2) ->
+    msgs = List::createFromItems(errs)
+      .map(clause2_err -> {
+        (clause2, err) = clause2_err;
+        msgs = err.toError(pos, subst, tenv);
+        if (!clause1.vars.isEmpty() || clause2.vars.isEmpty()) {
+          List.Cons(
+            (pos, `Type ${clause1}`),
+            List.Cons((pos, `is not compatible with type ${clause2}`), msgs),
+          )
+        } else {
+          msgs
+        }
+      })
+      .flatten();
+    if (msgs.isEmpty() || clauses2.clauses.size() > errs.size()) {
+      !msgs = List.Cons(
+        (pos, `Type ${clause1}`),
+        List.Cons((pos, `is not compatible with type ${clauses2}`), msgs),
+      )
+    };
+    if (clauses1.clauses.size() > 1) {
+      List.Cons(
+        (pos, `Type ${clauses1}`),
+        List.Cons((pos, `is not compatible with type ${clauses2}`), msgs),
+      )
+    } else {
+      msgs
     }
-  }
 }
 
 base class STErrorOnTType extends STError<TType> {
@@ -563,7 +583,7 @@ extension class Clauses {
           }
         }
       } else {
-        return STRecClauses(clauses1, clauses2, inter1, errors)
+        return STRecClauses(errors, inter1, clauses1, clauses2)
       }
     };
     STOk()
