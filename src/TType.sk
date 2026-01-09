@@ -311,7 +311,7 @@ class TType private {
     TType::fromClauses(this.pos, this.expand_(subst, tenv, variance))
   }
 
-  fun getConstantString(): ?(PosRange, String) {
+  fun getConstantString(): ?PrimLiteral {
     if (!this.insts.isEmpty()) None() else {
       this.clauses.getConstantString()
     }
@@ -425,10 +425,10 @@ fun createObject(
           (algebraicBranchFieldPos, `Got ${algebraicBranchFieldType} instead.`),
         ],
       )
-    | Some((tagPos, tag)) ->
+    | Some(lit) ->
       TType::single(
         TAlgebraic::single(
-          TConstr(tag, tagPos, fields),
+          TConstr(lit.val, lit.pos, fields),
           algebraicBranchFieldPos,
         ),
       )
@@ -674,7 +674,7 @@ class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
     value: String,
     pos: PosRange,
   ): TPrimValue {
-    TPrimValue(kind, Some(ArrayValues::single((pos, value))), pos)
+    TPrimValue(kind, Some(ArrayValues::single(PrimLiteral(pos, value))), pos)
   }
 
   static fun full(kind: TPrimValueKind, pos: PosRange): TPrimValue {
@@ -947,7 +947,7 @@ class STypes private (
     if (this.stypes.size() == 1) this.stypes.minimum() else None()
   }
 
-  fun getConstantString(): ?(PosRange, String) {
+  fun getConstantString(): ?PrimLiteral {
     this.singleElt() match {
     | Some(TPrimValue(TString(), Some(values), _)) -> values.singleElt()
     | _ -> None()
@@ -956,7 +956,8 @@ class STypes private (
 
   fun staticValue(): ?String {
     this.singleElt() match {
-    | Some(TPrimValue(_, Some(values), _)) -> values.singleElt().map(v -> v.i1)
+    | Some(TPrimValue(_, Some(values), _)) ->
+      values.singleElt().map(lit -> lit.val)
     | _ -> None()
     }
   }
@@ -1164,7 +1165,7 @@ class Clause private (
     this.map_(vars -> vars, f)
   }
 
-  fun getConstantString(): ?(PosRange, String) {
+  fun getConstantString(): ?PrimLiteral {
     if (!this.vars.isEmpty()) None() else {
       this.stypes.flatMap(sTypes -> sTypes.getConstantString())
     }
@@ -1257,7 +1258,7 @@ class Clauses private (
     }
   }
 
-  fun getConstantString(): ?(PosRange, String) {
+  fun getConstantString(): ?PrimLiteral {
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
   }
 
@@ -1397,8 +1398,7 @@ base class STError extends STResult {
           "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
       | TPrimValue(kind, None(), _) -> `This is of type ${kind}`
       | TPrimValue(kind, Some(x), _) ->
-        `This is a static ${kind}: ` +
-          x.values.map(x -> `'${x.i1}'`).join(" | ")
+        `This is a static ${kind}: ` + x.toStringList(true)
 
       | TPromise _ -> "This is a Promise"
       | TAlgebraic _ ->

@@ -137,119 +137,77 @@ module end;
 
 module SKJS;
 
-private fun mapUnion<T, Key: Orderable>(
-  iter1: mutable Iterator<T>,
-  iter2: mutable Iterator<T>,
-  proj: T ~> Key,
-  missing: T -> T,
-  union: (T, T) -> T,
-): Array<T> {
-  result = mutable Vector[];
-  head1 = iter1.next();
-  head2 = iter2.next();
-  loop {
-    (head1, head2) match {
-    | (None(), None()) -> break void
-    | (None(), Some(y)) ->
-      result.push(missing(y));
-      !head2 = iter2.next()
-    | (Some(x), None()) ->
-      result.push(missing(x));
-      !head1 = iter1.next()
-    | (Some(x), Some(y)) if (proj(x) < proj(y)) ->
-      result.push(missing(x));
-      !head1 = iter1.next()
-    | (Some(x), Some(y)) if (proj(x) > proj(y)) ->
-      result.push(missing(y));
-      !head2 = iter2.next()
-    | (Some(x), Some(y)) ->
-      result.push(union(x, y));
-      !head1 = iter1.next();
-      !head2 = iter2.next()
-    }
-  };
-  result.toArray()
+// A primitive literal value with position, identified by the value string
+class PrimLiteral(
+  pos: PosRange,
+  val: String,
+) uses Projectable<String>, Orderable {
+  fun project(): String {
+    this.val
+  }
+
+  fun compare(that: this): Order {
+    this.project().compare(that.project())
+  }
 }
 
 class ArrayValues private (
-  values: Array<(PosRange, String)>,
+  private inner: InternalKeyedArrayMap<String, PrimLiteral>,
 ) uses XXHashable, Orderable, Show {
-  // Invariant: values is not empty and is sorted by x ~> x.i1
+  // Invariant: inner is not empty
 
-  static fun single(elt: (PosRange, String)): this {
-    static(Array[elt])
+  static fun single(elt: PrimLiteral): ArrayValues {
+    ArrayValues(InternalKeyedArrayMap::single(elt))
   }
 
-  static fun ofSet(set: SortedSet<String>, pos: PosRange): ?this {
+  static fun ofSet(set: SortedSet<String>, pos: PosRange): ?ArrayValues {
     if (set.isEmpty()) None() else {
-      Some(static(set.toArray().map(s -> (pos, s))))
+      Some(
+        ArrayValues(
+          InternalKeyedArrayMap::createFromSortedIterator(
+            set.values().map(s -> PrimLiteral(pos, s)),
+          ),
+        ),
+      )
     }
   }
 
   fun xxhash(ignorePos: Bool = false): XXHash {
     // Custom xxhash that excludes positions, only hashes the strings
     result = 0;
-    for (i in Range(0, this.values.size())) {
-      !result = XXHash64.xxHash64(
-        result,
-        this.values[i].i1.xxhash(ignorePos).value,
-      );
+    for (lit in this.inner.values()) {
+      !result = XXHash64.xxHash64(result, lit.val.xxhash(ignorePos).value);
     };
     XXHash(result)
   }
 
   fun size(): Int {
-    this.values.size()
+    this.inner.size()
   }
 
-  fun singleElt(): ?(PosRange, String) {
-    if (this.values.size() == 1) Some(this.values[0]) else None()
+  fun singleElt(): ?PrimLiteral {
+    this.inner.singleElt()
   }
 
-  fun filter(f: ((PosRange, String)) -> Bool): ?this {
-    values = this.values.filter(f);
-    if (values.isEmpty()) None() else Some(static(values))
+  fun filter(f: PrimLiteral -> Bool): ?ArrayValues {
+    result = this.inner.filter(f);
+    if (result.isEmpty()) None() else Some(ArrayValues(result))
   }
 
-  fun union(other: ArrayValues): ArrayValues {
-    ArrayValues(
-      mapUnion(
-        this.values.iterator(),
-        other.values.iterator(),
-        x ~> x.i1,
-        x ~> x,
-        (x, _) ~> x,
-      ),
-    )
+  fun union(that: ArrayValues): ArrayValues {
+    ArrayValues(this.inner.union(that.inner))
   }
 
   fun inter(that: ArrayValues): ?ArrayValues {
-    result = mutable Vector[];
-    iter1 = this.values.iterator();
-    iter2 = that.values.iterator();
-    head1 = iter1.next();
-    head2 = iter2.next();
-    loop {
-      (head1, head2) match {
-      | (None(), _)
-      | (_, None()) ->
-        break void
-      | (Some(x), Some(y)) ->
-        x.i1.compare(y.i1) match {
-        | LT() -> !head1 = iter1.next()
-        | GT() -> !head2 = iter2.next()
-        | EQ() ->
-          result.push(x);
-          !head1 = iter1.next();
-          !head2 = iter2.next()
-        }
-      }
-    };
-    if (result.isEmpty()) None() else Some(ArrayValues(result.toArray()))
+    result = this.inner.inter(that.inner);
+    if (result.isEmpty()) None() else Some(ArrayValues(result))
   }
 
-  fun toStringList(): String {
-    this.values.map(x -> x.i1).join(" | ")
+  fun toStringList(quotes: Bool = false): String {
+    this.inner.values()
+      .map(lit -> if (quotes) `'${lit.val}'` else lit.val)
+      .collect(Array)
+      .join(" | ")
   }
 
   fun toString(): String {
@@ -257,14 +215,11 @@ class ArrayValues private (
   }
 
   fun contains(x: String): Bool {
-    idx = SKStore.binSearch(
-      i ~> this.values[i].i1,
-      x,
-      0,
-      this.values.size() - 1,
-    );
-    if (idx < 0 || idx >= this.values.size()) return false;
-    this.values[idx].i1 == x
+    this.inner.containsKey(x)
+  }
+
+  fun values(): mutable Iterator<PrimLiteral> {
+    this.inner.values()
   }
 }
 

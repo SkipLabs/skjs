@@ -231,6 +231,15 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     if (zero) None() else Some(result)
   }
 
+  fun inter(that: this): this {
+    this.merge(that, (xO, yO) ~>
+      (xO, yO) match {
+      | (Some(x), Some(_)) -> Some(x)
+      | _ -> None()
+      }
+    )
+  }
+
   fun union(that: this): this {
     this.merge(that, (xO, yO) ~>
       xO match {

@@ -193,7 +193,7 @@ extension class TypeChecker {
           fieldsToCheck.singleElt().flatMap(singleField ->
             TField::create(
               e1.pos,
-              singleField.i1,
+              singleField.val,
               false,
               TType::top(e.pos),
             ).map(field ->
@@ -236,7 +236,7 @@ extension class TypeChecker {
                     if (!indexes.isEmpty()) None() else {
                       TField::create(
                         e1.pos,
-                        singleField.i1,
+                        singleField.val,
                         false,
                         TType::top(e.pos),
                       ).flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
@@ -244,7 +244,7 @@ extension class TypeChecker {
                   } else {
                     Some(
                       tFields.filterMap(tField ->
-                        if (tField.name == singleField.i1) None() else {
+                        if (tField.name == singleField.val) None() else {
                           Some(tField)
                         }
                       ),

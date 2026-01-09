@@ -282,7 +282,7 @@ extension class TypeChecker {
       | TTuple(tyArr, tuplePos) ->
         n = idxSType match {
         | TPrimValue(TNum(), Some(numbers), _) ->
-          numbers.singleElt().flatMap(s -> s.i1.toIntOption())
+          numbers.singleElt().flatMap(lit -> lit.val.toIntOption())
         | _ -> None()
         } match {
         | None() ->
@@ -308,12 +308,12 @@ extension class TypeChecker {
         | None() -> Some(idxSType)
         | Some(values) ->
           values
-            .filter(posAndFieldName ->
+            .filter(fieldLit ->
               fields.maybeGetType(
                 tcenv.subst,
                 this.tenv,
-                posAndFieldName.i1,
-                posAndFieldName.i0,
+                fieldLit.val,
+                fieldLit.pos,
               ) match {
               | Some(ty) ->
                 !result = TType::union(tcenv.subst, this.tenv, result, ty);
@@ -374,13 +374,13 @@ extension class TypeChecker {
               (pos, "An algebraic expects a static index"),
             ],
           )
-        | Some((p, fieldName)) ->
+        | Some(lit) ->
           for (branch in branches) {
             !result = TType::union(
               tcenv.subst,
               this.tenv,
               result,
-              branch.getType(tcenv.subst, this.tenv, fieldName, p),
+              branch.getType(tcenv.subst, this.tenv, lit.val, lit.pos),
             )
           }
         }
@@ -1056,8 +1056,8 @@ extension class TypeChecker {
               fieldsOpt match {
               | None() -> true
               | Some(fieldsToCheck) ->
-                fieldsToCheck.values.any(fieldToCheck ->
-                  fields.maybeGet(fieldToCheck.i1) match {
+                fieldsToCheck.values().any(fieldToCheck ->
+                  fields.maybeGet(fieldToCheck.val) match {
                   | Some(tField) -> tField.isOptional
                   | None() -> true
                   }
@@ -1206,19 +1206,21 @@ extension class TypeChecker {
         stype match {
         | TPrimValue(TBool(), values, _) ->
           values.flatMap(v -> v.singleElt()) match {
-          | Some((_vPos, v)) ->
+          | Some(lit) ->
             tcenvb.error(
               Array[
                 (pos, "Constant expression could have been simplified"),
-                (subE.pos, `This has type ${v}`),
+                (subE.pos, `This has type ${lit.val}`),
               ],
             );
-            res = v match {
+            res = lit.val match {
             | "true" -> "false"
             | "false" -> "true"
             | _ ->
               internal_error(
-                `asConstExpr on Unop(UOExclamationMark) encountered a non-true non-false boolean: ${v}`,
+                `asConstExpr on Unop(UOExclamationMark) encountered a non-true non-false boolean: ${
+                  lit.val
+                }`,
               )
             };
             TPrimValue::single(TBool(), res, pos)
@@ -1251,9 +1253,11 @@ extension class TypeChecker {
                 internal_error(
                   "asConstExpr should return literals with a single value",
                 )
-              | Some((_pos, num)) ->
-                !num = if (num.startsWith("-")) num.stripPrefix("-") else {
-                  `-${num}`
+              | Some(lit) ->
+                num = if (lit.val.startsWith("-")) {
+                  lit.val.stripPrefix("-")
+                } else {
+                  `-${lit.val}`
                 };
                 TPrimValue::single(k, num, pos)
               }
