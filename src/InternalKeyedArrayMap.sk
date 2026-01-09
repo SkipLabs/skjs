@@ -204,11 +204,11 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     DiffInterDiffIterator::create(this.inner.values(), that.inner.values())
   }
 
-  fun iterDiff(that: this): mutable Iterator<(T, ?T)> {
+  fun iterDiff(that: this): mutable Iterator<T> {
     this.iterDiffInterDiff(that).filterMap((xO_yO) ->
       xO_yO match {
-      | (Some(x), yO) -> Some((x, yO))
-      | (None(), _) -> None()
+      | (Some(x), None()) -> Some(x)
+      | _ -> None()
       }
     )
   }
@@ -217,13 +217,14 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // x in s, otherwise the first Failure encountered is returned
   // immediately. Note that any extra elements in t are ignored.
   fun leq<E>(that: this, leqT: (T, ?T) -> Result<void, E>): Result<void, E> {
-    this.iterDiff(that).findMap((x_yO) ->
-      x_yO match {
-      | (x, yO) ->
+    this.iterDiffInterDiff(that).findMap((xO_yO) ->
+      xO_yO match {
+      | (Some(x), yO) ->
         leqT(x, yO) match {
         | Success(void) -> None()
         | Failure(err) -> Some(err)
         }
+      | (None(), _) -> None()
       }
     ) match {
     | None() -> Success(void)
