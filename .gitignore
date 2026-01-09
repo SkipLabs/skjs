@@ -3,3 +3,4 @@ target/
 dist/
 .vscode/
 node_modules/
+.generated-examples-check/
