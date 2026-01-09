@@ -752,6 +752,10 @@ class TIndexField(
     valueType = f(this.valueType);
     this with {keyType, valueType}
   }
+
+  fun toString(): String {
+    prettyPrintIndexField(this)
+  }
 }
 
 class TFields{
@@ -901,6 +905,10 @@ class TFields{
         ),
       }
     }
+  }
+
+  fun toString(): String {
+    prettyPrintFields(this)
   }
 }
 

@@ -336,12 +336,7 @@ mutable class TypePp{
       }
     };
     for (i => index in indexes) {
-      this.out(level, margin, "[ ");
-      this.out(level, margin, TypePp::escapeName(index.keyName));
-      this.out(level, margin, ": ");
-      this.type(level, margin, index.keyType);
-      this.out(level, margin, " ]: ");
-      this.type(level, margin, index.valueType);
+      this.indexField(level, margin, index);
       if (
         i != indexes.size() - 1 ||
         fields.call.isSome() ||
@@ -372,6 +367,15 @@ mutable class TypePp{
       this.out(level, margin, "new ");
       this.tfun(level, margin, (true, tfun))
     }
+  }
+
+  mutable fun indexField(level: Int, margin: Margin, index: TIndexField): void {
+    this.out(level, margin, "[ ");
+    this.out(level, margin, TypePp::escapeName(index.keyName));
+    this.out(level, margin, ": ");
+    this.type(level, margin, index.keyType);
+    this.out(level, margin, " ]: ");
+    this.type(level, margin, index.valueType);
   }
 
   static fun escapeName(name: String): String {
@@ -569,6 +573,14 @@ fun prettyPrintTFun(tFun: TFun, compact: Bool = false): String {
 
 fun prettyPrintConstr(constr: TConstr, compact: Bool = false): String {
   prettyPrint(compact, pp -> pp.constr(0, Margin(), constr))
+}
+
+fun prettyPrintFields(fields: TFields, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.object(0, Margin(), fields))
+}
+
+fun prettyPrintIndexField(index: TIndexField, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.indexField(0, Margin(), index))
 }
 
 module end;
