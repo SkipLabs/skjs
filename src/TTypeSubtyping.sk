@@ -192,16 +192,25 @@ base class STErrorOnClauses(
     }
 }
 
-base class STErrorOnTType extends STError<TType> {
+base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   children =
-  | STRecType(TType, TType, STError<Clauses>)
+  | STRecType(STError<Clauses>)
 
   fun toError(
     pos: PosRange,
     subst: mutable Subst,
     tenv: TEnv,
   ): List<(PosRange, String)>
-  | STRecType(_ty1, _ty2, err) -> err.toError(pos, subst, tenv)
+  | STRecType(err, ty1, ty2) ->
+    msgs = err.toError(pos, subst, tenv);
+    if (!ty1.insts.isEmpty() || !ty2.insts.isEmpty()) {
+      List.Cons(
+        (pos, `Type ${ty1}`),
+        List.Cons((pos, `is not compatible with type ${ty2}`), msgs),
+      )
+    } else {
+      msgs
+    }
 }
 
 base class STErrorOnTFuns extends STError<TFuns> {
@@ -651,7 +660,7 @@ extension class TType {
     | STOk() -> STOk()
     | err @ STError _ ->
       subst.restore(savedSubst);
-      STRecType(u1, u2, err)
+      STRecType(err, u1, u2)
     }
   }
 }
