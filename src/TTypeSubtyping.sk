@@ -114,6 +114,7 @@ base class STErrorOnTFun extends STError {
   | STRecFunParam(TFun, TFun, Int, STError)
   | STRecFunOptionalSpread(TFun, TFun, Int, STError)
   | STRecFunSpread(TFun, TFun, STError)
+  | STRecFunReturn(TFun, TFun, STError)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     this match {
@@ -128,7 +129,8 @@ base class STErrorOnTFun extends STError {
     | STRecFunThisParam(_f1, _f2, err)
     | STRecFunParam(_f1, _f2, _i, err)
     | STRecFunOptionalSpread(_f1, _f2, _i, err)
-    | STRecFunSpread(_f1, _f2, err) ->
+    | STRecFunSpread(_f1, _f2, err)
+    | STRecFunReturn(_f1, _f2, err) ->
       err.toString(subst, tenv)
     }
   }
@@ -652,7 +654,10 @@ extension class TFun {
         }
       }
     };
-    TType::isSub(subst, tenv, f1.retType, f2.retType)
+    TType::isSub(subst, tenv, f1.retType, f2.retType) match {
+    | STOk() -> STOk()
+    | err @ STError _ -> STRecFunReturn(f1, f2, err)
+    }
   }
 }
 
