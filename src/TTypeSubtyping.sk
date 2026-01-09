@@ -5,23 +5,23 @@
 module SKJS;
 
 /* Result for a check of subtyping of types T1 and T2 */
-base class STResult
+base class STResult<+T>
 
 /* T1 ⊑ T2 */
-class STOk() extends STResult
+class STOk<+T>() extends STResult<T>
 
 /* All other cases: T1 ⋢ T2 */
-base class STError extends STResult {
+base class STError<+T> extends STResult<T> {
   fun toString(_subst: mutable Subst, _tenv: TEnv): String;
 }
 
-class STMissing() extends STError {
+class STMissing<+T>() extends STError<T> {
   fun toString(_subst: mutable Subst, _tenv: TEnv): String {
     "Missing"
   }
 }
 
-base class STErrorOnSType extends STError {
+base class STErrorOnSType extends STError<SType> {
   children =
   | STTooManySType(SType)
 
@@ -44,43 +44,43 @@ base class STErrorOnSType extends STError {
     }
 }
 
-base class STErrorOnTTuple extends STError {
+base class STErrorOnTTuple extends STError<TTuple> {
   children =
   | STTooManyTTuple(TTuple)
-  | STRecTuple(TTuple, TTuple, Int, STError)
+  | STRecTuple(TTuple, TTuple, Int, STError<TType>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String
   | STTooManyTTuple(tuple) -> `This is a tuple of size ${tuple.tuple.size()}`
   | STRecTuple(_tup1, _tup2, _i, err) -> err.toString(subst, tenv)
 }
 
-base class STErrorOnTPromise extends STError {
+base class STErrorOnTPromise extends STError<TPromise> {
   children =
-  | STRecPromise(TPromise, TPromise, STError)
+  | STRecPromise(TPromise, TPromise, STError<TType>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String
   | STRecPromise(_p1, _p2, err) -> err.toString(subst, tenv)
 }
 
-base class STErrorOnObject extends STError {
+base class STErrorOnObject extends STError<TObject> {
   children =
-  | STRecObject(TObject, TObject, STError)
+  | STRecObject(TObject, TObject, STError<TFields>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String
   | STRecObject(_o1, _o2, err) -> err.toString(subst, tenv)
 }
 
-base class STErrorOnSTypes extends STError {
+base class STErrorOnSTypes extends STError<STypes> {
   children =
-  | STRecSTypes(STypes, STypes, STError)
+  | STRecSTypes(STypes, STypes, STError<SType>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String
   | STRecSTypes(_stypes1, _stypes2, err) -> err.toString(subst, tenv)
 }
 
-base class STErrorOnClauses extends STError {
+base class STErrorOnClauses extends STError<Clauses> {
   children =
-  | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError)>)
+  | STRecClauses(Clauses, Clauses, Clause, List<(Clause, STError<STypes>)>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     this match {
@@ -97,32 +97,32 @@ base class STErrorOnClauses extends STError {
   }
 }
 
-base class STErrorOnTType extends STError {
+base class STErrorOnTType extends STError<TType> {
   children =
-  | STRecType(TType, TType, STError)
+  | STRecType(TType, TType, STError<Clauses>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String
   | STRecType(_ty1, _ty2, err) -> err.toString(subst, tenv)
 }
 
-base class STErrorOnTFuns extends STError {
+base class STErrorOnTFuns extends STError<TFuns> {
   children =
-  | STRecTFuns(TFuns, TFuns, STError)
+  | STRecTFuns(TFuns, TFuns, STError<TFun>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String
   | STRecTFuns(_f1, _f2, err) -> err.toString(subst, tenv)
 }
 
-base class STErrorOnTFun extends STError {
+base class STErrorOnTFun extends STError<TFun> {
   children =
   | STTypeParameterMismatch()
   | STInvalidSpread(ArrayType)
-  | STRecFunTParam(TFun, TFun, Int, STError)
-  | STRecFunThisParam(TFun, TFun, STError)
-  | STRecFunParam(TFun, TFun, Int, STError)
-  | STRecFunOptionalSpread(TFun, TFun, Int, STError)
-  | STRecFunSpread(TFun, TFun, STError)
-  | STRecFunReturn(TFun, TFun, STError)
+  | STRecFunTParam(TFun, TFun, Int, STError<TType>)
+  | STRecFunThisParam(TFun, TFun, STError<TType>)
+  | STRecFunParam(TFun, TFun, Int, STError<TType>)
+  | STRecFunOptionalSpread(TFun, TFun, Int, STError<TType>)
+  | STRecFunSpread(TFun, TFun, STError<TType>)
+  | STRecFunReturn(TFun, TFun, STError<TType>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     this match {
@@ -144,33 +144,50 @@ base class STErrorOnTFun extends STError {
   }
 }
 
-base class STErrorOnTAlgebraic extends STError {
+base class STErrorOnTAlgebraic extends STError<TAlgebraic> {
   children =
   | STTooManyTConstr(TConstr)
-  | STRecAlgebraicOnBranch(TAlgebraic, TAlgebraic, tag: String, STError)
+  | STRecAlgebraicOnBranch(
+    TAlgebraic,
+    TAlgebraic,
+    tag: String,
+    STError<TConstr>,
+  )
 
   fun toString(subst: mutable Subst, tenv: TEnv): String
   | STTooManyTConstr _ -> "This is a constructor"
   | STRecAlgebraicOnBranch(_a1, _a2, _tag, err) -> err.toString(subst, tenv)
 }
 
-base class STErrorOnTContr extends STError {
+base class STErrorOnTContr extends STError<TConstr> {
   children =
-  | STRecConstr(TConstr, TConstr, STError)
+  | STRecConstr(TConstr, TConstr, STError<TFields>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String
   | STRecConstr(_c1, _c2, err) -> err.toString(subst, tenv)
 }
 
-base class STErrorOnTFields extends STError {
+base class STErrorOnTFields extends STError<TFields> {
   children =
-  | STRecFieldsCall(TFields, TFields, STError)
-  | STRecFieldsNew(TFields, TFields, STError)
-  | STRecFieldsIndexKey(TFields, TFields, TIndexField, TIndexField, STError)
-  | STRecFieldsIndexValue(TFields, TFields, TIndexField, TIndexField, STError)
-  | STRecFieldsFieldIndex(TFields, TFields, TField, TIndexField, STError)
-  | STRecFieldsIndexField(TFields, TFields, TIndexField, TField, STError)
-  | STRecFieldsField(TFields, TFields, String, STError)
+  | STRecFieldsCall(TFields, TFields, STError<TFuns>)
+  | STRecFieldsNew(TFields, TFields, STError<TFuns>)
+  | STRecFieldsIndexKey(
+    TFields,
+    TFields,
+    TIndexField,
+    TIndexField,
+    STError<TType>,
+  )
+  | STRecFieldsIndexValue(
+    TFields,
+    TFields,
+    TIndexField,
+    TIndexField,
+    STError<TType>,
+  )
+  | STRecFieldsFieldIndex(TFields, TFields, TField, TIndexField, STError<TType>)
+  | STRecFieldsIndexField(TFields, TFields, TIndexField, TField, STError<TType>)
+  | STRecFieldsField(TFields, TFields, String, STError<TType>)
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     this match {
@@ -180,7 +197,8 @@ base class STErrorOnTFields extends STError {
     | STRecFieldsField(_fields1, _fields2, fieldName, STMissing()) ->
       `The field '${fieldName}' is missing`
     | STRecFieldsCall(_fields1, _fields2, err)
-    | STRecFieldsNew(_fields1, _fields2, err)
+    | STRecFieldsNew(_fields1, _fields2, err) ->
+      err.toString(subst, tenv)
     | STRecFieldsIndexKey(_fields1, _fields2, _index1, _index2, err)
     | STRecFieldsIndexValue(_fields1, _fields2, _index1, _index2, err)
     | STRecFieldsFieldIndex(_fields1, _fields2, _field1, _index2, err)
@@ -197,7 +215,7 @@ extension class TAlgebraic {
     tenv: TEnv,
     a1: TAlgebraic,
     a2: TAlgebraic,
-  ): STResult {
+  ): STResult<TAlgebraic> {
     a1.branches.leq(a2.branches, (b1, b2O) ->
       b2O match {
       | Some(b2) ->
@@ -221,7 +239,7 @@ extension class TConstr {
     tenv: TEnv,
     x: TConstr,
     y: TConstr,
-  ): STResult {
+  ): STResult<TConstr> {
     if (x.tag != y.tag) {
       invariant_violation(`TConstr::isSub called on tags ${x.tag} != ${y.tag}`)
     };
@@ -238,7 +256,7 @@ extension class TFuns {
     tenv: TEnv,
     funs1: TFuns,
     funs2: TFuns,
-  ): STResult {
+  ): STResult<TFuns> {
     TFun::isSub(subst, tenv, funs1.fun_, funs2.fun_) match {
     | STOk() -> STOk()
     | err @ STError _ -> STRecTFuns(funs1, funs2, err)
@@ -252,7 +270,7 @@ extension class TFields {
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
-  ): STResult {
+  ): STResult<TFields> {
     TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
     | STOk() -> void
     | err @ STError _ -> return STRecFieldsCall(fields1, fields2, err)
@@ -340,7 +358,7 @@ extension class TFields {
     tenv: TEnv,
     f1opt: ?(Bool, TFuns),
     f2opt: ?(Bool, TFuns),
-  ): STResult {
+  ): STResult<TFuns> {
     (f1opt, f2opt) match {
     | (_, None())
     | (None(), Some((true, _))) ->
@@ -360,7 +378,7 @@ extension class STypes {
     tenv: TEnv,
     stypes1: STypes,
     stypes2: STypes,
-  ): STResult {
+  ): STResult<STypes> {
     stypes1.stypes.leq(stypes2.stypes, (sty1, sty2O) ->
       sty2O match {
       | Some(sty2) ->
@@ -405,13 +423,13 @@ extension class STypes {
         | _ -> internal_error("Internal error")
         } match {
         | STOk() -> Success(void)
-        | err @ STError _ -> Failure(STRecSTypes(stypes1, stypes2, err))
+        | err @ STError _ -> Failure(err)
         }
       | None() -> Failure(STTooManySType(sty1))
       }
     ) match {
     | Success(void) -> STOk()
-    | Failure(err) -> err
+    | Failure(err) -> STRecSTypes(stypes1, stypes2, err)
     }
   }
 }
@@ -422,7 +440,7 @@ extension class Clauses {
     tenv: TEnv,
     clauses1: Clauses,
     clauses2: Clauses,
-  ): STResult {
+  ): STResult<Clauses> {
     for (inter1 in clauses1.clauses) {
       errors = List[];
       for (inter2 in clauses2.clauses) {
@@ -455,7 +473,7 @@ extension class TType {
     tenv: TEnv,
     u1: TType,
     u2: TType,
-  ): STResult {
+  ): STResult<TType> {
     if (u1 == u2) return STOk();
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
@@ -471,7 +489,7 @@ extension class TType {
     tenv: TEnv,
     u1: TType,
     u2: TType,
-  ): STResult {
+  ): STResult<TType> {
     if (u2.isTop()) return STOk();
     if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
     !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
@@ -521,7 +539,7 @@ extension class TTuple {
     tenv: TEnv,
     tuple1: TTuple,
     tuple2: TTuple,
-  ): STResult {
+  ): STResult<TTuple> {
     if (tuple1.tuple.size() < tuple2.tuple.size()) {
       return STTooManyTTuple(tuple1)
     };
@@ -541,7 +559,7 @@ extension class TFun {
     tenv: TEnv,
     f1: TFun,
     f2: TFun,
-  ): STResult {
+  ): STResult<TFun> {
     if (f1.tparams.size() != f2.tparams.size()) {
       return STTypeParameterMismatch()
     };
@@ -675,7 +693,7 @@ extension base class ArrayType {
     tenv: TEnv,
     arr1: ArrayType,
     arr2: ArrayType,
-  ): STResult {
+  ): STResult<TType> {
     (
       arr1.maybeGetEltType(subst, tenv, Covariant()),
       arr2.maybeGetEltType(subst, tenv, Contravariant()),
@@ -692,7 +710,7 @@ extension class TObject {
     tenv: TEnv,
     obj1: TObject,
     obj2: TObject,
-  ): STResult {
+  ): STResult<TObject> {
     TFields::isSub(subst, tenv, obj1.fields, obj2.fields) match {
     | STOk() -> STOk()
     | err @ STError _ -> STRecObject(obj1, obj2, err)
