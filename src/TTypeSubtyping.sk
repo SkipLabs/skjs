@@ -62,6 +62,14 @@ base class STErrorOnTPromise extends STError {
   | STRecPromise(_p1, _p2, err) -> err.toString(subst, tenv)
 }
 
+base class STErrorOnObject extends STError {
+  children =
+  | STRecObject(TObject, TObject, STError)
+
+  fun toString(subst: mutable Subst, tenv: TEnv): String
+  | STRecObject(_o1, _o2, err) -> err.toString(subst, tenv)
+}
+
 base class STErrorOnSTypes extends STError {
   children =
   | STRecSTypes(STypes, STypes, STError)
@@ -685,7 +693,10 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): STResult {
-    TFields::isSub(subst, tenv, obj1.fields, obj2.fields)
+    TFields::isSub(subst, tenv, obj1.fields, obj2.fields) match {
+    | STOk() -> STOk()
+    | err @ STError _ -> STRecObject(obj1, obj2, err)
+    }
   }
 }
 
