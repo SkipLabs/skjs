@@ -225,41 +225,6 @@ private fun mapUnion<T, Key: Orderable>(
   result.toArray()
 }
 
-private fun mapInter<T, Key: Orderable>(
-  iter1: mutable Iterator<T>,
-  iter2: mutable Iterator<T>,
-  proj: T ~> Key,
-  inter: (T, T) -> T,
-): (Array<T>, Array<T>, Array<T>) {
-  noMatch1 = mutable Vector[];
-  noMatch2 = mutable Vector[];
-  present = mutable Vector[];
-  head1 = iter1.next();
-  head2 = iter2.next();
-  loop {
-    (head1, head2) match {
-    | (None(), None()) -> break void
-    | (None(), Some(y)) ->
-      noMatch2.push(y);
-      !head2 = iter2.next()
-    | (Some(x), None()) ->
-      noMatch1.push(x);
-      !head1 = iter1.next()
-    | (Some(x), Some(y)) if (proj(x) < proj(y)) ->
-      noMatch1.push(x);
-      !head1 = iter1.next()
-    | (Some(x), Some(y)) if (proj(x) > proj(y)) ->
-      noMatch2.push(y);
-      !head2 = iter2.next()
-    | (Some(x), Some(y)) ->
-      present.push(inter(x, y));
-      !head1 = iter1.next();
-      !head2 = iter2.next()
-    }
-  };
-  (noMatch1.toArray(), noMatch2.toArray(), present.toArray())
-}
-
 class ArrayValues private (
   values: Array<(PosRange, String)>,
 ) uses XXHashable, Orderable, Show {
@@ -312,14 +277,29 @@ class ArrayValues private (
     )
   }
 
-  fun inter(other: this): ?this {
-    (_noMatches1, _notMatches2, result) = mapInter(
-      this.values.iterator(),
-      other.values.iterator(),
-      x ~> x.i1,
-      (x, _) ~> x,
-    );
-    if (result.isEmpty()) None() else Some(static(result))
+  fun inter(that: ArrayValues): ?ArrayValues {
+    result = mutable Vector[];
+    iter1 = this.values.iterator();
+    iter2 = that.values.iterator();
+    head1 = iter1.next();
+    head2 = iter2.next();
+    loop {
+      (head1, head2) match {
+      | (None(), _)
+      | (_, None()) ->
+        break void
+      | (Some(x), Some(y)) ->
+        x.i1.compare(y.i1) match {
+        | LT() -> !head1 = iter1.next()
+        | GT() -> !head2 = iter2.next()
+        | EQ() ->
+          result.push(x);
+          !head1 = iter1.next();
+          !head2 = iter2.next()
+        }
+      }
+    };
+    if (result.isEmpty()) None() else Some(ArrayValues(result.toArray()))
   }
 
   fun toStringList(): String {
