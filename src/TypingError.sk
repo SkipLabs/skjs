@@ -17,7 +17,7 @@ class TypingError(
     messages = this.messages;
     this.stErr match {
     | Some((e, pos1, pos2)) ->
-      !messages = messages.concat(e.toError(pos1, pos2).toArray())
+      !messages = messages.concat(e.toError(pos1, pos2, 2).toArray())
     | None() -> void
     };
     for (message in messages) {
