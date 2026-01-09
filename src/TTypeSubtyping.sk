@@ -87,16 +87,26 @@ base class STErrorOnTTuple(tup1: TTuple, tup2: TTuple) extends STError<TTuple> {
     )
 }
 
-base class STErrorOnTPromise extends STError<TPromise> {
+base class STErrorOnTPromise(
+  p1: TPromise,
+  p2: TPromise,
+) extends STError<TPromise> {
   children =
-  | STRecPromise(TPromise, TPromise, STError<TType>)
+  | STRecPromise(STError<TType>)
 
   fun toError(
-    pos: PosRange,
+    _pos: PosRange,
     subst: mutable Subst,
     tenv: TEnv,
   ): List<(PosRange, String)>
-  | STRecPromise(_p1, _p2, err) -> err.toError(pos, subst, tenv)
+  | STRecPromise(err, p1, p2) ->
+    List.Cons(
+      (p1.pos, `Promise type ${p1}`),
+      List.Cons(
+        (p2.pos, `is not compatible with promise type ${p2}`),
+        err.toError(p1.inner.pos, subst, tenv),
+      ),
+    )
 }
 
 base class STErrorOnObject extends STError<TObject> {
@@ -488,7 +498,7 @@ extension class STypes {
         | (p1 @ TPromise(ty1, _), p2 @ TPromise(ty2, _)) ->
           TType::isSub(subst, tenv, ty1, ty2) match {
           | STOk() -> STOk()
-          | err @ STError _ -> STRecPromise(p1, p2, err)
+          | err @ STError _ -> STRecPromise(err, p1, p2)
           }
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::isSub(subst, tenv, obj1, obj2)
