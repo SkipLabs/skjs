@@ -213,6 +213,10 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     )
   }
 
+  fun diff(that: this): this {
+    InternalKeyedArrayMap::createFromSortedIterator(this.iterDiff(that))
+  }
+
   // s.leq(t, leqT) is Success if leqT(x, t.maybeGet(x)) is Success for every
   // x in s, otherwise the first Failure encountered is returned
   // immediately. Note that any extra elements in t are ignored.

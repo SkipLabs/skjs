@@ -965,13 +965,7 @@ class STypes private (
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
   static fun diff(left: STypes, right: STypes): STypes {
-    (noMatch1, _noMatch2, _present) = mapInter(
-      left.stypes.values(),
-      right.stypes.values(),
-      x ~> x.project(),
-      (x, _) ~> x,
-    );
-    STypes(InternalKeyedArrayMap::createFromSortedIterator(noMatch1.iterator()))
+    STypes(left.stypes.diff(right.stypes))
   }
 }
 
