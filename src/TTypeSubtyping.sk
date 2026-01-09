@@ -14,8 +14,6 @@ class STOk() extends STResult
 base class STError extends STResult {
   children =
   | STMissing()
-  | STMissingParameter()
-  | STMissingSpread()
   | STTooManySType(SType)
   | STTooManyTConstr(TConstr)
   | STTooManyTTuple(TTuple)
@@ -46,8 +44,8 @@ base class STError extends STResult {
     | STRecFunTParam(_f1, _f2, _i, STMissing()) ->
       "This type parameter does not define a constraint"
     | STRecFunThisParam(_f1, _f2, STMissing()) -> "Missing this parameter"
-    | STMissingParameter() -> "Missing parameter"
-    | STMissingSpread() -> "Missing ... parameter"
+    | STRecFunParam(_f1, _f2, _i, STMissing()) -> "Missing parameter"
+    | STRecFunSpread(_f1, _f2, STMissing()) -> "Missing ... parameter"
     | STRecFieldsCall(_fields1, _fields2_, STMissing()) ->
       "Missing call signature"
     | STRecFieldsNew(_fields1, _fields2, STMissing()) -> "Missing constructor"
@@ -477,7 +475,7 @@ extension class TFun {
     };
 
     if (f1.params.size() > f2.params.size()) {
-      return STMissingParameter()
+      return STRecFunParam(f1, f2, f2.params.size(), STMissing())
     };
 
     spread1elt = f1.spreadParam match {
@@ -530,10 +528,17 @@ extension class TFun {
     | None() ->
       if (
         f1.params.size() + f1.optionalParams.size() >
-          f2.params.size() + f2.optionalParams.size() ||
-        f1.spreadParam.isSome()
+        f2.params.size() + f2.optionalParams.size()
       ) {
-        return STMissingParameter()
+        return STRecFunParam(
+          f1,
+          f2,
+          f2.params.size() + f2.optionalParams.size(),
+          STMissing(),
+        )
+      };
+      if (f1.spreadParam.isSome()) {
+        return STRecFunSpread(f1, f2, STMissing())
       }
     | Some(spread2) ->
       spread2elt = spread2.maybeGetEltType(subst, tenv, Covariant()) match {
