@@ -187,10 +187,10 @@ extension class TypeChecker {
       )
 
     | In(e1, Expr(_, Var(local))) ->
-      (_t1, fieldsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
+      (_t1, litsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
       default = if (target) {
-        fieldsOpt.flatMap(fieldsToCheck ->
-          fieldsToCheck.singleElt().flatMap(singleField ->
+        litsOpt.flatMap(litsToCheck ->
+          litsToCheck.singleElt().flatMap(singleField ->
             TField::create(
               e1.pos,
               singleField.val,
@@ -227,9 +227,9 @@ extension class TypeChecker {
         | TPromise _ ->
           stype /* TODO */
         | TObject(tFields @ TFields{indexes}, tObjPos) ->
-          fieldsOpt
-            .flatMap(fieldsToCheck ->
-              fieldsToCheck
+          litsOpt
+            .flatMap(litsToCheck ->
+              litsToCheck
                 .singleElt()
                 .flatMap(singleField ->
                   if (target) {

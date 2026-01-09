@@ -223,8 +223,8 @@ extension class TypeChecker {
     cases = condType
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(TPrimValue(_, Some(values), _)) ->
-      Map::mcreateFromIterator(values.values().map(x -> (x.val, x.pos)))
+    | Some(TPrimValue(_, Some(lits), _)) ->
+      Map::mcreateFromIterator(lits.values().map(x -> (x.val, x.pos)))
     | _ ->
       /* branches.size() > 1 from the caller */
       return branches[branches.size() - 1] is SwitchBranch(Default(), _, _)

@@ -151,19 +151,19 @@ class PrimLiteral(
   }
 }
 
-class ArrayValues private (
+class PrimLiterals private (
   private inner: InternalKeyedArrayMap<String, PrimLiteral>,
 ) uses XXHashable, Orderable, Show {
   // Invariant: inner is not empty
 
-  static fun single(elt: PrimLiteral): ArrayValues {
-    ArrayValues(InternalKeyedArrayMap::single(elt))
+  static fun single(elt: PrimLiteral): PrimLiterals {
+    PrimLiterals(InternalKeyedArrayMap::single(elt))
   }
 
-  static fun ofSet(set: SortedSet<String>, pos: PosRange): ?ArrayValues {
+  static fun ofSet(set: SortedSet<String>, pos: PosRange): ?PrimLiterals {
     if (set.isEmpty()) None() else {
       Some(
-        ArrayValues(
+        PrimLiterals(
           InternalKeyedArrayMap::createFromSortedIterator(
             set.values().map(s -> PrimLiteral(pos, s)),
           ),
@@ -189,18 +189,18 @@ class ArrayValues private (
     this.inner.singleElt()
   }
 
-  fun filter(f: PrimLiteral -> Bool): ?ArrayValues {
+  fun filter(f: PrimLiteral -> Bool): ?PrimLiterals {
     result = this.inner.filter(f);
-    if (result.isEmpty()) None() else Some(ArrayValues(result))
+    if (result.isEmpty()) None() else Some(PrimLiterals(result))
   }
 
-  fun union(that: ArrayValues): ArrayValues {
-    ArrayValues(this.inner.union(that.inner))
+  fun union(that: PrimLiterals): PrimLiterals {
+    PrimLiterals(this.inner.union(that.inner))
   }
 
-  fun inter(that: ArrayValues): ?ArrayValues {
+  fun inter(that: PrimLiterals): ?PrimLiterals {
     result = this.inner.inter(that.inner);
-    if (result.isEmpty()) None() else Some(ArrayValues(result))
+    if (result.isEmpty()) None() else Some(PrimLiterals(result))
   }
 
   fun toStringList(quotes: Bool = false): String {

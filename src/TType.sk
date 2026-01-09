@@ -668,13 +668,13 @@ base class SType private (
 
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
-class TPrimValue(kind: TPrimValueKind, values: ?ArrayValues) extends SType {
+class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
   static fun single(
     kind: TPrimValueKind,
     value: String,
     pos: PosRange,
   ): TPrimValue {
-    TPrimValue(kind, Some(ArrayValues::single(PrimLiteral(pos, value))), pos)
+    TPrimValue(kind, Some(PrimLiterals::single(PrimLiteral(pos, value))), pos)
   }
 
   static fun full(kind: TPrimValueKind, pos: PosRange): TPrimValue {
@@ -949,15 +949,14 @@ class STypes private (
 
   fun getConstantString(): ?PrimLiteral {
     this.singleElt() match {
-    | Some(TPrimValue(TString(), Some(values), _)) -> values.singleElt()
+    | Some(TPrimValue(TString(), Some(lits), _)) -> lits.singleElt()
     | _ -> None()
     }
   }
 
   fun staticValue(): ?String {
     this.singleElt() match {
-    | Some(TPrimValue(_, Some(values), _)) ->
-      values.singleElt().map(lit -> lit.val)
+    | Some(TPrimValue(_, Some(lits), _)) -> lits.singleElt().map(lit -> lit.val)
     | _ -> None()
     }
   }

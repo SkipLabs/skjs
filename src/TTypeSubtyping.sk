@@ -187,11 +187,11 @@ extension class STypes {
           STTooManySType(sty1)
         | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> STOk()
 
-        | (TPrimValue(k, Some(s1), _), TPrimValue(_, Some(s2), _)) ->
-          for (elt in s1.values()) {
-            if (!s2.contains(elt.val)) {
+        | (TPrimValue(k, Some(lits1), _), TPrimValue(_, Some(lits2), _)) ->
+          for (elt in lits1.values()) {
+            if (!lits2.contains(elt.val)) {
               break STTooManySType(
-                TPrimValue(k, Some(ArrayValues::single(elt)), elt.pos),
+                TPrimValue(k, Some(PrimLiterals::single(elt)), elt.pos),
               )
             }
           } else {

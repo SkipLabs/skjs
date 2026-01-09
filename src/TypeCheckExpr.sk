@@ -304,10 +304,10 @@ extension class TypeChecker {
         !result = TType::top(objectPos)
 
       | TObject(fields, objectPos) ->
-        idxSType.values match {
+        idxSType.literals match {
         | None() -> Some(idxSType)
-        | Some(values) ->
-          values
+        | Some(lits) ->
+          lits
             .filter(fieldLit ->
               fields.maybeGetType(
                 tcenv.subst,
@@ -321,15 +321,15 @@ extension class TypeChecker {
               | None() -> true
               }
             )
-            .map(remainingValues ->
-              idxSType with {values => Some(remainingValues)}
+            .map(remainingLits ->
+              idxSType with {literals => Some(remainingLits)}
             )
         } match {
         | None() -> void
         | Some(remainingIdxSType) ->
           fields.maybeSingleIndex() match {
           | None() ->
-            remainingIdxSType.values match {
+            remainingIdxSType.literals match {
             | None() ->
               typingError(
                 Array[
@@ -341,8 +341,7 @@ extension class TypeChecker {
                   (objectPos, "But object has no index field"),
                 ],
               )
-            | Some(values) ->
-              fields.getTypeTypingError(values.toStringList(), pos)
+            | Some(lits) -> fields.getTypeTypingError(lits.toStringList(), pos)
             }
           | Some(index) ->
             this.checkSubType(
@@ -364,7 +363,7 @@ extension class TypeChecker {
 
       | TAlgebraic(branches, _) ->
         idxSType match {
-        | TPrimValue(TString(), Some(values), _) -> values.singleElt()
+        | TPrimValue(TString(), Some(lits), _) -> lits.singleElt()
         | _ -> None()
         } match {
         | None() ->
@@ -1204,8 +1203,8 @@ extension class TypeChecker {
     | Unop(UOExclamationMark(), subE) ->
       this.asConstExpr(tcenvb, subE).map(stype ->
         stype match {
-        | TPrimValue(TBool(), values, _) ->
-          values.flatMap(v -> v.singleElt()) match {
+        | TPrimValue(TBool(), lits, _) ->
+          lits.flatMap(v -> v.singleElt()) match {
           | Some(lit) ->
             tcenvb.error(
               Array[
@@ -1506,24 +1505,24 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     pos: PosRange,
     e1: Expr,
-  ): (TType, ?ArrayValues) {
+  ): (TType, ?PrimLiterals) {
     t1 = this.expr(tcenv, e1, true);
     t1.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
     | None() ->
       typingError(Array[(pos, "Invalid in"), (e1.pos, "This has type unknown")])
     | Some(stypes1) ->
-      fieldsOptOpt: ??ArrayValues = None();
+      litsOptOpt: ??PrimLiterals = None();
       for (stype1 in stypes1) {
         stype1 match {
-        | TPrimValue(TNum(), values, _pos)
-        | TPrimValue(TString(), values, _pos) ->
-          (fieldsOptOpt, values) match {
+        | TPrimValue(TNum(), lits, _pos)
+        | TPrimValue(TString(), lits, _pos) ->
+          (litsOptOpt, lits) match {
           | (Some(None()), _) -> void
           | (None(), _)
           | (Some(Some(_)), None()) ->
-            !fieldsOptOpt = Some(values)
-          | (Some(Some(existingFields)), Some(moreValues)) ->
-            !fieldsOptOpt = Some(Some(existingFields.union(moreValues)))
+            !litsOptOpt = Some(lits)
+          | (Some(Some(existingLits)), Some(moreLits)) ->
+            !litsOptOpt = Some(Some(existingLits.union(moreLits)))
           }
         | _ ->
           typingError(
@@ -1531,11 +1530,11 @@ extension class TypeChecker {
           )
         }
       };
-      fieldsOptOpt
+      litsOptOpt
     } match {
     | None() ->
       typingError(Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)])
-    | Some(fieldsOpt) -> (t1, fieldsOpt)
+    | Some(litsOpt) -> (t1, litsOpt)
     }
   }
 
