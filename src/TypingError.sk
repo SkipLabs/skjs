@@ -4,14 +4,23 @@
 
 module SKJS;
 
-class TypingError(messages: Array<(PosRange, String)>) extends Error {
+class TypingError(
+  messages: Array<(PosRange, String)>,
+  stErr: ?(STError<TType>, PosRange, PosRange),
+) extends Error {
   fun toString(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
   ): String {
     result = mutable Vector[];
-    for (message in this.messages) {
+    messages = this.messages;
+    this.stErr match {
+    | Some((e, pos1, pos2)) ->
+      !messages = messages.concat(e.toError(pos1, pos2).toArray())
+    | None() -> void
+    };
+    for (message in messages) {
       pos = message.i0;
       fileName = pos.fileName;
       resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
@@ -22,8 +31,11 @@ class TypingError(messages: Array<(PosRange, String)>) extends Error {
   }
 }
 
-fun typingError<T>(messages: Array<(PosRange, String)>): T {
-  throw ErrorExn(TypingError(messages))
+fun typingError<T>(
+  messages: Array<(PosRange, String)>,
+  stErr: ?(STError<TType>, PosRange, PosRange) = None(),
+): T {
+  throw ErrorExn(TypingError(messages, stErr))
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {

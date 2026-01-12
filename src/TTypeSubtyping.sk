@@ -11,8 +11,27 @@ base class STResult<+T>
 class STOk<+T>() extends STResult<T>
 
 /* All other cases: T1 ⋢ T2 */
-base class STError<+T> extends STResult<T> {
+base class STError<+T> extends STResult<T> uses Equality {
   fun toError(_pos1: PosRange, _pos2: PosRange): List<(PosRange, String)>;
+
+  overridable macro fun ==<U>(other: STError<U>): Bool {
+    other match {
+    | otherTyped @ #ThisClass _ ->
+      _ = otherTyped;
+      #forEachField (#field) {
+        if (!isEqual(this.#field, otherTyped.#field)) {
+          return false;
+        }
+      };
+      true
+
+    | _ -> false
+    }
+  }
+
+  overridable fun !=<U>(other: STError<U>): Bool {
+    !(this == other)
+  }
 }
 
 class STMissing<+T>() extends STError<T> {

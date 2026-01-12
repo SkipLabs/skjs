@@ -97,11 +97,12 @@ mutable class TCResults private {
   }
 
   mutable fun error(messages: Array<(PosRange, String)>): void {
+    stErr = None();
     this.errorHandling match {
-    | EHKeepGoing() -> this.errors.push(TypingError(messages))
+    | EHKeepGoing() -> this.errors.push(TypingError(messages, stErr))
     | EHBacktrace()
     | EHDefault() ->
-      typingError(messages)
+      typingError(messages, stErr)
     }
   }
 
