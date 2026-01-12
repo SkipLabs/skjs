@@ -244,13 +244,12 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): TFields {
-    fields = fields1.fields.merge(fields2.fields, (xo, yo) ->
-      (xo, yo) match {
-      | (Some(z), None())
-      | (None(), Some(z)) ->
+    fields = fields1.fields.merge(fields2.fields, ior ->
+      ior match {
+      | Left(z)
+      | Right(z) ->
         Some(z.withOptional())
-      | (Some(x), Some(y)) -> Some(TField::union(subst, tenv, x, y))
-      | (None(), None()) -> None()
+      | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );
     // TODO: handle intersection between normal fields and index fields

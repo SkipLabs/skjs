@@ -93,20 +93,15 @@ class .ArraySet<T: Orderable> private (
     )
   }
 
-  // s.iterDiffInterDiff(t) contains (Some(x), None()) for every element in
-  // s but not t, (None(), Some(y)) for every y in t but not s, and
-  // (Some(x), Some(y)) for every pair of elements that are in both s and t.
-  fun iterDiffInterDiff(that: this): mutable Iterator<(?T, ?T)> {
+  // s.iterDiffInterDiff(t) contains Left(x) for every x in s but not t,
+  // Right(y) for every y in t but not s, and Both(x, y) for every pair of
+  // elements that are in both s and t.
+  fun iterDiffInterDiff(that: this): mutable Iterator<InclusiveOr<T, T>> {
     this.inner.values().zipSorted(that.inner.values())
   }
 
   fun iterDiff(that: this): mutable Iterator<T> {
-    this.iterDiffInterDiff(that).filterMap((xO_yO) ->
-      xO_yO match {
-      | (xO @ Some(_), None()) -> xO
-      | _ -> None()
-      }
-    )
+    this.iterDiffInterDiff(that).filterMap(v -> v.maybeLeft())
   }
 
   fun diff(that: this): this {
@@ -114,16 +109,16 @@ class .ArraySet<T: Orderable> private (
   }
 
   fun contains(that: this): Bool {
-    !this.iterDiffInterDiff(that).any((xO_yO) -> xO_yO is (None(), Some(_)))
+    !this.iterDiffInterDiff(that).any(v -> v is Right(_))
   }
 
   fun iterUnion(that: this): mutable Iterator<T> {
-    this.iterDiffInterDiff(that).map((xO_yO) ->
-      xO_yO match {
-      | (Some(x), _)
-      | (None(), Some(x)) ->
+    this.iterDiffInterDiff(that).map(v ->
+      v match {
+      | Left(x)
+      | Right(x)
+      | Both(x, _) ->
         x
-      | (None(), None()) -> internal_error("ArraySet.union")
       }
     )
   }

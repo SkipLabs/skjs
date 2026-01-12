@@ -132,21 +132,20 @@ mutable class Scope{
     if (scope2.up.fromSome().id != this.id) {
       internal_error("scope2 up id mismatch")
     };
-    scope1.escapingRefs().zipSortedBy(scope2.escapingRefs()).each(pair -> {
-      pair match {
-      | (Some(nameRef), None())
-      | (None(), Some(nameRef)) ->
+    scope1.escapingRefs().zipSortedBy(scope2.escapingRefs()).each(ior -> {
+      ior match {
+      | Left(nameRef)
+      | Right(nameRef) ->
         (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
         this.!refs[nameRef.name] = LocalRef(
           TType::union(subst, tenv, upRef.type, nameRef.ref.type),
           upRef.isInitialized,
         )
-      | (Some(nameRef1), Some(nameRef2)) ->
+      | Both(nameRef1, nameRef2) ->
         this.!refs[nameRef1.name] = LocalRef(
           TType::union(subst, tenv, nameRef1.ref.type, nameRef2.ref.type),
           nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
         )
-      | (None(), None()) -> assert(false)
       }
     })
   }
