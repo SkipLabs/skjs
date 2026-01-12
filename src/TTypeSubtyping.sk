@@ -30,6 +30,14 @@ class STErrorDetail(
       this.showIntermediateMessages,
     )
   }
+
+  // Ensure intermediate depth is at least 1 when RecType depth is positive
+  fun ensureIntermediateDepth(): STErrorDetail {
+    if (this.maxRecTypeDepth >= 1 && this.maxIntermediateDepth < 1) {
+      !this.maxIntermediateDepth = 1
+    };
+    this
+  }
 }
 
 /* Result for a check of subtyping of types T1 and T2 */
@@ -285,7 +293,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
         msgs
       }
     } else {
-      err.toError(ty1.pos, ty2.pos, detail)
+      err.toError(ty1.pos, ty2.pos, detail.ensureIntermediateDepth())
     }
 }
 
