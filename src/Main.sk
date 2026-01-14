@@ -372,11 +372,13 @@ class Checker private {
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
   symbolsMap: SymbolsMap,
+  errorDetailConfig: ErrorDetailConfig,
 } {
   static fun create{
     context: mutable SKStore.Context,
     files: Files,
     errorHandling: ErrorHandling,
+    errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
@@ -397,7 +399,14 @@ class Checker private {
     );
     tenv = TEnv{defMap};
     checker = TypeChecker{defMap, tenv, errorHandling};
-    static{files, parsedFiles, checker, newLinesMap, symbolsMap}
+    static{
+      files,
+      parsedFiles,
+      checker,
+      newLinesMap,
+      symbolsMap,
+      errorDetailConfig,
+    }
   }
 
   fun checkFiles(
@@ -435,7 +444,12 @@ class Checker private {
   }
 
   fun errorToString(context: mutable SKStore.Context, err: Error): String {
-    err.toString(context, this.newLinesMap, this.symbolsMap)
+    err.toString(
+      context,
+      this.newLinesMap,
+      this.symbolsMap,
+      this.errorDetailConfig,
+    )
   }
 }
 
