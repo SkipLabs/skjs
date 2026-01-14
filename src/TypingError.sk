@@ -46,7 +46,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
 
     // If no specs match, use default
     if (matchingSpecs.isEmpty()) {
-      return STErrorDetail(1, 0, false)
+      return STErrorDetail::default
     };
 
     // Return the most specific matching spec
@@ -199,11 +199,11 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
   // Parse level name to STErrorDetail
   private static fun parseLevel(level: String): Result<STErrorDetail, String> {
     level match {
-    | "minimal" | "0" -> Success(STErrorDetail(0, 0, false))
-    | "default" | "1" -> Success(STErrorDetail(1, 0, false))
-    | "normal" | "2" -> Success(STErrorDetail(2, 1, false))
-    | "verbose" | "3" -> Success(STErrorDetail(2, 2, true))
-    | "full" | "max" -> Success(STErrorDetail(999, 999, true))
+    | "minimal" | "0" -> Success(STErrorDetail::minimal)
+    | "default" | "1" -> Success(STErrorDetail::default)
+    | "normal" | "2" -> Success(STErrorDetail::normal)
+    | "verbose" | "3" -> Success(STErrorDetail::verbose)
+    | "full" | "max" -> Success(STErrorDetail::full)
     | _ -> Failure(`Unknown error detail level: ${level}`)
     }
   }
@@ -226,7 +226,7 @@ class TypingError(
       // Get the appropriate detail level based on error location
       detail = if (this.messages.isEmpty()) {
         // Fallback to default when no message position available
-        STErrorDetail(1, 0, false)
+        STErrorDetail::default
       } else {
         firstPos = this.messages[0].i0;
         fileName = firstPos.fileName.toString();

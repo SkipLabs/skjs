@@ -13,6 +13,12 @@ class STErrorDetail(
   // Whether to show intermediate detail messages (e.g., "They differ in element 2")
   showIntermediateMessages: Bool,
 ) {
+  const minimal: STErrorDetail = STErrorDetail(0, 0, false);
+  const default: STErrorDetail = STErrorDetail(1, 0, false);
+  const normal: STErrorDetail = STErrorDetail(2, 1, false);
+  const verbose: STErrorDetail = STErrorDetail(2, 2, true);
+  const full: STErrorDetail = STErrorDetail(999, 999, true);
+
   // Create a new detail with decreased intermediate depth
   fun decreaseIntermediate(): STErrorDetail {
     STErrorDetail(
