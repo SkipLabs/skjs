@@ -401,7 +401,7 @@ class Checker private {
     context: mutable SKStore.Context,
     files: Files,
     errorHandling: ErrorHandling,
-    errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
+    errorDetailConfig: ErrorDetailConfig,
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);

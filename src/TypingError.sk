@@ -67,6 +67,12 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
     ErrorDetailConfig(Array[])
   }
 
+  static fun minimal(): ErrorDetailConfig {
+    ErrorDetailConfig(
+      Array[ErrorDetailSpec(None(), None(), STErrorDetail::minimal)],
+    )
+  }
+
   // Parse error detail specification from command-line argument
   // Formats supported:
   // - (empty)              -> *:*:full
