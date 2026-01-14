@@ -69,48 +69,89 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
 
   // Parse error detail specification from command-line argument
   // Formats supported:
+  // - (empty)              -> *:*:full
   // - <level>              -> *:*:<level>
   // - <line>               -> *:<line>:full
   // - <file>               -> <file>:*:full
+  // - *                    -> *:*:full
   // - <line>:<level>       -> *:<line>:<level>
   // - <file>:<level>       -> <file>:*:<level>
+  // - *:<level>            -> *:*:<level>
+  // - <file>:<line>        -> <file>:<line>:full
+  // - *:<line>             -> *:<line>:full
+  // - <file>:*             -> <file>:*:full
   // - <file>:<line>:<level> -> <file>:<line>:<level>
   static fun parseSpec(spec: String): Result<ErrorDetailSpec, String> {
     parts = spec.split(":");
-    if (parts.size() == 1) {
-      // Single value: either line, file, or level
+    if (parts.size() == 0 || (parts.size() == 1 && parts[0] == "")) {
+      // Empty spec -> *:*:full
+      Success(
+        ErrorDetailSpec(
+          None(),
+          None(),
+          static::parseLevel("full").fromSuccess(),
+        ),
+      )
+    } else if (parts.size() == 1) {
+      // Single value: either line, file, level, or *
       value = parts[0];
-      value.toIntOption() match {
-      | Some(line) ->
-        // It's a line number -> *:<line>:full
+      if (value == "*") {
+        // * -> *:*:full
         Success(
           ErrorDetailSpec(
             None(),
-            Some(line),
+            None(),
             static::parseLevel("full").fromSuccess(),
           ),
         )
-      | None() ->
-        static::parseLevel(value) match {
-        | Success(detail) ->
-          // It's a level -> *:*:<level>
-          Success(ErrorDetailSpec(None(), None(), detail))
-        | Failure _ ->
-          // It's a file pattern -> <file>:*:full
+      } else {
+        value.toIntOption() match {
+        | Some(line) ->
+          // It's a line number -> *:<line>:full
           Success(
             ErrorDetailSpec(
-              Some(value),
               None(),
+              Some(line),
               static::parseLevel("full").fromSuccess(),
             ),
           )
+        | None() ->
+          static::parseLevel(value) match {
+          | Success(detail) ->
+            // It's a level -> *:*:<level>
+            Success(ErrorDetailSpec(None(), None(), detail))
+          | Failure _ ->
+            // It's a file pattern -> <file>:*:full
+            Success(
+              ErrorDetailSpec(
+                Some(value),
+                None(),
+                static::parseLevel("full").fromSuccess(),
+              ),
+            )
+          }
         }
       }
     } else if (parts.size() == 2) {
       // Two values: <file>:<level>, <file>:<line>, or <line>:<level>
       first = parts[0];
       second = parts[1];
-      (first.toIntOption(), second.toIntOption()) match {
+      // Parse file pattern (handle *)
+      filePattern = if (first == "*") None() else {
+        first.toIntOption() match {
+        | Some(_) ->
+          None() // Line number means no file pattern
+        | None() -> Some(first)
+        }
+      };
+      // Parse line number (handle *)
+      lineNum = if (second == "*") {
+        None()
+      } else {
+        second.toIntOption()
+      };
+
+      (first.toIntOption(), lineNum) match {
       | (Some(line), _) ->
         // First is a line number -> *:<line>:<level>
         static::parseLevel(second).map(detail ->
@@ -120,7 +161,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
         // Second is a line number -> <file>:<line>:full
         Success(
           ErrorDetailSpec(
-            Some(first),
+            filePattern,
             Some(line),
             static::parseLevel("full").fromSuccess(),
           ),
@@ -128,7 +169,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
       | (None(), None()) ->
         // Neither is a number -> <file>:*:<level>
         static::parseLevel(second).map(detail ->
-          ErrorDetailSpec(Some(first), None(), detail)
+          ErrorDetailSpec(filePattern, None(), detail)
         )
       }
     } else if (parts.size() == 3) {
