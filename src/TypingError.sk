@@ -66,6 +66,106 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
   static fun default(): ErrorDetailConfig {
     ErrorDetailConfig(Array[])
   }
+
+  // Parse error detail specification from command-line argument
+  // Formats supported:
+  // - <level>              -> *:*:<level>
+  // - <line>               -> *:<line>:full
+  // - <file>               -> <file>:*:full
+  // - <line>:<level>       -> *:<line>:<level>
+  // - <file>:<level>       -> <file>:*:<level>
+  // - <file>:<line>:<level> -> <file>:<line>:<level>
+  static fun parseSpec(spec: String): Result<ErrorDetailSpec, String> {
+    parts = spec.split(":");
+    if (parts.size() == 1) {
+      // Single value: either line, file, or level
+      value = parts[0];
+      value.toIntOption() match {
+      | Some(line) ->
+        // It's a line number -> *:<line>:full
+        Success(
+          ErrorDetailSpec(
+            None(),
+            Some(line),
+            static::parseLevel("full").fromSuccess(),
+          ),
+        )
+      | None() ->
+        static::parseLevel(value) match {
+        | Success(detail) ->
+          // It's a level -> *:*:<level>
+          Success(ErrorDetailSpec(None(), None(), detail))
+        | Failure _ ->
+          // It's a file pattern -> <file>:*:full
+          Success(
+            ErrorDetailSpec(
+              Some(value),
+              None(),
+              static::parseLevel("full").fromSuccess(),
+            ),
+          )
+        }
+      }
+    } else if (parts.size() == 2) {
+      // Two values: <file>:<level>, <file>:<line>, or <line>:<level>
+      first = parts[0];
+      second = parts[1];
+      (first.toIntOption(), second.toIntOption()) match {
+      | (Some(line), _) ->
+        // First is a line number -> *:<line>:<level>
+        static::parseLevel(second).map(detail ->
+          ErrorDetailSpec(None(), Some(line), detail)
+        )
+      | (None(), Some(line)) ->
+        // Second is a line number -> <file>:<line>:full
+        Success(
+          ErrorDetailSpec(
+            Some(first),
+            Some(line),
+            static::parseLevel("full").fromSuccess(),
+          ),
+        )
+      | (None(), None()) ->
+        // Neither is a number -> <file>:*:<level>
+        static::parseLevel(second).map(detail ->
+          ErrorDetailSpec(Some(first), None(), detail)
+        )
+      }
+    } else if (parts.size() == 3) {
+      // Three values: <file>:<line>:<level>
+      file = parts[0];
+      lineStr = parts[1];
+      levelStr = parts[2];
+      filePattern = if (file == "*") None() else Some(file);
+      lineNum = if (lineStr == "*") {
+        Success(None())
+      } else {
+        lineStr.toIntOption() match {
+        | Some(l) -> Success(Some(l))
+        | None() -> Failure(`Invalid line number: ${lineStr}`)
+        }
+      };
+      lineNum.flatMap(ln ->
+        static::parseLevel(levelStr).map(detail ->
+          ErrorDetailSpec(filePattern, ln, detail)
+        )
+      )
+    } else {
+      Failure(`Invalid error-detail format: ${spec}`)
+    }
+  }
+
+  // Parse level name to STErrorDetail
+  private static fun parseLevel(level: String): Result<STErrorDetail, String> {
+    level match {
+    | "minimal" | "0" -> Success(STErrorDetail(0, 0, false))
+    | "default" | "1" -> Success(STErrorDetail(1, 0, false))
+    | "normal" | "2" -> Success(STErrorDetail(2, 1, false))
+    | "verbose" | "3" -> Success(STErrorDetail(2, 2, true))
+    | "full" | "max" -> Success(STErrorDetail(999, 999, true))
+    | _ -> Failure(`Unknown error detail level: ${level}`)
+    }
+  }
 }
 
 class TypingError(

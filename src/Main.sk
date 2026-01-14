@@ -204,6 +204,13 @@ const checkArgs: Array<Cli.Arg> = Array[
     .short("k")
     .default(false)
     .about("Do not stop at the first lexing/parsing error"),
+  Cli.Arg::string("error-detail")
+    .long("error-detail")
+    .repeatable()
+    .about(
+      "Control subtyping error detail level. Formats: <level>, <line>, <file>, <line>:<level>, <file>:<level>, <file>:<line>:<level>. " +
+        "Levels: minimal/0, default/1, normal/2, verbose/3, full/max. Can be specified multiple times.",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -274,6 +281,17 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   };
   srcFiles: Sequence<String> = args.getArray("src-file");
 
+  // Parse error detail specifications
+  errorDetailSpecs = args.getArray("error-detail").map(spec ->
+    ErrorDetailConfig::parseSpec(spec) match {
+    | Success(s) -> s
+    | Failure(err) ->
+      print_error(err);
+      throw Exit(2)
+    }
+  );
+  errorDetailConfig = ErrorDetailConfig(errorDetailSpecs);
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
 
   context = SKStore.runWithGcReturnContext(
@@ -300,7 +318,12 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{context, files, errorHandling};
+          checker = Checker::create{
+            context,
+            files,
+            errorHandling,
+            errorDetailConfig,
+          };
           checked = checker.checkFiles(context);
           _ = checked.map(
             SKStore.UnitID::keyType,
