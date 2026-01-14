@@ -16,6 +16,5 @@ function testExplicit<T, U>(x: T & U, h: Helper<T>): string {
 // When checking (T & U) <: (T | V), the T branch covers T & U,
 // so V remains unconstrained and can be inferred from the second arg.
 function testInference<T, U>(x: T & U, h: Helper<T>): string {
-  // @skjs-expect-error Invalid return type
   return h.f(x, "hello");
 }

@@ -1341,26 +1341,26 @@ class Clauses private (
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
   static fun diff(left: Clauses, right: Clauses): Clauses {
-    noParamRightOpt = right.clauses.maybeGet(ArraySet::empty());
-
-    // Use merge to handle the diff operation
-    diffClauses = left.clauses.merge(right.clauses, ior -> {
-      (ior, noParamRightOpt) match {
-      | (Left(clauseLeft), None()) ->
-        Some(clauseLeft) // Keep clause from left
-      | (Right(_), _) ->
-        None() // Don't include clauses only in right
-      | (Left(clauseLeft), Some(clauseRight))
-      | (Both(clauseLeft, clauseRight), None()) ->
-        Clause::diff(clauseLeft, clauseRight)
-      | (Both(clauseLeft, clauseRight), Some(noParamRight)) ->
-        Clause::diff(clauseLeft, clauseRight).flatMap(c ->
-          Clause::diff(c, noParamRight)
-        )
-      }
-    });
-
-    Clauses::create(diffClauses)
+    // For each left clause, subtract all right clauses whose vars are
+    // subsets (that is, supertypes).
+    Clauses::create(
+      left.clauses.filterMap(clauseLeft -> {
+        leftVars = clauseLeft.vars;
+        init: ?Clause = Some(clauseLeft);
+        right.clauses
+          .values()
+          .foldl(
+            (acc, clauseRight) -> {
+              if (leftVars.contains(clauseRight.vars)) {
+                acc.flatMap(c -> Clause::diff(c, clauseRight))
+              } else {
+                acc
+              }
+            },
+            init,
+          )
+      }),
+    )
   }
 
   fun any(f: Clause -> Bool): Bool {
