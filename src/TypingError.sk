@@ -4,6 +4,70 @@
 
 module SKJS;
 
+/***************************************************************************/
+/* Error Detail Configuration */
+/***************************************************************************/
+
+// A single error detail specification with optional file/line filter
+class ErrorDetailSpec(
+  filePattern: ?String, // None = applies to all files, Some = specific file pattern
+  line: ?Int, // None = applies to all lines, Some = specific line
+  detail: STErrorDetail,
+) {
+  // Check if this spec matches the given file and line
+  fun matches(fileName: String, lineNum: Int): Bool {
+    fileMatches = this.filePattern match {
+    | None() -> true
+    | Some(pattern) ->
+      fileName.contains(pattern) // Simple contains for now
+    };
+    lineMatches = this.line match {
+    | None() -> true
+    | Some(l) -> l == lineNum
+    };
+    fileMatches && lineMatches
+  }
+
+  // Return specificity score (higher = more specific)
+  // Used to determine which spec wins when multiple match
+  fun specificity(): Int {
+    fileScore = if (this.filePattern.isSome()) 2 else 0;
+    lineScore = if (this.line.isSome()) 1 else 0;
+    fileScore + lineScore
+  }
+}
+
+// Configuration for error detail levels across the codebase
+class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
+  // Get the appropriate STErrorDetail for a given file and line
+  fun getDetail(fileName: String, lineNum: Int): STErrorDetail {
+    // Find all matching specs
+    matchingSpecs = this.specs.filter(spec -> spec.matches(fileName, lineNum));
+
+    // If no specs match, use default
+    if (matchingSpecs.isEmpty()) {
+      return STErrorDetail(1, 0, false)
+    };
+
+    // Return the most specific matching spec
+    bestSpec = matchingSpecs.reduce(
+      (best, current) -> {
+        if (current.specificity() > best.specificity()) {
+          current
+        } else {
+          best
+        }
+      },
+      matchingSpecs[0],
+    );
+    bestSpec.detail
+  }
+
+  static fun default(): ErrorDetailConfig {
+    ErrorDetailConfig(Array[])
+  }
+}
+
 class TypingError(
   messages: Array<(PosRange, String)>,
   stErr: ?(STError<TType>, PosRange, PosRange),
