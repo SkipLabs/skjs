@@ -215,7 +215,9 @@ class TypingError(
         relPos = resolver.relPosRange(firstPos);
         errorDetailConfig.getDetail(fileName, relPos.start.line)
       };
-      !messages = messages.concat(e.toError(pos1, pos2, detail).toArray())
+      if (!detail.isMinimal()) {
+        !messages = messages.concat(e.toError(pos1, pos2, detail).toArray())
+      }
     | None() -> void
     };
     for (message in messages) {
