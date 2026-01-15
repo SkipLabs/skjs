@@ -97,30 +97,22 @@ class STMissing<+T>() extends STError<T> {
 
 base class STErrorOnSType extends STError<SType> {
   children =
-  | STTooManySType(SType)
+  | STTooManySType(sType1: SType, sTypes2: STypes)
 
   fun toError(
     _pos1: PosRange,
-    _pos2: PosRange,
+    pos2: PosRange,
     _detail: STErrorDetail,
   ): List<(PosRange, String)>
-  | STTooManySType(sty) ->
-    msg = sty match {
-    | TPrimUnit(kind, _) -> `This is a ${kind}`
-    | TPrimValue(TString(), None(), _) ->
-      "This is of type string. " +
-        "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
-    | TPrimValue(kind, None(), _) -> `This is of type ${kind}`
-    | TPrimValue(kind, Some(x), _) ->
-      `This is a static ${kind}: ` + x.toStringList(true)
-
-    | TPromise _ -> "This is a Promise"
-    | TAlgebraic _ ->
-      "This is a constructor (the field kind is a static string)"
-    | TObject _ -> "This is an object"
-    | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
+  | STTooManySType(sType1, sTypes2) ->
+    sTypes2.singleElt() match {
+    | Some(sType2) -> !pos2 = sType2.pos
+    | None() -> void
     };
-    List[(sty.pos, msg)]
+    List[
+      (sType1.pos, `Type ${sType1}`),
+      (pos2, `is not compatible with type ${sTypes2}`),
+    ]
 }
 
 base class STErrorOnTPrimValue(
@@ -804,7 +796,7 @@ extension class STypes {
         | STOk() -> Success(void)
         | err @ STError _ -> Failure(err)
         }
-      | None() -> Failure(STTooManySType(sty1))
+      | None() -> Failure(STTooManySType(sty1, stypes2))
       }
     ) match {
     | Success(void) -> STOk()
