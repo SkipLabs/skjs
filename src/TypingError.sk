@@ -20,16 +20,15 @@ class ErrorDetailSpec(
 
   // Check if this spec matches the given file and line
   fun matches(fileName: String, lineNum: Int): Bool {
-    fileMatches = this.filePattern match {
+    this.line match {
+    | Some(l) if (l != lineNum) -> return false
+    | _ -> void
+    };
+    this.filePattern match {
     | None() -> true
     | Some(pattern) ->
       fileName.contains(pattern) // Simple contains for now
-    };
-    lineMatches = this.line match {
-    | None() -> true
-    | Some(l) -> l == lineNum
-    };
-    fileMatches && lineMatches
+    }
   }
 }
 
