@@ -123,6 +123,32 @@ base class STErrorOnSType extends STError<SType> {
     List[(sty.pos, msg)]
 }
 
+base class STErrorOnTPrimValue(
+  prim1: TPrimValue,
+  prim2: TPrimValue,
+) extends STError<TPrimValue> {
+  children =
+  | STPrimValueFullSpecific()
+  | STPrimMissingValue(elt: PrimLiteral)
+
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    _detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STPrimValueFullSpecific(prim1, prim2) ->
+    List[
+      (prim1.pos, `Full type ${prim1}`),
+      (prim2.pos, `is not compatible with specific type ${prim2}`),
+    ]
+  | STPrimMissingValue(elt, prim1, prim2) ->
+    List[
+      (prim1.pos, `Type ${prim1}`),
+      (prim2.pos, `is not compatible with type ${prim2}`),
+      (elt.pos, `Value '${elt.val}' is missing`),
+    ]
+}
+
 base class STErrorOnTTuple(tup1: TTuple, tup2: TTuple) extends STError<TTuple> {
   children =
   | STTooManyTTuple()
@@ -758,21 +784,8 @@ extension class STypes {
         (sty1, sty2) match {
         | (TPrimUnit _, TPrimUnit _) -> STOk()
 
-        | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> STOk()
-        | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) ->
-          STTooManySType(sty1)
-        | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> STOk()
-
-        | (TPrimValue(k, Some(lits1), _), TPrimValue(_, Some(lits2), _)) ->
-          for (elt in lits1.values()) {
-            if (!lits2.contains(elt.val)) {
-              break STTooManySType(
-                TPrimValue(k, Some(PrimLiterals::single(elt)), elt.pos),
-              )
-            }
-          } else {
-            STOk()
-          }
+        | (prim1 @ TPrimValue _, prim2 @ TPrimValue _) ->
+          TPrimValue::isSub(prim1, prim2)
 
         | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
           TTuple::isSub(subst, tenv, tuple1, tuple2)
@@ -929,6 +942,26 @@ extension class TPromise {
     TType::isSub(subst, tenv, promise1.inner, promise2.inner) match {
     | STOk() -> STOk()
     | err @ STError _ -> STRecPromise(err, promise1, promise2)
+    }
+  }
+}
+
+extension class TPrimValue {
+  static fun isSub(prim1: TPrimValue, prim2: TPrimValue): STResult<TPrimValue> {
+    invariant(
+      prim1.tag() == prim2.tag(),
+      "TPrimValue::isSub expects to be called with identical tags",
+    );
+    (prim1.literals, prim2.literals) match {
+    | (_, None()) -> STOk()
+    | (None(), Some _) -> STPrimValueFullSpecific(prim1, prim2)
+    | (Some(lits1), Some(lits2)) ->
+      for (elt in lits1.values()) {
+        if (!lits2.contains(elt.val)) {
+          return STPrimMissingValue(elt, prim1, prim2)
+        }
+      };
+      STOk()
     }
   }
 }
