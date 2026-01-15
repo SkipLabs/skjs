@@ -27,40 +27,15 @@ class ErrorDetailSpec(
     };
     fileMatches && lineMatches
   }
-
-  // Return specificity score (higher = more specific)
-  // Used to determine which spec wins when multiple match
-  fun specificity(): Int {
-    fileScore = if (this.filePattern.isSome()) 2 else 0;
-    lineScore = if (this.line.isSome()) 1 else 0;
-    fileScore + lineScore
-  }
 }
 
 // Configuration for error detail levels across the codebase
 class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
   // Get the appropriate STErrorDetail for a given file and line
   fun getDetail(fileName: String, lineNum: Int): STErrorDetail {
-    // Find all matching specs
-    matchingSpecs = this.specs.filter(spec -> spec.matches(fileName, lineNum));
-
-    // If no specs match, use default
-    if (matchingSpecs.isEmpty()) {
-      return STErrorDetail::default
-    };
-
-    // Return the most specific matching spec
-    bestSpec = matchingSpecs.reduce(
-      (best, current) -> {
-        if (current.specificity() > best.specificity()) {
-          current
-        } else {
-          best
-        }
-      },
-      matchingSpecs[0],
-    );
-    bestSpec.detail
+    this.specs.find(spec -> spec.matches(fileName, lineNum))
+      .map(spec -> spec.detail)
+      .default(STErrorDetail::default)
   }
 
   fun getDefault(): STErrorDetail {
