@@ -782,13 +782,13 @@ extension class STypes {
           | STOk() -> STOk()
           | err @ STError _ -> STRecPromise(err, p1, p2)
           }
+
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::isSub(subst, tenv, obj1, obj2)
-        | (TAlgebraic _, TObject _)
-        | (TObject _, TAlgebraic _) ->
-          STTooManySType(sty1)
+
         | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
           TAlgebraic::isSub(subst, tenv, a1, a2)
+
         | _ -> internal_error("Internal error")
         } match {
         | STOk() -> Success(void)
