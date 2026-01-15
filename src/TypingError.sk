@@ -14,6 +14,10 @@ class ErrorDetailSpec(
   line: ?Int, // None = applies to all lines, Some = specific line
   detail: STErrorDetail,
 ) {
+  fun isMatchAll(): Bool {
+    this.filePattern is None() && this.line is None()
+  }
+
   // Check if this spec matches the given file and line
   fun matches(fileName: String, lineNum: Int): Bool {
     fileMatches = this.filePattern match {
@@ -39,7 +43,9 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
   }
 
   fun getDefault(): STErrorDetail {
-    STErrorDetail::default
+    this.specs.find(spec -> spec.isMatchAll())
+      .map(spec -> spec.detail)
+      .default(STErrorDetail::default)
   }
 
   static fun default(): ErrorDetailConfig {
