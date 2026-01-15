@@ -8,11 +8,20 @@ module SKJS;
 /* Error Detail Configuration */
 /***************************************************************************/
 
+base class ErrorDetailBase {
+  const default: STErrorDetail = STErrorDetail(0, 0, false);
+  const normal: STErrorDetail = STErrorDetail(999, 0, false);
+  const verbose: STErrorDetail = STErrorDetail(999, 0, true);
+  const full: STErrorDetail = STErrorDetail(999, 999, true);
+}
+
+class ErrorDetailMinimal() extends ErrorDetailBase
+
 // A single error detail specification with optional file/line filter
 class ErrorDetailSpec(
   filePattern: ?String, // None = applies to all files, Some = specific file pattern
   line: ?Int, // None = applies to all lines, Some = specific line
-  detail: STErrorDetail,
+  detail: ErrorDetailBase,
 ) {
   fun isMatchAll(): Bool {
     this.filePattern is None() && this.line is None()
@@ -35,13 +44,13 @@ class ErrorDetailSpec(
 // Configuration for error detail levels across the codebase
 class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
   // Get the appropriate STErrorDetail for a given file and line
-  fun getDetail(fileName: String, lineNum: Int): STErrorDetail {
+  fun getDetail(fileName: String, lineNum: Int): ErrorDetailBase {
     this.specs.find(spec -> spec.matches(fileName, lineNum))
       .map(spec -> spec.detail)
       .default(STErrorDetail::default)
   }
 
-  fun getDefault(): STErrorDetail {
+  fun getDefault(): ErrorDetailBase {
     this.specs.find(spec -> spec.isMatchAll())
       .map(spec -> spec.detail)
       .default(STErrorDetail::default)
@@ -53,7 +62,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
 
   static fun minimal(): ErrorDetailConfig {
     ErrorDetailConfig(
-      Array[ErrorDetailSpec(None(), None(), STErrorDetail::minimal)],
+      Array[ErrorDetailSpec(None(), None(), ErrorDetailMinimal())],
     )
   }
 
@@ -156,10 +165,12 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
     }
   }
 
-  // Parse level name to STErrorDetail
-  private static fun parseLevel(level: String): Result<STErrorDetail, String> {
+  // Parse level name to ErrorDetailBase
+  private static fun parseLevel(
+    level: String,
+  ): Result<ErrorDetailBase, String> {
     level match {
-    | "minimal" | "0" -> Success(STErrorDetail::minimal)
+    | "minimal" | "0" -> Success(ErrorDetailMinimal())
     | "default" | "1" -> Success(STErrorDetail::default)
     | "normal" | "2" -> Success(STErrorDetail::normal)
     | "verbose" | "3" -> Success(STErrorDetail::verbose)
@@ -184,7 +195,7 @@ class TypingError(
     this.stErr match {
     | Some((e, pos1, pos2)) ->
       // Get the appropriate detail level based on error location
-      detail = if (this.messages.isEmpty()) {
+      detailSpec = if (this.messages.isEmpty()) {
         errorDetailConfig.getDefault()
       } else {
         firstPos = this.messages[0].i0;
@@ -198,7 +209,9 @@ class TypingError(
         relPos = resolver.relPosRange(firstPos);
         errorDetailConfig.getDetail(fileName, relPos.start.line)
       };
-      if (!detail.isMinimal()) {
+      detailSpec match {
+      | ErrorDetailMinimal() -> void
+      | detail @ STErrorDetail _ ->
         !messages = messages.concat(e.toError(pos1, pos2, detail).toArray())
       }
     | None() -> void
