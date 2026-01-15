@@ -190,32 +190,35 @@ class TypingError(
     symbolsMap: SymbolsMap,
     errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
   ): String {
-    result = mutable Vector[];
-    messages = this.messages;
-    this.stErr match {
-    | Some((e, pos1, pos2)) ->
-      // Get the appropriate detail level based on error location
-      detailSpec = if (this.messages.isEmpty()) {
-        errorDetailConfig.getDefault()
-      } else {
-        firstPos = this.messages[0].i0;
-        fileName = firstPos.fileName.toString();
-        resolver = static::resolver(
-          firstPos.fileName,
-          context,
-          newLinesMap,
-          symbolsMap,
-        );
-        relPos = resolver.relPosRange(firstPos);
-        errorDetailConfig.getDetail(fileName, relPos.start.line)
-      };
-      detailSpec match {
-      | ErrorDetailMinimal() -> void
-      | detail @ STErrorDetail _ ->
-        !messages = messages.concat(e.toError(pos1, pos2, detail).toArray())
-      }
-    | None() -> void
+    // Get the appropriate detail level based on error location
+    detailSpec = if (this.messages.isEmpty()) {
+      errorDetailConfig.getDefault()
+    } else {
+      firstPos = this.messages[0].i0;
+      fileName = firstPos.fileName.toString();
+      resolver = static::resolver(
+        firstPos.fileName,
+        context,
+        newLinesMap,
+        symbolsMap,
+      );
+      relPos = resolver.relPosRange(firstPos);
+      errorDetailConfig.getDetail(fileName, relPos.start.line)
     };
+
+    messages = this.messages;
+
+    detailSpec match {
+    | ErrorDetailMinimal() -> void
+    | detail @ STErrorDetail _ ->
+      this.stErr match {
+      | Some((e, pos1, pos2)) ->
+        !messages = messages.concat(e.toError(pos1, pos2, detail).toArray())
+      | None() -> void
+      }
+    };
+
+    result = mutable Vector[];
     for (message in messages) {
       pos = message.i0;
       fileName = pos.fileName;
