@@ -777,11 +777,8 @@ extension class STypes {
         | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
           TTuple::isSub(subst, tenv, tuple1, tuple2)
 
-        | (p1 @ TPromise(ty1, _), p2 @ TPromise(ty2, _)) ->
-          TType::isSub(subst, tenv, ty1, ty2) match {
-          | STOk() -> STOk()
-          | err @ STError _ -> STRecPromise(err, p1, p2)
-          }
+        | (p1 @ TPromise _, p2 @ TPromise _) ->
+          TPromise::isSub(subst, tenv, p1, p2)
 
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::isSub(subst, tenv, obj1, obj2)
@@ -919,6 +916,20 @@ extension class TTuple {
       }
     };
     STOk()
+  }
+}
+
+extension class TPromise {
+  static fun isSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    promise1: TPromise,
+    promise2: TPromise,
+  ): STResult<TPromise> {
+    TType::isSub(subst, tenv, promise1.inner, promise2.inner) match {
+    | STOk() -> STOk()
+    | err @ STError _ -> STRecPromise(err, promise1, promise2)
+    }
   }
 }
 
