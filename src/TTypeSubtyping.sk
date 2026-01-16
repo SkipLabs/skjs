@@ -488,8 +488,8 @@ base class STErrorOnTFields(
   fields2: TFields,
 ) extends STError<TFields> {
   children =
-  | STRecFieldsCall(?STError<TFuns>)
-  | STRecFieldsNew(?STError<TFuns>)
+  | STRecFieldsCall(?STErrorOnTFuns)
+  | STRecFieldsNew(?STErrorOnTFuns)
   | STRecFieldsIndexKey(STErrorOnTType, TIndexField, TIndexField)
   | STRecFieldsIndexValue(STErrorOnTType, TIndexField, TIndexField)
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TIndexField)
@@ -660,13 +660,13 @@ extension class TFields {
     TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
     | None() -> return STRecFieldsCall(None(), fields1, fields2)
     | Some(STOk()) -> void
-    | Some(err @ STError _) ->
+    | Some(err @ STErrorOnTFuns _) ->
       return STRecFieldsCall(Some(err), fields1, fields2)
     };
     TFields::isSubOptTFuns(subst, tenv, fields1.new, fields2.new) match {
     | None() -> return STRecFieldsNew(None(), fields1, fields2)
     | Some(STOk()) -> void
-    | Some(err @ STError _) ->
+    | Some(err @ STErrorOnTFuns _) ->
       return STRecFieldsNew(Some(err), fields1, fields2)
     };
     index1o = fields1.maybeSingleIndex();
