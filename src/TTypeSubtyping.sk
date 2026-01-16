@@ -575,7 +575,7 @@ base class STErrorOnTFields(
     | STRecFieldsFieldIndex(err, field1, index2, _fields1, _fields2) ->
       (
         List[
-          (field1.pos, `Field ${field1.name}`),
+          (field1.pos, `Field '${field1.name}'`),
           (index2.pos, `is not compatible with index field ${index2}`),
         ],
         err.toError(field1.pos, index2.pos, detailForRec),
@@ -584,13 +584,13 @@ base class STErrorOnTFields(
       (
         List[
           (index1.pos, `Index field ${index1}`),
-          (field2.pos, `is not compatible with field ${field2.name}`),
+          (field2.pos, `is not compatible with field '${field2.name}'`),
         ],
         err.toError(index1.pos, field2.pos, detailForRec),
       )
     | STRecFieldsField(err, field, _fields1, _fields2) ->
       (
-        List[(field.pos, `Their field ${field.name} are not compatible`)],
+        List[(field.pos, `Their field '${field.name}' are not compatible`)],
         err.toError(pos1, pos2, detailForRec),
       )
     };
