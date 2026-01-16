@@ -15,6 +15,7 @@ base class ErrorDetailBase {
   const full: STErrorDetail = STErrorDetail(999, 999, true);
 }
 
+class ErrorDetailHide() extends ErrorDetailBase
 class ErrorDetailMinimal() extends ErrorDetailBase
 
 // A single error detail specification with optional file/line filter
@@ -170,6 +171,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
     level: String,
   ): Result<ErrorDetailBase, String> {
     level match {
+    | "hide" -> Success(ErrorDetailHide())
     | "minimal" | "0" -> Success(ErrorDetailMinimal())
     | "default" | "1" -> Success(STErrorDetail::default)
     | "normal" | "2" -> Success(STErrorDetail::normal)
@@ -209,6 +211,7 @@ class TypingError(
     messages = this.messages;
 
     detailSpec match {
+    | ErrorDetailHide() -> return ""
     | ErrorDetailMinimal() -> void
     | detail @ STErrorDetail _ ->
       this.stErr match {

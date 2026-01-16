@@ -209,7 +209,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .repeatable()
     .about(
       "Control subtyping error detail level. Formats: <level>, <line>, <file>, <line>:<level>, <file>:<level>, <file>:<line>:<level>. " +
-        "Levels: minimal/0, default/1, normal/2, verbose/3, full/max. Can be specified multiple times.",
+        "Levels: hide, minimal/0, default/1, normal/2, verbose/3, full/max. Can be specified multiple times.",
     ),
 ];
 
@@ -374,8 +374,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | Some(dir) ->
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
     for (error in errors) {
-      print_error(SKStore.StringFile::type(error).value);
-      print_error("");
+      msg = SKStore.StringFile::type(error).value;
+      if (msg != "") {
+        print_error(msg);
+        print_error("")
+      }
     };
     if (errors.size() != 0) 2 else 0
   }
