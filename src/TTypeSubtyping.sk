@@ -516,6 +516,23 @@ base class STErrorOnTFields(
     pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)> {
+    showTypes =
+      !this.fields1.fields.isEmpty() ||
+      !this.fields1.indexes.isEmpty() ||
+      !this.fields2.fields.isEmpty() ||
+      !this.fields2.indexes.isEmpty() ||
+      (
+        this.fields1.new,
+        this.fields1.call,
+        this.fields2.new,
+        this.fields2.call,
+      ) match {
+      | (Some((false, _)), None(), Some((false, _)), None())
+      | (None(), Some((false, _)), None(), Some((false, _))) ->
+        false
+      | _ -> true
+      };
+    detailForRec = if (showTypes) detail.decreaseIntermediate() else detail;
     (recMsgs, msgs) = this match {
     | STRecFieldsCall(STMissing(), _fields1, _fields2) ->
       (List.Nil(), List[(pos1, "Missing call signature")])
@@ -526,12 +543,12 @@ base class STErrorOnTFields(
     | STRecFieldsCall(err, _fields1, _fields2) ->
       (
         List[(pos1, `They differ in their call signature`)],
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(pos1, pos2, detailForRec),
       )
     | STRecFieldsNew(err, _fields1, _fields2) ->
       (
         List[(pos1, `They differ in their constructor signature`)],
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(pos1, pos2, detailForRec),
       )
     | STRecFieldsIndexKey(err, index1, index2, _fields1, _fields2) ->
       (
@@ -542,7 +559,7 @@ base class STErrorOnTFields(
             `is not compatible with key type of index field ${index2}`,
           ),
         ],
-        err.toError(index1.pos, index2.pos, detail.decreaseIntermediate()),
+        err.toError(index1.pos, index2.pos, detailForRec),
       )
     | STRecFieldsIndexValue(err, index1, index2, _fields1, _fields2) ->
       (
@@ -553,7 +570,7 @@ base class STErrorOnTFields(
             `is not compatible with value type of index field ${index2}`,
           ),
         ],
-        err.toError(index1.pos, index2.pos, detail.decreaseIntermediate()),
+        err.toError(index1.pos, index2.pos, detailForRec),
       )
     | STRecFieldsFieldIndex(err, field1, index2, _fields1, _fields2) ->
       (
@@ -561,7 +578,7 @@ base class STErrorOnTFields(
           (field1.pos, `Field ${field1.name}`),
           (index2.pos, `is not compatible with index field ${index2}`),
         ],
-        err.toError(field1.pos, index2.pos, detail.decreaseIntermediate()),
+        err.toError(field1.pos, index2.pos, detailForRec),
       )
     | STRecFieldsIndexField(err, index1, field2, _fields1, _fields2) ->
       (
@@ -569,15 +586,18 @@ base class STErrorOnTFields(
           (index1.pos, `Index field ${index1}`),
           (field2.pos, `is not compatible with field ${field2.name}`),
         ],
-        err.toError(index1.pos, field2.pos, detail.decreaseIntermediate()),
+        err.toError(index1.pos, field2.pos, detailForRec),
       )
     | STRecFieldsField(err, field, _fields1, _fields2) ->
       (
         List[(field.pos, `Their field ${field.name} are not compatible`)],
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(pos1, pos2, detailForRec),
       )
     };
-    if (recMsgs is List.Nil() || detail.maxIntermediateDepth > 0) {
+    if (
+      recMsgs is List.Nil() ||
+      (showTypes && detail.maxIntermediateDepth > 0)
+    ) {
       if (detail.showIntermediateMessages) {
         !msgs = recMsgs.concat(msgs)
       };
