@@ -56,7 +56,7 @@ class AnonymousLambda(
           this.pos.fileName,
           this.pos.relStart.value,
           this.pos.relEnd.value,
-        ).xxhash(false).value,
+        ).xxhash(true).value,
         this.closure.xxhash(ignorePos).value,
       ),
     )
@@ -71,7 +71,7 @@ class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
           this.funDef.pos.fileName,
           this.funDef.pos.relStart.value,
           this.funDef.pos.relEnd.value,
-        ).xxhash(false).value,
+        ).xxhash(true).value,
         this.funDef.xxhash(ignorePos).value,
       ),
     )
