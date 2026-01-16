@@ -258,7 +258,7 @@ base class STErrorOnClauses(
     msgs = List::createFromItems(errs)
       .map(clause2_err -> {
         (clause2, err) = clause2_err;
-        if (!clause1.vars.isEmpty() || clause2.vars.isEmpty()) {
+        if (!clause1.vars.isEmpty() || !clause2.vars.isEmpty()) {
           msgs = err.toError(pos1, pos2, detail.decreaseIntermediate());
           if (detail.maxIntermediateDepth > 0) {
             List.Cons(
