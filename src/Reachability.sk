@@ -91,7 +91,8 @@ class CGNode private (
   }
 
   fun xxhash(ignorePos: Bool): XXHash {
-    if (ignorePos) this.precomputed_hash else this.id.xxhash(false)
+    assert(ignorePos);
+    this.precomputed_hash
   }
   fun hash(): Int {
     this.xxhash(true).value

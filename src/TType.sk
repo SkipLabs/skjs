@@ -72,7 +72,8 @@ class TType private {
   }
 
   fun xxhash(ignorePos: Bool): XXHash {
-    if (ignorePos) this.h else (this.insts, this.clauses).xxhash(false)
+    assert(ignorePos);
+    this.h
   }
 
   //
