@@ -14,7 +14,7 @@ mutable base class TCEnvBase private {
 
   mutable fun error(
     messages: Array<(PosRange, String)>,
-    stErr: ?(STErrorOnTType, PosRange, PosRange) = None(),
+    stErr: ?STErrorOnTType = None(),
   ): void {
     this.results.error(messages, stErr)
   }
@@ -101,7 +101,7 @@ mutable class TCResults private {
 
   mutable fun error(
     messages: Array<(PosRange, String)>,
-    stErr: ?(STErrorOnTType, PosRange, PosRange) = None(),
+    stErr: ?STErrorOnTType = None(),
   ): void {
     this.errorHandling match {
     | EHKeepGoing() -> this.errors.push(TypingError(messages, stErr))

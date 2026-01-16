@@ -128,7 +128,7 @@ class TEnv{
               (targ.pos, `This is of type: ${targ}`),
               (cstr.pos, `It does not implement: ${cstrTy}`),
             ],
-            Some((err, targ.pos, cstrTy.pos)),
+            Some(err),
           )
         };
         subst.restore(savedSubst)
