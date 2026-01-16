@@ -123,7 +123,7 @@ base class STErrorOnTPrimValue(
 base class STErrorOnTTuple(tup1: TTuple, tup2: TTuple) extends STError<TTuple> {
   children =
   | STTooManyTTuple()
-  | STRecTuple(STError<TType>, Int)
+  | STRecTuple(STErrorOnTType, Int)
 
   fun toError(
     _pos1: PosRange,
@@ -162,7 +162,7 @@ base class STErrorOnTPromise(
   p2: TPromise,
 ) extends STError<TPromise> {
   children =
-  | STRecPromise(STError<TType>)
+  | STRecPromise(STErrorOnTType)
 
   fun toError(
     _pos1: PosRange,
@@ -316,12 +316,12 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
   children =
   | STTypeParameterMismatch()
   | STInvalidSpread(ArrayType)
-  | STRecFunTParam(?STError<TType>, Int)
-  | STRecFunThisParam(?STError<TType>)
-  | STRecFunParam(?STError<TType>, Int)
-  | STRecFunOptionalSpread(STError<TType>, Int)
-  | STRecFunSpread(?STError<TType>)
-  | STRecFunReturn(STError<TType>)
+  | STRecFunTParam(?STErrorOnTType, Int)
+  | STRecFunThisParam(?STErrorOnTType)
+  | STRecFunParam(?STErrorOnTType, Int)
+  | STRecFunOptionalSpread(STErrorOnTType, Int)
+  | STRecFunSpread(?STErrorOnTType)
+  | STRecFunReturn(STErrorOnTType)
 
   fun toError(
     pos1: PosRange,
@@ -490,11 +490,11 @@ base class STErrorOnTFields(
   children =
   | STRecFieldsCall(?STError<TFuns>)
   | STRecFieldsNew(?STError<TFuns>)
-  | STRecFieldsIndexKey(STError<TType>, TIndexField, TIndexField)
-  | STRecFieldsIndexValue(STError<TType>, TIndexField, TIndexField)
-  | STRecFieldsFieldIndex(STError<TType>, TField, TIndexField)
-  | STRecFieldsIndexField(STError<TType>, TIndexField, TField)
-  | STRecFieldsField(?STError<TType>, TField)
+  | STRecFieldsIndexKey(STErrorOnTType, TIndexField, TIndexField)
+  | STRecFieldsIndexValue(STErrorOnTType, TIndexField, TIndexField)
+  | STRecFieldsFieldIndex(STErrorOnTType, TField, TIndexField)
+  | STRecFieldsIndexField(STErrorOnTType, TIndexField, TField)
+  | STRecFieldsField(?STErrorOnTType, TField)
 
   fun toError(
     pos1: PosRange,
@@ -675,12 +675,12 @@ extension class TFields {
     | (_, None()) -> void
     | (Some(index1), Some(index2)) ->
       TType::isSub(subst, tenv, index2.keyType, index1.keyType) match {
-      | err @ STError _ ->
+      | err @ STErrorOnTType _ ->
         return STRecFieldsIndexKey(err, index1, index2, fields1, fields2)
       | STOk() -> void
       };
       TType::isSub(subst, tenv, index1.valueType, index2.valueType) match {
-      | err @ STError _ ->
+      | err @ STErrorOnTType _ ->
         return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
       | STOk() -> void
       }
@@ -693,7 +693,7 @@ extension class TFields {
         | STError _ -> void
         | STOk() ->
           TType::isSub(subst, tenv, f1.type, index2.valueType) match {
-          | err @ STError _ ->
+          | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
           | STOk() -> void
           }
@@ -717,7 +717,7 @@ extension class TFields {
           | STError _ -> void
           | STOk() ->
             TType::isSub(subst, tenv, index1.valueType, f2.type) match {
-            | err @ STError _ ->
+            | err @ STErrorOnTType _ ->
               return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
             | STOk() -> void
             }
@@ -734,7 +734,7 @@ extension class TFields {
           };
           TType::isSub(subst, tenv, f1.type, f2type) match {
           | STOk() -> void
-          | err @ STError _ ->
+          | err @ STErrorOnTType _ ->
             return STRecFieldsField(Some(err), f1, fields1, fields2)
           }
         }
@@ -920,7 +920,7 @@ extension class TTuple {
     for (i in Range(0, tuple2.tuple.size())) {
       TType::isSub(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]) match {
       | STOk() -> void
-      | err @ STError _ -> return STRecTuple(err, i, tuple1, tuple2)
+      | err @ STErrorOnTType _ -> return STRecTuple(err, i, tuple1, tuple2)
       }
     };
     STOk()
@@ -936,7 +936,7 @@ extension class TPromise {
   ): STResult<TPromise> {
     TType::isSub(subst, tenv, promise1.inner, promise2.inner) match {
     | STOk() -> STOk()
-    | err @ STError _ -> STRecPromise(err, promise1, promise2)
+    | err @ STErrorOnTType _ -> STRecPromise(err, promise1, promise2)
     }
   }
 }
@@ -982,7 +982,7 @@ extension class TFun {
       | (Some(ty1), Some(ty2)) ->
         TType::isSub(subst, tenv, ty2, ty1) match {
         | STOk() -> void
-        | err @ STError _ -> return STRecFunTParam(Some(err), i, f1, f2)
+        | err @ STErrorOnTType _ -> return STRecFunTParam(Some(err), i, f1, f2)
         }
       };
       !tsubst[tparam2.id] = tparam1;
@@ -994,7 +994,7 @@ extension class TFun {
     | (Some(this1), Some(this2)) ->
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
-      | err @ STError _ -> return STRecFunThisParam(Some(err), f1, f2)
+      | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)
       }
     };
 
@@ -1025,7 +1025,7 @@ extension class TFun {
       };
       TType::isSub(subst, tenv, p2, p1) match {
       | STOk() -> void
-      | err @ STError _ -> return STRecFunParam(Some(err), i, f1, f2)
+      | err @ STErrorOnTType _ -> return STRecFunParam(Some(err), i, f1, f2)
       }
     };
 
@@ -1044,7 +1044,7 @@ extension class TFun {
       };
       TType::isSub(subst, tenv, p2, p1) match {
       | STOk() -> void
-      | err @ STError _ -> return STRecFunParam(Some(err), i, f1, f2)
+      | err @ STErrorOnTType _ -> return STRecFunParam(Some(err), i, f1, f2)
       }
     };
 
@@ -1075,7 +1075,7 @@ extension class TFun {
       )) {
         TType::isSub(subst, tenv, spread2elt, f1.optionalParams[io1]) match {
         | STOk() -> void
-        | err @ STError _ ->
+        | err @ STErrorOnTType _ ->
           return STRecFunOptionalSpread(err, io1 + f1.params.size(), f1, f2)
         }
       };
@@ -1084,13 +1084,13 @@ extension class TFun {
       | Some(s1) ->
         TType::isSub(subst, tenv, spread2elt, s1) match {
         | STOk() -> void
-        | err @ STError _ -> return STRecFunSpread(Some(err), f1, f2)
+        | err @ STErrorOnTType _ -> return STRecFunSpread(Some(err), f1, f2)
         }
       }
     };
     TType::isSub(subst, tenv, f1.retType, f2.retType) match {
     | STOk() -> STOk()
-    | err @ STError _ -> STRecFunReturn(err, f1, f2)
+    | err @ STErrorOnTType _ -> STRecFunReturn(err, f1, f2)
     }
   }
 }

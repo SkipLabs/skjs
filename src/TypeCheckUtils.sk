@@ -60,7 +60,7 @@ extension class TypeChecker {
   ): void {
     TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
-    | err @ STError _ ->
+    | err @ STErrorOnTType _ ->
       tcenv.error(Array[(pos, msg)], Some((err, ty1.pos, ty2.pos)))
     }
   }

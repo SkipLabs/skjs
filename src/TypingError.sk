@@ -184,7 +184,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
 
 class TypingError(
   messages: Array<(PosRange, String)>,
-  stErr: ?(STError<TType>, PosRange, PosRange),
+  stErr: ?(STErrorOnTType, PosRange, PosRange),
 ) extends Error {
   fun toString(
     context: mutable SKStore.Context,
@@ -235,7 +235,7 @@ class TypingError(
 
 fun typingError<T>(
   messages: Array<(PosRange, String)>,
-  stErr: ?(STError<TType>, PosRange, PosRange) = None(),
+  stErr: ?(STErrorOnTType, PosRange, PosRange) = None(),
 ): T {
   throw ErrorExn(TypingError(messages, stErr))
 }
