@@ -187,7 +187,7 @@ base class STErrorOnTPromise(
 
 base class STErrorOnObject(o1: TObject, o2: TObject) extends STError<TObject> {
   children =
-  | STRecObject(STError<TFields>)
+  | STRecObject(STErrorOnTFields)
 
   fun toError(
     _pos1: PosRange,
@@ -464,7 +464,7 @@ base class STErrorOnTAlgebraic(
 }
 base class STErrorOnTContr(c1: TConstr, c2: TConstr) extends STError<TConstr> {
   children =
-  | STRecConstr(STError<TFields>)
+  | STRecConstr(STErrorOnTFields)
 
   fun toError(
     pos1: PosRange,
@@ -631,7 +631,7 @@ extension class TConstr {
     };
     TFields::isSub(subst, tenv, x.fields, y.fields) match {
     | STOk() -> STOk()
-    | err @ STError _ -> STRecConstr(err, x, y)
+    | err @ STErrorOnTFields _ -> STRecConstr(err, x, y)
     }
   }
 }
@@ -1121,7 +1121,7 @@ extension class TObject {
   ): STResult<TObject> {
     TFields::isSub(subst, tenv, obj1.fields, obj2.fields) match {
     | STOk() -> STOk()
-    | err @ STError _ -> STRecObject(err, obj1, obj2)
+    | err @ STErrorOnTFields _ -> STRecObject(err, obj1, obj2)
     }
   }
 }
