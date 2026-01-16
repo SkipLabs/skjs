@@ -209,7 +209,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .repeatable()
     .about(
       "Control subtyping error detail level. Formats: <level>, <line>, <file>, <line>:<level>, <file>:<level>, <file>:<line>:<level>. " +
-        "Levels: hide, minimal/0, default/1, normal/2, verbose/3, full/max. Can be specified multiple times.",
+        "Levels: hide, minimal/0, default/1, normal/2, verbose/3, full/max. Multiple specs can be separated by ';'. Can be specified multiple times.",
     ),
 ];
 
@@ -282,13 +282,16 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   srcFiles: Sequence<String> = args.getArray("src-file");
 
   // Parse error detail specifications
-  errorDetailSpecs = args.getArray("error-detail").map(spec ->
-    ErrorDetailConfig::parseSpec(spec) match {
-    | Success(s) -> s
-    | Failure(err) ->
-      print_error(err);
-      throw Exit(2)
-    }
+  // Each argument can contain semicolon-separated specs
+  errorDetailSpecs = args.getArray("error-detail").flatMap(arg ->
+    arg.split(";").map(spec ->
+      ErrorDetailConfig::parseSpec(spec) match {
+      | Success(s) -> s
+      | Failure(err) ->
+        print_error(err);
+        throw Exit(2)
+      }
+    )
   );
   errorDetailConfig = ErrorDetailConfig(errorDetailSpecs);
 
