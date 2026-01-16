@@ -104,10 +104,10 @@ extension class TFields {
         }
       }
     };
-    for (f1of2o in fields1.fields.iterDiffInterDiff(fields2.fields)) {
-      f1of2o match {
-      | (_, None()) -> void
-      | (None(), Some(f2)) ->
+    for (ior in fields1.fields.iterDiffInterDiff(fields2.fields)) {
+      ior match {
+      | Left(_) -> void
+      | Right(f2) ->
         if (!f2.isOptional) {
           return STMissingField(f2.name)
         };
@@ -126,7 +126,7 @@ extension class TFields {
             }
           }
         }
-      | (Some(f1), Some(f2)) ->
+      | Both(f1, f2) ->
         if (f1.isOptional && !f2.isOptional) {
           return STMissingField(f1.name)
         } else {

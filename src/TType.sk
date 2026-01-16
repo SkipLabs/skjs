@@ -1344,24 +1344,21 @@ class Clauses private (
     noParamRightOpt = right.clauses.maybeGet(ArraySet::empty());
 
     // Use merge to handle the diff operation
-    diffClauses = left.clauses.merge(
-      right.clauses,
-      (clauseLeftOpt, clauseRightOpt) -> {
-        (clauseLeftOpt, clauseRightOpt, noParamRightOpt) match {
-        | (Some(clauseLeft), None(), None()) ->
-          Some(clauseLeft) // Keep clause from left
-        | (None(), _, _) ->
-          None() // Don't include clauses only in right
-        | (Some(clauseLeft), Some(clauseRight), None())
-        | (Some(clauseLeft), None(), Some(clauseRight)) ->
-          Clause::diff(clauseLeft, clauseRight)
-        | (Some(clauseLeft), Some(clauseRight), Some(noParamRight)) ->
-          Clause::diff(clauseLeft, clauseRight).flatMap(c ->
-            Clause::diff(c, noParamRight)
-          )
-        }
-      },
-    );
+    diffClauses = left.clauses.merge(right.clauses, ior -> {
+      (ior, noParamRightOpt) match {
+      | (Left(clauseLeft), None()) ->
+        Some(clauseLeft) // Keep clause from left
+      | (Right(_), _) ->
+        None() // Don't include clauses only in right
+      | (Left(clauseLeft), Some(clauseRight))
+      | (Both(clauseLeft, clauseRight), None()) ->
+        Clause::diff(clauseLeft, clauseRight)
+      | (Both(clauseLeft, clauseRight), Some(noParamRight)) ->
+        Clause::diff(clauseLeft, clauseRight).flatMap(c ->
+          Clause::diff(c, noParamRight)
+        )
+      }
+    });
 
     Clauses::create(diffClauses)
   }

@@ -140,20 +140,15 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     static::createFromSortedIterator(this.inner.values().filterMap(f1))
   }
 
-  // s.iterDiffInterDiff(t) contains (Some(x), None()) for every element in
-  // s but not t, (None(), Some(y)) for every y in t but not s, and
-  // (Some(x), Some(y)) for every pair of elements that are in both s and t.
-  fun iterDiffInterDiff(that: this): mutable Iterator<(?T, ?T)> {
+  // s.iterDiffInterDiff(t) contains Left(x) for every x in s but not t,
+  // Right(y) for every y in t but not s, and Both(x, y) for every pair of
+  // elements that are in both s and t.
+  fun iterDiffInterDiff(that: this): mutable Iterator<InclusiveOr<T, T>> {
     this.inner.values().zipSortedBy(that.inner.values())
   }
 
   fun iterDiff(that: this): mutable Iterator<T> {
-    this.iterDiffInterDiff(that).filterMap((xO_yO) ->
-      xO_yO match {
-      | (Some(x), None()) -> Some(x)
-      | _ -> None()
-      }
-    )
+    this.iterDiffInterDiff(that).filterMap(v -> v.maybeLeft())
   }
 
   fun diff(that: this): this {
@@ -164,19 +159,15 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // x in s, otherwise the first Failure encountered is returned
   // immediately. Note that any extra elements in t are ignored.
   fun leq<E>(that: this, leqT: (T, ?T) -> Result<void, E>): Result<void, E> {
-    this.iterDiffInterDiff(that).findMap((xO_yO) ->
-      xO_yO match {
-      | (Some(x), yO) ->
-        leqT(x, yO) match {
-        | Success(void) -> None()
-        | Failure(err) -> Some(err)
+    this.iterDiffInterDiff(that)
+      .findMap(ior ->
+        ior match {
+        | Left(x) -> leqT(x, None()).maybeFailure()
+        | Both(x, y) -> leqT(x, Some(y)).maybeFailure()
+        | Right(_) -> None()
         }
-      | (None(), _) -> None()
-      }
-    ) match {
-    | None() -> Success(void)
-    | Some(err) -> Failure(err)
-    }
+      )
+      .failureOr(void)
   }
 
   // s.geq(t, geqT) is Success if geqT(s.maybeGet(y), y) is Success for every
@@ -187,23 +178,16 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   // s.merge(t, f) is the set of elements v where Some(v) is returned by f
-  // from (Some(x), None) for every element in s but not t, (None, Some(y))
-  // for every y in t but not s, and (Some(x), Some(y)) for every pair of
-  // elements that are in both s and t. If f returns None, it indicates the
-  // unit of the merge operation and no corresponding element is included in
-  // the result.
+  // from Left(x) for every element in s but not t, Right(y) for every y in
+  // t but not s, and Both(x, y) for every pair of elements that are in both
+  // s and t. If f returns None, it indicates the unit of the merge
+  // operation and no corresponding element is included in the result.
   //
   // REQUIRES: f must preserve project:
-  // x.project() == f(Some(x),_).each(project) for any x and
-  // y.project() == f(_,Some(y)).each(project) for any y
-  fun merge(that: this, f: (?T, ?T) -> ?T): this {
-    static::createFromSortedIterator(
-      this.iterDiffInterDiff(that).filterMap((xO_yO) ->
-        xO_yO match {
-        | (xO, yO) -> f(xO, yO)
-        }
-      ),
-    )
+  // x.project() == f(Left(x)).each(project) for any x and
+  // y.project() == f(Right(y)).each(project) for any y
+  fun merge(that: this, f: InclusiveOr<T, T> -> ?T): this {
+    static::createFromSortedIterator(this.iterDiffInterDiff(that).filterMap(f))
   }
 
   // mergeOption is a generalization of merge where f may return None() to
@@ -212,99 +196,89 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // operation, and Some(Some(z)) indicating an element.
   //
   // REQUIRES: f must preserve project:
-  // x.project() == f(Some(x),_).each(project) for any x and
-  // y.project() == f(_,Some(y)).each(project) for any y
-  fun mergeOption(that: this, f: (?T, ?T) -> ??T): ?this {
+  // x.project() == f(Left(x)).each(project) for any x and
+  // y.project() == f(Right(y)).each(project) for any y
+  fun mergeOption(that: this, f: InclusiveOr<T, T> -> ??T): ?this {
     zero = false;
     result =
       this.iterDiffInterDiff(that)
-        .map((xO_yO) -> {
-          zOO = xO_yO match {
-          | (xO, yO) -> f(xO, yO)
-          };
-          if (zOO.isNone()) !zero = true;
+        .map(ior -> {
+          zOO = f(ior);
+          if (zOO is None()) !zero = true;
           zOO
         })
-        .takeWhile((zOO) -> zOO.isSome())
-        .map((zOO) -> zOO.fromSome())
+        .takeWhile(zOO -> zOO is Some(_))
+        .map(zOO -> zOO.fromSome())
         .filterNone() |> static::createFromSortedIterator;
     if (zero) None() else Some(result)
   }
 
   fun inter(that: this): this {
-    this.merge(that, (xO, yO) ~>
-      (xO, yO) match {
-      | (Some(x), Some(_)) -> Some(x)
+    this.merge(that, ior ~>
+      ior match {
+      | Both(x, _) -> Some(x)
       | _ -> None()
       }
     )
   }
 
   fun union(that: this): this {
-    this.merge(that, (xO, yO) ~>
-      xO match {
-      | None() -> yO
-      | _ -> xO
+    this.merge(that, ior ~>
+      ior match {
+      | Left(x)
+      | Right(x)
+      | Both(x, _) ->
+        Some(x)
       }
     )
   }
 
   fun mapInter(that: this, f: (T, T) -> T): this {
-    this.merge(that, (xO, yO) ->
-      (xO, yO) match {
-      | (Some(x), Some(y)) -> Some(f(x, y))
+    this.merge(that, ior ->
+      ior match {
+      | Both(x, y) -> Some(f(x, y))
       | _ -> None()
       }
     )
   }
 
   fun mapUnion(that: this, f: (T, T) -> T): this {
-    this.merge(that, (xO, yO) ->
-      (xO, yO) match {
-      | (Some(z), None())
-      | (None(), Some(z)) ->
-        Some(z)
-      | (Some(x), Some(y)) -> Some(f(x, y))
-      | (None(), None()) -> None()
+    this.merge(that, ior ->
+      ior match {
+      | Left(x)
+      | Right(x) ->
+        Some(x)
+      | Both(x, y) -> Some(f(x, y))
       }
     )
   }
 
   fun mapInterOption(that: this, f: (T, T) -> ?T): ?this {
-    this.mergeOption(that, (xO, yO) ->
-      (xO, yO) match {
-      | (Some(x), Some(y)) ->
-        f(x, y) match {
-        | None() -> None()
-        | sz -> Some(sz)
-        }
+    this.mergeOption(that, ior ->
+      ior match {
+      | Both(x, y) -> f(x, y).map(z -> Some(z))
       | _ -> Some(None())
       }
     )
   }
 
   fun mapUnionOption(that: this, f: (T, T) -> ?T): ?this {
-    this.mergeOption(that, (xO, yO) ->
-      (xO, yO) match {
-      | (Some(z), None())
-      | (None(), Some(z)) ->
+    this.mergeOption(that, ior ->
+      ior match {
+      | Left(z)
+      | Right(z) ->
         Some(Some(z))
-      | (Some(x), Some(y)) ->
-        f(x, y) match {
-        | Some(z) -> Some(Some(z))
-        | None() -> None()
-        }
-      | (None(), None()) -> Some(None())
+      | Both(x, y) -> f(x, y).map(z -> Some(z))
       }
     )
   }
 
   fun mapDiff(that: this, f: (T, T) -> ?T): this {
-    this.merge(that, (xO, yO) ->
-      (xO, yO) match {
-      | (Some(x), None()) -> Some(x)
-      | (None(), _) -> None()
-      | (Some(x), Some(y)) -> f(x, y)
+    this.merge(that, ior ->
+      ior match {
+      | Left(x) -> Some(x)
+      | Right(_) -> None()
+      | Both(x, y) -> f(x, y)
       }
     )
   }
