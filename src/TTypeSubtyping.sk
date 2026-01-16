@@ -407,7 +407,7 @@ base class STErrorOnTAlgebraic(
 ) extends STError<TAlgebraic> {
   children =
   | STTooManyTConstr(TConstr)
-  | STRecAlgebraicOnBranch(STError<TConstr>, TConstr)
+  | STRecAlgebraicOnBranch(STErrorOnTConstr, TConstr)
 
   fun toError(
     _pos1: PosRange,
@@ -462,7 +462,7 @@ base class STErrorOnTAlgebraic(
     }
   }
 }
-base class STErrorOnTContr(c1: TConstr, c2: TConstr) extends STError<TConstr> {
+base class STErrorOnTConstr(c1: TConstr, c2: TConstr) extends STError<TConstr> {
   children =
   | STRecConstr(STErrorOnTFields)
 
@@ -608,7 +608,8 @@ extension class TAlgebraic {
       | Some(b2) ->
         TConstr::isSub(subst, tenv, b1, b2) match {
         | STOk() -> Success(void)
-        | err @ STError _ -> Failure(STRecAlgebraicOnBranch(err, b1, a1, a2))
+        | err @ STErrorOnTConstr _ ->
+          Failure(STRecAlgebraicOnBranch(err, b1, a1, a2))
         }
       | None() -> Failure(STTooManyTConstr(b1, a1, a2))
       }
