@@ -509,7 +509,7 @@ base class STErrorOnTFields(
   | STRecFieldsIndexValue(STError<TType>, TIndexField, TIndexField)
   | STRecFieldsFieldIndex(STError<TType>, TField, TIndexField)
   | STRecFieldsIndexField(STError<TType>, TIndexField, TField)
-  | STRecFieldsField(STError<TType>, String)
+  | STRecFieldsField(STError<TType>, TField)
 
   fun toError(
     pos1: PosRange,
@@ -521,8 +521,8 @@ base class STErrorOnTFields(
       (List.Nil(), List[(pos1, "Missing call signature")])
     | STRecFieldsNew(STMissing(), _fields1, _fields2) ->
       (List.Nil(), List[(pos1, "Missing constructor signature")])
-    | STRecFieldsField(STMissing(), fieldName, _fields1, _fields2) ->
-      (List.Nil(), List[(pos1, `The field '${fieldName}' is missing`)])
+    | STRecFieldsField(STMissing(), field, _fields1, _fields2) ->
+      (List.Nil(), List[(field.pos, `The field '${field.name}' is missing`)])
     | STRecFieldsCall(err, _fields1, _fields2) ->
       (
         List[(pos1, `They differ in their call signature`)],
@@ -571,9 +571,9 @@ base class STErrorOnTFields(
         ],
         err.toError(index1.pos, field2.pos, detail.decreaseIntermediate()),
       )
-    | STRecFieldsField(err, fieldName, _fields1, _fields2) ->
+    | STRecFieldsField(err, field, _fields1, _fields2) ->
       (
-        List[(pos1, `Their field ${fieldName} are not compatible`)],
+        List[(field.pos, `Their field ${field.name} are not compatible`)],
         err.toError(pos1, pos2, detail.decreaseIntermediate()),
       )
     };
@@ -696,7 +696,7 @@ extension class TFields {
       | Left(_) -> void
       | Right(f2) ->
         if (!f2.isOptional) {
-          return STRecFieldsField(STMissing(), f2.name, fields1, fields2)
+          return STRecFieldsField(STMissing(), f2, fields1, fields2)
         };
         index1o match {
         | None() -> void
@@ -716,7 +716,7 @@ extension class TFields {
         }
       | Both(f1, f2) ->
         if (f1.isOptional && !f2.isOptional) {
-          return STRecFieldsField(STMissing(), f1.name, fields1, fields2)
+          return STRecFieldsField(STMissing(), f1, fields1, fields2)
         } else {
           f2type = if (f2.isOptional) {
             TType::unionUndefined(subst, tenv, f2.type, f2.pos)
@@ -726,7 +726,7 @@ extension class TFields {
           TType::isSub(subst, tenv, f1.type, f2type) match {
           | STOk() -> void
           | err @ STError _ ->
-            return STRecFieldsField(err, f1.name, fields1, fields2)
+            return STRecFieldsField(err, f1, fields1, fields2)
           }
         }
       }
