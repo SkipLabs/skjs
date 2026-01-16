@@ -232,7 +232,7 @@ base class STErrorOnClauses(
   clauses2: Clauses,
 ) extends STError<Clauses> {
   children =
-  | STRecClauses(List<(Clause, STError<STypes>)>, clause1: Clause)
+  | STRecClauses(List<(Clause, STErrorOnSTypes)>, clause1: Clause)
 
   fun toError(
     pos1: PosRange,
@@ -829,7 +829,7 @@ extension class Clauses {
         | (Some(x1), Some(x2)) ->
           STypes::isSub(subst, tenv, x1, x2) match {
           | STOk() -> break void
-          | err @ STError _ ->
+          | err @ STErrorOnSTypes _ ->
             !errors = List.Cons((inter2, err), errors);
             continue
           }
