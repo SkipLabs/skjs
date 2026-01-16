@@ -215,8 +215,8 @@ class TypingError(
     | ErrorDetailMinimal() -> void
     | detail @ STErrorDetail _ ->
       this.stErr match {
-      | Some((e, pos1, pos2)) ->
-        !messages = messages.concat(e.toError(pos1, pos2, detail).toArray())
+      | Some((e, _pos1, _pos2)) ->
+        !messages = messages.concat(e.toError(detail).toArray())
       | None() -> void
       }
     };

@@ -145,7 +145,7 @@ base class STErrorOnTTuple(
     ]
   | STRecTuple(err, i, tup1, tup2) ->
     pos1 = tup1.tuple[i].pos;
-    msgs = err.toError(pos1, tup2.tuple[i].pos, detail.decreaseIntermediate());
+    msgs = err.toError(detail.decreaseIntermediate());
     if (detail.maxIntermediateDepth > 0) {
       if (tup1.tuple.size() > 1 && detail.showIntermediateMessages) {
         !msgs = List.Cons((pos1, `They differ in element ${i}`), msgs)
@@ -175,11 +175,7 @@ base class STErrorOnTPromise(
     detail: STErrorDetail,
   ): List<(PosRange, String)>
   | STRecPromise(err, p1, p2) ->
-    msgs = err.toError(
-      p1.inner.pos,
-      p2.inner.pos,
-      detail.decreaseIntermediate(),
-    );
+    msgs = err.toError(detail.decreaseIntermediate());
     if (detail.maxIntermediateDepth > 0) {
       List.Cons(
         (p1.pos, `Promise type ${p1}`),
@@ -287,11 +283,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   children =
   | STRecType(STErrorOnClauses)
 
-  fun toError(
-    _pos1: PosRange,
-    _pos2: PosRange,
-    detail: STErrorDetail,
-  ): List<(PosRange, String)>
+  fun toError(detail: STErrorDetail): List<(PosRange, String)>
   | STRecType(err, ty1, ty2) ->
     if (!ty1.insts.isEmpty() || !ty2.insts.isEmpty()) {
       msgs = err.toError(ty1.pos, ty2.pos, detail.decreaseRecType());
@@ -357,17 +349,17 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
       iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
       (
         Some((pos1, `Their type parameters${iStr} are not compatible`)),
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(detail.decreaseIntermediate()),
       )
     | STRecFunThisParam(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their this parameters are not compatible")),
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(detail.decreaseIntermediate()),
       )
     | STRecFunParam(Some(err), i, _f1, _f2) ->
       (
         Some((pos1, `Their parameters ${i + 1} are not compatible`)),
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(detail.decreaseIntermediate()),
       )
     | STRecFunOptionalSpread(err, i, _f1, _f2) ->
       (
@@ -377,17 +369,17 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
             `The parameter ${i + 1} is not compatible with the rest parameter`,
           ),
         ),
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(detail.decreaseIntermediate()),
       )
     | STRecFunSpread(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their rest parameters are not compatible")),
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(detail.decreaseIntermediate()),
       )
     | STRecFunReturn(err, _f1, _f2) ->
       (
         Some((pos1, "Their return types are not compatible")),
-        err.toError(pos1, pos2, detail.decreaseIntermediate()),
+        err.toError(detail.decreaseIntermediate()),
       )
     };
     recMsg match {
@@ -552,7 +544,7 @@ base class STErrorOnTFields(
             `is not compatible with key type of index field ${index2}`,
           ),
         ],
-        err.toError(index1.pos, index2.pos, detailForRec),
+        err.toError(detailForRec),
       )
     | STRecFieldsIndexValue(err, index1, index2, _fields1, _fields2) ->
       (
@@ -563,7 +555,7 @@ base class STErrorOnTFields(
             `is not compatible with value type of index field ${index2}`,
           ),
         ],
-        err.toError(index1.pos, index2.pos, detailForRec),
+        err.toError(detailForRec),
       )
     | STRecFieldsFieldIndex(err, field1, index2, _fields1, _fields2) ->
       (
@@ -571,7 +563,7 @@ base class STErrorOnTFields(
           (field1.pos, `Field '${field1.name}'`),
           (index2.pos, `is not compatible with index field ${index2}`),
         ],
-        err.toError(field1.pos, index2.pos, detailForRec),
+        err.toError(detailForRec),
       )
     | STRecFieldsIndexField(err, index1, field2, _fields1, _fields2) ->
       (
@@ -579,12 +571,12 @@ base class STErrorOnTFields(
           (index1.pos, `Index field ${index1}`),
           (field2.pos, `is not compatible with field '${field2.name}'`),
         ],
-        err.toError(index1.pos, field2.pos, detailForRec),
+        err.toError(detailForRec),
       )
     | STRecFieldsField(Some(err), field, _fields1, _fields2) ->
       (
         List[(field.pos, `Their field '${field.name}' are not compatible`)],
-        err.toError(pos1, pos2, detailForRec),
+        err.toError(detailForRec),
       )
     };
     if (
