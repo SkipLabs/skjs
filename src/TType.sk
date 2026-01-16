@@ -71,8 +71,8 @@ class TType private {
     this.h.compare(other.h)
   }
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
-    if (ignorePos) this.h else (this.insts, this.clauses).xxhash()
+  fun xxhash(ignorePos: Bool): XXHash {
+    if (ignorePos) this.h else (this.insts, this.clauses).xxhash(false)
   }
 
   //
@@ -1144,7 +1144,7 @@ class TVar private (
     !this.constraints = this.constraints.map(f);
     this
   }
-  fun xxhash(ignorePos: Bool = false): XXHash {
+  fun xxhash(ignorePos: Bool): XXHash {
     XXHash(
       this.constraints.iterator().foldl(
         (seed, t) -> {

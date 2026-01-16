@@ -48,7 +48,7 @@ class AnonymousLambda(
   pos: PosRange,
   closure: Closure,
 ) extends CGNode_ uses XXHashable {
-  fun xxhash(ignorePos: Bool = false): XXHash {
+  fun xxhash(ignorePos: Bool): XXHash {
     //always hash the pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
@@ -56,14 +56,14 @@ class AnonymousLambda(
           this.pos.fileName,
           this.pos.relStart.value,
           this.pos.relEnd.value,
-        ).xxhash().value,
+        ).xxhash(false).value,
         this.closure.xxhash(ignorePos).value,
       ),
     )
   }
 }
 class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
-  fun xxhash(ignorePos: Bool = false): XXHash {
+  fun xxhash(ignorePos: Bool): XXHash {
     //always hash the pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
@@ -71,7 +71,7 @@ class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
           this.funDef.pos.fileName,
           this.funDef.pos.relStart.value,
           this.funDef.pos.relEnd.value,
-        ).xxhash().value,
+        ).xxhash(false).value,
         this.funDef.xxhash(ignorePos).value,
       ),
     )
@@ -90,7 +90,7 @@ class CGNode private (
     static::create(Toplevel(fileName))
   }
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
+  fun xxhash(ignorePos: Bool): XXHash {
     if (ignorePos) this.precomputed_hash else this.id.xxhash(false)
   }
   fun hash(): Int {
@@ -130,7 +130,7 @@ class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
     this.nodes.inner.compare(other.nodes.inner)
   }
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
+  fun xxhash(ignorePos: Bool): XXHash {
     XXHash(
       this.nodes.iterator().foldl(
         (seed, node) -> XXHash64.xxHash64(seed, node.xxhash(ignorePos).value),
