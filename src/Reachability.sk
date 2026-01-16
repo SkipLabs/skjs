@@ -48,22 +48,22 @@ class AnonymousLambda(
   pos: PosRange,
   closure: Closure,
 ) extends CGNode_ uses XXHashable {
-  fun xxhash(ignorePos: Bool): XXHash {
-    //always hash the pos to be more conservative
+  fun xxhash(): XXHash {
+    // hash the fields of pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
         (
           this.pos.fileName,
           this.pos.relStart.value,
           this.pos.relEnd.value,
-        ).xxhash(true).value,
-        this.closure.xxhash(ignorePos).value,
+        ).xxhash().value,
+        this.closure.xxhash().value,
       ),
     )
   }
 }
 class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
-  fun xxhash(ignorePos: Bool): XXHash {
+  fun xxhash(): XXHash {
     //always hash the pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
@@ -71,8 +71,8 @@ class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
           this.funDef.pos.fileName,
           this.funDef.pos.relStart.value,
           this.funDef.pos.relEnd.value,
-        ).xxhash(true).value,
-        this.funDef.xxhash(ignorePos).value,
+        ).xxhash().value,
+        this.funDef.xxhash().value,
       ),
     )
   }
@@ -83,19 +83,18 @@ class CGNode private (
   precomputed_hash: XXHash,
 ) extends SKStore.Key, SKStore.File uses Hashable, XXHashable {
   static fun create(id: CGNode_): this {
-    static(id, id.xxhash(true))
+    static(id, id.xxhash())
   }
 
   static fun toplevel(fileName: FAbsolute): this {
     static::create(Toplevel(fileName))
   }
 
-  fun xxhash(ignorePos: Bool): XXHash {
-    assert(ignorePos);
+  fun xxhash(): XXHash {
     this.precomputed_hash
   }
   fun hash(): Int {
-    this.xxhash(true).value
+    this.xxhash().value
   }
   fun toString(): String {
     `CGNode[${this.id}]`
@@ -131,10 +130,10 @@ class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
     this.nodes.inner.compare(other.nodes.inner)
   }
 
-  fun xxhash(ignorePos: Bool): XXHash {
+  fun xxhash(): XXHash {
     XXHash(
       this.nodes.iterator().foldl(
-        (seed, node) -> XXHash64.xxHash64(seed, node.xxhash(ignorePos).value),
+        (seed, node) -> XXHash64.xxHash64(seed, node.xxhash().value),
         -1,
       ),
     )

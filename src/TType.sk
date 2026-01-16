@@ -71,8 +71,7 @@ class TType private {
     this.h.compare(other.h)
   }
 
-  fun xxhash(ignorePos: Bool): XXHash {
-    assert(ignorePos);
+  fun xxhash(): XXHash {
     this.h
   }
 
@@ -88,7 +87,7 @@ class TType private {
     if (clauses.isTop()) {
       !insts = TInsts::empty();
     };
-    h = (insts, clauses).xxhash(true);
+    h = (insts, clauses).xxhash();
     TType{h, pos, insts, clauses};
   }
 
@@ -1145,13 +1144,13 @@ class TVar private (
     !this.constraints = this.constraints.map(f);
     this
   }
-  fun xxhash(ignorePos: Bool): XXHash {
+  fun xxhash(): XXHash {
     XXHash(
       this.constraints.iterator().foldl(
         (seed, t) -> {
-          XXHash64.xxHash64(seed, t.xxhash(ignorePos).value)
+          XXHash64.xxHash64(seed, t.xxhash().value)
         },
-        XXHash64.xxHash64(this.id, this.pos.xxhash(ignorePos).value),
+        XXHash64.xxHash64(this.id, this.pos.xxhash().value),
       ),
     )
   }
