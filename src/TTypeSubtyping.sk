@@ -48,12 +48,6 @@ class STOk<+T>() extends STResult<T>
 
 /* All other cases: T1 ⋢ T2 */
 base class STError<+T> extends STResult<T> uses Equality {
-  fun toError(
-    _pos1: PosRange,
-    _pos2: PosRange,
-    _detail: STErrorDetail,
-  ): List<(PosRange, String)>;
-
   overridable macro fun ==<U>(other: STError<U>): Bool {
     other match {
     | otherTyped @ #ThisClass _ ->
@@ -74,7 +68,13 @@ base class STError<+T> extends STResult<T> uses Equality {
   }
 }
 
-base class STErrorOnSTypeBase<+T: SType> extends STError<T>
+base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    _detail: STErrorDetail,
+  ): List<(PosRange, String)>;
+}
 
 base class STErrorOnSType extends STErrorOnSTypeBase<SType> {
   children =
