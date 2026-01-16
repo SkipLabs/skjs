@@ -49,9 +49,9 @@ class AnonymousLambda(
   closure: Closure,
 ) extends CGNode_ uses XXHashable {
   fun xxhash(): XXHash {
-    // hash the fields of pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
+        // hash the *fields* of pos, not pos itself, to be more conservative
         (
           this.pos.fileName,
           this.pos.relStart.value,
@@ -64,9 +64,9 @@ class AnonymousLambda(
 }
 class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
   fun xxhash(): XXHash {
-    //always hash the pos to be more conservative
     XXHash(
       XXHash64.xxHash64(
+        // hash the *fields* of pos, not pos itself, to be more conservative
         (
           this.funDef.pos.fileName,
           this.funDef.pos.relStart.value,
