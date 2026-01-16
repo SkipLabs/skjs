@@ -298,6 +298,16 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       }
     )
   }
+
+  fun mapDiff(that: this, f: (T, T) -> ?T): this {
+    this.merge(that, (xO, yO) ->
+      (xO, yO) match {
+      | (Some(x), None()) -> Some(x)
+      | (None(), _) -> None()
+      | (Some(x), Some(y)) -> f(x, y)
+      }
+    )
+  }
 }
 
 module end;
