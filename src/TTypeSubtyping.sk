@@ -74,7 +74,9 @@ base class STError<+T> extends STResult<T> uses Equality {
   }
 }
 
-base class STErrorOnSType extends STError<SType> {
+base class STErrorOnSTypeBase<+T: SType> extends STError<T>
+
+base class STErrorOnSType extends STErrorOnSTypeBase<SType> {
   children =
   | STTooManySType(sType1: SType, sTypes2: STypes)
 
@@ -97,7 +99,7 @@ base class STErrorOnSType extends STError<SType> {
 base class STErrorOnTPrimValue(
   prim1: TPrimValue,
   prim2: TPrimValue,
-) extends STError<TPrimValue> {
+) extends STErrorOnSTypeBase<TPrimValue> {
   children =
   | STPrimValueFullSpecific()
   | STPrimMissingValue(elt: PrimLiteral)
@@ -120,7 +122,10 @@ base class STErrorOnTPrimValue(
     ]
 }
 
-base class STErrorOnTTuple(tup1: TTuple, tup2: TTuple) extends STError<TTuple> {
+base class STErrorOnTTuple(
+  tup1: TTuple,
+  tup2: TTuple,
+) extends STErrorOnSTypeBase<TTuple> {
   children =
   | STTooManyTTuple()
   | STRecTuple(STErrorOnTType, Int)
@@ -160,7 +165,7 @@ base class STErrorOnTTuple(tup1: TTuple, tup2: TTuple) extends STError<TTuple> {
 base class STErrorOnTPromise(
   p1: TPromise,
   p2: TPromise,
-) extends STError<TPromise> {
+) extends STErrorOnSTypeBase<TPromise> {
   children =
   | STRecPromise(STErrorOnTType)
 
@@ -185,7 +190,10 @@ base class STErrorOnTPromise(
     }
 }
 
-base class STErrorOnObject(o1: TObject, o2: TObject) extends STError<TObject> {
+base class STErrorOnObject(
+  o1: TObject,
+  o2: TObject,
+) extends STErrorOnSTypeBase<TObject> {
   children =
   | STRecObject(STErrorOnTFields)
 
@@ -202,7 +210,7 @@ base class STErrorOnSTypes(
   sTypes2: STypes,
 ) extends STError<STypes> {
   children =
-  | STRecSTypes(STError<SType>)
+  | STRecSTypes(STErrorOnSTypeBase<SType>)
 
   fun toError(
     pos1: PosRange,
@@ -404,7 +412,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
 base class STErrorOnTAlgebraic(
   a1: TAlgebraic,
   a2: TAlgebraic,
-) extends STError<TAlgebraic> {
+) extends STErrorOnSTypeBase<TAlgebraic> {
   children =
   | STTooManyTConstr(TConstr)
   | STRecAlgebraicOnBranch(STErrorOnTConstr, TConstr)
@@ -798,7 +806,7 @@ extension class STypes {
         | _ -> internal_error("Internal error")
         } match {
         | STOk() -> Success(void)
-        | err @ STError _ -> Failure(err)
+        | err @ STErrorOnSTypeBase _ -> Failure(err)
         }
       | None() -> Failure(STTooManySType(sty1, stypes2))
       }
