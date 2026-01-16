@@ -302,7 +302,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
 
 base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
   children =
-  | STRecTFuns(STError<TFun>)
+  | STRecTFuns(STErrorOnTFun)
 
   fun toError(
     pos1: PosRange,
@@ -646,7 +646,7 @@ extension class TFuns {
   ): STResult<TFuns> {
     TFun::isSub(subst, tenv, funs1.fun_, funs2.fun_) match {
     | STOk() -> STOk()
-    | err @ STError _ -> STRecTFuns(err, funs1, funs2)
+    | err @ STErrorOnTFun _ -> STRecTFuns(err, funs1, funs2)
     }
   }
 }
