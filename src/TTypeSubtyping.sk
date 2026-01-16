@@ -277,7 +277,7 @@ base class STErrorOnClauses(
 
 base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   children =
-  | STRecType(STError<Clauses>)
+  | STRecType(STErrorOnClauses)
 
   fun toError(
     _pos1: PosRange,
@@ -901,7 +901,7 @@ extension class TType {
     clauses2 = u2.expand_(subst, tenv, Contravariant());
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
-    | err @ STError _ ->
+    | err @ STErrorOnClauses _ ->
       subst.restore(savedSubst);
       STRecType(err, u1, u2)
     }
