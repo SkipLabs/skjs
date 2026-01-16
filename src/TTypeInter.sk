@@ -273,11 +273,11 @@ extension class TPrimValue {
         "Intersection must be called on primitive value types of same kind",
       )
     };
-    (t1.values, t2.values) match {
+    (t1.literals, t2.literals) match {
     | (_, None()) -> Some(t1)
     | (None(), Some _) -> Some(t2)
-    | (Some(s1), Some(s2)) ->
-      s1.inter(s2).map(values -> TPrimValue(t1.kind, Some(values), t1.pos))
+    | (Some(lits1), Some(lits2)) ->
+      lits1.inter(lits2).map(lits -> TPrimValue(t1.kind, Some(lits), t1.pos))
     }
   }
 }

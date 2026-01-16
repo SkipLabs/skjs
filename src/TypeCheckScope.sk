@@ -6,6 +6,12 @@ module SKJS;
 
 value class LocalRef(type: TType, isInitialized: Bool)
 
+class NameRef(name: String, ref: LocalRef) uses Projectable<String> {
+  fun project(): String {
+    this.name
+  }
+}
+
 mutable class Scope{
   id: Int,
   private isLoop: Bool,
@@ -108,8 +114,10 @@ mutable class Scope{
     this.!refs[name.value] = LocalRef(ty, true);
   }
 
-  readonly fun escapingRefs(): mutable Iterator<(String, LocalRef)> {
-    this.refs.items().filter(x -> !this.locals.containsKey(x.i0))
+  readonly fun escapingRefs(): mutable Iterator<NameRef> {
+    this.refs.items()
+      .filter(x -> !this.locals.containsKey(x.i0))
+      .map(x -> NameRef(x.i0, x.i1))
   }
 
   mutable fun merge(
@@ -124,32 +132,23 @@ mutable class Scope{
     if (scope2.up.fromSome().id != this.id) {
       internal_error("scope2 up id mismatch")
     };
-    _ = mapUnion(
-      scope1.escapingRefs(),
-      scope2.escapingRefs(),
-      x ~> x.i0,
-      (nameRef) -> {
-        (name, ref) = nameRef;
-        (_, upRef) = this.maybeGetRef(name).fromSome();
-        this.!refs[name] = LocalRef(
-          TType::union(subst, tenv, upRef.type, ref.type),
+    scope1.escapingRefs().zipSortedBy(scope2.escapingRefs()).each(pair -> {
+      pair match {
+      | (Some(nameRef), None())
+      | (None(), Some(nameRef)) ->
+        (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
+        this.!refs[nameRef.name] = LocalRef(
+          TType::union(subst, tenv, upRef.type, nameRef.ref.type),
           upRef.isInitialized,
-        );
-        nameRef
-      },
-      (nameRef1, nameRef2) -> {
-        (name1, ref1) = nameRef1;
-        (name2, ref2) = nameRef2;
-        if (name1 != name2) {
-          internal_error("name refs must have same name")
-        };
-        this.!refs[name1] = LocalRef(
-          TType::union(subst, tenv, ref1.type, ref2.type),
-          ref1.isInitialized && ref2.isInitialized,
-        );
-        nameRef1
-      },
-    );
+        )
+      | (Some(nameRef1), Some(nameRef2)) ->
+        this.!refs[nameRef1.name] = LocalRef(
+          TType::union(subst, tenv, nameRef1.ref.type, nameRef2.ref.type),
+          nameRef1.ref.isInitialized && nameRef2.ref.isInitialized,
+        )
+      | (None(), None()) -> assert(false)
+      }
+    })
   }
 
   mutable fun popMerge(
@@ -161,10 +160,9 @@ mutable class Scope{
       internal_error("scope up id mismatch")
     };
     for (nameRef in scope.escapingRefs()) {
-      (name, ref) = nameRef;
-      (_, upRef) = this.maybeGetRef(name).fromSome();
-      this.!refs[name] = LocalRef(
-        TType::union(subst, tenv, upRef.type, ref.type),
+      (_, upRef) = this.maybeGetRef(nameRef.name).fromSome();
+      this.!refs[nameRef.name] = LocalRef(
+        TType::union(subst, tenv, upRef.type, nameRef.ref.type),
         upRef.isInitialized,
       )
     }
@@ -175,8 +173,7 @@ mutable class Scope{
       internal_error("scope up id mismatch")
     };
     for (nameRef in scope.escapingRefs()) {
-      (name, ref) = nameRef;
-      this.!refs[name] = ref;
+      this.!refs[nameRef.name] = nameRef.ref;
     }
   }
 }

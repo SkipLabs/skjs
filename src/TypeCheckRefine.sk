@@ -187,13 +187,13 @@ extension class TypeChecker {
       )
 
     | In(e1, Expr(_, Var(local))) ->
-      (_t1, fieldsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
+      (_t1, litsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
       default = if (target) {
-        fieldsOpt.flatMap(fieldsToCheck ->
-          fieldsToCheck.singleElt().flatMap(singleField ->
+        litsOpt.flatMap(litsToCheck ->
+          litsToCheck.singleElt().flatMap(singleField ->
             TField::create(
               e1.pos,
-              singleField.i1,
+              singleField.val,
               false,
               TType::top(e.pos),
             ).map(field ->
@@ -227,16 +227,16 @@ extension class TypeChecker {
         | TPromise _ ->
           stype /* TODO */
         | TObject(tFields @ TFields{indexes}, tObjPos) ->
-          fieldsOpt
-            .flatMap(fieldsToCheck ->
-              fieldsToCheck
+          litsOpt
+            .flatMap(litsToCheck ->
+              litsToCheck
                 .singleElt()
                 .flatMap(singleField ->
                   if (target) {
                     if (!indexes.isEmpty()) None() else {
                       TField::create(
                         e1.pos,
-                        singleField.i1,
+                        singleField.val,
                         false,
                         TType::top(e.pos),
                       ).flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
@@ -244,7 +244,7 @@ extension class TypeChecker {
                   } else {
                     Some(
                       tFields.filterMap(tField ->
-                        if (tField.name == singleField.i1) None() else {
+                        if (tField.name == singleField.val) None() else {
                           Some(tField)
                         }
                       ),

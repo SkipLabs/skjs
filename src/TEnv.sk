@@ -1086,20 +1086,20 @@ class TEnv{
       Range(0, maxRange).map(i -> i.toString()),
     );
     !strings = strings.union(numbers);
-    ArrayValues::ofSet(strings, pos) match {
+    PrimLiterals::ofSet(strings, pos) match {
     | None() -> void
-    | strValues @ Some _ ->
-      literals = ArrayValues::ofSet(numbers, pos) match {
-      | None() -> TType::single(TPrimValue(TString(), strValues, pos))
-      | nbrValues @ Some _ ->
+    | strLits @ Some _ ->
+      litsType = PrimLiterals::ofSet(numbers, pos) match {
+      | None() -> TType::single(TPrimValue(TString(), strLits, pos))
+      | nbrLits @ Some _ ->
         TType::union(
           subst,
           this,
-          TType::single(TPrimValue(TString(), strValues, pos)),
-          TType::single(TPrimValue(TNum(), nbrValues, pos)),
+          TType::single(TPrimValue(TString(), strLits, pos)),
+          TType::single(TPrimValue(TNum(), nbrLits, pos)),
         )
       };
-      !result = TType::union(subst, this, result, literals)
+      !result = TType::union(subst, this, result, litsType)
     };
     result
   }

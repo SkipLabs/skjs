@@ -100,7 +100,7 @@ mutable class TypePp{
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
     | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
     | TPrimValue(_, Some(arr), _) ->
-      this.out(level, margin, arr.values.map(x -> "'" + x.i1 + "'").join(" | "))
+      this.out(level, margin, arr.toStringList(true))
 
     | TAlgebraic(branches, _) ->
       this.branch(

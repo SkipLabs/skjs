@@ -224,13 +224,15 @@ extension class TPrimValue {
         "Union must be called on primitive value types of same kind",
       )
     };
-    (t1.values, t2.values) match {
+    (t1.literals, t2.literals) match {
     | (None(), _) -> t1
     | (Some _, None()) -> t2
-    | (Some(s1), Some(s2)) ->
-      u = s1.union(s2);
-      v = if (t1.kind == TBool() && u.size() >= 2) None() else Some(u);
-      TPrimValue(t1.kind, v, t1.pos)
+    | (Some(lits1), Some(lits2)) ->
+      litsUnion = lits1.union(lits2);
+      lits = if (t1.kind == TBool() && litsUnion.size() >= 2) None() else {
+        Some(litsUnion)
+      };
+      TPrimValue(t1.kind, lits, t1.pos)
     }
   }
 }
