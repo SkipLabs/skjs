@@ -300,6 +300,25 @@ extension class TypeChecker {
         };
         !result = TType::union(tcenv.subst, this.tenv, result, tyAtN)
 
+      | TArray(eltType, _) ->
+        idxSType match {
+        | TPrimValue(TNum(), _, _) ->
+          // Numeric index: array access may return undefined for out-of-bounds
+          eltOrUndef = TType::union(
+            tcenv.subst,
+            this.tenv,
+            eltType,
+            TType::single(TPrimUnit(TUndefined(), pos)),
+          );
+          !result = TType::union(tcenv.subst, this.tenv, result, eltOrUndef)
+        | TPrimValue(TString(), _, _) ->
+          // String index: property access like arr["length"]
+          // Convert to Array object to access methods/properties
+          obj = this.tenv.newObject(tcenv, Name(pos, "Array"), Array[]);
+          stypes.push(obj)
+        | _ -> void
+        }
+
       | TObject(fields, objectPos) if (fields.isEmpty()) ->
         !result = TType::top(objectPos)
 

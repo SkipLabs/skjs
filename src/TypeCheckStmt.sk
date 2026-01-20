@@ -297,6 +297,7 @@ extension class TypeChecker {
         stypes.all(stype ->
           stype match {
           | TObject _
+          | TArray _
           | TTuple _ ->
             true
           | _ -> false
@@ -328,6 +329,8 @@ extension class TypeChecker {
 
     for (stype in stypes) {
       stype match {
+      | TArray(eltType, _) ->
+        !result = TType::union(tcenv.subst, this.tenv, result, eltType)
       | TObject(fields, _objectPos) ->
         if (fields.indexes.isEmpty()) {
           tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
