@@ -903,8 +903,8 @@ extension class TType {
       | _ -> void
       }
     };
-    clauses1 = u1.expand_(subst, tenv, Covariant());
-    clauses2 = u2.expand_(subst, tenv, Contravariant());
+    clauses1 = u1.expandToClauses(subst, tenv, Covariant());
+    clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->

@@ -279,7 +279,7 @@ class TType private {
   // so the return value over-approximates the type
   // Returns None() if the type eventually expands to Top
   fun getSTypes(subst: mutable Subst, tenv: TEnv, variance: Variance): ?STypes {
-    this.expand_(subst, tenv, variance).getSTypes(subst, tenv)
+    this.expandToClauses(subst, tenv, variance).getSTypes(subst, tenv)
   }
 
   fun expandedClausesIterator(
@@ -318,7 +318,15 @@ class TType private {
   }
 
   fun expand(subst: mutable Subst, tenv: TEnv, variance: Variance): TType {
-    TType::fromClauses(this.pos, this.expand_(subst, tenv, variance))
+    TType::fromClauses(this.pos, this.expandToClauses(subst, tenv, variance))
+  }
+
+  fun expandToClauses(
+    subst: mutable Subst,
+    tenv: TEnv,
+    variance: Variance,
+  ): Clauses {
+    this.expand_(subst, tenv, variance)
   }
 
   fun getConstantString(): ?PrimLiteral {
