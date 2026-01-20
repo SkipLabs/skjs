@@ -705,8 +705,17 @@ class TEnv{
       };
       TType::single(TObject(TFields::empty(), pos))
 
-    | TAArray(ty) ->
-      TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(tcenvb, ty)]))
+    | TAArray(ty) -> TType::single(TArray(this.normalize(tcenvb, ty), pos))
+    | TAInst(Name(p, "Array"), targs) ->
+      if (targs.size() != 1) {
+        tcenvb.error(Array[(p, "Invalid number of type arguments")])
+      };
+      tArg = if (targs.size() >= 1) {
+        this.normalize(tcenvb, targs[0])
+      } else {
+        TType::top(pos)
+      };
+      TType::single(TArray(tArg, pos))
 
     | TAInst(Name(p, "void"), targs) ->
       if (targs.size() != 0) {

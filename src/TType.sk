@@ -526,7 +526,7 @@ class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
   }
 
   fun full(): TType {
-    TType::inst(Name(this.pos, "Array"), TArgs(Array[this.eltType]))
+    TType::single(TArray(this.eltType, this.pos))
   }
 }
 
@@ -563,6 +563,7 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
+    | Some(TArray(inner, _pos)) -> Some(inner)
     | Some(object @ TObject _) ->
       ATFullType::getArrayObjectEltType(object, subst, tenv)
     | _ -> None()

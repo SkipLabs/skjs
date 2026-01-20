@@ -300,7 +300,7 @@ extension class TypeChecker {
         };
         !result = TType::union(tcenv.subst, this.tenv, result, tyAtN)
 
-      | TArray(eltType, _) ->
+      | arr @ TArray(eltType, _) ->
         idxSType match {
         | TPrimValue(TNum(), _, _) ->
           // Numeric index: array access may return undefined for out-of-bounds
@@ -314,9 +314,12 @@ extension class TypeChecker {
         | TPrimValue(TString(), _, _) ->
           // String index: property access like arr["length"]
           // Convert to Array object to access methods/properties
-          obj = this.tenv.newObject(tcenv, Name(pos, "Array"), Array[]);
+          obj = this.tenv.newObject(tcenv, arr.asClassName(), Array[eltType]);
           stypes.push(obj)
-        | _ -> void
+        | _ ->
+          internal_error(
+            `idxSType is ${idxSType} but was already checked to be TNum or TString`,
+          )
         }
 
       | TObject(fields, objectPos) if (fields.isEmpty()) ->

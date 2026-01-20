@@ -171,14 +171,10 @@ extension class TypeChecker {
       Expr(_, Var(local)),
       Expr(_, Var(Name(posArray, "Array"))),
     ) if (target) ->
-      tcenv.scope.set(
-        local,
-        TType::inst(
-          Name(posArray, "Array"),
-          TArgs(Array[TType::top(posArray)]),
-        ),
-        (_, _) -> void,
-      )
+      tvar = tcenv.subst.gen(posArray);
+      default = Some(TArray(TType::var(tvar), posArray));
+      filter = x ~> x is TArray _;
+      this.setLocal(tcenv, local, default, filter)
 
     | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
       tcenv.scope.set(
