@@ -100,7 +100,7 @@ class ArrayLitTyping() {
     tenv: TEnv,
     ty: TType,
   ): TType {
-    ty.mapSTypes(subst, tenv, Covariant(), stypesOpt ->
+    ty.mapSTypes(subst, tenv, Some(Covariant()), stypesOpt ->
       stypesOpt.map(stypes ->
         stypes.map(stype ->
           stype match {

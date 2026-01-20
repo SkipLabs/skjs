@@ -179,15 +179,15 @@ class TType private {
     TType::create(this.pos, insts(this.insts), clauses(this.clauses))
   }
 
-  // t.mapSTypes(subst, env, variance, f) is t expanded with each Clause's
-  // stypes updated by f
+  // t.mapSTypes(subst, env, expandTVars, f) is t expanded with each
+  // Clause's stypes updated by f
   fun mapSTypes(
     subst: mutable Subst,
     tenv: TEnv,
-    variance: Variance,
+    expandTVars: ?Variance,
     f: (?STypes) -> ?STypes,
   ): TType {
-    expanded = this.expand(subst, tenv, Some(variance));
+    expanded = this.expand(subst, tenv, expandTVars);
     TType::create(this.pos, expanded.insts, expanded.clauses.mapSTypes(f))
   }
 

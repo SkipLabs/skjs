@@ -456,7 +456,7 @@ extension class TypeChecker {
     tyWithoutNullish = ty.mapSTypes(
       tcenv.subst,
       this.tenv,
-      Covariant(),
+      Some(Covariant()),
       stypesOpt ->
         stypesOpt match {
         | None() ->
@@ -832,25 +832,30 @@ extension class TypeChecker {
         bool
       | nuop @ NumericUnaryOperator() ->
         invalid = false;
-        res = ty.mapSTypes(tcenv.subst, this.tenv, Covariant(), stypesOpt ->
-          stypesOpt match {
-          | None() ->
-            !invalid = true;
-            stypesOpt
-          | Some(stypes) ->
-            Some(
-              stypes.map(stype ->
-                stype match {
-                | TPrimValue(k @ TNum(), _, primPos)
-                | TPrimValue(k @ TBigInt(), _, primPos) ->
-                  TPrimValue(k, None(), primPos)
-                | _ ->
-                  !invalid = true;
-                  stype
-                }
-              ),
-            )
-          }
+        res = ty.mapSTypes(
+          tcenv.subst,
+          this.tenv,
+          Some(Covariant()),
+          stypesOpt ->
+            stypesOpt match {
+            | None() ->
+              !invalid = true;
+              stypesOpt
+            | Some(stypes) ->
+              Some(
+                stypes.map(stype ->
+                  stype match {
+                  | TPrimValue(k @ TNum(), _, primPos)
+                  | TPrimValue(k @ TBigInt(), _, primPos) ->
+                    TPrimValue(k, None(), primPos)
+                  | _ ->
+                    !invalid = true;
+                    stype
+                  }
+                ),
+              )
+            }
+          ,
         );
         if (invalid) {
           typingError(
