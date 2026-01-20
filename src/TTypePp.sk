@@ -109,20 +109,24 @@ mutable class TypePp{
         (pp, level, margin) ~> {
           for (i => branch in branches) {
             if (i != 0) pp.out(level, margin, " | ");
-            pp.object(level, margin, branch.fields)
+            pp.constr(level, margin, branch)
           }
         },
         (pp, level, _prevMargin, margin) ~> {
           pp.newLine();
           for (branch in branches) {
             pp.out(level, margin, "| ");
-            pp.object(level, margin, branch.fields);
+            pp.constr(level, margin, branch);
             pp.newLine()
           }
         },
       )
     | TTuple(arr, _) -> this.tuple(level, margin, arr)
     }
+  }
+
+  mutable fun constr(level: Int, margin: Margin, constr: TConstr): void {
+    this.object(level, margin, constr.fields, Some(constr.tag))
   }
 
   mutable fun tfun(level: Int, margin: Margin, arg: (Bool, TFun)): void {
@@ -256,16 +260,22 @@ mutable class TypePp{
     )
   }
 
-  mutable fun object(level: Int, margin: Margin, fields: TFields): void {
+  mutable fun object(
+    level: Int,
+    margin: Margin,
+    fields: TFields,
+    tagOpt: ?String = None(),
+  ): void {
     (
       fields.fields.isEmpty(),
       fields.indexes.isEmpty(),
       fields.call,
       fields.new,
+      tagOpt,
     ) match {
-    | (true, true, Some((false, TFuns(tfun, _pos))), None()) ->
+    | (true, true, Some((false, TFuns(tfun, _pos))), None(), None()) ->
       this.tfun(level, margin, (false, tfun))
-    | (true, true, None(), Some((false, TFuns(tfun, _pos)))) ->
+    | (true, true, None(), Some((false, TFuns(tfun, _pos))), None()) ->
       this.out(level, margin, "new ");
       this.tfun(level, margin, (false, tfun))
     | _ ->
@@ -275,11 +285,18 @@ mutable class TypePp{
         margin,
         (pp, level, margin) ~> {
           pp.out(level, margin, " ");
+          tagOpt.each(tag ->
+            pp.out(level, margin, `${kAlgebraicBranchFieldName}: "${tag}", `)
+          );
           pp.fields(level, margin, fields, false);
           pp.out(level, margin, " }");
         },
         (pp, level, prevMargin, margin) -> {
           pp.newLine();
+          tagOpt.each(tag -> {
+            pp.out(level, margin, `${kAlgebraicBranchFieldName}: "${tag}",`);
+            pp.newLine()
+          });
           pp.fields(level, margin, fields, true);
           pp.newLine();
           pp.out(level, prevMargin, "}");
@@ -319,12 +336,7 @@ mutable class TypePp{
       }
     };
     for (i => index in indexes) {
-      this.out(level, margin, "[ ");
-      this.out(level, margin, TypePp::escapeName(index.keyName));
-      this.out(level, margin, ": ");
-      this.type(level, margin, index.keyType);
-      this.out(level, margin, " ]: ");
-      this.type(level, margin, index.valueType);
+      this.indexField(level, margin, index);
       if (
         i != indexes.size() - 1 ||
         fields.call.isSome() ||
@@ -357,6 +369,15 @@ mutable class TypePp{
     }
   }
 
+  mutable fun indexField(level: Int, margin: Margin, index: TIndexField): void {
+    this.out(level, margin, "[ ");
+    this.out(level, margin, TypePp::escapeName(index.keyName));
+    this.out(level, margin, ": ");
+    this.type(level, margin, index.keyType);
+    this.out(level, margin, " ]: ");
+    this.type(level, margin, index.valueType);
+  }
+
   static fun escapeName(name: String): String {
     chars = mutable Vector[];
     for (c in name) {
@@ -379,18 +400,37 @@ mutable class TypePp{
       void
     | Some(c) ->
       if (!clause.vars.isEmpty()) this.out(level, margin, " extends ");
-      for (k => sty in c) {
-        if (k != 0) {
+      this.sTypes(level, margin, c)
+    }
+  }
+
+  mutable fun sTypes(level: Int, margin: Margin, sTypes: STypes): void {
+    for (k => sty in sTypes) {
+      if (k != 0) {
+        this.out(level, margin, " | ");
+      };
+      this.stype(level, margin, sty);
+    }
+  }
+
+  mutable fun clauses(level: Int, margin: Margin, clauses: Clauses): void {
+    if (clauses.isTop()) {
+      this.out(level, margin, "unknown")
+    } else if (clauses.isEmpty()) {
+      this.out(level, margin, "never")
+    } else {
+      for (i => clause in clauses.clauses) {
+        if (i != 0) {
           this.out(level, margin, " | ");
         };
-        this.stype(level, margin, sty);
-      }
+        this.clause(level, margin, clause);
+      };
     }
   }
 
   mutable fun type(level: Int, margin: Margin, ty: TType): void {
     !margin.depth = margin.depth + 1;
-    if (margin.depth >= 3) {
+    if (margin.depth >= 2) {
       this.out(level, margin, "...");
       return void;
     };
@@ -403,12 +443,7 @@ mutable class TypePp{
       return void;
     };
     if (!ty.clauses.clauses.isEmpty()) {
-      for (i => clause in ty.clauses.clauses) {
-        if (i != 0) {
-          this.out(level, margin, " | ");
-        };
-        this.clause(level, margin, clause);
-      };
+      this.clauses(level, margin, ty.clauses)
     };
     this.branch(
       level,
@@ -514,6 +549,10 @@ fun prettyPrintSType(stype: SType, compact: Bool = false): String {
   prettyPrintType(compact, TType::single(stype))
 }
 
+fun prettyPrintSTypes(sTypes: STypes, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.sTypes(0, Margin(), sTypes))
+}
+
 fun prettyPrintClause(clause: Clause, compact: Bool = false): String {
   if (clause.isTop()) {
     prettyPrint(compact, pp -> pp.out(0, Margin(), "unknown"))
@@ -522,6 +561,26 @@ fun prettyPrintClause(clause: Clause, compact: Bool = false): String {
       pp.clause(0, Margin(), clause);
     })
   }
+}
+
+fun prettyPrintClauses(clauses: Clauses, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.clauses(0, Margin(), clauses))
+}
+
+fun prettyPrintTFun(tFun: TFun, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.tfun(0, Margin(), (false, tFun)))
+}
+
+fun prettyPrintConstr(constr: TConstr, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.constr(0, Margin(), constr))
+}
+
+fun prettyPrintFields(fields: TFields, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.object(0, Margin(), fields))
+}
+
+fun prettyPrintIndexField(index: TIndexField, compact: Bool = false): String {
+  prettyPrint(compact, pp -> pp.indexField(0, Margin(), index))
 }
 
 module end;

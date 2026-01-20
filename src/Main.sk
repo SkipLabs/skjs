@@ -204,6 +204,13 @@ const checkArgs: Array<Cli.Arg> = Array[
     .short("k")
     .default(false)
     .about("Do not stop at the first lexing/parsing error"),
+  Cli.Arg::string("error-detail")
+    .long("error-detail")
+    .repeatable()
+    .about(
+      "Control subtyping error detail level. Formats: <level>, <line>, <file>, <line>:<level>, <file>:<level>, <file>:<line>:<level>. " +
+        "Levels: hide, minimal/0, default/1, normal/2, verbose/3, full/max. Multiple specs can be separated by ';'. Can be specified multiple times.",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -274,6 +281,20 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   };
   srcFiles: Sequence<String> = args.getArray("src-file");
 
+  // Parse error detail specifications
+  // Each argument can contain semicolon-separated specs
+  errorDetailSpecs = args.getArray("error-detail").flatMap(arg ->
+    arg.split(";").map(spec ->
+      ErrorDetailConfig::parseSpec(spec) match {
+      | Success(s) -> s
+      | Failure(err) ->
+        print_error(err);
+        throw Exit(2)
+      }
+    )
+  );
+  errorDetailConfig = ErrorDetailConfig(errorDetailSpecs);
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
 
   context = SKStore.runWithGcReturnContext(
@@ -300,7 +321,12 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{context, files, errorHandling};
+          checker = Checker::create{
+            context,
+            files,
+            errorHandling,
+            errorDetailConfig,
+          };
           checked = checker.checkFiles(context);
           _ = checked.map(
             SKStore.UnitID::keyType,
@@ -351,8 +377,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | Some(dir) ->
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
     for (error in errors) {
-      print_error(SKStore.StringFile::type(error).value);
-      print_error("");
+      msg = SKStore.StringFile::type(error).value;
+      if (msg != "") {
+        print_error(msg);
+        print_error("")
+      }
     };
     if (errors.size() != 0) 2 else 0
   }
@@ -372,11 +401,13 @@ class Checker private {
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
   symbolsMap: SymbolsMap,
+  errorDetailConfig: ErrorDetailConfig,
 } {
   static fun create{
     context: mutable SKStore.Context,
     files: Files,
     errorHandling: ErrorHandling,
+    errorDetailConfig: ErrorDetailConfig,
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     index = FileNameIndex::create(context, files.filesContent);
@@ -397,7 +428,14 @@ class Checker private {
     );
     tenv = TEnv{defMap};
     checker = TypeChecker{defMap, tenv, errorHandling};
-    static{files, parsedFiles, checker, newLinesMap, symbolsMap}
+    static{
+      files,
+      parsedFiles,
+      checker,
+      newLinesMap,
+      symbolsMap,
+      errorDetailConfig,
+    }
   }
 
   fun checkFiles(
@@ -435,7 +473,12 @@ class Checker private {
   }
 
   fun errorToString(context: mutable SKStore.Context, err: Error): String {
-    err.toString(context, this.newLinesMap, this.symbolsMap)
+    err.toString(
+      context,
+      this.newLinesMap,
+      this.symbolsMap,
+      this.errorDetailConfig,
+    )
   }
 }
 

@@ -39,7 +39,7 @@ class ExpectError{expectedErrors: SortedSet<String>} extends ReferenceError {
         .map(error -> {
           msg = error match {
           | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
-          | SKJS.TypingError(messages) -> messages[0].i1
+          | SKJS.TypingError(messages, _stErr) -> messages[0].i1
           };
           msg.trimForComparison()
         })

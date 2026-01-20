@@ -60,27 +60,7 @@ extension class TypeChecker {
   ): void {
     TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
     | STOk() -> void
-    | STRec(reason, pos1, subTy2) ->
-      tcenv.error(
-        Array[
-          (pos, msg),
-          (
-            pos1,
-            reason.toString(
-              tcenv.subst,
-              this.tenv,
-              expandTVars(tcenv.subst, this.tenv, ty1),
-            ),
-          ),
-          (
-            subTy2.pos,
-            "It is incompatible with: " +
-              expandTVars(tcenv.subst, this.tenv, subTy2).toString(),
-          ),
-        ],
-      )
-    | err @ STError _ ->
-      tcenv.error(Array[(pos, err.toString(tcenv.subst, this.tenv, ty1))])
+    | err @ STErrorOnTType _ -> tcenv.error(Array[(pos, msg)], Some(err))
     }
   }
 

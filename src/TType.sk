@@ -396,6 +396,10 @@ class TConstr(
   fun project(): String {
     this.tag
   }
+
+  fun toString(): String {
+    prettyPrintConstr(this)
+  }
 }
 
 fun createObject(
@@ -464,7 +468,11 @@ class TFun(
   spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   retType: TType,
   cgNodes: CGNodes,
-) uses XXHashable, Orderable
+) uses XXHashable, Orderable {
+  fun toString(): String {
+    prettyPrintTFun(this)
+  }
+}
 
 /***************************************************************************/
 /* ArrayType for the spread parameter of functions */
@@ -639,7 +647,7 @@ base class SType private (
   pos: PosRange,
 ) uses XXHashable, Orderable, Projectable<STypeTag> {
   children =
-  | TPromise(TType)
+  | TPromise(inner: TType)
 
   fun tag(): STypeTag {
     this match {
@@ -743,6 +751,10 @@ class TIndexField(
     keyType = f(this.keyType);
     valueType = f(this.valueType);
     this with {keyType, valueType}
+  }
+
+  fun toString(): String {
+    prettyPrintIndexField(this)
   }
 }
 
@@ -894,6 +906,10 @@ class TFields{
       }
     }
   }
+
+  fun toString(): String {
+    prettyPrintFields(this)
+  }
 }
 
 class STypes private (
@@ -959,6 +975,10 @@ class STypes private (
     | Some(TPrimValue(_, Some(lits), _)) -> lits.singleElt().map(lit -> lit.val)
     | _ -> None()
     }
+  }
+
+  fun toString(): String {
+    prettyPrintSTypes(this)
   }
 
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
@@ -1201,6 +1221,10 @@ class Clause private (
     this.vars
   }
 
+  fun toString(): String {
+    prettyPrintClause(this)
+  }
+
   /*
     t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
     i.e. such that t3 <= 1 and t3 | t2 >= t1
@@ -1370,75 +1394,10 @@ class Clauses private (
   fun values(): mutable Iterator<Clause> {
     this.clauses.values()
   }
-}
 
-/***************************************************************************/
-/* Sub-typing */
-/***************************************************************************/
-
-/* Result for a check of subtyping of types T1 and T2 */
-base class STResult
-
-/* T1 ⊑ T2 */
-class STOk() extends STResult
-
-/* All other cases: T1 ⋢ T2 */
-base class STError extends STResult {
-  children =
-  | STNoConstraint()
-  | STMissingField(String)
-  | STMissingThis()
-  | STMissingParameter()
-  | STMissingSpread()
-  | STTooManySType(SType)
-  | STTooManyTConstr(TConstr)
-  | STTooManyTTuple(TTuple)
-  | STTypeParameterMismatch()
-  | STInvalidClause(Clause)
-  | STInvalidSpread(ArrayType)
-  | STRec(STError, PosRange, TType)
-
-  fun toString(subst: mutable Subst, tenv: TEnv, ty: TType): String {
-    this match {
-    | STNoConstraint() -> "This type parameter does not define a constraint"
-    | STMissingThis() -> "Missing this parameter"
-    | STMissingParameter() -> "Missing parameter"
-    | STMissingSpread() -> "Missing ... parameter"
-    | STMissingCall() -> "Missing call signature"
-    | STMissingConstructor() -> "Missing constructor"
-    | STMissingField(fieldName) ->
-      `The field '${fieldName}' is missing\n` +
-        `Out of the type: ${expandTVars(subst, tenv, ty)}`
-    | STTooManySType(sty) ->
-      sty match {
-      | TPrimUnit(kind, _) -> `This is a ${kind}`
-      | TPrimValue(TString(), None(), _) ->
-        "This is of type string. " +
-          "Use 'as const' to create a string literal type, for example: \"foo\" as const or 'foo' as const."
-      | TPrimValue(kind, None(), _) -> `This is of type ${kind}`
-      | TPrimValue(kind, Some(x), _) ->
-        `This is a static ${kind}: ` + x.toStringList(true)
-
-      | TPromise _ -> "This is a Promise"
-      | TAlgebraic _ ->
-        "This is a constructor (the field kind is a static string)"
-      | TObject _ -> "This is an object"
-      | TTuple(tuple, _) -> "This is a tuple of size " + tuple.size()
-      }
-    | STTooManyTConstr(_) -> "This is a constructor"
-    | STTooManyTTuple(tuple) -> "This is a tuple of size " + tuple.tuple.size()
-    | STTypeParameterMismatch() -> "Type parameter mismatch"
-    | STInvalidClause(clause) -> "This is of type " + prettyPrintClause(clause)
-    | STInvalidSpread(spread) -> `Invalid spread type: ${spread}`
-    | STRec(st, _, ty2) -> st.toString(subst, tenv, ty2)
-    }
+  fun toString(): String {
+    prettyPrintClauses(this)
   }
-}
-
-base class STErrorNoArg final () extends STError {
-  children =
-  | STMissingCall
-  | STMissingConstructor
 }
 
 module end;

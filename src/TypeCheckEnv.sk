@@ -12,8 +12,11 @@ mutable base class TCEnvBase private {
     this.results.recordClassHierarchy{child, parent}
   }
 
-  mutable fun error(messages: Array<(PosRange, String)>): void {
-    this.results.error(messages)
+  mutable fun error(
+    messages: Array<(PosRange, String)>,
+    stErr: ?STErrorOnTType = None(),
+  ): void {
+    this.results.error(messages, stErr)
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
@@ -96,12 +99,15 @@ mutable class TCResults private {
     mutable TCResults{errorHandling}
   }
 
-  mutable fun error(messages: Array<(PosRange, String)>): void {
+  mutable fun error(
+    messages: Array<(PosRange, String)>,
+    stErr: ?STErrorOnTType = None(),
+  ): void {
     this.errorHandling match {
-    | EHKeepGoing() -> this.errors.push(TypingError(messages))
+    | EHKeepGoing() -> this.errors.push(TypingError(messages, stErr))
     | EHBacktrace()
     | EHDefault() ->
-      typingError(messages)
+      typingError(messages, stErr)
     }
   }
 

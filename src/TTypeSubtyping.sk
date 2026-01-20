@@ -4,21 +4,614 @@
 
 module SKJS;
 
+/* Controls the level of detail in subtyping error messages */
+class STErrorDetail(
+  // Maximum depth for STRecType intermediate steps (type wrapper contexts)
+  maxRecTypeDepth: Int,
+  // Maximum depth for other intermediate steps
+  maxIntermediateDepth: Int,
+  // Whether to show intermediate detail messages (e.g., "They differ in element 2")
+  showIntermediateMessages: Bool,
+) extends ErrorDetailBase {
+  // Create a new detail with decreased intermediate depth
+  fun decreaseIntermediate(): STErrorDetail {
+    STErrorDetail(
+      this.maxRecTypeDepth,
+      this.maxIntermediateDepth - 1,
+      this.showIntermediateMessages,
+    )
+  }
+
+  // Create a new detail with decreased RecType depth
+  fun decreaseRecType(): STErrorDetail {
+    STErrorDetail(
+      this.maxRecTypeDepth - 1,
+      this.maxIntermediateDepth,
+      this.showIntermediateMessages,
+    )
+  }
+
+  // Ensure intermediate depth is at least 1 when RecType depth is positive
+  fun ensureIntermediateDepth(): STErrorDetail {
+    if (this.maxRecTypeDepth >= 1 && this.maxIntermediateDepth < 1) {
+      !this.maxIntermediateDepth = 1
+    };
+    this
+  }
+}
+
+/* Result for a check of subtyping of types T1 and T2 */
+base class STResult<+T>
+
+/* T1 ⊑ T2 */
+class STOk<+T>() extends STResult<T>
+
+/* All other cases: T1 ⋢ T2 */
+base class STError<+T> extends STResult<T> uses Equality {
+  overridable macro fun ==<U>(other: STError<U>): Bool {
+    other match {
+    | otherTyped @ #ThisClass _ ->
+      _ = otherTyped;
+      #forEachField (#field) {
+        if (!isEqual(this.#field, otherTyped.#field)) {
+          return false;
+        }
+      };
+      true
+
+    | _ -> false
+    }
+  }
+
+  overridable fun !=<U>(other: STError<U>): Bool {
+    !(this == other)
+  }
+}
+
+base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    _detail: STErrorDetail,
+  ): List<(PosRange, String)>;
+}
+
+base class STErrorOnSType extends STErrorOnSTypeBase<SType> {
+  children =
+  | STTooManySType(sType1: SType, sTypes2: STypes)
+
+  fun toError(
+    _pos1: PosRange,
+    pos2: PosRange,
+    _detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STTooManySType(sType1, sTypes2) ->
+    sTypes2.singleElt() match {
+    | Some(sType2) -> !pos2 = sType2.pos
+    | None() -> void
+    };
+    List[
+      (sType1.pos, `Type ${sType1}`),
+      (pos2, `is not compatible with type ${sTypes2}`),
+    ]
+}
+
+base class STErrorOnTPrimValue(
+  prim1: TPrimValue,
+  prim2: TPrimValue,
+) extends STErrorOnSTypeBase<TPrimValue> {
+  children =
+  | STPrimValueFullSpecific()
+  | STPrimMissingValue(elt: PrimLiteral)
+
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    _detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STPrimValueFullSpecific(prim1, prim2) ->
+    List[
+      (prim1.pos, `Full type ${prim1}`),
+      (prim2.pos, `is not compatible with specific type ${prim2}`),
+    ]
+  | STPrimMissingValue(elt, prim1, prim2) ->
+    List[
+      (prim1.pos, `Type ${prim1}`),
+      (prim2.pos, `is not compatible with type ${prim2}`),
+      (elt.pos, `Value '${elt.val}' is missing`),
+    ]
+}
+
+base class STErrorOnTTuple(
+  tup1: TTuple,
+  tup2: TTuple,
+) extends STErrorOnSTypeBase<TTuple> {
+  children =
+  | STTooManyTTuple()
+  | STRecTuple(STErrorOnTType, Int)
+
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STTooManyTTuple(tup1, tup2) ->
+    List[
+      (tup1.pos, `Tuple type of size ${tup1.tuple.size()} ${tup1}`),
+      (
+        tup2.pos,
+        `is not compatible with tuple type of size ${tup2.tuple.size()} ${tup2}`,
+      ),
+    ]
+  | STRecTuple(err, i, tup1, tup2) ->
+    pos1 = tup1.tuple[i].pos;
+    msgs = err.toError(detail.decreaseIntermediate());
+    if (detail.maxIntermediateDepth > 0) {
+      if (tup1.tuple.size() > 1 && detail.showIntermediateMessages) {
+        !msgs = List.Cons((pos1, `They differ in element ${i}`), msgs)
+      };
+      List.Cons(
+        (tup1.pos, `Tuple type ${tup1}`),
+        List.Cons(
+          (tup2.pos, `is not compatible with tuple type ${tup2}`),
+          msgs,
+        ),
+      )
+    } else {
+      msgs
+    }
+}
+
+base class STErrorOnTPromise(
+  p1: TPromise,
+  p2: TPromise,
+) extends STErrorOnSTypeBase<TPromise> {
+  children =
+  | STRecPromise(STErrorOnTType)
+
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STRecPromise(err, p1, p2) ->
+    msgs = err.toError(detail.decreaseIntermediate());
+    if (detail.maxIntermediateDepth > 0) {
+      List.Cons(
+        (p1.pos, `Promise type ${p1}`),
+        List.Cons((p2.pos, `is not compatible with promise type ${p2}`), msgs),
+      )
+    } else {
+      msgs
+    }
+}
+
+base class STErrorOnObject(
+  o1: TObject,
+  o2: TObject,
+) extends STErrorOnSTypeBase<TObject> {
+  children =
+  | STRecObject(STErrorOnTFields)
+
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STRecObject(err, o1, o2) -> err.toError(o1.pos, o2.pos, detail)
+}
+
+base class STErrorOnSTypes(
+  sTypes1: STypes,
+  sTypes2: STypes,
+) extends STError<STypes> {
+  children =
+  | STRecSTypes(STErrorOnSTypeBase<SType>)
+
+  fun toError(
+    pos1: PosRange,
+    pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STRecSTypes(err, sTypes1, sTypes2) ->
+    !pos1 = sTypes1.singleElt().map(sType -> sType.pos).default(pos1);
+    !pos2 = sTypes2.singleElt().map(sType -> sType.pos).default(pos2);
+    if (sTypes1.size() != 1 || sTypes2.size() != 1) {
+      msgs = err.toError(pos1, pos2, detail.decreaseIntermediate());
+      if (detail.maxIntermediateDepth > 0) {
+        List.Cons(
+          (pos1, `Type ${sTypes1}`),
+          List.Cons((pos2, `is not compatible with type ${sTypes2}`), msgs),
+        )
+      } else {
+        msgs
+      }
+    } else {
+      err.toError(pos1, pos2, detail)
+    }
+}
+
+base class STErrorOnClauses(
+  clauses1: Clauses,
+  clauses2: Clauses,
+) extends STError<Clauses> {
+  children =
+  | STRecClauses(List<(Clause, STErrorOnSTypes)>, clause1: Clause)
+
+  fun toError(
+    pos1: PosRange,
+    pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STRecClauses(errs, clause1, clauses1, clauses2) ->
+    msgs = List::createFromItems(errs)
+      .map(clause2_err -> {
+        (clause2, err) = clause2_err;
+        if (!clause1.vars.isEmpty() || !clause2.vars.isEmpty()) {
+          msgs = err.toError(pos1, pos2, detail.decreaseIntermediate());
+          if (detail.maxIntermediateDepth > 0) {
+            List.Cons(
+              (pos1, `Type ${clause1}`),
+              List.Cons((pos2, `is not compatible with type ${clause2}`), msgs),
+            )
+          } else {
+            msgs
+          }
+        } else {
+          err.toError(pos1, pos2, detail)
+        }
+      })
+      .flatten();
+    if (detail.maxIntermediateDepth > 0) {
+      if (msgs.isEmpty() || clauses2.clauses.size() > errs.size()) {
+        !msgs = List.Cons(
+          (pos1, `Type ${clause1}`),
+          List.Cons((pos2, `is not compatible with type ${clauses2}`), msgs),
+        )
+      };
+      if (clauses1.clauses.size() > 1) {
+        !msgs = List.Cons(
+          (pos1, `Type ${clauses1}`),
+          List.Cons((pos2, `is not compatible with type ${clauses2}`), msgs),
+        )
+      }
+    };
+    msgs
+}
+
+base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
+  children =
+  | STRecType(STErrorOnClauses)
+
+  fun toError(detail: STErrorDetail): List<(PosRange, String)>
+  | STRecType(err, ty1, ty2) ->
+    if (!ty1.insts.isEmpty() || !ty2.insts.isEmpty()) {
+      msgs = err.toError(ty1.pos, ty2.pos, detail.decreaseRecType());
+      if (detail.maxRecTypeDepth > 0) {
+        List.Cons(
+          (ty1.pos, `Type ${ty1}`),
+          List.Cons((ty2.pos, `is not compatible with type ${ty2}`), msgs),
+        )
+      } else {
+        msgs
+      }
+    } else {
+      err.toError(ty1.pos, ty2.pos, detail.ensureIntermediateDepth())
+    }
+}
+
+base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
+  children =
+  | STRecTFuns(STErrorOnTFun)
+
+  fun toError(
+    pos1: PosRange,
+    pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STRecTFuns(err, _f1, _f2) -> err.toError(pos1, pos2, detail)
+}
+
+base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
+  children =
+  | STTypeParameterMismatch()
+  | STInvalidSpread(ArrayType)
+  | STRecFunTParam(?STErrorOnTType, Int)
+  | STRecFunThisParam(?STErrorOnTType)
+  | STRecFunParam(?STErrorOnTType, Int)
+  | STRecFunOptionalSpread(STErrorOnTType, Int)
+  | STRecFunSpread(?STErrorOnTType)
+  | STRecFunReturn(STErrorOnTType)
+
+  fun toError(
+    pos1: PosRange,
+    pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)> {
+    (recMsg, msgs) = this match {
+    | STRecFunTParam(None(), i, f1, _f2) ->
+      iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
+      (
+        None(),
+        List[(pos1, `The type parameter${iStr} does not define a constraint`)],
+      )
+    | STRecFunThisParam(None(), _f1, _f2) ->
+      (None(), List[(pos1, "The this parameter is missing")])
+    | STRecFunParam(None(), i, _f1, _f2) ->
+      (None(), List[(pos2, `The parameter ${i + 1} is missing`)])
+    | STRecFunSpread(None(), _f1, _f2) ->
+      (None(), List[(pos2, "The rest parameter is missing")])
+    | STTypeParameterMismatch(_f1, _f2) ->
+      (None(), List[(pos1, "Their number of type parameters differ")])
+    | STInvalidSpread(rest, _f1, _f2) ->
+      (None(), List[(pos1, `Invalid type for a rest parameter: ${rest}`)])
+    | STRecFunTParam(Some(err), i, f1, _f2) ->
+      iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
+      (
+        Some((pos1, `Their type parameters${iStr} are not compatible`)),
+        err.toError(detail.decreaseIntermediate()),
+      )
+    | STRecFunThisParam(Some(err), _f1, _f2) ->
+      (
+        Some((pos1, "Their this parameters are not compatible")),
+        err.toError(detail.decreaseIntermediate()),
+      )
+    | STRecFunParam(Some(err), i, _f1, _f2) ->
+      (
+        Some((pos1, `Their parameters ${i + 1} are not compatible`)),
+        err.toError(detail.decreaseIntermediate()),
+      )
+    | STRecFunOptionalSpread(err, i, _f1, _f2) ->
+      (
+        Some(
+          (
+            pos1,
+            `The parameter ${i + 1} is not compatible with the rest parameter`,
+          ),
+        ),
+        err.toError(detail.decreaseIntermediate()),
+      )
+    | STRecFunSpread(Some(err), _f1, _f2) ->
+      (
+        Some((pos1, "Their rest parameters are not compatible")),
+        err.toError(detail.decreaseIntermediate()),
+      )
+    | STRecFunReturn(err, _f1, _f2) ->
+      (
+        Some((pos1, "Their return types are not compatible")),
+        err.toError(detail.decreaseIntermediate()),
+      )
+    };
+    recMsg match {
+    | Some(m) ->
+      if (detail.maxIntermediateDepth > 0 && detail.showIntermediateMessages) {
+        !msgs = List.Cons(m, msgs)
+      } else {
+        return msgs
+      }
+    | None() -> void
+    };
+    List.Cons(
+      (pos1, `Function type ${this.f1}`),
+      List.Cons(
+        (pos2, `is not compatible with function type ${this.f2}`),
+        msgs,
+      ),
+    )
+  }
+}
+
+base class STErrorOnTAlgebraic(
+  a1: TAlgebraic,
+  a2: TAlgebraic,
+) extends STErrorOnSTypeBase<TAlgebraic> {
+  children =
+  | STTooManyTConstr(TConstr)
+  | STRecAlgebraicOnBranch(STErrorOnTConstr, TConstr)
+
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)> {
+    (printTypes, msgs) = this match {
+    | STTooManyTConstr(constr, _a1, _a2) ->
+      (
+        true,
+        List[
+          (
+            constr.tagPos,
+            `Case field ${kAlgebraicBranchFieldName} = '${
+              constr.tag
+            }' is missing`,
+          ),
+        ],
+      )
+    | STRecAlgebraicOnBranch(err, constr, a1, a2) ->
+      printTypes =
+        detail.maxIntermediateDepth > 0 &&
+        (a1.branches.size() != 1 || a2.branches.size() != 1);
+      msgs = err.toError(
+        a1.pos,
+        a2.pos,
+        if (printTypes) detail.decreaseIntermediate() else detail,
+      );
+      if (printTypes && detail.showIntermediateMessages) {
+        !msgs = List.Cons(
+          (
+            constr.tagPos,
+            `They differ on case field ${kAlgebraicBranchFieldName} = '${
+              constr.tag
+            }'`,
+          ),
+          msgs,
+        );
+      };
+      (printTypes, msgs)
+    };
+    if (printTypes) {
+      List.Cons(
+        (this.a1.pos, `Type ${this.a1}`),
+        List.Cons(
+          (this.a2.pos, `is not compatible with type ${this.a2}`),
+          msgs,
+        ),
+      )
+    } else {
+      msgs
+    }
+  }
+}
+base class STErrorOnTConstr(c1: TConstr, c2: TConstr) extends STError<TConstr> {
+  children =
+  | STRecConstr(STErrorOnTFields)
+
+  fun toError(
+    pos1: PosRange,
+    pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STRecConstr(err, c1, c2) ->
+    msgs = err.toError(pos1, pos2, detail.decreaseIntermediate());
+    if (detail.maxIntermediateDepth > 0) {
+      List.Cons(
+        (c1.tagPos, `Type ${c1}`),
+        List.Cons((c2.tagPos, `is not compatible with type ${c2}`), msgs),
+      )
+    } else {
+      msgs
+    }
+}
+
+base class STErrorOnTFields(
+  fields1: TFields,
+  fields2: TFields,
+) extends STError<TFields> {
+  children =
+  | STRecFieldsCall(?STErrorOnTFuns)
+  | STRecFieldsNew(?STErrorOnTFuns)
+  | STRecFieldsIndexKey(STErrorOnTType, TIndexField, TIndexField)
+  | STRecFieldsIndexValue(STErrorOnTType, TIndexField, TIndexField)
+  | STRecFieldsFieldIndex(STErrorOnTType, TField, TIndexField)
+  | STRecFieldsIndexField(STErrorOnTType, TIndexField, TField)
+  | STRecFieldsField(?STErrorOnTType, TField)
+
+  fun toError(
+    pos1: PosRange,
+    pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)> {
+    showTypes =
+      !this.fields1.fields.isEmpty() ||
+      !this.fields1.indexes.isEmpty() ||
+      !this.fields2.fields.isEmpty() ||
+      !this.fields2.indexes.isEmpty() ||
+      (
+        this.fields1.new,
+        this.fields1.call,
+        this.fields2.new,
+        this.fields2.call,
+      ) match {
+      | (Some((false, _)), None(), Some((false, _)), None())
+      | (None(), Some((false, _)), None(), Some((false, _))) ->
+        false
+      | _ -> true
+      };
+    detailForRec = if (showTypes) detail.decreaseIntermediate() else detail;
+    (recMsgs, msgs) = this match {
+    | STRecFieldsCall(None(), _fields1, _fields2) ->
+      (List.Nil(), List[(pos1, "Missing call signature")])
+    | STRecFieldsNew(None(), _fields1, _fields2) ->
+      (List.Nil(), List[(pos1, "Missing constructor signature")])
+    | STRecFieldsField(None(), field, _fields1, _fields2) ->
+      (List.Nil(), List[(field.pos, `The field '${field.name}' is missing`)])
+    | STRecFieldsCall(Some(err), _fields1, _fields2) ->
+      (
+        List[(pos1, `They differ in their call signature`)],
+        err.toError(pos1, pos2, detailForRec),
+      )
+    | STRecFieldsNew(Some(err), _fields1, _fields2) ->
+      (
+        List[(pos1, `They differ in their constructor signature`)],
+        err.toError(pos1, pos2, detailForRec),
+      )
+    | STRecFieldsIndexKey(err, index1, index2, _fields1, _fields2) ->
+      (
+        List[
+          (index1.pos, `Key type of index field ${index1}`),
+          (
+            index2.pos,
+            `is not compatible with key type of index field ${index2}`,
+          ),
+        ],
+        err.toError(detailForRec),
+      )
+    | STRecFieldsIndexValue(err, index1, index2, _fields1, _fields2) ->
+      (
+        List[
+          (index1.pos, `Value type of index field ${index1}`),
+          (
+            index2.pos,
+            `is not compatible with value type of index field ${index2}`,
+          ),
+        ],
+        err.toError(detailForRec),
+      )
+    | STRecFieldsFieldIndex(err, field1, index2, _fields1, _fields2) ->
+      (
+        List[
+          (field1.pos, `Field '${field1.name}'`),
+          (index2.pos, `is not compatible with index field ${index2}`),
+        ],
+        err.toError(detailForRec),
+      )
+    | STRecFieldsIndexField(err, index1, field2, _fields1, _fields2) ->
+      (
+        List[
+          (index1.pos, `Index field ${index1}`),
+          (field2.pos, `is not compatible with field '${field2.name}'`),
+        ],
+        err.toError(detailForRec),
+      )
+    | STRecFieldsField(Some(err), field, _fields1, _fields2) ->
+      (
+        List[(field.pos, `Their field '${field.name}' are not compatible`)],
+        err.toError(detailForRec),
+      )
+    };
+    if (
+      recMsgs is List.Nil() ||
+      (showTypes && detail.maxIntermediateDepth > 0)
+    ) {
+      if (detail.showIntermediateMessages) {
+        !msgs = recMsgs.concat(msgs)
+      };
+      List.Cons(
+        (pos1, `Type ${this.fields1}`),
+        List.Cons((pos2, `is not compatible with type ${this.fields2}`), msgs),
+      )
+    } else {
+      msgs
+    }
+  }
+}
+
 extension class TAlgebraic {
   static fun isSub(
     subst: mutable Subst,
     tenv: TEnv,
     a1: TAlgebraic,
     a2: TAlgebraic,
-  ): STResult {
+  ): STResult<TAlgebraic> {
     a1.branches.leq(a2.branches, (b1, b2O) ->
       b2O match {
       | Some(b2) ->
         TConstr::isSub(subst, tenv, b1, b2) match {
         | STOk() -> Success(void)
-        | err @ STError _ -> Failure(err)
+        | err @ STErrorOnTConstr _ ->
+          Failure(STRecAlgebraicOnBranch(err, b1, a1, a2))
         }
-      | None() -> Failure(STTooManyTConstr(b1))
+      | None() -> Failure(STTooManyTConstr(b1, a1, a2))
       }
     ) match {
     | Success(void) -> STOk()
@@ -33,8 +626,14 @@ extension class TConstr {
     tenv: TEnv,
     x: TConstr,
     y: TConstr,
-  ): STResult {
-    TFields::isSub(subst, tenv, x.fields, y.fields)
+  ): STResult<TConstr> {
+    if (x.tag != y.tag) {
+      invariant_violation(`TConstr::isSub called on tags ${x.tag} != ${y.tag}`)
+    };
+    TFields::isSub(subst, tenv, x.fields, y.fields) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnTFields _ -> STRecConstr(err, x, y)
+    }
   }
 }
 
@@ -44,8 +643,11 @@ extension class TFuns {
     tenv: TEnv,
     funs1: TFuns,
     funs2: TFuns,
-  ): STResult {
-    TFun::isSub(subst, tenv, funs1.fun_, funs2.fun_)
+  ): STResult<TFuns> {
+    TFun::isSub(subst, tenv, funs1.fun_, funs2.fun_) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnTFun _ -> STRecTFuns(err, funs1, funs2)
+    }
   }
 }
 
@@ -55,26 +657,18 @@ extension class TFields {
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
-  ): STResult {
-    TFields::isSubOptTFuns(
-      subst,
-      tenv,
-      fields1.call,
-      fields2.call,
-      STMissingCall,
-    ) match {
-    | STOk() -> void
-    | err @ STError _ -> return err
+  ): STResult<TFields> {
+    TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
+    | None() -> return STRecFieldsCall(None(), fields1, fields2)
+    | Some(STOk()) -> void
+    | Some(err @ STErrorOnTFuns _) ->
+      return STRecFieldsCall(Some(err), fields1, fields2)
     };
-    TFields::isSubOptTFuns(
-      subst,
-      tenv,
-      fields1.new,
-      fields2.new,
-      STMissingConstructor,
-    ) match {
-    | STOk() -> void
-    | err @ STError _ -> return err
+    TFields::isSubOptTFuns(subst, tenv, fields1.new, fields2.new) match {
+    | None() -> return STRecFieldsNew(None(), fields1, fields2)
+    | Some(STOk()) -> void
+    | Some(err @ STErrorOnTFuns _) ->
+      return STRecFieldsNew(Some(err), fields1, fields2)
     };
     index1o = fields1.maybeSingleIndex();
     index2o = fields2.maybeSingleIndex();
@@ -82,11 +676,13 @@ extension class TFields {
     | (_, None()) -> void
     | (Some(index1), Some(index2)) ->
       TType::isSub(subst, tenv, index2.keyType, index1.keyType) match {
-      | err @ STError _ -> return err
+      | err @ STErrorOnTType _ ->
+        return STRecFieldsIndexKey(err, index1, index2, fields1, fields2)
       | STOk() -> void
       };
       TType::isSub(subst, tenv, index1.valueType, index2.valueType) match {
-      | err @ STError _ -> return err
+      | err @ STErrorOnTType _ ->
+        return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
       | STOk() -> void
       }
     | (None(), Some(index2)) ->
@@ -98,7 +694,8 @@ extension class TFields {
         | STError _ -> void
         | STOk() ->
           TType::isSub(subst, tenv, f1.type, index2.valueType) match {
-          | err @ STError _ -> return err
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
           | STOk() -> void
           }
         }
@@ -109,7 +706,7 @@ extension class TFields {
       | Left(_) -> void
       | Right(f2) ->
         if (!f2.isOptional) {
-          return STMissingField(f2.name)
+          return STRecFieldsField(None(), f2, fields1, fields2)
         };
         index1o match {
         | None() -> void
@@ -121,14 +718,15 @@ extension class TFields {
           | STError _ -> void
           | STOk() ->
             TType::isSub(subst, tenv, index1.valueType, f2.type) match {
-            | err @ STError _ -> return err
+            | err @ STErrorOnTType _ ->
+              return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
             | STOk() -> void
             }
           }
         }
       | Both(f1, f2) ->
         if (f1.isOptional && !f2.isOptional) {
-          return STMissingField(f1.name)
+          return STRecFieldsField(None(), f1, fields1, fields2)
         } else {
           f2type = if (f2.isOptional) {
             TType::unionUndefined(subst, tenv, f2.type, f2.pos)
@@ -137,7 +735,8 @@ extension class TFields {
           };
           TType::isSub(subst, tenv, f1.type, f2type) match {
           | STOk() -> void
-          | err @ STError _ -> return err
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsField(Some(err), f1, fields1, fields2)
           }
         }
       }
@@ -150,17 +749,16 @@ extension class TFields {
     tenv: TEnv,
     f1opt: ?(Bool, TFuns),
     f2opt: ?(Bool, TFuns),
-    missing: Concrete<STErrorNoArg>,
-  ): STResult {
+  ): ?STResult<TFuns> {
     (f1opt, f2opt) match {
     | (_, None())
     | (None(), Some((true, _))) ->
-      STOk()
+      Some(STOk())
     | (None(), Some((false, _)))
     | (Some((true, _)), Some((false, _))) ->
-      missing()
+      None()
     | (Some((_opt1, call1)), Some((_opt2, call2))) ->
-      TFuns::isSub(subst, tenv, call1, call2)
+      Some(TFuns::isSub(subst, tenv, call1, call2))
     }
   }
 }
@@ -171,7 +769,7 @@ extension class STypes {
     tenv: TEnv,
     stypes1: STypes,
     stypes2: STypes,
-  ): STResult {
+  ): STResult<STypes> {
     stypes1.stypes.leq(stypes2.stypes, (sty1, sty2O) ->
       sty2O match {
       | Some(sty2) ->
@@ -182,44 +780,31 @@ extension class STypes {
         (sty1, sty2) match {
         | (TPrimUnit _, TPrimUnit _) -> STOk()
 
-        | (TPrimValue(_, None(), _), TPrimValue(_, None(), _)) -> STOk()
-        | (TPrimValue(_, None(), _), TPrimValue(_, Some _, _)) ->
-          STTooManySType(sty1)
-        | (TPrimValue(_, Some _, _), TPrimValue(_, None(), _)) -> STOk()
-
-        | (TPrimValue(k, Some(lits1), _), TPrimValue(_, Some(lits2), _)) ->
-          for (elt in lits1.values()) {
-            if (!lits2.contains(elt.val)) {
-              break STTooManySType(
-                TPrimValue(k, Some(PrimLiterals::single(elt)), elt.pos),
-              )
-            }
-          } else {
-            STOk()
-          }
+        | (prim1 @ TPrimValue _, prim2 @ TPrimValue _) ->
+          TPrimValue::isSub(prim1, prim2)
 
         | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
           TTuple::isSub(subst, tenv, tuple1, tuple2)
 
-        | (TPromise(ty1, _), TPromise(ty2, _)) ->
-          TType::isSub(subst, tenv, ty1, ty2)
+        | (p1 @ TPromise _, p2 @ TPromise _) ->
+          TPromise::isSub(subst, tenv, p1, p2)
+
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::isSub(subst, tenv, obj1, obj2)
-        | (TAlgebraic _, TObject _)
-        | (TObject _, TAlgebraic _) ->
-          STTooManySType(sty1)
+
         | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
           TAlgebraic::isSub(subst, tenv, a1, a2)
+
         | _ -> internal_error("Internal error")
         } match {
         | STOk() -> Success(void)
-        | err @ STError _ -> Failure(err)
+        | err @ STErrorOnSTypeBase _ -> Failure(err)
         }
-      | None() -> Failure(STTooManySType(sty1))
+      | None() -> Failure(STTooManySType(sty1, stypes2))
       }
     ) match {
     | Success(void) -> STOk()
-    | Failure(err) -> err
+    | Failure(err) -> STRecSTypes(err, stypes1, stypes2)
     }
   }
 }
@@ -230,7 +815,7 @@ extension class Clauses {
     tenv: TEnv,
     clauses1: Clauses,
     clauses2: Clauses,
-  ): STResult {
+  ): STResult<Clauses> {
     for (inter1 in clauses1.clauses) {
       errors = List[];
       for (inter2 in clauses2.clauses) {
@@ -244,16 +829,13 @@ extension class Clauses {
         | (Some(x1), Some(x2)) ->
           STypes::isSub(subst, tenv, x1, x2) match {
           | STOk() -> break void
-          | err @ STError _ ->
-            !errors = List.Cons(err, errors);
+          | err @ STErrorOnSTypes _ ->
+            !errors = List.Cons((inter2, err), errors);
             continue
           }
         }
       } else {
-        return errors match {
-        | List.Cons(err, List.Nil()) -> err
-        | _ -> STInvalidClause(inter1)
-        }
+        return STRecClauses(errors, inter1, clauses1, clauses2)
       }
     };
     STOk()
@@ -266,7 +848,7 @@ extension class TType {
     tenv: TEnv,
     u1: TType,
     u2: TType,
-  ): STResult {
+  ): STResult<TType> {
     if (u1 == u2) return STOk();
     pair = (u1, u2);
     if (subst.seenSub.contains(pair)) return STOk();
@@ -282,7 +864,7 @@ extension class TType {
     tenv: TEnv,
     u1: TType,
     u2: TType,
-  ): STResult {
+  ): STResult<TType> {
     if (u2.isTop()) return STOk();
     if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
     !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
@@ -319,15 +901,9 @@ extension class TType {
     clauses2 = u2.expand_(subst, tenv, Contravariant());
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
-    | err @ STRec _ ->
+    | err @ STErrorOnClauses _ ->
       subst.restore(savedSubst);
-      err
-    | other @ STTooManySType(stype) ->
-      subst.restore(savedSubst);
-      STRec(other, stype.pos, u2)
-    | other @ STError _ ->
-      subst.restore(savedSubst);
-      STRec(other, u1.pos, u2)
+      STRecType(err, u1, u2)
     }
   }
 }
@@ -338,17 +914,51 @@ extension class TTuple {
     tenv: TEnv,
     tuple1: TTuple,
     tuple2: TTuple,
-  ): STResult {
+  ): STResult<TTuple> {
     if (tuple1.tuple.size() < tuple2.tuple.size()) {
-      return STTooManySType(tuple1)
+      return STTooManyTTuple(tuple1, tuple2)
     };
     for (i in Range(0, tuple2.tuple.size())) {
       TType::isSub(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]) match {
       | STOk() -> void
-      | err @ STError _ -> return err
+      | err @ STErrorOnTType _ -> return STRecTuple(err, i, tuple1, tuple2)
       }
     };
     STOk()
+  }
+}
+
+extension class TPromise {
+  static fun isSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    promise1: TPromise,
+    promise2: TPromise,
+  ): STResult<TPromise> {
+    TType::isSub(subst, tenv, promise1.inner, promise2.inner) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnTType _ -> STRecPromise(err, promise1, promise2)
+    }
+  }
+}
+
+extension class TPrimValue {
+  static fun isSub(prim1: TPrimValue, prim2: TPrimValue): STResult<TPrimValue> {
+    invariant(
+      prim1.tag() == prim2.tag(),
+      "TPrimValue::isSub expects to be called with identical tags",
+    );
+    (prim1.literals, prim2.literals) match {
+    | (_, None()) -> STOk()
+    | (None(), Some _) -> STPrimValueFullSpecific(prim1, prim2)
+    | (Some(lits1), Some(lits2)) ->
+      for (elt in lits1.values()) {
+        if (!lits2.contains(elt.val)) {
+          return STPrimMissingValue(elt, prim1, prim2)
+        }
+      };
+      STOk()
+    }
   }
 }
 
@@ -358,9 +968,9 @@ extension class TFun {
     tenv: TEnv,
     f1: TFun,
     f2: TFun,
-  ): STResult {
+  ): STResult<TFun> {
     if (f1.tparams.size() != f2.tparams.size()) {
-      return STTypeParameterMismatch()
+      return STTypeParameterMismatch(f1, f2)
     };
     tsubst = SortedMap[];
     for (i in Range(0, f1.tparams.size())) {
@@ -369,11 +979,11 @@ extension class TFun {
       (tparam1.cstr, tparam2.cstr) match {
       | (None(), None()) -> void
       | (Some _, None()) -> void
-      | (None(), Some _) -> return STNoConstraint()
+      | (None(), Some _) -> return STRecFunTParam(None(), i, f1, f2)
       | (Some(ty1), Some(ty2)) ->
         TType::isSub(subst, tenv, ty2, ty1) match {
         | STOk() -> void
-        | err @ STError _ -> return err
+        | err @ STErrorOnTType _ -> return STRecFunTParam(Some(err), i, f1, f2)
         }
       };
       !tsubst[tparam2.id] = tparam1;
@@ -381,23 +991,23 @@ extension class TFun {
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
     (f1.thisParam, f2.thisParam) match {
     | (_, None()) -> void
-    | (None(), Some(_)) -> return STMissingThis()
+    | (None(), Some(_)) -> return STRecFunThisParam(None(), f1, f2)
     | (Some(this1), Some(this2)) ->
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
-      | err @ STError _ -> return err
+      | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)
       }
     };
 
     if (f1.params.size() > f2.params.size()) {
-      return STMissingParameter()
+      return STRecFunParam(None(), f2.params.size(), f1, f2)
     };
 
     spread1elt = f1.spreadParam match {
     | None() -> None()
     | Some(spread1) ->
       spread1.maybeGetEltType(subst, tenv, Contravariant()) match {
-      | None() -> return STInvalidSpread(spread1)
+      | None() -> return STInvalidSpread(spread1, f1, f2)
       | some @ Some _ -> some
       }
     };
@@ -416,7 +1026,7 @@ extension class TFun {
       };
       TType::isSub(subst, tenv, p2, p1) match {
       | STOk() -> void
-      | err @ STError _ -> return err
+      | err @ STErrorOnTType _ -> return STRecFunParam(Some(err), i, f1, f2)
       }
     };
 
@@ -435,7 +1045,7 @@ extension class TFun {
       };
       TType::isSub(subst, tenv, p2, p1) match {
       | STOk() -> void
-      | err @ STError _ -> return err
+      | err @ STErrorOnTType _ -> return STRecFunParam(Some(err), i, f1, f2)
       }
     };
 
@@ -443,14 +1053,21 @@ extension class TFun {
     | None() ->
       if (
         f1.params.size() + f1.optionalParams.size() >
-          f2.params.size() + f2.optionalParams.size() ||
-        f1.spreadParam.isSome()
+        f2.params.size() + f2.optionalParams.size()
       ) {
-        return STMissingParameter()
+        return STRecFunParam(
+          None(),
+          f2.params.size() + f2.optionalParams.size(),
+          f1,
+          f2,
+        )
+      };
+      if (f1.spreadParam.isSome()) {
+        return STRecFunSpread(None(), f1, f2)
       }
     | Some(spread2) ->
       spread2elt = spread2.maybeGetEltType(subst, tenv, Covariant()) match {
-      | None() -> return STInvalidSpread(spread2)
+      | None() -> return STInvalidSpread(spread2, f1, f2)
       | Some(spread2elt) -> spread2elt
       };
       for (io1 in Range(
@@ -459,7 +1076,8 @@ extension class TFun {
       )) {
         TType::isSub(subst, tenv, spread2elt, f1.optionalParams[io1]) match {
         | STOk() -> void
-        | err @ STError _ -> return err
+        | err @ STErrorOnTType _ ->
+          return STRecFunOptionalSpread(err, io1 + f1.params.size(), f1, f2)
         }
       };
       spread1elt match {
@@ -467,11 +1085,14 @@ extension class TFun {
       | Some(s1) ->
         TType::isSub(subst, tenv, spread2elt, s1) match {
         | STOk() -> void
-        | err @ STError _ -> return err
+        | err @ STErrorOnTType _ -> return STRecFunSpread(Some(err), f1, f2)
         }
       }
     };
-    TType::isSub(subst, tenv, f1.retType, f2.retType)
+    TType::isSub(subst, tenv, f1.retType, f2.retType) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnTType _ -> STRecFunReturn(err, f1, f2)
+    }
   }
 }
 
@@ -481,7 +1102,7 @@ extension base class ArrayType {
     tenv: TEnv,
     arr1: ArrayType,
     arr2: ArrayType,
-  ): STResult {
+  ): STResult<TType> {
     (
       arr1.maybeGetEltType(subst, tenv, Covariant()),
       arr2.maybeGetEltType(subst, tenv, Contravariant()),
@@ -498,8 +1119,11 @@ extension class TObject {
     tenv: TEnv,
     obj1: TObject,
     obj2: TObject,
-  ): STResult {
-    TFields::isSub(subst, tenv, obj1.fields, obj2.fields)
+  ): STResult<TObject> {
+    TFields::isSub(subst, tenv, obj1.fields, obj2.fields) match {
+    | STOk() -> STOk()
+    | err @ STErrorOnTFields _ -> STRecObject(err, obj1, obj2)
+    }
   }
 }
 

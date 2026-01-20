@@ -4,14 +4,224 @@
 
 module SKJS;
 
-class TypingError(messages: Array<(PosRange, String)>) extends Error {
+/***************************************************************************/
+/* Error Detail Configuration */
+/***************************************************************************/
+
+base class ErrorDetailBase {
+  const default: STErrorDetail = STErrorDetail(0, 0, false);
+  const normal: STErrorDetail = STErrorDetail(999, 0, false);
+  const verbose: STErrorDetail = STErrorDetail(999, 0, true);
+  const full: STErrorDetail = STErrorDetail(999, 999, true);
+}
+
+class ErrorDetailHide() extends ErrorDetailBase
+class ErrorDetailMinimal() extends ErrorDetailBase
+
+// A single error detail specification with optional file/line filter
+class ErrorDetailSpec(
+  filePattern: ?String, // None = applies to all files, Some = specific file pattern
+  line: ?Int, // None = applies to all lines, Some = specific line
+  detail: ErrorDetailBase,
+) {
+  fun isMatchAll(): Bool {
+    this.filePattern is None() && this.line is None()
+  }
+
+  // Check if this spec matches the given file and line
+  fun matches(fileName: String, lineNum: Int): Bool {
+    this.line match {
+    | Some(l) if (l != lineNum) -> return false
+    | _ -> void
+    };
+    this.filePattern match {
+    | None() -> true
+    | Some(pattern) ->
+      fileName.contains(pattern) // Simple contains for now
+    }
+  }
+}
+
+// Configuration for error detail levels across the codebase
+class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
+  // Get the appropriate STErrorDetail for a given file and line
+  fun getDetail(fileName: String, lineNum: Int): ErrorDetailBase {
+    this.specs.find(spec -> spec.matches(fileName, lineNum))
+      .map(spec -> spec.detail)
+      .default(STErrorDetail::default)
+  }
+
+  fun getDefault(): ErrorDetailBase {
+    this.specs.find(spec -> spec.isMatchAll())
+      .map(spec -> spec.detail)
+      .default(STErrorDetail::default)
+  }
+
+  static fun default(): ErrorDetailConfig {
+    ErrorDetailConfig(Array[])
+  }
+
+  static fun minimal(): ErrorDetailConfig {
+    ErrorDetailConfig(
+      Array[ErrorDetailSpec(None(), None(), ErrorDetailMinimal())],
+    )
+  }
+
+  // Parse error detail specification from command-line argument
+  // Formats supported:
+  // - (empty)              -> *:*:full
+  // - <level>              -> *:*:<level>
+  // - <line>               -> *:<line>:full
+  // - <file>               -> <file>:*:full
+  // - *                    -> *:*:full
+  // - <line>:<level>       -> *:<line>:<level>
+  // - <file>:<level>       -> <file>:*:<level>
+  // - *:<level>            -> *:*:<level>
+  // - <file>:<line>        -> <file>:<line>:full
+  // - *:<line>             -> *:<line>:full
+  // - <file>:*             -> <file>:*:full
+  // - <file>:<line>:<level> -> <file>:<line>:<level>
+  static fun parseSpec(spec: String): Result<ErrorDetailSpec, String> {
+    parts = spec.split(":");
+    if (parts.size() == 0 || (parts.size() == 1 && parts[0] == "")) {
+      // Empty spec -> *:*:full
+      Success(ErrorDetailSpec(None(), None(), STErrorDetail::full))
+    } else if (parts.size() == 1) {
+      // Single value: either line, file, level, or *
+      value = parts[0];
+      if (value == "*") {
+        // * -> *:*:full
+        Success(ErrorDetailSpec(None(), None(), STErrorDetail::full))
+      } else {
+        value.toIntOption() match {
+        | Some(line) ->
+          // It's a line number -> *:<line>:full
+          Success(ErrorDetailSpec(None(), Some(line), STErrorDetail::full))
+        | None() ->
+          static::parseLevel(value) match {
+          | Success(detail) ->
+            // It's a level -> *:*:<level>
+            Success(ErrorDetailSpec(None(), None(), detail))
+          | Failure _ ->
+            // It's a file pattern -> <file>:*:full
+            Success(ErrorDetailSpec(Some(value), None(), STErrorDetail::full))
+          }
+        }
+      }
+    } else if (parts.size() == 2) {
+      // Two values: <file>:<level>, <file>:<line>, or <line>:<level>
+      first = parts[0];
+      second = parts[1];
+      // Parse file pattern (handle *)
+      filePattern = if (first == "*") None() else {
+        first.toIntOption() match {
+        | Some(_) ->
+          None() // Line number means no file pattern
+        | None() -> Some(first)
+        }
+      };
+      // Parse line number (handle *)
+      lineNum = if (second == "*") {
+        None()
+      } else {
+        second.toIntOption()
+      };
+
+      (first.toIntOption(), lineNum) match {
+      | (Some(line), _) ->
+        // First is a line number -> *:<line>:<level>
+        static::parseLevel(second).map(detail ->
+          ErrorDetailSpec(None(), Some(line), detail)
+        )
+      | (None(), Some(line)) ->
+        // Second is a line number -> <file>:<line>:full
+        Success(ErrorDetailSpec(filePattern, Some(line), STErrorDetail::full))
+      | (None(), None()) ->
+        // Neither is a number -> <file>:*:<level>
+        static::parseLevel(second).map(detail ->
+          ErrorDetailSpec(filePattern, None(), detail)
+        )
+      }
+    } else if (parts.size() == 3) {
+      // Three values: <file>:<line>:<level>
+      file = parts[0];
+      lineStr = parts[1];
+      levelStr = parts[2];
+      filePattern = if (file == "*") None() else Some(file);
+      lineNum = if (lineStr == "*") {
+        Success(None())
+      } else {
+        lineStr.toIntOption() match {
+        | Some(l) -> Success(Some(l))
+        | None() -> Failure(`Invalid line number: ${lineStr}`)
+        }
+      };
+      lineNum.flatMap(ln ->
+        static::parseLevel(levelStr).map(detail ->
+          ErrorDetailSpec(filePattern, ln, detail)
+        )
+      )
+    } else {
+      Failure(`Invalid error-detail format: ${spec}`)
+    }
+  }
+
+  // Parse level name to ErrorDetailBase
+  private static fun parseLevel(
+    level: String,
+  ): Result<ErrorDetailBase, String> {
+    level match {
+    | "hide" -> Success(ErrorDetailHide())
+    | "minimal" | "0" -> Success(ErrorDetailMinimal())
+    | "default" | "1" -> Success(STErrorDetail::default)
+    | "normal" | "2" -> Success(STErrorDetail::normal)
+    | "verbose" | "3" -> Success(STErrorDetail::verbose)
+    | "full" | "max" -> Success(STErrorDetail::full)
+    | _ -> Failure(`Unknown error detail level: ${level}`)
+    }
+  }
+}
+
+class TypingError(
+  messages: Array<(PosRange, String)>,
+  stErr: ?STErrorOnTType,
+) extends Error {
   fun toString(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
+    errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
   ): String {
+    // Get the appropriate detail level based on error location
+    detailSpec = if (this.messages.isEmpty()) {
+      errorDetailConfig.getDefault()
+    } else {
+      firstPos = this.messages[0].i0;
+      fileName = firstPos.fileName.toString();
+      resolver = static::resolver(
+        firstPos.fileName,
+        context,
+        newLinesMap,
+        symbolsMap,
+      );
+      relPos = resolver.relPosRange(firstPos);
+      errorDetailConfig.getDetail(fileName, relPos.start.line)
+    };
+
+    messages = this.messages;
+
+    detailSpec match {
+    | ErrorDetailHide() -> return ""
+    | ErrorDetailMinimal() -> void
+    | detail @ STErrorDetail _ ->
+      this.stErr match {
+      | Some(e) -> !messages = messages.concat(e.toError(detail).toArray())
+      | None() -> void
+      }
+    };
+
     result = mutable Vector[];
-    for (message in this.messages) {
+    for (message in messages) {
       pos = message.i0;
       fileName = pos.fileName;
       resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
@@ -22,8 +232,11 @@ class TypingError(messages: Array<(PosRange, String)>) extends Error {
   }
 }
 
-fun typingError<T>(messages: Array<(PosRange, String)>): T {
-  throw ErrorExn(TypingError(messages))
+fun typingError<T>(
+  messages: Array<(PosRange, String)>,
+  stErr: ?STErrorOnTType = None(),
+): T {
+  throw ErrorExn(TypingError(messages, stErr))
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {

@@ -13,7 +13,7 @@ fun getLinedErrors(
   m = mutable Map[];
   for (err in errors) {
     errPos = err match {
-    | SKJS.TypingError(messages) ->
+    | SKJS.TypingError(messages, _stErr) ->
       invariant(!messages.isEmpty(), "Empty typing error");
       SKJS.EPRange(messages[0].i0)
     | SKJS.SinglePosError(errPos, _errKind) -> errPos
@@ -277,6 +277,7 @@ fun testFiles(
     context,
     files,
     errorHandling => SKJS.EHKeepGoing(),
+    errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
   };
   expectationErrors = checker
     .checkFiles(context)
