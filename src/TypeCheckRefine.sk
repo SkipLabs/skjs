@@ -167,13 +167,12 @@ extension class TypeChecker {
     | Binop(BOStrictInequality(), e1, e2) ->
       this.evalEquality(tcenv, e1, e2, !target)
 
-    | InstanceOf(
-      Expr(_, Var(local)),
-      Expr(_, Var(Name(posArray, "Array"))),
-    ) if (target) ->
+    | InstanceOf(Expr(_, Var(local)), Expr(_, Var(Name(posArray, "Array")))) ->
       tvar = tcenv.subst.gen(posArray);
-      default = Some(TArray(TType::var(tvar), posArray));
-      filter = x ~> x is TArray _;
+      default = if (target) Some(TArray(TType::var(tvar), posArray)) else {
+        None()
+      };
+      filter = x ~> (x is TArray _) == target;
       this.setLocal(tcenv, local, default, filter)
 
     | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
