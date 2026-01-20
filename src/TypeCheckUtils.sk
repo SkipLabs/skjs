@@ -75,28 +75,19 @@ extension class TypeChecker {
   }
 
   fun checkIsIgnorable(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
+    if (
+      ty.clauses.isEmpty() &&
+      ty.insts.insts.getUnique() is Some(TSInst(Name(_, "SKJS_Ignorable"), _))
+    ) {
+      return void
+    };
     tyVoid = TType::single(TPrimUnit(TVoid(), ty.pos));
-    ignorable = TType::union(
-      tcenv.subst,
-      this.tenv,
-      tyVoid,
-      TType::single(
-        TObject(
-          TFields::create{
-            fields => Array[
-              TField::create(pos, "__SKJS_Ignorable", false, tyVoid).fromSome(),
-            ],
-          },
-          pos,
-        ),
-      ),
-    );
     this.checkSubType(
       tcenv,
       pos,
       "This expression was expected to be of type void or ignorable",
       ty,
-      ignorable,
+      tyVoid,
     )
   }
 
