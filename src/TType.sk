@@ -162,9 +162,16 @@ class TType private {
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
      i.e. such that t3 <= t1 and t3 | t2 >= t1
    */
-  static fun diff(left: TType, right: TType): TType {
-    diffInsts = TInsts::diff(left.insts, right.insts);
-    diffClauses = Clauses::diff(left.clauses, right.clauses);
+  static fun diff(
+    subst: mutable Subst,
+    tenv: TEnv,
+    left: TType,
+    right: TType,
+  ): TType {
+    leftExpanded = left.expand(subst, tenv, None());
+    rightExpanded = right.expand(subst, tenv, None());
+    diffInsts = TInsts::diff(leftExpanded.insts, rightExpanded.insts);
+    diffClauses = Clauses::diff(leftExpanded.clauses, rightExpanded.clauses);
     TType::create(left.pos, diffInsts, diffClauses)
   }
 

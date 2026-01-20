@@ -149,7 +149,12 @@ extension class TypeChecker {
                     ) {
                       !defaultIsUseless = None();
                       union(
-                        TType::diff(tfield.type, undefined(defaultPos)),
+                        TType::diff(
+                          tcenv.subst,
+                          this.tenv,
+                          tfield.type,
+                          undefined(defaultPos),
+                        ),
                         defaultType,
                       )
                     } else {

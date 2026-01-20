@@ -882,7 +882,12 @@ extension class TType {
         if (
           constraints.all(cstr -> TType::isSub(subst, tenv, u1, cstr) is STOk())
         ) {
-          subst.grow(tenv, tvar, TType::diff(u1, u2), Contravariant())
+          subst.grow(
+            tenv,
+            tvar,
+            TType::diff(subst, tenv, u1, u2),
+            Contravariant(),
+          )
         } else {
           subst.restore(substCopy)
         }
@@ -896,7 +901,7 @@ extension class TType {
         if (
           constraints.all(cstr -> TType::isSub(subst, tenv, u2, cstr) is STOk())
         ) {
-          subst.grow(tenv, tvar, TType::diff(u2, u1), Covariant())
+          subst.grow(tenv, tvar, TType::diff(subst, tenv, u2, u1), Covariant())
         } else {
           subst.restore(substCopy)
         }

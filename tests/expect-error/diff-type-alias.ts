@@ -26,14 +26,12 @@ function testInline(x: { f: number | undefined }): number {
 // When the same union is behind a type alias, diff must expand it first.
 function testAlias(x: { f: MaybeNumber }): number {
   const { f = 1 } = x;
-  // @skjs-expect-error Invalid return type
   return f;
 }
 
 // Nested type aliases must be fully expanded to reveal the complete union.
 function testNestedAlias(x: { f: NestedMaybe }): number | string {
   const { f = "" } = x;
-  // @skjs-expect-error Invalid return type
   return f;
 }
 
@@ -46,7 +44,6 @@ type MaybeNumberOrString = MaybeNumber | MaybeString;
 // When a union contains multiple type aliases, each must be expanded.
 function testMultipleAliases(x: { f: MaybeNumberOrString }): number | string {
   const { f = "" } = x;
-  // @skjs-expect-error Invalid return type
   return f;
 }
 
@@ -65,7 +62,6 @@ function testAliasWithUndefinedInside(x: {
   f: NumberOrStringOrUndefined;
 }): number | string {
   const { f = 0 } = x;
-  // @skjs-expect-error Invalid return type
   return f;
 }
 
@@ -79,7 +75,6 @@ type DeepNested = MaybeNumber | NestedMaybe;
 // DeepNested -> MaybeNumber, NestedMaybe -> MaybeNumber -> (number | undefined)
 function testDeepNested(x: { f: DeepNested }): number | string {
   const { f = 0 } = x;
-  // @skjs-expect-error Invalid return type
   return f;
 }
 
@@ -97,7 +92,6 @@ function testOptionalBaseline(x: { f?: number }): number {
 // even though the optional marker also contributes to the union.
 function testOptionalWithMaybeAlias(x: { f?: MaybeNumber }): number {
   const { f = 1 } = x;
-  // @skjs-expect-error Invalid return type
   return f;
 }
 
@@ -111,7 +105,6 @@ type MaybeNullOrUndefined = number | null | undefined;
 // Here null must remain after undefined is subtracted.
 function testNullPreserved(x: { f: MaybeNullOrUndefined }): number | null {
   const { f = 1 } = x;
-  // @skjs-expect-error Invalid return type
   return f;
 }
 
@@ -123,6 +116,5 @@ function testNullAliasPreserved(x: {
   f: MaybeNullUndefinedAlias;
 }): number | null {
   const { f = 1 } = x;
-  // @skjs-expect-error Invalid return type
   return f;
 }
