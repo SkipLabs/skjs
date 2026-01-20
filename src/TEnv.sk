@@ -138,7 +138,7 @@ class TEnv{
 
     tdef match {
     | ta @ TypeDef _ -> this.normalize(subst, ta.body)
-    | Class _ -> this.new(subst, name, targs.targs)
+    | Class _ -> this.new(subst, name, targs.targs, true)
     | Enum _ -> typingError(Array[(name.pos, "TODO: instantiate Enum")])
     }
   }
@@ -169,8 +169,26 @@ class TEnv{
     tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
+    asValue: Bool,
     filter: ClassFieldTypeValue ~> Bool = _ ~> true,
   ): TType {
+    // Special case: new Array<T>() returns TArray instead of TObject
+    // when used as a value (not when extending/implementing)
+    // Note: interfaces/classes extending Array will get TObject, which is
+    // intentionally incompatible with TArray (no implicit conversion)
+    if (className.value == "Array" && asValue) {
+      if (targs.size() != 1) {
+        tcenvb.error(
+          Array[(className.pos, "Array expects exactly 1 type argument")],
+        )
+      };
+      tArg = if (targs.size() >= 1) {
+        targs[0]
+      } else {
+        TType::top(className.pos)
+      };
+      return TType::single(TArray(tArg, className.pos))
+    };
     obj = this.newObject(tcenvb, className, targs, filter);
     TType::single(obj)
   }

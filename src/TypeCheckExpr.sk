@@ -790,7 +790,7 @@ extension class TypeChecker {
         };
         cstr = this.tenv.newConstructor(tcenv, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
-        this.tenv.new(tcenv, className, tArgs)
+        this.tenv.new(tcenv, className, tArgs, true)
       | _ ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
         subExprTy

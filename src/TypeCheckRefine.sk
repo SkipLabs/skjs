@@ -179,7 +179,12 @@ extension class TypeChecker {
     | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
       tcenv.scope.set(
         local,
-        this.tenv.new(tcenv, className, this.tenv.makeTArgs(tcenv, className)),
+        this.tenv.new(
+          tcenv,
+          className,
+          this.tenv.makeTArgs(tcenv, className),
+          true,
+        ),
         (x, y) -> this.checkSubType(tcenv, e.pos, "Invalid instanceof", x, y),
       )
 

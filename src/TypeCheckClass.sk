@@ -71,6 +71,7 @@ extension class TypeChecker {
             subst,
             parentName,
             parentTArgs.map(ty -> this.tenv.normalize(subst, ty)),
+            false, // asValue = false for extends
           );
           if (!isInterface) {
             !this.super = Some((superCstr, super));
@@ -98,6 +99,7 @@ extension class TypeChecker {
           subst,
           parentName,
           parentTArgs.map(ty -> this.tenv.normalize(subst, ty)),
+          false, // asValue = false for implements
         );
         tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
         tcenv.recordClassHierarchy{
@@ -165,6 +167,7 @@ extension class TypeChecker {
             subst,
             c.name,
             targs.targs,
+            true, // asValue = true for constructor context
             fieldType ~> (fieldType is ClassFieldTypeValue{value => Some _}),
           );
           methods = c.fields
