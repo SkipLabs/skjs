@@ -194,6 +194,9 @@ extension class STypes {
       | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
         Some(TTuple::inter(subst, tenv, tuple1, tuple2))
 
+      | (arr1 @ TArray _, arr2 @ TArray _) ->
+        TArray::inter(subst, tenv, arr1, arr2)
+
       | (TPromise(ty1, pos1), TPromise(ty2, _)) ->
         Some(TPromise(TType::inter(subst, tenv, ty1, ty2), pos1))
 
@@ -400,6 +403,31 @@ extension base class ArrayType {
       ArrayType::createFromFull(
         TType::inter(subst, tenv, arr1.full(), arr2.full()),
       )
+    }
+  }
+}
+
+extension class TArray {
+  static fun inter(
+    subst: mutable Subst,
+    tenv: TEnv,
+    array1: TArray,
+    array2: TArray,
+  ): ?TArray {
+    // Arrays are invariant - both types must be subtypes of each other
+    TType::isSub(subst, tenv, array1.inner, array2.inner) match {
+    | STOk() ->
+      TType::isSub(subst, tenv, array2.inner, array1.inner) match {
+      | STOk() ->
+        Some(
+          TArray(
+            TType::inter(subst, tenv, array1.inner, array2.inner),
+            array1.pos,
+          ),
+        )
+      | STError _ -> None()
+      }
+    | STError _ -> None()
     }
   }
 }

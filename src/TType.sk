@@ -254,6 +254,7 @@ class TType private {
           for (ty in tys) {
             if (!ty.isPrimitiveType(subst, tenv)) return false
           }
+        | TArray _
         | TAlgebraic _
         | TObject _
         | TPromise _ ->
@@ -637,6 +638,7 @@ base class STypeTag final () uses Orderable {
   | TagNum
   | TagString
   | TagBigInt
+  | TagArray
   | TagTuple
   | TagPromise
   | TagObject
@@ -647,6 +649,7 @@ base class SType private (
   pos: PosRange,
 ) uses XXHashable, Orderable, Projectable<STypeTag> {
   children =
+  | TArray(inner: TType)
   | TPromise(inner: TType)
 
   fun tag(): STypeTag {
@@ -658,6 +661,7 @@ base class SType private (
     | TPrimValue(TNum(), _, _) -> TagNum()
     | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
+    | TArray _ -> TagArray()
     | TTuple _ -> TagTuple()
     | TPromise _ -> TagPromise()
     | TObject _ -> TagObject()

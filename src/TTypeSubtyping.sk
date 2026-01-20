@@ -162,6 +162,33 @@ base class STErrorOnTTuple(
     }
 }
 
+base class STErrorOnTArray(
+  arr1: TArray,
+  arr2: TArray,
+) extends STErrorOnSTypeBase<TArray> {
+  children =
+  | STRecArray(STErrorOnTType)
+
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    detail: STErrorDetail,
+  ): List<(PosRange, String)>
+  | STRecArray(err, arr1, arr2) ->
+    msgs = err.toError(detail.decreaseIntermediate());
+    if (detail.maxIntermediateDepth > 0) {
+      List.Cons(
+        (arr1.pos, `Array type ${arr1}`),
+        List.Cons(
+          (arr2.pos, `is not compatible with array type ${arr2}`),
+          msgs,
+        ),
+      )
+    } else {
+      msgs
+    }
+}
+
 base class STErrorOnTPromise(
   p1: TPromise,
   p2: TPromise,
@@ -786,6 +813,9 @@ extension class STypes {
         | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
           TTuple::isSub(subst, tenv, tuple1, tuple2)
 
+        | (arr1 @ TArray _, arr2 @ TArray _) ->
+          TArray::isSub(subst, tenv, arr1, arr2)
+
         | (p1 @ TPromise _, p2 @ TPromise _) ->
           TPromise::isSub(subst, tenv, p1, p2)
 
@@ -925,6 +955,25 @@ extension class TTuple {
       }
     };
     STOk()
+  }
+}
+
+extension class TArray {
+  static fun isSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    array1: TArray,
+    array2: TArray,
+  ): STResult<TArray> {
+    // Arrays are invariant - check both directions
+    TType::isSub(subst, tenv, array1.inner, array2.inner) match {
+    | STOk() ->
+      TType::isSub(subst, tenv, array2.inner, array1.inner) match {
+      | STOk() -> STOk()
+      | err @ STErrorOnTType _ -> STRecArray(err, array1, array2)
+      }
+    | err @ STErrorOnTType _ -> STRecArray(err, array1, array2)
+    }
   }
 }
 
