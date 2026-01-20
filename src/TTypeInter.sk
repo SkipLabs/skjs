@@ -415,20 +415,23 @@ extension class TArray {
     array2: TArray,
   ): ?TArray {
     // Arrays are invariant - both types must be subtypes of each other
+    savedSubst = subst.save();
     TType::isSub(subst, tenv, array1.inner, array2.inner) match {
     | STOk() ->
       TType::isSub(subst, tenv, array2.inner, array1.inner) match {
       | STOk() ->
-        Some(
+        return Some(
           TArray(
             TType::inter(subst, tenv, array1.inner, array2.inner),
             array1.pos,
           ),
         )
-      | STError _ -> None()
+      | STError _ -> void
       }
-    | STError _ -> None()
-    }
+    | STError _ -> void
+    };
+    subst.restore(savedSubst);
+    None()
   }
 }
 
