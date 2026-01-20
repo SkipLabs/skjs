@@ -1600,6 +1600,14 @@ extension class TypeChecker {
               },
             )
           }
+        | Some(TArray(eltType, _)) ->
+          !moreArgs = Some(
+            moreArgs match {
+            | None() -> eltType
+            | Some(ma) -> TType::union(tcenv.subst, this.tenv, ma, eltType)
+            },
+          )
+
         | Some(TTuple(tupElts, _)) ->
           moreArgs match {
           | None() -> args.extend(tupElts)
