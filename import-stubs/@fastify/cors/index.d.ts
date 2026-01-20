@@ -7,7 +7,7 @@ type OriginCallback = (
 type OriginType = string | boolean | RegExp;
 type ValueOrArray<T> = T | ArrayOfValueOrArray<T>;
 
-interface ArrayOfValueOrArray<T> extends Array<ValueOrArray<T>> {}
+type ArrayOfValueOrArray<T> = Array<ValueOrArray<T>>;
 
 type FastifyCorsPlugin = FastifyPluginCallback<NonNullable<FastifyCorsOptions>>;
 /*| FastifyCorsOptionsDelegate*/
