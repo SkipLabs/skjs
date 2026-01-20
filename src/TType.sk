@@ -649,7 +649,6 @@ base class SType private (
   pos: PosRange,
 ) uses XXHashable, Orderable, Projectable<STypeTag> {
   children =
-  | TArray(inner: TType)
   | TPromise(inner: TType)
 
   fun tag(): STypeTag {
@@ -675,6 +674,12 @@ base class SType private (
 
   fun toString(): String {
     prettyPrintSType(this, false)
+  }
+}
+
+class TArray(inner: TType) extends SType {
+  fun asClassName(): Name {
+    Name(this.pos, "Array")
   }
 }
 

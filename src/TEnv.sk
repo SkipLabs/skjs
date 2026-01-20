@@ -1077,8 +1077,10 @@ class TEnv{
         | prim @ TPrimValue _ ->
           obj = this.newObject(subst, prim.asClassName(), Array[]);
           stypes.push(obj)
+        | arr @ TArray(inner, _pos) ->
+          obj = this.newObject(subst, arr.asClassName(), Array[inner]);
+          stypes.push(obj)
         | TPrimUnit _ -> /* bottom */ void
-        | TArray _
         | TPromise _ ->
           typingError(Array[(pos, `TODO: keyof ${prettyPrintSType(stype)}`)])
         }
