@@ -265,7 +265,7 @@ mutable class ExpandTVars() extends ApplyType {
       (clauses) -> this.clauses(env, clauses),
     );
     (subst, tenv) = env;
-    ty.expand(subst, tenv, Covariant());
+    ty.expand(subst, tenv, Some(Covariant()));
   }
 }
 

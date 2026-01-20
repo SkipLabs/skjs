@@ -187,7 +187,7 @@ class TType private {
     variance: Variance,
     f: (?STypes) -> ?STypes,
   ): TType {
-    expanded = this.expand(subst, tenv, variance);
+    expanded = this.expand(subst, tenv, Some(variance));
     TType::create(this.pos, expanded.insts, expanded.clauses.mapSTypes(f))
   }
 
@@ -283,7 +283,7 @@ class TType private {
   fun expandedClausesIterator(
     subst: mutable Subst,
     tenv: TEnv,
-    variance: Variance,
+    expandTVars: ?Variance,
   ): mutable Iterator<Clauses> {
     yield this.clauses;
     insts = Vector::mcreateFromIterator(this.insts.insts.values());
@@ -294,7 +294,11 @@ class TType private {
       | TSInst(name, targs) -> tenv.instantiate(subst, name, targs)
       | TInter(ty1, ty2) -> TType::inter(subst, tenv, ty1, ty2)
       | TUnion(ty1, ty2) -> TType::union(subst, tenv, ty1, ty2)
-      | tvar @ TVar _ -> subst.get(tenv, tvar, variance)
+      | tvar @ TVar _ ->
+        expandTVars match {
+        | Some(variance) -> subst.get(tenv, tvar, variance)
+        | None() -> continue
+        }
       | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
       };
       yield tyDef.clauses;
@@ -306,17 +310,21 @@ class TType private {
     }
   }
 
-  fun expand_(subst: mutable Subst, tenv: TEnv, variance: Variance): Clauses {
+  fun expand_(
+    subst: mutable Subst,
+    tenv: TEnv,
+    expandTVars: ?Variance,
+  ): Clauses {
     res = Clauses::empty();
-    for (clauses in this.expandedClausesIterator(subst, tenv, variance)) {
+    for (clauses in this.expandedClausesIterator(subst, tenv, expandTVars)) {
       if (clauses.isTop()) return Clauses::top();
       !res = Clauses::union(subst, tenv, res, clauses)
     };
     res
   }
 
-  fun expand(subst: mutable Subst, tenv: TEnv, variance: Variance): TType {
-    TType::fromClauses(this.pos, this.expandToClauses(subst, tenv, variance))
+  fun expand(subst: mutable Subst, tenv: TEnv, expandTVars: ?Variance): TType {
+    TType::fromClauses(this.pos, this.expand_(subst, tenv, expandTVars))
   }
 
   fun expandToClauses(
@@ -324,7 +332,7 @@ class TType private {
     tenv: TEnv,
     variance: Variance,
   ): Clauses {
-    this.expand_(subst, tenv, variance)
+    this.expand_(subst, tenv, Some(variance))
   }
 
   fun getConstantString(): ?PrimLiteral {

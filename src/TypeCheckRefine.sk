@@ -279,7 +279,7 @@ extension class TypeChecker {
     map: SType ~> SType = x ~> x,
   ): void {
     ty = tcenv.scope.get(local);
-    !ty = ty.expand(tcenv.subst, this.tenv, Covariant());
+    !ty = ty.expand(tcenv.subst, this.tenv, Some(Covariant()));
     !ty = (mutable FilterType()).type((filter, map, default), ty);
     tcenv.scope.set(local, ty, (_, _) -> void)
   }

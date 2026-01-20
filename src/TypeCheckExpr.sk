@@ -720,7 +720,7 @@ extension class TypeChecker {
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       for (arg in args) {
         exprTy = this.expr(tcenv, arg, true);
-        ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Covariant());
+        ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Some(Covariant()));
         print_error(prettyPrintType(false, ty))
       };
       TType::single(TPrimUnit(TVoid(), pos))
