@@ -1,0 +1,297 @@
+/**
+ * Delayed array literal typing: defers tuple vs array choice until use-site.
+ *
+ * ## Overview
+ *
+ * When an array literal [e1, e2, ...] is encountered, we defer the decision of
+ * whether it should be typed as a tuple or an array. The literal is assigned a
+ * fresh type variable α (the "commitment variable") and remembers its element
+ * types. Later, when the literal is used in a context requiring a specific type,
+ * we "commit" α to either Array<U> or Tuple[...].
+ *
+ * ## Notation
+ *
+ * ArrayLit<α, elts> represents a delayed literal with:
+ *   - α: the commitment type variable (uncommitted when unbound)
+ *   - elts: the precise element types from the literal
+ *
+ * Commitment states:
+ *   - Uncommitted: α is unbound, literal can still become array or tuple
+ *   - ArrayLit<Array<U>, elts>: α bound to Array<U>, committed as array
+ *   - ArrayLit<Tuple[...], elts>: α bound to Tuple[...], committed as tuple
+ *
+ * ## Key Operations
+ *
+ * 1. typeFromLiteral: Creates ArrayLit<α, elts> with fresh α
+ * 2. expand: Returns committed type if bound, else defaults to Tuple[elts...]
+ * 3. refineForArrayUse: Commits to Array when array-like indexing is used
+ * 4. subtyping: Handles ArrayLit on LHS or RHS of subtype checks
+ *
+ * ## Subtyping Rules
+ *
+ * When checking u1 <: u2 where one side is an uncommitted ArrayLit:
+ *
+ * Case 1: u1 <: ArrayLit<α, elts> (RHS is literal)
+ *   → Commit α to Array<union(elts)>, then check u1 <: Array<...>
+ *
+ * Case 2: ArrayLit<α, elts> <: u2 (LHS is literal)
+ *   2a. u2 is unconstrained type variable → commit to Tuple[elts], bind u2
+ *   2b. u2 contains Array<U> → commit to Array<union(elts)>
+ *   2c. u2 is Tuple[...] → commit to Tuple[elts], check element subtyping
+ *
+ * See docs/delayed-array-literal-typing.tex for the formal type theory.
+ */
+
+module SKJS;
+
+class ArrayLitTyping() {
+  // Returns the single uncommitted ArrayLit in ty, or None if none/committed/multiple.
+  static private fun getSingleArrayLitUncommitted(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): ?TArrayLit {
+    if (!ty.clauses.isEmpty()) return None();
+    ty.insts.getSingleArrayLit() match {
+    | Some(arrLit) ->
+      ArrayLitTyping::arrayLitCommittedType(subst, tenv, arrLit) match {
+      | Some(_) -> None()
+      | None() -> Some(arrLit)
+      }
+    | None() -> None()
+    }
+  }
+
+  // Returns the type α is committed to, or None if uncommitted.
+  static private fun arrayLitCommittedType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+  ): ?TType {
+    subst.peek(tenv, arrLit.tvar)
+  }
+
+  // Default type when α is uncommitted: Tuple[...].
+  // Used during expansion and when biasing unconstrained type variables.
+  static private fun arrayLitDefaultType(arrLit: TArrayLit): TType {
+    ArrayLitTyping::arrayLitToTupleType(arrLit)
+  }
+
+  // Expands ArrayLit<α, elts> to its committed type, or default if uncommitted.
+  static fun expand(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+  ): TType {
+    ArrayLitTyping::arrayLitCommittedType(subst, tenv, arrLit) match {
+    | Some(ty) -> ty
+    | None() -> ArrayLitTyping::arrayLitDefaultType(arrLit)
+    }
+  }
+
+  // Converts ArrayLit<α, elts> to Tuple[elts...].
+  static private fun arrayLitToTupleType(arrLit: TArrayLit): TType {
+    TType::single(TTuple(arrLit.tupleElts, arrLit.tvar.pos))
+  }
+
+  // Widens literal primitive types (e.g., 42 -> number) in ty.
+  static private fun widenLiteralType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): TType {
+    ty.mapSTypes(subst, tenv, Covariant(), stypesOpt ->
+      stypesOpt.map(stypes ->
+        stypes.map(stype ->
+          stype match {
+          | TPrimValue(kind, Some(_), pos) -> TPrimValue::full(kind, pos)
+          | _ -> stype
+          }
+        )
+      )
+    )
+  }
+
+  // Converts ArrayLit<α, elts> to Array<U> by widening and unioning all elements.
+  // For empty arrays, generates Array<T> with fresh T instead of Array<never>.
+  static private fun arrayLitToArrayType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+  ): TType {
+    eltType = if (arrLit.tupleElts.isEmpty()) {
+      // Empty array: use fresh type variable
+      TType::var(subst.gen(arrLit.tvar.pos))
+    } else {
+      result = TType::bottom(arrLit.tvar.pos);
+      for (elt in arrLit.tupleElts) {
+        widenedElt = ArrayLitTyping::widenLiteralType(subst, tenv, elt);
+        !result = TType::union(subst, tenv, result, widenedElt)
+      };
+      result
+    };
+    TType::inst(Name(arrLit.tvar.pos, "Array"), TArgs(Array[eltType]))
+  }
+
+  // Commits ArrayLit<α, elts> by binding α to committedTy (irreversible).
+  static private fun arrayLitCommitType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+    committedTy: TType,
+  ): void {
+    subst.grow(tenv, arrLit.tvar, committedTy, Covariant());
+  }
+
+  // Extracts element types from Array<U> instances in ty (handles unions).
+  // If ty = Array<U1> | ... | Array<Un>, returns [U1, ..., Un].
+  static private fun arrayInstArgs(ty: TType): Array<TType> {
+    result = mutable Vector[];
+    for (inst in ty.insts.insts) {
+      inst match {
+      | TSInst(Name(_, "Array"), TArgs(targs)) if (targs.size() == 1) ->
+        result.push(targs[0])
+      | TUnion(ty1, ty2) ->
+        for (x in ArrayLitTyping::arrayInstArgs(ty1)) {
+          result.push(x)
+        };
+        for (x in ArrayLitTyping::arrayInstArgs(ty2)) {
+          result.push(x)
+        }
+      | _ -> void
+      }
+    };
+    result.toArray()
+  }
+
+  // Builds Array<U> by unioning candidate element types into U.
+  static private fun arrayTypeFromCandidates(
+    subst: mutable Subst,
+    tenv: TEnv,
+    pos: PosRange,
+    candidates: Array<TType>,
+  ): TType {
+    eltType = TType::bottom(pos);
+    for (candidate in candidates) {
+      !eltType = TType::union(subst, tenv, eltType, candidate)
+    };
+    TType::inst(Name(pos, "Array"), TArgs(Array[eltType]))
+  }
+
+  // Creates ArrayLit<α, elts> with fresh type variable α.
+  // Example: [1, 2] -> ArrayLit<α, elts=[number, number]>
+  static fun typeFromLiteral(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    elementTypes: Array<TType>,
+  ): TType {
+    tvar = tcenv.subst.gen(pos);
+    TType::arrayLit(tvar, elementTypes)
+  }
+
+  // Returns true if index type forces array refinement (string or non-literal number).
+  // Excludes literal numeric indices (e.g., x[0]) which could be tuple or array.
+  static private fun shouldRefineArrayFromIndexType(idxSType: SType): Bool {
+    idxSType match {
+    | TPrimValue(TString(), _, _) -> true
+    | TPrimValue(TNum(), None(), _) -> true
+    | _ -> false
+    }
+  }
+
+  // Refines ArrayLit<α, elts> to Array<U> when array-like indexing is used.
+  // Returns ty unchanged if:
+  //   - the index type doesn't force array refinement, or
+  //   - ty is not an uncommitted array literal.
+  // Otherwise commits the literal to Array<union(widened elts)> and returns it.
+  static fun refineForArrayUse(
+    tcenv: mutable TCEnv,
+    tenv: TEnv,
+    ty: TType,
+    idxSType: SType,
+  ): TType {
+    if (!ArrayLitTyping::shouldRefineArrayFromIndexType(idxSType)) return ty;
+    ArrayLitTyping::getSingleArrayLitUncommitted(tcenv.subst, tenv, ty) match {
+    | None() -> ty
+    | Some(arrLit) ->
+      // Commit to Array<union(widened elts)>
+      arrayTy = ArrayLitTyping::arrayLitToArrayType(tcenv.subst, tenv, arrLit);
+      ArrayLitTyping::arrayLitCommitType(tcenv.subst, tenv, arrLit, arrayTy);
+      arrayTy
+    }
+  }
+
+  // Handles subtyping when u1 or u2 contains ArrayLit<α, elts>.
+  // Each branch commits the literal to tuple or array based on context.
+  static fun subtyping(
+    subst: mutable Subst,
+    tenv: TEnv,
+    u1: TType,
+    u2: TType,
+  ): ?STResult<TType> {
+    // Case 1: u1 <: ArrayLit<α, elts> (RHS is uncommitted literal)
+    // Example: f([1,2], [3,4]) where T was inferred from [1,2] and reused.
+    ArrayLitTyping::getSingleArrayLitUncommitted(subst, tenv, u2) match {
+    | Some(arrLit) ->
+      // Commit RHS to Array<union(elts)> as permissive supertype.
+      arrayTy = ArrayLitTyping::arrayLitToArrayType(subst, tenv, arrLit);
+      ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
+      return Some(TType::isSub(subst, tenv, u1, arrayTy))
+    | None() -> void
+    };
+
+    // Case 2: ArrayLit<α, elts> <: u2 (LHS is uncommitted literal)
+    ArrayLitTyping::getSingleArrayLitUncommitted(subst, tenv, u1) match {
+    | Some(arrLit) ->
+      // Case 2a: ArrayLit<α, elts> <: β (unconstrained type variable)
+      // Example: f([1,2]) where T has no constraints.
+      u2.getSingleVar() match {
+      | Some(tvar) if (tvar.constraints.isEmpty()) ->
+        defaultTy = ArrayLitTyping::arrayLitDefaultType(arrLit);
+        ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, defaultTy);
+        subst.grow(tenv, tvar, defaultTy, Contravariant());
+        return Some(STOk())
+      | _ -> void
+      };
+      // Case 2b: ArrayLit<α, elts> <: Array<U1> | ... | Array<Un>
+      // Extract [U1, ..., Un] from the RHS union.
+      arrayCandidates = ArrayLitTyping::arrayInstArgs(u2);
+      // If we have array candidates, commit to array type:
+      // - If literal is empty []: commit to Array<U1 | ... | Un>
+      //   (An empty array has no elements, so use union of RHS element types instead.)
+      // - Otherwise: commit to Array<union(widened elts)>
+      //   (Use the literal's elements, widened and unioned.)
+      if (!arrayCandidates.isEmpty()) {
+        arrayTy = if (arrLit.tupleElts.isEmpty()) {
+          ArrayLitTyping::arrayTypeFromCandidates(
+            subst,
+            tenv,
+            arrLit.tvar.pos,
+            arrayCandidates,
+          )
+        } else {
+          ArrayLitTyping::arrayLitToArrayType(subst, tenv, arrLit)
+        };
+        ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
+        return Some(TType::isSub(subst, tenv, arrayTy, u2))
+      };
+      // Case 2c: ArrayLit<α, elts> <: Tuple[U1, ...]
+      u2.getSTypes(subst, tenv, Covariant()).flatMap(stypes ->
+        stypes.singleElt()
+      ) match {
+      | Some(tuple2 @ TTuple _) ->
+        // Commit to tuple, then check subtyping.
+        literalTupleTy = ArrayLitTyping::arrayLitToTupleType(arrLit);
+        ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, literalTupleTy);
+        return Some(
+          TType::isSub(subst, tenv, literalTupleTy, TType::single(tuple2)),
+        )
+      | _ -> void
+      }
+    | None() -> void
+    };
+    None()
+  }
+}
+
+module end;

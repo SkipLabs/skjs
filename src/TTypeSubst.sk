@@ -99,6 +99,19 @@ mutable class Subst private {
     result
   }
 
+  mutable fun peek(tenv: TEnv, tvar: TVar): ?TType {
+    this.values.maybeGet(tvar.id) match {
+    | None() -> None()
+    | Some(SVOpen(ty))
+    | Some(SVClosed(ty)) ->
+      result = ty;
+      for (cstr in tvar.constraints) {
+        !result = TType::inter(this, tenv, result, cstr)
+      };
+      Some(result)
+    }
+  }
+
   mutable fun gen(pos: PosRange): TVar {
     id = this.version;
     this.!version = this.version + 1;

@@ -1,0 +1,184 @@
+// Basic array annotation and array operation refinement.
+function numbersArray(): void {
+  const numbers: number[] = [1, 2, 3, 4, 5];
+  numbers.push(6);
+  const first: number | undefined = numbers[0];
+}
+
+// Array literal refined to array via push and index access.
+function arrayLiteralRefinement(): void {
+  const values = [1, 2, 3];
+  values.push(4);
+  const first: number | undefined = values[0];
+}
+
+// Union target array refinement: Array<T> | null accepts a literal.
+function unionArrayTarget(): void {
+  const values = [1, 2, 3];
+  takesArrayOrNull(values);
+}
+
+// Helper for unionArrayTarget.
+function takesArrayOrNull(values: number[] | null): void {
+  if (values === null) return;
+  values.push(4);
+}
+
+// Tuple refinement commits the literal, so array ops should fail.
+function tupleThenArrayUse(): void {
+  const values = [1, 2];
+  takesTuple(values);
+  // @skjs-expect-error Invalid index
+  values.push(3);
+}
+
+// Array refinement commits the literal, so tuple annotation should fail.
+function arrayThenTupleUse(): void {
+  const values = [1, 2];
+  takesArray(values);
+  // @skjs-expect-error Invalid annotation
+  const tuple: [number, number] = values;
+}
+
+// Tuple refinement should succeed for a matching tuple type.
+function tupleRefinementOk(): void {
+  const values = [1, 2];
+  const tuple: [number, number] = values;
+  if (tuple[0] < 0) {
+    return;
+  }
+}
+
+// Non-uniform tuple can be promoted to array of union type.
+function promoteNonUniformTuple(): void {
+  const values = [1, "a"];
+  const arr: Array<number | string> = values;
+  arr.push(2);
+  arr.push("b");
+}
+
+// Non-uniform tuple indexing is accepted by SKJS but rejected by TS.
+function nonUniformTupleIndexing(): void {
+  const values = [1, "a"];
+  const x: number = values[0];
+  if (x < 0) {
+    return;
+  }
+}
+
+// Non-literal index access refines to array, then tuple annotation fails.
+function indexRefinesArray(): void {
+  const values = [1, 2];
+  const idx: number = 1;
+  const v = values[idx];
+  if (v === undefined) {
+    return;
+  }
+  if (v < 0) {
+    return;
+  }
+  // @skjs-expect-error Invalid annotation
+  const tuple: [number, number] = values;
+}
+
+// Method access refines to array, then tuple annotation fails.
+function methodRefinesArray(): void {
+  const values = [1, 2];
+  const mapped = values.map((x: number) => x + 1);
+  const first = mapped[0];
+  if (first === undefined) {
+    return;
+  }
+  if (first < 0) {
+    return;
+  }
+  // @skjs-expect-error Invalid annotation
+  const tuple: [number, number] = values;
+}
+
+// Tuple helper used by tupleThenArrayUse and tupleRefinementOk.
+function takesTuple(values: [number, number]): void {
+  if (values[0] < 0) {
+    return;
+  }
+}
+
+// Literal tuple helper used by literalPrecisionLoss.
+function takesLiteralTuple(values: [1, 2]): void {
+  if (values[0] < 0) {
+    return;
+  }
+}
+
+// Array helper used by arrayThenTupleUse and unionArrayTarget.
+function takesArray(values: number[]): void {
+  values.push(3);
+}
+
+// --- Empty Array Literal Tests ---
+
+// Empty array literal with annotation refines to the annotated type.
+function emptyArrayWithAnnotation(): void {
+  const arr: number[] = [];
+  arr.push(1);
+  arr.push(2);
+  const first: number | undefined = arr[0];
+  if (first !== undefined && first < 0) {
+    return;
+  }
+}
+
+// Empty array literal without annotation refines to Array<T> for fresh T.
+function emptyArrayNoAnnotation(): void {
+  const arr = [];
+  arr.push(1);
+}
+
+// --- Supertype Position Test (RHS TArrayLit) ---
+
+// When a generic function receives two array literals, the first constrains T
+// and the second must be compatible. This exercises the RHS TArrayLit case
+// when the type variable T carries the first literal's type.
+function genericMerge<T>(a: T, b: T): T {
+  return a;
+}
+
+function supertypePositionTest(): void {
+  // Both literals refine through T; the second checks against T's constraint
+  const result = genericMerge([1, 2], [3, 4, 5]);
+  // Result should be compatible with array operations
+  const first = result[0];
+  if (first !== undefined && first < 0) {
+    return;
+  }
+}
+
+function tupleThenArrayUse2(): void {
+  const numbers = [1, 2, 3, 4, 5];
+  takesTuple(numbers);
+  // @skjs-expect-error Invalid call
+  takesArray(numbers); // Modifies the shape of the tuple
+  takesTuple(numbers);
+}
+
+// Precision loss example: committing a widened tuple can reject literal usage.
+function literalPrecisionLoss(): void {
+  const values = [1, 2];
+  takesLiteralTuple(values);
+  takesLiteralTuple(values);
+}
+
+numbersArray();
+arrayLiteralRefinement();
+unionArrayTarget();
+tupleThenArrayUse();
+arrayThenTupleUse();
+tupleRefinementOk();
+promoteNonUniformTuple();
+nonUniformTupleIndexing();
+indexRefinesArray();
+methodRefinesArray();
+emptyArrayWithAnnotation();
+emptyArrayNoAnnotation();
+supertypePositionTest();
+literalPrecisionLoss();

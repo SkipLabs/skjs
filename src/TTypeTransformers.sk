@@ -189,6 +189,13 @@ mutable base class ApplyType(
     | TUnion(ty1, ty2) ->
       Some(TUnion::create(this.type(env, ty1), this.type(env, ty2)))
     | tvar @ TVar _ -> Some(tvar.mapConstraints(ty -> this.type(env, ty)))
+    | TArrayLit(tvar, tupleElts) ->
+      Some(
+        TArrayLit(
+          tvar.mapConstraints(ty -> this.type(env, ty)),
+          tupleElts.map(ty -> this.type(env, ty)),
+        ),
+      )
     }
   }
 

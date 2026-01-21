@@ -4,3 +4,6 @@ dist/
 .vscode/
 node_modules/
 .generated-examples-check/
+docs/*.bbl
+docs/*.log
+docs/*.aux
