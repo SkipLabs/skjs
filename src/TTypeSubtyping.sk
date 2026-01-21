@@ -868,6 +868,12 @@ extension class TType {
     if (u2.isTop()) return STOk();
     if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
     !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
+
+    ArrayLitTyping::subtyping(subst, tenv, u1, u2) match {
+    | Some(res) -> return res
+    | None() -> void
+    };
+
     savedSubst = subst.save();
     for (inst in u2.insts) {
       inst match {

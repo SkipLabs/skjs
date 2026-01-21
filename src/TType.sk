@@ -137,6 +137,15 @@ class TType private {
     TType::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
+  // Delayed array literal instance.
+  static fun arrayLit(tvar: TVar, tupleElts: Array<TType>): TType {
+    TType::create(
+      tvar.pos,
+      TInsts::single(TArrayLit(tvar, tupleElts)),
+      Clauses::empty(),
+    )
+  }
+
   static fun fromTParamWithConstraint(
     subst: mutable Subst,
     tenv: TEnv,
@@ -288,6 +297,7 @@ class TType private {
       | TInter(ty1, ty2) -> TType::inter(subst, tenv, ty1, ty2)
       | TUnion(ty1, ty2) -> TType::union(subst, tenv, ty1, ty2)
       | tvar @ TVar _ -> subst.get(tenv, tvar, variance)
+      | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
       };
       yield tyDef.clauses;
       for (newInst in tyDef.insts) {
@@ -1053,6 +1063,9 @@ class TVar private (
   }
 }
 
+/* Array literal with delayed typing */
+class TArrayLit(tvar: TVar, tupleElts: Array<TType>) extends TInst {}
+
 /* Unexpanded named type */
 // possibly with type arguments
 class TSInst(name: Name, targs: TArgs) extends TInst {}
@@ -1093,6 +1106,13 @@ class TInsts private (insts: ArraySet<TInst>) uses XXHashable, Orderable {
   fun getSingleVar(): ?TVar {
     this.insts.getUnique() match {
     | Some(var @ TVar _) -> Some(var)
+    | _ -> None()
+    }
+  }
+
+  fun getSingleArrayLit(): ?TArrayLit {
+    this.insts.getUnique() match {
+    | Some(arrLit @ TArrayLit _) -> Some(arrLit)
     | _ -> None()
     }
   }

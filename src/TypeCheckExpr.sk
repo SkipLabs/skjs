@@ -252,16 +252,6 @@ extension class TypeChecker {
     idx: Expr,
     optionalChaining: Bool = false,
   ): TType {
-    stypes = objType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
-    | Some(stypes) if (!stypes.isEmpty()) ->
-      Vector::mcreateFromIterator(stypes.values())
-    | _ ->
-      typingError(
-        Array[
-          (pos, `Invalid access for type ${prettyPrintType(false, objType)}`),
-        ],
-      )
-    };
     idxType = this.expr(tcenv, idx, true);
     idxSType = idxType
       .getSTypes(tcenv.subst, this.tenv, Covariant())
@@ -270,6 +260,22 @@ extension class TypeChecker {
     | Some(ty @ TPrimValue(TNum(), _, _)) ->
       ty
     | _ -> typingError(Array[(idx.pos, "Invalid index type")])
+    };
+    objType2 = ArrayLitTyping::refineForArrayUse(
+      tcenv,
+      this.tenv,
+      objType,
+      idxSType,
+    );
+    stypes = objType2.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+    | Some(stypes) if (!stypes.isEmpty()) ->
+      Vector::mcreateFromIterator(stypes.values())
+    | _ ->
+      typingError(
+        Array[
+          (pos, `Invalid access for type ${prettyPrintType(false, objType2)}`),
+        ],
+      )
     };
     result = TType::bottom(pos);
     optionalChainingIsUseless = optionalChaining;
@@ -805,7 +811,11 @@ extension class TypeChecker {
       this.get(tcenv, pos, this.expr(tcenv, arr, mostPrecise), idx)
 
     | EArray(arr) ->
-      TType::single(TTuple(arr.map(x -> this.expr(tcenv, x, mostPrecise)), pos))
+      ArrayLitTyping::typeFromLiteral(
+        tcenv,
+        pos,
+        arr.map(x -> this.expr(tcenv, x, mostPrecise)),
+      )
 
     | Unop(uop, subExpr) ->
       ty = this.expr(tcenv, subExpr, true);
