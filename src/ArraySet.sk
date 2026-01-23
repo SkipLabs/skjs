@@ -43,6 +43,29 @@ class .ArraySet<T: Orderable> private (
     ArraySet(unsafe_chill_trust_me(inner))
   }
 
+  // Usually cannot use this when we want; it would require duplicating most
+  // of the functions on Vector to return mutable results.
+  static fun createFromMVector<T: Orderable>(
+    vec: mutable Vector<T>,
+  ): ArraySet<T> {
+    if (vec.isEmpty()) return ArraySet::empty();
+    vec.sortBy(id);
+    prev: ?T = None();
+    vec.keepWhere(x -> {
+      keep = prev.map(p -> p != x).default(true);
+      !prev = Some(x);
+      keep
+    });
+    ArraySet(unsafe_chill_trust_me(vec.chill()))
+  }
+
+  static fun createFromVector<T: Orderable>(
+    vec: readonly Vector<T>,
+  ): ArraySet<T> {
+    if (vec.isEmpty()) return ArraySet::empty();
+    ArraySet::createFromMVector(vec.clone())
+  }
+
   static fun createFromIterator<T: Orderable, I: mutable Iterator<T>>(
     items: I,
   ): ArraySet<T> {
@@ -82,15 +105,11 @@ class .ArraySet<T: Orderable> private (
   }
 
   fun map<U: Orderable>(f: T -> U): ArraySet<U> {
-    // use a SortedSet to sort and dedup since callers of map do not
-    // guarantee that f is monotone
-    static::createFromIterator(this.values().map(f).collect(SortedSet).values())
+    ArraySet::createFromVector(this.inner.map(f))
   }
 
   fun filterMap<U: Orderable>(f: T -> ?U): ArraySet<U> {
-    ArraySet::createFromIterator(
-      this.values().filterMap(f).collect(SortedSet).values(),
-    )
+    ArraySet::createFromVector(this.values().filterMap(f).collect(Vector))
   }
 
   // s.iterDiffInterDiff(t) contains Left(x) for every x in s but not t,
@@ -112,19 +131,8 @@ class .ArraySet<T: Orderable> private (
     !this.iterDiffInterDiff(that).any(v -> v is Right(_))
   }
 
-  fun iterUnion(that: this): mutable Iterator<T> {
-    this.iterDiffInterDiff(that).map(v ->
-      v match {
-      | Left(x)
-      | Right(x)
-      | Both(x, _) ->
-        x
-      }
-    )
-  }
-
   fun union(that: this): this {
-    static::createFromIterator(this.iterUnion(that))
+    ArraySet::createFromVector(this.inner.concat(that.inner))
   }
 }
 
