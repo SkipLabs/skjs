@@ -87,6 +87,10 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     this.maybeGet(k).isSome()
   }
 
+  fun toVector(): Vector<T> {
+    this.inner
+  }
+
   fun toArray(): Array<T> {
     this.inner.toArray()
   }
