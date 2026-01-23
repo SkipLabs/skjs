@@ -810,6 +810,12 @@ extension class TypeChecker {
     | Get(arr, idx) ->
       this.get(tcenv, pos, this.expr(tcenv, arr, mostPrecise), idx)
 
+    // We always interpret `[]` as an array, not a tuple.
+    // Because an empty tuple is not very meaningful.
+    | EArray(arr) if (arr.size() == 0) ->
+      tvar = this.newTVar(tcenv, pos);
+      TType::inst(Name(pos, "Array"), TArgs(Array[tvar]))
+
     | EArray(arr) ->
       ArrayLitTyping::typeFromLiteral(
         tcenv,

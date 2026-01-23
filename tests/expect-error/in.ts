@@ -311,7 +311,6 @@ function refineStringInRecord2(s: string, x: { f: number }): unknown {
 }
 
 function literalInTupleAlwaysFalse(): boolean {
-  // @skjs-expect-error TODO: in
   return 0 in [];
 }
 
