@@ -318,7 +318,14 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): TObject {
-    TObject(TFields::union(subst, tenv, obj1.fields, obj2.fields), obj1.pos)
+    arrayFields = (obj1.arrayFields, obj2.arrayFields) match {
+    | (Some(af1), Some(af2)) ->
+      Some(TFields::union(subst, tenv, af1, af2))
+    | (Some(af), None()) -> Some(af)
+    | (None(), Some(af)) -> Some(af)
+    | (None(), None()) -> None()
+    };
+    TObject(arrayFields, TFields::union(subst, tenv, obj1.fields, obj2.fields), obj1.pos)
   }
 }
 

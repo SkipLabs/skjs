@@ -98,7 +98,7 @@ extension class TypeChecker {
       | Some(stypes) ->
         for (stype in stypes) {
           (branches, typeForRest) = stype match {
-          | tobj @ TObject(fields, _) ->
+          | tobj @ TObject(_, fields, _) ->
             (Array[fields], tobj.removeFields(fieldsToRemoveForRest))
           | a @ TAlgebraic _ ->
             (
@@ -311,10 +311,10 @@ extension class TypeChecker {
         };
         !result = TType::union(tcenv.subst, this.tenv, result, tyAtN)
 
-      | TObject(fields, objectPos) if (fields.isEmpty()) ->
+      | TObject(_, fields, objectPos) if (fields.isEmpty()) ->
         !result = TType::top(objectPos)
 
-      | TObject(fields, objectPos) ->
+      | TObject(_, fields, objectPos) ->
         idxSType.literals match {
         | None() -> Some(idxSType)
         | Some(lits) ->
@@ -582,7 +582,7 @@ extension class TypeChecker {
               },
             );
             break TType::single(
-              TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
+              TObject(None(), TFields::create{call => Some(tFuns)}, tFuns.pos),
             )
           | c @ Class _ ->
             staticClass = this.tenv.newStatic(tcenv, c.name);
@@ -636,6 +636,7 @@ extension class TypeChecker {
             for (spreadSType in spreadSTypes) {
               spreadSType match {
               | TObject(
+                _,
                 TFields{fields => spreadFields, indexes => spreadIndexes},
                 _pos,
               ) ->
@@ -662,7 +663,7 @@ extension class TypeChecker {
           (
             name,
             TType::single(
-              TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
+              TObject(None(), TFields::create{call => Some(tFuns)}, tFuns.pos),
             ),
           )
         };
@@ -734,7 +735,7 @@ extension class TypeChecker {
       tfuns = fty
         .getSTypes(tcenv.subst, this.tenv, Covariant())
         .flatMap(stypes ~> stypes.singleElt()) match {
-      | Some(TObject(TFields{call => Some((optional, tfuns))}, _)) ->
+      | Some(TObject(_, TFields{call => Some((optional, tfuns))}, _)) ->
         if (optional) {
           tcenv.error(
             Array[
@@ -785,7 +786,7 @@ extension class TypeChecker {
         subExprTy
           .getSTypes(tcenv.subst, this.tenv, Covariant())
           .flatMap(stypes -> stypes.singleElt()) match {
-        | Some(TObject(TFields{new => Some((optional, f))}, objPos)) ->
+        | Some(TObject(_, TFields{new => Some((optional, f))}, objPos)) ->
           if (optional) {
             tcenv.error(
               Array[
@@ -795,7 +796,7 @@ extension class TypeChecker {
             )
           };
           this.call(tcenv, pos, f, tArgs, args, mostPrecise)
-        | Some(TObject(TFields{new => None()}, objPos)) ->
+        | Some(TObject(_, TFields{new => None()}, objPos)) ->
           typingError(
             Array[
               (pos, "Invalid new"),
@@ -1073,7 +1074,7 @@ extension class TypeChecker {
             );
             !canBeTrue = true;
             !canBeFalse = true
-          | TObject(TFields{fields, indexes}, _pos) ->
+          | TObject(_, TFields{fields, indexes}, _pos) ->
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
@@ -1342,6 +1343,7 @@ extension class TypeChecker {
 
     TType::single(
       TObject(
+        None(),
         TFields::create{
           call => Some(
             TFuns::singleFun(
@@ -1465,7 +1467,7 @@ extension class TypeChecker {
       .get(local)
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(TObject(fields, objPos)) ->
+    | Some(TObject(_, fields, objPos)) ->
       invariant(fields.indexes.isEmpty(), "Local objects have no indexes");
       invariant(fields.new is None(), "Local objects have no constructors");
       objField = fields.maybeGet(fieldName.value) match {
@@ -1505,7 +1507,7 @@ extension class TypeChecker {
             TFields::create{fields => Array[field]},
           ) match {
           | None() -> TType::bottom(objPos)
-          | Some(newFields) -> TType::single(TObject(newFields, objPos))
+          | Some(newFields) -> TType::single(TObject(None(), newFields, objPos))
           };
           tcenv.scope.set(local, newTy, (x, y) -> {
             this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)

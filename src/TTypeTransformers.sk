@@ -113,7 +113,11 @@ mutable base class ApplyType(
     env: this::Env,
     object: TObject,
   ): TObject {
-    TObject(this.fields(env, object.fields), object.pos)
+    TObject(
+      object.arrayFields.map(f -> this.fields(env, f)),
+      this.fields(env, object.fields),
+      object.pos,
+    )
   }
 
   overridable deferred mutable fun funs(env: this::Env, funs: TFuns): TFuns {

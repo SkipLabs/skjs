@@ -328,7 +328,7 @@ extension class TypeChecker {
 
     for (stype in stypes) {
       stype match {
-      | TObject(fields, _objectPos) ->
+      | TObject(_, fields, _objectPos) ->
         if (fields.indexes.isEmpty()) {
           tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
         };

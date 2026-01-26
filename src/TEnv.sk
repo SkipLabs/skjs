@@ -226,13 +226,12 @@ class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
-    TObject(
-      TFields::create{
-        fields => fields.values().collect(Array),
-        indexes => indexes.toArray(),
-      },
-      className.pos,
-    )
+    tfields = TFields::create{
+      fields => fields.values().collect(Array),
+      indexes => indexes.toArray(),
+    };
+    arrayFields = if (className.value == "Array") Some(tfields) else None();
+    TObject(arrayFields, tfields, className.pos)
   }
 
   fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {
@@ -264,14 +263,13 @@ class TEnv{
     | Some(tfuns) -> tfuns
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
-    TObject(
-      TFields::create{
-        fields => fields.values().collect(Array),
-        indexes => indexes.toArray(),
-        new => Some(new),
-      },
-      pos,
-    )
+    tfields = TFields::create{
+      fields => fields.values().collect(Array),
+      indexes => indexes.toArray(),
+      new => Some(new),
+    };
+    arrayFields = if (className.value == "Array") Some(tfields) else None();
+    TObject(arrayFields, tfields, pos)
   }
 
   private fun makeEmptyConstructor(
@@ -490,7 +488,7 @@ class TEnv{
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(
-          TObject(TFields::create{call => Some(metTFuns)}, metTFuns.pos),
+          TObject(None(), TFields::create{call => Some(metTFuns)}, metTFuns.pos),
         );
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
@@ -647,11 +645,11 @@ class TEnv{
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
-      TType::single(TObject(TFields::create{call => Some(tfuns)}, pos))
+      TType::single(TObject(None(), TFields::create{call => Some(tfuns)}, pos))
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
-      TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
+      TType::single(TObject(None(), TFields::create{new => Some(tfuns)}, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
@@ -683,7 +681,7 @@ class TEnv{
         | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
         | Some(fd) -> this.makeConstructor(tcenvb, className, c.tparams, fd)
         };
-        TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
+        TType::single(TObject(None(), TFields::create{new => Some(tfuns)}, pos))
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
     | TAPrim(kind) ->
@@ -703,7 +701,7 @@ class TEnv{
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TObject(TFields::empty(), pos))
+      TType::single(TObject(None(), TFields::empty(), pos))
 
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(tcenvb, ty)]))
@@ -1012,7 +1010,7 @@ class TEnv{
           notSupported(fd.pos, "symbol-named method in literal object type")
         | FNNormal(name) ->
           decl = TType::single(
-            TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
+            TObject(None(), TFields::create{call => Some(tFuns)}, tFuns.pos),
           );
           optField = TField::create(name.pos, name.value, false, decl);
           if (optField is None()) {
@@ -1055,7 +1053,7 @@ class TEnv{
         stype = stypes.pop();
         stype match {
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
-        | TObject(fields, _) ->
+        | TObject(_, fields, _) ->
           for (field in fields) {
             !strings = strings.set(field.name);
           };

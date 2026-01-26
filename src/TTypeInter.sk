@@ -339,9 +339,16 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): ?TObject {
-    TFields::inter(subst, tenv, obj1.fields, obj2.fields).map(fields ->
-      TObject(fields, obj1.pos)
-    )
+    TFields::inter(subst, tenv, obj1.fields, obj2.fields).map(fields -> {
+      arrayFields = (obj1.arrayFields, obj2.arrayFields) match {
+      | (Some(af1), Some(af2)) ->
+        TFields::inter(subst, tenv, af1, af2)
+      | (Some(af), None()) -> Some(af)
+      | (None(), Some(af)) -> Some(af)
+      | (None(), None()) -> None()
+      };
+      TObject(arrayFields, fields, obj1.pos)
+    })
   }
 }
 
