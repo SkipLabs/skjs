@@ -400,6 +400,10 @@ class TObject(fields: TFields) extends SType {
     TObject(f(this.fields), this.pos)
   }
 
+  fun filter(f: TField -> Bool): TObject {
+    this.map(fields -> fields.filter(f))
+  }
+
   fun removeFields(fieldsToRemove: SortedSet<String>): TObject {
     if (fieldsToRemove.isEmpty()) this else {
       this.map(fields -> fields.removeFields(fieldsToRemove))
