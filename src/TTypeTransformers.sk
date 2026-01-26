@@ -115,6 +115,7 @@ mutable base class ApplyType(
   ): TObject {
     TObject(
       object.arrayFields.map(f -> this.fields(env, f)),
+      object.objectFields.map(f -> this.fields(env, f)),
       this.fields(env, object.fields),
       object.pos,
     )

@@ -347,7 +347,14 @@ extension class TObject {
       | (None(), Some(af)) -> Some(af)
       | (None(), None()) -> None()
       };
-      TObject(arrayFields, fields, obj1.pos)
+      objectFields = (obj1.objectFields, obj2.objectFields) match {
+      | (Some(of1), Some(of2)) ->
+        TFields::inter(subst, tenv, of1, of2)
+      | (Some(of), None()) -> Some(of)
+      | (None(), Some(of)) -> Some(of)
+      | (None(), None()) -> None()
+      };
+      TObject(arrayFields, objectFields, fields, obj1.pos)
     })
   }
 }

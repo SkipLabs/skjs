@@ -395,7 +395,11 @@ base class Variance {
 
 // Regular Typescript (open) object type
 // but disjoint from types in TAlgebraic
-class TObject(arrayFields: ?TFields, fields: TFields) extends SType {
+class TObject(
+  arrayFields: ?TFields,
+  objectFields: ?TFields,
+  fields: TFields,
+) extends SType {
   fun removeFields(fieldsToRemove: SortedSet<String>): TObject {
     if (fieldsToRemove.isEmpty()) this else {
       this with {fields => this.fields.removeFields(fieldsToRemove)}
@@ -496,7 +500,7 @@ fun createObject(
         ),
       )
     }
-  | None() -> TType::single(TObject(None(), fields, pos))
+  | None() -> TType::single(TObject(None(), Some(fields), fields, pos))
   }
 }
 
@@ -606,7 +610,7 @@ class ATFullType(fullType: TType) extends ArrayType {
       popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(TObject(_, TFields{call => Some((_, TFuns(met, _)))}, _)) ->
+      | Some(TObject(_, _, TFields{call => Some((_, TFuns(met, _)))}, _)) ->
         Some(met.retType)
       | _ -> None()
       }

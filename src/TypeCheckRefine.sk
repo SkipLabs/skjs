@@ -98,8 +98,8 @@ extension class TypeChecker {
     | "object" ->
       filter = x ~>
         x match {
-        | TObject(_, TFields{call => Some((true, _))}, _) -> true
-        | TObject(_, TFields{call => None()}, _)
+        | TObject(_, _, TFields{call => Some((true, _))}, _) -> true
+        | TObject(_, _, TFields{call => None()}, _)
         | TAlgebraic _
         | TPrimUnit(TNull(), _)
         | TTuple _
@@ -109,27 +109,39 @@ extension class TypeChecker {
         };
       map = x ~>
         x match {
-        | TObject(arrayFields, tFields @ TFields{call => Some((true, f))}, pos) ->
+        | TObject(
+          arrayFields,
+          objectFields,
+          tFields @ TFields{call => Some((true, f))},
+          pos,
+        ) ->
           call = if (target) None() else Some((false, f));
-          TObject(arrayFields, tFields with {call}, pos)
+          TObject(arrayFields, objectFields, tFields with {call}, pos)
         | _ -> x
         };
-      default = if (target) Some(TObject(None(), TFields::empty(), typePos)) else {
+      default = if (target) {
+        Some(TObject(None(), Some(TFields::empty()), TFields::empty(), typePos))
+      } else {
         None()
       };
       this.setLocal(tcenv, local, default, filter, map)
     | "function" ->
       filter = x ~>
         x match {
-        | TObject(_, TFields{call => Some((true, _))}, _) -> true
-        | TObject(_, TFields{call => Some((false, _))}, _) -> target
+        | TObject(_, _, TFields{call => Some((true, _))}, _) -> true
+        | TObject(_, _, TFields{call => Some((false, _))}, _) -> target
         | _ -> !target
         };
       map = x ~>
         x match {
-        | TObject(arrayFields, tFields @ TFields{call => Some((true, f))}, pos) ->
+        | TObject(
+          arrayFields,
+          objectFields,
+          tFields @ TFields{call => Some((true, f))},
+          pos,
+        ) ->
           call = if (target) Some((false, f)) else None();
-          TObject(arrayFields, tFields with {call}, pos)
+          TObject(arrayFields, objectFields, tFields with {call}, pos)
         | _ -> x
         };
       default = None();
@@ -173,21 +185,38 @@ extension class TypeChecker {
       ),
       _targs,
       args,
-    ) if (args.size() == 1 && target) ->
+    ) if (args.size() == 1) ->
       args[0] match {
       | Expr(_, Var(local)) ->
-        filter = x ~>
-          x match {
-          | TObject(Some(_), _, _) -> true
-          | _ -> false
-          };
-        map = x ~>
-          x match {
-          | TObject(Some(arrFields), _, pos) ->
-            TObject(Some(arrFields), arrFields, pos)
-          | _ -> x
-          };
-        this.setLocal(tcenv, local, None(), filter, map)
+        if (target) {
+          // Refine to array type
+          filter = x ~>
+            x match {
+            | TObject(Some(_), _, _, _) -> true
+            | _ -> false
+            };
+          map = x ~>
+            x match {
+            | TObject(Some(arrFields), _, _, pos) ->
+              TObject(Some(arrFields), None(), arrFields, pos)
+            | _ -> x
+            };
+          this.setLocal(tcenv, local, None(), filter, map)
+        } else {
+          // Refine to non-array (object) type
+          filter = x ~>
+            x match {
+            | TObject(_, Some(_), _, _) -> true
+            | _ -> false
+            };
+          map = x ~>
+            x match {
+            | TObject(_, Some(objFields), _, pos) ->
+              TObject(None(), Some(objFields), objFields, pos)
+            | _ -> x
+            };
+          this.setLocal(tcenv, local, None(), filter, map)
+        }
       | _ -> void
       }
 
@@ -222,7 +251,12 @@ extension class TypeChecker {
               false,
               TType::top(e.pos),
             ).map(field ->
-              TObject(None(), TFields::create{fields => Array[field]}, e1.pos)
+              TObject(
+                None(),
+                Some(TFields::create{fields => Array[field]}),
+                TFields::create{fields => Array[field]},
+                e1.pos,
+              )
             )
           )
         )
@@ -251,7 +285,12 @@ extension class TypeChecker {
         | TAlgebraic _
         | TPromise _ ->
           stype /* TODO */
-        | TObject(arrayFields, tFields @ TFields{indexes}, tObjPos) ->
+        | TObject(
+          arrayFields,
+          objectFields,
+          tFields @ TFields{indexes},
+          tObjPos,
+        ) ->
           litsOpt
             .flatMap(litsToCheck ->
               litsToCheck
@@ -276,7 +315,9 @@ extension class TypeChecker {
                     )
                   }
                 )
-                .map(newTFields -> TObject(arrayFields, newTFields, tObjPos))
+                .map(newTFields ->
+                  TObject(arrayFields, objectFields, newTFields, tObjPos)
+                )
             )
             .default(stype)
         };

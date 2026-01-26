@@ -78,7 +78,7 @@ mutable class TypePp{
 
   mutable fun stype(level: Int, margin: Margin, sty: SType): void {
     sty match {
-    | TObject(_, fields, _) -> this.object(level, margin, fields)
+    | TObject(_, _, fields, _) -> this.object(level, margin, fields)
     | TPromise(ty, _) ->
       this.branch(
         level,

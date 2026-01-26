@@ -22,14 +22,12 @@ function testBasicArrayRefinement(x: Array<number> | Foo): Array<number> {
   }
 }
 
-// Test negative refinement - else branch is not refined (keeps union type)
-function testNegativeArrayRefinement(
-  x: Array<number> | Foo,
-): Array<number> | Foo {
+// Test negative refinement - else branch is refined to Foo
+function testNegativeArrayRefinement(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
-    return [];
+    return { a: "", b: 0 };
   } else {
-    // x is still Array<number> | Foo (no refinement in else branch)
+    // x is now refined to Foo
     return x;
   }
 }
@@ -79,11 +77,12 @@ function testMultipleUnion(
 
 function testMultipleUnionElseBranch(
   x: Array<number> | Foo | string,
-): Array<number> | Foo | string {
+): Foo | string {
   if (Array.isArray(x)) {
-    return [];
+    // @skjs-expect-error Invalid return type
+    return x;
   } else {
-    // x is still Array<number> | Foo | string (no refinement in else branch)
+    // x is now refined to Foo | string (no array)
     return x;
   }
 }
@@ -126,13 +125,13 @@ function testComplexUnion(
 // Negative tests - should produce errors
 ///////////////////////////////////////////////////////////////////////////////
 
-// Accessing array methods works in both branches without refinement
+// Accessing array methods - now with refinement
 function testArrayMethodOnNonArray(x: Array<number> | Foo): number {
   if (Array.isArray(x)) {
     return x.length;
   } else {
-    // x is still Array<number> | Foo, so length might exist
-    // @skjs-expect-error Invalid return type
+    // x is now refined to Foo (no length property)
+    // @skjs-expect-error Unbound field: length
     return x.length;
   }
 }
@@ -143,19 +142,17 @@ function testWrongTypeInArrayBranch(x: Array<number> | Foo): Foo {
     // @skjs-expect-error Invalid return type
     return x;
   } else {
-    // @skjs-expect-error Invalid return type
+    // x is now refined to Foo, so this should work
     return x;
   }
 }
 
-// Else branch without refinement
-function testWrongTypeInElseBranch(
-  x: Array<number> | Foo,
-): Array<number> | Foo {
+// Else branch with refinement
+function testElseBranchRefined(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
-    return x;
+    return { a: "", b: 0 };
   } else {
-    // x is still Array<number> | Foo (no refinement)
+    // x is now refined to Foo
     return x;
   }
 }
@@ -167,8 +164,7 @@ function testObjectPropOnArray(x: Array<number> | Foo): string {
     // @skjs-expect-error Invalid return type
     return x.a;
   } else {
-    // x is still Array<number> | Foo, so .a might exist
-    // @skjs-expect-error Invalid return type
+    // x is now refined to Foo, so x.a works
     return x.a;
   }
 }
