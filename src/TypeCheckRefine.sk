@@ -98,8 +98,26 @@ extension class TypeChecker {
     | "object" ->
       filter = x ~>
         x match {
-        | TObject(TFields{call => Some((true, _))}, _) -> true
-        | TObject(TFields{call => None()}, _)
+        | TObject(Some(TFields{call => Some((true, _))}), _, _)
+        | TObject(_, Some(TFields{call => Some((true, _))}), _)
+        | TObject(
+          Some(TFields{call => Some _}),
+          Some(TFields{call => None()}),
+          _,
+        )
+        | TObject(
+          Some(TFields{call => None()}),
+          Some(TFields{call => Some _}),
+          _,
+        ) ->
+          true
+        | TObject(Some(TFields{call => None()}), None(), _)
+        | TObject(None(), Some(TFields{call => None()}), _)
+        | TObject(
+          Some(TFields{call => None()}),
+          Some(TFields{call => None()}),
+          _,
+        )
         | TAlgebraic _
         | TPrimUnit(TNull(), _)
         | TTuple _
@@ -110,12 +128,16 @@ extension class TypeChecker {
       map = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> if (target) None() else Some((false, f))
-            | _ -> call
-            }
-          )
+          tObj
+            .mapCall(call ->
+              call match {
+              | Some((true, f)) ->
+                Some(if (target) None() else Some((false, f)))
+              | Some((false, _)) -> if (target) None() else Some(call)
+              | None() -> if (target) Some(call) else None()
+              }
+            )
+            .fromSome()
         | _ -> x
         };
       default = if (target) Some(TObject::createEmpty(typePos)) else {
@@ -125,19 +147,42 @@ extension class TypeChecker {
     | "function" ->
       filter = x ~>
         x match {
-        | TObject(TFields{call => Some((true, _))}, _) -> true
-        | TObject(TFields{call => Some((false, _))}, _) -> target
+        | TObject(Some(TFields{call => Some((true, _))}), _, _)
+        | TObject(_, Some(TFields{call => Some((true, _))}), _)
+        | TObject(
+          Some(TFields{call => Some _}),
+          Some(TFields{call => None()}),
+          _,
+        )
+        | TObject(
+          Some(TFields{call => None()}),
+          Some(TFields{call => Some _}),
+          _,
+        ) ->
+          true
+        | TObject(Some(TFields{call => Some((false, _))}), None(), _)
+        | TObject(None(), Some(TFields{call => Some((false, _))}), _)
+        | TObject(
+          Some(TFields{call => Some((false, _))}),
+          Some(TFields{call => Some((false, _))}),
+          _,
+        ) ->
+          target
         | _ -> !target
         };
       map = x ~>
         x match {
         | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> if (target) Some((false, f)) else None()
-            | _ -> call
-            }
-          )
+          tObj
+            .mapCall(call ->
+              call match {
+              | Some((true, f)) ->
+                Some(if (target) Some((false, f)) else None())
+              | Some((false, _)) -> if (target) Some(call) else None()
+              | None() -> if (target) None() else Some(call)
+              }
+            )
+            .fromSome()
         | _ -> x
         };
       default = None();

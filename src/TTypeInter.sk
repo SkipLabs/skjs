@@ -330,6 +330,21 @@ extension class TFields {
     };
     Some(TFields{fields, indexes, call, new})
   }
+
+  // Intersection on optional TFields (None() means bottom)
+  static fun interOpt(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fields1: ?TFields,
+    fields2: ?TFields,
+  ): ?TFields {
+    (fields1, fields2) match {
+    | (Some(f1), Some(f2)) -> TFields::inter(subst, tenv, f1, f2)
+    | (_, None())
+    | (None(), _) ->
+      None()
+    }
+  }
 }
 
 extension class TObject {
@@ -339,9 +354,21 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): ?TObject {
-    TFields::inter(subst, tenv, obj1.fields, obj2.fields).map(fields ->
-      TObject(fields, obj1.pos)
-    )
+    // TObject represents disjoint union: (O&¬a | A&a)
+    // (O1&¬a | A1&a) & (O2&¬a | A2&a) = (O1 & O2)&¬a | (A1 & A2)&a
+    objectFields = TFields::interOpt(
+      subst,
+      tenv,
+      obj1.objectFields,
+      obj2.objectFields,
+    );
+    arrayFields = TFields::interOpt(
+      subst,
+      tenv,
+      obj1.arrayFields,
+      obj2.arrayFields,
+    );
+    TObject::create(objectFields, arrayFields, obj1.pos)
   }
 }
 

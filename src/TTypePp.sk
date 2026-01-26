@@ -78,7 +78,12 @@ mutable class TypePp{
 
   mutable fun stype(level: Int, margin: Margin, sty: SType): void {
     sty match {
-    | TObject(fields, _) -> this.object(level, margin, fields)
+    | TObject(objectFields, arrayFields, _) ->
+      objectFields.each(fields -> this.object(level, margin, fields));
+      if (objectFields is Some _ && arrayFields is Some _) {
+        this.out(level, margin, " | ")
+      };
+      arrayFields.each(fields -> this.object(level, margin, fields))
     | TPromise(ty, _) ->
       this.branch(
         level,

@@ -395,11 +395,33 @@ base class Variance {
 
 // Regular Typescript (open) object type
 // but disjoint from types in TAlgebraic
-class TObject private (fields: TFields) extends SType {
+// Supports precise union of objects and arrays via dual TFields
+//
+// Interpretation:
+// 〚 tObj 〛 = 〚 tObj.objectFields 〛ᶠᵃˡˢᵉ ⨆ 〚 tObj.arrayFields 〛ᵗʳᵘᵉ
+//   with
+// 〚 fieldsOpt 〛ᵇ = ⊥                        if fieldsOpt is None
+//                = 〚 f + { #isArray: b } 〛  if fieldsOpt is Some(f)
+//
+// where #isArray is the internal private field used to check whether an
+// object is an Array with Array.isArray
+class TObject(objectFields: ?TFields, arrayFields: ?TFields) extends SType {
+  /* Invariant: objectFields and arrayFields are not both None() */
+
   /* Constructors */
 
+  static fun create(
+    objectFields: ?TFields,
+    arrayFields: ?TFields,
+    pos: PosRange,
+  ): ?TObject {
+    if (objectFields is None() && arrayFields is None()) None() else {
+      Some(TObject(objectFields, arrayFields, pos))
+    }
+  }
+
   static fun createAny(fields: TFields, pos: PosRange): TObject {
-    TObject(fields, pos)
+    TObject(Some(fields), Some(fields), pos)
   }
 
   static fun createEmpty(pos: PosRange): TObject {
@@ -407,11 +429,11 @@ class TObject private (fields: TFields) extends SType {
   }
 
   static fun createNonArray(fields: TFields, pos: PosRange): TObject {
-    TObject(fields, pos)
+    TObject(Some(fields), None(), pos)
   }
 
   static fun createArray(fields: TFields, pos: PosRange): TObject {
-    TObject(fields, pos)
+    TObject(None(), Some(fields), pos)
   }
 
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
@@ -429,11 +451,19 @@ class TObject private (fields: TFields) extends SType {
   /* Transformers */
 
   fun map(f: TFields -> TFields): TObject {
-    TObject(f(this.fields), this.pos)
+    TObject(this.objectFields.map(f), this.arrayFields.map(f), this.pos)
   }
 
-  fun mapCall(f: (?(Bool, TFuns)) -> ?(Bool, TFuns)): TObject {
-    this.map(fields -> fields.mapCall(f))
+  fun mapOpt(f: TFields -> ?TFields): ?TObject {
+    TObject::create(
+      this.objectFields.flatMap(f),
+      this.arrayFields.flatMap(f),
+      this.pos,
+    )
+  }
+
+  fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TObject {
+    this.mapOpt(fields -> fields.mapCall(f))
   }
 
   fun filter(f: TField -> Bool): TObject {
@@ -448,18 +478,47 @@ class TObject private (fields: TFields) extends SType {
 
   /* Accessors */
 
-  fun getTFields(_subst: mutable Subst, _tenv: TEnv): TFields {
-    this.fields
+  fun getTFields(subst: mutable Subst, tenv: TEnv): TFields {
+    (this.objectFields, this.arrayFields) match {
+    | (Some(f), None())
+    | (None(), Some(f)) ->
+      f
+    | (Some(f1), Some(f2)) -> TFields::union(subst, tenv, f1, f2)
+    | (None(), None()) ->
+      invariant_violation("TObject#getTFields got None() and None()")
+    }
   }
 
   fun getBranches(): Array<TFields> {
-    Array[this.fields]
+    (this.objectFields, this.arrayFields) match {
+    | (Some(f), None())
+    | (None(), Some(f)) ->
+      Array[f]
+    | (Some(f1), Some(f2)) -> Array[f1, f2]
+    | (None(), None()) ->
+      invariant_violation("TObject#getBranches got None() and None()")
+    }
   }
 
   fun getFuns(
-    f: TFields -> ?(Bool, TFuns),
+    getF: TFields -> ?(Bool, TFuns),
   ): ?(/* optional */ Bool, Array<TFuns>) {
-    f(this.fields).map(opt_tfuns -> (opt_tfuns.i0, Array[opt_tfuns.i1]))
+    (this.objectFields, this.arrayFields) match {
+    | (Some(f), None())
+    | (None(), Some(f)) ->
+      getF(f).map(opt_tfuns -> (opt_tfuns.i0, Array[opt_tfuns.i1]))
+    | (Some(f1), Some(f2)) ->
+      (getF(f1), getF(f2)) match {
+      | (None(), None()) -> None()
+      | (None(), Some((_opt, tFuns)))
+      | (Some((_opt, tFuns)), None()) ->
+        Some((true, Array[tFuns]))
+      | (Some((opt1, tFuns1)), Some((opt2, tFuns2))) ->
+        Some((opt1 || opt2, Array[tFuns1, tFuns2]))
+      }
+    | (None(), None()) ->
+      invariant_violation("TObject#getFuns got None() and None()")
+    }
   }
 
   fun getCalls(): ?(/* optional */ Bool, Array<TFuns>) {
@@ -667,18 +726,14 @@ class ATFullType(fullType: TType) extends ArrayType {
 
   static fun getArrayObjectEltType(
     object: TObject,
-    subst: mutable Subst,
-    tenv: TEnv,
+    _subst: mutable Subst,
+    _tenv: TEnv,
   ): ?TType {
-    object.fields.maybeGet("pop").flatMap(popMethod ->
-      popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
-      | Some(TObject(TFields{call => Some((_, TFuns(met, _)))}, _)) ->
-        Some(met.retType)
-      | _ -> None()
-      }
-    )
+    object match {
+    | TObject(Some _, _, _) -> None()
+    | TObject(None(), arrayFields, _) ->
+      arrayFields.flatMap(f -> f.maybeSingleIndex().map(idx -> idx.valueType))
+    }
   }
 
   fun maybeGetEltType(
@@ -943,8 +998,8 @@ class TFields{
     }
   }
 
-  fun mapCall(f: (?(Bool, TFuns)) -> ?(Bool, TFuns)): TFields {
-    this with {call => f(this.call)}
+  fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TFields {
+    f(this.call).map(call -> this with {call})
   }
 
   fun filter(f: TField -> Bool): TFields {

@@ -761,6 +761,21 @@ extension class TFields {
       Some(TFuns::isSub(subst, tenv, call1, call2))
     }
   }
+
+  // Subtyping on optional TFields
+  // (O1 | A1&a) <: (O2 | A2&a) requires checking cross-products
+  static fun isSubOpt(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fields1: ?TFields,
+    fields2: ?TFields,
+  ): STResult<TFields> {
+    (fields1, fields2) match {
+    | (Some(f1), Some(f2)) -> TFields::isSub(subst, tenv, f1, f2)
+    | (Some(_), None()) -> STOk()
+    | (None(), _) -> STOk()
+    }
+  }
 }
 
 extension class STypes {
@@ -1131,7 +1146,18 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): STResult<TObject> {
-    TFields::isSub(subst, tenv, obj1.fields, obj2.fields) match {
+    // TObject represents disjoint union: (O&¬a | A&a)
+    // (O1&¬a | A1&a) <: (O2&¬a | A2&a) ⟺ (O1 <: O2) ∧ (A1 <: A2)
+    // Since branches are disjoint, O1&¬a cannot be subtype of A2&a and vice versa
+
+    // Check O1 <: O2
+    TFields::isSubOpt(subst, tenv, obj1.objectFields, obj2.objectFields) match {
+    | STOk() -> void
+    | err @ STErrorOnTFields _ -> return STRecObject(err, obj1, obj2)
+    };
+
+    // Check A1 <: A2
+    TFields::isSubOpt(subst, tenv, obj1.arrayFields, obj2.arrayFields) match {
     | STOk() -> STOk()
     | err @ STErrorOnTFields _ -> STRecObject(err, obj1, obj2)
     }
