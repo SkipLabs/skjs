@@ -1330,7 +1330,7 @@ class Clauses private (
 
   // t.mapSTypes(f) is t with stypes updated by f
   fun mapSTypes(f: (?STypes) -> ?STypes): Clauses {
-    Clauses(this.clauses.filterMap(clause -> clause.mapSTypes(f)))
+    Clauses::create(this.clauses.filterMap(clause -> clause.mapSTypes(f)))
   }
 
   // Returns the actual STypes, forgetting type parameters,
