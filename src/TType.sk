@@ -400,6 +400,10 @@ class TObject(fields: TFields) extends SType {
     TObject(f(this.fields), this.pos)
   }
 
+  fun mapCall(f: (?(Bool, TFuns)) -> ?(Bool, TFuns)): TObject {
+    this.map(fields -> fields.mapCall(f))
+  }
+
   fun filter(f: TField -> Bool): TObject {
     this.map(fields -> fields.filter(f))
   }
@@ -881,6 +885,10 @@ class TFields{
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
     }
+  }
+
+  fun mapCall(f: (?(Bool, TFuns)) -> ?(Bool, TFuns)): TFields {
+    this with {call => f(this.call)}
   }
 
   fun filter(f: TField -> Bool): TFields {

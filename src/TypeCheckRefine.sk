@@ -109,9 +109,13 @@ extension class TypeChecker {
         };
       map = x ~>
         x match {
-        | TObject(tFields @ TFields{call => Some((true, f))}, pos) ->
-          call = if (target) None() else Some((false, f));
-          TObject(tFields with {call}, pos)
+        | tObj @ TObject _ ->
+          tObj.mapCall(call ->
+            call match {
+            | Some((true, f)) -> if (target) None() else Some((false, f))
+            | _ -> call
+            }
+          )
         | _ -> x
         };
       default = if (target) Some(TObject(TFields::empty(), typePos)) else {
@@ -127,9 +131,13 @@ extension class TypeChecker {
         };
       map = x ~>
         x match {
-        | TObject(tFields @ TFields{call => Some((true, f))}, pos) ->
-          call = if (target) Some((false, f)) else None();
-          TObject(tFields with {call}, pos)
+        | tObj @ TObject _ ->
+          tObj.mapCall(call ->
+            call match {
+            | Some((true, f)) -> if (target) Some((false, f)) else None()
+            | _ -> call
+            }
+          )
         | _ -> x
         };
       default = None();
