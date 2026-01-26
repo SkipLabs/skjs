@@ -180,6 +180,10 @@ extension class TInsts {
   static fun union(insts1: TInsts, insts2: TInsts): TInsts {
     TInsts(insts1.insts.union(insts2.insts))
   }
+
+  static fun unionN(insts: readonly Vector<TInst>): TInsts {
+    TInsts(ArraySet::createFromVector(insts))
+  }
 }
 
 extension class Clause {
@@ -214,6 +218,23 @@ extension class Clauses {
         Clause::union(subst, tenv, x, y)
       ),
     )
+  }
+
+  static fun unionN(
+    subst: mutable Subst,
+    tenv: TEnv,
+    clauses: readonly Vector<Clause>,
+  ): Clauses {
+    result = Clauses::empty();
+    for (clause in clauses) {
+      !result = Clauses::union(
+        subst,
+        tenv,
+        result,
+        Clauses::singleClause(clause),
+      )
+    };
+    result
   }
 }
 

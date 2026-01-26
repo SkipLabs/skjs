@@ -68,8 +68,8 @@ extension class TType {
     | None() -> void
     | Some(tvar) -> return TType::var(tvar.addConstraint(ty1))
     };
-    clauses1 = ty1.expand_(subst, tenv, Covariant());
-    clauses2 = ty2.expand_(subst, tenv, Covariant());
+    clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
+    clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
     (clauses1.primKind(), clauses2.getObject()) match {
     | (Some(primKind), Some(stype)) ->
       TType::isSub(

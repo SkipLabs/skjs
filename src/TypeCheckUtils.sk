@@ -2,8 +2,8 @@ module SKJS;
 
 extension class TypeChecker {
   fun isVoid(tcenv: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
-    clauses = ty.expand(tcenv.subst, this.tenv, Covariant());
-    for (clause in clauses.clauses) {
+    clauses = ty.expandToClauses(tcenv.subst, this.tenv, Covariant());
+    for (clause in clauses) {
       clause.stypes match {
       | None() -> return false
       | Some(stypes) ->
@@ -22,8 +22,8 @@ extension class TypeChecker {
 
   // Returns true if the type is not Top but contains void
   fun nonTopContainsVoid(tcenv: mutable TCEnv, ty: TType): Bool {
-    clauses = ty.expand(tcenv.subst, this.tenv, Covariant());
-    for (clause in clauses.clauses) {
+    clauses = ty.expandToClauses(tcenv.subst, this.tenv, Covariant());
+    for (clause in clauses) {
       clause.stypes match {
       | Some(stypes) if (stypes.any(stype ~> stype is TPrimUnit(TVoid(), _))) ->
         return true

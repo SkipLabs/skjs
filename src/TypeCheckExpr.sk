@@ -149,7 +149,12 @@ extension class TypeChecker {
                     ) {
                       !defaultIsUseless = None();
                       union(
-                        TType::diff(tfield.type, undefined(defaultPos)),
+                        TType::diff(
+                          tcenv.subst,
+                          this.tenv,
+                          tfield.type,
+                          undefined(defaultPos),
+                        ),
                         defaultType,
                       )
                     } else {
@@ -456,7 +461,7 @@ extension class TypeChecker {
     tyWithoutNullish = ty.mapSTypes(
       tcenv.subst,
       this.tenv,
-      Covariant(),
+      Some(Covariant()),
       stypesOpt ->
         stypesOpt match {
         | None() ->
@@ -720,7 +725,7 @@ extension class TypeChecker {
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       for (arg in args) {
         exprTy = this.expr(tcenv, arg, true);
-        ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Covariant());
+        ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Some(Covariant()));
         print_error(prettyPrintType(false, ty))
       };
       TType::single(TPrimUnit(TVoid(), pos))
@@ -832,25 +837,30 @@ extension class TypeChecker {
         bool
       | nuop @ NumericUnaryOperator() ->
         invalid = false;
-        res = ty.mapSTypes(tcenv.subst, this.tenv, Covariant(), stypesOpt ->
-          stypesOpt match {
-          | None() ->
-            !invalid = true;
-            stypesOpt
-          | Some(stypes) ->
-            Some(
-              stypes.map(stype ->
-                stype match {
-                | TPrimValue(k @ TNum(), _, primPos)
-                | TPrimValue(k @ TBigInt(), _, primPos) ->
-                  TPrimValue(k, None(), primPos)
-                | _ ->
-                  !invalid = true;
-                  stype
-                }
-              ),
-            )
-          }
+        res = ty.mapSTypes(
+          tcenv.subst,
+          this.tenv,
+          Some(Covariant()),
+          stypesOpt ->
+            stypesOpt match {
+            | None() ->
+              !invalid = true;
+              stypesOpt
+            | Some(stypes) ->
+              Some(
+                stypes.map(stype ->
+                  stype match {
+                  | TPrimValue(k @ TNum(), _, primPos)
+                  | TPrimValue(k @ TBigInt(), _, primPos) ->
+                    TPrimValue(k, None(), primPos)
+                  | _ ->
+                    !invalid = true;
+                    stype
+                  }
+                ),
+              )
+            }
+          ,
         );
         if (invalid) {
           typingError(

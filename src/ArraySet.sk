@@ -8,18 +8,15 @@ module ArraySet;
 class .ArraySet<T: Orderable> private (
   private inner: Vector<T>,
 ) uses Orderable, XXHashable[T: XXHashable] {
-  static fun empty(): this {
-    static(Vector[])
+  static fun empty(): ArraySet<T> {
+    ArraySet(Vector[])
   }
 
   fun size(): Int {
     this.inner.size()
   }
 
-  private static fun create<T: Orderable>(
-    size: Int,
-    init: (T -> void) -> void,
-  ): ArraySet<T> {
+  private static fun create(size: Int, init: (T -> void) -> void): ArraySet<T> {
     // create by allocating, initializing via calling push, and checking
     inner = Vector::mcreate(size);
     init(inner.push);
@@ -43,14 +40,34 @@ class .ArraySet<T: Orderable> private (
     ArraySet(unsafe_chill_trust_me(inner))
   }
 
-  static fun createFromIterator<T: Orderable, I: mutable Iterator<T>>(
+  // items must be strictly increasing
+  private static fun createFromIncreasingIterator<I: mutable Iterator<T>>(
     items: I,
   ): ArraySet<T> {
-    static::create(items.sizeHint().default(0), items.each)
+    ArraySet::create(items.sizeHint().default(0), items.each)
   }
 
-  static fun single(x: T): this {
-    static(Vector[x])
+  // Usually cannot use this when we want; it would require duplicating most
+  // of the functions on Vector to return mutable results.
+  static fun createFromMVector(vec: mutable Vector<T>): ArraySet<T> {
+    if (vec.isEmpty()) return ArraySet::empty();
+    vec.sortBy(id);
+    prev: ?T = None();
+    vec.keepWhere(x -> {
+      keep = prev.map(p -> p != x).default(true);
+      !prev = Some(x);
+      keep
+    });
+    ArraySet(unsafe_chill_trust_me(vec.chill()))
+  }
+
+  static fun createFromVector(vec: readonly Vector<T>): ArraySet<T> {
+    if (vec.isEmpty()) return ArraySet::empty();
+    ArraySet::createFromMVector(vec.clone())
+  }
+
+  static fun single(x: T): ArraySet<T> {
+    ArraySet(Vector[x])
   }
 
   fun isEmpty(): Bool {
@@ -77,54 +94,41 @@ class .ArraySet<T: Orderable> private (
     this.inner.items()
   }
 
-  fun filter(f: T -> Bool): this {
-    static(this.inner.filter(f))
+  fun filter(f: T -> Bool): ArraySet<T> {
+    ArraySet(this.inner.filter(f))
   }
 
   fun map<U: Orderable>(f: T -> U): ArraySet<U> {
-    // use a SortedSet to sort and dedup since callers of map do not
-    // guarantee that f is monotone
-    static::createFromIterator(this.values().map(f).collect(SortedSet).values())
+    ArraySet::createFromVector(this.inner.map(f))
   }
 
   fun filterMap<U: Orderable>(f: T -> ?U): ArraySet<U> {
-    ArraySet::createFromIterator(
-      this.values().filterMap(f).collect(SortedSet).values(),
-    )
+    ArraySet::createFromVector(this.values().filterMap(f).collect(Vector))
   }
 
   // s.iterDiffInterDiff(t) contains Left(x) for every x in s but not t,
   // Right(y) for every y in t but not s, and Both(x, y) for every pair of
   // elements that are in both s and t.
-  fun iterDiffInterDiff(that: this): mutable Iterator<InclusiveOr<T, T>> {
+  fun iterDiffInterDiff(
+    that: ArraySet<T>,
+  ): mutable Iterator<InclusiveOr<T, T>> {
     this.inner.values().zipSorted(that.inner.values())
   }
 
-  fun iterDiff(that: this): mutable Iterator<T> {
+  fun iterDiff(that: ArraySet<T>): mutable Iterator<T> {
     this.iterDiffInterDiff(that).filterMap(v -> v.maybeLeft())
   }
 
-  fun diff(that: this): this {
-    static::createFromIterator(this.iterDiff(that))
+  fun diff(that: ArraySet<T>): ArraySet<T> {
+    ArraySet::createFromIncreasingIterator(this.iterDiff(that))
   }
 
-  fun contains(that: this): Bool {
+  fun contains(that: ArraySet<T>): Bool {
     !this.iterDiffInterDiff(that).any(v -> v is Right(_))
   }
 
-  fun iterUnion(that: this): mutable Iterator<T> {
-    this.iterDiffInterDiff(that).map(v ->
-      v match {
-      | Left(x)
-      | Right(x)
-      | Both(x, _) ->
-        x
-      }
-    )
-  }
-
-  fun union(that: this): this {
-    static::createFromIterator(this.iterUnion(that))
+  fun union(that: ArraySet<T>): ArraySet<T> {
+    ArraySet::createFromVector(this.inner.concat(that.inner))
   }
 }
 
