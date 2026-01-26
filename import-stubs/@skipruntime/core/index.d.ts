@@ -28,8 +28,10 @@ export type DepSafe =
   //   | symbol
   | Managed;
 
-export interface EagerCollection<K extends Json, V extends Json>
-  extends Managed {
+export interface EagerCollection<
+  K extends Json,
+  V extends Json,
+> extends Managed {
   getArray(key: K): (V & DepSafe)[];
 
   getUnique(key: K, _default?: { ifNone?: V; ifMany?: V }): V & DepSafe;
@@ -96,8 +98,10 @@ export type Json = boolean | number | string | (Json | null)[] | JsonObject;
 
 export type JsonObject = { [key: string]: Json | null };
 
-export interface LazyCollection<K extends Json, V extends Json>
-  extends Managed {
+export interface LazyCollection<
+  K extends Json,
+  V extends Json,
+> extends Managed {
   getArray(key: K): (V & DepSafe)[];
 
   getUnique(key: K, _default?: { ifNone?: V; ifMany?: V }): V & DepSafe;

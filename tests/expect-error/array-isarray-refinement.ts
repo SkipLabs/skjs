@@ -65,9 +65,7 @@ function testArrayPushAfterRefinement(x: Array<number> | Foo): void {
 // Multiple union types
 ///////////////////////////////////////////////////////////////////////////////
 
-function testMultipleUnion(
-  x: Array<number> | Foo | string,
-): Array<number> {
+function testMultipleUnion(x: Array<number> | Foo | string): Array<number> {
   if (Array.isArray(x)) {
     return x;
   } else {
@@ -91,9 +89,7 @@ function testMultipleUnionElseBranch(
 // Nested refinement
 ///////////////////////////////////////////////////////////////////////////////
 
-function testNestedRefinement(
-  x: Array<number> | Foo | null,
-): Array<number> {
+function testNestedRefinement(x: Array<number> | Foo | null): Array<number> {
   if (x === null) {
     return [];
   } else if (Array.isArray(x)) {
@@ -111,9 +107,7 @@ type Bar = {
   c: boolean;
 };
 
-function testComplexUnion(
-  x: Array<string> | Foo | Bar,
-): Array<string> {
+function testComplexUnion(x: Array<string> | Foo | Bar): Array<string> {
   if (Array.isArray(x)) {
     return x;
   } else {

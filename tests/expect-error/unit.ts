@@ -385,8 +385,7 @@ interface DerivedInterface2 extends BaseInterface {
 }
 
 interface CombinedDerivedInterface
-  extends DerivedInterface1,
-    DerivedInterface2 {}
+  extends DerivedInterface1, DerivedInterface2 {}
 
 function checkBaseInterface(obj: BaseInterface): BaseInterface {
   return obj;
@@ -573,12 +572,9 @@ interface InitDerivedInterface2 extends InitBaseInterface {
 }
 
 interface InitCombinedDerivedInterface
-  extends InitDerivedInterface1,
-    InitDerivedInterface2 {}
+  extends InitDerivedInterface1, InitDerivedInterface2 {}
 
-class ClassWithCombinedDerivedConstructor
-  implements InitCombinedDerivedInterface
-{
+class ClassWithCombinedDerivedConstructor implements InitCombinedDerivedInterface {
   baseField: number;
   derivedField1: string;
   derivedField2: boolean;
@@ -627,9 +623,7 @@ interface ExtendedOptionalFieldsInterface extends OptionalFieldsInterface {
   field3?: boolean;
 }
 
-class ClassWithExtendedOptionalFields
-  implements ExtendedOptionalFieldsInterface
-{
+class ClassWithExtendedOptionalFields implements ExtendedOptionalFieldsInterface {
   field1: number;
   field2?: string;
   field3?: boolean;
@@ -705,9 +699,7 @@ interface OptionalInterfaceWithAlias extends OptionalAliasWithInterface {
   field5?: boolean;
 }
 
-class ClassWithOptionalInterfaceAliasConstructor
-  implements OptionalInterfaceWithAlias
-{
+class ClassWithOptionalInterfaceAliasConstructor implements OptionalInterfaceWithAlias {
   field1: number;
   field2?: string;
   field4?: string;
@@ -783,12 +775,9 @@ interface OptionalDerivedInterface2 extends OptionalBaseInterface {
 }
 
 interface OptionalCombinedDerivedInterface
-  extends OptionalDerivedInterface1,
-    OptionalDerivedInterface2 {}
+  extends OptionalDerivedInterface1, OptionalDerivedInterface2 {}
 
-class ClassWithOptionalCombinedDerivedConstructor
-  implements OptionalCombinedDerivedInterface
-{
+class ClassWithOptionalCombinedDerivedConstructor implements OptionalCombinedDerivedInterface {
   baseField: number;
   optionalBaseField?: string;
   derivedField1: string;
