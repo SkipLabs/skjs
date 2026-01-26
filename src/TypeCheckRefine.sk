@@ -226,28 +226,27 @@ extension class TypeChecker {
         | TAlgebraic _
         | TPromise _ ->
           stype /* TODO */
-        | TObject(tFields @ TFields{indexes}, tObjPos) ->
+        | tObj @ TObject _ ->
           litsOpt
             .flatMap(litsToCheck ->
-              litsToCheck
-                .singleElt()
-                .flatMap(singleField ->
-                  if (target) {
-                    if (!indexes.isEmpty()) None() else {
+              litsToCheck.singleElt().map(singleField ->
+                if (target) {
+                  tObj.map(tFields ->
+                    if (!tFields.indexes.isEmpty()) tFields else {
                       TField::create(
                         e1.pos,
                         singleField.val,
                         false,
                         TType::top(e.pos),
-                      ).flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
+                      )
+                        .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
+                        .default(tFields)
                     }
-                  } else {
-                    Some(
-                      tFields.filter(tField -> tField.name != singleField.val),
-                    )
-                  }
-                )
-                .map(newTFields -> TObject(newTFields, tObjPos))
+                  )
+                } else {
+                  tObj.filter(tField -> tField.name != singleField.val)
+                }
+              )
             )
             .default(stype)
         };
