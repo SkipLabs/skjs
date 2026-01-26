@@ -118,7 +118,7 @@ extension class TypeChecker {
           )
         | _ -> x
         };
-      default = if (target) Some(TObject(TFields::empty(), typePos)) else {
+      default = if (target) Some(TObject::createEmpty(typePos)) else {
         None()
       };
       this.setLocal(tcenv, local, default, filter, map)
@@ -205,7 +205,10 @@ extension class TypeChecker {
               false,
               TType::top(e.pos),
             ).map(field ->
-              TObject(TFields::create{fields => Array[field]}, e1.pos)
+              TObject::createAny(
+                TFields::create{fields => Array[field]},
+                e1.pos,
+              )
             )
           )
         )

@@ -395,7 +395,35 @@ base class Variance {
 
 // Regular Typescript (open) object type
 // but disjoint from types in TAlgebraic
-class TObject(fields: TFields) extends SType {
+class TObject private (fields: TFields) extends SType {
+  /* Constructors */
+
+  static fun createAny(fields: TFields, pos: PosRange): TObject {
+    TObject(fields, pos)
+  }
+
+  static fun createEmpty(pos: PosRange): TObject {
+    TObject::createAny(TFields::empty(), pos)
+  }
+
+  static fun createNonArray(fields: TFields, pos: PosRange): TObject {
+    TObject(fields, pos)
+  }
+
+  static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
+    TObject::createNonArray(TFields::create{call => Some(tFuns)}, pos)
+  }
+
+  static fun createCall(tFuns: TFuns): TObject {
+    TObject::createCallWithPos(tFuns, tFuns.pos)
+  }
+
+  static fun createNew(tFuns: TFuns, pos: PosRange): TObject {
+    TObject::createNonArray(TFields::create{new => Some(tFuns)}, pos)
+  }
+
+  /* Transformers */
+
   fun map(f: TFields -> TFields): TObject {
     TObject(f(this.fields), this.pos)
   }
@@ -508,7 +536,7 @@ fun createObject(
         ),
       )
     }
-  | None() -> TType::single(TObject(fields, pos))
+  | None() -> TType::single(TObject::createNonArray(fields, pos))
   }
 }
 
