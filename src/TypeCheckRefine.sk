@@ -243,11 +243,7 @@ extension class TypeChecker {
                     }
                   } else {
                     Some(
-                      tFields.filterMap(tField ->
-                        if (tField.name == singleField.val) None() else {
-                          Some(tField)
-                        }
-                      ),
+                      tFields.filter(tField -> tField.name != singleField.val),
                     )
                   }
                 )

@@ -879,6 +879,10 @@ class TFields{
     }
   }
 
+  fun filter(f: TField -> Bool): TFields {
+    this with {fields => this.fields.filter(f)}
+  }
+
   fun filterMap(f: TField -> ?TField): TFields {
     this with {fields => this.fields.filterMap(f)}
   }
