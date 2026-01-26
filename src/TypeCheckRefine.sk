@@ -166,6 +166,31 @@ extension class TypeChecker {
     | Binop(BOStrictInequality(), e1, e2) ->
       this.evalEquality(tcenv, e1, e2, !target)
 
+    | Call(
+      Expr(
+        _,
+        Dot(NormalDot(), Expr(_, Var(Name(_, "Array"))), Name(_, "isArray")),
+      ),
+      _targs,
+      args,
+    ) if (args.size() == 1 && target) ->
+      args[0] match {
+      | Expr(_, Var(local)) ->
+        filter = x ~>
+          x match {
+          | TObject(Some(_), _, _) -> true
+          | _ -> false
+          };
+        map = x ~>
+          x match {
+          | TObject(Some(arrFields), _, pos) ->
+            TObject(Some(arrFields), arrFields, pos)
+          | _ -> x
+          };
+        this.setLocal(tcenv, local, None(), filter, map)
+      | _ -> void
+      }
+
     | InstanceOf(
       Expr(_, Var(local)),
       Expr(_, Var(Name(posArray, "Array"))),
