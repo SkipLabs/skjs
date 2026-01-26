@@ -187,7 +187,8 @@ class TType private {
   }
 
   // t.mapSTypes(subst, env, expandTVars, f) is t expanded, with f applied
-  // to each clause's stypes before they are unioned.
+  // to each clause's stypes before they are unioned. Note that if t expands
+  // to Top, it has one clause with None stypes, which is presented to f.
   fun mapSTypes(
     subst: mutable Subst,
     tenv: TEnv,
@@ -195,7 +196,11 @@ class TType private {
     f: (?STypes) -> ?STypes,
   ): TType {
     this.expandToVectors(subst, tenv, expandTVars) match {
-    | None() -> TType::top(this.pos)
+    | None() ->
+      f(None()) match {
+      | Some(stypes) -> TType::fromSTypes(this.pos, stypes)
+      | None() -> TType::top(this.pos)
+      }
     | Some((insts, clauses)) ->
       mappedClauses: mutable Vector<Clause> = mutable Vector[];
       for (clause0 in clauses) {
