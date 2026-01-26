@@ -396,9 +396,13 @@ base class Variance {
 // Regular Typescript (open) object type
 // but disjoint from types in TAlgebraic
 class TObject(fields: TFields) extends SType {
+  fun map(f: TFields -> TFields): TObject {
+    TObject(f(this.fields), this.pos)
+  }
+
   fun removeFields(fieldsToRemove: SortedSet<String>): TObject {
     if (fieldsToRemove.isEmpty()) this else {
-      this with {fields => this.fields.removeFields(fieldsToRemove)}
+      this.map(fields -> fields.removeFields(fieldsToRemove))
     }
   }
 }
