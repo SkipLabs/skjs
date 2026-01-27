@@ -1,4 +1,5 @@
 PRETTIER_LOG_LEVEL?=warn
+PRETTIER_VERSION:=$(shell jq -r '.devDependencies.prettier' package.json)
 
 .PHONY: check
 check:
@@ -18,7 +19,7 @@ fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh
 
 .PHONY: fmt-js
 fmt-js: # Keep in sync with bin/git_hooks/check_format.sh
-	npx prettier --log-level $(PRETTIER_LOG_LEVEL) --write .
+	npx prettier@$(PRETTIER_VERSION) --log-level $(PRETTIER_LOG_LEVEL) --write .
 
 .PHONY: fmt
 fmt: fmt-sk fmt-js # Keep in sync with bin/git_hooks/check_format.sh
