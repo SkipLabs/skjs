@@ -1743,7 +1743,7 @@ class TVar private (
     this.id.isForField()
   }
 
-  fun addConstraint(ty: TType): TVar {
+  fun setConstraint(ty: TType): TVar {
     !this.constraints = this.constraints.set(ty);
     this
   }

@@ -142,13 +142,13 @@ extension class TType {
     ) if (subst.isUnbound(tvar1) && subst.isUnbound(tvar2)) ->
       return TType::unexpandedInter(ty1, ty2)
     | (Some(tvar), _) if (subst.isUnbound(tvar)) ->
-      return TType::var(tvar.addConstraint(ty2))
+      return TType::var(tvar.setConstraint(ty2))
     | (Some(tvar), _) if (subst.isOpen(tvar) && tvar.isForField()) ->
-      return TType::var(tvar.addConstraint(ty2))
+      return TType::var(tvar.setConstraint(ty2))
     | (_, Some(tvar)) if (subst.isUnbound(tvar)) ->
-      return TType::var(tvar.addConstraint(ty1))
+      return TType::var(tvar.setConstraint(ty1))
     | (_, Some(tvar)) if (subst.isOpen(tvar) && tvar.isForField()) ->
-      return TType::var(tvar.addConstraint(ty1))
+      return TType::var(tvar.setConstraint(ty1))
     | _ -> void
     };
     if (tenv.seenInter.contains((ty1, ty2))) {
