@@ -410,6 +410,10 @@ class TObject private (fields: TFields) extends SType {
     TObject(fields, pos)
   }
 
+  static fun createArray(fields: TFields, pos: PosRange): TObject {
+    TObject(fields, pos)
+  }
+
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
     TObject::createNonArray(TFields::create{call => Some(tFuns)}, pos)
   }

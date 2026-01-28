@@ -226,13 +226,15 @@ class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
-    TObject::createNonArray(
-      TFields::create{
-        fields => fields.values().collect(Array),
-        indexes => indexes.toArray(),
-      },
-      className.pos,
-    )
+    tFields = TFields::create{
+      fields => fields.values().collect(Array),
+      indexes => indexes.toArray(),
+    };
+    if (className.value == "Array") {
+      TObject::createArray(tFields, className.pos)
+    } else {
+      TObject::createNonArray(tFields, className.pos)
+    }
   }
 
   fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {
