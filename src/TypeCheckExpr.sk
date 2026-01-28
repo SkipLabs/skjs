@@ -1079,21 +1079,23 @@ extension class TypeChecker {
             );
             !canBeTrue = true;
             !canBeFalse = true
-          | TObject(TFields{fields, indexes}, _pos) ->
+          | tObj @ TObject _ ->
             !canBeTrue = true; // object types are open
-            !canBeFalse =
-              canBeFalse ||
-              !indexes.isEmpty() /* TODO: refine */ ||
-              fieldsOpt match {
-              | None() -> true
-              | Some(fieldsToCheck) ->
-                fieldsToCheck.values().any(fieldToCheck ->
-                  fields.maybeGet(fieldToCheck.val) match {
-                  | Some(tField) -> tField.isOptional
-                  | None() -> true
-                  }
-                )
-              }
+            tObj.getBranches().each(branch ->
+              !canBeFalse =
+                canBeFalse ||
+                !branch.indexes.isEmpty() /* TODO: refine */ ||
+                fieldsOpt match {
+                | None() -> true
+                | Some(fieldsToCheck) ->
+                  fieldsToCheck.values().any(fieldToCheck ->
+                    branch.fields.maybeGet(fieldToCheck.val) match {
+                    | Some(tField) -> tField.isOptional
+                    | None() -> true
+                    }
+                  )
+                }
+            )
           | TTuple _
           | TPromise _
           | TAlgebraic _ ->
