@@ -118,10 +118,10 @@ function testForOfWithStrings(): void {
   }
 }
 
-function testForOfWithIndexSignature(): void {
+function testForInWithIndexSignature(): void {
   const counts: { [key: string]: number } = { a: 1, b: 2 };
-  for (const value of counts) {
-    const n: number = value;
+  for (const key in counts) {
+    const value = counts[key];
   }
 }
 
@@ -169,4 +169,4 @@ function testForLoopsWithDifferentDeclarations(): void {
 }
 
 testForOfWithStrings();
-testForOfWithIndexSignature();
+testForInWithIndexSignature();

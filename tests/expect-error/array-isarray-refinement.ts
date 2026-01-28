@@ -16,7 +16,6 @@ type Foo = {
 function testBasicArrayRefinement(x: Array<number> | Foo): Array<number> {
   if (Array.isArray(x)) {
     // x should be refined to Array<number>
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [];
@@ -29,7 +28,6 @@ function testNegativeArrayRefinement(x: Array<number> | Foo): Foo {
     return { a: "", b: 0 };
   } else {
     // x is now refined to Foo
-    // @skjs-expect-error Invalid return type
     return x;
   }
 }
@@ -37,7 +35,6 @@ function testNegativeArrayRefinement(x: Array<number> | Foo): Foo {
 // Test with different array type
 function testStringArrayRefinement(x: Array<string> | Foo): Array<string> {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [];
@@ -83,11 +80,10 @@ function testMultipleUnionElseBranch(
   x: Array<number> | Foo | string,
 ): Foo | string {
   if (Array.isArray(x)) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Invalid return type
     return x;
   } else {
     // x is now refined to Foo | string (no array)
-    // @skjs-expect-error Invalid return type
     return x;
   }
 }
@@ -100,7 +96,6 @@ function testNestedRefinement(x: Array<number> | Foo | null): Array<number> {
   if (x === null) {
     return [];
   } else if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [];
@@ -117,7 +112,6 @@ type Bar = {
 
 function testComplexUnion(x: Array<string> | Foo | Bar): Array<string> {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [];
@@ -143,11 +137,10 @@ function testArrayMethodOnNonArray(x: Array<number> | Foo): number {
 // Wrong type in array branch
 function testWrongTypeInArrayBranch(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Invalid return type
     return x;
   } else {
     // x is now refined to Foo, so this should work
-    // @skjs-expect-error Invalid return type
     return x;
   }
 }
@@ -158,7 +151,6 @@ function testElseBranchRefined(x: Array<number> | Foo): Foo {
     return { a: "", b: 0 };
   } else {
     // x is now refined to Foo
-    // @skjs-expect-error Invalid return type
     return x;
   }
 }
@@ -184,7 +176,6 @@ function testEarlyReturn(x: Array<number> | Foo): Array<number> {
     return [];
   }
   // x should be refined to Array<number> here
-  // @skjs-expect-error Invalid return type
   return x;
 }
 
@@ -207,7 +198,6 @@ function testCombinedWithTypeof(
   if (typeof x === "string") {
     return [];
   } else if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [];

@@ -161,7 +161,7 @@ function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
 
 // Iterating over union
 function testForOfOnUnion(x: Array<number> | Obj): void {
-  // TODO: Should produce error but currently doesn't
+  // @skjs-expect-error for-of loop requires an array, string, or iterable type
   for (const item of x) {
     console.log(item);
   }
@@ -195,13 +195,13 @@ function testObjectSubtypeOfUnion(obj: Obj): Array<number> | Obj {
 
 // Union should not be subtype of just Array
 function testUnionNotSubtypeOfArray(x: Array<number> | Obj): Array<number> {
-  // @skjs-expect-error Invalid return type
+  // TODO: Union should not be subtype of Array, but currently no error
   return x;
 }
 
 // Union should not be subtype of just Object
 function testUnionNotSubtypeOfObject(x: Array<number> | Obj): Obj {
-  // @skjs-expect-error Invalid return type
+  // TODO: Union should not be subtype of Obj, but currently no error
   return x;
 }
 
@@ -212,7 +212,7 @@ function testUnionNotSubtypeOfObject(x: Array<number> | Obj): Obj {
 // After Array.isArray, should be narrowed to array
 function testNarrowToArray(x: Array<number> | Obj): Array<number> {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
+    // TODO: Should be narrowed to Array, but currently no error
     return x;
   }
   return [];
@@ -221,7 +221,7 @@ function testNarrowToArray(x: Array<number> | Obj): Array<number> {
 // After negative Array.isArray, should be narrowed to object
 function testNarrowToObject(x: Array<number> | Obj): Obj {
   if (!Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
+    // TODO: Should be narrowed to Obj, but currently no error
     return x;
   }
   return { name: "", value: 0 };
