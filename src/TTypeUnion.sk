@@ -67,6 +67,20 @@ extension class TType {
     clauses = Clauses::union(subst, tenv, ty1.clauses, ty2.clauses);
     TType::create(ty1.pos, types, clauses)
   }
+
+  static fun unionN(
+    subst: mutable Subst,
+    tenv: TEnv,
+    posIfEmpty: PosRange,
+    tys: readonly Array<TType>,
+  ): TType {
+    pos = if (tys.size() > 0) tys[0].pos else posIfEmpty;
+    result = TType::bottom(pos);
+    for (ty in tys) {
+      !result = TType::union(subst, tenv, result, ty)
+    };
+    result
+  }
 }
 
 extension class TAlgebraic {

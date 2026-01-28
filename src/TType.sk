@@ -455,6 +455,20 @@ class TObject private (fields: TFields) extends SType {
   fun getBranches(): Array<TFields> {
     Array[this.fields]
   }
+
+  fun getFuns(
+    f: TFields -> ?(Bool, TFuns),
+  ): ?(/* optional */ Bool, Array<TFuns>) {
+    f(this.fields).map(opt_tfuns -> (opt_tfuns.i0, Array[opt_tfuns.i1]))
+  }
+
+  fun getCalls(): ?(/* optional */ Bool, Array<TFuns>) {
+    this.getFuns(f -> f.call)
+  }
+
+  fun getNews(): ?(/* optional */ Bool, Array<TFuns>) {
+    this.getFuns(f -> f.new)
+  }
 }
 
 const kAlgebraicBranchFieldName: String = "kind";
