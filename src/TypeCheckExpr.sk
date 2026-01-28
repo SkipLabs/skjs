@@ -311,64 +311,67 @@ extension class TypeChecker {
         };
         !result = TType::union(tcenv.subst, this.tenv, result, tyAtN)
 
-      | TObject(fields, objectPos) if (fields.isEmpty()) ->
-        !result = TType::top(objectPos)
-
-      | TObject(fields, objectPos) ->
-        idxSType.literals match {
-        | None() -> Some(idxSType)
-        | Some(lits) ->
-          lits
-            .filter(fieldLit ->
-              fields.maybeGetType(
+      | tObj @ TObject _ ->
+        fields = tObj.getTFields(tcenv.subst, this.tenv);
+        if (fields.isEmpty()) {
+          !result = TType::top(tObj.pos)
+        } else {
+          idxSType.literals match {
+          | None() -> Some(idxSType)
+          | Some(lits) ->
+            lits
+              .filter(fieldLit ->
+                fields.maybeGetType(
+                  tcenv.subst,
+                  this.tenv,
+                  fieldLit.val,
+                  fieldLit.pos,
+                ) match {
+                | Some(ty) ->
+                  !result = TType::union(tcenv.subst, this.tenv, result, ty);
+                  false
+                | None() -> true
+                }
+              )
+              .map(remainingLits ->
+                idxSType with {literals => Some(remainingLits)}
+              )
+          } match {
+          | None() -> void
+          | Some(remainingIdxSType) ->
+            fields.maybeSingleIndex() match {
+            | None() ->
+              remainingIdxSType.literals match {
+              | None() ->
+                typingError(
+                  Array[
+                    (pos, "Invalid access"),
+                    (
+                      idx.pos,
+                      `Index has non-literal type ${remainingIdxSType.kind}`,
+                    ),
+                    (tObj.pos, "But object has no index field"),
+                  ],
+                )
+              | Some(lits) ->
+                fields.getTypeTypingError(lits.toStringList(), pos)
+              }
+            | Some(index) ->
+              this.checkSubType(
+                tcenv,
+                pos,
+                "Invalid index key",
+                TType::single(remainingIdxSType),
+                index.keyType,
+              );
+              ty = TType::unionUndefined(
                 tcenv.subst,
                 this.tenv,
-                fieldLit.val,
-                fieldLit.pos,
-              ) match {
-              | Some(ty) ->
-                !result = TType::union(tcenv.subst, this.tenv, result, ty);
-                false
-              | None() -> true
-              }
-            )
-            .map(remainingLits ->
-              idxSType with {literals => Some(remainingLits)}
-            )
-        } match {
-        | None() -> void
-        | Some(remainingIdxSType) ->
-          fields.maybeSingleIndex() match {
-          | None() ->
-            remainingIdxSType.literals match {
-            | None() ->
-              typingError(
-                Array[
-                  (pos, "Invalid access"),
-                  (
-                    idx.pos,
-                    `Index has non-literal type ${remainingIdxSType.kind}`,
-                  ),
-                  (objectPos, "But object has no index field"),
-                ],
-              )
-            | Some(lits) -> fields.getTypeTypingError(lits.toStringList(), pos)
+                index.valueType,
+                pos,
+              );
+              !result = TType::union(tcenv.subst, this.tenv, result, ty)
             }
-          | Some(index) ->
-            this.checkSubType(
-              tcenv,
-              pos,
-              "Invalid index key",
-              TType::single(remainingIdxSType),
-              index.keyType,
-            );
-            ty = TType::unionUndefined(
-              tcenv.subst,
-              this.tenv,
-              index.valueType,
-              pos,
-            );
-            !result = TType::union(tcenv.subst, this.tenv, result, ty)
           }
         }
 
