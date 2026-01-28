@@ -633,15 +633,15 @@ extension class TypeChecker {
           | Some(spreadSTypes) ->
             for (spreadSType in spreadSTypes) {
               spreadSType match {
-              | TObject(
-                TFields{fields => spreadFields, indexes => spreadIndexes},
-                _pos,
-              ) ->
-                for (spreadField in spreadFields) {
-                  fields![spreadField.name] = spreadField
-                };
-                for (spreadIndex in spreadIndexes) {
-                  indexes.push(spreadIndex)
+              | tObj @ TObject _ ->
+                tObj.getTFields(tcenv.subst, this.tenv) match {
+                | TFields{fields => spreadFields, indexes => spreadIndexes} ->
+                  for (spreadField in spreadFields) {
+                    fields![spreadField.name] = spreadField
+                  };
+                  for (spreadIndex in spreadIndexes) {
+                    indexes.push(spreadIndex)
+                  }
                 }
               | _ ->
                 tcenv.error(

@@ -445,6 +445,12 @@ class TObject private (fields: TFields) extends SType {
       this.map(fields -> fields.removeFields(fieldsToRemove))
     }
   }
+
+  /* Accessors */
+
+  fun getTFields(_subst: mutable Subst, _tenv: TEnv): TFields {
+    this.fields
+  }
 }
 
 const kAlgebraicBranchFieldName: String = "kind";
