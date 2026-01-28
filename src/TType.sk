@@ -398,6 +398,10 @@ base class Variance {
 class TObject(fields: TFields) extends SType {
   /* Constructors */
 
+  static fun createEmpty(pos: PosRange): TObject {
+    TObject(TFields::empty(), pos)
+  }
+
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
     TObject(TFields::create{call => Some(tFuns)}, pos)
   }
