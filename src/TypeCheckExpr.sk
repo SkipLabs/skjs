@@ -98,8 +98,8 @@ extension class TypeChecker {
       | Some(stypes) ->
         for (stype in stypes) {
           (branches, typeForRest) = stype match {
-          | tobj @ TObject(fields, _) ->
-            (Array[fields], tobj.removeFields(fieldsToRemoveForRest))
+          | tObj @ TObject _ ->
+            (tObj.getBranches(), tObj.removeFields(fieldsToRemoveForRest))
           | a @ TAlgebraic _ ->
             (
               a.branches.toArray().map(x -> x.fields),

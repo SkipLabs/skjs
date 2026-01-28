@@ -1053,13 +1053,15 @@ class TEnv{
         stype = stypes.pop();
         stype match {
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
-        | TObject(fields, _) ->
-          for (field in fields) {
-            !strings = strings.set(field.name);
-          };
-          for (index in fields.indexes) {
-            // TODO: convert numbers to strings
-            !result = TType::union(subst, this, result, index.keyType);
+        | tObj @ TObject _ ->
+          for (fields in tObj.getBranches()) {
+            for (field in fields) {
+              !strings = strings.set(field.name);
+            };
+            for (index in fields.indexes) {
+              // TODO: convert numbers to strings
+              !result = TType::union(subst, this, result, index.keyType);
+            }
           }
         | TAlgebraic(branches, _) ->
           !strings = strings.set(kAlgebraicBranchFieldName);

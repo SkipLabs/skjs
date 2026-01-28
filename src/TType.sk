@@ -451,6 +451,10 @@ class TObject private (fields: TFields) extends SType {
   fun getTFields(_subst: mutable Subst, _tenv: TEnv): TFields {
     this.fields
   }
+
+  fun getBranches(): Array<TFields> {
+    Array[this.fields]
+  }
 }
 
 const kAlgebraicBranchFieldName: String = "kind";
