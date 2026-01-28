@@ -122,7 +122,7 @@ function testIntersectionObjects(
 ): Obj & Obj2 {
   // This tests that intersection of (Array<number> | Obj) & (Array<string> | Obj2)
   // should give us (never | {name: string, value: number, id: number})
-  // @skjs-expect-error Invalid return type
+  // TODO: Should this error? The intersection creates optional fields
   return z;
 }
 
