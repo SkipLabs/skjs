@@ -23,7 +23,7 @@ npx skcheck all
 npx skcheck all --parallel 8
 
 # Enable/disable specific checkers
-npx skcheck --project generated-examples/todo-list-api --disable no-as-expression-necessary,no-as-expression-unnecessary
+npx skcheck --project generated-examples/todo-list-api --disable no-as-expression-from-json,no-as-expression-necessary,no-as-expression-unnecessary
 npx skcheck --project generated-examples/todo-list-api --enable service-count,service-members
 
 # Verbose output
@@ -37,10 +37,11 @@ npx skcheck --help
 
 | Checker | Description |
 |---------|-------------|
-| `no-as-expression-necessary` | Forbids necessary type assertions (where the type isn't assignable without `as`) |
-| `no-as-expression-unnecessary` | Forbids unnecessary type assertions (where the type is already assignable) |
-| `no-non-null-assertion` | Forbids postfix `!` except for safe patterns (e.g., `arr[i]!` inside bounded loops) |
-| `mapentry-values-toarray` | Ensures `Values<T>` params in `Mapper.mapEntry` are only used via `.toArray()` |
+| `no-as-expression-from-json` | Flags casts from `Json` type (e.g., `params as SomeType`) — prefer validated decoding |
+| `no-as-expression-necessary` | Flags casts where the expression type is **not** assignable to the target type |
+| `no-as-expression-unnecessary` | Flags casts where the expression type is **already** assignable to the target (can be removed) |
+| `no-non-null-assertion` | Flags `!` postfix except for safe patterns (e.g., `arr[i]!` in bounded loops with guards) |
+| `mapentry-values-toarray` | Ensures `Values<T>` params in `Mapper.mapEntry` are only consumed via `.toArray()` |
 | `service-count` | Requires exactly one `SkipService` class per project |
 | `service-members` | Validates required members (`resources`, `createGraph`) on `SkipService` |
 

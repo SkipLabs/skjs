@@ -14,6 +14,7 @@ import type { FileAnalysis } from "../report.js";
  * All known checker names as a const tuple for type safety.
  */
 export const CHECKER_NAMES = [
+  "no-as-expression-from-json",
   "no-as-expression-necessary",
   "no-as-expression-unnecessary",
   "no-non-null-assertion",

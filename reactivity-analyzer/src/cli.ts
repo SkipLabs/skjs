@@ -37,7 +37,11 @@ const VERSION = "0.0.1";
 const CHECKER_LIST = ALL_CHECKER_NAMES.join(", ");
 
 const LEGACY_CHECKER_ALIASES: Record<string, CheckerName[]> = {
-  "no-as-expression": ["no-as-expression-necessary", "no-as-expression-unnecessary"],
+  "no-as-expression": [
+    "no-as-expression-from-json",
+    "no-as-expression-necessary",
+    "no-as-expression-unnecessary",
+  ],
 };
 
 const HELP = `
@@ -66,7 +70,7 @@ CHECKERS
 
 EXAMPLES
   skcheck --project ../my-service              # Analyze a single project
-  skcheck --disable no-as-expression-necessary,no-as-expression-unnecessary  # Skip as-expression checks
+  skcheck --disable no-as-expression-from-json,no-as-expression-necessary,no-as-expression-unnecessary  # Skip as-expression checks
   skcheck --enable service-count,service-members  # Only run service checks
   skcheck all                                  # Analyze all generated-examples
   skcheck all --parallel 8 --verbose           # With more parallelism + output

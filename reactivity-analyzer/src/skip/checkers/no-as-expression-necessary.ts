@@ -2,12 +2,12 @@
  * Checker: flag necessary type assertions (`as` expressions).
  *
  * An assertion is necessary when the expression type is NOT assignable
- * to the target type. Use `no-as-expression-unnecessary` for the inverse.
+ * to the target type. Excludes casts from `Json` and double-cast patterns with `unknown`.
  */
 
 import type ts from "typescript";
 import { getLineCol, withEndCol } from "../../infra/ast-inspection.js";
-import { isTypeAssertionNecessary } from "../../infra/type-analysis.js";
+import { isDoubleCastBridge, isExpressionTypeJson, isTypeAssertionNecessary } from "../../infra/type-analysis.js";
 import type { Checker } from "./types.js";
 
 const NAME = "no-as-expression-necessary";
@@ -19,6 +19,14 @@ export const noAsExpressionNecessaryChecker: Checker = {
 
     visitor.on(tsMod.isAsExpression, (node: ts.AsExpression) => {
       if (!isTypeAssertionNecessary(typeChecker, node)) {
+        return [];
+      }
+      // Json casts are handled by no-as-expression-from-json
+      if (isExpressionTypeJson(typeChecker, node)) {
+        return [];
+      }
+      // Skip double-cast bridge patterns: `x as unknown as T`
+      if (isDoubleCastBridge(tsMod, typeChecker, node)) {
         return [];
       }
 
