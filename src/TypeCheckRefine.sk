@@ -281,9 +281,18 @@ extension class TypeChecker {
     filter: SType ~> Bool,
     map: SType ~> SType = x ~> x,
   ): void {
+    f = (sTypesOpt) ->
+      sTypesOpt match {
+      | None() -> default.map(STypes::single)
+      | Some(sTypes) ->
+        Some(
+          sTypes.filterMap(sType ->
+            if (filter(sType)) Some(map(sType)) else None()
+          ),
+        )
+      };
     ty = tcenv.scope.get(local);
-    !ty = ty.expand(tcenv.subst, this.tenv, Some(Covariant()));
-    !ty = (mutable FilterType()).type((filter, map, default), ty);
+    !ty = ty.mapSTypes(tcenv.subst, this.tenv, Some(Covariant()), f);
     tcenv.scope.set(local, ty, (_, _) -> void)
   }
 }

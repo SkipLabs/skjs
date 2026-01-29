@@ -357,12 +357,10 @@ function testClassInstance(x: MyClass | string): MyClass {
 }
 
 // Class instance vs function
-// FIXME: SKJS typeof refinement makes class field optional after function check
 function testClassInstanceVsFunction(x: MyClass | (() => void)): MyClass {
   if (typeof x === "function") {
     return new MyClass(0);
   } else {
-    // @skjs-expect-error Invalid return type
     return x;
   }
 }
