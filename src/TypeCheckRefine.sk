@@ -206,28 +206,28 @@ extension class TypeChecker {
         | TPromise _ ->
           Some(stype) /* TODO */
         | tObj @ TObject _ ->
-          Some(
-            singleLit
-              .map(singleField ->
-                if (target) {
-                  tObj.map(tFields ->
-                    if (!tFields.indexes.isEmpty()) tFields else {
-                      TField::create(
-                        e1.pos,
-                        singleField.val,
-                        false,
-                        TType::top(e.pos),
-                      )
-                        .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
-                        .default(tFields)
-                    }
-                  )
-                } else {
-                  tObj.filter(tField -> tField.name != singleField.val)
-                }
+          singleLit match {
+          | None() -> Some(stype)
+          | Some(singleField) ->
+            if (target) {
+              Some(
+                tObj.map(tFields ->
+                  if (!tFields.indexes.isEmpty()) tFields else {
+                    TField::create(
+                      e1.pos,
+                      singleField.val,
+                      false,
+                      TType::top(e.pos),
+                    )
+                      .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
+                      .default(tFields)
+                  }
+                ),
               )
-              .default(stype),
-          )
+            } else {
+              Some(tObj.filter(tField -> tField.name != singleField.val))
+            }
+          }
         };
       this.setLocalFilterMap(tcenv, local, default, filterMapSType)
 
