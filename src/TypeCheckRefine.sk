@@ -267,9 +267,8 @@ extension class TypeChecker {
     local: Name,
     default: ?SType,
     filter: SType ~> Bool,
-    map: SType ~> SType = x ~> x,
   ): void {
-    filterMap = sType -> if (filter(sType)) Some(map(sType)) else None();
+    filterMap = sType -> if (filter(sType)) Some(sType) else None();
     this.setLocalFilterMap(tcenv, local, default, filterMap)
   }
 }
