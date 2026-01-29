@@ -1,23 +1,20 @@
 /**
- * Checker: forbid postfix non-null assertions (`!`) except for safe patterns.
+ * Checker: forbid postfix non-null assertions (`!`) except for guarded array access.
  *
- * This checker flags uses of the postfix ! operator, with exceptions for
- * safe patterns like array access inside bounded for-loops or if-statements.
- *
- * Safe patterns allowed:
- * - `arr[i]!` where i < arr.length is checked in a for-loop or if-statement
- * - `cond ? arr[i]! : other` where cond includes a bound check
- * - Side-effect-free wrappers like `arr[i]!.foo.bar`
+ * Allows `arr[i]!` when a bound check (`i < arr.length` or equivalent) is established
+ * by a guard. See inline comments for supported patterns.
  */
 
 import type ts from "typescript";
 import { getLineCol, withEndCol } from "../../infra/ast-inspection.js";
 import {
   boundCheckMatchesElementAccess,
+  findPrecedingEarlyExitBoundCheck,
   getConditionalExpressionCondition,
   getGuardCondition,
   getGuardedStatementForSafePosition,
   getOutermostSideEffectFreeExpression,
+  getStatementForSafeEvaluation,
   parseBoundCheck,
   tryParseElementAccess,
 } from "../../infra/guard-analysis.js";
@@ -31,24 +28,38 @@ export const noNonNullAssertionChecker: Checker = {
     const { ts: tsMod, sourceFile } = ctx;
 
     visitor.on(tsMod.isNonNullExpression, (node: ts.NonNullExpression) => {
-      // Allow pattern: safe position with a bound check on a simple array access (arr[i]!)
-      // Supported guard contexts:
-      // - Guarded statements: for-loops and if-statements (first statement in body)
-      // - Conditional expressions: `cond ? arr[i]! : other` (whenTrue branch)
-      // Also allows side-effect-free wrappers like arr[i]!.foo.bar
+      // Allow side-effect-free wrappers like arr[i]!.foo.bar
       const outerExpr = getOutermostSideEffectFreeExpression(tsMod, node);
       const elementAccess = tryParseElementAccess(tsMod, node.expression);
 
       if (elementAccess) {
-        // Try guarded statement (for/if body)
+        // Pattern 1: Guarded body - first statement in for-loop or if with bound check
+        // Example: for (let i = 0; i < arr.length; i++) { const x = arr[i]!; }
         const guardedStmt = getGuardedStatementForSafePosition(tsMod, outerExpr);
+
+        // Pattern 2: Ternary - whenTrue branch with bound check condition
+        // Example: const x = i < arr.length ? arr[i]! : fallback;
         const condition = guardedStmt
           ? getGuardCondition(tsMod, guardedStmt)
           : getConditionalExpressionCondition(tsMod, outerExpr);
 
-        const boundCheck = parseBoundCheck(tsMod, condition);
-        if (boundCheck && boundCheckMatchesElementAccess(boundCheck, elementAccess)) {
-          return [];
+        // Check if patterns 1 or 2 establish a matching bound check (i < arr.length)
+        if (condition) {
+          const boundCheck = parseBoundCheck(tsMod, condition);
+          if (boundCheck && boundCheckMatchesElementAccess(boundCheck, elementAccess)) {
+            return [];
+          }
+        }
+
+        // Pattern 3: Early-exit guard - immediately preceding if with exit
+        // Example: if (arr.length === 0) { return; } const x = arr[0]!;
+        // Supports: === 0, <= n; exits: return, throw, continue, break (unlabeled)
+        const useStmt = getStatementForSafeEvaluation(tsMod, outerExpr);
+        if (useStmt) {
+          const earlyExitBoundCheck = findPrecedingEarlyExitBoundCheck(tsMod, useStmt);
+          if (earlyExitBoundCheck && boundCheckMatchesElementAccess(earlyExitBoundCheck, elementAccess)) {
+            return [];
+          }
         }
       }
 

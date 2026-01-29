@@ -124,9 +124,8 @@ function parseArrayLength(
  */
 export function parseBoundCheck(
   tsMod: typeof import("typescript"),
-  condition: ts.Expression | undefined,
+  condition: ts.Expression,
 ): BoundCheck | undefined {
-  if (!condition) return undefined;
   if (!tsMod.isBinaryExpression(condition)) return undefined;
 
   const op = condition.operatorToken.kind;
@@ -150,6 +149,150 @@ export function parseBoundCheck(
   }
 
   return undefined;
+}
+
+// =============================================================================
+// Early-exit guard analysis
+// =============================================================================
+
+/**
+ * Check if a statement is an early-exit statement.
+ * Supported: return, throw, continue (unlabeled), break (unlabeled)
+ */
+function isEarlyExitStatement(
+  tsMod: typeof import("typescript"),
+  stmt: ts.Statement,
+): boolean {
+  if (tsMod.isReturnStatement(stmt)) return true;
+  if (tsMod.isThrowStatement(stmt)) return true;
+  if (tsMod.isContinueStatement(stmt) && !stmt.label) return true;
+  if (tsMod.isBreakStatement(stmt) && !stmt.label) return true;
+  return false;
+}
+
+/**
+ * Get the single early-exit statement from an if-statement's then-branch.
+ * Returns the exit statement if the then-branch is either:
+ * - A single exit statement: `if (...) return;`
+ * - A block with exactly one exit statement: `if (...) { return; }`
+ */
+function getSingleEarlyExitStatement(
+  tsMod: typeof import("typescript"),
+  thenBranch: ts.Statement,
+): ts.Statement | undefined {
+  // Direct statement: `if (...) return;`
+  if (isEarlyExitStatement(tsMod, thenBranch)) {
+    return thenBranch;
+  }
+  // Block with single statement: `if (...) { return; }`
+  if (tsMod.isBlock(thenBranch) && thenBranch.statements.length === 1) {
+    const stmt = thenBranch.statements[0];
+    if (isEarlyExitStatement(tsMod, stmt)) {
+      return stmt;
+    }
+  }
+  return undefined;
+}
+
+/**
+ * Parse an early-exit guard as a BoundCheck.
+ *
+ * Patterns (no else, single early-exit in the body):
+ * - `if (arr.length === 0) { exit }` (or `==`, symmetric `0 === arr.length`)
+ * - `if (arr.length <= n) { exit }` (or `n >= arr.length`)
+ *
+ * After such a guard, we can derive a strict lower-bound check `n < arr.length`,
+ * which matches the existing BoundCheck representation.
+ *
+ * Returns BoundCheck { arrayVar, index: n } or undefined.
+ */
+export function parseEarlyExitBoundCheck(
+  tsMod: typeof import("typescript"),
+  ifStmt: ts.IfStatement,
+): BoundCheck | undefined {
+  // 1. Must have no else clause
+  if (ifStmt.elseStatement) return undefined;
+
+  // 2. Then-branch must be a single early-exit statement
+  if (!getSingleEarlyExitStatement(tsMod, ifStmt.thenStatement)) return undefined;
+
+  // 3. Parse condition
+  const condition = ifStmt.expression;
+  if (!tsMod.isBinaryExpression(condition)) return undefined;
+
+  const op = condition.operatorToken.kind;
+
+  // Pattern: arr.length === 0 or arr.length == 0
+  if (
+    op === tsMod.SyntaxKind.EqualsEqualsEqualsToken ||
+    op === tsMod.SyntaxKind.EqualsEqualsToken
+  ) {
+    // Try: arr.length === 0
+    const arrayVar = parseArrayLength(tsMod, condition.left);
+    if (arrayVar && tsMod.isNumericLiteral(condition.right) && condition.right.text === "0") {
+      return { arrayVar, index: "0" };
+    }
+    // Try symmetric: 0 === arr.length
+    const arrayVarSym = parseArrayLength(tsMod, condition.right);
+    if (arrayVarSym && tsMod.isNumericLiteral(condition.left) && condition.left.text === "0") {
+      return { arrayVar: arrayVarSym, index: "0" };
+    }
+  }
+
+  // Pattern: arr.length <= n
+  if (op === tsMod.SyntaxKind.LessThanEqualsToken) {
+    const arrayVar = parseArrayLength(tsMod, condition.left);
+    const index = parseBoundCheckIndex(tsMod, condition.right);
+    if (arrayVar && index) {
+      return { arrayVar, index };
+    }
+  }
+
+  // Pattern: n >= arr.length (symmetric)
+  if (op === tsMod.SyntaxKind.GreaterThanEqualsToken) {
+    const arrayVar = parseArrayLength(tsMod, condition.right);
+    const index = parseBoundCheckIndex(tsMod, condition.left);
+    if (arrayVar && index) {
+      return { arrayVar, index };
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Find an immediately-preceding early-exit guard that establishes a bound check.
+ * The guard must be in the same block/source file and directly precede the statement.
+ */
+export function findPrecedingEarlyExitBoundCheck(
+  tsMod: typeof import("typescript"),
+  stmt: ts.Statement,
+): BoundCheck | undefined {
+  const parent = stmt.parent;
+
+  // Must be in a block or source file
+  if (!tsMod.isBlock(parent) && !tsMod.isSourceFile(parent)) return undefined;
+
+  const statements = parent.statements;
+
+  // Find the statement's index using explicit iteration
+  let index = -1;
+  for (let i = 0; i < statements.length; i++) {
+    if (statements[i] === stmt) {
+      index = i;
+      break;
+    }
+  }
+
+  // Must have a preceding statement
+  if (index <= 0) return undefined;
+
+  const precedingStmt = statements[index - 1];
+
+  // Preceding statement must be an if-statement
+  if (!tsMod.isIfStatement(precedingStmt)) return undefined;
+
+  return parseEarlyExitBoundCheck(tsMod, precedingStmt);
 }
 
 // =============================================================================
@@ -291,7 +434,7 @@ const SAFE_EVALUATION_CHECKERS: SafeEvaluationChecker[] = [
  * Get the containing statement if node is in a safe evaluation position.
  * A safe position is one where no side effects happen before evaluating the node.
  */
-function getStatementForSafeEvaluation(
+export function getStatementForSafeEvaluation(
   tsMod: typeof import("typescript"),
   node: ts.Node,
 ): ts.Statement | undefined {
