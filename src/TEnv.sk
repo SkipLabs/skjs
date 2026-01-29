@@ -660,9 +660,23 @@ class TEnv{
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
     | TATemplate _ -> typingError(Array[(pos, "TODO template")])
     | TAImport _ -> typingError(Array[(pos, "TODO import")])
-    | TAReadonly(x) ->
-      tcenvb.error(Array[(pos, "TODO readonly")]);
-      this.normalize(tcenvb, x)
+    | TAReadonly(ty) ->
+      ty.value match {
+      | TAEmptyArray _
+      | TAArray _
+      | TATuple _ ->
+        tcenvb.error(Array[(pos, "TODO readonly")])
+      | _ ->
+        tcenvb.error(
+          Array[
+            (
+              pos,
+              "'readonly' type modifier is only permitted on array and tuple literal types.",
+            ),
+          ],
+        ) // TS1354
+      };
+      this.normalize(tcenvb, ty)
     | TAExtends _ -> typingError(Array[(pos, "TODO extends")])
     | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
