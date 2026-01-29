@@ -117,12 +117,12 @@ extension class TField {
     y: TField,
   ): TField {
     if (x.name != y.name) internal_error("field names must match");
-    TField(
-      x.pos,
-      x.name,
-      x.isOptional || y.isOptional,
-      TType::union(subst, tenv, x.type, y.type),
-    )
+    TField{
+      pos => x.pos,
+      name => x.name,
+      isOptional => x.isOptional || y.isOptional,
+      type => TType::union(subst, tenv, x.type, y.type),
+    }
   }
 }
 

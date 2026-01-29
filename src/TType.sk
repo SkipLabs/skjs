@@ -805,12 +805,12 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
   }
 }
 
-class TField private (
+class TField private {
   pos: PosRange,
   name: /* Invariant: name != kAlgebraicBranchFieldName */ String,
   isOptional: Bool,
   type: TType,
-) uses XXHashable, Orderable, Projectable<String> {
+} uses XXHashable, Orderable, Projectable<String> {
   static fun create(
     pos: PosRange,
     name: String,
@@ -818,7 +818,7 @@ class TField private (
     type: TType,
   ): ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
-      Some(TField(pos, name, isOptional, type))
+      Some(TField{pos, name, isOptional, type})
     }
   }
 
