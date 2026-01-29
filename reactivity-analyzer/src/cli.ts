@@ -36,6 +36,10 @@ const VERSION = "0.0.1";
 
 const CHECKER_LIST = ALL_CHECKER_NAMES.join(", ");
 
+const LEGACY_CHECKER_ALIASES: Record<string, CheckerName[]> = {
+  "no-as-expression": ["no-as-expression-necessary", "no-as-expression-unnecessary"],
+};
+
 const HELP = `
 skcheck - Static analyzer for Skip reactive services
 
@@ -62,7 +66,7 @@ CHECKERS
 
 EXAMPLES
   skcheck --project ../my-service              # Analyze a single project
-  skcheck --disable no-as-expression           # Skip as-expression checks
+  skcheck --disable no-as-expression-necessary,no-as-expression-unnecessary  # Skip as-expression checks
   skcheck --enable service-count,service-members  # Only run service checks
   skcheck all                                  # Analyze all generated-examples
   skcheck all --parallel 8 --verbose           # With more parallelism + output
@@ -86,6 +90,11 @@ function getCommand(): string | null {
   return null;
 }
 
+function expandCheckerName(name: string): CheckerName[] | null {
+  if (isKnownCheckerName(name)) return [name];
+  return LEGACY_CHECKER_ALIASES[name] ?? null;
+}
+
 function parseEnabledCheckers(): Set<CheckerName> {
   const enableArg = getArgValue("--enable");
   const disableArg = getArgValue("--disable");
@@ -96,8 +105,9 @@ function parseEnabledCheckers(): Set<CheckerName> {
     const names = enableArg.split(",").map((s) => s.trim());
     enabled = new Set<CheckerName>();
     for (const name of names) {
-      if (isKnownCheckerName(name)) {
-        enabled.add(name);
+      const expanded = expandCheckerName(name);
+      if (expanded) {
+        for (const checker of expanded) enabled.add(checker);
       } else {
         console.error(`Unknown checker: ${name}`);
         console.error(`Available checkers: ${CHECKER_LIST}`);
@@ -109,8 +119,9 @@ function parseEnabledCheckers(): Set<CheckerName> {
   if (disableArg) {
     const names = disableArg.split(",").map((s) => s.trim());
     for (const name of names) {
-      if (isKnownCheckerName(name)) {
-        enabled.delete(name);
+      const expanded = expandCheckerName(name);
+      if (expanded) {
+        for (const checker of expanded) enabled.delete(checker);
       } else {
         console.error(`Unknown checker: ${name}`);
         console.error(`Available checkers: ${CHECKER_LIST}`);

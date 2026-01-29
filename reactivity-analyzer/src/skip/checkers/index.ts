@@ -10,7 +10,8 @@ import type { NodeIterator } from "../../infra/ast-inspection.js";
 import type { Violation } from "../../infra/checker.js";
 import type { FileAnalysis } from "../report.js";
 import { mapEntryValuesToArrayChecker } from "./mapentry-values-toarray.js";
-import { noAsExpressionChecker } from "./no-as-expression.js";
+import { noAsExpressionNecessaryChecker } from "./no-as-expression-necessary.js";
+import { noAsExpressionUnnecessaryChecker } from "./no-as-expression-unnecessary.js";
 import { noNonNullAssertionChecker } from "./no-non-null-assertion.js";
 import { serviceCountChecker } from "./service-count.js";
 import { serviceMembersChecker } from "./service-members.js";
@@ -20,8 +21,9 @@ export { CHECKER_NAMES };
 export type { Checker, CheckerContext, CheckerName };
 
 export const ALL_CHECKERS: Checker[] = [
+  noAsExpressionNecessaryChecker,
+  noAsExpressionUnnecessaryChecker,
   noNonNullAssertionChecker,
-  noAsExpressionChecker,
   mapEntryValuesToArrayChecker,
   serviceCountChecker,
   serviceMembersChecker,
