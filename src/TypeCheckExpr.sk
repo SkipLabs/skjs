@@ -307,7 +307,7 @@ extension class TypeChecker {
         };
         tyAtN = tyArr.maybeGet(n) match {
         | Some(tyAtN) -> tyAtN
-        | None() -> TType::single(TPrimUnit(TUndefined(), pos))
+        | None() -> typingError(Array[(pos, "Out of bound index")])
         };
         !result = TType::union(tcenv.subst, this.tenv, result, tyAtN)
 
