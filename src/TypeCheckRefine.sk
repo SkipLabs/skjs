@@ -96,52 +96,42 @@ extension class TypeChecker {
       default = None();
       this.setLocal(tcenv, local, default, filter)
     | "object" ->
-      filter = x ~>
+      filterMap = x ~>
         x match {
-        | TObject(TFields{call => Some((true, _))}, _) -> true
-        | TObject(TFields{call => None()}, _)
+        | tObj @ TObject _ ->
+          tObj.mapCall(call ->
+            call match {
+            | Some((true, f)) -> Some(if (target) None() else Some((false, f)))
+            | Some((false, _)) -> if (target) None() else Some(call)
+            | None() -> if (target) Some(call) else None()
+            }
+          )
         | TAlgebraic _
         | TPrimUnit(TNull(), _)
         | TTuple _
         | TPromise _ ->
-          target
-        | _ -> !target
-        };
-      map = x ~>
-        x match {
-        | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> if (target) None() else Some((false, f))
-            | _ -> call
-            }
-          )
-        | _ -> x
+          if (target) Some(x) else None()
+        | _ -> if (target) None() else Some(x)
         };
       default = if (target) Some(TObject::createEmpty(typePos)) else {
         None()
       };
-      this.setLocal(tcenv, local, default, filter, map)
+      this.setLocalFilterMap(tcenv, local, default, filterMap)
     | "function" ->
-      filter = x ~>
-        x match {
-        | TObject(TFields{call => Some((true, _))}, _) -> true
-        | TObject(TFields{call => Some((false, _))}, _) -> target
-        | _ -> !target
-        };
-      map = x ~>
+      filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
           tObj.mapCall(call ->
             call match {
-            | Some((true, f)) -> if (target) Some((false, f)) else None()
-            | _ -> call
+            | Some((true, f)) -> Some(if (target) Some((false, f)) else None())
+            | Some((false, _)) -> if (target) Some(call) else None()
+            | None() -> if (target) None() else Some(call)
             }
           )
-        | _ -> x
+        | _ -> if (target) None() else Some(x)
         };
       default = None();
-      this.setLocal(tcenv, local, default, filter, map)
+      this.setLocalFilterMap(tcenv, local, default, filterMap)
     | _ ->
       tcenv.error(
         Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
