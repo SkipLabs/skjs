@@ -334,7 +334,6 @@ function refineInMandatoryField(x: { f: string } | string): string {
   if ("f" in x) {
     return x.f;
   } else {
-    // @skjs-expect-error Invalid return type
     return x;
   }
 }

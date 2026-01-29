@@ -205,7 +205,7 @@ extension class TypeChecker {
         | TAlgebraic _
         | TPromise _ ->
           Some(stype) /* TODO */
-        | tObj @ TObject _ ->
+        | tObj @ TObject(fields, _pos) ->
           singleLit match {
           | None() -> Some(stype)
           | Some(singleField) ->
@@ -225,7 +225,12 @@ extension class TypeChecker {
                 ),
               )
             } else {
-              Some(tObj.filter(tField -> tField.name != singleField.val))
+              fields.maybeGet(singleField.val) match {
+              | Some(TField(_pos, _name, /* optional */ false, _ty)) -> None()
+              | Some(_) ->
+                Some(tObj.filter(tField -> tField.name != singleField.val))
+              | _ -> Some(stype)
+              }
             }
           }
         };
