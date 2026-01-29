@@ -109,12 +109,16 @@ extension class TypeChecker {
         };
       map = x ~>
         x match {
-        | TObject(tFields @ TFields{call => Some((true, f))}, pos) ->
-          call = if (target) None() else Some((false, f));
-          TObject(tFields with {call}, pos)
+        | tObj @ TObject _ ->
+          tObj.mapCall(call ->
+            call match {
+            | Some((true, f)) -> if (target) None() else Some((false, f))
+            | _ -> call
+            }
+          )
         | _ -> x
         };
-      default = if (target) Some(TObject(TFields::empty(), typePos)) else {
+      default = if (target) Some(TObject::createEmpty(typePos)) else {
         None()
       };
       this.setLocal(tcenv, local, default, filter, map)
@@ -127,9 +131,13 @@ extension class TypeChecker {
         };
       map = x ~>
         x match {
-        | TObject(tFields @ TFields{call => Some((true, f))}, pos) ->
-          call = if (target) Some((false, f)) else None();
-          TObject(tFields with {call}, pos)
+        | tObj @ TObject _ ->
+          tObj.mapCall(call ->
+            call match {
+            | Some((true, f)) -> if (target) Some((false, f)) else None()
+            | _ -> call
+            }
+          )
         | _ -> x
         };
       default = None();
@@ -226,32 +234,27 @@ extension class TypeChecker {
         | TAlgebraic _
         | TPromise _ ->
           stype /* TODO */
-        | TObject(tFields @ TFields{indexes}, tObjPos) ->
+        | tObj @ TObject _ ->
           litsOpt
             .flatMap(litsToCheck ->
-              litsToCheck
-                .singleElt()
-                .flatMap(singleField ->
-                  if (target) {
-                    if (!indexes.isEmpty()) None() else {
+              litsToCheck.singleElt().map(singleField ->
+                if (target) {
+                  tObj.map(tFields ->
+                    if (!tFields.indexes.isEmpty()) tFields else {
                       TField::create(
                         e1.pos,
                         singleField.val,
                         false,
                         TType::top(e.pos),
-                      ).flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
+                      )
+                        .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
+                        .default(tFields)
                     }
-                  } else {
-                    Some(
-                      tFields.filterMap(tField ->
-                        if (tField.name == singleField.val) None() else {
-                          Some(tField)
-                        }
-                      ),
-                    )
-                  }
-                )
-                .map(newTFields -> TObject(newTFields, tObjPos))
+                  )
+                } else {
+                  tObj.filter(tField -> tField.name != singleField.val)
+                }
+              )
             )
             .default(stype)
         };

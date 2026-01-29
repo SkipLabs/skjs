@@ -489,9 +489,7 @@ class TEnv{
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
-        metType = TType::single(
-          TObject(TFields::create{call => Some(metTFuns)}, metTFuns.pos),
-        );
+        metType = TType::single(TObject::createCall(metTFuns));
         TField::create(fd.pos, metName.value, false, metType) match {
         | None() ->
           tcenvb.error(Array[(fd.pos, `Forbidden method name '${metName}'`)])
@@ -647,11 +645,11 @@ class TEnv{
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
-      TType::single(TObject(TFields::create{call => Some(tfuns)}, pos))
+      TType::single(TObject::createCallWithPos(tfuns, pos))
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
-      TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
+      TType::single(TObject::createNew(tfuns, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
@@ -683,7 +681,7 @@ class TEnv{
         | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
         | Some(fd) -> this.makeConstructor(tcenvb, className, c.tparams, fd)
         };
-        TType::single(TObject(TFields::create{new => Some(tfuns)}, pos))
+        TType::single(TObject::createNew(tfuns, pos))
       | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
       }
     | TAPrim(kind) ->
@@ -703,7 +701,7 @@ class TEnv{
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TObject(TFields::empty(), pos))
+      TType::single(TObject::createEmpty(pos))
 
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(tcenvb, ty)]))
@@ -1011,9 +1009,7 @@ class TEnv{
         | FNSymbol _ ->
           notSupported(fd.pos, "symbol-named method in literal object type")
         | FNNormal(name) ->
-          decl = TType::single(
-            TObject(TFields::create{call => Some(tFuns)}, tFuns.pos),
-          );
+          decl = TType::single(TObject::createCall(tFuns));
           optField = TField::create(name.pos, name.value, false, decl);
           if (optField is None()) {
             tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
