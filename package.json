@@ -1,6 +1,7 @@
 {
   "devDependencies": {
-    "prettier": "^3.4.1"
+    "prettier": "^3.4.1",
+    "skcheck": "file:reactivity-analyzer"
   },
   "scripts": {
     "fmt": "prettier --write .",

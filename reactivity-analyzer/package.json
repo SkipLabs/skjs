@@ -1,0 +1,17 @@
+{
+  "name": "skcheck",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "bin": {
+    "skcheck": "./skcheck.js"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3",
+    "@types/node": "20.17.24"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  }
+}
+
