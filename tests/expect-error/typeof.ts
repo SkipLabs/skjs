@@ -1102,7 +1102,7 @@ function testTupleSpread(
 function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
     // Accessing out of bounds
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Out of bound index
     return x[2];
   } else {
     return false;
