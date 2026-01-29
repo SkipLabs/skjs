@@ -152,6 +152,27 @@ extension class TypeChecker {
     this.setLocal(tcenv, local, default, filter)
   }
 
+  fun evalIsArray(tcenv: mutable TCEnv, local: Name, target: Bool): void {
+    if (target) {
+      filterMap = x ->
+        x match {
+        | TTuple _ -> Some(x)
+        | tObj @ TObject _ ->
+          tvar = TType::var(tcenv.subst.gen(local.pos));
+          arrObj = this.tenv.newObject(
+            tcenv,
+            Name(local.pos, "Array"),
+            Array[tvar],
+          );
+          TObject::inter(tcenv.subst, this.tenv, tObj, arrObj)
+        | _ -> None()
+        };
+
+      default = None();
+      this.setLocalFilterMap(tcenv, local, default, filterMap)
+    }
+  }
+
   fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
     e.value match {
     | Binop(BOStrictEquality(), e1, e2) ->
@@ -159,6 +180,19 @@ extension class TypeChecker {
 
     | Binop(BOStrictInequality(), e1, e2) ->
       this.evalEquality(tcenv, e1, e2, !target)
+
+    | Call(
+      Expr(
+        _,
+        Dot(NormalDot(), Expr(_, Var(Name(_, "Array"))), Name(_, "isArray")),
+      ),
+      targs,
+      args,
+    ) if (targs.isEmpty() && args.size() == 1) ->
+      args[0] match {
+      | Expr(_, Var(local)) -> this.evalIsArray(tcenv, local, target)
+      | _ -> void
+      }
 
     | InstanceOf(
       Expr(_, Var(local)),

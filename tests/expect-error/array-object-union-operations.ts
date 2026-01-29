@@ -212,7 +212,6 @@ function testUnionNotSubtypeOfObject(x: Array<number> | Obj): Obj {
 // After Array.isArray, should be narrowed to array
 function testNarrowToArray(x: Array<number> | Obj): Array<number> {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
     return x;
   }
   return [];
