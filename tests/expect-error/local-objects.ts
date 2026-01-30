@@ -41,11 +41,17 @@ function testGrowthBeforeLoop(): void {
   }
 }
 
-// Test 5: With index signature (currently errors from step 1)
+// Test 5: With index signature (field name matches index key type)
 function testWithIndexSignature(): void {
   let obj: { [key: string]: number } = {};
-  // @skjs-expect-error Local object has index signatures (will be ignored)
-  obj.x = 5;
+  obj.x = 5; // OK: "x" is a subtype of string, so use index signature
+}
+
+// Test 5b: Index signature with numeric key (field name doesn't match)
+function testWithNumericIndexSignature(): void {
+  let obj: { [key: number]: string } = {};
+  obj.x = "hello"; // OK: "x" is NOT a subtype of number, so add as field
+  const result: { x: string } = obj;
 }
 
 // Test 6: With constructor signature

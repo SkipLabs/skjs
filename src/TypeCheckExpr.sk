@@ -1477,57 +1477,87 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
-      // Emit error for index signatures (Step 4 will handle this properly).
-      if (!fields.indexes.isEmpty()) {
-        tcenv.error(
-          Array[(pos, "Local object has index signatures (will be ignored)")],
-        )
-      };
       // Constructor signatures are allowed - they don't interfere with field addition.
+      // Check if field exists explicitly, or if it matches an index signature.
       objField = fields.maybeGet(fieldName.value) match {
       | None() ->
-        used match {
-        | None() -> void
-        | Some(usedPos) ->
-          tcenv.error(
-            Array[
-              (pos, "You are trying to add a field to this object"),
-              (
-                usedPos,
-                "But this object has been already been used for something else",
-              ),
-            ],
-          )
-        };
-        if (tcenv.scope.isThroughLoop(local)) {
-          tcenv.error(
-            Array[(local.pos, "You cannot add a field to an object in a loop")],
-          )
-        };
-        TField::create(fieldType.pos, fieldName.value, false, fieldType) match {
-        | None() ->
-          tcenv.error(
-            Array[
-              (pos, "TODO: converting an object to an algebraic"),
-              (fieldName.pos, `For field ${fieldName}`),
-              (fieldType.pos, `Of type ${fieldType}`),
-            ],
-          )
-        | Some(field) ->
-          newTy = TFields::inter(
-            tcenv.subst,
+        // Field doesn't exist. Check if it matches an index signature.
+        fieldNameType = TType::single(
+          TPrimValue::single(TString(), fieldName.value, fieldName.pos),
+        );
+        matchingIndex = fields.indexes.find(indexField -> {
+          // Check if field name type is a subtype of index key type
+          // Clone subst to avoid side effects
+          clonedSubst = tcenv.subst.clone();
+          TType::isSub(
+            clonedSubst,
             this.tenv,
-            fields,
-            TFields::create{fields => Array[field]},
-          ) match {
-          | None() -> TType::bottom(objPos)
-          | Some(newFields) -> TType::single(TObject(newFields, objPos))
+            fieldNameType,
+            indexField.keyType,
+          ) is STOk _
+        });
+        matchingIndex match {
+        | Some(indexField) ->
+          // Field name matches index signature, use index value type
+          indexField.valueType
+        | None() ->
+          // No matching index, add a new field
+          used match {
+          | None() -> void
+          | Some(usedPos) ->
+            tcenv.error(
+              Array[
+                (pos, "You are trying to add a field to this object"),
+                (
+                  usedPos,
+                  "But this object has been already been used for something else",
+                ),
+              ],
+            )
           };
-          tcenv.scope.set(local, newTy, (x, y) -> {
-            this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
-          })
-        };
-        fieldType
+          if (tcenv.scope.isThroughLoop(local)) {
+            tcenv.error(
+              Array[
+                (local.pos, "You cannot add a field to an object in a loop"),
+              ],
+            )
+          };
+          TField::create(
+            fieldType.pos,
+            fieldName.value,
+            false,
+            fieldType,
+          ) match {
+          | None() ->
+            tcenv.error(
+              Array[
+                (pos, "TODO: converting an object to an algebraic"),
+                (fieldName.pos, `For field ${fieldName}`),
+                (fieldType.pos, `Of type ${fieldType}`),
+              ],
+            )
+          | Some(field) ->
+            newTy = TFields::inter(
+              tcenv.subst,
+              this.tenv,
+              fields,
+              TFields::create{fields => Array[field]},
+            ) match {
+            | None() -> TType::bottom(objPos)
+            | Some(newFields) -> TType::single(TObject(newFields, objPos))
+            };
+            tcenv.scope.set(local, newTy, (x, y) -> {
+              this.checkSubType(
+                tcenv,
+                fieldType.pos,
+                "Invalid assignment",
+                x,
+                y,
+              )
+            })
+          };
+          fieldType
+        }
       | Some(fd) -> fd.type
       };
       this.checkSubType(
