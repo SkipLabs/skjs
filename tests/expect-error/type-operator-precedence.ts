@@ -14,7 +14,6 @@ function testKeyofUnion(): void {
   const a: KeyofUnion = "x";
 
   // This should work: any string is in the union
-  // Now works correctly with fixed precedence
   const b: KeyofUnion = "hello";
 
   // This should work: another arbitrary string
