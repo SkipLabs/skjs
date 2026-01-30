@@ -458,7 +458,12 @@ class TEnv{
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField(indexName.pos, indexName.value, keyType, valueType),
+            TIndexField{
+              pos => indexName.pos,
+              keyName => indexName.value,
+              keyType,
+              valueType,
+            },
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
         }
@@ -992,7 +997,12 @@ class TEnv{
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField(indexName.pos, indexName.value, keyType, valueType),
+            TIndexField{
+              pos => indexName.pos,
+              keyName => indexName.value,
+              keyType,
+              valueType,
+            },
           );
           None()
         }

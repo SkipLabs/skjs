@@ -836,12 +836,12 @@ class TField private {
 }
 
 /* Fields such as { [keyName: KeyType]: ValueType } */
-class TIndexField(
+class TIndexField{
   pos: PosRange,
   keyName: String,
   keyType: TType,
   valueType: TType,
-) uses XXHashable, Orderable {
+} uses XXHashable, Orderable {
   fun mapTypes(f: TType -> TType): TIndexField {
     keyType = f(this.keyType);
     valueType = f(this.valueType);
