@@ -14,12 +14,10 @@ function testKeyofUnion(): void {
   const a: KeyofUnion = "x";
 
   // This should work: any string is in the union
-  // Currently FAILS in SKJS because it parses as keyof (object | string)
-  // @skjs-expect-error Invalid annotation
+  // Now works correctly with fixed precedence
   const b: KeyofUnion = "hello";
 
   // This should work: another arbitrary string
-  // @ts-expect-error Invalid annotation
   const c: KeyofUnion = "world";
 }
 
@@ -31,9 +29,7 @@ function testKeyofUnion(): void {
 type KeyofIntersection = keyof { x: number } & string;
 
 function testKeyofIntersection(): void {
-  // This should work with correct precedence: "x" is both in keyof and is a string
-  // But SKJS parses as keyof ({ x: number } & string) = keyof never = never
-  // @skjs-expect-error Invalid annotation
+  // This works with correct precedence: "x" is both in keyof and is a string
   const a: KeyofIntersection = "x";
 
   // This should fail: "y" is not a key
@@ -66,9 +62,7 @@ type MultipleKeyof = keyof { a: number } | keyof { b: string };
 function testMultipleKeyof(): void {
   const a: MultipleKeyof = "a";
 
-  // This should work in TypeScript: "b" is from keyof { b: string }
-  // SKJS currently parses this incorrectly due to precedence bug
-  // @skjs-expect-error Invalid annotation
+  // This works: "b" is from keyof { b: string }
   const b: MultipleKeyof = "b";
 
   // This should fail: "c" is not in either keyof
@@ -184,9 +178,7 @@ type MixedPrefixUnion = keyof { a: number } | keyof { b: string } | number;
 function testMixedPrefixUnion(): void {
   const a: MixedPrefixUnion = "a";
 
-  // Should work: "b" is from keyof { b: string }
-  // SKJS currently has precedence bug
-  // @skjs-expect-error Invalid annotation
+  // Works: "b" is from keyof { b: string }
   const b: MixedPrefixUnion = "b";
 
   const c: MixedPrefixUnion = 42;
@@ -233,14 +225,11 @@ function testUnionIntersectionMixed(): void {
 type ComplexPrecedence = keyof { x: number } | ({ y: string } & { z: boolean });
 
 function testComplexPrecedence(): void {
-  // With wrong precedence, SKJS parses as: keyof ({ x: number } | { y: string; z: boolean })
-  // Which gives: "x" | "y" | "z"
-  // So "x" is incorrectly accepted
+  // With correct precedence: (keyof { x: number }) | ({ y: string } & { z: boolean })
+  // = "x" | { y: string; z: boolean }
   const a: ComplexPrecedence = "x";
 
-  // With wrong precedence, SKJS parses as: keyof ({ x: number } | { y: string; z: boolean })
-  // Which gives string union "x" | "y" | "z", not the object type
-  // @skjs-expect-error Invalid annotation
+  // Works: object with both y and z matches { y: string; z: boolean }
   const b: ComplexPrecedence = { y: "hello", z: true };
 
   // Should fail: object with only y

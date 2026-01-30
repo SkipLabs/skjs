@@ -155,7 +155,7 @@ extension class Parser {
     | TKOpenCurly() -> TAObject(this.objectTypeFields())
     | TKVar() ->
       this.getVar(tok) match {
-      | "typeof" -> TATypeOf(this.type(0))
+      | "typeof" -> TATypeOf(this.type(prefixPrec))
       | "import" ->
         this.expect(TKOpenParen());
         e = this.expr(0);
@@ -198,11 +198,11 @@ extension class Parser {
       | "boolean" -> TAPrim(TPKBool())
       | "string" -> TAPrim(TPKString())
       | "bigint" -> TAPrim(TPKBigInt())
-      | "readonly" -> TAReadonly(this.type(prec))
+      | "readonly" -> TAReadonly(this.type(prefixPrec))
       | "infer" -> TAInfer(this.getName())
-      | "keyof" -> TAKeyOf(this.type(prec))
-      | "abstract" -> TANew(this.type(prec))
-      | "new" -> TANew(this.type(prec))
+      | "keyof" -> TAKeyOf(this.type(prefixPrec))
+      | "abstract" -> TANew(this.type(prefixPrec))
+      | "new" -> TANew(this.type(prefixPrec))
       | className ->
         name = Name(this.lex.posRange(tok), className);
         loop {
