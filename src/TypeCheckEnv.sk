@@ -82,6 +82,14 @@ mutable class TCEnv private {
    *   - First use: once read/passed, no more fields
    *   - Loops: can't grow in loops (final type unpredictable)
    *
+   * Special handling:
+   *   - Constructor signatures: allowed on local objects, don't interfere with
+   *     field addition
+   *   - Index signatures: field addition checks if field name matches index key
+   *     type. If it matches, use index value type. If not, add explicit field.
+   *     Example: `let obj: { [key: string]: number } = {}; obj.x = 5;`
+   *     Here "x" is a subtype of string, so uses index signature.
+   *
    * See examples/src/tree.ts:Node() for real usage.
    */
   localObjects: mutable Map<String, LocalObjectState> = mutable Map[],
