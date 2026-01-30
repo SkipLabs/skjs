@@ -231,6 +231,14 @@ base class Associativity {
 
 /***************************************************************************/
 // Operators associativity and precedence.
+//
+// These precedence constants apply to both expressions AND types:
+// - prefixPrec (18): Unary prefix operators in expressions (!x, typeof x)
+//                    AND type operators (keyof T, typeof T, readonly T)
+// - Precedence 10: Bitwise AND (&) in expressions AND intersection (&) in types
+// - Precedence 8: Bitwise OR (|) in expressions AND union (|) in types
+// - ternaryPrec (4): Ternary conditional (x ? y : z) in expressions
+//                    AND conditional types (T extends U ? X : Y)
 /***************************************************************************/
 
 const callPrecHigh: Int = 22;
@@ -253,6 +261,7 @@ const binaryOperators: Map<
   /* 20: new x (no argument list) (non-assoc) => not supported */
   /* 19: x++, x--, x! (postfixPrec) */
   /* 18: !x, ~x, ++x, --x, +x, -x, typeof x, void x, delete x, await x (prefixPrec) */
+  /*     TYPE: keyof T, typeof T, readonly T, infer T, new T, abstract T (prefixPrec) */
   TKExponentiation() => (ARight(), 17, BOExponentiation()),
   TKMultiplication() => (ALeft(), 16, BOMultiplication()),
   TKDivision() => (ALeft(), 16, BODivision()),
@@ -272,12 +281,15 @@ const binaryOperators: Map<
   TKStrictInequality() => (ALeft(), 11, BOStrictInequality()),
   /* 11, also x == y, x != y (banned!) */
   TKBitwiseAnd() => (ALeft(), 10, BOBitwiseAnd()),
+  /*              TYPE: T & U (intersection types) */
   TKBitwiseXor() => (ALeft(), 9, BOBitwiseXor()),
   TKBitwiseOr() => (ALeft(), 8, BOBitwiseOr()),
+  /*             TYPE: T | U (union types) */
   TKLogicalAnd() => (ALeft(), 7, BOLogicalAnd()),
   TKLogicalOr() => (ALeft(), 6, BOLogicalOr()),
   TKNullishCoalescing() => (ALeft(), 5, BONullishCoalescing()),
   /* 4: x ? y : z (right) (ternaryPrec) */
+  /*    TYPE: T extends U ? X : Y (conditional types) */
   /* 3: x => y, async x => y (right) (closurePrec) */
   TKAssignment() => (ARight(), 2, BOAssignment()),
   TKExponentiationAssignment() => (
