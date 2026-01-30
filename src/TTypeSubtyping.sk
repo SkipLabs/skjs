@@ -862,30 +862,49 @@ extension class TType {
   private static fun isSub_(
     subst: mutable Subst,
     tenv: TEnv,
-    u1: TType,
-    u2: TType,
+    ltyp: TType,
+    rtyp: TType,
   ): STResult<TType> {
-    if (u2.isTop()) return STOk();
-    if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
-    !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
+    if (rtyp.isTop()) return STOk();
+    if (tenv.seenSub.contains((subst.version, ltyp, rtyp))) return STOk();
+    !tenv.seenSub = tenv.seenSub.set((subst.version, ltyp, rtyp));
 
-    ArrayLitTyping::subtyping(subst, tenv, u1, u2) match {
+    ArrayLitTyping::subtyping(subst, tenv, ltyp, rtyp) match {
     | Some(res) -> return res
     | None() -> void
     };
 
     savedSubst = subst.save();
-    for (inst in u2.insts) {
+    for (inst in rtyp.insts) {
       inst match {
-      | tvar @ TVar(_, _, constraints) ->
+      | rvar @ TVar(_, _, constraints) ->
         substCopy = subst.save();
-        if (
-          constraints.all(cstr -> TType::isSub(subst, tenv, u1, cstr) is STOk())
-        ) {
+        // Checking ltyp <: rtyp. Here rtyp is (rvar ∧ ⋀ᵢupperᵢ).
+        // Constraints on rvar come from intersection:
+        //   inter(rvar, upperᵢ) added upperᵢ as a constraint on rvar.
+        // To check ltyp <: (rvar ∧ ⋀ᵢupperᵢ),
+        //   check ltyp <: upperᵢ for all i, and
+        //   add a lower bound of ltyp to rvar.
+        // If upperᵢ is a TVar uvarᵢ, then also
+        //   add an upper bound to uvarᵢ of ltyp.
+        // End result:
+        //   ∀i. uvarᵢ <: ltyp <: upperᵢ (= uvarᵢ), so ltyp = uvarᵢ;
+        //   and ltyp <: rvar.
+        constraintsOk = constraints.all(upper -> {
+          result = TType::isSub(subst, tenv, ltyp, upper);
+          if (result is STOk()) {
+            upper.getSingleVar() match {
+            | Some(uvar) -> subst.shrink(tenv, uvar, ltyp)
+            | None() -> void
+            }
+          };
+          result is STOk()
+        });
+        if (constraintsOk) {
           subst.grow(
             tenv,
-            tvar,
-            TType::diff(subst, tenv, u1, u2),
+            rvar,
+            TType::diff(subst, tenv, ltyp, rtyp),
             Contravariant(),
           )
         } else {
@@ -894,27 +913,34 @@ extension class TType {
       | _ -> void
       }
     };
-    for (inst in u1.insts) {
+    for (inst in ltyp.insts) {
       inst match {
-      | tvar @ TVar(_, _, constraints) ->
+      | lvar @ TVar(_, _, constraints) ->
         substCopy = subst.save();
         if (
-          constraints.all(cstr -> TType::isSub(subst, tenv, u2, cstr) is STOk())
+          constraints.all(upper ->
+            TType::isSub(subst, tenv, rtyp, upper) is STOk()
+          )
         ) {
-          subst.grow(tenv, tvar, TType::diff(subst, tenv, u2, u1), Covariant())
+          subst.grow(
+            tenv,
+            lvar,
+            TType::diff(subst, tenv, rtyp, ltyp),
+            Covariant(),
+          )
         } else {
           subst.restore(substCopy)
         }
       | _ -> void
       }
     };
-    clauses1 = u1.expandToClauses(subst, tenv, Covariant());
-    clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
+    clauses1 = ltyp.expandToClauses(subst, tenv, Covariant());
+    clauses2 = rtyp.expandToClauses(subst, tenv, Contravariant());
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
       subst.restore(savedSubst);
-      STRecType(err, u1, u2)
+      STRecType(err, ltyp, rtyp)
     }
   }
 }

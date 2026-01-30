@@ -60,13 +60,35 @@ extension class TType {
       return TType::unexpandedInter(ty1, ty2);
     };
     !tenv.seenInter = tenv.seenInter.set((ty1, ty2));
-    ty1.getSingleVar() match {
-    | None() -> void
-    | Some(tvar) -> return TType::var(tvar.addConstraint(ty2))
-    };
-    ty2.getSingleVar() match {
-    | None() -> void
-    | Some(tvar) -> return TType::var(tvar.addConstraint(ty1))
+    // When both args are TVars with bounds (lower or upper), intersect the
+    // bounds and narrow both - this forces them to converge to a common type.
+    // When only one has an upper bound, use it to shrink the other.
+    // Lower bounds alone cannot justify shrinking the other TVar.
+    (ty1.getSingleVar(), ty2.getSingleVar()) match {
+    | (Some(tvar1), Some(tvar2)) ->
+      // First check if both have any bounds (lower or upper)
+      (subst.peek(tenv, tvar1), subst.peek(tenv, tvar2)) match {
+      | (Some(bound1), Some(bound2)) ->
+        // Both have bounds - intersect and narrow both
+        result = TType::inter(subst, tenv, bound1, bound2);
+        subst.shrink(tenv, tvar1, result);
+        subst.shrink(tenv, tvar2, result);
+        return result
+      | _ ->
+        // At most one has a lower bound - check for upper bounds
+        (subst.peekUpper(tenv, tvar1), subst.peekUpper(tenv, tvar2)) match {
+        | (Some(upper1), None()) ->
+          subst.shrink(tenv, tvar2, upper1);
+          return TType::var(tvar1.addConstraint(ty2))
+        | (None(), Some(upper2)) ->
+          subst.shrink(tenv, tvar1, upper2);
+          return TType::var(tvar2.addConstraint(ty1))
+        | _ -> return TType::var(tvar1.addConstraint(ty2))
+        }
+      }
+    | (Some(tvar), None()) -> return TType::var(tvar.addConstraint(ty2))
+    | (None(), Some(tvar)) -> return TType::var(tvar.addConstraint(ty1))
+    | (None(), None()) -> void
     };
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());

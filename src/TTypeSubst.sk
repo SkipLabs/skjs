@@ -4,20 +4,23 @@
 
 module SKJS;
 
-base class SubstValue {
+// Bounds on type variables. Lower bounds come from grow (bound <: TVar),
+// upper bounds come from shrink (TVar <: bound).
+base class SubstBound {
   children =
-  | SVOpen(TType)
-  | SVClosed(TType)
+  | SBLower{lower: TType, isClosed: Bool}
+  | SBUpper{upper: TType}
+  | SBBoth{lower: TType, isClosed: Bool, upper: TType}
 }
 
-class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
+class SavedSubst{version: Int, bounds: SortedMap<Int, SubstBound>}
 
 mutable class Subst private {
   mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
   mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
-  private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+  private mutable bounds: SortedMap<Int, SubstBound> = SortedMap[],
 } extends TCEnvBase {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
@@ -38,77 +41,160 @@ mutable class Subst private {
       seenInter => this.seenInter,
       seenUnion => this.seenUnion,
       version => this.version,
-      values => this.values,
+      bounds => this.bounds,
     }
   }
 
   readonly fun save(): SavedSubst {
-    SavedSubst{version => this.version, values => this.values}
+    SavedSubst{version => this.version, bounds => this.bounds}
   }
 
   mutable fun restore(saved: SavedSubst): void {
     this.!version = saved.version;
-    this.!values = saved.values;
+    this.!bounds = saved.bounds;
   }
 
+  // Accumulates lower bounds on tvars via union.
+  // NOTE The cases that return SBBoth{lower, upper} may create inconsistent
+  // bounds if lower <: upper does not hold. This inconsistency later
+  // resolves to `never` when get() computes inter(lower, upper).
   mutable fun grow(
     tenv: TEnv,
     tvar: TVar,
     ty: TType,
     variance: Variance,
   ): void {
-    newTy = this.values.maybeGet(tvar.id) match {
-    | None() -> ty
-    | Some(SVClosed(_)) -> return void
-    | Some(SVOpen(ty2)) ->
-      newTy = TType::union(this, tenv, ty2, ty);
-      if (newTy == ty2) return void;
-      newTy
+    closed = variance is Covariant();
+    newBound = this.bounds.maybeGet(tvar.id) match {
+    | None() -> SBLower{lower => ty, isClosed => closed}
+    | Some(SBLower{lower, isClosed}) ->
+      if (isClosed) {
+        return void
+      } else {
+        newLower = TType::union(this, tenv, lower, ty);
+        if (!closed && newLower == lower) {
+          return void
+        } else {
+          SBLower{lower => newLower, isClosed => closed}
+        }
+      }
+    | Some(SBUpper{upper}) -> SBBoth{lower => ty, isClosed => closed, upper}
+    | Some(SBBoth{lower, isClosed, upper}) ->
+      if (isClosed) {
+        return void
+      } else {
+        newLower = TType::union(this, tenv, lower, ty);
+        if (!closed && newLower == lower) {
+          return void
+        } else {
+          SBBoth{lower => newLower, isClosed => closed, upper}
+        }
+      }
     };
     this.!version = this.version + 1;
-    this.!values[tvar.id] = variance match {
-    | Contravariant() -> SVOpen(newTy)
-    | Covariant() -> SVClosed(newTy)
-    }
+    this.!bounds[tvar.id] = newBound
   }
 
-  mutable fun get(tenv: TEnv, tvar: TVar, variance: Variance): TType {
-    result = variance match {
-    | Covariant() ->
-      this.values.maybeGet(tvar.id) match {
-      | None() -> SVOpen(TType::bottom(tvar.pos))
-      | Some(sv) -> sv
-      } match {
-      | SVOpen(ty) ->
-        this.!version = this.version + 1;
-        this.!values[tvar.id] = SVClosed(ty);
-        ty
-      | SVClosed(ty) -> ty
-      }
-    | Contravariant() ->
-      this.values.maybeGet(tvar.id) match {
-      | None() -> TType::bottom(tvar.pos)
-      | Some(SVOpen(ty))
-      | Some(SVClosed(ty)) ->
-        ty
-      }
+  // Accumulates upper bounds on tvars via intersection.
+  // NOTE The cases that return SBBoth{lower, upper} may create inconsistent
+  // bounds if lower <: upper does not hold. This inconsistency later
+  // resolves to `never` when get() computes inter(lower, upper).
+  mutable fun shrink(tenv: TEnv, tvar: TVar, ty: TType): void {
+    newBound = this.bounds.maybeGet(tvar.id) match {
+    | None() -> SBUpper{upper => ty}
+    | Some(SBLower{lower, isClosed}) -> SBBoth{lower, isClosed, upper => ty}
+    | Some(SBUpper{upper}) ->
+      SBUpper{upper => TType::inter(this, tenv, upper, ty)}
+    | Some(SBBoth{lower, isClosed, upper}) ->
+      SBBoth{lower, isClosed, upper => TType::inter(this, tenv, upper, ty)}
     };
+    this.!version = this.version + 1;
+    this.!bounds[tvar.id] = newBound
+  }
+
+  // Applies TVar constraints to a type via intersection.
+  private mutable fun applyConstraints(
+    tenv: TEnv,
+    tvar: TVar,
+    ty: TType,
+  ): TType {
+    result = ty;
     for (cstr in tvar.constraints) {
-      !result = TType::inter(this, tenv, result, cstr);
+      !result = TType::inter(this, tenv, result, cstr)
     };
     result
   }
 
+  // Returns the inferred type from a bound: inter(lower, upper) if both exist.
+  private mutable fun boundToType(tenv: TEnv, bound: SubstBound): TType {
+    bound match {
+    | SBLower{lower} -> lower
+    | SBUpper{upper} -> upper
+    | SBBoth{lower, upper} -> TType::inter(this, tenv, lower, upper)
+    }
+  }
+
+  // Returns the inferred type for a tvar. When both lower and upper bounds
+  // exist, returns their intersection (the most specific satisfying type).
+  mutable fun get(tenv: TEnv, tvar: TVar, variance: Variance): TType {
+    boundTy = variance match {
+    | Covariant() ->
+      this.bounds.maybeGet(tvar.id) match {
+      | None() ->
+        this.!version = this.version + 1;
+        this.!bounds[tvar.id] = SBLower{
+          lower => TType::bottom(tvar.pos),
+          isClosed => true,
+        };
+        TType::bottom(tvar.pos)
+      | Some(SBLower{lower, isClosed => false}) ->
+        this.!version = this.version + 1;
+        this.!bounds[tvar.id] = SBLower{lower, isClosed => true};
+        lower
+      | Some(SBLower{lower, isClosed => true}) -> lower
+      | Some(SBUpper{upper}) ->
+        this.!version = this.version + 1;
+        this.!bounds[tvar.id] = SBBoth{
+          lower => TType::bottom(tvar.pos),
+          isClosed => true,
+          upper,
+        };
+        upper
+      | Some(SBBoth{lower, isClosed => false, upper}) ->
+        this.!version = this.version + 1;
+        this.!bounds[tvar.id] = SBBoth{lower, isClosed => true, upper};
+        TType::inter(this, tenv, lower, upper)
+      | Some(SBBoth{lower, isClosed => true, upper}) ->
+        TType::inter(this, tenv, lower, upper)
+      }
+    | Contravariant() ->
+      this.bounds.maybeGet(tvar.id) match {
+      | None() -> TType::bottom(tvar.pos)
+      | Some(bound) -> this.boundToType(tenv, bound)
+      }
+    };
+    this.applyConstraints(tenv, tvar, boundTy)
+  }
+
+  // Returns the inferred type if a lower bound exists, without closing.
+  // Returns None if only an upper bound exists (no lower bound from grow).
   mutable fun peek(tenv: TEnv, tvar: TVar): ?TType {
-    this.values.maybeGet(tvar.id) match {
+    this.bounds.maybeGet(tvar.id) match {
     | None() -> None()
-    | Some(SVOpen(ty))
-    | Some(SVClosed(ty)) ->
-      result = ty;
-      for (cstr in tvar.constraints) {
-        !result = TType::inter(this, tenv, result, cstr)
-      };
-      Some(result)
+    | Some(SBUpper _) -> None()
+    | Some(bound) ->
+      Some(this.applyConstraints(tenv, tvar, this.boundToType(tenv, bound)))
+    }
+  }
+
+  // Returns the inferred type if an upper bound exists, without closing.
+  // Returns None if only a lower bound exists (no upper bound from shrink).
+  mutable fun peekUpper(tenv: TEnv, tvar: TVar): ?TType {
+    this.bounds.maybeGet(tvar.id) match {
+    | None() -> None()
+    | Some(SBLower _) -> None()
+    | Some(bound) ->
+      Some(this.applyConstraints(tenv, tvar, this.boundToType(tenv, bound)))
     }
   }
 
@@ -119,8 +205,9 @@ mutable class Subst private {
   }
 
   readonly fun isOpen(tvar: TVar): Bool {
-    this.values.maybeGet(tvar.id) match {
-    | Some(SVOpen _) -> true
+    this.bounds.maybeGet(tvar.id) match {
+    | Some(SBLower{isClosed => false}) -> true
+    | Some(SBBoth{isClosed => false}) -> true
     | _ -> false
     }
   }

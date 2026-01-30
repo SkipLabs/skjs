@@ -25,6 +25,5 @@ function testUIsNumber(): number {
 // U should be 42 (narrowed via intersection with T)
 function testU(): 42 {
   const num: number = 42;
-  // @skjs-expect-error Invalid return type
   return getU(42, num, 42);
 }
