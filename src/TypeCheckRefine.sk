@@ -46,12 +46,8 @@ extension class TypeChecker {
     tag: String,
     target: Bool,
   ): void {
-    this.setLocal(
-      tcenv,
-      local,
-      None(),
-      _ ~> true,
-      stype ~>
+    this.setLocalFilterMap(tcenv, local, None(), stype ~>
+      Some(
         stype match {
         | TAlgebraic(branches, aPos) ->
           TAlgebraic(
@@ -59,8 +55,8 @@ extension class TypeChecker {
             aPos,
           )
         | x -> x
-        }
-      ,
+        },
+      )
     )
   }
 
@@ -96,52 +92,42 @@ extension class TypeChecker {
       default = None();
       this.setLocal(tcenv, local, default, filter)
     | "object" ->
-      filter = x ~>
+      filterMap = x ~>
         x match {
-        | TObject(TFields{call => Some((true, _))}, _) -> true
-        | TObject(TFields{call => None()}, _)
+        | tObj @ TObject _ ->
+          tObj.mapCall(call ->
+            call match {
+            | Some((true, f)) -> Some(if (target) None() else Some((false, f)))
+            | Some((false, _)) -> if (target) None() else Some(call)
+            | None() -> if (target) Some(call) else None()
+            }
+          )
         | TAlgebraic _
         | TPrimUnit(TNull(), _)
         | TTuple _
         | TPromise _ ->
-          target
-        | _ -> !target
-        };
-      map = x ~>
-        x match {
-        | tObj @ TObject _ ->
-          tObj.mapCall(call ->
-            call match {
-            | Some((true, f)) -> if (target) None() else Some((false, f))
-            | _ -> call
-            }
-          )
-        | _ -> x
+          if (target) Some(x) else None()
+        | _ -> if (target) None() else Some(x)
         };
       default = if (target) Some(TObject::createEmpty(typePos)) else {
         None()
       };
-      this.setLocal(tcenv, local, default, filter, map)
+      this.setLocalFilterMap(tcenv, local, default, filterMap)
     | "function" ->
-      filter = x ~>
-        x match {
-        | TObject(TFields{call => Some((true, _))}, _) -> true
-        | TObject(TFields{call => Some((false, _))}, _) -> target
-        | _ -> !target
-        };
-      map = x ~>
+      filterMap = x ~>
         x match {
         | tObj @ TObject _ ->
           tObj.mapCall(call ->
             call match {
-            | Some((true, f)) -> if (target) Some((false, f)) else None()
-            | _ -> call
+            | Some((true, f)) -> Some(if (target) Some((false, f)) else None())
+            | Some((false, _)) -> if (target) Some(call) else None()
+            | None() -> if (target) None() else Some(call)
             }
           )
-        | _ -> x
+        | _ -> if (target) None() else Some(x)
         };
       default = None();
-      this.setLocal(tcenv, local, default, filter, map)
+      this.setLocalFilterMap(tcenv, local, default, filterMap)
     | _ ->
       tcenv.error(
         Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
@@ -196,69 +182,55 @@ extension class TypeChecker {
 
     | In(e1, Expr(_, Var(local))) ->
       (_t1, litsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
+      singleLit = litsOpt.flatMap(litsToCheck -> litsToCheck.singleElt());
       default = if (target) {
-        litsOpt.flatMap(litsToCheck ->
-          litsToCheck.singleElt().flatMap(singleField ->
-            TField::create(
-              e1.pos,
-              singleField.val,
-              false,
-              TType::top(e.pos),
-            ).map(field ->
-              TObject(TFields::create{fields => Array[field]}, e1.pos)
-            )
+        singleLit.flatMap(singleField ->
+          TField::create(e1.pos, singleField.val, false, TType::top(e.pos)).map(
+            field -> TObject(TFields::create{fields => Array[field]}, e1.pos),
           )
         )
       } else {
         None()
       };
-      filterSType = stype ~>
+      filterMapSType = stype ~>
         stype match {
         | TPrimUnit _
         | TPrimValue _ ->
-          !target
+          if (target) None() else Some(stype)
         | TTuple _
         | TAlgebraic _
         | TPromise _ ->
-          true /* TODO */
-        | TObject _ -> true
-        };
-      mapSType = stype ~>
-        stype match {
-        | TPrimUnit _
-        | TPrimValue _ ->
-          if (target) internal_error("Filter should have got rid of it") else {
-            stype
-          }
-        | TTuple _
-        | TAlgebraic _
-        | TPromise _ ->
-          stype /* TODO */
-        | tObj @ TObject _ ->
-          litsOpt
-            .flatMap(litsToCheck ->
-              litsToCheck.singleElt().map(singleField ->
-                if (target) {
-                  tObj.map(tFields ->
-                    if (!tFields.indexes.isEmpty()) tFields else {
-                      TField::create(
-                        e1.pos,
-                        singleField.val,
-                        false,
-                        TType::top(e.pos),
-                      )
-                        .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
-                        .default(tFields)
-                    }
-                  )
-                } else {
-                  tObj.filter(tField -> tField.name != singleField.val)
-                }
+          Some(stype) /* TODO */
+        | tObj @ TObject(fields, _pos) ->
+          singleLit match {
+          | None() -> Some(stype)
+          | Some(singleField) ->
+            if (target) {
+              Some(
+                tObj.map(tFields ->
+                  if (!tFields.indexes.isEmpty()) tFields else {
+                    TField::create(
+                      e1.pos,
+                      singleField.val,
+                      false,
+                      TType::top(e.pos),
+                    )
+                      .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
+                      .default(tFields)
+                  }
+                ),
               )
-            )
-            .default(stype)
+            } else {
+              fields.maybeGet(singleField.val) match {
+              | Some(TField(_pos, _name, /* optional */ false, _ty)) -> None()
+              | Some(_) ->
+                Some(tObj.filter(tField -> tField.name != singleField.val))
+              | _ -> Some(stype)
+              }
+            }
+          }
         };
-      this.setLocal(tcenv, local, default, filterSType, mapSType)
+      this.setLocalFilterMap(tcenv, local, default, filterMapSType)
 
     | Unop(UOExclamationMark(), subE) -> this.evalCond(tcenv, subE, !target)
 
@@ -274,17 +246,30 @@ extension class TypeChecker {
     }
   }
 
+  fun setLocalFilterMap(
+    tcenv: mutable TCEnv,
+    local: Name,
+    default: ?SType,
+    filterMap: SType -> ?SType,
+  ): void {
+    f = (sTypesOpt) ->
+      sTypesOpt match {
+      | None() -> default.map(STypes::single)
+      | Some(sTypes) -> Some(sTypes.filterMap(filterMap))
+      };
+    ty = tcenv.scope.get(local);
+    !ty = ty.mapSTypes(tcenv.subst, this.tenv, Some(Covariant()), f);
+    tcenv.scope.set(local, ty, (_, _) -> void)
+  }
+
   fun setLocal(
     tcenv: mutable TCEnv,
     local: Name,
     default: ?SType,
     filter: SType ~> Bool,
-    map: SType ~> SType = x ~> x,
   ): void {
-    ty = tcenv.scope.get(local);
-    !ty = ty.expand(tcenv.subst, this.tenv, Some(Covariant()));
-    !ty = (mutable FilterType()).type((filter, map, default), ty);
-    tcenv.scope.set(local, ty, (_, _) -> void)
+    filterMap = sType -> if (filter(sType)) Some(sType) else None();
+    this.setLocalFilterMap(tcenv, local, default, filterMap)
   }
 }
 

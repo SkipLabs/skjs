@@ -227,22 +227,6 @@ mutable class RenameClauses() extends ApplyType {
   }
 }
 
-mutable class FilterType() extends ApplyType {
-  type Env = (SType ~> Bool, SType ~> SType, ?SType);
-
-  mutable fun insts(_env: this::Env, insts: TInsts): TInsts {
-    insts
-  }
-
-  mutable fun sTypesOpt(env: this::Env, sTypesOpt: ?STypes): ?STypes {
-    sTypesOpt match {
-    | None() -> env.i2.map(STypes::single)
-    | Some(sTypes) ->
-      Some(sTypes.filterMap(x -> if (env.i0(x)) Some(env.i1(x)) else None()))
-    }
-  }
-}
-
 mutable class Instantiate() extends ApplyType {
   type Env = (mutable Subst, TEnv, SortedMap<Id, TType>);
 

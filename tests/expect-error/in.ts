@@ -328,3 +328,12 @@ function literalInNonObject(x: number): boolean {
   // @ts-expect-error Invalid in
   return 0 in x;
 }
+
+function refineInMandatoryField(x: { f: string } | string): string {
+  // @ts-expect-error Invalid in
+  if ("f" in x) {
+    return x.f;
+  } else {
+    return x;
+  }
+}
