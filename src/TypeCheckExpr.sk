@@ -1477,20 +1477,13 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
-      // Emit errors for unexpected cases but continue processing.
-      // Steps 3-4 will properly handle these cases.
+      // Emit error for index signatures (Step 4 will handle this properly).
       if (!fields.indexes.isEmpty()) {
         tcenv.error(
           Array[(pos, "Local object has index signatures (will be ignored)")],
         )
       };
-      if (fields.new is Some(_)) {
-        tcenv.error(
-          Array[
-            (pos, "Local object has constructor signature (will be ignored)"),
-          ],
-        )
-      };
+      // Constructor signatures are allowed - they don't interfere with field addition.
       objField = fields.maybeGet(fieldName.value) match {
       | None() ->
         used match {
