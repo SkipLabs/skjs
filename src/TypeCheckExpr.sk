@@ -563,6 +563,10 @@ extension class TypeChecker {
     | Var(Name(_, "undefined")) ->
       this.makeBoundTVar(tcenv, TType::single(TPrimUnit(TUndefined(), pos)))
     | Var(local) ->
+      // Transition local objects to LOUsed state when read/referenced.
+      // Once used, the type is frozen - no more fields can be added.
+      // This ensures soundness: code that observed the object with N fields
+      // won't be invalidated by later additions.
       if (tcenv.localObjects.containsKey(local.value)) {
         tcenv.localObjects![local.value] = LOUsed(local.pos)
       };
@@ -1441,6 +1445,25 @@ extension class TypeChecker {
     }
   }
 
+  /*
+   * Adds a field to a local object via assignment: obj.newField = value
+   *
+   * This implements the "growth" mechanism for local objects. When we see:
+   *   let obj = {};
+   *   obj.field = value;
+   *
+   * We:
+   * 1. Check if obj is a local object in LOCanGrow state
+   * 2. Create a new TField with the field name and type
+   * 3. Intersect with existing fields (adds the field)
+   * 4. Update the object's type in scope
+   * 5. Verify against bound type (if type-annotated)
+   *
+   * Errors if:
+   * - Object has been used (LOUsed state)
+   * - Adding field inside a loop
+   * - Field would convert object to algebraic (special kAlgebraicBranchFieldName)
+   */
   fun assignLocalObject(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -1454,6 +1477,9 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
+      // Invariants: Local objects are simple field-only objects.
+      // Index signatures would make growth unpredictable (can't infer which fields).
+      // Constructors don't make sense for plain object literals.
       invariant(fields.indexes.isEmpty(), "Local objects have no indexes");
       invariant(fields.new is None(), "Local objects have no constructors");
       objField = fields.maybeGet(fieldName.value) match {

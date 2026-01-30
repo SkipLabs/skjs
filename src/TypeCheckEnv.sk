@@ -30,9 +30,31 @@ mutable base class TCEnvBase private {
 
 mutable class TCEnvLight{} extends TCEnvBase {}
 
+/*
+ * State tracking for local objects (object literals bound to variables).
+ *
+ * Local objects enable progressive typing: building objects field-by-field
+ * starting from an empty literal `{}`, which is common in JavaScript:
+ *
+ *   let obj = {};
+ *   obj.field1 = value1;
+ *   obj.field2 = value2;
+ *   return obj;  // Type inferred from added fields
+ *
+ * State transitions:
+ *   LOCanGrow -> LOUsed   (on first read/use of the object)
+ *
+ * Once LOUsed, the object's type is frozen and no more fields can be added.
+ * This ensures type soundness: if code observes an object with certain fields,
+ * we can't later add more fields that weren't visible at observation time.
+ */
 base class LocalObjectState {
   children =
+  // Object can still have fields added (before first use).
+  // `bound` is the optional type annotation that constrains growth.
   | LOCanGrow(bound: ?TType)
+  // Object has been used (read/passed), type is now frozen.
+  // Position records where it was first used (for error messages).
   | LOUsed(PosRange)
 }
 
@@ -40,11 +62,29 @@ mutable class TCEnv private {
   subst: mutable Subst,
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
-  localObjects: mutable Map<String, LocalObjectState> = mutable Map[]/*
-  Tracks local objects, i.e. object literals bounded to variables.
-  Those are allowed to grow if they haven't been used.
-  Growth is limited by the provided type, if any.
-  */ ,
+  /*
+   * Tracks local objects: object literals bound to variables that can grow.
+   *
+   * Problem: JavaScript developers commonly build objects incrementally:
+   *   let obj = {};
+   *   obj.x = 5;
+   *   obj.y = 10;
+   *   return obj;
+   *
+   * TypeScript handles this with `any` and structural typing. SKJS is stricter
+   * and requires explicit types, but we still want to support this pattern.
+   *
+   * Solution: Track object literals bound to variables, allow adding fields
+   * before first use, then infer/check the final type.
+   *
+   * Growth is limited by:
+   *   - Type annotation (if provided): new fields must match
+   *   - First use: once read/passed, no more fields
+   *   - Loops: can't grow in loops (final type unpredictable)
+   *
+   * See examples/src/tree.ts:Node() for real usage.
+   */
+  localObjects: mutable Map<String, LocalObjectState> = mutable Map[],
   private mutable counter: Int = 0,
 } extends TCEnvBase {
   static fun mcreate(
