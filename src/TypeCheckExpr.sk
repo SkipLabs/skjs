@@ -1477,11 +1477,20 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
-      // Invariants: Local objects are simple field-only objects.
-      // Index signatures would make growth unpredictable (can't infer which fields).
-      // Constructors don't make sense for plain object literals.
-      invariant(fields.indexes.isEmpty(), "Local objects have no indexes");
-      invariant(fields.new is None(), "Local objects have no constructors");
+      // Emit errors for unexpected cases but continue processing.
+      // Steps 3-4 will properly handle these cases.
+      if (!fields.indexes.isEmpty()) {
+        tcenv.error(
+          Array[(pos, "Local object has index signatures (will be ignored)")],
+        )
+      };
+      if (fields.new is Some(_)) {
+        tcenv.error(
+          Array[
+            (pos, "Local object has constructor signature (will be ignored)"),
+          ],
+        )
+      };
       objField = fields.maybeGet(fieldName.value) match {
       | None() ->
         used match {
