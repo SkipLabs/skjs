@@ -1477,7 +1477,6 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this.tenv, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
-      // Constructor signatures are allowed - they don't interfere with field addition.
       // Check if field exists explicitly, or if it matches an index signature.
       objField = fields.maybeGet(fieldName.value) match {
       | None() ->

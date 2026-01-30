@@ -83,8 +83,6 @@ mutable class TCEnv private {
    *   - Loops: can't grow in loops (final type unpredictable)
    *
    * Special handling:
-   *   - Constructor signatures: allowed on local objects, don't interfere with
-   *     field addition
    *   - Index signatures: field addition checks if field name matches index key
    *     type. If it matches, use index value type. If not, add explicit field.
    *     Example: `let obj: { [key: string]: number } = {}; obj.x = 5;`
