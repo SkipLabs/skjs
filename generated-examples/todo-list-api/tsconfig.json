@@ -28,7 +28,7 @@
     // Language and Environment
     "target": "ES2021",
     // Root
-    "rootDir": "./src"
+    "rootDir": "."
   },
-  "include": ["src/**/*.ts"]
+  "include": ["main.ts", "test.ts", "src/**/*.ts", "skipruntime/**/*.ts"]
 }
