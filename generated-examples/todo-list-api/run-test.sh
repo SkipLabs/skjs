@@ -13,7 +13,7 @@ npm run build
 echo "=== Starting service ==="
 node dist/main.js &
 SERVER_PID=$!
-trap "kill $SERVER_PID 2>/dev/null" EXIT
+trap 'kill $SERVER_PID 2>/dev/null' EXIT
 
 sleep 2
 
