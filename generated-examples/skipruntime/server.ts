@@ -33,8 +33,9 @@ export type SkipServer = {
 function adaptService<
   InputDefs extends NamedInputDefinitions,
   ResourceInputs extends NamedEagerCollections,
+  Resources,
 >(
-  safeService: SkipService<InputDefs, ResourceInputs>,
+  safeService: SkipService<InputDefs, ResourceInputs, Resources>,
 ): RuntimeSkipService<never, never> {
   // Extract initial data from service.inputs
   const initialData: Record<string, Entry<Json, Json>[]> = {};
@@ -52,7 +53,7 @@ function adaptService<
 
     createGraph(runtimeInputs: unknown, context: unknown): unknown {
       return safeService.createGraph(
-        runtimeInputs as NamedEagerCollections,
+        runtimeInputs as ResourceInputs,
         context as Context,
       );
     },
@@ -70,8 +71,9 @@ function adaptService<
 export function runService<
   InputDefs extends NamedInputDefinitions,
   ResourceInputs extends NamedEagerCollections,
+  Resources,
 >(
-  service: SkipService<InputDefs, ResourceInputs>,
+  service: SkipService<InputDefs, ResourceInputs, Resources>,
   options?: ServiceOptions,
 ): Promise<SkipServer> {
   const adapted = adaptService(service);
