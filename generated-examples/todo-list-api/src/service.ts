@@ -43,7 +43,7 @@ export class TodosResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<Inputs, GraphCollections> {
+class Service implements SkipService<Inputs, GraphCollections, Resources> {
   public inputs: Inputs;
   public resources: Resources;
 
@@ -59,6 +59,6 @@ class Service implements SkipService<Inputs, GraphCollections> {
   }
 }
 
-export function service(): SkipService<Inputs, GraphCollections> {
+export function service(): SkipService<Inputs, GraphCollections, Resources> {
   return new Service();
 }

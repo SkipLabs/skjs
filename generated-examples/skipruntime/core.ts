@@ -153,12 +153,11 @@ export type ResourceClass<
 export interface SkipService<
   InputDefs extends NamedInputDefinitions,
   ResourceInputs extends NamedEagerCollections,
+  Resources,
 > {
   inputs: InputDefs;
 
-  resources: {
-    [name: string]: ResourceClass<ResourceInputs, never>;
-  };
+  resources: Resources;
 
-  createGraph(inputs: NamedEagerCollections, context: Context): ResourceInputs;
+  createGraph(inputs: ResourceInputs, context: Context): ResourceInputs;
 }
