@@ -4,36 +4,34 @@
 // Test 1: Basic symbol type annotations
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error TODO symbol
 function basicSymbolParam(s: symbol): void {
   console.log(s);
 }
 
-// @skjs-expect-error TODO symbol
 function basicSymbolReturn(): symbol {
+  // @skjs-expect-error Unbound name
   return Symbol("test");
 }
 
-// @skjs-expect-error TODO symbol
+// @skjs-expect-error Unbound name
 const sym1: symbol = Symbol();
 
-// @skjs-expect-error TODO symbol
+// @skjs-expect-error Unbound name
 const sym2: symbol = Symbol("description");
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 2: Symbol in union types
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error TODO symbol
 function symbolOrString(x: symbol | string): string {
   if (typeof x === "string") {
     return x;
   } else {
+    // @skjs-expect-error Invalid call
     return String(x);
   }
 }
 
-// @skjs-expect-error TODO symbol
 function symbolOrNumber(x: symbol | number): number {
   if (typeof x === "number") {
     return x;
@@ -46,20 +44,21 @@ function symbolOrNumber(x: symbol | number): number {
 // Test 3: typeof refinement with symbol
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error TODO symbol
 function refineToSymbol(x: symbol | string): symbol {
   if (typeof x === "symbol") {
+    // @skjs-expect-error Invalid return type
     return x; // x is narrowed to symbol here
   } else {
+    // @skjs-expect-error Unbound name
     return Symbol("default");
   }
 }
 
-// @skjs-expect-error TODO symbol
 function refineAwaySymbol(x: symbol | string): string {
   if (typeof x === "symbol") {
     return "was a symbol";
   } else {
+    // @skjs-expect-error Invalid return type
     return x; // x is narrowed to string here
   }
 }
@@ -137,7 +136,6 @@ function symbolAtRuntime(): void {
 // Test 10: typeof symbol with null/undefined
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error TODO symbol
 function symbolOrNull(x: symbol | null): symbol | null {
   if (typeof x === "symbol") {
     return x;
@@ -146,11 +144,12 @@ function symbolOrNull(x: symbol | null): symbol | null {
   }
 }
 
-// @skjs-expect-error TODO symbol
 function symbolOrUndefined(x: symbol | undefined): symbol {
   if (typeof x === "symbol") {
+    // @skjs-expect-error Invalid return type
     return x;
   } else {
+    // @skjs-expect-error Unbound name
     return Symbol("default");
   }
 }

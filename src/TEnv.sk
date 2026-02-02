@@ -699,7 +699,7 @@ base class TEnv{
         | TPKNum() -> TPrimValue::number(pos)
         | TPKString() -> TPrimValue::string(pos)
         | TPKBigInt() -> TPrimValue::bigint(pos)
-        | TPKSymbol() -> typingError(Array[(pos, "TODO symbol")])
+        | TPKSymbol() -> TPrimValue::symbol(pos)
         },
       )
     | TAObject(fields) ->
