@@ -1,6 +1,13 @@
 // Tests for symbol and unique symbol type support
 
 ///////////////////////////////////////////////////////////////////////////////
+// Test 0: Importing unique symbols
+///////////////////////////////////////////////////////////////////////////////
+
+// TODO: Test currently might pass or fail depending on import resolution
+// import { exportedUniqueSymbol } from './symbols-export';
+
+///////////////////////////////////////////////////////////////////////////////
 // Test 1: Basic symbol type annotations
 ///////////////////////////////////////////////////////////////////////////////
 
@@ -67,11 +74,30 @@ const uniqueSym1: unique symbol = Symbol();
 const uniqueSym2: unique symbol = Symbol("unique");
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 5: unique symbol must be const (will be tested once unique symbol works)
+// Test 5: unique symbol can only be used in top-level const declarations
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO: Test that unique symbol requires const declaration
-// Currently SKJS doesn't support top-level let, so we can't test this yet
+// unique symbol cannot be used in function parameters
+// @skjs-expect-error TODO uniqueSymbol
+function takesUniqueSymbol(s: unique symbol): void {
+  console.log(s);
+}
+
+// unique symbol cannot be used in function return types
+// @skjs-expect-error TODO uniqueSymbol
+function returnsUniqueSymbol(): unique symbol {
+  return Symbol();
+}
+
+// unique symbol cannot be used in local const declarations
+function localUniqueSymbol(): void {
+  // @skjs-expect-error TODO uniqueSymbol
+  const localSym: unique symbol = Symbol();
+}
+
+// unique symbol cannot be used in object property types
+// @skjs-expect-error TODO uniqueSymbol
+const objWithUniqueSymbol: { prop: unique symbol } = { prop: Symbol() };
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 6: unique symbols are distinct types (will be tested once they work)
@@ -143,3 +169,26 @@ function symbolOrUndefined(x: symbol | undefined): symbol {
     return Symbol("default");
   }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 11: Exported unique symbols
+///////////////////////////////////////////////////////////////////////////////
+
+// @skjs-expect-error TODO uniqueSymbol
+export const exportedUniqueSym: unique symbol = Symbol();
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 12: Static readonly class members with unique symbol
+///////////////////////////////////////////////////////////////////////////////
+
+class MyClass {
+  // @skjs-expect-error TODO uniqueSymbol
+  static readonly classSym: unique symbol = Symbol();
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 13: Declare const with unique symbol
+///////////////////////////////////////////////////////////////////////////////
+
+// declare const allows unique symbol (works correctly)
+declare const declaredSym: unique symbol;
