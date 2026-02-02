@@ -83,13 +83,21 @@ extension class TypeChecker {
     subst = Subst::mcreate(tcenvl);
 
     // Validate type annotation
+    // Check if this is a unique symbol declaration
+    isUniqueSymbol = typeAnnotation match {
+    | Some(Type(_, TAUniqueSymbol())) -> true
+    | _ -> false
+    };
+
     typeOpt = typeAnnotation match {
     | None() ->
       if (literalType is None()) {
         tcenvl.error(Array[(pos, "Missing type annotation")])
       };
       literalType
-    | Some(x) -> Some(this.normalize(subst, x))
+    | Some(x) ->
+      // Use normalizeTopLevelConst to allow unique symbol
+      Some(this.normalizeTopLevelConst(subst, x))
     };
 
     // Check if type is primitive
@@ -108,21 +116,37 @@ extension class TypeChecker {
     | _ -> void
     };
 
-    // Check subtype compatibility
-    (value, typeOpt) match {
-    | (Some(e), Some(type)) ->
-      tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
-      this.checkSubType(
-        tcenv,
-        pos,
-        "Invalid definition: value type is not compatible with type annotation",
-        literalType match {
-        | None() -> this.expr(tcenv, e, true)
-        | Some(litType) -> litType
-        },
-        type,
-      )
-    | _ -> void
+    // Check value compatibility
+    if (isUniqueSymbol) {
+      // For unique symbol, validate that the expression is Symbol(...)
+      value match {
+      | Some(Expr(_, Call(Expr(_, Var(Name(_, "Symbol"))), _, _))) -> void
+      | Some(_) ->
+        tcenvl.error(
+          Array[
+            (pos, "unique symbol type requires Symbol() call as initializer"),
+          ],
+        )
+      | None() ->
+        void // Already reported missing definition error
+      }
+    } else {
+      // For regular types, check subtype compatibility
+      (value, typeOpt) match {
+      | (Some(e), Some(type)) ->
+        tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
+        this.checkSubType(
+          tcenv,
+          pos,
+          "Invalid definition: value type is not compatible with type annotation",
+          literalType match {
+          | None() -> this.expr(tcenv, e, true)
+          | Some(litType) -> litType
+          },
+          type,
+        )
+      | _ -> void
+      }
     }
   }
 

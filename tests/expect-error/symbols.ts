@@ -67,10 +67,9 @@ function refineAwaySymbol(x: symbol | string): string {
 // Test 4: unique symbol type
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error TODO uniqueSymbol
+// Top-level const with unique symbol works correctly
 const uniqueSym1: unique symbol = Symbol();
 
-// @skjs-expect-error TODO uniqueSymbol
 const uniqueSym2: unique symbol = Symbol("unique");
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -78,25 +77,25 @@ const uniqueSym2: unique symbol = Symbol("unique");
 ///////////////////////////////////////////////////////////////////////////////
 
 // unique symbol cannot be used in function parameters
-// @skjs-expect-error TODO uniqueSymbol
+// @skjs-expect-error unique symbol type cannot be used here
 function takesUniqueSymbol(s: unique symbol): void {
   console.log(s);
 }
 
 // unique symbol cannot be used in function return types
-// @skjs-expect-error TODO uniqueSymbol
+// @skjs-expect-error unique symbol type cannot be used here
 function returnsUniqueSymbol(): unique symbol {
   return Symbol();
 }
 
 // unique symbol cannot be used in local const declarations
 function localUniqueSymbol(): void {
-  // @skjs-expect-error TODO uniqueSymbol
+  // @skjs-expect-error unique symbol type cannot be used here
   const localSym: unique symbol = Symbol();
 }
 
 // unique symbol cannot be used in object property types
-// @skjs-expect-error TODO uniqueSymbol
+// @skjs-expect-error unique symbol type cannot be used here
 const objWithUniqueSymbol: { prop: unique symbol } = { prop: Symbol() };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -174,7 +173,7 @@ function symbolOrUndefined(x: symbol | undefined): symbol {
 // Test 11: Exported unique symbols
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error TODO uniqueSymbol
+// Exported unique symbol works correctly
 export const exportedUniqueSym: unique symbol = Symbol();
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -182,7 +181,7 @@ export const exportedUniqueSym: unique symbol = Symbol();
 ///////////////////////////////////////////////////////////////////////////////
 
 class MyClass {
-  // @skjs-expect-error TODO uniqueSymbol
+  // Static readonly unique symbol works correctly
   static readonly classSym: unique symbol = Symbol();
 }
 

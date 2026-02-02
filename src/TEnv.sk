@@ -644,13 +644,32 @@ base class TEnv{
     this.normalizeFun(tcenvb, fd.pos, tafun)
   }
 
+  // Normalizes a type annotation for top-level const declarations.
+  // Allows unique symbol type, which is only permitted in this context.
+  // May also be used in the future for:
+  // - Class static readonly members
+  // - Imported const bindings with unique symbol types
+  fun normalizeTopLevelConst(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
+    typeAst.value match {
+    | TAUniqueSymbol() ->
+      // Each unique symbol gets a distinct type based on its position
+      annotPos = typeAst.pos;
+      uniqueId = `unique_symbol_${annotPos.fileName.hash()}_${annotPos.symbol.hash()}_${
+        annotPos.relStart.value
+      }`;
+      TType::single(TPrimValue::single(TSymbol(), uniqueId, annotPos))
+    | _ -> this.normalize(tcenvb, typeAst)
+    }
+  }
+
   fun normalize(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
     | TAAssertIs _ -> typingError(Array[(pos, "TODO assertIs")])
     | TAAbstract _ -> typingError(Array[(pos, "TODO abstract")])
-    | TAUniqueSymbol() -> typingError(Array[(pos, "TODO uniqueSymbol")])
+    | TAUniqueSymbol() ->
+      typingError(Array[(pos, "unique symbol type cannot be used here")])
     | TAAsserts _ -> typingError(Array[(pos, "TODO asserts")])
     | TAIs _ -> typingError(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
