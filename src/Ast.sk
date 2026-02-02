@@ -463,7 +463,7 @@ base class WithModifiers{modifiers: Modifiers} uses XXHashable {
 //   | <number>
 //   | <bigint>
 //   | <prim-kind>
-//   | typeof <type>
+//   | typeof <expr>
 //   | <type> []
 //   | { <field-type>* }
 //   | <name> < <type>* >
@@ -496,7 +496,7 @@ base class Type_ uses XXHashable {
   | TANumLiteral(String)
   | TABigIntLiteral(String)
   | TAPrim(TPrimKind)
-  | TATypeOf(Type)
+  | TATypeOf(Expr)
   | TAArray(Type)
   | TAObject(Array<ObjectFieldType>)
   | TAInst(Name, Array<Type>)

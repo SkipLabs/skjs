@@ -155,7 +155,7 @@ extension class Parser {
     | TKOpenCurly() -> TAObject(this.objectTypeFields())
     | TKVar() ->
       this.getVar(tok) match {
-      | "typeof" -> TATypeOf(this.type(prefixPrec))
+      | "typeof" -> TATypeOf(this.expr(prefixPrec))
       | "import" ->
         this.expect(TKOpenParen());
         e = this.expr(0);
