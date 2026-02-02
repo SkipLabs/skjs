@@ -705,13 +705,14 @@ base class TPrimUnitKind uses XXHashable, Orderable {
   }
 }
 
-/* Types with literal subtypes: booleans, numbers, strings, and bigints. */
+/* Types with literal subtypes: booleans, numbers, strings, bigints, and symbols. */
 base class TPrimValueKind uses XXHashable, Orderable {
   children =
   | TNum()
   | TBool()
   | TString()
   | TBigInt()
+  | TSymbol()
 
   fun toString(): String {
     this match {
@@ -719,6 +720,7 @@ base class TPrimValueKind uses XXHashable, Orderable {
     | TBool() -> "boolean"
     | TString() -> "string"
     | TBigInt() -> "bigint"
+    | TSymbol() -> "symbol"
     }
   }
 }
@@ -732,6 +734,7 @@ base class STypeTag final () uses Orderable {
   | TagNum
   | TagString
   | TagBigInt
+  | TagSymbol
   | TagTuple
   | TagPromise
   | TagObject
@@ -753,6 +756,7 @@ base class SType private (
     | TPrimValue(TNum(), _, _) -> TagNum()
     | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
+    | TPrimValue(TSymbol(), _, _) -> TagSymbol()
     | TTuple _ -> TagTuple()
     | TPromise _ -> TagPromise()
     | TObject _ -> TagObject()
@@ -798,6 +802,10 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 
   static fun bigint(pos: PosRange): TPrimValue {
     TPrimValue::full(TBigInt(), pos)
+  }
+
+  static fun symbol(pos: PosRange): TPrimValue {
+    TPrimValue::full(TSymbol(), pos)
   }
 
   fun asClassName(): Name {
