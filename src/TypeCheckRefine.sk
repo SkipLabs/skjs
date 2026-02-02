@@ -68,7 +68,10 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     typeStr match {
-    | "symbol" -> void
+    | "symbol" ->
+      filter = x ~> (x is TPrimValue(TSymbol(), _, _)) == target;
+      default = if (target) Some(TPrimValue::symbol(typePos)) else None();
+      this.setLocal(tcenv, local, default, filter)
     | "string" ->
       filter = x ~> (x is TPrimValue(TString(), _, _)) == target;
       default = if (target) Some(TPrimValue::string(typePos)) else None();

@@ -52,10 +52,9 @@ function testBigintRefinement(x: bigint | number): bigint {
   }
 }
 
-// FIXME: typeof === "symbol" refinement not yet implemented in SKJS
+// symbol refinement
 function testSymbolRefinement(x: symbol | string, sym: symbol): symbol {
   if (typeof x === "symbol") {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return sym;

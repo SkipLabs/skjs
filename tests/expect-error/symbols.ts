@@ -42,7 +42,6 @@ function symbolOrNumber(x: symbol | number): number {
 
 function refineToSymbol(x: symbol | string): symbol {
   if (typeof x === "symbol") {
-    // @skjs-expect-error Invalid return type
     return x; // x is narrowed to symbol here
   } else {
     return Symbol("default");
@@ -53,7 +52,6 @@ function refineAwaySymbol(x: symbol | string): string {
   if (typeof x === "symbol") {
     return "was a symbol";
   } else {
-    // @skjs-expect-error Invalid return type
     return x; // x is narrowed to string here
   }
 }
@@ -140,7 +138,6 @@ function symbolOrNull(x: symbol | null): symbol | null {
 
 function symbolOrUndefined(x: symbol | undefined): symbol {
   if (typeof x === "symbol") {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return Symbol("default");
