@@ -74,6 +74,21 @@ extension class TypeChecker {
       | VDKLet() -> tcenvl.notSupported(varDef.pat.pos, "toplevel let")
       | VDKVar() -> tcenvl.notSupported(varDef.pat.pos, "toplevel var")
       };
+      // Check pattern is not destructuring first
+      varDef.pat.value match {
+      | PVar _ -> void
+      | PArray _
+      | PObject _ ->
+        typingError(
+          Array[
+            (
+              varDef.pat.pos,
+              "Construction not supported: top-level const declarations cannot destructure\n" +
+                "Declare a simple const (e.g. `const tmp = ...`) and perform the destructuring inside a block/function.",
+            ),
+          ],
+        )
+      };
       if (varDef.value is None()) {
         tcenvl.error(Array[(varDef.pat.pos, "Missing definition")])
       };
@@ -102,20 +117,6 @@ extension class TypeChecker {
           )
         }
       | _ -> void
-      };
-      varDef.pat.value match {
-      | PVar _ -> void
-      | PArray _
-      | PObject _ ->
-        typingError(
-          Array[
-            (
-              varDef.pat.pos,
-              "Construction not supported: top-level const declarations cannot destructure\n" +
-                "Declare a simple const (e.g. `const tmp = ...`) and perform the destructuring inside a block/function.",
-            ),
-          ],
-        )
       };
       (varDef.value, typeOpt) match {
       | (Some(e), Some(type)) ->
