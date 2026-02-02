@@ -118,7 +118,6 @@ extension class TypeChecker {
     for (fieldType in c.fields) {
       fieldType match {
       | field @ ClassFieldTypeValue _ ->
-        // Check if field is static and validate modifiers
         isStatic = false;
         isReadonly = false;
         for (modifier in field.modifiers.modifiers) {
@@ -141,22 +140,12 @@ extension class TypeChecker {
           }
         };
 
-        // Handle static fields
         if (isStatic) {
-          // Static fields must be readonly
           if (!isReadonly) {
             tcenvl.error(Array[(field.pos, "static fields must be readonly")])
-          } else {
-            // Validate static readonly field using shared logic
-            this.validateToplevelConst(
-              tcenvl,
-              field.pos,
-              field.type,
-              field.value,
-            )
-          }
+          };
+          this.validateToplevelConst(tcenvl, field.pos, field.type, field.value)
         } else {
-          // Non-static field validation (existing logic)
           typeOpt = field.type match {
           | None() ->
             tcenvl.error(Array[(field.pos, "Type annotation expected")]);

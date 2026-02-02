@@ -412,7 +412,6 @@ class TEnv{
       fieldType match {
       | field @ ClassFieldTypeValue _ ->
         if (!filter(field)) continue;
-        // Check if field is static and readonly
         fieldIsStatic = false;
         fieldIsReadonly = false;
         for (modifier in field.modifiers.modifiers) {
@@ -434,7 +433,7 @@ class TEnv{
             )
           }
         };
-        // Static fields must be readonly
+        if (fieldIsStatic != isStatic.isSome()) continue;
         if (fieldIsStatic && !fieldIsReadonly) {
           tcenvb.error(Array[(field.pos, "static fields must be readonly")])
         };
