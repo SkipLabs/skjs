@@ -27,7 +27,6 @@ function symbolOrString(x: symbol | string): string {
   if (typeof x === "string") {
     return x;
   } else {
-    // @skjs-expect-error Invalid call
     return String(x);
   }
 }

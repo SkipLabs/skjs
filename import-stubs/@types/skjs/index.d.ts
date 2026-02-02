@@ -127,6 +127,9 @@ declare class number {
 
 // Number object for static access (e.g., Number.MAX_VALUE)
 declare const Number: {
+  // Call signature for Number(value) conversion
+  (value?: unknown): number;
+
   MAX_VALUE: number;
   MIN_VALUE: number;
   POSITIVE_INFINITY: number;
@@ -181,6 +184,8 @@ declare class string {
 }
 
 declare const String: {
+  // Call signature for String(value) conversion
+  (value?: unknown): string;
   // Static methods
   fromCharCode(code: number): string;
 };
