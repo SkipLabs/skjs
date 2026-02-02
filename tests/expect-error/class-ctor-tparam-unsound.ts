@@ -1,27 +1,13 @@
-/**
- * UNSOUND: Class constructor type parameter inference defaults to top.
- *
- * When a generic class constructor is called without explicit type arguments,
- * the type parameter is not inferred from constructor arguments - it defaults
- * to top, allowing any type to be read from fields.
- *
- * This test passes type checking but crashes at runtime.
- */
+// Type parameter inference from class constructor arguments.
 
 class Holder<T> {
   constructor(public value: T) {}
 }
 
-// new Holder("hello") should infer Holder<"hello">, but T defaults to top.
-// holder.value is typed as top, so returning it as number is accepted.
-// At runtime, holder.value is "hello", not a number.
+// When Holder is instantiated with "hello", T is inferred as "hello".
+// When T is "hello", holder.value has type "hello" and is not assignable to number.
 function getNumber(): number {
   const holder = new Holder("hello");
-  // @ts-expect-error Type 'string' is not assignable to type 'number'.
-   return holder.value;
-}
-
-// Crashes: "hello".toFixed(2) is not a function
-function crash(): string {
-  return getNumber().toFixed(2);
+  // @ts-expect-error Invalid return type
+  return holder.value;
 }
