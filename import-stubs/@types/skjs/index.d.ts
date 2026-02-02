@@ -190,7 +190,7 @@ declare const String: {
   fromCharCode(code: number): string;
 };
 
-interface Symbol {
+declare class symbol {
   toString(): string;
   valueOf(): symbol;
 }

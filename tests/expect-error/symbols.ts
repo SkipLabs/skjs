@@ -9,14 +9,11 @@ function basicSymbolParam(s: symbol): void {
 }
 
 function basicSymbolReturn(): symbol {
-  // @skjs-expect-error Invalid call
   return Symbol("test");
 }
 
-// @skjs-expect-error Invalid call
 const sym1: symbol = Symbol();
 
-// @skjs-expect-error Invalid call
 const sym2: symbol = Symbol("description");
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -48,7 +45,6 @@ function refineToSymbol(x: symbol | string): symbol {
     // @skjs-expect-error Invalid return type
     return x; // x is narrowed to symbol here
   } else {
-    // @skjs-expect-error Invalid call
     return Symbol("default");
   }
 }
@@ -94,7 +90,6 @@ const uniqueSym2: unique symbol = Symbol("unique");
 ///////////////////////////////////////////////////////////////////////////////
 
 function symbolAtRuntime(): void {
-  // @skjs-expect-error Invalid call
   const s1 = Symbol();
   const s2 = Symbol("key");
 
@@ -148,7 +143,6 @@ function symbolOrUndefined(x: symbol | undefined): symbol {
     // @skjs-expect-error Invalid return type
     return x;
   } else {
-    // @skjs-expect-error Invalid call
     return Symbol("default");
   }
 }
