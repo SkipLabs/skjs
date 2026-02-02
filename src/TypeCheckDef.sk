@@ -63,6 +63,69 @@ extension class TypeChecker {
     }
   }
 
+  // Validate a top-level const declaration (also reusable for class static readonly)
+  private fun validateToplevelConst(
+    tcenvl: mutable TCEnvLight,
+    pos: PosRange,
+    typeAnnotation: ?Type,
+    value: ?Expr,
+  ): void {
+    // Check for missing value
+    if (value is None()) {
+      tcenvl.error(Array[(pos, "Missing definition")])
+    };
+
+    // Extract literal type from const expression
+    literalType = value
+      .flatMap((e) -> this.asConstExpr(tcenvl, e))
+      .map(TType::single);
+
+    subst = Subst::mcreate(tcenvl);
+
+    // Validate type annotation
+    typeOpt = typeAnnotation match {
+    | None() ->
+      if (literalType is None()) {
+        tcenvl.error(Array[(pos, "Missing type annotation")])
+      };
+      literalType
+    | Some(x) -> Some(this.tenv.normalize(subst, x))
+    };
+
+    // Check if type is primitive
+    typeOpt match {
+    | Some(type) ->
+      if (!type.isPrimitiveType(subst, this.tenv)) {
+        tcenvl.error(
+          Array[
+            (
+              pos,
+              "Invalid type for constant, only primitive types (not objects) are allowed",
+            ),
+          ],
+        )
+      }
+    | _ -> void
+    };
+
+    // Check subtype compatibility
+    (value, typeOpt) match {
+    | (Some(e), Some(type)) ->
+      tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
+      this.checkSubType(
+        tcenv,
+        pos,
+        "Invalid definition: value type is not compatible with type annotation",
+        literalType match {
+        | None() -> this.expr(tcenv, e, true)
+        | Some(litType) -> litType
+        },
+        type,
+      )
+    | _ -> void
+    }
+  }
+
   fun varDefs(
     tcenvl: mutable TCEnvLight,
     kind: VarDefKind,
@@ -74,35 +137,7 @@ extension class TypeChecker {
       | VDKLet() -> tcenvl.notSupported(varDef.pat.pos, "toplevel let")
       | VDKVar() -> tcenvl.notSupported(varDef.pat.pos, "toplevel var")
       };
-      if (varDef.value is None()) {
-        tcenvl.error(Array[(varDef.pat.pos, "Missing definition")])
-      };
-      literalType = varDef.value
-        .flatMap((e) -> this.asConstExpr(tcenvl, e))
-        .map(TType::single);
-      subst = Subst::mcreate(tcenvl);
-      typeOpt = varDef.type match {
-      | None() ->
-        if (literalType is None()) {
-          tcenvl.error(Array[(varDef.pat.pos, "Missing type annotation")])
-        };
-        literalType
-      | Some(x) -> Some(this.tenv.normalize(subst, x))
-      };
-      typeOpt match {
-      | Some(type) ->
-        if (!type.isPrimitiveType(subst, this.tenv)) {
-          tcenvl.error(
-            Array[
-              (
-                varDef.pat.pos,
-                "Invalid type for constant, only primitive types (not objects) are allowed",
-              ),
-            ],
-          )
-        }
-      | _ -> void
-      };
+      // Check pattern is not destructuring first
       varDef.pat.value match {
       | PVar _ -> void
       | PArray _
@@ -117,24 +152,13 @@ extension class TypeChecker {
           ],
         )
       };
-      (varDef.value, typeOpt) match {
-      | (Some(e), Some(type)) ->
-        tcenv = TCEnv::mcreate(
-          subst,
-          CGNode::toplevel(varDef.pat.pos.fileName),
-        );
-        this.checkSubType(
-          tcenv,
-          varDef.pat.pos,
-          "Invalid definition: value type is not compatible with type annotation",
-          literalType match {
-          | None() -> this.expr(tcenv, e, kind is VDKConst())
-          | Some(litType) -> litType
-          },
-          type,
-        )
-      | _ -> void
-      }
+      // Validate the const declaration
+      this.validateToplevelConst(
+        tcenvl,
+        varDef.pat.pos,
+        varDef.type,
+        varDef.value,
+      )
     }
   }
 

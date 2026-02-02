@@ -412,14 +412,15 @@ class TEnv{
       fieldType match {
       | field @ ClassFieldTypeValue _ ->
         if (!filter(field)) continue;
+        fieldIsStatic = false;
+        fieldIsReadonly = false;
         for (modifier in field.modifiers.modifiers) {
           modifier match {
-          | ModStatic(pos) ->
-            tcenvb.error(Array[(pos, "static fields are forbidden")])
+          | ModStatic _ -> !fieldIsStatic = true
+          | ModReadonly _ -> !fieldIsReadonly = true
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
-          | ModProtected _
-          | ModReadonly _ ->
+          | ModProtected _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
             tcenvb.error(
@@ -431,6 +432,15 @@ class TEnv{
               ],
             )
           }
+        };
+        if (fieldIsStatic != isStatic.isSome()) continue;
+        if (fieldIsStatic) {
+          if (!fieldIsReadonly) {
+            tcenvb.error(Array[(field.pos, "static fields must be readonly")])
+          };
+          field.optional.each(pos ->
+            tcenvb.error(Array[(pos, "static fields cannot be optional")])
+          )
         };
         fieldTy = field.type match {
         | None() -> typingError(Array[(field.pos, "Type annotation expected")])
