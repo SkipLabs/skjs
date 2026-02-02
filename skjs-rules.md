@@ -33,9 +33,32 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Workaround**: Avoid using private fields for now
 
 #### 4b. Abstract Classes Not Supported
-- **Rule**: Abstract classes and abstract method modifiers are not implemented  
+- **Rule**: Abstract classes and abstract method modifiers are not implemented
 - **Error**: "TODO: support for method modifiers (encountered abstract)"
 - **Workaround**: Use regular classes with interfaces, or avoid abstract patterns
+
+#### 4c. Static Fields Must Be Readonly
+- **Rule**: Static fields are supported but must have the `readonly` modifier
+- **Restrictions**:
+  - Must use `static readonly` together
+  - Must be initialized with a value
+  - Only primitive types allowed (number, string, boolean, bigint, symbol - no objects)
+  - Type annotation can be inferred from literal values
+- **Errors**:
+  - `static field: number = 42` → "static fields must be readonly"
+  - `static readonly field: number;` → "Missing definition"
+  - `static readonly obj: MyClass = new MyClass();` → "Invalid type for constant, only primitive types (not objects) are allowed"
+- **Supported**:
+  ```typescript
+  class Config {
+    static readonly API_URL: string = "https://api.example.com";
+    static readonly MAX_RETRIES = 3;  // Type inferred as literal 3
+    static readonly DEBUG: boolean = true;
+  }
+
+  const url = Config.API_URL;  // Access via class name
+  ```
+- **Rationale**: Static readonly fields have the same restrictions as top-level `const` declarations to ensure predictable initialization and type safety
 
 ### 5. Console Surface Is Minimal
 - **Rule**: Only `console.log`, `console.assert`, and `console.error` are provided by `import-stubs/@types/skjs`; other console helpers (e.g., `console.table`) are unavailable.
@@ -243,7 +266,8 @@ let tags = ['urgent' as const, 'priority' as const];
 6. **Handle undefined explicitly**: Check for undefined before method calls
 7. **Generic classes work well**: Both generic functions and generic classes are fully supported
 8. **Use `new Array<T>()` for array initialization**: This works in all cases including generic classes
-9. **Use local variables for null/undefined comparisons**: Always assign properties to locals before comparing to null/undefined
+9. **Static fields must be readonly**: Use `static readonly` together for class constants with primitive types only
+10. **Use local variables for null/undefined comparisons**: Always assign properties to locals before comparing to null/undefined
 11. **NEVER use the `any` type**: The `any` type is not supported in SKJS - use specific types or union types instead
 13. **Avoid the `!` operator**: Use explicit comparisons like `=== false` instead of `!` for better type safety
 14. **Template literals work as expected**: Use backticks and `${expression}` syntax for string interpolation and multiline strings
@@ -397,6 +421,13 @@ class Person {
     constructor(name: string) { this.name = name; }
 }
 
+// Good - static readonly fields for constants
+class Config {
+    static readonly API_URL: string = "https://api.example.com";
+    static readonly MAX_RETRIES = 3;  // Type inferred
+}
+const url = Config.API_URL;
+
 // Good - generic classes work well
 class Stack<T> {
     items: Array<T>;
@@ -406,6 +437,11 @@ class Stack<T> {
 // Good - inheritance with matching constructors
 class Student extends Person {
     constructor(name: string, age: number) { super(name, age); }
+}
+
+// Avoid - static fields without readonly
+class Bad {
+    static count: number = 0;  // Error: static fields must be readonly
 }
 
 // Avoid - inheritance with different constructor signatures
