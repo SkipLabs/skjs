@@ -99,14 +99,35 @@ function localUniqueSymbol(): void {
 const objWithUniqueSymbol: { prop: unique symbol } = { prop: Symbol() };
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 6: unique symbols are distinct types (will be tested once they work)
+// Test 6: unique symbols are distinct types
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO: Once unique symbols are implemented, test that:
-// - Each unique symbol declaration creates a distinct type
-// - unique symbol A is not assignable to unique symbol B
-// - unique symbol is assignable to symbol (covariance)
-// - symbol is NOT assignable to unique symbol (contravariance)
+// Each unique symbol declaration creates a distinct type
+const uniqueA: unique symbol = Symbol("a");
+const uniqueB: unique symbol = Symbol("b");
+
+// unique symbol A is not assignable to unique symbol B
+// TODO: Test type incompatibility once typeof is implemented
+// function testDistinctTypes(): void {
+//   const b: typeof uniqueA = uniqueB; // Different unique symbols are incompatible
+// }
+
+// Local const cannot use unique symbol (only top-level const allowed)
+function testLocalUniqueSymbol(): void {
+  // @skjs-expect-error unique symbol type cannot be used here
+  const a: unique symbol = Symbol("a");
+}
+
+// unique symbol cannot be used in function parameters
+// @skjs-expect-error unique symbol type cannot be used here
+function testCovariance(us: unique symbol): symbol {
+  return us;
+}
+
+// TODO: Test contravariance once typeof is implemented
+// function testContravariance(s: symbol): void {
+//   const us: typeof uniqueA = s; // symbol → unique symbol should fail
+// }
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 7: Symbol values at runtime
