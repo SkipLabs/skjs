@@ -118,14 +118,16 @@ extension class TypeChecker {
     for (fieldType in c.fields) {
       fieldType match {
       | field @ ClassFieldTypeValue _ ->
+        // Check if field is static and validate modifiers
+        isStatic = false;
+        isReadonly = false;
         for (modifier in field.modifiers.modifiers) {
           modifier match {
-          | ModStatic(pos) ->
-            tcenvl.error(Array[(pos, "static fields are forbidden")])
+          | ModStatic _ -> !isStatic = true
+          | ModReadonly _ -> !isReadonly = true
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
-          | ModProtected _
-          | ModReadonly _ ->
+          | ModProtected _ ->
             /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
           | mod ->
             tcenvl.error(
@@ -138,25 +140,43 @@ extension class TypeChecker {
             )
           }
         };
-        typeOpt = field.type match {
-        | None() ->
-          tcenvl.error(Array[(field.pos, "Type annotation expected")]);
-          None()
-        | Some(ty) -> Some(this.tenv.normalize(subst, ty))
-        };
-        (field.value, typeOpt) match {
-        | (None(), _)
-        | (_, None()) ->
-          void
-        | (Some(e), Some(type)) ->
-          tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
-          this.checkSubType(
-            tcenv,
-            e.pos,
-            "Invalid assignment",
-            this.expr(tcenv, e, true),
-            type,
-          )
+
+        // Handle static fields
+        if (isStatic) {
+          // Static fields must be readonly
+          if (!isReadonly) {
+            tcenvl.error(Array[(field.pos, "static fields must be readonly")])
+          } else {
+            // Validate static readonly field using shared logic
+            this.validateToplevelConst(
+              tcenvl,
+              field.pos,
+              field.type,
+              field.value,
+            )
+          }
+        } else {
+          // Non-static field validation (existing logic)
+          typeOpt = field.type match {
+          | None() ->
+            tcenvl.error(Array[(field.pos, "Type annotation expected")]);
+            None()
+          | Some(ty) -> Some(this.tenv.normalize(subst, ty))
+          };
+          (field.value, typeOpt) match {
+          | (None(), _)
+          | (_, None()) ->
+            void
+          | (Some(e), Some(type)) ->
+            tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
+            this.checkSubType(
+              tcenv,
+              e.pos,
+              "Invalid assignment",
+              this.expr(tcenv, e, true),
+              type,
+            )
+          }
         }
       | fd @ ClassFieldTypeMethod _ ->
         if (fd.name is FNNormal(Name(_, "constructor"))) {
@@ -204,12 +224,15 @@ extension class TypeChecker {
       for (fieldType in c.fields) {
         fieldType match {
         | field @ ClassFieldTypeValue _ ->
-          field.value match {
-          | None() ->
-            if (field.optional is None()) {
-              tcenvl.error(Array[(field.pos, "Uninitialized field")])
+          // Skip static fields (already validated)
+          if (!field.isStatic()) {
+            field.value match {
+            | None() ->
+              if (field.optional is None()) {
+                tcenvl.error(Array[(field.pos, "Uninitialized field")])
+              }
+            | Some(_) -> void
             }
-          | Some(_) -> void
           }
         | ClassFieldTypeMethod _ -> void
         }
