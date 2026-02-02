@@ -434,10 +434,10 @@ class TEnv{
           }
         };
         if (fieldIsStatic != isStatic.isSome()) continue;
-        if (fieldIsStatic && !fieldIsReadonly) {
-          tcenvb.error(Array[(field.pos, "static fields must be readonly")])
-        };
         if (fieldIsStatic) {
+          if (!fieldIsReadonly) {
+            tcenvb.error(Array[(field.pos, "static fields must be readonly")])
+          };
           field.optional.each(pos ->
             tcenvb.error(Array[(pos, "static fields cannot be optional")])
           )
