@@ -190,6 +190,19 @@ declare const String: {
   fromCharCode(code: number): string;
 };
 
+interface Symbol {
+  toString(): string;
+  valueOf(): symbol;
+}
+
+declare const Symbol: {
+  // Call signature for Symbol(description?) creation
+  (description?: string | number): symbol;
+  // Static methods
+  for(key: string): symbol;
+  keyFor(sym: symbol): string | undefined;
+};
+
 declare class Object {
   // Existing methods
   static keys(obj: object): Array<string>;
