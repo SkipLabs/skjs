@@ -437,6 +437,11 @@ class TEnv{
         if (fieldIsStatic && !fieldIsReadonly) {
           tcenvb.error(Array[(field.pos, "static fields must be readonly")])
         };
+        if (fieldIsStatic) {
+          field.optional.each(pos ->
+            tcenvb.error(Array[(pos, "static fields cannot be optional")])
+          )
+        };
         fieldTy = field.type match {
         | None() -> typingError(Array[(field.pos, "Type annotation expected")])
         | Some(ty) -> ty

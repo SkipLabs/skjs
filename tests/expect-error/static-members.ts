@@ -41,6 +41,12 @@ class StaticReadonlyNoType {
   static readonly num = 42;
 }
 
+// Test static readonly with optional modifier (should error: static fields cannot be optional)
+class StaticReadonlyOptional {
+  // @skjs-expect-error static fields cannot be optional
+  static readonly optField?: number = 42;
+}
+
 // Test accessing static fields
 class AccessStaticFields {
   static readonly value: number = 100;

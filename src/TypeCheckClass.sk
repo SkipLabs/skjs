@@ -144,6 +144,9 @@ extension class TypeChecker {
           if (!isReadonly) {
             tcenvl.error(Array[(field.pos, "static fields must be readonly")])
           };
+          field.optional.each(pos ->
+            tcenvl.error(Array[(pos, "static fields cannot be optional")])
+          );
           this.validateToplevelConst(tcenvl, field.pos, field.type, field.value)
         } else {
           typeOpt = field.type match {
