@@ -692,15 +692,14 @@ base class TEnv{
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
     | TAPrim(kind) ->
-      TType::single(
-        kind match {
-        | TPKNull() -> TPrimUnit(TNull(), pos)
-        | TPKBool() -> TPrimValue::boolean(pos)
-        | TPKNum() -> TPrimValue::number(pos)
-        | TPKString() -> TPrimValue::string(pos)
-        | TPKBigInt() -> TPrimValue::bigint(pos)
-        },
-      )
+      kind match {
+      | TPKNull() -> TType::single(TPrimUnit(TNull(), pos))
+      | TPKBool() -> TType::single(TPrimValue::boolean(pos))
+      | TPKNum() -> TType::single(TPrimValue::number(pos))
+      | TPKString() -> TType::single(TPrimValue::string(pos))
+      | TPKBigInt() -> TType::single(TPrimValue::bigint(pos))
+      | TPKSymbol() -> typingError(Array[(pos, "TODO symbol")])
+      }
     | TAObject(fields) ->
       (algebraicBranchField, tFields) = this.createTFields(tcenvb, fields);
       createObject(tcenvb, pos, algebraicBranchField, tFields)
