@@ -42,10 +42,12 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Restrictions**:
   - Must use `static readonly` together
   - Must be initialized with a value
+  - Cannot be marked as optional (`?`)
   - Only primitive types allowed (number, string, boolean, bigint, symbol - no objects)
   - Type annotation can be inferred from literal values
 - **Errors**:
   - `static field: number = 42` → "static fields must be readonly"
+  - `static readonly field?: number = 42` → "static fields cannot be optional"
   - `static readonly field: number;` → "Missing definition"
   - `static readonly obj: MyClass = new MyClass();` → "Invalid type for constant, only primitive types (not objects) are allowed"
 - **Supported**:
