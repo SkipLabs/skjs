@@ -70,34 +70,40 @@ extension class TypeChecker {
     typeAnnotation: ?Type,
     value: ?Expr,
   ): void {
-    // Check for missing value
-    if (value is None()) {
-      tcenvl.error(Array[(pos, "Missing definition")])
-    };
-
-    // Extract literal type from const expression
-    literalType = value
-      .flatMap((e) -> this.asConstExpr(tcenvl, e))
-      .map(TType::single);
-
     subst = Subst::mcreate(tcenvl);
 
-    // Validate type annotation
-    // Check if this is a unique symbol declaration
-    isUniqueSymbol = typeAnnotation match {
-    | Some(Type(_, TAUniqueSymbol())) -> true
-    | _ -> false
-    };
+    typeOpt = typeAnnotation.map(x ->
+      this.normalizeTopLevelConst(subst, x)
+    );
 
-    typeOpt = typeAnnotation match {
-    | None() ->
-      if (literalType is None()) {
-        tcenvl.error(Array[(pos, "Missing type annotation")])
-      };
-      literalType
-    | Some(x) ->
-      // Use normalizeTopLevelConst to allow unique symbol
-      Some(this.normalizeTopLevelConst(subst, x))
+    value match {
+    | None() -> tcenvl.error(Array[(pos, "Missing definition")])
+    | Some(e) ->
+      tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
+      valueType = this.expr(tcenv, e, true);
+      if (typeAnnotation is Some(Type(_, TAUniqueSymbol()))) {
+        e.value match {
+        | Call(Expr(_, Var(Name(_, "Symbol"))), _, _) -> void
+        | _ ->
+          tcenvl.error(
+            Array[
+              (pos, "unique symbol type requires Symbol() call as initializer"),
+            ],
+          )
+        }
+      } else {
+        typeOpt match {
+        | None() -> !typeOpt = Some(valueType)
+        | Some(type) ->
+          this.checkSubType(
+            tcenv,
+            pos,
+            "Invalid definition: value type is not compatible with type annotation",
+            valueType,
+            type,
+          )
+        }
+      }
     };
 
     // Check if type is primitive
@@ -114,39 +120,6 @@ extension class TypeChecker {
         )
       }
     | _ -> void
-    };
-
-    // Check value compatibility
-    if (isUniqueSymbol) {
-      // For unique symbol, validate that the expression is Symbol(...)
-      value match {
-      | Some(Expr(_, Call(Expr(_, Var(Name(_, "Symbol"))), _, _))) -> void
-      | Some(_) ->
-        tcenvl.error(
-          Array[
-            (pos, "unique symbol type requires Symbol() call as initializer"),
-          ],
-        )
-      | None() ->
-        void // Already reported missing definition error
-      }
-    } else {
-      // For regular types, check subtype compatibility
-      (value, typeOpt) match {
-      | (Some(e), Some(type)) ->
-        tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
-        this.checkSubType(
-          tcenv,
-          pos,
-          "Invalid definition: value type is not compatible with type annotation",
-          literalType match {
-          | None() -> this.expr(tcenv, e, true)
-          | Some(litType) -> litType
-          },
-          type,
-        )
-      | _ -> void
-      }
     }
   }
 
