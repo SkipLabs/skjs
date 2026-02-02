@@ -198,6 +198,7 @@ extension class Parser {
       | "boolean" -> TAPrim(TPKBool())
       | "string" -> TAPrim(TPKString())
       | "bigint" -> TAPrim(TPKBigInt())
+      | "symbol" -> TAPrim(TPKSymbol())
       | "readonly" -> TAReadonly(this.type(prefixPrec))
       | "infer" -> TAInfer(this.getName())
       | "keyof" -> TAKeyOf(this.type(prefixPrec))

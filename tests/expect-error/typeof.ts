@@ -53,7 +53,7 @@ function testBigintRefinement(x: bigint | number): bigint {
 }
 
 // FIXME: symbol type not supported in SKJS
-// @skjs-expect-error Type symbol not found
+// @skjs-expect-error TODO symbol
 function testSymbolRefinement(x: symbol | string, sym: symbol): symbol {
   if (typeof x === "symbol") {
     return x;

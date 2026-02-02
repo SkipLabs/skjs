@@ -20,7 +20,7 @@ class StaticReadonlyBigint {
 
 // Test static readonly field with symbol type (symbol not fully supported)
 class StaticReadonlySymbol {
-  // @skjs-expect-error Type symbol not found
+  // @skjs-expect-error TODO symbol
   static readonly sym: symbol = Symbol.for("test");
 }
 
