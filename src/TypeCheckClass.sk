@@ -141,9 +141,9 @@ extension class TypeChecker {
         };
 
         if (isStatic) {
-          // TS#1070: 'static' modifier cannot appear on a type member
           if (c.kind is CKInterface()) {
-            tcenvl.error(
+            // TS#1070: 'static' modifier cannot appear on a type member
+            typingError(
               Array[
                 (
                   field.pos,
@@ -151,21 +151,14 @@ extension class TypeChecker {
                 ),
               ],
             )
-          } else {
-            // Only validate further if not an interface
-            if (!isReadonly) {
-              tcenvl.error(Array[(field.pos, "static fields must be readonly")])
-            };
-            field.optional.each(pos ->
-              tcenvl.error(Array[(pos, "static fields cannot be optional")])
-            );
-            this.validateToplevelConst(
-              tcenvl,
-              field.pos,
-              field.type,
-              field.value,
-            )
-          }
+          };
+          if (!isReadonly) {
+            tcenvl.error(Array[(field.pos, "static fields must be readonly")])
+          };
+          field.optional.each(pos ->
+            tcenvl.error(Array[(pos, "static fields cannot be optional")])
+          );
+          this.validateToplevelConst(tcenvl, field.pos, field.type, field.value)
         } else {
           typeOpt = field.type match {
           | None() ->
