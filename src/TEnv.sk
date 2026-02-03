@@ -690,32 +690,7 @@ base class TEnv{
     | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
-    | TATypeOf(expr) ->
-      // typeof in type position: type T = typeof expression
-      // Handle special cases that were working before
-      expr.value match {
-      | Var(Name(_, "undefined")) ->
-        // typeof undefined -> undefined type
-        TType::single(TPrimUnit(TUndefined(), pos))
-      | Var(className) ->
-        // typeof ClassName -> constructor type
-        // This is the common pattern: type Constructor = typeof MyClass
-        c = this.getClass(tcenvb.context, className);
-        tfuns = this.findConstructorMethod(
-          tcenvb,
-          SortedSet[],
-          className,
-          c.tparams,
-          Array[],
-        ) match {
-        | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
-        | Some(fd) -> this.makeConstructor(tcenvb, className, c.tparams, fd)
-        };
-        TType::single(TObject::createNew(tfuns, pos))
-      | _ ->
-        // For other expressions, we need full expression type inference
-        typingError(Array[(expr.pos, "TODO: typeof for complex expressions")])
-      }
+    | TATypeOf(expr) -> this.normalizeTypeOf(tcenvb, expr, pos)
     | TAPrim(kind) ->
       TType::single(
         kind match {
@@ -863,6 +838,37 @@ base class TEnv{
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(tcenvb, ty)), pos))
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
+    }
+  }
+
+  private fun normalizeTypeOf(
+    tcenvb: mutable TCEnvBase,
+    expr: Expr,
+    pos: PosRange,
+  ): TType {
+    // typeof in type position: type T = typeof expression
+    expr.value match {
+    | Var(Name(_, "undefined")) ->
+      // typeof undefined -> undefined type
+      TType::single(TPrimUnit(TUndefined(), pos))
+    | Var(className) ->
+      // typeof ClassName -> constructor type
+      // This is the common pattern: type Constructor = typeof MyClass
+      c = this.getClass(tcenvb.context, className);
+      tfuns = this.findConstructorMethod(
+        tcenvb,
+        SortedSet[],
+        className,
+        c.tparams,
+        Array[],
+      ) match {
+      | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
+      | Some(fd) -> this.makeConstructor(tcenvb, className, c.tparams, fd)
+      };
+      TType::single(TObject::createNew(tfuns, pos))
+    | _ ->
+      // For other expressions, we need full expression type inference
+      typingError(Array[(expr.pos, "TODO: typeof for complex expressions")])
     }
   }
 
