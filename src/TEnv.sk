@@ -156,12 +156,10 @@ class TEnv{
   fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
     this.getClass(tcenv.context, className).tparams.map(tparam -> {
       tvar = tcenv.subst.gen(className.pos);
-      ty = TType::var(tvar);
-      tparam.constraint match {
-      | None() -> ty
-      | Some(cstr) ->
-        TType::union(tcenv.subst, this, this.normalize(tcenv, cstr), ty)
-      }
+      tparam.constraint.each(cstr ->
+        !tvar = tvar.addConstraint(this.normalize(tcenv, cstr))
+      );
+      TType::var(tvar)
     })
   }
 
