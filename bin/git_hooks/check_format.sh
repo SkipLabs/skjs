@@ -17,7 +17,7 @@ check-file () {
     if [[ "$file" == *.sk ]]; then # keep in sync with fmt-sk in Makefile
         fmt="skfmt --assume-filename=$file"
     elif [[ "$file" =~ .*\.(json|ts)$ ]]; then # keep in sync with .prettierignore
-        fmt="npx prettier@$PRETTIER_VERSION --stdin-filepath $file"
+        fmt="npx -y prettier@$PRETTIER_VERSION --stdin-filepath $file"
     else
         exit 0;
     fi
