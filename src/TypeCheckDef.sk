@@ -89,13 +89,13 @@ extension class TypeChecker {
         tcenvl.error(Array[(pos, "Missing type annotation")])
       };
       literalType
-    | Some(x) -> Some(this.tenv.normalize(subst, x))
+    | Some(x) -> Some(this.normalize(subst, x))
     };
 
     // Check if type is primitive
     typeOpt match {
     | Some(type) ->
-      if (!type.isPrimitiveType(subst, this.tenv)) {
+      if (!type.isPrimitiveType(subst, this)) {
         tcenvl.error(
           Array[
             (
@@ -170,9 +170,9 @@ extension class TypeChecker {
     );
 
     subst = Subst::mcreate(tcenvl);
-    !this.tenv = this.tenv.addTParams(subst, typeDef.tdefParams);
+    !this = this.addTParams(subst, typeDef.tdefParams);
 
-    tcenvl.collectErrors(() -> _ = this.tenv.normalize(subst, typeDef.body));
+    tcenvl.collectErrors(() -> _ = this.normalize(subst, typeDef.body));
   }
 
   static fun checkTypeParams(

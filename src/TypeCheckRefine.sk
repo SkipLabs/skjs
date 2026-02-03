@@ -159,12 +159,8 @@ extension class TypeChecker {
         | TTuple _ -> Some(x)
         | tObj @ TObject _ ->
           tvar = TType::var(tcenv.subst.gen(local.pos));
-          arrObj = this.tenv.newObject(
-            tcenv,
-            Name(local.pos, "Array"),
-            Array[tvar],
-          );
-          TObject::inter(tcenv.subst, this.tenv, tObj, arrObj)
+          arrObj = this.newObject(tcenv, Name(local.pos, "Array"), Array[tvar]);
+          TObject::inter(tcenv.subst, this, tObj, arrObj)
         | _ -> None()
         };
 
@@ -210,7 +206,7 @@ extension class TypeChecker {
     | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
       tcenv.scope.set(
         local,
-        this.tenv.new(tcenv, className, this.tenv.makeTArgs(tcenv, className)),
+        this.new(tcenv, className, this.makeTArgs(tcenv, className)),
         (x, y) -> this.checkSubType(tcenv, e.pos, "Invalid instanceof", x, y),
       )
 
@@ -292,7 +288,7 @@ extension class TypeChecker {
       | Some(sTypes) -> Some(sTypes.filterMap(filterMap))
       };
     ty = tcenv.scope.get(local);
-    !ty = ty.mapSTypes(tcenv.subst, this.tenv, Some(Covariant()), f);
+    !ty = ty.mapSTypes(tcenv.subst, this, Some(Covariant()), f);
     tcenv.scope.set(local, ty, (_, _) -> void)
   }
 

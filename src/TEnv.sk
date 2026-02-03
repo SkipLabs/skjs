@@ -9,9 +9,9 @@ module SKJS;
 
 value class CstrType(cstr: ?TFuns, tArgs: Array<TType>)
 
-class TEnv{
+base class TEnv{
   // The defMap associates an AST to a type name.
-  private defMap: IDefMap,
+  defMap: IDefMap,
 
   // The type-parameters that are currently in scope. So if we see a
   // type definition with a matching name, we know we are dealing with

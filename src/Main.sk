@@ -426,8 +426,7 @@ class Checker private {
       files.importStubs,
       parsedFiles,
     );
-    tenv = TEnv{defMap};
-    checker = TypeChecker{defMap, tenv, errorHandling};
+    checker = TypeChecker{defMap, errorHandling};
     static{
       files,
       parsedFiles,

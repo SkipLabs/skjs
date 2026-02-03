@@ -45,7 +45,7 @@ extension class TypeChecker {
         notSupported(restName.pos, "Rest element in array destructuring")
       | None() -> void
       };
-      type.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      type.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
       | Some(TTuple(tyl, _)) ->
@@ -90,7 +90,7 @@ extension class TypeChecker {
       | Some(_name) ->
         SortedSet::createFromItems(objectFields.map(f -> f.i0.value))
       };
-      type.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+      type.getSTypes(tcenv.subst, this, Covariant()) match {
       | None() ->
         typingError(
           Array[(pos, "Invalid object pattern"), (type.pos, `This is ${type}`)],
@@ -132,8 +132,7 @@ extension class TypeChecker {
               | Some(tfield) ->
                 undefined = (pos) ->
                   TType::single(TPrimUnit(TUndefined(), pos));
-                union = (t1, t2) ->
-                  TType::union(tcenv.subst, this.tenv, t1, t2);
+                union = (t1, t2) -> TType::union(tcenv.subst, this, t1, t2);
                 !typeForField = union(
                   typeForField,
                   defaultOpt match {
@@ -142,7 +141,7 @@ extension class TypeChecker {
                       tfield.isOptional ||
                       TType::isSub(
                         tcenv.subst.clone(),
-                        this.tenv,
+                        this,
                         undefined(defaultPos),
                         tfield.type,
                       ) is STOk()
@@ -151,7 +150,7 @@ extension class TypeChecker {
                       union(
                         TType::diff(
                           tcenv.subst,
-                          this.tenv,
+                          this,
                           tfield.type,
                           undefined(defaultPos),
                         ),
@@ -214,7 +213,7 @@ extension class TypeChecker {
       type match {
       | None() -> typingError(Array[(pos, "Was expecting a type or a value")])
       | Some(annotAst) ->
-        ty = this.tenv.normalize(tcenv, annotAst);
+        ty = this.normalize(tcenv, annotAst);
         (ty, false)
       }
     | Some(e) ->
@@ -222,7 +221,7 @@ extension class TypeChecker {
       type match {
       | None() -> (ty, true)
       | Some(annotAst) ->
-        annot = this.tenv.normalize(tcenv, annotAst);
+        annot = this.normalize(tcenv, annotAst);
         this.checkSubType(tcenv, annotAst.pos, "Invalid annotation", ty, annot);
         (annot, true)
       }
@@ -259,7 +258,7 @@ extension class TypeChecker {
   ): TType {
     idxType = this.expr(tcenv, idx, true);
     idxSType = idxType
-      .getSTypes(tcenv.subst, this.tenv, Covariant())
+      .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(ty @ TPrimValue(TString(), _, _))
     | Some(ty @ TPrimValue(TNum(), _, _)) ->
@@ -268,11 +267,11 @@ extension class TypeChecker {
     };
     objType2 = ArrayLitTyping::refineForArrayUse(
       tcenv,
-      this.tenv,
+      this,
       objType,
       idxSType,
     );
-    stypes = objType2.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+    stypes = objType2.getSTypes(tcenv.subst, this, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) ->
       Vector::mcreateFromIterator(stypes.values())
     | _ ->
@@ -309,7 +308,7 @@ extension class TypeChecker {
         | Some(tyAtN) -> tyAtN
         | None() -> typingError(Array[(pos, "Out of bound index")])
         };
-        !result = TType::union(tcenv.subst, this.tenv, result, tyAtN)
+        !result = TType::union(tcenv.subst, this, result, tyAtN)
 
       | TObject(fields, objectPos) if (fields.isEmpty()) ->
         !result = TType::top(objectPos)
@@ -322,12 +321,12 @@ extension class TypeChecker {
             .filter(fieldLit ->
               fields.maybeGetType(
                 tcenv.subst,
-                this.tenv,
+                this,
                 fieldLit.val,
                 fieldLit.pos,
               ) match {
               | Some(ty) ->
-                !result = TType::union(tcenv.subst, this.tenv, result, ty);
+                !result = TType::union(tcenv.subst, this, result, ty);
                 false
               | None() -> true
               }
@@ -362,13 +361,8 @@ extension class TypeChecker {
               TType::single(remainingIdxSType),
               index.keyType,
             );
-            ty = TType::unionUndefined(
-              tcenv.subst,
-              this.tenv,
-              index.valueType,
-              pos,
-            );
-            !result = TType::union(tcenv.subst, this.tenv, result, ty)
+            ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
+            !result = TType::union(tcenv.subst, this, result, ty)
           }
         }
 
@@ -388,15 +382,15 @@ extension class TypeChecker {
           for (branch in branches) {
             !result = TType::union(
               tcenv.subst,
-              this.tenv,
+              this,
               result,
-              branch.getType(tcenv.subst, this.tenv, lit.val, lit.pos),
+              branch.getType(tcenv.subst, this, lit.val, lit.pos),
             )
           }
         }
 
       | prim @ TPrimValue _ ->
-        obj = this.tenv.newObject(tcenv, prim.asClassName(), Array[]);
+        obj = this.newObject(tcenv, prim.asClassName(), Array[]);
         stypes.push(obj)
 
       | TPrimUnit(TUndefined(), undefPos)
@@ -406,12 +400,7 @@ extension class TypeChecker {
       ) if (optionalChaining) ->
         !optionalChainingIsUseless = false;
         !optionalChainingIsAlwaysUndefinedForThisSType = true;
-        !result = TType::unionUndefined(
-          tcenv.subst,
-          this.tenv,
-          result,
-          undefPos,
-        )
+        !result = TType::unionUndefined(tcenv.subst, this, result, undefPos)
 
       | _ ->
         typingError(
@@ -460,7 +449,7 @@ extension class TypeChecker {
     hasOthers = false;
     tyWithoutNullish = ty.mapSTypes(
       tcenv.subst,
-      this.tenv,
+      this,
       Some(Covariant()),
       stypesOpt ->
         stypesOpt match {
@@ -576,7 +565,7 @@ extension class TypeChecker {
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
-            tFuns = this.tenv.funDecl(
+            tFuns = this.funDecl(
               tcenv,
               false,
               fd,
@@ -587,7 +576,7 @@ extension class TypeChecker {
             );
             break TType::single(TObject::createCall(tFuns))
           | c @ Class _ ->
-            staticClass = this.tenv.newStatic(tcenv, c.name);
+            staticClass = this.newStatic(tcenv, c.name);
             break staticClass
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
@@ -599,7 +588,7 @@ extension class TypeChecker {
               | None() -> this.newTVar(tcenv, pos)
               | Some(ty) -> TType::single(ty)
               }
-            | Some(ty) -> this.tenv.normalize(tcenv, ty)
+            | Some(ty) -> this.normalize(tcenv, ty)
             }
           | _ -> void
           }
@@ -626,7 +615,7 @@ extension class TypeChecker {
 
         | FDSpread(spreadExpr) ->
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-          spreadTy.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+          spreadTy.getSTypes(tcenv.subst, this, Covariant()) match {
           | None() ->
             tcenv.error(
               Array[
@@ -660,7 +649,7 @@ extension class TypeChecker {
           continue
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          tFuns = this.tenv.funDecl(tcenv, false, fd, cgNode);
+          tFuns = this.funDecl(tcenv, false, fd, cgNode);
           (name, TType::single(TObject::createCall(tFuns)))
         };
         TField::create(name.pos, name.value, false, ty) match {
@@ -709,7 +698,7 @@ extension class TypeChecker {
         thisName = Name(pos, "this");
         thisType = TType::inter(
           tcenv.subst,
-          this.tenv,
+          this,
           tcenv.scope.get(thisName),
           super,
         );
@@ -722,15 +711,15 @@ extension class TypeChecker {
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       for (arg in args) {
         exprTy = this.expr(tcenv, arg, true);
-        ty = exprTy.expand(tcenv.subst.clone(), this.tenv, Some(Covariant()));
+        ty = exprTy.expand(tcenv.subst.clone(), this, Some(Covariant()));
         print_error(prettyPrintType(false, ty))
       };
       TType::single(TPrimUnit(TVoid(), pos))
     | Call(f, targs, args) ->
       fty = this.expr(tcenv, f, mostPrecise);
-      tfuns = fty
-        .getSTypes(tcenv.subst, this.tenv, Covariant())
-        .flatMap(stypes ~> stypes.singleElt()) match {
+      tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+        stypes.singleElt()
+      ) match {
       | Some(TObject(TFields{call => Some((optional, tfuns))}, _)) ->
         if (optional) {
           tcenv.error(
@@ -753,7 +742,7 @@ extension class TypeChecker {
         tcenv,
         pos,
         tfuns,
-        targs.map(ty -> this.tenv.normalize(tcenv, ty)),
+        targs.map(ty -> this.normalize(tcenv, ty)),
         args,
         mostPrecise,
       );
@@ -768,20 +757,20 @@ extension class TypeChecker {
       };
       rty
     | New(subExpr, targsAst, args) ->
-      tArgs = targsAst.map(targ -> this.tenv.normalize(tcenv, targ));
+      tArgs = targsAst.map(targ -> this.normalize(tcenv, targ));
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
         if (targsAst.size() == 0) {
-          !tArgs = this.tenv.makeTArgs(tcenv, className)
+          !tArgs = this.makeTArgs(tcenv, className)
         };
-        cstr = this.tenv.newConstructor(tcenv, className, tArgs);
+        cstr = this.newConstructor(tcenv, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
-        this.tenv.new(tcenv, className, tArgs)
+        this.new(tcenv, className, tArgs)
       | _ ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
-        subExprTy
-          .getSTypes(tcenv.subst, this.tenv, Covariant())
-          .flatMap(stypes -> stypes.singleElt()) match {
+        subExprTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
+          stypes.singleElt()
+        ) match {
         | Some(TObject(TFields{new => Some((optional, f))}, objPos)) ->
           if (optional) {
             tcenv.error(
@@ -834,30 +823,25 @@ extension class TypeChecker {
         bool
       | nuop @ NumericUnaryOperator() ->
         invalid = false;
-        res = ty.mapSTypes(
-          tcenv.subst,
-          this.tenv,
-          Some(Covariant()),
-          stypesOpt ->
-            stypesOpt match {
-            | None() ->
-              !invalid = true;
-              stypesOpt
-            | Some(stypes) ->
-              Some(
-                stypes.map(stype ->
-                  stype match {
-                  | TPrimValue(k @ TNum(), _, primPos)
-                  | TPrimValue(k @ TBigInt(), _, primPos) ->
-                    TPrimValue(k, None(), primPos)
-                  | _ ->
-                    !invalid = true;
-                    stype
-                  }
-                ),
-              )
-            }
-          ,
+        res = ty.mapSTypes(tcenv.subst, this, Some(Covariant()), stypesOpt ->
+          stypesOpt match {
+          | None() ->
+            !invalid = true;
+            stypesOpt
+          | Some(stypes) ->
+            Some(
+              stypes.map(stype ->
+                stype match {
+                | TPrimValue(k @ TNum(), _, primPos)
+                | TPrimValue(k @ TBigInt(), _, primPos) ->
+                  TPrimValue(k, None(), primPos)
+                | _ ->
+                  !invalid = true;
+                  stype
+                }
+              ),
+            )
+          }
         );
         if (invalid) {
           typingError(
@@ -887,7 +871,7 @@ extension class TypeChecker {
       op match {
       | BOAddition() ->
         ty1 = this.expr(tcenv, e1, true);
-        ty1.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
+        ty1.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
           stypes.singleElt()
         ) match {
         | Some(TPrimValue(k @ TNum(), _, primPos))
@@ -910,10 +894,10 @@ extension class TypeChecker {
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
         if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
-          TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
+          TType::isSub(tcenv.subst, this, ty1, ty2) match {
           | STOk() -> void
           | STError _ ->
-            TType::isSub(tcenv.subst, this.tenv, ty2, ty1) match {
+            TType::isSub(tcenv.subst, this, ty2, ty1) match {
             | STOk() -> void
             | STError _ ->
               alwaysResult = op_ match {
@@ -954,7 +938,7 @@ extension class TypeChecker {
           TType::single(TPrimValue::boolean(e2.pos)),
         );
         tcenv.!scope = savedScope;
-        tcenv.popScope(this.tenv, branch2);
+        tcenv.popScope(this, branch2);
         TType::single(TPrimValue::boolean(pos))
 
       | BOLessThan()
@@ -963,7 +947,7 @@ extension class TypeChecker {
       | BOGreaterThanOrEqual() ->
         getExprPrimKind = (e) -> {
           ty = this.expr(tcenv, e, true);
-          ty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
+          ty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
             stypes.singleElt()
           ) match {
           | Some(TPrimValue(k, _, _)) -> Some(k)
@@ -1042,18 +1026,18 @@ extension class TypeChecker {
           mostPrecise,
         );
         ty2 = this.expr(tcenv, e2, mostPrecise);
-        TType::union(tcenv.subst, this.tenv, ty1WithoutNullish, ty2)
+        TType::union(tcenv.subst, this, ty1WithoutNullish, ty2)
       }
 
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(tcenv, e1, true);
-      _ = this.tenv.getClass(tcenv.context, className);
+      _ = this.getClass(tcenv.context, className);
       TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
     | In(e1, e2) ->
       (t1, fieldsOpt) = this.getInLhsTypeAndFields(tcenv, pos, e1);
       t2 = this.expr(tcenv, e2, true);
-      t2.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+      t2.getSTypes(tcenv.subst, this, Covariant()) match {
       | None() ->
         tcenv.error(
           Array[(pos, "Invalid in"), (e2.pos, "This has type unknown")],
@@ -1157,7 +1141,7 @@ extension class TypeChecker {
     | Async _ -> typingError(Array[(pos, "Invalid async")])
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
-      aeType.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
+      aeType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
       | Some(TPromise(ty, _)) -> ty
@@ -1193,7 +1177,7 @@ extension class TypeChecker {
       right = this.expr(tcenv, e3, mostPrecise);
       tcenv.!scope = scopeCopy;
 
-      TType::union(tcenv.subst, this.tenv, left, right)
+      TType::union(tcenv.subst, this, left, right)
     | AsConst(subExpr) ->
       this.asConstExpr(tcenv, subExpr) match {
       | Some(ty) -> TType::single(ty)
@@ -1312,7 +1296,7 @@ extension class TypeChecker {
       param.i1 match {
       | None() ->
         typingError(Array[(param.i0.pos, "Please add a type annotation")])
-      | Some(ty) -> (param.i0, this.tenv.normalize(tcenv, ty))
+      | Some(ty) -> (param.i0, this.normalize(tcenv, ty))
       }
     });
     retType = retTypeAstOpt match {
@@ -1322,7 +1306,7 @@ extension class TypeChecker {
       | None() -> tvar
       | Some(asyncPos) -> TType::single(TPromise(tvar, asyncPos))
       }
-    | Some(retTypeAst) -> this.tenv.normalize(tcenv, retTypeAst)
+    | Some(retTypeAst) -> this.normalize(tcenv, retTypeAst)
     };
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
@@ -1474,7 +1458,7 @@ extension class TypeChecker {
   ): TType {
     tcenv.scope
       .get(local)
-      .getSTypes(tcenv.subst, this.tenv, Covariant())
+      .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(fields, objPos)) ->
       // Check if field exists explicitly, or if it matches an index signature.
@@ -1490,7 +1474,7 @@ extension class TypeChecker {
           clonedSubst = tcenv.subst.clone();
           TType::isSub(
             clonedSubst,
-            this.tenv,
+            this,
             fieldNameType,
             indexField.keyType,
           ) is STOk _
@@ -1538,7 +1522,7 @@ extension class TypeChecker {
           | Some(field) ->
             newTy = TFields::inter(
               tcenv.subst,
-              this.tenv,
+              this,
               fields,
               TFields::create{fields => Array[field]},
             ) match {
@@ -1578,7 +1562,7 @@ extension class TypeChecker {
     e1: Expr,
   ): (TType, ?PrimLiterals) {
     t1 = this.expr(tcenv, e1, true);
-    t1.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+    t1.getSTypes(tcenv.subst, this, Covariant()) match {
     | None() ->
       typingError(Array[(pos, "Invalid in"), (e1.pos, "This has type unknown")])
     | Some(stypes1) ->
@@ -1624,15 +1608,11 @@ extension class TypeChecker {
       argExpr.value match {
       | Spread(spreadExpr) ->
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-        spreadTy
-          .getSTypes(tcenv.subst, this.tenv, Covariant())
-          .flatMap(stypes ~> stypes.singleElt()) match {
+        spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+          stypes.singleElt()
+        ) match {
         | Some(object @ TObject _) ->
-          ATFullType::getArrayObjectEltType(
-            object,
-            tcenv.subst,
-            this.tenv,
-          ) match {
+          ATFullType::getArrayObjectEltType(object, tcenv.subst, this) match {
           | None() ->
             tcenv.error(
               Array[
@@ -1644,7 +1624,7 @@ extension class TypeChecker {
             !moreArgs = Some(
               moreArgs match {
               | None() -> eltType
-              | Some(ma) -> TType::union(tcenv.subst, this.tenv, ma, eltType)
+              | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
               },
             )
           }
@@ -1653,7 +1633,7 @@ extension class TypeChecker {
           | None() -> args.extend(tupElts)
           | Some(ma) ->
             for (tupElt in tupElts) {
-              !ma = TType::union(tcenv.subst, this.tenv, ma, tupElt)
+              !ma = TType::union(tcenv.subst, this, ma, tupElt)
             };
             !moreArgs = Some(ma)
           }
@@ -1670,7 +1650,7 @@ extension class TypeChecker {
         moreArgs match {
         | None() -> args.push(argTy)
         | Some(ma) ->
-          !moreArgs = Some(TType::union(tcenv.subst, this.tenv, ma, argTy))
+          !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
         }
       }
     };
@@ -1698,7 +1678,7 @@ extension class TypeChecker {
         };
       };
       !tfun = (mutable Instantiate()).fun_(
-        (tcenv.subst, this.tenv, map.chill()),
+        (tcenv.subst, this, map.chill()),
         tfun with {tparams => Array[]},
       );
       totalSize = tfun.params.size() + tfun.optionalParams.size();
@@ -1750,11 +1730,7 @@ extension class TypeChecker {
           // Allow more ignored parameters
           void
         | Some(spreadType) ->
-          spreadType.maybeGetEltType(
-            tcenv.subst,
-            this.tenv,
-            Contravariant(),
-          ) match {
+          spreadType.maybeGetEltType(tcenv.subst, this, Contravariant()) match {
           | Some(eltType) ->
             for (i in Range(totalSize, args.size())) {
               this.checkSubType(
