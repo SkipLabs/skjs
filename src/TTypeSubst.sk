@@ -76,7 +76,7 @@ mutable class Subst private {
     result = variance match {
     | Covariant() ->
       this.values.maybeGet(tvar.id) match {
-      | None() -> SVOpen(TType::bottom(tvar.pos))
+      | None() -> SVOpen(TType::top(tvar.pos))
       | Some(sv) -> sv
       } match {
       | SVOpen(ty) ->
