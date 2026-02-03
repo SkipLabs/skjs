@@ -691,27 +691,31 @@ class TEnv{
     | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
-    | TATypeOf(ty) ->
-      ty.value match {
-      | TAInst(Name(_, "undefined"), targs) ->
-        if (targs.size() != 0) {
-          tcenvb.error(Array[(pos, "Unexpected type parameters for undefined")])
-        };
+    | TATypeOf(expr) ->
+      // typeof in type position: type T = typeof expression
+      // Handle special cases that were working before
+      expr.value match {
+      | Var(Name(_, "undefined")) ->
+        // typeof undefined -> undefined type
         TType::single(TPrimUnit(TUndefined(), pos))
-      | TAInst(className, targs) ->
+      | Var(className) ->
+        // typeof ClassName -> constructor type
+        // This is the common pattern: type Constructor = typeof MyClass
         c = this.getClass(tcenvb.context, className);
         tfuns = this.findConstructorMethod(
           tcenvb,
           SortedSet[],
           className,
           c.tparams,
-          targs.map(x -> this.normalize(tcenvb, x)),
+          Array[],
         ) match {
         | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
         | Some(fd) -> this.makeConstructor(tcenvb, className, c.tparams, fd)
         };
         TType::single(TObject::createNew(tfuns, pos))
-      | _ -> typingError(Array[(ty.pos, "Invalid typeof")])
+      | _ ->
+        // For other expressions, we need full expression type inference
+        typingError(Array[(expr.pos, "TODO: typeof for complex expressions")])
       }
     | TAPrim(kind) ->
       TType::single(
