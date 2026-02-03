@@ -18,6 +18,36 @@ function unionArrayTarget(): void {
   takesArrayOrNull(values);
 }
 
+// Array literal passed directly to function with constrained generic T extends number[].
+type NumberArray = number[];
+type ArrayOrString = NumberArray | string;
+function takesConstrainedArray<S extends ArrayOrString>(values: S): S {
+  return values;
+}
+
+function constrainedArrayLiteralDirect(): void {
+  const result = takesConstrainedArray([1, 2, 3]);
+  const first = result[0];
+  if (first !== undefined && first < 0) {
+    return;
+  }
+}
+
+// Tuple literal passed directly to function with constrained generic T extends tuple | something.
+type NumberPair = [number, number];
+type TupleOrString = NumberPair | string;
+function takesConstrainedTuple<S extends TupleOrString>(values: S): S {
+  return values;
+}
+
+function constrainedTupleLiteralDirect(): void {
+  const result = takesConstrainedTuple([1, 2]);
+  const first: number = result[0];
+  if (first < 0) {
+    return;
+  }
+}
+
 // Helper for unionArrayTarget.
 function takesArrayOrNull(values: number[] | null): void {
   if (values === null) return;
@@ -171,6 +201,8 @@ function literalPrecisionLoss(): void {
 numbersArray();
 arrayLiteralRefinement();
 unionArrayTarget();
+constrainedArrayLiteralDirect();
+constrainedTupleLiteralDirect();
 tupleThenArrayUse();
 arrayThenTupleUse();
 tupleRefinementOk();

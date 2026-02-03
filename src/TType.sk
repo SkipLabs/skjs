@@ -1156,7 +1156,8 @@ class TVar private (
   }
 }
 
-/* Array literal with delayed typing */
+/* Array literal with delayed typing.
+ * Invariant: tupleElts must be non-empty (empty array literals are handled separately). */
 class TArrayLit(tvar: TVar, tupleElts: Array<TType>) extends TInst {}
 
 /* Unexpanded named type */
