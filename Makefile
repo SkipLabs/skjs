@@ -19,7 +19,7 @@ fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh
 
 .PHONY: fmt-js
 fmt-js: # Keep in sync with bin/git_hooks/check_format.sh
-	npx prettier@$(PRETTIER_VERSION) --log-level $(PRETTIER_LOG_LEVEL) --write .
+	npx -y prettier@$(PRETTIER_VERSION) --log-level $(PRETTIER_LOG_LEVEL) --write .
 
 .PHONY: fmt
 fmt: fmt-sk fmt-js # Keep in sync with bin/git_hooks/check_format.sh
