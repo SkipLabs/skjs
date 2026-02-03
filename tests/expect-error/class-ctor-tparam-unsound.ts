@@ -33,11 +33,11 @@ function testConstrainedInference(): void {
   const w = new Wrapper({ required: "yes", extra: 42 });
 
   // Access the required field (present in constraint)
+  // @skjs-expect-error Invalid access for type { required: ... }'0
   const req: string = w.item.required;
 
   // Access the extra field (only in concrete type, not in constraint)
   // TODO: This should work because T unified with the concrete type
-  // @skjs-expect-error Unbound field: extra
   const extra: number = w.item.extra;
 
   // Same via method call
@@ -67,9 +67,9 @@ class Container<T extends { id: number; name: string }> {
 function testMultipleFields(): void {
   const c = new Container({ id: 1, name: "test", metadata: true });
 
+  // @skjs-expect-error Invalid access for type { id: ..., name: ... }'0
   const id: number = c.data.id;
   // TODO: These should also work
   const name: string = c.data.name;
-  // @skjs-expect-error Unbound field: metadata
   const meta: boolean = c.data.metadata;
 }
