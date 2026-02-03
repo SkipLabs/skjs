@@ -645,7 +645,6 @@ base class TEnv{
   }
 
   fun normalize(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
-    subst = Subst::mcreate(tcenvb);
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
@@ -655,6 +654,7 @@ base class TEnv{
     | TAAsserts _ -> typingError(Array[(pos, "TODO asserts")])
     | TAIs _ -> typingError(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
+      subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
@@ -786,6 +786,7 @@ base class TEnv{
             ],
           )
         };
+        subst = Subst::mcreate(tcenvb);
         tparam = this.tparams[n.value];
         TType::fromTParamWithConstraint(subst, this, pos, tparam)
       } else if (this.subst.containsKey(n.value)) {
@@ -831,6 +832,7 @@ base class TEnv{
         TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
       }
     | TAUnion(ty1, ty2) ->
+      subst = Subst::mcreate(tcenvb);
       TType::union(
         subst,
         this,
@@ -838,6 +840,7 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | TAInter(ty1, ty2) ->
+      subst = Subst::mcreate(tcenvb);
       TType::inter(
         subst,
         this,
