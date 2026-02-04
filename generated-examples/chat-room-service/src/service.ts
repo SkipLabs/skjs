@@ -163,7 +163,7 @@ export class RoomsMembersResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<Inputs, GraphCollections, Resources> {
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   public inputs: Inputs;
   public resources: Resources;
 
@@ -182,6 +182,6 @@ class Service implements SkipService<Inputs, GraphCollections, Resources> {
   }
 }
 
-export function service(): SkipService<Inputs, GraphCollections, Resources> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }
