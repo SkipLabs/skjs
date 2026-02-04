@@ -107,10 +107,10 @@ const uniqueA: unique symbol = Symbol("a");
 const uniqueB: unique symbol = Symbol("b");
 
 // unique symbol A is not assignable to unique symbol B
-// TODO: Test type incompatibility once typeof is implemented
-// function testDistinctTypes(): void {
-//   const b: typeof uniqueA = uniqueB; // Different unique symbols are incompatible
-// }
+function testDistinctTypes(): void {
+  // @skjs-expect-error Invalid annotation
+  const b: typeof uniqueA = uniqueB; // Different unique symbols are incompatible
+}
 
 // Local const cannot use unique symbol (only top-level const allowed)
 function testLocalUniqueSymbol(): void {
@@ -124,10 +124,11 @@ function testCovariance(us: unique symbol): symbol {
   return us;
 }
 
-// TODO: Test contravariance once typeof is implemented
-// function testContravariance(s: symbol): void {
-//   const us: typeof uniqueA = s; // symbol → unique symbol should fail
-// }
+// symbol is not assignable to unique symbol
+function testContravariance(s: symbol): void {
+  // @skjs-expect-error Invalid annotation
+  const us: typeof uniqueA = s; // symbol → unique symbol should fail
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 7: Symbol values at runtime

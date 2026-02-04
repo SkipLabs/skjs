@@ -72,9 +72,7 @@ extension class TypeChecker {
   ): void {
     subst = Subst::mcreate(tcenvl);
 
-    typeOpt = typeAnnotation.map(x ->
-      this.normalizeTopLevelConst(subst, x)
-    );
+    typeOpt = typeAnnotation.map(x -> this.normalizeTopLevelConst(subst, x));
 
     value match {
     | None() -> tcenvl.error(Array[(pos, "Missing definition")])

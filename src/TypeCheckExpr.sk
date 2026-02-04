@@ -588,7 +588,12 @@ extension class TypeChecker {
               | None() -> this.newTVar(tcenv, pos)
               | Some(ty) -> TType::single(ty)
               }
-            | Some(ty) -> this.normalize(tcenv, ty)
+            | Some(ty) ->
+              if (kind is VDKConst _) {
+                this.normalizeTopLevelConst(tcenv, ty)
+              } else {
+                this.normalize(tcenv, ty)
+              }
             }
           | _ -> void
           }

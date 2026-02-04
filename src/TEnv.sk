@@ -892,6 +892,8 @@ base class TEnv{
     | Var(varName) ->
       for (def in this.defMap.getAll(tcenvb.context, varName)) {
         def match {
+        | FDVar(VDKConst(), _, Some(t), _) ->
+          return this.normalizeTopLevelConst(tcenvb, t)
         | FDVar(_, _, Some(t), _) -> return this.normalize(tcenvb, t)
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.default(CGNode::create(AnonymousFunDef(fd)));
