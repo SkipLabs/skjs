@@ -75,22 +75,22 @@ export interface EagerCollection<K extends Json, V extends Json>
 
   getUnique(key: K, _default?: { ifNone?: V; ifMany?: V }): V & DepSafe;
 
-  map<K2 extends Json, V2 extends Json, Param extends DepSafe>(
-    mapper: new (param: Param) => Mapper<K, V, K2, V2>,
-    param: Param
+  map<K2 extends Json, V2 extends Json, Params extends DepSafe[]>(
+    mapper: new (...params: Params) => Mapper<K, V, K2, V2>,
+    ...params: Params
   ): EagerCollection<K2, V2>;
 
-  reduce<Accum extends Json, Param extends DepSafe>(
-    reducer: new (param: Param) => Reducer<V, Accum>,
-    param: Param
+  reduce<Accum extends Json, Params extends DepSafe[]>(
+    reducer: new (...params: Params) => Reducer<V, Accum>,
+    ...params: Params
   ): EagerCollection<K, Accum>;
 
-  mapReduce<K2 extends Json, V2 extends Json, MapperParam extends DepSafe>(
-    mapper: new (param: MapperParam) => Mapper<K, V, K2, V2>,
-    mapperParam: MapperParam
-  ): <Accum extends Json, ReducerParam extends DepSafe>(
-    reducer: new (param: ReducerParam) => Reducer<V2, Accum>,
-    reducerParam: ReducerParam
+  mapReduce<K2 extends Json, V2 extends Json, MapperParams extends DepSafe[]>(
+    mapper: new (...params: MapperParams) => Mapper<K, V, K2, V2>,
+    ...mapperParams: MapperParams
+  ): <Accum extends Json, ReducerParams extends DepSafe[]>(
+    reducer: new (...params: ReducerParams) => Reducer<V2, Accum>,
+    ...reducerParams: ReducerParams
   ) => EagerCollection<K2, Accum>;
 
   slice(start: K & DepSafe, end: K & DepSafe): EagerCollection<K, V>;
@@ -152,6 +152,7 @@ export type ResourceClass<
 
 export interface SkipService<
   InputDefs extends NamedInputDefinitions,
+  Inputs extends NamedEagerCollections,
   ResourceInputs extends NamedEagerCollections,
   Resources,
 > {
@@ -159,5 +160,5 @@ export interface SkipService<
 
   resources: Resources;
 
-  createGraph(inputs: ResourceInputs, context: Context): ResourceInputs;
+  createGraph(inputs: Inputs, context: Context): ResourceInputs;
 }
