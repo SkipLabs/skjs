@@ -213,3 +213,14 @@ class MyClass {
 
 // declare const allows unique symbol (works correctly)
 declare const declaredSym: unique symbol;
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 14: Well-known symbols
+///////////////////////////////////////////////////////////////////////////////
+
+// Well-known symbols are accessible as properties on Symbol
+const iteratorSym: symbol = Symbol.iterator;
+const asyncIteratorSym: symbol = Symbol.asyncIterator;
+const toStringTagSym: symbol = Symbol.toStringTag;
+const hasInstanceSym: symbol = Symbol.hasInstance;
+const toPrimitiveSym: symbol = Symbol.toPrimitive;
