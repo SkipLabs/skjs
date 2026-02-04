@@ -23,21 +23,21 @@ function sideEffectFunc(): number {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Number literal - type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type NumberLiteralType = typeof 42;
 
 // Number literal - function parameter (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 function testNumLiteralParam(x: typeof 42): number {
   return x;
 }
 
 // String literal - type alias context
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type StringLiteralType = typeof "hello";
 
 // String literal - function return type (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 function testStrLiteralReturn(): typeof "hello" {
   return "hello";
 }
@@ -57,17 +57,17 @@ type NullLiteralType = typeof null;
 ///////////////////////////////////////////////////////////////////////////////
 
 // Function call - type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type FuncCallType = typeof sideEffectFunc();
 
 // Function call - function parameter (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 function testFuncCallParam(x: typeof sideEffectFunc()): number {
   return x;
 }
 
 // Method call - type alias context
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type MethodCallType = typeof "hello".toUpperCase();
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -75,17 +75,17 @@ type MethodCallType = typeof "hello".toUpperCase();
 ///////////////////////////////////////////////////////////////////////////////
 
 // Addition - type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type AdditionType = typeof (1 + 2);
 
 // Addition - function return type (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 function testAdditionReturn(): typeof (1 + 2) {
   return 3;
 }
 
 // Comparison
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type ComparisonType = typeof (1 < 2);
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -93,11 +93,11 @@ type ComparisonType = typeof (1 < 2);
 ///////////////////////////////////////////////////////////////////////////////
 
 // new expression - type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type NewExprType = typeof new Point(1, 2);
 
 // new expression - function parameter (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 function testNewExprParam(x: typeof new Point(1, 2)): Point {
   return x;
 }
@@ -107,11 +107,11 @@ function testNewExprParam(x: typeof new Point(1, 2)): Point {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Array literal - type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type ArrayLiteralType = typeof [1, 2, 3];
 
 // Array literal - function return type (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 function testArrayLiteralReturn(): typeof [1, 2, 3] {
   return [1, 2, 3];
 }
@@ -121,12 +121,12 @@ function testArrayLiteralReturn(): typeof [1, 2, 3] {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Object literal - type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type ObjectLiteralType = typeof { x: 1, y: 2 };
 
 // Object literal - local variable annotation (TCEnv available)
-// NOTE: Inside functions, expr() handles all expressions including object literals
 function testObjectLiteralLocal(): void {
+  // @skjs-expect-error typeof operand must be an identifier or property access
   const p: typeof { x: 1 } = { x: 1 };
 }
 
@@ -135,11 +135,11 @@ function testObjectLiteralLocal(): void {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Ternary - type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type TernaryType = typeof (true ? 1 : 2);
 
 // Ternary - function parameter (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 function testTernaryParam(x: typeof (true ? "a" : "b")): string {
   return x;
 }
@@ -157,11 +157,11 @@ type ThisType = typeof this;
 ///////////////////////////////////////////////////////////////////////////////
 
 // Template literal - type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type TemplateLiteralType = typeof `hello`;
 
 // Template with interpolation
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type TemplateInterpType = typeof `value: ${42}`;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -169,11 +169,11 @@ type TemplateInterpType = typeof `value: ${42}`;
 ///////////////////////////////////////////////////////////////////////////////
 
 // Parenthesized call - type alias (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 type ParenCallType = typeof (sideEffectFunc());
 
 // Parenthesized arithmetic - function parameter (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error typeof operand must be an identifier or property access
 function testParenArithParam(x: typeof (2 * 3)): number {
   return x;
 }

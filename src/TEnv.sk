@@ -841,9 +841,28 @@ base class TEnv{
     }
   }
 
+  private fun isValidTypeofExpr(expr: Expr): Bool {
+    expr.value match {
+    | Var(_) -> true
+    | Dot(_, baseExpr, _) -> this.isValidTypeofExpr(baseExpr)
+    | _ -> false
+    }
+  }
+
   private fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
+      // Validate structure first - only Var and Dot allowed
+      if (!this.isValidTypeofExpr(expr)) {
+        tcenvb.error(
+          Array[
+            (
+              expr.pos,
+              "typeof operand must be an identifier or property access",
+            ),
+          ],
+        )
+      };
       return tc.expr(tcenv, expr, false)
     | _ -> void
     };
@@ -886,7 +905,11 @@ base class TEnv{
         )
       }
     | _ ->
-      typingError(Array[(expr.pos, "TODO: typeof for complex expressions")])
+      typingError(
+        Array[
+          (expr.pos, "typeof operand must be an identifier or property access"),
+        ],
+      )
     }
   }
 
