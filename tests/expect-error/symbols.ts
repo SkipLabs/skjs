@@ -94,8 +94,10 @@ function localUniqueSymbol(): void {
   const localSym: unique symbol = Symbol();
 }
 
-// unique symbol cannot be used in object property types
-// @skjs-expect-error unique symbol type cannot be used here
+// unique symbol in object property types is allowed for top-level const,
+// but Symbol() returns symbol, not a specific unique symbol
+// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const objWithUniqueSymbol: { prop: unique symbol } = { prop: Symbol() };
 
 ///////////////////////////////////////////////////////////////////////////////

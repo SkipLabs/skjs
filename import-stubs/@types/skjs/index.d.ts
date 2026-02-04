@@ -201,20 +201,20 @@ declare const Symbol: {
   // Static methods
   for(key: string): symbol;
   keyFor(sym: symbol): string | undefined;
-  // Well-known symbols (typed as symbol since unique symbol not allowed in object types)
-  readonly iterator: symbol;
-  readonly asyncIterator: symbol;
-  readonly toStringTag: symbol;
-  readonly hasInstance: symbol;
-  readonly isConcatSpreadable: symbol;
-  readonly match: symbol;
-  readonly matchAll: symbol;
-  readonly replace: symbol;
-  readonly search: symbol;
-  readonly species: symbol;
-  readonly split: symbol;
-  readonly toPrimitive: symbol;
-  readonly unscopables: symbol;
+  // Well-known symbols
+  readonly iterator: unique symbol;
+  readonly asyncIterator: unique symbol;
+  readonly toStringTag: unique symbol;
+  readonly hasInstance: unique symbol;
+  readonly isConcatSpreadable: unique symbol;
+  readonly match: unique symbol;
+  readonly matchAll: unique symbol;
+  readonly replace: unique symbol;
+  readonly search: unique symbol;
+  readonly species: unique symbol;
+  readonly split: unique symbol;
+  readonly toPrimitive: unique symbol;
+  readonly unscopables: unique symbol;
 };
 
 declare class Object {

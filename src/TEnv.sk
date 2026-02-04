@@ -720,7 +720,11 @@ base class TEnv{
         },
       )
     | TAObject(fields) ->
-      (algebraicBranchField, tFields) = this.createTFields(tcenvb, fields);
+      (algebraicBranchField, tFields) = this.createTFields(
+        tcenvb,
+        fields,
+        isTopLevelConst,
+      );
       createObject(tcenvb, pos, algebraicBranchField, tFields)
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
@@ -1043,6 +1047,7 @@ base class TEnv{
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
+    isTopLevelConst: Bool = false,
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     indexes = mutable Vector[];
@@ -1060,7 +1065,7 @@ base class TEnv{
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
         | FNNormal(name) ->
-          normalizedType = this.normalize(tcenvb, fieldTy);
+          normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
           optField = TField::create(
             name.pos,
             name.value,
