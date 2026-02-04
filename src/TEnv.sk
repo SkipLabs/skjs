@@ -644,32 +644,30 @@ base class TEnv{
     this.normalizeFun(tcenvb, fd.pos, tafun)
   }
 
-  // Normalizes a type annotation for top-level const declarations.
-  // Allows unique symbol type, which is only permitted in this context.
-  // May also be used in the future for:
-  // - Class static readonly members
-  // - Imported const bindings with unique symbol types
-  fun normalizeTopLevelConst(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
-    typeAst.value match {
-    | TAUniqueSymbol() ->
-      // Each unique symbol gets a distinct type based on its position
-      annotPos = typeAst.pos;
-      uniqueId = `unique_symbol_${annotPos.fileName.hash()}_${annotPos.symbol.hash()}_${
-        annotPos.relStart.value
-      }`;
-      TType::single(TPrimValue::single(TSymbol(), uniqueId, annotPos))
-    | _ -> this.normalize(tcenvb, typeAst)
-    }
-  }
-
-  fun normalize(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
+  // Normalizes a type annotation.
+  // When isTopLevelConst is true, allows unique symbol type (only permitted
+  // in top-level const declarations, class static readonly members, and
+  // imported const bindings).
+  fun normalize(
+    tcenvb: mutable TCEnvBase,
+    typeAst: Type,
+    isTopLevelConst: Bool = false,
+  ): TType {
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
     | TAAssertIs _ -> typingError(Array[(pos, "TODO assertIs")])
     | TAAbstract _ -> typingError(Array[(pos, "TODO abstract")])
     | TAUniqueSymbol() ->
-      typingError(Array[(pos, "unique symbol type cannot be used here")])
+      if (isTopLevelConst) {
+        // Each unique symbol gets a distinct type based on its position
+        uniqueId = `unique_symbol_${pos.fileName.hash()}_${pos.symbol.hash()}_${
+          pos.relStart.value
+        }`;
+        TType::single(TPrimValue::single(TSymbol(), uniqueId, pos))
+      } else {
+        typingError(Array[(pos, "unique symbol type cannot be used here")])
+      }
     | TAAsserts _ -> typingError(Array[(pos, "TODO asserts")])
     | TAIs _ -> typingError(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
@@ -892,9 +890,8 @@ base class TEnv{
     | Var(varName) ->
       for (def in this.defMap.getAll(tcenvb.context, varName)) {
         def match {
-        | FDVar(VDKConst(), _, Some(t), _) ->
-          return this.normalizeTopLevelConst(tcenvb, t)
-        | FDVar(_, _, Some(t), _) -> return this.normalize(tcenvb, t)
+        | FDVar(kind, _, Some(t), _) ->
+          return this.normalize(tcenvb, t, kind is VDKConst _)
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.default(CGNode::create(AnonymousFunDef(fd)));
           return TType::single(
