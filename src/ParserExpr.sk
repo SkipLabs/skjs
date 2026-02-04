@@ -515,6 +515,17 @@ extension class Parser {
     args.toArray()
   }
 
+  // Parse field name: identifier, string, number, or [expr] for computed keys
+  mutable fun getFieldNameOrComputed(): SimpleFieldName {
+    if (this.lex.peekKind() is Some(TKOpenSquare())) {
+      _ = this.lex.next(); // consume [
+      keyExpr = this.expr(0);
+      this.expect(TKCloseSquare());
+      return FNComputed(keyExpr)
+    };
+    FNNormal(this.getNameOrStringOrNumber())
+  }
+
   // Parse object field in expression context
   mutable fun field(): Field {
     if (this.lex.peekKind() is Some(TKDotDotDot())) {
@@ -524,30 +535,39 @@ extension class Parser {
     };
     modifiers = this.modifiers();
     fieldGetSet = this.isGetSet();
-    fieldName = this.getNameOrStringOrNumber();
+    fieldNameOrComputed = this.getFieldNameOrComputed();
+
+    // Handle method definitions
     if (
       this.lex.peekKind() is Some(TKOpenParen()) ||
       this.lex.peekKind() is Some(TKLessThan())
     ) {
-      return this.methodDef(
-        {pos, tparams, params, retType, body} ->
-          FDMethod{
-            pos,
-            isAsync => None(),
-            modifiers,
-            isGetSet => fieldGetSet,
-            name => FNNormal(fieldName),
-            optional => None(),
-            tparams,
-            params,
-            retType,
-            body,
-            cgNode => None(),
-          },
-        FNNormal(fieldName),
-        true,
-      )
+      fieldNameOrComputed match {
+      | FNNormal(fieldName) ->
+        return this.methodDef(
+          {pos, tparams, params, retType, body} ->
+            FDMethod{
+              pos,
+              isAsync => None(),
+              modifiers,
+              isGetSet => fieldGetSet,
+              name => FNNormal(fieldName),
+              optional => None(),
+              tparams,
+              params,
+              retType,
+              body,
+              cgNode => None(),
+            },
+          FNNormal(fieldName),
+          true,
+        )
+      | FNComputed(keyExpr) ->
+        this.error(EPRange(keyExpr.pos), ComputedMethodNameNotSupported())
+      | _ -> void
+      }
     };
+
     tok = this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
     | Some(x) -> x
@@ -555,13 +575,31 @@ extension class Parser {
     if (fieldGetSet.isSome()) {
       this.error(this.lex.posStart(tok), ExpectedAccessorDefinition())
     };
-    tok.kind match {
-    | TKColon() ->
-      _ = this.lex.next();
-      FDNormal(fieldName, this.expr(0))
-    | TKComma()
-    | TKCloseCurly() ->
-      FDNormal(fieldName, Expr(fieldName.pos, Var(fieldName)))
+
+    // Handle value fields
+    fieldNameOrComputed match {
+    | FNNormal(fieldName) ->
+      tok.kind match {
+      | TKColon() ->
+        _ = this.lex.next();
+        FDNormal(fieldName, this.expr(0))
+      | TKComma()
+      | TKCloseCurly() ->
+        FDNormal(fieldName, Expr(fieldName.pos, Var(fieldName)))
+      | _ ->
+        this.error(
+          this.lex.posStart(tok),
+          ExpectedTokens(Array[TKCloseCurly(), TKColon(), TKComma()]),
+        )
+      }
+    | FNComputed(keyExpr) ->
+      tok.kind match {
+      | TKColon() ->
+        _ = this.lex.next();
+        FDComputed(keyExpr, this.expr(0))
+      | _ ->
+        this.error(this.lex.posStart(tok), ExpectedTokens(Array[TKColon()]))
+      }
     | _ ->
       this.error(
         this.lex.posStart(tok),

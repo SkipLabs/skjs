@@ -647,6 +647,11 @@ extension class TypeChecker {
             }
           };
           continue
+        | FDComputed(keyExpr, _valueExpr) ->
+          tcenv.error(
+            Array[(keyExpr.pos, "Computed property keys not yet supported")],
+          );
+          continue
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           tFuns = this.funDecl(tcenv, false, fd, cgNode);

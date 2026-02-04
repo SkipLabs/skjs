@@ -197,6 +197,11 @@ class ExpectedAccessorDefinition() extends ParsingKind {
     `Expected accessor definition`
   }
 }
+class ComputedMethodNameNotSupported() extends ParsingKind {
+  fun toString(): String {
+    `Computed method names not yet supported`
+  }
+}
 class ExpectedToken(tokenKind: TokenKind) extends ParsingKind {
   fun toString(): String {
     `Expected token ${this.tokenKind}`

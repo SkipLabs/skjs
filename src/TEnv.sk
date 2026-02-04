@@ -498,6 +498,8 @@ base class TEnv{
         | FNNormal(name) -> name
         | FNSymbol(symbolName) ->
           notSupported(symbolName.pos, "symbol-named method")
+        | FNComputed(keyExpr) ->
+          notSupported(keyExpr.pos, "computed method name")
         };
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
@@ -1064,6 +1066,12 @@ base class TEnv{
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
+        | FNComputed(keyExpr) ->
+          typingError(
+            Array[
+              (keyExpr.pos, "Computed property names not supported in types"),
+            ],
+          )
         | FNNormal(name) ->
           normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
           optField = TField::create(
@@ -1119,6 +1127,11 @@ base class TEnv{
           None()
         | FNSymbol _ ->
           notSupported(fd.pos, "symbol-named method in literal object type")
+        | FNComputed(keyExpr) ->
+          notSupported(
+            keyExpr.pos,
+            "computed method name in literal object type",
+          )
         | FNNormal(name) ->
           decl = TType::single(TObject::createCall(tFuns));
           optField = TField::create(name.pos, name.value, false, decl);

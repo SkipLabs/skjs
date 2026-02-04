@@ -255,6 +255,8 @@ value class StmtTermination private {
     | FDNormal(_name, e)
     | FDSpread(e) ->
       static::expr(e)
+    | FDComputed(keyExpr, valueExpr) ->
+      static::expr(keyExpr).then(static::expr(valueExpr))
     | FDMethod _ -> static::skip
     }
   }
