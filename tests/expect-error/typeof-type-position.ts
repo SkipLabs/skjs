@@ -114,10 +114,9 @@ class WithStatic {
   }
 }
 
-// FIXME: Constructor type should include static members
+// Static members accessible through typeof
 type WithStaticConstructor = typeof WithStatic;
 function accessStaticThroughTypeof(Ctor: WithStaticConstructor): number {
-  // @skjs-expect-error Invalid return type
   return Ctor.DEFAULT;
 }
 
@@ -165,7 +164,7 @@ function testTypeofVarLocal(): void {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// FIXME: Generic classes with typeof not yet supported
+// typeof with generic classes
 ///////////////////////////////////////////////////////////////////////////////
 
 class Container<T> {
@@ -175,7 +174,6 @@ class Container<T> {
   }
 }
 
-// @skjs-expect-error Invalid number of type arguments
 type ContainerConstructor = typeof Container;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -222,20 +220,29 @@ class AppConfig {
 }
 
 // Static member in type alias context (no TCEnv)
-// @skjs-expect-error TODO: typeof for complex expressions
 type DefaultPortType = typeof AppConfig.DEFAULT_PORT;
 
 // Static member in function parameter (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
 function useDefaultPort(p: typeof AppConfig.DEFAULT_PORT): number {
   return p;
 }
 
 // Static member in function return type (TCEnv available)
-// @skjs-expect-error TODO: typeof for complex expressions
 function getDefaultHost(): typeof AppConfig.DEFAULT_HOST {
   return "localhost";
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// typeof property access - negative tests
+///////////////////////////////////////////////////////////////////////////////
+
+// Non-existent static member
+// @skjs-expect-error Property NONEXISTENT not found
+type NonExistentType = typeof AppConfig.NONEXISTENT;
+
+// Accessing instance field as static (should fail - instance fields not in static type)
+// @skjs-expect-error Property instanceField not found
+type InstanceAsStaticType = typeof AppConfig.instanceField;
 
 ///////////////////////////////////////////////////////////////////////////////
 // prototype access - explicitly not supported
@@ -246,5 +253,5 @@ class Config {
   host: string = "localhost";
 }
 
-// @skjs-expect-error TODO: typeof for complex expressions
+// @skjs-expect-error Construction not supported: prototype access
 type PortType = typeof Config.prototype.port;

@@ -844,46 +844,58 @@ base class TEnv{
   private fun normalizeTypeOf(
     tcenvb: mutable TCEnvBase,
     expr: Expr,
-    pos: PosRange,
+    _pos: PosRange,
   ): TType {
-    // typeof in type position: type T = typeof expression
     // Use expr() when TypeChecker and TCEnv are available
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
       return tc.expr(tcenv, expr, false)
     | _ -> void
     };
-    // Fallback for non-TypeChecker/TCEnv contexts (e.g., type aliases)
+    // Fallback for type alias context
+    this.typeOfExpr(tcenvb, expr)
+  }
+
+  private fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     expr.value match {
-    | Var(Name(_, "undefined")) -> TType::single(TPrimUnit(TUndefined(), pos))
+    | Var(Name(_, "undefined")) ->
+      TType::single(TPrimUnit(TUndefined(), expr.pos))
     | Var(varName) ->
-      // Look up in defMap for variables, functions, and classes
       for (def in this.defMap.getAll(tcenvb.context, varName)) {
         def match {
         | FDVar(_, _, Some(t), _) -> return this.normalize(tcenvb, t)
         | fd @ TopLevelFunDef _ ->
-          cgNode = fd.cgNode match {
-          | Some(n) -> n
-          | None() -> CGNode::create(AnonymousFunDef(fd))
-          };
-          tfuns = this.funDecl(tcenvb, false, fd, cgNode);
-          return TType::single(TObject::createCall(tfuns))
-        | c @ Class _ ->
-          tfuns = this.findConstructorMethod(
-            tcenvb,
-            SortedSet[],
-            varName,
-            c.tparams,
-            Array[],
-          ) match {
-          | None() -> this.makeEmptyConstructor(tcenvb, pos, varName, c)
-          | Some(fd) -> this.makeConstructor(tcenvb, varName, c.tparams, fd)
-          };
-          return TType::single(TObject::createNew(tfuns, pos))
+          cgNode = fd.cgNode.default(CGNode::create(AnonymousFunDef(fd)));
+          return TType::single(
+            TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
+          )
+        | Class _ -> return this.newStatic(tcenvb, varName)
         | _ -> void
         }
       };
       typingError(Array[(varName.pos, `Type ${varName} not found`)])
+    | Dot(_, baseExpr, propertyName) ->
+      if (propertyName.value == "prototype") {
+        notSupported(propertyName.pos, "prototype access")
+      };
+      baseType = this.typeOfExpr(tcenvb, baseExpr);
+      // Look up property in base type
+      subst = Subst::mcreate(tcenvb);
+      baseType.getSTypes(subst, this, Covariant()) match {
+      | Some(stypes) ->
+        stypes.singleElt() match {
+        | Some(TObject(fields, _)) ->
+          fields.maybeGetType(subst, this, propertyName.value, expr.pos) match {
+          | Some(ty) -> return ty
+          | _ -> void
+          }
+        | _ -> void
+        }
+      | _ -> void
+      };
+      typingError(
+        Array[(propertyName.pos, `Property ${propertyName.value} not found`)],
+      )
     | _ ->
       typingError(Array[(expr.pos, "TODO: typeof for complex expressions")])
     }
