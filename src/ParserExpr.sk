@@ -564,7 +564,6 @@ extension class Parser {
         )
       | FNComputed(keyExpr) ->
         this.error(EPRange(keyExpr.pos), ComputedMethodNameNotSupported())
-      | _ -> void
       }
     };
 
@@ -600,11 +599,6 @@ extension class Parser {
       | _ ->
         this.error(this.lex.posStart(tok), ExpectedTokens(Array[TKColon()]))
       }
-    | _ ->
-      this.error(
-        this.lex.posStart(tok),
-        ExpectedTokens(Array[TKCloseCurly(), TKColon(), TKComma()]),
-      )
     }
   }
 

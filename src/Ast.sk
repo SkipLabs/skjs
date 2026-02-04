@@ -388,7 +388,6 @@ base class PostOperator uses XXHashable {
 base class FieldName uses XXHashable {
   fun getName(): String
   | FNNormal(n)
-  | FNSymbol(n)
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
@@ -402,7 +401,6 @@ class FNEmpty() extends FieldName
 base class SimpleFieldName extends NonEmptyFieldName {
   children =
   | FNNormal(Name)
-  | FNSymbol(Name)
   | FNComputed(Expr)
 }
 

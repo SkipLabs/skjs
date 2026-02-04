@@ -129,7 +129,7 @@ extension class Parser {
           FNColon(fname, indexType)
         } else {
           this.expect(TKCloseSquare());
-          FNSymbol(fname);
+          FNComputed(Expr(fname.pos, Var(fname)))
         }
       }
     } else {

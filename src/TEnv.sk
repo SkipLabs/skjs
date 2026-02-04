@@ -496,8 +496,6 @@ base class TEnv{
         if (metIsStatic != isStatic.isSome()) continue;
         metName = fd.name match {
         | FNNormal(name) -> name
-        | FNSymbol(symbolName) ->
-          notSupported(symbolName.pos, "symbol-named method")
         | FNComputed(keyExpr) ->
           notSupported(keyExpr.pos, "computed method name")
         };
@@ -1065,7 +1063,6 @@ base class TEnv{
         };
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
-        | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
         | FNComputed(keyExpr) ->
           typingError(
             Array[
@@ -1125,8 +1122,6 @@ base class TEnv{
         | FNEmpty() ->
           !call = Some(tFuns);
           None()
-        | FNSymbol _ ->
-          notSupported(fd.pos, "symbol-named method in literal object type")
         | FNComputed(keyExpr) ->
           notSupported(
             keyExpr.pos,
