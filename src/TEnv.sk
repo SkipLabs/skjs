@@ -690,7 +690,7 @@ base class TEnv{
     | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
-    | TATypeOf(expr) -> this.normalizeTypeOf(tcenvb, expr, pos)
+    | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
     | TAPrim(kind) ->
       TType::single(
         kind match {
@@ -841,22 +841,12 @@ base class TEnv{
     }
   }
 
-  private fun normalizeTypeOf(
-    tcenvb: mutable TCEnvBase,
-    expr: Expr,
-    _pos: PosRange,
-  ): TType {
-    // Use expr() when TypeChecker and TCEnv are available
+  private fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
       return tc.expr(tcenv, expr, false)
     | _ -> void
     };
-    // Fallback for type alias context
-    this.typeOfExpr(tcenvb, expr)
-  }
-
-  private fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     expr.value match {
     | Var(Name(_, "undefined")) ->
       TType::single(TPrimUnit(TUndefined(), expr.pos))
@@ -873,29 +863,28 @@ base class TEnv{
         | _ -> void
         }
       };
-      typingError(Array[(varName.pos, `Type ${varName} not found`)])
+      typingError(Array[(varName.pos, `Variable ${varName} not found`)])
     | Dot(_, baseExpr, propertyName) ->
       if (propertyName.value == "prototype") {
         notSupported(propertyName.pos, "prototype access")
       };
       baseType = this.typeOfExpr(tcenvb, baseExpr);
-      // Look up property in base type
       subst = Subst::mcreate(tcenvb);
-      baseType.getSTypes(subst, this, Covariant()) match {
-      | Some(stypes) ->
-        stypes.singleElt() match {
-        | Some(TObject(fields, _)) ->
-          fields.maybeGetType(subst, this, propertyName.value, expr.pos) match {
-          | Some(ty) -> return ty
-          | _ -> void
-          }
-        | _ -> void
-        }
-      | _ -> void
-      };
-      typingError(
-        Array[(propertyName.pos, `Property ${propertyName.value} not found`)],
-      )
+      baseType.getSTypes(subst, this, Covariant()).flatMap(sTypes ->
+        sTypes.singleElt()
+      ) match {
+      | Some(TObject(fields, _)) ->
+        fields.getType(subst, this, propertyName.value, expr.pos)
+      | _ ->
+        typingError(
+          Array[
+            (
+              propertyName.pos,
+              `Cannot get type for property of non-object type ${baseType}`,
+            ),
+          ],
+        )
+      }
     | _ ->
       typingError(Array[(expr.pos, "TODO: typeof for complex expressions")])
     }
