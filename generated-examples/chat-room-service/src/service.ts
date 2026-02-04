@@ -65,9 +65,7 @@ export class FilterMessagesByRoomMapper implements Mapper<MessageId, MessageValu
     _context: Context
   ): Iterable<[MessageId, MessageValue]> {
     const result: Array<[MessageId, MessageValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.roomId === this.roomId) {
         result.push([key, v]);
       }
@@ -89,9 +87,7 @@ export class FilterMembersByRoomMapper implements Mapper<RoomMemberId, RoomMembe
     _context: Context
   ): Iterable<[RoomMemberId, RoomMemberValue]> {
     const result: Array<[RoomMemberId, RoomMemberValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.roomId === this.roomId) {
         result.push([key, v]);
       }
