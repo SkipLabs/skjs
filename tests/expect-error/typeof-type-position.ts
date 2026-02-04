@@ -138,25 +138,21 @@ function wrongArgType(Ctor: typeof Point): Point {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// FIXME: typeof with variables not yet implemented
-// These tests document expected behavior once implemented
+// typeof with top-level variables
 ///////////////////////////////////////////////////////////////////////////////
 
 // number variable - type alias context
 const myNumber: number = 42;
-// @skjs-expect-error Type myNumber not found
 type MyNumberType = typeof myNumber;
 
 // string variable - in function parameter
 const myString: string = "hello";
-// @skjs-expect-error Type myString not found
 function testStringParam(x: typeof myString): string {
   return x;
 }
 
 // boolean variable - in function return type
 const myBool: boolean = true;
-// @skjs-expect-error Type myBool not found
 function testBoolReturn(): typeof myBool {
   return true;
 }
@@ -183,7 +179,7 @@ class Container<T> {
 type ContainerConstructor = typeof Container;
 
 ///////////////////////////////////////////////////////////////////////////////
-// FIXME: typeof with function names not yet implemented
+// typeof with function names
 ///////////////////////////////////////////////////////////////////////////////
 
 // Simple function
@@ -191,7 +187,6 @@ function myFunc(x: number): string {
   return x.toString();
 }
 
-// @skjs-expect-error Type myFunc not found
 type MyFuncType = typeof myFunc;
 
 // Function with multiple parameters
@@ -199,23 +194,19 @@ function multiParam(a: number, b: string, c: boolean): number {
   return a;
 }
 
-// @skjs-expect-error Type multiParam not found
 type MultiParamType = typeof multiParam;
 
 // Function returning void
 function voidFunc(): void {}
 
-// @skjs-expect-error Type voidFunc not found
 type VoidFuncType = typeof voidFunc;
 
 // typeof function in parameter position
-// @skjs-expect-error Type myFunc not found
 function useFuncType(f: typeof myFunc): string {
   return f(42);
 }
 
 // typeof function in return position
-// @skjs-expect-error Type myFunc not found
 function returnFuncType(): typeof myFunc {
   return myFunc;
 }

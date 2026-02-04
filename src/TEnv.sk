@@ -847,27 +847,44 @@ base class TEnv{
     pos: PosRange,
   ): TType {
     // typeof in type position: type T = typeof expression
+    // Use expr() when TypeChecker and TCEnv are available
+    (this, tcenvb) match {
+    | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
+      return tc.expr(tcenv, expr, false)
+    | _ -> void
+    };
+    // Fallback for non-TypeChecker/TCEnv contexts (e.g., type aliases)
     expr.value match {
-    | Var(Name(_, "undefined")) ->
-      // typeof undefined -> undefined type
-      TType::single(TPrimUnit(TUndefined(), pos))
-    | Var(className) ->
-      // typeof ClassName -> constructor type
-      // This is the common pattern: type Constructor = typeof MyClass
-      c = this.getClass(tcenvb.context, className);
-      tfuns = this.findConstructorMethod(
-        tcenvb,
-        SortedSet[],
-        className,
-        c.tparams,
-        Array[],
-      ) match {
-      | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
-      | Some(fd) -> this.makeConstructor(tcenvb, className, c.tparams, fd)
+    | Var(Name(_, "undefined")) -> TType::single(TPrimUnit(TUndefined(), pos))
+    | Var(varName) ->
+      // Look up in defMap for variables, functions, and classes
+      for (def in this.defMap.getAll(tcenvb.context, varName)) {
+        def match {
+        | FDVar(_, _, Some(t), _) -> return this.normalize(tcenvb, t)
+        | fd @ TopLevelFunDef _ ->
+          cgNode = fd.cgNode match {
+          | Some(n) -> n
+          | None() -> CGNode::create(AnonymousFunDef(fd))
+          };
+          tfuns = this.funDecl(tcenvb, false, fd, cgNode);
+          return TType::single(TObject::createCall(tfuns))
+        | c @ Class _ ->
+          tfuns = this.findConstructorMethod(
+            tcenvb,
+            SortedSet[],
+            varName,
+            c.tparams,
+            Array[],
+          ) match {
+          | None() -> this.makeEmptyConstructor(tcenvb, pos, varName, c)
+          | Some(fd) -> this.makeConstructor(tcenvb, varName, c.tparams, fd)
+          };
+          return TType::single(TObject::createNew(tfuns, pos))
+        | _ -> void
+        }
       };
-      TType::single(TObject::createNew(tfuns, pos))
+      typingError(Array[(varName.pos, `Type ${varName} not found`)])
     | _ ->
-      // For other expressions, we need full expression type inference
       typingError(Array[(expr.pos, "TODO: typeof for complex expressions")])
     }
   }
