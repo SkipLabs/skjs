@@ -212,10 +212,35 @@ function returnFuncType(): typeof myFunc {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// FIXME: typeof for complex expressions not yet implemented
+// typeof for property access - static class members
 ///////////////////////////////////////////////////////////////////////////////
 
-// typeof property access
+class AppConfig {
+  static readonly DEFAULT_PORT: number = 8080;
+  static readonly DEFAULT_HOST: string = "localhost";
+  instanceField: number = 0;
+}
+
+// Static member in type alias context (no TCEnv)
+// @skjs-expect-error TODO: typeof for complex expressions
+type DefaultPortType = typeof AppConfig.DEFAULT_PORT;
+
+// Static member in function parameter (TCEnv available)
+// @skjs-expect-error TODO: typeof for complex expressions
+function useDefaultPort(p: typeof AppConfig.DEFAULT_PORT): number {
+  return p;
+}
+
+// Static member in function return type (TCEnv available)
+// @skjs-expect-error TODO: typeof for complex expressions
+function getDefaultHost(): typeof AppConfig.DEFAULT_HOST {
+  return "localhost";
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// prototype access - explicitly not supported
+///////////////////////////////////////////////////////////////////////////////
+
 class Config {
   port: number = 3000;
   host: string = "localhost";
