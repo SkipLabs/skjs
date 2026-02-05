@@ -165,7 +165,6 @@ declare const withSymbolField: { [Symbol.iterator]: () => void };
 // Test 9: Computed property in object literal expression
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error Computed property keys not yet supported
 // @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const symObj = { [Symbol.iterator]: () => {} };
 

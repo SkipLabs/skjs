@@ -615,6 +615,7 @@ extension class TypeChecker {
     | Object(efields) ->
       algebraicBranchField: ?(PosRange, TType) = None();
       fields = mutable Map[];
+      symbolFieldsVec = mutable Vector[];
       indexes = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
@@ -662,10 +663,53 @@ extension class TypeChecker {
             }
           };
           continue
-        | FDComputed(keyExpr, _valueExpr) ->
-          tcenv.error(
-            Array[(keyExpr.pos, "Computed property keys not yet supported")],
-          );
+        | FDComputed(keyExpr, valueExpr) ->
+          keyType = this.expr(tcenv, keyExpr, true);
+          valueTy = this.expr(tcenv, valueExpr, mostPrecise);
+          keySType = keyType
+            .getSTypes(tcenv.subst, this, Covariant())
+            .flatMap(stypes -> stypes.singleElt());
+          keySType match {
+          | Some(TPrimValue(TString(), Some(lits), _))
+          | Some(TPrimValue(TNum(), Some(lits), _)) ->
+            lits.singleElt() match {
+            | Some(lit) ->
+              TField::create(keyExpr.pos, lit.val, false, valueTy).each(f ->
+                fields![lit.val] = f
+              )
+            | None() ->
+              tcenv.error(
+                Array[
+                  (
+                    keyExpr.pos,
+                    "Computed key must resolve to a single literal",
+                  ),
+                ],
+              )
+            }
+          | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
+            lits.singleElt() match {
+            | Some(lit) ->
+              symbolFieldsVec.push(
+                TField::create(keyExpr.pos, lit.val, false, valueTy).fromSome(),
+              )
+            | None() ->
+              tcenv.error(
+                Array[
+                  (keyExpr.pos, "Computed key must resolve to a single symbol"),
+                ],
+              )
+            }
+          | _ ->
+            tcenv.error(
+              Array[
+                (
+                  keyExpr.pos,
+                  "Computed property key must be a literal or unique symbol",
+                ),
+              ],
+            )
+          };
           continue
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
@@ -693,6 +737,7 @@ extension class TypeChecker {
         algebraicBranchField,
         TFields::create{
           fields => fields.values().collect(Array),
+          symbolFields => symbolFieldsVec.toArray(),
           indexes => indexes.toArray(),
         },
       );
