@@ -1041,21 +1041,16 @@ base class TEnv{
     }
   }
 
-  // Resolve a computed key expression to a unique symbol ID.
-  // Returns Some(uniqueId) if the expression has a unique symbol type, None() otherwise.
-  private fun resolveSymbolKey(
+  // Resolve a computed key expression to its single SType.
+  private fun resolveComputedKeySType(
     tcenvb: mutable TCEnvBase,
     keyExpr: Expr,
-  ): ?String {
+  ): ?SType {
     keyType = this.typeOfExpr(tcenvb, keyExpr);
     subst = Subst::mcreate(tcenvb);
     keyType.getSTypes(subst, this, Covariant()).flatMap(stypes ->
       stypes.singleElt()
-    ) match {
-    | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
-      lits.singleElt().map(lit -> lit.val)
-    | _ -> None()
-    }
+    )
   }
 
   private fun createTFields(
@@ -1081,20 +1076,55 @@ base class TEnv{
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNComputed(keyExpr) ->
-          this.resolveSymbolKey(tcenvb, keyExpr) match {
-          | Some(uniqueId) ->
+          this.resolveComputedKeySType(tcenvb, keyExpr) match {
+          | Some(TPrimValue(TString(), Some(lits), _))
+          | Some(TPrimValue(TNum(), Some(lits), _)) ->
+            name = lits.singleElt().map(lit -> lit.val) match {
+            | Some(n) -> n
+            | None() ->
+              typingError(
+                Array[
+                  (
+                    keyExpr.pos,
+                    "Computed key must resolve to a single literal",
+                  ),
+                ],
+              )
+            };
             normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
             TField::create(
               keyExpr.pos,
-              uniqueId,
+              name,
               fd.optional is Some _,
               normalizedType,
-            ).each(f -> symbolFieldsVec.push(f));
+            )
+          | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
+            uniqueId = lits.singleElt().map(lit -> lit.val) match {
+            | Some(id) -> id
+            | None() ->
+              typingError(
+                Array[
+                  (keyExpr.pos, "Computed key must resolve to a single symbol"),
+                ],
+              )
+            };
+            normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
+            symbolFieldsVec.push(
+              TField::create(
+                keyExpr.pos,
+                uniqueId,
+                fd.optional is Some _,
+                normalizedType,
+              ).fromSome(),
+            );
             None()
-          | None() ->
+          | _ ->
             typingError(
               Array[
-                (keyExpr.pos, "Computed property key must be a unique symbol"),
+                (
+                  keyExpr.pos,
+                  "Computed property key must be a literal or unique symbol",
+                ),
               ],
             )
           }
@@ -1152,14 +1182,39 @@ base class TEnv{
           !call = Some(tFuns);
           None()
         | FNComputed(keyExpr) ->
-          this.resolveSymbolKey(tcenvb, keyExpr) match {
-          | Some(uniqueId) ->
+          this.resolveComputedKeySType(tcenvb, keyExpr) match {
+          | Some(TPrimValue(TString(), Some(lits), _))
+          | Some(TPrimValue(TNum(), Some(lits), _)) ->
+            name = lits.singleElt().map(lit -> lit.val) match {
+            | Some(n) -> n
+            | None() ->
+              typingError(
+                Array[
+                  (
+                    keyExpr.pos,
+                    "Computed key must resolve to a single literal",
+                  ),
+                ],
+              )
+            };
             decl = TType::single(TObject::createCall(tFuns));
-            TField::create(keyExpr.pos, uniqueId, false, decl).each(f ->
-              symbolFieldsVec.push(f)
+            TField::create(keyExpr.pos, name, false, decl)
+          | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
+            uniqueId = lits.singleElt().map(lit -> lit.val) match {
+            | Some(id) -> id
+            | None() ->
+              typingError(
+                Array[
+                  (keyExpr.pos, "Computed key must resolve to a single symbol"),
+                ],
+              )
+            };
+            decl = TType::single(TObject::createCall(tFuns));
+            symbolFieldsVec.push(
+              TField::create(keyExpr.pos, uniqueId, false, decl).fromSome(),
             );
             None()
-          | None() ->
+          | _ ->
             notSupported(
               keyExpr.pos,
               "computed method name in literal object type",
