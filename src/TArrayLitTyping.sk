@@ -113,8 +113,8 @@ class ArrayLitTyping() {
     )
   }
 
-  // Converts ArrayLit<α, elts> to Array<U> by widening and unioning all elements.
-  static private fun arrayLitToArrayType(
+  // Computes the element type for an array literal by widening and unioning all elements.
+  static private fun arrayLitEltType(
     subst: mutable Subst,
     tenv: TEnv,
     arrLit: TArrayLit,
@@ -124,6 +124,16 @@ class ArrayLitTyping() {
       widenedElt = ArrayLitTyping::widenLiteralType(subst, tenv, elt);
       !eltType = TType::union(subst, tenv, eltType, widenedElt)
     };
+    eltType
+  }
+
+  // Converts ArrayLit<α, elts> to Array<U> by widening and unioning all elements.
+  static private fun arrayLitToArrayType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    arrLit: TArrayLit,
+  ): TType {
+    eltType = ArrayLitTyping::arrayLitEltType(subst, tenv, arrLit);
     TType::inst(Name(arrLit.tvar.pos, "Array"), TArgs(Array[eltType]))
   }
 
@@ -262,13 +272,22 @@ class ArrayLitTyping() {
       | _ -> void
       };
       // Case 2b: ArrayLit<α, elts> <: Array<U1> | ... | Array<Un>
-      // Extract [U1, ..., Un] from the RHS union.
       arrayCandidates = ArrayLitTyping::arrayInstArgs(u2);
-      // If we have array candidates, commit to Array<union(widened elts)>.
       if (!arrayCandidates.isEmpty()) {
-        arrayTy = ArrayLitTyping::arrayLitToArrayType(subst, tenv, arrLit);
+        litEltType = ArrayLitTyping::arrayLitEltType(subst, tenv, arrLit);
+        expectedEltType = arrayCandidates.reduce(
+          (acc, candidate) -> TType::union(subst, tenv, acc, candidate),
+          TType::bottom(arrLit.tvar.pos),
+        );
+        result = TType::isSub(subst, tenv, litEltType, expectedEltType);
+        // Covariance is sound here: we're committing an uncommitted literal,
+        // not assigning an already-typed array. Future writes check against expectedEltType.
+        arrayTy = TType::inst(
+          Name(arrLit.tvar.pos, "Array"),
+          TArgs(Array[expectedEltType]),
+        );
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
-        return Some(TType::isSub(subst, tenv, arrayTy, u2))
+        return Some(result)
       };
       // Case 2c: ArrayLit<α, elts> <: Tuple[U1, ...]
       u2.getSTypes(subst, tenv, Covariant()).flatMap(stypes ->
