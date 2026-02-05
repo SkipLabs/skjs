@@ -1273,6 +1273,12 @@ base class TEnv{
           for (field in fields.fields) {
             !strings = strings.set(field.name);
           };
+          for (symbolField in fields.symbolFields) {
+            symbolType = TType::single(
+              TPrimValue::single(TSymbol(), symbolField.name, pos),
+            );
+            !result = TType::union(subst, this, result, symbolType);
+          };
           for (index in fields.indexes) {
             // TODO: convert numbers to strings
             !result = TType::union(subst, this, result, index.keyType);
@@ -1282,6 +1288,12 @@ base class TEnv{
           for (branch in branches) {
             for (field in branch.fields.fields) {
               !strings = strings.set(field.name);
+            };
+            for (symbolField in branch.fields.symbolFields) {
+              symbolType = TType::single(
+                TPrimValue::single(TSymbol(), symbolField.name, pos),
+              );
+              !result = TType::union(subst, this, result, symbolType);
             };
             for (index in branch.fields.indexes) {
               // TODO: convert numbers to strings
