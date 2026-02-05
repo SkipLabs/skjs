@@ -179,12 +179,14 @@ const iterFn: () => void = withSymbolField[Symbol.iterator];
 // Test 11: for...in does not enumerate symbol properties
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO: enable when symbol fields in types are supported
-// function testForInWithSymbols(obj: { a: number; [Symbol.iterator]: () => void }): void {
-//   for (const k in obj) {
-//     const s: string = k; // k should always be string, not string | symbol
-//   }
-// }
+function testForInWithSymbols(obj: {
+  a: number;
+  [Symbol.iterator]: () => void;
+}): void {
+  for (const k in obj) {
+    const s: string = k; // k should always be string, not string | symbol
+  }
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 12: 'in' operator with symbol key

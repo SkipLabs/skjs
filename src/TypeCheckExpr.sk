@@ -643,11 +643,18 @@ extension class TypeChecker {
             for (spreadSType in spreadSTypes) {
               spreadSType match {
               | TObject(
-                TFields{fields => spreadFields, indexes => spreadIndexes},
+                TFields{
+                  fields => spreadFields,
+                  symbolFields => spreadSymbolFields,
+                  indexes => spreadIndexes,
+                },
                 _pos,
               ) ->
                 for (spreadField in spreadFields) {
                   fields![spreadField.name] = spreadField
+                };
+                for (spreadSymbolField in spreadSymbolFields) {
+                  symbolFieldsVec.push(spreadSymbolField)
                 };
                 for (spreadIndex in spreadIndexes) {
                   indexes.push(spreadIndex)
