@@ -257,7 +257,9 @@ extension class TypeChecker {
               fields.maybeGet(singleField.val) match {
               | Some(TField{isOptional => false}) -> None()
               | Some(_) ->
-                Some(tObj.filter(tField -> tField.name != singleField.val))
+                Some(
+                  tObj.filterFields(tField -> tField.name != singleField.val),
+                )
               | _ -> Some(stype)
               }
             }

@@ -428,8 +428,8 @@ class TObject(fields: TFields) extends SType {
     this.mapOpt(fields -> fields.mapCall(f))
   }
 
-  fun filter(f: TField -> Bool): TObject {
-    this.map(fields -> fields.filter(f))
+  fun filterFields(f: TField -> Bool): TObject {
+    this.map(fields -> fields.filterFields(f))
   }
 
   fun removeFields(fieldsToRemove: SortedSet<String>): TObject {
@@ -923,11 +923,11 @@ class TFields{
     f(this.call).map(call -> this with {call})
   }
 
-  fun filter(f: TField -> Bool): TFields {
+  fun filterFields(f: TField -> Bool): TFields {
     this with {fields => this.fields.filter(f)}
   }
 
-  fun filterMap(f: TField -> ?TField): TFields {
+  fun filterMapFields(f: TField -> ?TField): TFields {
     this with {fields => this.fields.filterMap(f)}
   }
 
