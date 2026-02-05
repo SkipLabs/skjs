@@ -10,12 +10,10 @@ module SKJS;
 
 class TypeChecker{
   errorHandling: ErrorHandling,
-  defMap: DefMap,
-  tenv: TEnv,
   super: ?(CstrType, TType) = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
-} {}
+} extends TEnv {}
 
 /***************************************************************************/
 /* Returns true if a statement always is "terminal", meaning if

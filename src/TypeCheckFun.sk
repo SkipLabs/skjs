@@ -16,9 +16,9 @@ extension class TypeChecker {
       )
     | Some(thisType) -> thisType
     };
-    !this.tenv.subst["this"] = (false, thisType);
+    !this.subst["this"] = (false, thisType);
     tcenv.scope.bind(tcenv, Name(fd.pos, "this"), thisType, true);
-    !this.tenv = this.tenv.addTParams(subst, fd.tparams);
+    !this = this.addTParams(subst, fd.tparams);
     for (i => param in fd.params) {
       param.isRest match {
       | Some(restPos) ->
@@ -46,17 +46,12 @@ extension class TypeChecker {
       };
       paramType = param.type match {
       | None() -> typingError(Array[(param.pos, "Missing type annotation")])
-      | Some(ty) -> this.tenv.normalize(subst, ty)
+      | Some(ty) -> this.normalize(subst, ty)
       };
       param.optional match {
       | None() -> void
       | Some(optionalPos) ->
-        !paramType = TType::unionUndefined(
-          subst,
-          this.tenv,
-          paramType,
-          optionalPos,
-        )
+        !paramType = TType::unionUndefined(subst, this, paramType, optionalPos)
       };
       param.default match {
       | None() -> void
@@ -99,7 +94,7 @@ extension class TypeChecker {
       };
       tcenv.scope.bind(tcenv, paramName, paramType, true)
     };
-    !this.retType = fd.retType.i1.map(rty -> this.tenv.normalize(subst, rty));
+    !this.retType = fd.retType.i1.map(rty -> this.normalize(subst, rty));
     (this, tcenv)
   }
 

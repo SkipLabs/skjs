@@ -2,7 +2,7 @@ module SKJS;
 
 extension class TypeChecker {
   fun isVoid(tcenv: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
-    clauses = ty.expandToClauses(tcenv.subst, this.tenv, Covariant());
+    clauses = ty.expandToClauses(tcenv.subst, this, Covariant());
     for (clause in clauses) {
       clause.stypes match {
       | None() -> return false
@@ -22,7 +22,7 @@ extension class TypeChecker {
 
   // Returns true if the type is not Top but contains void
   fun nonTopContainsVoid(tcenv: mutable TCEnv, ty: TType): Bool {
-    clauses = ty.expandToClauses(tcenv.subst, this.tenv, Covariant());
+    clauses = ty.expandToClauses(tcenv.subst, this, Covariant());
     for (clause in clauses) {
       clause.stypes match {
       | Some(stypes) if (stypes.any(stype ~> stype is TPrimUnit(TVoid(), _))) ->
@@ -58,7 +58,7 @@ extension class TypeChecker {
     ty1: TType,
     ty2: TType,
   ): void {
-    TType::isSub(tcenv.subst, this.tenv, ty1, ty2) match {
+    TType::isSub(tcenv.subst, this, ty1, ty2) match {
     | STOk() -> void
     | err @ STErrorOnTType _ -> tcenv.error(Array[(pos, msg)], Some(err))
     }
@@ -115,7 +115,7 @@ extension class TypeChecker {
   fun checkStringifiable(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
     // Check if the type is a primitive type that can be converted to string
     // Allowed types: string, number, bigint, boolean, null, undefined
-    isStringifiable = ty.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+    isStringifiable = ty.getSTypes(tcenv.subst, this, Covariant()) match {
     | None() -> false
     | Some(stypes) ->
       stypes.all(stype ->
@@ -150,7 +150,7 @@ extension class TypeChecker {
     msg: String,
     ty: TType,
   ): void {
-    ty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
+    ty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(TNum(), _, _)) -> void
@@ -164,7 +164,7 @@ extension class TypeChecker {
     msg: String,
     ty: TType,
   ): TPrimValueKind {
-    ty.getSTypes(tcenv.subst, this.tenv, Covariant()).flatMap(stypes ~>
+    ty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(kind @ TNum(), _, _))
@@ -182,7 +182,7 @@ extension class TypeChecker {
 
   fun makeBoundTVar(tcenv: mutable TCEnv, ty: TType): TType {
     tvar = tcenv.subst.gen(ty.pos);
-    tcenv.subst.grow(this.tenv, tvar, ty, Contravariant());
+    tcenv.subst.grow(this, tvar, ty, Contravariant());
     TType::var(tvar)
   }
 

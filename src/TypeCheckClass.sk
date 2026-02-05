@@ -30,28 +30,28 @@ extension class TypeChecker {
           tparam.name.value,
           tparam.name.pos.fileName,
           tparam.id,
-          tparam.constraint.map(c -> this.tenv.normalize(subst, c)),
+          tparam.constraint.map(c -> this.normalize(subst, c)),
         );
         TType::fromTParamWithConstraint(
           subst,
-          this.tenv,
+          this,
           tparam.name.pos,
           ttypeParam,
         )
       }),
     );
-    !this.tenv = this.tenv.addTParams(subst, c.tparams);
+    !this = this.addTParams(subst, c.tparams);
     fileName = c.name.pos.fileName;
     cstr = TType::inst(c.name, targs);
     thisType = TType::fromTParamWithConstraint(
       subst,
-      this.tenv,
+      this,
       c.name.pos,
       TParamWithConstraint(
         "this",
         fileName,
         Id::createThis(),
-        Some(cstr.expand(subst, this.tenv, Some(Covariant()))),
+        Some(cstr.expand(subst, this, Some(Covariant()))),
       ),
     );
     if (c.extends_.size() != 0) {
@@ -62,15 +62,15 @@ extension class TypeChecker {
       for (ext in c.extends_) {
         ext.value match {
         | TAInst(parentName, parentTArgs) ->
-          superCstr = this.tenv.newConstructor(
+          superCstr = this.newConstructor(
             subst,
             parentName,
-            parentTArgs.map(ty -> this.tenv.normalize(subst, ty)),
+            parentTArgs.map(ty -> this.normalize(subst, ty)),
           );
-          super = this.tenv.new(
+          super = this.new(
             subst,
             parentName,
-            parentTArgs.map(ty -> this.tenv.normalize(subst, ty)),
+            parentTArgs.map(ty -> this.normalize(subst, ty)),
           );
           if (!isInterface) {
             !this.super = Some((superCstr, super));
@@ -78,7 +78,7 @@ extension class TypeChecker {
           tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
           tcenv.recordClassHierarchy{
             child => c,
-            parent => this.tenv.getClass(tcenvl.context, parentName),
+            parent => this.getClass(tcenvl.context, parentName),
           };
           this.checkSubType(
             tcenv,
@@ -94,15 +94,15 @@ extension class TypeChecker {
     for (interface in c.implements) {
       interface.value match {
       | TAInst(parentName, parentTArgs) ->
-        super = this.tenv.new(
+        super = this.new(
           subst,
           parentName,
-          parentTArgs.map(ty -> this.tenv.normalize(subst, ty)),
+          parentTArgs.map(ty -> this.normalize(subst, ty)),
         );
         tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
         tcenv.recordClassHierarchy{
           child => c,
-          parent => this.tenv.getClass(tcenvl.context, parentName),
+          parent => this.getClass(tcenvl.context, parentName),
         };
         this.checkSubType(
           tcenv,
@@ -164,7 +164,7 @@ extension class TypeChecker {
           | None() ->
             tcenvl.error(Array[(field.pos, "Type annotation expected")]);
             None()
-          | Some(ty) -> Some(this.tenv.normalize(subst, ty))
+          | Some(ty) -> Some(this.normalize(subst, ty))
           };
           (field.value, typeOpt) match {
           | (None(), _)
@@ -184,11 +184,8 @@ extension class TypeChecker {
       | fd @ ClassFieldTypeMethod _ ->
         if (fd.name is FNNormal(Name(_, "constructor"))) {
           !hasConstructor = true;
-          partialThisType = this.tenv.new(
-            subst,
-            c.name,
-            targs.targs,
-            fieldType ~> (fieldType is ClassFieldTypeValue{value => Some _}),
+          partialThisType = this.new(subst, c.name, targs.targs, fieldType ~>
+            (fieldType is ClassFieldTypeValue{value => Some _})
           );
           methods = c.fields
             .iterator()
@@ -280,15 +277,10 @@ extension class TypeChecker {
       objType = static::filterMethods(
         blockThisType,
         tcenv.subst,
-        this.tenv,
+        this,
         methods,
       );
-      fullType = static::filterMethods(
-        thisType,
-        tcenv.subst,
-        this.tenv,
-        methods,
-      );
+      fullType = static::filterMethods(thisType, tcenv.subst, this, methods);
       this.checkSubType(
         tcenv,
         fd.pos,

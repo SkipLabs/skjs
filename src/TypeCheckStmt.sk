@@ -57,7 +57,7 @@ extension class TypeChecker {
       | (true, true) -> void /* TODO: everything that follows is unreachable */
       | (true, false) -> tcenv.popScopeReplace(scope2)
       | (false, true) -> tcenv.popScopeReplace(scope1)
-      | (false, false) -> tcenv.mergeScope(this.tenv, scope1, scope2)
+      | (false, false) -> tcenv.mergeScope(this, scope1, scope2)
       }
 
     | For(initStmt, cond, incr, block) ->
@@ -72,7 +72,7 @@ extension class TypeChecker {
       tcenv.popScopeReplace(loopBody);
       _ = this.expr(tcenv, incr, false);
       tcenv.!scope = initScope;
-      tcenv.popScope(this.tenv, loopScope);
+      tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope)
     | Block(stmts) ->
@@ -99,7 +99,7 @@ extension class TypeChecker {
       loopBody = this.block(tcenv, block);
       tcenv.popScopeReplace(loopBody);
       tcenv.!scope = initScope;
-      tcenv.popScope(this.tenv, loopScope);
+      tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope)
 
@@ -112,7 +112,7 @@ extension class TypeChecker {
       loopBody = this.block(tcenv, block, Some((cond, true)));
       tcenv.popScopeReplace(loopBody);
       tcenv.!scope = scopeCopy;
-      tcenv.popScope(this.tenv, loopScope)
+      tcenv.popScope(this, loopScope)
     | Switch(e, branches) -> this.switch(tcenv, e, branches)
     | Try(tryBlock, catchClause, finallyBlock) ->
       scopeCopy = tcenv.scope;
@@ -122,7 +122,7 @@ extension class TypeChecker {
         this.stmt(tcenv, stmt)
       };
       tcenv.!scope = scopeCopy;
-      tcenv.popScope(this.tenv, tryScope);
+      tcenv.popScope(this, tryScope);
 
       catchClause match {
       | Some(CatchClause(param, type, catchBlock)) ->
@@ -140,7 +140,7 @@ extension class TypeChecker {
                 ),
               ],
             );
-            this.tenv.normalize(tcenv, t)
+            this.normalize(tcenv, t)
           | None() -> TType::top(pat.pos)
           };
           this.bind(tcenv, BKLet(), pat, errorType, true, false)
@@ -150,7 +150,7 @@ extension class TypeChecker {
           this.stmt(tcenv, stmt)
         };
         tcenv.!scope = scopeCopy;
-        tcenv.popScope(this.tenv, catchScope)
+        tcenv.popScope(this, catchScope)
       | None() -> void
       };
 
@@ -162,7 +162,7 @@ extension class TypeChecker {
           this.stmt(tcenv, stmt)
         };
         tcenv.!scope = scopeCopy;
-        tcenv.popScope(this.tenv, finallyScope)
+        tcenv.popScope(this, finallyScope)
       | None() -> void
       }
     }
@@ -207,7 +207,7 @@ extension class TypeChecker {
       | SwitchBranch(Default(), _, _) -> None()
       };
       scopeBranch = this.block(tcenv, branches[i].block, cond);
-      tcenv.mergeScope(this.tenv, scope, scopeBranch)
+      tcenv.mergeScope(this, scope, scopeBranch)
     }
   }
 
@@ -218,7 +218,7 @@ extension class TypeChecker {
   ): Bool {
     condType = this.expr(tcenv, e, true);
     cases = condType
-      .getSTypes(tcenv.subst, this.tenv, Covariant())
+      .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TPrimValue(_, Some(lits), _)) ->
       Map::mcreateFromIterator(lits.values().map(x -> (x.val, x.pos)))
@@ -234,7 +234,7 @@ extension class TypeChecker {
       branch match {
       | SwitchBranch(Case(v), _, pos) ->
         this.expr(tcenv, v, true)
-          .getSTypes(tcenv.subst, this.tenv, Covariant())
+          .getSTypes(tcenv.subst, this, Covariant())
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.containsKey(staticValue)) {
@@ -286,7 +286,7 @@ extension class TypeChecker {
     iterableType: TType,
   ): void {
     // TypeScript error code: TS2407
-    iterableType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+    iterableType.getSTypes(tcenv.subst, this, Covariant()) match {
     | None() -> void
     | Some(stypes) ->
       if (
@@ -316,7 +316,7 @@ extension class TypeChecker {
   ): TType {
     result = TType::bottom(pos);
 
-    stypes = iterableType.getSTypes(tcenv.subst, this.tenv, Covariant()) match {
+    stypes = iterableType.getSTypes(tcenv.subst, this, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> stypes
     | _ ->
       tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")]);
@@ -330,21 +330,16 @@ extension class TypeChecker {
           tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
         };
         for (index in fields.indexes) {
-          !result = TType::union(
-            tcenv.subst,
-            this.tenv,
-            result,
-            index.valueType,
-          )
+          !result = TType::union(tcenv.subst, this, result, index.valueType)
         }
       | TTuple(tuple, _) ->
         for (elementType in tuple) {
-          !result = TType::union(tcenv.subst, this.tenv, result, elementType)
+          !result = TType::union(tcenv.subst, this, result, elementType)
         }
       | TPrimValue(TString(), _, _) ->
         !result = TType::union(
           tcenv.subst,
-          this.tenv,
+          this,
           result,
           TType::single(TPrimValue::string(pos)),
         )
