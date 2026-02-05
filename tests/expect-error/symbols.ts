@@ -247,3 +247,29 @@ const asyncIteratorSym: symbol = Symbol.asyncIterator;
 const toStringTagSym: symbol = Symbol.toStringTag;
 const hasInstanceSym: symbol = Symbol.hasInstance;
 const toPrimitiveSym: symbol = Symbol.toPrimitive;
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 18: Bracket assignment with symbol key grows local object
+///////////////////////////////////////////////////////////////////////////////
+
+function testBracketAssignSymbol(): void {
+  let obj = {};
+  obj[Symbol.iterator] = () => {};
+  // After bracket assignment, obj should have the symbol field.
+  // Currently the object doesn't grow via bracket assignment, so this fails:
+  // @skjs-expect-error Invalid annotation
+  const typed: { [Symbol.iterator]: () => void } = obj;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 19: Bracket assignment with string literal key grows local object
+///////////////////////////////////////////////////////////////////////////////
+
+function testBracketAssignString(): void {
+  let obj = {};
+  obj["foo"] = 42;
+  // After bracket assignment, obj should have the "foo" field.
+  // Currently the object doesn't grow via bracket assignment, so this fails:
+  // @skjs-expect-error Invalid annotation
+  const typed: { foo: number } = obj;
+}
