@@ -741,6 +741,31 @@ extension class TFields {
         }
       }
     };
+    // Symbol fields: same logic as string fields, but not checked against index signatures
+    for (ior in fields1.symbolFields.iterDiffInterDiff(fields2.symbolFields)) {
+      ior match {
+      | Left(_) -> void
+      | Right(f2) ->
+        if (!f2.isOptional) {
+          return STRecFieldsField(None(), f2, fields1, fields2)
+        }
+      | Both(f1, f2) ->
+        if (f1.isOptional && !f2.isOptional) {
+          return STRecFieldsField(None(), f1, fields1, fields2)
+        } else {
+          f2type = if (f2.isOptional) {
+            TType::unionUndefined(subst, tenv, f2.type, f2.pos)
+          } else {
+            f2.type
+          };
+          TType::isSub(subst, tenv, f1.type, f2type) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsField(Some(err), f1, fields1, fields2)
+          }
+        }
+      }
+    };
     STOk()
   }
 

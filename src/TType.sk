@@ -863,6 +863,8 @@ class TIndexField{
 
 class TFields{
   fields: InternalKeyedArrayMap<String, TField>,
+  // Fields keyed by unique symbol ID (e.g. Symbol.iterator)
+  symbolFields: InternalKeyedArrayMap<String, TField>,
   indexes: Array<TIndexField>,
   /* There can be several index fields.
      Typescript allows only one per object, but is fine with
@@ -880,6 +882,7 @@ class TFields{
   static fun empty(): TFields {
     TFields{
       fields => InternalKeyedArrayMap::empty(),
+      symbolFields => InternalKeyedArrayMap::empty(),
       indexes => Array[],
       new => None(),
       call => None(),
@@ -888,6 +891,7 @@ class TFields{
 
   static fun create{
     fields: Array<TField> = Array[],
+    symbolFields: Array<TField> = Array[],
     indexes: Array<TIndexField> = Array[],
     new: ?TFuns = None(),
     call: ?TFuns = None(),
@@ -896,6 +900,9 @@ class TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
+      symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
+        symbolFields.sortedBy(x ~> x.name).values(),
+      ),
       indexes,
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
@@ -903,7 +910,9 @@ class TFields{
   }
 
   fun isEmpty(): Bool {
-    this.fields.isEmpty() && this.indexes.isEmpty()
+    this.fields.isEmpty() &&
+      this.symbolFields.isEmpty() &&
+      this.indexes.isEmpty()
   }
 
   fun map(
@@ -913,6 +922,7 @@ class TFields{
   ): TFields {
     TFields{
       fields => this.fields.map(fField),
+      symbolFields => this.symbolFields.map(fField),
       indexes => this.indexes.map(fIndexField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
@@ -949,6 +959,10 @@ class TFields{
     this.fields.maybeGet(fieldName)
   }
 
+  fun maybeGetSymbol(uniqueId: String): ?TField {
+    this.symbolFields.maybeGet(uniqueId)
+  }
+
   fun maybeGetType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -956,6 +970,22 @@ class TFields{
     pos: PosRange,
   ): ?TType {
     this.maybeGet(fieldName).map(fd -> {
+      ty = fd.type;
+      if (fd.isOptional) {
+        TType::unionUndefined(subst, tenv, ty, pos)
+      } else {
+        ty
+      }
+    })
+  }
+
+  fun maybeGetSymbolType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    uniqueId: String,
+    pos: PosRange,
+  ): ?TType {
+    this.maybeGetSymbol(uniqueId).map(fd -> {
       ty = fd.type;
       if (fd.isOptional) {
         TType::unionUndefined(subst, tenv, ty, pos)

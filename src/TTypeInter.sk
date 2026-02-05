@@ -312,6 +312,10 @@ extension class TFields {
     fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
       TField::inter(subst, tenv, x, y)
     );
+    symbolFields = fields1.symbolFields.mapUnion(
+      fields2.symbolFields,
+      (x, y) -> TField::inter(subst, tenv, x, y),
+    );
     // TODO: handle intersection between normal fields and index fields
     indexes = {
       index1o = fields1.maybeSingleIndex();
@@ -328,7 +332,7 @@ extension class TFields {
       | Some(index) -> Array[index]
       }
     };
-    Some(TFields{fields, indexes, call, new})
+    Some(TFields{fields, symbolFields, indexes, call, new})
   }
 }
 
