@@ -36,13 +36,10 @@ value class RelPosRange(start: RelPos, end: RelPos) {
 value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
   const none: this = Pos(-1);
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
-    if (ignorePos) {
-      // Intentionally collide all PosRange hashes so that ASTs can compare as equal if they only differ in PosRange values
-      XXHash(3691082372) // first 8 bytes of sha256("Pos")
-    } else {
-      internal_error("should never xx-hash a Pos")
-    };
+  // Intentionally collide all Pos hashes so that ASTs can compare as equal
+  // if they only differ in Pos values
+  fun xxhash(): XXHash {
+    XXHash(3691082372) // first 8 bytes of sha256("Pos")
   }
 }
 
@@ -80,13 +77,10 @@ value class PosRange private (
     this with {relEnd => Pos(end.value - lexer.currentSymbolPos)}
   }
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
-    if (ignorePos) {
-      // Intentionally collide all PosRange hashes so that ASTs can compare as equal if they only differ in PosRange values
-      XXHash(1232240476) // first 8 bytes of sha256("PosRange")
-    } else {
-      internal_error("should never xx-hash a PosRange")
-    };
+  // Intentionally collide all PosRange hashes so that ASTs can compare as
+  // equal if they only differ in PosRange values
+  fun xxhash(): XXHash {
+    XXHash(1232240476) // first 8 bytes of sha256("PosRange")
   }
 
   fun getStart(symbols: Map<SymbolicPos, Int>): Pos {

@@ -35,11 +35,11 @@ class PrimLiterals private (
     }
   }
 
-  fun xxhash(ignorePos: Bool = false): XXHash {
+  fun xxhash(): XXHash {
     // Custom xxhash that excludes positions, only hashes the strings
     result = 0;
     for (lit in this.inner.values()) {
-      !result = XXHash64.xxHash64(result, lit.val.xxhash(ignorePos).value);
+      !result = XXHash64.xxHash64(result, lit.val.xxhash().value);
     };
     XXHash(result)
   }
