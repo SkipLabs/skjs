@@ -198,9 +198,24 @@ function literalPrecisionLoss(): void {
   takesLiteralTuple(values);
 }
 
+// Array literal commits to annotated type, not narrower inferred type.
+type UnionWithObject = string | number | { x: number };
+function arrayWithObjectUnion(): void {
+  const arr: UnionWithObject[] = ["a", 1];
+  arr[0] = { x: 42 }; // Would fail if arr inferred as Array<string | number>
+}
+
+// Uncommitted literal adopts wider type from first constrained use.
+function arrayCommittedTypeTest(): void {
+  const arr = ["a", 1];
+  const arr2: UnionWithObject[] = arr; // Commits arr to Array<UnionWithObject>
+  arr[0] = { x: 42 }; // Proves arr has the wider type
+}
+
 numbersArray();
 arrayLiteralRefinement();
 unionArrayTarget();
+arrayWithObjectUnion();
 constrainedArrayLiteralDirect();
 constrainedTupleLiteralDirect();
 tupleThenArrayUse();
@@ -214,3 +229,4 @@ emptyArrayWithAnnotation();
 emptyArrayNoAnnotation();
 supertypePositionTest();
 literalPrecisionLoss();
+arrayCommittedTypeTest();
