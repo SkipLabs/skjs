@@ -7,3 +7,4 @@ node_modules/
 docs/*.bbl
 docs/*.log
 docs/*.aux
+.claude/CLAUDE.md

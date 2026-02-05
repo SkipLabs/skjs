@@ -1,7 +1,7 @@
 // Tests for generic spread/rest parameters
 //
 // Standard pattern: ...args: T[] (element type extracted via Symbol.iterator)
-// Bare TVar pattern: ...args: T where T extends Array<X> (not yet supported)
+// Bare TVar pattern: ...args: T where T extends ReadonlyArray<X>
 
 ///////////////////////////////////////////////////////////////////////////////
 // Standard generic spread: ...args: T[]
@@ -37,26 +37,25 @@ function testCombine(): void {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Bare TVar spread: ...args: T where T extends Array<X>
-// TODO: not yet supported — element type extraction doesn't work for bare TVars
+// Bare TVar spread: ...args: T where T extends ReadonlyArray<X>
 ///////////////////////////////////////////////////////////////////////////////
 
-function bareSpread<T extends Array<number>>(...args: T): Array<number> {
+function bareSpread<T extends ReadonlyArray<number>>(
+  ...args: T
+): ReadonlyArray<number> {
   return args;
 }
 
 function testBareSpread(): void {
-  // @skjs-expect-error Invalid call. Unexpected type for ...
   let r = bareSpread(1, 2, 3);
 }
 
-function bareSpreadStr<T extends Array<string>>(...items: T): void {
+function bareSpreadStr<T extends ReadonlyArray<string>>(...items: T): void {
   for (const s of items) {
     console.log(s);
   }
 }
 
 function testBareSpreadStr(): void {
-  // @skjs-expect-error Invalid call. Unexpected type for ...
   bareSpreadStr("a", "b", "c");
 }

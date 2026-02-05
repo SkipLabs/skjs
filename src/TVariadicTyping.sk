@@ -1,0 +1,289 @@
+/**
+ * Variadic constructor pattern support: infer tuple rest params from call-site arguments.
+ *
+ * Motivating example:
+ *
+ *   type DepSafe = string | number | object;
+ *   interface Collection {
+ *     map<Params extends readonly DepSafe[]>(
+ *       mapper: new (...params: Params) => { process(): void },
+ *       ...params: Params
+ *     ): void;
+ *   }
+ *
+ *   class Two { constructor(_p1: string, _p2: number) {} process(): void {} }
+ *
+ *   declare const coll: Collection;
+ *   coll.map(Two, "hello", 42);
+ *
+ * Here `Params` is a generic rest type variable constrained by `readonly DepSafe[]`.
+ * At the call site `coll.map(Two, "hello", 42)`, we infer `Params = [string, number]`
+ * from the trailing arguments.
+ */
+
+module SKJS;
+
+class VariadicTyping() {
+  // Resolves a spread param to its tuple element types, if possible.
+  //
+  // Given a spread param like `...params: Params` where Params is bound to
+  // `[string, number]`, returns `Some(Array[string, number])`.
+  //
+  // Tries two strategies:
+  //   1. Direct: expand the type to clauses and check for a single tuple.
+  //   2. Via tvar: if the type is a type variable, peek its raw binding
+  //      (without constraint intersection, which can destroy tuple structure)
+  //      and check that for a tuple.
+  //
+  // Returns None() if the spread param is not a tuple rest.
+  static fun resolveSpreadToTuple(
+    subst: mutable Subst,
+    tenv: TEnv,
+    spreadParam: ?ArrayType,
+  ): ?Array<TType> {
+    spreadParam match {
+    | Some(ATFullType(fullType)) ->
+      // First check if it's directly a tuple type
+      fullType
+        .expandToClauses(subst, tenv, Contravariant())
+        .getSingleTuple() match {
+      | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
+      | _ ->
+        // If not, check if it's a type variable bound to a tuple.
+        // We peek the raw binding (without constraint intersection) because
+        // constraints can change the shape and hide the tuple structure.
+        // E.g. Params bound to [string, number] with constraint readonly DepSafe[]
+        // would lose the tuple shape if intersected.
+        fullType.getSingleVar().flatMap(tvar -> subst.peekRaw(tvar)) match {
+        | Some(boundType) ->
+          boundType
+            .expandToClauses(subst, tenv, Contravariant())
+            .getSingleTuple() match {
+          | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
+          | _ -> None()
+          }
+        | _ -> None()
+        }
+      }
+    | _ -> None()
+    }
+  }
+
+  // Infers and binds an unbound generic rest type variable from call-site arguments.
+  //
+  // For `coll.map(Two, "hello", 42)` with `...params: Params` where
+  // `Params extends readonly DepSafe[]`:
+  //   - totalSize = 1 (the `mapper` param), args = [Two, "hello", 42]
+  //   - Trailing args after totalSize: ["hello", 42]
+  //   - Infers Params = [string, number] (a tuple)
+  //   - Checks constraint: [string, number] <: readonly DepSafe[] (succeeds)
+  //   - Binds Params to [string, number] in the substitution
+  //
+  // When call-site includes an unknown-length spread (moreArgs is Some),
+  // infers ReadonlyArray<U> instead of a tuple since exact shape is unknown.
+  //
+  // Returns true if inference fails constraints (call is invalid).
+  static fun inferRestTypeVar(
+    tcenv: mutable TCEnv,
+    tenv: TEnv,
+    pos: PosRange,
+    spreadParam: ?ArrayType,
+    totalSize: Int,
+    args: mutable Vector<TType>,
+    moreArgs: ?TType,
+  ): Bool {
+    subst = tcenv.subst;
+    spreadParam match {
+    | Some(ATFullType(fullType)) ->
+      fullType.getSingleVar() match {
+      | Some(tvar) if (subst.isUnbound(tvar)) ->
+        inferred = moreArgs match {
+        | Some(tailElt0) ->
+          // Unknown-length tail: infer ReadonlyArray<U> where U = union of all rest args.
+          tailElt = tailElt0;
+          for (i in Range(totalSize, args.size())) {
+            !tailElt = TType::union(subst, tenv, tailElt, args[i])
+          };
+          TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[tailElt]))
+        | None() ->
+          // No tail: infer an exact tuple (including empty tuple for zero rest args).
+          restArgTypes = mutable Vector[];
+          for (i in Range(totalSize, args.size())) {
+            restArgTypes.push(args[i])
+          };
+          TType::single(TTuple(restArgTypes.toArray(), pos))
+        };
+        saved = subst.save();
+        subst.grow(tenv, tvar, inferred, Contravariant());
+        failedConstraint = tvar.constraints.find(cstr ->
+          !(TType::isSub(subst, tenv, inferred, cstr) is STOk _)
+        );
+        failedConstraint match {
+        | Some(cstr) ->
+          subst.restore(saved);
+          tcenv.error(
+            Array[
+              (
+                pos,
+                `Invalid call. Inferred rest arguments ${inferred} do not satisfy the constraint`,
+              ),
+              (cstr.pos, `Constraint ${cstr}`),
+            ],
+          );
+          true
+        | None() -> false
+        }
+      | _ -> false
+      }
+    | _ -> false
+    }
+  }
+
+  // Validates rest arguments against the expected rest shape after param checking.
+  //
+  // For `coll.map(Two, "hello", 42)` with `...params: Params` bound to `[string, number]`:
+  //   - totalSize = 1 (the `mapper` param), args = [Two, "hello", 42]
+  //   - knownRest = ["hello": string, 42: number] (args after fixed params)
+  //   - Resolves spread to tuple [string, number], checks element-wise:
+  //     "hello" <: string (ok), 42 <: number (ok)
+  //
+  // For tuple-rest, enforces exact arity and rejects unknown-length tails:
+  //   - `coll.map(Two, "hello")` => error: expects 2 rest args, got 1
+  //   - `coll.map(Two, ...arr)` where arr is unknown-length => error
+  //
+  // For array-rest (non-tuple), checks each rest arg against the element type.
+  static fun checkRestArgs(
+    tcenv: mutable TCEnv,
+    tenv: TEnv,
+    pos: PosRange,
+    spreadParam: ?ArrayType,
+    totalSize: Int,
+    args: mutable Vector<TType>,
+    moreArgs: ?TType,
+  ): void {
+    spreadParam match {
+    | None() ->
+      // No rest param: allow extra ignored arguments.
+      void
+    | Some(spreadType) ->
+      knownRest = mutable Vector[];
+      for (i in Range(totalSize, args.size())) {
+        knownRest.push(args[i])
+      };
+
+      static::resolveSpreadToTuple(tcenv.subst, tenv, Some(spreadType)) match {
+      | Some(tupleElts) ->
+        // Exact tuple-rest: reject unknown-length tail, enforce exact arity,
+        // then element-wise subtype check.
+        if (moreArgs is Some(_)) {
+          tcenv.error(
+            Array[
+              (
+                pos,
+                "Invalid call. Tuple rest parameters require exact arguments",
+              ),
+              (
+                spreadType.getPos(),
+                "This call includes an unknown-length spread argument",
+              ),
+            ],
+          )
+        } else if (knownRest.size() != tupleElts.size()) {
+          tcenv.error(
+            Array[
+              (pos, "Invalid call"),
+              (
+                spreadType.getPos(),
+                `Tuple rest parameter expects ${tupleElts.size()} arguments, got ${knownRest.size()}`,
+              ),
+            ],
+          )
+        } else {
+          for (i in Range(0, tupleElts.size())) {
+            TType::isSub(tcenv.subst, tenv, knownRest[i], tupleElts[i]) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ ->
+              tcenv.error(Array[(pos, "Invalid argument")], Some(err))
+            }
+          }
+        }
+      | None() ->
+        // Array-rest (or array-like) validation: check each rest arg against the
+        // element type.
+        spreadType.maybeGetEltType(tcenv.subst, tenv, Contravariant()) match {
+        | Some(eltType) ->
+          for (restArg in knownRest) {
+            TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ ->
+              tcenv.error(Array[(pos, "Invalid argument")], Some(err))
+            }
+          };
+          moreArgs.each(ma -> {
+            TType::isSub(tcenv.subst, tenv, ma, eltType) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ ->
+              tcenv.error(Array[(pos, "Invalid argument")], Some(err))
+            }
+          })
+        | None() ->
+          tcenv.error(
+            Array[
+              (pos, "Invalid call. Unexpected type for ..."),
+              (spreadType.getPos(), `${spreadType} is not an array`),
+            ],
+          )
+        }
+      }
+    }
+  }
+
+  // Handles tuple-to-array subtyping: [T1, T2] <: ReadonlyArray<U>.
+  //
+  // For `[string, number] <: readonly DepSafe[]`:
+  //   - Checks rhs is array-like (has a "length" field)
+  //   - Builds U = string | number
+  //   - Checks ReadonlyArray<string | number> <: readonly DepSafe[] (succeeds)
+  //
+  // ReadonlyArray is covariant, so this correctly allows:
+  //   [Dog, Dog] <: readonly Animal[]  (covariant element type)
+  // And correctly rejects:
+  //   [Dog, Dog] <: Animal[]  (ReadonlyArray is not a subtype of mutable Array)
+  //
+  // Returns Some(result) if this is a tuple-to-array case, None() otherwise.
+  static fun tupleToArraySubtyping(
+    subst: mutable Subst,
+    tenv: TEnv,
+    clauses1: Clauses,
+    rhs: TType,
+  ): ?STResult<TType> {
+    // Check if lhs is a single tuple
+    tuple1 = clauses1.getSingleTuple();
+    if (tuple1 is None()) return None();
+
+    // Cheap array-like trigger: check if rhs has a "length" field.
+    // This is just a gate — correctness comes from ReadonlyArray<U> <: rhs below.
+    rhsClauses = rhs.expandToClauses(subst, tenv, Contravariant());
+    hasLength = rhsClauses.getSTypes(subst, tenv) match {
+    | Some(stypes) ->
+      stypes.singleElt() match {
+      | Some(TObject(fields, _)) -> fields.maybeGet("length") is Some _
+      | _ -> false
+      }
+    | _ -> false
+    };
+    if (!hasLength) return None();
+
+    // Build U = union of tuple element types, then check ReadonlyArray<U> <: rhs.
+    tuple = tuple1.fromSome();
+    pos = tuple.pos;
+    u = tuple.tuple.reduce(
+      (acc, elt) -> TType::union(subst, tenv, acc, elt),
+      TType::bottom(pos),
+    );
+    readonlyArray = TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[u]));
+    Some(TType::isSub(subst, tenv, readonlyArray, rhs))
+  }
+}
+
+module end;

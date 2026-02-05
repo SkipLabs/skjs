@@ -186,8 +186,9 @@ function supertypePositionTest(): void {
 function tupleThenArrayUse2(): void {
   const numbers = [1, 2, 3, 4, 5];
   takesTuple(numbers);
+  // Tuples are readonly, so they can't be passed as mutable Array
   // @skjs-expect-error Invalid call
-  takesArray(numbers); // Modifies the shape of the tuple
+  takesArray(numbers);
   takesTuple(numbers);
 }
 
