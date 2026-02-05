@@ -504,7 +504,7 @@ fun createObject(
   fields: TFields,
 ): TType {
   seen = mutable Set<String>[];
-  for (field in fields) {
+  for (field in fields.fields) {
     if (seen.contains(field.name)) {
       tcenvb.error(Array[(field.pos, "Duplicate field")])
     } else {
@@ -929,10 +929,6 @@ class TFields{
 
   fun filterMap(f: TField -> ?TField): TFields {
     this with {fields => this.fields.filterMap(f)}
-  }
-
-  fun values(): mutable Iterator<TField> {
-    this.fields.values()
   }
 
   fun maybeSingleIndex(): ?TIndexField {

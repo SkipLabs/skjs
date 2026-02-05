@@ -1171,7 +1171,7 @@ base class TEnv{
         stype match {
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | TObject(fields, _) ->
-          for (field in fields) {
+          for (field in fields.fields) {
             !strings = strings.set(field.name);
           };
           for (index in fields.indexes) {
@@ -1181,7 +1181,7 @@ base class TEnv{
         | TAlgebraic(branches, _) ->
           !strings = strings.set(kAlgebraicBranchFieldName);
           for (branch in branches) {
-            for (field in branch.fields) {
+            for (field in branch.fields.fields) {
               !strings = strings.set(field.name);
             };
             for (index in branch.fields.indexes) {
