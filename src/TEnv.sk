@@ -1041,16 +1041,33 @@ base class TEnv{
     }
   }
 
-  /*
-    The first element is the position and the type of the algebraic branch field if it is present.
-   */
+  // Resolve a computed key expression to a unique symbol ID.
+  // Returns Some(uniqueId) if the expression has a unique symbol type, None() otherwise.
+  private fun resolveSymbolKey(
+    tcenvb: mutable TCEnvBase,
+    keyExpr: Expr,
+  ): ?String {
+    keyType = this.typeOfExpr(tcenvb, keyExpr);
+    subst = Subst::mcreate(tcenvb);
+    keyType.getSTypes(subst, this, Covariant()).flatMap(stypes ->
+      stypes.singleElt()
+    ) match {
+    | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
+      lits.singleElt().map(lit -> lit.val)
+    | _ -> None()
+    }
+  }
+
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
     isTopLevelConst: Bool = false,
-  ): (?(PosRange, TType), TFields) {
+  ): /*
+  The first element is the position and the type of the algebraic branch field if it is present.
+  */ (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     indexes = mutable Vector[];
+    symbolFieldsVec = mutable Vector[];
     call: ?TFuns = None();
     new: ?TFuns = None();
 
@@ -1064,11 +1081,23 @@ base class TEnv{
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNComputed(keyExpr) ->
-          typingError(
-            Array[
-              (keyExpr.pos, "Computed property names not supported in types"),
-            ],
-          )
+          this.resolveSymbolKey(tcenvb, keyExpr) match {
+          | Some(uniqueId) ->
+            normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
+            TField::create(
+              keyExpr.pos,
+              uniqueId,
+              fd.optional is Some _,
+              normalizedType,
+            ).each(f -> symbolFieldsVec.push(f));
+            None()
+          | None() ->
+            typingError(
+              Array[
+                (keyExpr.pos, "Computed property key must be a unique symbol"),
+              ],
+            )
+          }
         | FNNormal(name) ->
           normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
           optField = TField::create(
@@ -1123,10 +1152,19 @@ base class TEnv{
           !call = Some(tFuns);
           None()
         | FNComputed(keyExpr) ->
-          notSupported(
-            keyExpr.pos,
-            "computed method name in literal object type",
-          )
+          this.resolveSymbolKey(tcenvb, keyExpr) match {
+          | Some(uniqueId) ->
+            decl = TType::single(TObject::createCall(tFuns));
+            TField::create(keyExpr.pos, uniqueId, false, decl).each(f ->
+              symbolFieldsVec.push(f)
+            );
+            None()
+          | None() ->
+            notSupported(
+              keyExpr.pos,
+              "computed method name in literal object type",
+            )
+          }
         | FNNormal(name) ->
           decl = TType::single(TObject::createCall(tFuns));
           optField = TField::create(name.pos, name.value, false, decl);
@@ -1137,7 +1175,13 @@ base class TEnv{
         }
       }
     });
-    tFields = TFields::create{fields, indexes => indexes.toArray(), new, call};
+    tFields = TFields::create{
+      fields,
+      symbolFields => symbolFieldsVec.toArray(),
+      indexes => indexes.toArray(),
+      new,
+      call,
+    };
     (algebraicBranchField, tFields)
   }
 
