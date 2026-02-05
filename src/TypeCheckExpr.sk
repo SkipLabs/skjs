@@ -1651,6 +1651,9 @@ extension class TypeChecker {
           | (Some(Some(existingLits)), Some(moreLits)) ->
             !litsOptOpt = Some(Some(existingLits.union(moreLits)))
           }
+        | TPrimValue(TSymbol(), _, _pos) ->
+          // Symbols are valid for 'in' but don't participate in field narrowing
+          !litsOptOpt = Some(None())
         | _ ->
           typingError(
             Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)],
