@@ -173,8 +173,8 @@ const symObj = { [Symbol.iterator]: () => {} };
 // Test 10: Symbol property access (requires symbol fields in types)
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO: enable when symbol field access is supported
-// const iterFn: () => void = withSymbolField[Symbol.iterator];
+// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+const iterFn: () => void = withSymbolField[Symbol.iterator];
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 11: for...in does not enumerate symbol properties

@@ -261,7 +261,8 @@ extension class TypeChecker {
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(ty @ TPrimValue(TString(), _, _))
-    | Some(ty @ TPrimValue(TNum(), _, _)) ->
+    | Some(ty @ TPrimValue(TNum(), _, _))
+    | Some(ty @ TPrimValue(TSymbol(), _, _)) ->
       ty
     | _ -> typingError(Array[(idx.pos, "Invalid index type")])
     };
@@ -312,6 +313,20 @@ extension class TypeChecker {
 
       | TObject(fields, objectPos) if (fields.isEmpty()) ->
         !result = TType::top(objectPos)
+
+      | TObject(fields, _) if (idxSType is TPrimValue(TSymbol(), _, _)) ->
+        uniqueId = idxSType match {
+        | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
+        | _ -> None()
+        } match {
+        | Some(id) -> id
+        | None() -> typingError(Array[(idx.pos, "Expected a unique symbol")])
+        };
+        fields.maybeGetSymbolType(tcenv.subst, this, uniqueId, pos) match {
+        | Some(ty) -> !result = TType::union(tcenv.subst, this, result, ty)
+        | None() ->
+          typingError(Array[(pos, "Symbol property not found on object")])
+        }
 
       | TObject(fields, objectPos) ->
         idxSType.literals match {
