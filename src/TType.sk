@@ -725,6 +725,11 @@ base class TPrimValueKind uses XXHashable, Orderable {
   }
 }
 
+base class TComputedKeyKind
+extension class TNum extends TComputedKeyKind
+extension class TString extends TComputedKeyKind
+extension class TSymbol extends TComputedKeyKind
+
 base class STypeTag final () uses Orderable {
   children =
   | TagUndefined
