@@ -154,27 +154,48 @@ function symbolAtRuntime(): void {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 8: Symbol as object key type (future enhancement)
+// Test 8: Symbol-keyed property in type definition (declare const is lazy)
 ///////////////////////////////////////////////////////////////////////////////
 
-// These will fail until symbol-named properties are supported
-// const mySymbol = Symbol("myKey");
-// const obj = {
-//   [mySymbol]: "value"
-// };
+// declare const with symbol field doesn't error at declaration site
+// (the type is lazily normalized - errors appear when accessed)
+declare const withSymbolField: { [Symbol.iterator]: () => void };
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 9: Well-known symbols (future enhancement)
+// Test 9: Computed property in object literal expression
 ///////////////////////////////////////////////////////////////////////////////
 
-// function testIterator(): void {
-//   const arr = [1, 2, 3];
-//   const iterator = arr[Symbol.iterator]();
-//   console.log(iterator.next());
+// @skjs-expect-error Computed property keys not yet supported
+// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+const symObj = { [Symbol.iterator]: () => {} };
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 10: Symbol property access (requires symbol fields in types)
+///////////////////////////////////////////////////////////////////////////////
+
+// TODO: enable when symbol field access is supported
+// const iterFn: () => void = withSymbolField[Symbol.iterator];
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 11: for...in does not enumerate symbol properties
+///////////////////////////////////////////////////////////////////////////////
+
+// TODO: enable when symbol fields in types are supported
+// function testForInWithSymbols(obj: { a: number; [Symbol.iterator]: () => void }): void {
+//   for (const k in obj) {
+//     const s: string = k; // k should always be string, not string | symbol
+//   }
 // }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 10: typeof symbol with null/undefined
+// Test 12: 'in' operator with symbol key
+///////////////////////////////////////////////////////////////////////////////
+
+// @skjs-expect-error Invalid in
+const inResult = Symbol.iterator in {};
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 13: typeof symbol with null/undefined
 ///////////////////////////////////////////////////////////////////////////////
 
 function symbolOrNull(x: symbol | null): symbol | null {
@@ -194,14 +215,14 @@ function symbolOrUndefined(x: symbol | undefined): symbol {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 11: Exported unique symbols
+// Test 14: Exported unique symbols
 ///////////////////////////////////////////////////////////////////////////////
 
 // Exported unique symbol works correctly
 export const exportedUniqueSym: unique symbol = Symbol();
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 12: Static readonly class members with unique symbol
+// Test 15: Static readonly class members with unique symbol
 ///////////////////////////////////////////////////////////////////////////////
 
 class MyClass {
@@ -210,14 +231,14 @@ class MyClass {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 13: Declare const with unique symbol
+// Test 16: Declare const with unique symbol
 ///////////////////////////////////////////////////////////////////////////////
 
 // declare const allows unique symbol (works correctly)
 declare const declaredSym: unique symbol;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 14: Well-known symbols
+// Test 17: Well-known symbols
 ///////////////////////////////////////////////////////////////////////////////
 
 // Well-known symbols are accessible as properties on Symbol
