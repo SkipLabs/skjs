@@ -195,11 +195,12 @@ class ArrayLitTyping() {
     TType::arrayLit(tvar, elementTypes)
   }
 
-  // Returns true if index type forces array refinement (string or non-literal number).
+  // Returns true if index type forces array refinement (string, symbol, or non-literal number).
   // Excludes literal numeric indices (e.g., x[0]) which could be tuple or array.
   static private fun shouldRefineArrayFromIndexType(idxSType: SType): Bool {
     idxSType match {
     | TPrimValue(TString(), _, _) -> true
+    | TPrimValue(TSymbol(), _, _) -> true
     | TPrimValue(TNum(), None(), _) -> true
     | _ -> false
     }
