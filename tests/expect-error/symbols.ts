@@ -269,3 +269,16 @@ function testBracketAssignString(): void {
   // After bracket assignment, obj should have the "foo" field.
   const typed: { foo: number } = obj;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 20: for...of with Symbol.iterator protocol
+///////////////////////////////////////////////////////////////////////////////
+
+function testForOfWithIterator(obj: {
+  [Symbol.iterator](): { next(): { value: number; done: boolean } };
+}): void {
+  // @skjs-expect-error Invalid iterable type for for-of loop
+  for (const x of obj) {
+    const n: number = x;
+  }
+}
