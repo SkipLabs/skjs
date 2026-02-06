@@ -725,11 +725,6 @@ base class TPrimValueKind uses XXHashable, Orderable {
   }
 }
 
-base class TComputedKeyKind
-extension class TNum extends TComputedKeyKind
-extension class TString extends TComputedKeyKind
-extension class TSymbol extends TComputedKeyKind
-
 // Represents either a string/number field name or a symbol key
 base class FieldKey {
   children =
@@ -1036,21 +1031,6 @@ class TFields{
     | FKName(name) -> this.fields.maybeGet(name.value)
     | FKSymbol(_, uniqueId) -> this.symbolFields.maybeGet(uniqueId)
     }
-  }
-
-  fun maybeGetFieldType(
-    subst: mutable Subst,
-    tenv: TEnv,
-    key: FieldKey,
-  ): ?TType {
-    this.maybeGetField(key).map(fd -> {
-      ty = fd.type;
-      if (fd.isOptional) {
-        TType::unionUndefined(subst, tenv, ty, key.pos())
-      } else {
-        ty
-      }
-    })
   }
 
   fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
