@@ -12,6 +12,8 @@ class Box<T> {
 
 // Parameter type is `T | number` where T has constraint `Box<string>`.
 function takeBoxOrNumber<T extends Box<string>>(x: T | number): void {}
+// Same shape as above, only binder name differs (S instead of T).
+function takeBoxOrNumberS<S extends Box<string>>(x: S | number): void {}
 
 function test(): void {
   // A number matches the `number` branch of the union.
@@ -22,4 +24,7 @@ function test(): void {
   const badBox: Box<"foo"> = new Box("foo");
   // @skjs-expect-error Invalid call
   takeBoxOrNumber(badBox);
+
+  // Name-sensitive behavior probe: this variant can differ from the T-binder one.
+  takeBoxOrNumberS(badBox);
 }
