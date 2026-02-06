@@ -246,16 +246,22 @@ function testNestedUnionsGetFirst(
 function testGenericArrayOrObject<T extends Array<number> | Obj>(x: T): T {
   return x;
 }
+// Same shape as above, only binder name differs (S instead of T).
+function testGenericArrayOrObjectS<S extends Array<number> | Obj>(x: S): S {
+  return x;
+}
 
 // Using the generic function
 function testUseGenericArrayOrObject(): void {
   const arr: Array<number> = [1, 2, 3];
   // @skjs-expect-error Invalid call
   const result1 = testGenericArrayOrObject(arr);
+  const result1S = testGenericArrayOrObjectS(arr);
 
   const obj: Obj = { name: "test", value: 42 };
   // TODO: Should this work?
   const result2 = testGenericArrayOrObject(obj);
+  const result2S = testGenericArrayOrObjectS(obj);
 }
 
 ///////////////////////////////////////////////////////////////////////////////
