@@ -730,6 +730,27 @@ extension class TNum extends TComputedKeyKind
 extension class TString extends TComputedKeyKind
 extension class TSymbol extends TComputedKeyKind
 
+// Represents either a string/number field name or a symbol key
+base class FieldKey {
+  children =
+  | FKName(name: Name)
+  | FKSymbol(keyPos: PosRange, uniqueId: String)
+
+  fun pos(): PosRange {
+    this match {
+    | FKName(name) -> name.pos
+    | FKSymbol(keyPos, _) -> keyPos
+    }
+  }
+
+  fun value(): String {
+    this match {
+    | FKName(name) -> name.value
+    | FKSymbol(_, uniqueId) -> uniqueId
+    }
+  }
+}
+
 base class STypeTag final () uses Orderable {
   children =
   | TagUndefined
@@ -994,6 +1015,28 @@ class TFields{
       ty = fd.type;
       if (fd.isOptional) {
         TType::unionUndefined(subst, tenv, ty, pos)
+      } else {
+        ty
+      }
+    })
+  }
+
+  fun maybeGetField(key: FieldKey): ?TField {
+    key match {
+    | FKName(name) -> this.fields.maybeGet(name.value)
+    | FKSymbol(_, uniqueId) -> this.symbolFields.maybeGet(uniqueId)
+    }
+  }
+
+  fun maybeGetFieldType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    key: FieldKey,
+  ): ?TType {
+    this.maybeGetField(key).map(fd -> {
+      ty = fd.type;
+      if (fd.isOptional) {
+        TType::unionUndefined(subst, tenv, ty, key.pos())
       } else {
         ty
       }
