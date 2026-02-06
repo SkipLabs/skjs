@@ -256,8 +256,6 @@ function testBracketAssignSymbol(): void {
   let obj = {};
   obj[Symbol.iterator] = () => {};
   // After bracket assignment, obj should have the symbol field.
-  // Currently the object doesn't grow via bracket assignment, so this fails:
-  // @skjs-expect-error Invalid annotation
   const typed: { [Symbol.iterator]: () => void } = obj;
 }
 
@@ -269,7 +267,5 @@ function testBracketAssignString(): void {
   let obj = {};
   obj["foo"] = 42;
   // After bracket assignment, obj should have the "foo" field.
-  // Currently the object doesn't grow via bracket assignment, so this fails:
-  // @skjs-expect-error Invalid annotation
   const typed: { foo: number } = obj;
 }

@@ -749,6 +749,16 @@ base class FieldKey {
     | FKSymbol(_, uniqueId) -> uniqueId
     }
   }
+
+  fun toType(): TType {
+    TType::single(
+      this match {
+      | FKName(name) -> TPrimValue::single(TString(), name.value, name.pos)
+      | FKSymbol(keyPos, uniqueId) ->
+        TPrimValue::single(TSymbol(), uniqueId, keyPos)
+      },
+    )
+  }
 }
 
 base class STypeTag final () uses Orderable {
