@@ -326,11 +326,17 @@ extension class TypeChecker {
     for (stype in stypes) {
       stype match {
       | TObject(fields, _objectPos) ->
-        if (fields.indexes.isEmpty()) {
-          tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
-        };
-        for (index in fields.indexes) {
-          !result = TType::union(tcenv.subst, this, result, index.valueType)
+        if (!fields.indexes.isEmpty()) {
+          for (index in fields.indexes) {
+            !result = TType::union(tcenv.subst, this, result, index.valueType)
+          }
+        } else {
+          this.getIteratorElementType(tcenv, pos, fields) match {
+          | Some(elementType) ->
+            !result = TType::union(tcenv.subst, this, result, elementType)
+          | None() ->
+            tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
+          }
         }
       | TTuple(tuple, _) ->
         for (elementType in tuple) {
@@ -352,6 +358,80 @@ extension class TypeChecker {
       }
     };
     result
+  }
+
+  fun getIteratorElementType(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    fields: TFields,
+  ): ?TType {
+    // Step 1: Resolve Symbol.iterator's unique ID via synthetic expression
+    symbolExpr = Expr(pos, Var(Name(pos, "Symbol")));
+    iteratorExpr = Expr(
+      pos,
+      Dot(NormalDot(), symbolExpr, Name(pos, "iterator")),
+    );
+    iteratorSymType = this.typeOfExpr(tcenv.subst, iteratorExpr);
+    uniqueId = iteratorSymType
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
+      lits.singleElt() match {
+      | Some(lit) -> lit.val
+      | None() -> return None()
+      }
+    | _ -> return None()
+    };
+
+    // Step 2: Look up [Symbol.iterator] symbol field
+    iteratorMethodType = fields.maybeGetSymbolType(
+      tcenv.subst,
+      this,
+      uniqueId,
+      pos,
+    ) match {
+    | Some(t) -> t
+    | None() -> return None()
+    };
+
+    // Step 3: Get return type of calling [Symbol.iterator]()
+    iteratorType = iteratorMethodType
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(TFields{call => Some((_, TFuns(fun_, _)))}, _)) ->
+      fun_.retType
+    | _ -> return None()
+    };
+
+    // Step 4: Look up "next" on the iterator object
+    nextMethodType = iteratorType
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(iterFields, _)) ->
+      iterFields.maybeGetType(tcenv.subst, this, "next", pos) match {
+      | Some(t) -> t
+      | None() -> return None()
+      }
+    | _ -> return None()
+    };
+
+    // Step 5: Get return type of calling next()
+    nextResultType = nextMethodType
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(TFields{call => Some((_, TFuns(nextFun, _)))}, _)) ->
+      nextFun.retType
+    | _ -> return None()
+    };
+
+    // Step 6: Look up "value" on {value: T, done: boolean}
+    nextResultType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TObject(resultFields, _)) ->
+      resultFields.maybeGetType(tcenv.subst, this, "value", pos)
+    | _ -> None()
+    }
   }
 }
 

@@ -871,7 +871,7 @@ base class TEnv{
     }
   }
 
-  private fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
+  fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
       // Validate structure first - only Var and Dot allowed

@@ -277,7 +277,6 @@ function testBracketAssignString(): void {
 function testForOfWithIterator(obj: {
   [Symbol.iterator](): { next(): { value: number; done: boolean } };
 }): void {
-  // @skjs-expect-error Invalid iterable type for for-of loop
   for (const x of obj) {
     const n: number = x;
   }
