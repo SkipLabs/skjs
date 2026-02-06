@@ -1041,11 +1041,11 @@ base class TEnv{
     }
   }
 
-  // Resolve a computed key expression to its single SType.
-  private fun resolveComputedKeySType(
+  // Resolve a computed key expression to a FieldKey.
+  private fun resolveComputedKeyFieldKey(
     tcenvb: mutable TCEnvBase,
     keyExpr: Expr,
-  ): (TComputedKeyKind, String) {
+  ): FieldKey {
     keyType = this.typeOfExpr(tcenvb, keyExpr);
     subst = Subst::mcreate(tcenvb);
     keyType
@@ -1053,10 +1053,11 @@ base class TEnv{
       .flatMap(stypes -> stypes.singleElt())
       .flatMap(sType ->
         sType match {
-        | TPrimValue(kind @ TString(), Some(lits), _)
-        | TPrimValue(kind @ TNum(), Some(lits), _)
-        | TPrimValue(kind @ TSymbol(), Some(lits), _) ->
-          lits.singleElt().map(lit -> ((kind : TComputedKeyKind), lit.val))
+        | TPrimValue(TString(), Some(lits), _)
+        | TPrimValue(TNum(), Some(lits), _) ->
+          lits.singleElt().map(lit -> FKName(Name(keyExpr.pos, lit.val)))
+        | TPrimValue(TSymbol(), Some(lits), _) ->
+          lits.singleElt().map(lit -> FKSymbol(keyExpr.pos, lit.val))
         | _ -> None()
         }
       ) match {
@@ -1100,8 +1101,8 @@ base class TEnv{
           normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
           name = simpleFieldName match {
           | FNComputed(keyExpr) ->
-            this.resolveComputedKeySType(tcenvb, keyExpr) match {
-            | (TSymbol(), uniqueId) ->
+            this.resolveComputedKeyFieldKey(tcenvb, keyExpr) match {
+            | FKSymbol(_, uniqueId) ->
               symbolFieldsVec.push(
                 TField::create(
                   keyExpr.pos,
@@ -1111,9 +1112,7 @@ base class TEnv{
                 ).fromSome(),
               );
               continue
-            | (TString(), nameStr)
-            | (TNum(), nameStr) ->
-              Name(keyExpr.pos, nameStr)
+            | FKName(name) -> name
             }
           | FNNormal(name) -> name
           };
@@ -1167,15 +1166,13 @@ base class TEnv{
           decl = TType::single(TObject::createCall(tFuns));
           name = simpleFieldName match {
           | FNComputed(keyExpr) ->
-            this.resolveComputedKeySType(tcenvb, keyExpr) match {
-            | (TSymbol(), uniqueId) ->
+            this.resolveComputedKeyFieldKey(tcenvb, keyExpr) match {
+            | FKSymbol(_, uniqueId) ->
               symbolFieldsVec.push(
                 TField::create(keyExpr.pos, uniqueId, false, decl).fromSome(),
               );
               continue
-            | (TString(), nameStr)
-            | (TNum(), nameStr) ->
-              Name(keyExpr.pos, nameStr)
+            | FKName(name) -> name
             }
           | FNNormal(name) -> name
           };
