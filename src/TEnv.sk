@@ -645,7 +645,6 @@ base class TEnv{
   }
 
   fun normalize(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
-    subst = Subst::mcreate(tcenvb);
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
@@ -655,6 +654,7 @@ base class TEnv{
     | TAAsserts _ -> typingError(Array[(pos, "TODO asserts")])
     | TAIs _ -> typingError(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
+      subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
@@ -690,32 +690,7 @@ base class TEnv{
     | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
-    | TATypeOf(expr) ->
-      // typeof in type position: type T = typeof expression
-      // Handle special cases that were working before
-      expr.value match {
-      | Var(Name(_, "undefined")) ->
-        // typeof undefined -> undefined type
-        TType::single(TPrimUnit(TUndefined(), pos))
-      | Var(className) ->
-        // typeof ClassName -> constructor type
-        // This is the common pattern: type Constructor = typeof MyClass
-        c = this.getClass(tcenvb.context, className);
-        tfuns = this.findConstructorMethod(
-          tcenvb,
-          SortedSet[],
-          className,
-          c.tparams,
-          Array[],
-        ) match {
-        | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
-        | Some(fd) -> this.makeConstructor(tcenvb, className, c.tparams, fd)
-        };
-        TType::single(TObject::createNew(tfuns, pos))
-      | _ ->
-        // For other expressions, we need full expression type inference
-        typingError(Array[(expr.pos, "TODO: typeof for complex expressions")])
-      }
+    | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
     | TAPrim(kind) ->
       TType::single(
         kind match {
@@ -786,6 +761,7 @@ base class TEnv{
             ],
           )
         };
+        subst = Subst::mcreate(tcenvb);
         tparam = this.tparams[n.value];
         TType::fromTParamWithConstraint(subst, this, pos, tparam)
       } else if (this.subst.containsKey(n.value)) {
@@ -831,6 +807,7 @@ base class TEnv{
         TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
       }
     | TAUnion(ty1, ty2) ->
+      subst = Subst::mcreate(tcenvb);
       TType::union(
         subst,
         this,
@@ -838,6 +815,7 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | TAInter(ty1, ty2) ->
+      subst = Subst::mcreate(tcenvb);
       TType::inter(
         subst,
         this,
@@ -860,6 +838,78 @@ base class TEnv{
       types = typeVec.toArray();
       TType::single(TTuple(types.map(ty -> this.normalize(tcenvb, ty)), pos))
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
+    }
+  }
+
+  private fun isValidTypeofExpr(expr: Expr): Bool {
+    expr.value match {
+    | Var(_) -> true
+    | Dot(_, baseExpr, _) -> this.isValidTypeofExpr(baseExpr)
+    | _ -> false
+    }
+  }
+
+  private fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
+    (this, tcenvb) match {
+    | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
+      // Validate structure first - only Var and Dot allowed
+      if (!this.isValidTypeofExpr(expr)) {
+        tcenvb.error(
+          Array[
+            (
+              expr.pos,
+              "typeof operand must be an identifier or property access",
+            ),
+          ],
+        )
+      };
+      return tc.expr(tcenv, expr, false)
+    | _ -> void
+    };
+    expr.value match {
+    | Var(Name(_, "undefined")) ->
+      TType::single(TPrimUnit(TUndefined(), expr.pos))
+    | Var(varName) ->
+      for (def in this.defMap.getAll(tcenvb.context, varName)) {
+        def match {
+        | FDVar(_, _, Some(t), _) -> return this.normalize(tcenvb, t)
+        | fd @ TopLevelFunDef _ ->
+          cgNode = fd.cgNode.default(CGNode::create(AnonymousFunDef(fd)));
+          return TType::single(
+            TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
+          )
+        | Class _ -> return this.newStatic(tcenvb, varName)
+        | _ -> void
+        }
+      };
+      typingError(Array[(varName.pos, `Variable ${varName} not found`)])
+    | Dot(_, baseExpr, propertyName) ->
+      if (propertyName.value == "prototype") {
+        notSupported(propertyName.pos, "prototype access")
+      };
+      baseType = this.typeOfExpr(tcenvb, baseExpr);
+      subst = Subst::mcreate(tcenvb);
+      baseType.getSTypes(subst, this, Covariant()).flatMap(sTypes ->
+        sTypes.singleElt()
+      ) match {
+      | Some(TObject(fields, _)) ->
+        fields.getType(subst, this, propertyName.value, expr.pos)
+      | _ ->
+        typingError(
+          Array[
+            (
+              propertyName.pos,
+              `Cannot get type for property of non-object type ${baseType}`,
+            ),
+          ],
+        )
+      }
+    | _ ->
+      typingError(
+        Array[
+          (expr.pos, "typeof operand must be an identifier or property access"),
+        ],
+      )
     }
   }
 
