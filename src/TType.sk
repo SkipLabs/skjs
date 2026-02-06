@@ -159,9 +159,10 @@ class TType private {
     }
   }
 
-  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
-     i.e. such that t3 <= t1 and t3 | t2 >= t1
-   */
+  // Local contract:
+  // `diff(left, right)` returns an over-approximation of set difference
+  // `left \ right` that is still a subtype of `left`.
+  // This operation is read-oriented and is not used to derive write targets.
   static fun diff(
     subst: mutable Subst,
     tenv: TEnv,
@@ -348,6 +349,10 @@ class TType private {
   }
 
   fun expand(subst: mutable Subst, tenv: TEnv, expandTVars: ?Variance): TType {
+    // Local contract:
+    // - expands delayed type constructors/aliases into insts+clauses normal form;
+    // - preserves denotation for read typing;
+    // - does not add write privileges (write checks consume explicit write channels).
     this.expandToVectors(subst, tenv, expandTVars) match {
     | None() -> TType::top(this.pos)
     | Some((insts, clauses)) ->
@@ -389,6 +394,58 @@ base class Variance {
   | Contravariant()
 }
 
+base class ApproxMode {
+  children =
+  | Exact()
+  | Over()
+  | Under()
+}
+
+base class TypeUse {
+  children =
+  | ReadType()
+  | WriteType()
+  | SubtypeLhs()
+  | SubtypeRhs()
+  | RefineTrue()
+  | RefineFalse()
+  | InferConstraint()
+}
+
+class ApproxPolicy() {
+  // Soundness boundary:
+  // callers must choose mode from semantic use-site variance, then call
+  // `TType::{inter,union}WithMode`. Downstream operations may be mode-free
+  // only after this obligation is discharged.
+  static fun modeForInter(use: TypeUse): ApproxMode {
+    use match {
+    | ReadType()
+    | SubtypeRhs()
+    | RefineFalse() ->
+      Over()
+    | WriteType()
+    | SubtypeLhs()
+    | RefineTrue()
+    | InferConstraint() ->
+      Under()
+    }
+  }
+
+  static fun modeForUnion(use: TypeUse): ApproxMode {
+    use match {
+    | WriteType()
+    | SubtypeLhs()
+    | RefineTrue()
+    | InferConstraint() ->
+      Under()
+    | ReadType()
+    | SubtypeRhs()
+    | RefineFalse() ->
+      Over()
+    }
+  }
+}
+
 /***************************************************************************/
 /* Object types. */
 /***************************************************************************/
@@ -399,7 +456,7 @@ class TObject(fields: TFields) extends SType {
   /* Constructors */
 
   static fun createEmpty(pos: PosRange): TObject {
-    TObject(TFields::empty(), pos)
+    TObject(TFields::empty().setObjectTopLike(), pos)
   }
 
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
@@ -498,21 +555,107 @@ class TConstr(
 }
 
 fun createObject(
+  tenv: TEnv,
   tcenvb: mutable TCEnvBase,
   pos: PosRange,
   algebraicBranchField: ?(PosRange, TType),
   fields: TFields,
 ): TType {
-  seen = mutable Set<String>[];
+  subst = Subst::mcreate(tcenvb);
+  for (index in fields.indexes) {
+    // Index domain safety: SKJS only supports key domains under string|number.
+    keySTypesOpt = index.keyType.getSTypes(subst.clone(), tenv, Covariant());
+    isValidKeyType = keySTypesOpt match {
+    | None() -> false
+    | Some(keySTypes) ->
+      keySTypes.all(stype ->
+        stype match {
+        | TPrimValue(TString(), _, _)
+        | TPrimValue(TNum(), _, _) -> true
+        | _ -> false
+        }
+      )
+    };
+    if (!isValidKeyType) {
+      tcenvb.error(
+        Array[
+          (index.pos, "Invalid index signature key type"),
+          (
+            index.pos,
+            `Index key type ${index.keyType} is not a subtype of string | number`,
+          ),
+        ],
+      )
+    }
+  };
   for (field in fields) {
-    if (seen.contains(field.name)) {
-      tcenvb.error(Array[(field.pos, "Duplicate field")])
-    } else {
-      seen.insert(field.name)
+    for (index in fields.indexes) {
+      // Overlap only when the concrete field key is in the index domain.
+      fieldKeyType = TType::single(
+        TPrimValue::single(TString(), field.name, field.pos),
+      );
+      if (TType::isSub(subst.clone(), tenv, fieldKeyType, index.keyType) is STOk()) {
+        // Overlap normalization policy for member get/set pairs:
+        // 1) get-channel must be compatible (field.get <: index.get);
+        // 2) write channels must agree on writeability for the same slot;
+        // 3) if both are writable, index.set must be accepted by field.set.
+        TType::isSub(subst.clone(), tenv, field.type, index.getReadType()) match {
+        | STOk() -> void
+        | _ ->
+          tcenvb.error(
+            Array[
+              (field.pos, `Field ${field.name} is incompatible with index signature`),
+              (
+                field.pos,
+                `Field type ${field.type} is not a subtype of ${index.getReadType()}`,
+              ),
+            ],
+          )
+        };
+        fieldWriteBottom = field.getWriteType().isBottom();
+        indexWriteBottom = index.getWriteType().isBottom();
+        if (fieldWriteBottom != indexWriteBottom) {
+          tcenvb.error(
+            Array[
+              (
+                field.pos,
+                `Field ${field.name} and overlapping index signature disagree on readonly`,
+              ),
+              (
+                index.pos,
+                `Index signature for key type ${index.keyType} has incompatible readonly`,
+              ),
+            ],
+          )
+        } else if (!fieldWriteBottom) {
+          TType::isSub(
+            subst.clone(),
+            tenv,
+            index.getWriteType(),
+            field.getWriteType(),
+          ) match {
+          | STOk() -> void
+          | _ ->
+            tcenvb.error(
+              Array[
+                (
+                  field.pos,
+                  `Field ${field.name} is incompatible with index signature writes`,
+                ),
+                (
+                  field.pos,
+                  `Index write type ${index.getWriteType()} is not a subtype of ${field.getWriteType()}`,
+                ),
+              ],
+            )
+          }
+        }
+      }
     }
   };
   algebraicBranchField match {
   | Some((algebraicBranchFieldPos, algebraicBranchFieldType)) ->
+    // Algebraic encoding requires `kind` to be a constant string literal.
     algebraicBranchFieldType.getConstantString() match {
     | None() ->
       typingError(
@@ -809,16 +952,25 @@ class TField private {
   pos: PosRange,
   name: /* Invariant: name != kAlgebraicBranchFieldName */ String,
   isOptional: Bool,
+  // Read semantics: over-approximated set of values that may be observed
+  // when reading this field.
   type: TType,
+  // Write semantics: under-approximated set of values that are safe to
+  // assign to this field for all concretizations represented here.
+  // `bottom` denotes non-writable (semantic readonly).
+  writeType: TType,
 } uses XXHashable, Orderable, Projectable<String> {
   static fun create(
     pos: PosRange,
     name: String,
     isOptional: Bool,
     type: TType,
+    writeType: TType,
   ): ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
-      Some(TField{pos, name, isOptional, type})
+      Some(
+        TField{pos, name, isOptional, type, writeType},
+      )
     }
   }
 
@@ -826,8 +978,24 @@ class TField private {
     this with {isOptional => true}
   }
 
+  fun withSemanticReadonly(): TField {
+    this with {writeType => TType::bottom(this.pos)}
+  }
+
+  fun isWriteReadonly(): Bool {
+    this.getWriteType().isBottom()
+  }
+
   fun mapType(f: TType -> TType): TField {
-    this with {type => f(this.type)}
+    this with {type => f(this.type), writeType => f(this.writeType)}
+  }
+
+  fun withWriteType(writeType: TType): TField {
+    this with {writeType}
+  }
+
+  fun getWriteType(): TType {
+    this.writeType
   }
 
   fun project(): String {
@@ -839,13 +1007,38 @@ class TField private {
 class TIndexField{
   pos: PosRange,
   keyName: String,
+  // Read semantics for index access.
   keyType: TType,
+  // Read semantics for values obtained via index access.
   valueType: TType,
+  // Write semantics: values safe to assign through this index.
+  // `bottom` denotes non-writable (semantic readonly).
+  writeType: TType,
 } uses XXHashable, Orderable {
   fun mapTypes(f: TType -> TType): TIndexField {
     keyType = f(this.keyType);
     valueType = f(this.valueType);
-    this with {keyType, valueType}
+    this with {keyType, valueType, writeType => f(this.writeType)}
+  }
+
+  fun withSemanticReadonly(): TIndexField {
+    this with {writeType => TType::bottom(this.pos)}
+  }
+
+  fun getReadType(): TType {
+    this.valueType
+  }
+
+  fun getWriteType(): TType {
+    this.writeType
+  }
+
+  fun withWriteType(writeType: TType): TIndexField {
+    this with {writeType}
+  }
+
+  fun isWriteReadonly(): Bool {
+    this.getWriteType().isBottom()
   }
 
   fun toString(): String {
@@ -856,46 +1049,133 @@ class TIndexField{
 class TFields{
   fields: InternalKeyedArrayMap<String, TField>,
   indexes: Array<TIndexField>,
+  // Finite set of keys explicitly removed (e.g. object-rest destructuring).
+  // Read semantics: these keys are absent unless later reintroduced.
+  removedKeys: ArraySet<String>,
   /* There can be several index fields.
      Typescript allows only one per object, but is fine with
      intersecting two objects with index fields, so it's like having
      two of them. This array is expected to have zero or one element
      most of the time, or at most a few elements.
 
-     TODO: allow only subtypes of string | number (| symbol)
-     TODO: if a field name is included an index key type, then its
-      type must be a subtype of the index key type
+     Invariant (enforced at object construction sites):
+     - each index key type is a subtype of string | number
+     - if a field name falls under an index key type, field.type is a
+       subtype of the index value type
   */
   new: ?(/* optional */ Bool, TFuns),
   call: ?(/* optional */ Bool, TFuns),
+  // Marker for values typed as '{}' / 'object': they may hide unknown fields.
+  objectTopLike: Bool,
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{
       fields => InternalKeyedArrayMap::empty(),
       indexes => Array[],
+      removedKeys => ArraySet::empty(),
       new => None(),
       call => None(),
+      objectTopLike => false,
     }
   }
 
   static fun create{
     fields: Array<TField> = Array[],
     indexes: Array<TIndexField> = Array[],
+    removedKeys: ArraySet<String> = ArraySet::empty(),
     new: ?TFuns = None(),
     call: ?TFuns = None(),
+    objectTopLike: Bool = false,
   }: TFields {
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
       indexes,
+      removedKeys,
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
+      objectTopLike,
+    }
+  }
+
+  static fun fieldKeyType(field: TField): TType {
+    TType::single(TPrimValue::single(TString(), field.name, field.pos))
+  }
+
+  static fun sameIndexDomain(
+    subst: mutable Subst,
+    tenv: TEnv,
+    left: TIndexField,
+    right: TIndexField,
+  ): Bool {
+    TType::isSub(subst.clone(), tenv, left.keyType, right.keyType) is STOk() &&
+    TType::isSub(subst.clone(), tenv, right.keyType, left.keyType) is STOk()
+  }
+
+  static fun overlapIndexForField(
+    subst: mutable Subst,
+    tenv: TEnv,
+    field: TField,
+    indexes: Array<TIndexField>,
+  ): ?TIndexField {
+    overlapIndex: ?TIndexField = None();
+    fieldKeyType = TFields::fieldKeyType(field);
+    for (index in indexes) {
+      if (TType::isSub(subst.clone(), tenv, fieldKeyType, index.keyType) is STOk()) {
+        !overlapIndex = Some(index)
+      }
+    };
+    overlapIndex
+  }
+
+  static fun syntheticFieldFromIndex(
+    field: TField,
+    index: TIndexField,
+    isOptional: Bool,
+  ): TField {
+    TField::create(
+      field.pos,
+      field.name,
+      isOptional,
+      index.getReadType(),
+      index.writeType,
+    ).fromSome()
+  }
+
+  static fun mergeUnionMissingField(
+    subst: mutable Subst,
+    tenv: TEnv,
+    field: TField,
+    indexes: Array<TIndexField>,
+  ): TField {
+    TFields::overlapIndexForField(subst, tenv, field, indexes) match {
+    | Some(index) ->
+      synthetic = TFields::syntheticFieldFromIndex(field, index, false);
+      merged = TField::union(subst, tenv, field, synthetic);
+      safeWrite = TField::writeTarget(subst, tenv, field, synthetic);
+      merged.withWriteType(safeWrite)
+    | None() ->
+      field.withOptional().withWriteType(TType::bottom(field.pos))
+    }
+  }
+
+  static fun mergeInterMissingField(
+    subst: mutable Subst,
+    tenv: TEnv,
+    field: TField,
+    indexes: Array<TIndexField>,
+  ): TField {
+    TFields::overlapIndexForField(subst, tenv, field, indexes) match {
+    | Some(index) ->
+      synthetic = TFields::syntheticFieldFromIndex(field, index, true);
+      TField::inter(subst, tenv, field, synthetic)
+    | None() -> field
     }
   }
 
   fun isEmpty(): Bool {
-    this.fields.isEmpty() && this.indexes.isEmpty()
+    this.fields.isEmpty() && this.indexes.isEmpty() && this.removedKeys.isEmpty()
   }
 
   fun map(
@@ -906,8 +1186,21 @@ class TFields{
     TFields{
       fields => this.fields.map(fField),
       indexes => this.indexes.map(fIndexField),
+      removedKeys => this.removedKeys,
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
+      objectTopLike => this.objectTopLike,
+    }
+  }
+
+  fun setObjectTopLike(): TFields {
+    this with {objectTopLike => true}
+  }
+
+  fun asSemanticReadonly(): TFields {
+    this with {
+      fields => this.fields.map(field -> field.withSemanticReadonly()),
+      indexes => this.indexes.map(index -> index.withSemanticReadonly()),
     }
   }
 
@@ -931,14 +1224,19 @@ class TFields{
     this.indexes.size() match {
     | 0 -> None()
     | 1 -> Some(this.indexes[0])
-    | _ ->
-      typingError(
-        Array[
-          (this.indexes[0].pos, "TODO: multiple indexes"),
-          (this.indexes[1].pos, "Second one is here"),
-        ],
-      )
+    | _ -> None()
     }
+  }
+
+  // Returns every index signature that can accept `keyType`.
+  fun matchingIndexes(
+    subst: mutable Subst,
+    tenv: TEnv,
+    keyType: TType,
+  ): Array<TIndexField> {
+    this.indexes.filter(index ->
+      TType::isSub(subst.clone(), tenv, keyType, index.keyType) is STOk()
+    )
   }
 
   fun maybeGet(fieldName: String): ?TField {
@@ -951,6 +1249,9 @@ class TFields{
     fieldName: String,
     pos: PosRange,
   ): ?TType {
+    if (this.removedKeys.contains(ArraySet::single(fieldName))) {
+      return Some(TType::single(TPrimUnit(TUndefined(), pos)))
+    };
     this.maybeGet(fieldName).map(fd -> {
       ty = fd.type;
       if (fd.isOptional) {
@@ -994,6 +1295,7 @@ class TFields{
           fields => this.fields.union(
             InternalKeyedArrayMap::single(fieldToAdd),
           ),
+          removedKeys => this.removedKeys.diff(ArraySet::single(fieldToAdd.name)),
         },
       )
     }
@@ -1001,17 +1303,31 @@ class TFields{
 
   fun removeFields(fieldsToRemove: SortedSet<String>): TFields {
     if (fieldsToRemove.isEmpty()) this else {
-      // TODO: better approximation of removing fields that may intersect with indexes
+      removedKeysToAdd = ArraySet::createFromVector(
+        fieldsToRemove.toArray().collect(Vector),
+      );
       this with {
         fields => this.fields.filter(field ->
           !fieldsToRemove.contains(field.name)
         ),
+        removedKeys => this.removedKeys.union(removedKeysToAdd),
       }
     }
   }
 
   fun toString(): String {
     prettyPrintFields(this)
+  }
+}
+
+extension class TType {
+  // Deep projection used by fresh-object commit checks.
+  // Semantics:
+  // - preserves read behavior;
+  // - marks every object field/index as semantic readonly recursively.
+  // This operation is pure and does not depend on environment state.
+  fun asReadonlyObjectView(): TType {
+    (mutable ProjectObjectMembersReadonly()).type(void, this)
   }
 }
 

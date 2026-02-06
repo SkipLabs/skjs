@@ -18,48 +18,69 @@ declare interface ArrayLike<T> {
 declare class Array<T> implements Iterable<T> {
   constructor(...items: T[]);
   length: number;
-
   [index: number]: T;
 
-  // Existing methods
   find(filter: (item: T) => boolean): undefined | T;
-  push(elt: T): void;
   indexOf(x: T): number;
-  sort(f?: (a: object, b: object) => number): SKJS_Ignorable<Array<T>>;
   map<T2>(f: (item: T) => T2): Array<T2>;
   filter(f: (item: T) => boolean): Array<T>;
   reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
-  static isArray<T>(value: T): boolean;
   join(separator: string): string;
   slice(start: number, end?: number): Array<T>;
-
-  // Additional essential Array methods
-  pop(): T | undefined;
-  shift(): T | undefined;
-  unshift(element: T): number;
-  splice(start: number, deleteCount?: number): SKJS_Ignorable<Array<T>>;
   concat(other: Array<T>): Array<T>;
-  reverse(): SKJS_Ignorable<Array<T>>;
   includes(element: T): boolean;
   lastIndexOf(element: T): number;
   every(predicate: (item: T) => boolean): boolean;
   some(predicate: (item: T) => boolean): boolean;
   forEach(callback: (item: T, index: number) => void): void;
   findIndex(predicate: (item: T) => boolean): number;
+  flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
+  reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
+
+  push(elt: T): void;
+  pop(): T | undefined;
+  shift(): T | undefined;
+  unshift(element: T): number;
+  splice(start: number, deleteCount?: number): SKJS_Ignorable<Array<T>>;
+  sort(f?: (a: object, b: object) => number): SKJS_Ignorable<Array<T>>;
+  reverse(): SKJS_Ignorable<Array<T>>;
   fill(value: T, start?: number, end?: number): SKJS_Ignorable<Array<T>>;
   copyWithin(
     target: number,
     start: number,
     end?: number,
   ): SKJS_Ignorable<Array<T>>;
-  flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
-  reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 
   // Static methods
+  static isArray<T>(value: T): boolean;
   static from<T>(arrayLike: ArrayLike<T> | Iterable<T>): Array<T>;
   // If we have overloads:
   // static from<T, U>(arrayLike: Array<T>, mapFn: (item: T) => U): Array<U>;
   static of<T>(...elements: T[]): Array<T>;
+}
+
+declare interface ReadonlyArray<T> extends Iterable<T> {
+  length: number;
+
+  readonly [index: number]: T;
+
+  find(filter: (item: T) => boolean): undefined | T;
+  indexOf(x: T): number;
+  map<T2>(f: (item: T) => T2): Array<T2>;
+  filter(f: (item: T) => boolean): Array<T>;
+  reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
+  join(separator: string): string;
+  slice(start: number, end?: number): Array<T>;
+
+  concat(other: Array<T>): Array<T>;
+  includes(element: T): boolean;
+  lastIndexOf(element: T): number;
+  every(predicate: (item: T) => boolean): boolean;
+  some(predicate: (item: T) => boolean): boolean;
+  forEach(callback: (item: T, index: number) => void): void;
+  findIndex(predicate: (item: T) => boolean): number;
+  flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
+  reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
 }
 
 declare const Math: {

@@ -1,6 +1,44 @@
 module SKJS;
 
 extension class TypeChecker {
+  // Commit fallback is only sound for literal trees with no alias-carrying
+  // nodes (vars, spreads, calls, getters, etc.). This recursive predicate
+  // approximates that set conservatively.
+  static private fun isCommitSafeFreshExpr(expr: Expr): Bool {
+    expr.value match {
+    | Object(fields) ->
+      fields.all(field ->
+        field match {
+        | FDNormal(_name, fieldExpr) ->
+          TypeChecker::isCommitSafeFreshExpr(fieldExpr)
+        | FDMethod _ ->
+          true
+        | FDSpread _ ->
+          false
+        },
+      )
+    | EArray(els) ->
+      els.all(elt ->
+        elt.value match {
+        | Spread _ -> false
+        | _ -> TypeChecker::isCommitSafeFreshExpr(elt)
+        },
+      )
+    | Number(_)
+    | BigInt(_)
+    | EString(_) ->
+      true
+    | TemplateLiteral(_parts, exprs) ->
+      exprs.all(e -> TypeChecker::isCommitSafeFreshExpr(e))
+    | Var(Name(_, "true"))
+    | Var(Name(_, "false"))
+    | Var(Name(_, "null"))
+    | Var(Name(_, "undefined")) ->
+      true
+    | _ -> false
+    }
+  }
+
   fun isVoid(tcenv: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
     clauses = ty.expandToClauses(tcenv.subst, this, Covariant());
     for (clause in clauses) {
@@ -61,6 +99,50 @@ extension class TypeChecker {
     TType::isSub(tcenv.subst, this, ty1, ty2) match {
     | STOk() -> void
     | err @ STErrorOnTType _ -> tcenv.error(Array[(pos, msg)], Some(err))
+    }
+  }
+
+  fun checkSubTypeWithFreshObjectCommit(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    msg: String,
+    sourceExpr: ?Expr,
+    ty1: TType,
+    ty2: TType,
+  ): void {
+    // Invariant:
+    // - regular path keeps full writable invariance checks;
+    // - fallback is allowed only for recursively fresh literal trees.
+    //
+    // Soundness rationale for fallback:
+    // a recursively fresh literal tree has no pre-existing aliases, so
+    // widening through a readonly projection cannot invalidate a mutable
+    // narrow view reachable from outside the literal.
+    //
+    // Probe on cloned substitutions first to avoid polluting solver state
+    // when the fallback is not taken.
+    probeSubst = tcenv.subst.clone();
+    TType::isSub(probeSubst, this, ty1, ty2) match {
+    | STOk() ->
+      // Apply on the real substitution environment.
+      this.checkSubType(tcenv, pos, msg, ty1, ty2)
+    | err @ STErrorOnTType _ ->
+      isFreshObjectLiteral = sourceExpr match {
+      | Some(e) -> TypeChecker::isCommitSafeFreshExpr(e)
+      | _ -> false
+      };
+      if (isFreshObjectLiteral) {
+        readonlyTarget = ty2.asReadonlyObjectView();
+        probeFallbackSubst = tcenv.subst.clone();
+        TType::isSub(probeFallbackSubst, this, ty1, readonlyTarget) match {
+        | STOk() ->
+          // Commit using real substitution after probe success.
+          this.checkSubType(tcenv, pos, msg, ty1, readonlyTarget)
+        | STError _ -> tcenv.error(Array[(pos, msg)], Some(err))
+        }
+      } else {
+        tcenv.error(Array[(pos, msg)], Some(err))
+      }
     }
   }
 

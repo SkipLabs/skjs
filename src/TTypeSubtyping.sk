@@ -494,6 +494,10 @@ base class STErrorOnTFields(
   | STRecFieldsIndexValue(STErrorOnTType, TIndexField, TIndexField)
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TIndexField)
   | STRecFieldsIndexField(STErrorOnTType, TIndexField, TField)
+  | STRecFieldsReadonlyField(TField, TField)
+  | STRecFieldsReadonlyIndex(TIndexField, TIndexField)
+  | STRecFieldsReadonlyFieldIndex(TField, TIndexField)
+  | STRecFieldsReadonlyIndexField(TIndexField, TField)
   | STRecFieldsField(?STErrorOnTType, TField)
 
   fun toError(
@@ -572,6 +576,38 @@ base class STErrorOnTFields(
           (field2.pos, `is not compatible with field '${field2.name}'`),
         ],
         err.toError(detailForRec),
+      )
+    | STRecFieldsReadonlyField(field1, field2, _fields1, _fields2) ->
+      (
+        List[
+          (field1.pos, `Field '${field1.name}' is readonly`),
+          (field2.pos, `but field '${field2.name}' is mutable`),
+        ],
+        List.Nil(),
+      )
+    | STRecFieldsReadonlyIndex(index1, index2, _fields1, _fields2) ->
+      (
+        List[
+          (index1.pos, `Index field ${index1} is readonly`),
+          (index2.pos, `but index field ${index2} is mutable`),
+        ],
+        List.Nil(),
+      )
+    | STRecFieldsReadonlyFieldIndex(field1, index2, _fields1, _fields2) ->
+      (
+        List[
+          (field1.pos, `Field '${field1.name}' is readonly`),
+          (index2.pos, `but index field ${index2} is mutable`),
+        ],
+        List.Nil(),
+      )
+    | STRecFieldsReadonlyIndexField(index1, field2, _fields1, _fields2) ->
+      (
+        List[
+          (index1.pos, `Index field ${index1} is readonly`),
+          (field2.pos, `but field '${field2.name}' is mutable`),
+        ],
+        List.Nil(),
       )
     | STRecFieldsField(Some(err), field, _fields1, _fields2) ->
       (
@@ -658,6 +694,11 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult<TFields> {
+    // Local object-member subtyping contract:
+    // - required members in `fields2` must be provided by `fields1`;
+    // - read channels are checked covariantly;
+    // - write channels are checked contravariantly;
+    // - non-writable targets (writeType = bottom) cannot be weakened.
     TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
     | None() -> return STRecFieldsCall(None(), fields1, fields2)
     | Some(STOk()) -> void
@@ -670,33 +711,164 @@ extension class TFields {
     | Some(err @ STErrorOnTFuns _) ->
       return STRecFieldsNew(Some(err), fields1, fields2)
     };
-    index1o = fields1.maybeSingleIndex();
-    index2o = fields2.maybeSingleIndex();
-    (index1o, index2o) match {
-    | (_, None()) -> void
-    | (Some(index1), Some(index2)) ->
-      TType::isSub(subst, tenv, index2.keyType, index1.keyType) match {
-      | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexKey(err, index1, index2, fields1, fields2)
-      | STOk() -> void
-      };
-      TType::isSub(subst, tenv, index1.valueType, index2.valueType) match {
-      | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
-      | STOk() -> void
+    indexes1 = fields1.indexes;
+    indexes2 = fields2.indexes;
+    if (!indexes2.isEmpty()) {
+      if (!indexes1.isEmpty()) {
+        for (index2 in indexes2) {
+          foundOk = false;
+          firstKeyErr: ?(TIndexField, STErrorOnTType) = None();
+          firstValErr: ?(TIndexField, STErrorOnTType) = None();
+          firstReadonlyErr: ?TIndexField = None();
+          firstWriteValErr: ?(TIndexField, STErrorOnTType) = None();
+          for (index1 in indexes1) {
+            TType::isSub(subst.clone(), tenv, index2.keyType, index1.keyType) match {
+            | err @ STErrorOnTType _ ->
+              if (firstKeyErr is None()) {
+                !firstKeyErr = Some((index1, err))
+              }
+            | STOk() ->
+              if (
+                index1.getWriteType().isBottom() &&
+                !index2.getWriteType().isBottom()
+              ) {
+                if (firstReadonlyErr is None()) {
+                  !firstReadonlyErr = Some(index1)
+                };
+                continue
+              };
+              // Read channel is covariant: source readable values must be
+              // acceptable where target reads are expected.
+              TType::isSub(
+                subst.clone(),
+                tenv,
+                index1.getReadType(),
+                index2.getReadType(),
+              ) match {
+              | err @ STErrorOnTType _ ->
+                if (firstValErr is None()) {
+                  !firstValErr = Some((index1, err))
+                }
+              | STOk() ->
+                if (
+                  !index2.getWriteType().isBottom() &&
+                  index2.getWriteType().getSingleVar() is None()
+                ) {
+                  // Write channel is contravariant: any value accepted by the
+                  // target write contract must be accepted by the source.
+                  TType::isSub(
+                    subst.clone(),
+                    tenv,
+                    index2.getWriteType(),
+                    index1.getWriteType(),
+                  ) match {
+                  | err @ STErrorOnTType _ ->
+                    if (firstWriteValErr is None()) {
+                      !firstWriteValErr = Some((index1, err))
+                    }
+                  | STOk() ->
+                    !foundOk = true;
+                    break void
+                  }
+                } else {
+                  !foundOk = true;
+                  break void
+                }
+              }
+            }
+          };
+          if (!foundOk) {
+            firstReadonlyErr match {
+            | Some(index1) ->
+              return STRecFieldsReadonlyIndex(index1, index2, fields1, fields2)
+            | None() -> void
+            };
+            firstWriteValErr match {
+            | Some((index1, err)) ->
+              return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
+            | None() -> void
+            };
+            firstValErr match {
+            | Some((index1, err)) ->
+              return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
+            | None() ->
+              firstKeyErr match {
+              | Some((index1, err)) ->
+                return STRecFieldsIndexKey(err, index1, index2, fields1, fields2)
+              | None() -> void
+              }
+            }
+          }
+        }
+      } else {
+        for (index2 in indexes2) {
+          for (f1 in fields1.fields) {
+            f1keyType = TType::single(
+              TPrimValue::single(TString(), f1.name, f1.pos),
+            );
+            TType::isSub(subst.clone(), tenv, f1keyType, index2.keyType) match {
+            | STError _ -> void
+            | STOk() ->
+              if (
+                f1.getWriteType().isBottom() &&
+                !index2.getWriteType().isBottom()
+              ) {
+                return STRecFieldsReadonlyFieldIndex(f1, index2, fields1, fields2)
+              };
+              // Field reads must satisfy the target index read contract.
+              TType::isSub(subst, tenv, f1.type, index2.getReadType()) match {
+              | err @ STErrorOnTType _ ->
+                return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
+              | STOk() -> void
+              };
+              if (
+                !index2.getWriteType().isBottom() &&
+                index2.getWriteType().getSingleVar() is None()
+              ) {
+                // Target index writes must be valid writes for this field.
+                TType::isSub(
+                  subst,
+                  tenv,
+                  index2.getWriteType(),
+                  f1.getWriteType(),
+                ) match {
+                | err @ STErrorOnTType _ ->
+                  return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
+                | STOk() -> void
+                };
+              }
+            }
+          }
+        }
       }
-    | (None(), Some(index2)) ->
-      for (f1 in fields1.fields) {
-        f1keyType = TType::single(
-          TPrimValue::single(TString(), f1.name, f1.pos),
-        );
-        TType::isSub(subst.clone(), tenv, f1keyType, index2.keyType) match {
-        | STError _ -> void
-        | STOk() ->
-          TType::isSub(subst, tenv, f1.type, index2.valueType) match {
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
-          | STOk() -> void
+      ;
+      for (removedKey in fields1.removedKeys) {
+        for (index2 in indexes2) {
+          removedKeyTy = TType::single(
+            TPrimValue::single(TString(), removedKey, index2.pos),
+          );
+          TType::isSub(subst.clone(), tenv, removedKeyTy, index2.keyType) match {
+          | STError _ -> void
+          | STOk() ->
+            undefTy = TType::single(TPrimUnit(TUndefined(), index2.pos));
+            TType::isSub(subst, tenv, undefTy, index2.getReadType()) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ ->
+              removedField = TField::create(
+                index2.pos,
+                removedKey,
+                false,
+                undefTy,
+                undefTy,
+              ).fromSome();
+              return STRecFieldsFieldIndex(
+                err,
+                removedField,
+                index2,
+                fields1,
+                fields2,
+              )
+            }
           }
         }
       }
@@ -708,23 +880,97 @@ extension class TFields {
         if (!f2.isOptional) {
           return STRecFieldsField(None(), f2, fields1, fields2)
         };
-        index1o match {
-        | None() -> void
-        | Some(index1) ->
+        if (indexes1.isEmpty()) {
+          if (fields1.objectTopLike) {
+            return STRecFieldsField(None(), f2, fields1, fields2)
+          }
+        } else {
           f2keyType = TType::single(
             TPrimValue::single(TString(), f2.name, f2.pos),
           );
-          TType::isSub(subst.clone(), tenv, f2keyType, index1.keyType) match {
-          | STError _ -> void
-          | STOk() ->
-            TType::isSub(subst, tenv, index1.valueType, f2.type) match {
-            | err @ STErrorOnTType _ ->
-              return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
-            | STOk() -> void
+          matchedCoverage = false;
+          firstIndexValErr: ?(TIndexField, STErrorOnTType) = None();
+          firstIndexReadonlyErr: ?TIndexField = None();
+          firstIndexWriteErr: ?(TIndexField, STErrorOnTType) = None();
+          for (index1 in indexes1) {
+            TType::isSub(subst.clone(), tenv, f2keyType, index1.keyType) match {
+            | STError _ -> void
+            | STOk() ->
+              if (
+                index1.getWriteType().isBottom() &&
+                !f2.getWriteType().isBottom()
+              ) {
+                if (firstIndexReadonlyErr is None()) {
+                  !firstIndexReadonlyErr = Some(index1)
+                };
+                continue
+              };
+              !matchedCoverage = true;
+              f2type = if (f2.isOptional) {
+                TType::unionUndefined(subst, tenv, f2.type, f2.pos)
+              } else {
+                f2.type
+              };
+              // Index reads are a super-source for the target field reads.
+              TType::isSub(subst.clone(), tenv, index1.getReadType(), f2type) match {
+              | STOk() ->
+                if (
+                  !f2.getWriteType().isBottom() &&
+                  f2.getWriteType().getSingleVar() is None()
+                ) {
+                  // Field writes must be accepted by the source index writes.
+                  TType::isSub(
+                    subst.clone(),
+                    tenv,
+                    f2.getWriteType(),
+                    index1.getWriteType(),
+                  ) match {
+                  | STOk() ->
+                    !firstIndexValErr = None();
+                    !firstIndexWriteErr = None();
+                    break void
+                  | err @ STErrorOnTType _ ->
+                    if (firstIndexWriteErr is None()) {
+                      !firstIndexWriteErr = Some((index1, err))
+                    }
+                  }
+                } else {
+                  !firstIndexValErr = None();
+                  break void
+                }
+              | err @ STErrorOnTType _ ->
+                if (firstIndexValErr is None()) {
+                  !firstIndexValErr = Some((index1, err))
+                }
+              }
+            }
+          };
+          firstIndexReadonlyErr match {
+          | Some(index1) ->
+            return STRecFieldsReadonlyIndexField(index1, f2, fields1, fields2)
+          | None() -> void
+          };
+          firstIndexWriteErr match {
+          | Some((index1, err)) ->
+            return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
+          | None() -> void
+          };
+          firstIndexValErr match {
+          | Some((index1, err)) ->
+            return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
+          | None() ->
+            if (!matchedCoverage && fields1.objectTopLike) {
+              return STRecFieldsField(None(), f2, fields1, fields2)
             }
           }
         }
       | Both(f1, f2) ->
+        if (f1.getWriteType().isBottom() && !f2.getWriteType().isBottom()) {
+          return STRecFieldsReadonlyField(f1, f2, fields1, fields2)
+        };
+        if (fields1.objectTopLike && f1.isOptional) {
+          return STRecFieldsField(None(), f1, fields1, fields2)
+        };
         if (f1.isOptional && !f2.isOptional) {
           return STRecFieldsField(None(), f1, fields1, fields2)
         } else {
@@ -737,6 +983,16 @@ extension class TFields {
           | STOk() -> void
           | err @ STErrorOnTType _ ->
             return STRecFieldsField(Some(err), f1, fields1, fields2)
+          };
+          if (
+            !f2.getWriteType().isBottom() &&
+            f2.getWriteType().getSingleVar() is None()
+          ) {
+            TType::isSub(subst, tenv, f2.getWriteType(), f1.getWriteType()) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ ->
+              return STRecFieldsField(Some(err), f1, fields1, fields2)
+            };
           }
         }
       }

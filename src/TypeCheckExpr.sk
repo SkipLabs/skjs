@@ -222,7 +222,14 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
-        this.checkSubType(tcenv, annotAst.pos, "Invalid annotation", ty, annot);
+        this.checkSubTypeWithFreshObjectCommit(
+          tcenv,
+          annotAst.pos,
+          "Invalid annotation",
+          Some(e),
+          ty,
+          annot,
+        );
         (annot, true)
       }
     }
@@ -337,10 +344,14 @@ extension class TypeChecker {
         } match {
         | None() -> void
         | Some(remainingIdxSType) ->
-          fields.maybeSingleIndex() match {
+          remainingIdxSType.literals match {
           | None() ->
-            remainingIdxSType.literals match {
-            | None() ->
+            matches = fields.matchingIndexes(
+              tcenv.subst,
+              this,
+              TType::single(remainingIdxSType),
+            );
+            if (matches.isEmpty()) {
               typingError(
                 Array[
                   (pos, "Invalid access"),
@@ -348,21 +359,31 @@ extension class TypeChecker {
                     idx.pos,
                     `Index has non-literal type ${remainingIdxSType.kind}`,
                   ),
-                  (objectPos, "But object has no index field"),
+                  (objectPos, "But object has no matching index field"),
                 ],
               )
-            | Some(lits) -> fields.getTypeTypingError(lits.toStringList(), pos)
+            };
+            for (index in matches) {
+              ty = TType::unionUndefined(tcenv.subst, this, index.getReadType(), pos);
+              !result = TType::union(tcenv.subst, this, result, ty)
             }
-          | Some(index) ->
-            this.checkSubType(
-              tcenv,
-              pos,
-              "Invalid index key",
-              TType::single(remainingIdxSType),
-              index.keyType,
-            );
-            ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
-            !result = TType::union(tcenv.subst, this, result, ty)
+          | Some(lits) ->
+            for (lit in lits.values()) {
+              litKey = TType::single(
+                remainingIdxSType.kind match {
+                | TNum() -> TPrimValue::single(TNum(), lit.val, lit.pos)
+                | _ -> TPrimValue::single(TString(), lit.val, lit.pos)
+                },
+              );
+              matches = fields.matchingIndexes(tcenv.subst, this, litKey);
+              if (matches.isEmpty()) {
+                fields.getTypeTypingError(lit.val, lit.pos)
+              };
+              for (index in matches) {
+                ty = TType::unionUndefined(tcenv.subst, this, index.getReadType(), lit.pos);
+                !result = TType::union(tcenv.subst, this, result, ty)
+              }
+            }
           }
         }
 
@@ -434,6 +455,187 @@ extension class TypeChecker {
       )
     };
     result
+  }
+
+  // Type required to safely write into obj[idx].
+  // This is stricter than read typing and intersects constraints across
+  // all possible receiver branches and key alternatives.
+  fun getWrite(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    objType: TType,
+    idx: Expr,
+  ): TType {
+    idxType = this.expr(tcenv, idx, true);
+    idxSType = idxType
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(ty @ TPrimValue(TString(), _, _))
+    | Some(ty @ TPrimValue(TNum(), _, _)) ->
+      ty
+    | _ -> typingError(Array[(idx.pos, "Invalid index type")])
+    };
+    objType2 = ArrayLitTyping::refineForArrayUse(
+      tcenv,
+      this,
+      objType,
+      idxSType,
+    );
+    stypes = objType2.getSTypes(tcenv.subst, this, Covariant()) match {
+    | None() ->
+      typingError(
+        Array[
+          (pos, `Invalid access for type ${prettyPrintType(false, objType2)}`),
+        ],
+      )
+    | Some(stypes) if (stypes.isEmpty()) ->
+      typingError(
+        Array[
+          (pos, `Invalid access for type ${prettyPrintType(false, objType2)}`),
+        ],
+      )
+    | Some(stypes) -> stypes.values().collect(Array)
+    };
+
+    branchTypeOpt: ?TType = None();
+    for (stype in stypes) {
+      branchType = stype match {
+      | tobj @ TObject _ ->
+        // Write typing must stay in the setter channel only.
+        // Do not fall back to read access typing here.
+        this.getWriteOnObject(tcenv, pos, tobj, idx, idxSType)
+      | _ ->
+        this.get(tcenv, pos, TType::single(stype), idx, false)
+      };
+      branchTypeOpt match {
+      | None() -> !branchTypeOpt = Some(branchType)
+      | Some(acc) ->
+        !branchTypeOpt = Some(
+          TType::interForUse(tcenv.subst, this, acc, branchType, WriteType()),
+        )
+      }
+    };
+    branchTypeOpt.fromSome()
+  }
+
+  private fun getWriteOnObject(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    object: TObject,
+    idx: Expr,
+    idxSType: TPrimValue,
+  ): TType {
+    fields = object.fields;
+    constraints = mutable Vector[];
+    idxSType.literals match {
+    | None() ->
+      matches = fields.matchingIndexes(tcenv.subst, this, TType::single(idxSType));
+      if (matches.isEmpty()) {
+        typingError(
+          Array[
+            (pos, "Invalid access"),
+            (idx.pos, `Index has non-literal type ${idxSType.kind}`),
+            (object.pos, "But object has no matching index field"),
+          ],
+        )
+      };
+      for (index in matches) {
+        if (index.isWriteReadonly()) {
+          tcenv.error(
+            Array[
+              (pos, "Invalid assignment"),
+              (idx.pos, "Cannot assign through readonly index signature"),
+            ],
+          )
+        };
+        this.checkSubType(
+          tcenv,
+          pos,
+          "Invalid index key",
+          TType::single(idxSType),
+          index.keyType,
+        );
+        constraints.push(index.getWriteType())
+      }
+    | Some(lits) ->
+      for (lit in lits.values()) {
+        matched = false;
+        fields.maybeGet(lit.val) match {
+        | Some(fd) ->
+          if (fd.isWriteReadonly()) {
+            tcenv.error(
+              Array[
+                (pos, "Invalid assignment"),
+                (lit.pos, `Cannot assign to readonly field '${lit.val}'`),
+              ],
+            )
+          };
+          // Read type can be wider than sound write type on collapsed unions.
+          constraints.push(fd.getWriteType());
+          !matched = true
+        | None() -> void
+        };
+        keyTy = TType::single(
+          idxSType.kind match {
+          | TNum() -> TPrimValue::single(TNum(), lit.val, lit.pos)
+          | TString() -> TPrimValue::single(TString(), lit.val, lit.pos)
+          | _ -> TPrimValue::single(TString(), lit.val, lit.pos)
+          },
+        );
+        for (index in fields.matchingIndexes(tcenv.subst, this, keyTy)) {
+          if (index.isWriteReadonly()) {
+            tcenv.error(
+              Array[
+                (pos, "Invalid assignment"),
+                (
+                  lit.pos,
+                  `Cannot assign through readonly index signature for '${lit.val}'`,
+                ),
+              ],
+            )
+          };
+          constraints.push(index.getWriteType());
+          !matched = true
+        };
+        if (!matched) {
+          fields.getTypeTypingError(lit.val, lit.pos)
+        }
+      }
+    };
+
+    if (constraints.isEmpty()) {
+      typingError(Array[(pos, "Invalid assignment target")])
+    };
+    required = constraints[0];
+    for (i in Range(1, constraints.size())) {
+      !required = TType::interForUse(
+        tcenv.subst,
+        this,
+        required,
+        constraints[i],
+        WriteType(),
+      )
+    };
+    required
+  }
+
+  private fun lvalueWriteType(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    e1: Expr,
+  ): TType {
+    e1.value match {
+    | Dot(NormalDot(), eObj, fieldName) ->
+      this.getWrite(
+        tcenv,
+        pos,
+        this.expr(tcenv, eObj, false),
+        Expr(fieldName.pos, EString(fieldName.value)),
+      )
+    | Get(eObj, idx) ->
+      this.getWrite(tcenv, pos, this.expr(tcenv, eObj, false), idx)
+    | _ -> this.expr(tcenv, e1, false)
+    }
   }
 
   fun exprWithoutNullish(
@@ -652,7 +854,7 @@ extension class TypeChecker {
           tFuns = this.funDecl(tcenv, false, fd, cgNode);
           (name, TType::single(TObject::createCall(tFuns)))
         };
-        TField::create(name.pos, name.value, false, ty) match {
+        TField::create(name.pos, name.value, false, ty, ty) match {
         | None() ->
           algebraicBranchField match {
           | Some((existingPos, _existingType)) ->
@@ -668,6 +870,7 @@ extension class TypeChecker {
         }
       };
       obj = createObject(
+        this,
         tcenv,
         pos,
         algebraicBranchField,
@@ -1409,12 +1612,18 @@ extension class TypeChecker {
         bound match {
         | None() -> void
         | Some(objectType) ->
+          // Bound checks for writes must use the lvalue write channel.
           this.checkSubType(
             tcenv,
             e2.pos,
             "Invalid assignment",
             fieldType,
-            this.dot(tcenv, e1.pos, objectType, fieldName),
+            this.getWrite(
+              tcenv,
+              e1.pos,
+              objectType,
+              Expr(fieldName.pos, EString(fieldName.value)),
+            ),
           )
         };
         None()
@@ -1422,8 +1631,8 @@ extension class TypeChecker {
       };
       this.assignLocalObject(tcenv, pos, local, fieldName, fieldType, used)
     | _ ->
-      ty1 = this.expr(tcenv, e1, false);
       ty2 = this.expr(tcenv, e2, mostPrecise);
+      ty1 = this.lvalueWriteType(tcenv, pos, e1);
       this.checkSubType(tcenv, e2.pos, "Invalid assignment", ty2, ty1);
       ty1
     }
@@ -1481,8 +1690,19 @@ extension class TypeChecker {
         });
         matchingIndex match {
         | Some(indexField) ->
+          if (indexField.isWriteReadonly()) {
+            tcenv.error(
+              Array[
+                (pos, "Invalid assignment"),
+                (
+                  fieldName.pos,
+                  `Cannot assign through readonly index signature for '${fieldName}'`,
+                ),
+              ],
+            )
+          };
           // Field name matches index signature, use index value type
-          indexField.valueType
+          indexField.getWriteType()
         | None() ->
           // No matching index, add a new field
           used match {
@@ -1509,6 +1729,7 @@ extension class TypeChecker {
             fieldType.pos,
             fieldName.value,
             false,
+            fieldType,
             fieldType,
           ) match {
           | None() ->
@@ -1541,7 +1762,16 @@ extension class TypeChecker {
           };
           fieldType
         }
-      | Some(fd) -> fd.type
+      | Some(fd) ->
+        if (fd.isWriteReadonly()) {
+          tcenv.error(
+            Array[
+              (pos, "Invalid assignment"),
+              (fieldName.pos, `Cannot assign to readonly field '${fieldName}'`),
+            ],
+          )
+        };
+        fd.getWriteType()
       };
       this.checkSubType(
         tcenv,
@@ -1602,6 +1832,7 @@ extension class TypeChecker {
     mostPrecise: Bool,
   ): TType {
     args = mutable Vector<TType>[];
+    argSources = mutable Vector<?Expr>[];
     moreArgs: ?TType = None();
 
     for (argExpr in argExprs) {
@@ -1630,7 +1861,11 @@ extension class TypeChecker {
           }
         | Some(TTuple(tupElts, _)) ->
           moreArgs match {
-          | None() -> args.extend(tupElts)
+          | None() ->
+            args.extend(tupElts);
+            for (_ in tupElts) {
+              argSources.push(None())
+            }
           | Some(ma) ->
             for (tupElt in tupElts) {
               !ma = TType::union(tcenv.subst, this, ma, tupElt)
@@ -1648,7 +1883,9 @@ extension class TypeChecker {
       | _ ->
         argTy = this.expr(tcenv, argExpr, mostPrecise);
         moreArgs match {
-        | None() -> args.push(argTy)
+        | None() ->
+          args.push(argTy);
+          argSources.push(Some(argExpr))
         | Some(ma) ->
           !moreArgs = Some(TType::union(tcenv.subst, this, ma, argTy))
         }
@@ -1694,10 +1931,12 @@ extension class TypeChecker {
             );
             break void
           } else {
-            this.checkSubType(
+            argSource = if (i < argSources.size()) argSources[i] else None();
+            this.checkSubTypeWithFreshObjectCommit(
               tcenv,
               pos,
               "Invalid call",
+              argSource,
               args[i],
               tfun.params[i],
             )
@@ -1713,10 +1952,12 @@ extension class TypeChecker {
             | Some(ma) -> ma
             }
           };
-          this.checkSubType(
+          argSource = if (i < argSources.size()) argSources[i] else None();
+          this.checkSubTypeWithFreshObjectCommit(
             tcenv,
             pos,
             "Invalid call",
+            argSource,
             arg,
             tfun.optionalParams[j],
           )

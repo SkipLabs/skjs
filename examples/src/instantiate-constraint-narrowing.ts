@@ -26,7 +26,7 @@ export function instantiateShouldNotClose(col: Collection): string {
 
 // Same idea, but with an implicit instantiation where the type argument is a
 // fresh inference variable (not an explicit concrete type like `string`).
-type Box<T extends StrOrNum> = { v: T };
+type Box<T extends StrOrNum> = { readonly v: T };
 
 function mkBox<T extends StrOrNum>(v: T): Box<T> {
   return { v: v };

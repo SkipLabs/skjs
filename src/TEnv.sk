@@ -454,6 +454,7 @@ base class TEnv{
             fieldName,
             field.optional is Some _,
             type,
+            if (fieldIsReadonly) TType::bottom(field.pos) else type,
           ) match {
           | None() ->
             tcenvb.error(
@@ -472,6 +473,7 @@ base class TEnv{
               keyName => indexName.value,
               keyType,
               valueType,
+              writeType => if (fieldIsReadonly) TType::bottom(indexName.pos) else valueType,
             },
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
@@ -504,7 +506,7 @@ base class TEnv{
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
-        TField::create(fd.pos, metName.value, false, metType) match {
+        TField::create(fd.pos, metName.value, false, metType, metType) match {
         | None() ->
           tcenvb.error(Array[(fd.pos, `Forbidden method name '${metName}'`)])
         | Some(field) -> acc![metName.value] = field
@@ -671,10 +673,13 @@ base class TEnv{
     | TAImport _ -> typingError(Array[(pos, "TODO import")])
     | TAReadonly(ty) ->
       ty.value match {
+      | TAArray(eltTyAst) ->
+        eltTy = this.normalize(tcenvb, eltTyAst);
+        TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[eltTy]))
       | TAEmptyArray _
-      | TAArray _
       | TATuple _ ->
-        tcenvb.error(Array[(pos, "TODO readonly")])
+        tcenvb.error(Array[(pos, "TODO readonly")]);
+        this.normalize(tcenvb, ty)
       | _ ->
         tcenvb.error(
           Array[
@@ -683,9 +688,9 @@ base class TEnv{
               "'readonly' type modifier is only permitted on array and tuple literal types.",
             ),
           ],
-        ) // TS1354
-      };
-      this.normalize(tcenvb, ty)
+        ); // TS1354
+        this.normalize(tcenvb, ty)
+      }
     | TAExtends _ -> typingError(Array[(pos, "TODO extends")])
     | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
@@ -728,7 +733,18 @@ base class TEnv{
       )
     | TAObject(fields) ->
       (algebraicBranchField, tFields) = this.createTFields(tcenvb, fields);
-      createObject(tcenvb, pos, algebraicBranchField, tFields)
+      tFields2 = if (
+        algebraicBranchField is None() &&
+        tFields.fields.isEmpty() &&
+        tFields.indexes.isEmpty() &&
+        tFields.new is None() &&
+        tFields.call is None()
+      ) {
+        tFields.setObjectTopLike()
+      } else {
+        tFields
+      };
+      createObject(this, tcenvb, pos, algebraicBranchField, tFields2)
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])
@@ -987,6 +1003,13 @@ base class TEnv{
         | None() -> typingError(Array[(fd.pos, "Type annotation expected")])
         | Some(ty) -> ty
         };
+        isReadonly = fd.readonly_ match {
+        | None()
+        | Some(OFRemoveReadonly(_)) ->
+          false
+        | Some(OFReadonly(_)) ->
+          true
+        };
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
@@ -997,6 +1020,7 @@ base class TEnv{
             name.value,
             fd.optional is Some _,
             normalizedType,
+            if (isReadonly) TType::bottom(name.pos) else normalizedType,
           );
           if (optField is None()) {
             algebraicBranchField match {
@@ -1029,6 +1053,7 @@ base class TEnv{
               keyName => indexName.value,
               keyType,
               valueType,
+              writeType => if (isReadonly) TType::bottom(indexName.pos) else valueType,
             },
           );
           None()
@@ -1047,7 +1072,7 @@ base class TEnv{
           notSupported(fd.pos, "symbol-named method in literal object type")
         | FNNormal(name) ->
           decl = TType::single(TObject::createCall(tFuns));
-          optField = TField::create(name.pos, name.value, false, decl);
+          optField = TField::create(name.pos, name.value, false, decl, decl);
           if (optField is None()) {
             tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
           };
@@ -1055,7 +1080,25 @@ base class TEnv{
         }
       }
     });
-    tFields = TFields::create{fields, indexes => indexes.toArray(), new, call};
+    dedupedFields = mutable Map[];
+    for (field in fields) {
+      dedupedFields.maybeGet(field.name) match {
+      | Some(prev) ->
+        tcenvb.error(
+          Array[
+            (field.pos, `Duplicate field ${field.name}`),
+            (prev.pos, "Previously declared here"),
+          ],
+        )
+      | None() -> dedupedFields![field.name] = field
+      }
+    };
+    tFields = TFields::create{
+      fields => dedupedFields.values().collect(Array),
+      indexes => indexes.toArray(),
+      new,
+      call,
+    };
     (algebraicBranchField, tFields)
   }
 

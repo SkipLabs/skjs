@@ -240,6 +240,27 @@ mutable class Instantiate() extends ApplyType {
   }
 }
 
+// Deep readonly projection for fresh-object commit checks.
+// Invariants preserved:
+// - no field/index type is widened or narrowed: only mutability metadata changes;
+// - recursion is structural through ApplyType, including nested object/algebraic
+//   members, function signatures, and generic arguments;
+// - the result is intended for subtyping checks only (not to mutate runtime values).
+//
+// This enables local relaxation for fresh literals while keeping regular
+// writable-invariance checks for non-fresh values.
+mutable class ProjectObjectMembersReadonly() extends ApplyType {
+  type Env = void;
+
+  mutable fun field(env: this::Env, field: TField): TField {
+    field.mapType(ty -> this.type(env, ty)).withSemanticReadonly()
+  }
+
+  mutable fun indexField(env: this::Env, indexField: TIndexField): TIndexField {
+    indexField.mapTypes(ty -> this.type(env, ty)).withSemanticReadonly()
+  }
+}
+
 mutable class ExpandTVars() extends ApplyType {
   type Env = (mutable Subst, TEnv);
 

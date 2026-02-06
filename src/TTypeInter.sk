@@ -22,6 +22,35 @@ class TInter private (ty1: TType, ty2: TType) extends TInst {
 }
 
 extension class TType {
+  static fun interForUse(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty1: TType,
+    ty2: TType,
+    use: TypeUse,
+  ): TType {
+    TType::interWithMode(subst, tenv, ty1, ty2, ApproxPolicy::modeForInter(use))
+  }
+
+  static fun interWithMode(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty1: TType,
+    ty2: TType,
+    mode: ApproxMode,
+  ): TType {
+    // Caller obligation: `mode` must come from `ApproxPolicy` for the
+    // current use-site variance. This is the only entry that may swap
+    // intersection/union at type level.
+    mode match {
+    | Exact()
+    | Under() ->
+      TType::inter(subst, tenv, ty1, ty2)
+    | Over() ->
+      TType::union(subst, tenv, ty1, ty2)
+    }
+  }
+
   // Unexpanded intersection.
   static private fun unexpandedInter(t1: TType, t2: TType): TType {
     TInter::create(t1, t2) match {
@@ -36,6 +65,9 @@ extension class TType {
     ty1: TType,
     ty2: TType,
   ): TType {
+    // Local contract: result under-approximates values that satisfy both
+    // operands simultaneously. Member-level intersection preserves this by
+    // combining read/write channels with conjunction semantics.
     if (ty1 == ty2) return ty1;
     pair = (ty1, ty2);
     subst.seenInter.maybeGet(pair) match {
@@ -122,6 +154,8 @@ extension class TConstr {
     y: TConstr,
   ): ?TConstr {
     invariant(x.tag == y.tag, "TConstr::inter expects identical tags");
+    // Mode obligation is already discharged at `TType::interWithMode`.
+    // `TFields::inter` is mode-free and enforces its own local conjunction spec.
     TFields::inter(subst, tenv, x.fields, y.fields).map(fields ->
       TConstr(x.tag, x.tagPos, fields)
     )
@@ -152,6 +186,14 @@ extension class TField {
       name => x.name,
       isOptional => x.isOptional && y.isOptional,
       type => TType::inter(subst, tenv, x.type, y.type),
+      writeType =>
+        TType::interForUse(
+          subst,
+          tenv,
+          x.getWriteType(),
+          y.getWriteType(),
+          WriteType(),
+        ),
     }
   }
 }
@@ -162,14 +204,23 @@ extension class TIndexField {
     tenv: TEnv,
     x: TIndexField,
     y: TIndexField,
-  ): ?TIndexField {
-    /* Currently over-approximating by a union
-       for { [f: 0 | 1]: 4 | 5 } & { [g: 1 | 2]: 5 | 6 },
-       the result would be { [f: 0]: 4 | 5, [fg: 1]: 5, [g: 2]: 5 | 6}
-       but we return { [f: 0 | 1 | 2]: 4 | 5 | 6 } */
-    valueType = TType::union(subst, tenv, x.valueType, y.valueType);
-    keyType = TType::union(subst, tenv, x.keyType, y.keyType);
-    Some(TIndexField{pos => x.pos, keyName => x.keyName, keyType, valueType})
+  ): TIndexField {
+    TIndexField{
+      pos => x.pos,
+      keyName => x.keyName,
+      // Domain equivalence is checked by caller (`sameIndexDomain`), so keep
+      // the original key domain to avoid accidental domain drift.
+      keyType => x.keyType,
+      valueType => TType::inter(subst, tenv, x.getReadType(), y.getReadType()),
+      writeType =>
+        TType::interForUse(
+          subst,
+          tenv,
+          x.getWriteType(),
+          y.getWriteType(),
+          WriteType(),
+        ),
+    }
   }
 }
 
@@ -289,6 +340,9 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): ?TFields {
+    // Local member intersection contract:
+    // resulting members must satisfy constraints from both sides for reads
+    // and writes. Missing-field/index overlap is merged via synthetic members.
     call = (fields1.call, fields2.call) match {
     | (None(), call)
     | (call, None()) ->
@@ -309,26 +363,46 @@ extension class TFields {
       | Some(f) -> Some((opt1 && opt2, f))
       }
     };
-    fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
-      TField::inter(subst, tenv, x, y)
-    );
-    // TODO: handle intersection between normal fields and index fields
-    indexes = {
-      index1o = fields1.maybeSingleIndex();
-      index2o = fields2.maybeSingleIndex();
-      (index1o, index2o) match {
-      | (None(), None()) -> None()
-      | (Some(index), None())
-      | (None(), Some(index)) ->
-        Some(index)
-      | (Some(index1), Some(index2)) ->
-        TIndexField::inter(subst, tenv, index1, index2)
-      } match {
-      | None() -> Array[]
-      | Some(index) -> Array[index]
+    fields = fields1.fields.merge(fields2.fields, ior ->
+      ior match {
+      | Left(z) -> Some(TFields::mergeInterMissingField(subst, tenv, z, fields2.indexes))
+      | Right(z) -> Some(TFields::mergeInterMissingField(subst, tenv, z, fields1.indexes))
+      | Both(x, y) -> Some(TField::inter(subst, tenv, x, y))
       }
+    );
+    indexes = mutable Vector[];
+    remaining2 = fields2.indexes;
+    for (index1 in fields1.indexes) {
+      overlaps = remaining2.filter(index2 ->
+        TFields::sameIndexDomain(subst, tenv, index1, index2)
+      );
+      if (overlaps.isEmpty()) {
+        indexes.push(index1);
+        continue
+      };
+      merged = index1;
+      for (index2 in overlaps) {
+        !merged = TIndexField::inter(subst, tenv, merged, index2)
+      };
+      indexes.push(merged);
+      !remaining2 = remaining2.filter(index2 ->
+        !TFields::sameIndexDomain(subst, tenv, index1, index2)
+      );
     };
-    Some(TFields{fields, indexes, call, new})
+    for (index2 in remaining2) {
+      indexes.push(index2)
+    };
+    removedKeys = fields1.removedKeys.union(fields2.removedKeys);
+    Some(
+      TFields{
+        fields,
+        indexes => indexes.toArray(),
+        removedKeys,
+        call,
+        new,
+        objectTopLike => fields1.objectTopLike && fields2.objectTopLike,
+      },
+    )
   }
 }
 
@@ -339,6 +413,7 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): ?TObject {
+    // Mode obligation is already discharged at `TType::interWithMode`.
     TFields::inter(subst, tenv, obj1.fields, obj2.fields).map(fields ->
       TObject(fields, obj1.pos)
     )

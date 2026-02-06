@@ -1,7 +1,7 @@
 // Test recursive type with generic constraints
 
 // Recursive JSON type definition
-type Json = { [key: string]: Json } | number | string;
+type Json = { readonly [key: string]: Json } | number | string;
 
 // Generic function with constraint that extends recursive type
 function foo<T extends Json>(x: T): void {}

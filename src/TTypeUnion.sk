@@ -18,6 +18,41 @@ class TUnion private (ty1: TType, ty2: TType) extends TInst {
 }
 
 extension class TType {
+  static fun unionForUse(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty1: TType,
+    ty2: TType,
+    use: TypeUse,
+  ): TType {
+    TType::unionWithMode(
+      subst,
+      tenv,
+      ty1,
+      ty2,
+      ApproxPolicy::modeForUnion(use),
+    )
+  }
+
+  static fun unionWithMode(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty1: TType,
+    ty2: TType,
+    mode: ApproxMode,
+  ): TType {
+    // Caller obligation: `mode` must come from `ApproxPolicy` for the
+    // current use-site variance. This is the only entry that may swap
+    // union/intersection at type level.
+    mode match {
+    | Exact()
+    | Over() ->
+      TType::union(subst, tenv, ty1, ty2)
+    | Under() ->
+      TType::inter(subst, tenv, ty1, ty2)
+    }
+  }
+
   // Unexpanded union.
   static private fun unexpandedUnion(t1: TType, t2: TType): TType {
     u = TUnion::create(t1, t2);
@@ -40,6 +75,9 @@ extension class TType {
     ty1: TType,
     ty2: TType,
   ): TType {
+    // Local contract: result over-approximates runtime alternatives.
+    // Read channels may widen; write channels must remain safe for all
+    // alternatives (handled by member-level union rules).
     if (ty1 == ty2) return ty1;
     subst.seenUnion.maybeGet((ty1, ty2)) match {
     | None() ->
@@ -93,6 +131,8 @@ extension class TConstr {
     y: TConstr,
   ): TConstr {
     invariant(x.tag == y.tag, "TConstr::union expects identical tags");
+    // Mode obligation is already discharged at `TType::unionWithMode`.
+    // `TFields::union` is mode-free and enforces its own local read/write spec.
     TConstr(x.tag, x.tagPos, TFields::union(subst, tenv, x.fields, y.fields))
   }
 }
@@ -110,6 +150,16 @@ extension class TFuns {
 }
 
 extension class TField {
+  static fun writeTarget(
+    subst: mutable Subst,
+    tenv: TEnv,
+    x: TField,
+    y: TField,
+  ): TType {
+    // Union writes are contravariant: value must be valid for both branches.
+    TType::interForUse(subst, tenv, x.getWriteType(), y.getWriteType(), WriteType())
+  }
+
   static fun union(
     subst: mutable Subst,
     tenv: TEnv,
@@ -122,6 +172,7 @@ extension class TField {
       name => x.name,
       isOptional => x.isOptional || y.isOptional,
       type => TType::union(subst, tenv, x.type, y.type),
+      writeType => TField::writeTarget(subst, tenv, x, y),
     }
   }
 }
@@ -132,14 +183,23 @@ extension class TIndexField {
     tenv: TEnv,
     x: TIndexField,
     y: TIndexField,
-  ): ?TIndexField {
-    /* Currently over-approximating by a union
-       for { [f: 0 | 1]: 4 | 5 } | { [g: 1 | 2]: 5 | 6 },
-       the result would be { [f: 0]: 4 | 5, [fg: 1]: 4 | 5 | 6, [g: 2]: 5 | 6}
-       but we return { [f: 0 | 1 | 2]: 4 | 5 | 6 } */
-    valueType = TType::union(subst, tenv, x.valueType, y.valueType);
-    keyType = TType::union(subst, tenv, x.keyType, y.keyType);
-    Some(TIndexField{pos => x.pos, keyName => x.keyName, keyType, valueType})
+  ): TIndexField {
+    TIndexField{
+      pos => x.pos,
+      keyName => x.keyName,
+      // Domain equivalence is checked by caller (`sameIndexDomain`), so keep
+      // the original key domain to avoid widening key coverage.
+      keyType => x.keyType,
+      valueType => TType::union(subst, tenv, x.getReadType(), y.getReadType()),
+      writeType =>
+        TType::interForUse(
+          subst,
+          tenv,
+          x.getWriteType(),
+          y.getWriteType(),
+          WriteType(),
+        ),
+    }
   }
 }
 
@@ -265,33 +325,60 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): TFields {
+    // Local member union contract:
+    // - get-channel: branch union (over-approximate readable values);
+    // - set-channel: branch intersection (under-approximate safe writes).
+    // If no non-bottom write target exists, writes become impossible via
+    // `writeType = bottom`.
     fields = fields1.fields.merge(fields2.fields, ior ->
       ior match {
-      | Left(z)
-      | Right(z) ->
-        Some(z.withOptional())
-      | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
+      | Left(z) -> Some(TFields::mergeUnionMissingField(subst, tenv, z, fields2.indexes))
+      | Right(z) -> Some(TFields::mergeUnionMissingField(subst, tenv, z, fields1.indexes))
+      | Both(x, y) ->
+        merged = TField::union(subst, tenv, x, y);
+        safeWrite = TField::writeTarget(subst, tenv, x, y);
+        // Keep read type as union, and preserve exact safe write target.
+        Some(merged.withWriteType(safeWrite))
       }
     );
-    // TODO: handle intersection between normal fields and index fields
-    indexes = {
-      index1o = fields1.maybeSingleIndex();
-      index2o = fields2.maybeSingleIndex();
-      (index1o, index2o) match {
-      | (None(), None()) -> None()
-      | (Some(index), None())
-      | (None(), Some(index)) ->
-        Some(index)
-      | (Some(index1), Some(index2)) ->
-        TIndexField::union(subst, tenv, index1, index2)
-      } match {
-      | None() -> Array[]
-      | Some(index) -> Array[index]
-      }
+    indexes = mutable Vector[];
+    remaining2 = fields2.indexes;
+    for (index1 in fields1.indexes) {
+      overlaps = remaining2.filter(index2 ->
+        TFields::sameIndexDomain(subst, tenv, index1, index2)
+      );
+      if (overlaps.isEmpty()) {
+        indexes.push(index1.withWriteType(TType::bottom(index1.pos)));
+        continue
+      };
+      merged = index1;
+      for (index2 in overlaps) {
+        !merged = TIndexField::union(subst, tenv, merged, index2)
+      };
+      indexes.push(merged);
+      !remaining2 = remaining2.filter(index2 ->
+        !TFields::sameIndexDomain(subst, tenv, index1, index2)
+      );
+    };
+    for (index2 in remaining2) {
+      indexes.push(index2.withWriteType(TType::bottom(index2.pos)))
     };
     call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
     new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
-    TFields{fields, indexes, call, new}
+    removedKeys = ArraySet::createFromVector(
+      fields1.removedKeys
+        .iterDiffInterDiff(fields2.removedKeys)
+        .filterMap(ior -> ior.maybeBoth().map(x -> x.i0))
+        .collect(Vector),
+    );
+    TFields{
+      fields,
+      indexes => indexes.toArray(),
+      removedKeys,
+      call,
+      new,
+      objectTopLike => fields1.objectTopLike || fields2.objectTopLike,
+    }
   }
 
   static fun unionOptTFuns(
@@ -318,6 +405,7 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): TObject {
+    // Mode obligation is already discharged at `TType::unionWithMode`.
     TObject(TFields::union(subst, tenv, obj1.fields, obj2.fields), obj1.pos)
   }
 }
