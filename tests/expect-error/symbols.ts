@@ -294,36 +294,33 @@ function testForOfArray(): void {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 22: for...of on Set (fails - no Symbol.iterator yet)
+// Test 22: for...of on Set
 ///////////////////////////////////////////////////////////////////////////////
 
 function testForOfSet(): void {
   const s = new Set<number>([1, 2, 3]);
-  // @skjs-expect-error Invalid iterable type for for-of loop
   for (const x of s) {
     const n: number = x;
   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 23: for...of on Map (fails - no Symbol.iterator yet)
+// Test 23: for...of on Map
 ///////////////////////////////////////////////////////////////////////////////
 
 function testForOfMap(): void {
   const m = new Map<string, number>([["a", 1]]);
-  // @skjs-expect-error Invalid iterable type for for-of loop
   for (const entry of m) {
     const pair: [string, number] = entry;
   }
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 24: for...of on MapIterator (fails - no Symbol.iterator yet)
+// Test 24: for...of on MapIterator
 ///////////////////////////////////////////////////////////////////////////////
 
 function testForOfMapIterator(): void {
   const m = new Map<string, number>([["a", 1]]);
-  // @skjs-expect-error Invalid iterable type for for-of loop
   for (const k of m.keys()) {
     const s: string = k;
   }

@@ -4,10 +4,8 @@ declare const console: {
   error(message?: unknown, ...optionalParams: unknown[]): void;
 };
 
-/* It's not really the interface but for now it will do the trick given
-   that our Iterables are Arrays only. */
 declare interface Iterable<T> {
-  [i: number]: T;
+  [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
 
 declare interface ArrayLike<T> {
@@ -60,6 +58,8 @@ declare class Array<T> implements Iterable<T> {
   // If we have overloads:
   // static from<T, U>(arrayLike: Array<T>, mapFn: (item: T) => U): Array<U>;
   static of<T>(...elements: T[]): Array<T>;
+
+  [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
 
 declare const Math: {
@@ -261,6 +261,8 @@ interface MapIterator<T> {
   some(predicate: (value: T) => boolean): boolean;
   every(predicate: (value: T) => boolean): boolean;
   find(predicate: (value: T) => boolean): T | undefined;
+
+  [Symbol.iterator](): MapIterator<T>;
 }
 
 // Updated Map class declaration
@@ -280,6 +282,8 @@ declare class Map<K, V> {
   has(key: K): boolean;
   keys(): MapIterator<K>;
   values(): MapIterator<V>;
+
+  [Symbol.iterator](): { next(): { value: [K, V]; done: boolean } };
 }
 
 declare class Set<T> {
@@ -295,6 +299,8 @@ declare class Set<T> {
   has(value: T): boolean;
   keys(): Array<T>;
   values(): Array<T>;
+
+  [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
 
 declare class WeakMap<K, V> {

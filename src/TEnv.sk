@@ -205,12 +205,14 @@ base class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
+    symFields = mutable Vector[];
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
     constructor = this.addFields(
       tcenvb,
       fields,
+      symFields,
       indexes,
       visitedClasses,
       None(),
@@ -228,6 +230,7 @@ base class TEnv{
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
+        symbolFields => symFields.toArray(),
         indexes => indexes.toArray(),
       },
       className.pos,
@@ -247,10 +250,12 @@ base class TEnv{
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
+    symFields = mutable Vector[];
     indexes = mutable Vector[];
     constructor = this.addFields(
       tcenvb,
       fields,
+      symFields,
       indexes,
       visitedClasses,
       Some(c.tparams),
@@ -266,6 +271,7 @@ base class TEnv{
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
+        symbolFields => symFields.toArray(),
         indexes => indexes.toArray(),
         new => Some(new),
       },
@@ -374,6 +380,7 @@ base class TEnv{
   private fun addFields(
     tcenvb: mutable TCEnvBase,
     acc: mutable Map<String, TField>,
+    symbolFields: mutable Vector<TField>,
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
     isStatic: ?Array<TypeParam>,
@@ -394,6 +401,7 @@ base class TEnv{
         _ = this.addFields(
           tcenvb,
           acc,
+          symbolFields,
           indexes,
           visitedClasses,
           isStatic,
@@ -494,20 +502,31 @@ base class TEnv{
       | fd @ ClassFieldTypeMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
-        metName = fd.name match {
-        | FNNormal(name) -> name
-        | FNComputed(keyExpr) ->
-          notSupported(keyExpr.pos, "computed method name")
-        };
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
-        TField::create(fd.pos, metName.value, false, metType) match {
-        | None() ->
-          tcenvb.error(Array[(fd.pos, `Forbidden method name '${metName}'`)])
-        | Some(field) -> acc![metName.value] = field
+        fd.name match {
+        | FNComputed(keyExpr) ->
+          this.resolveComputedKeyFieldKey(tcenvb, keyExpr) match {
+          | FKSymbol(_, uniqueId) ->
+            symbolFields.push(
+              TField::create(keyExpr.pos, uniqueId, false, metType).fromSome(),
+            )
+          | FKName(name) ->
+            TField::create(name.pos, name.value, false, metType) match {
+            | None() ->
+              tcenvb.error(Array[(fd.pos, `Forbidden method name '${name}'`)])
+            | Some(field) -> acc![name.value] = field
+            }
+          }
+        | FNNormal(metName) ->
+          TField::create(fd.pos, metName.value, false, metType) match {
+          | None() ->
+            tcenvb.error(Array[(fd.pos, `Forbidden method name '${metName}'`)])
+          | Some(field) -> acc![metName.value] = field
+          }
         }
       }
     };
