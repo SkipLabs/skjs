@@ -1096,53 +1096,27 @@ base class TEnv{
         };
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
-        | FNComputed(keyExpr) ->
-          this.resolveComputedKeySType(tcenvb, keyExpr) match {
-          | (TString(), nameStr)
-          | (TNum(), nameStr) ->
-            name = Name(keyExpr.pos, nameStr);
-            normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
-            TField::create(
-              name.pos,
-              name.value,
-              fd.optional is Some _,
-              normalizedType,
-            ) match {
-            | Some(field) -> fieldsVec.push(field)
-            | None() ->
-              algebraicBranchField match {
-              | Some((existingPos, _existingType)) ->
-                tcenvb.error(
-                  Array[
-                    (name.pos, `Duplicate field ${name}`),
-                    (existingPos, "Previously declared here"),
-                  ],
-                );
-                continue
-              | None() -> void
-              };
-              fd.optional match {
-              | Some(optionalPos) ->
-                tcenvb.error(
-                  Array[(optionalPos, `Field ${name} cannot be optional`)],
-                )
-              | None() -> void
-              };
-              !algebraicBranchField = Some((name.pos, normalizedType))
-            }
-          | (TSymbol(), uniqueId) ->
-            normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
-            symbolFieldsVec.push(
-              TField::create(
-                keyExpr.pos,
-                uniqueId,
-                fd.optional is Some _,
-                normalizedType,
-              ).fromSome(),
-            )
-          }
-        | FNNormal(name) ->
+        | simpleFieldName @ SimpleFieldName _ ->
           normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
+          name = simpleFieldName match {
+          | FNComputed(keyExpr) ->
+            this.resolveComputedKeySType(tcenvb, keyExpr) match {
+            | (TSymbol(), uniqueId) ->
+              symbolFieldsVec.push(
+                TField::create(
+                  keyExpr.pos,
+                  uniqueId,
+                  fd.optional is Some _,
+                  normalizedType,
+                ).fromSome(),
+              );
+              continue
+            | (TString(), nameStr)
+            | (TNum(), nameStr) ->
+              Name(keyExpr.pos, nameStr)
+            }
+          | FNNormal(name) -> name
+          };
           TField::create(
             name.pos,
             name.value,
@@ -1189,25 +1163,22 @@ base class TEnv{
         fd.name match {
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
         | FNEmpty() -> !call = Some(tFuns)
-        | FNComputed(keyExpr) ->
-          this.resolveComputedKeySType(tcenvb, keyExpr) match {
-          | (TString(), nameStr)
-          | (TNum(), nameStr) ->
-            name = Name(keyExpr.pos, nameStr);
-            decl = TType::single(TObject::createCall(tFuns));
-            TField::create(name.pos, name.value, false, decl) match {
-            | Some(field) -> fieldsVec.push(field)
-            | None() ->
-              tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
-            }
-          | (TSymbol(), uniqueId) ->
-            decl = TType::single(TObject::createCall(tFuns));
-            symbolFieldsVec.push(
-              TField::create(keyExpr.pos, uniqueId, false, decl).fromSome(),
-            )
-          }
-        | FNNormal(name) ->
+        | simpleFieldName @ SimpleFieldName _ ->
           decl = TType::single(TObject::createCall(tFuns));
+          name = simpleFieldName match {
+          | FNComputed(keyExpr) ->
+            this.resolveComputedKeySType(tcenvb, keyExpr) match {
+            | (TSymbol(), uniqueId) ->
+              symbolFieldsVec.push(
+                TField::create(keyExpr.pos, uniqueId, false, decl).fromSome(),
+              );
+              continue
+            | (TString(), nameStr)
+            | (TNum(), nameStr) ->
+              Name(keyExpr.pos, nameStr)
+            }
+          | FNNormal(name) -> name
+          };
           TField::create(name.pos, name.value, false, decl) match {
           | Some(field) -> fieldsVec.push(field)
           | None() ->
