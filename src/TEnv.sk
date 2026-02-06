@@ -1081,12 +1081,13 @@ base class TEnv{
   The first element is the position and the type of the algebraic branch field if it is present.
   */ (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
-    indexes = mutable Vector[];
+    fieldsVec = mutable Vector[];
     symbolFieldsVec = mutable Vector[];
+    indexes = mutable Vector[];
     call: ?TFuns = None();
     new: ?TFuns = None();
 
-    fields = fieldTypes.filterMap(elt -> {
+    for (elt in fieldTypes) {
       elt match {
       | fd @ ObjectFieldTypeValue _ ->
         fieldTy = fd.type match {
@@ -1097,15 +1098,38 @@ base class TEnv{
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | FNComputed(keyExpr) ->
           this.resolveComputedKeySType(tcenvb, keyExpr) match {
-          | (TString(), name)
-          | (TNum(), name) ->
+          | (TString(), nameStr)
+          | (TNum(), nameStr) ->
+            name = Name(keyExpr.pos, nameStr);
             normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
             TField::create(
-              keyExpr.pos,
-              name,
+              name.pos,
+              name.value,
               fd.optional is Some _,
               normalizedType,
-            )
+            ) match {
+            | Some(field) -> fieldsVec.push(field)
+            | None() ->
+              algebraicBranchField match {
+              | Some((existingPos, _existingType)) ->
+                tcenvb.error(
+                  Array[
+                    (name.pos, `Duplicate field ${name}`),
+                    (existingPos, "Previously declared here"),
+                  ],
+                );
+                continue
+              | None() -> void
+              };
+              fd.optional match {
+              | Some(optionalPos) ->
+                tcenvb.error(
+                  Array[(optionalPos, `Field ${name} cannot be optional`)],
+                )
+              | None() -> void
+              };
+              !algebraicBranchField = Some((name.pos, normalizedType))
+            }
           | (TSymbol(), uniqueId) ->
             normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
             symbolFieldsVec.push(
@@ -1115,18 +1139,18 @@ base class TEnv{
                 fd.optional is Some _,
                 normalizedType,
               ).fromSome(),
-            );
-            None()
+            )
           }
         | FNNormal(name) ->
           normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
-          optField = TField::create(
+          TField::create(
             name.pos,
             name.value,
             fd.optional is Some _,
             normalizedType,
-          );
-          if (optField is None()) {
+          ) match {
+          | Some(field) -> fieldsVec.push(field)
+          | None() ->
             algebraicBranchField match {
             | Some((existingPos, _existingType)) ->
               tcenvb.error(
@@ -1135,7 +1159,7 @@ base class TEnv{
                   (existingPos, "Previously declared here"),
                 ],
               );
-              return None()
+              continue
             | None() -> void
             };
             fd.optional match {
@@ -1146,8 +1170,7 @@ base class TEnv{
             | None() -> void
             };
             !algebraicBranchField = Some((name.pos, normalizedType))
-          };
-          optField
+          }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
@@ -1158,44 +1181,43 @@ base class TEnv{
               keyType,
               valueType,
             },
-          );
-          None()
+          )
         }
       | fd @ ObjectFieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
         tFuns = this.funDecl(tcenvb, false, fd, cgNode);
         fd.name match {
-        | FNNormal(Name(_, "new")) ->
-          !new = Some(tFuns);
-          None()
-        | FNEmpty() ->
-          !call = Some(tFuns);
-          None()
+        | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
+        | FNEmpty() -> !call = Some(tFuns)
         | FNComputed(keyExpr) ->
           this.resolveComputedKeySType(tcenvb, keyExpr) match {
-          | (TString(), name)
-          | (TNum(), name) ->
+          | (TString(), nameStr)
+          | (TNum(), nameStr) ->
+            name = Name(keyExpr.pos, nameStr);
             decl = TType::single(TObject::createCall(tFuns));
-            TField::create(keyExpr.pos, name, false, decl)
+            TField::create(name.pos, name.value, false, decl) match {
+            | Some(field) -> fieldsVec.push(field)
+            | None() ->
+              tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
+            }
           | (TSymbol(), uniqueId) ->
             decl = TType::single(TObject::createCall(tFuns));
             symbolFieldsVec.push(
               TField::create(keyExpr.pos, uniqueId, false, decl).fromSome(),
-            );
-            None()
+            )
           }
         | FNNormal(name) ->
           decl = TType::single(TObject::createCall(tFuns));
-          optField = TField::create(name.pos, name.value, false, decl);
-          if (optField is None()) {
+          TField::create(name.pos, name.value, false, decl) match {
+          | Some(field) -> fieldsVec.push(field)
+          | None() ->
             tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
-          };
-          optField
+          }
         }
       }
-    });
+    };
     tFields = TFields::create{
-      fields,
+      fields => fieldsVec.toArray(),
       symbolFields => symbolFieldsVec.toArray(),
       indexes => indexes.toArray(),
       new,
