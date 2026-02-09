@@ -353,6 +353,5 @@ function testDestructureArray(): void {
 
 function testSpreadInArrayLiteral(): void {
   const s = new Set<number>([1, 2, 3]);
-  // @skjs-expect-error TODO: ...
   const arr: Array<number> = [...s];
 }

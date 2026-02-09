@@ -903,11 +903,36 @@ extension class TypeChecker {
       TType::inst(Name(pos, "Array"), TArgs(Array[tvar]))
 
     | EArray(arr) ->
-      ArrayLitTyping::typeFromLiteral(
-        tcenv,
-        pos,
-        arr.map(x -> this.expr(tcenv, x, mostPrecise)),
-      )
+      hasSpread = arr.any(x -> x.value is Spread _);
+      if (hasSpread) {
+        eltType = TType::bottom(pos);
+        for (x in arr) {
+          x.value match {
+          | Spread(spreadExpr) ->
+            spreadTy = this.expr(tcenv, spreadExpr, true);
+            !eltType = TType::union(
+              tcenv.subst,
+              this,
+              eltType,
+              this.getValueType(tcenv, x.pos, spreadTy),
+            )
+          | _ ->
+            !eltType = TType::union(
+              tcenv.subst,
+              this,
+              eltType,
+              this.expr(tcenv, x, mostPrecise),
+            )
+          }
+        };
+        TType::inst(Name(pos, "Array"), TArgs(Array[eltType]))
+      } else {
+        ArrayLitTyping::typeFromLiteral(
+          tcenv,
+          pos,
+          arr.map(x -> this.expr(tcenv, x, mostPrecise)),
+        )
+      }
 
     | Unop(uop, subExpr) ->
       ty = this.expr(tcenv, subExpr, true);
