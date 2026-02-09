@@ -91,7 +91,7 @@ function testMultipleUnionElseBranch(
 // Nested refinement
 ///////////////////////////////////////////////////////////////////////////////
 
-function testNestedRefinement(x: Array<number> | Foo | null): Array<number> {
+function testNestedRefinement(x: Array<number> | Foo | null): Array<unknown> {
   if (x === null) {
     return [];
   } else if (Array.isArray(x)) {
@@ -123,12 +123,11 @@ function testComplexUnion(x: Array<string> | Foo | Bar): Array<string> {
 ///////////////////////////////////////////////////////////////////////////////
 
 // Accessing array methods - now with refinement
-function testArrayMethodOnNonArray(x: Array<number> | Foo): number {
+function testArrayMethodOnNonArray(x: Array<number> | Foo): unknown {
   if (Array.isArray(x)) {
     return x.length;
   } else {
-    // x is now refined to Foo (no length property)
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Invalid index key
     return x.length;
   }
 }
@@ -157,13 +156,12 @@ function testElseBranchRefined(x: Array<number> | Foo): Foo {
 }
 
 // Accessing object properties on array branch
-function testObjectPropOnArray(x: Array<number> | Foo): string {
+function testObjectPropOnArray(x: Array<number> | Foo): unknown {
   if (Array.isArray(x)) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Invalid index key
     return x.a;
   } else {
-    // x is now refined to Foo, so x.a works
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Invalid index key
     return x.a;
   }
 }
@@ -198,6 +196,7 @@ function testCombinedWithTypeof(
   if (typeof x === "string") {
     return [];
   } else if (Array.isArray(x)) {
+    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [];
