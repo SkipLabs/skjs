@@ -633,22 +633,6 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.toString()
   }
 
-  static fun getArrayObjectEltType(
-    object: TObject,
-    subst: mutable Subst,
-    tenv: TEnv,
-  ): ?TType {
-    object.fields.maybeGet("pop").flatMap(popMethod ->
-      popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
-      | Some(TObject(TFields{call => Some((_, TFuns(met, _)))}, _)) ->
-        Some(met.retType)
-      | _ -> None()
-      }
-    )
-  }
-
   fun maybeGetEltType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -657,8 +641,8 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(object @ TObject _) ->
-      ATFullType::getArrayObjectEltType(object, subst, tenv)
+    | Some(TObject(fields, objectPos)) ->
+      tenv.getIteratorElementType(subst, fields, objectPos)
     | _ -> None()
     }
   }
