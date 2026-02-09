@@ -334,7 +334,6 @@ function spreadTarget(...args: number[]): void {}
 
 function testSpreadIterableInCall(): void {
   const s = new Set<number>([1, 2, 3]);
-  // @skjs-expect-error Invalid spread argument
   spreadTarget(...s);
 }
 

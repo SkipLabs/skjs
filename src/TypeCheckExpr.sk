@@ -1721,8 +1721,8 @@ extension class TypeChecker {
         spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
           stypes.singleElt()
         ) match {
-        | Some(object @ TObject _) ->
-          ATFullType::getArrayObjectEltType(object, tcenv.subst, this) match {
+        | Some(TObject(fields, _)) ->
+          this.getIteratorElementType(tcenv, argExpr.pos, fields) match {
           | None() ->
             tcenv.error(
               Array[
