@@ -644,7 +644,8 @@ class ATFullType(fullType: TType) extends ArrayType {
     tenv: TEnv,
     variance: Variance,
   ): ?TType {
-    this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
+    _ = variance;
+    this.fullType.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
     | Some(TObject(fields, objectPos)) ->

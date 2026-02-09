@@ -46,7 +46,7 @@ function bareSpread<T extends Array<number>>(...args: T): Array<number> {
 }
 
 function testBareSpread(): void {
-  // @skjs-expect-error Invalid call. Unexpected type for ...
+  // @skjs-expect-error Invalid argument
   let r = bareSpread(1, 2, 3);
 }
 
@@ -57,6 +57,6 @@ function bareSpreadStr<T extends Array<string>>(...items: T): void {
 }
 
 function testBareSpreadStr(): void {
-  // @skjs-expect-error Invalid call. Unexpected type for ...
+  // @skjs-expect-error Invalid argument
   bareSpreadStr("a", "b", "c");
 }
