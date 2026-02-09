@@ -325,3 +325,36 @@ function testForOfMapIterator(): void {
     const s: string = k;
   }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 25: Spread iterable in function call
+///////////////////////////////////////////////////////////////////////////////
+
+function spreadTarget(...args: number[]): void {}
+
+function testSpreadIterableInCall(): void {
+  const s = new Set<number>([1, 2, 3]);
+  // @skjs-expect-error Invalid spread argument
+  spreadTarget(...s);
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 26: Array destructuring with Array<T>
+///////////////////////////////////////////////////////////////////////////////
+
+function testDestructureArray(): void {
+  const arr: Array<number> = [1, 2, 3];
+  // @skjs-expect-error Invalid tuple pattern
+  const [a, b] = arr;
+  const n: number = a;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 27: Spread in array literal
+///////////////////////////////////////////////////////////////////////////////
+
+function testSpreadInArrayLiteral(): void {
+  const s = new Set<number>([1, 2, 3]);
+  // @skjs-expect-error TODO: ...
+  const arr: Array<number> = [...s];
+}
