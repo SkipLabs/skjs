@@ -18,5 +18,5 @@ PRETTIER_VERSION=$(jq -r '.devDependencies.prettier' package.json)
 
 case "$file_path" in
     *.sk)        skfmt -i "$file_path" ;;
-    *.ts|*.json) npx -y prettier@$PRETTIER_VERSION --write "$file_path" ;;
+    *.ts|*.json) npx -y prettier@"$PRETTIER_VERSION" --write "$file_path" ;;
 esac
