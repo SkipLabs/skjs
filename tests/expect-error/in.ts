@@ -110,6 +110,7 @@ function refineLiteralInRecordOptUnion2(
   x: { f?: number } | { g: number },
 ): number | undefined {
   if ("f" in x) {
+    // @skjs-expect-error Invalid return type
     return x.f;
   } else {
     return 0;
