@@ -413,6 +413,7 @@ function testNestedDestructuringNonNull(
 function testArrayDestructuringNonNull(x: number[] | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
   const [first] = x!;
+  // @skjs-expect-error Invalid return type
   return first;
 }
 

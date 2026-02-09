@@ -344,7 +344,10 @@ function testSpreadIterableInCall(): void {
 function testDestructureArray(): void {
   const arr: Array<number> = [1, 2, 3];
   const [a, b] = arr;
-  const n: number = a;
+  // Elements from iterable destructuring are T | undefined
+  const nOk: number | undefined = a;
+  // @skjs-expect-error Invalid annotation
+  const nBad: number = a;
 }
 
 ///////////////////////////////////////////////////////////////////////////////

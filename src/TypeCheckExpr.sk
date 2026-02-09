@@ -95,7 +95,20 @@ extension class TypeChecker {
               "Default value in array destructuring",
             )
           | Some((eltPat, None())) ->
-            this.bind(tcenv, kind, eltPat, eltType, isInitialized, false)
+            optionalEltType = TType::unionUndefined(
+              tcenv.subst,
+              this,
+              eltType,
+              eltPat.pos,
+            );
+            this.bind(
+              tcenv,
+              kind,
+              eltPat,
+              optionalEltType,
+              isInitialized,
+              false,
+            )
           }
         }
       | _ ->
