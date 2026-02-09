@@ -920,23 +920,13 @@ extension class TypeChecker {
       if (hasSpread) {
         eltType = TType::bottom(pos);
         for (x in arr) {
-          x.value match {
+          xEltTy = x.value match {
           | Spread(spreadExpr) ->
             spreadTy = this.expr(tcenv, spreadExpr, true);
-            !eltType = TType::union(
-              tcenv.subst,
-              this,
-              eltType,
-              this.getValueType(tcenv, x.pos, spreadTy),
-            )
-          | _ ->
-            !eltType = TType::union(
-              tcenv.subst,
-              this,
-              eltType,
-              this.expr(tcenv, x, mostPrecise),
-            )
-          }
+            this.getValueType(tcenv, x.pos, spreadTy)
+          | _ -> this.expr(tcenv, x, mostPrecise)
+          };
+          !eltType = TType::union(tcenv.subst, this, eltType, xEltTy)
         };
         TType::inst(Name(pos, "Array"), TArgs(Array[eltType]))
       } else {
