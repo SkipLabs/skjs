@@ -1084,6 +1084,7 @@ function testTupleSpread(
   x: [number, string] | number,
 ): [number, string, boolean] {
   if (typeof x === "object") {
+    // TODO be more precise with tuples
     // @skjs-expect-error Invalid return type
     return [...x, false];
   } else {
