@@ -76,7 +76,7 @@ extension class TypeChecker {
           )
         }
       | Some(TObject(fields, _)) ->
-        eltType = this.getIteratorElementType(tcenv, pos, fields) match {
+        eltType = this.getIteratorElementType(tcenv.subst, fields, pos) match {
         | Some(t) -> t
         | None() ->
           typingError(
@@ -1773,7 +1773,7 @@ extension class TypeChecker {
           stypes.singleElt()
         ) match {
         | Some(TObject(fields, _)) ->
-          this.getIteratorElementType(tcenv, argExpr.pos, fields) match {
+          this.getIteratorElementType(tcenv.subst, fields, argExpr.pos) match {
           | None() ->
             tcenv.error(
               Array[
