@@ -75,6 +75,29 @@ extension class TypeChecker {
             ],
           )
         }
+      | Some(TObject(fields, _)) ->
+        eltType = this.getIteratorElementType(tcenv, pos, fields) match {
+        | Some(t) -> t
+        | None() ->
+          typingError(
+            Array[
+              (pos, "Invalid tuple pattern"),
+              (type.pos, `This is not iterable, it is ${type}`),
+            ],
+          )
+        };
+        for (i in Range(0, arrPat.size())) {
+          arrPat[i] match {
+          | None() -> void
+          | Some((_, Some(defaultExpr))) ->
+            tcenv.notSupported(
+              defaultExpr.pos,
+              "Default value in array destructuring",
+            )
+          | Some((eltPat, None())) ->
+            this.bind(tcenv, kind, eltPat, eltType, isInitialized, false)
+          }
+        }
       | _ ->
         typingError(
           Array[

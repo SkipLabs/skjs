@@ -411,8 +411,6 @@ function testNestedDestructuringNonNull(
 }
 
 function testArrayDestructuringNonNull(x: number[] | null): number {
-  // FIXME
-  // @skjs-expect-error Invalid tuple pattern
   // @skjs-expect-error Do not use the postfix ! operator
   const [first] = x!;
   return first;

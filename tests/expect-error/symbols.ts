@@ -343,7 +343,6 @@ function testSpreadIterableInCall(): void {
 
 function testDestructureArray(): void {
   const arr: Array<number> = [1, 2, 3];
-  // @skjs-expect-error Invalid tuple pattern
   const [a, b] = arr;
   const n: number = a;
 }
