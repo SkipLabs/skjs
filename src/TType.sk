@@ -1041,6 +1041,12 @@ class TFields{
     );
     if (!indexes.isEmpty()) {
       subst = Subst::mcreate(tcenvb);
+      checkSub = (pos, msg, ty1, ty2) -> {
+        TType::isSub(subst, tenv, ty1, ty2) match {
+        | STOk() -> void
+        | err @ STErrorOnTType _ -> tcenvb.error(Array[(pos, msg)], Some(err))
+        }
+      };
       for (index in indexes) {
         if (index.keyKinds.hasString || index.keyKinds.hasNumber) {
           for (field in sortedFields) {
@@ -1052,39 +1058,25 @@ class TFields{
               false
             };
             if (shouldCheck) {
-              TType::isSub(subst, tenv, field.type, index.valueType) match {
-              | STOk() -> void
-              | err @ STErrorOnTType _ ->
-                tcenvb.error(
-                  Array[
-                    (
-                      field.pos,
-                      `Property '${
-                        field.name
-                      }' is not assignable to index value type`,
-                    ),
-                  ],
-                  Some(err),
-                )
-              }
+              checkSub(
+                field.pos,
+                `Property '${
+                  field.name
+                }' is not assignable to index value type`,
+                field.type,
+                index.valueType,
+              )
             }
           }
         };
         if (index.keyKinds.hasSymbol) {
           for (field in sortedSymbolFields) {
-            TType::isSub(subst, tenv, field.type, index.valueType) match {
-            | STOk() -> void
-            | err @ STErrorOnTType _ ->
-              tcenvb.error(
-                Array[
-                  (
-                    field.pos,
-                    "Symbol property is not assignable to index value type",
-                  ),
-                ],
-                Some(err),
-              )
-            }
+            checkSub(
+              field.pos,
+              "Symbol property is not assignable to index value type",
+              field.type,
+              index.valueType,
+            )
           }
         }
       };
@@ -1115,24 +1107,12 @@ class TFields{
           } else {
             continue
           };
-          TType::isSub(
-            subst,
-            tenv,
+          checkSub(
+            numberIdx.pos,
+            "Number index type is not assignable to string index type",
             numberIdx.valueType,
             stringIdx.valueType,
-          ) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            tcenvb.error(
-              Array[
-                (
-                  numberIdx.pos,
-                  "Number index type is not assignable to string index type",
-                ),
-              ],
-              Some(err),
-            )
-          }
+          )
         }
       }
     };
