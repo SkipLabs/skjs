@@ -165,8 +165,12 @@ extension class TIndexField {
   ): TIndexField {
     /* Currently over-approximating by union of value types */
     valueType = TType::union(subst, tenv, x.valueType, y.valueType);
-    keyKinds = IndexKeyKinds::union(x.keyKinds, y.keyKinds);
-    TIndexField{pos => x.pos, keyName => x.keyName, keyKinds, valueType}
+    TIndexField{
+      pos => x.pos,
+      keyName => x.keyName,
+      keyKinds => x.keyKinds,
+      valueType,
+    }
   }
 }
 
@@ -314,18 +318,35 @@ extension class TFields {
       (x, y) -> TField::inter(subst, tenv, x, y),
     );
     // TODO: handle intersection between normal fields and index fields
-    indexes = {
-      TFields::interOptIndex(
-        subst,
-        tenv,
-        fields1.maybeSingleIndex(),
-        fields2.maybeSingleIndex(),
-      ) match {
-      | None() -> Array[]
-      | Some(index) -> Array[index]
-      }
-    };
-    Some(TFields{fields, symbolFields, indexes, call, new})
+    stringIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      fields1.stringIndex,
+      fields2.stringIndex,
+    );
+    numberIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      fields1.numberIndex,
+      fields2.numberIndex,
+    );
+    symbolIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      fields1.symbolIndex,
+      fields2.symbolIndex,
+    );
+    Some(
+      TFields{
+        fields,
+        symbolFields,
+        stringIndex,
+        numberIndex,
+        symbolIndex,
+        call,
+        new,
+      },
+    )
   }
 
   static fun interOptIndex(

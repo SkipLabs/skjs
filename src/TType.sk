@@ -984,13 +984,9 @@ class TFields{
   fields: InternalKeyedArrayMap<String, TField>,
   // Fields keyed by unique symbol ID (e.g. Symbol.iterator)
   symbolFields: InternalKeyedArrayMap<String, TField>,
-  indexes: Array<TIndexField>,
-  /* There can be several index fields.
-     Typescript allows only one per object, but is fine with
-     intersecting two objects with index fields, so it's like having
-     two of them. This array is expected to have zero or one element
-     most of the time, or at most a few elements.
-  */
+  stringIndex: ?TIndexField,
+  numberIndex: ?TIndexField,
+  symbolIndex: ?TIndexField,
   new: ?(/* optional */ Bool, TFuns),
   call: ?(/* optional */ Bool, TFuns),
 } uses XXHashable, Orderable {
@@ -998,7 +994,9 @@ class TFields{
     TFields{
       fields => InternalKeyedArrayMap::empty(),
       symbolFields => InternalKeyedArrayMap::empty(),
-      indexes => Array[],
+      stringIndex => None(),
+      numberIndex => None(),
+      symbolIndex => None(),
       new => None(),
       call => None(),
     }
@@ -1018,7 +1016,9 @@ class TFields{
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields.sortedBy(x ~> x.name).values(),
       ),
-      indexes => Array[],
+      stringIndex => None(),
+      numberIndex => None(),
+      symbolIndex => None(),
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
     }
@@ -1039,7 +1039,35 @@ class TFields{
     sortedSymbolFields = InternalKeyedArrayMap::createFromSortedIterator(
       symbolFields.sortedBy(x ~> x.name).values(),
     );
-    if (!indexes.isEmpty()) {
+    // Split indexes array into per-kind optionals
+    stringIndex: ?TIndexField = None();
+    numberIndex: ?TIndexField = None();
+    symbolIndex: ?TIndexField = None();
+    for (index in indexes) {
+      if (index.keyKinds.hasString) {
+        if (stringIndex.isSome()) {
+          tcenvb.error(Array[(index.pos, "Duplicate index signature")], None())
+        };
+        !stringIndex = Some(index)
+      };
+      if (index.keyKinds.hasNumber) {
+        if (numberIndex.isSome()) {
+          tcenvb.error(Array[(index.pos, "Duplicate index signature")], None())
+        };
+        !numberIndex = Some(index)
+      };
+      if (index.keyKinds.hasSymbol) {
+        if (symbolIndex.isSome()) {
+          tcenvb.error(Array[(index.pos, "Duplicate index signature")], None())
+        };
+        !symbolIndex = Some(index)
+      };
+    };
+    hasIndex =
+      stringIndex.isSome() ||
+      numberIndex.isSome() ||
+      symbolIndex.isSome();
+    if (hasIndex) {
       subst = Subst::mcreate(tcenvb);
       checkSub = (pos, msg, ty1, ty2) -> {
         TType::isSub(subst, tenv, ty1, ty2) match {
@@ -1047,79 +1075,59 @@ class TFields{
         | err @ STErrorOnTType _ -> tcenvb.error(Array[(pos, msg)], Some(err))
         }
       };
-      for (index in indexes) {
-        if (index.keyKinds.hasString || index.keyKinds.hasNumber) {
-          for (field in sortedFields) {
-            shouldCheck = if (index.keyKinds.hasString) {
-              true
-            } else if (index.keyKinds.hasNumber) {
-              field.name.toIntOption().isSome()
-            } else {
-              false
-            };
-            if (shouldCheck) {
-              checkSub(
-                field.pos,
-                `Property '${
-                  field.name
-                }' is not assignable to index value type`,
-                field.type,
-                index.valueType,
-              )
-            }
-          }
-        };
-        if (index.keyKinds.hasSymbol) {
-          for (field in sortedSymbolFields) {
+      // Validate named fields against string index
+      stringIndex.each(index -> {
+        for (field in sortedFields) {
+          checkSub(
+            field.pos,
+            `Property '${field.name}' is not assignable to index value type`,
+            field.type,
+            index.valueType,
+          )
+        }
+      });
+      // Validate numeric named fields against number index
+      numberIndex.each(index -> {
+        for (field in sortedFields) {
+          if (field.name.toIntOption().isSome()) {
             checkSub(
               field.pos,
-              "Symbol property is not assignable to index value type",
+              `Property '${field.name}' is not assignable to index value type`,
               field.type,
               index.valueType,
             )
           }
         }
-      };
-      for (i in Range(0, indexes.size())) {
-        for (j in Range(i + 1, indexes.size())) {
-          a = indexes[i];
-          b = indexes[j];
-          overlaps =
-            (a.keyKinds.hasString && b.keyKinds.hasString) ||
-            (a.keyKinds.hasNumber && b.keyKinds.hasNumber) ||
-            (a.keyKinds.hasSymbol && b.keyKinds.hasSymbol);
-          if (overlaps) {
-            tcenvb.error(
-              Array[
-                (a.pos, "Duplicate index signature"),
-                (b.pos, "Conflicts with this index signature"),
-              ],
-            );
-            continue
-          };
-          (stringIdx, numberIdx) = if (
-            a.keyKinds.hasString &&
-            b.keyKinds.hasNumber
-          ) {
-            (a, b)
-          } else if (b.keyKinds.hasString && a.keyKinds.hasNumber) {
-            (b, a)
-          } else {
-            continue
-          };
+      });
+      // Validate symbol fields against symbol index
+      symbolIndex.each(index -> {
+        for (field in sortedSymbolFields) {
           checkSub(
-            numberIdx.pos,
-            "Number index type is not assignable to string index type",
-            numberIdx.valueType,
-            stringIdx.valueType,
+            field.pos,
+            "Symbol property is not assignable to index value type",
+            field.type,
+            index.valueType,
           )
         }
+      });
+      // Validate number index value type is subtype of string index value type
+      (stringIndex, numberIndex) match {
+      | (Some(strIdx), Some(numIdx)) ->
+        checkSub(
+          numIdx.pos,
+          "Number index type is not assignable to string index type",
+          numIdx.valueType,
+          strIdx.valueType,
+        )
+      | _ -> void
       }
     };
     TFields{
       fields => sortedFields,
       symbolFields => sortedSymbolFields,
-      indexes,
+      stringIndex,
+      numberIndex,
+      symbolIndex,
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
     }
@@ -1128,28 +1136,27 @@ class TFields{
   fun isEmpty(): Bool {
     this.fields.isEmpty() &&
       this.symbolFields.isEmpty() &&
-      this.indexes.isEmpty() &&
+      !this.hasIndex() &&
       this.new.isNone() &&
       this.call.isNone()
   }
 
   fun hasIndex(): Bool {
-    !this.indexes.isEmpty()
+    this.stringIndex.isSome() ||
+      this.numberIndex.isSome() ||
+      this.symbolIndex.isSome()
   }
 
   fun indexArray(): Array<TIndexField> {
-    this.indexes
+    Array[this.stringIndex, this.numberIndex, this.symbolIndex].filterNone()
   }
 
   fun indexForKeyKind(kind: TPrimValueKind): ?TIndexField {
     kind match {
-    | TString() -> this.indexes.find(idx -> idx.keyKinds.hasString)
+    | TString() -> this.stringIndex
     | TNum() ->
-      this.indexes.find(idx -> idx.keyKinds.hasNumber) match {
-      | some @ Some _ -> some
-      | None() -> this.indexes.find(idx -> idx.keyKinds.hasString)
-      }
-    | TSymbol() -> this.indexes.find(idx -> idx.keyKinds.hasSymbol)
+      if (this.numberIndex.isSome()) this.numberIndex else this.stringIndex
+    | TSymbol() -> this.symbolIndex
     | _ -> None()
     }
   }
@@ -1162,7 +1169,9 @@ class TFields{
     TFields{
       fields => this.fields.map(fField),
       symbolFields => this.symbolFields.map(fField),
-      indexes => this.indexes.map(fIndexField),
+      stringIndex => this.stringIndex.map(fIndexField),
+      numberIndex => this.numberIndex.map(fIndexField),
+      symbolIndex => this.symbolIndex.map(fIndexField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
     }
@@ -1178,20 +1187,6 @@ class TFields{
 
   fun filterMapFields(f: TField -> ?TField): TFields {
     this with {fields => this.fields.filterMap(f)}
-  }
-
-  fun maybeSingleIndex(): ?TIndexField {
-    this.indexes.size() match {
-    | 0 -> None()
-    | 1 -> Some(this.indexes[0])
-    | _ ->
-      typingError(
-        Array[
-          (this.indexes[0].pos, "TODO: multiple indexes"),
-          (this.indexes[1].pos, "Second one is here"),
-        ],
-      )
-    }
   }
 
   fun maybeGet(fieldName: String): ?TField {

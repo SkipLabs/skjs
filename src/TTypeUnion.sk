@@ -126,16 +126,6 @@ extension class TField {
   }
 }
 
-extension class IndexKeyKinds {
-  static fun union(a: IndexKeyKinds, b: IndexKeyKinds): IndexKeyKinds {
-    IndexKeyKinds{
-      hasString => a.hasString || b.hasString,
-      hasNumber => a.hasNumber || b.hasNumber,
-      hasSymbol => a.hasSymbol || b.hasSymbol,
-    }
-  }
-}
-
 extension class TIndexField {
   static fun union(
     subst: mutable Subst,
@@ -145,8 +135,12 @@ extension class TIndexField {
   ): TIndexField {
     /* Currently over-approximating by a union of value types */
     valueType = TType::union(subst, tenv, x.valueType, y.valueType);
-    keyKinds = IndexKeyKinds::union(x.keyKinds, y.keyKinds);
-    TIndexField{pos => x.pos, keyName => x.keyName, keyKinds, valueType}
+    TIndexField{
+      pos => x.pos,
+      keyName => x.keyName,
+      keyKinds => x.keyKinds,
+      valueType,
+    }
   }
 }
 
@@ -289,20 +283,35 @@ extension class TFields {
       }
     );
     // TODO: handle intersection between normal fields and index fields
-    indexes = {
-      TFields::unionOptIndex(
-        subst,
-        tenv,
-        fields1.maybeSingleIndex(),
-        fields2.maybeSingleIndex(),
-      ) match {
-      | None() -> Array[]
-      | Some(index) -> Array[index]
-      }
-    };
+    stringIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.stringIndex,
+      fields2.stringIndex,
+    );
+    numberIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.numberIndex,
+      fields2.numberIndex,
+    );
+    symbolIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.symbolIndex,
+      fields2.symbolIndex,
+    );
     call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
     new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
-    TFields{fields, symbolFields, indexes, call, new}
+    TFields{
+      fields,
+      symbolFields,
+      stringIndex,
+      numberIndex,
+      symbolIndex,
+      call,
+      new,
+    }
   }
 
   static fun unionOptIndex(

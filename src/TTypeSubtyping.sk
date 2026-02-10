@@ -596,14 +596,6 @@ base class STErrorOnTFields(
   }
 }
 
-extension class IndexKeyKinds {
-  static fun isSub(a: IndexKeyKinds, b: IndexKeyKinds): Bool {
-    (!a.hasString || b.hasString || b.hasNumber) &&
-      (!a.hasNumber || b.hasNumber) &&
-      (!a.hasSymbol || b.hasSymbol)
-  }
-}
-
 extension class TAlgebraic {
   static fun isSub(
     subst: mutable Subst,
@@ -678,28 +670,80 @@ extension class TFields {
     | Some(err @ STErrorOnTFuns _) ->
       return STRecFieldsNew(Some(err), fields1, fields2)
     };
-    index1o = fields1.maybeSingleIndex();
-    index2o = fields2.maybeSingleIndex();
-    (index1o, index2o) match {
+    // Check string index subtyping
+    (fields1.stringIndex, fields2.stringIndex) match {
     | (_, None()) -> void
-    | (Some(index1), Some(index2)) ->
-      if (!IndexKeyKinds::isSub(index2.keyKinds, index1.keyKinds)) {
-        return STRecFieldsIndexKey(index1, index2, fields1, fields2)
-      };
-      TType::isSub(subst, tenv, index1.valueType, index2.valueType) match {
+    | (Some(subIdx), Some(superIdx)) ->
+      TType::isSub(subst, tenv, subIdx.valueType, superIdx.valueType) match {
       | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
+        return STRecFieldsIndexValue(err, subIdx, superIdx, fields1, fields2)
       | STOk() -> void
       }
-    | (None(), Some(index2)) ->
-      if (index2.keyKinds.hasString) {
+    | (None(), Some(superIdx)) ->
+      // Fall back to number index (number <: string for index keys)
+      fields1.numberIndex match {
+      | Some(subIdx) ->
+        TType::isSub(subst, tenv, subIdx.valueType, superIdx.valueType) match {
+        | err @ STErrorOnTType _ ->
+          return STRecFieldsIndexValue(err, subIdx, superIdx, fields1, fields2)
+        | STOk() -> void
+        }
+      | None() ->
+        if (fields1.hasIndex()) {
+          // Sub has some index but not string/number → key mismatch
+          return STRecFieldsIndexKey(
+            fields1.indexArray()[0],
+            superIdx,
+            fields1,
+            fields2,
+          )
+        };
+        // No index: check all named fields against string index value
         for (f1 in fields1.fields) {
-          TType::isSub(subst, tenv, f1.type, index2.valueType) match {
+          TType::isSub(subst, tenv, f1.type, superIdx.valueType) match {
           | err @ STErrorOnTType _ ->
-            return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
+            return STRecFieldsFieldIndex(err, f1, superIdx, fields1, fields2)
           | STOk() -> void
           }
         }
+      }
+    };
+    // Check number index subtyping
+    (fields1.numberIndex, fields2.numberIndex) match {
+    | (_, None()) -> void
+    | (Some(subIdx), Some(superIdx)) ->
+      TType::isSub(subst, tenv, subIdx.valueType, superIdx.valueType) match {
+      | err @ STErrorOnTType _ ->
+        return STRecFieldsIndexValue(err, subIdx, superIdx, fields1, fields2)
+      | STOk() -> void
+      }
+    | (None(), Some(superIdx)) ->
+      if (fields1.hasIndex()) {
+        return STRecFieldsIndexKey(
+          fields1.indexArray()[0],
+          superIdx,
+          fields1,
+          fields2,
+        )
+      }
+    };
+    // Check symbol index subtyping
+    (fields1.symbolIndex, fields2.symbolIndex) match {
+    | (_, None()) -> void
+    | (Some(subIdx), Some(superIdx)) ->
+      TType::isSub(subst, tenv, subIdx.valueType, superIdx.valueType) match {
+      | err @ STErrorOnTType _ ->
+        return STRecFieldsIndexValue(err, subIdx, superIdx, fields1, fields2)
+      | STOk() -> void
+      }
+    | (None(), Some(superIdx)) ->
+      if (fields1.hasIndex()) {
+        return STRecFieldsIndexKey(
+          fields1.indexArray()[0],
+          superIdx,
+          fields1,
+          fields2,
+        )
       }
     };
     for (ior in fields1.fields.iterDiffInterDiff(fields2.fields)) {
@@ -709,15 +753,14 @@ extension class TFields {
         if (!f2.isOptional) {
           return STRecFieldsField(None(), f2, fields1, fields2)
         };
-        index1o match {
+        fields1.stringIndex match {
         | None() -> void
-        | Some(index1) if (index1.keyKinds.hasString) ->
+        | Some(index1) ->
           TType::isSub(subst, tenv, index1.valueType, f2.type) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
           | STOk() -> void
           }
-        | _ -> void
         }
       | Both(f1, f2) ->
         if (f1.isOptional && !f2.isOptional) {
