@@ -896,17 +896,69 @@ class TField private {
   }
 }
 
+/* The set of allowed key kinds for an index signature.
+   Only string, number, and symbol are valid index key types. */
+class IndexKeyKinds{
+  hasString: Bool,
+  hasNumber: Bool,
+  hasSymbol: Bool,
+} uses XXHashable, Orderable {
+  fun contains(kind: TPrimValueKind): Bool {
+    kind match {
+    | TString() -> this.hasString
+    | TNum() -> this.hasNumber
+    | TSymbol() -> this.hasSymbol
+    | _ -> false
+    }
+  }
+
+  fun toTType(subst: mutable Subst, tenv: TEnv, pos: PosRange): TType {
+    result = TType::bottom(pos);
+    if (this.hasString) {
+      !result = TType::union(
+        subst,
+        tenv,
+        result,
+        TType::single(TPrimValue::string(pos)),
+      )
+    };
+    if (this.hasNumber) {
+      !result = TType::union(
+        subst,
+        tenv,
+        result,
+        TType::single(TPrimValue::number(pos)),
+      )
+    };
+    if (this.hasSymbol) {
+      !result = TType::union(
+        subst,
+        tenv,
+        result,
+        TType::single(TPrimValue::symbol(pos)),
+      )
+    };
+    result
+  }
+
+  fun toString(): String {
+    parts = mutable Vector[];
+    if (this.hasString) parts.push("string");
+    if (this.hasNumber) parts.push("number");
+    if (this.hasSymbol) parts.push("symbol");
+    parts.join(" | ")
+  }
+}
+
 /* Fields such as { [keyName: KeyType]: ValueType } */
 class TIndexField{
   pos: PosRange,
   keyName: String,
-  keyType: TType,
+  keyKinds: IndexKeyKinds,
   valueType: TType,
 } uses XXHashable, Orderable {
   fun mapTypes(f: TType -> TType): TIndexField {
-    keyType = f(this.keyType);
-    valueType = f(this.valueType);
-    this with {keyType, valueType}
+    this with {valueType => f(this.valueType)}
   }
 
   fun toString(): String {

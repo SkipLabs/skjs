@@ -400,7 +400,7 @@ mutable class TypePp{
     this.out(level, margin, "[ ");
     this.out(level, margin, TypePp::escapeName(index.keyName));
     this.out(level, margin, ": ");
-    this.type(level, margin, index.keyType);
+    this.out(level, margin, index.keyKinds.toString());
     this.out(level, margin, " ]: ");
     this.type(level, margin, index.valueType);
   }

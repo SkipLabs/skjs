@@ -474,13 +474,13 @@ base class TEnv{
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
-          this.checkIndexKeyType(tcenvb, indexName.pos, keyType);
+          keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             TIndexField{
               pos => indexName.pos,
               keyName => indexName.value,
-              keyType,
+              keyKinds,
               valueType,
             },
           )
@@ -952,24 +952,34 @@ base class TEnv{
     }
   }
 
-  fun checkIndexKeyType(
+  fun resolveIndexKeyKinds(
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
     keyType: TType,
-  ): void {
+  ): IndexKeyKinds {
     subst = Subst::mcreate(tcenvb);
-    allowedKeyType = TType::union(
-      subst,
-      this,
-      TType::single(TPrimValue::string(pos)),
-      TType::union(
-        subst,
-        this,
-        TType::single(TPrimValue::number(pos)),
-        TType::single(TPrimValue::symbol(pos)),
-      ),
-    );
-    if (!(TType::isSub(subst, this, keyType, allowedKeyType) is STOk _)) {
+    hasString = false;
+    hasNumber = false;
+    hasSymbol = false;
+    valid = keyType.getSTypes(subst, this, Covariant()) match {
+    | Some(stypes) ->
+      stypes.all(stype ->
+        stype match {
+        | TPrimValue(TString(), _, _) ->
+          !hasString = true;
+          true
+        | TPrimValue(TNum(), _, _) ->
+          !hasNumber = true;
+          true
+        | TPrimValue(TSymbol(), _, _) ->
+          !hasSymbol = true;
+          true
+        | _ -> false
+        }
+      )
+    | _ -> false
+    };
+    if (!valid) {
       tcenvb.error(
         Array[
           (
@@ -977,8 +987,14 @@ base class TEnv{
             "An index signature parameter type must be string, number, or symbol",
           ),
         ],
-      )
-    }
+      );
+      return IndexKeyKinds{
+        hasString => true,
+        hasNumber => false,
+        hasSymbol => false,
+      }
+    };
+    IndexKeyKinds{hasString, hasNumber, hasSymbol}
   }
 
   fun getIteratorElementType(
@@ -1253,13 +1269,13 @@ base class TEnv{
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
-          this.checkIndexKeyType(tcenvb, indexName.pos, keyType);
+          keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             TIndexField{
               pos => indexName.pos,
               keyName => indexName.value,
-              keyType,
+              keyKinds,
               valueType,
             },
           )
@@ -1339,8 +1355,12 @@ base class TEnv{
             !symbols = symbols.set(symbolField.name);
           };
           for (index in fields.indexes) {
-            // TODO: convert numbers to strings
-            !result = TType::union(subst, this, result, index.keyType);
+            !result = TType::union(
+              subst,
+              this,
+              result,
+              index.keyKinds.toTType(subst, this, index.pos),
+            );
           }
         | TAlgebraic(branches, _) ->
           !strings = strings.set(kAlgebraicBranchFieldName);
@@ -1352,8 +1372,12 @@ base class TEnv{
               !symbols = symbols.set(symbolField.name);
             };
             for (index in branch.fields.indexes) {
-              // TODO: convert numbers to strings
-              !result = TType::union(subst, this, result, index.keyType);
+              !result = TType::union(
+                subst,
+                this,
+                result,
+                index.keyKinds.toTType(subst, this, index.pos),
+              );
             }
           }
         | prim @ TPrimValue _ ->
