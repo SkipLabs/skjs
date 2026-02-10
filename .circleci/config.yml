@@ -211,4 +211,4 @@ workflows:
             tags:
               only: /^v.*/
             branches:
-              only: /.*/
+              only: main
