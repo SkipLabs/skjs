@@ -920,7 +920,7 @@ class IndexKeyKinds private {
   fun contains(kind: TPrimValueKind): Bool {
     kind match {
     | TString() -> this.hasString
-    | TNum() -> this.hasNumber
+    | TNum() -> this.hasNumber || this.hasString
     | TSymbol() -> this.hasSymbol
     | _ -> false
     }

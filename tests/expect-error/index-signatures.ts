@@ -227,13 +227,12 @@ function dynamicNumberKey(x: NumberIndex, key: number): string | undefined {
 // Test 18: Invalid index key (wrong type of key used to access)
 ///////////////////////////////////////////////////////////////////////////////
 
-function numberKeyOnStringIndex(x: StringIndex): void {
-  // @ts-expect-error Invalid index key
-  const v = x[42];
+function numberKeyOnStringIndex(x: StringIndex): number | undefined {
+  return x[42];
 }
 
 function stringKeyOnNumberIndex(x: NumberIndex): void {
-  // @ts-expect-error Invalid index key
+  // @skjs-expect-error Invalid index key
   const v = x["name"];
 }
 
