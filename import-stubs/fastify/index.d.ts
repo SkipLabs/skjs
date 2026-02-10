@@ -82,7 +82,7 @@ export interface FastifyReply {
   //   removeHeader(key: HttpHeader): FastifyReply<RouteGeneric, RawServer, RawRequest, RawReply, ContextConfig, SchemaCompiler, TypeProvider>;
   //   hasHeader(key: HttpHeader): boolean;
   //   redirect(url: string, statusCode?: number): FastifyReply<RouteGeneric, RawServer, RawRequest, RawReply, ContextConfig, SchemaCompiler, TypeProvider>;
-  //   writeEarlyHints(hints: Record<string, string | string[]>, callback?: () => void): void;
+  //   writeEarlyHints(hints: StringRecord<string | string[]>, callback?: () => void): void;
   //   hijack(): FastifyReply<RouteGeneric, RawServer, RawRequest, RawReply, ContextConfig, SchemaCompiler, TypeProvider>;
   callNotFound(): void;
   //   type(contentType: string): FastifyReply<RouteGeneric, RawServer, RawRequest, RawReply, ContextConfig, SchemaCompiler, TypeProvider>;
@@ -112,7 +112,7 @@ export type onRequestAsyncHookHandler = (
   reply: FastifyReply,
 ) => Promise<unknown>;
 
-export type FastifyPluginOptions = Record<string, unknown>;
+export type FastifyPluginOptions = StringRecord<unknown>;
 
 export type FastifyPluginAsync = (instance: FastifyInstance) => Promise<void>;
 
@@ -125,7 +125,7 @@ export type FastifyPluginCallback<Options /*extends FastifyPluginOptions*/> = (
 export interface RegisterOptions {
   prefix?: string;
   logLevel?: LogLevel;
-  logSerializers?: Record<string, (value: unknown) => string>;
+  logSerializers?: StringRecord<(value: unknown) => string>;
 }
 
 export type FastifyRegisterOptions<Options> =

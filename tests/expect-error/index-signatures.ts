@@ -148,18 +148,18 @@ const koString: keyof StringIndex = "anything";
 const koNumber: keyof NumberIndex = 42;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 12: Record<K, V> utility type
+// Test 12: StringRecord<V> utility type
 ///////////////////////////////////////////////////////////////////////////////
 
-function recordString(x: Record<string, number>): number | undefined {
+function stringRecordAccess(x: StringRecord<number>): number | undefined {
   return x["key"];
 }
 
-function assignRecordToStringIndex(x: Record<string, number>): StringIndex {
+function assignStringRecordToStringIndex(x: StringRecord<number>): StringIndex {
   return x;
 }
 
-function assignStringIndexToRecord(x: StringIndex): Record<string, number> {
+function assignStringIndexToStringRecord(x: StringIndex): StringRecord<number> {
   return x;
 }
 
