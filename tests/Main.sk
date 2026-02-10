@@ -311,13 +311,22 @@ fun testFiles(
   validateResult: Validator,
   update: UpdateMode = UMValidateOnly(),
 ): void {
+  testFilesWithRoot(".", srcFiles, importStubs, validateResult)
+}
+
+fun testFilesWithRoot(
+  root: String,
+  srcFiles: Array<String>,
+  importStubs: Array<String>,
+  validateResult: Validator,
+): void {
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
 
   files =
     SKJS.Files::create(
       context,
-      ".",
+      root,
       builtinsFileName,
       srcFiles,
       false,
@@ -415,6 +424,39 @@ fun testNotSupportedTypeScriptConformance(): void {
     } catch {
     | InvariantViolation(_) -> void
     | e -> throw e
+    }
+  }
+}
+
+fun testProject(projectDir: String): void {
+  dir = Path.resolve(projectDir);
+  configPath = Path.join(dir, "tsconfig.json");
+  config = SKJS.loadTsConfig(configPath);
+  srcFiles = SKJS.resolveConfigFiles(config);
+  configDirStr = config.configDir.toString();
+  root = config.compilerOptions.baseUrl match {
+  | Some(bu) -> Path.join(configDirStr, bu)
+  | None() ->
+    config.compilerOptions.rootDir match {
+    | Some(rd) -> Path.join(configDirStr, rd)
+    | None() -> configDirStr
+    }
+  };
+  testFilesWithRoot(
+    root,
+    srcFiles,
+    Array["./import-stubs"],
+    validateExpectErrorComments,
+  )
+}
+
+@test
+fun testProjects(): void {
+  dir = Path.resolve("./tests/projects/");
+  for (subDir in FileSystem.readDirectory(dir)) {
+    projectDir = Path.join(dir, subDir);
+    if (FileSystem.isDirectory(projectDir)) {
+      testProject(projectDir)
     }
   }
 }
