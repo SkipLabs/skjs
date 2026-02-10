@@ -1,0 +1,88 @@
+module SKJSTests;
+
+@test
+fun testGlobMatchExact(): void {
+  SKTest.expectTrue(SKJS.globMatch("foo.ts", "foo.ts"));
+  SKTest.expectFalse(SKJS.globMatch("foo.ts", "bar.ts"));
+  SKTest.expectTrue(SKJS.globMatch("src/foo.ts", "src/foo.ts"));
+  SKTest.expectFalse(SKJS.globMatch("src/foo.ts", "src/bar.ts"));
+}
+
+@test
+fun testGlobMatchStar(): void {
+  // * matches any characters within a single segment
+  SKTest.expectTrue(SKJS.globMatch("*.ts", "foo.ts"));
+  SKTest.expectTrue(SKJS.globMatch("*.ts", "bar.ts"));
+  SKTest.expectFalse(SKJS.globMatch("*.ts", "foo.js"));
+  // * does not cross segment boundaries
+  SKTest.expectFalse(SKJS.globMatch("*.ts", "src/foo.ts"));
+  // * in a segment
+  SKTest.expectTrue(SKJS.globMatch("src/*.ts", "src/foo.ts"));
+  SKTest.expectFalse(SKJS.globMatch("src/*.ts", "src/sub/foo.ts"));
+  // * with prefix/suffix
+  SKTest.expectTrue(SKJS.globMatch("foo*", "foobar"));
+  SKTest.expectTrue(SKJS.globMatch("*bar", "foobar"));
+  SKTest.expectTrue(SKJS.globMatch("foo*.ts", "foo.ts"));
+  SKTest.expectTrue(SKJS.globMatch("foo*.ts", "foobar.ts"));
+}
+
+@test
+fun testGlobMatchQuestion(): void {
+  // ? matches exactly one character
+  SKTest.expectTrue(SKJS.globMatch("?.ts", "a.ts"));
+  SKTest.expectFalse(SKJS.globMatch("?.ts", "ab.ts"));
+  SKTest.expectFalse(SKJS.globMatch("?.ts", ".ts"));
+  SKTest.expectTrue(SKJS.globMatch("fo?.ts", "foo.ts"));
+  SKTest.expectFalse(SKJS.globMatch("fo?.ts", "fo.ts"));
+}
+
+@test
+fun testGlobMatchDoublestar(): void {
+  // ** matches zero or more directory segments
+  SKTest.expectTrue(SKJS.globMatch("**/*.ts", "foo.ts"));
+  SKTest.expectTrue(SKJS.globMatch("**/*.ts", "src/foo.ts"));
+  SKTest.expectTrue(SKJS.globMatch("**/*.ts", "src/sub/foo.ts"));
+  SKTest.expectFalse(SKJS.globMatch("**/*.ts", "foo.js"));
+  // ** at the end
+  SKTest.expectTrue(SKJS.globMatch("src/**", "src/foo.ts"));
+  SKTest.expectTrue(SKJS.globMatch("src/**", "src/sub/foo.ts"));
+  SKTest.expectFalse(SKJS.globMatch("src/**", "lib/foo.ts"));
+  // ** in the middle
+  SKTest.expectTrue(SKJS.globMatch("src/**/foo.ts", "src/foo.ts"));
+  SKTest.expectTrue(SKJS.globMatch("src/**/foo.ts", "src/a/foo.ts"));
+  SKTest.expectTrue(SKJS.globMatch("src/**/foo.ts", "src/a/b/foo.ts"));
+  SKTest.expectFalse(SKJS.globMatch("src/**/foo.ts", "src/a/bar.ts"));
+  // ** matching zero segments
+  SKTest.expectTrue(SKJS.globMatch("**/foo.ts", "foo.ts"));
+}
+
+@test
+fun testGlobMatchTsconfigPatterns(): void {
+  // Typical tsconfig include patterns
+  SKTest.expectTrue(SKJS.globMatch("**/*.ts", "index.ts"));
+  SKTest.expectTrue(SKJS.globMatch("**/*.ts", "src/app.ts"));
+  SKTest.expectTrue(SKJS.globMatch("**/*.ts", "src/utils/helpers.ts"));
+  SKTest.expectFalse(SKJS.globMatch("**/*.ts", "README.md"));
+
+  // Scoped include
+  SKTest.expectTrue(SKJS.globMatch("src/**/*.ts", "src/index.ts"));
+  SKTest.expectTrue(SKJS.globMatch("src/**/*.ts", "src/lib/utils.ts"));
+  SKTest.expectFalse(SKJS.globMatch("src/**/*.ts", "tests/test.ts"));
+}
+
+@test
+fun testGlobMatchEdgeCases(): void {
+  // Empty path
+  SKTest.expectFalse(SKJS.globMatch("*.ts", ""));
+  // Pattern with no wildcards on multi-segment path
+  SKTest.expectFalse(SKJS.globMatch("foo", "foo/bar"));
+  // Multiple * in one segment
+  SKTest.expectTrue(SKJS.globMatch("*.*", "foo.ts"));
+  SKTest.expectFalse(SKJS.globMatch("*.*", "foobar"));
+  // ** alone matches everything
+  SKTest.expectTrue(SKJS.globMatch("**", "foo"));
+  SKTest.expectTrue(SKJS.globMatch("**", "foo/bar"));
+  SKTest.expectTrue(SKJS.globMatch("**", "foo/bar/baz"));
+}
+
+module end;
