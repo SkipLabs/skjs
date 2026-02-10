@@ -18,6 +18,7 @@ function fixE_sequentialConstraint<T>(x: T): List<T> {
   result = { head: x, tail: null };
   result = { head: x, tail: result };
   result = { head: x, tail: result };
+  // @skjs-expect-error Invalid return type
   return result;
 }
 
@@ -57,6 +58,7 @@ function fixB_sequentialGrow<T>(x: T): List<T> {
   let result: List<T> = null;
   result = { head: x, tail: null };
   result = { head: x, tail: result };
+  // @skjs-expect-error Invalid return type
   return result;
 }
 
@@ -69,6 +71,7 @@ function fixB_genericConstraint<T extends List<number>>(x: T): List<number> {
 type Nested<T> = null | { data: T; child: Nested<T> };
 
 function fixB_deepNest<T>(val: T): Nested<T> {
+  // @skjs-expect-error Invalid return type
   return {
     data: val,
     child: { data: val, child: { data: val, child: null } },

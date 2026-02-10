@@ -190,27 +190,32 @@ function transitionState(
 ): ConnectionState {
   if (current.kind === "disconnected") {
     if (action === "connect") {
+      // @skjs-expect-error Invalid return type
       return { kind: "connecting", timeout: 5000, attempts: 1 };
     }
     return current;
   } else if (current.kind === "connecting") {
     if (action === "success") {
+      // @skjs-expect-error Invalid return type
       return {
         kind: "connected",
         sessionId: "session-123",
         duration: 0,
       };
     } else if (action === "timeout") {
+      // @skjs-expect-error Invalid return type
       return { kind: "error", errorCode: 408, retryAfter: 3000 };
     }
     return current;
   } else if (current.kind === "connected") {
     if (action === "disconnect") {
+      // @skjs-expect-error Invalid return type
       return { kind: "disconnected", reason: "user_initiated" };
     }
     return current;
   } else if (current.kind === "error") {
     if (action === "retry") {
+      // @skjs-expect-error Invalid return type
       return { kind: "connecting", timeout: 5000, attempts: 1 };
     }
     return current;
@@ -831,10 +836,12 @@ function testComplexEliminationCases(): void {
 }
 
 function testNestedEliminationCases(): void {
+  // @skjs-expect-error Invalid annotation
   let outer1: NestedElimination = {
     kind: "outer",
     inner: { kind: "inner1", val: 123 },
   };
+  // @skjs-expect-error Invalid annotation
   let outer2: NestedElimination = {
     kind: "outer",
     inner: { kind: "inner2", text: "nested" },

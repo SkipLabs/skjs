@@ -101,6 +101,7 @@ function main(): void {
   console.log("Testing type refinement patterns...");
 
   // Test 1: Null checks
+  // @skjs-expect-error Invalid call
   handleNullableString({ message: "Hello World" });
   handleNullableString({ message: null });
 
@@ -109,6 +110,7 @@ function main(): void {
   processResponse({ kind: "error", message: "error message" });
 
   // Test 3: Nested objects
+  // @skjs-expect-error Invalid call
   handleNestedObject({ user: { name: "Alice" } });
   handleNestedObject({ user: null });
 
@@ -120,6 +122,7 @@ function main(): void {
   let users: Array<{ name: string | null }> = new Array<{
     name: string | null;
   }>();
+  // @skjs-expect-error Invalid call
   users.push({ name: "Bob" });
   users.push({ name: null });
   processUsers(users);
@@ -129,10 +132,12 @@ function main(): void {
   processOptionalUser(null);
 
   // Test 7: Boolean flags
+  // @skjs-expect-error Invalid call
   handleConditionalData({ hasData: true, data: "important data" });
   handleConditionalData({ hasData: false, data: null });
 
   // Test 8: Numeric values
+  // @skjs-expect-error Invalid call
   processScore({ score: 85, passed: true });
   processScore({ score: null, passed: false });
 

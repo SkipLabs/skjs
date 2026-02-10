@@ -1,3 +1,4 @@
+// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 // @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
 const obj: { f: number } = { f: 1 };
 

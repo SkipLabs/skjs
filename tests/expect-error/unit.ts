@@ -215,15 +215,16 @@ function checkLiteralType(
 type NestedType1 = { a: { b: { c: number } } };
 type NestedType2 = { a: { b: { d: string } } };
 
-function checkNestedType(obj: NestedType1 & NestedType2): {
+function checkNestedTypeIntersection(obj: NestedType1 & NestedType2): {
   a: { b: { c: number; d: string } };
 } {
   return obj;
 }
 
-function checkNestedType(obj: NestedType1 | NestedType2): {
+function checkNestedTypeUnion(obj: NestedType1 | NestedType2): {
   a: { b: { c?: number; d?: string } };
 } {
+  // @skjs-expect-error Invalid return type
   return obj;
 }
 

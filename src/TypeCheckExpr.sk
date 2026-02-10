@@ -186,7 +186,7 @@ extension class TypeChecker {
                         tcenv.subst.clone(),
                         this,
                         undefined(defaultPos),
-                        tfield.type,
+                        tfield.get,
                       ) is STOk()
                     ) {
                       !defaultIsUseless = None();
@@ -194,19 +194,19 @@ extension class TypeChecker {
                         TType::diff(
                           tcenv.subst,
                           this,
-                          tfield.type,
+                          tfield.get,
                           undefined(defaultPos),
                         ),
                         defaultType,
                       )
                     } else {
-                      tfield.type
+                      tfield.get
                     }
                   | None() ->
                     if (tfield.isOptional) {
-                      union(tfield.type, undefined(tfield.pos))
+                      union(tfield.get, undefined(tfield.pos))
                     } else {
-                      tfield.type
+                      tfield.get
                     }
                   },
                 )
@@ -1722,7 +1722,7 @@ extension class TypeChecker {
             fieldType.pos,
             "Invalid assignment",
             fieldType,
-            fd.type,
+            fd.set,
           )
         | None() ->
           matchingIndex = fields.indexes.find(indexField -> {

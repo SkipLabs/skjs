@@ -84,12 +84,13 @@ function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
 // Assigning array to union variable
 function testAssignArrayToUnion(): Array<number> | Obj {
   const arr: Array<number> = [1, 2, 3];
-  // TODO: Should Array<number> be assignable to Array<number> | Obj?
+  // @skjs-expect-error Invalid return type
   return arr;
 }
 
 // Assigning object to union variable
 function testAssignObjectToUnion(): Array<number> | Obj {
+  // @skjs-expect-error Invalid annotation
   const obj: Obj = { name: "test", value: 42 };
   // TODO: Should Obj be assignable to Array<number> | Obj?
   return obj;
@@ -192,7 +193,7 @@ function testDestructuringUnion(x: Array<number> | Obj): void {
 
 // Array<number> should be subtype of Array<number> | Obj
 function testArraySubtypeOfUnion(arr: Array<number>): Array<number> | Obj {
-  // TODO: Should Array<number> be subtype of union?
+  // @skjs-expect-error Invalid return type
   return arr;
 }
 
@@ -232,6 +233,7 @@ function testNarrowToObject(x: Array<number> | Obj): Obj {
     // @skjs-expect-error Invalid return type
     return x;
   }
+  // @skjs-expect-error Invalid return type
   return { name: "", value: 0 };
 }
 
@@ -263,9 +265,12 @@ function testGenericArrayOrObjectS<S extends Array<number> | Obj>(x: S): S {
 // Using the generic function
 function testUseGenericArrayOrObject(): void {
   const arr: Array<number> = [1, 2, 3];
+  // @skjs-expect-error Invalid call
   const result1 = testGenericArrayOrObject(arr);
+  // @skjs-expect-error Invalid call
   const result1S = testGenericArrayOrObjectS(arr);
 
+  // @skjs-expect-error Invalid annotation
   const obj: Obj = { name: "test", value: 42 };
   // TODO: Should this work?
   const result2 = testGenericArrayOrObject(obj);

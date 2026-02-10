@@ -121,7 +121,8 @@ extension class TField {
       pos => x.pos,
       name => x.name,
       isOptional => x.isOptional || y.isOptional,
-      type => TType::union(subst, tenv, x.type, y.type),
+      get => TType::union(subst, tenv, x.get, y.get),
+      set => TType::inter(subst, tenv, x.set, y.set),
     }
   }
 }
@@ -277,7 +278,13 @@ extension class TFields {
       ior match {
       | Left(z)
       | Right(z) ->
-        Some(z.withOptional())
+        TField::create{
+          pos => z.pos,
+          name => z.name,
+          isOptional => true,
+          isReadonly => None(),
+          type => z.get,
+        }
       | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );

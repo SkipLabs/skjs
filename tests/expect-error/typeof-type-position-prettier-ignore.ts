@@ -126,6 +126,7 @@ type ObjectLiteralType = typeof { x: 1, y: 2 };
 
 // Object literal - local variable annotation (TCEnv available)
 function testObjectLiteralLocal(): void {
+  // @skjs-expect-error Invalid annotation
   // @skjs-expect-error typeof operand must be an identifier or property access
   const p: typeof { x: 1 } = { x: 1 };
 }

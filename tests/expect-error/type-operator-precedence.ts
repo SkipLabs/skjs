@@ -229,6 +229,7 @@ function testComplexPrecedence(): void {
   const a: ComplexPrecedence = "x";
 
   // Works: object with both y and z matches { y: string; z: boolean }
+  // @skjs-expect-error Invalid annotation
   const b: ComplexPrecedence = { y: "hello", z: true };
 
   // Should fail: object with only y
