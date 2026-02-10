@@ -2,6 +2,7 @@
   "compilerOptions": {
     "strict": true,
     "target": "ES2020",
+    // @skjs-expect-error Option 'strictNullChecks' is redundant when 'strict' is true.
     "strictNullChecks": true
   },
   "include": ["src/**/*.ts"]

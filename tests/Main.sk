@@ -311,15 +311,17 @@ fun testFiles(
   validateResult: Validator,
   update: UpdateMode = UMValidateOnly(),
 ): void {
-  testFilesWithRoot(".", srcFiles, importStubs, validateResult)
+  reportExpectationErrors(
+    checkFilesWithRoot(".", srcFiles, importStubs, validateResult),
+  )
 }
 
-fun testFilesWithRoot(
+fun checkFilesWithRoot(
   root: String,
   srcFiles: Array<String>,
   importStubs: Array<String>,
   validateResult: Validator,
-): void {
+): Array<SKTest.ExpectationError> {
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
 
@@ -339,7 +341,7 @@ fun testFilesWithRoot(
     errorHandling => SKJS.EHKeepGoing(),
     errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
   };
-  expectationErrors = checker
+  checker
     .checkFiles(context)
     .items(context)
     .map(res ->
@@ -355,8 +357,7 @@ fun testFilesWithRoot(
       }
     )
     .collect(Array)
-    .flatten();
-  reportExpectationErrors(expectationErrors)
+    .flatten()
 }
 
 fun testFile(
@@ -431,7 +432,17 @@ fun testNotSupportedTypeScriptConformance(): void {
 fun testProject(projectDir: String): void {
   dir = Path.resolve(projectDir);
   configPath = Path.join(dir, "tsconfig.json");
-  config = SKJS.loadTsConfig(configPath);
+  (config, diagnostics) = SKJS.loadTsConfig(configPath);
+
+  // Validate tsconfig lint diagnostics against @skjs-expect-error annotations
+  rawContents = FileSystem.readTextFile(configPath);
+  tsconfigExpectErrors = findExpectErrors(rawContents);
+  tsconfigDiagErrors = validateTsConfigDiags(
+    configPath,
+    diagnostics,
+    tsconfigExpectErrors.iterator(),
+  );
+
   srcFiles = SKJS.resolveConfigFiles(config);
   configDirStr = config.configDir.toString();
   root = config.compilerOptions.baseUrl match {
@@ -442,12 +453,97 @@ fun testProject(projectDir: String): void {
     | None() -> configDirStr
     }
   };
-  testFilesWithRoot(
+  fileErrors = checkFilesWithRoot(
     root,
     srcFiles,
     Array["./import-stubs"],
     validateExpectErrorComments,
-  )
+  );
+  reportExpectationErrors(tsconfigDiagErrors.concat(fileErrors))
+}
+
+// Validate tsconfig diagnostics against expect-error annotations.
+// Similar to validateReferenceErrors but for TsConfigDiag instead of Error.
+fun validateTsConfigDiags(
+  configPath: String,
+  diags: Array<SKJS.TsConfigDiag>,
+  expectErrors: mutable Iterator<ExpectError>,
+): Array<SKTest.ExpectationError> {
+  expectErrorOpt = expectErrors.next();
+
+  // Group diagnostics by line (mirrors getLinedErrors for SKJS.Error)
+  m = mutable Map[];
+  for (diag in diags) {
+    diagsAtLine = m.getOrAdd(diag.line, () -> Vector::mcreate(0));
+    diagsAtLine.push(diag)
+  };
+  groupedDiags = m
+    .iterator()
+    .map(entry -> (entry.i0, entry.i1.toArray()))
+    .collect(Array)
+    .sortedBy(entry ~> entry.i0);
+
+  errors = mutable Vector[];
+
+  i = 0;
+  loop {
+    groupOpt = groupedDiags.maybeGet(i);
+    (groupOpt, expectErrorOpt) match {
+    | (None(), None()) -> break void
+    | (
+      Some((actualLine, lineDiags)),
+      Some(ref @ ExpectError{line => expectedLine}),
+    ) if (actualLine == expectedLine) ->
+      actuals = lineDiags
+        .map(d -> d.message.trimForComparison())
+        .collect(SortedSet);
+      if (actuals != ref.expectedErrors) {
+        errors.push(
+          SKTest.ExpectationError(
+            `${configPath}:${actualLine} Wrong tsconfig diagnostic`,
+            ref.getMessage(),
+            actuals.toArray().join(" / "),
+          ),
+        )
+      };
+      !i = i + 1;
+      !expectErrorOpt = expectErrors.next()
+    | (
+      Some((actualLine, lineDiags)),
+      Some(ExpectError{line => expectedLine}),
+    ) if (actualLine < expectedLine) ->
+      diagStr = lineDiags.map(d -> d.message).join("; ");
+      errors.push(
+        SKTest.ExpectationError(
+          `${configPath}:${actualLine} Unexpected tsconfig diagnostic`,
+          "no diagnostic",
+          diagStr,
+        ),
+      );
+      !i = i + 1
+    | (Some((actualLine, lineDiags)), None()) ->
+      diagStr = lineDiags.map(d -> d.message).join("; ");
+      errors.push(
+        SKTest.ExpectationError(
+          `${configPath}:${actualLine} Unexpected tsconfig diagnostic`,
+          "no diagnostic",
+          diagStr,
+        ),
+      );
+      !i = i + 1
+    | (_, Some(ref @ ExpectError{line => expectedLine})) ->
+      errors.push(
+        SKTest.ExpectationError(
+          `${configPath}:${expectedLine} Expected tsconfig diagnostic`,
+          ref.getMessage(),
+          "no diagnostic",
+        ),
+      );
+      !expectErrorOpt = expectErrors.next()
+    }
+  };
+
+  errors.toArray()
 }
 
 @test

@@ -289,12 +289,17 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       // No tsconfig found, fall through to existing behavior
       (cliBaseUrl.default("."), Array[])
     | Some(configPath) ->
-      config = try {
+      (config, diagnostics) = try {
         loadTsConfig(configPath)
       } catch {
       | exn ->
         print_error(`Failed to parse ${configPath}: ${exn.getMessage()}`);
         throw Exit(2)
+      };
+      // Report tsconfig lint diagnostics
+      for (diag in diagnostics) {
+        prefix = if (diag.isWarning) "warning" else "error";
+        print_error(`${configPath}:${diag.line}: ${prefix}: ${diag.message}`);
       };
       resolvedFiles: Array<String> = resolveConfigFiles(config);
       if (resolvedFiles.isEmpty()) {

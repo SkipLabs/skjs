@@ -3,16 +3,65 @@
 /*                                                                         */
 /* Provides:                                                               */
 /*   - tsconfig.json loading and field extraction                          */
+/*   - tsconfig.json linting (compilerOptions validation)                  */
 /*   - File discovery from tsconfig configuration                          */
 /***************************************************************************/
 
 module SKJS;
 
 /***************************************************************************/
+// compilerOptions disposition for SKJS
+//
+// REQUIRED — must be set to a specific value:
+//   strict: true            SKJS always checks in strict mode
+//
+// STRICT SUB-OPTIONS — covered by strict:true:
+//   Error if set to false (weakening strict).
+//   Warn if redundantly set to true.
+//     noImplicitAny, strictNullChecks, strictFunctionTypes,
+//     strictBindCallApply, strictPropertyInitialization, noImplicitThis,
+//     alwaysStrict, useUnknownInCatchVariables, exactOptionalPropertyTypes
+//
+// SUPPORTED — type-checking options SKJS recognizes, silently accepted:
+//     noImplicitReturns, noFallthroughCasesInSwitch,
+//     noUncheckedIndexedAccess, noPropertyAccessFromIndexSignature,
+//     noUnusedLocals, noUnusedParameters, rootDir, baseUrl
+//
+// IGNORED — emit/tooling/IDE options, silently accepted:
+//   Emit: target, outDir, outFile, declaration, declarationMap,
+//     declarationDir, emitDeclarationOnly, sourceMap, sourceRoot, mapRoot,
+//     removeComments, noEmit, preserveConstEnums, downlevelIteration,
+//     newLine, importsNotUsedAsValues, noEmitOnError
+//   Module: module, moduleResolution, typeRoots, types,
+//     resolveJsonModule, rootDirs, moduleSuffixes, customConditions
+//   Interop: esModuleInterop, allowSyntheticDefaultImports,
+//     forceConsistentCasingInFileNames, isolatedModules,
+//     verbatimModuleSyntax
+//   Language: lib
+//   Projects: composite, incremental, tsBuildInfoFile
+//   Completeness: skipLibCheck, skipDefaultLibCheck
+//   Other: pretty, allowUmdGlobalAccess, useDefineForClassFields,
+//     noImplicitOverride
+//
+// RESTRICTED — error if present:
+//   allowJs, checkJs          SKJS only checks .ts files
+//   jsx, jsxFactory,          JSX not supported
+//     jsxFragmentFactory,
+//     jsxImportSource
+//   experimentalDecorators,   decorators not supported
+//     emitDecoratorMetadata
+//   paths                     path aliases not yet supported
+//   suppressExcessPropertyErrors,  weakens type checking
+//     suppressImplicitAnyIndexErrors
+/***************************************************************************/
+
+/***************************************************************************/
 // Data types
 /***************************************************************************/
 
 class TsCompilerOptions{rootDir: ?String = None(), baseUrl: ?String = None()}
+
+class TsConfigDiag{line: Int, message: String, isWarning: Bool}
 
 class TsConfig{
   configDir: DAbsolute,
@@ -68,21 +117,91 @@ fun resolveTsConfigPath(projectPath: String): Result<String, String> {
 }
 
 // Load and parse a tsconfig.json file.
-fun loadTsConfig(path: String): TsConfig {
+// Returns the config and any lint diagnostics.
+fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
   contents = FileSystem.readTextFile(path);
   stripped = stripJsonComments(contents);
   json = JSON.decode(stripped);
   obj = json.expectObject();
   configDir = DAbsolute::create(Path.dirname(path));
 
-  // Extract compilerOptions
+  // Extract and lint compilerOptions in a single pass
+  diags = mutable Vector[];
   compilerOptions = obj.maybeGetObject("compilerOptions") match {
   | Some(co) ->
+    // Check strict
+    hasStrict = co.maybeGetBool("strict");
+    hasStrict match {
+    | Some(true) -> void
+    | Some(false) ->
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(contents, "strict"),
+          message => "SKJS requires 'strict: true' in compilerOptions.",
+          isWarning => false,
+        },
+      )
+    | None() ->
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(contents, "compilerOptions"),
+          message => "SKJS requires 'strict: true' in compilerOptions.",
+          isWarning => false,
+        },
+      )
+    };
+
+    isStrict = hasStrict == Some(true);
+
+    // Check strict sub-options
+    for (name in strictSubOptions) {
+      co.maybeGetBool(name) match {
+      | Some(false) ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(contents, name),
+            message => `Option '${name}' cannot be disabled; SKJS requires strict mode.`,
+            isWarning => false,
+          },
+        )
+      | Some(true) if (isStrict) ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(contents, name),
+            message => `Option '${name}' is redundant when 'strict' is true.`,
+            isWarning => true,
+          },
+        )
+      | _ -> void
+      }
+    };
+
+    // Check restricted options
+    for (name in restrictedOptions) {
+      if (co.maybeGet(name).isSome()) {
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(contents, name),
+            message => `Option '${name}' is not supported by SKJS.`,
+            isWarning => false,
+          },
+        )
+      }
+    };
+
     TsCompilerOptions{
       rootDir => co.maybeGetString("rootDir"),
       baseUrl => co.maybeGetString("baseUrl"),
     }
-  | None() -> TsCompilerOptions{}
+  | None() ->
+    diags.push(
+      TsConfigDiag{
+        line => 1,
+        message => "SKJS requires 'strict: true' in compilerOptions.",
+        isWarning => false,
+      },
+    );
+    TsCompilerOptions{}
   };
 
   // Extract include
@@ -127,18 +246,67 @@ fun loadTsConfig(path: String): TsConfig {
     exclude
   };
 
-  TsConfig{
-    configDir,
-    compilerOptions,
-    include => effectiveInclude,
-    exclude => effectiveExclude,
-    files,
-  }
+  (
+    TsConfig{
+      configDir,
+      compilerOptions,
+      include => effectiveInclude,
+      exclude => effectiveExclude,
+      files,
+    },
+    diags.toArray(),
+  )
 }
 
 // Replace ${configDir} in a string value with the actual config directory path.
 fun substituteConfigDir(value: String, configDir: DAbsolute): String {
   value.replace("${configDir}", configDir.toString())
+}
+
+/***************************************************************************/
+// tsconfig.json linting
+/***************************************************************************/
+
+const strictSubOptions: Array<String> = Array[
+  "noImplicitAny",
+  "strictNullChecks",
+  "strictFunctionTypes",
+  "strictBindCallApply",
+  "strictPropertyInitialization",
+  "noImplicitThis",
+  "alwaysStrict",
+  "useUnknownInCatchVariables",
+  "exactOptionalPropertyTypes",
+];
+
+const restrictedOptions: Array<String> = Array[
+  "allowJs",
+  "checkJs",
+  "jsx",
+  "jsxFactory",
+  "jsxFragmentFactory",
+  "jsxImportSource",
+  "experimentalDecorators",
+  "emitDecoratorMetadata",
+  "paths",
+  "suppressExcessPropertyErrors",
+  "suppressImplicitAnyIndexErrors",
+];
+
+// Find the 1-based line number of a JSON key in raw JSONC content.
+// Searches for "key" followed by optional whitespace and ':'.
+// Returns 0 if not found.
+fun findKeyLine(contents: String, key: String): Int {
+  keyColon = `"${key}":`;
+  keySpaceColon = `"${key}" :`;
+  lines = contents.split("\n");
+  for (i in Range(0, lines.size())) {
+    line = lines[i];
+    if (line.contains(keyColon) || line.contains(keySpaceColon)) {
+      return i + 1
+    }
+  };
+  0
 }
 
 /***************************************************************************/
