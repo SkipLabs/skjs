@@ -598,7 +598,7 @@ base class STErrorOnTFields(
 
 extension class IndexKeyKinds {
   static fun isSub(a: IndexKeyKinds, b: IndexKeyKinds): Bool {
-    (!a.hasString || b.hasString) &&
+    (!a.hasString || b.hasString || b.hasNumber) &&
       (!a.hasNumber || b.hasNumber) &&
       (!a.hasSymbol || b.hasSymbol)
   }

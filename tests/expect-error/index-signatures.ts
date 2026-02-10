@@ -305,7 +305,6 @@ type StringIndexNum = { [k: string]: number };
 
 // Number index assignable to string index (number keys are a subset of string keys)
 function assignNumberIndexToStringIndex(x: NumberIndexNum): StringIndexNum {
-  // @skjs-expect-error Invalid return type
   return x;
 }
 
