@@ -370,6 +370,13 @@ type StringSymbolIndependent = { [k: string]: number; [k: symbol]: string };
 // Number and symbol indexes are independent — OK
 type NumberSymbolIndependent = { [k: number]: number; [k: symbol]: string };
 
+///////////////////////////////////////////////////////////////////////////////
+// Test 25: Duplicate/overlapping index signatures
+///////////////////////////////////////////////////////////////////////////////
+
+// @skjs-expect-error Duplicate index signature
+type DupStringIndex = { [k: string]: number; [k: string]: string };
+
 // Interface with incompatible field
 interface InterfaceFieldIncompat {
   // @skjs-expect-error Property 'name' is not assignable to index value type

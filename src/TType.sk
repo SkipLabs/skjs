@@ -1092,6 +1092,19 @@ class TFields{
         for (j in Range(i + 1, indexes.size())) {
           a = indexes[i];
           b = indexes[j];
+          overlaps =
+            (a.keyKinds.hasString && b.keyKinds.hasString) ||
+            (a.keyKinds.hasNumber && b.keyKinds.hasNumber) ||
+            (a.keyKinds.hasSymbol && b.keyKinds.hasSymbol);
+          if (overlaps) {
+            tcenvb.error(
+              Array[
+                (a.pos, "Duplicate index signature"),
+                (b.pos, "Conflicts with this index signature"),
+              ],
+            );
+            continue
+          };
           (stringIdx, numberIdx) = if (
             a.keyKinds.hasString &&
             b.keyKinds.hasNumber
