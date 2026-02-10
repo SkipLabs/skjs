@@ -962,7 +962,7 @@ base class TEnv{
     hasNumber = false;
     hasSymbol = false;
     valid = keyType.getSTypes(subst, this, Covariant()) match {
-    | Some(stypes) if (!stypes.isEmpty()) ->
+    | Some(stypes) ->
       stypes.all(stype ->
         stype match {
         | TPrimValue(TString(), None(), _) ->
@@ -979,17 +979,20 @@ base class TEnv{
       )
     | _ -> false
     };
-    if (!valid) {
-      typingError(
-        Array[
-          (
-            pos,
-            "An index signature parameter type must be string, number, or symbol",
-          ),
-        ],
-      )
+    if (valid) {
+      IndexKeyKinds::create(hasString, hasNumber, hasSymbol) match {
+      | Some(res) -> return res
+      | None() -> void
+      }
     };
-    IndexKeyKinds{hasString, hasNumber, hasSymbol}
+    typingError(
+      Array[
+        (
+          pos,
+          "An index signature parameter type must be string, number, or symbol",
+        ),
+      ],
+    )
   }
 
   fun getIteratorElementType(

@@ -898,11 +898,25 @@ class TField private {
 
 /* The set of allowed key kinds for an index signature.
    Only string, number, and symbol are valid index key types. */
-class IndexKeyKinds{
+class IndexKeyKinds private {
   hasString: Bool,
   hasNumber: Bool,
   hasSymbol: Bool,
 } uses XXHashable, Orderable {
+  /* Invariant: hasString || hasNumber || hasSymbol */
+
+  static fun create(
+    hasString: Bool,
+    hasNumber: Bool,
+    hasSymbol: Bool,
+  ): ?IndexKeyKinds {
+    if (hasString || hasNumber || hasSymbol) {
+      Some(IndexKeyKinds{hasString, hasNumber, hasSymbol})
+    } else {
+      None()
+    }
+  }
+
   fun contains(kind: TPrimValueKind): Bool {
     kind match {
     | TString() -> this.hasString
