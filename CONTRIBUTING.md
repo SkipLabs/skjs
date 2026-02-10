@@ -65,10 +65,8 @@
 - If testing requires specific types, use function parameters instead of complex type annotations
 
 ### Running Tests
-```bash
-skargo test                                                      # Run all tests
-./target/host/dev/skjs check --import-stubs import-stubs <file>  # Check specific file
-```
+
+See [README.md](README.md) for build and test commands.
 
 ## Commit Guidelines
 
@@ -78,6 +76,7 @@ skargo test                                                      # Run all tests
 - Each commit must pass tests (`skargo test`)
 - Make one commit per logical change
 - Message must start with `AIGEN` if code was produced with AI assistance
+- PR titles follow the same `AIGEN` prefix rule
 
 ### When to Update Documentation
 - Update `skjs-rules.md` when adding or removing restrictions/features that differ from TypeScript
