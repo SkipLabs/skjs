@@ -162,14 +162,11 @@ extension class TIndexField {
     tenv: TEnv,
     x: TIndexField,
     y: TIndexField,
-  ): ?TIndexField {
-    /* Currently over-approximating by a union
-       for { [f: 0 | 1]: 4 | 5 } & { [g: 1 | 2]: 5 | 6 },
-       the result would be { [f: 0]: 4 | 5, [fg: 1]: 5, [g: 2]: 5 | 6}
-       but we return { [f: 0 | 1 | 2]: 4 | 5 | 6 } */
+  ): TIndexField {
+    /* Currently over-approximating by union of value types */
     valueType = TType::union(subst, tenv, x.valueType, y.valueType);
     keyKinds = IndexKeyKinds::union(x.keyKinds, y.keyKinds);
-    Some(TIndexField{pos => x.pos, keyName => x.keyName, keyKinds, valueType})
+    TIndexField{pos => x.pos, keyName => x.keyName, keyKinds, valueType}
   }
 }
 
@@ -318,21 +315,33 @@ extension class TFields {
     );
     // TODO: handle intersection between normal fields and index fields
     indexes = {
-      index1o = fields1.maybeSingleIndex();
-      index2o = fields2.maybeSingleIndex();
-      (index1o, index2o) match {
-      | (None(), None()) -> None()
-      | (Some(index), None())
-      | (None(), Some(index)) ->
-        Some(index)
-      | (Some(index1), Some(index2)) ->
-        TIndexField::inter(subst, tenv, index1, index2)
-      } match {
+      TFields::interOptIndex(
+        subst,
+        tenv,
+        fields1.maybeSingleIndex(),
+        fields2.maybeSingleIndex(),
+      ) match {
       | None() -> Array[]
       | Some(index) -> Array[index]
       }
     };
     Some(TFields{fields, symbolFields, indexes, call, new})
+  }
+
+  static fun interOptIndex(
+    subst: mutable Subst,
+    tenv: TEnv,
+    i1: ?TIndexField,
+    i2: ?TIndexField,
+  ): ?TIndexField {
+    (i1, i2) match {
+    | (None(), None()) -> None()
+    | (Some(index), None())
+    | (None(), Some(index)) ->
+      Some(index)
+    | (Some(index1), Some(index2)) ->
+      Some(TIndexField::inter(subst, tenv, index1, index2))
+    }
   }
 }
 
