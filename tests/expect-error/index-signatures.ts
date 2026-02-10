@@ -272,6 +272,9 @@ function aliasIndexAccess(x: AliasIndex): number | undefined {
 // Test 21: Invalid key types (all rejected)
 ///////////////////////////////////////////////////////////////////////////////
 
+// TODO: reject
+type NeverIndex = { [k: never]: number };
+
 // @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type BooleanIndex = { [k: boolean]: number };
 
@@ -287,6 +290,7 @@ type StringOrBoolIndex = { [k: string | boolean]: number };
 // @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type ObjectIndex = { [k: object]: number };
 
+// TODO: reject
 // Literal types pass because "a" | "b" is a subtype of string
 // (TypeScript rejects them syntactically, but we allow them)
 type LiteralIndex = { [k: "a" | "b"]: number };
