@@ -388,24 +388,13 @@ extension class TypeChecker {
         } match {
         | None() -> void
         | Some(remainingIdxSType) ->
-          fields.maybeSingleIndex() match {
-          | None() ->
-            remainingIdxSType.literals match {
-            | None() ->
-              typingError(
-                Array[
-                  (pos, "Invalid access"),
-                  (
-                    idx.pos,
-                    `Index has non-literal type ${remainingIdxSType.kind}`,
-                  ),
-                  (objectPos, "But object has no index field"),
-                ],
-              )
-            | Some(lits) -> fields.getTypeTypingError(lits.toStringList(), pos)
-            }
+          fields.indexForKeyKind(remainingIdxSType.kind) match {
           | Some(index) ->
-            if (!index.keyKinds.contains(remainingIdxSType.kind)) {
+            ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
+            !result = TType::union(tcenv.subst, this, result, ty)
+          | None() ->
+            fields.anyIndex() match {
+            | Some(index) ->
               tcenv.error(
                 Array[
                   (pos, "Invalid index key"),
@@ -416,10 +405,31 @@ extension class TypeChecker {
                     } is not compatible with ${index.keyKinds}`,
                   ),
                 ],
-              )
-            };
-            ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
-            !result = TType::union(tcenv.subst, this, result, ty)
+              );
+              ty = TType::unionUndefined(
+                tcenv.subst,
+                this,
+                index.valueType,
+                pos,
+              );
+              !result = TType::union(tcenv.subst, this, result, ty)
+            | None() ->
+              remainingIdxSType.literals match {
+              | None() ->
+                typingError(
+                  Array[
+                    (pos, "Invalid access"),
+                    (
+                      idx.pos,
+                      `Index has non-literal type ${remainingIdxSType.kind}`,
+                    ),
+                    (objectPos, "But object has no index field"),
+                  ],
+                )
+              | Some(lits) ->
+                fields.getTypeTypingError(lits.toStringList(), pos)
+              }
+            }
           }
         }
 
@@ -1179,11 +1189,11 @@ extension class TypeChecker {
             );
             !canBeTrue = true;
             !canBeFalse = true
-          | TObject(TFields{fields, symbolFields, indexes}, _pos) ->
+          | TObject(objFields @ TFields{fields}, _pos) ->
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
-              !indexes.isEmpty() /* TODO: refine */ ||
+              objFields.hasIndex() /* TODO: refine */ ||
               fieldsOpt match {
               | None() ->
                 false // no field keys to check
@@ -1204,7 +1214,7 @@ extension class TypeChecker {
                 true // broad symbol, could be any key
               | Some(Some(symFieldsToCheck)) ->
                 symFieldsToCheck.values().any(symToCheck ->
-                  symbolFields.maybeGet(symToCheck.val) match {
+                  objFields.symbolFields.maybeGet(symToCheck.val) match {
                   | Some(tField) -> tField.isOptional
                   | None() -> true
                   }
@@ -1691,14 +1701,8 @@ extension class TypeChecker {
           )
         | None() ->
           // Check if it matches an index signature.
-          keyKind = key match {
-          | FKName _ -> TString()
-          | FKSymbol _ -> TSymbol()
-          };
-          matchingIndex = fields.indexes.find(indexField -> {
-            indexField.keyKinds.contains(keyKind)
-          });
-          matchingIndex match {
+          keyKind = key.toPrimValueKind();
+          fields.indexForKeyKind(keyKind) match {
           | Some(indexField) ->
             this.checkSubType(
               tcenv,

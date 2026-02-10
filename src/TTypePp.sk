@@ -274,7 +274,7 @@ mutable class TypePp{
   ): void {
     (
       fields.fields.isEmpty(),
-      fields.indexes.isEmpty(),
+      !fields.hasIndex(),
       fields.call,
       fields.new,
       tagOpt,

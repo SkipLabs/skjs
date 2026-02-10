@@ -1153,6 +1153,27 @@ class TFields{
       this.call.isNone()
   }
 
+  fun hasIndex(): Bool {
+    !this.indexes.isEmpty()
+  }
+
+  fun anyIndex(): ?TIndexField {
+    if (this.indexes.isEmpty()) None() else Some(this.indexes[0])
+  }
+
+  fun indexForKeyKind(kind: TPrimValueKind): ?TIndexField {
+    kind match {
+    | TString() -> this.indexes.find(idx -> idx.keyKinds.hasString)
+    | TNum() ->
+      this.indexes.find(idx -> idx.keyKinds.hasNumber) match {
+      | some @ Some _ -> some
+      | None() -> this.indexes.find(idx -> idx.keyKinds.hasString)
+      }
+    | TSymbol() -> this.indexes.find(idx -> idx.keyKinds.hasSymbol)
+    | _ -> None()
+    }
+  }
+
   fun map(
     fField: TField -> TField,
     fIndexField: TIndexField -> TIndexField,

@@ -256,8 +256,8 @@ extension class TypeChecker {
           | Some(key) ->
             if (target) {
               Some(
-                tObj.map(tf ->
-                  if (!tf.indexes.isEmpty()) /* TODO: refine */ tf else {
+                tObj.map(tFields ->
+                  if (tFields.hasIndex()) tFields else {
                     TField::create(
                       e1.pos,
                       key.value(),
@@ -266,12 +266,12 @@ extension class TypeChecker {
                     )
                       .flatMap(fieldToAdd ->
                         if (key is FKSymbol _) {
-                          tf.addSymbolField(fieldToAdd)
+                          tFields.addSymbolField(fieldToAdd)
                         } else {
-                          tf.addField(fieldToAdd)
+                          tFields.addField(fieldToAdd)
                         }
                       )
-                      .default(tf)
+                      .default(tFields)
                   }
                 ),
               )
