@@ -290,9 +290,7 @@ type StringOrBoolIndex = { [k: string | boolean]: number };
 // @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type ObjectIndex = { [k: object]: number };
 
-// TODO: reject
-// Literal types pass because "a" | "b" is a subtype of string
-// (TypeScript rejects them syntactically, but we allow them)
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type LiteralIndex = { [k: "a" | "b"]: number };
 
 // @skjs-expect-error An index signature parameter type must be string, number, or symbol

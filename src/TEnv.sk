@@ -965,13 +965,13 @@ base class TEnv{
     | Some(stypes) if (!stypes.isEmpty()) ->
       stypes.all(stype ->
         stype match {
-        | TPrimValue(TString(), _, _) ->
+        | TPrimValue(TString(), None(), _) ->
           !hasString = true;
           true
-        | TPrimValue(TNum(), _, _) ->
+        | TPrimValue(TNum(), None(), _) ->
           !hasNumber = true;
           true
-        | TPrimValue(TSymbol(), _, _) ->
+        | TPrimValue(TSymbol(), None(), _) ->
           !hasSymbol = true;
           true
         | _ -> false
