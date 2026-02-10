@@ -295,3 +295,22 @@ type LiteralIndex = { [k: "a" | "b"]: number };
 
 // @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type GenericIndex<K> = { [k: K]: number };
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 22: Cross-key-kind assignability (number is subtype of string)
+///////////////////////////////////////////////////////////////////////////////
+
+type NumberIndexNum = { [k: number]: number };
+type StringIndexNum = { [k: string]: number };
+
+// Number index assignable to string index (number keys are a subset of string keys)
+function assignNumberIndexToStringIndex(x: NumberIndexNum): StringIndexNum {
+  // @skjs-expect-error Invalid return type
+  return x;
+}
+
+// String index NOT assignable to number index
+function assignStringIndexToNumberIndex(x: StringIndexNum): NumberIndexNum {
+  // @skjs-expect-error Invalid return type
+  return x;
+}
