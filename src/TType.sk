@@ -984,6 +984,9 @@ class TFields{
   fields: InternalKeyedArrayMap<String, TField>,
   // Fields keyed by unique symbol ID (e.g. Symbol.iterator)
   symbolFields: InternalKeyedArrayMap<String, TField>,
+  // Index signatures: `[k: string]: V`, `[k: number]: V`, `[k: symbol]: V`.
+  // A TS index like `[k: string | number]: V` sets both stringIndex and numberIndex.
+  // Number-keyed access falls back to stringIndex when numberIndex is absent.
   stringIndex: ?TIndexField,
   numberIndex: ?TIndexField,
   symbolIndex: ?TIndexField,
