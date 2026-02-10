@@ -236,3 +236,59 @@ function stringKeyOnNumberIndex(x: NumberIndex): void {
   // @ts-expect-error Invalid index key
   const v = x["name"];
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 19: Valid union key types
+///////////////////////////////////////////////////////////////////////////////
+
+type StringOrNumberIndex = { [k: string | number]: number };
+
+function stringOrNumberIndexWithString(
+  x: StringOrNumberIndex,
+): number | undefined {
+  return x["a"];
+}
+
+function stringOrNumberIndexWithNumber(
+  x: StringOrNumberIndex,
+): number | undefined {
+  return x[42];
+}
+
+type AllKeysIndex = { [k: string | number | symbol]: number };
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 20: Type alias as index key type
+///////////////////////////////////////////////////////////////////////////////
+
+type MyString = string;
+type AliasIndex = { [k: MyString]: number };
+
+function aliasIndexAccess(x: AliasIndex): number | undefined {
+  return x["key"];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 21: Invalid key types (TODO: should all be rejected)
+///////////////////////////////////////////////////////////////////////////////
+
+// TODO: should reject — boolean is not a valid index key type
+type BooleanIndex = { [k: boolean]: number };
+
+// TODO: should reject — null is not a valid index key type
+type NullIndex = { [k: null]: number };
+
+// TODO: should reject — undefined is not a valid index key type
+type UndefinedIndex = { [k: undefined]: number };
+
+// TODO: should reject — union containing invalid type
+type StringOrBoolIndex = { [k: string | boolean]: number };
+
+// TODO: should reject — object is not a valid index key type
+type ObjectIndex = { [k: object]: number };
+
+// TODO: should reject — literal types are not valid in index signatures
+type LiteralIndex = { [k: "a" | "b"]: number };
+
+// TODO: should reject — type parameter is not valid in index signatures
+type GenericIndex<K> = { [k: K]: number };
