@@ -515,7 +515,7 @@ base class TEnv{
             symbolFields.push(
               TField::create(keyExpr.pos, uniqueId, false, metType).fromSome(),
             )
-          | FKName(name) ->
+          | FKName(name, _) ->
             TField::create(name.pos, name.value, false, metType) match {
             | None() ->
               tcenvb.error(Array[(fd.pos, `Forbidden method name '${name}'`)])
@@ -1145,16 +1145,7 @@ base class TEnv{
     keyType
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes -> stypes.singleElt())
-      .flatMap(sType ->
-        sType match {
-        | TPrimValue(TString(), Some(lits), _)
-        | TPrimValue(TNum(), Some(lits), _) ->
-          lits.singleElt().map(lit -> FKName(Name(keyExpr.pos, lit.val)))
-        | TPrimValue(TSymbol(), Some(lits), _) ->
-          lits.singleElt().map(lit -> FKSymbol(keyExpr.pos, lit.val))
-        | _ -> None()
-        }
-      ) match {
+      .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype)) match {
     | Some(res) -> res
     | None() ->
       typingError(
@@ -1206,7 +1197,7 @@ base class TEnv{
                 ).fromSome(),
               );
               continue
-            | FKName(name) -> name
+            | FKName(name, _) -> name
             }
           | FNNormal(name) -> name
           };
@@ -1266,7 +1257,7 @@ base class TEnv{
                 TField::create(keyExpr.pos, uniqueId, false, decl).fromSome(),
               );
               continue
-            | FKName(name) -> name
+            | FKName(name, _) -> name
             }
           | FNNormal(name) -> name
           };

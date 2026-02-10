@@ -709,30 +709,55 @@ base class TPrimValueKind uses XXHashable, Orderable {
   }
 }
 
+// Restricted key kind for FKName: only string or number
+base class FKNameKind {
+  fun toPrimValueKind(): TPrimValueKind {
+    this match {
+    | x @ TNum() -> x
+    | x @ TString() -> x
+    }
+  }
+}
+extension class TNum extends FKNameKind
+extension class TString extends FKNameKind
+
 // Represents either a string/number field name or a symbol key
 base class FieldKey {
   children =
-  | FKName(name: Name)
+  | FKName(name: Name, kind: FKNameKind)
   | FKSymbol(keyPos: PosRange, uniqueId: String)
 
   fun pos(): PosRange {
     this match {
-    | FKName(name) -> name.pos
+    | FKName(name, _) -> name.pos
     | FKSymbol(keyPos, _) -> keyPos
     }
   }
 
   fun value(): String {
     this match {
-    | FKName(name) -> name.value
+    | FKName(name, _) -> name.value
     | FKSymbol(_, uniqueId) -> uniqueId
+    }
+  }
+
+  static fun ofSType(pos: PosRange, stype: SType): ?FieldKey {
+    stype match {
+    | TPrimValue(TString(), Some(lits), _) ->
+      lits.singleElt().map(lit -> FKName(Name(pos, lit.val), TString()))
+    | TPrimValue(TNum(), Some(lits), _) ->
+      lits.singleElt().map(lit -> FKName(Name(pos, lit.val), TNum()))
+    | TPrimValue(TSymbol(), Some(lits), _) ->
+      lits.singleElt().map(lit -> FKSymbol(pos, lit.val))
+    | _ -> None()
     }
   }
 
   fun toType(): TType {
     TType::single(
       this match {
-      | FKName(name) -> TPrimValue::single(TString(), name.value, name.pos)
+      | FKName(name, kind) ->
+        TPrimValue::single(kind.toPrimValueKind(), name.value, name.pos)
       | FKSymbol(keyPos, uniqueId) ->
         TPrimValue::single(TSymbol(), uniqueId, keyPos)
       },
@@ -1012,7 +1037,7 @@ class TFields{
 
   fun maybeGetField(key: FieldKey): ?TField {
     key match {
-    | FKName(name) -> this.fields.maybeGet(name.value)
+    | FKName(name, _) -> this.fields.maybeGet(name.value)
     | FKSymbol(_, uniqueId) -> this.symbolFields.maybeGet(uniqueId)
     }
   }

@@ -1589,16 +1589,7 @@ extension class TypeChecker {
     fieldKey = keyType
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes -> stypes.singleElt())
-      .flatMap(stype ->
-        stype match {
-        | TPrimValue(TString(), Some(lits), _)
-        | TPrimValue(TNum(), Some(lits), _) ->
-          lits.singleElt().map(lit -> FKName(Name(keyExpr.pos, lit.val)))
-        | TPrimValue(TSymbol(), Some(lits), _) ->
-          lits.singleElt().map(lit -> FKSymbol(keyExpr.pos, lit.val))
-        | _ -> None()
-        }
-      );
+      .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype));
     fieldKey match {
     | None() -> fieldType
     | Some(key) ->
@@ -1627,6 +1618,10 @@ extension class TypeChecker {
         | Some(fd) -> fd.type
         | None() ->
           // Check if it matches an index signature.
+          keyKind = key match {
+          | FKName(_, kind) -> kind.toPrimValueKind()
+          | FKSymbol _ -> TSymbol()
+          };
           matchingIndex = fields.indexes.find(indexField -> {
             clonedSubst = tcenv.subst.clone();
             TType::isSub(
