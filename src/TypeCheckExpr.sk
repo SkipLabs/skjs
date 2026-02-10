@@ -393,9 +393,9 @@ extension class TypeChecker {
             ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
             !result = TType::union(tcenv.subst, this, result, ty)
           | None() ->
-            // No matching index — check for mismatched key kind
-            fields.maybeSingleIndex() match {
-            | Some(index) ->
+            if (fields.hasIndex()) {
+              // Has index but wrong key kind — non-fatal error
+              index = fields.indexArray()[0];
               tcenv.error(
                 Array[
                   (pos, "Invalid index key"),
@@ -414,7 +414,7 @@ extension class TypeChecker {
                 pos,
               );
               !result = TType::union(tcenv.subst, this, result, ty)
-            | None() ->
+            } else {
               remainingIdxSType.literals match {
               | None() ->
                 typingError(
@@ -696,10 +696,9 @@ extension class TypeChecker {
             for (spreadSType in spreadSTypes) {
               spreadSType match {
               | TObject(
-                TFields{
+                spreadTFields @ TFields{
                   fields => spreadFields,
                   symbolFields => spreadSymbolFields,
-                  indexes => spreadIndexes,
                   call => spreadCall,
                   new => spreadNew,
                 },
@@ -711,7 +710,7 @@ extension class TypeChecker {
                 for (spreadSymbolField in spreadSymbolFields) {
                   symbolFields.push(spreadSymbolField)
                 };
-                for (spreadIndex in spreadIndexes) {
+                for (spreadIndex in spreadTFields.indexArray()) {
                   indexes.push(spreadIndex)
                 };
                 spreadCall.each(_ ->

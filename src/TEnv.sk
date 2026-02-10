@@ -1354,7 +1354,7 @@ base class TEnv{
           for (symbolField in fields.symbolFields) {
             !symbols = symbols.set(symbolField.name);
           };
-          for (index in fields.indexes) {
+          for (index in fields.indexArray()) {
             !result = TType::union(
               subst,
               this,
@@ -1371,7 +1371,7 @@ base class TEnv{
             for (symbolField in branch.fields.symbolFields) {
               !symbols = symbols.set(symbolField.name);
             };
-            for (index in branch.fields.indexes) {
+            for (index in branch.fields.indexArray()) {
               !result = TType::union(
                 subst,
                 this,

@@ -320,7 +320,7 @@ mutable class TypePp{
   ): void {
     fieldArray = fields.fields;
     symbolFieldArray = fields.symbolFields;
-    indexes = fields.indexes;
+    indexes = fields.indexArray();
     for (i => field in fieldArray) {
       fieldName = field.name;
       fieldType = field.type;

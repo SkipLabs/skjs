@@ -1157,6 +1157,10 @@ class TFields{
     !this.indexes.isEmpty()
   }
 
+  fun indexArray(): Array<TIndexField> {
+    this.indexes
+  }
+
   fun indexForKeyKind(kind: TPrimValueKind): ?TIndexField {
     kind match {
     | TString() -> this.indexes.find(idx -> idx.keyKinds.hasString)
