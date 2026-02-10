@@ -312,3 +312,41 @@ function assignStringIndexToNumberIndex(x: StringIndexNum): NumberIndexNum {
   // @skjs-expect-error Invalid return type
   return x;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 23: Named field types must be subtypes of index value type
+///////////////////////////////////////////////////////////////////////////////
+
+// Field type incompatible with string index value type
+// @skjs-expect-error Property 'name' is not assignable to index value type
+type FieldIncompatString = { name: string; [k: string]: number };
+
+// Field type IS subtype of index value type — OK
+type FieldCompatString = { name: string; [k: string]: string | number };
+
+// Field type matches exactly — OK
+type FieldExactMatch = { name: number; [k: string]: number };
+
+// Multiple fields, one incompatible
+// @skjs-expect-error Property 'b' is not assignable to index value type
+type MultiFieldOneBad = { a: number; b: string; [k: string]: number };
+
+// Named field with number-only index — no constraint (name isn't numeric)
+type FieldWithNumberIndex = { name: string; [k: number]: boolean };
+
+// Numeric field name with number index — must be compatible
+// @skjs-expect-error Property '0' is not assignable to index value type
+type NumericFieldBadNumberIndex = { 0: string; [k: number]: number };
+
+// Numeric field name with number index — compatible, OK
+type NumericFieldGoodNumberIndex = { 0: number; [k: number]: number };
+
+// Named field with symbol index — no constraint, OK
+type FieldWithSymbolIndex = { name: string; [k: symbol]: number };
+
+// Interface with incompatible field
+interface InterfaceFieldIncompat {
+  // @skjs-expect-error Property 'name' is not assignable to index value type
+  name: string;
+  [k: string]: number;
+}

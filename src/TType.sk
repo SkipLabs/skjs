@@ -990,9 +990,6 @@ class TFields{
      intersecting two objects with index fields, so it's like having
      two of them. This array is expected to have zero or one element
      most of the time, or at most a few elements.
-
-     TODO: if a field name is included an index key type, then its
-      type must be a subtype of the index key type
   */
   new: ?(/* optional */ Bool, TFuns),
   call: ?(/* optional */ Bool, TFuns),
@@ -1018,6 +1015,60 @@ class TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
+      symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
+        symbolFields.sortedBy(x ~> x.name).values(),
+      ),
+      indexes => Array[],
+      new => new.map(tfuns ~> (false, tfuns)),
+      call => call.map(tfuns ~> (false, tfuns)),
+    }
+  }
+
+  static fun createWithIndexes{
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    fields: Array<TField> = Array[],
+    symbolFields: Array<TField> = Array[],
+    indexes: Array<TIndexField>,
+    new: ?TFuns = None(),
+    call: ?TFuns = None(),
+  }: TFields {
+    sortedFields = InternalKeyedArrayMap::createFromSortedIterator(
+      fields.sortedBy(x ~> x.name).values(),
+    );
+    if (!indexes.isEmpty()) {
+      subst = Subst::mcreate(tcenvb);
+      for (index in indexes) {
+        for (field in sortedFields) {
+          shouldCheck = if (index.keyKinds.hasString) {
+            true
+          } else if (index.keyKinds.hasNumber) {
+            field.name.toIntOption().isSome()
+          } else {
+            false
+          };
+          if (shouldCheck) {
+            TType::isSub(subst, tenv, field.type, index.valueType) match {
+            | STOk() -> void
+            | err @ STErrorOnTType _ ->
+              tcenvb.error(
+                Array[
+                  (
+                    field.pos,
+                    `Property '${
+                      field.name
+                    }' is not assignable to index value type`,
+                  ),
+                ],
+                Some(err),
+              )
+            }
+          }
+        }
+      }
+    };
+    TFields{
+      fields => sortedFields,
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields.sortedBy(x ~> x.name).values(),
       ),

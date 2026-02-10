@@ -227,14 +227,14 @@ base class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
-    TObject(
-      TFields::create{
-        fields => fields.values().collect(Array),
-        symbolFields,
-        indexes => indexes.toArray(),
-      },
-      className.pos,
-    )
+    tFields = TFields::createWithIndexes{
+      tcenvb,
+      tenv => this,
+      fields => fields.values().collect(Array),
+      symbolFields => symbolFields.toArray(),
+      indexes => indexes.toArray(),
+    };
+    TObject(tFields, className.pos)
   }
 
   fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {
@@ -268,15 +268,15 @@ base class TEnv{
     | Some(tfuns) -> tfuns
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
-    TObject(
-      TFields::create{
-        fields => fields.values().collect(Array),
-        symbolFields,
-        indexes => indexes.toArray(),
-        new => Some(new),
-      },
-      pos,
-    )
+    tFields = TFields::createWithIndexes{
+      tcenvb,
+      tenv => this,
+      fields => fields.values().collect(Array),
+      symbolFields => symbolFields.toArray(),
+      indexes => indexes.toArray(),
+      new => Some(new),
+    };
+    TObject(tFields, pos)
   }
 
   private fun makeEmptyConstructor(
@@ -1305,9 +1305,11 @@ base class TEnv{
         }
       }
     };
-    tFields = TFields::create{
+    tFields = TFields::createWithIndexes{
+      tcenvb,
+      tenv => this,
       fields => fieldsVec.toArray(),
-      symbolFields,
+      symbolFields => symbolFields.toArray(),
       indexes => indexes.toArray(),
       new,
       call,

@@ -774,9 +774,11 @@ extension class TypeChecker {
         tcenv,
         pos,
         algebraicBranchField,
-        TFields::create{
+        TFields::createWithIndexes{
+          tcenvb => tcenv.subst,
+          tenv => this,
           fields => fields.values().collect(Array),
-          symbolFields,
+          symbolFields => symbolFields.toArray(),
           indexes => indexes.toArray(),
         },
       );
