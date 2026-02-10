@@ -44,11 +44,12 @@ function unionIdxAndFieldAccess(
 // Test 4: Intersection of same-kind string index signatures
 ///////////////////////////////////////////////////////////////////////////////
 
-// Intersection merges value types (over-approximated as union)
+// Intersection of value types: number & string = never, access gives never | undefined = undefined
 function interStringIndex(
   x: { [k: string]: number } & { [k: string]: string },
 ): void {
   const v: number | string | undefined = x["a"];
+  const v2: undefined = x["a"];
 }
 
 ///////////////////////////////////////////////////////////////////////////////

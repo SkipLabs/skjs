@@ -163,8 +163,7 @@ extension class TIndexField {
     x: TIndexField,
     y: TIndexField,
   ): TIndexField {
-    /* Currently over-approximating by union of value types */
-    valueType = TType::union(subst, tenv, x.valueType, y.valueType);
+    valueType = TType::inter(subst, tenv, x.valueType, y.valueType);
     TIndexField{
       pos => x.pos,
       keyName => x.keyName,
