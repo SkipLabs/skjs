@@ -918,7 +918,8 @@ class TField private {
   pos: PosRange,
   name: /* Invariant: name != kAlgebraicBranchFieldName */ FieldNameString,
   isOptional: Bool,
-  type: TType,
+  get: TType,
+  set: TType,
 } uses XXHashable, Orderable, Projectable<FieldNameString> {
   static fun create{
     pos: PosRange,
@@ -928,7 +929,11 @@ class TField private {
     type: TType,
   }: ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
-      Some(TField{pos, name => FieldNameString(name), isOptional, type})
+      setType = isReadonly match {
+      | Some(roPos) -> TType::bottom(roPos)
+      | None() -> type
+      };
+      Some(TField{pos, name => FieldNameString(name), isOptional, get => type, set => setType})
     }
   }
 
@@ -937,7 +942,7 @@ class TField private {
   }
 
   fun mapType(f: TType -> TType): TField {
-    this with {type => f(this.type)}
+    this with {get => f(this.get), set => f(this.set)}
   }
 
   fun project(): FieldNameString {
@@ -1147,7 +1152,7 @@ class TFields private {
   ): ?TType {
     _ = isLValue; // Will be used when get/set types are introduced
     this.maybeGet(fieldName).map(fd -> {
-      ty = fd.type;
+      ty = fd.get;
       if (fd.isOptional) {
         TType::unionUndefined(subst, tenv, ty, pos)
       } else {
@@ -1163,7 +1168,7 @@ class TFields private {
     pos: PosRange,
   ): ?TType {
     this.maybeGetSymbol(uniqueId).map(fd -> {
-      ty = fd.type;
+      ty = fd.get;
       if (fd.isOptional) {
         TType::unionUndefined(subst, tenv, ty, pos)
       } else {

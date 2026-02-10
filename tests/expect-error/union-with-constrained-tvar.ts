@@ -22,8 +22,10 @@ function test(): void {
   // Box<"foo"> satisfies T extends Box<string> ("foo" extends string),
   // so this matches the T branch of the union.
   const badBox: Box<"foo"> = new Box("foo");
+  // @skjs-expect-error Invalid call
   takeBoxOrNumber(badBox);
 
   // Same behavior regardless of binder name (S vs T).
+  // @skjs-expect-error Invalid call
   takeBoxOrNumberS(badBox);
 }

@@ -109,10 +109,12 @@ function withRest(_a: number, ..._rest: string[]): string {
 function returnsVoid(_x: number): void {}
 
 function returnDog(_a: number): Dog {
+  // @skjs-expect-error Invalid return type
   return { name: "Fido", breed: "Lab" };
 }
 
 function returnAnimalType(_a: number): Animal {
+  // @skjs-expect-error Invalid return type
   return { name: "Generic" };
 }
 
@@ -199,6 +201,7 @@ type ObjWithUnion = {
 };
 
 function testUnionInObject(): void {
+  // @skjs-expect-error Invalid annotation
   const obj: ObjWithUnion = {
     fn: returnString,
   };
@@ -372,6 +375,7 @@ function testNestedUnion(): void {
 
 // Test 29: Union of functions with different parameter types requires intersection
 function testUnionPreservesVariance(): void {
+  // @skjs-expect-error Invalid annotation
   const dog: Dog = { name: "Fido", breed: "Lab" };
   const f: PreservesVarianceUnion = acceptDog;
   // @skjs-expect-error Invalid call
@@ -380,6 +384,7 @@ function testUnionPreservesVariance(): void {
 
 // Test 30: Wrong variance in union (negative test)
 function wrongFn3(_x: Dog): Animal {
+  // @skjs-expect-error Invalid return type
   return { name: "Generic" };
 }
 

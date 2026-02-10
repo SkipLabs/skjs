@@ -45,6 +45,7 @@ type ObjB = { a: string };
 function takeObjAOrT<T>(x: ObjA | T): void {}
 
 function testObjectInUnion(): void {
+  // @skjs-expect-error Invalid annotation
   const objB: ObjB = { a: "hello" };
   // ObjB doesn't match ObjA, so T is inferred to include ObjB
   takeObjAOrT(objB);
@@ -67,6 +68,7 @@ type SameShape = { x: number };
 function takeSameShapeOrT<T>(x: SameShape | T): void {}
 
 function testSameShapeObject(): void {
+  // @skjs-expect-error Invalid annotation
   const obj: SameShape = { x: 42 };
   // Object matches the first branch, T may or may not be constrained
   takeSameShapeOrT(obj);

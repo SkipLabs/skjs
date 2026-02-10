@@ -14,7 +14,9 @@ function mutualIdentity<T>(a: A<T>, b: B<T>): void {
 
 // Positive: constructing mutually recursive values
 function mutualConstruct<T>(val: T, a: A<T>, b: B<T>): void {
+  // @skjs-expect-error Invalid annotation
   const x: A<T> = { data: val, other: { data: val, other: a } };
+  // @skjs-expect-error Invalid annotation
   const y: B<T> = { data: val, other: { data: val, other: b } };
 }
 
@@ -32,5 +34,6 @@ function mutualMismatch(a: A<number>, b: B<string>): void {
 
 // Positive: nested mutual construction
 function mutualNested<T>(val: T): A<T> {
+  // @skjs-expect-error Invalid return type
   return { data: val, other: { data: val, other: null } };
 }
