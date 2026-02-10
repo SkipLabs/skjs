@@ -1157,10 +1157,6 @@ class TFields{
     !this.indexes.isEmpty()
   }
 
-  fun anyIndex(): ?TIndexField {
-    if (this.indexes.isEmpty()) None() else Some(this.indexes[0])
-  }
-
   fun indexForKeyKind(kind: TPrimValueKind): ?TIndexField {
     kind match {
     | TString() -> this.indexes.find(idx -> idx.keyKinds.hasString)

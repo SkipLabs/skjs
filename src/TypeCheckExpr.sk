@@ -393,7 +393,8 @@ extension class TypeChecker {
             ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
             !result = TType::union(tcenv.subst, this, result, ty)
           | None() ->
-            fields.anyIndex() match {
+            // No matching index — check for mismatched key kind
+            fields.maybeSingleIndex() match {
             | Some(index) ->
               tcenv.error(
                 Array[
