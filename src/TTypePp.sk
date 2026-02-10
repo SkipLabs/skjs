@@ -316,7 +316,7 @@ mutable class TypePp{
     indexes = fields.indexes;
     for (i => field in fieldArray) {
       fieldName = field.name;
-      fieldType = field.type;
+      fieldType = field.get;
       this.out(level, margin, TypePp::escapeName(fieldName));
       if (field.isOptional) {
         this.out(level, margin, "?")

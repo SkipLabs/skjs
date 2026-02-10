@@ -121,7 +121,8 @@ extension class TField {
       pos => x.pos,
       name => x.name,
       isOptional => x.isOptional || y.isOptional,
-      type => TType::union(subst, tenv, x.type, y.type),
+      get => TType::union(subst, tenv, x.get, y.get),
+      set => TType::inter(subst, tenv, x.set, y.set),
     }
   }
 }
