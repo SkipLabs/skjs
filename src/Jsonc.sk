@@ -1,0 +1,96 @@
+/***************************************************************************/
+/* JSONC preprocessing — strip comments and trailing commas.              */
+/*                                                                         */
+/* JSON with Comments (JSONC) is used by tsconfig.json and other config   */
+/* files. Standard JSON.decode() doesn't support comments or trailing     */
+/* commas, so we preprocess the input before parsing.                     */
+/***************************************************************************/
+
+module SKJS;
+
+// Strips // line comments, /* */ block comments, and trailing commas
+// from a JSON string, being careful not to modify string literals.
+fun stripJsonComments(contents: String): String {
+  chars = contents.chars().toArray();
+  result = mutable Vector[];
+  pos = 0;
+  while (pos < chars.size()) {
+    c = chars[pos];
+    // String literal — copy verbatim including escapes
+    if (c == '"') {
+      result.push(c);
+      !pos = pos + 1;
+      loop {
+        if (pos >= chars.size()) break void;
+        sc = chars[pos];
+        result.push(sc);
+        if (sc == '\\') {
+          !pos = pos + 1;
+          if (pos < chars.size()) {
+            result.push(chars[pos]);
+            !pos = pos + 1;
+          };
+          continue
+        };
+        !pos = pos + 1;
+        if (sc == '"') break void;
+      };
+      continue
+    };
+    // Line comment //
+    if (c == '/' && pos + 1 < chars.size() && chars[pos + 1] == '/') {
+      !pos = pos + 2;
+      while (pos < chars.size() && chars[pos] != '\n') {
+        !pos = pos + 1;
+      };
+      continue
+    };
+    // Block comment /* */
+    if (c == '/' && pos + 1 < chars.size() && chars[pos + 1] == '*') {
+      !pos = pos + 2;
+      loop {
+        if (pos >= chars.size()) break void;
+        if (
+          chars[pos] == '*' &&
+          pos + 1 < chars.size() &&
+          chars[pos + 1] == '/'
+        ) {
+          !pos = pos + 2;
+          break void
+        };
+        !pos = pos + 1;
+      };
+      continue
+    };
+    // Trailing comma — skip comma if only whitespace/newlines before } or ]
+    if (c == ',') {
+      // Look ahead past whitespace to see if next non-ws char is } or ]
+      ahead = pos + 1;
+      while (
+        ahead < chars.size() &&
+        (chars[ahead] == ' ' ||
+          chars[ahead] == '\t' ||
+          chars[ahead] == '\n' ||
+          chars[ahead] == '\r')
+      ) {
+        !ahead = ahead + 1;
+      };
+      if (
+        ahead < chars.size() &&
+        (chars[ahead] == '}' || chars[ahead] == ']')
+      ) {
+        // Skip the trailing comma
+        !pos = pos + 1;
+        continue
+      };
+      result.push(c);
+      !pos = pos + 1;
+      continue
+    };
+    result.push(c);
+    !pos = pos + 1;
+  };
+  String::fromChars(result.toArray())
+}
+
+module end;

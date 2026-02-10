@@ -1,0 +1,192 @@
+/***************************************************************************/
+/* tsconfig.json support for SKJS.                                        */
+/*                                                                         */
+/* Provides:                                                               */
+/*   - tsconfig.json loading and field extraction                          */
+/*   - File discovery from tsconfig configuration                          */
+/***************************************************************************/
+
+module SKJS;
+
+/***************************************************************************/
+// Data types
+/***************************************************************************/
+
+class TsCompilerOptions{rootDir: ?String = None(), baseUrl: ?String = None()}
+
+class TsConfig{
+  configDir: DAbsolute,
+  compilerOptions: TsCompilerOptions,
+  include: Array<String>,
+  exclude: Array<String>,
+  files: Array<String>,
+}
+
+/***************************************************************************/
+// tsconfig.json discovery
+/***************************************************************************/
+
+// Walk up from startDir looking for tsconfig.json.
+// Returns the full path to the config file, or None() if not found.
+fun findTsConfig(startDir: String): ?String {
+  dir = Path.resolve(startDir);
+  loop {
+    candidate = Path.join(dir, "tsconfig.json");
+    if (FileSystem.exists(candidate)) {
+      return Some(candidate)
+    };
+    parent = Path.dirname(dir);
+    if (parent == dir) {
+      // Reached filesystem root
+      return None()
+    };
+    !dir = parent;
+  }
+}
+
+/***************************************************************************/
+// tsconfig.json loading
+/***************************************************************************/
+
+// Resolve the tsconfig.json path from a --project argument.
+// If the path is a directory, look for tsconfig.json inside it.
+// If the path is a file, use it directly.
+fun resolveTsConfigPath(projectPath: String): Result<String, String> {
+  resolved = Path.resolve(projectPath);
+  if (!FileSystem.exists(resolved)) {
+    return Failure(`File not found: ${projectPath}`)
+  };
+  if (FileSystem.isDirectory(resolved)) {
+    configFile = Path.join(resolved, "tsconfig.json");
+    if (!FileSystem.exists(configFile)) {
+      return Failure(`tsconfig.json not found in ${projectPath}`)
+    };
+    Success(configFile)
+  } else {
+    Success(resolved)
+  }
+}
+
+// Load and parse a tsconfig.json file.
+fun loadTsConfig(path: String): TsConfig {
+  contents = FileSystem.readTextFile(path);
+  stripped = stripJsonComments(contents);
+  json = JSON.decode(stripped);
+  obj = json.expectObject();
+  configDir = DAbsolute::create(Path.dirname(path));
+
+  // Extract compilerOptions
+  compilerOptions = obj.maybeGetObject("compilerOptions") match {
+  | Some(co) ->
+    TsCompilerOptions{
+      rootDir => co.maybeGetString("rootDir"),
+      baseUrl => co.maybeGetString("baseUrl"),
+    }
+  | None() -> TsCompilerOptions{}
+  };
+
+  // Extract include
+  include = obj.maybeGetArray("include") match {
+  | Some(arr) ->
+    arr.value
+      .map(v -> substituteConfigDir(v.expectString(), configDir))
+      .collect(Array)
+  | None() -> Array[]
+  };
+
+  // Extract exclude
+  exclude = obj.maybeGetArray("exclude") match {
+  | Some(arr) ->
+    arr.value
+      .map(v -> substituteConfigDir(v.expectString(), configDir))
+      .collect(Array)
+  | None() -> Array[]
+  };
+
+  // Extract files
+  files = obj.maybeGetArray("files") match {
+  | Some(arr) ->
+    arr.value
+      .map(v -> substituteConfigDir(v.expectString(), configDir))
+      .collect(Array)
+  | None() -> Array[]
+  };
+
+  // Apply defaults per tsc behavior:
+  // If neither files nor include is specified, default include to ["**/*.ts"]
+  effectiveInclude = if (files.isEmpty() && include.isEmpty()) {
+    Array["**/*.ts"]
+  } else {
+    include
+  };
+
+  // Default exclude when not specified
+  effectiveExclude = if (exclude.isEmpty()) {
+    Array["node_modules", "bower_components", "jspm_packages"]
+  } else {
+    exclude
+  };
+
+  TsConfig{
+    configDir,
+    compilerOptions,
+    include => effectiveInclude,
+    exclude => effectiveExclude,
+    files,
+  }
+}
+
+// Replace ${configDir} in a string value with the actual config directory path.
+fun substituteConfigDir(value: String, configDir: DAbsolute): String {
+  value.replace("${configDir}", configDir.toString())
+}
+
+/***************************************************************************/
+// File resolution from tsconfig
+/***************************************************************************/
+
+// Resolve all source files from a tsconfig configuration.
+// Returns absolute file paths.
+fun resolveConfigFiles(config: TsConfig): Array<String> {
+  configDirStr = config.configDir.toString();
+  result = mutable Set[];
+
+  // 1. Add explicit files (resolved relative to configDir)
+  for (file in config.files) {
+    resolved = Path.resolve(Path.join(configDirStr, file));
+    if (FileSystem.exists(resolved)) {
+      result.insert(resolved)
+    }
+  };
+
+  // 2. Collect all files under configDir for glob matching
+  allFiles = if (FileSystem.exists(configDirStr)) {
+    FileSystem.readFilesRecursive(configDirStr, fileName ->
+      fileName.endsWith(".ts")
+    )
+  } else {
+    Array[]
+  };
+
+  // 3. Apply include globs
+  for (file in allFiles) {
+    // Get path relative to configDir for glob matching
+    relPath = Path.relativeTo{path => file, base => configDirStr};
+    included = config.include.any(pattern -> globMatch(pattern, relPath));
+    if (included) {
+      excluded = config.exclude.any(pattern -> {
+        // Exclude patterns match against the relative path
+        // A bare directory name like "node_modules" matches if any segment matches
+        globMatch(pattern, relPath) ||
+          relPath.splitIterator("/").any(segment -> segment == pattern)
+      });
+      if (!excluded) {
+        result.insert(file)
+      }
+    }
+  };
+
+  result.toArray()
+}
+
+module end;
