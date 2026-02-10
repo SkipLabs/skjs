@@ -353,6 +353,23 @@ type SymbolFieldBadSymbolIndex = { [symBad]: string; [k: symbol]: number };
 declare const symGood: unique symbol;
 type SymbolFieldGoodSymbolIndex = { [symGood]: number; [k: symbol]: number };
 
+///////////////////////////////////////////////////////////////////////////////
+// Test 24: Cross-index validation (number index value must be subtype of string index value)
+///////////////////////////////////////////////////////////////////////////////
+
+// Number index value assignable to string index value — OK
+type CrossIndexOk = { [k: string]: number | string; [k: number]: number };
+
+// Number index value NOT assignable to string index value
+// @skjs-expect-error Number index type is not assignable to string index type
+type CrossIndexBad = { [k: string]: number; [k: number]: string };
+
+// String and symbol indexes are independent — OK
+type StringSymbolIndependent = { [k: string]: number; [k: symbol]: string };
+
+// Number and symbol indexes are independent — OK
+type NumberSymbolIndependent = { [k: number]: number; [k: symbol]: string };
+
 // Interface with incompatible field
 interface InterfaceFieldIncompat {
   // @skjs-expect-error Property 'name' is not assignable to index value type

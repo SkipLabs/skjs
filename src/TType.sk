@@ -1087,6 +1087,40 @@ class TFields{
             }
           }
         }
+      };
+      for (i in Range(0, indexes.size())) {
+        for (j in Range(i + 1, indexes.size())) {
+          a = indexes[i];
+          b = indexes[j];
+          (stringIdx, numberIdx) = if (
+            a.keyKinds.hasString &&
+            b.keyKinds.hasNumber
+          ) {
+            (a, b)
+          } else if (b.keyKinds.hasString && a.keyKinds.hasNumber) {
+            (b, a)
+          } else {
+            continue
+          };
+          TType::isSub(
+            subst,
+            tenv,
+            numberIdx.valueType,
+            stringIdx.valueType,
+          ) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            tcenvb.error(
+              Array[
+                (
+                  numberIdx.pos,
+                  "Number index type is not assignable to string index type",
+                ),
+              ],
+              Some(err),
+            )
+          }
+        }
       }
     };
     TFields{
