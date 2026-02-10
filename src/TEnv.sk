@@ -474,6 +474,7 @@ base class TEnv{
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
+          this.checkIndexKeyType(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             TIndexField{
@@ -951,6 +952,35 @@ base class TEnv{
     }
   }
 
+  fun checkIndexKeyType(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    keyType: TType,
+  ): void {
+    subst = Subst::mcreate(tcenvb);
+    allowedKeyType = TType::union(
+      subst,
+      this,
+      TType::single(TPrimValue::string(pos)),
+      TType::union(
+        subst,
+        this,
+        TType::single(TPrimValue::number(pos)),
+        TType::single(TPrimValue::symbol(pos)),
+      ),
+    );
+    if (!(TType::isSub(subst, this, keyType, allowedKeyType) is STOk _)) {
+      tcenvb.error(
+        Array[
+          (
+            pos,
+            "An index signature parameter type must be string, number, or symbol",
+          ),
+        ],
+      )
+    }
+  }
+
   fun getIteratorElementType(
     subst: mutable Subst,
     fields: TFields,
@@ -1223,6 +1253,7 @@ base class TEnv{
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
+          this.checkIndexKeyType(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             TIndexField{
