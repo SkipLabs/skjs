@@ -272,7 +272,7 @@ function aliasIndexAccess(x: AliasIndex): number | undefined {
 // Test 21: Invalid key types (all rejected)
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO: reject
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type NeverIndex = { [k: never]: number };
 
 // @skjs-expect-error An index signature parameter type must be string, number, or symbol

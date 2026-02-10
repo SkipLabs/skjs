@@ -962,7 +962,7 @@ base class TEnv{
     hasNumber = false;
     hasSymbol = false;
     valid = keyType.getSTypes(subst, this, Covariant()) match {
-    | Some(stypes) ->
+    | Some(stypes) if (!stypes.isEmpty()) ->
       stypes.all(stype ->
         stype match {
         | TPrimValue(TString(), _, _) ->
@@ -980,19 +980,14 @@ base class TEnv{
     | _ -> false
     };
     if (!valid) {
-      tcenvb.error(
+      typingError(
         Array[
           (
             pos,
             "An index signature parameter type must be string, number, or symbol",
           ),
         ],
-      );
-      return IndexKeyKinds{
-        hasString => true,
-        hasNumber => false,
-        hasSymbol => false,
-      }
+      )
     };
     IndexKeyKinds{hasString, hasNumber, hasSymbol}
   }
