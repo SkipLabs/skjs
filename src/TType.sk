@@ -1036,18 +1036,42 @@ class TFields{
     sortedFields = InternalKeyedArrayMap::createFromSortedIterator(
       fields.sortedBy(x ~> x.name).values(),
     );
+    sortedSymbolFields = InternalKeyedArrayMap::createFromSortedIterator(
+      symbolFields.sortedBy(x ~> x.name).values(),
+    );
     if (!indexes.isEmpty()) {
       subst = Subst::mcreate(tcenvb);
       for (index in indexes) {
-        for (field in sortedFields) {
-          shouldCheck = if (index.keyKinds.hasString) {
-            true
-          } else if (index.keyKinds.hasNumber) {
-            field.name.toIntOption().isSome()
-          } else {
-            false
-          };
-          if (shouldCheck) {
+        if (index.keyKinds.hasString || index.keyKinds.hasNumber) {
+          for (field in sortedFields) {
+            shouldCheck = if (index.keyKinds.hasString) {
+              true
+            } else if (index.keyKinds.hasNumber) {
+              field.name.toIntOption().isSome()
+            } else {
+              false
+            };
+            if (shouldCheck) {
+              TType::isSub(subst, tenv, field.type, index.valueType) match {
+              | STOk() -> void
+              | err @ STErrorOnTType _ ->
+                tcenvb.error(
+                  Array[
+                    (
+                      field.pos,
+                      `Property '${
+                        field.name
+                      }' is not assignable to index value type`,
+                    ),
+                  ],
+                  Some(err),
+                )
+              }
+            }
+          }
+        };
+        if (index.keyKinds.hasSymbol) {
+          for (field in sortedSymbolFields) {
             TType::isSub(subst, tenv, field.type, index.valueType) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
@@ -1055,9 +1079,7 @@ class TFields{
                 Array[
                   (
                     field.pos,
-                    `Property '${
-                      field.name
-                    }' is not assignable to index value type`,
+                    "Symbol property is not assignable to index value type",
                   ),
                 ],
                 Some(err),
@@ -1069,9 +1091,7 @@ class TFields{
     };
     TFields{
       fields => sortedFields,
-      symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
-        symbolFields.sortedBy(x ~> x.name).values(),
-      ),
+      symbolFields => sortedSymbolFields,
       indexes,
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),

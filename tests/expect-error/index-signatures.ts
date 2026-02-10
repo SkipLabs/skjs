@@ -344,6 +344,15 @@ type NumericFieldGoodNumberIndex = { 0: number; [k: number]: number };
 // Named field with symbol index — no constraint, OK
 type FieldWithSymbolIndex = { name: string; [k: symbol]: number };
 
+// Symbol field incompatible with symbol index
+declare const symBad: unique symbol;
+// @skjs-expect-error Symbol property is not assignable to index value type
+type SymbolFieldBadSymbolIndex = { [symBad]: string; [k: symbol]: number };
+
+// Symbol field compatible with symbol index — OK
+declare const symGood: unique symbol;
+type SymbolFieldGoodSymbolIndex = { [symGood]: number; [k: symbol]: number };
+
 // Interface with incompatible field
 interface InterfaceFieldIncompat {
   // @skjs-expect-error Property 'name' is not assignable to index value type
