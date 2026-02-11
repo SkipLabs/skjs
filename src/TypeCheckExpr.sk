@@ -1591,7 +1591,15 @@ extension class TypeChecker {
       .flatMap(stypes -> stypes.singleElt())
       .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype));
     fieldKey match {
-    | None() -> fieldType
+    | None() ->
+      this.assignLocalObjectByIndex(
+        tcenv,
+        pos,
+        local,
+        keyExpr,
+        keyType,
+        fieldType,
+      )
     | Some(key) ->
       used = tcenv.localObjects[local.value] match {
       | LOCanGrow(bound) ->
@@ -1707,6 +1715,50 @@ extension class TypeChecker {
       };
       fieldType
     }
+  }
+
+  // Validates a computed-key assignment on a local object when the key
+  // can't be resolved to a single literal. Checks index signatures.
+  private fun assignLocalObjectByIndex(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    local: Name,
+    keyExpr: Expr,
+    keyType: TType,
+    fieldType: TType,
+  ): TType {
+    tcenv.scope
+      .get(local)
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(fields, _)) ->
+      matchingIndex = fields.indexes.find(indexField -> {
+        clonedSubst = tcenv.subst.clone();
+        TType::isSub(clonedSubst, this, keyType, indexField.keyType) is STOk _
+      });
+      matchingIndex match {
+      | Some(indexField) ->
+        this.checkSubType(
+          tcenv,
+          fieldType.pos,
+          "Invalid assignment",
+          fieldType,
+          indexField.valueType,
+        )
+      | None() ->
+        tcenv.error(
+          Array[
+            (
+              keyExpr.pos,
+              "Computed property key must match an index signature on this object",
+            ),
+          ],
+        )
+      }
+    | _ ->
+      tcenv.error(Array[(pos, "Internal error: local object is not an object")])
+    };
+    fieldType
   }
 
   fun getInLhsTypeAndFields(

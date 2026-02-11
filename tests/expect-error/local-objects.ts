@@ -98,3 +98,20 @@ function testComputedKeyBroadWithIndex(): void {
   let key: string = "x";
   obj[key] = 42;
 }
+
+// Test 12: Computed key with broad type, no index signature — should error
+function testComputedKeyBroadNoIndex(): void {
+  let obj = {};
+  obj.x = 1;
+  let key: string = "y";
+  // @skjs-expect-error Computed property key must match an index signature on this object
+  obj[key] = 2;
+}
+
+// Test 13: Computed key with string variable + wrong value type — should error
+function testComputedKeyBroadWrongType(): void {
+  let obj: { [key: string]: number } = {};
+  let key: string = "x";
+  // @skjs-expect-error Invalid assignment
+  obj[key] = "hello";
+}
