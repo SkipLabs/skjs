@@ -377,6 +377,7 @@ base class TEnv{
     (this, cls)
   }
 
+  // Returns the type of the constructor, if any.
   private fun addFields(
     tcenvb: mutable TCEnvBase,
     acc: mutable Map<String, TField>,
@@ -387,7 +388,7 @@ base class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldTypeValue ~> Bool,
-  ): /* Type of constructor */ ?TFuns {
+  ): ?TFuns {
     (!this, cls) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -1167,13 +1168,13 @@ base class TEnv{
     }
   }
 
+  // Returns (algebraicBranchField, fields). The first element is the
+  // position and the type of the algebraic branch field, if present.
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
     isTopLevelConst: Bool = false,
-  ): /*
-  The first element is the position and the type of the algebraic branch field if it is present.
-  */ (?(PosRange, TType), TFields) {
+  ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     fieldsVec = mutable Vector[];
     symbolFieldsVec = mutable Vector[];
