@@ -387,9 +387,9 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
   };
 
   // Apply defaults per tsc behavior:
-  // If neither files nor include is specified, default include to ["**/*.ts"]
+  // If neither files nor include is specified, default include to ["**/*"]
   effectiveInclude = if (files.isEmpty() && include.isEmpty()) {
-    Array["**/*.ts"]
+    Array["**/*"]
   } else {
     include
   };
@@ -495,9 +495,7 @@ fun resolveConfigFiles(config: TsConfig): Array<String> {
 
   // 2. Collect all files under configDir for glob matching
   allFiles = if (FileSystem.exists(configDirStr)) {
-    FileSystem.readFilesRecursive(configDirStr, fileName ->
-      fileName.endsWith(".ts")
-    )
+    FileSystem.readFilesRecursive(configDirStr, fileName -> isTsFile(fileName))
   } else {
     Array[]
   };

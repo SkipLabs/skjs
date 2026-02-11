@@ -379,7 +379,7 @@ fun testDirectory(
 ): void {
   dir = Path.resolve(dirName);
   srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
-    if (f.endsWith(".ts")) Some(Path.join(dir, f)) else {
+    if (SKJS.isTsFile(f)) Some(Path.join(dir, f)) else {
       if (f != "." && f != "..") {
         invariant_violation(`Unexpected non-ts file ${f} in ${dir}`)
       };
@@ -567,7 +567,7 @@ fun checkNoLostTest(path: String): void {
     Array[path]
   };
   for (file in files) {
-    if (file.endsWith(".ts")) {
+    if (SKJS.isTsFile(file)) {
       invariant_violation(`${file} not covered by tests`)
     };
     if (file.endsWith(".js")) {
