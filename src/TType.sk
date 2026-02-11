@@ -955,29 +955,26 @@ class TIndexField private {
   pos: PosRange,
   keyName: String,
   keyType: TType,
-  isReadonly: Bool,
-  valueType: TType,
+  valueTypeGet: TType,
+  valueTypeSet: TType,
 } uses XXHashable, Orderable {
   static fun create{
     pos: PosRange,
     keyName: String,
     keyType: TType,
     isReadonly: ?PosRange,
-    valueType: TType,
+    valueTypeGet: TType,
+    valueTypeSet: TType,
   }: TIndexField {
-    TIndexField{
-      pos,
-      keyName,
-      keyType,
-      isReadonly => isReadonly.isSome(),
-      valueType,
-    }
+    _ = isReadonly;
+    TIndexField{pos, keyName, keyType, valueTypeGet, valueTypeSet}
   }
 
   fun mapTypes(f: TType -> TType): TIndexField {
     keyType = f(this.keyType);
-    valueType = f(this.valueType);
-    this with {keyType, valueType}
+    valueTypeGet = f(this.valueTypeGet);
+    valueTypeSet = f(this.valueTypeSet);
+    this with {keyType, valueTypeGet, valueTypeSet}
   }
 
   fun toString(): String {

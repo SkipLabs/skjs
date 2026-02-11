@@ -402,7 +402,7 @@ mutable class TypePp{
     this.out(level, margin, ": ");
     this.type(level, margin, index.keyType);
     this.out(level, margin, " ]: ");
-    this.type(level, margin, index.valueType);
+    this.type(level, margin, index.valueTypeGet);
   }
 
   static fun escapeName(name: String): String {

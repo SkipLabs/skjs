@@ -160,7 +160,6 @@ function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
 function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
   // TODO: better error message
   // @skjs-expect-error Invalid iterable type for for-of loop
-  // @skjs-expect-error Invalid return type
   return [...x];
 }
 
