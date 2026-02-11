@@ -651,7 +651,7 @@ extension class TypeChecker {
     | Object(efields) ->
       algebraicBranchField: ?(PosRange, TType) = None();
       fields = mutable Map[];
-      symbolFieldsVec = mutable Vector[];
+      symbolFields = mutable Vector[];
       indexes = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
@@ -690,7 +690,7 @@ extension class TypeChecker {
                   fields![spreadField.name] = spreadField
                 };
                 for (spreadSymbolField in spreadSymbolFields) {
-                  symbolFieldsVec.push(spreadSymbolField)
+                  symbolFields.push(spreadSymbolField)
                 };
                 for (spreadIndex in spreadIndexes) {
                   indexes.push(spreadIndex)
@@ -715,7 +715,7 @@ extension class TypeChecker {
             .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype)) match {
           | Some(FKName(name, _)) -> (name, valueTy)
           | Some(FKSymbol(_, uniqueId)) ->
-            symbolFieldsVec.push(
+            symbolFields.push(
               TField::create(keyExpr.pos, uniqueId, false, valueTy).fromSome(),
             );
             continue
@@ -756,7 +756,7 @@ extension class TypeChecker {
         algebraicBranchField,
         TFields::create{
           fields => fields.values().collect(Array),
-          symbolFields => symbolFieldsVec.toArray(),
+          symbolFields,
           indexes => indexes.toArray(),
         },
       );
@@ -1712,7 +1712,7 @@ extension class TypeChecker {
         };
         allNewFields = TFields::create{
           fields => newFieldsVec.toArray(),
-          symbolFields => newSymbolFieldsVec.toArray(),
+          symbolFields => newSymbolFieldsVec,
         };
         newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
         | None() -> TType::bottom(objPos)

@@ -205,14 +205,14 @@ base class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    symFields = mutable Vector[];
+    symbolFields = mutable Vector[];
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
     constructor = this.addFields(
       tcenvb,
       fields,
-      symFields,
+      symbolFields,
       indexes,
       visitedClasses,
       None(),
@@ -230,7 +230,7 @@ base class TEnv{
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
-        symbolFields => symFields.toArray(),
+        symbolFields,
         indexes => indexes.toArray(),
       },
       className.pos,
@@ -250,12 +250,12 @@ base class TEnv{
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    symFields = mutable Vector[];
+    symbolFields = mutable Vector[];
     indexes = mutable Vector[];
     constructor = this.addFields(
       tcenvb,
       fields,
-      symFields,
+      symbolFields,
       indexes,
       visitedClasses,
       Some(c.tparams),
@@ -271,7 +271,7 @@ base class TEnv{
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
-        symbolFields => symFields.toArray(),
+        symbolFields,
         indexes => indexes.toArray(),
         new => Some(new),
       },
@@ -1163,7 +1163,7 @@ base class TEnv{
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     fieldsVec = mutable Vector[];
-    symbolFieldsVec = mutable Vector[];
+    symbolFields = mutable Vector[];
     indexes = mutable Vector[];
     call: ?TFuns = None();
     new: ?TFuns = None();
@@ -1185,7 +1185,7 @@ base class TEnv{
             this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
           } match {
           | FKSymbol(exprPos, uniqueId) ->
-            symbolFieldsVec.push(
+            symbolFields.push(
               TField::create(
                 exprPos,
                 uniqueId,
@@ -1247,7 +1247,7 @@ base class TEnv{
             this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
           } match {
           | FKSymbol(exprPos, uniqueId) ->
-            symbolFieldsVec.push(
+            symbolFields.push(
               TField::create(exprPos, uniqueId, false, decl).fromSome(),
             )
           | FKName(name, _) ->
@@ -1262,7 +1262,7 @@ base class TEnv{
     };
     tFields = TFields::create{
       fields => fieldsVec.toArray(),
-      symbolFields => symbolFieldsVec.toArray(),
+      symbolFields,
       indexes => indexes.toArray(),
       new,
       call,

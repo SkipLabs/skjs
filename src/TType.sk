@@ -948,7 +948,7 @@ class TFields{
 
   static fun create{
     fields: Array<TField> = Array[],
-    symbolFields: Array<TField> = Array[],
+    symbolFields: readonly Vector<TField> = Vector[],
     indexes: Array<TIndexField> = Array[],
     new: ?TFuns = None(),
     call: ?TFuns = None(),
