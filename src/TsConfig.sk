@@ -116,18 +116,117 @@ fun resolveTsConfigPath(projectPath: String): Result<String, String> {
   }
 }
 
-// Load and parse a tsconfig.json file.
-// Returns the config and any lint diagnostics.
-fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
+// Parse a tsconfig.json file into its raw JSON object.
+// Returns (obj, rawContents, configDir).
+fun parseTsConfigFile(path: String): (JSON.Object, String, DAbsolute) {
   contents = FileSystem.readTextFile(path);
   stripped = stripJsonComments(contents);
   json = JSON.decode(stripped);
   obj = json.expectObject();
   configDir = DAbsolute::create(Path.dirname(path));
+  (obj, contents, configDir)
+}
+
+// Extract extends paths from a tsconfig object.
+// Returns empty array if no extends field.
+fun getExtendsPaths(obj: JSON.Object): Array<String> {
+  obj.maybeGet("extends") match {
+  | None() -> Array[]
+  | Some(JSON.String(s)) -> Array[s]
+  | Some(v) -> v.expectArray().value.map(x -> x.expectString()).collect(Array)
+  }
+}
+
+// Merge two JSON objects for compilerOptions (per-key, child overrides base).
+fun mergeJsonObjects(base: ?JSON.Object, child: JSON.Object): JSON.Object {
+  result = mutable Map[];
+  base match {
+  | Some(b) -> b.value.each((k, v) -> result.set(k, v))
+  | None() -> void
+  };
+  child.value.each((k, v) -> result.set(k, v));
+  JSON.Object(result.chill())
+}
+
+// Merge two tsconfig JSON objects.
+// compilerOptions: deep-merged per-key (child overrides base).
+// include/exclude/files: child replaces base entirely if present.
+// extends: not inherited.
+fun mergeConfigObjects(base: JSON.Object, child: JSON.Object): JSON.Object {
+  result = mutable Map[];
+
+  // Start with all base entries except extends
+  base.value.each((k, v) -> {
+    if (k != "extends") result.set(k, v)
+  });
+
+  // Override with child entries
+  child.value.each((k, v) -> {
+    if (k != "extends") {
+      if (k == "compilerOptions") {
+        // Deep merge compilerOptions
+        baseOpts = base.maybeGetObject("compilerOptions");
+        childOpts = v.expectObject();
+        result.set(k, mergeJsonObjects(baseOpts, childOpts))
+      } else {
+        result.set(k, v)
+      }
+    }
+  });
+
+  JSON.Object(result.chill())
+}
+
+// Resolve the extends chain for a tsconfig JSON object.
+// Returns the fully merged JSON object.
+fun resolveExtends(
+  obj: JSON.Object,
+  configDir: DAbsolute,
+  visited: SortedSet<String>,
+): JSON.Object {
+  extendsPaths = getExtendsPaths(obj);
+  if (extendsPaths.isEmpty()) return obj;
+
+  // Load and merge all bases left-to-right
+  base = JSON.Object(Map[]);
+  for (extendsPath in extendsPaths) {
+    if (!extendsPath.startsWith(".")) {
+      invariant_violation(
+        `Package-style extends not supported by SKJS: ${extendsPath}`,
+      )
+    };
+    resolved = Path.resolve(Path.join(configDir.toString(), extendsPath));
+    finalPath = if (!resolved.endsWith(".json")) {
+      resolved + ".json"
+    } else {
+      resolved
+    };
+    if (visited.contains(finalPath)) {
+      invariant_violation(`Circular tsconfig extends: ${finalPath}`)
+    };
+    (parentObj, _, parentDir) = parseTsConfigFile(finalPath);
+    resolvedParent = resolveExtends(
+      parentObj,
+      parentDir,
+      visited.set(finalPath),
+    );
+    !base = mergeConfigObjects(base, resolvedParent);
+  };
+
+  // Merge: accumulated bases first, then current obj on top
+  mergeConfigObjects(base, obj)
+}
+
+// Load and parse a tsconfig.json file, resolving extends.
+// Returns the config and any lint diagnostics.
+fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
+  resolvedPath = Path.resolve(path);
+  (obj, rawContents, configDir) = parseTsConfigFile(resolvedPath);
+  mergedObj = resolveExtends(obj, configDir, SortedSet[resolvedPath]);
 
   // Extract and lint compilerOptions in a single pass
   diags = mutable Vector[];
-  compilerOptions = obj.maybeGetObject("compilerOptions") match {
+  compilerOptions = mergedObj.maybeGetObject("compilerOptions") match {
   | Some(co) ->
     // Check strict
     hasStrict = co.maybeGetBool("strict");
@@ -136,7 +235,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
     | Some(false) ->
       diags.push(
         TsConfigDiag{
-          line => findKeyLine(contents, "strict"),
+          line => findKeyLine(rawContents, "strict"),
           message => "SKJS requires 'strict: true' in compilerOptions.",
           isWarning => false,
         },
@@ -144,7 +243,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
     | None() ->
       diags.push(
         TsConfigDiag{
-          line => findKeyLine(contents, "compilerOptions"),
+          line => findKeyLine(rawContents, "compilerOptions"),
           message => "SKJS requires 'strict: true' in compilerOptions.",
           isWarning => false,
         },
@@ -159,7 +258,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       | Some(false) ->
         diags.push(
           TsConfigDiag{
-            line => findKeyLine(contents, name),
+            line => findKeyLine(rawContents, name),
             message => `Option '${name}' cannot be disabled; SKJS requires strict mode.`,
             isWarning => false,
           },
@@ -167,7 +266,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       | Some(true) if (isStrict) ->
         diags.push(
           TsConfigDiag{
-            line => findKeyLine(contents, name),
+            line => findKeyLine(rawContents, name),
             message => `Option '${name}' is redundant when 'strict' is true.`,
             isWarning => true,
           },
@@ -181,7 +280,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       if (co.maybeGet(name).isSome()) {
         diags.push(
           TsConfigDiag{
-            line => findKeyLine(contents, name),
+            line => findKeyLine(rawContents, name),
             message => `Option '${name}' is not supported by SKJS.`,
             isWarning => false,
           },
@@ -205,7 +304,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
   };
 
   // Extract include
-  include = obj.maybeGetArray("include") match {
+  include = mergedObj.maybeGetArray("include") match {
   | Some(arr) ->
     arr.value
       .map(v -> substituteConfigDir(v.expectString(), configDir))
@@ -214,7 +313,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
   };
 
   // Extract exclude
-  exclude = obj.maybeGetArray("exclude") match {
+  exclude = mergedObj.maybeGetArray("exclude") match {
   | Some(arr) ->
     arr.value
       .map(v -> substituteConfigDir(v.expectString(), configDir))
@@ -223,7 +322,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
   };
 
   // Extract files
-  files = obj.maybeGetArray("files") match {
+  files = mergedObj.maybeGetArray("files") match {
   | Some(arr) ->
     arr.value
       .map(v -> substituteConfigDir(v.expectString(), configDir))
