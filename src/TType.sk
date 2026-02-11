@@ -761,11 +761,7 @@ base class FieldKey {
 
   fun toType(): TType {
     TType::single(
-      this match {
-      | FKName(name, kind) -> TPrimValue::single(kind, name.value, name.pos)
-      | FKSymbol(keyPos, uniqueId) ->
-        TPrimValue::single(TSymbol(), uniqueId, keyPos)
-      },
+      TPrimValue::single(this.toPrimValueKind(), this.value(), this.pos()),
     )
   }
 
