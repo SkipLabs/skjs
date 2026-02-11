@@ -4,8 +4,9 @@
 // Test 0: Importing unique symbols
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO: Test currently might pass or fail depending on import resolution
-// import { exportedUniqueSymbol } from './symbols-export';
+import { exportedUniqueSymbol } from "./symbols-export.js";
+
+const importedSym: typeof exportedUniqueSymbol = exportedUniqueSymbol;
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 1: Basic symbol type annotations
