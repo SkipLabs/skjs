@@ -495,7 +495,7 @@ fun resolveConfigFiles(config: TsConfig): Array<String> {
 
   // 2. Collect all files under configDir for glob matching
   allFiles = if (FileSystem.exists(configDirStr)) {
-    FileSystem.readFilesRecursive(configDirStr, fileName -> isTsFile(fileName))
+    FileSystem.readFilesRecursive(configDirStr, isTsFile)
   } else {
     Array[]
   };
