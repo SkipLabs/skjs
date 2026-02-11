@@ -511,6 +511,13 @@ fun createObject(
       seen.insert(field.name)
     }
   };
+  for (field in fields.symbolFields) {
+    if (seen.contains(field.name)) {
+      tcenvb.error(Array[(field.pos, "Duplicate field")])
+    } else {
+      seen.insert(field.name)
+    }
+  };
   algebraicBranchField match {
   | Some((algebraicBranchFieldPos, algebraicBranchFieldType)) ->
     algebraicBranchFieldType.getConstantString() match {
