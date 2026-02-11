@@ -177,22 +177,20 @@ function subNumberToString(x: { [k: number]: number }): {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 14: Subtyping — cross-kind key mismatches
+// Test 14: Subtyping — cross-kind compatibility
 ///////////////////////////////////////////////////////////////////////////////
 
-// FIXME: TS allows string index to satisfy number index, SKJS rejects
+// String index covers numeric keys — satisfies number index
 function subStringToNumber(x: { [k: string]: number }): {
   [k: number]: number;
 } {
-  // @skjs-expect-error Invalid return type
   return x;
 }
 
-// FIXME: TS allows symbol index to satisfy string index, SKJS rejects
+// Symbol index is irrelevant to string keys — vacuously satisfies string index
 function subSymbolToString(x: { [k: symbol]: number }): {
   [k: string]: number;
 } {
-  // @skjs-expect-error Invalid return type
   return x;
 }
 
@@ -221,12 +219,11 @@ function subBothToString(x: { [k: string]: number; [k: number]: number }): {
   return x;
 }
 
-// FIXME: TS allows string-only to satisfy string+number, SKJS rejects number part
+// String index covers numeric keys — satisfies both string and number index
 function subStringToBoth(x: { [k: string]: number }): {
   [k: string]: number;
   [k: number]: number;
 } {
-  // @skjs-expect-error Invalid return type
   return x;
 }
 

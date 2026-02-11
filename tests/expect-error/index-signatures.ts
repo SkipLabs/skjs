@@ -307,9 +307,8 @@ function assignNumberIndexToStringIndex(x: NumberIndexNum): StringIndexNum {
   return x;
 }
 
-// String index NOT assignable to number index
+// String index covers numeric keys — assignable to number index
 function assignStringIndexToNumberIndex(x: StringIndexNum): NumberIndexNum {
-  // @skjs-expect-error Invalid return type
   return x;
 }
 

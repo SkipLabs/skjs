@@ -689,16 +689,7 @@ extension class TFields {
         | STOk() -> void
         }
       | None() ->
-        if (fields1.hasIndex()) {
-          // Sub has some index but not string/number → key mismatch
-          return STRecFieldsIndexKey(
-            fields1.indexArray()[0],
-            superIdx,
-            fields1,
-            fields2,
-          )
-        };
-        // No index: check all named fields against string index value
+        // No string or number index: check named fields against super's string index
         for (f1 in fields1.fields) {
           TType::isSub(subst, tenv, f1.type, superIdx.valueType) match {
           | err @ STErrorOnTType _ ->
@@ -718,13 +709,15 @@ extension class TFields {
       | STOk() -> void
       }
     | (None(), Some(superIdx)) ->
-      if (fields1.hasIndex()) {
-        return STRecFieldsIndexKey(
-          fields1.indexArray()[0],
-          superIdx,
-          fields1,
-          fields2,
-        )
+      // Fall back to string index (string covers numeric keys)
+      fields1.stringIndex match {
+      | Some(subIdx) ->
+        TType::isSub(subst, tenv, subIdx.valueType, superIdx.valueType) match {
+        | err @ STErrorOnTType _ ->
+          return STRecFieldsIndexValue(err, subIdx, superIdx, fields1, fields2)
+        | STOk() -> void
+        }
+      | None() -> void
       }
     };
     // Check symbol index subtyping
@@ -736,15 +729,7 @@ extension class TFields {
         return STRecFieldsIndexValue(err, subIdx, superIdx, fields1, fields2)
       | STOk() -> void
       }
-    | (None(), Some(superIdx)) ->
-      if (fields1.hasIndex()) {
-        return STRecFieldsIndexKey(
-          fields1.indexArray()[0],
-          superIdx,
-          fields1,
-          fields2,
-        )
-      }
+    | (None(), Some(_superIdx)) -> void
     };
     for (ior in fields1.fields.iterDiffInterDiff(fields2.fields)) {
       ior match {
