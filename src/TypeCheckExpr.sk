@@ -683,6 +683,8 @@ extension class TypeChecker {
                   fields => spreadFields,
                   symbolFields => spreadSymbolFields,
                   indexes => spreadIndexes,
+                  call => spreadCall,
+                  new => spreadNew,
                 },
                 _pos,
               ) ->
@@ -694,7 +696,19 @@ extension class TypeChecker {
                 };
                 for (spreadIndex in spreadIndexes) {
                   indexes.push(spreadIndex)
-                }
+                };
+                spreadCall.each(_ ->
+                  tcenv.notSupported(
+                    spreadExpr.pos,
+                    "call signature in spread object",
+                  )
+                );
+                spreadNew.each(_ ->
+                  tcenv.notSupported(
+                    spreadExpr.pos,
+                    "constructor signature in spread object",
+                  )
+                )
               | _ ->
                 tcenv.error(
                   Array[
