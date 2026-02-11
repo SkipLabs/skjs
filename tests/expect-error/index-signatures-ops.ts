@@ -371,3 +371,32 @@ function unionMultiFieldsVsIdx(
   const v1: string | number | undefined = x.a;
   const v2: boolean | number | undefined = x.b;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 27: Union — number index widens numeric field name
+///////////////////////////////////////////////////////////////////////////////
+
+// x["0"]: left has number index (number), right has field "0" (string)
+// Result should be string | number | undefined
+function unionNumIdxNumFieldNarrow(
+  x: { [k: number]: number } | { "0": string },
+): string | undefined {
+  // TODO: x["0"] should be string | number | undefined
+  return x["0"];
+}
+
+function unionNumIdxNumFieldOk(
+  x: { [k: number]: number } | { "0": string },
+): string | number | undefined {
+  return x["0"];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 28: Union — number index does NOT widen non-numeric field name
+///////////////////////////////////////////////////////////////////////////////
+
+function unionNumIdxNonNumField(
+  x: { [k: number]: number } | { a: string },
+): string | undefined {
+  return x.a;
+}
