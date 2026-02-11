@@ -122,3 +122,5 @@ function testMultiLiteralKey(key: "a" | "b"): void {
   obj[key] = 42;
   const result: { a?: number; b?: number } = obj;
 }
+
+// TODO: handle growth on the same field with different type, should probably union

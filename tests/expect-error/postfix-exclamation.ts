@@ -417,6 +417,14 @@ function testArrayDestructuringNonNull(x: number[] | null): number {
   return first;
 }
 
+function testArrayDestructuringNonNullButUndefined(
+  x: number[] | null,
+): number | undefined {
+  // @skjs-expect-error Do not use the postfix ! operator
+  const [first] = x!;
+  return first;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Non-null assertions with class instances
 ///////////////////////////////////////////////////////////////////////////////
