@@ -271,8 +271,7 @@ extension class TFields {
       | Left(z) ->
         otherIdx = fields2.stringIndex match {
         | some @ Some _ -> some
-        | None() ->
-          if (z.name.toIntOption().isSome()) fields2.numberIndex else None()
+        | None() -> if (z.hasNumericName()) fields2.numberIndex else None()
         };
         otherIdx match {
         | Some(index) ->
@@ -283,8 +282,7 @@ extension class TFields {
       | Right(z) ->
         otherIdx = fields1.stringIndex match {
         | some @ Some _ -> some
-        | None() ->
-          if (z.name.toIntOption().isSome()) fields1.numberIndex else None()
+        | None() -> if (z.hasNumericName()) fields1.numberIndex else None()
         };
         otherIdx match {
         | Some(index) ->

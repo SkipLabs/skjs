@@ -887,6 +887,10 @@ class TField private {
     this with {isOptional => true}
   }
 
+  fun hasNumericName(): Bool {
+    this.name.toIntOption().isSome()
+  }
+
   fun mapType(f: TType -> TType): TField {
     this with {type => f(this.type)}
   }
@@ -1092,7 +1096,7 @@ class TFields{
       // Validate numeric named fields against number index
       numberIndex.each(index -> {
         for (field in sortedFields) {
-          if (field.name.toIntOption().isSome()) {
+          if (field.hasNumericName()) {
             checkSub(
               field.pos,
               `Property '${field.name}' is not assignable to index value type`,
