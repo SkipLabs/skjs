@@ -742,6 +742,7 @@ extension class TFields {
       }
     };
     // Symbol fields: same logic as string fields, but not checked against index signatures
+    // TODO: will be fixed in subsequent PR
     for (ior in fields1.symbolFields.iterDiffInterDiff(fields2.symbolFields)) {
       ior match {
       | Left(_) -> void
