@@ -22,10 +22,18 @@ module SKJS;
 //     strictBindCallApply, strictPropertyInitialization, noImplicitThis,
 //     alwaysStrict, useUnknownInCatchVariables, exactOptionalPropertyTypes
 //
-// SUPPORTED — type-checking options SKJS recognizes, silently accepted:
+// ALWAYS-ON — SKJS always performs these checks.
+//   Warn if explicitly set to false. Silent if absent or true.
 //     noImplicitReturns, noFallthroughCasesInSwitch,
-//     noUncheckedIndexedAccess, noPropertyAccessFromIndexSignature,
-//     noUnusedLocals, noUnusedParameters, rootDir, baseUrl
+//     noUncheckedIndexedAccess
+//
+// NOT YET SUPPORTED — recognized but not yet implemented.
+//   Warn if enabled (value is ignored). Silent if absent or false.
+//     noUnusedLocals, noUnusedParameters,
+//     noPropertyAccessFromIndexSignature
+//
+// SUPPORTED — silently accepted:
+//     rootDir, baseUrl
 //
 // IGNORED — emit/tooling/IDE options, silently accepted:
 //   Emit: target, outDir, outFile, declaration, declarationMap,
@@ -288,6 +296,32 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       }
     };
 
+    // Check always-on options (warn if explicitly disabled)
+    for (name in alwaysOnOptions) {
+      if (co.maybeGetBool(name) == Some(false)) {
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, name),
+            message => `Option '${name}' is always checked by SKJS and cannot be disabled.`,
+            isWarning => true,
+          },
+        )
+      }
+    };
+
+    // Check not-yet-supported options (warn if enabled)
+    for (name in notYetSupportedOptions) {
+      if (co.maybeGetBool(name) == Some(true)) {
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, name),
+            message => `Option '${name}' is not yet implemented by SKJS and will be ignored.`,
+            isWarning => true,
+          },
+        )
+      }
+    };
+
     TsCompilerOptions{
       rootDir => co.maybeGetString("rootDir"),
       baseUrl => co.maybeGetString("baseUrl"),
@@ -390,6 +424,18 @@ const restrictedOptions: Array<String> = Array[
   "paths",
   "suppressExcessPropertyErrors",
   "suppressImplicitAnyIndexErrors",
+];
+
+const alwaysOnOptions: Array<String> = Array[
+  "noImplicitReturns",
+  "noFallthroughCasesInSwitch",
+  "noUncheckedIndexedAccess",
+];
+
+const notYetSupportedOptions: Array<String> = Array[
+  "noUnusedLocals",
+  "noUnusedParameters",
+  "noPropertyAccessFromIndexSignature",
 ];
 
 // Find the 1-based line number of a JSON key in raw JSONC content.
