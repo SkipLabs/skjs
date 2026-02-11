@@ -960,7 +960,9 @@ class TFields{
   fun isEmpty(): Bool {
     this.fields.isEmpty() &&
       this.symbolFields.isEmpty() &&
-      this.indexes.isEmpty()
+      this.indexes.isEmpty() &&
+      this.new.isNone() &&
+      this.call.isNone()
   }
 
   fun map(
