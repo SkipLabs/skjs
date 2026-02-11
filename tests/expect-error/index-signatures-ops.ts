@@ -314,3 +314,60 @@ function interIdxAndFieldsBothSides(
   const v2: string = x.b;
   const v3: number | undefined = x["c"];
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 23: Union — field type should include other side's string index value
+///////////////////////////////////////////////////////////////////////////////
+
+// x.b: left has string index (number), right has field b (string)
+// Result should be string | number | undefined, not just string | undefined
+function unionFieldVsStringIdxNarrow(
+  x: { [k: string]: number } | { b: string },
+): string | undefined {
+  // TODO: x.b should be string | number | undefined
+  return x.b;
+}
+
+function unionFieldVsStringIdxOk(
+  x: { [k: string]: number } | { b: string },
+): string | number | undefined {
+  return x.b;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 24: Union — field on left, string index on right
+///////////////////////////////////////////////////////////////////////////////
+
+function unionFieldLeftIdxRightNarrow(
+  x: { a: number } | { [k: string]: string },
+): number | undefined {
+  // TODO: x.a should be number | string | undefined
+  return x.a;
+}
+
+function unionFieldLeftIdxRightOk(
+  x: { a: number } | { [k: string]: string },
+): number | string | undefined {
+  return x.a;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 25: Union — number index does NOT affect string-keyed fields
+///////////////////////////////////////////////////////////////////////////////
+
+function unionNumIdxNoEffect(
+  x: { [k: number]: number } | { b: string },
+): string | undefined {
+  return x.b;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 26: Union — multiple fields with string index on other side
+///////////////////////////////////////////////////////////////////////////////
+
+function unionMultiFieldsVsIdx(
+  x: { [k: string]: number } | { a: string; b: boolean },
+): void {
+  const v1: string | number | undefined = x.a;
+  const v2: boolean | number | undefined = x.b;
+}
