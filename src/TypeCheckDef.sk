@@ -46,6 +46,11 @@ extension class TypeChecker {
       cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
       subst = Subst::mcreate(tcenvl);
       this.funDef(subst, None(), fd, cgNode)
+    | Declare(VarDefs(_, varDefs))
+    | ExportDeclare(VarDefs(_, varDefs)) ->
+      for (varDef in varDefs) {
+        varDef.type.each(t -> checkUniqueSymbolReadonly(tcenvl, t))
+      }
     | Declare _
     | ExportDeclare _ ->
       void
@@ -207,6 +212,33 @@ extension class TypeChecker {
         void
       }
     }
+  }
+}
+
+fun checkUniqueSymbolReadonly(tcenvl: mutable TCEnvLight, t: Type): void {
+  t.value match {
+  | TAObject(fields) ->
+    for (field in fields) {
+      field match {
+      | fd @ ObjectFieldTypeValue _ ->
+        fd.type match {
+        | Some(
+          Type(_, TAUniqueSymbol()),
+        ) if (!(fd.readonly_ is Some(OFReadonly _))) ->
+          tcenvl.error(
+            Array[
+              (
+                fd.pos,
+                "A property whose type is 'unique symbol' must be 'readonly'",
+              ),
+            ],
+          )
+        | _ -> void
+        }
+      | _ -> void
+      }
+    }
+  | _ -> void
   }
 }
 

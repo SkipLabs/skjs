@@ -243,7 +243,10 @@ class MyClass {
 // declare const allows unique symbol (works correctly)
 declare const declaredSym: unique symbol;
 
+// @skjs-expect-error A property whose type is 'unique symbol' must be 'readonly'
 declare const declaredObj: { a: unique symbol };
+
+declare const declaredObjOk: { readonly a: unique symbol };
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 17: Well-known symbols
