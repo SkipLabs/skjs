@@ -381,7 +381,7 @@ function unionMultiFieldsVsIdx(
 function unionNumIdxNumFieldNarrow(
   x: { [k: number]: number } | { "0": string },
 ): string | undefined {
-  // TODO: x["0"] should be string | number | undefined
+  // @skjs-expect-error Invalid return type
   return x["0"];
 }
 

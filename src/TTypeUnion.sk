@@ -269,14 +269,24 @@ extension class TFields {
     fields = fields1.fields.merge(fields2.fields, ior ->
       ior match {
       | Left(z) ->
-        fields2.stringIndex match {
+        otherIdx = fields2.stringIndex match {
+        | some @ Some _ -> some
+        | None() ->
+          if (z.name.toIntOption().isSome()) fields2.numberIndex else None()
+        };
+        otherIdx match {
         | Some(index) ->
           newType = TType::union(subst, tenv, z.type, index.valueType);
           Some(z.withOptional().mapType(_ -> newType))
         | None() -> Some(z.withOptional())
         }
       | Right(z) ->
-        fields1.stringIndex match {
+        otherIdx = fields1.stringIndex match {
+        | some @ Some _ -> some
+        | None() ->
+          if (z.name.toIntOption().isSome()) fields1.numberIndex else None()
+        };
+        otherIdx match {
         | Some(index) ->
           newType = TType::union(subst, tenv, z.type, index.valueType);
           Some(z.withOptional().mapType(_ -> newType))
