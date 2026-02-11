@@ -503,19 +503,14 @@ fun createObject(
   algebraicBranchField: ?(PosRange, TType),
   fields: TFields,
 ): TType {
-  seen = mutable Set<String>[];
-  for (field in fields.fields) {
-    if (seen.contains(field.name)) {
-      tcenvb.error(Array[(field.pos, "Duplicate field")])
-    } else {
-      seen.insert(field.name)
-    }
-  };
-  for (field in fields.symbolFields) {
-    if (seen.contains(field.name)) {
-      tcenvb.error(Array[(field.pos, "Duplicate field")])
-    } else {
-      seen.insert(field.name)
+  for (fieldArray in Array[fields.fields, fields.symbolFields]) {
+    seen = mutable Set<String>[];
+    for (field in fieldArray) {
+      if (seen.contains(field.name)) {
+        tcenvb.error(Array[(field.pos, "Duplicate field")])
+      } else {
+        seen.insert(field.name)
+      }
     }
   };
   algebraicBranchField match {
