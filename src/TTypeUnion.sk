@@ -268,21 +268,42 @@ extension class TFields {
   ): TFields {
     fields = fields1.fields.merge(fields2.fields, ior ->
       ior match {
-      | Left(z)
+      | Left(z) ->
+        fields2.stringIndex match {
+        | Some(index) ->
+          newType = TType::union(subst, tenv, z.type, index.valueType);
+          Some(z.withOptional().mapType(_ -> newType))
+        | None() -> Some(z.withOptional())
+        }
       | Right(z) ->
-        Some(z.withOptional())
+        fields1.stringIndex match {
+        | Some(index) ->
+          newType = TType::union(subst, tenv, z.type, index.valueType);
+          Some(z.withOptional().mapType(_ -> newType))
+        | None() -> Some(z.withOptional())
+        }
       | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );
     symbolFields = fields1.symbolFields.merge(fields2.symbolFields, ior ->
       ior match {
-      | Left(z)
+      | Left(z) ->
+        fields2.symbolIndex match {
+        | Some(index) ->
+          newType = TType::union(subst, tenv, z.type, index.valueType);
+          Some(z.withOptional().mapType(_ -> newType))
+        | None() -> Some(z.withOptional())
+        }
       | Right(z) ->
-        Some(z.withOptional())
+        fields1.symbolIndex match {
+        | Some(index) ->
+          newType = TType::union(subst, tenv, z.type, index.valueType);
+          Some(z.withOptional().mapType(_ -> newType))
+        | None() -> Some(z.withOptional())
+        }
       | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );
-    // TODO: handle intersection between normal fields and index fields
     stringIndex = TFields::unionOptIndex(
       subst,
       tenv,

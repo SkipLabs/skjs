@@ -324,7 +324,7 @@ function interIdxAndFieldsBothSides(
 function unionFieldVsStringIdxNarrow(
   x: { [k: string]: number } | { b: string },
 ): string | undefined {
-  // TODO: x.b should be string | number | undefined
+  // @skjs-expect-error Invalid return type
   return x.b;
 }
 
@@ -341,7 +341,7 @@ function unionFieldVsStringIdxOk(
 function unionFieldLeftIdxRightNarrow(
   x: { a: number } | { [k: string]: string },
 ): number | undefined {
-  // TODO: x.a should be number | string | undefined
+  // @skjs-expect-error Invalid return type
   return x.a;
 }
 

@@ -316,7 +316,6 @@ extension class TFields {
       fields2.symbolFields,
       (x, y) -> TField::inter(subst, tenv, x, y),
     );
-    // TODO: handle intersection between normal fields and index fields
     stringIndex = TFields::interOptIndex(
       subst,
       tenv,
