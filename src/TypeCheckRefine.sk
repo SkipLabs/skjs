@@ -214,14 +214,27 @@ extension class TypeChecker {
       )
 
     | In(e1, Expr(_, Var(local))) ->
-      (_t1, litsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
-      singleLit = litsOpt.flatMap(litsToCheck -> litsToCheck.singleElt());
+      (_t1, litsOpt, symLitsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
+      singleKey: ?(PrimLiteral, Bool) = litsOpt match {
+      | Some(Some(lits)) -> lits.singleElt().map(l -> (l, false))
+      | _ ->
+        symLitsOpt
+          .flatMap(x -> x)
+          .flatMap(lits -> lits.singleElt().map(l -> (l, true)))
+      };
       default = if (target) {
-        singleLit.flatMap(singleField ->
-          TField::create(e1.pos, singleField.val, false, TType::top(e.pos)).map(
-            field -> TObject(TFields::create{fields => Array[field]}, e1.pos),
+        singleKey.flatMap(keyAndIsSym -> {
+          (key, isSym) = keyAndIsSym;
+          TField::create(e1.pos, key.val, false, TType::top(e.pos)).map(
+            field ->
+              if (isSym) {
+                TObject(TFields::create{symbolFields => Vector[field]}, e1.pos)
+              } else {
+                TObject(TFields::create{fields => Array[field]}, e1.pos)
+              }
+            ,
           )
-        )
+        })
       } else {
         None()
       };
@@ -234,32 +247,38 @@ extension class TypeChecker {
         | TAlgebraic _
         | TPromise _ ->
           Some(stype) /* TODO */
-        | tObj @ TObject(fields, _pos) ->
-          singleLit match {
+        | tObj @ TObject(tFields, _pos) ->
+          singleKey match {
           | None() -> Some(stype)
-          | Some(singleField) ->
+          | Some((key, isSym)) ->
             if (target) {
               Some(
-                tObj.map(tFields ->
-                  if (!tFields.indexes.isEmpty()) tFields else {
-                    TField::create(
-                      e1.pos,
-                      singleField.val,
-                      false,
-                      TType::top(e.pos),
-                    )
-                      .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
-                      .default(tFields)
+                tObj.map(tf ->
+                  if (!tf.indexes.isEmpty()) tf else {
+                    TField::create(e1.pos, key.val, false, TType::top(e.pos))
+                      .flatMap(fieldToAdd ->
+                        if (isSym) tf.addSymbolField(fieldToAdd) else {
+                          tf.addField(fieldToAdd)
+                        }
+                      )
+                      .default(tf)
                   }
                 ),
               )
             } else {
-              fields.maybeGet(singleField.val) match {
+              lookup = if (isSym) {
+                tFields.symbolFields.maybeGet(key.val)
+              } else {
+                tFields.fields.maybeGet(key.val)
+              };
+              lookup match {
               | Some(TField{isOptional => false}) -> None()
               | Some(_) ->
-                Some(
-                  tObj.filterFields(tField -> tField.name != singleField.val),
-                )
+                if (isSym) {
+                  Some(tObj.filterSymbolFields(sf -> sf.name != key.val))
+                } else {
+                  Some(tObj.filterFields(f -> f.name != key.val))
+                }
               | _ -> Some(stype)
               }
             }

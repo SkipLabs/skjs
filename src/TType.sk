@@ -432,6 +432,10 @@ class TObject(fields: TFields) extends SType {
     this.map(fields -> fields.filterFields(f))
   }
 
+  fun filterSymbolFields(f: TField -> Bool): TObject {
+    this.map(fields -> fields.filterSymbolFields(f))
+  }
+
   fun removeFields(fieldsToRemove: SortedSet<String>): TObject {
     if (fieldsToRemove.isEmpty()) this else {
       this.map(fields -> fields.removeFields(fieldsToRemove))
@@ -1088,6 +1092,22 @@ class TFields{
         },
       )
     }
+  }
+
+  fun addSymbolField(fieldToAdd: TField): ?TFields {
+    if (this.symbolFields.containsKey(fieldToAdd.name)) None() else {
+      Some(
+        this with {
+          symbolFields => this.symbolFields.union(
+            InternalKeyedArrayMap::single(fieldToAdd),
+          ),
+        },
+      )
+    }
+  }
+
+  fun filterSymbolFields(f: TField -> Bool): TFields {
+    this with {symbolFields => this.symbolFields.filter(f)}
   }
 
   fun removeFields(fieldsToRemove: SortedSet<String>): TFields {

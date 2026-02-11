@@ -1148,7 +1148,11 @@ extension class TypeChecker {
       TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
     | In(e1, e2) ->
-      (t1, fieldsOpt) = this.getInLhsTypeAndFields(tcenv, pos, e1);
+      (t1, fieldsOpt, symFieldsOpt) = this.getInLhsTypeAndFields(
+        tcenv,
+        pos,
+        e1,
+      );
       t2 = this.expr(tcenv, e2, true);
       t2.getSTypes(tcenv.subst, this, Covariant()) match {
       | None() ->
@@ -1167,16 +1171,32 @@ extension class TypeChecker {
             );
             !canBeTrue = true;
             !canBeFalse = true
-          | TObject(TFields{fields, indexes}, _pos) ->
+          | TObject(TFields{fields, symbolFields, indexes}, _pos) ->
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
               !indexes.isEmpty() /* TODO: refine */ ||
               fieldsOpt match {
-              | None() -> true
-              | Some(fieldsToCheck) ->
+              | None() ->
+                false // no field keys to check
+              | Some(None()) ->
+                true // broad type, could be any key
+              | Some(Some(fieldsToCheck)) ->
                 fieldsToCheck.values().any(fieldToCheck ->
                   fields.maybeGet(fieldToCheck.val) match {
+                  | Some(tField) -> tField.isOptional
+                  | None() -> true
+                  }
+                )
+              } ||
+              symFieldsOpt match {
+              | None() ->
+                false // no symbol keys to check
+              | Some(None()) ->
+                true // broad symbol, could be any key
+              | Some(Some(symFieldsToCheck)) ->
+                symFieldsToCheck.values().any(symToCheck ->
+                  symbolFields.maybeGet(symToCheck.val) match {
                   | Some(tField) -> tField.isOptional
                   | None() -> true
                   }
@@ -1790,39 +1810,39 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     pos: PosRange,
     e1: Expr,
-  ): (TType, ?PrimLiterals) {
+  ): (TType, ??PrimLiterals, ??PrimLiterals) {
     t1 = this.expr(tcenv, e1, true);
     t1.getSTypes(tcenv.subst, this, Covariant()) match {
-    | None() ->
-      typingError(Array[(pos, "Invalid in"), (e1.pos, "This has type unknown")])
-    | Some(stypes1) ->
-      litsOptOpt: ??PrimLiterals = None();
+    | Some(stypes1) if (!stypes1.isEmpty()) ->
+      fieldLitsOpt: ??PrimLiterals = None();
+      symLitsOpt: ??PrimLiterals = None();
       for (stype1 in stypes1) {
         stype1 match {
-        | TPrimValue(TNum(), lits, _pos)
-        | TPrimValue(TString(), lits, _pos) ->
-          (litsOptOpt, lits) match {
-          | (Some(None()), _) -> void
-          | (None(), _)
-          | (Some(Some(_)), None()) ->
-            !litsOptOpt = Some(lits)
-          | (Some(Some(existingLits)), Some(moreLits)) ->
-            !litsOptOpt = Some(Some(existingLits.union(moreLits)))
+        | TPrimValue(TNum(), lits, _)
+        | TPrimValue(TString(), lits, _) ->
+          !fieldLitsOpt = fieldLitsOpt match {
+          | Some(None()) -> Some(None())
+          | None() -> Some(lits)
+          | Some(Some(_)) if (lits.isNone()) -> Some(None())
+          | Some(Some(existing)) -> Some(lits.map(more -> existing.union(more)))
           }
-        | TPrimValue(TSymbol(), _, _pos) ->
-          // Symbols are valid for 'in' but don't participate in field narrowing
-          !litsOptOpt = Some(None())
+        | TPrimValue(TSymbol(), symLits, _) ->
+          !symLitsOpt = symLitsOpt match {
+          | Some(None()) -> Some(None())
+          | None() -> Some(symLits)
+          | Some(Some(_)) if (symLits.isNone()) -> Some(None())
+          | Some(Some(existing)) ->
+            Some(symLits.map(more -> existing.union(more)))
+          }
         | _ ->
           typingError(
             Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)],
           )
         }
       };
-      litsOptOpt
-    } match {
-    | None() ->
+      (t1, fieldLitsOpt, symLitsOpt)
+    | _ ->
       typingError(Array[(pos, "Invalid in"), (e1.pos, `This has type ${t1}`)])
-    | Some(litsOpt) -> (t1, litsOpt)
     }
   }
 
