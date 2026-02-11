@@ -215,19 +215,22 @@ extension class TypeChecker {
 
     | In(e1, Expr(_, Var(local))) ->
       (_t1, litsOpt, symLitsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
-      singleKey: ?(PrimLiteral, Bool) = litsOpt match {
-      | Some(Some(lits)) -> lits.singleElt().map(l -> (l, false))
-      | _ ->
-        symLitsOpt
-          .flatMap(x -> x)
-          .flatMap(lits -> lits.singleElt().map(l -> (l, true)))
+      singleKey = (litsOpt, symLitsOpt) match {
+      | (Some(Some(strLits)), None()) ->
+        strLits.singleElt().map(singleStr ->
+          FKName(Name(singleStr.pos, singleStr.val), TString())
+        )
+      | (None(), Some(Some(symLits))) ->
+        symLits.singleElt().map(singleSym ->
+          FKSymbol(singleSym.pos, singleSym.val)
+        )
+      | _ -> None()
       };
       default = if (target) {
-        singleKey.flatMap(keyAndIsSym -> {
-          (key, isSym) = keyAndIsSym;
-          TField::create(e1.pos, key.val, false, TType::top(e.pos)).map(
+        singleKey.flatMap(key -> {
+          TField::create(e1.pos, key.value(), false, TType::top(e.pos)).map(
             field ->
-              if (isSym) {
+              if (key is FKSymbol _) {
                 TObject(TFields::create{symbolFields => Vector[field]}, e1.pos)
               } else {
                 TObject(TFields::create{fields => Array[field]}, e1.pos)
@@ -250,14 +253,21 @@ extension class TypeChecker {
         | tObj @ TObject(tFields, _pos) ->
           singleKey match {
           | None() -> Some(stype)
-          | Some((key, isSym)) ->
+          | Some(key) ->
             if (target) {
               Some(
                 tObj.map(tf ->
-                  if (!tf.indexes.isEmpty()) tf else {
-                    TField::create(e1.pos, key.val, false, TType::top(e.pos))
+                  if (!tf.indexes.isEmpty()) /* TODO: refine */ tf else {
+                    TField::create(
+                      e1.pos,
+                      key.value(),
+                      false,
+                      TType::top(e.pos),
+                    )
                       .flatMap(fieldToAdd ->
-                        if (isSym) tf.addSymbolField(fieldToAdd) else {
+                        if (key is FKSymbol _) {
+                          tf.addSymbolField(fieldToAdd)
+                        } else {
                           tf.addField(fieldToAdd)
                         }
                       )
@@ -266,18 +276,14 @@ extension class TypeChecker {
                 ),
               )
             } else {
-              lookup = if (isSym) {
-                tFields.symbolFields.maybeGet(key.val)
-              } else {
-                tFields.fields.maybeGet(key.val)
-              };
-              lookup match {
+              tFields.maybeGetField(key) match {
               | Some(TField{isOptional => false}) -> None()
               | Some(_) ->
-                if (isSym) {
-                  Some(tObj.filterSymbolFields(sf -> sf.name != key.val))
-                } else {
-                  Some(tObj.filterFields(f -> f.name != key.val))
+                key match {
+                | FKSymbol(_, keyName) ->
+                  Some(tObj.filterSymbolFields(sf -> sf.name != keyName))
+                | FKName(Name(_, keyName), _) ->
+                  Some(tObj.filterFields(f -> f.name != keyName))
                 }
               | _ -> Some(stype)
               }
