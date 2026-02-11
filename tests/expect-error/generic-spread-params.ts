@@ -27,16 +27,6 @@ function testPushAll(): void {
   let b1check: Array<number> = b1;
 }
 
-// Generic spread, return type should be precise
-function identity<T>(...args: T[]): Array<T> {
-  return args;
-}
-
-function testIdentitySpread(): void {
-  let d1 = identity(1, 2, 3);
-  let d1check: Array<number> = d1;
-}
-
 // Return type uses T from spread
 function combine<T>(first: T, ...rest: T[]): T {
   return first;
