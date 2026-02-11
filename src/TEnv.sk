@@ -205,12 +205,14 @@ base class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
+    symbolFields = mutable Vector[];
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
     constructor = this.addFields(
       tcenvb,
       fields,
+      symbolFields,
       indexes,
       visitedClasses,
       None(),
@@ -228,6 +230,7 @@ base class TEnv{
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
+        symbolFields,
         indexes => indexes.toArray(),
       },
       className.pos,
@@ -247,10 +250,12 @@ base class TEnv{
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
+    symbolFields = mutable Vector[];
     indexes = mutable Vector[];
     constructor = this.addFields(
       tcenvb,
       fields,
+      symbolFields,
       indexes,
       visitedClasses,
       Some(c.tparams),
@@ -266,6 +271,7 @@ base class TEnv{
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
+        symbolFields,
         indexes => indexes.toArray(),
         new => Some(new),
       },
@@ -371,16 +377,18 @@ base class TEnv{
     (this, cls)
   }
 
+  // Returns the type of the constructor, if any.
   private fun addFields(
     tcenvb: mutable TCEnvBase,
     acc: mutable Map<String, TField>,
+    symbolFields: mutable Vector<TField>,
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
     isStatic: ?Array<TypeParam>,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldTypeValue ~> Bool,
-  ): /* Type of constructor */ ?TFuns {
+  ): ?TFuns {
     (!this, cls) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -394,6 +402,7 @@ base class TEnv{
         _ = this.addFields(
           tcenvb,
           acc,
+          symbolFields,
           indexes,
           visitedClasses,
           isStatic,
@@ -494,20 +503,26 @@ base class TEnv{
       | fd @ ClassFieldTypeMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
-        metName = fd.name match {
-        | FNNormal(name) -> name
-        | FNSymbol(symbolName) ->
-          notSupported(symbolName.pos, "symbol-named method")
-        };
         cgNode = CGNode::create(
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
-        TField::create(fd.pos, metName.value, false, metType) match {
-        | None() ->
-          tcenvb.error(Array[(fd.pos, `Forbidden method name '${metName}'`)])
-        | Some(field) -> acc![metName.value] = field
+        fd.name match {
+        | FNNormal(name) -> FKName(name, TString())
+        | FNComputed(keyExpr) ->
+          this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
+        } match {
+        | FKSymbol(exprPos, uniqueId) ->
+          symbolFields.push(
+            TField::create(exprPos, uniqueId, false, metType).fromSome(),
+          )
+        | FKName(name, _) ->
+          TField::create(name.pos, name.value, false, metType) match {
+          | None() ->
+            tcenvb.error(Array[(fd.pos, `Forbidden method name '${name}'`)])
+          | Some(field) -> acc![name.value] = field
+          }
         }
       }
     };
@@ -644,13 +659,30 @@ base class TEnv{
     this.normalizeFun(tcenvb, fd.pos, tafun)
   }
 
-  fun normalize(tcenvb: mutable TCEnvBase, typeAst: Type): TType {
+  // Normalizes a type annotation.
+  // When isTopLevelConst is true, allows unique symbol type (only permitted
+  // in top-level const declarations, class static readonly members, and
+  // imported const bindings).
+  fun normalize(
+    tcenvb: mutable TCEnvBase,
+    typeAst: Type,
+    isTopLevelConst: Bool = false,
+  ): TType {
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
     | TAAssertIs _ -> typingError(Array[(pos, "TODO assertIs")])
     | TAAbstract _ -> typingError(Array[(pos, "TODO abstract")])
-    | TAUniqueSymbol() -> typingError(Array[(pos, "TODO uniqueSymbol")])
+    | TAUniqueSymbol() ->
+      if (isTopLevelConst) {
+        // Each unique symbol gets a distinct type based on its position
+        uniqueId = `unique_symbol_${pos.fileName.hash()}_${pos.symbol.hash()}_${
+          pos.relStart.value
+        }`;
+        TType::single(TPrimValue::single(TSymbol(), uniqueId, pos))
+      } else {
+        typingError(Array[(pos, "unique symbol type cannot be used here")])
+      }
     | TAAsserts _ -> typingError(Array[(pos, "TODO asserts")])
     | TAIs _ -> typingError(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
@@ -699,10 +731,15 @@ base class TEnv{
         | TPKNum() -> TPrimValue::number(pos)
         | TPKString() -> TPrimValue::string(pos)
         | TPKBigInt() -> TPrimValue::bigint(pos)
+        | TPKSymbol() -> TPrimValue::symbol(pos)
         },
       )
     | TAObject(fields) ->
-      (algebraicBranchField, tFields) = this.createTFields(tcenvb, fields);
+      (algebraicBranchField, tFields) = this.createTFields(
+        tcenvb,
+        fields,
+        isTopLevelConst,
+      );
       createObject(tcenvb, pos, algebraicBranchField, tFields)
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
@@ -849,7 +886,7 @@ base class TEnv{
     }
   }
 
-  private fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
+  fun typeOfExpr(tcenvb: mutable TCEnvBase, expr: Expr): TType {
     (this, tcenvb) match {
     | (tc @ TypeChecker _, tcenv @ TCEnv _) ->
       // Validate structure first - only Var and Dot allowed
@@ -872,7 +909,8 @@ base class TEnv{
     | Var(varName) ->
       for (def in this.defMap.getAll(tcenvb.context, varName)) {
         def match {
-        | FDVar(_, _, Some(t), _) -> return this.normalize(tcenvb, t)
+        | FDVar(kind, _, Some(t), _) ->
+          return this.normalize(tcenvb, t, kind is VDKConst _)
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.default(CGNode::create(AnonymousFunDef(fd)));
           return TType::single(
@@ -910,6 +948,80 @@ base class TEnv{
           (expr.pos, "typeof operand must be an identifier or property access"),
         ],
       )
+    }
+  }
+
+  fun getIteratorElementType(
+    subst: mutable Subst,
+    fields: TFields,
+    pos: PosRange,
+  ): ?TType {
+    // Step 1: Resolve Symbol.iterator's unique ID via synthetic expression
+    symbolExpr = Expr(pos, Var(Name(pos, "Symbol")));
+    iteratorExpr = Expr(
+      pos,
+      Dot(NormalDot(), symbolExpr, Name(pos, "iterator")),
+    );
+    iteratorSymType = this.typeOfExpr(subst, iteratorExpr);
+    uniqueId = iteratorSymType
+      .getSTypes(subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
+      lits.singleElt() match {
+      | Some(lit) -> lit.val
+      | None() -> return None()
+      }
+    | _ -> return None()
+    };
+
+    // Step 2: Look up [Symbol.iterator] symbol field
+    iteratorMethodType = fields.maybeGetSymbolType(
+      subst,
+      this,
+      uniqueId,
+      pos,
+    ) match {
+    | Some(t) -> t
+    | None() -> return None()
+    };
+
+    // Step 3: Get return type of calling [Symbol.iterator]()
+    iteratorType = iteratorMethodType
+      .getSTypes(subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(TFields{call => Some((_, TFuns(fun_, _)))}, _)) ->
+      fun_.retType
+    | _ -> return None()
+    };
+
+    // Step 4: Look up "next" on the iterator object
+    nextMethodType = iteratorType
+      .getSTypes(subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(iterFields, _)) ->
+      iterFields.maybeGetType(subst, this, "next", pos) match {
+      | Some(t) -> t
+      | None() -> return None()
+      }
+    | _ -> return None()
+    };
+
+    // Step 5: Get return type of calling next()
+    nextResultType = nextMethodType
+      .getSTypes(subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(TFields{call => Some((_, TFuns(nextFun, _)))}, _)) ->
+      nextFun.retType
+    | _ -> return None()
+    };
+
+    // Step 6: Look up "value" on {value: T, done: boolean}
+    nextResultType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(TObject(resultFields, _)) ->
+      resultFields.maybeGetType(subst, this, "value", pos)
+    | _ -> None()
     }
   }
 
@@ -1018,19 +1130,45 @@ base class TEnv{
     }
   }
 
-  /*
-    The first element is the position and the type of the algebraic branch field if it is present.
-   */
+  // Resolve a computed key expression to a FieldKey.
+  private fun resolveComputedKeyFieldKey(
+    tcenvb: mutable TCEnvBase,
+    keyExpr: Expr,
+  ): FieldKey {
+    keyType = this.typeOfExpr(tcenvb, keyExpr);
+    subst = Subst::mcreate(tcenvb);
+    keyType
+      .getSTypes(subst, this, Covariant())
+      .flatMap(stypes -> stypes.singleElt())
+      .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype)) match {
+    | Some(res) -> res
+    | None() ->
+      typingError(
+        Array[
+          (
+            keyExpr.pos,
+            "Computed property key must be a literal or unique symbol",
+          ),
+        ],
+      )
+    }
+  }
+
+  // Returns (algebraicBranchField, fields). The first element is the
+  // position and the type of the algebraic branch field, if present.
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
+    isTopLevelConst: Bool = false,
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
+    fieldsVec = mutable Vector[];
+    symbolFields = mutable Vector[];
     indexes = mutable Vector[];
     call: ?TFuns = None();
     new: ?TFuns = None();
 
-    fields = fieldTypes.filterMap(elt -> {
+    for (elt in fieldTypes) {
       elt match {
       | fd @ ObjectFieldTypeValue _ ->
         fieldTy = fd.type match {
@@ -1039,37 +1177,50 @@ base class TEnv{
         };
         fd.name match {
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
-        | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
-        | FNNormal(name) ->
-          normalizedType = this.normalize(tcenvb, fieldTy);
-          optField = TField::create(
-            name.pos,
-            name.value,
-            fd.optional is Some _,
-            normalizedType,
-          );
-          if (optField is None()) {
-            algebraicBranchField match {
-            | Some((existingPos, _existingType)) ->
-              tcenvb.error(
-                Array[
-                  (name.pos, `Duplicate field ${name}`),
-                  (existingPos, "Previously declared here"),
-                ],
+        | simpleFieldName @ SimpleFieldName _ ->
+          normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
+          simpleFieldName match {
+          | FNNormal(name) -> FKName(name, TString())
+          | FNComputed(keyExpr) ->
+            this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
+          } match {
+          | FKSymbol(exprPos, uniqueId) ->
+            symbolFields.push(
+              TField::create(
+                exprPos,
+                uniqueId,
+                fd.optional is Some _,
+                normalizedType,
+              ).fromSome(),
+            )
+          | FKName(name, _) ->
+            TField::create(
+              name.pos,
+              name.value,
+              fd.optional is Some _,
+              normalizedType,
+            ) match {
+            | Some(field) -> fieldsVec.push(field)
+            | None() ->
+              algebraicBranchField match {
+              | Some((existingPos, _existingType)) ->
+                tcenvb.error(
+                  Array[
+                    (name.pos, `Duplicate field ${name}`),
+                    (existingPos, "Previously declared here"),
+                  ],
+                );
+                continue
+              | None() -> void
+              };
+              fd.optional.each(optionalPos ->
+                tcenvb.error(
+                  Array[(optionalPos, `Field ${name} cannot be optional`)],
+                )
               );
-              return None()
-            | None() -> void
-            };
-            fd.optional match {
-            | Some(optionalPos) ->
-              tcenvb.error(
-                Array[(optionalPos, `Field ${name} cannot be optional`)],
-              )
-            | None() -> void
-            };
-            !algebraicBranchField = Some((name.pos, normalizedType))
-          };
-          optField
+              !algebraicBranchField = Some((name.pos, normalizedType))
+            }
+          }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
@@ -1080,32 +1231,42 @@ base class TEnv{
               keyType,
               valueType,
             },
-          );
-          None()
+          )
         }
       | fd @ ObjectFieldTypeMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
         tFuns = this.funDecl(tcenvb, false, fd, cgNode);
         fd.name match {
-        | FNNormal(Name(_, "new")) ->
-          !new = Some(tFuns);
-          None()
-        | FNEmpty() ->
-          !call = Some(tFuns);
-          None()
-        | FNSymbol _ ->
-          notSupported(fd.pos, "symbol-named method in literal object type")
-        | FNNormal(name) ->
+        | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
+        | FNEmpty() -> !call = Some(tFuns)
+        | simpleFieldName @ SimpleFieldName _ ->
           decl = TType::single(TObject::createCall(tFuns));
-          optField = TField::create(name.pos, name.value, false, decl);
-          if (optField is None()) {
-            tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
-          };
-          optField
+          simpleFieldName match {
+          | FNNormal(name) -> FKName(name, TString())
+          | FNComputed(keyExpr) ->
+            this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
+          } match {
+          | FKSymbol(exprPos, uniqueId) ->
+            symbolFields.push(
+              TField::create(exprPos, uniqueId, false, decl).fromSome(),
+            )
+          | FKName(name, _) ->
+            TField::create(name.pos, name.value, false, decl) match {
+            | Some(field) -> fieldsVec.push(field)
+            | None() ->
+              tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
+            }
+          }
         }
       }
-    });
-    tFields = TFields::create{fields, indexes => indexes.toArray(), new, call};
+    };
+    tFields = TFields::create{
+      fields => fieldsVec.toArray(),
+      symbolFields,
+      indexes => indexes.toArray(),
+      new,
+      call,
+    };
     (algebraicBranchField, tFields)
   }
 
@@ -1131,6 +1292,7 @@ base class TEnv{
     result = TType::bottom(pos);
     maxRange = -1;
     strings = SortedSet[];
+    symbols = SortedSet[];
     for (clause in clauses) {
       invariant(clause.vars.isEmpty(), "keyof with non-empty variables");
       stypes = Vector::mcreateFromIterator(clause.stypes.fromSome().values());
@@ -1139,8 +1301,11 @@ base class TEnv{
         stype match {
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | TObject(fields, _) ->
-          for (field in fields) {
+          for (field in fields.fields) {
             !strings = strings.set(field.name);
+          };
+          for (symbolField in fields.symbolFields) {
+            !symbols = symbols.set(symbolField.name);
           };
           for (index in fields.indexes) {
             // TODO: convert numbers to strings
@@ -1149,8 +1314,11 @@ base class TEnv{
         | TAlgebraic(branches, _) ->
           !strings = strings.set(kAlgebraicBranchFieldName);
           for (branch in branches) {
-            for (field in branch.fields) {
+            for (field in branch.fields.fields) {
               !strings = strings.set(field.name);
+            };
+            for (symbolField in branch.fields.symbolFields) {
+              !symbols = symbols.set(symbolField.name);
             };
             for (index in branch.fields.indexes) {
               // TODO: convert numbers to strings
@@ -1184,6 +1352,12 @@ base class TEnv{
         )
       };
       !result = TType::union(subst, this, result, litsType)
+    };
+    PrimLiterals::ofSet(symbols, pos) match {
+    | None() -> void
+    | symbolLits @ Some _ ->
+      symbolType = TType::single(TPrimValue(TSymbol(), symbolLits, pos));
+      !result = TType::union(subst, this, result, symbolType)
     };
     result
   }

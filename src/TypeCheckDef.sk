@@ -46,6 +46,11 @@ extension class TypeChecker {
       cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
       subst = Subst::mcreate(tcenvl);
       this.funDef(subst, None(), fd, cgNode)
+    | Declare(VarDefs(_, varDefs))
+    | ExportDeclare(VarDefs(_, varDefs)) ->
+      for (varDef in varDefs) {
+        varDef.type.each(t -> checkUniqueSymbolReadonly(tcenvl, t))
+      }
     | Declare _
     | ExportDeclare _ ->
       void
@@ -70,26 +75,38 @@ extension class TypeChecker {
     typeAnnotation: ?Type,
     value: ?Expr,
   ): void {
-    // Check for missing value
-    if (value is None()) {
-      tcenvl.error(Array[(pos, "Missing definition")])
-    };
-
-    // Extract literal type from const expression
-    literalType = value
-      .flatMap((e) -> this.asConstExpr(tcenvl, e))
-      .map(TType::single);
-
     subst = Subst::mcreate(tcenvl);
 
-    // Validate type annotation
-    typeOpt = typeAnnotation match {
-    | None() ->
-      if (literalType is None()) {
-        tcenvl.error(Array[(pos, "Missing type annotation")])
-      };
-      literalType
-    | Some(x) -> Some(this.normalize(subst, x))
+    typeOpt = typeAnnotation.map(x -> this.normalize(subst, x, true));
+
+    value match {
+    | None() -> tcenvl.error(Array[(pos, "Missing definition")])
+    | Some(e) ->
+      tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
+      valueType = this.expr(tcenv, e, true);
+      if (typeAnnotation is Some(Type(_, TAUniqueSymbol()))) {
+        e.value match {
+        | Call(Expr(_, Var(Name(_, "Symbol"))), _, _) -> void
+        | _ ->
+          tcenvl.error(
+            Array[
+              (pos, "unique symbol type requires Symbol() call as initializer"),
+            ],
+          )
+        }
+      } else {
+        typeOpt match {
+        | None() -> !typeOpt = Some(valueType)
+        | Some(type) ->
+          this.checkSubType(
+            tcenv,
+            pos,
+            "Invalid definition: value type is not compatible with type annotation",
+            valueType,
+            type,
+          )
+        }
+      }
     };
 
     // Check if type is primitive
@@ -105,23 +122,6 @@ extension class TypeChecker {
           ],
         )
       }
-    | _ -> void
-    };
-
-    // Check subtype compatibility
-    (value, typeOpt) match {
-    | (Some(e), Some(type)) ->
-      tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
-      this.checkSubType(
-        tcenv,
-        pos,
-        "Invalid definition: value type is not compatible with type annotation",
-        literalType match {
-        | None() -> this.expr(tcenv, e, true)
-        | Some(litType) -> litType
-        },
-        type,
-      )
     | _ -> void
     }
   }
@@ -212,6 +212,33 @@ extension class TypeChecker {
         void
       }
     }
+  }
+}
+
+fun checkUniqueSymbolReadonly(tcenvl: mutable TCEnvLight, t: Type): void {
+  t.value match {
+  | TAObject(fields) ->
+    for (field in fields) {
+      field match {
+      | fd @ ObjectFieldTypeValue _ ->
+        fd.type match {
+        | Some(
+          Type(_, TAUniqueSymbol()),
+        ) if (!(fd.readonly_ is Some(OFReadonly _))) ->
+          tcenvl.error(
+            Array[
+              (
+                fd.pos,
+                "A property whose type is 'unique symbol' must be 'readonly'",
+              ),
+            ],
+          )
+        | _ -> void
+        }
+      | _ -> void
+      }
+    }
+  | _ -> void
   }
 }
 

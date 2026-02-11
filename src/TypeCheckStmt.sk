@@ -326,11 +326,11 @@ extension class TypeChecker {
     for (stype in stypes) {
       stype match {
       | TObject(fields, _objectPos) ->
-        if (fields.indexes.isEmpty()) {
+        this.getIteratorElementType(tcenv.subst, fields, pos) match {
+        | Some(elementType) ->
+          !result = TType::union(tcenv.subst, this, result, elementType)
+        | None() ->
           tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
-        };
-        for (index in fields.indexes) {
-          !result = TType::union(tcenv.subst, this, result, index.valueType)
         }
       | TTuple(tuple, _) ->
         for (elementType in tuple) {

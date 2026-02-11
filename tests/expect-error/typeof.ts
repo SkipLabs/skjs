@@ -52,8 +52,7 @@ function testBigintRefinement(x: bigint | number): bigint {
   }
 }
 
-// FIXME: symbol type not supported in SKJS
-// @skjs-expect-error Type symbol not found
+// symbol refinement
 function testSymbolRefinement(x: symbol | string, sym: symbol): symbol {
   if (typeof x === "symbol") {
     return x;
@@ -1085,7 +1084,8 @@ function testTupleSpread(
   x: [number, string] | number,
 ): [number, string, boolean] {
   if (typeof x === "object") {
-    // @skjs-expect-error TODO: ...
+    // TODO be more precise with tuples
+    // @skjs-expect-error Invalid return type
     return [...x, false];
   } else {
     return [x, "", false];

@@ -18,9 +18,8 @@ class StaticReadonlyBigint {
   static readonly bigintVal: bigint = 123n;
 }
 
-// Test static readonly field with symbol type (symbol not fully supported)
+// Test static readonly field with symbol type
 class StaticReadonlySymbol {
-  // @skjs-expect-error Type symbol not found
   static readonly sym: symbol = Symbol.for("test");
 }
 

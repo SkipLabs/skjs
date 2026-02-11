@@ -356,11 +356,12 @@ base class ClosureBody uses XXHashable {
 }
 
 /***************************************************************************/
-// <field> ::= <name> : <expr> | ... <expr>
+// <field> ::= <name> : <expr> | [<expr>] : <expr> | ... <expr>
 /***************************************************************************/
 base class Field uses XXHashable {
   children =
   | FDNormal(name: Name, expr: Expr)
+  | FDComputed(key: Expr, value: Expr)
   | FDSpread(expr: Expr)
   | FDMethod
 }
@@ -387,11 +388,11 @@ base class PostOperator uses XXHashable {
 base class FieldName uses XXHashable {
   fun getName(): String
   | FNNormal(n)
-  | FNSymbol(n)
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
   | FNEmpty() -> "(anonymous)"
+  | FNComputed(_) -> "(computed)"
 }
 
 base class NonEmptyFieldName extends FieldName
@@ -400,7 +401,7 @@ class FNEmpty() extends FieldName
 base class SimpleFieldName extends NonEmptyFieldName {
   children =
   | FNNormal(Name)
-  | FNSymbol(Name)
+  | FNComputed(Expr)
 }
 
 base class IndexFieldName extends NonEmptyFieldName {
@@ -599,6 +600,7 @@ base class TPrimKind uses XXHashable {
   | TPKNum()
   | TPKString()
   | TPKBigInt()
+  | TPKSymbol()
 }
 
 base class FieldGetSetKind uses XXHashable {

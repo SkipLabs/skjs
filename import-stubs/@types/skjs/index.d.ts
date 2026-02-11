@@ -4,10 +4,8 @@ declare const console: {
   error(message?: unknown, ...optionalParams: unknown[]): void;
 };
 
-/* It's not really the interface but for now it will do the trick given
-   that our Iterables are Arrays only. */
 declare interface Iterable<T> {
-  [i: number]: T;
+  [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
 
 declare interface ArrayLike<T> {
@@ -60,6 +58,8 @@ declare class Array<T> implements Iterable<T> {
   // If we have overloads:
   // static from<T, U>(arrayLike: Array<T>, mapFn: (item: T) => U): Array<U>;
   static of<T>(...elements: T[]): Array<T>;
+
+  [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
 
 declare const Math: {
@@ -127,6 +127,9 @@ declare class number {
 
 // Number object for static access (e.g., Number.MAX_VALUE)
 declare const Number: {
+  // Call signature for Number(value) conversion
+  (value?: unknown): number;
+
   MAX_VALUE: number;
   MIN_VALUE: number;
   POSITIVE_INFINITY: number;
@@ -181,8 +184,37 @@ declare class string {
 }
 
 declare const String: {
+  // Call signature for String(value) conversion
+  (value?: unknown): string;
   // Static methods
   fromCharCode(code: number): string;
+};
+
+declare class symbol {
+  toString(): string;
+  valueOf(): symbol;
+}
+
+declare const Symbol: {
+  // Call signature for Symbol(description?) creation
+  (description?: string | number): symbol;
+  // Static methods
+  for(key: string): symbol;
+  keyFor(sym: symbol): string | undefined;
+  // Well-known symbols
+  readonly iterator: unique symbol;
+  readonly asyncIterator: unique symbol;
+  readonly toStringTag: unique symbol;
+  readonly hasInstance: unique symbol;
+  readonly isConcatSpreadable: unique symbol;
+  readonly match: unique symbol;
+  readonly matchAll: unique symbol;
+  readonly replace: unique symbol;
+  readonly search: unique symbol;
+  readonly species: unique symbol;
+  readonly split: unique symbol;
+  readonly toPrimitive: unique symbol;
+  readonly unscopables: unique symbol;
 };
 
 declare class Object {
@@ -229,6 +261,8 @@ interface MapIterator<T> {
   some(predicate: (value: T) => boolean): boolean;
   every(predicate: (value: T) => boolean): boolean;
   find(predicate: (value: T) => boolean): T | undefined;
+
+  [Symbol.iterator](): MapIterator<T>;
 }
 
 // Updated Map class declaration
@@ -248,6 +282,8 @@ declare class Map<K, V> {
   has(key: K): boolean;
   keys(): MapIterator<K>;
   values(): MapIterator<V>;
+
+  [Symbol.iterator](): { next(): { value: [K, V]; done: boolean } };
 }
 
 declare class Set<T> {
@@ -263,6 +299,8 @@ declare class Set<T> {
   has(value: T): boolean;
   keys(): Array<T>;
   values(): Array<T>;
+
+  [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
 
 declare class WeakMap<K, V> {

@@ -313,6 +313,7 @@ mutable class TypePp{
     multiLine: Bool,
   ): void {
     fieldArray = fields.fields;
+    symbolFieldArray = fields.symbolFields;
     indexes = fields.indexes;
     for (i => field in fieldArray) {
       fieldName = field.name;
@@ -325,6 +326,26 @@ mutable class TypePp{
       this.type(level, margin, fieldType);
       if (
         i != fieldArray.size() - 1 ||
+        !symbolFieldArray.isEmpty() ||
+        !indexes.isEmpty() ||
+        fields.call.isSome() ||
+        fields.new.isSome()
+      ) {
+        this.out(level, margin, ",");
+        if (multiLine) this.newLine() else {
+          this.out(level, margin, " ")
+        };
+      }
+    };
+    for (i => field in symbolFieldArray) {
+      this.out(level, margin, `[${field.name}]`);
+      if (field.isOptional) {
+        this.out(level, margin, "?")
+      };
+      this.out(level, margin, ": ");
+      this.type(level, margin, field.type);
+      if (
+        i != symbolFieldArray.size() - 1 ||
         !indexes.isEmpty() ||
         fields.call.isSome() ||
         fields.new.isSome()

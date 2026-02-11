@@ -273,6 +273,14 @@ extension class TFields {
       | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );
+    symbolFields = fields1.symbolFields.merge(fields2.symbolFields, ior ->
+      ior match {
+      | Left(z)
+      | Right(z) ->
+        Some(z.withOptional())
+      | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
+      }
+    );
     // TODO: handle intersection between normal fields and index fields
     indexes = {
       index1o = fields1.maybeSingleIndex();
@@ -291,7 +299,7 @@ extension class TFields {
     };
     call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
     new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
-    TFields{fields, indexes, call, new}
+    TFields{fields, symbolFields, indexes, call, new}
   }
 
   static fun unionOptTFuns(

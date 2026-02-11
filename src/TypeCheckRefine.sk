@@ -68,7 +68,10 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     typeStr match {
-    | "symbol" -> void
+    | "symbol" ->
+      filter = x ~> (x is TPrimValue(TSymbol(), _, _)) == target;
+      default = if (target) Some(TPrimValue::symbol(typePos)) else None();
+      this.setLocal(tcenv, local, default, filter)
     | "string" ->
       filter = x ~> (x is TPrimValue(TString(), _, _)) == target;
       default = if (target) Some(TPrimValue::string(typePos)) else None();
@@ -211,14 +214,30 @@ extension class TypeChecker {
       )
 
     | In(e1, Expr(_, Var(local))) ->
-      (_t1, litsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
-      singleLit = litsOpt.flatMap(litsToCheck -> litsToCheck.singleElt());
-      default = if (target) {
-        singleLit.flatMap(singleField ->
-          TField::create(e1.pos, singleField.val, false, TType::top(e.pos)).map(
-            field -> TObject(TFields::create{fields => Array[field]}, e1.pos),
-          )
+      (_t1, litsOpt, symLitsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
+      singleKey = (litsOpt, symLitsOpt) match {
+      | (Some(Some(strLits)), None()) ->
+        strLits.singleElt().map(singleStr ->
+          FKName(Name(singleStr.pos, singleStr.val), TString())
         )
+      | (None(), Some(Some(symLits))) ->
+        symLits.singleElt().map(singleSym ->
+          FKSymbol(singleSym.pos, singleSym.val)
+        )
+      | _ -> None()
+      };
+      default = if (target) {
+        singleKey.flatMap(key -> {
+          TField::create(e1.pos, key.value(), false, TType::top(e.pos)).map(
+            field ->
+              if (key is FKSymbol _) {
+                TObject(TFields::create{symbolFields => Vector[field]}, e1.pos)
+              } else {
+                TObject(TFields::create{fields => Array[field]}, e1.pos)
+              }
+            ,
+          )
+        })
       } else {
         None()
       };
@@ -231,30 +250,41 @@ extension class TypeChecker {
         | TAlgebraic _
         | TPromise _ ->
           Some(stype) /* TODO */
-        | tObj @ TObject(fields, _pos) ->
-          singleLit match {
+        | tObj @ TObject(tFields, _pos) ->
+          singleKey match {
           | None() -> Some(stype)
-          | Some(singleField) ->
+          | Some(key) ->
             if (target) {
               Some(
-                tObj.map(tFields ->
-                  if (!tFields.indexes.isEmpty()) tFields else {
+                tObj.map(tf ->
+                  if (!tf.indexes.isEmpty()) /* TODO: refine */ tf else {
                     TField::create(
                       e1.pos,
-                      singleField.val,
+                      key.value(),
                       false,
                       TType::top(e.pos),
                     )
-                      .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
-                      .default(tFields)
+                      .flatMap(fieldToAdd ->
+                        if (key is FKSymbol _) {
+                          tf.addSymbolField(fieldToAdd)
+                        } else {
+                          tf.addField(fieldToAdd)
+                        }
+                      )
+                      .default(tf)
                   }
                 ),
               )
             } else {
-              fields.maybeGet(singleField.val) match {
+              tFields.maybeGetField(key) match {
               | Some(TField{isOptional => false}) -> None()
               | Some(_) ->
-                Some(tObj.filter(tField -> tField.name != singleField.val))
+                key match {
+                | FKSymbol(_, keyName) ->
+                  Some(tObj.filterSymbolFields(sf -> sf.name != keyName))
+                | FKName(Name(_, keyName), _) ->
+                  Some(tObj.filterFields(f -> f.name != keyName))
+                }
               | _ -> Some(stype)
               }
             }

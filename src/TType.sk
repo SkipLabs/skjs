@@ -428,8 +428,12 @@ class TObject(fields: TFields) extends SType {
     this.mapOpt(fields -> fields.mapCall(f))
   }
 
-  fun filter(f: TField -> Bool): TObject {
-    this.map(fields -> fields.filter(f))
+  fun filterFields(f: TField -> Bool): TObject {
+    this.map(fields -> fields.filterFields(f))
+  }
+
+  fun filterSymbolFields(f: TField -> Bool): TObject {
+    this.map(fields -> fields.filterSymbolFields(f))
   }
 
   fun removeFields(fieldsToRemove: SortedSet<String>): TObject {
@@ -503,12 +507,14 @@ fun createObject(
   algebraicBranchField: ?(PosRange, TType),
   fields: TFields,
 ): TType {
-  seen = mutable Set<String>[];
-  for (field in fields) {
-    if (seen.contains(field.name)) {
-      tcenvb.error(Array[(field.pos, "Duplicate field")])
-    } else {
-      seen.insert(field.name)
+  for (fieldArray in Array[fields.fields, fields.symbolFields]) {
+    seen = mutable Set<String>[];
+    for (field in fieldArray) {
+      if (seen.contains(field.name)) {
+        tcenvb.error(Array[(field.pos, "Duplicate field")])
+      } else {
+        seen.insert(field.name)
+      }
     }
   };
   algebraicBranchField match {
@@ -633,22 +639,6 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.toString()
   }
 
-  static fun getArrayObjectEltType(
-    object: TObject,
-    subst: mutable Subst,
-    tenv: TEnv,
-  ): ?TType {
-    object.fields.maybeGet("pop").flatMap(popMethod ->
-      popMethod.type.getSTypes(subst, tenv, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
-      | Some(TObject(TFields{call => Some((_, TFuns(met, _)))}, _)) ->
-        Some(met.retType)
-      | _ -> None()
-      }
-    )
-  }
-
   fun maybeGetEltType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -657,8 +647,8 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(object @ TObject _) ->
-      ATFullType::getArrayObjectEltType(object, subst, tenv)
+    | Some(TObject(fields, objectPos)) ->
+      tenv.getIteratorElementType(subst, fields, objectPos)
     | _ -> None()
     }
   }
@@ -705,13 +695,14 @@ base class TPrimUnitKind uses XXHashable, Orderable {
   }
 }
 
-/* Types with literal subtypes: booleans, numbers, strings, and bigints. */
+/* Types with literal subtypes: booleans, numbers, strings, bigints, and symbols. */
 base class TPrimValueKind uses XXHashable, Orderable {
   children =
   | TNum()
   | TBool()
   | TString()
   | TBigInt()
+  | TSymbol()
 
   fun toString(): String {
     this match {
@@ -719,6 +710,69 @@ base class TPrimValueKind uses XXHashable, Orderable {
     | TBool() -> "boolean"
     | TString() -> "string"
     | TBigInt() -> "bigint"
+    | TSymbol() -> "symbol"
+    }
+  }
+}
+
+// Restricted key kind for FKName: only string or number
+base class FKNameKind extends TPrimValueKind
+extension class TNum extends FKNameKind
+extension class TString extends FKNameKind
+
+// Represents either a string/number field name or a symbol key
+base class FieldKey {
+  children =
+  | FKName(name: Name, kind: FKNameKind)
+  | FKSymbol(keyPos: PosRange, uniqueId: String)
+
+  fun pos(): PosRange {
+    this match {
+    | FKName(name, _) -> name.pos
+    | FKSymbol(keyPos, _) -> keyPos
+    }
+  }
+
+  fun value(): String {
+    this match {
+    | FKName(name, _) -> name.value
+    | FKSymbol(_, uniqueId) -> uniqueId
+    }
+  }
+
+  static fun ofSType(pos: PosRange, stype: SType): ?FieldKey {
+    stype match {
+    | TPrimValue(k @ TString(), Some(lits), _)
+    | TPrimValue(k @ TNum(), Some(lits), _) ->
+      lits.singleElt().map(lit -> FKName(Name(pos, lit.val), k))
+    | TPrimValue(TSymbol(), Some(lits), _) ->
+      lits.singleElt().map(lit -> FKSymbol(pos, lit.val))
+    | _ -> None()
+    }
+  }
+
+  // Like ofSType but returns all literals, not just when there's exactly one.
+  static fun allOfSType(pos: PosRange, stype: SType): Array<FieldKey> {
+    stype match {
+    | TPrimValue(k @ TString(), Some(lits), _)
+    | TPrimValue(k @ TNum(), Some(lits), _) ->
+      lits.values().map(lit -> FKName(Name(pos, lit.val), k)).collect(Array)
+    | TPrimValue(TSymbol(), Some(lits), _) ->
+      lits.values().map(lit -> FKSymbol(pos, lit.val)).collect(Array)
+    | _ -> Array[]
+    }
+  }
+
+  fun toType(): TType {
+    TType::single(
+      TPrimValue::single(this.toPrimValueKind(), this.value(), this.pos()),
+    )
+  }
+
+  fun toPrimValueKind(): TPrimValueKind {
+    this match {
+    | FKName(_, kind) -> kind
+    | FKSymbol _ -> TSymbol()
     }
   }
 }
@@ -732,6 +786,7 @@ base class STypeTag final () uses Orderable {
   | TagNum
   | TagString
   | TagBigInt
+  | TagSymbol
   | TagTuple
   | TagPromise
   | TagObject
@@ -753,6 +808,7 @@ base class SType private (
     | TPrimValue(TNum(), _, _) -> TagNum()
     | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
+    | TPrimValue(TSymbol(), _, _) -> TagSymbol()
     | TTuple _ -> TagTuple()
     | TPromise _ -> TagPromise()
     | TObject _ -> TagObject()
@@ -798,6 +854,10 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 
   static fun bigint(pos: PosRange): TPrimValue {
     TPrimValue::full(TBigInt(), pos)
+  }
+
+  static fun symbol(pos: PosRange): TPrimValue {
+    TPrimValue::full(TSymbol(), pos)
   }
 
   fun asClassName(): Name {
@@ -855,6 +915,8 @@ class TIndexField{
 
 class TFields{
   fields: InternalKeyedArrayMap<String, TField>,
+  // Fields keyed by unique symbol ID (e.g. Symbol.iterator)
+  symbolFields: InternalKeyedArrayMap<String, TField>,
   indexes: Array<TIndexField>,
   /* There can be several index fields.
      Typescript allows only one per object, but is fine with
@@ -872,6 +934,7 @@ class TFields{
   static fun empty(): TFields {
     TFields{
       fields => InternalKeyedArrayMap::empty(),
+      symbolFields => InternalKeyedArrayMap::empty(),
       indexes => Array[],
       new => None(),
       call => None(),
@@ -880,6 +943,7 @@ class TFields{
 
   static fun create{
     fields: Array<TField> = Array[],
+    symbolFields: readonly Vector<TField> = Vector[],
     indexes: Array<TIndexField> = Array[],
     new: ?TFuns = None(),
     call: ?TFuns = None(),
@@ -888,6 +952,9 @@ class TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
         fields.sortedBy(x ~> x.name).values(),
       ),
+      symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
+        symbolFields.sortedBy(x ~> x.name).values(),
+      ),
       indexes,
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
@@ -895,7 +962,11 @@ class TFields{
   }
 
   fun isEmpty(): Bool {
-    this.fields.isEmpty() && this.indexes.isEmpty()
+    this.fields.isEmpty() &&
+      this.symbolFields.isEmpty() &&
+      this.indexes.isEmpty() &&
+      this.new.isNone() &&
+      this.call.isNone()
   }
 
   fun map(
@@ -905,6 +976,7 @@ class TFields{
   ): TFields {
     TFields{
       fields => this.fields.map(fField),
+      symbolFields => this.symbolFields.map(fField),
       indexes => this.indexes.map(fIndexField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
@@ -915,16 +987,12 @@ class TFields{
     f(this.call).map(call -> this with {call})
   }
 
-  fun filter(f: TField -> Bool): TFields {
+  fun filterFields(f: TField -> Bool): TFields {
     this with {fields => this.fields.filter(f)}
   }
 
-  fun filterMap(f: TField -> ?TField): TFields {
+  fun filterMapFields(f: TField -> ?TField): TFields {
     this with {fields => this.fields.filterMap(f)}
-  }
-
-  fun values(): mutable Iterator<TField> {
-    this.fields.values()
   }
 
   fun maybeSingleIndex(): ?TIndexField {
@@ -945,6 +1013,10 @@ class TFields{
     this.fields.maybeGet(fieldName)
   }
 
+  fun maybeGetSymbol(uniqueId: String): ?TField {
+    this.symbolFields.maybeGet(uniqueId)
+  }
+
   fun maybeGetType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -959,6 +1031,29 @@ class TFields{
         ty
       }
     })
+  }
+
+  fun maybeGetSymbolType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    uniqueId: String,
+    pos: PosRange,
+  ): ?TType {
+    this.maybeGetSymbol(uniqueId).map(fd -> {
+      ty = fd.type;
+      if (fd.isOptional) {
+        TType::unionUndefined(subst, tenv, ty, pos)
+      } else {
+        ty
+      }
+    })
+  }
+
+  fun maybeGetField(key: FieldKey): ?TField {
+    key match {
+    | FKName(name, _) -> this.fields.maybeGet(name.value)
+    | FKSymbol(_, uniqueId) -> this.symbolFields.maybeGet(uniqueId)
+    }
   }
 
   fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
@@ -997,6 +1092,22 @@ class TFields{
         },
       )
     }
+  }
+
+  fun addSymbolField(fieldToAdd: TField): ?TFields {
+    if (this.symbolFields.containsKey(fieldToAdd.name)) None() else {
+      Some(
+        this with {
+          symbolFields => this.symbolFields.union(
+            InternalKeyedArrayMap::single(fieldToAdd),
+          ),
+        },
+      )
+    }
+  }
+
+  fun filterSymbolFields(f: TField -> Bool): TFields {
+    this with {symbolFields => this.symbolFields.filter(f)}
   }
 
   fun removeFields(fieldsToRemove: SortedSet<String>): TFields {

@@ -91,46 +91,45 @@ extension class Parser {
   mutable fun getFieldName(): NonEmptyFieldName {
     if (this.lex.peekKind() is Some(TKOpenSquare())) {
       _ = this.lex.next();
-      if (
-        this.lex.peekKind() is Some(TKQuote()) ||
-        this.lex.peekKind() is Some(TKDoubleQuote()) ||
-        this.lex.peekKind() is Some(TKSubtraction()) ||
-        this.lex.peekKind() is Some(TKAddition())
-      ) {
-        name = this.getNameOrStringOrNumber();
-        this.expect(TKCloseSquare());
-        FNNormal(name);
-      } else {
-        fname = this.getName();
-        if (this.lex.isEq("in")) {
+      // Try to parse [name in Type] (mapped type) or [name: Type] (index signature).
+      // If neither, backtrack and parse [expr] as a computed key.
+      this.lex.tryAhead(() -> {
+        name = this.getName();
+        isIn = this.lex.isEq("in");
+        if (isIn || this.lex.peekKind() is Some(TKColon())) {
           _ = this.lex.next();
-          ty = this.type(0);
-          asOpt = if (this.lex.isEq("as")) {
-            _ = this.lex.next();
-            Some(this.type(0))
-          } else {
-            None()
-          };
-          this.expect(TKCloseSquare());
-          op = if (this.lex.peekKind() is Some(TKRemoveQM())) {
-            Some(FNRemove(this.lex.posRange(this.lex.next().fromSome())))
-          } else if (this.lex.peekKind() is Some(TKAddQM())) {
-            Some(FNAdd(this.lex.posRange(this.lex.next().fromSome())))
-          } else if (this.lex.peekKind() is Some(TKQuestionMark())) {
-            Some(FNQuestion(this.lex.posRange(this.lex.next().fromSome())))
-          } else {
-            None()
-          };
-          FNIn(fname, ty, asOpt, op)
-        } else if (this.lex.peekKind() is Some(TKColon())) {
-          _ = this.lex.next();
-          indexType = this.type(0);
-          this.expect(TKCloseSquare());
-          FNColon(fname, indexType)
+          Some((name, isIn))
         } else {
-          this.expect(TKCloseSquare());
-          FNSymbol(fname);
+          None()
         }
+      }) match {
+      | Some((fname, true)) ->
+        ty = this.type(0);
+        asOpt = if (this.lex.isEq("as")) {
+          _ = this.lex.next();
+          Some(this.type(0))
+        } else {
+          None()
+        };
+        this.expect(TKCloseSquare());
+        op = if (this.lex.peekKind() is Some(TKRemoveQM())) {
+          Some(FNRemove(this.lex.posRange(this.lex.next().fromSome())))
+        } else if (this.lex.peekKind() is Some(TKAddQM())) {
+          Some(FNAdd(this.lex.posRange(this.lex.next().fromSome())))
+        } else if (this.lex.peekKind() is Some(TKQuestionMark())) {
+          Some(FNQuestion(this.lex.posRange(this.lex.next().fromSome())))
+        } else {
+          None()
+        };
+        FNIn(fname, ty, asOpt, op)
+      | Some((fname, false)) ->
+        indexType = this.type(0);
+        this.expect(TKCloseSquare());
+        FNColon(fname, indexType)
+      | None() ->
+        keyExpr = this.expr(0);
+        this.expect(TKCloseSquare());
+        FNComputed(keyExpr)
       }
     } else {
       FNNormal(this.getNameOrStringOrNumber())

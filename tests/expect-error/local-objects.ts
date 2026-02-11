@@ -91,3 +91,36 @@ function testReturnLocalObject(): { x: number; y: string } {
   obj.y = "hello";
   return obj;
 }
+
+// Test 11: Computed key with string variable + index signature (should pass)
+function testComputedKeyBroadWithIndex(): void {
+  let obj: { [key: string]: number } = {};
+  let key: string = "x";
+  obj[key] = 42;
+}
+
+// Test 12: Computed key with broad type, no index signature — should error
+function testComputedKeyBroadNoIndex(): void {
+  let obj = {};
+  obj.x = 1;
+  let key: string = "y";
+  // @skjs-expect-error Computed property key must match an index signature on this object
+  obj[key] = 2;
+}
+
+// Test 13: Computed key with string variable + wrong value type — should error
+function testComputedKeyBroadWrongType(): void {
+  let obj: { [key: string]: number } = {};
+  let key: string = "x";
+  // @skjs-expect-error Invalid assignment
+  obj[key] = "hello";
+}
+
+// Test 14: Multi-literal key grows with optional fields
+function testMultiLiteralKey(key: "a" | "b"): void {
+  let obj = {};
+  obj[key] = 42;
+  const result: { a?: number; b?: number } = obj;
+}
+
+// TODO: handle growth on the same field with different type, should probably union
