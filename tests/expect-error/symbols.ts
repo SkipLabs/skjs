@@ -169,15 +169,17 @@ declare const withSymbolField: { [Symbol.iterator]: () => void };
 // Test 9: Computed property in object literal expression
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
-const symObj = { [Symbol.iterator]: () => {} };
+function testSymObj(): void {
+  const symObj = { [Symbol.iterator]: () => {} };
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 10: Symbol property access (requires symbol fields in types)
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
-const iterFn: () => void = withSymbolField[Symbol.iterator];
+function testIterFn(): void {
+  const iterFn: () => void = withSymbolField[Symbol.iterator];
+}
 
 ///////////////////////////////////////////////////////////////////////////////
 // Test 11: for...in does not enumerate symbol properties
