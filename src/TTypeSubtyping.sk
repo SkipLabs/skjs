@@ -680,10 +680,25 @@ extension class TFields {
         return STRecFieldsIndexKey(err, index1, index2, fields1, fields2)
       | STOk() -> void
       };
-      TType::isSub(subst, tenv, index1.valueType, index2.valueType) match {
+      TType::isSub(
+        subst,
+        tenv,
+        index1.valueTypeGet,
+        index2.valueTypeGet,
+      ) match {
       | err @ STErrorOnTType _ ->
         return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
-      | STOk() -> void
+      | STOk() ->
+        TType::isSub(
+          subst,
+          tenv,
+          index2.valueTypeSet,
+          index1.valueTypeSet,
+        ) match {
+        | err @ STErrorOnTType _ ->
+          return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
+        | STOk() -> void
+        }
       }
     | (None(), Some(index2)) ->
       for (f1 in fields1.fields) {
@@ -693,11 +708,11 @@ extension class TFields {
         TType::isSub(subst.clone(), tenv, f1keyType, index2.keyType) match {
         | STError _ -> void
         | STOk() ->
-          TType::isSub(subst, tenv, f1.get, index2.valueType) match {
+          TType::isSub(subst, tenv, f1.get, index2.valueTypeGet) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
           | STOk() ->
-            TType::isSub(subst, tenv, index2.valueType, f1.set) match {
+            TType::isSub(subst, tenv, index2.valueTypeSet, f1.set) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
             | STOk() -> void
@@ -722,11 +737,11 @@ extension class TFields {
           TType::isSub(subst.clone(), tenv, f2keyType, index1.keyType) match {
           | STError _ -> void
           | STOk() ->
-            TType::isSub(subst, tenv, index1.valueType, f2.get) match {
+            TType::isSub(subst, tenv, index1.valueTypeGet, f2.get) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
             | STOk() ->
-              TType::isSub(subst, tenv, f2.set, index1.valueType) match {
+              TType::isSub(subst, tenv, f2.set, index1.valueTypeSet) match {
               | err @ STErrorOnTType _ ->
                 return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
               | STOk() -> void

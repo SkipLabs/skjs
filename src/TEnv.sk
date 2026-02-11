@@ -471,7 +471,8 @@ base class TEnv{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
-              valueType,
+              valueTypeGet => valueType,
+              valueTypeSet => valueType,
             },
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
@@ -1078,7 +1079,8 @@ base class TEnv{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
-              valueType,
+              valueTypeGet => valueType,
+              valueTypeSet => valueType,
             },
           );
           None()

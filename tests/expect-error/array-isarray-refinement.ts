@@ -196,7 +196,6 @@ function testCombinedWithTypeof(
   if (typeof x === "string") {
     return [];
   } else if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
     return x;
   } else {
     return [];

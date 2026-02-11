@@ -361,7 +361,12 @@ extension class TypeChecker {
               TType::single(remainingIdxSType),
               index.keyType,
             );
-            ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
+            ty = TType::unionUndefined(
+              tcenv.subst,
+              this,
+              index.valueTypeGet,
+              pos,
+            );
             !result = TType::union(tcenv.subst, this, result, ty)
           }
         }
@@ -1493,7 +1498,7 @@ extension class TypeChecker {
         matchingIndex match {
         | Some(indexField) ->
           // Field name matches index signature, use index value type
-          indexField.valueType
+          indexField.valueTypeSet
         | None() ->
           // No matching index, add a new field
           used match {
