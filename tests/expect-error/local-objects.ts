@@ -91,3 +91,10 @@ function testReturnLocalObject(): { x: number; y: string } {
   obj.y = "hello";
   return obj;
 }
+
+// Test 11: Computed key with string variable + index signature (should pass)
+function testComputedKeyBroadWithIndex(): void {
+  let obj: { [key: string]: number } = {};
+  let key: string = "x";
+  obj[key] = 42;
+}
