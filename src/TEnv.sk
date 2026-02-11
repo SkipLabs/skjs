@@ -1179,50 +1179,47 @@ base class TEnv{
         | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
         | simpleFieldName @ SimpleFieldName _ ->
           normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
-          name = simpleFieldName match {
+          simpleFieldName match {
+          | FNNormal(name) -> FKName(name, TString())
           | FNComputed(keyExpr) ->
-            this.resolveComputedKeyFieldKey(tcenvb, keyExpr) match {
-            | FKSymbol(_, uniqueId) ->
-              symbolFieldsVec.push(
-                TField::create(
-                  keyExpr.pos,
-                  uniqueId,
-                  fd.optional is Some _,
-                  normalizedType,
-                ).fromSome(),
+            this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
+          } match {
+          | FKSymbol(exprPos, uniqueId) ->
+            symbolFieldsVec.push(
+              TField::create(
+                exprPos,
+                uniqueId,
+                fd.optional is Some _,
+                normalizedType,
+              ).fromSome(),
+            )
+          | FKName(name, _) ->
+            TField::create(
+              name.pos,
+              name.value,
+              fd.optional is Some _,
+              normalizedType,
+            ) match {
+            | Some(field) -> fieldsVec.push(field)
+            | None() ->
+              algebraicBranchField match {
+              | Some((existingPos, _existingType)) ->
+                tcenvb.error(
+                  Array[
+                    (name.pos, `Duplicate field ${name}`),
+                    (existingPos, "Previously declared here"),
+                  ],
+                );
+                continue
+              | None() -> void
+              };
+              fd.optional.each(optionalPos ->
+                tcenvb.error(
+                  Array[(optionalPos, `Field ${name} cannot be optional`)],
+                )
               );
-              continue
-            | FKName(name, _) -> name
+              !algebraicBranchField = Some((name.pos, normalizedType))
             }
-          | FNNormal(name) -> name
-          };
-          TField::create(
-            name.pos,
-            name.value,
-            fd.optional is Some _,
-            normalizedType,
-          ) match {
-          | Some(field) -> fieldsVec.push(field)
-          | None() ->
-            algebraicBranchField match {
-            | Some((existingPos, _existingType)) ->
-              tcenvb.error(
-                Array[
-                  (name.pos, `Duplicate field ${name}`),
-                  (existingPos, "Previously declared here"),
-                ],
-              );
-              continue
-            | None() -> void
-            };
-            fd.optional match {
-            | Some(optionalPos) ->
-              tcenvb.error(
-                Array[(optionalPos, `Field ${name} cannot be optional`)],
-              )
-            | None() -> void
-            };
-            !algebraicBranchField = Some((name.pos, normalizedType))
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
@@ -1244,22 +1241,21 @@ base class TEnv{
         | FNEmpty() -> !call = Some(tFuns)
         | simpleFieldName @ SimpleFieldName _ ->
           decl = TType::single(TObject::createCall(tFuns));
-          name = simpleFieldName match {
+          simpleFieldName match {
+          | FNNormal(name) -> FKName(name, TString())
           | FNComputed(keyExpr) ->
-            this.resolveComputedKeyFieldKey(tcenvb, keyExpr) match {
-            | FKSymbol(_, uniqueId) ->
-              symbolFieldsVec.push(
-                TField::create(keyExpr.pos, uniqueId, false, decl).fromSome(),
-              );
-              continue
-            | FKName(name, _) -> name
+            this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
+          } match {
+          | FKSymbol(exprPos, uniqueId) ->
+            symbolFieldsVec.push(
+              TField::create(exprPos, uniqueId, false, decl).fromSome(),
+            )
+          | FKName(name, _) ->
+            TField::create(name.pos, name.value, false, decl) match {
+            | Some(field) -> fieldsVec.push(field)
+            | None() ->
+              tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
             }
-          | FNNormal(name) -> name
-          };
-          TField::create(name.pos, name.value, false, decl) match {
-          | Some(field) -> fieldsVec.push(field)
-          | None() ->
-            tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
           }
         }
       }
