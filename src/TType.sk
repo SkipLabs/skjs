@@ -753,6 +753,25 @@ base class FieldKey {
     }
   }
 
+  // Like ofSType but returns all literals, not just when there's exactly one.
+  static fun allOfSType(pos: PosRange, stype: SType): Array<FieldKey> {
+    stype match {
+    | TPrimValue(TString(), Some(lits), _) ->
+      lits
+        .values()
+        .map(lit -> FKName(Name(pos, lit.val), TString()))
+        .collect(Array)
+    | TPrimValue(TNum(), Some(lits), _) ->
+      lits
+        .values()
+        .map(lit -> FKName(Name(pos, lit.val), TNum()))
+        .collect(Array)
+    | TPrimValue(TSymbol(), Some(lits), _) ->
+      lits.values().map(lit -> FKSymbol(pos, lit.val)).collect(Array)
+    | _ -> Array[]
+    }
+  }
+
   fun toType(): TType {
     TType::single(
       this match {

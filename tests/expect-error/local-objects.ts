@@ -115,3 +115,10 @@ function testComputedKeyBroadWrongType(): void {
   // @skjs-expect-error Invalid assignment
   obj[key] = "hello";
 }
+
+// Test 14: Multi-literal key grows with optional fields
+function testMultiLiteralKey(key: "a" | "b"): void {
+  let obj = {};
+  obj[key] = 42;
+  const result: { a?: number; b?: number } = obj;
+}

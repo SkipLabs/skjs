@@ -1586,12 +1586,32 @@ extension class TypeChecker {
   ): TType {
     fieldType = this.expr(tcenv, e2, mostPrecise);
     keyType = this.expr(tcenv, keyExpr, true);
-    fieldKey = keyType
-      .getSTypes(tcenv.subst, this, Covariant())
-      .flatMap(stypes -> stypes.singleElt())
-      .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype));
-    fieldKey match {
-    | None() ->
+    keyType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
+      stypes.singleElt()
+    ) match {
+    | Some(stype) ->
+      fieldKeys = FieldKey::allOfSType(keyExpr.pos, stype);
+      if (fieldKeys.isEmpty()) {
+        this.assignLocalObjectByIndex(
+          tcenv,
+          pos,
+          local,
+          keyExpr,
+          keyType,
+          fieldType,
+        )
+      } else {
+        this.assignLocalObjectByKeys(
+          tcenv,
+          pos,
+          e1Pos,
+          local,
+          keyExpr,
+          fieldType,
+          fieldKeys,
+        )
+      }
+    | _ ->
       this.assignLocalObjectByIndex(
         tcenv,
         pos,
@@ -1600,36 +1620,58 @@ extension class TypeChecker {
         keyType,
         fieldType,
       )
-    | Some(key) ->
-      used = tcenv.localObjects[local.value] match {
-      | LOCanGrow(bound) ->
-        bound match {
-        | None() -> void
-        | Some(objectType) ->
+    }
+  }
+
+  // Grows a local object by one or more literal keys.
+  // When there are multiple keys (e.g. key: "a" | "b"), fields are optional.
+  private fun assignLocalObjectByKeys(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    e1Pos: PosRange,
+    local: Name,
+    keyExpr: Expr,
+    fieldType: TType,
+    fieldKeys: Array<FieldKey>,
+  ): TType {
+    isOptional = fieldKeys.size() > 1;
+    used = tcenv.localObjects[local.value] match {
+    | LOCanGrow(bound) ->
+      bound match {
+      | None() -> void
+      | Some(objectType) ->
+        this.checkSubType(
+          tcenv,
+          fieldType.pos,
+          "Invalid assignment",
+          fieldType,
+          this.get(tcenv, e1Pos, objectType, keyExpr),
+        )
+      };
+      None()
+    | LOUsed(usedPos) -> Some(usedPos)
+    };
+    tcenv.scope
+      .get(local)
+      .getSTypes(tcenv.subst, this, Covariant())
+      .flatMap(stypes ~> stypes.singleElt()) match {
+    | Some(TObject(fields, objPos)) ->
+      // For each key, check existing fields/index sigs and collect
+      // new fields to grow.
+      newFieldsVec = mutable Vector[];
+      newSymbolFieldsVec = mutable Vector[];
+      needsGrowth = false;
+      for (key in fieldKeys) {
+        fields.maybeGetField(key) match {
+        | Some(fd) ->
           this.checkSubType(
             tcenv,
             fieldType.pos,
             "Invalid assignment",
             fieldType,
-            this.get(tcenv, e1Pos, objectType, keyExpr),
+            fd.type,
           )
-        };
-        None()
-      | LOUsed(usedPos) -> Some(usedPos)
-      };
-      tcenv.scope
-        .get(local)
-        .getSTypes(tcenv.subst, this, Covariant())
-        .flatMap(stypes ~> stypes.singleElt()) match {
-      | Some(TObject(fields, objPos)) ->
-        objField = fields.maybeGetField(key) match {
-        | Some(fd) -> fd.type
         | None() ->
-          // Check if it matches an index signature.
-          keyKind = key match {
-          | FKName(_, kind) -> kind.toPrimValueKind()
-          | FKSymbol _ -> TSymbol()
-          };
           matchingIndex = fields.indexes.find(indexField -> {
             clonedSubst = tcenv.subst.clone();
             TType::isSub(
@@ -1640,32 +1682,23 @@ extension class TypeChecker {
             ) is STOk _
           });
           matchingIndex match {
-          | Some(indexField) -> indexField.valueType
+          | Some(indexField) ->
+            this.checkSubType(
+              tcenv,
+              fieldType.pos,
+              "Invalid assignment",
+              fieldType,
+              indexField.valueType,
+            )
           | None() ->
-            // No matching index, grow the object.
-            used match {
-            | None() -> void
-            | Some(usedPos) ->
-              tcenv.error(
-                Array[
-                  (pos, "You are trying to add a field to this object"),
-                  (
-                    usedPos,
-                    "But this object has been already been used for something else",
-                  ),
-                ],
-              )
-            };
-            if (tcenv.scope.isThroughLoop(local)) {
-              tcenv.error(
-                Array[
-                  (local.pos, "You cannot add a field to an object in a loop"),
-                ],
-              )
-            };
-            TField::create(key.pos(), key.value(), false, fieldType) match {
+            !needsGrowth = true;
+            TField::create(
+              key.pos(),
+              key.value(),
+              isOptional,
+              fieldType,
+            ) match {
             | None() ->
-              // Only FKName can produce None (algebraic branch field)
               tcenv.error(
                 Array[
                   (pos, "TODO: converting an object to an algebraic"),
@@ -1674,47 +1707,49 @@ extension class TypeChecker {
                 ],
               )
             | Some(field) ->
-              newFields = key match {
-              | FKName _ -> TFields::create{fields => Array[field]}
-              | FKSymbol _ -> TFields::create{symbolFields => Array[field]}
-              };
-              newTy = TFields::inter(
-                tcenv.subst,
-                this,
-                fields,
-                newFields,
-              ) match {
-              | None() -> TType::bottom(objPos)
-              | Some(mergedFields) ->
-                TType::single(TObject(mergedFields, objPos))
-              };
-              tcenv.scope.set(local, newTy, (x, y) -> {
-                this.checkSubType(
-                  tcenv,
-                  fieldType.pos,
-                  "Invalid assignment",
-                  x,
-                  y,
-                )
-              })
-            };
-            fieldType
+              key match {
+              | FKName _ -> newFieldsVec.push(field)
+              | FKSymbol _ -> newSymbolFieldsVec.push(field)
+              }
+            }
           }
-        };
-        this.checkSubType(
-          tcenv,
-          fieldType.pos,
-          "Invalid assignment",
-          fieldType,
-          objField,
-        )
-      | _ ->
-        tcenv.error(
-          Array[(pos, "Internal error: local object is not an object")],
-        )
+        }
       };
-      fieldType
-    }
+      if (needsGrowth) {
+        used match {
+        | None() -> void
+        | Some(usedPos) ->
+          tcenv.error(
+            Array[
+              (pos, "You are trying to add a field to this object"),
+              (
+                usedPos,
+                "But this object has been already been used for something else",
+              ),
+            ],
+          )
+        };
+        if (tcenv.scope.isThroughLoop(local)) {
+          tcenv.error(
+            Array[(local.pos, "You cannot add a field to an object in a loop")],
+          )
+        };
+        allNewFields = TFields::create{
+          fields => newFieldsVec.toArray(),
+          symbolFields => newSymbolFieldsVec.toArray(),
+        };
+        newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
+        | None() -> TType::bottom(objPos)
+        | Some(mergedFields) -> TType::single(TObject(mergedFields, objPos))
+        };
+        tcenv.scope.set(local, newTy, (x, y) -> {
+          this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
+        })
+      }
+    | _ ->
+      tcenv.error(Array[(pos, "Internal error: local object is not an object")])
+    };
+    fieldType
   }
 
   // Validates a computed-key assignment on a local object when the key
