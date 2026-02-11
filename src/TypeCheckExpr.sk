@@ -604,13 +604,24 @@ extension class TypeChecker {
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
+          ttype = this.expr(
+            tcenv,
+            y,
+            mostPrecise || name.value == kAlgebraicBranchFieldName,
+          );
           (
             name,
-            this.expr(
-              tcenv,
-              y,
-              mostPrecise || name.value == kAlgebraicBranchFieldName,
-            ),
+            if (name.value == kAlgebraicBranchFieldName) ttype else {
+              y.value match {
+              | Number _
+              | EString _
+              | Object _
+              | Var(Name(_, "true"))
+              | Var(Name(_, "false")) ->
+                this.makeBoundTVar(tcenv, ttype)
+              | _ -> ttype
+              }
+            },
           )
 
         | FDSpread(spreadExpr) ->

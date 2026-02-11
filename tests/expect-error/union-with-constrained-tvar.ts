@@ -26,5 +26,6 @@ function test(): void {
   takeBoxOrNumber(badBox);
 
   // Name-sensitive behavior probe: this variant can differ from the T-binder one.
+  // @skjs-expect-error Invalid call
   takeBoxOrNumberS(badBox);
 }
