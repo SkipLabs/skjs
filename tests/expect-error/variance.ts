@@ -5,8 +5,6 @@ type arrayBooleanOrArrayString = Array<boolean> | Array<string>;
 function interWithTop<T>(...x: T[] & arrayBooleanOrArrayString): T {
   const result = x[0];
   if (result === undefined) throw "Array is empty";
-  // TODO: Intersection on index field is not precise enough
-  // @skjs-expect-error Invalid return type
   return result;
 }
 
@@ -20,8 +18,6 @@ function checkIntersectionWithTopIsNotBottom(): number {
 function interWithTopS<S>(...x: S[] & arrayBooleanOrArrayString): S {
   const result = x[0];
   if (result === undefined) throw "Array is empty";
-  // TODO: Intersection on index field is not precise enough
-  // @skjs-expect-error Invalid return type
   return result;
 }
 

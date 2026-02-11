@@ -498,7 +498,12 @@ base class TEnv{
               keyName => indexName.value,
               keyType,
               isReadonly => fieldIsReadonly,
-              valueType,
+              valueTypeGet => valueType,
+              valueTypeSet => if (fieldIsReadonly is Some _) {
+                TType::bottom(field.pos)
+              } else {
+                valueType
+              },
             },
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
@@ -1304,7 +1309,8 @@ base class TEnv{
               keyName => indexName.value,
               keyType,
               isReadonly => readonly_.map(r -> r.pos),
-              valueType,
+              valueTypeGet => valueType,
+              valueTypeSet => valueType,
             },
           )
         }

@@ -422,7 +422,12 @@ extension class TypeChecker {
               TType::single(remainingIdxSType),
               index.keyType,
             );
-            ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
+            ty = TType::unionUndefined(
+              tcenv.subst,
+              this,
+              index.valueTypeGet,
+              pos,
+            );
             !result = TType::union(tcenv.subst, this, result, ty)
           }
         }
@@ -1752,7 +1757,7 @@ extension class TypeChecker {
               fieldType.pos,
               "Invalid assignment",
               fieldType,
-              indexField.valueType,
+              indexField.valueTypeSet,
             )
           | None() ->
             !needsGrowth = true;
@@ -1843,7 +1848,7 @@ extension class TypeChecker {
           fieldType.pos,
           "Invalid assignment",
           fieldType,
-          indexField.valueType,
+          indexField.valueTypeSet,
         )
       | None() ->
         tcenv.error(
