@@ -710,14 +710,7 @@ base class TPrimValueKind uses XXHashable, Orderable {
 }
 
 // Restricted key kind for FKName: only string or number
-base class FKNameKind {
-  fun toPrimValueKind(): TPrimValueKind {
-    this match {
-    | x @ TNum() -> x
-    | x @ TString() -> x
-    }
-  }
-}
+base class FKNameKind extends TPrimValueKind
 extension class TNum extends FKNameKind
 extension class TString extends FKNameKind
 
@@ -743,10 +736,9 @@ base class FieldKey {
 
   static fun ofSType(pos: PosRange, stype: SType): ?FieldKey {
     stype match {
-    | TPrimValue(TString(), Some(lits), _) ->
-      lits.singleElt().map(lit -> FKName(Name(pos, lit.val), TString()))
-    | TPrimValue(TNum(), Some(lits), _) ->
-      lits.singleElt().map(lit -> FKName(Name(pos, lit.val), TNum()))
+    | TPrimValue(k @ TString(), Some(lits), _)
+    | TPrimValue(k @ TNum(), Some(lits), _) ->
+      lits.singleElt().map(lit -> FKName(Name(pos, lit.val), k))
     | TPrimValue(TSymbol(), Some(lits), _) ->
       lits.singleElt().map(lit -> FKSymbol(pos, lit.val))
     | _ -> None()
@@ -756,16 +748,9 @@ base class FieldKey {
   // Like ofSType but returns all literals, not just when there's exactly one.
   static fun allOfSType(pos: PosRange, stype: SType): Array<FieldKey> {
     stype match {
-    | TPrimValue(TString(), Some(lits), _) ->
-      lits
-        .values()
-        .map(lit -> FKName(Name(pos, lit.val), TString()))
-        .collect(Array)
-    | TPrimValue(TNum(), Some(lits), _) ->
-      lits
-        .values()
-        .map(lit -> FKName(Name(pos, lit.val), TNum()))
-        .collect(Array)
+    | TPrimValue(k @ TString(), Some(lits), _)
+    | TPrimValue(k @ TNum(), Some(lits), _) ->
+      lits.values().map(lit -> FKName(Name(pos, lit.val), k)).collect(Array)
     | TPrimValue(TSymbol(), Some(lits), _) ->
       lits.values().map(lit -> FKSymbol(pos, lit.val)).collect(Array)
     | _ -> Array[]
@@ -775,12 +760,18 @@ base class FieldKey {
   fun toType(): TType {
     TType::single(
       this match {
-      | FKName(name, kind) ->
-        TPrimValue::single(kind.toPrimValueKind(), name.value, name.pos)
+      | FKName(name, kind) -> TPrimValue::single(kind, name.value, name.pos)
       | FKSymbol(keyPos, uniqueId) ->
         TPrimValue::single(TSymbol(), uniqueId, keyPos)
       },
     )
+  }
+
+  fun toPrimValueKind(): TPrimValueKind {
+    this match {
+    | FKName(_, kind) -> kind
+    | FKSymbol _ -> TSymbol()
+    }
   }
 }
 
