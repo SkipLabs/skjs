@@ -321,6 +321,7 @@ fun checkFilesWithRoot(
   srcFiles: Array<String>,
   importStubs: Array<String>,
   validateResult: Validator,
+  compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{},
 ): Array<SKTest.ExpectationError> {
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
@@ -340,6 +341,7 @@ fun checkFilesWithRoot(
     files,
     errorHandling => SKJS.EHKeepGoing(),
     errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    compilerOptions,
   };
   checker
     .checkFiles(context)
@@ -458,6 +460,7 @@ fun testProject(projectDir: String): void {
     srcFiles,
     Array["./import-stubs"],
     validateExpectErrorComments,
+    config.compilerOptions,
   );
   reportExpectationErrors(tsconfigDiagErrors.concat(fileErrors))
 }

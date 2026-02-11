@@ -36,6 +36,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     builtinsFileName: FAbsolute,
     importStubs: Array<DAbsolute>,
     parsedFiles: S.EHandle<FAbsolute, ParsedResultFile>,
+    compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   ): this {
     static(
       S.LHandle::create(
@@ -66,6 +67,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
                 fileName.dirName,
                 includes,
                 importStubs,
+                compilerOptions,
                 defs,
               ),
             ]
@@ -349,6 +351,7 @@ mutable class FileDefsState private {
   root: DAbsolute,
   dirName: DAbsolute,
   importStubs: Array<DAbsolute>,
+  compilerOptions: TsCompilerOptions,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   exported: mutable Map<
@@ -366,9 +369,16 @@ mutable class FileDefsState private {
     dirName: DAbsolute,
     includes: Array<FAbsolute>,
     importStubs: Array<DAbsolute>,
+    compilerOptions: TsCompilerOptions,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable static{context, root, dirName, importStubs};
+    state = mutable static{
+      context,
+      root,
+      dirName,
+      importStubs,
+      compilerOptions,
+    };
     state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
@@ -390,7 +400,11 @@ mutable class FileDefsState private {
       };
       resolveName(this.dirName, name)
     } else {
-      resolveStubs(this.importStubs, name)
+      // Try path alias resolution first
+      resolvePathAlias(this.root, this.compilerOptions, name) match {
+      | some @ Some(_) -> some
+      | None() -> resolveStubs(this.importStubs, name)
+      }
     };
     resolved match {
     | Some(fileName) -> Some(ModuleName{name, fileName})
@@ -476,6 +490,7 @@ mutable class FileDefsState private {
       root => this.root,
       dirName => this.dirName,
       importStubs => this.importStubs,
+      compilerOptions => this.compilerOptions,
     };
     state.processDefs(defs)
   }

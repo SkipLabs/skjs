@@ -261,7 +261,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   // 1. Explicit src-file args -> use directly, no tsconfig
   // 2. --project/-p specified -> load that tsconfig
   // 3. No files, no --project -> auto-discover tsconfig.json
-  (root, srcFiles) = if (!cliSrcFiles.isEmpty()) {
+  (root, srcFiles, compilerOptions) = if (!cliSrcFiles.isEmpty()) {
     // Reject combining --project with explicit source files (matches tsc TS5042)
     if (args.maybeGetString("project").isSome()) {
       print_error(
@@ -270,7 +270,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       throw Exit(2)
     };
     // Explicit files provided: no tsconfig processing
-    (cliBaseUrl.default("."), cliSrcFiles)
+    (cliBaseUrl.default("."), cliSrcFiles, TsCompilerOptions{})
   } else {
     tsconfigPath: ?String = args.maybeGetString("project") match {
     | Some(projectPath) ->
@@ -287,7 +287,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     tsconfigPath match {
     | None() ->
       // No tsconfig found, fall through to existing behavior
-      (cliBaseUrl.default("."), Array[])
+      (cliBaseUrl.default("."), Array[], TsCompilerOptions{})
     | Some(configPath) ->
       (config, diagnostics) = try {
         loadTsConfig(configPath)
@@ -320,7 +320,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
           }
         }
       };
-      (effectiveRoot, resolvedFiles)
+      (effectiveRoot, resolvedFiles, config.compilerOptions)
     }
   };
 
@@ -402,6 +402,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             files,
             errorHandling,
             errorDetailConfig,
+            compilerOptions,
           };
           checked = checker.checkFiles(context);
           _ = checked.map(
@@ -485,6 +486,7 @@ class Checker private {
     files: Files,
     errorHandling: ErrorHandling,
     errorDetailConfig: ErrorDetailConfig,
+    compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     (parsedAndSymbolsFiles, symbolsMap) = files.parse(
@@ -500,6 +502,7 @@ class Checker private {
       builtinsFileName,
       files.importStubs,
       parsedFiles,
+      compilerOptions,
     );
     checker = TypeChecker{defMap, errorHandling};
     static{

@@ -33,7 +33,7 @@ module SKJS;
 //     noPropertyAccessFromIndexSignature
 //
 // SUPPORTED — silently accepted:
-//     rootDir, baseUrl
+//     rootDir, baseUrl, paths
 //
 // IGNORED — emit/tooling/IDE options, silently accepted:
 //   Emit: target, outDir, outFile, declaration, declarationMap,
@@ -58,7 +58,6 @@ module SKJS;
 //     jsxImportSource
 //   experimentalDecorators,   decorators not supported
 //     emitDecoratorMetadata
-//   paths                     path aliases not yet supported
 //   suppressExcessPropertyErrors,  weakens type checking
 //     suppressImplicitAnyIndexErrors
 /***************************************************************************/
@@ -67,7 +66,11 @@ module SKJS;
 // Data types
 /***************************************************************************/
 
-class TsCompilerOptions{rootDir: ?String = None(), baseUrl: ?String = None()}
+class TsCompilerOptions{
+  rootDir: ?String = None(),
+  baseUrl: ?String = None(),
+  paths: Map<String, Array<String>> = Map[],
+}
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
 
@@ -322,10 +325,29 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       }
     };
 
-    TsCompilerOptions{
-      rootDir => co.maybeGetString("rootDir"),
-      baseUrl => co.maybeGetString("baseUrl"),
-    }
+    // Extract paths and check it requires baseUrl
+    baseUrl = co.maybeGetString("baseUrl");
+    paths = co.maybeGetObject("paths") match {
+    | Some(pathsObj) ->
+      result = mutable Map[];
+      pathsObj.value.each((k, v) -> {
+        subs = v.expectArray().value.map(s -> s.expectString()).collect(Array);
+        result.set(k, subs)
+      });
+      result.chill()
+    | None() -> Map[]
+    };
+    if (!paths.isEmpty() && baseUrl.isNone()) {
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "paths"),
+          message => "Option 'paths' requires 'baseUrl' to be set.",
+          isWarning => false,
+        },
+      )
+    };
+
+    TsCompilerOptions{rootDir => co.maybeGetString("rootDir"), baseUrl, paths}
   | None() ->
     diags.push(
       TsConfigDiag{
@@ -421,7 +443,6 @@ const restrictedOptions: Array<String> = Array[
   "jsxImportSource",
   "experimentalDecorators",
   "emitDecoratorMetadata",
-  "paths",
   "suppressExcessPropertyErrors",
   "suppressImplicitAnyIndexErrors",
 ];
