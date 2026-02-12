@@ -19,11 +19,11 @@ function test(): void {
   // A number matches the `number` branch of the union.
   takeBoxOrNumber(42);
 
-  // A Box<"foo"> does not satisfy T extends Box<string> (literal vs string),
-  // and is not assignable to number, so this should fail.
+  // Box<"foo"> satisfies T extends Box<string> ("foo" extends string),
+  // so this matches the T branch of the union.
   const badBox: Box<"foo"> = new Box("foo");
   takeBoxOrNumber(badBox);
 
-  // Name-sensitive behavior probe: this variant can differ from the T-binder one.
+  // Same behavior regardless of binder name (S vs T).
   takeBoxOrNumberS(badBox);
 }
