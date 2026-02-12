@@ -429,7 +429,7 @@ extension class TypeChecker {
         optionalChainingIsAlwaysUndefined &&
         optionalChainingIsAlwaysUndefinedForThisSType;
     };
-    if (optionalChainingIsUseless && !isLValue) {
+    if (optionalChainingIsUseless) {
       tcenv.error(
         Array[
           (pos, "Useless '?.'. Use '.' instead"),
@@ -891,11 +891,13 @@ extension class TypeChecker {
       }
 
     | Dot(dotKind, e1, fieldName) ->
-      accessKind = if (isLValue) AKLValue() else {
-        dotKind match {
-        | OptionalDot() -> AKOptionalChain()
-        | NormalDot() -> AKNormal()
-        }
+      accessKind = (isLValue, dotKind) match {
+      | (true, OptionalDot()) ->
+        tcenv.notSupported(pos, "optional dot in L-value");
+        AKLValue()
+      | (true, NormalDot()) -> AKLValue()
+      | (false, OptionalDot()) -> AKOptionalChain()
+      | (false, NormalDot()) -> AKNormal()
       };
       this.dot(
         tcenv,
