@@ -734,6 +734,7 @@ extension class TypeChecker {
                 pos => keyExpr.pos,
                 name => uniqueId,
                 isOptional => false,
+                isReadonly => false,
                 type => valueTy,
               }.fromSome(),
             );
@@ -758,6 +759,7 @@ extension class TypeChecker {
           pos => name.pos,
           name => name.value,
           isOptional => false,
+          isReadonly => false,
           type => ty,
         } match {
         | None() ->
@@ -1716,6 +1718,7 @@ extension class TypeChecker {
               pos => key.pos(),
               name => key.value(),
               isOptional,
+              isReadonly => false,
               type => fieldType,
             } match {
             | None() ->
