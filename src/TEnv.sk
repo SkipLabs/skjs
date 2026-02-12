@@ -453,6 +453,7 @@ base class TEnv{
             pos => field.pos,
             name => fieldName,
             isOptional => field.optional is Some _,
+            isReadonly => false,
             type,
           } match {
           | None() ->
@@ -513,6 +514,7 @@ base class TEnv{
           pos => fd.pos,
           name => metName.value,
           isOptional => false,
+          isReadonly => false,
           type => metType,
         } match {
         | None() ->
@@ -1076,6 +1078,7 @@ base class TEnv{
             pos => name.pos,
             name => name.value,
             isOptional => fd.optional is Some _,
+            isReadonly => false,
             type => normalizedType,
           };
           if (optField is None()) {
@@ -1141,6 +1144,7 @@ base class TEnv{
             pos => name.pos,
             name => name.value,
             isOptional => false,
+            isReadonly => false,
             type => decl,
           };
           if (optField is None()) {
