@@ -1068,7 +1068,7 @@ base class TEnv{
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(TObject(iterFields, _)) ->
-      iterFields.maybeGetType(subst, this, "next", pos) match {
+      iterFields.maybeGetType(subst, this, "next", pos, false) match {
       | Some(t) -> t
       | None() -> return None()
       }
@@ -1089,7 +1089,7 @@ base class TEnv{
       stypes.singleElt()
     ) match {
     | Some(TObject(resultFields, _)) ->
-      resultFields.maybeGetType(subst, this, "value", pos)
+      resultFields.maybeGetType(subst, this, "value", pos, false)
     | _ -> None()
     }
   }
@@ -1310,7 +1310,10 @@ base class TEnv{
               keyType,
               isReadonly => readonly_.map(r -> r.pos),
               valueTypeGet => valueType,
-              valueTypeSet => valueType,
+              valueTypeSet => readonly_ match {
+              | None() -> valueType
+              | Some(ro) -> TType::bottom(ro.pos)
+              },
             },
           )
         }

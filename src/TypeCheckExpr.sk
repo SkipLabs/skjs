@@ -422,12 +422,9 @@ extension class TypeChecker {
               TType::single(remainingIdxSType),
               index.keyType,
             );
-            ty = TType::unionUndefined(
-              tcenv.subst,
-              this,
-              index.valueTypeGet,
-              pos,
-            );
+            ty = if (isLValue) index.valueTypeSet else {
+              TType::unionUndefined(tcenv.subst, this, index.valueTypeGet, pos)
+            };
             !result = TType::union(tcenv.subst, this, result, ty)
           }
         }
