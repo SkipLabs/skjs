@@ -690,16 +690,13 @@ extension class TypeChecker {
           );
           (
             name,
-            if (name.value == kAlgebraicBranchFieldName) ttype else {
-              y.value match {
-              | Number _
-              | EString _
-              | Object _
-              | Var(Name(_, "true"))
-              | Var(Name(_, "false")) ->
-                this.makeBoundTVar(tcenv, ttype)
-              | _ -> ttype
-              }
+            if (name.value == kAlgebraicBranchFieldName) ttype else if (
+              y.value is Object _ ||
+              ttype.isConcretePrimitive()
+            ) {
+              this.makeBoundTVar(tcenv, ttype)
+            } else {
+              ttype
             },
           )
 
