@@ -825,16 +825,6 @@ class TField private {
     }
   }
 
-  fun setReadonly(pos: PosRange): TField {
-    TField{
-      pos => this.pos,
-      name => this.name,
-      isOptional => this.isOptional,
-      get => this.get,
-      set => TType::bottom(pos),
-    }
-  }
-
   fun withOptional(): TField {
     this with {isOptional => true}
   }
