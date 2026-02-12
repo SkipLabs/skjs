@@ -215,8 +215,13 @@ extension class TypeChecker {
       singleLit = litsOpt.flatMap(litsToCheck -> litsToCheck.singleElt());
       default = if (target) {
         singleLit.flatMap(singleField ->
-          TField::create(e1.pos, singleField.val, false, TType::top(e.pos)).map(
-            field -> TObject(TFields::create{fields => Array[field]}, e1.pos),
+          TField::create{
+            pos => e1.pos,
+            name => singleField.val,
+            isOptional => false,
+            type => TType::top(e.pos),
+          }.map(field ->
+            TObject(TFields::create{fields => Array[field]}, e1.pos)
           )
         )
       } else {
@@ -239,12 +244,12 @@ extension class TypeChecker {
               Some(
                 tObj.map(tFields ->
                   if (!tFields.indexes.isEmpty()) tFields else {
-                    TField::create(
-                      e1.pos,
-                      singleField.val,
-                      false,
-                      TType::top(e.pos),
-                    )
+                    TField::create{
+                      pos => e1.pos,
+                      name => singleField.val,
+                      isOptional => false,
+                      type => TType::top(e.pos),
+                    }
                       .flatMap(fieldToAdd -> tFields.addField(fieldToAdd))
                       .default(tFields)
                   }

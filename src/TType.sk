@@ -812,12 +812,12 @@ class TField private {
   get: TType,
   set: TType,
 } uses XXHashable, Orderable, Projectable<String> {
-  static fun create(
+  static fun create{
     pos: PosRange,
     name: String,
     isOptional: Bool,
     type: TType,
-  ): ?TField {
+  }: ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
       Some(TField{pos, name, isOptional, get => type, set => type})
     }

@@ -449,12 +449,12 @@ base class TEnv{
         | FNNormal(fdName) ->
           fieldName = fdName.value;
           type = this.normalize(tcenvb, fieldTy);
-          TField::create(
-            field.pos,
-            fieldName,
-            field.optional is Some _,
+          TField::create{
+            pos => field.pos,
+            name => fieldName,
+            isOptional => field.optional is Some _,
             type,
-          ) match {
+          } match {
           | None() ->
             tcenvb.error(
               Array[
@@ -509,7 +509,12 @@ base class TEnv{
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
-        TField::create(fd.pos, metName.value, false, metType) match {
+        TField::create{
+          pos => fd.pos,
+          name => metName.value,
+          isOptional => false,
+          type => metType,
+        } match {
         | None() ->
           tcenvb.error(Array[(fd.pos, `Forbidden method name '${metName}'`)])
         | Some(field) -> acc![metName.value] = field
@@ -1067,12 +1072,12 @@ base class TEnv{
         | FNSymbol _ -> typingError(Array[(fd.pos, "TODO symbol")])
         | FNNormal(name) ->
           normalizedType = this.normalize(tcenvb, fieldTy);
-          optField = TField::create(
-            name.pos,
-            name.value,
-            fd.optional is Some _,
-            normalizedType,
-          );
+          optField = TField::create{
+            pos => name.pos,
+            name => name.value,
+            isOptional => fd.optional is Some _,
+            type => normalizedType,
+          };
           if (optField is None()) {
             algebraicBranchField match {
             | Some((existingPos, _existingType)) ->
@@ -1132,7 +1137,12 @@ base class TEnv{
           notSupported(fd.pos, "symbol-named method in literal object type")
         | FNNormal(name) ->
           decl = TType::single(TObject::createCall(tFuns));
-          optField = TField::create(name.pos, name.value, false, decl);
+          optField = TField::create{
+            pos => name.pos,
+            name => name.value,
+            isOptional => false,
+            type => decl,
+          };
           if (optField is None()) {
             tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
           };

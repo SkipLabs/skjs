@@ -673,7 +673,12 @@ extension class TypeChecker {
           tFuns = this.funDecl(tcenv, false, fd, cgNode);
           (name, TType::single(TObject::createCall(tFuns)))
         };
-        TField::create(name.pos, name.value, false, ty) match {
+        TField::create{
+          pos => name.pos,
+          name => name.value,
+          isOptional => false,
+          type => ty,
+        } match {
         | None() ->
           algebraicBranchField match {
           | Some((existingPos, _existingType)) ->
@@ -1528,12 +1533,12 @@ extension class TypeChecker {
               ],
             )
           };
-          TField::create(
-            fieldType.pos,
-            fieldName.value,
-            false,
-            fieldType,
-          ) match {
+          TField::create{
+            pos => fieldType.pos,
+            name => fieldName.value,
+            isOptional => false,
+            type => fieldType,
+          } match {
           | None() ->
             tcenv.error(
               Array[
