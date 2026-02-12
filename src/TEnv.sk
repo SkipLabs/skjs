@@ -514,7 +514,7 @@ base class TEnv{
           pos => fd.pos,
           name => metName.value,
           isOptional => false,
-          isReadonly => false,
+          isReadonly => true,
           type => metType,
         } match {
         | None() ->
@@ -1139,7 +1139,7 @@ base class TEnv{
             pos => name.pos,
             name => name.value,
             isOptional => false,
-            isReadonly => false,
+            isReadonly => true,
             type => decl,
           };
           if (optField is None()) {
