@@ -13,7 +13,9 @@ type ObjectWithReadonlyOptionalField = {
   readonly opt?: number;
 };
 
-function writesOnReadonlyOptionalField(x: ObjectWithReadonlyOptionalField): void {
+function writesOnReadonlyOptionalField(
+  x: ObjectWithReadonlyOptionalField,
+): void {
   // @skjs-expect-error Invalid assignment
   x.opt = 3;
 }
