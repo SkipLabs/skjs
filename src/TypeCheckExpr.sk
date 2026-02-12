@@ -237,9 +237,10 @@ extension class TypeChecker {
     objType: TType,
     fieldName: Name,
     optionalChaining: Bool = false,
+    isLValue: Bool = false,
   ): TType {
     idx = Expr(fieldName.pos, EString(fieldName.value));
-    this.get(tcenv, pos, objType, idx, optionalChaining)
+    this.get(tcenv, pos, objType, idx, optionalChaining, isLValue)
   }
 
   /* Typechecks expression  obj[idx]
@@ -255,6 +256,7 @@ extension class TypeChecker {
     objType: TType,
     idx: Expr,
     optionalChaining: Bool = false,
+    isLValue: Bool = false,
   ): TType {
     idxType = this.expr(tcenv, idx, true);
     idxSType = idxType
@@ -324,6 +326,7 @@ extension class TypeChecker {
                 this,
                 fieldLit.val,
                 fieldLit.pos,
+                isLValue,
               ) match {
               | Some(ty) ->
                 !result = TType::union(tcenv.subst, this, result, ty);
@@ -361,12 +364,9 @@ extension class TypeChecker {
               TType::single(remainingIdxSType),
               index.keyType,
             );
-            ty = TType::unionUndefined(
-              tcenv.subst,
-              this,
-              index.valueTypeGet,
-              pos,
-            );
+            ty = if (isLValue) index.valueTypeSet else {
+              TType::unionUndefined(tcenv.subst, this, index.valueTypeGet, pos)
+            };
             !result = TType::union(tcenv.subst, this, result, ty)
           }
         }
@@ -422,7 +422,7 @@ extension class TypeChecker {
         optionalChainingIsAlwaysUndefined &&
         optionalChainingIsAlwaysUndefinedForThisSType;
     };
-    if (optionalChainingIsUseless) {
+    if (optionalChainingIsUseless && !isLValue) {
       tcenv.error(
         Array[
           (pos, "Useless '?.'. Use '.' instead"),
@@ -527,7 +527,12 @@ extension class TypeChecker {
 
   /* Typechecks expression e
      If mostPrecise, use the most precise type. */
-  fun expr(tcenv: mutable TCEnv, e: Expr, mostPrecise: Bool): TType {
+  fun expr(
+    tcenv: mutable TCEnv,
+    e: Expr,
+    mostPrecise: Bool,
+    isLValue: Bool = false,
+  ): TType {
     if (mostPrecise) {
       this.asConstExpr(tcenv, e) match {
       | Some(ty) -> return TType::single(ty)
@@ -815,7 +820,8 @@ extension class TypeChecker {
       }
 
     | Get(arr, idx) ->
-      this.get(tcenv, pos, this.expr(tcenv, arr, mostPrecise), idx)
+      objOrArray = this.expr(tcenv, arr, mostPrecise);
+      this.get(tcenv, pos, objOrArray, idx, false, isLValue)
 
     // We always interpret `[]` as an array, not a tuple.
     // Because an empty tuple is not very meaningful.
@@ -881,6 +887,7 @@ extension class TypeChecker {
         this.expr(tcenv, e1, mostPrecise),
         fieldName,
         optionalChaining,
+        isLValue,
       )
 
     | Binop(op, e1, e2) ->
@@ -1438,7 +1445,7 @@ extension class TypeChecker {
       };
       this.assignLocalObject(tcenv, pos, local, fieldName, fieldType, used)
     | _ ->
-      ty1 = this.expr(tcenv, e1, false);
+      ty1 = this.expr(tcenv, e1, false, true);
       ty2 = this.expr(tcenv, e2, mostPrecise);
       this.checkSubType(tcenv, e2.pos, "Invalid assignment", ty2, ty1);
       ty1

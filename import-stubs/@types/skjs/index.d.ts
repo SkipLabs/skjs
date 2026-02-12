@@ -7,12 +7,40 @@ declare const console: {
 /* It's not really the interface but for now it will do the trick given
    that our Iterables are Arrays only. */
 declare interface Iterable<T> {
-  [i: number]: T;
+  readonly [i: number]: T;
 }
 
 declare interface ArrayLike<T> {
   /*readonly*/ length: number;
   /*readonly*/ [n: number]: T;
+}
+
+declare interface ReadonlyArray<T> extends Iterable<T> {
+  readonly length: number;
+
+  // Read-only queries
+  find(filter: (item: T) => boolean): undefined | T;
+  indexOf(x: T): number;
+  includes(element: T): boolean;
+  lastIndexOf(element: T): number;
+  every(predicate: (item: T) => boolean): boolean;
+  some(predicate: (item: T) => boolean): boolean;
+  forEach(callback: (item: T, index: number) => void): void;
+  findIndex(predicate: (item: T) => boolean): number;
+  join(separator: string): string;
+
+  // Pure transforms
+  map<T2>(f: (item: T) => T2): ReadonlyArray<T2>;
+  filter(f: (item: T) => boolean): ReadonlyArray<T>;
+  flatMap<U>(mapper: (item: T) => ReadonlyArray<U>): ReadonlyArray<U>;
+
+  // Folds
+  reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
+  reduceRight<U>(reducer: (acc: U, item: T) => U, initial: U): U;
+
+  // Slicing / combining (still pure)
+  slice(start: number, end?: number): ReadonlyArray<T>;
+  concat(other: ReadonlyArray<T>): ReadonlyArray<T>;
 }
 
 declare class Array<T> implements Iterable<T> {
