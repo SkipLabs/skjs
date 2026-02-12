@@ -91,6 +91,11 @@ function numberIsAValidFieldNameInValue(): { 0: number } {
   return { 0: 1 };
 }
 
+function shorthandFromConst(): void {
+  const a = 1;
+  const x: { a: number } = { a };
+}
+
 function extendWithSpread(x: { f1: number; f2: string }): {
   f0: boolean;
   f1: number;
