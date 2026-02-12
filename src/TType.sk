@@ -828,10 +828,6 @@ class TField private {
     }
   }
 
-  fun withOptional(): TField {
-    this with {isOptional => true}
-  }
-
   fun mapType(f: TType -> TType): TField {
     this with {get => f(this.get), set => f(this.set)}
   }
