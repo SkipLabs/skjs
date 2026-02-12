@@ -541,6 +541,16 @@ extension class TypeChecker {
     isLValue: Bool = false,
   ): TType {
     if (mostPrecise) {
+      if (isLValue) {
+        tcenv.error(
+          Array[
+            (
+              e.pos,
+              "Internal error: expr call with both mostPrecise and isLValue",
+            ),
+          ],
+        )
+      };
       this.asConstExpr(tcenv, e) match {
       | Some(ty) -> return TType::single(ty)
       | None() -> void
