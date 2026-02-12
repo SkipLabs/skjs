@@ -274,6 +274,22 @@ class TType private {
     this.clauses.isTop()
   }
 
+  fun isConcretePrimitive(): Bool {
+    if (!this.insts.isEmpty()) return false;
+    for (clause in this.clauses) {
+      clause.stypes match {
+      | None() -> return false
+      | Some(stypes) ->
+        if (
+          !stypes.all(stype -> stype is TPrimUnit _ || stype is TPrimValue _)
+        ) {
+          return false
+        }
+      }
+    };
+    true
+  }
+
   fun isPrimitiveType(subst: mutable Subst, tenv: TEnv): Bool {
     this.getSTypes(subst, tenv, Covariant()) match {
     | None() -> false
