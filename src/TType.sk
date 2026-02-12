@@ -1145,11 +1145,10 @@ class TFields private {
     tenv: TEnv,
     fieldName: String,
     pos: PosRange,
-    isLValue: Bool = false,
+    isLValue: Bool,
   ): ?TType {
-    _ = isLValue; // Will be used when get/set types are introduced
     this.maybeGet(fieldName).map(fd -> {
-      ty = fd.get;
+      ty = if (isLValue) fd.set else fd.get;
       if (fd.isOptional) {
         TType::unionUndefined(subst, tenv, ty, pos)
       } else {
@@ -1199,8 +1198,9 @@ class TFields private {
     tenv: TEnv,
     fieldName: String,
     pos: PosRange,
+    isLValue: Bool = false,
   ): TType {
-    this.maybeGetType(subst, tenv, fieldName, pos) match {
+    this.maybeGetType(subst, tenv, fieldName, pos, isLValue) match {
     | None() -> this.getTypeTypingError(fieldName, pos)
     | Some(ty) -> ty
     }
