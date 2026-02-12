@@ -895,6 +895,7 @@ class TField private {
     pos: PosRange,
     name: String,
     isOptional: Bool,
+    isReadonly: Bool = false,
     type: TType,
   }: ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
