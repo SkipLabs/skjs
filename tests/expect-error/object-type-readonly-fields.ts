@@ -46,8 +46,8 @@ function assignNumberToOptional(x: ObjectWithOptionalField): void {
   x.opt = 3;
 }
 
-// FIXME: should error with exactOptionalPropertyTypes semantics
 function assignUndefinedToOptional(x: ObjectWithOptionalField): void {
+  // @skjs-expect-error Invalid assignment
   x.opt = undefined;
 }
 
