@@ -980,11 +980,12 @@ class TFields{
     isLValue: Bool,
   ): ?TType {
     this.maybeGet(fieldName).map(fd -> {
-      ty = if (isLValue) fd.set else fd.get;
-      if (fd.isOptional) {
-        TType::unionUndefined(subst, tenv, ty, pos)
+      if (isLValue) {
+        fd.set
+      } else if (fd.isOptional) {
+        TType::unionUndefined(subst, tenv, fd.get, pos)
       } else {
-        ty
+        fd.get
       }
     })
   }
