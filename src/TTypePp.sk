@@ -422,6 +422,14 @@ mutable class TypePp{
     this.type(level, margin, index.keyType);
     this.out(level, margin, " ]: ");
     this.type(level, margin, index.valueTypeGet);
+    if (
+      !index.valueTypeSet.isBottom() &&
+      index.valueTypeGet != index.valueTypeSet
+    ) {
+      this.out(level, margin, " (set: ");
+      this.type(level, margin, index.valueTypeSet);
+      this.out(level, margin, ")");
+    }
   }
 
   static fun escapeName(name: String): String {
