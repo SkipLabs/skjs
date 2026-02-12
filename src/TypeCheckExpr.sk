@@ -677,7 +677,7 @@ extension class TypeChecker {
           pos => name.pos,
           name => name.value,
           isOptional => false,
-          isReadonly => false,
+          isReadonly => None(),
           type => ty,
         } match {
         | None() ->
@@ -1538,7 +1538,7 @@ extension class TypeChecker {
             pos => fieldType.pos,
             name => fieldName.value,
             isOptional => false,
-            isReadonly => false,
+            isReadonly => None(),
             type => fieldType,
           } match {
           | None() ->

@@ -816,11 +816,14 @@ class TField private {
     pos: PosRange,
     name: String,
     isOptional: Bool,
-    isReadonly: Bool,
+    isReadonly: ?PosRange,
     type: TType,
   }: ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
-      set = if (isReadonly) TType::bottom(pos) else type;
+      set = isReadonly match {
+      | Some(roPos) -> TType::bottom(roPos)
+      | None() -> type
+      };
       Some(TField{pos, name, isOptional, get => type, set})
     }
   }
@@ -850,7 +853,7 @@ class TIndexField private {
     pos: PosRange,
     keyName: String,
     keyType: TType,
-    isReadonly: Bool,
+    isReadonly: ?PosRange,
     valueType: TType,
   }: TIndexField {
     TIndexField{
@@ -858,7 +861,10 @@ class TIndexField private {
       keyName,
       keyType,
       valueTypeGet => valueType,
-      valueTypeSet => if (isReadonly) TType::bottom(pos) else valueType,
+      valueTypeSet => isReadonly match {
+      | Some(roPos) -> TType::bottom(roPos)
+      | None() -> valueType
+      },
     }
   }
 
