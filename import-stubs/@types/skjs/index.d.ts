@@ -11,8 +11,8 @@ declare interface Iterable<T> {
 }
 
 declare interface ArrayLike<T> {
-  /*readonly*/ length: number;
-  /*readonly*/ [n: number]: T;
+  readonly length: number;
+  readonly [n: number]: T;
 }
 
 declare interface ReadonlyArray<T> extends Iterable<T> {
