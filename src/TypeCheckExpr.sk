@@ -1760,6 +1760,10 @@ extension class TypeChecker {
       bound match {
       | None() -> void
       | Some(objectType) ->
+        /* Not using the setter type here:
+           LOCanGrow with a bound is only used for the this type in constructors
+           so getters and setters have the same type, except for readonly-fields.
+           But in constructors, all fields are writable, hence the usage of the getter type. */
         this.checkSubType(
           tcenv,
           fieldType.pos,
