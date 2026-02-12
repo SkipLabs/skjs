@@ -839,13 +839,29 @@ class TField private {
 }
 
 /* Fields such as { [keyName: KeyType]: ValueType } */
-class TIndexField{
+class TIndexField private {
   pos: PosRange,
   keyName: String,
   keyType: TType,
   valueTypeGet: TType,
   valueTypeSet: TType,
 } uses XXHashable, Orderable {
+  static fun create{
+    pos: PosRange,
+    keyName: String,
+    keyType: TType,
+    isReadonly: Bool,
+    valueType: TType,
+  }: TIndexField {
+    TIndexField{
+      pos,
+      keyName,
+      keyType,
+      valueTypeGet => valueType,
+      valueTypeSet => if (isReadonly) TType::bottom(pos) else valueType,
+    }
+  }
+
   fun mapTypes(f: TType -> TType): TIndexField {
     keyType = f(this.keyType);
     valueTypeGet = f(this.valueTypeGet);

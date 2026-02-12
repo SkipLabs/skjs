@@ -468,16 +468,12 @@ base class TEnv{
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField{
+            TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
-              valueTypeGet => valueType,
-              valueTypeSet => if (fieldIsReadonly) {
-                TType::bottom(field.pos)
-              } else {
-                valueType
-              },
+              isReadonly => fieldIsReadonly,
+              valueType,
             },
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
@@ -1108,15 +1104,12 @@ base class TEnv{
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField{
+            TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
-              valueTypeGet => valueType,
-              valueTypeSet => readonly_ match {
-              | None() -> valueType
-              | Some(ro) -> TType::bottom(ro.pos)
-              },
+              isReadonly => readonly_ is Some _,
+              valueType,
             },
           );
           None()
