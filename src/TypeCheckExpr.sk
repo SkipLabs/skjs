@@ -1,5 +1,12 @@
 module SKJS;
 
+base class AccessKind uses XXHashable {
+  children =
+  | AKNormal()
+  | AKLValue()
+  | AKOptionalChain()
+}
+
 extension class TypeChecker {
   fun block(
     tcenv: mutable TCEnv,
@@ -229,23 +236,22 @@ extension class TypeChecker {
   }
 
   /* Typechecks expression  obj.fieldName
-             or expression  obj?.fieldName  if optionalChaining is true
+             or expression  obj?.fieldName
        where obj has type objType */
   fun dot(
     tcenv: mutable TCEnv,
     pos: PosRange,
     objType: TType,
     fieldName: Name,
-    optionalChaining: Bool = false,
-    isLValue: Bool = false,
+    accessKind: AccessKind,
   ): TType {
     idx = Expr(fieldName.pos, EString(fieldName.value));
-    this.get(tcenv, pos, objType, idx, optionalChaining, isLValue)
+    this.get(tcenv, pos, objType, idx, accessKind)
   }
 
   /* Typechecks expression  obj[idx]
              or expression  obj.idx
-             or expression  obj?.idx  if optionalChaining is true
+             or expression  obj?.idx
      where obj has type objType
 
      Try to keep in synch with TEnv#keyOfType
@@ -255,8 +261,7 @@ extension class TypeChecker {
     pos: PosRange,
     objType: TType,
     idx: Expr,
-    optionalChaining: Bool = false,
-    isLValue: Bool = false,
+    accessKind: AccessKind,
   ): TType {
     idxType = this.expr(tcenv, idx, true);
     idxSType = idxType
@@ -284,8 +289,10 @@ extension class TypeChecker {
       )
     };
     result = TType::bottom(pos);
-    optionalChainingIsUseless = optionalChaining;
-    optionalChainingIsAlwaysUndefined = optionalChaining;
+    isOptionalChaining = accessKind is AKOptionalChain _;
+    isLValue = accessKind is AKLValue _;
+    optionalChainingIsUseless = isOptionalChaining;
+    optionalChainingIsAlwaysUndefined = isOptionalChaining;
     while (!stypes.isEmpty()) {
       stype = stypes.pop();
 
@@ -402,7 +409,7 @@ extension class TypeChecker {
       | TPrimUnit(
         TNull(),
         undefPos,
-      ) if (optionalChaining) ->
+      ) if (isOptionalChaining) ->
         !optionalChainingIsUseless = false;
         !optionalChainingIsAlwaysUndefinedForThisSType = true;
         !result = TType::unionUndefined(tcenv.subst, this, result, undefPos)
@@ -827,7 +834,8 @@ extension class TypeChecker {
 
     | Get(arr, idx) ->
       objOrArray = this.expr(tcenv, arr, mostPrecise);
-      this.get(tcenv, pos, objOrArray, idx, false, isLValue)
+      accessKind = if (isLValue) AKLValue() else AKNormal();
+      this.get(tcenv, pos, objOrArray, idx, accessKind)
 
     // We always interpret `[]` as an array, not a tuple.
     // Because an empty tuple is not very meaningful.
@@ -883,17 +891,18 @@ extension class TypeChecker {
       }
 
     | Dot(dotKind, e1, fieldName) ->
-      optionalChaining = dotKind match {
-      | NormalDot() -> false
-      | OptionalDot() -> true
+      accessKind = if (isLValue) AKLValue() else {
+        dotKind match {
+        | OptionalDot() -> AKOptionalChain()
+        | NormalDot() -> AKNormal()
+        }
       };
       this.dot(
         tcenv,
         e1.pos,
         this.expr(tcenv, e1, mostPrecise),
         fieldName,
-        optionalChaining,
-        isLValue,
+        accessKind,
       )
 
     | Binop(op, e1, e2) ->
@@ -1443,7 +1452,7 @@ extension class TypeChecker {
             e2.pos,
             "Invalid assignment",
             fieldType,
-            this.dot(tcenv, e1.pos, objectType, fieldName),
+            this.dot(tcenv, e1.pos, objectType, fieldName, AKNormal()),
           )
         };
         None()
