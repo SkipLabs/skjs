@@ -453,7 +453,7 @@ base class TEnv{
             pos => field.pos,
             name => fieldName,
             isOptional => field.optional is Some _,
-            isReadonly => false,
+            isReadonly => fieldIsReadonly,
             type,
           } match {
           | None() ->
@@ -1078,7 +1078,7 @@ base class TEnv{
             pos => name.pos,
             name => name.value,
             isOptional => fd.optional is Some _,
-            isReadonly => false,
+            isReadonly => readonly_ is Some _,
             type => normalizedType,
           };
           if (optField is None()) {
@@ -1102,12 +1102,7 @@ base class TEnv{
             };
             !algebraicBranchField = Some((name.pos, normalizedType))
           };
-          optField.map(x -> {
-            readonly_ match {
-            | None() -> x
-            | Some(ro) -> x.setReadonly(ro.pos)
-            }
-          })
+          optField
 
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
