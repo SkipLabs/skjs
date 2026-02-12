@@ -478,7 +478,7 @@ base class TEnv{
             pos => field.pos,
             name => fieldName,
             isOptional => field.optional is Some _,
-            isReadonly => false,
+            isReadonly => fieldIsReadonly,
             type,
           } match {
           | None() ->
@@ -1262,7 +1262,7 @@ base class TEnv{
                 pos => exprPos,
                 name => uniqueId,
                 isOptional => fd.optional is Some _,
-                isReadonly => false,
+                isReadonly => readonly_ is Some _,
                 type => normalizedType,
               }.fromSome(),
             )
@@ -1271,7 +1271,7 @@ base class TEnv{
               pos => name.pos,
               name => name.value,
               isOptional => fd.optional is Some _,
-              isReadonly => false,
+              isReadonly => readonly_ is Some _,
               type => normalizedType,
             } match {
             | Some(field) -> fieldsVec.push(field)
