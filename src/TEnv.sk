@@ -536,7 +536,7 @@ base class TEnv{
               pos => exprPos,
               name => uniqueId,
               isOptional => false,
-              isReadonly => false,
+              isReadonly => true,
               type => metType,
             }.fromSome(),
           )
@@ -545,7 +545,7 @@ base class TEnv{
             pos => name.pos,
             name => name.value,
             isOptional => false,
-            isReadonly => false,
+            isReadonly => true,
             type => metType,
           } match {
           | None() ->
@@ -1257,15 +1257,14 @@ base class TEnv{
             this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
           } match {
           | FKSymbol(exprPos, uniqueId) ->
-            symbolFields.push(
-              TField::create{
-                pos => exprPos,
-                name => uniqueId,
-                isOptional => fd.optional is Some _,
-                isReadonly => readonly_ is Some _,
-                type => normalizedType,
-              }.fromSome(),
-            )
+            field = TField::create{
+              pos => exprPos,
+              name => uniqueId,
+              isOptional => fd.optional is Some _,
+              isReadonly => readonly_ is Some _,
+              type => normalizedType,
+            }.fromSome();
+            symbolFields.push(field)
           | FKName(name, _) ->
             TField::create{
               pos => name.pos,
@@ -1326,7 +1325,7 @@ base class TEnv{
                 pos => exprPos,
                 name => uniqueId,
                 isOptional => false,
-                isReadonly => false,
+                isReadonly => true,
                 type => decl,
               }.fromSome(),
             )
@@ -1335,7 +1334,7 @@ base class TEnv{
               pos => name.pos,
               name => name.value,
               isOptional => false,
-              isReadonly => false,
+              isReadonly => true,
               type => decl,
             } match {
             | Some(field) -> fieldsVec.push(field)
