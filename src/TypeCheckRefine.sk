@@ -232,7 +232,7 @@ extension class TypeChecker {
             pos => e1.pos,
             name => key.value(),
             isOptional => false,
-            isReadonly => true,
+            isReadonly => Some(e1.pos),
             type => TType::top(e.pos),
           }.map(field ->
             if (key is FKSymbol _) {
@@ -266,7 +266,7 @@ extension class TypeChecker {
                       pos => e1.pos,
                       name => key.value(),
                       isOptional => false,
-                      isReadonly => true,
+                      isReadonly => Some(e1.pos),
                       type => TType::top(e.pos),
                     }
                       .flatMap(fieldToAdd ->

@@ -895,7 +895,7 @@ class TField private {
     pos: PosRange,
     name: String,
     isOptional: Bool,
-    isReadonly: Bool,
+    isReadonly: ?PosRange,
     type: TType,
   }: ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
@@ -927,7 +927,7 @@ class TIndexField private {
     pos: PosRange,
     keyName: String,
     keyType: TType,
-    isReadonly: Bool,
+    isReadonly: ?PosRange,
     valueType: TType,
   }: TIndexField {
     _ = isReadonly; // Will be used when get/set types are introduced

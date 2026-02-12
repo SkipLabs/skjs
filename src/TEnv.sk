@@ -437,11 +437,11 @@ base class TEnv{
       | field @ ClassFieldTypeValue _ ->
         if (!filter(field)) continue;
         fieldIsStatic = false;
-        fieldIsReadonly = false;
+        fieldIsReadonly: ?PosRange = None();
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic _ -> !fieldIsStatic = true
-          | ModReadonly _ -> !fieldIsReadonly = true
+          | ModReadonly(roPos) -> !fieldIsReadonly = Some(roPos)
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _ ->
@@ -459,7 +459,7 @@ base class TEnv{
         };
         if (fieldIsStatic != isStatic.isSome()) continue;
         if (fieldIsStatic) {
-          if (!fieldIsReadonly) {
+          if (fieldIsReadonly is None()) {
             tcenvb.error(Array[(field.pos, "static fields must be readonly")])
           };
           field.optional.each(pos ->
@@ -537,7 +537,7 @@ base class TEnv{
               pos => exprPos,
               name => uniqueId,
               isOptional => false,
-              isReadonly => true,
+              isReadonly => Some(fd.pos),
               type => metType,
             }.fromSome(),
           )
@@ -546,7 +546,7 @@ base class TEnv{
             pos => name.pos,
             name => name.value,
             isOptional => false,
-            isReadonly => true,
+            isReadonly => Some(fd.pos),
             type => metType,
           } match {
           | None() ->
@@ -1262,7 +1262,7 @@ base class TEnv{
               pos => exprPos,
               name => uniqueId,
               isOptional => fd.optional is Some _,
-              isReadonly => readonly_ is Some _,
+              isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
             }.fromSome();
             symbolFields.push(field)
@@ -1271,7 +1271,7 @@ base class TEnv{
               pos => name.pos,
               name => name.value,
               isOptional => fd.optional is Some _,
-              isReadonly => readonly_ is Some _,
+              isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
             } match {
             | Some(field) -> fieldsVec.push(field)
@@ -1303,7 +1303,7 @@ base class TEnv{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
-              isReadonly => readonly_ is Some _,
+              isReadonly => readonly_.map(r -> r.pos),
               valueType,
             },
           )
@@ -1327,7 +1327,7 @@ base class TEnv{
                 pos => exprPos,
                 name => uniqueId,
                 isOptional => false,
-                isReadonly => true,
+                isReadonly => Some(exprPos),
                 type => decl,
               }.fromSome(),
             )
@@ -1336,7 +1336,7 @@ base class TEnv{
               pos => name.pos,
               name => name.value,
               isOptional => false,
-              isReadonly => true,
+              isReadonly => Some(name.pos),
               type => decl,
             } match {
             | Some(field) -> fieldsVec.push(field)
