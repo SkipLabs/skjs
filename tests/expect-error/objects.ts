@@ -94,7 +94,6 @@ function numberIsAValidFieldNameInValue(): { 0: number } {
 
 function shorthandFromConst(): void {
   const a = 1;
-  // @skjs-expect-error Invalid annotation
   const x: { a: number } = { a };
 }
 
