@@ -493,10 +493,11 @@ base class TEnv{
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField{
+            TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
+              isReadonly => fieldIsReadonly,
               valueType,
             },
           )
@@ -1298,10 +1299,11 @@ base class TEnv{
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField{
+            TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
+              isReadonly => readonly_ is Some _,
               valueType,
             },
           )
