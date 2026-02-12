@@ -323,13 +323,29 @@ mutable class TypePp{
     indexes = fields.indexes;
     for (i => field in fieldArray) {
       fieldName = field.name.value;
-      fieldType = field.get;
-      this.out(level, margin, TypePp::escapeName(fieldName));
-      if (field.isOptional) {
-        this.out(level, margin, "?")
+      escapedName = TypePp::escapeName(fieldName);
+      if (field.set.isBottom()) {
+        this.out(level, margin, "readonly ");
+        this.out(level, margin, escapedName);
+        if (field.isOptional) this.out(level, margin, "?");
+        this.out(level, margin, ": ");
+        this.type(level, margin, field.get);
+      } else if (field.get != field.set) {
+        this.out(level, margin, "get ");
+        this.out(level, margin, escapedName);
+        this.out(level, margin, "(): ");
+        this.type(level, margin, field.get);
+        this.out(level, margin, ", set ");
+        this.out(level, margin, escapedName);
+        this.out(level, margin, "(v: ");
+        this.type(level, margin, field.set);
+        this.out(level, margin, ")");
+      } else {
+        this.out(level, margin, escapedName);
+        if (field.isOptional) this.out(level, margin, "?");
+        this.out(level, margin, ": ");
+        this.type(level, margin, field.get);
       };
-      this.out(level, margin, ": ");
-      this.type(level, margin, fieldType);
       if (
         i != fieldArray.size() - 1 ||
         !symbolFieldArray.isEmpty() ||
@@ -397,6 +413,9 @@ mutable class TypePp{
   }
 
   mutable fun indexField(level: Int, margin: Margin, index: TIndexField): void {
+    if (index.valueTypeSet.isBottom()) {
+      this.out(level, margin, "readonly ")
+    };
     this.out(level, margin, "[ ");
     this.out(level, margin, TypePp::escapeName(index.keyName));
     this.out(level, margin, ": ");
