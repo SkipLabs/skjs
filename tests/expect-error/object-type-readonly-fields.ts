@@ -38,6 +38,19 @@ function writeOnUnionReadonlyAndMutable(x: UnionReadonlyAndMutable): void {
   x.a = 1;
 }
 
+type ObjectWithOptionalField = {
+  opt?: number;
+};
+
+function assignNumberToOptional(x: ObjectWithOptionalField): void {
+  x.opt = 3;
+}
+
+// FIXME: should error with exactOptionalPropertyTypes semantics
+function assignUndefinedToOptional(x: ObjectWithOptionalField): void {
+  x.opt = undefined;
+}
+
 type NestedReadonlyObject = {
   readonly cfg: {
     readonly port: number;
