@@ -91,6 +91,14 @@ function numberIsAValidFieldNameInValue(): { 0: number } {
   return { 0: 1 };
 }
 
+// FIXME: SKJS rejects this because const narrows to literal type 1,
+// but it should widen when used as an object field value.
+function shorthandFromConst(): void {
+  const a = 1;
+  // @skjs-expect-error Invalid annotation
+  const x: { a: number } = { a };
+}
+
 function extendWithSpread(x: { f1: number; f2: string }): {
   f0: boolean;
   f1: number;
