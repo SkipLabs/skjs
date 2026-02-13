@@ -24,8 +24,6 @@ value class DRelative uses DirName {
     );
     DRelative(splitPath(dirNameStr))
   }
-
-  const node_modules: this = DRelative::create("node_modules");
 }
 
 class DAbsolute extends S.Key uses DirName, Hashable, XXHashable {
@@ -42,15 +40,6 @@ class DAbsolute extends S.Key uses DirName, Hashable, XXHashable {
     this.path.size() <= 0
   }
 
-  fun exists(): Bool {
-    FileSystem.exists(this.toString())
-  }
-
-  fun endsWith(str: String): Bool {
-    if (str == "") internal_error("str should not be empty");
-    this.path.size() > 0 && this.path[this.path.size() - 1] == str
-  }
-
   fun basename(): String {
     if (this.path.size() <= 0) {
       ""
@@ -62,13 +51,6 @@ class DAbsolute extends S.Key uses DirName, Hashable, XXHashable {
   fun parent(): this {
     path = this.path.slice(0, -1);
     static(path)
-  }
-
-  fun allAncestors(): mutable Iterator<DAbsolute> {
-    while (!this.isRoot()) {
-      !this = this.parent();
-      yield this
-    }
   }
 
   fun +(other: FRelative): FAbsolute {
