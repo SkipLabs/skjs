@@ -14,7 +14,7 @@ if [[ "$file_path" =~ .*-prettier-ignore\..* ]]; then
     exit 0
 fi
 
-PRETTIER_VERSION=$(jq -r '.devDependencies.prettier' package.json)
+PRETTIER_VERSION=$(jq -r '.devDependencies.prettier' "$CLAUDE_PROJECT_DIR/package.json")
 
 case "$file_path" in
     *.sk)        skfmt -i "$file_path" ;;
