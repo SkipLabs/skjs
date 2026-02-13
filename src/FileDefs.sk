@@ -377,7 +377,7 @@ mutable class FileDefsState private {
           ],
         )
       };
-      resolveName(this.context, this.index, this.root, this.dirName, name)
+      resolveName(this.dirName, name)
     } else {
       resolveStubs(this.importStubs, name)
     }) match {

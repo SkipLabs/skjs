@@ -230,151 +230,50 @@ class FileNameIndex private (modules: S.EHandle<DAbsolute, NodeModuleDir>) {
 }
 
 /***************************************************************************/
-// Given an import statement in a TypeScript file: 1. Determine the
-// import path from the import statement.  2. Resolve the module
-// according to the following steps:
-
-//     a. If the import path is a relative path (starts with "./" or
-//         "../"): i. Try appending ".ts", ".tsx", ".d.ts" to the path
-//         and check if the file exists.  ii. If the file does not exist,
-//         try treating the path as a directory and look for an
-//         "index.ts", "index.tsx", or "index.d.ts" file in that
-//         directory.
-
-//     b. If the import path is a non-relative module name: i. Look in
-//         the nearest node_modules directory.  ii. Travel up the
-//         directory tree and look into each node_modules directory until
-//         the root of the file system is reached.  iii. In each
-//         node_modules directory, attempt to find the module. For a
-//         module named "Example", look for
-//         "Example.d.ts". If not found, it then looks for a package.json
-//         file in the "Example" directory, and reads the "typings" or
-//         "types" field to determine the path to the declaration file.
-//         iv. If the package.json does not specify a "typings" or
-//         "types" field, try to find an "index.d.ts" file
-//         in the module's root directory.
+// Resolve a relative import path to an absolute file path.
+// Tries mode-specific extensions (.ts/.tsx/.d.ts for .js,
+// .mts/.d.mts for .mjs, .cts/.d.cts for .cjs).
 /***************************************************************************/
 
-fun resolveName(
-  context: mutable S.Context,
-  index: FileNameIndex,
-  root: DAbsolute,
-  cwd: DAbsolute,
-  moduleName: String,
-): ?FAbsolute {
-  if (moduleName.endsWith("-js")) {
-    !moduleName = moduleName.stripSuffix("-js");
-  };
-  isAbsolute = Path.isAbsolute(moduleName);
-  if (isAbsolute || moduleName.startsWith(".")) {
-    if (moduleName == "." || moduleName == "./") {
-      print_error("Could not resolve module '.'");
-      return None();
-    };
-    fullName = if (isAbsolute) {
-      FAbsolute::create(moduleName)
-    } else {
-      cwd + FRelative::create(moduleName)
-    };
-    suffix = Path.extname(moduleName);
-    suffix match {
-    | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
-    | ".js" ->
-      stripped = fullName.baseName.stripSuffix(suffix);
-      for (ext in Array[".ts", ".tsx", ".d.ts"]) {
-        tryPath = fullName with {baseName => stripped + ext};
-        if (tryPath.exists()) return Some(tryPath)
-      }
-    | ".mjs" ->
-      stripped = fullName.baseName.stripSuffix(suffix);
-      for (ext in Array[".mts", ".d.mts", ".ts", ".d.ts"]) {
-        tryPath = fullName with {baseName => stripped + ext};
-        if (tryPath.exists()) return Some(tryPath)
-      }
-    | ".cjs" ->
-      stripped = fullName.baseName.stripSuffix(suffix);
-      for (ext in Array[".cts", ".d.cts", ".ts", ".d.ts"]) {
-        tryPath = fullName with {baseName => stripped + ext};
-        if (tryPath.exists()) return Some(tryPath)
-      }
-    | _ ->
-      if (!isAbsolute) {
-        for (ext in Array[".d.ts", "/index.d.ts", "/index.cjs"]) {
-          tryPath = cwd + FRelative::create(moduleName + ext);
-          if (tryPath.exists()) return Some(tryPath)
-        }
-      };
-      print_error(`Could not find module[3]: ${moduleName}`);
-      print_error(`From: ${cwd}`)
-    };
-    return None()
-  };
-
-  for (prepost in Array[
-    ("./@types/", "/index.d.ts"),
-    ("./@types/node/", ".d.ts"),
-  ]) {
-    tryPath = FAbsolute::create(prepost.i0 + moduleName + prepost.i1);
-    index.lookup(context, root, tryPath) match {
-    | None() -> void
-    | x @ Some _ -> return x
-    }
-  };
-
-  if (moduleName.contains(":")) {
-    requireTypesPath =
-      root +
-      FRelative::create(
-        "./node_modules/@types/" + moduleName.split(":").join("/") + ".d.ts",
-      );
-    debug(requireTypesPath.toString());
-    index.lookup(context, cwd, requireTypesPath) match {
-    | x @ Some _ -> return x
-    | _ ->
-      print_error(`Could not find module[2]: ${moduleName}`);
-      print_error(`From: ${cwd}`)
-    };
+fun resolveName(cwd: DAbsolute, moduleName: String): ?FAbsolute {
+  if (moduleName == "." || moduleName == "./") {
+    print_error("Could not resolve module '.'");
     return None();
   };
-
-  for (ext in Array[
-    "/index.d.ts",
-    "/dist/index.d.ts",
-    "/dist/types/types.d.ts",
-    "/types/index.d.ts",
-    "/typing/index.d.ts",
-  ]) {
-    index.lookup(context, cwd, FAbsolute::create(moduleName + ext)) match {
-    | None() -> void
-    | x @ Some _ -> return x
+  fullName = if (Path.isAbsolute(moduleName)) {
+    FAbsolute::create(moduleName)
+  } else {
+    cwd + FRelative::create(moduleName)
+  };
+  suffix = Path.extname(moduleName);
+  suffix match {
+  | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
+  | ".js" ->
+    stripped = fullName.baseName.stripSuffix(suffix);
+    for (ext in Array[".ts", ".tsx", ".d.ts"]) {
+      tryPath = fullName with {baseName => stripped + ext};
+      if (tryPath.exists()) return Some(tryPath)
+    }
+  | ".mjs" ->
+    stripped = fullName.baseName.stripSuffix(suffix);
+    for (ext in Array[".mts", ".d.mts", ".ts", ".d.ts"]) {
+      tryPath = fullName with {baseName => stripped + ext};
+      if (tryPath.exists()) return Some(tryPath)
+    }
+  | ".cjs" ->
+    stripped = fullName.baseName.stripSuffix(suffix);
+    for (ext in Array[".cts", ".d.cts", ".ts", ".d.ts"]) {
+      tryPath = fullName with {baseName => stripped + ext};
+      if (tryPath.exists()) return Some(tryPath)
+    }
+  | _ ->
+    for (ext in Array[".d.ts", "/index.d.ts"]) {
+      tryPath = cwd + FRelative::create(moduleName + ext);
+      if (tryPath.exists()) return Some(tryPath)
     }
   };
-
-  index.lookup(
-    context,
-    cwd,
-    FAbsolute::create(moduleName.replace("/", ".").replace("@", "") + ".d.ts"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-
-  //  if (moduleName.contains("/")) {
-  index.lookup(context, cwd, FAbsolute::create(moduleName + ".d.ts")) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  index.lookup(
-    context,
-    cwd,
-    FAbsolute::create(moduleName + "/index.cjs"),
-  ) match {
-  | None() -> void
-  | x @ Some _ -> return x
-  };
-  //  };
-
-  debug(`Could not find module[1]: ${moduleName}`);
+  print_error(`Could not find module: ${moduleName}`);
+  print_error(`From: ${cwd}`);
   None()
 }
 
