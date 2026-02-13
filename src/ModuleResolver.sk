@@ -379,7 +379,7 @@ fun resolveStubs(
       res match {
       | Some(existing) ->
         debug(
-          `Found at least 2 stubs with name ${moduleName}: ${existing} and {path}`,
+          `Found at least 2 stubs with name ${moduleName}: ${existing} and ${path}`,
         )
       | None() -> !res = Some(path)
       }
