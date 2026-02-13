@@ -490,7 +490,7 @@ mutable class FileDefsState private {
         | PVar(x) -> x
         | _ ->
           typingError(
-            Array[(varDef.pat.pos, "TODO: cannot have exports base on names")],
+            Array[(varDef.pat.pos, "TODO: cannot have exports based on names")],
           )
         };
         if (isExport) {
