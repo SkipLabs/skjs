@@ -588,7 +588,7 @@ fun prettyPrintType(compact: Bool, ty: TType): String {
 }
 
 fun prettyPrintSType(stype: SType, compact: Bool = false): String {
-  prettyPrintType(compact, TType::single(stype))
+  prettyPrint(compact, pp -> pp.stype(0, Margin{}, stype))
 }
 
 fun prettyPrintSTypes(sTypes: STypes, compact: Bool = false): String {
