@@ -145,11 +145,11 @@ mutable class TypePp{
           pp.out(level, margin, "<");
           for (i => tparam in tfun.tparams) {
             if (i != 0) pp.out(level, margin, ", ");
-            pp.out(level, margin, tparam.name + ":" + tparam.id);
+            pp.tparamName(level, margin, tparam.name, tparam.id);
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
-              pp.out(level, margin, " extends1 ");
+              pp.out(level, margin, " extends ");
               pp.type(level, margin, x)
             }
           };
@@ -194,11 +194,11 @@ mutable class TypePp{
           pp.out(level, margin, "<");
           for (i => tparam in tfun.tparams) {
             if (i != 0) pp.out(level, margin, ", ");
-            pp.out(level, margin, tparam.name + ":" + tparam.id);
+            pp.tparamName(level, margin, tparam.name, tparam.id);
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
-              pp.out(level, margin, " extends2 ");
+              pp.out(level, margin, " extends ");
               pp.type(level, margin, x)
             }
           };
@@ -419,7 +419,7 @@ mutable class TypePp{
       if (j != 0) {
         this.out(level, margin, " & ");
       };
-      this.out(level, margin, tparam.name + ":" + tparam.id);
+      this.tparamName(level, margin, tparam.name, tparam.id);
     };
     clause.stypes match {
     | None() ->
@@ -477,9 +477,9 @@ mutable class TypePp{
       margin,
       (pp, level, margin) ~> {
         for (i => inst in ty.insts.insts) {
+          if (i != 0) pp.out(level, margin, " | ");
           inst match {
           | TSInst(x, targs) ->
-            if (i != 0) pp.out(level, margin, " | ");
             pp.out(level, margin, x.value);
             if (targs.targs.size() != 0) {
               pp.out(level, margin, "<");
@@ -490,7 +490,6 @@ mutable class TypePp{
               pp.out(level, margin, ">");
             }
           | TArrayLit(_tvar, tupleElts) ->
-            if (i != 0) pp.out(level, margin, " | ");
             pp.out(level, margin, "ArrayLit<");
             for (j => eltTy in tupleElts) {
               if (j != 0) pp.out(level, margin, ", ");
@@ -513,7 +512,7 @@ mutable class TypePp{
             pp.out(level, margin, "(");
             pp.type(level, margin, ty2);
             pp.out(level, margin, ")")
-          | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
+          | x @ TVar _ -> pp.tvar(level, margin, x)
           }
         }
       },
@@ -551,11 +550,42 @@ mutable class TypePp{
             pp.type(level, margin, ty1);
             pp.out(level, margin, " | ");
             pp.type(level, margin, ty2)
-          | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
+          | x @ TVar _ -> pp.tvar(level, margin, x)
           }
         }
       },
     );
+  }
+
+  mutable fun tvar(level: Int, margin: Margin, tvar: TVar): void {
+    this.out(level, margin, "'" + tvar.id);
+    if (!tvar.constraints.isEmpty()) {
+      this.out(level, margin, " extends ");
+      first = true;
+      for (c in tvar.constraints) {
+        if (first) {
+          !first = false;
+        } else {
+          this.out(level, margin, " & ");
+        };
+        this.type(level, margin, c)
+      }
+    }
+  }
+
+  mutable fun tparamName(
+    level: Int,
+    margin: Margin,
+    name: String,
+    id: Id,
+  ): void {
+    idStr = id.toString();
+    nameColon = name + ":";
+    if (idStr.startsWith(nameColon)) {
+      this.out(level, margin, idStr)
+    } else {
+      this.out(level, margin, nameColon + id)
+    }
   }
 
   mutable fun arrayType(level: Int, margin: Margin, arrayTy: ArrayType): void {
