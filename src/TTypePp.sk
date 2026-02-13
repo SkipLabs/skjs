@@ -6,7 +6,13 @@ class MaxSizeReached() extends Exception {
   }
 }
 
-value class Margin(depth: Int = 0, size: Int = 0, str: String = "")
+const kDefaultMaxDepth: Int = 2;
+
+value class Margin{
+  max_depth: Int = kDefaultMaxDepth,
+  size: Int = 0,
+  str: String = "",
+}
 
 mutable class TypePp{
   compact: Bool,
@@ -450,8 +456,8 @@ mutable class TypePp{
   }
 
   mutable fun type(level: Int, margin: Margin, ty: TType): void {
-    !margin.depth = margin.depth + 1;
-    if (margin.depth >= 2) {
+    !margin.max_depth = margin.max_depth - 1;
+    if (margin.max_depth < 0) {
       this.out(level, margin, "...");
       return void;
     };
@@ -575,48 +581,84 @@ fun prettyPrint(compact: Bool, f: mutable TypePp -> void): String {
   result
 }
 
-fun prettyPrintType(compact: Bool, ty: TType): String {
+fun prettyPrintType(
+  compact: Bool,
+  ty: TType,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
   prettyPrint(compact, pp -> {
-    pp.type(0, Margin(), ty);
+    pp.type(0, Margin{max_depth}, ty);
   })
 }
 
-fun prettyPrintSType(stype: SType, compact: Bool = false): String {
-  prettyPrintType(compact, TType::single(stype))
+fun prettyPrintSType(
+  stype: SType,
+  compact: Bool = false,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
+  prettyPrint(compact, pp -> pp.stype(0, Margin{max_depth}, stype))
 }
 
-fun prettyPrintSTypes(sTypes: STypes, compact: Bool = false): String {
-  prettyPrint(compact, pp -> pp.sTypes(0, Margin(), sTypes))
+fun prettyPrintSTypes(
+  sTypes: STypes,
+  compact: Bool = false,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
+  prettyPrint(compact, pp -> pp.sTypes(0, Margin{max_depth}, sTypes))
 }
 
-fun prettyPrintClause(clause: Clause, compact: Bool = false): String {
+fun prettyPrintClause(
+  clause: Clause,
+  compact: Bool = false,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
   if (clause.isTop()) {
-    prettyPrint(compact, pp -> pp.out(0, Margin(), "unknown"))
+    prettyPrint(compact, pp -> pp.out(0, Margin{max_depth}, "unknown"))
   } else {
     prettyPrint(compact, pp -> {
-      pp.clause(0, Margin(), clause);
+      pp.clause(0, Margin{max_depth}, clause);
     })
   }
 }
 
-fun prettyPrintClauses(clauses: Clauses, compact: Bool = false): String {
-  prettyPrint(compact, pp -> pp.clauses(0, Margin(), clauses))
+fun prettyPrintClauses(
+  clauses: Clauses,
+  compact: Bool = false,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
+  prettyPrint(compact, pp -> pp.clauses(0, Margin{max_depth}, clauses))
 }
 
-fun prettyPrintTFun(tFun: TFun, compact: Bool = false): String {
-  prettyPrint(compact, pp -> pp.tfun(0, Margin(), (false, tFun)))
+fun prettyPrintTFun(
+  tFun: TFun,
+  compact: Bool = false,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
+  prettyPrint(compact, pp -> pp.tfun(0, Margin{max_depth}, (false, tFun)))
 }
 
-fun prettyPrintConstr(constr: TConstr, compact: Bool = false): String {
-  prettyPrint(compact, pp -> pp.constr(0, Margin(), constr))
+fun prettyPrintConstr(
+  constr: TConstr,
+  compact: Bool = false,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
+  prettyPrint(compact, pp -> pp.constr(0, Margin{max_depth}, constr))
 }
 
-fun prettyPrintFields(fields: TFields, compact: Bool = false): String {
-  prettyPrint(compact, pp -> pp.object(0, Margin(), fields))
+fun prettyPrintFields(
+  fields: TFields,
+  compact: Bool = false,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
+  prettyPrint(compact, pp -> pp.object(0, Margin{max_depth}, fields))
 }
 
-fun prettyPrintIndexField(index: TIndexField, compact: Bool = false): String {
-  prettyPrint(compact, pp -> pp.indexField(0, Margin(), index))
+fun prettyPrintIndexField(
+  index: TIndexField,
+  compact: Bool = false,
+  max_depth: Int = kDefaultMaxDepth,
+): String {
+  prettyPrint(compact, pp -> pp.indexField(0, Margin{max_depth}, index))
 }
 
 module end;
