@@ -2,6 +2,7 @@
   "compilerOptions": {
     "strict": true,
     "target": "ES2020",
+    // @skjs-expect-error Option 'moduleResolution' value 'classic' is not supported by SKJS.
     "moduleResolution": "classic"
   },
   "include": ["src/**/*"]

@@ -33,14 +33,14 @@ module SKJS;
 //     noPropertyAccessFromIndexSignature
 //
 // SUPPORTED — silently accepted:
-//     rootDir, baseUrl, paths, target, module
+//     rootDir, baseUrl, paths, target, module, moduleResolution
 //
 // IGNORED — emit/tooling/IDE options, silently accepted:
 //   Emit: outDir, outFile, declaration, declarationMap,
 //     declarationDir, emitDeclarationOnly, sourceMap, sourceRoot, mapRoot,
 //     removeComments, noEmit, preserveConstEnums, downlevelIteration,
 //     newLine, importsNotUsedAsValues, noEmitOnError
-//   Module: moduleResolution, typeRoots, types,
+//   Module: typeRoots, types,
 //     resolveJsonModule, rootDirs, moduleSuffixes, customConditions
 //   Interop: esModuleInterop, allowSyntheticDefaultImports,
 //     forceConsistentCasingInFileNames, isolatedModules,
@@ -146,12 +146,53 @@ base class TsModule uses Equality {
   }
 }
 
+// TypeScript module resolution strategy
+base class ModuleResolution uses Equality {
+  children =
+  | MRNode16()
+  | MRNodeNext()
+  | MRBundler()
+
+  const default: ModuleResolution = MRNode16();
+
+  // Parse a moduleResolution string (case-insensitive). Returns None() for unknown values.
+  static fun fromString(s: String): ?ModuleResolution {
+    s.lowercase() match {
+    | "node16" -> Some(MRNode16())
+    | "nodenext" -> Some(MRNodeNext())
+    | "bundler" -> Some(MRBundler())
+    | _ -> None()
+    }
+  }
+
+  // Whether this string is a known-but-unsupported moduleResolution value.
+  static fun isUnsupported(s: String): Bool {
+    normalized = s.lowercase();
+    normalized == "classic" || normalized == "node" || normalized == "node10"
+  }
+
+  // Derive the default moduleResolution from the module option (matches tsc).
+  static fun defaultFromModule(tsModule: TsModule): ModuleResolution {
+    tsModule match {
+    | TMNode16() -> MRNode16()
+    | TMNodeNext() -> MRNodeNext()
+    | TMPreserve() -> MRBundler()
+    | _ -> ModuleResolution::default
+    }
+  }
+
+  fun isBundlerMode(): Bool {
+    this == MRBundler()
+  }
+}
+
 class TsCompilerOptions{
   rootDir: ?String = None(),
   baseUrl: ?String = None(),
   paths: Map<String, Array<String>> = Map[],
   tsTarget: TsTarget = TsTarget::default,
   tsModule: TsModule = TsModule::default,
+  moduleResolution: ModuleResolution = ModuleResolution::default,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -483,12 +524,36 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
     | None() -> TsModule::defaultFromTarget(tsTarget)
     };
 
+    // Extract and check moduleResolution
+    moduleResolution = co.maybeGetString("moduleResolution") match {
+    | Some(v) ->
+      ModuleResolution::fromString(v) match {
+      | Some(mr) -> mr
+      | None() ->
+        msg = if (ModuleResolution::isUnsupported(v)) {
+          `Option 'moduleResolution' value '${v}' is not supported by SKJS.`
+        } else {
+          `Unknown 'moduleResolution' value '${v}'.`
+        };
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, "moduleResolution"),
+            message => msg,
+            isWarning => false,
+          },
+        );
+        ModuleResolution::default
+      }
+    | None() -> ModuleResolution::defaultFromModule(tsModule)
+    };
+
     TsCompilerOptions{
       rootDir => co.maybeGetString("rootDir"),
       baseUrl,
       paths,
       tsTarget,
       tsModule,
+      moduleResolution,
     }
   | None() ->
     diags.push(

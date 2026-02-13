@@ -386,7 +386,10 @@ mutable class FileDefsState private {
   private mutable fun resolveName(mname: Name): ?ModuleName {
     name = mname.value;
     resolved = if (name.startsWith("./") || name.startsWith("../")) {
-      if (!hasJsLikeExtension(name)) {
+      if (
+        !hasJsLikeExtension(name) &&
+        !this.compilerOptions.moduleResolution.isBundlerMode()
+      ) {
         this.fileErrors.push(
           TypingError(
             Array[
