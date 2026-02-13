@@ -153,9 +153,9 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Special**: Only `kind` field enables ADT pattern matching, other field names won't work
 
 ### 14. Import System ✅
-- **Rule**: Imports must use relative paths starting with `./` and ending with `.js`
+- **Rule**: Relative imports must start with `./` or `../`.
+- **Extensions**: In `node16`/`nodenext` moduleResolution (default), imports must end with `.js`, `.mjs`, or `.cjs`. In `bundler` mode, extensions are optional.
 - **Syntax**: `import { functionName, TypeName } from './filename.js'`
-- **Requirements**: File must start with `./` and end with `.js` extension
 - **Example**: `import { add, User } from './utils.js'`
 
 ### 15. Only Locals Can Be Compared to null/undefined
@@ -524,9 +524,9 @@ export function helper(): void { ... }
 export type MyType = { ... };
 export interface MyInterface { ... }
 
-// Avoid - incorrect import paths
+// Avoid - incorrect import paths (in node16/nodenext mode)
 import { add } from 'math_utils';        // Missing ./ and .js
-import { add } from './math_utils';      // Missing .js extension
+import { add } from './math_utils';      // Missing .js extension (OK in bundler mode)
 import { add } from './math_utils.ts';   // Wrong extension
 ```
 
