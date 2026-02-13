@@ -477,9 +477,9 @@ mutable class TypePp{
       margin,
       (pp, level, margin) ~> {
         for (i => inst in ty.insts.insts) {
+          if (i != 0) pp.out(level, margin, " | ");
           inst match {
           | TSInst(x, targs) ->
-            if (i != 0) pp.out(level, margin, " | ");
             pp.out(level, margin, x.value);
             if (targs.targs.size() != 0) {
               pp.out(level, margin, "<");
@@ -490,7 +490,6 @@ mutable class TypePp{
               pp.out(level, margin, ">");
             }
           | TArrayLit(_tvar, tupleElts) ->
-            if (i != 0) pp.out(level, margin, " | ");
             pp.out(level, margin, "ArrayLit<");
             for (j => eltTy in tupleElts) {
               if (j != 0) pp.out(level, margin, ", ");
