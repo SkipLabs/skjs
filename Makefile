@@ -33,6 +33,16 @@ check-fmt:
 check-sh:
 	git ls-files "*.sh" | xargs shellcheck
 
+# Docker targets: run skargo commands inside the Skip Docker image.
+# Override DOCKER_IMAGE or SKIP_DIR if needed:
+#   make test-in-docker SKIP_DIR=/path/to/skip
+#   make test-in-docker DOCKER_IMAGE=skiplabs/skip:0.1.0
+DOCKER_IMAGE?=skiplabs/skip:latest
+SKIP_DIR?=$(CURDIR)/../skip
+
+%-in-docker:
+	docker run --rm -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) skargo $*
+
 .PHONY: clean
 clean:
 	skargo clean

@@ -7,14 +7,10 @@ SKJS is a typechecker for a dialect of TypeScript that reject programs that woul
 Requires the [Skip repository](https://github.com/SkipLabs/skip) checked out as a sibling directory (`../skip`).
 
 ```bash
-# Build (produces ./target/host/dev/skjs)
-docker run --rm -v "$(pwd):/work/skjs" -v "$(pwd)/../skip:/work/skip" -w /work/skjs skiplabs/skip:latest skargo build
-
-# Run all tests
-docker run --rm -v "$(pwd):/work/skjs" -v "$(pwd)/../skip:/work/skip" -w /work/skjs skiplabs/skip:latest skargo test
-
-# Check a specific TypeScript file (builds if needed)
-docker run --rm -v "$(pwd):/work/skjs" -v "$(pwd)/../skip:/work/skip" -w /work/skjs skiplabs/skip:latest skargo run -- check --import-stubs import-stubs <file>
+make build-in-docker   # Build (produces ./target/host/dev/skjs)
+make test-in-docker    # Run all tests
+make check-in-docker   # Type-check without building
+make clean-in-docker   # Clean build artifacts
 ```
 
 ## Documentation
