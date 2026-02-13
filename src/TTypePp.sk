@@ -149,7 +149,7 @@ mutable class TypePp{
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
-              pp.out(level, margin, " extends1 ");
+              pp.out(level, margin, " extends ");
               pp.type(level, margin, x)
             }
           };
@@ -198,7 +198,7 @@ mutable class TypePp{
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
-              pp.out(level, margin, " extends2 ");
+              pp.out(level, margin, " extends ");
               pp.type(level, margin, x)
             }
           };
@@ -513,7 +513,7 @@ mutable class TypePp{
             pp.out(level, margin, "(");
             pp.type(level, margin, ty2);
             pp.out(level, margin, ")")
-          | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
+          | x @ TVar _ -> pp.tvar(level, margin, x)
           }
         }
       },
@@ -551,11 +551,27 @@ mutable class TypePp{
             pp.type(level, margin, ty1);
             pp.out(level, margin, " | ");
             pp.type(level, margin, ty2)
-          | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
+          | x @ TVar _ -> pp.tvar(level, margin, x)
           }
         }
       },
     );
+  }
+
+  mutable fun tvar(level: Int, margin: Margin, tvar: TVar): void {
+    this.out(level, margin, "'" + tvar.id);
+    if (!tvar.constraints.isEmpty()) {
+      this.out(level, margin, " extends ");
+      first = true;
+      for (c in tvar.constraints) {
+        if (first) {
+          !first = false;
+        } else {
+          this.out(level, margin, " & ");
+        };
+        this.type(level, margin, c)
+      }
+    }
   }
 
   mutable fun arrayType(level: Int, margin: Margin, arrayTy: ArrayType): void {
