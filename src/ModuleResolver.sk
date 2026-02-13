@@ -279,14 +279,24 @@ fun resolveName(
     suffix = Path.extname(moduleName);
     suffix match {
     | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
-    | ".js" | ".mjs" ->
+    | ".js" ->
       stripped = fullName.baseName.stripSuffix(suffix);
       for (ext in Array[".ts", ".tsx", ".d.ts"]) {
         tryPath = fullName with {baseName => stripped + ext};
         if (tryPath.exists()) return Some(tryPath)
-      };
-      print_error(`Could not find file: ${fullName}`);
-      print_error(`From: ${cwd}`)
+      }
+    | ".mjs" ->
+      stripped = fullName.baseName.stripSuffix(suffix);
+      for (ext in Array[".mts", ".d.mts", ".ts", ".d.ts"]) {
+        tryPath = fullName with {baseName => stripped + ext};
+        if (tryPath.exists()) return Some(tryPath)
+      }
+    | ".cjs" ->
+      stripped = fullName.baseName.stripSuffix(suffix);
+      for (ext in Array[".cts", ".d.cts", ".ts", ".d.ts"]) {
+        tryPath = fullName with {baseName => stripped + ext};
+        if (tryPath.exists()) return Some(tryPath)
+      }
     | _ ->
       if (!isAbsolute) {
         for (ext in Array[".d.ts", "/index.d.ts", "/index.cjs"]) {
