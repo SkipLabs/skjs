@@ -410,7 +410,6 @@ class Checker private {
     errorDetailConfig: ErrorDetailConfig,
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
-    index = FileNameIndex::create(context, files.filesContent);
     (parsedAndSymbolsFiles, symbolsMap) = files.parse(
       context,
       newLinesMap,
@@ -420,7 +419,6 @@ class Checker private {
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
       context,
-      index,
       files.root,
       builtinsFileName,
       files.importStubs,

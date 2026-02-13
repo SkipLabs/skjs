@@ -28,7 +28,6 @@ base class IDefMap {
 class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
-    index: FileNameIndex,
     root: DAbsolute,
     builtinsFileName: FAbsolute,
     importStubs: Array<DAbsolute>,
@@ -59,7 +58,6 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
             Array[
               FileDefsState::createFileDefs(
                 context,
-                index,
                 root,
                 fileName.dirName,
                 includes,
@@ -339,7 +337,6 @@ fun mapPush<K: Hashable & Equality, V>(
 
 mutable class FileDefsState private {
   context: mutable S.Context,
-  index: FileNameIndex,
   root: DAbsolute,
   dirName: DAbsolute,
   importStubs: Array<DAbsolute>,
@@ -355,14 +352,13 @@ mutable class FileDefsState private {
 } {
   static fun createFileDefs(
     context: mutable S.Context,
-    index: FileNameIndex,
     root: DAbsolute,
     dirName: DAbsolute,
     includes: Array<FAbsolute>,
     importStubs: Array<DAbsolute>,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable static{context, index, root, dirName, importStubs};
+    state = mutable static{context, root, dirName, importStubs};
     state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
@@ -453,7 +449,6 @@ mutable class FileDefsState private {
   private mutable fun createSubFileDefs(defs: Array<Def>): FileDefs {
     state = mutable static{
       context => this.context,
-      index => this.index,
       root => this.root,
       dirName => this.dirName,
       importStubs => this.importStubs,
