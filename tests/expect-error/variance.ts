@@ -12,6 +12,7 @@ function interWithTop<T>(...x: T[] & arrayBooleanOrArrayString): T {
 
 // We should not be able to call interWithTop with T instantiated to number
 function checkIntersectionWithTopIsNotBottom(): number {
+  // @skjs-expect-error Invalid call. Unexpected type for ...
   return interWithTop<number>(0) + 1;
 }
 

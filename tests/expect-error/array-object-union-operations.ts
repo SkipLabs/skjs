@@ -256,7 +256,6 @@ function testGenericArrayOrObjectS<S extends Array<number> | Obj>(x: S): S {
 // Using the generic function
 function testUseGenericArrayOrObject(): void {
   const arr: Array<number> = [1, 2, 3];
-  // @skjs-expect-error Invalid call
   const result1 = testGenericArrayOrObject(arr);
   const result1S = testGenericArrayOrObjectS(arr);
 

@@ -26,6 +26,13 @@ base class TEnv{
   // if you introduce an existential (like you would with a parametric new
   // construct without explicit type arguments), a different substitution is
   // used (cf TVar).
+  //
+  // Tuple semantics:
+  // - (true, ty): high-priority binding in this.subst.
+  //   In TAInst lookup, this shadows same-named entries from tparams.
+  //   Example: class Box<T> {...}; function f<T extends Box<number>>(...) ...
+  //   The T in Box<T> must resolve to Box's T (bound to number), not f's T.
+  // - (false, ty): normal this.subst binding.
   subst: SortedMap<String, (Bool, TType)> = SortedMap[],
 
   // When expanding a type definition, we don't want to recursively
@@ -94,6 +101,11 @@ base class TEnv{
       )
     };
 
+    // Instantiation bindings in this.subst are local to this expansion.
+    // Example: in `function f<T>(): Box<number>`, expanding Box<number>
+    // temporarily binds T -> number in this.subst. Without save/restore,
+    // later references to T could resolve to number instead of f's T.
+    savedTypeSubst = this.subst;
     for (i => tparam in clauses) {
       targ = if (i < targs.targs.size()) targs.targs[i] else {
         tparam.default match {
@@ -136,11 +148,13 @@ base class TEnv{
       !this.subst[tparam.name.value] = (true, targ);
     };
 
-    tdef match {
+    result = tdef match {
     | ta @ TypeDef _ -> this.normalize(subst, ta.body)
     | Class _ -> this.new(subst, name, targs.targs)
     | Enum _ -> typingError(Array[(name.pos, "TODO: instantiate Enum")])
-    }
+    };
+    !this.subst = savedTypeSubst;
+    result
   }
 
   fun getClass(context: mutable SKStore.Context, className: Name): Class {
@@ -371,7 +385,9 @@ base class TEnv{
           | Some(d) -> this.normalize(tcenvb, d)
           }
         };
-        !this.subst[tparam.name.value] = (false, targ)
+        // Class type arguments are lexical binders for this class expansion.
+        // Mark them priority so same-named outer tparams are shadowed.
+        !this.subst[tparam.name.value] = (true, targ)
       }
     };
     (this, cls)
@@ -659,6 +675,23 @@ base class TEnv{
     this.normalizeFun(tcenvb, fd.pos, tafun)
   }
 
+  private fun checkNoTypeArgsOnBoundTParam(
+    tcenvb: mutable TCEnvBase,
+    n: Name,
+    targs: Array<Type>,
+  ): void {
+    if (targs.size() != 0) {
+      tcenvb.error(
+        Array[
+          (
+            n.pos,
+            "A bound occurrence of a type parameter cannot have type arguments",
+          ),
+        ],
+      )
+    }
+  }
+
   // Normalizes a type annotation.
   // When isTopLevelConst is true, allows unique symbol type (only permitted
   // in top-level const declarations, class static readonly members, and
@@ -787,36 +820,34 @@ base class TEnv{
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
-      if (this.tparams.containsKey(n.value)) {
-        if (targs.size() != 0) {
-          tcenvb.error(
-            Array[
-              (
-                n.pos,
-                "A bound occurrence of a type parameter cannot have type arguments",
-              ),
-            ],
-          )
-        };
+      // Resolution order for bound names:
+      //   1) priority this.subst binding (lexical class/instantiate binder)
+      //   2) ambient tparams
+      //   3) regular this.subst binding
+      // If none applies, resolve n as a named type definition.
+      // If n resolves to a bound type parameter, n<targs> is invalid
+      // (example: class C<T> { value: T<number> }).
+      substEntry = this.subst.maybeGet(n.value);
+      if (substEntry is Some((true, _))) {
+        // Case 1: priority this.subst binding.
+        this.checkNoTypeArgsOnBoundTParam(tcenvb, n, targs);
+        (_keepPos, ty) = substEntry.fromSome();
+        ty
+      } else if (this.tparams.containsKey(n.value)) {
+        // Case 2: ambient tparams.
+        this.checkNoTypeArgsOnBoundTParam(tcenvb, n, targs);
         subst = Subst::mcreate(tcenvb);
         tparam = this.tparams[n.value];
         TType::fromTParamWithConstraint(subst, this, pos, tparam)
-      } else if (this.subst.containsKey(n.value)) {
-        if (targs.size() != 0) {
-          tcenvb.error(
-            Array[
-              (
-                n.pos,
-                "A bound occurrence of a type parameter cannot have type arguments",
-              ),
-            ],
-          )
-        };
-        (keepPos, ty) = this.subst[n.value];
+      } else if (substEntry is Some((_, _))) {
+        // Case 3: regular this.subst binding.
+        this.checkNoTypeArgsOnBoundTParam(tcenvb, n, targs);
+        (keepPos, ty) = substEntry.fromSome();
         if (keepPos) ty else ty.withPos(pos)
       } else if (this.forbiddenInsts.contains(n.value)) {
         typingError(Array[(n.pos, "Cyclic definition")])
       } else {
+        // No bound-name match: treat n as a named type definition.
         tdef = this.defMap.getType(tcenvb.context, n);
         tparams = tdef match {
         | TypeDef{tdefParams} -> tdefParams
