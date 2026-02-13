@@ -259,7 +259,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     | 1 -> Path.join(importStubs[0], "@types/skjs/index.d.ts")
     | _ ->
       print_error(
-        "--bultins-file unspecified but more than one --import-stubs specified",
+        "--builtins-file unspecified but more than one --import-stubs specified",
       );
       throw Exit(2)
     }
@@ -380,6 +380,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       msg = SKStore.StringFile::type(error).value;
       if (msg != "") {
         print_error(msg);
+        // Blank line separator between errors
         print_error("")
       }
     };
