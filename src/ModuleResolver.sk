@@ -120,9 +120,13 @@ value class FRelative uses FileNameBase<DRelative> {
 }
 
 /***************************************************************************/
-// Resolve a relative import path to an absolute file path.
-// Tries mode-specific extensions (.ts/.tsx/.d.ts for .js,
-// .mts/.d.mts for .mjs, .cts/.d.cts for .cjs).
+// Resolve a relative import path ("./" or "../"):
+//   1. If the path has a JS-like extension (.js, .mjs, .cjs), replace it
+//      with the corresponding TS extension (.ts/.tsx/.d.ts, .mts/.d.mts,
+//      .cts/.d.cts) and check if the file exists.
+//   2. Otherwise, try appending .ts, .tsx, .d.ts to the path.
+//   3. If still not found, try treating the path as a directory and look
+//      for index.ts, index.tsx, or index.d.ts.
 /***************************************************************************/
 
 fun hasJsLikeExtension(name: String): Bool {
@@ -165,7 +169,14 @@ fun resolveName(cwd: DAbsolute, moduleName: String): ?FAbsolute {
       if (tryPath.exists()) return Some(tryPath)
     }
   | _ ->
-    for (ext in Array[".d.ts", "/index.d.ts"]) {
+    for (ext in Array[
+      ".ts",
+      ".tsx",
+      ".d.ts",
+      "/index.ts",
+      "/index.tsx",
+      "/index.d.ts",
+    ]) {
       tryPath = cwd + FRelative::create(moduleName + ext);
       if (tryPath.exists()) return Some(tryPath)
     }
