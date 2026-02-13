@@ -145,7 +145,7 @@ mutable class TypePp{
           pp.out(level, margin, "<");
           for (i => tparam in tfun.tparams) {
             if (i != 0) pp.out(level, margin, ", ");
-            pp.out(level, margin, tparam.name + ":" + tparam.id);
+            pp.tparamName(level, margin, tparam.name, tparam.id);
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
@@ -194,7 +194,7 @@ mutable class TypePp{
           pp.out(level, margin, "<");
           for (i => tparam in tfun.tparams) {
             if (i != 0) pp.out(level, margin, ", ");
-            pp.out(level, margin, tparam.name + ":" + tparam.id);
+            pp.tparamName(level, margin, tparam.name, tparam.id);
             tparam.cstr match {
             | None() -> void
             | Some(x) ->
@@ -419,7 +419,7 @@ mutable class TypePp{
       if (j != 0) {
         this.out(level, margin, " & ");
       };
-      this.out(level, margin, tparam.name + ":" + tparam.id);
+      this.tparamName(level, margin, tparam.name, tparam.id);
     };
     clause.stypes match {
     | None() ->
@@ -570,6 +570,21 @@ mutable class TypePp{
         };
         this.type(level, margin, c)
       }
+    }
+  }
+
+  mutable fun tparamName(
+    level: Int,
+    margin: Margin,
+    name: String,
+    id: Id,
+  ): void {
+    idStr = id.toString();
+    nameColon = name + ":";
+    if (idStr.startsWith(nameColon)) {
+      this.out(level, margin, idStr)
+    } else {
+      this.out(level, margin, nameColon + id)
     }
   }
 
