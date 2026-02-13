@@ -395,7 +395,8 @@ mutable class FileDefsState private {
             Array[
               (
                 mname.pos,
-                "Invalid import: local imports must be from js files",
+                "Relative imports require a '.js', '.mjs', or '.cjs' extension. " +
+                  "Use 'moduleResolution: \"bundler\"' for extensionless imports.",
               ),
             ],
           ),
