@@ -33,14 +33,14 @@ module SKJS;
 //     noPropertyAccessFromIndexSignature
 //
 // SUPPORTED — silently accepted:
-//     rootDir, baseUrl, paths, target
+//     rootDir, baseUrl, paths, target, module
 //
 // IGNORED — emit/tooling/IDE options, silently accepted:
 //   Emit: outDir, outFile, declaration, declarationMap,
 //     declarationDir, emitDeclarationOnly, sourceMap, sourceRoot, mapRoot,
 //     removeComments, noEmit, preserveConstEnums, downlevelIteration,
 //     newLine, importsNotUsedAsValues, noEmitOnError
-//   Module: module, moduleResolution, typeRoots, types,
+//   Module: moduleResolution, typeRoots, types,
 //     resolveJsonModule, rootDirs, moduleSuffixes, customConditions
 //   Interop: esModuleInterop, allowSyntheticDefaultImports,
 //     forceConsistentCasingInFileNames, isolatedModules,
@@ -110,11 +110,48 @@ base class TsTarget uses Equality {
   }
 }
 
+// TypeScript module system
+base class TsModule uses Equality {
+  children =
+  | TMCommonJS()
+  | TMNode16()
+  | TMNodeNext()
+  | TMPreserve()
+  | TMES() // es2015, es2020, es2022, esnext, es6
+  | TMOther() // amd, umd, system, none — accepted but no special behavior
+
+  // Parse a module string (case-insensitive). Returns None() for unknown values.
+  static fun fromString(s: String): ?TsModule {
+    s.lowercase() match {
+    | "commonjs" -> Some(TMCommonJS())
+    | "node16" -> Some(TMNode16())
+    | "nodenext" -> Some(TMNodeNext())
+    | "preserve" -> Some(TMPreserve())
+    | "es6" | "es2015" | "es2020" | "es2022" | "esnext" -> Some(TMES())
+    | "amd" | "umd" | "system" | "none" -> Some(TMOther())
+    | _ -> None()
+    }
+  }
+
+  const default: TsModule = TMCommonJS();
+
+  // Derive the default module from the target option (matches tsc).
+  static fun defaultFromTarget(tsTarget: TsTarget): TsModule {
+    tsTarget match {
+    | TES3()
+    | TES5() ->
+      TMCommonJS()
+    | _ -> TMES()
+    }
+  }
+}
+
 class TsCompilerOptions{
   rootDir: ?String = None(),
   baseUrl: ?String = None(),
   paths: Map<String, Array<String>> = Map[],
   tsTarget: TsTarget = TsTarget::default,
+  tsModule: TsModule = TsModule::default,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -428,11 +465,30 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       t
     };
 
+    // Extract module with default from target
+    tsModule = co.maybeGetString("module") match {
+    | Some(v) ->
+      TsModule::fromString(v) match {
+      | Some(m) -> m
+      | None() ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, "module"),
+            message => `Unknown 'module' value '${v}'.`,
+            isWarning => false,
+          },
+        );
+        TsModule::defaultFromTarget(tsTarget)
+      }
+    | None() -> TsModule::defaultFromTarget(tsTarget)
+    };
+
     TsCompilerOptions{
       rootDir => co.maybeGetString("rootDir"),
       baseUrl,
       paths,
       tsTarget,
+      tsModule,
     }
   | None() ->
     diags.push(
