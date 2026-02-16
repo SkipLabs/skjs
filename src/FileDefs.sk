@@ -391,23 +391,32 @@ mutable class FileDefsState private {
     state.processDefs(parsedDefs)
   }
 
-  private mutable fun resolveName(mname: Name): ModuleName {
+  private mutable fun resolveName(mname: Name): ?ModuleName {
     name = mname.value;
-    (if (name.startsWith("./") || name.startsWith("../")) {
+    resolved = if (name.startsWith("./") || name.startsWith("../")) {
       if (!name.endsWith(".js")) {
-        typingError(
-          Array[
-            (mname.pos, "Invalid import: local imports must be from js files"),
-          ],
+        this.fileErrors.push(
+          TypingError(
+            Array[
+              (
+                mname.pos,
+                "Invalid import: local imports must be from js files",
+              ),
+            ],
+          ),
         )
       };
       resolveName(this.dirName, name)
     } else {
       resolveStubs(this.importStubs, name)
-    }) match {
-    | Some(fileName) -> ModuleName{name, fileName}
+    };
+    resolved match {
+    | Some(fileName) -> Some(ModuleName{name, fileName})
     | None() ->
-      typingError(Array[(mname.pos, `Could not find module '${mname}'`)])
+      this.fileErrors.push(
+        TypingError(Array[(mname.pos, `Could not find module '${mname}'`)]),
+      );
+      None()
     }
   }
 
@@ -430,13 +439,14 @@ mutable class FileDefsState private {
 
       | ExportNames(_, names) -> this.exportNames(names)
       | ExportNamesFrom(isType, names, mname) ->
-        modName = this.resolveName(mname);
-        static::addImportsFrom(
-          this.reexports,
-          isType.isSome(),
-          Array[names],
-          modName,
-        )
+        this.resolveName(mname).each(modName -> {
+          static::addImportsFrom(
+            this.reexports,
+            isType.isSome(),
+            Array[names],
+            modName,
+          )
+        })
 
       | ExportDefault(Expr(_, Var(n))) ->
         /* Treat
@@ -449,15 +459,18 @@ mutable class FileDefsState private {
         )
 
       | Import(isType, names, importName) ->
-        modName = this.resolveName(importName);
-        static::addImportsFrom(this.imports, isType.isSome(), names, modName)
+        this.resolveName(importName).each(modName -> {
+          static::addImportsFrom(this.imports, isType.isSome(), names, modName)
+        })
 
       | ExportAs _
       | ExportDefault _
       | ExportEq _
       | ImportExpr _
       | ExportImport _ ->
-        typingError(Array[(def.pos, "TODO: unsupported export")])
+        this.fileErrors.push(
+          TypingError(Array[(def.pos, "TODO: unsupported export")]),
+        )
       }
     };
     this.toFileDefs()
@@ -515,30 +528,34 @@ mutable class FileDefsState private {
 
     | VarDefs(k, varDefs) ->
       for (varDef in varDefs) {
-        exportName = varDef.pat.value match {
-        | PVar(x) -> x
-        | _ ->
-          typingError(
-            Array[(varDef.pat.pos, "TODO: cannot have exports based on names")],
+        varDef.pat.value match {
+        | PVar(exportName) ->
+          if (isExport) {
+            mapPush(this.exported, exportName.value, exportName.value)
+          };
+          mapPush(
+            this.defs,
+            exportName.value,
+            FDVar(k, exportName, varDef.type, varDef.value),
           )
-        };
-        if (isExport) {
-          mapPush(this.exported, exportName.value, exportName.value)
-        };
-        mapPush(
-          this.defs,
-          exportName.value,
-          FDVar(k, exportName, varDef.type, varDef.value),
-        )
+        | _ ->
+          this.fileErrors.push(
+            TypingError(
+              Array[
+                (varDef.pat.pos, "TODO: cannot have exports based on names"),
+              ],
+            ),
+          )
+        }
       }
     | Global(defs) ->
       if (defs.size() > 0) {
-        typingError(Array[(defs[0].pos, "TODO: global")])
+        this.fileErrors.push(TypingError(Array[(defs[0].pos, "TODO: global")]))
       } else {
         internal_error("TODO: global")
       }
     | Module(Name(pos, _), _defsOpt) ->
-      typingError(Array[(pos, "TODO: module")])
+      this.fileErrors.push(TypingError(Array[(pos, "TODO: module")]))
     }
   }
 

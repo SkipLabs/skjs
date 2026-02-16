@@ -5,4 +5,5 @@ declare global {
   }
 }
 
+// @skjs-expect-error TODO: module
 declare module "augmented";
