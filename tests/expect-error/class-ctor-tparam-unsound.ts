@@ -30,14 +30,12 @@ class Wrapper<T extends { required: string }> {
 function testConstrainedInference(): void {
   // Infer type arguments: passing { required: "yes", extra: 42 }
   // T should be inferred as the concrete type { required: string, extra: number }
-  // @skjs-expect-error Invalid call
   const w = new Wrapper({ required: "yes", extra: 42 });
 
   // Access the required field (present in constraint)
   const req: string = w.item.required;
 
   // Access the extra field (only in concrete type, not in constraint)
-  // @skjs-expect-error Unbound field: extra
   const extra: number = w.item.extra;
 
   // Same via method call
@@ -47,7 +45,6 @@ function testConstrainedInference(): void {
 
 function testExplicitTypeArgs(): void {
   // With explicit type args, should work as expected
-  // @skjs-expect-error Invalid call
   const w = new Wrapper<{ required: string; extra: number }>({
     required: "yes",
     extra: 42,
@@ -65,11 +62,9 @@ class Container<T extends { id: number; name: string }> {
 }
 
 function testMultipleFields(): void {
-  // @skjs-expect-error Invalid call
   const c = new Container({ id: 1, name: "test", metadata: true });
 
   const id: number = c.data.id;
   const name: string = c.data.name;
-  // @skjs-expect-error Unbound field: metadata
   const meta: boolean = c.data.metadata;
 }

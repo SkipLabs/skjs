@@ -116,7 +116,6 @@ function testObjectRefinement(x: { a: number } | string): { a: number } {
     // but SKJS should refine to { a: number }
     return x;
   } else {
-    // @skjs-expect-error Invalid return type
     return { a: 0 };
   }
 }
@@ -136,7 +135,6 @@ function testObjectVsString(x: { field: string } | string): { field: string } {
   if (typeof x === "object") {
     return x;
   } else {
-    // @skjs-expect-error Invalid return type
     return { field: "" };
   }
 }
@@ -161,10 +159,8 @@ function testNullInUnion(x: { a: number } | null | string): { a: number } {
   if (typeof x === "object") {
     // x could be { a: number } or null
     // SKJS needs to refine this properly
-    // @skjs-expect-error Invalid return type
     return x ?? { a: 0 };
   } else {
-    // @skjs-expect-error Invalid return type
     return { a: 0 };
   }
 }
@@ -224,7 +220,6 @@ function testCallableObject(x: CallableObject | string): CallableObject {
     // Callable objects are typeof "function"
     return x;
   } else {
-    // @skjs-expect-error Invalid annotation
     const fn: CallableObject = Object.assign((n: number) => n, {
       property: "",
     });
@@ -264,16 +259,12 @@ function testComplexUnion2(
   x: number | string | { a: number } | (() => void) | undefined,
 ): { a: number } {
   if (typeof x === "number") {
-    // @skjs-expect-error Invalid return type
     return { a: 0 };
   } else if (typeof x === "string") {
-    // @skjs-expect-error Invalid return type
     return { a: 0 };
   } else if (typeof x === "undefined") {
-    // @skjs-expect-error Invalid return type
     return { a: 0 };
   } else if (typeof x === "function") {
-    // @skjs-expect-error Invalid return type
     return { a: 0 };
   } else {
     // @skjs-expect-error Invalid return type
@@ -404,7 +395,6 @@ function testIncorrectNullHandling(x: { a: number } | null): { a: number } {
     // @ts-expect-error Invalid return type
     return x;
   } else {
-    // @skjs-expect-error Invalid return type
     return { a: 0 };
   }
 }

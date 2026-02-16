@@ -85,12 +85,10 @@ function withRest(_a: number, ..._rest: string[]): string {
 function returnsVoid(_x: number): void {}
 
 function returnDog(_a: number): Dog {
-  // @skjs-expect-error Invalid return type
   return { name: "Fido", breed: "Lab" };
 }
 
 function returnAnimalType(_a: number): Animal {
-  // @skjs-expect-error Invalid return type
   return { name: "Generic" };
 }
 
@@ -289,19 +287,16 @@ function testNestedIntersection(): void {
 
 // Test 27: Intersection preserves return type covariance
 function returnDogFromAnimal(_a: Animal): Dog {
-  // @skjs-expect-error Invalid return type
   return { name: "Fido", breed: "Lab" };
 }
 
 function testIntersectionPreservesCovariance(): void {
   const inter: PreservesVarianceInter = returnDogFromAnimal;
-  // @skjs-expect-error Invalid call
   const result: Dog = inter({ name: "test" });
 }
 
 // Test 28: Wrong variance in intersection parameters
 function wrongFn2(_x: Dog): Animal {
-  // @skjs-expect-error Invalid return type
   return { name: "Generic" };
 }
 

@@ -10,7 +10,6 @@ class TestUnsupportedFeatures {
 
   // Test non-null assertion on member access (not supported)
   testNonNullAssertion(): void {
-    // @skjs-expect-error Invalid annotation
     const obj: { value: number } | null = { value: 5 };
     // @skjs-expect-error Do not use the postfix ! operator
     const x: number = obj!.value;

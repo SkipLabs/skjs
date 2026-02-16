@@ -116,7 +116,6 @@ function testSpreadNonArray(): void {
 
 // Test 15: Spread object (not array)
 function testSpreadObject(): void {
-  // @skjs-expect-error Invalid annotation
   const obj: { a: number; b: number; c: number } = { a: 1, b: 2, c: 3 };
   // @skjs-expect-error Invalid call
   // @ts-expect-error Invalid spread argument

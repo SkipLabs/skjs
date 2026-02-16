@@ -7,7 +7,6 @@ function badRecordIteration(): void {
 }
 
 function dictionaryIteration(): number {
-  // @skjs-expect-error Invalid annotation
   const dictionary: { [key: string]: number } = { a: 1, b: 2 };
   let sum = 0;
   // @skjs-expect-error Invalid iterable type for for-of loop

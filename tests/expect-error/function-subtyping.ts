@@ -11,14 +11,12 @@ type Cat = { name: string; meow: () => void };
 
 // Test 1: Return type covariance - basic
 function testReturnCovariance(): void {
-  // @skjs-expect-error Invalid annotation
   const returnsDog: () => Dog = () => ({ name: "Fido", breed: "Lab" });
   const acceptsAnimalReturner: () => Animal = returnsDog;
 }
 
 // Test 2: Return type covariance - with parameters
 function testReturnCovarianceWithParams(): void {
-  // @skjs-expect-error Invalid annotation
   const returnsDog: (x: number) => Dog = (_x: number) => ({
     name: "Fido",
     breed: "Lab",
@@ -28,7 +26,6 @@ function testReturnCovarianceWithParams(): void {
 
 // Test 3: Return type contravariance fails (negative test)
 function testReturnContravarianceFails(): void {
-  // @skjs-expect-error Invalid annotation
   const returnsAnimal: () => Animal = () => ({ name: "Generic" });
   // @skjs-expect-error Invalid annotation
   const acceptsDogReturner: () => Dog = returnsAnimal;
@@ -61,7 +58,6 @@ function testParamCovarianceFails(): void {
 
 // Test 7: Mixed variance - params contravariant, return covariant
 function testMixedVariance(): void {
-  // @skjs-expect-error Invalid annotation
   const fn: (a: Animal) => Dog = (_a: Animal) => ({
     name: "Fido",
     breed: "Lab",
@@ -197,7 +193,6 @@ function testNoParameters(): void {
 
 // Test 24: Multiple variance checks together
 function testMultipleVariance(): void {
-  // @skjs-expect-error Invalid annotation
   const fn: (a: Animal, b: Animal) => Dog = (_a: Animal, _b: Animal) => ({
     name: "Fido",
     breed: "Lab",
@@ -209,7 +204,6 @@ function testMultipleVariance(): void {
 
 // Test 25: Function type in object (covariance + contravariance)
 function testFunctionInObject(): void {
-  // @skjs-expect-error Invalid annotation
   const obj1: { fn: (a: Animal) => Dog } = {
     fn: (_a: Animal) => ({ name: "Fido", breed: "Lab" }),
   };

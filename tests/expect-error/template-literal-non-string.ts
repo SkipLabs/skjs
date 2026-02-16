@@ -4,7 +4,6 @@ const active: boolean = true;
 
 // Function that returns an object (not stringifiable)
 function getObj(): { foo: string } {
-  // @skjs-expect-error Invalid return type
   return { foo: "bar" };
 }
 
