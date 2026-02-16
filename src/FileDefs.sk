@@ -61,32 +61,16 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
           };
           parsedFile.value match {
           | PROk(defs) ->
-            try {
-              Array[
-                FileDefsState::createFileDefs(
-                  context,
-                  root,
-                  fileName.dirName,
-                  includes,
-                  importStubs,
-                  defs,
-                ),
-              ]
-            } catch {
-            | ErrorExn(err @ TypingError _) ->
-              Array[
-                FileDefs{
-                  defs => Map[],
-                  imports => Map[],
-                  exported => Map[],
-                  reexports => Map[],
-                  modules => Map[],
-                  includes,
-                  errors => Array[err],
-                },
-              ]
-            | exn -> throw exn
-            }
+            Array[
+              FileDefsState::createFileDefs(
+                context,
+                root,
+                fileName.dirName,
+                includes,
+                importStubs,
+                defs,
+              ),
+            ]
           | _ -> Array[]
           }
         },
