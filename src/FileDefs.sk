@@ -127,7 +127,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
       elt match {
       | e @ FileDefElt _ -> result.push(e)
       | FDNamespace _ ->
-        typingError(
+        tcenvb.error(
           Array[
             (
               path.pos,
@@ -171,7 +171,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields)
       | FDVar(_kind, Name(pos, _), _type, _value) ->
-        typingError(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
+        tcenvb.error(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
       | FDNamespace(nsTypeOnly, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
         this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result)
