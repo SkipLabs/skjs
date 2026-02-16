@@ -60,13 +60,27 @@ extension class TType {
       return TType::unexpandedInter(ty1, ty2);
     };
     !tenv.seenInter = tenv.seenInter.set((ty1, ty2));
-    ty1.getSingleVar() match {
-    | None() -> void
-    | Some(tvar) -> return TType::var(tvar.addConstraint(ty2))
-    };
-    ty2.getSingleVar() match {
-    | None() -> void
-    | Some(tvar) -> return TType::var(tvar.addConstraint(ty1))
+    (ty1.getSingleVar(), ty2.getSingleVar()) match {
+    | (Some(tvar1), Some(_)) -> return TType::var(tvar1.addConstraint(ty2))
+    | (Some(tvar), None()) ->
+      if (subst.hasSelfReferentialBound(tvar)) {
+        return subst.peek(tenv, tvar) match {
+        | Some(bound) -> TType::inter(subst, tenv, bound, ty2)
+        | None() -> TType::var(tvar.addConstraint(ty2))
+        }
+      } else {
+        return TType::var(tvar.addConstraint(ty2))
+      }
+    | (None(), Some(tvar)) ->
+      if (subst.hasSelfReferentialBound(tvar)) {
+        return subst.peek(tenv, tvar) match {
+        | Some(bound) -> TType::inter(subst, tenv, ty1, bound)
+        | None() -> TType::var(tvar.addConstraint(ty1))
+        }
+      } else {
+        return TType::var(tvar.addConstraint(ty1))
+      }
+    | _ -> void
     };
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());

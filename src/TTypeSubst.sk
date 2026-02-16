@@ -118,6 +118,15 @@ mutable class Subst private {
     TVar::create(pos, id)
   }
 
+  readonly fun hasSelfReferentialBound(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) match {
+    | None() -> false
+    | Some(SVOpen(ty))
+    | Some(SVClosed(ty)) ->
+      ty.referencesTVarId(tvar.id)
+    }
+  }
+
   readonly fun isOpen(tvar: TVar): Bool {
     this.values.maybeGet(tvar.id) match {
     | Some(SVOpen _) -> true

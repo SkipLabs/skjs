@@ -397,6 +397,71 @@ class TType private {
       None()
     }
   }
+
+  fun referencesTVarId(id: Int): Bool {
+    for (inst in this.insts) {
+      inst match {
+      | TVar(_, i, _) -> if (i == id) return true
+      | TInter(t1, t2) ->
+        if (t1.referencesTVarId(id) || t2.referencesTVarId(id)) return true
+      | TUnion(t1, t2) ->
+        if (t1.referencesTVarId(id) || t2.referencesTVarId(id)) return true
+      | TArrayLit(tvar, elts) ->
+        if (tvar.id == id || elts.any(elt -> elt.referencesTVarId(id))) {
+          return true
+        }
+      | TSInst _ -> void
+      }
+    };
+    for (clause in this.clauses.clauses) {
+      clause.stypes match {
+      | None() -> void
+      | Some(stypes) ->
+        for (stype in stypes.values()) {
+          stype match {
+          | TObject(fields, _) ->
+            for (field in fields.fields) {
+              if (
+                field.get.referencesTVarId(id) ||
+                field.set.referencesTVarId(id)
+              ) {
+                return true
+              }
+            };
+            for (index in fields.indexes) {
+              if (
+                index.keyType.referencesTVarId(id) ||
+                index.valueTypeGet.referencesTVarId(id) ||
+                index.valueTypeSet.referencesTVarId(id)
+              ) {
+                return true
+              }
+            }
+          | TTuple(tuple, _) ->
+            for (ty in tuple) {
+              if (ty.referencesTVarId(id)) return true
+            }
+          | TPromise(ty, _) -> if (ty.referencesTVarId(id)) return true
+          | TAlgebraic(branches, _) ->
+            for (branch in branches.values()) {
+              for (field in branch.fields.fields) {
+                if (
+                  field.get.referencesTVarId(id) ||
+                  field.set.referencesTVarId(id)
+                ) {
+                  return true
+                }
+              }
+            }
+          | TPrimUnit _
+          | TPrimValue _ ->
+            void
+          }
+        }
+      }
+    };
+    false
+  }
 }
 
 base class Variance {
