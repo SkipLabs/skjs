@@ -27,18 +27,20 @@ function getFirst<U>(
 // ============================================================
 
 function testUnsound(): void {
+  // @skjs-expect-error Invalid call
   const box = getFirst({ value: "hello" }, { value: 42 });
   // @skjs-expect-error Invalid annotation
   const n: number = box.value;
 }
 
 function testReversedOrder(): void {
+  // @skjs-expect-error Invalid call
   const box = getFirst({ value: 42 }, { value: "hello" });
-  // @skjs-expect-error Invalid annotation
   const n: number = box.value;
 }
 
 function testThreeArgs(): void {
+  // @skjs-expect-error Invalid call
   const box = getFirst3({ value: true }, { value: 42 }, { value: 100 });
   // @skjs-expect-error Invalid annotation
   const n: number = box.value;
@@ -60,6 +62,7 @@ function getFirst3<U>(
 // ============================================================
 
 function testBothValidWithoutAnnot(): void {
+  // @skjs-expect-error Invalid call
   const box = getFirst({ value: 42 }, { value: 100 });
   const n: number = box.value;
 }
