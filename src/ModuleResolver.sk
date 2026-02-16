@@ -137,6 +137,10 @@ fun isTsFile(fileName: String): Bool {
   fileName.endsWith(".ts") || fileName.endsWith(".tsx")
 }
 
+fun hasTsExtension(name: String): Bool {
+  name.endsWith(".ts") || name.endsWith(".tsx")
+}
+
 fun resolveName(cwd: DAbsolute, moduleName: String): ?FAbsolute {
   if (moduleName == "." || moduleName == "./") {
     print_error("Could not resolve module '.'");
