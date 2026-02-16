@@ -1,3 +1,4 @@
+// @skjs-expect-error TODO: unsupported export
 // @skjs-expect-error Construction not supported: export default (ignored)
 export default 42;
 
