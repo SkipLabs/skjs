@@ -90,7 +90,6 @@ function testAssignArrayToUnion(): Array<number> | Obj {
 
 // Assigning object to union variable
 function testAssignObjectToUnion(): Array<number> | Obj {
-  // @skjs-expect-error Invalid annotation
   const obj: Obj = { name: "test", value: 42 };
   // TODO: Should Obj be assignable to Array<number> | Obj?
   return obj;
@@ -233,7 +232,6 @@ function testNarrowToObject(x: Array<number> | Obj): Obj {
     // @skjs-expect-error Invalid return type
     return x;
   }
-  // @skjs-expect-error Invalid return type
   return { name: "", value: 0 };
 }
 
@@ -270,7 +268,6 @@ function testUseGenericArrayOrObject(): void {
   // @skjs-expect-error Invalid call
   const result1S = testGenericArrayOrObjectS(arr);
 
-  // @skjs-expect-error Invalid annotation
   const obj: Obj = { name: "test", value: 42 };
   // TODO: Should this work?
   const result2 = testGenericArrayOrObject(obj);

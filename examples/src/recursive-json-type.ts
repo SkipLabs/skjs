@@ -17,7 +17,6 @@ function testJsonUsage(): void {
   let str: Json = "hello";
 
   // Nested object
-  // @skjs-expect-error Invalid annotation
   let nested: Json = {
     name: "test",
     value: 123,

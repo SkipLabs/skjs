@@ -25,7 +25,6 @@ function testBasicArrayRefinement(x: Array<number> | Foo): Array<number> {
 // Test negative refinement - else branch is refined to Foo
 function testNegativeArrayRefinement(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
     return { a: "", b: 0 };
   } else {
     // TODO: x is now refined to Foo
@@ -149,7 +148,6 @@ function testWrongTypeInArrayBranch(x: Array<number> | Foo): Foo {
 // Else branch with refinement
 function testElseBranchRefined(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
     return { a: "", b: 0 };
   } else {
     // x is now refined to Foo

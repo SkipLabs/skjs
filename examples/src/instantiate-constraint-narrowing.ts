@@ -52,7 +52,6 @@ function idBox<B extends Box<StrOrNum>>(b: B): IdConstrained<B> {
 }
 
 export function instantiateNestedGenericShouldNotClose(): string {
-  // @skjs-expect-error Invalid annotation
   const b: Box<string> = { v: "x" };
   // Here `B` is inferred at the call site. The result type is `IdConstrained<B>`,
   // which instantiates the constrained alias with an inference type variable.
