@@ -23,12 +23,10 @@ base class IDefMap {
     Name,
     typeOnly: Bool = false,
   ): Array<FileDefElt>;
-  overridable fun getFileErrors(
+  fun getFileErrors(
     _context: mutable S.Context,
     _fileName: FAbsolute,
-  ): Array<TypingError> {
-    Array[]
-  }
+  ): Array<TypingError>;
 }
 
 class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
