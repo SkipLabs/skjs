@@ -33,7 +33,8 @@ module SKJS;
 //     noPropertyAccessFromIndexSignature
 //
 // SUPPORTED — silently accepted:
-//     rootDir, baseUrl, paths, target, module, moduleResolution
+//     rootDir, baseUrl, paths, target, module, moduleResolution,
+//     allowImportingTsExtensions
 //
 // IGNORED — emit/tooling/IDE options, silently accepted:
 //   Emit: outDir, outFile, declaration, declarationMap,
@@ -193,6 +194,7 @@ class TsCompilerOptions{
   tsTarget: TsTarget = TsTarget::default,
   tsModule: TsModule = TsModule::default,
   moduleResolution: ModuleResolution = ModuleResolution::default,
+  allowImportingTsExtensions: Bool = false,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -547,6 +549,10 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
     | None() -> ModuleResolution::defaultFromModule(tsModule)
     };
 
+    allowImportingTsExtensions = co
+      .maybeGetBool("allowImportingTsExtensions")
+      .default(false);
+
     TsCompilerOptions{
       rootDir => co.maybeGetString("rootDir"),
       baseUrl,
@@ -554,6 +560,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       tsTarget,
       tsModule,
       moduleResolution,
+      allowImportingTsExtensions,
     }
   | None() ->
     diags.push(
