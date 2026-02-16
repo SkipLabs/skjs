@@ -295,6 +295,7 @@ class FileDefs{
   reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   includes: Array<FAbsolute>,
+  errors: Array<TypingError> = Array[],
 } extends S.File
 
 base class FileDef
@@ -349,6 +350,7 @@ mutable class FileDefsState private {
   reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   includes: mutable Vector<FAbsolute> = mutable Vector[],
+  fileErrors: mutable Vector<TypingError> = mutable Vector[],
 } {
   static fun createFileDefs(
     context: mutable S.Context,
@@ -443,6 +445,7 @@ mutable class FileDefsState private {
       modules => this.modules.map((_, x) -> x.chill()),
       defs => this.defs.map((_, x) -> x.toArray()),
       includes => this.includes.toArray(),
+      errors => this.fileErrors.toArray(),
     }
   }
 
