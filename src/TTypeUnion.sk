@@ -267,9 +267,9 @@ extension class TFields {
   ): TFields {
     fields = fields1.fields.merge(fields2.fields, ior ->
       ior match {
-      | Left(z)
-      | Right(z) ->
-        Some(z.withOptional())
+      | Left _
+      | Right _ ->
+        None()
       | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );

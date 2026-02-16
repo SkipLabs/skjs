@@ -30,12 +30,14 @@ function testCommonProperty(x: Array<number> | ObjWithLength): number {
 
 // Accessing array-only property
 function testArrayOnlyProperty(x: Array<number> | Obj): number {
+  // @skjs-expect-error Invalid index key
   // @skjs-expect-error Invalid return type
   return x.length;
 }
 
 // Accessing object-only property
 function testObjectOnlyProperty(x: Array<number> | Obj): string {
+  // @skjs-expect-error Invalid index key
   // @skjs-expect-error Invalid return type
   return x.name;
 }
@@ -47,12 +49,14 @@ function testObjectOnlyProperty(x: Array<number> | Obj): string {
 // Calling array method on union
 function testArrayMethodOnUnion(x: Array<number> | Obj): Array<number> {
   // @skjs-expect-error Invalid call
+  // @skjs-expect-error Invalid index key
   return x.map((n) => n * 2);
 }
 
 // Calling push on union
 function testPushOnUnion(x: Array<number> | Obj): void {
   // @skjs-expect-error Invalid call
+  // @skjs-expect-error Invalid index key
   x.push(42);
 }
 
@@ -68,7 +72,8 @@ function testNumericIndexOnUnion(x: Array<string> | Obj): string | undefined {
 
 // String index on array | object union
 function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
-  // TODO: Currently no error for string index
+  // @skjs-expect-error Invalid index key
+  // @skjs-expect-error Invalid return type
   return x["name"];
 }
 
@@ -136,11 +141,13 @@ type Obj3 = {
 
 function testMultipleObjectsGetName(x: Array<number> | Obj | Obj3): string {
   // Can't access any specific property without refinement
+  // @skjs-expect-error Invalid index key
   // @skjs-expect-error Invalid return type
   return x.name;
 }
 
 function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
+  // @skjs-expect-error Invalid index key
   // @skjs-expect-error Invalid return type
   return x.label;
 }
