@@ -8,8 +8,19 @@ base class ReferenceError{line: Int} {
   fun getMessage(): String;
 }
 
-const kTS_EXPECT_ERROR: Vector<Char> = "ts-expect-error".chars();
-const kSKJS_EXPECT_ERROR: Vector<Char> = "skjs-expect-error".chars();
+base class AnnotationKind {
+  const str: String;
+}
+
+class TS_EXPECT_ERROR() extends AnnotationKind {
+  const str: String = "ts-expect-error";
+  const chars: Vector<Char> = TS_EXPECT_ERROR::str.chars();
+}
+
+class SKJS_EXPECT_ERROR() extends AnnotationKind {
+  const str: String = "skjs-expect-error";
+  const chars: Vector<Char> = SKJS_EXPECT_ERROR::str.chars();
+}
 
 extension class .String {
   fun trimForComparison(): String {
@@ -76,9 +87,9 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     - ' ', '\t'
     - '/'
     - '@'
-    - characters in kTS_EXPECT_ERROR union kSKJS_EXPECT_ERROR
-    and on the fact that the first characters of kTS_EXPECT_ERROR and
-    kSKJS_EXPECT_ERROR differ.
+    - characters in TS_EXPECT_ERROR::chars union SKJS_EXPECT_ERROR::chars
+    and on the fact that the first characters of TS_EXPECT_ERROR::chars and
+    SKJS_EXPECT_ERROR::chars differ.
    */
   result = mutable Vector[];
   chars = contents.chars().toArray();
@@ -94,10 +105,10 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
       if (pos >= chars.size()) {
         break void
       };
-      possibleAnnot = if (chars[pos] == kTS_EXPECT_ERROR[0]) {
-        kTS_EXPECT_ERROR
-      } else if (chars[pos] == kSKJS_EXPECT_ERROR[0]) {
-        kSKJS_EXPECT_ERROR
+      possibleAnnot = if (chars[pos] == TS_EXPECT_ERROR::chars[0]) {
+        TS_EXPECT_ERROR::chars
+      } else if (chars[pos] == SKJS_EXPECT_ERROR::chars[0]) {
+        SKJS_EXPECT_ERROR::chars
       } else {
         continue
       };
@@ -140,10 +151,10 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     if (pos >= chars.size()) {
       break void
     };
-    possibleAnnot = if (chars[pos] == kTS_EXPECT_ERROR[0]) {
-      kTS_EXPECT_ERROR
-    } else if (chars[pos] == kSKJS_EXPECT_ERROR[0]) {
-      kSKJS_EXPECT_ERROR
+    possibleAnnot = if (chars[pos] == TS_EXPECT_ERROR::chars[0]) {
+      TS_EXPECT_ERROR::chars
+    } else if (chars[pos] == SKJS_EXPECT_ERROR::chars[0]) {
+      SKJS_EXPECT_ERROR::chars
     } else {
       continue
     };
