@@ -79,27 +79,24 @@ class ExpectError{expectedErrors: SortedSet<String>} extends ReferenceError {
  * match any annotation kind. */
 fun tryMatchAnnotation(
   allChars: Array<Char>,
-  startPos: Int,
-): ?(String, Bool, Int) {
-  if (startPos >= allChars.size()) return None();
-  (annotStr, annotChars) = if (
-    allChars[startPos] == TS_EXPECT_ERROR::chars[0]
-  ) {
-    (TS_EXPECT_ERROR::str, TS_EXPECT_ERROR::chars)
-  } else if (allChars[startPos] == SKJS_EXPECT_ERROR::chars[0]) {
-    (SKJS_EXPECT_ERROR::str, SKJS_EXPECT_ERROR::chars)
+  pos: Int,
+): ?(Concrete<AnnotationKind>, Bool, Int) {
+  if (pos >= allChars.size()) return None();
+  possibleAnnot = if (allChars[pos] == TS_EXPECT_ERROR::chars[0]) {
+    TS_EXPECT_ERROR
+  } else if (allChars[pos] == SKJS_EXPECT_ERROR::chars[0]) {
+    SKJS_EXPECT_ERROR
   } else {
     return None()
   };
-  pos = startPos;
   posInAnnot = 0;
   do {
     !pos = pos + 1;
     !posInAnnot = posInAnnot + 1;
   } while (pos < allChars.size() &&
-    posInAnnot < annotChars.size() &&
-    allChars[pos] == annotChars[posInAnnot]);
-  Some((annotStr, posInAnnot >= annotChars.size(), pos))
+    posInAnnot < possibleAnnot::chars.size() &&
+    allChars[pos] == possibleAnnot::chars[posInAnnot]);
+  Some((possibleAnnot, posInAnnot >= possibleAnnot::chars.size(), pos))
 }
 
 /* Returns an array of line numbers and rest-of-line for all lines
@@ -135,9 +132,8 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
         break void
       };
       tryMatchAnnotation(chars, pos) match {
-      | Some((annotStr, true, newPos)) ->
-        !pos = newPos;
-        invariant_violation(`Line ${lineNumber}: misplaced @${annotStr}`)
+      | Some((annot, true, _newPos)) ->
+        invariant_violation(`Line ${lineNumber}: misplaced @${annot::str}`)
       | Some((_, _, newPos)) -> !pos = newPos
       | None() -> void
       };
@@ -168,11 +164,12 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     if (pos >= chars.size()) {
       break void
     };
-    matchResult = tryMatchAnnotation(chars, pos);
-    if (matchResult is None()) continue;
-    (_annotStr, isFullMatch, newPos) = matchResult.fromSome();
-    !pos = newPos;
-    if (!isFullMatch) continue;
+    tryMatchAnnotation(chars, pos) match {
+    | None() -> continue
+    | Some((_annot, isFullMatch, newPos)) ->
+      !pos = newPos;
+      if (!isFullMatch) continue
+    };
     while (pos < chars.size() && (chars[pos] == ' ' || chars[pos] == '\t')) {
       !pos = pos + 1
     };
