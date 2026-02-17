@@ -529,8 +529,38 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
     // Extract and check moduleResolution
     moduleResolution = co.maybeGetString("moduleResolution") match {
     | Some(v) ->
+      mrLine = findKeyLine(rawContents, "moduleResolution");
       ModuleResolution::fromString(v) match {
-      | Some(mr) -> mr
+      | Some(mr) ->
+        // Validate module/moduleResolution compatibility
+        mr match {
+        | MRNodeNext() if (tsModule != TMNodeNext()) ->
+          diags.push(
+            TsConfigDiag{
+              line => mrLine,
+              message => "Option 'moduleResolution' is set to 'nodenext', but option 'module' must also be set to 'nodenext'.",
+              isWarning => false,
+            },
+          )
+        | MRNode16() if (tsModule != TMNode16()) ->
+          diags.push(
+            TsConfigDiag{
+              line => mrLine,
+              message => "Option 'moduleResolution' is set to 'node16', but option 'module' must also be set to 'node16'.",
+              isWarning => false,
+            },
+          )
+        | MRBundler() if (tsModule != TMES() && tsModule != TMPreserve()) ->
+          diags.push(
+            TsConfigDiag{
+              line => mrLine,
+              message => "Option 'moduleResolution' is set to 'bundler', but option 'module' must be set to an ES module format (es2015 or later).",
+              isWarning => false,
+            },
+          )
+        | _ -> void
+        };
+        mr
       | None() ->
         msg = if (ModuleResolution::isUnsupported(v)) {
           `Option 'moduleResolution' value '${v}' is not supported by SKJS.`
@@ -538,11 +568,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
           `Unknown 'moduleResolution' value '${v}'.`
         };
         diags.push(
-          TsConfigDiag{
-            line => findKeyLine(rawContents, "moduleResolution"),
-            message => msg,
-            isWarning => false,
-          },
+          TsConfigDiag{line => mrLine, message => msg, isWarning => false},
         );
         ModuleResolution::default
       }
