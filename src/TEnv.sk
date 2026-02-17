@@ -734,12 +734,30 @@ base class TEnv{
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
     | TATemplate _ -> typingError(Array[(pos, "TODO template")])
     | TAImport _ -> typingError(Array[(pos, "TODO import")])
-    | TAReadonly(ty) ->
-      ty.value match {
-      | TAEmptyArray _
-      | TAArray _
+    | TAReadonly(ro) ->
+      ro.value match {
+      | TAArray(ty) ->
+        TType::inst(
+          Name(pos, "ReadonlyArray"),
+          TArgs(Array[this.normalize(tcenvb, ty)]),
+        )
+      | TAInst(Name(_, "Array"), arr) ->
+        if (arr.size() != 1) {
+          tcenvb.error(Array[(pos, "Array expects 1 type parameter")])
+        };
+        ty = arr[0];
+        TType::inst(
+          Name(pos, "ReadonlyArray"),
+          TArgs(Array[this.normalize(tcenvb, ty)]),
+        )
+      | TAEmptyArray _ ->
+        TType::inst(
+          Name(pos, "ReadonlyArray"),
+          TArgs(Array[TType::bottom(pos)]),
+        )
       | TATuple _ ->
-        tcenvb.error(Array[(pos, "TODO readonly")])
+        tcenvb.error(Array[(pos, "TODO readonly")]);
+        this.normalize(tcenvb, ro)
       | _ ->
         tcenvb.error(
           Array[
@@ -748,9 +766,9 @@ base class TEnv{
               "'readonly' type modifier is only permitted on array and tuple literal types.",
             ),
           ],
-        ) // TS1354
-      };
-      this.normalize(tcenvb, ty)
+        ); // TS1354
+        this.normalize(tcenvb, ro)
+      }
     | TAExtends _ -> typingError(Array[(pos, "TODO extends")])
     | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
