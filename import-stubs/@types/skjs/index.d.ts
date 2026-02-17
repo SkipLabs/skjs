@@ -19,9 +19,10 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
 
   // Read-only queries
   find(filter: (item: T) => boolean): undefined | T;
-  indexOf(x: T): number;
-  includes(element: T): boolean;
-  lastIndexOf(element: T): number;
+  // T in contravariant position prevents covariant subtyping of ReadonlyArray.
+  // indexOf(x: T): number;
+  // includes(element: T): boolean;
+  // lastIndexOf(element: T): number;
   every(predicate: (item: T) => boolean): boolean;
   some(predicate: (item: T) => boolean): boolean;
   forEach(callback: (item: T, index: number) => void): void;
@@ -31,7 +32,9 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
   // Pure transforms
   map<T2>(f: (item: T) => T2): ReadonlyArray<T2>;
   filter(f: (item: T) => boolean): ReadonlyArray<T>;
-  flatMap<U>(mapper: (item: T) => ReadonlyArray<U>): ReadonlyArray<U>;
+  // Callback returns Array<U> (not ReadonlyArray<U>) to avoid T in contravariant
+  // position. Return is also Array<U> since flatMap creates a fresh mutable array.
+  flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
 
   // Folds
   reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
@@ -39,7 +42,8 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
 
   // Slicing / combining (still pure)
   slice(start: number, end?: number): ReadonlyArray<T>;
-  concat(other: ReadonlyArray<T>): ReadonlyArray<T>;
+  // T in contravariant position prevents covariant subtyping from Array to ReadonlyArray.
+  // concat(other: ReadonlyArray<T>): ReadonlyArray<T>;
 }
 
 declare class Array<T> implements Iterable<T> {
