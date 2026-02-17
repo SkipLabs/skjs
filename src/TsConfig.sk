@@ -33,10 +33,10 @@ module SKJS;
 //     noPropertyAccessFromIndexSignature
 //
 // SUPPORTED — silently accepted:
-//     rootDir, baseUrl, paths
+//     rootDir, baseUrl, paths, target
 //
 // IGNORED — emit/tooling/IDE options, silently accepted:
-//   Emit: target, outDir, outFile, declaration, declarationMap,
+//   Emit: outDir, outFile, declaration, declarationMap,
 //     declarationDir, emitDeclarationOnly, sourceMap, sourceRoot, mapRoot,
 //     removeComments, noEmit, preserveConstEnums, downlevelIteration,
 //     newLine, importsNotUsedAsValues, noEmitOnError
@@ -66,10 +66,55 @@ module SKJS;
 // Data types
 /***************************************************************************/
 
+// TypeScript target (JS emit level)
+base class TsTarget uses Equality {
+  children =
+  | TES3()
+  | TES5()
+  | TES2015() // es6
+  | TES2016()
+  | TES2017()
+  | TES2018()
+  | TES2019()
+  | TES2020()
+  | TES2021()
+  | TES2022()
+  | TES2023()
+  | TES2024()
+  | TESNext()
+
+  const default: TsTarget = TES3();
+
+  // Parse a target string (case-insensitive). Returns None() for unknown values.
+  static fun fromString(s: String): ?TsTarget {
+    s.lowercase() match {
+    | "es3" -> Some(TES3())
+    | "es5" -> Some(TES5())
+    | "es6" | "es2015" -> Some(TES2015())
+    | "es2016" -> Some(TES2016())
+    | "es2017" -> Some(TES2017())
+    | "es2018" -> Some(TES2018())
+    | "es2019" -> Some(TES2019())
+    | "es2020" -> Some(TES2020())
+    | "es2021" -> Some(TES2021())
+    | "es2022" -> Some(TES2022())
+    | "es2023" -> Some(TES2023())
+    | "es2024" -> Some(TES2024())
+    | "esnext" -> Some(TESNext())
+    | _ -> None()
+    }
+  }
+
+  fun isOutdated(): Bool {
+    this == TES3() || this == TES5()
+  }
+}
+
 class TsCompilerOptions{
   rootDir: ?String = None(),
   baseUrl: ?String = None(),
   paths: Map<String, Array<String>> = Map[],
+  tsTarget: TsTarget = TsTarget::default,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -347,7 +392,48 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       )
     };
 
-    TsCompilerOptions{rootDir => co.maybeGetString("rootDir"), baseUrl, paths}
+    // Extract and check target
+    tsTarget = co.maybeGetString("target") match {
+    | None() ->
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "compilerOptions"),
+          message => "Option 'target' is not set; defaulting to 'ES3'. Consider setting 'target' explicitly.",
+          isWarning => true,
+        },
+      );
+      TsTarget::default
+    | Some(v) ->
+      t = TsTarget::fromString(v) match {
+      | Some(t) -> t
+      | None() ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, "target"),
+            message => `Unknown 'target' value '${v}'.`,
+            isWarning => false,
+          },
+        );
+        TESNext()
+      };
+      if (t.isOutdated()) {
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, "target"),
+            message => `Option 'target' value '${v}' is outdated. Consider using 'ES6' or later.`,
+            isWarning => true,
+          },
+        )
+      };
+      t
+    };
+
+    TsCompilerOptions{
+      rootDir => co.maybeGetString("rootDir"),
+      baseUrl,
+      paths,
+      tsTarget,
+    }
   | None() ->
     diags.push(
       TsConfigDiag{
