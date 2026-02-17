@@ -57,15 +57,7 @@ class ExpectError{expectedErrors: SortedSet<String>} extends ReferenceError {
     errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {
     if (this.expectedErrors.size() > 0) {
-      actuals = errors
-        .map(error -> {
-          msg = error match {
-          | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
-          | SKJS.TypingError(messages, _stErr) -> messages[0].i1
-          };
-          msg.trimMessage(true)
-        })
-        .collect(SortedSet);
+      actuals = errors.map(errorToExpectMessage).collect(SortedSet);
       if (actuals != this.expectedErrors) {
         return Some(
           SKTest.ExpectationError(
@@ -117,6 +109,17 @@ class AnnotationLine{
 }
 
 class AnnotationGroup{errorLine: Int, annotations: Array<AnnotationLine>}
+
+fun errorToFullMessage(error: SKJS.Error): String {
+  error match {
+  | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
+  | SKJS.TypingError(messages, _stErr) -> messages[0].i1
+  }
+}
+
+fun errorToExpectMessage(error: SKJS.Error): String {
+  errorToFullMessage(error).trimMessage(true)
+}
 
 /* Returns all expect-error annotation groups with their metadata.
  * Matches .*\/\/\s*(@(skjs|ts)-expect-error)\s+(?<rest-of-line>[^\n]*)
