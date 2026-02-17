@@ -237,7 +237,15 @@ fun resolvePathAlias(
         } else {
           sub
         };
-        for (ext in Array["", ".ts", ".tsx", "/index.ts", "/index.d.ts"]) {
+        for (ext in Array[
+          "",
+          ".ts",
+          ".tsx",
+          ".d.ts",
+          "/index.ts",
+          "/index.tsx",
+          "/index.d.ts",
+        ]) {
           fullPath = Path.resolve(Path.join(root.toString(), resolved + ext));
           if (FileSystem.exists(fullPath)) {
             return Some(FAbsolute::create(fullPath))
