@@ -1054,7 +1054,9 @@ class TFields{
     tenv: TEnv,
     fieldName: String,
     pos: PosRange,
+    isLValue: Bool = false,
   ): ?TType {
+    _ = isLValue; // Will be used when get/set types are introduced
     this.maybeGet(fieldName).map(fd -> {
       ty = fd.type;
       if (fd.isOptional) {
