@@ -7,7 +7,6 @@ type Json = { [key: string]: Json } | number | string;
 function foo<T extends Json>(x: T): void {}
 
 // Usage with object that satisfies the constraint
-// @skjs-expect-error Invalid call
 foo<{ x: number; y: string }>({ x: 0, y: "" });
 
 // Additional test cases
@@ -28,6 +27,5 @@ function testJsonUsage(): void {
   // Using with generic function
   foo<number>(42);
   foo<string>("hello");
-  // @skjs-expect-error Invalid call
   foo<{ name: string; age: number }>({ name: "John", age: 30 });
 }

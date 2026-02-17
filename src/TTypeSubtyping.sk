@@ -705,14 +705,23 @@ extension class TFields {
         f1keyType = TType::single(
           TPrimValue::single(TString(), f1.name, f1.pos),
         );
+        // Clone subst for all index compatibility checks to avoid growing
+        // TVars that would interfere with subsequent named field checks.
+        // The named field checks in the Both case below are more specific
+        // and should drive TVar inference.
         TType::isSub(subst.clone(), tenv, f1keyType, index2.keyType) match {
         | STError _ -> void
         | STOk() ->
-          TType::isSub(subst, tenv, f1.get, index2.valueTypeGet) match {
+          TType::isSub(subst.clone(), tenv, f1.get, index2.valueTypeGet) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
           | STOk() ->
-            TType::isSub(subst, tenv, index2.valueTypeSet, f1.set) match {
+            TType::isSub(
+              subst.clone(),
+              tenv,
+              index2.valueTypeSet,
+              f1.set,
+            ) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
             | STOk() -> void
