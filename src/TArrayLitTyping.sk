@@ -147,13 +147,17 @@ class ArrayLitTyping() {
     subst.grow(tenv, arrLit.tvar, committedTy, Covariant());
   }
 
-  // Extracts element types from Array<U> instances in ty (handles unions).
+  // Extracts element types from Array<U> or ReadonlyArray<U> instances in ty (handles unions).
   // If ty = Array<U1> | ... | Array<Un>, returns [U1, ..., Un].
+  // ReadonlyArray<U> is treated the same way so that array literals can commit
+  // to Array<U> when the expected type is ReadonlyArray<U>.
   static private fun arrayInstArgs(ty: TType): Array<TType> {
     result = mutable Vector[];
     for (inst in ty.insts.insts) {
       inst match {
       | TSInst(Name(_, "Array"), TArgs(targs)) if (targs.size() == 1) ->
+        result.push(targs[0])
+      | TSInst(Name(_, "ReadonlyArray"), TArgs(targs)) if (targs.size() == 1) ->
         result.push(targs[0])
       | TUnion(ty1, ty2) ->
         for (x in ArrayLitTyping::arrayInstArgs(ty1)) {
