@@ -762,11 +762,8 @@ extension class TFields {
         if (f1.isOptional && !f2.isOptional) {
           return STRecFieldsField(None(), f1, fields1, fields2)
         } else {
-          TType::isSub(subst, tenv, f2.set, f1.set) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsField(Some(err), f1, fields1, fields2)
-          };
+          // Contravariant set check deferred until fields actually use
+          // different get/set types (i.e., readonly fields are created).
           f2type = if (f2.isOptional) {
             TType::unionUndefined(subst, tenv, f2.get, f2.pos)
           } else {

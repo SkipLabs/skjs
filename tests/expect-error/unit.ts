@@ -224,7 +224,6 @@ function checkNestedTypeIntersection(obj: NestedType1 & NestedType2): {
 function checkNestedType2(obj: NestedType1 | NestedType2): {
   a: { b: { c?: number; d?: string } };
 } {
-  // @skjs-expect-error Invalid return type
   return obj;
 }
 

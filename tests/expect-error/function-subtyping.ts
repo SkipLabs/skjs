@@ -207,7 +207,6 @@ function testFunctionInObject(): void {
   const obj1: { fn: (a: Animal) => Dog } = {
     fn: (_a: Animal) => ({ name: "Fido", breed: "Lab" }),
   };
-  // @skjs-expect-error Invalid annotation
   const obj2: { fn: (d: Dog) => Animal } = obj1;
 }
 
