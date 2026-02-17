@@ -1201,7 +1201,16 @@ base class TEnv{
 
     for (elt in fieldTypes) {
       elt match {
-      | fd @ ObjectFieldTypeValue _ ->
+      | fd @ ObjectFieldTypeValue{readonly_} ->
+        readonly_.each(r ->
+          if (r is OFRemoveReadonly _ && !(fd.name is FNIn _)) {
+            tcenvb.error(
+              Array[
+                (r.pos, "'-readonly' modifier can only appear in mapped types"),
+              ],
+            )
+          }
+        );
         fieldTy = fd.type match {
         | None() -> typingError(Array[(fd.pos, "Type annotation expected")])
         | Some(ty) -> ty
