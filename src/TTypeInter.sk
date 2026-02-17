@@ -68,9 +68,6 @@ extension class TType {
     | None() -> void
     | Some(tvar) -> return TType::var(tvar.addConstraint(ty1))
     };
-    // Absorption: (A | B) & B = B
-    if (ty1.containsType(ty2)) return ty2;
-    if (ty2.containsType(ty1)) return ty1;
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
     (clauses1.primKind(), clauses2.getObject()) match {
