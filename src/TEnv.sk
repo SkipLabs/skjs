@@ -745,11 +745,12 @@ base class TEnv{
         if (arr.size() != 1) {
           tcenvb.error(Array[(pos, "Array expects 1 type parameter")])
         };
-        ty = arr[0];
-        TType::inst(
-          Name(pos, "ReadonlyArray"),
-          TArgs(Array[this.normalize(tcenvb, ty)]),
-        )
+        elemType = if (arr.isEmpty()) {
+          TType::top(pos)
+        } else {
+          this.normalize(tcenvb, arr[0])
+        };
+        TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[elemType]))
       | TAEmptyArray _ ->
         TType::inst(
           Name(pos, "ReadonlyArray"),
