@@ -127,6 +127,7 @@ fun validateExpectErrorComments(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   checkResult: SKJS.CheckResult,
+  _update: Bool,
 ): Array<SKTest.ExpectationError> {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
   | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
@@ -154,6 +155,7 @@ fun validateTSConformance(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   checkResult: SKJS.CheckResult,
+  _update: Bool,
 ): Array<SKTest.ExpectationError> {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
   | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
@@ -204,6 +206,7 @@ fun validateNotSupported(
   _context: mutable SKStore.Context,
   _checker: SKJS.Checker,
   checkResult: SKJS.CheckResult,
+  _update: Bool,
 ): Array<SKTest.ExpectationError> {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
   | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
@@ -253,12 +256,14 @@ type Validator = (
   mutable SKStore.Context,
   SKJS.Checker,
   SKJS.CheckResult,
+  Bool,
 ) ~> Array<SKTest.ExpectationError>;
 
 fun testFiles(
   srcFiles: Array<String>,
   importStubs: Array<String>,
   validateResult: Validator,
+  update: Bool = false,
 ): void {
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
@@ -284,9 +289,14 @@ fun testFiles(
     .items(context)
     .map(res ->
       if (res.i0.toString() == builtinsFileName) {
-        validateExpectErrorComments(context, checker, res.i1.next().fromSome())
+        validateExpectErrorComments(
+          context,
+          checker,
+          res.i1.next().fromSome(),
+          update,
+        )
       } else {
-        validateResult(context, checker, res.i1.next().fromSome())
+        validateResult(context, checker, res.i1.next().fromSome(), update)
       }
     )
     .collect(Array)
@@ -297,15 +307,17 @@ fun testFiles(
 fun testFile(
   fileName: String,
   validateResult: Validator = validateExpectErrorComments,
+  update: Bool = false,
 ): void {
   srcFiles = Array[fileName];
   importStubs = Array[];
-  testFiles(srcFiles, importStubs, validateResult)
+  testFiles(srcFiles, importStubs, validateResult, update)
 }
 
 fun testDirectory(
   dirName: String,
   validateResult: Validator = validateExpectErrorComments,
+  update: Bool = false,
 ): void {
   dir = Path.resolve(dirName);
   srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
@@ -317,17 +329,19 @@ fun testDirectory(
     }
   );
   importStubs = Array["./import-stubs"];
-  testFiles(srcFiles, importStubs, validateResult)
+  testFiles(srcFiles, importStubs, validateResult, update)
 }
 
 @test
 fun testExamples(): void {
-  testDirectory("./examples/src/");
+  update = Environ.varOpt("UPDATE_EXPECT") == Some("1");
+  testDirectory("./examples/src/", validateExpectErrorComments, update);
 }
 
 @test
 fun testExpectError(): void {
-  testDirectory("./tests/expect-error/")
+  update = Environ.varOpt("UPDATE_EXPECT") == Some("1");
+  testDirectory("./tests/expect-error/", validateExpectErrorComments, update)
 }
 
 @test

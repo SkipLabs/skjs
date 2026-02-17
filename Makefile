@@ -40,8 +40,10 @@ check-sh:
 DOCKER_IMAGE?=skiplabs/skip:latest
 SKIP_DIR?=$(CURDIR)/../skip
 
+DOCKER_ENV_FLAGS=$(if $(UPDATE_EXPECT),-e UPDATE_EXPECT=$(UPDATE_EXPECT))
+
 %-in-docker:
-	docker run --rm -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) skargo $*
+	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) skargo $*
 
 .PHONY: clean
 clean:
