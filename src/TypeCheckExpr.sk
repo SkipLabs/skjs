@@ -612,7 +612,7 @@ extension class TypeChecker {
       };
       tcenv.scope.maybeGet(local) match {
       | None() ->
-        defs = this.defMap.getAll(tcenv.context, local);
+        defs = this.defMap.getAll(tcenv, local);
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
@@ -1144,7 +1144,7 @@ extension class TypeChecker {
 
     | InstanceOf(e1, Expr(_, Var(className))) ->
       _ = this.expr(tcenv, e1, true);
-      _ = this.getClass(tcenv.context, className);
+      _ = this.getClass(tcenv, className);
       TType::single(TPrimValue::boolean(pos))
     | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
     | In(e1, e2) ->

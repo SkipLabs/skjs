@@ -84,7 +84,7 @@ base class TEnv{
     };
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
 
-    tdef = this.defMap.getType(subst.context, name);
+    tdef = this.defMap.getType(subst, name);
     clauses = tdef match {
     | TypeDef{tdefParams} -> tdefParams
     | Class{tparams} -> tparams
@@ -157,8 +157,8 @@ base class TEnv{
     result
   }
 
-  fun getClass(context: mutable SKStore.Context, className: Name): Class {
-    tdef = this.defMap.getType(context, className);
+  fun getClass(tcenvb: mutable TCEnvBase, className: Name): Class {
+    tdef = this.defMap.getType(tcenvb, className);
     tdef match {
     | ca @ Class _ -> ca
     | TypeDef _
@@ -168,7 +168,7 @@ base class TEnv{
   }
 
   fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
-    this.getClass(tcenv.context, className).tparams.map(tparam -> {
+    this.getClass(tcenv, className).tparams.map(tparam -> {
       tvar = tcenv.subst.gen(className.pos);
       tparam.constraint.each(cstr ->
         !tvar = tvar.addConstraint(this.normalize(tcenv, cstr))
@@ -192,7 +192,7 @@ base class TEnv{
     className: Name,
     targs: Array<TType>,
   ): CstrType {
-    c = this.getClass(tcenvb.context, className);
+    c = this.getClass(tcenvb, className);
     if (c.tparams.size() != targs.size()) {
       tcenvb.error(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
@@ -211,7 +211,7 @@ base class TEnv{
     targs: Array<TType>,
     filter: ClassFieldTypeValue ~> Bool = _ ~> true,
   ): TObject {
-    c = this.getClass(tcenvb.context, className);
+    c = this.getClass(tcenvb, className);
     if (c.tparams.size() != targs.size()) {
       tcenvb.error(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
@@ -260,7 +260,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     className: Name,
   ): TObject {
-    c = this.getClass(tcenvb.context, className);
+    c = this.getClass(tcenvb, className);
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
@@ -344,7 +344,7 @@ base class TEnv{
       typingError(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.getAll(tcenvb.context, className);
+    defs = this.defMap.getAll(tcenvb, className);
     defsCls = defs.filterMap(def ->
       def match {
       | cls @ Class _ -> Some(cls)
@@ -867,7 +867,7 @@ base class TEnv{
         typingError(Array[(n.pos, "Cyclic definition")])
       } else {
         // No bound-name match: treat n as a named type definition.
-        tdef = this.defMap.getType(tcenvb.context, n);
+        tdef = this.defMap.getType(tcenvb, n);
         tparams = tdef match {
         | TypeDef{tdefParams} -> tdefParams
         | Class{tparams} -> tparams
@@ -957,7 +957,7 @@ base class TEnv{
     | Var(Name(_, "undefined")) ->
       TType::single(TPrimUnit(TUndefined(), expr.pos))
     | Var(varName) ->
-      for (def in this.defMap.getAll(tcenvb.context, varName)) {
+      for (def in this.defMap.getAll(tcenvb, varName)) {
         def match {
         | FDVar(kind, _, Some(t), _) ->
           return this.normalize(tcenvb, t, kind is VDKConst _)

@@ -17,12 +17,16 @@ module alias S = SKStore;
 module SKJS;
 
 base class IDefMap {
-  fun getType(mutable S.Context, Name): TypeOnlyDef;
+  fun getType(mutable TCEnvBase, Name): TypeOnlyDef;
   fun getAll(
-    mutable S.Context,
+    mutable TCEnvBase,
     Name,
     typeOnly: Bool = false,
   ): Array<FileDefElt>;
+  fun getFileErrors(
+    _context: mutable S.Context,
+    _fileName: FAbsolute,
+  ): Array<TypingError>;
 }
 
 class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
@@ -72,8 +76,18 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     )
   }
 
-  fun getType(context: mutable S.Context, path: Name): TypeOnlyDef {
-    for (def in this.getAll(context, path, true)) {
+  fun getFileErrors(
+    context: mutable S.Context,
+    fileName: FAbsolute,
+  ): Array<TypingError> {
+    this.fileDefsDir.maybeGet(context, fileName) match {
+    | Some(fileDefs) -> fileDefs.errors
+    | None() -> Array[]
+    }
+  }
+
+  fun getType(tcenvb: mutable TCEnvBase, path: Name): TypeOnlyDef {
+    for (def in this.getAll(tcenvb, path, true)) {
       def match {
       | d @ TypeOnlyDef _ -> return d
       | _ ->
@@ -84,18 +98,18 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
   }
 
   fun getAll(
-    context: mutable S.Context,
+    tcenvb: mutable TCEnvBase,
     path: Name,
     typeOnly: Bool = false,
   ): Array<FileDefElt> {
     fileName = path.pos.fileName;
-    tmp = this.getPath(context, fileName, path.value, typeOnly);
+    tmp = this.getPath(tcenvb, fileName, path.value, typeOnly);
     result = mutable Vector[];
     for (elt in tmp) {
       elt match {
       | e @ FileDefElt _ -> result.push(e)
       | FDNamespace _ ->
-        typingError(
+        tcenvb.error(
           Array[
             (
               path.pos,
@@ -109,24 +123,24 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
   }
 
   private fun getPath(
-    context: mutable S.Context,
+    tcenvb: mutable TCEnvBase,
     fileName: FAbsolute,
     path: String,
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
     defs: readonly Vector<FileDef> = Vector[
-      FDNamespace(false, this.getFileDefs(context, fileName)),
+      FDNamespace(false, this.getFileDefs(tcenvb, fileName)),
     ];
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
       dotTypeOnly = typeOnly && i >= pathElts.size() - 1;
-      !defs = this.dot(context, defs, pathElt, dotTypeOnly)
+      !defs = this.dot(tcenvb, defs, pathElt, dotTypeOnly)
     };
     defs
   }
 
   private fun dot(
-    context: mutable S.Context,
+    tcenvb: mutable TCEnvBase,
     defs: readonly Vector<FileDef>,
     name: String,
     typeOnly: Bool,
@@ -139,17 +153,17 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields)
       | FDVar(_kind, Name(pos, _), _type, _value) ->
-        typingError(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
+        tcenvb.error(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
       | FDNamespace(nsTypeOnly, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
-        this.getInDefs(context, nsDefs, name, getTypeOnly, result)
+        this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result)
       }
     };
     result
   }
 
   private fun getInDefs(
-    context: mutable S.Context,
+    tcenvb: mutable TCEnvBase,
     fileDefs: FileDefs,
     name: String,
     typeOnly: Bool,
@@ -158,8 +172,8 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     invariant(name != "", "getInDefs expects a non-empty name");
     for (fileName in fileDefs.includes) {
       this.getInDefs(
-        context,
-        this.getFileDefs(context, fileName),
+        tcenvb,
+        this.getFileDefs(tcenvb, fileName),
         name,
         typeOnly,
         result,
@@ -168,7 +182,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     fileDefs.imports.maybeGet(name) match {
     | Some(imports) ->
       this.getFromImports(
-        context,
+        tcenvb,
         imports,
         "",
         typeOnly,
@@ -194,22 +208,22 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
   }
 
   private fun getExported(
-    context: mutable S.Context,
+    tcenvb: mutable TCEnvBase,
     fileName: FAbsolute,
     name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
   ): void {
-    fileDefs = this.getFileDefs(context, fileName);
+    fileDefs = this.getFileDefs(tcenvb, fileName);
     if (name == "") {
       result.push(FDNamespace(typeOnly, fileDefs))
     } else {
-      this.getExportedInDefs(context, fileDefs, name, typeOnly, result)
+      this.getExportedInDefs(tcenvb, fileDefs, name, typeOnly, result)
     }
   }
 
   private fun getExportedInDefs(
-    context: mutable S.Context,
+    tcenvb: mutable TCEnvBase,
     fileDefs: FileDefs,
     name: String,
     typeOnly: Bool,
@@ -219,7 +233,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     fileDefs.reexports.maybeGet("") match {
     | Some(wholeModuleReexports) ->
       this.getFromImports(
-        context,
+        tcenvb,
         wholeModuleReexports,
         name,
         typeOnly,
@@ -231,14 +245,14 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     fileDefs.exported.maybeGet(name) match {
     | Some(origNames) ->
       for (origName in origNames) {
-        this.getInDefs(context, fileDefs, origName, typeOnly, result)
+        this.getInDefs(tcenvb, fileDefs, origName, typeOnly, result)
       }
     | None() -> void
     };
     fileDefs.reexports.maybeGet(name) match {
     | Some(reexports) ->
       this.getFromImports(
-        context,
+        tcenvb,
         reexports,
         "",
         typeOnly,
@@ -250,7 +264,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
   }
 
   private fun getFromImports(
-    context: mutable S.Context,
+    tcenvb: mutable TCEnvBase,
     imports: Array<Imported>,
     suffix: String,
     typeOnly: Bool,
@@ -260,18 +274,12 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     for (import in imports) {
       name = import.origName + suffix;
       getTypeOnly = typeOnly || import.typeOnly;
-      this.getExported(
-        context,
-        import.from.fileName,
-        name,
-        getTypeOnly,
-        result,
-      );
+      this.getExported(tcenvb, import.from.fileName, name, getTypeOnly, result);
       modules.maybeGet(import.from.name) match {
       | Some(augmentations) ->
         for (augmentation in augmentations) {
           this.getExportedInDefs(
-            context,
+            tcenvb,
             augmentation,
             name,
             getTypeOnly,
@@ -283,8 +291,8 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     }
   }
 
-  private fun getFileDefs(context: mutable S.Context, fn: FAbsolute): FileDefs {
-    this.fileDefsDir.get(context, fn)
+  private fun getFileDefs(tcenvb: mutable TCEnvBase, fn: FAbsolute): FileDefs {
+    this.fileDefsDir.get(tcenvb.context, fn)
   }
 }
 
@@ -295,6 +303,7 @@ class FileDefs{
   reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   includes: Array<FAbsolute>,
+  errors: Array<TypingError> = Array[],
 } extends S.File
 
 base class FileDef
@@ -349,6 +358,7 @@ mutable class FileDefsState private {
   reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   includes: mutable Vector<FAbsolute> = mutable Vector[],
+  fileErrors: mutable Vector<TypingError> = mutable Vector[],
 } {
   static fun createFileDefs(
     context: mutable S.Context,
@@ -363,23 +373,32 @@ mutable class FileDefsState private {
     state.processDefs(parsedDefs)
   }
 
-  private mutable fun resolveName(mname: Name): ModuleName {
+  private mutable fun resolveName(mname: Name): ?ModuleName {
     name = mname.value;
-    (if (name.startsWith("./") || name.startsWith("../")) {
+    resolved = if (name.startsWith("./") || name.startsWith("../")) {
       if (!name.endsWith(".js")) {
-        typingError(
-          Array[
-            (mname.pos, "Invalid import: local imports must be from js files"),
-          ],
+        this.fileErrors.push(
+          TypingError(
+            Array[
+              (
+                mname.pos,
+                "Invalid import: local imports must be from js files",
+              ),
+            ],
+          ),
         )
       };
       resolveName(this.dirName, name)
     } else {
       resolveStubs(this.importStubs, name)
-    }) match {
-    | Some(fileName) -> ModuleName{name, fileName}
+    };
+    resolved match {
+    | Some(fileName) -> Some(ModuleName{name, fileName})
     | None() ->
-      typingError(Array[(mname.pos, `Could not find module '${mname}'`)])
+      this.fileErrors.push(
+        TypingError(Array[(mname.pos, `Could not find module '${mname}'`)]),
+      );
+      None()
     }
   }
 
@@ -402,13 +421,14 @@ mutable class FileDefsState private {
 
       | ExportNames(_, names) -> this.exportNames(names)
       | ExportNamesFrom(isType, names, mname) ->
-        modName = this.resolveName(mname);
-        static::addImportsFrom(
-          this.reexports,
-          isType.isSome(),
-          Array[names],
-          modName,
-        )
+        this.resolveName(mname).each(modName -> {
+          static::addImportsFrom(
+            this.reexports,
+            isType.isSome(),
+            Array[names],
+            modName,
+          )
+        })
 
       | ExportDefault(Expr(_, Var(n))) ->
         /* Treat
@@ -421,15 +441,18 @@ mutable class FileDefsState private {
         )
 
       | Import(isType, names, importName) ->
-        modName = this.resolveName(importName);
-        static::addImportsFrom(this.imports, isType.isSome(), names, modName)
+        this.resolveName(importName).each(modName -> {
+          static::addImportsFrom(this.imports, isType.isSome(), names, modName)
+        })
 
       | ExportAs _
       | ExportDefault _
       | ExportEq _
       | ImportExpr _
       | ExportImport _ ->
-        typingError(Array[(def.pos, "TODO: unsupported export")])
+        this.fileErrors.push(
+          TypingError(Array[(def.pos, "TODO: unsupported export")]),
+        )
       }
     };
     this.toFileDefs()
@@ -443,6 +466,7 @@ mutable class FileDefsState private {
       modules => this.modules.map((_, x) -> x.chill()),
       defs => this.defs.map((_, x) -> x.toArray()),
       includes => this.includes.toArray(),
+      errors => this.fileErrors.toArray(),
     }
   }
 
@@ -486,30 +510,34 @@ mutable class FileDefsState private {
 
     | VarDefs(k, varDefs) ->
       for (varDef in varDefs) {
-        exportName = varDef.pat.value match {
-        | PVar(x) -> x
-        | _ ->
-          typingError(
-            Array[(varDef.pat.pos, "TODO: cannot have exports based on names")],
+        varDef.pat.value match {
+        | PVar(exportName) ->
+          if (isExport) {
+            mapPush(this.exported, exportName.value, exportName.value)
+          };
+          mapPush(
+            this.defs,
+            exportName.value,
+            FDVar(k, exportName, varDef.type, varDef.value),
           )
-        };
-        if (isExport) {
-          mapPush(this.exported, exportName.value, exportName.value)
-        };
-        mapPush(
-          this.defs,
-          exportName.value,
-          FDVar(k, exportName, varDef.type, varDef.value),
-        )
+        | _ ->
+          this.fileErrors.push(
+            TypingError(
+              Array[
+                (varDef.pat.pos, "TODO: cannot have exports based on names"),
+              ],
+            ),
+          )
+        }
       }
     | Global(defs) ->
       if (defs.size() > 0) {
-        typingError(Array[(defs[0].pos, "TODO: global")])
+        this.fileErrors.push(TypingError(Array[(defs[0].pos, "TODO: global")]))
       } else {
         internal_error("TODO: global")
       }
     | Module(Name(pos, _), _defsOpt) ->
-      typingError(Array[(pos, "TODO: module")])
+      this.fileErrors.push(TypingError(Array[(pos, "TODO: module")]))
     }
   }
 

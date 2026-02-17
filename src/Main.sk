@@ -452,7 +452,8 @@ class Checker private {
         parsedFile.value match {
         | PROk(defs) ->
           results = this.checker.check(context, defs);
-          errors = results.errors.toArray();
+          fileDefErrors = this.checker.defMap.getFileErrors(context, fileName);
+          errors = fileDefErrors.concat(results.errors.toArray());
           writer.set(
             fileName,
             CheckResult(

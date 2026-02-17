@@ -78,7 +78,7 @@ extension class TypeChecker {
           tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
           tcenv.recordClassHierarchy{
             child => c,
-            parent => this.getClass(tcenvl.context, parentName),
+            parent => this.getClass(tcenvl, parentName),
           };
           this.checkSubType(
             tcenv,
@@ -102,7 +102,7 @@ extension class TypeChecker {
         tcenv = TCEnv::mcreate(subst, CGNode::toplevel(fileName));
         tcenv.recordClassHierarchy{
           child => c,
-          parent => this.getClass(tcenvl.context, parentName),
+          parent => this.getClass(tcenvl, parentName),
         };
         this.checkSubType(
           tcenv,
