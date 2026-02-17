@@ -201,9 +201,14 @@ fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
     while (pos < chars.size() && chars[pos] != '\n') {
       !pos = pos + 1;
     };
-    rawMessage = String::fromChars(
-      chars.slice(restOfLineStart, pos),
-    ).trimRight();
+    rawEnd = pos;
+    while (
+      rawEnd > restOfLineStart &&
+      (chars[rawEnd - 1] == ' ' || chars[rawEnd - 1] == '\t')
+    ) {
+      !rawEnd = rawEnd - 1
+    };
+    rawMessage = String::fromChars(chars.slice(restOfLineStart, rawEnd));
     if (lineNumber != lastCommentLine + 1 && currentGroup.size() > 0) {
       groups.push(
         AnnotationGroup{
