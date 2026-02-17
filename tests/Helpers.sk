@@ -8,16 +8,17 @@ base class ReferenceError{line: Int} {
   fun getMessage(): String;
 }
 
-base class AnnotationKind {
+base class AnnotationKind final () {
   const str: String;
+  const chars: Vector<Char>;
 }
 
-class TS_EXPECT_ERROR() extends AnnotationKind {
+class TS_EXPECT_ERROR extends AnnotationKind {
   const str: String = "ts-expect-error";
   const chars: Vector<Char> = TS_EXPECT_ERROR::str.chars();
 }
 
-class SKJS_EXPECT_ERROR() extends AnnotationKind {
+class SKJS_EXPECT_ERROR extends AnnotationKind {
   const str: String = "skjs-expect-error";
   const chars: Vector<Char> = SKJS_EXPECT_ERROR::str.chars();
 }
@@ -106,9 +107,9 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
         break void
       };
       possibleAnnot = if (chars[pos] == TS_EXPECT_ERROR::chars[0]) {
-        TS_EXPECT_ERROR::chars
+        TS_EXPECT_ERROR
       } else if (chars[pos] == SKJS_EXPECT_ERROR::chars[0]) {
-        SKJS_EXPECT_ERROR::chars
+        SKJS_EXPECT_ERROR
       } else {
         continue
       };
@@ -117,11 +118,11 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
         !pos = pos + 1;
         !posInAnnot = posInAnnot + 1;
       } while (pos < chars.size() &&
-        posInAnnot < possibleAnnot.size() &&
-        chars[pos] == possibleAnnot[posInAnnot]);
-      if (posInAnnot >= possibleAnnot.size()) {
+        posInAnnot < possibleAnnot::chars.size() &&
+        chars[pos] == possibleAnnot::chars[posInAnnot]);
+      if (posInAnnot >= possibleAnnot::chars.size()) {
         invariant_violation(
-          `Line ${lineNumber}: misplaced @${possibleAnnot.join("")}`,
+          `Line ${lineNumber}: misplaced @${possibleAnnot::str}`,
         );
       };
       continue;
@@ -152,9 +153,9 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
       break void
     };
     possibleAnnot = if (chars[pos] == TS_EXPECT_ERROR::chars[0]) {
-      TS_EXPECT_ERROR::chars
+      TS_EXPECT_ERROR
     } else if (chars[pos] == SKJS_EXPECT_ERROR::chars[0]) {
-      SKJS_EXPECT_ERROR::chars
+      SKJS_EXPECT_ERROR
     } else {
       continue
     };
@@ -163,9 +164,9 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
       !pos = pos + 1;
       !posInAnnot = posInAnnot + 1;
     } while (pos < chars.size() &&
-      posInAnnot < possibleAnnot.size() &&
-      chars[pos] == possibleAnnot[posInAnnot]);
-    if (posInAnnot < possibleAnnot.size()) {
+      posInAnnot < possibleAnnot::chars.size() &&
+      chars[pos] == possibleAnnot::chars[posInAnnot]);
+    if (posInAnnot < possibleAnnot::chars.size()) {
       continue;
     };
     while (pos < chars.size() && (chars[pos] == ' ' || chars[pos] == '\t')) {
