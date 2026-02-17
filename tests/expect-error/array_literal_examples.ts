@@ -212,6 +212,27 @@ function arrayCommittedTypeTest(): void {
   arr[0] = { x: 42 }; // Proves arr has the wider type
 }
 
+// --- ReadonlyArray Commitment Tests ---
+
+// Array literal commits to Array<T> which is a subtype of ReadonlyArray<T>.
+function arrayLiteralAsReadonly(): readonly number[] {
+  return [1, 2, 3];
+}
+
+// Array literal assigned to a readonly-annotated variable.
+function arrayLiteralReadonlyAnnotation(): void {
+  const xs: readonly number[] = [1, 2, 3];
+  const first: number | undefined = xs[0];
+}
+
+// Array literal passed as argument to readonly parameter.
+function takesReadonly(xs: readonly number[]): readonly number[] {
+  return xs;
+}
+function arrayLiteralReadonlyArg(): readonly number[] {
+  return takesReadonly([1, 2, 3]);
+}
+
 numbersArray();
 arrayLiteralRefinement();
 unionArrayTarget();

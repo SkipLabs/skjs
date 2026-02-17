@@ -29,3 +29,42 @@ function checkIntersectionWithTopSIsNotBottom(): number {
   // @skjs-expect-error Invalid call. Unexpected type for ...
   return interWithTopS<number>(0) + 1;
 }
+
+// ReadonlyArray is covariant: readonly Dog[] is a subtype of readonly Animal[]
+interface Animal {
+  name: string;
+}
+interface Dog extends Animal {
+  breed: string;
+}
+
+function readonlyArrayIsCovariant(dogs: readonly Dog[]): readonly Animal[] {
+  return dogs;
+}
+
+// The reverse does not hold
+function readonlyArrayIsNotContravariant(
+  animals: readonly Animal[],
+): readonly Dog[] {
+  // @skjs-expect-error Invalid return type
+  return animals;
+}
+
+// Array<T> is a subtype of readonly T[]
+function arrayIsSubtypeOfReadonlyArray(dogs: Dog[]): readonly Dog[] {
+  return dogs;
+}
+
+// readonly T[] is not a subtype of Array<T>
+function readonlyArrayIsNotSubtypeOfArray(dogs: readonly Dog[]): Dog[] {
+  // @skjs-expect-error Invalid return type
+  return dogs;
+}
+
+// Known limitation: indexOf, includes, lastIndexOf, concat are commented out
+// on ReadonlyArray because T in contravariant position prevents covariant subtyping.
+function readonlyArrayMissingMethods(xs: readonly number[]): void {
+  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Invalid index key
+  xs.indexOf(1);
+}

@@ -724,9 +724,8 @@ function testWrongArrayMethod(x: number[] | null): string {
 }
 
 // Using ! doesn't fix readonly/mutable mismatch
-// @skjs-expect-error TODO readonly
 function testReadonlyMismatch(x: readonly number[] | null): number[] {
-  // TODO: Invalid return type
+  // @skjs-expect-error Invalid return type
   // @skjs-expect-error Do not use the postfix ! operator
   return x!;
 }
