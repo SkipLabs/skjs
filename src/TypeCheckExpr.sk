@@ -730,7 +730,12 @@ extension class TypeChecker {
           | Some(FKName(name, _)) -> (name, valueTy)
           | Some(FKSymbol(_, uniqueId)) ->
             symbolFields.push(
-              TField::create(keyExpr.pos, uniqueId, false, valueTy).fromSome(),
+              TField::create{
+                pos => keyExpr.pos,
+                name => uniqueId,
+                isOptional => false,
+                type => valueTy,
+              }.fromSome(),
             );
             continue
           | None() ->
@@ -749,7 +754,12 @@ extension class TypeChecker {
           tFuns = this.funDecl(tcenv, false, fd, cgNode);
           (name, TType::single(TObject::createCall(tFuns)))
         };
-        TField::create(name.pos, name.value, false, ty) match {
+        TField::create{
+          pos => name.pos,
+          name => name.value,
+          isOptional => false,
+          type => ty,
+        } match {
         | None() ->
           algebraicBranchField match {
           | Some((existingPos, _existingType)) ->
@@ -1702,12 +1712,12 @@ extension class TypeChecker {
             )
           | None() ->
             !needsGrowth = true;
-            TField::create(
-              key.pos(),
-              key.value(),
+            TField::create{
+              pos => key.pos(),
+              name => key.value(),
               isOptional,
-              fieldType,
-            ) match {
+              type => fieldType,
+            } match {
             | None() ->
               tcenv.error(
                 Array[

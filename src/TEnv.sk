@@ -474,12 +474,12 @@ base class TEnv{
         | FNNormal(fdName) ->
           fieldName = fdName.value;
           type = this.normalize(tcenvb, fieldTy);
-          TField::create(
-            field.pos,
-            fieldName,
-            field.optional is Some _,
+          TField::create{
+            pos => field.pos,
+            name => fieldName,
+            isOptional => field.optional is Some _,
             type,
-          ) match {
+          } match {
           | None() ->
             tcenvb.error(
               Array[
@@ -531,10 +531,20 @@ base class TEnv{
         } match {
         | FKSymbol(exprPos, uniqueId) ->
           symbolFields.push(
-            TField::create(exprPos, uniqueId, false, metType).fromSome(),
+            TField::create{
+              pos => exprPos,
+              name => uniqueId,
+              isOptional => false,
+              type => metType,
+            }.fromSome(),
           )
         | FKName(name, _) ->
-          TField::create(name.pos, name.value, false, metType) match {
+          TField::create{
+            pos => name.pos,
+            name => name.value,
+            isOptional => false,
+            type => metType,
+          } match {
           | None() ->
             tcenvb.error(Array[(fd.pos, `Forbidden method name '${name}'`)])
           | Some(field) -> acc![name.value] = field
@@ -1245,20 +1255,20 @@ base class TEnv{
           } match {
           | FKSymbol(exprPos, uniqueId) ->
             symbolFields.push(
-              TField::create(
-                exprPos,
-                uniqueId,
-                fd.optional is Some _,
-                normalizedType,
-              ).fromSome(),
+              TField::create{
+                pos => exprPos,
+                name => uniqueId,
+                isOptional => fd.optional is Some _,
+                type => normalizedType,
+              }.fromSome(),
             )
           | FKName(name, _) ->
-            TField::create(
-              name.pos,
-              name.value,
-              fd.optional is Some _,
-              normalizedType,
-            ) match {
+            TField::create{
+              pos => name.pos,
+              name => name.value,
+              isOptional => fd.optional is Some _,
+              type => normalizedType,
+            } match {
             | Some(field) -> fieldsVec.push(field)
             | None() ->
               algebraicBranchField match {
@@ -1307,10 +1317,20 @@ base class TEnv{
           } match {
           | FKSymbol(exprPos, uniqueId) ->
             symbolFields.push(
-              TField::create(exprPos, uniqueId, false, decl).fromSome(),
+              TField::create{
+                pos => exprPos,
+                name => uniqueId,
+                isOptional => false,
+                type => decl,
+              }.fromSome(),
             )
           | FKName(name, _) ->
-            TField::create(name.pos, name.value, false, decl) match {
+            TField::create{
+              pos => name.pos,
+              name => name.value,
+              isOptional => false,
+              type => decl,
+            } match {
             | Some(field) -> fieldsVec.push(field)
             | None() ->
               tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
