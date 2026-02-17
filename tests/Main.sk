@@ -122,32 +122,74 @@ fun validateReferenceErrors<R: ReferenceError>(
   expectationErrors.toArray()
 }
 
-// Errors must be prefixed with @ts-expect-error or @skjs-expect-error
+fun doUpdateExpectErrorComments(
+  context: mutable SKStore.Context,
+  checker: SKJS.Checker,
+  fileName: SKJS.FAbsolute,
+  fileContents: String,
+  actualErrors: Array<SKJS.Error>,
+): void {
+  linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
+  errorsByLine = mutable Map[];
+  fullMessages = mutable Map[];
+  for (lineErrs in linedErrors) {
+    trimmedMsgs = SortedSet[];
+    for (err in lineErrs.i1) {
+      full = errorToFullMessage(err);
+      trimmed = full.trimMessage(true);
+      fullMessages.set(trimmed, full.trimMessage());
+      !trimmedMsgs = trimmedMsgs.set(trimmed)
+    };
+    errorsByLine.set(lineErrs.i0, trimmedMsgs)
+  };
+  updateFileAnnotations(
+    fileContents,
+    errorsByLine.chill(),
+    fullMessages.chill(),
+  ).each(updatedContents -> {
+    FileSystem.writeTextFile(fileName.toString(), updatedContents);
+    print_string(`Updated: ${fileName}\n`)
+  })
+}
+
+// Errors must be prefixed with @ts-expect-error or @skjs-expect-error.
+// When update is true, rewrites annotations in-place and returns no errors.
 fun validateExpectErrorComments(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   checkResult: SKJS.CheckResult,
-  _update: Bool,
+  update: Bool,
 ): Array<SKTest.ExpectationError> {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
   | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
   };
 
   fileContents = checker.files.filesContent.get(context, fileName);
-  tsExpectErrors = findExpectErrors(fileContents.value).iterator();
 
   actualErrors = parseErrorOpt match {
   | None() -> typeErrors
   | Some(parseError) -> typeErrors.concat(Array[parseError])
   };
 
-  validateReferenceErrors(
-    context,
-    checker,
-    fileName,
-    actualErrors,
-    tsExpectErrors,
-  )
+  if (update) {
+    doUpdateExpectErrorComments(
+      context,
+      checker,
+      fileName,
+      fileContents.value,
+      actualErrors,
+    );
+    Array[]
+  } else {
+    tsExpectErrors = findExpectErrors(fileContents.value).iterator();
+    validateReferenceErrors(
+      context,
+      checker,
+      fileName,
+      actualErrors,
+      tsExpectErrors,
+    )
+  }
 }
 
 // Expects no parse errors, type errors should correspond to the reference ones

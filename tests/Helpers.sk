@@ -256,6 +256,86 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
   })
 }
 
+/* Rewrites a file's expect-error annotations to match actual errors.
+ * - Updates messages for existing annotations (preserving @ts vs @skjs prefix)
+ * - Removes annotations where errors no longer occur
+ * - Adds @skjs-expect-error annotations for new errors
+ * - At most one @ts-expect-error per group, always last */
+fun updateFileAnnotations(
+  contents: String,
+  actualErrorsByLine: Map<Int, SortedSet<String>>,
+  fullMessages: Map<String, String>,
+): ?String {
+  groups = findAnnotationLines(contents);
+
+  // Build set of annotation comment line numbers and maps for lookup
+  commentLineNumbers = SortedSet[];
+  origMessageMap = mutable Map[]; // (errorLine, message) -> originalMessage
+  lastTsExpect = mutable Map[]; // errorLine -> message (last @ts-expect-error)
+  for (group in groups) {
+    for (a in group.annotations) {
+      !commentLineNumbers = commentLineNumbers.add(a.commentLineNumber);
+      origMessageMap.set((group.errorLine, a.message), a.originalMessage);
+      if (a.annot::str == TS_EXPECT_ERROR::str) {
+        lastTsExpect.set(group.errorLine, a.message)
+      }
+    }
+  };
+
+  lines = contents.split("\n");
+  result = mutable Vector[];
+  for (lineIdx => lineContents in lines) {
+    lineNum = lineIdx + 1;
+    if (commentLineNumbers.contains(lineNum)) {
+      continue
+    };
+    // Insert updated annotations before this code line
+    actualErrorsByLine.maybeGet(lineNum) match {
+    | Some(errors) ->
+      // Compute indentation from the code line
+      i = lineContents.getIter();
+      _ = i.find(c ~> c != ' ' && c != '\t');
+      _ = i.prev();
+      indent = lineContents.getIter().substring(i);
+      // At most one @ts-expect-error, must be last in group
+      tsMsg = lastTsExpect.maybeGet(lineNum) match {
+      | Some(msg) if (errors.contains(msg)) -> Some(msg)
+      | _ -> None()
+      };
+      // Output @skjs-expect-error first
+      for (trimmedMsg in errors) {
+        tsMsg match {
+        | Some(msg) if (msg == trimmedMsg) -> continue
+        | _ -> void
+        };
+        msgText = origMessageMap.maybeGet((lineNum, trimmedMsg)) match {
+        | Some(orig) -> orig
+        | None() -> fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
+        };
+        result.push(`${indent}// @${SKJS_EXPECT_ERROR::str} ${msgText}`)
+      };
+      // Output @ts-expect-error last
+      tsMsg.each(trimmedMsg -> {
+        msgText = origMessageMap.maybeGet((lineNum, trimmedMsg)) match {
+        | Some(orig) -> orig
+        | None() -> fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
+        };
+        result.push(`${indent}// @${TS_EXPECT_ERROR::str} ${msgText}`)
+      })
+    | None() -> void
+    };
+    result.push(lineContents)
+  };
+  if (
+    result.size() == lines.size() &&
+    result.items().all(p -> p.i1 == lines[p.i0])
+  ) {
+    None()
+  } else {
+    Some("\n".join(result))
+  }
+}
+
 fun isDigit(c: Char): Bool {
   c >= '0' && c <= '9'
 }
