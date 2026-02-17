@@ -109,14 +109,22 @@ fun tryMatchAnnotation(
   Some((possibleAnnot, posInAnnot >= possibleAnnot::chars.size(), pos))
 }
 
-/* Returns an array of line numbers and rest-of-line for all lines
- * matching .*\/\/\s*(@(skjs|ts)-expect-error)\s+(?<rest-of-line>[^\n]*)
- * The returned line numbers are the line numbers on which errors are
- * expected, i.e. if the comment is on the first line, the corresponding
- * returned line number is 2.
+class AnnotationLine{
+  commentLineNumber: Int,
+  annot: Concrete<AnnotationKind>,
+  message: String,
+  originalMessage: String,
+}
+
+class AnnotationGroup{errorLine: Int, annotations: Array<AnnotationLine>}
+
+/* Returns all expect-error annotation groups with their metadata.
+ * Matches .*\/\/\s*(@(skjs|ts)-expect-error)\s+(?<rest-of-line>[^\n]*)
+ * Consecutive annotations are grouped together; the error is expected
+ * on the line after the last annotation in the group.
  *
- * Throws if the annotation is found somewhere else. */
-fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
+ * Throws if the annotation is found somewhere else (e.g. not in a comment). */
+fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
   /*
     Correctness is based on the fact that these are all disjoint sets:
     - '\n'
@@ -127,7 +135,9 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     and on the fact that the first characters of TS_EXPECT_ERROR::chars and
     SKJS_EXPECT_ERROR::chars differ.
    */
-  result = mutable Vector[];
+  groups = mutable Vector[];
+  currentGroup = mutable Vector[];
+  lastCommentLine = -2;
   chars = contents.chars().toArray();
   pos = 0;
   // Do not trust the lexer's newLinesMap, as a way to double-check it
@@ -174,11 +184,12 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     if (pos >= chars.size()) {
       break void
     };
-    tryMatchAnnotation(chars, pos) match {
+    annot = tryMatchAnnotation(chars, pos) match {
     | None() -> continue
-    | Some((_annot, isFullMatch, newPos)) ->
+    | Some((annot, isFullMatch, newPos)) ->
       !pos = newPos;
-      if (!isFullMatch) continue
+      if (!isFullMatch) continue;
+      annot
     };
     while (pos < chars.size() && (chars[pos] == ' ' || chars[pos] == '\t')) {
       !pos = pos + 1
@@ -187,31 +198,54 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     while (pos < chars.size() && chars[pos] != '\n') {
       !pos = pos + 1;
     };
-    restOfLine = String::fromChars(
+    rawMessage = String::fromChars(
       chars.slice(restOfLineStart, pos),
-    ).trimMessage(true);
-    lastResultI = result.size() - 1;
-    result.maybeGet(lastResultI) match {
-    | Some(lastResult) if (lastResult.line == lineNumber) ->
-      if (lastResult.expectedErrors.contains(restOfLine)) {
+    ).trimRight();
+    if (lineNumber != lastCommentLine + 1 && currentGroup.size() > 0) {
+      groups.push(
+        AnnotationGroup{
+          errorLine => lastCommentLine + 1,
+          annotations => currentGroup.toArray(),
+        },
+      );
+      currentGroup.clear()
+    };
+    currentGroup.push(
+      AnnotationLine{
+        commentLineNumber => lineNumber,
+        annot,
+        message => rawMessage.trimMessage(true),
+        originalMessage => rawMessage,
+      },
+    );
+    !lastCommentLine = lineNumber
+  };
+  if (currentGroup.size() > 0) {
+    groups.push(
+      AnnotationGroup{
+        errorLine => lastCommentLine + 1,
+        annotations => currentGroup.toArray(),
+      },
+    )
+  };
+  groups
+}
+
+fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
+  findAnnotationLines(contents).map(group -> {
+    expectedErrors = SortedSet[];
+    for (a in group.annotations) {
+      if (expectedErrors.contains(a.message)) {
         invariant_violation(
-          `Line ${lineNumber}: duplicate annotation: ${restOfLine}`,
+          `Line ${a.commentLineNumber}: duplicate annotation: ${
+            a.originalMessage
+          }`,
         )
       };
-      result![lastResultI] = lastResult with {
-        line => lineNumber + 1,
-        expectedErrors => lastResult.expectedErrors.add(restOfLine),
-      }
-    | _ ->
-      result.push(
-        ExpectError{
-          line => lineNumber + 1,
-          expectedErrors => SortedSet[restOfLine],
-        },
-      )
-    }
-  };
-  result
+      !expectedErrors = expectedErrors.set(a.message)
+    };
+    ExpectError{line => group.errorLine, expectedErrors}
+  })
 }
 
 fun isDigit(c: Char): Bool {
