@@ -24,20 +24,30 @@ class SKJS_EXPECT_ERROR extends AnnotationKind {
 }
 
 extension class .String {
-  fun trimForComparison(): String {
+  // Keep first line only, right-trimmed. When trimDots is true, also strip
+  // trailing dots (and whitespace exposed by their removal).
+  fun trimMessage(trimDots: Bool = false): String {
     i = this.getIter();
     _ = i.find(c ~> c == '\n'); // Keep first line only
     _ = i.rfind(c ~> !String.isWhitespace(c)); // Ignore trailing whitespaces
     _ = i.next();
-    i.rfind(c ~> c != '.') match { // Ignore trailing dots
-    | None() -> return ""
-    | Some(_) -> void
+    if (trimDots) {
+      i.rfind(c ~> c != '.') match { // Ignore trailing dots
+      | None() -> return ""
+      | Some(_) -> void
+      };
+      if (i.current() is Some('!')) {
+        _ = i.next() // Do not ignore last dot following a !
+      };
+      _ = i.next(); // Advance past the non-dot char so rfind can see it
+      // Trim whitespace exposed by dot removal (e.g. "msg   ...")
+      i.rfind(c ~> !String.isWhitespace(c)) match {
+      | None() -> return ""
+      | Some(_) -> void
+      };
+      _ = i.next();
     };
-    if (i.current() is Some('!')) {
-      _ = i.next() // Do not ignore last dot following a !
-    };
-    _ = i.next();
-    this.getIter().substring(i)
+    if (i.current() is None()) this else this.getIter().substring(i)
   }
 }
 
@@ -53,7 +63,7 @@ class ExpectError{expectedErrors: SortedSet<String>} extends ReferenceError {
           | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
           | SKJS.TypingError(messages, _stErr) -> messages[0].i1
           };
-          msg.trimForComparison()
+          msg.trimMessage(true)
         })
         .collect(SortedSet);
       if (actuals != this.expectedErrors) {
@@ -179,7 +189,7 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     };
     restOfLine = String::fromChars(
       chars.slice(restOfLineStart, pos),
-    ).trimForComparison();
+    ).trimMessage(true);
     lastResultI = result.size() - 1;
     result.maybeGet(lastResultI) match {
     | Some(lastResult) if (lastResult.line == lineNumber) ->
