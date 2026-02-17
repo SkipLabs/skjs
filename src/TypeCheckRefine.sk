@@ -228,14 +228,18 @@ extension class TypeChecker {
       };
       default = if (target) {
         singleKey.flatMap(key -> {
-          TField::create(e1.pos, key.value(), false, TType::top(e.pos)).map(
-            field ->
-              if (key is FKSymbol _) {
-                TObject(TFields::create{symbolFields => Vector[field]}, e1.pos)
-              } else {
-                TObject(TFields::create{fields => Array[field]}, e1.pos)
-              }
-            ,
+          TField::create{
+            pos => e1.pos,
+            name => key.value(),
+            isOptional => false,
+            isReadonly => Some(e1.pos),
+            type => TType::top(e.pos),
+          }.map(field ->
+            if (key is FKSymbol _) {
+              TObject(TFields::create{symbolFields => Vector[field]}, e1.pos)
+            } else {
+              TObject(TFields::create{fields => Array[field]}, e1.pos)
+            }
           )
         })
       } else {
@@ -258,12 +262,13 @@ extension class TypeChecker {
               Some(
                 tObj.map(tf ->
                   if (!tf.indexes.isEmpty()) /* TODO: refine */ tf else {
-                    TField::create(
-                      e1.pos,
-                      key.value(),
-                      false,
-                      TType::top(e.pos),
-                    )
+                    TField::create{
+                      pos => e1.pos,
+                      name => key.value(),
+                      isOptional => false,
+                      isReadonly => Some(e1.pos),
+                      type => TType::top(e.pos),
+                    }
                       .flatMap(fieldToAdd ->
                         if (key is FKSymbol _) {
                           tf.addSymbolField(fieldToAdd)

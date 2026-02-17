@@ -437,11 +437,11 @@ base class TEnv{
       | field @ ClassFieldTypeValue _ ->
         if (!filter(field)) continue;
         fieldIsStatic = false;
-        fieldIsReadonly = false;
+        fieldIsReadonly: ?PosRange = None();
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic _ -> !fieldIsStatic = true
-          | ModReadonly _ -> !fieldIsReadonly = true
+          | ModReadonly(roPos) -> !fieldIsReadonly = Some(roPos)
           | ModPublic _ -> void /* public is the default */
           | ModPrivate _
           | ModProtected _ ->
@@ -459,7 +459,7 @@ base class TEnv{
         };
         if (fieldIsStatic != isStatic.isSome()) continue;
         if (fieldIsStatic) {
-          if (!fieldIsReadonly) {
+          if (fieldIsReadonly is None()) {
             tcenvb.error(Array[(field.pos, "static fields must be readonly")])
           };
           field.optional.each(pos ->
@@ -474,12 +474,13 @@ base class TEnv{
         | FNNormal(fdName) ->
           fieldName = fdName.value;
           type = this.normalize(tcenvb, fieldTy);
-          TField::create(
-            field.pos,
-            fieldName,
-            field.optional is Some _,
+          TField::create{
+            pos => field.pos,
+            name => fieldName,
+            isOptional => field.optional is Some _,
+            isReadonly => fieldIsReadonly,
             type,
-          ) match {
+          } match {
           | None() ->
             tcenvb.error(
               Array[
@@ -492,10 +493,11 @@ base class TEnv{
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField{
+            TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
+              isReadonly => fieldIsReadonly,
               valueType,
             },
           )
@@ -531,10 +533,22 @@ base class TEnv{
         } match {
         | FKSymbol(exprPos, uniqueId) ->
           symbolFields.push(
-            TField::create(exprPos, uniqueId, false, metType).fromSome(),
+            TField::create{
+              pos => exprPos,
+              name => uniqueId,
+              isOptional => false,
+              isReadonly => Some(fd.pos),
+              type => metType,
+            }.fromSome(),
           )
         | FKName(name, _) ->
-          TField::create(name.pos, name.value, false, metType) match {
+          TField::create{
+            pos => name.pos,
+            name => name.value,
+            isOptional => false,
+            isReadonly => Some(fd.pos),
+            type => metType,
+          } match {
           | None() ->
             tcenvb.error(Array[(fd.pos, `Forbidden method name '${name}'`)])
           | Some(field) -> acc![name.value] = field
@@ -1244,21 +1258,22 @@ base class TEnv{
             this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
           } match {
           | FKSymbol(exprPos, uniqueId) ->
-            symbolFields.push(
-              TField::create(
-                exprPos,
-                uniqueId,
-                fd.optional is Some _,
-                normalizedType,
-              ).fromSome(),
-            )
+            field = TField::create{
+              pos => exprPos,
+              name => uniqueId,
+              isOptional => fd.optional is Some _,
+              isReadonly => readonly_.map(r -> r.pos),
+              type => normalizedType,
+            }.fromSome();
+            symbolFields.push(field)
           | FKName(name, _) ->
-            TField::create(
-              name.pos,
-              name.value,
-              fd.optional is Some _,
-              normalizedType,
-            ) match {
+            TField::create{
+              pos => name.pos,
+              name => name.value,
+              isOptional => fd.optional is Some _,
+              isReadonly => readonly_.map(r -> r.pos),
+              type => normalizedType,
+            } match {
             | Some(field) -> fieldsVec.push(field)
             | None() ->
               algebraicBranchField match {
@@ -1284,10 +1299,11 @@ base class TEnv{
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField{
+            TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
+              isReadonly => readonly_.map(r -> r.pos),
               valueType,
             },
           )
@@ -1307,10 +1323,22 @@ base class TEnv{
           } match {
           | FKSymbol(exprPos, uniqueId) ->
             symbolFields.push(
-              TField::create(exprPos, uniqueId, false, decl).fromSome(),
+              TField::create{
+                pos => exprPos,
+                name => uniqueId,
+                isOptional => false,
+                isReadonly => Some(exprPos),
+                type => decl,
+              }.fromSome(),
             )
           | FKName(name, _) ->
-            TField::create(name.pos, name.value, false, decl) match {
+            TField::create{
+              pos => name.pos,
+              name => name.value,
+              isOptional => false,
+              isReadonly => Some(name.pos),
+              type => decl,
+            } match {
             | Some(field) -> fieldsVec.push(field)
             | None() ->
               tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])

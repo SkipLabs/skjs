@@ -891,12 +891,13 @@ class TField private {
   isOptional: Bool,
   type: TType,
 } uses XXHashable, Orderable, Projectable<String> {
-  static fun create(
+  static fun create{
     pos: PosRange,
     name: String,
     isOptional: Bool,
+    isReadonly: ?PosRange,
     type: TType,
-  ): ?TField {
+  }: ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
       Some(TField{pos, name, isOptional, type})
     }
@@ -916,12 +917,23 @@ class TField private {
 }
 
 /* Fields such as { [keyName: KeyType]: ValueType } */
-class TIndexField{
+class TIndexField private {
   pos: PosRange,
   keyName: String,
   keyType: TType,
   valueType: TType,
 } uses XXHashable, Orderable {
+  static fun create{
+    pos: PosRange,
+    keyName: String,
+    keyType: TType,
+    isReadonly: ?PosRange,
+    valueType: TType,
+  }: TIndexField {
+    _ = isReadonly; // Will be used when get/set types are introduced
+    TIndexField{pos, keyName, keyType, valueType}
+  }
+
   fun mapTypes(f: TType -> TType): TIndexField {
     keyType = f(this.keyType);
     valueType = f(this.valueType);
