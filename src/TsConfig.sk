@@ -319,6 +319,8 @@ fun resolveExtends(
   obj: JSON.Object,
   configDir: DAbsolute,
   visited: SortedSet<String>,
+  diags: mutable Vector<TsConfigDiag>,
+  rawContents: String,
 ): JSON.Object {
   extendsPaths = getExtendsPaths(obj);
   if (extendsPaths.isEmpty()) return obj;
@@ -327,9 +329,14 @@ fun resolveExtends(
   base = JSON.Object(Map[]);
   for (extendsPath in extendsPaths) {
     if (!extendsPath.startsWith(".")) {
-      invariant_violation(
-        `Package-style extends not supported by SKJS: ${extendsPath}`,
-      )
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "extends"),
+          message => `Package-style extends not supported by SKJS: ${extendsPath}`,
+          isWarning => false,
+        },
+      );
+      continue
     };
     resolved = Path.resolve(Path.join(configDir.toString(), extendsPath));
     finalPath = if (!resolved.endsWith(".json")) {
@@ -338,13 +345,22 @@ fun resolveExtends(
       resolved
     };
     if (visited.contains(finalPath)) {
-      invariant_violation(`Circular tsconfig extends: ${finalPath}`)
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "extends"),
+          message => `Circular tsconfig extends: ${finalPath}`,
+          isWarning => false,
+        },
+      );
+      continue
     };
-    (parentObj, _, parentDir) = parseTsConfigFile(finalPath);
+    (parentObj, parentRawContents, parentDir) = parseTsConfigFile(finalPath);
     resolvedParent = resolveExtends(
       parentObj,
       parentDir,
       visited.set(finalPath),
+      diags,
+      parentRawContents,
     );
     !base = mergeConfigObjects(base, resolvedParent);
   };
@@ -358,10 +374,16 @@ fun resolveExtends(
 fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
   resolvedPath = Path.resolve(path);
   (obj, rawContents, configDir) = parseTsConfigFile(resolvedPath);
-  mergedObj = resolveExtends(obj, configDir, SortedSet[resolvedPath]);
 
   // Extract and lint compilerOptions in a single pass
   diags = mutable Vector[];
+  mergedObj = resolveExtends(
+    obj,
+    configDir,
+    SortedSet[resolvedPath],
+    diags,
+    rawContents,
+  );
   compilerOptions = mergedObj.maybeGetObject("compilerOptions") match {
   | Some(co) ->
     // Check strict
