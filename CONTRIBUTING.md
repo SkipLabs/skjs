@@ -68,6 +68,28 @@
 
 See [README.md](README.md) for build and test commands.
 
+### Updating Error Annotations
+
+When error messages change, update all `@ts-expect-error` and `@skjs-expect-error` annotations automatically:
+
+```sh
+UPDATE_EXPECT=1 make test-in-docker
+```
+
+This rewrites annotations in `tests/expect-error/` and `examples/src/` to match actual error messages, preserving the `@ts-expect-error` vs `@skjs-expect-error` prefix. New errors get `@skjs-expect-error` by default. Run `make test-in-docker` afterward to verify.
+
+Use `UPDATE_EXPECT=2` to also replace existing annotation text with the current full error message (while still preserving annotation order):
+
+```sh
+UPDATE_EXPECT=2 make test-in-docker
+```
+
+Use `UPDATE_EXPECT=3` for a full rewrite that also reorders annotations alphabetically:
+
+```sh
+UPDATE_EXPECT=3 make test-in-docker
+```
+
 ## Commit Guidelines
 
 ### Commit Requirements

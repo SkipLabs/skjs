@@ -1,0 +1,512 @@
+module SKJSTests;
+
+fun lines(parts: Array<String>): String {
+  "\n".join(parts)
+}
+
+@test
+fun testUpdateFileAnnotations(): void {
+  noErrors = Map[];
+  noFull = Map[];
+
+  // 1. No changes needed
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type mismatch"]],
+      noFull,
+    ),
+    None(),
+    "No changes needed",
+  );
+
+  // 2. Error message changes
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Old message",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["New message"]],
+      Map["New message" => "New message full"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error New message full",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Error message changes",
+  );
+
+  // 3. Error removed
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(Array["// @skjs-expect-error Some error", "const x: number = 42;"]),
+      noErrors,
+      noFull,
+    ),
+    Some("const x: number = 42;"),
+    "Error removed",
+  );
+
+  // 4. New error appears
+  SKTest.expectEq(
+    updateFileAnnotations(
+      "const x: number = \"hello\";",
+      Map[1 => SortedSet["Type mismatch"]],
+      Map["Type mismatch" => "Type mismatch full"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch full",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "New error appears",
+  );
+
+  // 5. Multiple errors on one line
+  SKTest.expectEq(
+    updateFileAnnotations(
+      "const x: number = \"hello\";",
+      Map[1 => SortedSet["Error A", "Error B"]],
+      Map["Error A" => "Error A", "Error B" => "Error B"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Error A",
+          "// @skjs-expect-error Error B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Multiple errors on one line",
+  );
+
+  // 6. @ts-expect-error preserved when message still matches
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @ts-expect-error Type mismatch",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type mismatch"]],
+      noFull,
+    ),
+    None(),
+    "@ts-expect-error preserved",
+  );
+
+  // 7. @ts-expect-error dropped when message no longer matches
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @ts-expect-error Old message",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["New message"]],
+      Map["New message" => "New message"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error New message",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "@ts-expect-error dropped",
+  );
+
+  // 8. Mixed ordering: @skjs first, @ts last
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(Array["// @ts-expect-error Msg B", "const x: number = \"hello\";"]),
+      Map[2 => SortedSet["Msg A", "Msg B"]],
+      Map["Msg A" => "Msg A"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg A",
+          "// @ts-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Mixed @skjs/@ts ordering",
+  );
+
+  // 9. Both @skjs and @ts preexisting, no changes needed
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg A",
+          "// @ts-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B"]],
+      noFull,
+    ),
+    None(),
+    "Both @skjs and @ts preexisting, no changes",
+  );
+
+  // 10. Both @skjs and @ts preexisting, errors change
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg A",
+          "// @ts-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg B", "Msg C"]],
+      Map["Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg C",
+          "// @ts-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Both @skjs and @ts preexisting, errors change",
+  );
+
+  // 11. Indentation preserved from code line
+  SKTest.expectEq(
+    updateFileAnnotations(
+      "    const x: number = \"hello\";",
+      Map[1 => SortedSet["Type error"]],
+      Map["Type error" => "Type error"],
+    ),
+    Some(
+      lines(
+        Array[
+          "    // @skjs-expect-error Type error",
+          "    const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Indentation preserved",
+  );
+
+  // 12. All annotations removed
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Error A",
+          "// @skjs-expect-error Error B",
+          "const x: number = 42;",
+        ],
+      ),
+      noErrors,
+      noFull,
+    ),
+    Some("const x: number = 42;"),
+    "All annotations removed",
+  );
+
+  // 13. Original message formatting preserved
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type mismatch"]],
+      noFull,
+    ),
+    None(),
+    "Original message formatting preserved",
+  );
+
+  // 14. Full message used for new errors
+  SKTest.expectEq(
+    updateFileAnnotations(
+      "const x: number = \"hello\";",
+      Map[1 => SortedSet["Type mismatch"]],
+      Map["Type mismatch" => "Type mismatch between types."],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch between types.",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Full message used for new errors",
+  );
+
+  // 15. Full rewrite replaces preserved annotation text
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type mismatch"]],
+      Map["Type mismatch" => "Type mismatch between types."],
+      UMFullMessages(),
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch between types.",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Full rewrite replaces preserved annotation text",
+  );
+
+  // 16. Full rewrite falls back to trimmed when no full message available
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type mismatch"]],
+      noFull,
+      UMFullMessages(),
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Full rewrite falls back to trimmed when no full message",
+  );
+
+  // 17. Non-alphabetical annotation order preserved when set matches
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B",
+          "// @skjs-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B"]],
+      Map["Msg A" => "Msg A", "Msg B" => "Msg B"],
+    ),
+    None(),
+    "Non-alphabetical order preserved when set matches",
+  );
+
+  // 18. Partial group change preserves order of remaining annotations
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg C",
+          "// @skjs-expect-error Msg B",
+          "// @skjs-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[4 => SortedSet["Msg A", "Msg C"]],
+      Map["Msg A" => "Msg A", "Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg C",
+          "// @skjs-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Partial group change preserves order of remaining",
+  );
+
+  // 19. Partial group change: new messages added after existing
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B",
+          "// @skjs-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B", "Msg C"]],
+      Map["Msg A" => "Msg A", "Msg B" => "Msg B", "Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B",
+          "// @skjs-expect-error Msg A",
+          "// @skjs-expect-error Msg C",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "New messages added after existing in original order",
+  );
+
+  // 20. Non-last @ts-expect-error stays in original position
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @ts-expect-error Msg A",
+          "// @skjs-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg C"]],
+      Map["Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @ts-expect-error Msg A",
+          "// @skjs-expect-error Msg C",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Non-last @ts-expect-error stays in position",
+  );
+
+  // 21. useFullMessages rewrites text but preserves order
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B...",
+          "// @skjs-expect-error Msg A...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B"]],
+      Map["Msg A" => "Msg A full", "Msg B" => "Msg B full"],
+      UMFullMessages(),
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B full",
+          "// @skjs-expect-error Msg A full",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "UMFullMessages rewrites text but preserves order",
+  );
+
+  // 22. Last @ts-expect-error stays last when group changes
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg A",
+          "// @ts-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg B", "Msg C"]],
+      Map["Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg C",
+          "// @ts-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Last @ts-expect-error stays last when group changes",
+  );
+
+  // 23. reorder forces alphabetical order
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B...",
+          "// @skjs-expect-error Msg A...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B"]],
+      Map["Msg A" => "Msg A full", "Msg B" => "Msg B full"],
+      UMFullRewrite(),
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg A full",
+          "// @skjs-expect-error Msg B full",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "reorder forces alphabetical order",
+  );
+
+  // 24. Original annotation indentation preserved when text updated
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "    // @skjs-expect-error Type error...",
+          "  const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type error"]],
+      Map["Type error" => "Type error full"],
+      UMFullMessages(),
+    ),
+    Some(
+      lines(
+        Array[
+          "    // @skjs-expect-error Type error full",
+          "  const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Original annotation indentation preserved",
+  );
+}
+
+module end;
