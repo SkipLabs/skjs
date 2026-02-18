@@ -23,6 +23,12 @@ class SKJS_EXPECT_ERROR extends AnnotationKind {
   const chars: Vector<Char> = SKJS_EXPECT_ERROR::str.chars();
 }
 
+base class UpdateMode {
+  children =
+  | UMValidateOnly()
+  | UMUpdate()
+}
+
 extension class .String {
   // Keep first line only, right-trimmed. When trimDots is true, also strip
   // trailing dots (and whitespace exposed by their removal).
