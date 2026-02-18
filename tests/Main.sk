@@ -377,18 +377,20 @@ fun testDirectory(
 
 @test
 fun testExamples(): void {
-  update = if (Environ.varOpt("UPDATE_EXPECT") == Some("1")) UMUpdate() else {
-    UMValidateOnly()
-  };
-  testDirectory("./examples/src/", validateExpectErrorComments, update);
+  testDirectory(
+    "./examples/src/",
+    validateExpectErrorComments,
+    UpdateMode::fromEnv(),
+  );
 }
 
 @test
 fun testExpectError(): void {
-  update = if (Environ.varOpt("UPDATE_EXPECT") == Some("1")) UMUpdate() else {
-    UMValidateOnly()
-  };
-  testDirectory("./tests/expect-error/", validateExpectErrorComments, update)
+  testDirectory(
+    "./tests/expect-error/",
+    validateExpectErrorComments,
+    UpdateMode::fromEnv(),
+  )
 }
 
 @test

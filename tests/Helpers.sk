@@ -27,6 +27,18 @@ base class UpdateMode {
   children =
   | UMValidateOnly()
   | UMUpdate()
+
+  static fun fromEnv(): UpdateMode {
+    Environ.varOpt("UPDATE_EXPECT") match {
+    | Some("1") -> UMUpdate()
+    | None() -> UMValidateOnly()
+    | Some(v) ->
+      print_string(
+        `Warning: Unknown UPDATE_EXPECT value "${v}", defaulting to 1\n`,
+      );
+      UMUpdate()
+    }
+  }
 }
 
 extension class .String {
