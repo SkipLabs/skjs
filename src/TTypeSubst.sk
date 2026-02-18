@@ -16,17 +16,30 @@ mutable base class SubstState private {
   mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
   mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+} {
+  readonly fun save(): SavedSubst {
+    SavedSubst::create(this)
+  }
+
+  mutable fun restore(saved: SavedSubst): void {
+    this.!version = saved.version;
+    this.!values = saved.values;
+    this.!seenSub = saved.seenSub;
+    this.!seenInter = saved.seenInter;
+    this.!seenUnion = saved.seenUnion;
+  }
 }
 
-mutable class SavedSubst{} extends SubstState {
-  static fun create(
-    seenSub: SortedSet<(TType, TType)>,
-    seenInter: SortedMap<(TType, TType), TType>,
-    seenUnion: SortedMap<(TType, TType), TType>,
-    version: Int,
-    values: SortedMap<Int, SubstValue>,
-  ): SavedSubst {
-    SavedSubst{seenSub, seenInter, seenUnion, version, values}
+mutable class SavedSubst private {} extends SubstState {
+  /* Forces frozen SavedSubst */
+  static fun create(state: readonly SubstState): SavedSubst {
+    SavedSubst{
+      seenSub => state.seenSub,
+      seenInter => state.seenInter,
+      seenUnion => state.seenUnion,
+      version => state.version,
+      values => state.values,
+    }
   }
 }
 
@@ -52,24 +65,6 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
       version => this.version,
       values => this.values,
     }
-  }
-
-  readonly fun save(): SavedSubst {
-    SavedSubst::create(
-      this.seenSub,
-      this.seenInter,
-      this.seenUnion,
-      this.version,
-      this.values,
-    )
-  }
-
-  mutable fun restore(saved: SavedSubst): void {
-    this.!version = saved.version;
-    this.!values = saved.values;
-    this.!seenSub = saved.seenSub;
-    this.!seenInter = saved.seenInter;
-    this.!seenUnion = saved.seenUnion;
   }
 
   mutable fun grow(
