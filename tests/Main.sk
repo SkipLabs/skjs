@@ -153,12 +153,12 @@ fun doUpdateExpectErrorComments(
 }
 
 // Errors must be prefixed with @ts-expect-error or @skjs-expect-error.
-// When update is true, rewrites annotations in-place and returns no errors.
+// When update is UMUpdate(), rewrites annotations in-place and returns no errors.
 fun validateExpectErrorComments(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   checkResult: SKJS.CheckResult,
-  update: Bool,
+  update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
   | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
@@ -171,7 +171,8 @@ fun validateExpectErrorComments(
   | Some(parseError) -> typeErrors.concat(Array[parseError])
   };
 
-  if (update) {
+  update match {
+  | UMUpdate() ->
     doUpdateExpectErrorComments(
       context,
       checker,
@@ -180,7 +181,7 @@ fun validateExpectErrorComments(
       actualErrors,
     );
     Array[]
-  } else {
+  | UMValidateOnly() ->
     tsExpectErrors = findExpectErrors(fileContents.value).iterator();
     validateReferenceErrors(
       context,
@@ -197,7 +198,7 @@ fun validateTSConformance(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
   checkResult: SKJS.CheckResult,
-  _update: Bool,
+  _update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
   | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
@@ -248,7 +249,7 @@ fun validateNotSupported(
   _context: mutable SKStore.Context,
   _checker: SKJS.Checker,
   checkResult: SKJS.CheckResult,
-  _update: Bool,
+  _update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
   (fileName, parseErrorOpt, typeErrors) = checkResult match {
   | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
@@ -298,14 +299,14 @@ type Validator = (
   mutable SKStore.Context,
   SKJS.Checker,
   SKJS.CheckResult,
-  Bool,
+  UpdateMode,
 ) ~> Array<SKTest.ExpectationError>;
 
 fun testFiles(
   srcFiles: Array<String>,
   importStubs: Array<String>,
   validateResult: Validator,
-  update: Bool = false,
+  update: UpdateMode = UMValidateOnly(),
 ): void {
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
@@ -349,7 +350,7 @@ fun testFiles(
 fun testFile(
   fileName: String,
   validateResult: Validator = validateExpectErrorComments,
-  update: Bool = false,
+  update: UpdateMode = UMValidateOnly(),
 ): void {
   srcFiles = Array[fileName];
   importStubs = Array[];
@@ -359,7 +360,7 @@ fun testFile(
 fun testDirectory(
   dirName: String,
   validateResult: Validator = validateExpectErrorComments,
-  update: Bool = false,
+  update: UpdateMode = UMValidateOnly(),
 ): void {
   dir = Path.resolve(dirName);
   srcFiles = FileSystem.readDirectory(dir).filterMap(f ~>
@@ -376,13 +377,17 @@ fun testDirectory(
 
 @test
 fun testExamples(): void {
-  update = Environ.varOpt("UPDATE_EXPECT") == Some("1");
+  update = if (Environ.varOpt("UPDATE_EXPECT") == Some("1")) UMUpdate() else {
+    UMValidateOnly()
+  };
   testDirectory("./examples/src/", validateExpectErrorComments, update);
 }
 
 @test
 fun testExpectError(): void {
-  update = Environ.varOpt("UPDATE_EXPECT") == Some("1");
+  update = if (Environ.varOpt("UPDATE_EXPECT") == Some("1")) UMUpdate() else {
+    UMValidateOnly()
+  };
   testDirectory("./tests/expect-error/", validateExpectErrorComments, update)
 }
 
