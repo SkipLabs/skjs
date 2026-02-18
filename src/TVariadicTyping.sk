@@ -258,9 +258,10 @@ class VariadicTyping() {
     rhs: TType,
   ): ?STResult<TType> {
     // Check if lhs is a single tuple
-    tuple1 = clauses1.getSingleTuple();
-    if (tuple1 is None()) return None();
-
+    tuple = clauses1.getSingleTuple() match {
+    | None() -> return None()
+    | Some(tuple) -> tuple
+    };
     // Cheap array-like trigger: check if rhs has a "length" field.
     // This is just a gate — correctness comes from ReadonlyArray<U> <: rhs below.
     rhsClauses = rhs.expandToClauses(subst, tenv, Contravariant());
@@ -275,7 +276,6 @@ class VariadicTyping() {
     if (!hasLength) return None();
 
     // Build U = union of tuple element types, then check ReadonlyArray<U> <: rhs.
-    tuple = tuple1.fromSome();
     pos = tuple.pos;
     u = tuple.tuple.reduce(
       (acc, elt) -> TType::union(subst, tenv, acc, elt),

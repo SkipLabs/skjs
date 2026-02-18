@@ -1574,6 +1574,18 @@ class Clauses private (
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
   }
 
+  // Returns the single tuple if clauses represents exactly one tuple type
+  fun getSingleTuple(): ?TTuple {
+    clause = this.clauses.singleElt() match {
+    | Some(c) if (c.vars.isEmpty()) -> c
+    | _ -> return None()
+    };
+    clause.stypes.flatMap(stypes -> stypes.singleElt()) match {
+    | Some(tuple @ TTuple _) -> Some(tuple)
+    | _ -> None()
+    }
+  }
+
   // t.mapSTypes(f) is t with stypes updated by f
   fun mapSTypes(f: (?STypes) -> ?STypes): Clauses {
     Clauses::create(this.clauses.filterMap(clause -> clause.mapSTypes(f)))
