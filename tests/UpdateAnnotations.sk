@@ -329,6 +329,83 @@ fun testUpdateFileAnnotations(): void {
     None(),
     "Non-alphabetical order preserved when set matches",
   );
+
+  // 18. Partial group change preserves order of remaining annotations
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg C",
+          "// @skjs-expect-error Msg B",
+          "// @skjs-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[4 => SortedSet["Msg A", "Msg C"]],
+      Map["Msg A" => "Msg A", "Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg C",
+          "// @skjs-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Partial group change preserves order of remaining",
+  );
+
+  // 19. Partial group change: new messages added after existing
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B",
+          "// @skjs-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B", "Msg C"]],
+      Map["Msg A" => "Msg A", "Msg B" => "Msg B", "Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B",
+          "// @skjs-expect-error Msg A",
+          "// @skjs-expect-error Msg C",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "New messages added after existing in original order",
+  );
+
+  // 20. Partial group change with @ts-expect-error stays last
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B",
+          "// @ts-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg C"]],
+      Map["Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg C",
+          "// @ts-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Partial change with @ts-expect-error stays last",
+  );
 }
 
 module end;

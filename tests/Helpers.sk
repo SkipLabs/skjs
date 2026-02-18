@@ -343,34 +343,45 @@ fun updateFileAnnotations(
         | Some(msg) if (errors.contains(msg)) -> Some(msg)
         | _ -> None()
         };
-        // Output @skjs-expect-error first
+        // Phase 1: Emit existing annotations still in errors, preserving order
+        // (skip @ts-expect-error — Phase 3 emits it last)
+        emitted = SortedSet[];
+        existingGroups.maybeGet(lineNum) match {
+        | Some(g) ->
+          for (a in g.annotations) {
+            isTsMsg = tsMsg match {
+            | Some(msg) if (msg == a.message) -> true
+            | _ -> false
+            };
+            if (!isTsMsg && errors.contains(a.message)) {
+              msgText = if (!fullRewrite) {
+                a.originalMessage
+              } else {
+                fullMessages.maybeGet(a.message).default(a.message)
+              };
+              result.push(`${indent}// @${a.annot::str} ${msgText}`);
+              !emitted = emitted.set(a.message)
+            }
+          }
+        | None() -> void
+        };
+        // Phase 2: Emit new @skjs-expect-error annotations
         for (trimmedMsg in errors) {
+          if (emitted.contains(trimmedMsg)) continue;
           tsMsg match {
           | Some(msg) if (msg == trimmedMsg) -> continue
           | _ -> void
           };
-          msgText = if (!fullRewrite) {
-            origMessageMap.maybeGet((lineNum, trimmedMsg)) match {
-            | Some(orig) -> orig
-            | None() -> fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
-            }
-          } else {
-            fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
-          };
+          msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
           result.push(`${indent}// @${SKJS_EXPECT_ERROR::str} ${msgText}`)
         };
-        // Output @ts-expect-error last
-        tsMsg.each(trimmedMsg -> {
-          msgText = if (!fullRewrite) {
-            origMessageMap.maybeGet((lineNum, trimmedMsg)) match {
-            | Some(orig) -> orig
-            | None() -> fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
-            }
-          } else {
-            fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
-          };
+        // Phase 3: Emit @ts-expect-error last (only if new, not already emitted)
+        tsMsg match {
+        | Some(trimmedMsg) if (!emitted.contains(trimmedMsg)) ->
+          msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
           result.push(`${indent}// @${TS_EXPECT_ERROR::str} ${msgText}`)
-        })
+        | _ -> void
+        }
       }
     | None() -> void
     };
