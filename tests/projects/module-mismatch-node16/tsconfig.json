@@ -3,7 +3,7 @@
     "strict": true,
     "target": "ES2020",
     "module": "esnext",
-    // @skjs-expect-error Option 'moduleResolution' is set to 'node16', but option 'module' must also be set to 'node16'
+    // @skjs-expect-error Option 'moduleResolution' is set to 'node16', but option 'module' must also be set to 'node16'.
     "moduleResolution": "node16"
   },
   "include": ["src/**/*"]
