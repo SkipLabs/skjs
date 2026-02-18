@@ -55,11 +55,7 @@ class Files(
         return Failure(`Source file ${f} does not exist`)
       };
       if (FileSystem.isDirectory(f)) {
-        srcFiles.extend(
-          FileSystem.readFilesRecursive(f, fileName ->
-            fileName.endsWith(".ts")
-          ),
-        )
+        srcFiles.extend(FileSystem.readFilesRecursive(f, isTsFile))
       } else {
         srcFiles.insert(f)
       }
@@ -73,11 +69,7 @@ class Files(
     srcFiles.insert(builtinsFileName.toString());
     !importStubs = importStubs.map(dir -> Path.resolve(dir));
     importStubs.each(dir ->
-      srcFiles.extend(
-        FileSystem.readFilesRecursive(dir, fileName ->
-          fileName.endsWith(".ts")
-        ),
-      )
+      srcFiles.extend(FileSystem.readFilesRecursive(dir, isTsFile))
     );
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();

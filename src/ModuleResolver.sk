@@ -129,6 +129,10 @@ fun hasJsLikeExtension(name: String): Bool {
   name.endsWith(".js") || name.endsWith(".mjs") || name.endsWith(".cjs")
 }
 
+fun isTsFile(fileName: String): Bool {
+  fileName.endsWith(".ts") || fileName.endsWith(".tsx")
+}
+
 fun resolveName(cwd: DAbsolute, moduleName: String): ?FAbsolute {
   if (moduleName == "." || moduleName == "./") {
     print_error("Could not resolve module '.'");
