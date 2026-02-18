@@ -359,15 +359,13 @@ extension class TFun {
     f1: TFun,
     f2: TFun,
   ): ?TFun {
-    saved1 = subst.save();
     TFun::isSub(subst, tenv, f1, f2) match {
     | STOk() -> return Some(f1)
-    | STError _ -> subst.restore(saved1)
+    | STError _ -> void
     };
-    saved2 = subst.save();
     TFun::isSub(subst, tenv, f2, f1) match {
     | STOk() -> return Some(f2)
-    | STError _ -> subst.restore(saved2)
+    | STError _ -> void
     };
     None()
   }
