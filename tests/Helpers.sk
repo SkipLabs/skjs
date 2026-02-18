@@ -27,10 +27,12 @@ base class UpdateMode {
   children =
   | UMValidateOnly()
   | UMUpdate()
+  | UMFullRewrite()
 
   static fun fromEnv(): UpdateMode {
     Environ.varOpt("UPDATE_EXPECT") match {
     | Some("1") -> UMUpdate()
+    | Some("2") -> UMFullRewrite()
     | None() -> UMValidateOnly()
     | Some(v) ->
       print_string(

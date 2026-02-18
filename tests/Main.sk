@@ -172,7 +172,8 @@ fun validateExpectErrorComments(
   };
 
   update match {
-  | UMUpdate() ->
+  | UMUpdate()
+  | UMFullRewrite() ->
     doUpdateExpectErrorComments(
       context,
       checker,
