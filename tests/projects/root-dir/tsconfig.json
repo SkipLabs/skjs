@@ -1,0 +1,9 @@
+{
+  // Test that rootDir is parsed correctly
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    "rootDir": "./src"
+  },
+  "include": ["src/**/*.ts"]
+}

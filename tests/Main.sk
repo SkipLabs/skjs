@@ -454,6 +454,7 @@ fun testNoLostTest(): void {
   coveredTestDirs = Set[
     "expect-error", // handled in testExpectError
     "ts-conformance", // handled in testTypeScriptConformance and testNotSupportedTypeScriptConformance
+    "projects", // handled in testProjects
   ];
   for (subDir in FileSystem.readDirectory(testsDir)) {
     if (coveredTestDirs.contains(subDir)) continue;
