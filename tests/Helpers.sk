@@ -26,13 +26,12 @@ class SKJS_EXPECT_ERROR extends AnnotationKind {
 base class UpdateMode {
   children =
   | UMValidateOnly()
-  | UMUpdate()
-  | UMFullRewrite()
 
   static fun fromEnv(): UpdateMode {
     Environ.varOpt("UPDATE_EXPECT") match {
     | Some("1") -> UMUpdate()
-    | Some("2") -> UMFullRewrite()
+    | Some("2") -> UMFullMessages()
+    | Some("3") -> UMFullRewrite()
     | None() -> UMValidateOnly()
     | Some(v) ->
       print_string(
@@ -41,6 +40,13 @@ base class UpdateMode {
       UMUpdate()
     }
   }
+}
+
+base class UMDoUpdate extends UpdateMode {
+  children =
+  | UMUpdate()
+  | UMFullMessages()
+  | UMFullRewrite()
 }
 
 extension class .String {
@@ -285,7 +291,7 @@ fun updateFileAnnotations(
   contents: String,
   actualErrorsByLine: Map<Int, SortedSet<String>>,
   fullMessages: Map<String, String>,
-  fullRewrite: Bool = false,
+  update: UMDoUpdate = UMUpdate(),
 ): ?String {
   groups = findAnnotationLines(contents);
 
@@ -316,7 +322,7 @@ fun updateFileAnnotations(
     actualErrorsByLine.maybeGet(lineNum) match {
     | Some(errors) ->
       // Check if existing annotations already match — preserve original order
-      existingMatch = if (!fullRewrite) {
+      existingMatch = if (update is UMUpdate()) {
         existingGroups.maybeGet(lineNum) match {
         | Some(
           g,
@@ -344,26 +350,28 @@ fun updateFileAnnotations(
         | _ -> None()
         };
         // Phase 1: Emit existing annotations still in errors, preserving order
-        // (skip @ts-expect-error — Phase 3 emits it last)
+        // (skip @ts-expect-error — Phase 3 emits it last; skip entirely when reordering)
         emitted = SortedSet[];
-        existingGroups.maybeGet(lineNum) match {
-        | Some(g) ->
-          for (a in g.annotations) {
-            isTsMsg = tsMsg match {
-            | Some(msg) if (msg == a.message) -> true
-            | _ -> false
-            };
-            if (!isTsMsg && errors.contains(a.message)) {
-              msgText = if (!fullRewrite) {
-                a.originalMessage
-              } else {
-                fullMessages.maybeGet(a.message).default(a.message)
+        if (!(update is UMFullRewrite())) {
+          existingGroups.maybeGet(lineNum) match {
+          | Some(g) ->
+            for (a in g.annotations) {
+              isTsMsg = tsMsg match {
+              | Some(msg) if (msg == a.message) -> true
+              | _ -> false
               };
-              result.push(`${indent}// @${a.annot::str} ${msgText}`);
-              !emitted = emitted.set(a.message)
+              if (!isTsMsg && errors.contains(a.message)) {
+                msgText = if (update is UMUpdate()) {
+                  a.originalMessage
+                } else {
+                  fullMessages.maybeGet(a.message).default(a.message)
+                };
+                result.push(`${indent}// @${a.annot::str} ${msgText}`);
+                !emitted = emitted.set(a.message)
+              }
             }
+          | None() -> void
           }
-        | None() -> void
         };
         // Phase 2: Emit new @skjs-expect-error annotations
         for (trimmedMsg in errors) {

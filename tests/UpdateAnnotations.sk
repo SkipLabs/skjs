@@ -276,7 +276,7 @@ fun testUpdateFileAnnotations(): void {
       ),
       Map[2 => SortedSet["Type mismatch"]],
       Map["Type mismatch" => "Type mismatch between types."],
-      true,
+      UMFullMessages(),
     ),
     Some(
       lines(
@@ -300,7 +300,7 @@ fun testUpdateFileAnnotations(): void {
       ),
       Map[2 => SortedSet["Type mismatch"]],
       noFull,
-      true,
+      UMFullMessages(),
     ),
     Some(
       lines(
@@ -405,6 +405,58 @@ fun testUpdateFileAnnotations(): void {
       ),
     ),
     "Partial change with @ts-expect-error stays last",
+  );
+
+  // 21. useFullMessages rewrites text but preserves order
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B...",
+          "// @skjs-expect-error Msg A...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B"]],
+      Map["Msg A" => "Msg A full", "Msg B" => "Msg B full"],
+      UMFullMessages(),
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B full",
+          "// @skjs-expect-error Msg A full",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "UMFullMessages rewrites text but preserves order",
+  );
+
+  // 22. reorder forces alphabetical order
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B...",
+          "// @skjs-expect-error Msg A...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B"]],
+      Map["Msg A" => "Msg A full", "Msg B" => "Msg B full"],
+      UMFullRewrite(),
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg A full",
+          "// @skjs-expect-error Msg B full",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "reorder forces alphabetical order",
   );
 }
 
