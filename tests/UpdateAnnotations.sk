@@ -312,6 +312,23 @@ fun testUpdateFileAnnotations(): void {
     ),
     "Full rewrite falls back to trimmed when no full message",
   );
+
+  // 17. Non-alphabetical annotation order preserved when set matches
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg B",
+          "// @skjs-expect-error Msg A",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg A", "Msg B"]],
+      Map["Msg A" => "Msg A", "Msg B" => "Msg B"],
+    ),
+    None(),
+    "Non-alphabetical order preserved when set matches",
+  );
 }
 
 module end;
