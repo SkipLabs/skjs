@@ -128,7 +128,7 @@ fun doUpdateExpectErrorComments(
   fileName: SKJS.FAbsolute,
   fileContents: String,
   actualErrors: Array<SKJS.Error>,
-  update: UMDoUpdate = UMUpdate(),
+  update: UMDoUpdate,
 ): void {
   linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
   errorsByLine = mutable Map[];
@@ -174,18 +174,6 @@ fun validateExpectErrorComments(
   };
 
   update match {
-  | doUpdate @ UMUpdate()
-  | doUpdate @ UMFullMessages()
-  | doUpdate @ UMFullRewrite() ->
-    doUpdateExpectErrorComments(
-      context,
-      checker,
-      fileName,
-      fileContents.value,
-      actualErrors,
-      doUpdate,
-    );
-    Array[]
   | UMValidateOnly() ->
     tsExpectErrors = findExpectErrors(fileContents.value).iterator();
     validateReferenceErrors(
@@ -195,6 +183,16 @@ fun validateExpectErrorComments(
       actualErrors,
       tsExpectErrors,
     )
+  | doUpdate @ UMDoUpdate _ ->
+    doUpdateExpectErrorComments(
+      context,
+      checker,
+      fileName,
+      fileContents.value,
+      actualErrors,
+      doUpdate,
+    );
+    Array[]
   }
 }
 
