@@ -67,6 +67,9 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
   mutable fun restore(saved: SavedSubst): void {
     this.!version = saved.version;
     this.!values = saved.values;
+    this.!seenSub = saved.seenSub;
+    this.!seenInter = saved.seenInter;
+    this.!seenUnion = saved.seenUnion;
   }
 
   mutable fun grow(
