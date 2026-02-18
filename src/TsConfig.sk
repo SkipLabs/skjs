@@ -109,6 +109,26 @@ base class TsTarget uses Equality {
   fun isOutdated(): Bool {
     this == TES3() || this == TES5()
   }
+
+  // Derive the default lib from the target (matches tsc, minus DOM).
+  fun defaultLib(): Array<String> {
+    this match {
+    | TES3()
+    | TES5() ->
+      Array["es5"]
+    | TES2015() -> Array["es2015"]
+    | TES2016() -> Array["es2016"]
+    | TES2017() -> Array["es2017"]
+    | TES2018() -> Array["es2018"]
+    | TES2019() -> Array["es2019"]
+    | TES2020() -> Array["es2020"]
+    | TES2021() -> Array["es2021"]
+    | TES2022() -> Array["es2022"]
+    | TES2023() -> Array["es2023"]
+    | TES2024() -> Array["es2024"]
+    | TESNext() -> Array["esnext"]
+    }
+  }
 }
 
 // TypeScript module system
@@ -602,11 +622,11 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       .maybeGetBool("allowImportingTsExtensions")
       .default(false);
 
-    // Extract lib
+    // Extract lib (default from target when not specified, matching tsc)
     lib = co.maybeGetArray("lib") match {
     | Some(arr) ->
       arr.value.map(v -> v.expectString().lowercase()).collect(Array)
-    | None() -> Array[]
+    | None() -> tsTarget.defaultLib()
     };
 
     TsCompilerOptions{
