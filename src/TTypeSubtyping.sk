@@ -1,5 +1,10 @@
 /***************************************************************************/
 // Subtyping operations for types.
+//
+// INVARIANT: Every isSub function must guarantee that when it returns
+// STError, the subst is unchanged (either restored or never mutated).
+// This ensures callers can safely try speculative subtype checks without
+// manual save/restore.
 /***************************************************************************/
 
 module SKJS;
