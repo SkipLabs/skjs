@@ -376,7 +376,7 @@ mutable class FileDefsState private {
   private mutable fun resolveName(mname: Name): ?ModuleName {
     name = mname.value;
     resolved = if (name.startsWith("./") || name.startsWith("../")) {
-      if (!name.endsWith(".js")) {
+      if (!hasJsLikeExtension(name)) {
         this.fileErrors.push(
           TypingError(
             Array[
