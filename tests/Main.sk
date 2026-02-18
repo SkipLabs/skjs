@@ -128,6 +128,7 @@ fun doUpdateExpectErrorComments(
   fileName: SKJS.FAbsolute,
   fileContents: String,
   actualErrors: Array<SKJS.Error>,
+  fullRewrite: Bool = false,
 ): void {
   linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
   errorsByLine = mutable Map[];
@@ -146,6 +147,7 @@ fun doUpdateExpectErrorComments(
     fileContents,
     errorsByLine.chill(),
     fullMessages.chill(),
+    fullRewrite,
   ).each(updatedContents -> {
     FileSystem.writeTextFile(fileName.toString(), updatedContents);
     print_string(`Updated: ${fileName}\n`)
@@ -180,6 +182,7 @@ fun validateExpectErrorComments(
       fileName,
       fileContents.value,
       actualErrors,
+      update is UMFullRewrite(),
     );
     Array[]
   | UMValidateOnly() ->

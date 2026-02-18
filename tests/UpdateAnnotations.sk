@@ -264,6 +264,54 @@ fun testUpdateFileAnnotations(): void {
     ),
     "Full message used for new errors",
   );
+
+  // 15. Full rewrite replaces preserved annotation text
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type mismatch"]],
+      Map["Type mismatch" => "Type mismatch between types."],
+      true,
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch between types.",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Full rewrite replaces preserved annotation text",
+  );
+
+  // 16. Full rewrite falls back to trimmed when no full message available
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch...",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type mismatch"]],
+      noFull,
+      true,
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Full rewrite falls back to trimmed when no full message",
+  );
 }
 
 module end;

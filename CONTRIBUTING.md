@@ -78,6 +78,12 @@ UPDATE_EXPECT=1 make test-in-docker
 
 This rewrites annotations in `tests/expect-error/` and `examples/src/` to match actual error messages, preserving the `@ts-expect-error` vs `@skjs-expect-error` prefix. New errors get `@skjs-expect-error` by default. Run `make test-in-docker` afterward to verify.
 
+Use `UPDATE_EXPECT=2` for a full rewrite that also replaces existing annotation text with the current full error message (ignoring previously preserved formatting):
+
+```sh
+UPDATE_EXPECT=2 make test-in-docker
+```
+
 ## Commit Guidelines
 
 ### Commit Requirements

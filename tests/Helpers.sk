@@ -285,6 +285,7 @@ fun updateFileAnnotations(
   contents: String,
   actualErrorsByLine: Map<Int, SortedSet<String>>,
   fullMessages: Map<String, String>,
+  fullRewrite: Bool = false,
 ): ?String {
   groups = findAnnotationLines(contents);
 
@@ -328,17 +329,25 @@ fun updateFileAnnotations(
         | Some(msg) if (msg == trimmedMsg) -> continue
         | _ -> void
         };
-        msgText = origMessageMap.maybeGet((lineNum, trimmedMsg)) match {
-        | Some(orig) -> orig
-        | None() -> fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
+        msgText = if (!fullRewrite) {
+          origMessageMap.maybeGet((lineNum, trimmedMsg)) match {
+          | Some(orig) -> orig
+          | None() -> fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
+          }
+        } else {
+          fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
         };
         result.push(`${indent}// @${SKJS_EXPECT_ERROR::str} ${msgText}`)
       };
       // Output @ts-expect-error last
       tsMsg.each(trimmedMsg -> {
-        msgText = origMessageMap.maybeGet((lineNum, trimmedMsg)) match {
-        | Some(orig) -> orig
-        | None() -> fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
+        msgText = if (!fullRewrite) {
+          origMessageMap.maybeGet((lineNum, trimmedMsg)) match {
+          | Some(orig) -> orig
+          | None() -> fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
+          }
+        } else {
+          fullMessages.maybeGet(trimmedMsg).default(trimmedMsg)
         };
         result.push(`${indent}// @${TS_EXPECT_ERROR::str} ${msgText}`)
       })
