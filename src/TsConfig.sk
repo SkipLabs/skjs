@@ -34,7 +34,7 @@ module SKJS;
 //
 // SUPPORTED — silently accepted:
 //     rootDir, baseUrl, paths, target, module, moduleResolution,
-//     allowImportingTsExtensions
+//     allowImportingTsExtensions, lib
 //
 // IGNORED — emit/tooling/IDE options, silently accepted:
 //   Emit: outDir, outFile, declaration, declarationMap,
@@ -46,7 +46,7 @@ module SKJS;
 //   Interop: esModuleInterop, allowSyntheticDefaultImports,
 //     forceConsistentCasingInFileNames, isolatedModules,
 //     verbatimModuleSyntax
-//   Language: lib
+//   Language: (none remaining)
 //   Projects: composite, incremental, tsBuildInfoFile
 //   Completeness: skipLibCheck, skipDefaultLibCheck
 //   Other: pretty, allowUmdGlobalAccess, useDefineForClassFields,
@@ -195,6 +195,7 @@ class TsCompilerOptions{
   tsModule: TsModule = TsModule::default,
   moduleResolution: ModuleResolution = ModuleResolution::default,
   allowImportingTsExtensions: Bool = false,
+  lib: Array<String> = Array[],
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -601,6 +602,13 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       .maybeGetBool("allowImportingTsExtensions")
       .default(false);
 
+    // Extract lib
+    lib = co.maybeGetArray("lib") match {
+    | Some(arr) ->
+      arr.value.map(v -> v.expectString().lowercase()).collect(Array)
+    | None() -> Array[]
+    };
+
     TsCompilerOptions{
       rootDir => co.maybeGetString("rootDir"),
       baseUrl,
@@ -609,6 +617,7 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
       tsModule,
       moduleResolution,
       allowImportingTsExtensions,
+      lib,
     }
   | None() ->
     diags.push(
