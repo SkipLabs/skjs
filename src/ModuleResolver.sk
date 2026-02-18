@@ -125,6 +125,10 @@ value class FRelative uses FileNameBase<DRelative> {
 // .mts/.d.mts for .mjs, .cts/.d.cts for .cjs).
 /***************************************************************************/
 
+fun hasJsLikeExtension(name: String): Bool {
+  name.endsWith(".js") || name.endsWith(".mjs") || name.endsWith(".cjs")
+}
+
 fun resolveName(cwd: DAbsolute, moduleName: String): ?FAbsolute {
   if (moduleName == "." || moduleName == "./") {
     print_error("Could not resolve module '.'");
