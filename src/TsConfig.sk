@@ -640,6 +640,14 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
             isWarning => false,
           },
         )
+      } else if (unsupportedLibValues.contains(value)) {
+        diags.push(
+          TsConfigDiag{
+            line => libLine,
+            message => `Option 'lib' value '${value}' is not supported by SKJS.`,
+            isWarning => true,
+          },
+        )
       }
     };
 
@@ -860,6 +868,18 @@ const knownLibValues: SortedSet<String> = SortedSet[
   "scripthost",
   "decorators",
   "decorators.legacy",
+];
+
+// Lib values that are known but not supported by SKJS (no DOM/browser APIs).
+const unsupportedLibValues: SortedSet<String> = SortedSet[
+  "dom",
+  "dom.asynciterable",
+  "dom.iterable",
+  "webworker",
+  "webworker.asynciterable",
+  "webworker.importscripts",
+  "webworker.iterable",
+  "scripthost",
 ];
 
 // Find the 1-based line number of a JSON key in raw JSONC content.
