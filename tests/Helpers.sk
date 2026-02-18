@@ -170,6 +170,11 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
     lastResultI = result.size() - 1;
     result.maybeGet(lastResultI) match {
     | Some(lastResult) if (lastResult.line == lineNumber) ->
+      if (lastResult.expectedErrors.contains(restOfLine)) {
+        invariant_violation(
+          `Line ${lineNumber}: duplicate annotation: ${restOfLine}`,
+        )
+      };
       result![lastResultI] = lastResult with {
         line => lineNumber + 1,
         expectedErrors => lastResult.expectedErrors.add(restOfLine),
