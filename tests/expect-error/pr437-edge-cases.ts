@@ -1,11 +1,9 @@
-// Edge cases for PR #437: type inference bugs in inter_ and field subtyping
-// All cases pass both TypeScript (npx tsc --strict --noEmit) and SKJS.
+// Edge cases for type intersection and recursive type inference.
 
 // ============================================================
-// 1. Self-referential TVar through function types
-//    referencesTVarId doesn't traverse TFun params/returns,
-//    but these pass because the self-reference pattern that triggers
-//    infinite recursion occurs through object field types, not function types.
+// 1. Self-referential types through function fields
+//    Recursive types where the self-reference goes through function
+//    parameter or return types rather than plain object fields.
 // ============================================================
 
 type FnNode = null | { apply: (x: FnNode) => FnNode };
@@ -52,9 +50,11 @@ function testSelfHandler<T extends SelfHandler>(x: T): SelfHandler {
 }
 
 // ============================================================
-// 2. Deferred set check — mutable field covariance
-//    With the set check removed, object fields are covariant (matching TS).
-//    Array<T> remains invariant because Array has mutable methods.
+// 2. Mutable field covariance
+//    Object fields are covariant in structural subtyping: {pet: Dog}
+//    is assignable to {pet: Animal}. This is unsound (a write through
+//    the wider type could violate the narrower type) but matches TS.
+//    TODO: reject once fields have separate get/set types.
 // ============================================================
 
 interface Animal {
@@ -64,7 +64,6 @@ interface Dog extends Animal {
   breed: string;
 }
 
-// TS allows mutable field covariance (structural typing unsoundness)
 function testMutableFieldCovariance(): void {
   const dogBox: { pet: Dog } = { pet: { name: "Rex", breed: "Lab" } };
   const animalBox: { pet: Animal } = dogBox;
@@ -78,7 +77,8 @@ function testNestedMutableCovariance(): void {
 }
 
 // ============================================================
-// 3. Recursive type patterns (inter_ recursion fix)
+// 3. Recursive type patterns
+//    Types with recursive references through arrays and index signatures.
 // ============================================================
 
 type TreeNode437 = {
@@ -114,7 +114,10 @@ function testJsonGeneric437(): void {
 }
 
 // ============================================================
-// 4. Constraint intersection — nested generic constraint
+// 4. Nested generic constraint intersection
+//    When a type variable has a nested constraint (Wrapper<StrOrNum>)
+//    and is instantiated with a narrower type (Wrapper<string>),
+//    the constraint intersection must preserve field types correctly.
 // ============================================================
 
 interface Box437<T> {
