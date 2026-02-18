@@ -2,6 +2,7 @@
   "compilerOptions": {
     "strict": true,
     "target": "ES2020",
+    // @skjs-expect-error Unknown 'lib' value 'foobar'.
     "lib": ["foobar"]
   },
   "include": ["src/**/*"]

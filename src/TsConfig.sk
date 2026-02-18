@@ -629,6 +629,20 @@ fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
     | None() -> tsTarget.defaultLib()
     };
 
+    // Validate lib values
+    libLine = findKeyLine(rawContents, "lib");
+    for (value in lib) {
+      if (!knownLibValues.contains(value)) {
+        diags.push(
+          TsConfigDiag{
+            line => libLine,
+            message => `Unknown 'lib' value '${value}'.`,
+            isWarning => false,
+          },
+        )
+      }
+    };
+
     TsCompilerOptions{
       rootDir => co.maybeGetString("rootDir"),
       baseUrl,
@@ -748,6 +762,104 @@ const notYetSupportedOptions: Array<String> = Array[
   "noUnusedLocals",
   "noUnusedParameters",
   "noPropertyAccessFromIndexSignature",
+];
+
+// Valid lib values (from tsc 5.6, plus es2024 for forward compat).
+const knownLibValues: SortedSet<String> = SortedSet[
+  // Base ES levels
+  "es5",
+  "es6",
+  "es2015",
+  "es2016",
+  "es2017",
+  "es2018",
+  "es2019",
+  "es2020",
+  "es2021",
+  "es2022",
+  "es2023",
+  "es2024",
+  "esnext",
+  // ES2015 sub-libs
+  "es2015.collection",
+  "es2015.core",
+  "es2015.generator",
+  "es2015.iterable",
+  "es2015.promise",
+  "es2015.proxy",
+  "es2015.reflect",
+  "es2015.symbol",
+  "es2015.symbol.wellknown",
+  // ES2016 sub-libs
+  "es2016.array.include",
+  "es2016.intl",
+  // ES2017 sub-libs
+  "es2017.date",
+  "es2017.intl",
+  "es2017.object",
+  "es2017.sharedmemory",
+  "es2017.string",
+  "es2017.typedarrays",
+  // ES2018 sub-libs
+  "es2018.asyncgenerator",
+  "es2018.asynciterable",
+  "es2018.intl",
+  "es2018.promise",
+  "es2018.regexp",
+  // ES2019 sub-libs
+  "es2019.array",
+  "es2019.intl",
+  "es2019.object",
+  "es2019.string",
+  "es2019.symbol",
+  // ES2020 sub-libs
+  "es2020.bigint",
+  "es2020.date",
+  "es2020.intl",
+  "es2020.number",
+  "es2020.promise",
+  "es2020.sharedmemory",
+  "es2020.string",
+  "es2020.symbol.wellknown",
+  // ES2021 sub-libs
+  "es2021.intl",
+  "es2021.promise",
+  "es2021.string",
+  "es2021.weakref",
+  // ES2022 sub-libs
+  "es2022.array",
+  "es2022.error",
+  "es2022.intl",
+  "es2022.object",
+  "es2022.regexp",
+  "es2022.sharedmemory",
+  "es2022.string",
+  // ES2023 sub-libs
+  "es2023.array",
+  "es2023.collection",
+  "es2023.intl",
+  // ESNext sub-libs
+  "esnext.array",
+  "esnext.collection",
+  "esnext.decorators",
+  "esnext.disposable",
+  "esnext.intl",
+  "esnext.iterator",
+  "esnext.object",
+  "esnext.promise",
+  "esnext.regexp",
+  "esnext.string",
+  // Environment libs
+  "dom",
+  "dom.asynciterable",
+  "dom.iterable",
+  "webworker",
+  "webworker.asynciterable",
+  "webworker.importscripts",
+  "webworker.iterable",
+  "scripthost",
+  "decorators",
+  "decorators.legacy",
 ];
 
 // Find the 1-based line number of a JSON key in raw JSONC content.
