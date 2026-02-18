@@ -10,15 +10,27 @@ base class SubstValue {
   | SVClosed(TType)
 }
 
-class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
-
-mutable class Subst private {
+mutable base class SubstState private {
   mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
   mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
-  private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
-} extends TCEnvBase {
+  mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+}
+
+mutable class SavedSubst{} extends SubstState {
+  static fun create(
+    seenSub: SortedSet<(TType, TType)>,
+    seenInter: SortedMap<(TType, TType), TType>,
+    seenUnion: SortedMap<(TType, TType), TType>,
+    version: Int,
+    values: SortedMap<Int, SubstValue>,
+  ): SavedSubst {
+    SavedSubst{seenSub, seenInter, seenUnion, version, values}
+  }
+}
+
+mutable class Subst private {} extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
@@ -43,7 +55,13 @@ mutable class Subst private {
   }
 
   readonly fun save(): SavedSubst {
-    SavedSubst{version => this.version, values => this.values}
+    SavedSubst::create(
+      this.seenSub,
+      this.seenInter,
+      this.seenUnion,
+      this.version,
+      this.values,
+    )
   }
 
   mutable fun restore(saved: SavedSubst): void {
