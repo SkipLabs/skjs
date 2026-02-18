@@ -282,6 +282,13 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
   })
 }
 
+fun getIndent(line: String): String {
+  i = line.getIter();
+  _ = i.find(c ~> c != ' ' && c != '\t');
+  _ = i.prev();
+  line.getIter().substring(i)
+}
+
 /* Rewrites a file's expect-error annotations to match actual errors.
  * - Updates messages for existing annotations (preserving @ts vs @skjs prefix)
  * - Removes annotations where errors no longer occur
@@ -294,6 +301,7 @@ fun updateFileAnnotations(
   update: UMDoUpdate = UMUpdate(),
 ): ?String {
   groups = findAnnotationLines(contents);
+  lines = contents.split("\n");
 
   // Build set of annotation comment line numbers and maps for lookup
   commentLineNumbers = SortedSet[];
@@ -305,13 +313,13 @@ fun updateFileAnnotations(
     for (a in group.annotations) {
       !commentLineNumbers = commentLineNumbers.add(a.commentLineNumber);
       origMessageMap.set((group.errorLine, a.message), a.originalMessage);
-      if (a.annot::str == TS_EXPECT_ERROR::str) {
-        lastTsExpect.set(group.errorLine, a.message)
-      }
+    };
+    // Only track @ts-expect-error for "emit last" if it's the last annotation
+    lastAnnot = group.annotations[group.annotations.size() - 1];
+    if (lastAnnot.annot::str == TS_EXPECT_ERROR::str) {
+      lastTsExpect.set(group.errorLine, lastAnnot.message)
     }
   };
-
-  lines = contents.split("\n");
   result = mutable Vector[];
   for (lineIdx => lineContents in lines) {
     lineNum = lineIdx + 1;
@@ -339,18 +347,20 @@ fun updateFileAnnotations(
           result.push(lines[a.commentLineNumber - 1])
         }
       | None() ->
-        // Compute indentation from the code line
-        i = lineContents.getIter();
-        _ = i.find(c ~> c != ' ' && c != '\t');
-        _ = i.prev();
-        indent = lineContents.getIter().substring(i);
-        // At most one @ts-expect-error, must be last in group
+        // Use original group indentation when available, fall back to code line
+        groupIndent = getIndent(
+          existingGroups
+            .maybeGet(lineNum)
+            .map(g -> lines[g.annotations[0].commentLineNumber - 1])
+            .default(lineContents),
+        );
+        // @ts-expect-error emitted last only if it was the last annotation in the original group
         tsMsg = lastTsExpect.maybeGet(lineNum) match {
         | Some(msg) if (errors.contains(msg)) -> Some(msg)
         | _ -> None()
         };
         // Phase 1: Emit existing annotations still in errors, preserving order
-        // (skip @ts-expect-error — Phase 3 emits it last; skip entirely when reordering)
+        // (skip last @ts-expect-error — Phase 3 emits it; skip entirely when reordering)
         emitted = SortedSet[];
         if (!(update is UMFullRewrite())) {
           existingGroups.maybeGet(lineNum) match {
@@ -366,7 +376,7 @@ fun updateFileAnnotations(
                 } else {
                   fullMessages.maybeGet(a.message).default(a.message)
                 };
-                result.push(`${indent}// @${a.annot::str} ${msgText}`);
+                result.push(`${groupIndent}// @${a.annot::str} ${msgText}`);
                 !emitted = emitted.set(a.message)
               }
             }
@@ -381,13 +391,13 @@ fun updateFileAnnotations(
           | _ -> void
           };
           msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
-          result.push(`${indent}// @${SKJS_EXPECT_ERROR::str} ${msgText}`)
+          result.push(`${groupIndent}// @${SKJS_EXPECT_ERROR::str} ${msgText}`)
         };
         // Phase 3: Emit @ts-expect-error last (only if new, not already emitted)
         tsMsg match {
         | Some(trimmedMsg) if (!emitted.contains(trimmedMsg)) ->
           msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
-          result.push(`${indent}// @${TS_EXPECT_ERROR::str} ${msgText}`)
+          result.push(`${groupIndent}// @${TS_EXPECT_ERROR::str} ${msgText}`)
         | _ -> void
         }
       }

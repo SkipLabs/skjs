@@ -382,13 +382,13 @@ fun testUpdateFileAnnotations(): void {
     "New messages added after existing in original order",
   );
 
-  // 20. Partial group change with @ts-expect-error stays last
+  // 20. Non-last @ts-expect-error stays in original position
   SKTest.expectEq(
     updateFileAnnotations(
       lines(
         Array[
-          "// @skjs-expect-error Msg B",
           "// @ts-expect-error Msg A",
+          "// @skjs-expect-error Msg B",
           "const x: number = \"hello\";",
         ],
       ),
@@ -398,13 +398,13 @@ fun testUpdateFileAnnotations(): void {
     Some(
       lines(
         Array[
-          "// @skjs-expect-error Msg C",
           "// @ts-expect-error Msg A",
+          "// @skjs-expect-error Msg C",
           "const x: number = \"hello\";",
         ],
       ),
     ),
-    "Partial change with @ts-expect-error stays last",
+    "Non-last @ts-expect-error stays in position",
   );
 
   // 21. useFullMessages rewrites text but preserves order
@@ -433,7 +433,32 @@ fun testUpdateFileAnnotations(): void {
     "UMFullMessages rewrites text but preserves order",
   );
 
-  // 22. reorder forces alphabetical order
+  // 22. Last @ts-expect-error stays last when group changes
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg A",
+          "// @ts-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Msg B", "Msg C"]],
+      Map["Msg C" => "Msg C"],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Msg C",
+          "// @ts-expect-error Msg B",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Last @ts-expect-error stays last when group changes",
+  );
+
+  // 23. reorder forces alphabetical order
   SKTest.expectEq(
     updateFileAnnotations(
       lines(
@@ -457,6 +482,30 @@ fun testUpdateFileAnnotations(): void {
       ),
     ),
     "reorder forces alphabetical order",
+  );
+
+  // 24. Original annotation indentation preserved when text updated
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "    // @skjs-expect-error Type error...",
+          "  const x: number = \"hello\";",
+        ],
+      ),
+      Map[2 => SortedSet["Type error"]],
+      Map["Type error" => "Type error full"],
+      UMFullMessages(),
+    ),
+    Some(
+      lines(
+        Array[
+          "    // @skjs-expect-error Type error full",
+          "  const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Original annotation indentation preserved",
   );
 }
 
