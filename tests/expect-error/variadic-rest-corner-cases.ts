@@ -207,12 +207,8 @@ function testTypeAliasTupleSpread(): void {
 // ------------------------------------------------------------
 // 9) Generic tuple constraint in function subtyping
 // ------------------------------------------------------------
-declare const genericTupleConstraintSrc: <U extends [string, number]>(
-  a: string,
-  b: number,
-) => void;
+declare const identity: <U extends [string, number]>(a: string, b: number) => U;
 
 function testGenericTupleConstraint(): void {
-  const tgt: <T extends [string, number]>(...args: T) => void =
-    genericTupleConstraintSrc;
+  const tgt: <T extends [string, number]>(...args: T) => T = identity;
 }
