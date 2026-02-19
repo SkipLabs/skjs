@@ -10,15 +10,40 @@ base class SubstValue {
   | SVClosed(TType)
 }
 
-class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
-
-mutable class Subst private {
+mutable base class SubstState private {
   mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
   mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
-  private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
-} extends TCEnvBase {
+  mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+} {
+  readonly fun save(): SavedSubst {
+    SavedSubst::create(this)
+  }
+
+  mutable fun restore(saved: SavedSubst): void {
+    this.!version = saved.version;
+    this.!values = saved.values;
+    this.!seenSub = saved.seenSub;
+    this.!seenInter = saved.seenInter;
+    this.!seenUnion = saved.seenUnion;
+  }
+}
+
+mutable class SavedSubst private {} extends SubstState {
+  /* Forces frozen SavedSubst */
+  static fun create(state: readonly SubstState): SavedSubst {
+    SavedSubst{
+      seenSub => state.seenSub,
+      seenInter => state.seenInter,
+      seenUnion => state.seenUnion,
+      version => state.version,
+      values => state.values,
+    }
+  }
+}
+
+mutable class Subst private {} extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
@@ -40,15 +65,6 @@ mutable class Subst private {
       version => this.version,
       values => this.values,
     }
-  }
-
-  readonly fun save(): SavedSubst {
-    SavedSubst{version => this.version, values => this.values}
-  }
-
-  mutable fun restore(saved: SavedSubst): void {
-    this.!version = saved.version;
-    this.!values = saved.values;
   }
 
   mutable fun grow(

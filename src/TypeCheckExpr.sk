@@ -1049,11 +1049,14 @@ extension class TypeChecker {
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
+        // Clone subst: this is a diagnostic check ("always false/true?"),
+        // not a type assignment. It should not grow type variables.
         if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
-          TType::isSub(tcenv.subst, this, ty1, ty2) match {
+          clonedSubst = tcenv.subst.clone();
+          TType::isSub(clonedSubst, this, ty1, ty2) match {
           | STOk() -> void
           | STError _ ->
-            TType::isSub(tcenv.subst, this, ty2, ty1) match {
+            TType::isSub(clonedSubst, this, ty2, ty1) match {
             | STOk() -> void
             | STError _ ->
               alwaysResult = op_ match {

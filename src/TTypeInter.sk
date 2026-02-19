@@ -73,6 +73,9 @@ extension class TType {
     if (ty2.containsType(ty1)) return ty1;
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
+    // TODO: These speculative isSub checks use subst directly. They only
+    // involve concrete types (expandPrim produces e.g. Number, not TVars),
+    // so TVar growth cannot occur. If this changes, consider using clone().
     (clauses1.primKind(), clauses2.getObject()) match {
     | (Some(primKind), Some(stype)) ->
       TType::isSub(
@@ -359,28 +362,12 @@ extension class TFun {
     f1: TFun,
     f2: TFun,
   ): ?TFun {
-    subst1 = subst.clone();
-    TFun::isSub(subst1, tenv, f1, f2) match {
-    | STOk() ->
-      if (subst1.version != subst.version) {
-        invariant(
-          TFun::isSub(subst, tenv, f1, f2) is STOk(),
-          "TFun::inter: reapplying isSub (1)",
-        );
-      };
-      return Some(f1)
+    TFun::isSub(subst, tenv, f1, f2) match {
+    | STOk() -> return Some(f1)
     | STError _ -> void
     };
-    subst2 = subst.clone();
-    TFun::isSub(subst2, tenv, f2, f1) match {
-    | STOk() ->
-      if (subst2.version != subst.version) {
-        invariant(
-          TFun::isSub(subst, tenv, f2, f1) is STOk(),
-          "TFun::inter: reapplying isSub (2)",
-        );
-      };
-      return Some(f2)
+    TFun::isSub(subst, tenv, f2, f1) match {
+    | STOk() -> return Some(f2)
     | STError _ -> void
     };
     None()

@@ -126,12 +126,11 @@ base class TEnv{
       | None() -> void
       | Some(cstr) ->
         cstrTy = this.normalize(subst, cstr);
-        // Save/restore substitution: constraint checking should verify compatibility
+        // Clone substitution: constraint checking should verify compatibility
         // but NOT permanently grow type variables. Growing here would close the
         // variable to its constraint, preventing later unification with more
         // specific types (e.g., TVar<:Json should remain open to unify with string).
-        savedSubst = subst.save();
-        TType::isSub(subst, this, targ, cstrTy) match {
+        TType::isSub(subst.clone(), this, targ, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
           subst.error(
@@ -142,8 +141,7 @@ base class TEnv{
             ],
             Some(err),
           )
-        };
-        subst.restore(savedSubst)
+        }
       };
       !this.subst[tparam.name.value] = (true, targ);
     };

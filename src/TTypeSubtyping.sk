@@ -1,5 +1,10 @@
 /***************************************************************************/
 // Subtyping operations for types.
+//
+// INVARIANT: Every isSub function must guarantee that when it returns
+// STError, the subst is unchanged (either restored or never mutated).
+// This ensures callers can safely try speculative subtype checks without
+// manual save/restore.
 /***************************************************************************/
 
 module SKJS;
@@ -603,6 +608,7 @@ extension class TAlgebraic {
     a1: TAlgebraic,
     a2: TAlgebraic,
   ): STResult<TAlgebraic> {
+    savedSubst = subst.save();
     a1.branches.leq(a2.branches, (b1, b2O) ->
       b2O match {
       | Some(b2) ->
@@ -615,7 +621,9 @@ extension class TAlgebraic {
       }
     ) match {
     | Success(void) -> STOk()
-    | Failure(err) -> err
+    | Failure(err) ->
+      subst.restore(savedSubst);
+      err
     }
   }
 }
@@ -653,6 +661,18 @@ extension class TFuns {
 
 extension class TFields {
   static fun isSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fields1: TFields,
+    fields2: TFields,
+  ): STResult<TFields> {
+    savedSubst = subst.save();
+    res = TFields::isSub_(subst, tenv, fields1, fields2);
+    if (res is STError _) subst.restore(savedSubst);
+    res
+  }
+
+  private static fun isSub_(
     subst: mutable Subst,
     tenv: TEnv,
     fields1: TFields,
@@ -796,6 +816,7 @@ extension class STypes {
     stypes1: STypes,
     stypes2: STypes,
   ): STResult<STypes> {
+    savedSubst = subst.save();
     stypes1.stypes.leq(stypes2.stypes, (sty1, sty2O) ->
       sty2O match {
       | Some(sty2) ->
@@ -830,7 +851,9 @@ extension class STypes {
       }
     ) match {
     | Success(void) -> STOk()
-    | Failure(err) -> STRecSTypes(err, stypes1, stypes2)
+    | Failure(err) ->
+      subst.restore(savedSubst);
+      STRecSTypes(err, stypes1, stypes2)
     }
   }
 }
@@ -842,6 +865,7 @@ extension class Clauses {
     clauses1: Clauses,
     clauses2: Clauses,
   ): STResult<Clauses> {
+    savedSubst = subst.save();
     for (inter1 in clauses1.clauses) {
       errors = List[];
       for (inter2 in clauses2.clauses) {
@@ -861,6 +885,7 @@ extension class Clauses {
           }
         }
       } else {
+        subst.restore(savedSubst);
         return STRecClauses(errors, inter1, clauses1, clauses2)
       }
     };
@@ -955,10 +980,13 @@ extension class TTuple {
     if (tuple1.tuple.size() < tuple2.tuple.size()) {
       return STTooManyTTuple(tuple1, tuple2)
     };
+    savedSubst = subst.save();
     for (i in Range(0, tuple2.tuple.size())) {
       TType::isSub(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]) match {
       | STOk() -> void
-      | err @ STErrorOnTType _ -> return STRecTuple(err, i, tuple1, tuple2)
+      | err @ STErrorOnTType _ ->
+        subst.restore(savedSubst);
+        return STRecTuple(err, i, tuple1, tuple2)
       }
     };
     STOk()
@@ -1001,6 +1029,18 @@ extension class TPrimValue {
 
 extension class TFun {
   static fun isSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    f1: TFun,
+    f2: TFun,
+  ): STResult<TFun> {
+    savedSubst = subst.save();
+    res = TFun::isSub_(subst, tenv, f1, f2);
+    if (res is STError _) subst.restore(savedSubst);
+    res
+  }
+
+  private static fun isSub_(
     subst: mutable Subst,
     tenv: TEnv,
     f1: TFun,
