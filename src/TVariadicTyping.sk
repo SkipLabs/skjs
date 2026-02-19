@@ -38,6 +38,7 @@ class VariadicTyping() {
   //      with constraints, which can hide the tuple (e.g. [string, number]
   //      & readonly DepSafe[] loses the tuple shape). Peek the raw binding
   //      (without constraint intersection) and retry.
+  // INVARIANT: when this function returns None, subst is unchanged.
   static fun resolveSpreadToTuple(
     subst: mutable Subst,
     tenv: TEnv,
@@ -47,6 +48,7 @@ class VariadicTyping() {
     | Some(ATFullType(ft)) -> ft
     | _ -> return None()
     };
+    saved = subst.save();
     // Expand (resolves type aliases, applies tvar bindings + constraints)
     clauses = fullType.expandToClauses(subst, tenv, Contravariant());
     clauses.getSingleTuple() match {
@@ -58,17 +60,23 @@ class VariadicTyping() {
     // (without constraint intersection) and try again.
     tvar = fullType.getSingleVar() match {
     | Some(tv) -> tv
-    | None() -> return None()
+    | None() ->
+      subst.restore(saved);
+      return None()
     };
     boundType = subst.peekRaw(tvar) match {
     | Some(bt) -> bt
-    | None() -> return None()
+    | None() ->
+      subst.restore(saved);
+      return None()
     };
     boundType
       .expandToClauses(subst, tenv, Contravariant())
       .getSingleTuple() match {
     | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
-    | None() -> None()
+    | None() ->
+      subst.restore(saved);
+      None()
     }
   }
 
