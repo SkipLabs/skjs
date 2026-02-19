@@ -123,24 +123,25 @@ class VariadicTyping() {
         };
         saved = subst.save();
         subst.grow(tenv, tvar, inferred, Contravariant());
-        failedConstraint = tvar.constraints.find(cstr ->
-          !(TType::isSub(subst, tenv, inferred, cstr) is STOk _)
-        );
-        failedConstraint match {
-        | Some(cstr) ->
-          subst.restore(saved);
-          tcenv.error(
-            Array[
-              (
-                pos,
-                `Invalid call. Inferred rest arguments ${inferred} do not satisfy the constraint`,
-              ),
-              (cstr.pos, `Constraint ${cstr}`),
-            ],
-          );
-          true
-        | None() -> false
-        }
+        for (cstr in tvar.constraints) {
+          TType::isSub(subst, tenv, inferred, cstr) match {
+          | STOk() -> void
+          | stErr @ STErrorOnTType _ ->
+            subst.restore(saved);
+            tcenv.error(
+              Array[
+                (
+                  pos,
+                  `Invalid call. Inferred rest arguments ${inferred} do not satisfy the constraint`,
+                ),
+                (cstr.pos, `Constraint ${cstr}`),
+              ],
+              Some(stErr),
+            );
+            return true
+          }
+        };
+        false
       | _ -> false
       }
     | _ -> false
