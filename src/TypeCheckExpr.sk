@@ -588,12 +588,8 @@ extension class TypeChecker {
     pos: PosRange,
   ): TType {
     for (arg in args) {
-      exprTy = this.expr(tcenv, arg, true);
-      ty = if (expand) {
-        exprTy.expand(tcenv.subst.clone(), this, Some(Covariant()))
-      } else {
-        exprTy
-      };
+      ty = this.expr(tcenv, arg, true);
+      if (expand) !ty = ty.expand(tcenv.subst.clone(), this, Some(Covariant()));
       print_error(prettyPrintType(false, ty))
     };
     TType::single(TPrimUnit(TVoid(), pos))
