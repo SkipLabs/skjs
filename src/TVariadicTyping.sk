@@ -191,13 +191,13 @@ class VariadicTyping() {
               ),
             ],
           )
-        } else if (knownRest.size() != tupleElts.size()) {
+        } else if (knownRest.size() < tupleElts.size()) {
           tcenv.error(
             Array[
               (pos, "Invalid call"),
               (
                 spreadType.getPos(),
-                `Tuple rest parameter expects ${tupleElts.size()} arguments, got ${knownRest.size()}`,
+                `This function has ${totalSize + tupleElts.size()} parameters`,
               ),
             ],
           )

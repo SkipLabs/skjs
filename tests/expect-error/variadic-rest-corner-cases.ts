@@ -103,7 +103,7 @@ function testTupleRestExactArity(): void {
   tupleRestExact("a", 1);
   // @ts-expect-error Invalid call
   tupleRestExact("a");
-  // @ts-expect-error Invalid call
+  // Extra args allowed (consistent with no-rest functions)
   tupleRestExact("a", 1, 2);
 
   // Unknown-length array spread into concrete tuple rest
