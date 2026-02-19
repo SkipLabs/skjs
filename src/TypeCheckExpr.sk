@@ -609,7 +609,10 @@ extension class TypeChecker {
           if (actual != expected.val) {
             tcenv.error(
               Array[
-                (args[0].pos, `__SKJS_show: expected ${expected.val}, got ${actual}`),
+                (
+                  args[0].pos,
+                  `__SKJS_show: expected ${expected.val}, got ${actual}`,
+                ),
               ],
             )
           }

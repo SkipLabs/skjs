@@ -94,8 +94,8 @@ function testOptionalBeforeTupleRest(): void {
 // 1) Empty-rest inference
 function testEmptyRestInference(): void {
   const empty0 = emptyInfer();
-  // No empty tuple type syntax, so we use __SKJS_show to assert the inferred type.
-  __SKJS_show(empty0, "[]");
+  // No empty tuple type syntax, so we use expanded show to assert tuple shape.
+  __SKJS_show_expanded(empty0, "[]");
   const empty0_as_ro_unknown_array: readonly unknown[] = empty0;
 }
 
