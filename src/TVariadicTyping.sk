@@ -24,48 +24,51 @@
 module SKJS;
 
 class VariadicTyping() {
-  // Resolves a spread param to its tuple element types, if possible.
+  // Finds the most specific fixed-length tuple type that spreadParam is a
+  // subtype of. Returns the element types, or None.
   //
-  // Given a spread param like `...params: Params` where Params is bound to
-  // `[string, number]`, returns `Some(Array[string, number])`.
+  // Precondition: spreadParam is normalized — all unions (TUnion) and
+  // intersections (TInter) have been eagerly computed during normalize().
+  // This guarantees at most one clause with a tuple after expansion.
   //
-  // Tries two strategies:
-  //   1. Direct: expand the type to clauses and check for a single tuple.
-  //   2. Via tvar: if the type is a type variable, peek its raw binding
-  //      (without constraint intersection, which can destroy tuple structure)
-  //      and check that for a tuple.
-  //
-  // Returns None() if the spread param is not a tuple rest.
+  // Two paths:
+  //   1. Expand to clauses (resolves type aliases and tvar bindings) and
+  //      look for a tuple in the single clause.
+  //   2. Fallback for bound tvars: expandToClauses intersects the binding
+  //      with constraints, which can hide the tuple (e.g. [string, number]
+  //      & readonly DepSafe[] loses the tuple shape). Peek the raw binding
+  //      (without constraint intersection) and retry.
   static fun resolveSpreadToTuple(
     subst: mutable Subst,
     tenv: TEnv,
     spreadParam: ?ArrayType,
   ): ?Array<TType> {
-    spreadParam match {
-    | Some(ATFullType(fullType)) ->
-      // First check if it's directly a tuple type
-      fullType
-        .expandToClauses(subst, tenv, Contravariant())
-        .getSingleTuple() match {
-      | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
-      | _ ->
-        // If not, check if it's a type variable bound to a tuple.
-        // We peek the raw binding (without constraint intersection) because
-        // constraints can change the shape and hide the tuple structure.
-        // E.g. Params bound to [string, number] with constraint readonly DepSafe[]
-        // would lose the tuple shape if intersected.
-        fullType.getSingleVar().flatMap(tvar -> subst.peekRaw(tvar)) match {
-        | Some(boundType) ->
-          boundType
-            .expandToClauses(subst, tenv, Contravariant())
-            .getSingleTuple() match {
-          | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
-          | _ -> None()
-          }
-        | _ -> None()
-        }
-      }
-    | _ -> None()
+    fullType = spreadParam match {
+    | Some(ATFullType(ft)) -> ft
+    | _ -> return None()
+    };
+    // Expand (resolves type aliases, applies tvar bindings + constraints)
+    clauses = fullType.expandToClauses(subst, tenv, Contravariant());
+    clauses.getSingleTuple() match {
+    | Some(TTuple(tupleElts, _)) -> return Some(tupleElts)
+    | None() -> void
+    };
+    // Fallback: for a bound tvar, expandToClauses intersects the binding
+    // with constraints, which can hide the tuple. Peek the raw binding
+    // (without constraint intersection) and try again.
+    tvar = fullType.getSingleVar() match {
+    | Some(tv) -> tv
+    | None() -> return None()
+    };
+    boundType = subst.peekRaw(tvar) match {
+    | Some(bt) -> bt
+    | None() -> return None()
+    };
+    boundType
+      .expandToClauses(subst, tenv, Contravariant())
+      .getSingleTuple() match {
+    | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
+    | None() -> None()
     }
   }
 

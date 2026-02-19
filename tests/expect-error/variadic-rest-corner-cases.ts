@@ -189,3 +189,29 @@ function testMotivatingAPI(): void {
   // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
   prefixedColl.mapWithPrefix("tag", PrefixOne, true);
 }
+
+// ------------------------------------------------------------
+// 8) Type alias expanding to tuple used as spread param
+// ------------------------------------------------------------
+type MyPair = [string, number];
+declare function takePair(...args: MyPair): void;
+
+function testTypeAliasTupleSpread(): void {
+  takePair("hello", 42);
+
+  // @ts-expect-error Invalid argument
+  takePair(42, "hello");
+}
+
+// ------------------------------------------------------------
+// 9) Generic tuple constraint in function subtyping
+// ------------------------------------------------------------
+declare const genericTupleConstraintSrc: <U extends [string, number]>(
+  a: string,
+  b: number,
+) => void;
+
+function testGenericTupleConstraint(): void {
+  const tgt: <T extends [string, number]>(...args: T) => void =
+    genericTupleConstraintSrc;
+}
