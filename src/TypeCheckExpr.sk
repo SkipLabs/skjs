@@ -581,6 +581,24 @@ extension class TypeChecker {
     ty
   }
 
+  private fun showTypes(
+    tcenv: mutable TCEnv,
+    args: Array<Expr>,
+    expand: Bool,
+    pos: PosRange,
+  ): TType {
+    for (arg in args) {
+      exprTy = this.expr(tcenv, arg, true);
+      ty = if (expand) {
+        exprTy.expand(tcenv.subst.clone(), this, Some(Covariant()))
+      } else {
+        exprTy
+      };
+      print_error(prettyPrintType(false, ty))
+    };
+    TType::single(TPrimUnit(TVoid(), pos))
+  }
+
   /* Typechecks expression e
      If mostPrecise, use the most precise type. */
   fun expr(
@@ -844,12 +862,7 @@ extension class TypeChecker {
       TType::single(TPrimUnit(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
-      for (arg in args) {
-        exprTy = this.expr(tcenv, arg, true);
-        ty = exprTy.expand(tcenv.subst.clone(), this, Some(Covariant()));
-        print_error(prettyPrintType(false, ty))
-      };
-      TType::single(TPrimUnit(TVoid(), pos))
+      this.showTypes(tcenv, args, true, pos)
     | Call(f, targs, args) ->
       fty = this.expr(tcenv, f, mostPrecise);
       tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
