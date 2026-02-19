@@ -59,3 +59,18 @@ function bareSpreadStr<T extends ReadonlyArray<string>>(...items: T): void {
 function testBareSpreadStr(): void {
   bareSpreadStr("a", "b", "c");
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Bare TVar spread must reject mutable Array constraints
+///////////////////////////////////////////////////////////////////////////////
+
+// @ts-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+function bareMutable<T extends Array<number>>(...args: T): void {}
+
+// @ts-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+function bareShorthand<T extends number[]>(...args: T): void {}
+
+type MutableNums = number[];
+
+// @ts-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+function aliasMutable<T extends MutableNums>(...args: T): void {}

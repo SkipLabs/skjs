@@ -287,6 +287,56 @@ class VariadicTyping() {
     readonlyArray = TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[u]));
     Some(TType::isSub(subst, tenv, readonlyArray, rhs))
   }
+
+  // Checks that a rest parameter's type variable constraint uses ReadonlyArray.
+  // Rest parameters are inherently readonly, so mutable Array constraints are
+  // unsound and must be rejected at the declaration site.
+  static fun checkRestParamReadonly(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    restPos: PosRange,
+    paramType: Type,
+    tparams: Array<TypeParam>,
+  ): void {
+    paramType.value match {
+    | TAInst(tparamName, targs) if (targs.isEmpty()) ->
+      tparams
+        .find(tp -> tp.name.value == tparamName.value)
+        .each(tp -> {
+          tp.constraint.each(cstr -> {
+            isDirectMutableArray = cstr.value match {
+            | TAArray _ -> true
+            | TAInst(Name(_, "Array"), _) -> true
+            | _ -> false
+            };
+            subst = Subst::mcreate(tcenvb);
+            normalizedCstr = tenv.normalize(tcenvb, cstr);
+            resolvedCstr = normalizedCstr.insts.insts.getUnique() match {
+            | Some(TSInst(name, cstrTArgs)) ->
+              tenv.instantiate(subst, name, cstrTArgs)
+            | _ -> normalizedCstr
+            };
+            isExpandedMutableArray = resolvedCstr.insts.insts.getUnique() match {
+            | Some(TSInst(Name(_, "Array"), _)) -> true
+            | _ -> false
+            };
+            isMutableArray = isDirectMutableArray || isExpandedMutableArray;
+            if (isMutableArray) {
+              tcenvb.error(
+                Array[
+                  (
+                    restPos,
+                    "Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly",
+                  ),
+                  (cstr.pos, "This constraint uses a mutable Array type"),
+                ],
+              )
+            }
+          })
+        })
+    | _ -> void
+    }
+  }
 }
 
 module end;

@@ -1,4 +1,4 @@
-// Test that this cannot appear in destructuring patterns or as spread parameter
+// Test that this cannot appear in destructuring patterns or as rest parameter
 
 // Cannot destructure into parameter named this (array destructuring)
 class MethodWithThisArrayDestructure {
@@ -18,9 +18,9 @@ class MethodWithThisNested {
   method({ x: [this] }: { x: [string] }): void {}
 }
 
-// Spread parameter cannot be named this
+// Rest parameter cannot be named this
 class TestSpreadParameter1 {
-  // @skjs-expect-error this cannot be a spread parameter
+  // @skjs-expect-error this cannot be a rest parameter
   // @skjs-expect-error TODO: support this parameter
   method(...this: number[]): void {}
 }

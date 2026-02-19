@@ -2,7 +2,7 @@ export interface Context {
   createLazyCollection<
     K extends Json,
     V extends Json,
-    Params extends DepSafe[],
+    Params extends readonly DepSafe[],
   >(
     compute: new (...params: Params) => LazyCompute<K, V>,
     ...params: Params
@@ -34,20 +34,24 @@ export interface EagerCollection<K extends Json, V extends Json>
 
   getUnique(key: K, _default?: { ifNone?: V; ifMany?: V }): V & DepSafe;
 
-  map<K2 extends Json, V2 extends Json, Params extends DepSafe[]>(
+  map<K2 extends Json, V2 extends Json, Params extends readonly DepSafe[]>(
     mapper: new (...params: Params) => Mapper<K, V, K2, V2>,
     ...params: Params
   ): EagerCollection<K2, V2>;
 
-  reduce<Accum extends Json, Params extends DepSafe[]>(
+  reduce<Accum extends Json, Params extends readonly DepSafe[]>(
     reducer: new (...params: Params) => Reducer<V, Accum>,
     ...params: Params
   ): EagerCollection<K, Accum>;
 
-  mapReduce<K2 extends Json, V2 extends Json, MapperParams extends DepSafe[]>(
+  mapReduce<
+    K2 extends Json,
+    V2 extends Json,
+    MapperParams extends readonly DepSafe[],
+  >(
     mapper: new (...params: MapperParams) => Mapper<K, V, K2, V2>,
     ...mapperParams: MapperParams
-  ): <Accum extends Json, ReducerParams extends DepSafe[]>(
+  ): <Accum extends Json, ReducerParams extends readonly DepSafe[]>(
     reducer: new (...params: ReducerParams) => Reducer<V2, Accum>,
     ...reducerParams: ReducerParams
   ) => EagerCollection<K2, Accum>;
