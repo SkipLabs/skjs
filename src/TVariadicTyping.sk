@@ -110,10 +110,7 @@ class VariadicTyping() {
           TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[tailElt]))
         | None() ->
           // No tail: infer an exact tuple (including empty tuple for zero rest args).
-          restArgTypes = mutable Vector[];
-          for (i in Range(totalSize, args.size())) {
-            restArgTypes.push(args[i])
-          };
+          restArgTypes = args.slice(totalSize);
           TType::single(TTuple(restArgTypes.toArray(), pos))
         };
         saved = subst.save();
@@ -169,10 +166,7 @@ class VariadicTyping() {
       // No rest param: allow extra ignored arguments.
       void
     | Some(spreadType) ->
-      knownRest = mutable Vector[];
-      for (i in Range(totalSize, args.size())) {
-        knownRest.push(args[i])
-      };
+      knownRest = args.slice(totalSize);
 
       static::resolveSpreadToTuple(tcenv.subst, tenv, Some(spreadType)) match {
       | Some(tupleElts) ->
