@@ -92,7 +92,7 @@ class VariadicTyping() {
     pos: PosRange,
     spreadParam: ?ArrayType,
     totalSize: Int,
-    args: mutable Vector<TType>,
+    args: readonly Vector<TType>,
     moreArgs: ?TType,
   ): Bool {
     subst = tcenv.subst;
@@ -161,7 +161,7 @@ class VariadicTyping() {
     pos: PosRange,
     spreadParam: ?ArrayType,
     totalSize: Int,
-    args: mutable Vector<TType>,
+    args: readonly Vector<TType>,
     moreArgs: ?TType,
   ): void {
     spreadParam match {
