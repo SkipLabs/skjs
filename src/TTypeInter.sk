@@ -73,6 +73,9 @@ extension class TType {
     if (ty2.containsType(ty1)) return ty1;
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
+    // TODO: These speculative isSub checks use subst directly. They only
+    // involve concrete types (expandPrim produces e.g. Number, not TVars),
+    // so TVar growth cannot occur. If this changes, consider using clone().
     (clauses1.primKind(), clauses2.getObject()) match {
     | (Some(primKind), Some(stype)) ->
       TType::isSub(
