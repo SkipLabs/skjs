@@ -863,6 +863,8 @@ extension class TypeChecker {
 
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
       this.showTypes(tcenv, args, true, pos)
+    | Call(Expr(_, Var(Name(_, "__SKJS_show_expanded"))), _, args) ->
+      this.showTypes(tcenv, args, true, pos)
     | Call(f, targs, args) ->
       fty = this.expr(tcenv, f, mostPrecise);
       tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
