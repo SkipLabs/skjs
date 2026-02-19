@@ -120,6 +120,7 @@ function testGenericTupleRestInference(): void {
   const t1_as_tuple: [string, number] = t1;
 
   // Constraint enforcement (DepSafe)
+  // @skjs-expect-error This expression was expected to be of type void or ignorable
   // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
   inferTuple(true);
 }

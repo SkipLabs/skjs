@@ -2047,9 +2047,9 @@ extension class TypeChecker {
       );
 
       if (callInvalid) {
-        // Skip further param checking and return void to avoid cascading diagnostics
-        // (e.g. "Invalid call", "Unexpected type", "expected void").
-        return TType::single(TPrimUnit(TVoid(), pos))
+        // Skip further param checking and return the function's return type
+        // to avoid cascading diagnostics from void/return-type mismatches.
+        return tfun.retType
       };
 
       version = tcenv.subst.version;
