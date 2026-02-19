@@ -1,0 +1,947 @@
+/***************************************************************************/
+/* tsconfig.json support for SKJS.                                        */
+/*                                                                         */
+/* Provides:                                                               */
+/*   - tsconfig.json loading and field extraction                          */
+/*   - tsconfig.json linting (compilerOptions validation)                  */
+/*   - File discovery from tsconfig configuration                          */
+/***************************************************************************/
+
+module SKJS;
+
+/***************************************************************************/
+// compilerOptions disposition for SKJS
+//
+// REQUIRED — must be set to a specific value:
+//   strict: true            SKJS always checks in strict mode
+//
+// STRICT SUB-OPTIONS — covered by strict:true:
+//   Error if set to false (weakening strict).
+//   Warn if redundantly set to true.
+//     noImplicitAny, strictNullChecks, strictFunctionTypes,
+//     strictBindCallApply, strictPropertyInitialization, noImplicitThis,
+//     alwaysStrict, useUnknownInCatchVariables, exactOptionalPropertyTypes
+//
+// ALWAYS-ON — SKJS always performs these checks.
+//   Warn if explicitly set to false. Silent if absent or true.
+//     noImplicitReturns, noFallthroughCasesInSwitch,
+//     noUncheckedIndexedAccess
+//
+// NOT YET SUPPORTED — recognized but not yet implemented.
+//   Warn if enabled (value is ignored). Silent if absent or false.
+//     noUnusedLocals, noUnusedParameters,
+//     noPropertyAccessFromIndexSignature
+//
+// SUPPORTED — silently accepted:
+//     rootDir, baseUrl, paths, target, module, moduleResolution,
+//     allowImportingTsExtensions, lib
+//
+// IGNORED — emit/tooling/IDE options, silently accepted:
+//   Emit: outDir, outFile, declaration, declarationMap,
+//     declarationDir, emitDeclarationOnly, sourceMap, sourceRoot, mapRoot,
+//     removeComments, noEmit, preserveConstEnums, downlevelIteration,
+//     newLine, importsNotUsedAsValues, noEmitOnError
+//   Module: typeRoots, types,
+//     resolveJsonModule, rootDirs, moduleSuffixes, customConditions
+//   Interop: esModuleInterop, allowSyntheticDefaultImports,
+//     forceConsistentCasingInFileNames, isolatedModules,
+//     verbatimModuleSyntax
+//   Language: (none remaining)
+//   Projects: composite, incremental, tsBuildInfoFile
+//   Completeness: skipLibCheck, skipDefaultLibCheck
+//   Other: pretty, allowUmdGlobalAccess, useDefineForClassFields,
+//     noImplicitOverride
+//
+// RESTRICTED — error if present:
+//   allowJs, checkJs          SKJS only checks .ts files
+//   jsx, jsxFactory,          JSX not supported
+//     jsxFragmentFactory,
+//     jsxImportSource
+//   experimentalDecorators,   decorators not supported
+//     emitDecoratorMetadata
+//   suppressExcessPropertyErrors,  weakens type checking
+//     suppressImplicitAnyIndexErrors
+/***************************************************************************/
+
+/***************************************************************************/
+// Data types
+/***************************************************************************/
+
+// TypeScript target (JS emit level)
+base class TsTarget uses Equality {
+  children =
+  | TES3()
+  | TES5()
+  | TES2015() // es6
+  | TES2016()
+  | TES2017()
+  | TES2018()
+  | TES2019()
+  | TES2020()
+  | TES2021()
+  | TES2022()
+  | TES2023()
+  | TES2024()
+  | TESNext()
+
+  const default: TsTarget = TES3();
+
+  // Parse a target string (case-insensitive). Returns None() for unknown values.
+  static fun fromString(s: String): ?TsTarget {
+    s.lowercase() match {
+    | "es3" -> Some(TES3())
+    | "es5" -> Some(TES5())
+    | "es6" | "es2015" -> Some(TES2015())
+    | "es2016" -> Some(TES2016())
+    | "es2017" -> Some(TES2017())
+    | "es2018" -> Some(TES2018())
+    | "es2019" -> Some(TES2019())
+    | "es2020" -> Some(TES2020())
+    | "es2021" -> Some(TES2021())
+    | "es2022" -> Some(TES2022())
+    | "es2023" -> Some(TES2023())
+    | "es2024" -> Some(TES2024())
+    | "esnext" -> Some(TESNext())
+    | _ -> None()
+    }
+  }
+
+  fun isOutdated(): Bool {
+    this == TES3() || this == TES5()
+  }
+
+  // Derive the default lib from the target (matches tsc, minus DOM).
+  fun defaultLib(): Array<String> {
+    this match {
+    | TES3()
+    | TES5() ->
+      Array["es5"]
+    | TES2015() -> Array["es2015"]
+    | TES2016() -> Array["es2016"]
+    | TES2017() -> Array["es2017"]
+    | TES2018() -> Array["es2018"]
+    | TES2019() -> Array["es2019"]
+    | TES2020() -> Array["es2020"]
+    | TES2021() -> Array["es2021"]
+    | TES2022() -> Array["es2022"]
+    | TES2023() -> Array["es2023"]
+    | TES2024() -> Array["es2024"]
+    | TESNext() -> Array["esnext"]
+    }
+  }
+}
+
+// TypeScript module system
+base class TsModule uses Equality {
+  children =
+  | TMCommonJS()
+  | TMNode16()
+  | TMNodeNext()
+  | TMPreserve()
+  | TMES() // es2015, es2020, es2022, esnext, es6
+  | TMOther() // amd, umd, system, none — accepted but no special behavior
+
+  // Parse a module string (case-insensitive). Returns None() for unknown values.
+  static fun fromString(s: String): ?TsModule {
+    s.lowercase() match {
+    | "commonjs" -> Some(TMCommonJS())
+    | "node16" -> Some(TMNode16())
+    | "nodenext" -> Some(TMNodeNext())
+    | "preserve" -> Some(TMPreserve())
+    | "es6" | "es2015" | "es2020" | "es2022" | "esnext" -> Some(TMES())
+    | "amd" | "umd" | "system" | "none" -> Some(TMOther())
+    | _ -> None()
+    }
+  }
+
+  const default: TsModule = TMCommonJS();
+
+  // Derive the default module from the target option (matches tsc).
+  static fun defaultFromTarget(tsTarget: TsTarget): TsModule {
+    tsTarget match {
+    | TES3()
+    | TES5() ->
+      TMCommonJS()
+    | _ -> TMES()
+    }
+  }
+}
+
+// TypeScript module resolution strategy
+base class ModuleResolution uses Equality {
+  children =
+  | MRNode16()
+  | MRNodeNext()
+  | MRBundler()
+
+  const default: ModuleResolution = MRNode16();
+
+  // Parse a moduleResolution string (case-insensitive). Returns None() for unknown values.
+  static fun fromString(s: String): ?ModuleResolution {
+    s.lowercase() match {
+    | "node16" -> Some(MRNode16())
+    | "nodenext" -> Some(MRNodeNext())
+    | "bundler" -> Some(MRBundler())
+    | _ -> None()
+    }
+  }
+
+  // Whether this string is a known-but-unsupported moduleResolution value.
+  static fun isUnsupported(s: String): Bool {
+    normalized = s.lowercase();
+    normalized == "classic" || normalized == "node" || normalized == "node10"
+  }
+
+  // Derive the default moduleResolution from the module option (matches tsc).
+  static fun defaultFromModule(tsModule: TsModule): ModuleResolution {
+    tsModule match {
+    | TMNode16() -> MRNode16()
+    | TMNodeNext() -> MRNodeNext()
+    | TMPreserve() -> MRBundler()
+    | _ -> ModuleResolution::default
+    }
+  }
+
+  fun isBundlerMode(): Bool {
+    this == MRBundler()
+  }
+}
+
+class TsCompilerOptions{
+  rootDir: ?String = None(),
+  baseUrl: ?String = None(),
+  paths: Map<String, Array<String>> = Map[],
+  tsTarget: TsTarget = TsTarget::default,
+  tsModule: TsModule = TsModule::default,
+  moduleResolution: ModuleResolution = ModuleResolution::default,
+  allowImportingTsExtensions: Bool = false,
+  lib: Array<String> = Array[],
+}
+
+class TsConfigDiag{line: Int, message: String, isWarning: Bool}
+
+class TsConfig{
+  configDir: DAbsolute,
+  compilerOptions: TsCompilerOptions,
+  include: Array<String>,
+  exclude: Array<String>,
+  files: Array<String>,
+}
+
+/***************************************************************************/
+// tsconfig.json discovery
+/***************************************************************************/
+
+// Walk up from startDir looking for tsconfig.json.
+// Returns the full path to the config file, or None() if not found.
+fun findTsConfig(startDir: String): ?String {
+  dir = Path.resolve(startDir);
+  loop {
+    candidate = Path.join(dir, "tsconfig.json");
+    if (FileSystem.exists(candidate)) {
+      return Some(candidate)
+    };
+    parent = Path.dirname(dir);
+    if (parent == dir) {
+      // Reached filesystem root
+      return None()
+    };
+    !dir = parent;
+  }
+}
+
+/***************************************************************************/
+// tsconfig.json loading
+/***************************************************************************/
+
+// Resolve the tsconfig.json path from a --project argument.
+// If the path is a directory, look for tsconfig.json inside it.
+// If the path is a file, use it directly.
+fun resolveTsConfigPath(projectPath: String): Result<String, String> {
+  resolved = Path.resolve(projectPath);
+  if (!FileSystem.exists(resolved)) {
+    return Failure(`File not found: ${projectPath}`)
+  };
+  if (FileSystem.isDirectory(resolved)) {
+    configFile = Path.join(resolved, "tsconfig.json");
+    if (!FileSystem.exists(configFile)) {
+      return Failure(`tsconfig.json not found in ${projectPath}`)
+    };
+    Success(configFile)
+  } else {
+    Success(resolved)
+  }
+}
+
+// Parse a tsconfig.json file into its raw JSON object.
+// Returns (obj, rawContents, configDir).
+fun parseTsConfigFile(path: String): (JSON.Object, String, DAbsolute) {
+  contents = FileSystem.readTextFile(path);
+  stripped = stripJsonComments(contents);
+  json = JSON.decode(stripped);
+  obj = json.expectObject();
+  configDir = DAbsolute::create(Path.dirname(path));
+  (obj, contents, configDir)
+}
+
+// Extract extends paths from a tsconfig object.
+// Returns empty array if no extends field.
+fun getExtendsPaths(obj: JSON.Object): Array<String> {
+  obj.maybeGet("extends") match {
+  | None() -> Array[]
+  | Some(JSON.String(s)) -> Array[s]
+  | Some(v) -> v.expectArray().value.map(x -> x.expectString()).collect(Array)
+  }
+}
+
+// Merge two JSON objects for compilerOptions (per-key, child overrides base).
+fun mergeJsonObjects(base: ?JSON.Object, child: JSON.Object): JSON.Object {
+  result = mutable Map[];
+  base match {
+  | Some(b) -> b.value.each((k, v) -> result.set(k, v))
+  | None() -> void
+  };
+  child.value.each((k, v) -> result.set(k, v));
+  JSON.Object(result.chill())
+}
+
+// Merge two tsconfig JSON objects.
+// compilerOptions: deep-merged per-key (child overrides base).
+// include/exclude/files: child replaces base entirely if present.
+// extends: not inherited.
+fun mergeConfigObjects(base: JSON.Object, child: JSON.Object): JSON.Object {
+  result = mutable Map[];
+
+  // Start with all base entries except extends
+  base.value.each((k, v) -> {
+    if (k != "extends") result.set(k, v)
+  });
+
+  // Override with child entries
+  child.value.each((k, v) -> {
+    if (k != "extends") {
+      if (k == "compilerOptions") {
+        // Deep merge compilerOptions
+        baseOpts = base.maybeGetObject("compilerOptions");
+        childOpts = v.expectObject();
+        result.set(k, mergeJsonObjects(baseOpts, childOpts))
+      } else {
+        result.set(k, v)
+      }
+    }
+  });
+
+  JSON.Object(result.chill())
+}
+
+// Resolve the extends chain for a tsconfig JSON object.
+// Returns the fully merged JSON object.
+fun resolveExtends(
+  obj: JSON.Object,
+  configDir: DAbsolute,
+  visited: SortedSet<String>,
+  diags: mutable Vector<TsConfigDiag>,
+  rawContents: String,
+): JSON.Object {
+  extendsPaths = getExtendsPaths(obj);
+  if (extendsPaths.isEmpty()) return obj;
+
+  // Load and merge all bases left-to-right
+  base = JSON.Object(Map[]);
+  for (extendsPath in extendsPaths) {
+    if (!extendsPath.startsWith(".")) {
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "extends"),
+          message => `Package-style extends not supported by SKJS: ${extendsPath}`,
+          isWarning => false,
+        },
+      );
+      continue
+    };
+    resolved = Path.resolve(Path.join(configDir.toString(), extendsPath));
+    finalPath = if (!resolved.endsWith(".json")) {
+      resolved + ".json"
+    } else {
+      resolved
+    };
+    if (visited.contains(finalPath)) {
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "extends"),
+          message => `Circular tsconfig extends: ${finalPath}`,
+          isWarning => false,
+        },
+      );
+      continue
+    };
+    (parentObj, parentRawContents, parentDir) = parseTsConfigFile(finalPath);
+    resolvedParent = resolveExtends(
+      parentObj,
+      parentDir,
+      visited.set(finalPath),
+      diags,
+      parentRawContents,
+    );
+    !base = mergeConfigObjects(base, resolvedParent);
+  };
+
+  // Merge: accumulated bases first, then current obj on top
+  mergeConfigObjects(base, obj)
+}
+
+// Load and parse a tsconfig.json file, resolving extends.
+// Returns the config and any lint diagnostics.
+fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
+  resolvedPath = Path.resolve(path);
+  (obj, rawContents, configDir) = parseTsConfigFile(resolvedPath);
+
+  // Extract and lint compilerOptions in a single pass
+  diags = mutable Vector[];
+  mergedObj = resolveExtends(
+    obj,
+    configDir,
+    SortedSet[resolvedPath],
+    diags,
+    rawContents,
+  );
+  compilerOptions = mergedObj.maybeGetObject("compilerOptions") match {
+  | Some(co) ->
+    // Check strict
+    hasStrict = co.maybeGetBool("strict");
+    hasStrict match {
+    | Some(true) -> void
+    | Some(false) ->
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "strict"),
+          message => "SKJS requires 'strict: true' in compilerOptions.",
+          isWarning => false,
+        },
+      )
+    | None() ->
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "compilerOptions"),
+          message => "SKJS requires 'strict: true' in compilerOptions.",
+          isWarning => false,
+        },
+      )
+    };
+
+    isStrict = hasStrict == Some(true);
+
+    // Check strict sub-options
+    for (name in strictSubOptions) {
+      co.maybeGetBool(name) match {
+      | Some(false) ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, name),
+            message => `Option '${name}' cannot be disabled; SKJS requires strict mode.`,
+            isWarning => false,
+          },
+        )
+      | Some(true) if (isStrict) ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, name),
+            message => `Option '${name}' is redundant when 'strict' is true.`,
+            isWarning => true,
+          },
+        )
+      | _ -> void
+      }
+    };
+
+    // Check restricted options
+    for (name in restrictedOptions) {
+      if (co.maybeGet(name).isSome()) {
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, name),
+            message => `Option '${name}' is not supported by SKJS.`,
+            isWarning => false,
+          },
+        )
+      }
+    };
+
+    // Check always-on options (warn if explicitly disabled)
+    for (name in alwaysOnOptions) {
+      if (co.maybeGetBool(name) == Some(false)) {
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, name),
+            message => `Option '${name}' is always checked by SKJS and cannot be disabled.`,
+            isWarning => true,
+          },
+        )
+      }
+    };
+
+    // Check not-yet-supported options (warn if enabled)
+    for (name in notYetSupportedOptions) {
+      if (co.maybeGetBool(name) == Some(true)) {
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, name),
+            message => `Option '${name}' is not yet implemented by SKJS and will be ignored.`,
+            isWarning => true,
+          },
+        )
+      }
+    };
+
+    // Extract paths and check it requires baseUrl
+    baseUrl = co.maybeGetString("baseUrl");
+    paths = co.maybeGetObject("paths") match {
+    | Some(pathsObj) ->
+      result = mutable Map[];
+      pathsObj.value.each((k, v) -> {
+        subs = v.expectArray().value.map(s -> s.expectString()).collect(Array);
+        result.set(k, subs)
+      });
+      result.chill()
+    | None() -> Map[]
+    };
+    if (!paths.isEmpty() && baseUrl.isNone()) {
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "paths"),
+          message => "Option 'paths' requires 'baseUrl' to be set.",
+          isWarning => false,
+        },
+      )
+    };
+
+    // Extract and check target
+    tsTarget = co.maybeGetString("target") match {
+    | None() ->
+      diags.push(
+        TsConfigDiag{
+          line => findKeyLine(rawContents, "compilerOptions"),
+          message => "Option 'target' is not set; defaulting to 'ES3'. Consider setting 'target' explicitly.",
+          isWarning => true,
+        },
+      );
+      TsTarget::default
+    | Some(v) ->
+      t = TsTarget::fromString(v) match {
+      | Some(t) -> t
+      | None() ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, "target"),
+            message => `Unknown 'target' value '${v}'.`,
+            isWarning => false,
+          },
+        );
+        TESNext()
+      };
+      if (t.isOutdated()) {
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, "target"),
+            message => `Option 'target' value '${v}' is outdated. Consider using 'ES6' or later.`,
+            isWarning => true,
+          },
+        )
+      };
+      t
+    };
+
+    // Extract module with default from target
+    tsModule = co.maybeGetString("module") match {
+    | Some(v) ->
+      TsModule::fromString(v) match {
+      | Some(m) -> m
+      | None() ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, "module"),
+            message => `Unknown 'module' value '${v}'.`,
+            isWarning => false,
+          },
+        );
+        TsModule::defaultFromTarget(tsTarget)
+      }
+    | None() -> TsModule::defaultFromTarget(tsTarget)
+    };
+
+    // Extract and check moduleResolution
+    moduleResolution = co.maybeGetString("moduleResolution") match {
+    | Some(v) ->
+      mrLine = findKeyLine(rawContents, "moduleResolution");
+      ModuleResolution::fromString(v) match {
+      | Some(mr) ->
+        // Validate module/moduleResolution compatibility
+        mr match {
+        | MRNodeNext() if (tsModule != TMNodeNext()) ->
+          diags.push(
+            TsConfigDiag{
+              line => mrLine,
+              message => "Option 'moduleResolution' is set to 'nodenext', but option 'module' must also be set to 'nodenext'.",
+              isWarning => false,
+            },
+          )
+        | MRNode16() if (tsModule != TMNode16()) ->
+          diags.push(
+            TsConfigDiag{
+              line => mrLine,
+              message => "Option 'moduleResolution' is set to 'node16', but option 'module' must also be set to 'node16'.",
+              isWarning => false,
+            },
+          )
+        | MRBundler() if (tsModule != TMES() && tsModule != TMPreserve()) ->
+          diags.push(
+            TsConfigDiag{
+              line => mrLine,
+              message => "Option 'moduleResolution' is set to 'bundler', but option 'module' must be set to an ES module format (es2015 or later).",
+              isWarning => false,
+            },
+          )
+        | _ -> void
+        };
+        mr
+      | None() ->
+        msg = if (ModuleResolution::isUnsupported(v)) {
+          `Option 'moduleResolution' value '${v}' is not supported by SKJS.`
+        } else {
+          `Unknown 'moduleResolution' value '${v}'.`
+        };
+        diags.push(
+          TsConfigDiag{line => mrLine, message => msg, isWarning => false},
+        );
+        ModuleResolution::default
+      }
+    | None() -> ModuleResolution::defaultFromModule(tsModule)
+    };
+
+    allowImportingTsExtensions = co
+      .maybeGetBool("allowImportingTsExtensions")
+      .default(false);
+
+    // Extract lib (default from target when not specified, matching tsc)
+    lib = co.maybeGetArray("lib") match {
+    | Some(arr) ->
+      arr.value.map(v -> v.expectString().lowercase()).collect(Array)
+    | None() -> tsTarget.defaultLib()
+    };
+
+    // Validate lib values
+    libLine = findKeyLine(rawContents, "lib");
+    for (value in lib) {
+      if (!knownLibValues.contains(value)) {
+        diags.push(
+          TsConfigDiag{
+            line => libLine,
+            message => `Unknown 'lib' value '${value}'.`,
+            isWarning => false,
+          },
+        )
+      } else if (unsupportedLibValues.contains(value)) {
+        diags.push(
+          TsConfigDiag{
+            line => libLine,
+            message => `Option 'lib' value '${value}' is not supported by SKJS.`,
+            isWarning => true,
+          },
+        )
+      }
+    };
+
+    TsCompilerOptions{
+      rootDir => co.maybeGetString("rootDir"),
+      baseUrl,
+      paths,
+      tsTarget,
+      tsModule,
+      moduleResolution,
+      allowImportingTsExtensions,
+      lib,
+    }
+  | None() ->
+    diags.push(
+      TsConfigDiag{
+        line => 1,
+        message => "SKJS requires 'strict: true' in compilerOptions.",
+        isWarning => false,
+      },
+    );
+    TsCompilerOptions{}
+  };
+
+  // Extract include
+  include = mergedObj.maybeGetArray("include") match {
+  | Some(arr) ->
+    arr.value
+      .map(v -> substituteConfigDir(v.expectString(), configDir))
+      .collect(Array)
+  | None() -> Array[]
+  };
+
+  // Extract exclude
+  exclude = mergedObj.maybeGetArray("exclude") match {
+  | Some(arr) ->
+    arr.value
+      .map(v -> substituteConfigDir(v.expectString(), configDir))
+      .collect(Array)
+  | None() -> Array[]
+  };
+
+  // Extract files
+  files = mergedObj.maybeGetArray("files") match {
+  | Some(arr) ->
+    arr.value
+      .map(v -> substituteConfigDir(v.expectString(), configDir))
+      .collect(Array)
+  | None() -> Array[]
+  };
+
+  // Apply defaults per tsc behavior:
+  // If neither files nor include is specified, default include to ["**/*"]
+  effectiveInclude = if (files.isEmpty() && include.isEmpty()) {
+    Array["**/*"]
+  } else {
+    include
+  };
+
+  // Default exclude when not specified
+  effectiveExclude = if (exclude.isEmpty()) {
+    Array["node_modules", "bower_components", "jspm_packages"]
+  } else {
+    exclude
+  };
+
+  (
+    TsConfig{
+      configDir,
+      compilerOptions,
+      include => effectiveInclude,
+      exclude => effectiveExclude,
+      files,
+    },
+    diags.toArray(),
+  )
+}
+
+// Replace ${configDir} in a string value with the actual config directory path.
+fun substituteConfigDir(value: String, configDir: DAbsolute): String {
+  value.replace("${configDir}", configDir.toString())
+}
+
+/***************************************************************************/
+// tsconfig.json linting
+/***************************************************************************/
+
+const strictSubOptions: Array<String> = Array[
+  "noImplicitAny",
+  "strictNullChecks",
+  "strictFunctionTypes",
+  "strictBindCallApply",
+  "strictPropertyInitialization",
+  "noImplicitThis",
+  "alwaysStrict",
+  "useUnknownInCatchVariables",
+  "exactOptionalPropertyTypes",
+];
+
+const restrictedOptions: Array<String> = Array[
+  "allowJs",
+  "checkJs",
+  "jsx",
+  "jsxFactory",
+  "jsxFragmentFactory",
+  "jsxImportSource",
+  "experimentalDecorators",
+  "emitDecoratorMetadata",
+  "suppressExcessPropertyErrors",
+  "suppressImplicitAnyIndexErrors",
+];
+
+const alwaysOnOptions: Array<String> = Array[
+  "noImplicitReturns",
+  "noFallthroughCasesInSwitch",
+  "noUncheckedIndexedAccess",
+];
+
+const notYetSupportedOptions: Array<String> = Array[
+  "noUnusedLocals",
+  "noUnusedParameters",
+  "noPropertyAccessFromIndexSignature",
+];
+
+// Valid lib values (from tsc 5.6, plus es2024 for forward compat).
+const knownLibValues: SortedSet<String> = SortedSet[
+  // Base ES levels
+  "es5",
+  "es6",
+  "es2015",
+  "es2016",
+  "es2017",
+  "es2018",
+  "es2019",
+  "es2020",
+  "es2021",
+  "es2022",
+  "es2023",
+  "es2024",
+  "esnext",
+  // ES2015 sub-libs
+  "es2015.collection",
+  "es2015.core",
+  "es2015.generator",
+  "es2015.iterable",
+  "es2015.promise",
+  "es2015.proxy",
+  "es2015.reflect",
+  "es2015.symbol",
+  "es2015.symbol.wellknown",
+  // ES2016 sub-libs
+  "es2016.array.include",
+  "es2016.intl",
+  // ES2017 sub-libs
+  "es2017.date",
+  "es2017.intl",
+  "es2017.object",
+  "es2017.sharedmemory",
+  "es2017.string",
+  "es2017.typedarrays",
+  // ES2018 sub-libs
+  "es2018.asyncgenerator",
+  "es2018.asynciterable",
+  "es2018.intl",
+  "es2018.promise",
+  "es2018.regexp",
+  // ES2019 sub-libs
+  "es2019.array",
+  "es2019.intl",
+  "es2019.object",
+  "es2019.string",
+  "es2019.symbol",
+  // ES2020 sub-libs
+  "es2020.bigint",
+  "es2020.date",
+  "es2020.intl",
+  "es2020.number",
+  "es2020.promise",
+  "es2020.sharedmemory",
+  "es2020.string",
+  "es2020.symbol.wellknown",
+  // ES2021 sub-libs
+  "es2021.intl",
+  "es2021.promise",
+  "es2021.string",
+  "es2021.weakref",
+  // ES2022 sub-libs
+  "es2022.array",
+  "es2022.error",
+  "es2022.intl",
+  "es2022.object",
+  "es2022.regexp",
+  "es2022.sharedmemory",
+  "es2022.string",
+  // ES2023 sub-libs
+  "es2023.array",
+  "es2023.collection",
+  "es2023.intl",
+  // ESNext sub-libs
+  "esnext.array",
+  "esnext.collection",
+  "esnext.decorators",
+  "esnext.disposable",
+  "esnext.intl",
+  "esnext.iterator",
+  "esnext.object",
+  "esnext.promise",
+  "esnext.regexp",
+  "esnext.string",
+  // Environment libs
+  "dom",
+  "dom.asynciterable",
+  "dom.iterable",
+  "webworker",
+  "webworker.asynciterable",
+  "webworker.importscripts",
+  "webworker.iterable",
+  "scripthost",
+  "decorators",
+  "decorators.legacy",
+];
+
+// Lib values that are known but not supported by SKJS (no DOM/browser APIs).
+const unsupportedLibValues: SortedSet<String> = SortedSet[
+  "dom",
+  "dom.asynciterable",
+  "dom.iterable",
+  "webworker",
+  "webworker.asynciterable",
+  "webworker.importscripts",
+  "webworker.iterable",
+  "scripthost",
+];
+
+// Find the 1-based line number of a JSON key in raw JSONC content.
+// Searches for "key" followed by optional whitespace and ':'.
+// Returns 0 if not found.
+fun findKeyLine(contents: String, key: String): Int {
+  keyColon = `"${key}":`;
+  keySpaceColon = `"${key}" :`;
+  lines = contents.split("\n");
+  for (i in Range(0, lines.size())) {
+    line = lines[i];
+    if (line.contains(keyColon) || line.contains(keySpaceColon)) {
+      return i + 1
+    }
+  };
+  0
+}
+
+/***************************************************************************/
+// File resolution from tsconfig
+/***************************************************************************/
+
+// Resolve all source files from a tsconfig configuration.
+// Returns absolute file paths.
+fun resolveConfigFiles(config: TsConfig): Array<String> {
+  configDirStr = config.configDir.toString();
+  result = mutable Set[];
+
+  // 1. Add explicit files (resolved relative to configDir)
+  for (file in config.files) {
+    resolved = Path.resolve(Path.join(configDirStr, file));
+    if (FileSystem.exists(resolved)) {
+      result.insert(resolved)
+    }
+  };
+
+  // 2. Collect all files under configDir for glob matching
+  allFiles = if (FileSystem.exists(configDirStr)) {
+    FileSystem.readFilesRecursive(configDirStr, isTsFile)
+  } else {
+    Array[]
+  };
+
+  // 3. Apply include globs
+  for (file in allFiles) {
+    // Get path relative to configDir for glob matching
+    relPath = Path.relativeTo{path => file, base => configDirStr};
+    included = config.include.any(pattern -> globMatch(pattern, relPath));
+    if (included) {
+      excluded = config.exclude.any(pattern -> {
+        // Exclude patterns match against the relative path
+        // A bare directory name like "node_modules" matches if any segment matches
+        globMatch(pattern, relPath) ||
+          relPath.splitIterator("/").any(segment -> segment == pattern)
+      });
+      if (!excluded) {
+        result.insert(file)
+      }
+    }
+  };
+
+  result.toArray()
+}
+
+module end;

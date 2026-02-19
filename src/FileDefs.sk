@@ -36,6 +36,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     builtinsFileName: FAbsolute,
     importStubs: Array<DAbsolute>,
     parsedFiles: S.EHandle<FAbsolute, ParsedResultFile>,
+    compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   ): this {
     static(
       S.LHandle::create(
@@ -66,6 +67,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
                 fileName.dirName,
                 includes,
                 importStubs,
+                compilerOptions,
                 defs,
               ),
             ]
@@ -349,6 +351,7 @@ mutable class FileDefsState private {
   root: DAbsolute,
   dirName: DAbsolute,
   importStubs: Array<DAbsolute>,
+  compilerOptions: TsCompilerOptions,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   exported: mutable Map<
@@ -366,9 +369,16 @@ mutable class FileDefsState private {
     dirName: DAbsolute,
     includes: Array<FAbsolute>,
     importStubs: Array<DAbsolute>,
+    compilerOptions: TsCompilerOptions,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable static{context, root, dirName, importStubs};
+    state = mutable static{
+      context,
+      root,
+      dirName,
+      importStubs,
+      compilerOptions,
+    };
     state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
@@ -376,13 +386,31 @@ mutable class FileDefsState private {
   private mutable fun resolveName(mname: Name): ?ModuleName {
     name = mname.value;
     resolved = if (name.startsWith("./") || name.startsWith("../")) {
-      if (!hasJsLikeExtension(name)) {
+      if (hasTsExtension(name)) {
+        if (!this.compilerOptions.allowImportingTsExtensions) {
+          suffix = Path.extname(name);
+          this.fileErrors.push(
+            TypingError(
+              Array[
+                (
+                  mname.pos,
+                  `An import path can only end with a '${suffix}' extension when 'allowImportingTsExtensions' is enabled.`,
+                ),
+              ],
+            ),
+          )
+        }
+      } else if (
+        !hasJsLikeExtension(name) &&
+        !this.compilerOptions.moduleResolution.isBundlerMode()
+      ) {
         this.fileErrors.push(
           TypingError(
             Array[
               (
                 mname.pos,
-                "Invalid import: local imports must be from js files",
+                "Relative imports require a '.js', '.mjs', or '.cjs' extension. " +
+                  "Use 'moduleResolution: \"bundler\"' for extensionless imports.",
               ),
             ],
           ),
@@ -390,7 +418,11 @@ mutable class FileDefsState private {
       };
       resolveName(this.dirName, name)
     } else {
-      resolveStubs(this.importStubs, name)
+      // Try path alias resolution first
+      resolvePathAlias(this.root, this.compilerOptions, name) match {
+      | some @ Some(_) -> some
+      | None() -> resolveStubs(this.importStubs, name)
+      }
     };
     resolved match {
     | Some(fileName) -> Some(ModuleName{name, fileName})
@@ -476,6 +508,7 @@ mutable class FileDefsState private {
       root => this.root,
       dirName => this.dirName,
       importStubs => this.importStubs,
+      compilerOptions => this.compilerOptions,
     };
     state.processDefs(defs)
   }

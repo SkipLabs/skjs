@@ -1,0 +1,80 @@
+/***************************************************************************/
+/* Glob pattern matching for file path filtering.                         */
+/*                                                                         */
+/* Supports: ** (any directory depth), * (any chars except /), ? (one     */
+/* char). Used by tsconfig.json include/exclude processing.               */
+/***************************************************************************/
+
+module SKJS;
+
+// Match a glob pattern against a path (both relative, using / as separator).
+// Supports: ** (any directory depth), * (any chars except /), ? (one char)
+fun globMatch(pattern: String, path: String): Bool {
+  patternSegs = splitGlobSegments(pattern);
+  pathSegs = splitGlobSegments(path);
+  matchSegments(patternSegs, 0, pathSegs, 0)
+}
+
+fun splitGlobSegments(s: String): Array<String> {
+  s.splitIterator("/").filter(x -> x != "").collect(Array)
+}
+
+// Recursive segment-by-segment matching.
+fun matchSegments(
+  pattern: Array<String>,
+  pi: Int,
+  path: Array<String>,
+  si: Int,
+): Bool {
+  // Both exhausted — match
+  if (pi >= pattern.size()) return si >= path.size();
+
+  // ** matches zero or more path segments
+  if (pattern[pi] == "**") {
+    for (skip in Range(si, path.size() + 1)) {
+      if (matchSegments(pattern, pi + 1, path, skip)) return true;
+    };
+    return false
+  };
+
+  // Pattern has segments left but path is exhausted — no match
+  if (si >= path.size()) return false;
+
+  // Match current segment and recurse
+  if (!matchSegment(pattern[pi], path[si])) return false;
+  matchSegments(pattern, pi + 1, path, si + 1)
+}
+
+// Match a single path segment against a pattern segment.
+// Supports * (zero or more chars) and ? (one char).
+fun matchSegment(pattern: String, text: String): Bool {
+  patChars = pattern.chars().toArray();
+  txtChars = text.chars().toArray();
+  matchChars(patChars, 0, txtChars, 0)
+}
+
+fun matchChars(
+  pattern: Array<Char>,
+  pi: Int,
+  text: Array<Char>,
+  ti: Int,
+): Bool {
+  if (pi >= pattern.size()) return ti >= text.size();
+  if (pattern[pi] == '*') {
+    // * matches zero or more characters
+    for (skip in Range(ti, text.size() + 1)) {
+      if (matchChars(pattern, pi + 1, text, skip)) return true;
+    };
+    return false
+  };
+  if (ti >= text.size()) return false;
+  if (pattern[pi] == '?') {
+    // ? matches exactly one character
+    return matchChars(pattern, pi + 1, text, ti + 1)
+  };
+  // Literal character match
+  if (pattern[pi] != text[ti]) return false;
+  matchChars(pattern, pi + 1, text, ti + 1)
+}
+
+module end;

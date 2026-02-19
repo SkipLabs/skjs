@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    // @skjs-expect-error Option 'lib' value 'dom' is not supported by SKJS.
+    "lib": ["ES2020", "DOM"]
+  },
+  "include": ["src/**/*"]
+}

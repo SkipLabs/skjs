@@ -211,6 +211,13 @@ const checkArgs: Array<Cli.Arg> = Array[
       "Control subtyping error detail level. Formats: <level>, <line>, <file>, <line>:<level>, <file>:<level>, <file>:<line>:<level>. " +
         "Levels: hide, minimal/0, default/1, normal/2, verbose/3, full/max. Multiple specs can be separated by ';'. Can be specified multiple times.",
     ),
+  Cli.Arg::string("project")
+    .long("project")
+    .short("p")
+    .value_name("PATH")
+    .about(
+      "Path to tsconfig.json or directory containing one (auto-discovered when no source files are provided)",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -245,8 +252,78 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | (false, true) -> EHKeepGoing()
   | (false, false) -> EHDefault()
   };
-  root = args.maybeGetString("base-url").default(".");
+  cliSrcFiles = args.getArray("src-file");
   importStubs = args.getArray("import-stubs");
+  cliBaseUrl = args.maybeGetString("base-url");
+
+  // Resolve source files and root via tsconfig.json if applicable.
+  // Decision tree (matches tsc behavior):
+  // 1. Explicit src-file args -> use directly, no tsconfig
+  // 2. --project/-p specified -> load that tsconfig
+  // 3. No files, no --project -> auto-discover tsconfig.json
+  (root, srcFiles, compilerOptions) = if (!cliSrcFiles.isEmpty()) {
+    // Reject combining --project with explicit source files (matches tsc TS5042)
+    if (args.maybeGetString("project").isSome()) {
+      print_error(
+        "Option 'project' cannot be mixed with source files on a command line",
+      );
+      throw Exit(2)
+    };
+    // Explicit files provided: no tsconfig processing
+    (cliBaseUrl.default("."), cliSrcFiles, TsCompilerOptions{})
+  } else {
+    tsconfigPath: ?String = args.maybeGetString("project") match {
+    | Some(projectPath) ->
+      resolveTsConfigPath(projectPath) match {
+      | Success(p) -> Some(p)
+      | Failure(err) ->
+        print_error(err);
+        throw Exit(2)
+      }
+    | None() ->
+      // Auto-discover: walk up from cwd looking for tsconfig.json
+      findTsConfig(getcwd())
+    };
+    tsconfigPath match {
+    | None() ->
+      // No tsconfig found, fall through to existing behavior
+      (cliBaseUrl.default("."), Array[], TsCompilerOptions{})
+    | Some(configPath) ->
+      (config, diagnostics) = try {
+        loadTsConfig(configPath)
+      } catch {
+      | exn ->
+        print_error(`Failed to parse ${configPath}: ${exn.getMessage()}`);
+        throw Exit(2)
+      };
+      // Report tsconfig lint diagnostics
+      for (diag in diagnostics) {
+        prefix = if (diag.isWarning) "warning" else "error";
+        print_error(`${configPath}:${diag.line}: ${prefix}: ${diag.message}`);
+      };
+      resolvedFiles: Array<String> = resolveConfigFiles(config);
+      if (resolvedFiles.isEmpty()) {
+        print_error(`No input files found from ${configPath}`);
+        throw Exit(2)
+      };
+      // Determine root: CLI --base-url overrides tsconfig baseUrl/rootDir
+      effectiveRoot = cliBaseUrl match {
+      | Some(cliRoot) -> cliRoot
+      | None() ->
+        configDirStr = config.configDir.toString();
+        config.compilerOptions.baseUrl match {
+        | Some(bu) -> Path.join(configDirStr, bu)
+        | None() ->
+          config.compilerOptions.rootDir match {
+          | Some(rd) -> Path.join(configDirStr, rd)
+          | None() -> configDirStr
+          }
+        }
+      };
+      (effectiveRoot, resolvedFiles, config.compilerOptions)
+    }
+  };
+
   builtinsFileName = args.maybeGetString("builtins-file") match {
   | Some(x) -> x
   | None() ->
@@ -279,7 +356,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       throw Exit(2);
     };
   };
-  srcFiles: Sequence<String> = args.getArray("src-file");
 
   // Parse error detail specifications
   // Each argument can contain semicolon-separated specs
@@ -326,6 +402,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             files,
             errorHandling,
             errorDetailConfig,
+            compilerOptions,
           };
           checked = checker.checkFiles(context);
           _ = checked.map(
@@ -409,6 +486,7 @@ class Checker private {
     files: Files,
     errorHandling: ErrorHandling,
     errorDetailConfig: ErrorDetailConfig,
+    compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
     (parsedAndSymbolsFiles, symbolsMap) = files.parse(
@@ -424,6 +502,7 @@ class Checker private {
       builtinsFileName,
       files.importStubs,
       parsedFiles,
+      compilerOptions,
     );
     checker = TypeChecker{defMap, errorHandling};
     static{

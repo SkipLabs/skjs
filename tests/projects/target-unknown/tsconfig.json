@@ -1,0 +1,8 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    // @skjs-expect-error Unknown 'target' value 'ES2099'.
+    "target": "ES2099"
+  },
+  "include": ["src/**/*"]
+}

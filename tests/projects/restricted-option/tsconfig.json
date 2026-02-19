@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    // @skjs-expect-error Option 'allowJs' is not supported by SKJS.
+    "allowJs": true
+  },
+  "include": ["src/**/*.ts"]
+}

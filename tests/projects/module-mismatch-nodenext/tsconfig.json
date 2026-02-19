@@ -1,0 +1,10 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    "module": "commonjs",
+    // @skjs-expect-error Option 'moduleResolution' is set to 'nodenext', but option 'module' must also be set to 'nodenext'.
+    "moduleResolution": "nodenext"
+  },
+  "include": ["src/**/*"]
+}

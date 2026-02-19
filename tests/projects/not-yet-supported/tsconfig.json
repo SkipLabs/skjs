@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    // @skjs-expect-error Option 'noUnusedLocals' is not yet implemented by SKJS and will be ignored.
+    "noUnusedLocals": true
+  },
+  "include": ["src/**/*.ts"]
+}
