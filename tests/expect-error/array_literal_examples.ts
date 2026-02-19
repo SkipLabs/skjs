@@ -186,7 +186,7 @@ function supertypePositionTest(): void {
 function tupleThenArrayUse2(): void {
   const numbers = [1, 2, 3, 4, 5];
   takesTuple(numbers);
-  // Tuples are readonly, so they can't be passed as mutable Array
+  // Tuples are only subtypes of immutable Array for now (can be relaxed when tuples are distinct from readonly tuples)
   // @skjs-expect-error Invalid call
   takesArray(numbers);
   takesTuple(numbers);
