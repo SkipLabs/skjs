@@ -862,7 +862,7 @@ extension class TypeChecker {
       TType::single(TPrimUnit(TVoid(), pos))
 
     | Call(Expr(_, Var(Name(_, "__SKJS_show"))), _, args) ->
-      this.showTypes(tcenv, args, true, pos)
+      this.showTypes(tcenv, args, false, pos)
     | Call(Expr(_, Var(Name(_, "__SKJS_show_expanded"))), _, args) ->
       this.showTypes(tcenv, args, true, pos)
     | Call(f, targs, args) ->
