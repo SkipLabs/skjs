@@ -151,7 +151,7 @@ function testArraySpreadInference(): void {
   const a1_as_array: readonly string[] = a1;
 }
 
-// 6) Spread array followed by positional arg: ambiguous positions
+// 6) Spread array followed by positional arg: loses precision on string vs numner
 function testSpreadArrayFollowedByPositional(): void {
   const depArr: VariadicDepSafe[] = ["a", 1];
   // @ts-expect-error Invalid call
