@@ -212,3 +212,14 @@ declare const identity: <U extends [string, number]>(a: string, b: number) => U;
 function testGenericTupleConstraint(): void {
   const tgt: <T extends [string, number]>(...args: T) => T = identity;
 }
+
+// ------------------------------------------------------------
+// 10) Tuple rest to positional in function subtyping
+// ------------------------------------------------------------
+declare const tupleRest1: (...x: [number]) => void;
+declare const tupleRest2: (...x: [string, number]) => void;
+
+function testTupleRestToPositional(): void {
+  const positional1: (x: number) => void = tupleRest1;
+  const positional2: (a: string, b: number) => void = tupleRest2;
+}

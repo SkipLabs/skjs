@@ -1087,13 +1087,10 @@ extension class TFun {
       }
     };
 
-    // Handle the case where f2 uses tuple rest param: (...args: [A, B]) => R
-    // This is equivalent to (a: A, b: B) => R. For mixed signatures, we append
-    // tuple-rest elements after required AND optional params to preserve
-    // positional order. E.g. (x: X, y?: Y, ...args: [A, B]) => R is treated
-    // as (x: X, y: Y, a: A, b: B) => R (optional params become positionally
-    // required since they can't be skipped to reach the tuple args).
-    // NOTE(variadic-design): union/intersection rest-tuple forms are not expanded here.
+    // Flatten tuple rest params to positional params for both sides.
+    // E.g. (...args: [A, B]) => R becomes (a: A, b: B) => R.
+    // Optional params before the tuple become positionally required
+    // since they can't be skipped to reach the tuple args.
     (
       f2params,
       f2optionalParams,
@@ -1111,11 +1108,23 @@ extension class TFun {
       (combined.toArray(), Array[], None())
     | None() -> (f2.params, f2.optionalParams, f2.spreadParam)
     };
-    (f1params, f1optionalParams, f1spreadParam) = (
-      f1.params,
-      f1.optionalParams,
+    (
+      f1params,
+      f1optionalParams,
+      f1spreadParam,
+    ) = VariadicTyping::resolveSpreadToTuple(
+      subst,
+      tenv,
       f1.spreadParam,
-    );
+    ) match {
+    | Some(tupleElts) ->
+      combined = mutable Vector[];
+      combined.extend(f1.params);
+      combined.extend(f1.optionalParams);
+      combined.extend(tupleElts);
+      (combined.toArray(), Array[], None())
+    | None() -> (f1.params, f1.optionalParams, f1.spreadParam)
+    };
 
     if (f1params.size() > f2params.size()) {
       return STRecFunParam(None(), f2params.size(), f1, f2)
