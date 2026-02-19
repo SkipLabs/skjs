@@ -587,10 +587,48 @@ extension class TypeChecker {
     expand: Bool,
     pos: PosRange,
   ): TType {
-    for (arg in args) {
-      ty = this.expr(tcenv, arg, true);
-      if (expand) !ty = ty.expand(tcenv.subst.clone(), this, Some(Covariant()));
-      print_error(prettyPrintType(false, ty))
+    if (!args.isEmpty()) {
+      subst = tcenv.subst.clone();
+      exprTy = this.expr(tcenv, args[0], true);
+      ty = if (expand) {
+        // Resolve single tvar to raw binding (without constraint intersection)
+        // to avoid e.g. [string, number] & readonly unknown[] -> never.
+        exprTy.getSingleVar().flatMap(tvar -> subst.peekRaw(tvar)) match {
+        | Some(rawBinding) -> rawBinding.expand(subst, this, Some(Covariant()))
+        | None() -> exprTy.expand(subst, this, Some(Covariant()))
+        }
+      } else {
+        exprTy
+      };
+      actual = prettyPrintType(false, ty);
+      print_error(actual);
+      if (args.size() >= 2) {
+        expectedTy = this.expr(tcenv, args[1], true);
+        expectedTy.getConstantString() match {
+        | Some(expected) ->
+          if (actual != expected.val) {
+            tcenv.error(
+              Array[
+                (args[0].pos, `__SKJS_show: expected ${expected.val}, got ${actual}`),
+              ],
+            )
+          }
+        | None() ->
+          tcenv.error(
+            Array[
+              (
+                args[1].pos,
+                "__SKJS_show: second argument must be a string literal",
+              ),
+            ],
+          )
+        }
+      };
+      if (args.size() > 2) {
+        tcenv.error(
+          Array[(args[2].pos, "__SKJS_show: expected at most 2 arguments")],
+        )
+      }
     };
     TType::single(TPrimUnit(TVoid(), pos))
   }
