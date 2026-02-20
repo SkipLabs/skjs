@@ -99,7 +99,10 @@ mutable base class ApplyType(
     env: this::Env,
     algebraic: TAlgebraic,
   ): TAlgebraic {
-    TAlgebraic(algebraic.branches.map(x -> this.constr(env, x)), algebraic.pos)
+    TAlgebraic(
+      algebraic.branches.mapKeyed(x -> this.constr(env, x)),
+      algebraic.pos,
+    )
   }
 
   overridable deferred mutable fun constr(

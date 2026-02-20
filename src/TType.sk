@@ -475,7 +475,7 @@ class TAlgebraic(
   fun removeFields(fieldsToRemove: SortedSet<String>): TAlgebraic {
     if (fieldsToRemove.isEmpty()) this else {
       this with {
-        branches => this.branches.map(branch ->
+        branches => this.branches.mapKeyed(branch ->
           branch.removeFields(fieldsToRemove)
         ),
       }
@@ -1007,8 +1007,8 @@ class TFields{
     fTFuns: TFuns -> TFuns,
   ): TFields {
     TFields{
-      fields => this.fields.map(fField),
-      symbolFields => this.symbolFields.map(fField),
+      fields => this.fields.mapKeyed(fField),
+      symbolFields => this.symbolFields.mapKeyed(fField),
       indexes => this.indexes.map(fIndexField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
@@ -1020,7 +1020,7 @@ class TFields{
   }
 
   fun filterFields(f: TField -> Bool): TFields {
-    this with {fields => this.fields.filter(f)}
+    this with {fields => this.fields.filterKeyed(f)}
   }
 
   fun filterMapFields(f: TField -> ?TField): TFields {
@@ -1141,14 +1141,14 @@ class TFields{
   }
 
   fun filterSymbolFields(f: TField -> Bool): TFields {
-    this with {symbolFields => this.symbolFields.filter(f)}
+    this with {symbolFields => this.symbolFields.filterKeyed(f)}
   }
 
   fun removeFields(fieldsToRemove: SortedSet<String>): TFields {
     if (fieldsToRemove.isEmpty()) this else {
       // TODO: better approximation of removing fields that may intersect with indexes
       this with {
-        fields => this.fields.filter(field ->
+        fields => this.fields.filterKeyed(field ->
           !fieldsToRemove.contains(field.name)
         ),
       }
@@ -1172,11 +1172,11 @@ class STypes private (
   }
 
   fun mapSTypes(f: SType -> SType): STypes {
-    STypes(this.stypes.map(f))
+    STypes(this.stypes.mapKeyed(f))
   }
 
   fun filterSTypes(f: SType -> Bool): STypes {
-    STypes(this.stypes.filter(f))
+    STypes(this.stypes.filterKeyed(f))
   }
 
   fun filterMap(f: SType -> ?SType): STypes {

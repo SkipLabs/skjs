@@ -53,7 +53,7 @@ class PrimLiterals private (
   }
 
   fun filterLiterals(f: PrimLiteral -> Bool): ?PrimLiterals {
-    result = this.inner.filter(f);
+    result = this.inner.filterKeyed(f);
     if (result.isEmpty()) None() else Some(PrimLiterals(result))
   }
 

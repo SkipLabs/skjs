@@ -8,7 +8,7 @@ module InternalKeyedArrayMap;
 // A map where the keys are projected from the values, backed by a sorted array
 class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   private inner: Vector<T>,
-) uses Orderable[T: Orderable], XXHashable[T: XXHashable] {
+) extends Sequence<T> uses Orderable[T: Orderable], XXHashable[T: XXHashable] {
   //
   private static fun createFromSortedVector(inner: Vector<T>): this {
     // inner must be strictly increasing under project, which is expected to
@@ -115,14 +115,14 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     this.inner.find(f)
   }
 
-  fun filter(f: T -> Bool): this {
+  fun filterKeyed(f: T -> Bool): this {
     // don't need to call create since Vector.filter returns a subset and
     // preserves order
     static(this.inner.filter(f))
   }
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
-  fun map(f: T -> T): this {
+  fun mapKeyed(f: T -> T): this {
     f1 = (x) -> {
       y = f(x);
       assert(x.project() == y.project());
