@@ -1127,7 +1127,7 @@ base class TEnv{
           };
           invariant(thisParam is None(), "Assigning thisParam multiple times");
           param.isRest.each(restPos ->
-            tcenvb.error(Array[(restPos, "this cannot be a spread parameter")])
+            tcenvb.error(Array[(restPos, "this cannot be a rest parameter")])
           );
           param.optional.each(optPos ->
             tcenvb.error(Array[(optPos, "this cannot be optional")])
@@ -1140,15 +1140,22 @@ base class TEnv{
         | Some(restPos) ->
           param.optional match {
           | Some(optPos) ->
-            tcenvb.error(
-              Array[(optPos, "The spread parameter cannot be marked optional")],
-            )
+            tcenvb.error(Array[(optPos, "A rest parameter cannot be optional")])
           | None() -> void
           };
           !spreadParam = Some(ArrayType::createFromFull(paramType));
+          VariadicTyping::checkRestParamReadonly(
+            tcenvb,
+            this,
+            restPos,
+            param.type,
+            clauses,
+          );
           if (i != params.size() - 1) {
             tcenvb.error(
-              Array[(restPos, "... must always be the last parameter")],
+              Array[
+                (restPos, "A rest parameter must be last in a parameter list"),
+              ],
             );
             break void
           };

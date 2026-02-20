@@ -961,6 +961,17 @@ extension class TType {
     };
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
+
+    // Special case: tuple-like lhs against array-like rhs.
+    // We accept only when ReadonlyArray<U(tuple elems)> <: rhs.
+    substCopy = subst.save();
+    VariadicTyping::tupleToArraySubtyping(subst, tenv, clauses1, u2) match {
+    | Some(res) ->
+      if (!(res is STOk())) subst.restore(substCopy);
+      return res
+    | None() -> subst.restore(substCopy)
+    };
+
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
@@ -1076,11 +1087,50 @@ extension class TFun {
       }
     };
 
-    if (f1.params.size() > f2.params.size()) {
-      return STRecFunParam(None(), f2.params.size(), f1, f2)
+    // Flatten tuple rest params to positional params for both sides.
+    // E.g. (...args: [A, B]) => R becomes (a: A, b: B) => R.
+    // Optional params before the tuple become positionally required
+    // since they can't be skipped to reach the tuple args.
+    (
+      f2params,
+      f2optionalParams,
+      f2spreadParam,
+    ) = VariadicTyping::resolveSpreadToTuple(
+      subst,
+      tenv,
+      f2.spreadParam,
+    ) match {
+    | Some(tupleElts) ->
+      combined = mutable Vector[];
+      combined.extend(f2.params);
+      combined.extend(f2.optionalParams);
+      combined.extend(tupleElts);
+      (combined.toArray(), Array[], None())
+    | None() -> (f2.params, f2.optionalParams, f2.spreadParam)
+    };
+    (
+      f1params,
+      f1optionalParams,
+      f1spreadParam,
+    ) = VariadicTyping::resolveSpreadToTuple(
+      subst,
+      tenv,
+      f1.spreadParam,
+    ) match {
+    | Some(tupleElts) ->
+      combined = mutable Vector[];
+      combined.extend(f1.params);
+      combined.extend(f1.optionalParams);
+      combined.extend(tupleElts);
+      (combined.toArray(), Array[], None())
+    | None() -> (f1.params, f1.optionalParams, f1.spreadParam)
     };
 
-    spread1elt = f1.spreadParam match {
+    if (f1params.size() > f2params.size()) {
+      return STRecFunParam(None(), f2params.size(), f1, f2)
+    };
+
+    spread1elt = f1spreadParam match {
     | None() -> None()
     | Some(spread1) ->
       spread1.maybeGetEltType(subst, tenv, Contravariant()) match {
@@ -1089,12 +1139,12 @@ extension class TFun {
       }
     };
 
-    for (i => p2 in f2.params) {
-      io1 = i - f1.params.size();
+    for (i => p2 in f2params) {
+      io1 = i - f1params.size();
       p1 = if (io1 < 0) {
-        f1.params[i]
-      } else if (io1 < f1.optionalParams.size()) {
-        f1.optionalParams[io1]
+        f1params[i]
+      } else if (io1 < f1optionalParams.size()) {
+        f1optionalParams[io1]
       } else {
         spread1elt match {
         | None() -> break void
@@ -1107,13 +1157,13 @@ extension class TFun {
       }
     };
 
-    for (io2 => p2 in f2.optionalParams) {
-      i = io2 + f2.params.size();
-      io1 = i - f1.params.size();
+    for (io2 => p2 in f2optionalParams) {
+      i = io2 + f2params.size();
+      io1 = i - f1params.size();
       p1 = if (io1 < 0) {
         internal_error("f1.params.size() <= f2.params.size() checked above")
-      } else if (io1 < f1.optionalParams.size()) {
-        f1.optionalParams[io1]
+      } else if (io1 < f1optionalParams.size()) {
+        f1optionalParams[io1]
       } else {
         spread1elt match {
         | None() -> break void
@@ -1126,20 +1176,20 @@ extension class TFun {
       }
     };
 
-    f2.spreadParam match {
+    f2spreadParam match {
     | None() ->
       if (
-        f1.params.size() + f1.optionalParams.size() >
-        f2.params.size() + f2.optionalParams.size()
+        f1params.size() + f1optionalParams.size() >
+        f2params.size() + f2optionalParams.size()
       ) {
         return STRecFunParam(
           None(),
-          f2.params.size() + f2.optionalParams.size(),
+          f2params.size() + f2optionalParams.size(),
           f1,
           f2,
         )
       };
-      if (f1.spreadParam.isSome()) {
+      if (f1spreadParam.isSome()) {
         return STRecFunSpread(None(), f1, f2)
       }
     | Some(spread2) ->
@@ -1148,13 +1198,13 @@ extension class TFun {
       | Some(spread2elt) -> spread2elt
       };
       for (io1 in Range(
-        f2.params.size() + f2.optionalParams.size() - f1.params.size(),
-        f1.optionalParams.size(),
+        f2params.size() + f2optionalParams.size() - f1params.size(),
+        f1optionalParams.size(),
       )) {
-        TType::isSub(subst, tenv, spread2elt, f1.optionalParams[io1]) match {
+        TType::isSub(subst, tenv, spread2elt, f1optionalParams[io1]) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
-          return STRecFunOptionalSpread(err, io1 + f1.params.size(), f1, f2)
+          return STRecFunOptionalSpread(err, io1 + f1params.size(), f1, f2)
         }
       };
       spread1elt match {

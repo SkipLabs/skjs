@@ -25,18 +25,35 @@ extension class TypeChecker {
         param.optional match {
         | None() -> void
         | Some(optionalPos) ->
-          subst.error(Array[(optionalPos, "... cannot be optional")])
+          subst.error(
+            Array[(optionalPos, "A rest parameter cannot be optional")],
+          )
         };
         param.default match {
         | None() -> void
         | Some(defaultExpr) ->
           subst.error(
-            Array[(defaultExpr.pos, "... cannot have a default value")],
+            Array[
+              (defaultExpr.pos, "A rest parameter cannot have an initializer"),
+            ],
           )
         };
         if (i != fd.params.size() - 1) {
-          subst.error(Array[(restPos, "... must be the last parameter")])
-        }
+          subst.error(
+            Array[
+              (restPos, "A rest parameter must be last in a parameter list"),
+            ],
+          )
+        };
+        param.type.each(paramType ->
+          VariadicTyping::checkRestParamReadonly(
+            subst,
+            this,
+            restPos,
+            paramType,
+            fd.tparams,
+          )
+        )
       | None() -> void
       };
       for (modifier in param.modifiers.modifiers) {

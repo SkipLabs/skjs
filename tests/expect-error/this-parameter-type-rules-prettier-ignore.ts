@@ -4,6 +4,6 @@
 // @skjs-expect-error this cannot be optional
 type FuncWithOptionalThis = (this?: string) => void;
 
-// this parameter cannot be a spread parameter in function types
-// @skjs-expect-error this cannot be a spread parameter
+// this parameter cannot be a rest parameter in function types
+// @skjs-expect-error this cannot be a rest parameter
 type FuncWithSpreadThis = (...this: string[]) => void;

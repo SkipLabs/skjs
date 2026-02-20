@@ -587,10 +587,51 @@ extension class TypeChecker {
     expand: Bool,
     pos: PosRange,
   ): TType {
-    for (arg in args) {
-      ty = this.expr(tcenv, arg, true);
-      if (expand) !ty = ty.expand(tcenv.subst.clone(), this, Some(Covariant()));
-      print_error(prettyPrintType(false, ty))
+    if (!args.isEmpty()) {
+      subst = tcenv.subst.clone();
+      exprTy = this.expr(tcenv, args[0], true);
+      ty = if (expand) {
+        // Resolve single tvar to raw binding (without constraint intersection)
+        // to avoid e.g. [string, number] & readonly unknown[] -> never.
+        exprTy.getSingleVar().flatMap(tvar -> subst.peekRaw(tvar)) match {
+        | Some(rawBinding) -> rawBinding.expand(subst, this, Some(Covariant()))
+        | None() -> exprTy.expand(subst, this, Some(Covariant()))
+        }
+      } else {
+        exprTy
+      };
+      actual = prettyPrintType(false, ty);
+      print_error(actual);
+      if (args.size() >= 2) {
+        expectedTy = this.expr(tcenv, args[1], true);
+        expectedTy.getConstantString() match {
+        | Some(expected) ->
+          if (actual != expected.val) {
+            tcenv.error(
+              Array[
+                (
+                  args[0].pos,
+                  `__SKJS_show: expected ${expected.val}, got ${actual}`,
+                ),
+              ],
+            )
+          }
+        | None() ->
+          tcenv.error(
+            Array[
+              (
+                args[1].pos,
+                "__SKJS_show: second argument must be a string literal",
+              ),
+            ],
+          )
+        }
+      };
+      if (args.size() > 2) {
+        tcenv.error(
+          Array[(args[2].pos, "__SKJS_show: expected at most 2 arguments")],
+        )
+      }
     };
     TType::single(TPrimUnit(TVoid(), pos))
   }
@@ -1993,6 +2034,24 @@ extension class TypeChecker {
         tfun with {tparams => Array[]},
       );
       totalSize = tfun.params.size() + tfun.optionalParams.size();
+      // Unified rest-argument mechanism (Stage A): if spreadParam is an unbound generic
+      // type variable, infer/bind it from call-site arguments before param checking.
+      callInvalid = VariadicTyping::inferRestTypeVar(
+        tcenv,
+        this,
+        pos,
+        tfun.spreadParam,
+        totalSize,
+        args,
+        moreArgs,
+      );
+
+      if (callInvalid) {
+        // Skip further param checking and return the function's return type
+        // to avoid cascading diagnostics from void/return-type mismatches.
+        return tfun.retType
+      };
+
       version = tcenv.subst.version;
       loop {
         for (i in Range(0, tfun.params.size())) {
@@ -2035,38 +2094,15 @@ extension class TypeChecker {
         if (tcenv.subst.version == version) break void;
         !version = tcenv.subst.version;
       };
-      if (args.size() > totalSize || moreArgs.isSome()) {
-        tfun.spreadParam match {
-        | None() ->
-          // Allow more ignored parameters
-          void
-        | Some(spreadType) ->
-          spreadType.maybeGetEltType(tcenv.subst, this, Contravariant()) match {
-          | Some(eltType) ->
-            for (i in Range(totalSize, args.size())) {
-              this.checkSubType(
-                tcenv,
-                pos,
-                "Invalid argument",
-                args[i],
-                eltType,
-              );
-            };
-            moreArgs match {
-            | None() -> void
-            | Some(ma) ->
-              this.checkSubType(tcenv, pos, "Invalid argument", ma, eltType)
-            }
-          | None() ->
-            tcenv.error(
-              Array[
-                (pos, "Invalid call. Unexpected type for ..."),
-                (spreadType.getPos(), `${spreadType} is not an array`),
-              ],
-            )
-          }
-        }
-      };
+      VariadicTyping::checkRestArgs(
+        tcenv,
+        this,
+        pos,
+        tfun.spreadParam,
+        totalSize,
+        args,
+        moreArgs,
+      );
       tfun.retType
     }
   }

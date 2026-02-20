@@ -140,6 +140,22 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
     | _ -> false
     }
   }
+
+  // Returns true if the type variable has no binding at all
+  readonly fun isUnbound(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) is None()
+  }
+
+  // Returns the raw bound value without applying constraints
+  // Used for checking if a type variable is bound to a tuple for spread param expansion
+  readonly fun peekRaw(tvar: TVar): ?TType {
+    this.values.maybeGet(tvar.id) match {
+    | None() -> None()
+    | Some(SVOpen(ty))
+    | Some(SVClosed(ty)) ->
+      Some(ty)
+    }
+  }
 }
 
 module end;
