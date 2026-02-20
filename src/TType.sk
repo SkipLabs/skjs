@@ -1162,7 +1162,7 @@ class TFields{
 
 class STypes private (
   private stypes: InternalKeyedArrayMap<STypeTag, SType>,
-) uses XXHashable, Orderable {
+) extends Sequence<SType> uses XXHashable, Orderable {
   static fun empty(): STypes {
     STypes(InternalKeyedArrayMap::empty())
   }
@@ -1171,11 +1171,11 @@ class STypes private (
     STypes(InternalKeyedArrayMap::single(x))
   }
 
-  fun map(f: SType -> SType): STypes {
+  fun mapSTypes(f: SType -> SType): STypes {
     STypes(this.stypes.map(f))
   }
 
-  fun filter(f: SType -> Bool): STypes {
+  fun filterSTypes(f: SType -> Bool): STypes {
     STypes(this.stypes.filter(f))
   }
 

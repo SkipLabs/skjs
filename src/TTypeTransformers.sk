@@ -80,7 +80,7 @@ mutable base class ApplyType(
     env: this::Env,
     stypes: STypes,
   ): STypes {
-    stypes.map(stype -> this.stype(env, stype))
+    stypes.mapSTypes(stype -> this.stype(env, stype))
   }
 
   overridable deferred mutable fun stype(env: this::Env, stype: SType): SType {

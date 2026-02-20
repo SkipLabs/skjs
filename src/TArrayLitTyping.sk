@@ -103,7 +103,7 @@ class ArrayLitTyping() {
   ): TType {
     ty.mapSTypes(subst, tenv, Some(Covariant()), stypesOpt ->
       stypesOpt.map(stypes ->
-        stypes.map(stype ->
+        stypes.mapSTypes(stype ->
           stype match {
           | TPrimValue(kind, Some(_), pos) -> TPrimValue::full(kind, pos)
           | _ -> stype
