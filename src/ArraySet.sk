@@ -7,7 +7,7 @@ module ArraySet;
 // A set of orderable elements backed by a sorted array.
 class .ArraySet<T: Orderable> private (
   private inner: Vector<T>,
-) uses Orderable, XXHashable[T: XXHashable] {
+) extends Sequence<T> uses Orderable, XXHashable[T: XXHashable] {
   static fun empty(): ArraySet<T> {
     ArraySet(Vector[])
   }
@@ -98,7 +98,7 @@ class .ArraySet<T: Orderable> private (
     ArraySet(this.inner.filter(f))
   }
 
-  fun map<U: Orderable>(f: T -> U): ArraySet<U> {
+  fun mapToSet<U: Orderable>(f: T -> U): ArraySet<U> {
     ArraySet::createFromVector(this.inner.map(f))
   }
 

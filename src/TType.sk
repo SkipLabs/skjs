@@ -1327,7 +1327,7 @@ class TInsts private (insts: ArraySet<TInst>) uses XXHashable, Orderable {
   }
 
   fun map(f: TInst -> TInst): TInsts {
-    TInsts(this.insts.map(f))
+    TInsts(this.insts.mapToSet(f))
   }
 
   fun filterMap(f: TInst -> ?TInst): TInsts {
@@ -1457,7 +1457,7 @@ class Clause private (
     fTParam: TParam -> TParam,
     fSTypesOpt: (?STypes) -> ?STypes,
   ): ?Clause {
-    this.map_(vars -> vars.map(fTParam), fSTypesOpt)
+    this.map_(vars -> vars.mapToSet(fTParam), fSTypesOpt)
   }
 
   // t.mapSTypes(f) is t with stypes updated by f
