@@ -16,7 +16,7 @@ class PrimLiteral(
 
 class PrimLiterals private (
   private inner: InternalKeyedArrayMap<String, PrimLiteral>,
-) uses XXHashable, Orderable, Show {
+) extends Sequence<PrimLiteral> uses XXHashable, Orderable, Show {
   // Invariant: inner is not empty
 
   static fun single(elt: PrimLiteral): PrimLiterals {
@@ -52,7 +52,7 @@ class PrimLiterals private (
     this.inner.singleElt()
   }
 
-  fun filter(f: PrimLiteral -> Bool): ?PrimLiterals {
+  fun filterLiterals(f: PrimLiteral -> Bool): ?PrimLiterals {
     result = this.inner.filter(f);
     if (result.isEmpty()) None() else Some(PrimLiterals(result))
   }

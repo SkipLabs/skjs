@@ -377,7 +377,7 @@ extension class TypeChecker {
         | None() -> Some(idxSType)
         | Some(lits) ->
           lits
-            .filter(fieldLit ->
+            .filterLiterals(fieldLit ->
               fields.maybeGetType(
                 tcenv.subst,
                 this,
