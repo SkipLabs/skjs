@@ -103,7 +103,7 @@ class ArrayLitTyping() {
   ): TType {
     ty.mapSTypes(subst, tenv, Some(Covariant()), stypesOpt ->
       stypesOpt.map(stypes ->
-        stypes.map(stype ->
+        stypes.mapSTypes(stype ->
           stype match {
           | TPrimValue(kind, Some(_), pos) -> TPrimValue::full(kind, pos)
           | _ -> stype
@@ -153,7 +153,7 @@ class ArrayLitTyping() {
   // to Array<U> when the expected type is ReadonlyArray<U>.
   static private fun arrayInstArgs(ty: TType): Array<TType> {
     result = mutable Vector[];
-    for (inst in ty.insts.insts) {
+    for (inst in ty.insts) {
       inst match {
       | TSInst(Name(_, "Array"), TArgs(targs)) if (targs.size() == 1) ->
         result.push(targs[0])

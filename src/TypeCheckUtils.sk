@@ -77,7 +77,7 @@ extension class TypeChecker {
   fun checkIsIgnorable(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
     if (
       ty.clauses.isEmpty() &&
-      ty.insts.insts.getUnique() is Some(TSInst(Name(_, "SKJS_Ignorable"), _))
+      ty.insts.getUnique() is Some(TSInst(Name(_, "SKJS_Ignorable"), _))
     ) {
       return void
     };

@@ -80,7 +80,7 @@ mutable base class ApplyType(
     env: this::Env,
     stypes: STypes,
   ): STypes {
-    stypes.map(stype -> this.stype(env, stype))
+    stypes.mapSTypes(stype -> this.stype(env, stype))
   }
 
   overridable deferred mutable fun stype(env: this::Env, stype: SType): SType {
@@ -99,7 +99,10 @@ mutable base class ApplyType(
     env: this::Env,
     algebraic: TAlgebraic,
   ): TAlgebraic {
-    TAlgebraic(algebraic.branches.map(x -> this.constr(env, x)), algebraic.pos)
+    TAlgebraic(
+      algebraic.branches.mapKeyed(x -> this.constr(env, x)),
+      algebraic.pos,
+    )
   }
 
   overridable deferred mutable fun constr(

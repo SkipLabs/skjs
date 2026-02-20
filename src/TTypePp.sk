@@ -476,7 +476,7 @@ mutable class TypePp{
       level,
       margin,
       (pp, level, margin) ~> {
-        for (i => inst in ty.insts.insts) {
+        for (i => inst in ty.insts) {
           if (i != 0) pp.out(level, margin, " | ");
           inst match {
           | TSInst(x, targs) ->
@@ -517,7 +517,7 @@ mutable class TypePp{
         }
       },
       (pp, level, _prevMargin, margin) ~> {
-        for (inst in ty.insts.insts) {
+        for (inst in ty.insts) {
           pp.buffer match {
           | List.Nil()
           | List.Cons("\n", _) ->

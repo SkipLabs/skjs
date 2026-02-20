@@ -316,8 +316,7 @@ extension class TypeChecker {
       idxSType,
     );
     stypes = objType2.getSTypes(tcenv.subst, this, Covariant()) match {
-    | Some(stypes) if (!stypes.isEmpty()) ->
-      Vector::mcreateFromIterator(stypes.values())
+    | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
     | _ ->
       typingError(
         Array[
@@ -378,7 +377,7 @@ extension class TypeChecker {
         | None() -> Some(idxSType)
         | Some(lits) ->
           lits
-            .filter(fieldLit ->
+            .filterLiterals(fieldLit ->
               fields.maybeGetType(
                 tcenv.subst,
                 this,
@@ -519,7 +518,7 @@ extension class TypeChecker {
           stypesOpt
         | Some(stypes) ->
           Some(
-            stypes.filter(stype -> {
+            stypes.filterSTypes(stype -> {
               stype match {
               | TPrimUnit(TNull(), _)
               | TPrimUnit(TUndefined(), _) ->
@@ -1034,7 +1033,7 @@ extension class TypeChecker {
             stypesOpt
           | Some(stypes) ->
             Some(
-              stypes.map(stype ->
+              stypes.mapSTypes(stype ->
                 stype match {
                 | TPrimValue(k @ TNum(), _, primPos)
                 | TPrimValue(k @ TBigInt(), _, primPos) ->

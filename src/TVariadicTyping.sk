@@ -314,12 +314,12 @@ class VariadicTyping() {
             };
             subst = Subst::mcreate(tcenvb);
             normalizedCstr = tenv.normalize(tcenvb, cstr);
-            resolvedCstr = normalizedCstr.insts.insts.getUnique() match {
+            resolvedCstr = normalizedCstr.insts.getUnique() match {
             | Some(TSInst(name, cstrTArgs)) ->
               tenv.instantiate(subst, name, cstrTArgs)
             | _ -> normalizedCstr
             };
-            isExpandedMutableArray = resolvedCstr.insts.insts.getUnique() match {
+            isExpandedMutableArray = resolvedCstr.insts.getUnique() match {
             | Some(TSInst(Name(_, "Array"), _)) -> true
             | _ -> false
             };
