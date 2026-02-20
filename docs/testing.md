@@ -53,8 +53,8 @@ make fmt                # Format code (skfmt for .sk, prettier for .ts/.json)
 - Create regression tests for known discrepancies using `@skjs-expect-error` and FIXME comments
 
 **SKJS-specific type system differences**:
-- In SKJS, tuples are not compatible with arrays — the `[...]` syntax is for tuples only, both in types and values
-- Tuple types like `[number, string]` are distinct from array types
+- Array literals use delayed typing — `[...]` commits to array or tuple based on usage context (type annotation, method calls, etc.)
+- Once committed, the type cannot change (e.g., using `.push()` commits to array, then assigning to a tuple type is an error)
 - SKJS requires explicit type annotations on class and object type fields (stricter than TypeScript's implicit `any`)
 
 **Writing effective tests**:
