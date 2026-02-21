@@ -93,16 +93,16 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
         // * -> *:*:full
         Success(ErrorDetailSpec(None(), None(), STErrorDetail::full))
       } else {
-        value.toIntOption() match {
-        | Some(line) ->
-          // It's a line number -> *:<line>:full
-          Success(ErrorDetailSpec(None(), Some(line), STErrorDetail::full))
-        | None() ->
-          static::parseLevel(value) match {
-          | Success(detail) ->
-            // It's a level -> *:*:<level>
-            Success(ErrorDetailSpec(None(), None(), detail))
-          | Failure _ ->
+        static::parseLevel(value) match {
+        | Success(detail) ->
+          // It's a level -> *:*:<level>
+          Success(ErrorDetailSpec(None(), None(), detail))
+        | Failure _ ->
+          value.toIntOption() match {
+          | Some(line) ->
+            // It's a line number -> *:<line>:full
+            Success(ErrorDetailSpec(None(), Some(line), STErrorDetail::full))
+          | None() ->
             // It's a file pattern -> <file>:*:full
             Success(ErrorDetailSpec(Some(value), None(), STErrorDetail::full))
           }
