@@ -15,11 +15,12 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Reason**: SKJS loads top-level constants as literal scalars for predictable initialization; pattern binding would require tracking object/tuple shapes in the loader.
 - **Workaround**: Bind the value to a simple `const tmp = ...` at the top level, then destructure inside a function or block (where regular `const` destructuring remains supported).
 
-### 2. Array Literals vs Tuples
-- **Rule**: `[]` syntax creates tuples, not `Array<T>` types
-- **Array Usage**: Use `new Array<T>()` for homogeneous collections
-- **Tuple Usage**: Use `[value1, value2]` for heterogeneous fixed-length collections
-- **Example**: `let arr: Array<number> = new Array<number>()` vs `let tuple = [1, "hello"]`
+### 2. Array Literals Use Delayed Typing
+- **Rule**: `[...]` literals defer their type (array vs tuple) until used in context
+- **Commits to Array**: when assigned to `Array<T>` / `T[]` / `readonly T[]`, used with `.push()` / `.map()` etc., or indexed with a non-literal number
+- **Commits to Tuple**: when assigned to a tuple type like `[number, string]`, or used only with literal indices
+- **Once committed, cannot change**: using an array-committed literal as a tuple (or vice versa) is an error
+- **Example**: `const nums: number[] = [1, 2, 3];` commits to array; `const pair: [number, string] = [1, "hello"];` commits to tuple
 
 ### 3. Class Inheritance Constructor Signatures
 - **Rule**: Child class constructors must have same signature as parent
@@ -261,13 +262,13 @@ let tags = ['urgent' as const, 'priority' as const];
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
-2. **Use explicit Array construction**: Don't rely on array literals for typed arrays
+2. **Array literals use delayed typing**: `[...]` commits to array or tuple based on usage context
 3. **Keep constructor signatures simple**: Match parent class constructors exactly
 4. **Use single console.log arguments**: Concatenate strings before logging
 5. **Avoid private modifiers**: Use public fields only
 6. **Handle undefined explicitly**: Check for undefined before method calls
 7. **Generic classes work well**: Both generic functions and generic classes are fully supported
-8. **Use `new Array<T>()` for array initialization**: This works in all cases including generic classes
+8. **Array literals work for initialization**: `const arr: number[] = [1, 2, 3]` works; `new Array<T>()` also works
 9. **Static fields must be readonly**: Use `static readonly` together for class constants with primitive types only
 10. **Use local variables for null/undefined comparisons**: Always assign properties to locals before comparing to null/undefined
 11. **NEVER use the `any` type**: The `any` type is not supported in SKJS - use specific types or union types instead
@@ -399,20 +400,24 @@ let tags = ['urgent' as const, 'priority' as const];
 
 ## Recommended Patterns
 
-### Array Creation vs Tuples
+### Array Literals (Delayed Typing)
 ```typescript
-// Good - Arrays for homogeneous collections
-let arr: Array<number> = new Array<number>();
-arr.push(1);
-arr.push(2);
+// Good - array literal commits to Array via type annotation
+const nums: number[] = [1, 2, 3];
+nums.push(4);
 
-// Good - Tuples for heterogeneous fixed collections
-let tuple: [number, string] = [42, "hello"];
-let coordinate: [number, number] = [10, 20];
-let userInfo: [string, number, boolean] = ["Alice", 25, true];
+// Good - array literal commits to Array via method usage
+const items = [1, 2, 3];
+items.push(4); // commits to Array<number>
 
-// Avoid - mixing array and tuple syntax
-let arr: Array<number> = [1, 2]; // Type incompatibility
+// Good - array literal commits to Tuple via type annotation
+const pair: [number, string] = [42, "hello"];
+const coordinate: [number, number] = [10, 20];
+
+// Error - once committed, cannot change
+const values = [1, 2];
+values.push(3);  // commits to Array<number>
+const tuple: [number, number] = values; // Error: already committed to Array
 ```
 
 ### Class Design
