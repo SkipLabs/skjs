@@ -15,7 +15,7 @@ mutable base class SubstState private {
   mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
-  mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+  mutable values: SortedMap<TVarID, SubstValue> = SortedMap[],
 } {
   readonly fun save(): SavedSubst {
     SavedSubst::create(this)
@@ -131,7 +131,7 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
   mutable fun gen(pos: PosRange): TVar {
     id = this.version;
     this.!version = this.version + 1;
-    TVar::create(pos, id)
+    TVar::create(pos, TVarID(id))
   }
 
   readonly fun isOpen(tvar: TVar): Bool {
