@@ -10,14 +10,14 @@ base class SubstValue {
   | SVClosed(TType)
 }
 
-class SavedSubst{version: Int, values: SortedMap<Int, SubstValue>}
+class SavedSubst{version: Int, values: SortedMap<TVarID, SubstValue>}
 
 mutable class Subst private {
   mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
   mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
   mutable version: Int = 0,
-  private mutable values: SortedMap<Int, SubstValue> = SortedMap[],
+  private mutable values: SortedMap<TVarID, SubstValue> = SortedMap[],
 } extends TCEnvBase {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
@@ -115,7 +115,7 @@ mutable class Subst private {
   mutable fun gen(pos: PosRange): TVar {
     id = this.version;
     this.!version = this.version + 1;
-    TVar::create(pos, id)
+    TVar::create(pos, TVarID(id))
   }
 
   readonly fun isOpen(tvar: TVar): Bool {

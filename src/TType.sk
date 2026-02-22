@@ -1167,12 +1167,21 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
+class TVarID(value: Int) uses Orderable {
+  fun valueForHash(): Int {
+    this.value
+  }
+  fun toString(): String {
+    this.value.toString()
+  }
+}
+
 class TVar private (
   pos: PosRange,
-  id: Int,
+  id: TVarID,
   constraints: SortedSet<TType>,
 ) extends TInst {
-  static fun create(pos: PosRange, id: Int): TVar {
+  static fun create(pos: PosRange, id: TVarID): TVar {
     TVar(pos, id, SortedSet[])
   }
 
@@ -1191,7 +1200,7 @@ class TVar private (
         (seed, t) -> {
           XXHash64.xxHash64(seed, t.xxhash().value)
         },
-        XXHash64.xxHash64(this.id, this.pos.xxhash().value),
+        XXHash64.xxHash64(this.id.valueForHash(), this.pos.xxhash().value),
       ),
     )
   }
