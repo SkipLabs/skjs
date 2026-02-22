@@ -505,7 +505,17 @@ mutable class TypePp{
             pp.out(level, margin, "(");
             pp.type(level, margin, ty2);
             pp.out(level, margin, ")")
-          | TVar(_, id, _) -> pp.out(level, margin, "'" + id.toString())
+          | TVar(_, id, constraints) ->
+            pp.out(level, margin, "'" + id.toString());
+            if (!constraints.isEmpty()) {
+              pp.out(level, margin, " extends ");
+              first = true;
+              for (cstr in constraints) {
+                if (!first) pp.out(level, margin, " & ");
+                !first = false;
+                pp.type(level, margin, cstr);
+              }
+            }
           }
         }
       },
@@ -539,7 +549,17 @@ mutable class TypePp{
             pp.type(level, margin, ty1);
             pp.out(level, margin, " & ");
             pp.type(level, margin, ty2)
-          | TVar(_, id, _) -> pp.out(level, margin, "'" + id.toString())
+          | TVar(_, id, constraints) ->
+            pp.out(level, margin, "'" + id.toString());
+            if (!constraints.isEmpty()) {
+              pp.out(level, margin, " extends ");
+              first = true;
+              for (cstr in constraints) {
+                if (!first) pp.out(level, margin, " & ");
+                !first = false;
+                pp.type(level, margin, cstr);
+              }
+            }
           }
         }
       },
