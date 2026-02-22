@@ -186,6 +186,12 @@ extension class TypeChecker {
     TType::var(tvar)
   }
 
+  fun makeBoundTVarForField(tcenv: mutable TCEnv, ty: TType): TType {
+    tvar = tcenv.subst.genForField(ty.pos);
+    tcenv.subst.grow(this, tvar, ty, Contravariant());
+    TType::var(tvar)
+  }
+
   fun newTVar(tcenv: mutable TCEnv, pos: PosRange): TType {
     tvar = tcenv.subst.gen(pos);
     TType::var(tvar)

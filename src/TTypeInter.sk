@@ -8,25 +8,48 @@ module SKJS;
 //
 // Interpretation:
 // 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
-class TInter private (ty1: TType, ty2: TType) extends TInst {
+class TInter private (tys: ArraySet<TType>) extends TInst {
   static fun create(ty1: TType, ty2: TType): ?TInter {
-    if (ty1.isTop() || ty2.isTop()) {
-      internal_error(`Unexpected Top in TInter: ${ty1} inter ${ty2}`)
-    };
     if (ty1.isBottom() || ty2.isBottom()) {
       None()
     } else {
-      Some(TInter(ty1, ty2))
+      Some(TInter(ArraySet::createFromVector(Vector[ty1, ty2])))
     }
+  }
+
+  static fun createFromArraySet(tys: ArraySet<TType>): ?TInter {
+    for (ty in tys) {
+      if (ty.isBottom()) return None()
+    };
+    Some(TInter(tys))
+  }
+
+  fun map(f: TType -> TType): this {
+    !this.tys = this.tys.map(f);
+    this
   }
 }
 
 extension class TType {
   // Unexpanded intersection.
-  static private fun unexpandedInter(t1: TType, t2: TType): TType {
-    TInter::create(t1, t2) match {
-    | None() -> TType::bottom(t1.pos)
-    | Some(i) -> TType::create(t1.pos, TInsts::single(i), Clauses::empty())
+  static fun unexpandedInter(ty1: TType, ty2: TType): TType {
+    tinterOpt = (ty1.getSingleInter(), ty2.getSingleInter()) match {
+    | (Some(TInter(tys1)), Some(TInter(tys2))) ->
+      TInter::createFromArraySet(tys1.union(tys2))
+    | (Some(TInter(tys1)), None()) ->
+      TInter::createFromArraySet(
+        tys1.union(ArraySet::createFromVector(Vector[ty2])),
+      )
+    | (None(), Some(TInter(tys2))) ->
+      TInter::createFromArraySet(
+        tys2.union(ArraySet::createFromVector(Vector[ty1])),
+      )
+    | _ -> TInter::create(ty1, ty2)
+    };
+    tinterOpt match {
+    | None() -> TType::bottom(ty1.pos)
+    | Some(tinter) ->
+      TType::create(ty1.pos, TInsts::single(tinter), Clauses::empty())
     }
   }
 
@@ -41,8 +64,12 @@ extension class TType {
     subst.seenInter.maybeGet(pair) match {
     | None() ->
       result = TType::inter_(subst, tenv, ty1, ty2);
-      subst.!seenInter[pair] = result;
-      result
+      if (subst.seenInter.containsKey(pair)) {
+        TType::unexpandedInter(ty1, ty2)
+      } else {
+        subst.!seenInter[pair] = result;
+        result
+      }
     | Some(ty) -> ty
     }
   }
@@ -56,18 +83,25 @@ extension class TType {
     expandPrim = (primClassName) -> TType::inst(primClassName, TArgs(Array[]));
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
+    ty1.getSingleVar() match {
+    | Some(tvar) if (subst.isUnbound(tvar)) ->
+      if (ty1 == ty2) return ty1;
+      return TType::var(tvar.addConstraint(ty2))
+    | Some(tvar) if (subst.isOpen(tvar) && tvar.isForField()) ->
+      return TType::var(tvar.addConstraint(ty2))
+    | _ -> void
+    };
+    ty2.getSingleVar() match {
+    | Some(tvar) if (subst.isUnbound(tvar)) ->
+      return TType::var(tvar.addConstraint(ty1))
+    | Some(tvar) if (subst.isOpen(tvar) && tvar.isForField()) ->
+      return TType::var(tvar.addConstraint(ty1))
+    | _ -> void
+    };
     if (tenv.seenInter.contains((ty1, ty2))) {
       return TType::unexpandedInter(ty1, ty2);
     };
     !tenv.seenInter = tenv.seenInter.set((ty1, ty2));
-    ty1.getSingleVar() match {
-    | None() -> void
-    | Some(tvar) -> return TType::var(tvar.addConstraint(ty2))
-    };
-    ty2.getSingleVar() match {
-    | None() -> void
-    | Some(tvar) -> return TType::var(tvar.addConstraint(ty1))
-    };
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
     (clauses1.primKind(), clauses2.getObject()) match {
@@ -147,12 +181,18 @@ extension class TField {
     y: TField,
   ): TField {
     if (x.name != y.name) internal_error("field names must match");
+    // The union should be processed first, it leads to better inference
+    set = TType::union(subst, tenv, x.set, y.set);
     TField{
       pos => x.pos,
       name => x.name,
       isOptional => x.isOptional && y.isOptional,
-      get => TType::inter(subst, tenv, x.get, y.get),
-      set => TType::union(subst, tenv, x.set, y.set),
+      get => if (tenv.expandInter) {
+        TType::inter(subst, tenv, x.get, y.get)
+      } else {
+        TType::unexpandedInter(x.get, y.get)
+      },
+      set,
     }
   }
 }

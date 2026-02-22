@@ -99,6 +99,13 @@ mutable class Subst private {
     result
   }
 
+  readonly fun isUnbound(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) match {
+    | None() -> true
+    | Some _ -> false
+    }
+  }
+
   mutable fun peek(tenv: TEnv, tvar: TVar): ?TType {
     this.values.maybeGet(tvar.id) match {
     | None() -> None()
@@ -115,7 +122,13 @@ mutable class Subst private {
   mutable fun gen(pos: PosRange): TVar {
     id = this.version;
     this.!version = this.version + 1;
-    TVar::create(pos, TVarID(id))
+    TVar::create(pos, TVarID::create(id))
+  }
+
+  mutable fun genForField(pos: PosRange): TVar {
+    id = this.version;
+    this.!version = this.version + 1;
+    TVar::create(pos, TVarID::create(-id))
   }
 
   readonly fun isOpen(tvar: TVar): Bool {

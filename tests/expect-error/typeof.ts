@@ -160,7 +160,8 @@ function testNullInUnion(x: { a: number } | null | string): { a: number } {
   if (typeof x === "object") {
     // x could be { a: number } or null
     // SKJS needs to refine this properly
-    return x ?? { a: 0 };
+    const d: { a: number } = { a: 0 };
+    return x ?? d;
   } else {
     return { a: 0 };
   }
@@ -221,9 +222,15 @@ function testCallableObject(x: CallableObject | string): CallableObject {
     // Callable objects are typeof "function"
     return x;
   } else {
-    const fn: CallableObject = Object.assign((n: number) => n, {
-      property: "",
-    });
+    const fn: CallableObject =
+      // We need an annotation here, otherwise the inferred type is
+      // { (n: number) => number, property: '' }
+      // Which is correct, for all we know Object.assign could be relying on
+      // property being of type '' (without an annotation that is).
+      Object.assign<(n: number) => number, { property: string }>
+          ((n: number) => n, {
+            property: "",
+          });
     return fn;
   }
 }

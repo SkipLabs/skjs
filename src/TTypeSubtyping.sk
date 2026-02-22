@@ -899,6 +899,11 @@ extension class TType {
     if (tenv.seenSub.contains((subst.version, u1, u2))) return STOk();
     !tenv.seenSub = tenv.seenSub.set((subst.version, u1, u2));
 
+    u2.getSingleInter() match {
+    | Some(TInter(tys)) if (tys.containsElt(u1)) -> return STOk()
+    | _ -> void
+    };
+
     ArrayLitTyping::subtyping(subst, tenv, u1, u2) match {
     | Some(res) -> return res
     | None() -> void

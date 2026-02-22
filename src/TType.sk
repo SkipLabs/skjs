@@ -336,7 +336,20 @@ class TType private {
       inst = todo.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> tenv.instantiate(subst, name, targs)
-      | TInter(ty1, ty2) -> TType::inter(subst, tenv, ty1, ty2)
+      | TInter(tys) ->
+        for (ty1 in tys) {
+          for (ty2 in tys) {
+            !ty1 = TType::inter(
+              subst,
+              tenv with {expandInter => true},
+              ty1,
+              ty2,
+            );
+          };
+          break ty1
+        } else {
+          internal_error("Unexpected empty TInter")
+        }
       | tvar @ TVar _ ->
         expandTVars match {
         | Some(variance) -> subst.get(tenv, tvar, variance)
@@ -393,6 +406,12 @@ class TType private {
 
   fun getSingleVar(): ?TVar {
     if (this.clauses.isEmpty()) this.insts.getSingleVar() else {
+      None()
+    }
+  }
+
+  fun getSingleInter(): ?TInter {
+    if (this.clauses.isEmpty()) this.insts.getSingleInter() else {
       None()
     }
   }
@@ -1167,12 +1186,35 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
-class TVarID(value: Int) uses Orderable {
-  fun valueForHash(): Int {
-    this.value
+base class TVarID uses Orderable {
+  children =
+  // A normal type variable identifier
+  | TVID(value: Int)
+  // A type variable that was introduced to infer the type of a field
+  // in a literal object.
+  | TVIDForField(value: Int)
+
+  static fun create(id: Int): TVarID {
+    TVID(id)
   }
-  fun toString(): String {
-    this.value.toString()
+
+  static fun createForField(id: Int): TVarID {
+    TVIDForField(id)
+  }
+
+  fun valueForHash(): Int
+  | TVID(x) -> x
+  | TVIDForField(x) -> x
+
+  fun toString(): String
+  | TVID(x) -> x.toString()
+  | TVIDForField(x) -> x.toString()
+
+  fun isForField(): Bool {
+    this match {
+    | TVIDForField _ -> true
+    | _ -> false
+    }
   }
 }
 
@@ -1183,6 +1225,10 @@ class TVar private (
 ) extends TInst {
   static fun create(pos: PosRange, id: TVarID): TVar {
     TVar(pos, id, SortedSet[])
+  }
+
+  fun isForField(): Bool {
+    this.id.isForField()
   }
 
   fun addConstraint(ty: TType): TVar {
@@ -1257,6 +1303,13 @@ class TInsts private (insts: ArraySet<TInst>) uses XXHashable, Orderable {
   fun getSingleArrayLit(): ?TArrayLit {
     this.insts.getUnique() match {
     | Some(arrLit @ TArrayLit _) -> Some(arrLit)
+    | _ -> None()
+    }
+  }
+
+  fun getSingleInter(): ?TInter {
+    this.insts.getUnique() match {
+    | Some(inter @ TInter _) -> Some(inter)
     | _ -> None()
     }
   }

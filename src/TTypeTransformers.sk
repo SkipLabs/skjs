@@ -184,8 +184,7 @@ mutable base class ApplyType(
   overridable deferred mutable fun inst(env: this::Env, inst: TInst): ?TInst {
     inst match {
     | TSInst(name, targs) -> Some(TSInst(name, this.targs(env, targs)))
-    | TInter(ty1, ty2) ->
-      TInter::create(this.type(env, ty1), this.type(env, ty2))
+    | tinter @ TInter _ -> Some(tinter.map(x -> this.type(env, x)))
     | tvar @ TVar _ -> Some(tvar.mapConstraints(ty -> this.type(env, ty)))
     | TArrayLit(tvar, tupleElts) ->
       Some(
