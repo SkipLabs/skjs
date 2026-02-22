@@ -186,8 +186,6 @@ mutable base class ApplyType(
     | TSInst(name, targs) -> Some(TSInst(name, this.targs(env, targs)))
     | TInter(ty1, ty2) ->
       TInter::create(this.type(env, ty1), this.type(env, ty2))
-    | TUnion(ty1, ty2) ->
-      Some(TUnion::create(this.type(env, ty1), this.type(env, ty2)))
     | tvar @ TVar _ -> Some(tvar.mapConstraints(ty -> this.type(env, ty)))
     | TArrayLit(tvar, tupleElts) ->
       Some(

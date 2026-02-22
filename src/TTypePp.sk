@@ -505,14 +505,6 @@ mutable class TypePp{
             pp.out(level, margin, "(");
             pp.type(level, margin, ty2);
             pp.out(level, margin, ")")
-          | TUnion(ty1, ty2) ->
-            pp.out(level, margin, "(");
-            pp.type(level, margin, ty1);
-            pp.out(level, margin, ")");
-            pp.out(level, margin, " | ");
-            pp.out(level, margin, "(");
-            pp.type(level, margin, ty2);
-            pp.out(level, margin, ")")
           | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
           }
         }
@@ -546,10 +538,6 @@ mutable class TypePp{
           | TInter(ty1, ty2) ->
             pp.type(level, margin, ty1);
             pp.out(level, margin, " & ");
-            pp.type(level, margin, ty2)
-          | TUnion(ty1, ty2) ->
-            pp.type(level, margin, ty1);
-            pp.out(level, margin, " | ");
             pp.type(level, margin, ty2)
           | TVar(_, id, _) -> pp.out(level, margin, "'" + id)
           }

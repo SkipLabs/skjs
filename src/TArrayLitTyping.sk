@@ -155,13 +155,6 @@ class ArrayLitTyping() {
       inst match {
       | TSInst(Name(_, "Array"), TArgs(targs)) if (targs.size() == 1) ->
         result.push(targs[0])
-      | TUnion(ty1, ty2) ->
-        for (x in ArrayLitTyping::arrayInstArgs(ty1)) {
-          result.push(x)
-        };
-        for (x in ArrayLitTyping::arrayInstArgs(ty2)) {
-          result.push(x)
-        }
       | _ -> void
       }
     };
