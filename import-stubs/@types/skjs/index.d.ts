@@ -327,11 +327,11 @@ declare class Set<T> {
   add(value: T): void;
   clear(): void;
   delete(value: T): void;
-  entries(): Array<[T, T]>;
+  entries(): MapIterator<[T, T]>;
   forEach(callback: (value: T) => void): void;
   has(value: T): boolean;
-  keys(): Array<T>;
-  values(): Array<T>;
+  keys(): MapIterator<T>;
+  values(): MapIterator<T>;
 
   [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
