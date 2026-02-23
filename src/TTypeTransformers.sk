@@ -187,8 +187,14 @@ mutable base class ApplyType(
   overridable deferred mutable fun inst(env: this::Env, inst: TInst): ?TInst {
     inst match {
     | TSInst(name, targs) -> Some(TSInst(name, this.targs(env, targs)))
-    | TInter(ty1, ty2) ->
-      TInter::create(this.type(env, ty1), this.type(env, ty2))
+    | tinter @ TInter _ ->
+      tinter.map(x -> this.type(env, x)) match {
+      | Success(res) -> res
+      | Failure(ty) ->
+        internal_error(
+          `Mapping TInter resulted in a singleton intersection ${ty}. We don't know what to do with it`,
+        )
+      }
     | tvar @ TVar _ -> Some(tvar.mapConstraints(ty -> this.type(env, ty)))
     | TArrayLit(tvar, tupleElts) ->
       Some(

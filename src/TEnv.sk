@@ -57,7 +57,7 @@ base class TEnv{
   forbiddenInsts: SortedSet<String> = SortedSet[],
 
   // This field keeps track of the intersections that we are in the
-  // process of computing. If a cycle occurs, the type TInter(t1, t2)
+  // process of computing. If a cycle occurs, an unexpanded TInter
   // will be returned.
   seenInter: SortedSet<(TType, TType)> = SortedSet[],
 

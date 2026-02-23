@@ -7,26 +7,74 @@ module SKJS;
 /* Unexpanded intersection */
 //
 // Interpretation:
-// 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
-class TInter private (ty1: TType, ty2: TType) extends TInst {
+// 〚 inter 〛 = ⨅ t for t in tys
+//
+// Holds a flattened set of types: (A & B) & C is stored as {A, B, C}.
+//
+// Invariant:
+// - none of the inner TType is either bottom, top, or a single inter
+// - the size of tys is >= 2
+class TInter private (tys: ArraySet<TType>) extends TInst {
   static fun create(ty1: TType, ty2: TType): ?TInter {
     if (ty1.isTop() || ty2.isTop()) {
       internal_error(`Unexpected Top in TInter: ${ty1} inter ${ty2}`)
     };
     if (ty1.isBottom() || ty2.isBottom()) {
-      None()
-    } else {
-      Some(TInter(ty1, ty2))
+      return None()
+    };
+    tys = (ty1.getSingleInter(), ty2.getSingleInter()) match {
+    | (Some(TInter(tys1)), Some(TInter(tys2))) -> tys1.union(tys2)
+    | (Some(TInter(tys1)), None()) -> tys1.set(ty2)
+    | (None(), Some(TInter(tys2))) -> tys2.set(ty1)
+    | _ ->
+      vec = mutable Vector[ty1, ty2];
+      ArraySet::createFromMVector(vec)
+    };
+    Some(TInter(tys))
+  }
+
+  // Compute the intersection of all types in this group.
+  fun expand(subst: mutable Subst, tenv: TEnv): TType {
+    iter = this.tys.values();
+    result = iter.next().fromSome();
+    for (ty in iter) {
+      !result = TType::inter(subst, tenv, result, ty);
+    };
+    result
+  }
+
+  // Maps f over all types in the intersection, preserving invariants.
+  // Returns:
+  //   Success(None())       if result is bottom
+  //   Success(Some(inter))  if result is a valid TInter (>= 2 types)
+  //   Failure(ty)           if result collapsed to a single type
+  fun map(f: TType -> TType): Result<?TInter, TType> {
+    result = mutable Vector[];
+    for (ty in this.tys) {
+      mapped = f(ty);
+      if (mapped.isTop()) continue;
+      if (mapped.isBottom()) return Success(None());
+      mapped.getSingleInter() match {
+      | Some(TInter(innerTys)) -> result.extend(innerTys)
+      | None() -> result.push(mapped)
+      }
+    };
+    result.size() match {
+    | 0 -> Success(None())
+    | 1 -> Failure(result[0])
+    | _ -> Success(Some(TInter(ArraySet::createFromMVector(result))))
     }
   }
 }
 
 extension class TType {
-  // Unexpanded intersection.
-  static private fun unexpandedInter(t1: TType, t2: TType): TType {
-    TInter::create(t1, t2) match {
-    | None() -> TType::bottom(t1.pos)
-    | Some(i) -> TType::create(t1.pos, TInsts::single(i), Clauses::empty())
+  // Unexpanded intersection. Flattens nested TInters:
+  // (A & B) & (C & D) → A & B & C & D
+  static private fun unexpandedInter(ty1: TType, ty2: TType): TType {
+    TInter::create(ty1, ty2) match {
+    | None() -> TType::bottom(ty1.pos)
+    | Some(tinter) ->
+      TType::create(ty1.pos, TInsts::single(tinter), Clauses::empty())
     }
   }
 
