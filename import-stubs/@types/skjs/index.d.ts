@@ -1,5 +1,5 @@
 declare const console: {
-  log<T>(...msg: T[]): void;
+  log(...msg: unknown[]): void;
   assert(cond: boolean, msg?: string): void;
   error(message?: unknown, ...optionalParams: unknown[]): void;
 };
