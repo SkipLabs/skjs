@@ -309,7 +309,7 @@ declare class Map<K, V> {
 
   // Additional Map methods
   clear(): void;
-  delete(key: K): void;
+  delete(key: K): boolean;
   entries(): MapIterator<[K, V]>;
   forEach(callback: (value: V, key: K) => void): void;
   has(key: K): boolean;
