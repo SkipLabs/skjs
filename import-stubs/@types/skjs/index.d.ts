@@ -300,7 +300,7 @@ interface MapIterator<T> {
 
 // Updated Map class declaration
 declare class Map<K, V> {
-  constructor(elts?: Array<[K, V]>);
+  constructor(elts?: Array<[K, V]> | Iterable<[K, V]>);
   size: number;
 
   // Existing methods
@@ -320,7 +320,7 @@ declare class Map<K, V> {
 }
 
 declare class Set<T> {
-  constructor(values?: Array<T>);
+  constructor(values?: Array<T> | Iterable<T>);
   size: number;
 
   // Set methods
