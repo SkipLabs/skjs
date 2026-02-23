@@ -1271,7 +1271,7 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
-value class TVarID(value: Int) uses Orderable, XXHashable {
+value class TVarID(private value: Int) uses Orderable, XXHashable {
   fun toString(): String {
     this.value.toString()
   }
