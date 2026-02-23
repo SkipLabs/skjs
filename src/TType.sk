@@ -1271,12 +1271,13 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
-class TVarID(value: Int) uses Orderable {
-  fun valueForHash(): Int {
-    this.value
-  }
+class TVarID(value: Int) uses Orderable, XXHashable {
   fun toString(): String {
     this.value.toString()
+  }
+
+  fun xxhash(): XXHash {
+    XXHash(this.value)
   }
 }
 
@@ -1304,7 +1305,7 @@ class TVar private (
         (seed, t) -> {
           XXHash64.xxHash64(seed, t.xxhash().value)
         },
-        XXHash64.xxHash64(this.id.valueForHash(), this.pos.xxhash().value),
+        XXHash64.xxHash64(this.id.xxhash().value, this.pos.xxhash().value),
       ),
     )
   }
