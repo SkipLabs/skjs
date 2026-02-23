@@ -68,6 +68,28 @@ class .ArraySet<T: Orderable> private (
     ArraySet::create(items.sizeHint().default(0), items.each)
   }
 
+  // Transformers
+
+  fun filter(f: T -> Bool): ArraySet<T> {
+    ArraySet(this.inner.filter(f))
+  }
+
+  fun mapToSet<U: Orderable>(f: T -> U): ArraySet<U> {
+    ArraySet::createFromVector(this.inner.map(f))
+  }
+
+  fun filterMap<U: Orderable>(f: T -> ?U): ArraySet<U> {
+    ArraySet::createFromVector(this.values().filterMap(f).collect(Vector))
+  }
+
+  fun diff(that: ArraySet<T>): ArraySet<T> {
+    ArraySet::createFromIncreasingIterator(this.iterDiff(that))
+  }
+
+  fun union(that: ArraySet<T>): ArraySet<T> {
+    ArraySet::createFromVector(this.inner.concat(that.inner))
+  }
+
   //
 
   fun size(): Int {
@@ -98,18 +120,6 @@ class .ArraySet<T: Orderable> private (
     this.inner.items()
   }
 
-  fun filter(f: T -> Bool): ArraySet<T> {
-    ArraySet(this.inner.filter(f))
-  }
-
-  fun mapToSet<U: Orderable>(f: T -> U): ArraySet<U> {
-    ArraySet::createFromVector(this.inner.map(f))
-  }
-
-  fun filterMap<U: Orderable>(f: T -> ?U): ArraySet<U> {
-    ArraySet::createFromVector(this.values().filterMap(f).collect(Vector))
-  }
-
   // s.iterDiffInterDiff(t) contains Left(x) for every x in s but not t,
   // Right(y) for every y in t but not s, and Both(x, y) for every pair of
   // elements that are in both s and t.
@@ -123,10 +133,6 @@ class .ArraySet<T: Orderable> private (
     this.iterDiffInterDiff(that).filterMap(v -> v.maybeLeft())
   }
 
-  fun diff(that: ArraySet<T>): ArraySet<T> {
-    ArraySet::createFromIncreasingIterator(this.iterDiff(that))
-  }
-
   fun contains(that: ArraySet<T>): Bool {
     !this.iterDiffInterDiff(that).any(v -> v is Right(_))
   }
@@ -135,10 +141,6 @@ class .ArraySet<T: Orderable> private (
     if (this.inner.isEmpty()) return false;
     idx = SKStore.binSearch(i ~> this.inner[i], elt, 0, this.inner.size() - 1);
     idx >= 0 && idx < this.inner.size() && this.inner[idx] == elt
-  }
-
-  fun union(that: ArraySet<T>): ArraySet<T> {
-    ArraySet::createFromVector(this.inner.concat(that.inner))
   }
 }
 
