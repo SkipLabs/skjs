@@ -10,6 +10,10 @@ module SKJS;
 // 〚 inter 〛 = ⨅ t for t in tys
 //
 // Holds a flattened set of types: (A & B) & C is stored as {A, B, C}.
+//
+// Invariant:
+// - none of the inner TType is either bottom, top, or a single inter
+// - the size of tys is >= 2
 class TInter private (tys: ArraySet<TType>) extends TInst {
   static fun create(ty1: TType, ty2: TType): ?TInter {
     if (ty1.isTop() || ty2.isTop()) {
