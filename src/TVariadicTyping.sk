@@ -27,7 +27,7 @@ class VariadicTyping() {
   // Finds the most specific fixed-length tuple type that spreadParam is a
   // subtype of. Returns the element types, or None.
   //
-  // Precondition: spreadParam is normalized — all unions (TUnion) and
+  // Precondition: spreadParam is normalized — all unions and
   // intersections (TInter) have been eagerly computed during normalize().
   // This guarantees at most one clause with a tuple after expansion.
   //

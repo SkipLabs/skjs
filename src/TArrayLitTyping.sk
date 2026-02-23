@@ -159,13 +159,6 @@ class ArrayLitTyping() {
         result.push(targs[0])
       | TSInst(Name(_, "ReadonlyArray"), TArgs(targs)) if (targs.size() == 1) ->
         result.push(targs[0])
-      | TUnion(ty1, ty2) ->
-        for (x in ArrayLitTyping::arrayInstArgs(ty1)) {
-          result.push(x)
-        };
-        for (x in ArrayLitTyping::arrayInstArgs(ty2)) {
-          result.push(x)
-        }
       | _ -> void
       }
     };
