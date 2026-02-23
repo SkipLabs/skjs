@@ -56,7 +56,7 @@ declare class Array<T> implements Iterable<T> {
   find(filter: (item: T) => boolean): undefined | T;
   push(elt: T): void;
   indexOf(x: T): number;
-  sort(f?: (a: object, b: object) => number): SKJS_Ignorable<Array<T>>;
+  sort(f?: (a: T, b: T) => number): SKJS_Ignorable<Array<T>>;
   map<T2>(f: (item: T) => T2): Array<T2>;
   filter(f: (item: T) => boolean): Array<T>;
   reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
