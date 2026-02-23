@@ -1529,15 +1529,6 @@ extension class TypeChecker {
       | Some(ty) -> (param.i0, this.normalize(tcenv, ty))
       }
     });
-    retType = retTypeAstOpt match {
-    | None() ->
-      tvar = this.newTVar(tcenv, pos);
-      isAsync match {
-      | None() -> tvar
-      | Some(asyncPos) -> TType::single(TPromise(tvar, asyncPos))
-      }
-    | Some(retTypeAst) -> this.normalize(tcenv, retTypeAst)
-    };
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
     tcenv.recordCalls(CGNodes::singleton(callingContext));
@@ -1546,7 +1537,48 @@ extension class TypeChecker {
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
     tcenv.!callingContext = callingContext;
 
-    this.closure(tcenv, isAsync, paramTypes, retType, body);
+    for (param in paramTypes) {
+      tcenv.scope.bind(tcenv, param.i0, param.i1, true)
+    };
+
+    retType = (retTypeAstOpt, body) match {
+    | (None(), CBExpr(e)) ->
+      inferredType = this.expr(tcenv, e, true);
+      isAsync match {
+      | None() -> inferredType
+      | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
+      }
+    | (Some(annotatedTypeAst), CBExpr(e)) ->
+      inferredType = this.expr(tcenv, e, true);
+      annotatedType = this.normalize(tcenv, annotatedTypeAst);
+      this.checkSubType(
+        tcenv,
+        e.pos,
+        "Invalid callback return",
+        isAsync match {
+        | None() -> inferredType
+        | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
+        },
+        annotatedType,
+      );
+      annotatedType
+    | (None(), CBBlock(bl)) ->
+      if (isAsync is Some _) !this.isAsync = true;
+      tvar = isAsync match {
+      | None() -> this.newTVar(tcenv, pos)
+      | Some(asyncPos) ->
+        TType::single(TPromise(this.newTVar(tcenv, pos), asyncPos))
+      };
+      !this.retType = Some(tvar);
+      _ = this.block(tcenv, bl);
+      tvar
+    | (Some(annotatedTypeAst), CBBlock(bl)) ->
+      if (isAsync is Some _) !this.isAsync = true;
+      annotatedType = this.normalize(tcenv, annotatedTypeAst);
+      !this.retType = Some(annotatedType);
+      _ = this.block(tcenv, bl);
+      annotatedType
+    };
 
     tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
@@ -1567,36 +1599,6 @@ extension class TypeChecker {
         ),
       ),
     )
-  }
-
-  fun closure(
-    tcenv: mutable TCEnv,
-    isAsync: ?PosRange,
-    params: Array<(Name, TType)>,
-    retType: TType,
-    body: ClosureBody,
-  ): void {
-    for (param in params) {
-      tcenv.scope.bind(tcenv, param.i0, param.i1, true)
-    };
-    body match {
-    | CBExpr(e) ->
-      retTy = this.expr(tcenv, e, true);
-      this.checkSubType(
-        tcenv,
-        e.pos,
-        "Invalid callback return",
-        isAsync match {
-        | None() -> retTy
-        | Some(asyncPos) -> TType::single(TPromise(retTy, asyncPos))
-        },
-        retType,
-      )
-    | CBBlock(bl) ->
-      if (isAsync is Some _) !this.isAsync = true;
-      !this.retType = Some(retType);
-      _ = this.block(tcenv, bl)
-    }
   }
 
   fun callConstructor(
