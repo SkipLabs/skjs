@@ -4,26 +4,7 @@
 
 module SKJS;
 
-/* Unexpanded union */
-//
-// Interpretation:
-// 〚 union 〛 = 〚 union.ty1 〛 \/ 〚 union.ty2 〛
-class TUnion private (ty1: TType, ty2: TType) extends TInst {
-  static fun create(ty1: TType, ty2: TType): TUnion {
-    if (ty1.isBottom() || ty2.isBottom() || ty1.isTop() || ty2.isTop()) {
-      internal_error(`Unexpected Bottom or Top in TUnion: ${ty1} union ${ty2}`)
-    };
-    TUnion(ty1, ty2)
-  }
-}
-
 extension class TType {
-  // Unexpanded union.
-  static private fun unexpandedUnion(t1: TType, t2: TType): TType {
-    u = TUnion::create(t1, t2);
-    TType::create(t1.pos, TInsts::single(u), Clauses::empty())
-  }
-
   static fun unionUndefined(
     subst: mutable Subst,
     tenv: TEnv,
@@ -50,6 +31,10 @@ extension class TType {
     }
   }
 
+  // No cycle detection needed: union_ operates on ty.insts and ty.clauses
+  // without expanding insts. Recursive types use nominal references (TSInst)
+  // in their fields, so TField::union always receives inst-level types for
+  // recursive fields, which bottom out in Clauses::union with empty clauses.
   private static fun union_(
     subst: mutable Subst,
     tenv: TEnv,
@@ -58,10 +43,6 @@ extension class TType {
   ): TType {
     if (ty1.isTop() || ty2.isBottom()) return ty1;
     if (ty2.isTop() || ty1.isBottom()) return ty2;
-    if (tenv.seenUnion.contains((ty1, ty2))) {
-      return TType::unexpandedUnion(ty1, ty2);
-    };
-    !tenv.seenUnion = tenv.seenUnion.set((ty1, ty2));
 
     types = TInsts::union(ty1.insts, ty2.insts);
     clauses = Clauses::union(subst, tenv, ty1.clauses, ty2.clauses);

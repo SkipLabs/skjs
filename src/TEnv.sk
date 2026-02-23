@@ -61,11 +61,6 @@ base class TEnv{
   // will be returned.
   seenInter: SortedSet<(TType, TType)> = SortedSet[],
 
-  // This field keeps track of the unions that we are in the
-  // process of computing. If a cycle occurs, the type TUnion(t1, t2)
-  // will be returned.
-  seenUnion: SortedSet<(TType, TType)> = SortedSet[],
-
   // This field keeps track of the subtyping relations that we are in
   // the process of checking. If a cycle occurs, the subtyping
   // relation is considered correct (by co-induction).
