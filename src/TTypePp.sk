@@ -497,13 +497,11 @@ mutable class TypePp{
             };
             pp.out(level, margin, ">")
           | TInter(tys) ->
-            j = 0;
-            for (ity in tys) {
+            for (j => ity in tys) {
+              if (j > 0) pp.out(level, margin, " & ");
               pp.out(level, margin, "(");
               pp.type(level, margin, ity);
               pp.out(level, margin, ")");
-              if (j < tys.size() - 1) pp.out(level, margin, " & ");
-              !j = j + 1;
             }
           | x @ TVar _ -> pp.tvar(level, margin, x)
           }
@@ -536,11 +534,9 @@ mutable class TypePp{
             };
             pp.out(level, margin, ">")
           | TInter(tys) ->
-            i = 0;
-            for (ity in tys) {
+            for (i => ity in tys) {
+              if (i > 0) pp.out(level, margin, " & ");
               pp.type(level, margin, ity);
-              if (i < tys.size() - 1) pp.out(level, margin, " & ");
-              !i = i + 1;
             }
           | x @ TVar _ -> pp.tvar(level, margin, x)
           }
