@@ -31,6 +31,10 @@ extension class TType {
     }
   }
 
+  // No cycle detection needed: union_ operates on ty.insts and ty.clauses
+  // without expanding insts. Recursive types use nominal references (TSInst)
+  // in their fields, so TField::union always receives inst-level types for
+  // recursive fields, which bottom out in Clauses::union with empty clauses.
   private static fun union_(
     subst: mutable Subst,
     tenv: TEnv,
