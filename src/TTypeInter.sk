@@ -33,9 +33,19 @@ class TInter private (tys: ArraySet<TType>) extends TInst {
     Some(TInter(tys))
   }
 
-  fun map(f: TType -> TType): this {
-    !this.tys = this.tys.mapToSet(f);
-    this
+  fun map(f: TType -> TType): ?TInter {
+    result = mutable Vector[];
+    for (ty in this.tys) {
+      mapped = f(ty);
+      if (mapped.isBottom()) return None();
+      mapped.getSingleInter() match {
+      | Some(TInter(innerTys)) -> for (t in innerTys) result.push(t)
+      | None() -> result.push(mapped)
+      }
+    };
+    tys = ArraySet::createFromMVector(result);
+    if (tys.size() < 2) return None();
+    Some(TInter(tys))
   }
 }
 
