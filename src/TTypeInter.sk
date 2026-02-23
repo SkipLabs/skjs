@@ -16,10 +16,10 @@ class TInter private (tys: ArraySet<TType>) extends TInst {
       internal_error(`Unexpected Top in TInter: ${ty1} inter ${ty2}`)
     };
     if (ty1.isBottom() || ty2.isBottom()) {
-      None()
-    } else {
-      Some(TInter(ArraySet::createFromVector(Vector[ty1, ty2])))
-    }
+      return None()
+    };
+    vec = mutable Vector[ty1, ty2];
+    Some(TInter(ArraySet::createFromMVector(vec)))
   }
 
   static fun createFromArraySet(tys: ArraySet<TType>): ?TInter {
