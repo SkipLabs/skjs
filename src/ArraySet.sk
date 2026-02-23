@@ -127,8 +127,10 @@ class .ArraySet<T: Orderable> private (
     !this.iterDiffInterDiff(that).any(v -> v is Right(_))
   }
 
-  fun containsElt(that: T): Bool {
-    this.contains(ArraySet::createFromVector(Vector[that]))
+  fun containsElt(elt: T): Bool {
+    if (this.inner.isEmpty()) return false;
+    idx = SKStore.binSearch(i ~> this.inner[i], elt, 0, this.inner.size() - 1);
+    idx >= 0 && idx < this.inner.size() && this.inner[idx] == elt
   }
 
   fun union(that: ArraySet<T>): ArraySet<T> {
