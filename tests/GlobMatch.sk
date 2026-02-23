@@ -85,4 +85,51 @@ fun testGlobMatchEdgeCases(): void {
   SKTest.expectTrue(SKJS.globMatch("**", "foo/bar/baz"));
 }
 
+@test
+fun testErrorDetailGlobMatching(): void {
+  // ErrorDetailSpec.matches uses globMatch for file patterns
+  spec = SKJS.ErrorDetailSpec(
+    Some("**/*.ts"),
+    None(),
+    SKJS.STErrorDetail::full,
+  );
+  SKTest.expectTrue(spec.matches("src/foo.ts", 1));
+  SKTest.expectTrue(spec.matches("src/sub/bar.ts", 1));
+  SKTest.expectFalse(spec.matches("src/foo.js", 1));
+
+  // Single-directory glob
+  spec2 = SKJS.ErrorDetailSpec(
+    Some("src/*.ts"),
+    None(),
+    SKJS.STErrorDetail::full,
+  );
+  SKTest.expectTrue(spec2.matches("src/foo.ts", 1));
+  SKTest.expectFalse(spec2.matches("src/sub/foo.ts", 1));
+  SKTest.expectFalse(spec2.matches("lib/foo.ts", 1));
+
+  // Combined file pattern + line filter
+  spec3 = SKJS.ErrorDetailSpec(
+    Some("**/*.ts"),
+    Some(42),
+    SKJS.STErrorDetail::full,
+  );
+  SKTest.expectTrue(spec3.matches("src/foo.ts", 42));
+  SKTest.expectFalse(spec3.matches("src/foo.ts", 10));
+  SKTest.expectFalse(spec3.matches("src/foo.js", 42));
+
+  // No file pattern matches everything
+  spec4 = SKJS.ErrorDetailSpec(None(), None(), SKJS.STErrorDetail::full);
+  SKTest.expectTrue(spec4.matches("anything.ts", 1));
+
+  // ErrorDetailConfig.getDetail picks first matching spec
+  config = SKJS.ErrorDetailConfig(
+    Array[
+      SKJS.ErrorDetailSpec(Some("src/**"), None(), SKJS.STErrorDetail::verbose),
+      SKJS.ErrorDetailSpec(None(), None(), SKJS.STErrorDetail::normal),
+    ],
+  );
+  SKTest.expectTrue(config.getDetail("src/foo.ts", 1) is SKJS.STErrorDetail _);
+  SKTest.expectTrue(config.getDetail("lib/bar.ts", 1) is SKJS.STErrorDetail _);
+}
+
 module end;

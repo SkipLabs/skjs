@@ -36,8 +36,7 @@ class ErrorDetailSpec(
     };
     this.filePattern match {
     | None() -> true
-    | Some(pattern) ->
-      fileName.contains(pattern) // Simple contains for now
+    | Some(pattern) -> globMatch(pattern, fileName)
     }
   }
 }
