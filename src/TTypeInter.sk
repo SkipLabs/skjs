@@ -42,14 +42,8 @@ extension class TType {
     tinterOpt = (ty1.getSingleInter(), ty2.getSingleInter()) match {
     | (Some(TInter(tys1)), Some(TInter(tys2))) ->
       TInter::createFromArraySet(tys1.union(tys2))
-    | (Some(TInter(tys1)), None()) ->
-      TInter::createFromArraySet(
-        tys1.union(ArraySet::createFromVector(Vector[ty2])),
-      )
-    | (None(), Some(TInter(tys2))) ->
-      TInter::createFromArraySet(
-        tys2.union(ArraySet::createFromVector(Vector[ty1])),
-      )
+    | (Some(TInter(tys1)), None()) -> TInter::createFromArraySet(tys1.set(ty2))
+    | (None(), Some(TInter(tys2))) -> TInter::createFromArraySet(tys2.set(ty1))
     | _ -> TInter::create(ty1, ty2)
     };
     tinterOpt match {
