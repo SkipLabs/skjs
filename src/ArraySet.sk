@@ -70,6 +70,19 @@ class .ArraySet<T: Orderable> private (
 
   // Transformers
 
+  fun set(elt: T): ArraySet<T> {
+    if (this.inner.isEmpty()) return ArraySet::single(elt);
+    idx = SKStore.binSearch(i ~> this.inner[i], elt, 0, this.inner.size() - 1);
+    if (idx < this.inner.size() && this.inner[idx] == elt) return this;
+    v = this.inner.clone();
+    v.insert(idx, elt);
+    ArraySet(unsafe_chill_trust_me(v.chill()))
+  }
+
+  fun union(that: ArraySet<T>): ArraySet<T> {
+    ArraySet::createFromVector(this.inner.concat(that.inner))
+  }
+
   fun filter(f: T -> Bool): ArraySet<T> {
     ArraySet(this.inner.filter(f))
   }
@@ -84,10 +97,6 @@ class .ArraySet<T: Orderable> private (
 
   fun diff(that: ArraySet<T>): ArraySet<T> {
     ArraySet::createFromIncreasingIterator(this.iterDiff(that))
-  }
-
-  fun union(that: ArraySet<T>): ArraySet<T> {
-    ArraySet::createFromVector(this.inner.concat(that.inner))
   }
 
   // Iterators
