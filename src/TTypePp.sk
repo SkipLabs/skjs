@@ -558,7 +558,7 @@ mutable class TypePp{
   }
 
   mutable fun tvar(level: Int, margin: Margin, tvar: TVar): void {
-    this.out(level, margin, "'" + tvar.id);
+    this.out(level, margin, `'${tvar.id}`);
     if (!tvar.constraints.isEmpty()) {
       this.out(level, margin, " extends ");
       first = true;
