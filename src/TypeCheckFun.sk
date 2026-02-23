@@ -65,6 +65,9 @@ extension class TypeChecker {
       | None() -> typingError(Array[(param.pos, "Missing type annotation")])
       | Some(ty) -> this.normalize(subst, ty)
       };
+      param.isRest.each(_ ->
+        !paramType = TType::arrayToReadonlyArray(paramType)
+      );
       param.optional match {
       | None() -> void
       | Some(optionalPos) ->

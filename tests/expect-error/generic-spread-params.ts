@@ -9,12 +9,23 @@
 
 // Generic spread where all args go through spread
 function collectAll<T>(...items: T[]): Array<T> {
+  // @skjs-expect-error Invalid return type
   return items;
 }
 
 function testCollectAll(): void {
   let a1 = collectAll(1, 2, 3);
   let a1check: Array<number> = a1;
+}
+
+// Fixed version: return ReadonlyArray since rest params are readonly
+function collectAllRO<T>(...items: T[]): ReadonlyArray<T> {
+  return items;
+}
+
+function testCollectAllRO(): void {
+  let a1 = collectAllRO(1, 2, 3);
+  let a1check: ReadonlyArray<number> = a1;
 }
 
 // Explicit param constrains T, extra args checked via spread
