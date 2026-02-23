@@ -340,15 +340,7 @@ class TType private {
       inst = todo.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> tenv.instantiate(subst, name, targs)
-      | TInter(tys) ->
-        for (ty1 in tys) {
-          for (ty2 in tys) {
-            !ty1 = TType::inter(subst, tenv, ty1, ty2);
-          };
-          break ty1
-        } else {
-          internal_error("Unexpected empty TInter")
-        }
+      | tinter @ TInter _ -> tinter.expand(subst, tenv)
       | tvar @ TVar _ ->
         expandTVars match {
         | Some(variance) -> subst.get(tenv, tvar, variance)
