@@ -8,12 +8,33 @@ module ArraySet;
 class .ArraySet<T: Orderable> private (
   private inner: Vector<T>,
 ) extends Sequence<T> uses Orderable, XXHashable[T: XXHashable] {
+  // Constructors
+
   static fun empty(): ArraySet<T> {
     ArraySet(Vector[])
   }
 
-  fun size(): Int {
-    this.inner.size()
+  static fun single(x: T): ArraySet<T> {
+    ArraySet(Vector[x])
+  }
+
+  // Usually cannot use this when we want; it would require duplicating most
+  // of the functions on Vector to return mutable results.
+  static fun createFromMVector(vec: mutable Vector<T>): ArraySet<T> {
+    if (vec.isEmpty()) return ArraySet::empty();
+    vec.sortBy(id);
+    prev: ?T = None();
+    vec.keepWhere(x -> {
+      keep = prev.map(p -> p != x).default(true);
+      !prev = Some(x);
+      keep
+    });
+    ArraySet(unsafe_chill_trust_me(vec.chill()))
+  }
+
+  static fun createFromVector(vec: readonly Vector<T>): ArraySet<T> {
+    if (vec.isEmpty()) return ArraySet::empty();
+    ArraySet::createFromMVector(vec.clone())
   }
 
   private static fun create(size: Int, init: (T -> void) -> void): ArraySet<T> {
@@ -47,27 +68,10 @@ class .ArraySet<T: Orderable> private (
     ArraySet::create(items.sizeHint().default(0), items.each)
   }
 
-  // Usually cannot use this when we want; it would require duplicating most
-  // of the functions on Vector to return mutable results.
-  static fun createFromMVector(vec: mutable Vector<T>): ArraySet<T> {
-    if (vec.isEmpty()) return ArraySet::empty();
-    vec.sortBy(id);
-    prev: ?T = None();
-    vec.keepWhere(x -> {
-      keep = prev.map(p -> p != x).default(true);
-      !prev = Some(x);
-      keep
-    });
-    ArraySet(unsafe_chill_trust_me(vec.chill()))
-  }
+  //
 
-  static fun createFromVector(vec: readonly Vector<T>): ArraySet<T> {
-    if (vec.isEmpty()) return ArraySet::empty();
-    ArraySet::createFromMVector(vec.clone())
-  }
-
-  static fun single(x: T): ArraySet<T> {
-    ArraySet(Vector[x])
+  fun size(): Int {
+    this.inner.size()
   }
 
   fun isEmpty(): Bool {
