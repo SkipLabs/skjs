@@ -46,7 +46,7 @@ jobs:
       - run:
           name: Build release binary
           command: |
-            skargo build --release
+            skargo build --release --bin skjs
             echo "Checking if binary was created:"
             ls -la target/host/release/
       - run:
