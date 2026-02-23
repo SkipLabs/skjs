@@ -107,8 +107,8 @@ declare const Math: {
   SQRT2: number;
 
   // Existing methods
-  max: (a: number, b: number) => number;
-  min: (a: number, b: number) => number;
+  max: (...values: number[]) => number;
+  min: (...values: number[]) => number;
   floor: (x: number) => number;
   ceil: (x: number) => number;
   round: (x: number) => number;
