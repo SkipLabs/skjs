@@ -90,27 +90,7 @@ class .ArraySet<T: Orderable> private (
     ArraySet::createFromVector(this.inner.concat(that.inner))
   }
 
-  //
-
-  fun size(): Int {
-    this.inner.size()
-  }
-
-  fun isEmpty(): Bool {
-    this.inner.isEmpty()
-  }
-
-  fun getUnique(): ?T {
-    if (this.size() == 1) {
-      Some(this.inner[0])
-    } else {
-      None()
-    }
-  }
-
-  fun toArray(): Array<T> {
-    this.inner.toArray()
-  }
+  // Iterators
 
   fun values(): mutable Iterator<T> {
     this.inner.values()
@@ -131,6 +111,28 @@ class .ArraySet<T: Orderable> private (
 
   fun iterDiff(that: ArraySet<T>): mutable Iterator<T> {
     this.iterDiffInterDiff(that).filterMap(v -> v.maybeLeft())
+  }
+
+  //
+
+  fun size(): Int {
+    this.inner.size()
+  }
+
+  fun isEmpty(): Bool {
+    this.inner.isEmpty()
+  }
+
+  fun getUnique(): ?T {
+    if (this.size() == 1) {
+      Some(this.inner[0])
+    } else {
+      None()
+    }
+  }
+
+  fun toArray(): Array<T> {
+    this.inner.toArray()
   }
 
   fun contains(that: ArraySet<T>): Bool {
