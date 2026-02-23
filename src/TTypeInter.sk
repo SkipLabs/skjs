@@ -18,13 +18,13 @@ class TInter private (tys: ArraySet<TType>) extends TInst {
     if (ty1.isBottom() || ty2.isBottom()) {
       return None()
     };
-    vec = mutable Vector[ty1, ty2];
-    Some(TInter(ArraySet::createFromMVector(vec)))
-  }
-
-  static fun createFromArraySet(tys: ArraySet<TType>): ?TInter {
-    for (ty in tys) {
-      if (ty.isBottom()) return None()
+    tys = (ty1.getSingleInter(), ty2.getSingleInter()) match {
+    | (Some(TInter(tys1)), Some(TInter(tys2))) -> tys1.union(tys2)
+    | (Some(TInter(tys1)), None()) -> tys1.set(ty2)
+    | (None(), Some(TInter(tys2))) -> tys2.set(ty1)
+    | _ ->
+      vec = mutable Vector[ty1, ty2];
+      ArraySet::createFromMVector(vec)
     };
     Some(TInter(tys))
   }
@@ -39,14 +39,7 @@ extension class TType {
   // Unexpanded intersection. Flattens nested TInters:
   // (A & B) & (C & D) → A & B & C & D
   static private fun unexpandedInter(ty1: TType, ty2: TType): TType {
-    tinterOpt = (ty1.getSingleInter(), ty2.getSingleInter()) match {
-    | (Some(TInter(tys1)), Some(TInter(tys2))) ->
-      TInter::createFromArraySet(tys1.union(tys2))
-    | (Some(TInter(tys1)), None()) -> TInter::createFromArraySet(tys1.set(ty2))
-    | (None(), Some(TInter(tys2))) -> TInter::createFromArraySet(tys2.set(ty1))
-    | _ -> TInter::create(ty1, ty2)
-    };
-    tinterOpt match {
+    TInter::create(ty1, ty2) match {
     | None() -> TType::bottom(ty1.pos)
     | Some(tinter) ->
       TType::create(ty1.pos, TInsts::single(tinter), Clauses::empty())
