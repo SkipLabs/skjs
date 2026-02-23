@@ -5,6 +5,10 @@ executors:
     docker:
       - image: skiplabs/skip:latest
     resource_class: medium
+  skip-executor-large:
+    docker:
+      - image: skiplabs/skip:latest
+    resource_class: large
 
 jobs:
   build_and_test:
@@ -36,7 +40,7 @@ jobs:
           path: ~/test-results/skjs.xml
 
   build_binaries:
-    executor: skip-executor
+    executor: skip-executor-large
     steps:
       - checkout
       - run:
