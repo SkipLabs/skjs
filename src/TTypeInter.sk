@@ -7,26 +7,52 @@ module SKJS;
 /* Unexpanded intersection */
 //
 // Interpretation:
-// 〚 inter 〛 = 〚 inter.ty1 〛 ⨅ 〚 inter.ty2 〛
-class TInter private (ty1: TType, ty2: TType) extends TInst {
+// 〚 inter 〛 = ⨅ t for t in tys
+//
+// Holds a flattened set of types: (A & B) & C is stored as {A, B, C}.
+class TInter private (tys: ArraySet<TType>) extends TInst {
   static fun create(ty1: TType, ty2: TType): ?TInter {
-    if (ty1.isTop() || ty2.isTop()) {
-      internal_error(`Unexpected Top in TInter: ${ty1} inter ${ty2}`)
-    };
     if (ty1.isBottom() || ty2.isBottom()) {
       None()
     } else {
-      Some(TInter(ty1, ty2))
+      Some(TInter(ArraySet::createFromVector(Vector[ty1, ty2])))
     }
+  }
+
+  static fun createFromArraySet(tys: ArraySet<TType>): ?TInter {
+    for (ty in tys) {
+      if (ty.isBottom()) return None()
+    };
+    Some(TInter(tys))
+  }
+
+  fun map(f: TType -> TType): this {
+    !this.tys = this.tys.mapToSet(f);
+    this
   }
 }
 
 extension class TType {
-  // Unexpanded intersection.
-  static private fun unexpandedInter(t1: TType, t2: TType): TType {
-    TInter::create(t1, t2) match {
-    | None() -> TType::bottom(t1.pos)
-    | Some(i) -> TType::create(t1.pos, TInsts::single(i), Clauses::empty())
+  // Unexpanded intersection. Flattens nested TInters:
+  // (A & B) & (C & D) → A & B & C & D
+  static private fun unexpandedInter(ty1: TType, ty2: TType): TType {
+    tinterOpt = (ty1.getSingleInter(), ty2.getSingleInter()) match {
+    | (Some(TInter(tys1)), Some(TInter(tys2))) ->
+      TInter::createFromArraySet(tys1.union(tys2))
+    | (Some(TInter(tys1)), None()) ->
+      TInter::createFromArraySet(
+        tys1.union(ArraySet::createFromVector(Vector[ty2])),
+      )
+    | (None(), Some(TInter(tys2))) ->
+      TInter::createFromArraySet(
+        tys2.union(ArraySet::createFromVector(Vector[ty1])),
+      )
+    | _ -> TInter::create(ty1, ty2)
+    };
+    tinterOpt match {
+    | None() -> TType::bottom(ty1.pos)
+    | Some(tinter) ->
+      TType::create(ty1.pos, TInsts::single(tinter), Clauses::empty())
     }
   }
 

@@ -55,7 +55,7 @@ class TType private {
   // The list of type instances which can be:
   // - Type variables
   // - Unexpanded type instances MyClass<number>
-  // - Unexpanded intersections TInter(t1, t2)
+  // - Unexpanded intersections TInter(tys)
   insts: TInsts,
 
   // Single types and type parameters (universally quantified type variables), in a
@@ -340,7 +340,15 @@ class TType private {
       inst = todo.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> tenv.instantiate(subst, name, targs)
-      | TInter(ty1, ty2) -> TType::inter(subst, tenv, ty1, ty2)
+      | TInter(tys) ->
+        for (ty1 in tys) {
+          for (ty2 in tys) {
+            !ty1 = TType::inter(subst, tenv, ty1, ty2);
+          };
+          break ty1
+        } else {
+          internal_error("Unexpected empty TInter")
+        }
       | tvar @ TVar _ ->
         expandTVars match {
         | Some(variance) -> subst.get(tenv, tvar, variance)
@@ -397,6 +405,12 @@ class TType private {
 
   fun getSingleVar(): ?TVar {
     if (this.clauses.isEmpty()) this.insts.getSingleVar() else {
+      None()
+    }
+  }
+
+  fun getSingleInter(): ?TInter {
+    if (this.clauses.isEmpty()) this.insts.getSingleInter() else {
       None()
     }
   }
@@ -1367,6 +1381,13 @@ class TInsts private (
 
   fun contains(that: TInsts): Bool {
     this.insts.contains(that.insts)
+  }
+
+  fun getSingleInter(): ?TInter {
+    this.getUnique() match {
+    | Some(inter @ TInter _) -> Some(inter)
+    | _ -> None()
+    }
   }
 
   fun getSingleVar(): ?TVar {

@@ -127,6 +127,10 @@ class .ArraySet<T: Orderable> private (
     !this.iterDiffInterDiff(that).any(v -> v is Right(_))
   }
 
+  fun containsElt(that: T): Bool {
+    this.contains(ArraySet::createFromVector(Vector[that]))
+  }
+
   fun union(that: ArraySet<T>): ArraySet<T> {
     ArraySet::createFromVector(this.inner.concat(that.inner))
   }
