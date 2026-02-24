@@ -87,18 +87,19 @@ extension class TType {
     if (ty1 == ty2) return ty1;
     pair = (ty1, ty2);
     subst.seenInter.maybeGet(pair) match {
+    | Some(ty) -> ty
     | None() ->
       result = TType::inter_(subst, tenv, ty1, ty2);
-      if (subst.seenInter.containsKey(pair)) {
-        // Re-entrant cycle: a recursive call during inter_ already
-        // cached a result for this pair. Return unexpanded to avoid
-        // overwriting the cached (and already-used) result.
-        TType::unexpandedInter(ty1, ty2)
-      } else {
+      subst.seenInter.maybeGet(pair) match {
+      | Some(ty) ->
+        // Re-entrant cycle: a recursive call during inter_ already cached a
+        // result for this pair. Return the already-cached (and already-used)
+        // result for consistency with intermediate callers that consumed it.
+        ty
+      | None() ->
         subst.!seenInter[pair] = result;
         result
       }
-    | Some(ty) -> ty
     }
   }
 
