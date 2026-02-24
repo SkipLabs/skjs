@@ -37,7 +37,7 @@ mutable base class ApplyType(
     env: this::Env,
     clauses: Clauses,
   ): Clauses {
-    clauses.map(c -> this.clause(env, c))
+    clauses.filterMap(c -> this.clause(env, c))
   }
 
   overridable deferred mutable fun clause(

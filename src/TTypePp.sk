@@ -469,7 +469,7 @@ mutable class TypePp{
       this.out(level, margin, "never");
       return void;
     };
-    if (!ty.clauses.clauses.isEmpty()) {
+    if (!ty.clauses.isEmpty()) {
       this.clauses(level, margin, ty.clauses)
     };
     this.branch(
