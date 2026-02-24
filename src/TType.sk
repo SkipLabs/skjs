@@ -365,12 +365,11 @@ class TType private {
         }
       | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
       };
+      if (tyDef.clauses.isTop()) {
+        return None();
+      };
       for (clause in tyDef.clauses) {
-        if (clause.isTop()) {
-          return None()
-        } else {
-          clauses.push(clause)
-        }
+        clauses.push(clause)
       };
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
