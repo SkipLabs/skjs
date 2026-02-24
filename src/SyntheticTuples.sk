@@ -1,0 +1,34 @@
+/***************************************************************************/
+// Synthetic tuple classes.
+//
+// SKJS represents a tuple `[T0, ..., Tn-1]` (and its readonly variant) as
+// an instance of a synthetic class `SKJS_TupleN<T0, ..., Tn-1>` (resp.
+// `SKJS_ReadonlyTupleN`).
+/***************************************************************************/
+
+module SKJS;
+
+const tupleName: String = "SKJS_Tuple";
+const readonlyTupleName: String = "SKJS_ReadonlyTuple";
+
+value class TupleKind{isReadonly: Bool, arity: Int}
+
+// Returns Some(kind) when `name` matches `SKJS_Tuple<N>` or
+// `SKJS_ReadonlyTuple<N>`; None otherwise.
+fun tupleKind(name: String): ?TupleKind {
+  if (name.startsWith(readonlyTupleName)) {
+    name
+      .substring(name.getIter().forward(readonlyTupleName.length()))
+      .toIntOption()
+      .map(n -> TupleKind{isReadonly => true, arity => n})
+  } else if (name.startsWith(tupleName)) {
+    name
+      .substring(name.getIter().forward(tupleName.length()))
+      .toIntOption()
+      .map(n -> TupleKind{isReadonly => false, arity => n})
+  } else {
+    None()
+  }
+}
+
+module end;
