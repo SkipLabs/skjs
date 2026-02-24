@@ -1104,12 +1104,12 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
 }
 
 // Wrong destructuring count
-// With TupleN as TObject, destructuring more elements than the tuple has
-// falls through to the iterable path, so c gets the union element type.
+// Tuple is now detected via expansion, so destructuring more elements
+// than the tuple has gives a hard error on size mismatch.
 function testTupleWrongDestructure(x: [number, string] | number): boolean {
   if (typeof x === "object") {
+    // @skjs-expect-error Invalid tuple pattern size, it is of size 3
     const [_a, _b, c] = x;
-    // @ts-expect-error Invalid return type
     return c;
   } else {
     return false;

@@ -436,12 +436,81 @@ class TType private {
   }
 
   // Returns the tuple element types if this is a TupleN<...> or ReadonlyTupleN<...> instance.
-  fun getTupleElements(): ?Array<TType> {
-    if (!this.clauses.isEmpty()) return None();
-    this.insts.getUnique() match {
-    | Some(TSInst(name, TArgs(targs))) if (isTupleName(name.value)) ->
-      Some(targs)
-    | _ -> None()
+  // Returns (elements, isReadonly) or None if not a tuple after expansion.
+  // Also handles pre-expanded clauses with TObject numeric fields.
+  fun getTupleElements(
+    subst: mutable Subst,
+    tenv: TEnv,
+  ): ?(Array<TType>, Bool) {
+    // Expand insts, collecting TupleN/ReadonlyTupleN candidates along the way.
+    instTuples = mutable Vector<Array<TType>>[];
+    anyReadonly = false;
+    this.expandToVectorsGen(inst -> {
+      inst match {
+      | TSInst(name, TArgs(tArgs)) if (isTupleName(name.value)) ->
+        instTuples.push(tArgs);
+        if (isReadonlyTupleName(name.value)) !anyReadonly = true;
+        Some(TType::bottom(name.pos))
+      | _ -> inst.maybeExpand(subst, tenv, Some(Covariant()))
+      }
+    }) match {
+    | None() -> None()
+    | Some((_insts, clauses)) ->
+      candLen = instTuples.reduce(
+        (acc, tArgs) -> min(acc, tArgs.size()),
+        Int::max,
+      );
+      if (candLen <= 0) {
+        return None()
+      };
+      allFields = mutable Vector<TFields>[];
+      for (clause in clauses) {
+        clause.stypes match {
+        | Some(stypes) ->
+          for (stype in stypes) {
+            stype match {
+            | TObject(fields, _) -> allFields.push(fields)
+            | _ -> return None()
+            }
+          }
+        | None() -> return None()
+        }
+      };
+      elts = if (allFields.isEmpty()) {
+        if (instTuples.isEmpty()) {
+          return None()
+        };
+        Vector::mfill(candLen, TType::bottom(instTuples[0][0].pos))
+      } else {
+        elts = mutable Vector[];
+        idx = 0;
+        loop {
+          if (idx >= candLen) break elts;
+          key = idx.toString();
+          eltTypes = mutable Vector[];
+          for (fields in allFields) {
+            fields.maybeGet(key) match {
+            | Some(f) -> eltTypes.push(f.type)
+            | None() -> break void
+            }
+          } else {
+            eltType = eltTypes.reduce(
+              (acc, t) -> TType::union(subst, tenv, acc, t),
+              TType::bottom(this.pos),
+            );
+            elts.push(eltType);
+            !idx = idx + 1;
+            continue
+          };
+          break elts
+        }
+      };
+      for (instTuple in instTuples) {
+        for (i in Range(0, elts.size())) {
+          elts![i] = TType::union(subst, tenv, elts[i], instTuple[i])
+        }
+      };
+      Some((elts.toArray(), anyReadonly))
     }
   }
 

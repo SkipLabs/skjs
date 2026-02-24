@@ -310,8 +310,8 @@ class ArrayLitTyping() {
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
         return Some(result)
       };
-      // Case 2c: ArrayLit<α, elts> <: TupleN<U1, ...>
-      if (u2.getTupleElements().isSome()) {
+      // Case 2c: ArrayLit<α, elts> <: TupleN<U1, ...> (expanding aliases)
+      if (u2.getTupleElements(subst, tenv).isSome()) {
         // Commit to tuple, then check subtyping.
         literalTupleTy = ArrayLitTyping::arrayLitToTupleType(arrLit);
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, literalTupleTy);

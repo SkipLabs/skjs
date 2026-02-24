@@ -207,7 +207,6 @@ function testTypeAliasTupleSpread(): void {
 declare const identity: <U extends [string, number]>(a: string, b: number) => U;
 
 function testGenericTupleConstraint(): void {
-  // @skjs-expect-error Invalid annotation
   const tgt: <T extends [string, number]>(...args: T) => T = identity;
 }
 

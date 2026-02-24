@@ -41,7 +41,6 @@ function takesConstrainedTuple<S extends TupleOrString>(values: S): S {
 }
 
 function constrainedTupleLiteralDirect(): void {
-  // @skjs-expect-error Invalid call
   const result = takesConstrainedTuple([1, 2]);
   const first: number = result[0];
   if (first < 0) {

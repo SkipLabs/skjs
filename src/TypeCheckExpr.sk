@@ -52,8 +52,8 @@ extension class TypeChecker {
         notSupported(restName.pos, "Rest element in array destructuring")
       | None() -> void
       };
-      type.getTupleElements() match {
-      | Some(tyl) ->
+      type.getTupleElements(tcenv.subst, this) match {
+      | Some((tyl, _)) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
           arrPat[i] match {
           | None() -> /* skipped element */ void
@@ -1987,31 +1987,9 @@ extension class TypeChecker {
       argExpr.value match {
       | Spread(spreadExpr) ->
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-        // Try to extract tuple elements: first from insts, then from expanded TObject.
-        tupEltsOpt = spreadTy.getTupleElements() match {
-        | Some(elts) -> Some(elts)
-        | None() ->
-          // Fallback: expand to TObject and look for numeric fields.
-          spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-            stypes.singleElt()
-          ) match {
-          | Some(TObject(fields, _)) ->
-            elts = mutable Vector[];
-            idx = 0;
-            loop {
-              fields.maybeGet(idx.toString()) match {
-              | Some(f) ->
-                elts.push(f.type);
-                !idx = idx + 1
-              | None() -> break void
-              }
-            };
-            if (elts.isEmpty()) None() else Some(elts.toArray())
-          | _ -> None()
-          }
-        };
+        tupEltsOpt = spreadTy.getTupleElements(tcenv.subst, this);
         tupEltsOpt match {
-        | Some(tupElts) ->
+        | Some((tupElts, _)) ->
           moreArgs match {
           | None() -> args.extend(tupElts)
           | Some(ma) ->

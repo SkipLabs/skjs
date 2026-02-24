@@ -49,23 +49,12 @@ class VariadicTyping() {
     | _ -> return None()
     };
     saved = subst.save();
-    fullType.getTupleElements() match {
-    | Some(tupleElts) -> return Some(tupleElts)
+    fullType.getTupleElements(subst, tenv) match {
+    | Some((tupleElts, _)) -> return Some(tupleElts)
     | None() -> void
     };
-    // Fallback 1: expand a type alias (e.g. MyPair -> Tuple2<string, number>)
-    // by instantiating the single TSInst.
-    fullType.insts.getUnique() match {
-    | Some(TSInst(name, targs)) if (!isTupleName(name.value)) ->
-      expanded = tenv.instantiate(subst, name, targs);
-      expanded.getTupleElements() match {
-      | Some(tupleElts) -> return Some(tupleElts)
-      | None() -> void
-      }
-    | _ -> void
-    };
-    // Fallback 2: for a bound tvar, peek the raw binding
-    // (without constraint intersection) and try again.
+    // Fallback: for a bound tvar, peek the raw binding
+    // (without constraint intersection) and retry.
     tvar = fullType.getSingleVar() match {
     | Some(tv) -> tv
     | None() ->
@@ -75,19 +64,19 @@ class VariadicTyping() {
     boundType = subst.peekRaw(tvar) match {
     | Some(bt) -> bt
     | None() ->
-      // Fallback 3: for an unbound tvar, check constraints for a tuple type.
+      // For an unbound tvar, check constraints for a tuple type.
       // E.g. <T extends [string, number]>(...args: T) => T
       for (cstr in tvar.constraints) {
-        cstr.getTupleElements() match {
-        | Some(tupleElts) -> return Some(tupleElts)
+        cstr.getTupleElements(subst, tenv) match {
+        | Some((tupleElts, _)) -> return Some(tupleElts)
         | None() -> void
         }
       };
       subst.restore(saved);
       return None()
     };
-    boundType.getTupleElements() match {
-    | Some(tupleElts) -> Some(tupleElts)
+    boundType.getTupleElements(subst, tenv) match {
+    | Some((tupleElts, _)) -> Some(tupleElts)
     | None() ->
       subst.restore(saved);
       None()
@@ -274,34 +263,23 @@ class VariadicTyping() {
     lhs: TType,
     rhs: TType,
   ): ?STResult<TType> {
-    // Check if lhs is a TupleN type. Also resolve committed ArrayLits.
-    (tupleElts, isReadonly) = lhs.getTupleElements() match {
-    | Some(elts) -> (elts, lhs.isReadonlyTuple())
+    // Check if lhs is a TupleN type (expanding aliases). Also resolve committed ArrayLits.
+    (tupleElts, isReadonly) = lhs.getTupleElements(subst, tenv) match {
+    | Some(result) -> result
     | None() ->
       // Fallback: check if lhs is a committed ArrayLit whose committed type is a tuple.
       lhs.insts.getSingleArrayLit() match {
       | Some(arrLit) ->
         expanded = ArrayLitTyping::expand(subst, tenv, arrLit);
-        expanded.getTupleElements() match {
-        | Some(elts) -> (elts, expanded.isReadonlyTuple())
+        expanded.getTupleElements(subst, tenv) match {
+        | Some(result) -> result
         | None() -> return None()
         }
       | None() -> return None()
       }
     };
-    // If rhs contains any TupleN, skip — regular structural subtyping handles it.
-    // Check both single-tuple case and union-of-tuples case.
-    if (rhs.getTupleElements().isSome()) return None();
-    if (
-      rhs.insts.any(inst ->
-        inst match {
-        | TSInst(name, _) -> isTupleName(name.value)
-        | _ -> false
-        }
-      )
-    ) {
-      return None()
-    };
+    // If rhs contains any TupleN (expanding aliases), skip — regular structural subtyping handles it.
+    if (rhs.getTupleElements(subst, tenv).isSome()) return None();
     // Cheap array-like trigger: check if rhs has a "length" field.
     rhsClauses = rhs.expandToClauses(subst, tenv, Contravariant());
     hasLength = rhsClauses.getSTypes(subst, tenv) match {
