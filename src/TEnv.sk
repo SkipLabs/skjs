@@ -1138,7 +1138,9 @@ base class TEnv{
             tcenvb.error(Array[(optPos, "A rest parameter cannot be optional")])
           | None() -> void
           };
-          !spreadParam = Some(ArrayType::createFromFull(paramType));
+          !spreadParam = Some(
+            ArrayType::createFromFull(TType::arrayToReadonlyArray(paramType)),
+          );
           VariadicTyping::checkRestParamReadonly(
             tcenvb,
             this,

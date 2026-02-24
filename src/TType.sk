@@ -137,6 +137,16 @@ class TType private {
     TType::create(name.pos, TInsts::single(x), Clauses::empty())
   }
 
+  // Convert Array<T> to ReadonlyArray<T>. Used for rest parameters.
+  static fun arrayToReadonlyArray(ty: TType): TType {
+    if (!ty.clauses.isEmpty()) return ty;
+    ty.insts.getUnique() match {
+    | Some(TSInst(Name(pos, "Array"), targs)) ->
+      TType::inst(Name(pos, "ReadonlyArray"), targs)
+    | _ -> ty
+    }
+  }
+
   // Delayed array literal instance.
   static fun arrayLit(tvar: TVar, tupleElts: Array<TType>): TType {
     TType::create(
@@ -639,7 +649,7 @@ class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
   }
 
   fun toString(): String {
-    `Array<${this.eltType}>`
+    `ReadonlyArray<${this.eltType}>`
   }
 
   fun maybeGetEltType(
@@ -651,7 +661,7 @@ class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
   }
 
   fun full(): TType {
-    TType::inst(Name(this.pos, "Array"), TArgs(Array[this.eltType]))
+    TType::inst(Name(this.pos, "ReadonlyArray"), TArgs(Array[this.eltType]))
   }
 }
 
