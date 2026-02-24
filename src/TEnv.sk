@@ -1398,10 +1398,13 @@ base class TEnv{
       while (!stypes.isEmpty()) {
         stype = stypes.pop();
         stype match {
-        | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | TObject(fields, _) ->
           for (field in fields.fields) {
             !strings = strings.set(field.name);
+            // Track numeric field names for numeric key literals (e.g., tuple fields "0", "1")
+            field.name.toIntOption().each(n ->
+              !maxRange = max(maxRange, n + 1)
+            );
           };
           for (symbolField in fields.symbolFields) {
             !symbols = symbols.set(symbolField.name);
@@ -1428,6 +1431,7 @@ base class TEnv{
           obj = this.newObject(subst, prim.asClassName(), Array[]);
           stypes.push(obj)
         | TPrimUnit _ -> void /* bottom */
+        | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | TPromise _ ->
           typingError(Array[(pos, `TODO: keyof ${prettyPrintSType(stype)}`)])
         }
