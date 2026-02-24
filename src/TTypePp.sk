@@ -479,6 +479,11 @@ mutable class TypePp{
         for (i => inst in ty.insts) {
           if (i != 0) pp.out(level, margin, " | ");
           inst match {
+          | TSInst(x, targs) if (isReadonlyTupleName(x.value)) ->
+            pp.out(level, margin, "readonly ");
+            pp.tuple(level, margin, targs.targs)
+          | TSInst(x, targs) if (isMutableTupleName(x.value)) ->
+            pp.tuple(level, margin, targs.targs)
           | TSInst(x, targs) ->
             pp.out(level, margin, x.value);
             if (targs.targs.size() != 0) {
@@ -516,6 +521,11 @@ mutable class TypePp{
           | _ -> pp.newLine()
           };
           inst match {
+          | TSInst(x, targs) if (isReadonlyTupleName(x.value)) ->
+            pp.out(level, margin, "readonly ");
+            pp.tuple(level, margin, targs.targs)
+          | TSInst(x, targs) if (isMutableTupleName(x.value)) ->
+            pp.tuple(level, margin, targs.targs)
           | TSInst(x, targs) ->
             pp.out(level, margin, x.value);
             if (targs.targs.size() != 0) {
