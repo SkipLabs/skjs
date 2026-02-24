@@ -35,7 +35,8 @@ jobs:
           name: Tests
           command: |
             mkdir -p ~/test-results
-            skargo test --jobs 8 --junitxml ~/test-results/skjs.xml
+            (cd skjs-tests && skargo build)
+            ./skjs-tests/target/host/dev/test --jobs 8 --junitxml ~/test-results/skjs.xml
       - store_test_results:
           path: ~/test-results/skjs.xml
 
