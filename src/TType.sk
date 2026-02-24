@@ -471,6 +471,9 @@ class TType private {
           for (stype in stypes) {
             stype match {
             | TObject(fields, _) -> allFields.push(fields)
+            | TTuple(tArgs, _) ->
+              instTuples.push(tArgs);
+              !candLen = min(candLen, tArgs.size())
             | _ -> return None()
             }
           }
