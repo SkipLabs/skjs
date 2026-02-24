@@ -170,16 +170,23 @@ class ArrayLitTyping() {
   // clauses for TObject with numeric field "0" (e.g. when a type alias
   // like NumberPair = [number, number] has been expanded in a union).
   static private fun constraintsContainTuple(
+    subst: mutable Subst,
+    tenv: TEnv,
     constraints: SortedSet<TType>,
   ): Bool {
-    constraints.any(cstr ->
-      cstr.insts.any(inst ->
+    constraints.any(cstr -> {
+      hasNamedTuple = false;
+      cstr.expandToVectorsGen(inst ->
         inst match {
-        | TSInst(name, _) -> isTupleName(name.value)
-        | _ -> false
+        | TSInst(name, _) if (isTupleName(name.value)) ->
+          !hasNamedTuple = true;
+          Some(TType::top(name.pos))
+        | _ -> inst.maybeExpand(subst, tenv, Some(Covariant()))
         }
-      ) ||
-        cstr.clauses.any(clause ->
+      ) match {
+      | None() -> hasNamedTuple
+      | Some((_insts, clauses)) ->
+        clauses.any(clause ->
           clause.stypes match {
           | Some(stypes) ->
             stypes.any(stype ->
@@ -191,7 +198,8 @@ class ArrayLitTyping() {
           | None() -> false
           }
         )
-    )
+      }
+    })
   }
 
   // Creates ArrayLit<α, elts> with fresh type variable α.
@@ -274,7 +282,7 @@ class ArrayLitTyping() {
       | Some(tvar) ->
         // If constraints contain a tuple, commit to Tuple; otherwise commit to Array
         committedTy = if (
-          ArrayLitTyping::constraintsContainTuple(tvar.constraints)
+          ArrayLitTyping::constraintsContainTuple(subst, tenv, tvar.constraints)
         ) {
           ArrayLitTyping::arrayLitToTupleType(arrLit)
         } else {

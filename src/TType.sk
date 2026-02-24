@@ -369,7 +369,7 @@ class TType private {
   // Head-expand all insts transitively using expandInst, collecting the
   // resulting clauses and any insts that expandInst chose not to expand
   // (returned as None). Returns None() when expansion reaches Top.
-  private fun expandToVectorsGen(
+  fun expandToVectorsGen(
     expandInst: TInst -> ?TType,
   ): ?(mutable Vector<TInst>, mutable Vector<Clause>) /* None is Top */ {
     if (this.isTop()) return None();
