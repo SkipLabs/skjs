@@ -52,10 +52,8 @@ extension class TypeChecker {
         notSupported(restName.pos, "Rest element in array destructuring")
       | None() -> void
       };
-      type.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
-      | Some(TTuple(tyl, _)) ->
+      type.getTupleElements() match {
+      | Some(tyl) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
           arrPat[i] match {
           | None() -> /* skipped element */ void
@@ -82,49 +80,94 @@ extension class TypeChecker {
             ],
           )
         }
-      | Some(TObject(fields, _)) ->
-        eltType = this.getIteratorElementType(tcenv.subst, fields, pos) match {
-        | Some(t) -> t
-        | None() ->
-          typingError(
-            Array[
-              (pos, "Invalid tuple pattern"),
-              (type.pos, `This is not iterable, it is ${type}`),
-            ],
-          )
+      | None() ->
+        // Try to extract tuple-like elements from expanded TObject with numeric fields.
+        // This handles cases where the type was narrowed (e.g., via typeof) and lost its
+        // TSInst("TupleN") form but still has numeric fields like "0", "1", etc.
+        singleObj = type
+          .getSTypes(tcenv.subst, this, Covariant())
+          .flatMap(stypes ~> stypes.singleElt()) match {
+        | Some(obj @ TObject _) -> Some(obj)
+        | _ -> None()
         };
-        for (i in Range(0, arrPat.size())) {
-          arrPat[i] match {
-          | None() -> void
-          | Some((_, Some(defaultExpr))) ->
-            tcenv.notSupported(
-              defaultExpr.pos,
-              "Default value in array destructuring",
-            )
-          | Some((eltPat, None())) ->
-            optionalEltType = TType::unionUndefined(
+        objTupleElts = singleObj match {
+        | Some(TObject(fields, _)) ->
+          elts = mutable Vector[];
+          for (i in Range(0, arrPat.size())) {
+            fields.maybeGet(i.toString()) match {
+            | Some(f) -> elts.push(f.type)
+            | None() -> break None()
+            }
+          } else {
+            Some(elts.toArray())
+          }
+        | _ -> None()
+        };
+        objTupleElts match {
+        | Some(tupleElts) ->
+          for (i in Range(0, arrPat.size())) {
+            arrPat[i] match {
+            | None() -> void
+            | Some((_, Some(defaultExpr))) ->
+              tcenv.notSupported(
+                defaultExpr.pos,
+                "Default value in array destructuring",
+              )
+            | Some((eltPat, None())) ->
+              this.bind(tcenv, kind, eltPat, tupleElts[i], isInitialized, false)
+            }
+          }
+        | None() ->
+          singleObj match {
+          | Some(TObject(fields, _)) ->
+            eltType = this.getIteratorElementType(
               tcenv.subst,
-              this,
-              eltType,
-              eltPat.pos,
-            );
-            this.bind(
-              tcenv,
-              kind,
-              eltPat,
-              optionalEltType,
-              isInitialized,
-              false,
+              fields,
+              pos,
+            ) match {
+            | Some(t) -> t
+            | None() ->
+              typingError(
+                Array[
+                  (pos, "Invalid tuple pattern"),
+                  (type.pos, `This is not iterable, it is ${type}`),
+                ],
+              )
+            };
+            for (i in Range(0, arrPat.size())) {
+              arrPat[i] match {
+              | None() -> void
+              | Some((_, Some(defaultExpr))) ->
+                tcenv.notSupported(
+                  defaultExpr.pos,
+                  "Default value in array destructuring",
+                )
+              | Some((eltPat, None())) ->
+                optionalEltType = TType::unionUndefined(
+                  tcenv.subst,
+                  this,
+                  eltType,
+                  eltPat.pos,
+                );
+                this.bind(
+                  tcenv,
+                  kind,
+                  eltPat,
+                  optionalEltType,
+                  isInitialized,
+                  false,
+                )
+              }
+            }
+          | _ ->
+            typingError(
+              Array[
+                (pos, "Invalid tuple pattern"),
+                (type.pos, `This is not a tuple, it is ${type}`),
+              ],
             )
           }
         }
-      | _ ->
-        typingError(
-          Array[
-            (pos, "Invalid tuple pattern"),
-            (type.pos, `This is not a tuple, it is ${type}`),
-          ],
-        )
       }
 
     | PObject{fields => objectFields, rest} ->
@@ -334,27 +377,6 @@ extension class TypeChecker {
 
       optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
-      | TTuple(tyArr, tuplePos) ->
-        n = idxSType match {
-        | TPrimValue(TNum(), Some(numbers), _) ->
-          numbers.singleElt().flatMap(lit -> lit.val.toIntOption())
-        | _ -> None()
-        } match {
-        | None() ->
-          typingError(
-            Array[
-              (idx.pos, "Invalid index"),
-              (tuplePos, "A tuple expects a static index"),
-            ],
-          )
-        | Some(x) -> x
-        };
-        tyAtN = tyArr.maybeGet(n) match {
-        | Some(tyAtN) -> tyAtN
-        | None() -> typingError(Array[(pos, "Out of bound index")])
-        };
-        !result = TType::union(tcenv.subst, this, result, tyAtN)
-
       | TObject(fields, objectPos) if (fields.isEmpty()) ->
         !result = TType::top(objectPos)
 
@@ -597,7 +619,12 @@ extension class TypeChecker {
         | None() -> exprTy.expand(subst, this, Some(Covariant()))
         }
       } else {
-        exprTy
+        // Resolve single tvar to raw binding (without constraint intersection)
+        // so we show e.g. Tuple0 as [] instead of '0 extends ReadonlyArray<unknown>.
+        exprTy.getSingleVar().flatMap(tvar -> subst.peekRaw(tvar)) match {
+        | Some(rawBinding) -> rawBinding
+        | None() -> exprTy
+        }
       };
       actual = prettyPrintType(false, ty);
       print_error(actual);
@@ -1299,7 +1326,6 @@ extension class TypeChecker {
                   }
                 )
               }
-          | TTuple _
           | TPromise _
           | TAlgebraic _ ->
             tcenv.error(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)]);
@@ -1961,27 +1987,31 @@ extension class TypeChecker {
       argExpr.value match {
       | Spread(spreadExpr) ->
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-        spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-          stypes.singleElt()
-        ) match {
-        | Some(TObject(fields, _)) ->
-          this.getIteratorElementType(tcenv.subst, fields, argExpr.pos) match {
-          | None() ->
-            tcenv.error(
-              Array[
-                (argExpr.pos, "Invalid spread argument"),
-                (spreadTy.pos, `It has type ${spreadTy}`),
-              ],
-            )
-          | Some(eltType) ->
-            !moreArgs = Some(
-              moreArgs match {
-              | None() -> eltType
-              | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
-              },
-            )
+        // Try to extract tuple elements: first from insts, then from expanded TObject.
+        tupEltsOpt = spreadTy.getTupleElements() match {
+        | Some(elts) -> Some(elts)
+        | None() ->
+          // Fallback: expand to TObject and look for numeric fields.
+          spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+            stypes.singleElt()
+          ) match {
+          | Some(TObject(fields, _)) ->
+            elts = mutable Vector[];
+            idx = 0;
+            loop {
+              fields.maybeGet(idx.toString()) match {
+              | Some(f) ->
+                elts.push(f.type);
+                !idx = idx + 1
+              | None() -> break void
+              }
+            };
+            if (elts.isEmpty()) None() else Some(elts.toArray())
+          | _ -> None()
           }
-        | Some(TTuple(tupElts, _)) ->
+        };
+        tupEltsOpt match {
+        | Some(tupElts) ->
           moreArgs match {
           | None() -> args.extend(tupElts)
           | Some(ma) ->
@@ -1990,13 +2020,39 @@ extension class TypeChecker {
             };
             !moreArgs = Some(ma)
           }
-        | _ ->
-          tcenv.error(
-            Array[
-              (argExpr.pos, "Invalid spread argument"),
-              (spreadTy.pos, `It has type ${spreadTy}`),
-            ],
-          )
+        | None() ->
+          spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+            stypes.singleElt()
+          ) match {
+          | Some(TObject(fields, _)) ->
+            this.getIteratorElementType(
+              tcenv.subst,
+              fields,
+              argExpr.pos,
+            ) match {
+            | None() ->
+              tcenv.error(
+                Array[
+                  (argExpr.pos, "Invalid spread argument"),
+                  (spreadTy.pos, `It has type ${spreadTy}`),
+                ],
+              )
+            | Some(eltType) ->
+              !moreArgs = Some(
+                moreArgs match {
+                | None() -> eltType
+                | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
+                },
+              )
+            }
+          | _ ->
+            tcenv.error(
+              Array[
+                (argExpr.pos, "Invalid spread argument"),
+                (spreadTy.pos, `It has type ${spreadTy}`),
+              ],
+            )
+          }
         }
       | _ ->
         argTy = this.expr(tcenv, argExpr, mostPrecise);

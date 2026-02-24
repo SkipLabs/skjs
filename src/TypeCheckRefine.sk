@@ -107,7 +107,6 @@ extension class TypeChecker {
           )
         | TAlgebraic _
         | TPrimUnit(TNull(), _)
-        | TTuple _
         | TPromise _ ->
           if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
@@ -159,7 +158,6 @@ extension class TypeChecker {
     if (target) {
       filterMap = x ->
         x match {
-        | TTuple _ -> Some(x)
         | tObj @ TObject _ ->
           tvar = TType::var(tcenv.subst.gen(local.pos));
           arrObj = this.newObject(tcenv, Name(local.pos, "Array"), Array[tvar]);
@@ -250,7 +248,6 @@ extension class TypeChecker {
         | TPrimUnit _
         | TPrimValue _ ->
           if (target) None() else Some(stype)
-        | TTuple _
         | TAlgebraic _
         | TPromise _ ->
           Some(stype) /* TODO */

@@ -492,6 +492,196 @@ declare type Record<K extends string, V> = {
 
 type NonNullable<T> = T & {};
 
+/* Mutable tuple types: Tuple0 through Tuple10
+   Used to represent TypeScript tuple types [A, B, C] as Tuple3<A, B, C>.
+   Each TupleN extends TupleN-1 so that longer tuples are subtypes of shorter ones.
+   Fields are mutable (no readonly), so TupleN <: Array<T> via tupleToArraySubtyping. */
+
+declare class Tuple0 implements Iterable<never> {
+  length: number;
+  [Symbol.iterator](): { next(): { value: never; done: boolean } };
+}
+declare class Tuple1<T0> extends Tuple0 implements Iterable<T0> {
+  0: T0;
+  [Symbol.iterator](): { next(): { value: T0; done: boolean } };
+}
+declare class Tuple2<T0, T1> extends Tuple1<T0> implements Iterable<T0 | T1> {
+  1: T1;
+  [Symbol.iterator](): { next(): { value: T0 | T1; done: boolean } };
+}
+declare class Tuple3<T0, T1, T2>
+  extends Tuple2<T0, T1>
+  implements Iterable<T0 | T1 | T2>
+{
+  2: T2;
+  [Symbol.iterator](): { next(): { value: T0 | T1 | T2; done: boolean } };
+}
+declare class Tuple4<T0, T1, T2, T3>
+  extends Tuple3<T0, T1, T2>
+  implements Iterable<T0 | T1 | T2 | T3>
+{
+  3: T3;
+  [Symbol.iterator](): { next(): { value: T0 | T1 | T2 | T3; done: boolean } };
+}
+declare class Tuple5<T0, T1, T2, T3, T4>
+  extends Tuple4<T0, T1, T2, T3>
+  implements Iterable<T0 | T1 | T2 | T3 | T4>
+{
+  4: T4;
+  [Symbol.iterator](): {
+    next(): { value: T0 | T1 | T2 | T3 | T4; done: boolean };
+  };
+}
+declare class Tuple6<T0, T1, T2, T3, T4, T5>
+  extends Tuple5<T0, T1, T2, T3, T4>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5>
+{
+  5: T5;
+  [Symbol.iterator](): {
+    next(): { value: T0 | T1 | T2 | T3 | T4 | T5; done: boolean };
+  };
+}
+declare class Tuple7<T0, T1, T2, T3, T4, T5, T6>
+  extends Tuple6<T0, T1, T2, T3, T4, T5>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5 | T6>
+{
+  6: T6;
+  [Symbol.iterator](): {
+    next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6; done: boolean };
+  };
+}
+declare class Tuple8<T0, T1, T2, T3, T4, T5, T6, T7>
+  extends Tuple7<T0, T1, T2, T3, T4, T5, T6>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7>
+{
+  7: T7;
+  [Symbol.iterator](): {
+    next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7; done: boolean };
+  };
+}
+declare class Tuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8>
+  extends Tuple8<T0, T1, T2, T3, T4, T5, T6, T7>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8>
+{
+  8: T8;
+  [Symbol.iterator](): {
+    next(): {
+      value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8;
+      done: boolean;
+    };
+  };
+}
+declare class Tuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>
+  extends Tuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9>
+{
+  9: T9;
+  [Symbol.iterator](): {
+    next(): {
+      value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9;
+      done: boolean;
+    };
+  };
+}
+
+/* Readonly tuple types: ReadonlyTuple0 through ReadonlyTuple10
+   Used to represent TypeScript readonly tuple types readonly [A, B, C] as ReadonlyTuple3<A, B, C>.
+   Also used for rest parameter inference (rest args are inherently readonly).
+   ReadonlyTupleN <: ReadonlyArray<T> but NOT Array<T>. */
+
+declare class ReadonlyTuple0 implements Iterable<never> {
+  readonly length: number;
+  [Symbol.iterator](): { next(): { value: never; done: boolean } };
+}
+declare class ReadonlyTuple1<T0>
+  extends ReadonlyTuple0
+  implements Iterable<T0>
+{
+  readonly 0: T0;
+  [Symbol.iterator](): { next(): { value: T0; done: boolean } };
+}
+declare class ReadonlyTuple2<T0, T1>
+  extends ReadonlyTuple1<T0>
+  implements Iterable<T0 | T1>
+{
+  readonly 1: T1;
+  [Symbol.iterator](): { next(): { value: T0 | T1; done: boolean } };
+}
+declare class ReadonlyTuple3<T0, T1, T2>
+  extends ReadonlyTuple2<T0, T1>
+  implements Iterable<T0 | T1 | T2>
+{
+  readonly 2: T2;
+  [Symbol.iterator](): { next(): { value: T0 | T1 | T2; done: boolean } };
+}
+declare class ReadonlyTuple4<T0, T1, T2, T3>
+  extends ReadonlyTuple3<T0, T1, T2>
+  implements Iterable<T0 | T1 | T2 | T3>
+{
+  readonly 3: T3;
+  [Symbol.iterator](): { next(): { value: T0 | T1 | T2 | T3; done: boolean } };
+}
+declare class ReadonlyTuple5<T0, T1, T2, T3, T4>
+  extends ReadonlyTuple4<T0, T1, T2, T3>
+  implements Iterable<T0 | T1 | T2 | T3 | T4>
+{
+  readonly 4: T4;
+  [Symbol.iterator](): {
+    next(): { value: T0 | T1 | T2 | T3 | T4; done: boolean };
+  };
+}
+declare class ReadonlyTuple6<T0, T1, T2, T3, T4, T5>
+  extends ReadonlyTuple5<T0, T1, T2, T3, T4>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5>
+{
+  readonly 5: T5;
+  [Symbol.iterator](): {
+    next(): { value: T0 | T1 | T2 | T3 | T4 | T5; done: boolean };
+  };
+}
+declare class ReadonlyTuple7<T0, T1, T2, T3, T4, T5, T6>
+  extends ReadonlyTuple6<T0, T1, T2, T3, T4, T5>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5 | T6>
+{
+  readonly 6: T6;
+  [Symbol.iterator](): {
+    next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6; done: boolean };
+  };
+}
+declare class ReadonlyTuple8<T0, T1, T2, T3, T4, T5, T6, T7>
+  extends ReadonlyTuple7<T0, T1, T2, T3, T4, T5, T6>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7>
+{
+  readonly 7: T7;
+  [Symbol.iterator](): {
+    next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7; done: boolean };
+  };
+}
+declare class ReadonlyTuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8>
+  extends ReadonlyTuple8<T0, T1, T2, T3, T4, T5, T6, T7>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8>
+{
+  readonly 8: T8;
+  [Symbol.iterator](): {
+    next(): {
+      value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8;
+      done: boolean;
+    };
+  };
+}
+declare class ReadonlyTuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>
+  extends ReadonlyTuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8>
+  implements Iterable<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9>
+{
+  readonly 9: T9;
+  [Symbol.iterator](): {
+    next(): {
+      value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9;
+      done: boolean;
+    };
+  };
+}
+
 /* SKJS hacks */
 
 type SKJS_Ignorable<T> = T; // & { __SKJS_Ignorable: void };

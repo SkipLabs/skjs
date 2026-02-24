@@ -14,6 +14,32 @@
 
 module SKJS;
 
+const tupleName: String = "Tuple";
+const readonlyTupleName: String = "ReadonlyTuple";
+
+fun isMutableTupleName(name: String): Bool {
+  name.startsWith(tupleName) &&
+    !name.startsWith(readonlyTupleName) &&
+    {
+      suffix = name.substring(name.getIter().forward(tupleName.length()));
+      suffix.toIntOption().isSome()
+    }
+}
+
+fun isReadonlyTupleName(name: String): Bool {
+  name.startsWith(readonlyTupleName) &&
+    {
+      suffix = name.substring(
+        name.getIter().forward(readonlyTupleName.length()),
+      );
+      suffix.toIntOption().isSome()
+    }
+}
+
+fun isTupleName(name: String): Bool {
+  isMutableTupleName(name) || isReadonlyTupleName(name)
+}
+
 /***************************************************************************/
 // The class representing all the types.
 //
@@ -154,6 +180,14 @@ class TType private {
       TInsts::single(TArrayLit(tvar, tupleElts)),
       Clauses::empty(),
     )
+  }
+
+  static fun tuple(pos: PosRange, tArgs: Array<TType>): TType {
+    TType::inst(Name(pos, `${tupleName}${tArgs.size()}`), TArgs(tArgs))
+  }
+
+  static fun readonlyTuple(pos: PosRange, tArgs: Array<TType>): TType {
+    TType::inst(Name(pos, `${readonlyTupleName}${tArgs.size()}`), TArgs(tArgs))
   }
 
   static fun fromTParamWithConstraint(
@@ -313,10 +347,6 @@ class TType private {
         | TPrimUnit _
         | TPrimValue _ ->
           continue
-        | TTuple(tys, _) ->
-          for (ty in tys) {
-            if (!ty.isPrimitiveType(subst, tenv)) return false
-          }
         | TAlgebraic _
         | TObject _
         | TPromise _ ->
@@ -402,6 +432,23 @@ class TType private {
   fun getConstantString(): ?PrimLiteral {
     if (!this.insts.isEmpty()) None() else {
       this.clauses.getConstantString()
+    }
+  }
+
+  // Returns the tuple element types if this is a TupleN<...> or ReadonlyTupleN<...> instance.
+  fun getTupleElements(): ?Array<TType> {
+    if (!this.clauses.isEmpty()) return None();
+    this.insts.getUnique() match {
+    | Some(TSInst(name, TArgs(targs))) if (isTupleName(name.value)) ->
+      Some(targs)
+    | _ -> None()
+    }
+  }
+
+  fun isReadonlyTuple(): Bool {
+    this.insts.getUnique() match {
+    | Some(TSInst(name, _)) -> isReadonlyTupleName(name.value)
+    | _ -> false
     }
   }
 
@@ -694,12 +741,6 @@ class ATFullType(fullType: TType) extends ArrayType {
 }
 
 /***************************************************************************/
-/* Tuples */
-/***************************************************************************/
-
-class TTuple(tuple: Array<TType>) extends SType
-
-/***************************************************************************/
 /* Single types */
 /***************************************************************************/
 
@@ -822,7 +863,6 @@ base class STypeTag final () uses Orderable {
   | TagString
   | TagBigInt
   | TagSymbol
-  | TagTuple
   | TagPromise
   | TagObject
   | TagAlgebraic
@@ -844,7 +884,6 @@ base class SType private (
     | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
     | TPrimValue(TSymbol(), _, _) -> TagSymbol()
-    | TTuple _ -> TagTuple()
     | TPromise _ -> TagPromise()
     | TObject _ -> TagObject()
     | TAlgebraic _ -> TagAlgebraic()
@@ -1642,20 +1681,6 @@ class Clauses private (
 
   fun getConstantString(): ?PrimLiteral {
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
-  }
-
-  // Returns the tuple if clauses is a single clause whose only stype is a TTuple.
-  fun getSingleTuple(): ?TTuple {
-    clause = this.clauses.singleElt() match {
-    | Some(c) -> c
-    | _ -> return None()
-    };
-    clause.stypes.flatMap(stypes -> {
-      stypes.singleElt() match {
-      | Some(tuple @ TTuple _) -> Some(tuple)
-      | _ -> None()
-      }
-    })
   }
 
   // t.mapSTypes(f) is t with stypes updated by f

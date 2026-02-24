@@ -90,9 +90,9 @@ class ArrayLitTyping() {
     }
   }
 
-  // Converts ArrayLit<α, elts> to Tuple[elts...].
+  // Converts ArrayLit<α, elts> to TupleN<elts...>.
   static private fun arrayLitToTupleType(arrLit: TArrayLit): TType {
-    TType::single(TTuple(arrLit.tupleElts, arrLit.tvar.pos))
+    TType::tuple(arrLit.tvar.pos, arrLit.tupleElts)
   }
 
   // Widens literal primitive types (e.g., 42 -> number) in ty.
@@ -166,16 +166,31 @@ class ArrayLitTyping() {
   }
 
   // Returns true if any constraint in the set contains a tuple type.
+  // Checks unexpanded insts for TupleN names and also pre-expanded
+  // clauses for TObject with numeric field "0" (e.g. when a type alias
+  // like NumberPair = [number, number] has been expanded in a union).
   static private fun constraintsContainTuple(
-    subst: mutable Subst,
-    tenv: TEnv,
     constraints: SortedSet<TType>,
   ): Bool {
     constraints.any(cstr ->
-      cstr.getSTypes(subst, tenv, Covariant()) match {
-      | Some(stypes) -> stypes.any(stype -> stype is TTuple _)
-      | _ -> false
-      }
+      cstr.insts.any(inst ->
+        inst match {
+        | TSInst(name, _) -> isTupleName(name.value)
+        | _ -> false
+        }
+      ) ||
+        cstr.clauses.any(clause ->
+          clause.stypes match {
+          | Some(stypes) ->
+            stypes.any(stype ->
+              stype match {
+              | TObject(fields, _) -> fields.maybeGet("0").isSome()
+              | _ -> false
+              }
+            )
+          | None() -> false
+          }
+        )
     )
   }
 
@@ -259,7 +274,7 @@ class ArrayLitTyping() {
       | Some(tvar) ->
         // If constraints contain a tuple, commit to Tuple; otherwise commit to Array
         committedTy = if (
-          ArrayLitTyping::constraintsContainTuple(subst, tenv, tvar.constraints)
+          ArrayLitTyping::constraintsContainTuple(tvar.constraints)
         ) {
           ArrayLitTyping::arrayLitToTupleType(arrLit)
         } else {
@@ -287,18 +302,12 @@ class ArrayLitTyping() {
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
         return Some(result)
       };
-      // Case 2c: ArrayLit<α, elts> <: Tuple[U1, ...]
-      u2.getSTypes(subst, tenv, Covariant()).flatMap(stypes ->
-        stypes.singleElt()
-      ) match {
-      | Some(tuple2 @ TTuple _) ->
+      // Case 2c: ArrayLit<α, elts> <: TupleN<U1, ...>
+      if (u2.getTupleElements().isSome()) {
         // Commit to tuple, then check subtyping.
         literalTupleTy = ArrayLitTyping::arrayLitToTupleType(arrLit);
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, literalTupleTy);
-        return Some(
-          TType::isSub(subst, tenv, literalTupleTy, TType::single(tuple2)),
-        )
-      | _ -> void
+        return Some(TType::isSub(subst, tenv, literalTupleTy, u2))
       }
     | None() -> void
     };
