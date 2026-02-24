@@ -368,9 +368,7 @@ class TType private {
       if (tyDef.clauses.isTop()) {
         return None();
       };
-      for (clause in tyDef.clauses) {
-        clauses.push(clause)
-      };
+      clauses.extend(tyDef.clauses);
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
         !seen = seen.set(newInst);
