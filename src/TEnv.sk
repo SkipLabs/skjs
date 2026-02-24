@@ -763,9 +763,7 @@ base class TEnv{
           Name(pos, "ReadonlyArray"),
           TArgs(Array[TType::bottom(pos)]),
         )
-      | TATuple _ ->
-        tcenvb.error(Array[(pos, "TODO readonly")]);
-        this.normalize(tcenvb, ro)
+      | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, true)
       | _ ->
         tcenvb.error(
           Array[
@@ -916,7 +914,7 @@ base class TEnv{
         this.normalize(tcenvb, ty1),
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
-    | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple)
+    | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
     }
   }
@@ -925,7 +923,11 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
     taTuple: TATuple,
+    isReadonly: Bool,
   ): TType {
+    if (isReadonly) {
+      tcenvb.error(Array[(pos, "TODO readonly")])
+    };
     tupleElts = taTuple match {
     | TATuple(elts) -> elts
     };
