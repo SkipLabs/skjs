@@ -916,21 +916,31 @@ base class TEnv{
         this.normalize(tcenvb, ty1),
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
-    | TATuple(tupleElts) ->
-      types = tupleElts.map(ty ->
-        ty match {
-        | TEType(n, optional, x) ->
-          if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
-          if (optional is Some _) {
-            tcenvb.error(Array[(pos, "TODO optional element tuple")])
-          };
-          this.normalize(tcenvb, x)
-        | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
-        }
-      );
-      TType::single(TTuple(types, pos))
+    | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple)
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
     }
+  }
+
+  private fun normalizeTuple(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    taTuple: TATuple,
+  ): TType {
+    tupleElts = taTuple match {
+    | TATuple(elts) -> elts
+    };
+    types = tupleElts.map(ty ->
+      ty match {
+      | TEType(n, optional, x) ->
+        if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
+        if (optional is Some _) {
+          tcenvb.error(Array[(pos, "TODO optional element tuple")])
+        };
+        this.normalize(tcenvb, x)
+      | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
+      }
+    );
+    TType::single(TTuple(types, pos))
   }
 
   private fun isValidTypeofExpr(expr: Expr): Bool {
