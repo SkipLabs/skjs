@@ -1,5 +1,5 @@
 declare const console: {
-  log<T>(...msg: T[]): void;
+  log(...msg: unknown[]): void;
   assert(cond: boolean, msg?: string): void;
   error(message?: unknown, ...optionalParams: unknown[]): void;
 };
@@ -56,7 +56,7 @@ declare class Array<T> implements Iterable<T> {
   find(filter: (item: T) => boolean): undefined | T;
   push(elt: T): void;
   indexOf(x: T): number;
-  sort(f?: (a: object, b: object) => number): SKJS_Ignorable<Array<T>>;
+  sort(f?: (a: T, b: T) => number): SKJS_Ignorable<Array<T>>;
   map<T2>(f: (item: T) => T2): Array<T2>;
   filter(f: (item: T) => boolean): Array<T>;
   reduce<U>(f: (acc: U, item: T) => U, initial: U): U;
@@ -107,8 +107,8 @@ declare const Math: {
   SQRT2: number;
 
   // Existing methods
-  max: (a: number, b: number) => number;
-  min: (a: number, b: number) => number;
+  max: (...values: number[]) => number;
+  min: (...values: number[]) => number;
   floor: (x: number) => number;
   ceil: (x: number) => number;
   round: (x: number) => number;
@@ -300,7 +300,7 @@ interface MapIterator<T> {
 
 // Updated Map class declaration
 declare class Map<K, V> {
-  constructor(elts?: Array<[K, V]>);
+  constructor(elts?: Array<[K, V]> | Iterable<[K, V]>);
   size: number;
 
   // Existing methods
@@ -309,7 +309,7 @@ declare class Map<K, V> {
 
   // Additional Map methods
   clear(): void;
-  delete(key: K): void;
+  delete(key: K): boolean;
   entries(): MapIterator<[K, V]>;
   forEach(callback: (value: V, key: K) => void): void;
   has(key: K): boolean;
@@ -320,18 +320,18 @@ declare class Map<K, V> {
 }
 
 declare class Set<T> {
-  constructor(values?: Array<T>);
+  constructor(values?: Array<T> | Iterable<T>);
   size: number;
 
   // Set methods
   add(value: T): void;
   clear(): void;
   delete(value: T): void;
-  entries(): Array<[T, T]>;
+  entries(): MapIterator<[T, T]>;
   forEach(callback: (value: T) => void): void;
   has(value: T): boolean;
-  keys(): Array<T>;
-  values(): Array<T>;
+  keys(): MapIterator<T>;
+  values(): MapIterator<T>;
 
   [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
