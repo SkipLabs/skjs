@@ -917,20 +917,18 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | TATuple(tupleElts) ->
-      typeVec = mutable Vector[];
-      for (ty in tupleElts) {
+      types = tupleElts.map(ty ->
         ty match {
         | TEType(n, optional, x) ->
           if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
           if (optional is Some _) {
             tcenvb.error(Array[(pos, "TODO optional element tuple")])
           };
-          typeVec.push(x)
+          this.normalize(tcenvb, x)
         | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
         }
-      };
-      types = typeVec.toArray();
-      TType::single(TTuple(types.map(ty -> this.normalize(tcenvb, ty)), pos))
+      );
+      TType::single(TTuple(types, pos))
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
     }
   }
