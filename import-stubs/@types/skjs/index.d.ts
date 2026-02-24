@@ -106,6 +106,218 @@ declare class Array<T> implements ArrayAndTupleBase<T> {
   [Symbol.iterator](): { next(): { value: T; done: boolean } };
 }
 
+declare interface ReadonlyTuple0 extends ReadonlyArray<never> {
+  readonly length: 0;
+}
+
+declare interface ReadonlyTuple1<T0> extends ReadonlyArray<T0> {
+  readonly length: 1;
+  readonly 0: T0;
+}
+
+declare interface ReadonlyTuple2<T0, T1> extends ReadonlyArray<T0 | T1> {
+  readonly length: 2;
+  readonly 0: T0;
+  readonly 1: T1;
+}
+
+declare interface ReadonlyTuple3<T0, T1, T2>
+  extends ReadonlyArray<T0 | T1 | T2> {
+  readonly length: 3;
+  readonly 0: T0;
+  readonly 1: T1;
+  readonly 2: T2;
+}
+
+declare interface ReadonlyTuple4<T0, T1, T2, T3>
+  extends ReadonlyArray<T0 | T1 | T2 | T3> {
+  readonly length: 4;
+  readonly 0: T0;
+  readonly 1: T1;
+  readonly 2: T2;
+  readonly 3: T3;
+}
+
+declare interface ReadonlyTuple5<T0, T1, T2, T3, T4>
+  extends ReadonlyArray<T0 | T1 | T2 | T3 | T4> {
+  readonly length: 5;
+  readonly 0: T0;
+  readonly 1: T1;
+  readonly 2: T2;
+  readonly 3: T3;
+  readonly 4: T4;
+}
+
+declare interface ReadonlyTuple6<T0, T1, T2, T3, T4, T5>
+  extends ReadonlyArray<T0 | T1 | T2 | T3 | T4 | T5> {
+  readonly length: 6;
+  readonly 0: T0;
+  readonly 1: T1;
+  readonly 2: T2;
+  readonly 3: T3;
+  readonly 4: T4;
+  readonly 5: T5;
+}
+
+declare interface ReadonlyTuple7<T0, T1, T2, T3, T4, T5, T6>
+  extends ReadonlyArray<T0 | T1 | T2 | T3 | T4 | T5 | T6> {
+  readonly length: 7;
+  readonly 0: T0;
+  readonly 1: T1;
+  readonly 2: T2;
+  readonly 3: T3;
+  readonly 4: T4;
+  readonly 5: T5;
+  readonly 6: T6;
+}
+
+declare interface ReadonlyTuple8<T0, T1, T2, T3, T4, T5, T6, T7>
+  extends ReadonlyArray<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7> {
+  readonly length: 8;
+  readonly 0: T0;
+  readonly 1: T1;
+  readonly 2: T2;
+  readonly 3: T3;
+  readonly 4: T4;
+  readonly 5: T5;
+  readonly 6: T6;
+  readonly 7: T7;
+}
+
+declare interface ReadonlyTuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8>
+  extends ReadonlyArray<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8> {
+  readonly length: 9;
+  readonly 0: T0;
+  readonly 1: T1;
+  readonly 2: T2;
+  readonly 3: T3;
+  readonly 4: T4;
+  readonly 5: T5;
+  readonly 6: T6;
+  readonly 7: T7;
+  readonly 8: T8;
+}
+
+declare interface ReadonlyTuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>
+  extends ReadonlyArray<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9> {
+  readonly length: 10;
+  readonly 0: T0;
+  readonly 1: T1;
+  readonly 2: T2;
+  readonly 3: T3;
+  readonly 4: T4;
+  readonly 5: T5;
+  readonly 6: T6;
+  readonly 7: T7;
+  readonly 8: T8;
+  readonly 9: T9;
+}
+
+declare interface Tuple0 extends ArrayAndTupleBase<never>, ReadonlyTuple0 {}
+
+declare interface Tuple1<T0> extends ArrayAndTupleBase<T0>, ReadonlyTuple1<T0> {
+  0: T0;
+}
+
+declare interface Tuple2<T0, T1>
+  extends ArrayAndTupleBase<T0 | T1>,
+    ReadonlyTuple2<T0, T1> {
+  0: T0;
+  1: T1;
+}
+
+declare interface Tuple3<T0, T1, T2>
+  extends ArrayAndTupleBase<T0 | T1 | T2>,
+    ReadonlyTuple3<T0, T1, T2> {
+  0: T0;
+  1: T1;
+  2: T2;
+}
+
+declare interface Tuple4<T0, T1, T2, T3>
+  extends ArrayAndTupleBase<T0 | T1 | T2 | T3>,
+    ReadonlyTuple4<T0, T1, T2, T3> {
+  0: T0;
+  1: T1;
+  2: T2;
+  3: T3;
+}
+
+declare interface Tuple5<T0, T1, T2, T3, T4>
+  extends ArrayAndTupleBase<T0 | T1 | T2 | T3 | T4>,
+    ReadonlyTuple5<T0, T1, T2, T3, T4> {
+  0: T0;
+  1: T1;
+  2: T2;
+  3: T3;
+  4: T4;
+}
+
+declare interface Tuple6<T0, T1, T2, T3, T4, T5>
+  extends ArrayAndTupleBase<T0 | T1 | T2 | T3 | T4 | T5>,
+    ReadonlyTuple6<T0, T1, T2, T3, T4, T5> {
+  0: T0;
+  1: T1;
+  2: T2;
+  3: T3;
+  4: T4;
+  5: T5;
+}
+
+declare interface Tuple7<T0, T1, T2, T3, T4, T5, T6>
+  extends ArrayAndTupleBase<T0 | T1 | T2 | T3 | T4 | T5 | T6>,
+    ReadonlyTuple7<T0, T1, T2, T3, T4, T5, T6> {
+  0: T0;
+  1: T1;
+  2: T2;
+  3: T3;
+  4: T4;
+  5: T5;
+  6: T6;
+}
+
+declare interface Tuple8<T0, T1, T2, T3, T4, T5, T6, T7>
+  extends ArrayAndTupleBase<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7>,
+    ReadonlyTuple8<T0, T1, T2, T3, T4, T5, T6, T7> {
+  0: T0;
+  1: T1;
+  2: T2;
+  3: T3;
+  4: T4;
+  5: T5;
+  6: T6;
+  7: T7;
+}
+
+declare interface Tuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8>
+  extends ArrayAndTupleBase<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8>,
+    ReadonlyTuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8> {
+  0: T0;
+  1: T1;
+  2: T2;
+  3: T3;
+  4: T4;
+  5: T5;
+  6: T6;
+  7: T7;
+  8: T8;
+}
+
+declare interface Tuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9>
+  extends ArrayAndTupleBase<T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9>,
+    ReadonlyTuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> {
+  0: T0;
+  1: T1;
+  2: T2;
+  3: T3;
+  4: T4;
+  5: T5;
+  6: T6;
+  7: T7;
+  8: T8;
+  9: T9;
+}
+
 declare const Math: {
   // Mathematical constants
   PI: number;
