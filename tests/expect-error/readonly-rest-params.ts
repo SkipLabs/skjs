@@ -90,12 +90,27 @@ function genericRestMutation<T extends ReadonlyArray<number>>(
 type Numbers = number[];
 
 // FIXME: type alias rest should also be treated as readonly, but
-// arrayToReadonlyArray only matches literal Array<T>, not aliases
+// arrayToReadonlyArray only matches literal Array<T>, not aliases.
+// Compare with acceptsRO/rejectsArray above which use `number[]` directly.
+
+// This works because nums stays as Array<number> (not converted to readonly),
+// and Array<number> is assignable to ReadonlyArray<number>.
 function aliasRest(...nums: Numbers): ReadonlyArray<number> {
+  // FIXME: This mutation should be rejected but isn't,
+  // because nums is still mutable Array<number>.
+  nums.push(42);
   return nums;
 }
 
+// FIXME: This should error (like rejectsArray above) but doesn't,
+// because the type alias prevents the Array→ReadonlyArray conversion.
 function aliasRestRejectsArray(...nums: Numbers): void {
+  const arr: Array<number> = nums;
+}
+
+// Non-alias version correctly rejects the same assignment.
+function nonAliasRestRejectsArray(...nums: number[]): void {
+  // @skjs-expect-error Invalid annotation
   const arr: Array<number> = nums;
 }
 
