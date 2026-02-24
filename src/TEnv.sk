@@ -212,7 +212,7 @@ base class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    symbolFields = mutable Vector[];
+    symbolFields = mutable Map[];
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
@@ -237,7 +237,7 @@ base class TEnv{
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
-        symbolFields,
+        symbolFields => symbolFields.values().collect(Vector),
         indexes => indexes.toArray(),
       },
       className.pos,
@@ -257,7 +257,7 @@ base class TEnv{
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    symbolFields = mutable Vector[];
+    symbolFields = mutable Map[];
     indexes = mutable Vector[];
     constructor = this.addFields(
       tcenvb,
@@ -278,7 +278,7 @@ base class TEnv{
     TObject(
       TFields::create{
         fields => fields.values().collect(Array),
-        symbolFields,
+        symbolFields => symbolFields.values().collect(Vector),
         indexes => indexes.toArray(),
         new => Some(new),
       },
@@ -390,7 +390,7 @@ base class TEnv{
   private fun addFields(
     tcenvb: mutable TCEnvBase,
     acc: mutable Map<String, TField>,
-    symbolFields: mutable Vector<TField>,
+    symbolFields: mutable Map<String, TField>,
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
     isStatic: ?Array<TypeParam>,
@@ -525,15 +525,13 @@ base class TEnv{
           this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
         } match {
         | FKSymbol(exprPos, uniqueId) ->
-          symbolFields.push(
-            TField::create{
-              pos => exprPos,
-              name => uniqueId,
-              isOptional => false,
-              isReadonly => Some(fd.pos),
-              type => metType,
-            }.fromSome(),
-          )
+          symbolFields![uniqueId] = TField::create{
+            pos => exprPos,
+            name => uniqueId,
+            isOptional => false,
+            isReadonly => Some(fd.pos),
+            type => metType,
+          }.fromSome()
         | FKName(name, _) ->
           TField::create{
             pos => name.pos,
@@ -764,8 +762,8 @@ base class TEnv{
           TArgs(Array[TType::bottom(pos)]),
         )
       | TATuple _ ->
-        tcenvb.error(Array[(pos, "TODO readonly")]);
-        this.normalize(tcenvb, ro)
+        // readonly [A, B] → ReadonlyTuple2<A, B>
+        this.normalizeTuple(tcenvb, ro, true)
       | _ ->
         tcenvb.error(
           Array[
@@ -916,22 +914,48 @@ base class TEnv{
         this.normalize(tcenvb, ty1),
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
-    | TATuple(tupleElts) ->
-      typeVec = mutable Vector[];
-      for (ty in tupleElts) {
-        ty match {
-        | TEType(n, optional, x) ->
-          if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
-          if (optional is Some _) {
-            tcenvb.error(Array[(pos, "TODO optional element tuple")])
-          };
-          typeVec.push(x)
-        | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
-        }
-      };
-      types = typeVec.toArray();
-      TType::single(TTuple(types.map(ty -> this.normalize(tcenvb, ty)), pos))
+    | TATuple _ ->
+      // [A, B] → mutable Tuple2<A, B>
+      this.normalizeTuple(tcenvb, typeAst, false)
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
+    }
+  }
+
+  private fun normalizeTuple(
+    tcenvb: mutable TCEnvBase,
+    type: Type,
+    isReadonly: Bool,
+  ): TType {
+    pos = type.pos;
+    tupleElts = type.value match {
+    | TATuple(elts) -> elts
+    | _ -> invariant_violation("normalizeTuple called on non-TATuple")
+    };
+    typeVec = mutable Vector[];
+    for (ty in tupleElts) {
+      ty match {
+      | TEType(n, optional, x) ->
+        if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
+        if (optional is Some _) {
+          tcenvb.error(Array[(pos, "TODO optional element tuple")])
+        };
+        typeVec.push(x)
+      | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
+      }
+    };
+    types = typeVec.toArray();
+    normalizedTypes = types.map(ty -> this.normalize(tcenvb, ty));
+    if (normalizedTypes.size() > 10) {
+      tcenvb.error(
+        Array[
+          (pos, "Tuple types with more than 10 elements are not supported"),
+        ],
+      )
+    };
+    if (isReadonly) {
+      TType::readonlyTuple(pos, normalizedTypes)
+    } else {
+      TType::tuple(pos, normalizedTypes)
     }
   }
 
@@ -1388,10 +1412,13 @@ base class TEnv{
       while (!stypes.isEmpty()) {
         stype = stypes.pop();
         stype match {
-        | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | TObject(fields, _) ->
           for (field in fields.fields) {
             !strings = strings.set(field.name);
+            // Track numeric field names for numeric key literals (e.g., tuple fields "0", "1")
+            field.name.toIntOption().each(n ->
+              !maxRange = max(maxRange, n + 1)
+            );
           };
           for (symbolField in fields.symbolFields) {
             !symbols = symbols.set(symbolField.name);

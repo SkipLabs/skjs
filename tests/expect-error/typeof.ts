@@ -973,15 +973,13 @@ function testTupleDestructuring(x: [number, string] | number): string {
 }
 
 // Multiple tuple types in union
-// FIXME: SKJS infers [false] as a 2-element tuple instead of 1-element tuple
+// With TupleN, [false] is correctly inferred as Tuple1<false> which is a subtype of [boolean].
 function testMultipleTuples(
   x: [number, string] | [boolean] | number,
 ): [number, string] | [boolean] {
   if (typeof x === "number") {
-    // @skjs-expect-error Invalid return type
     return [false];
   } else {
-    // TODO: This error won't be reported due to earlier error
     return x;
   }
 }
@@ -1012,11 +1010,9 @@ function testLabeledTuple(
 }
 
 // Readonly tuple
-// FIXME: SKJS doesn't support readonly tuples yet
+// TupleN fields are already readonly, so readonly [T, U] works now.
 function testReadonlyTuple(
-  // @skjs-expect-error TODO readonly
   x: readonly [number, string] | number,
-  // @skjs-expect-error TODO readonly
 ): readonly [number, string] {
   if (typeof x === "object") {
     return x;
@@ -1047,13 +1043,13 @@ function testComplexTupleUnion(
 }
 
 // Tuple in intersection (unusual but valid)
+// With TupleN as TObject, the intersection works correctly (no longer collapses to never).
 function testTupleIntersection(
   x: ([number, string] & { length: 2 }) | number,
 ): number {
   if (typeof x === "number") {
     return x;
   } else {
-    // @skjs-expect-error Invalid access for type never
     return x[0];
   }
 }
@@ -1100,7 +1096,7 @@ function testTupleSpread(
 function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
     // Accessing out of bounds
-    // @skjs-expect-error Out of bound index
+    // @skjs-expect-error Unbound field: 2
     return x[2];
   } else {
     return false;
@@ -1108,9 +1104,11 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
 }
 
 // Wrong destructuring count
+// Tuple is now detected via expansion, so destructuring more elements
+// than the tuple has gives a hard error on size mismatch.
 function testTupleWrongDestructure(x: [number, string] | number): boolean {
   if (typeof x === "object") {
-    // @ts-expect-error Invalid tuple pattern size, it is of size 3
+    // @skjs-expect-error Invalid tuple pattern size, it is of size 3
     const [_a, _b, c] = x;
     return c;
   } else {
@@ -1123,7 +1121,7 @@ function testTupleWrongDestructure(x: [number, string] | number): boolean {
 function testTupleArrayMethod(x: [number, string] | number): number {
   if (typeof x === "object") {
     // Tuples don't have array methods in SKJS
-    // @skjs-expect-error Invalid index
+    // @skjs-expect-error Unbound field: map
     return x.map((v) => v).length;
   } else {
     return x;

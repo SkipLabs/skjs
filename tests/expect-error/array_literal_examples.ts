@@ -58,7 +58,7 @@ function takesArrayOrNull(values: number[] | null): void {
 function tupleThenArrayUse(): void {
   const values = [1, 2];
   takesTuple(values);
-  // @skjs-expect-error Invalid index
+  // @skjs-expect-error Unbound field: push
   values.push(3);
 }
 
@@ -186,8 +186,7 @@ function supertypePositionTest(): void {
 function tupleThenArrayUse2(): void {
   const numbers = [1, 2, 3, 4, 5];
   takesTuple(numbers);
-  // Tuples are only subtypes of immutable Array for now (can be relaxed when tuples are distinct from readonly tuples)
-  // @skjs-expect-error Invalid call
+  // Mutable tuples are subtypes of Array<T> via tupleToArraySubtyping.
   takesArray(numbers);
   takesTuple(numbers);
 }

@@ -49,15 +49,12 @@ class VariadicTyping() {
     | _ -> return None()
     };
     saved = subst.save();
-    // Expand (resolves type aliases, applies tvar bindings + constraints)
-    clauses = fullType.expandToClauses(subst, tenv, Contravariant());
-    clauses.getSingleTuple() match {
-    | Some(TTuple(tupleElts, _)) -> return Some(tupleElts)
+    fullType.getTupleElements(subst, tenv) match {
+    | Some((tupleElts, _)) -> return Some(tupleElts)
     | None() -> void
     };
-    // Fallback: for a bound tvar, expandToClauses intersects the binding
-    // with constraints, which can hide the tuple. Peek the raw binding
-    // (without constraint intersection) and try again.
+    // Fallback: for a bound tvar, peek the raw binding
+    // (without constraint intersection) and retry.
     tvar = fullType.getSingleVar() match {
     | Some(tv) -> tv
     | None() ->
@@ -67,13 +64,19 @@ class VariadicTyping() {
     boundType = subst.peekRaw(tvar) match {
     | Some(bt) -> bt
     | None() ->
+      // For an unbound tvar, check constraints for a tuple type.
+      // E.g. <T extends [string, number]>(...args: T) => T
+      for (cstr in tvar.constraints) {
+        cstr.getTupleElements(subst, tenv) match {
+        | Some((tupleElts, _)) -> return Some(tupleElts)
+        | None() -> void
+        }
+      };
       subst.restore(saved);
       return None()
     };
-    boundType
-      .expandToClauses(subst, tenv, Contravariant())
-      .getSingleTuple() match {
-    | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
+    boundType.getTupleElements(subst, tenv) match {
+    | Some((tupleElts, _)) -> Some(tupleElts)
     | None() ->
       subst.restore(saved);
       None()
@@ -117,9 +120,8 @@ class VariadicTyping() {
           };
           TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[tailElt]))
         | None() ->
-          // No tail: infer an exact tuple (including empty tuple for zero rest args).
-          restArgTypes = args.slice(totalSize);
-          TType::single(TTuple(restArgTypes.toArray(), pos))
+          // No tail: infer an exact readonly tuple (rest args are inherently readonly).
+          TType::readonlyTuple(pos, args.slice(totalSize).toArray())
         };
         saved = subst.save();
         subst.grow(tenv, tvar, inferred, Contravariant());
@@ -244,32 +246,41 @@ class VariadicTyping() {
     }
   }
 
-  // Handles tuple-to-array subtyping: [T1, T2] <: ReadonlyArray<U>.
+  // Handles tuple-to-array subtyping: [T1, T2] <: Array<U> or ReadonlyArray<U>.
   //
-  // For `[string, number] <: readonly DepSafe[]`:
-  //   - Checks rhs is array-like (has a "length" field)
-  //   - Builds U = string | number
-  //   - Checks ReadonlyArray<string | number> <: readonly DepSafe[] (succeeds)
+  // For mutable tuples (TupleN): builds Array<U> <: rhs
+  //   [string, number] <: Array<string | number>  (succeeds)
+  //   [string, number] <: ReadonlyArray<string | number>  (succeeds, Array <: ReadonlyArray)
   //
-  // ReadonlyArray is covariant, so this correctly allows:
-  //   [Dog, Dog] <: readonly Animal[]  (covariant element type)
-  // And correctly rejects:
-  //   [Dog, Dog] <: Animal[]  (ReadonlyArray is not a subtype of mutable Array)
+  // For readonly tuples (ReadonlyTupleN): builds ReadonlyArray<U> <: rhs
+  //   readonly [string, number] <: ReadonlyArray<string | number>  (succeeds)
+  //   readonly [string, number] <: Array<string | number>  (fails)
   //
   // Returns Some(result) if this is a tuple-to-array case, None() otherwise.
   static fun tupleToArraySubtyping(
     subst: mutable Subst,
     tenv: TEnv,
-    clauses1: Clauses,
+    lhs: TType,
     rhs: TType,
   ): ?STResult<TType> {
-    // Check if lhs is a single tuple
-    tuple = clauses1.getSingleTuple() match {
-    | None() -> return None()
-    | Some(tuple) -> tuple
+    // Check if lhs is a TupleN type (expanding aliases). Also resolve committed ArrayLits.
+    (tupleElts, isReadonly) = lhs.getTupleElements(subst, tenv) match {
+    | Some(result) -> result
+    | None() ->
+      // Fallback: check if lhs is a committed ArrayLit whose committed type is a tuple.
+      lhs.insts.getSingleArrayLit() match {
+      | Some(arrLit) ->
+        expanded = ArrayLitTyping::expand(subst, tenv, arrLit);
+        expanded.getTupleElements(subst, tenv) match {
+        | Some(result) -> result
+        | None() -> return None()
+        }
+      | None() -> return None()
+      }
     };
+    // If rhs contains any TupleN (expanding aliases), skip — regular structural subtyping handles it.
+    if (rhs.getTupleElements(subst, tenv).isSome()) return None();
     // Cheap array-like trigger: check if rhs has a "length" field.
-    // This is just a gate — correctness comes from ReadonlyArray<U> <: rhs below.
     rhsClauses = rhs.expandToClauses(subst, tenv, Contravariant());
     hasLength = rhsClauses.getSTypes(subst, tenv) match {
     | Some(stypes) ->
@@ -281,14 +292,45 @@ class VariadicTyping() {
     };
     if (!hasLength) return None();
 
-    // Build U = union of tuple element types, then check ReadonlyArray<U> <: rhs.
-    pos = tuple.pos;
-    u = tuple.tuple.reduce(
-      (acc, elt) -> TType::union(subst, tenv, acc, elt),
-      TType::bottom(pos),
-    );
-    readonlyArray = TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[u]));
-    Some(TType::isSub(subst, tenv, readonlyArray, rhs))
+    pos = lhs.pos;
+    // Mutable tuples → Array<U>, readonly tuples → ReadonlyArray<U>.
+    arrayName = if (isReadonly) "ReadonlyArray" else "Array";
+
+    // Try to extract element type from rhs (Array<E> or ReadonlyArray<E>).
+    // This avoids invariance issues: Array<literal_union> !<: Array<number>,
+    // but each literal element IS a subtype of number covariant.
+    rhsEltType: ?TType = None();
+    for (inst in rhs.insts) {
+      inst match {
+      | TSInst(Name(_, "Array"), TArgs(targs)) if (targs.size() == 1) ->
+        !rhsEltType = Some(targs[0])
+      | TSInst(Name(_, "ReadonlyArray"), TArgs(targs)) if (targs.size() == 1) ->
+        !rhsEltType = Some(targs[0])
+      | _ -> void
+      }
+    };
+
+    rhsEltType match {
+    | Some(eltType) ->
+      // Covariant element-wise check: each tuple element <: rhs element type.
+      for (elt in tupleElts) {
+        TType::isSub(subst, tenv, elt, eltType) match {
+        | STOk() -> void
+        | err @ STErrorOnTType _ -> return Some(err)
+        }
+      };
+      // Verify structural compatibility using the rhs element type (not literal union).
+      arrayType = TType::inst(Name(pos, arrayName), TArgs(Array[eltType]));
+      Some(TType::isSub(subst, tenv, arrayType, rhs))
+    | None() ->
+      // Structural rhs (not explicit Array/ReadonlyArray): use union of element types.
+      u = tupleElts.reduce(
+        (acc, elt) -> TType::union(subst, tenv, acc, elt),
+        TType::bottom(pos),
+      );
+      arrayType = TType::inst(Name(pos, arrayName), TArgs(Array[u]));
+      Some(TType::isSub(subst, tenv, arrayType, rhs))
+    }
   }
 
   // Checks that a rest parameter's type variable constraint uses ReadonlyArray.

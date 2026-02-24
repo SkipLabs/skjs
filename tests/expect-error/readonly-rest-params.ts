@@ -66,9 +66,8 @@ function tupleMutation(...args: [string, number]): void {
   args[0] = "x";
 }
 
-// Tuple rest is already not assignable to mutable Array
+// Concrete tuple rest is mutable — can be assigned to Array
 function tupleToArray(...args: [string, number]): void {
-  // @skjs-expect-error Invalid annotation
   const arr: Array<string | number> = args;
 }
 
