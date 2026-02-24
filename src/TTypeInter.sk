@@ -65,6 +65,25 @@ class TInter private (tys: ArraySet<TType>) extends TInst {
     | _ -> Success(Some(TInter(ArraySet::createFromMVector(result))))
     }
   }
+
+  static fun getTupleElements(
+    subst: mutable Subst,
+    tenv: TEnv,
+    tys: readonly Sequence<TType>,
+  ): ?(readonly Vector<Array<TType>>, Bool) {
+    /* ROUGH approximation of the intersection by a union */
+    readOnly = false;
+    eltsVec = mutable Vector[];
+    for (ty in tys) {
+      ty.getTupleElements(subst, tenv) match {
+      | None() -> return None()
+      | Some((elts, ro)) ->
+        eltsVec.push(elts);
+        !readOnly = readOnly || ro
+      }
+    };
+    Some((eltsVec, readOnly))
+  }
 }
 
 extension class TType {
