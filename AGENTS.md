@@ -3,18 +3,18 @@
 TypeScript type checker implemented in the Skip language. It checks a sound subset of TypeScript — programs that pass SKJS will not fail at runtime for type reasons.
 
 - **`.sk` files** in `src/` are the checker implementation (Skip language)
+- **`.sk` files** in `skjs-tests/tests/` are the test harness (separate skargo package)
 - **`.ts` files** in `tests/` and `examples/` are TypeScript user programs checked by SKJS
 
 ## Commands
 
 ```bash
-make build-skjs-bin-in-docker          # Build only the skjs binary (default for checker iteration)
+make build-in-docker                   # Build the skjs binary
 make check-file-in-docker FILE=tmp.ts  # Run skjs check on one file (fast iteration)
 make test-in-docker                    # Run all tests — every commit must pass this
-make check-in-docker                   # Type-check the Skip code without building
+make check-in-docker                   # Type-check the Skip code without building (fast incremental)
 make fmt                               # Format all code (skfmt for .sk, prettier for .ts/.json)
 make clean-in-docker                   # Clean build artifacts
-make build-in-docker                   # Full Docker build (slow; use for end-to-end/CI-style validation)
 ```
 
 ## Fast Iteration (Single File + Binary Variants)
@@ -22,7 +22,7 @@ make build-in-docker                   # Full Docker build (slow; use for end-to
 Use this loop for checker debugging (much faster than full builds/tests):
 
 ```bash
-make build-skjs-bin-in-docker
+make build-in-docker
 make check-file-in-docker FILE=tmp_atarrayof_semantic_fail.ts
 make check-file-in-docker FILE=tmp_atarrayof_semantic_fail.ts BIN=target/host/dev/skjs.some-variant
 ```
@@ -46,6 +46,7 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
 | Path | Contents |
 | --- | --- |
 | `src/*.sk` | Type checker implementation (~49 files): lexer, parser, type checker, module resolver |
+| `skjs-tests/` | Separate skargo package for test harness (`.sk` test files in `skjs-tests/tests/`) |
 | `tests/expect-error/*.ts` | Negative + positive type-checking tests with error annotations |
 | `examples/src/*.ts` | Working example programs demonstrating supported features |
 | `tests/projects/*/` | Multi-file test projects (auto-discovered — all must pass at every commit) |

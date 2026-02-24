@@ -11,7 +11,8 @@ build:
 
 .PHONY: test
 test:
-	skargo test
+	cd skjs-tests && skargo build
+	./skjs-tests/target/host/dev/test
 
 .PHONY: fmt-sk
 fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh
@@ -42,17 +43,17 @@ SKIP_DIR?=$(CURDIR)/../skip
 
 DOCKER_ENV_FLAGS=$(if $(UPDATE_EXPECT),-e UPDATE_EXPECT=$(UPDATE_EXPECT))
 
+.PHONY: test-in-docker
+test-in-docker:
+	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) sh -c 'cd skjs-tests && skargo build && cd /work/skjs && ./skjs-tests/target/host/dev/test'
+
 %-in-docker:
 	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) skargo $*
-
-.PHONY: build-skjs-bin-in-docker
-build-skjs-bin-in-docker:
-	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) skargo build --bin skjs
 
 .PHONY: check-file-in-docker
 check-file-in-docker:
 	: $${FILE:?Usage: make check-file-in-docker FILE=path/to/file.ts [BIN=target/host/dev/skjs]}
-	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) $(if $(BIN),$(BIN),./target/host/dev/skjs) check --import-stubs import-stubs "$(FILE)"
+	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) sh -c '$(if $(BIN),,skargo build --bin skjs && )$(if $(BIN),$(BIN),./target/host/dev/skjs) check --import-stubs import-stubs "$(FILE)"'
 
 .PHONY: clean
 clean:

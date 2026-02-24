@@ -1,0 +1,12 @@
+[package]
+name = "skjs-tests"
+version = "0.1.0"
+test-harness = "SKTest.main"
+
+[dependencies]
+std = { path = "../../skip/skiplang/prelude" }
+cli = { path = "../../skip/skiplang/cli" }
+skjs = { path = ".." }
+
+[dev-dependencies]
+sktest = { path = "../../skip/skiplang/sktest" }
