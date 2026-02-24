@@ -14,6 +14,32 @@
 
 module SKJS;
 
+const tupleName: String = "Tuple";
+const readonlyTupleName: String = "ReadonlyTuple";
+
+fun isMutableTupleName(name: String): Bool {
+  name.startsWith(tupleName) &&
+    !name.startsWith(readonlyTupleName) &&
+    {
+      suffix = name.substring(name.getIter().forward(tupleName.length()));
+      suffix.toIntOption().isSome()
+    }
+}
+
+fun isReadonlyTupleName(name: String): Bool {
+  name.startsWith(readonlyTupleName) &&
+    {
+      suffix = name.substring(
+        name.getIter().forward(readonlyTupleName.length()),
+      );
+      suffix.toIntOption().isSome()
+    }
+}
+
+fun isTupleName(name: String): Bool {
+  isMutableTupleName(name) || isReadonlyTupleName(name)
+}
+
 /***************************************************************************/
 // The class representing all the types.
 //
