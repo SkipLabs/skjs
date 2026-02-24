@@ -8,12 +8,38 @@ TypeScript type checker implemented in the Skip language. It checks a sound subs
 ## Commands
 
 ```bash
-make build-in-docker    # Build (produces ./target/host/dev/skjs)
-make test-in-docker     # Run all tests — every commit must pass this
-make check-in-docker    # Type-check the Skip code without building
-make fmt                # Format all code (skfmt for .sk, prettier for .ts/.json)
-make clean-in-docker    # Clean build artifacts
+make build-skjs-bin-in-docker          # Build only the skjs binary (default for checker iteration)
+make check-file-in-docker FILE=tmp.ts  # Run skjs check on one file (fast iteration)
+make test-in-docker                    # Run all tests — every commit must pass this
+make check-in-docker                   # Type-check the Skip code without building
+make fmt                               # Format all code (skfmt for .sk, prettier for .ts/.json)
+make clean-in-docker                   # Clean build artifacts
+make build-in-docker                   # Full Docker build (slow; use for end-to-end/CI-style validation)
 ```
+
+## Fast Iteration (Single File + Binary Variants)
+
+Use this loop for checker debugging (much faster than full builds/tests):
+
+```bash
+make build-skjs-bin-in-docker
+make check-file-in-docker FILE=tmp_atarrayof_semantic_fail.ts
+make check-file-in-docker FILE=tmp_atarrayof_semantic_fail.ts BIN=target/host/dev/skjs.some-variant
+```
+
+Notes:
+
+- `check-file-in-docker` defaults to `BIN=./target/host/dev/skjs`; override `BIN=...` to compare variants on the same repro.
+- Save binary variants manually when iterating on one code change:
+
+```bash
+cp target/host/dev/skjs target/host/dev/skjs.<label>
+```
+
+- Debug type inference/normalization with show intrinsics inside `.ts` repros:
+  - `__SKJS_show(expr)` prints the inferred type (often alias-preserving).
+  - `__SKJS_show_expanded(expr)` prints an expanded type (useful for internals/tuple-rest debugging).
+  - Optional 2nd arg string literal asserts the expected printed type (e.g. `__SKJS_show_expanded(x, "[]")`).
 
 ## Project Layout
 
