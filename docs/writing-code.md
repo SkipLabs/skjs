@@ -4,6 +4,10 @@
 
 SKJS is implemented in **Skip** (`.sk` files in `src/`). The TypeScript files (`.ts`) in this repo are user programs that SKJS type-checks — they are not part of the implementation.
 
+## Coding Style
+
+**Early returns:** Early return is a bug farm. When a function has early returns, make them visually prominent by using explicit if/else blocks with braces rather than flattening them. This makes the non-linear control flow obvious to readers.
+
 ## TypeScript Subset Rules
 
 [skjs-rules.md](../skjs-rules.md) is the definitive spec of the supported TypeScript subset. Examples and user programs should follow these rules; tests intentionally exercise and violate them to verify error reporting. Key points:
