@@ -302,8 +302,8 @@ extension class Clauses {
     clauses2: Clauses,
   ): Clauses {
     result = SortedMap[];
-    for (clause1 in clauses1.clauses) {
-      for (clause2 in clauses2.clauses) {
+    for (clause1 in clauses1) {
+      for (clause2 in clauses2) {
         Clause::inter(subst, tenv, clause1, clause2) match {
         | None() -> void
         | Some(inter) ->
