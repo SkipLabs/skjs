@@ -156,6 +156,14 @@ class TType private {
     )
   }
 
+  static fun tuple(
+    pos: PosRange,
+    tArgs: Array<TType>,
+    _isReadonly: Bool,
+  ): TType {
+    TType::single(TTuple(tArgs, pos))
+  }
+
   static fun fromTParamWithConstraint(
     subst: mutable Subst,
     tenv: TEnv,
