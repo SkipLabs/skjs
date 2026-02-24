@@ -341,10 +341,8 @@ class TType private {
     this.expandToClauses(subst, tenv, variance).getSTypes(subst, tenv)
   }
 
-  private fun expandToVectors(
-    subst: mutable Subst,
-    tenv: TEnv,
-    expandTVars: ?Variance,
+  private fun expandToVectorsGen(
+    expandInst: TInst -> ?TType,
   ): ?(mutable Vector<TInst>, mutable Vector<Clause>) /* None is Top */ {
     if (this.isTop()) return None();
     clauses = Vector::mcreateFromItems(this.clauses);
@@ -353,7 +351,7 @@ class TType private {
     seen = SortedSet::createFromItems(todo);
     while (!todo.isEmpty()) {
       inst = todo.pop();
-      tyDef = inst.maybeExpand(subst, tenv, expandTVars) match {
+      tyDef = expandInst(inst) match {
       | Some(ty) -> ty
       | None() ->
         insts.push(inst);
@@ -370,6 +368,14 @@ class TType private {
       }
     };
     Some((insts, clauses))
+  }
+
+  private fun expandToVectors(
+    subst: mutable Subst,
+    tenv: TEnv,
+    expandTVars: ?Variance,
+  ): ?(mutable Vector<TInst>, mutable Vector<Clause>) /* None is Top */ {
+    this.expandToVectorsGen(inst -> inst.maybeExpand(subst, tenv, expandTVars))
   }
 
   fun expand(subst: mutable Subst, tenv: TEnv, expandTVars: ?Variance): TType {
