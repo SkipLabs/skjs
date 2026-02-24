@@ -119,7 +119,7 @@ class VariadicTyping() {
         | None() ->
           // No tail: infer an exact tuple (including empty tuple for zero rest args).
           restArgTypes = args.slice(totalSize);
-          TType::single(TTuple(restArgTypes.toArray(), pos))
+          TType::tuple(pos, restArgTypes.toArray(), true)
         };
         saved = subst.save();
         subst.grow(tenv, tvar, inferred, Contravariant());

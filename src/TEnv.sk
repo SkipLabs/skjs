@@ -942,7 +942,7 @@ base class TEnv{
       | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
       }
     );
-    TType::single(TTuple(types, pos))
+    TType::tuple(pos, types, isReadonly)
   }
 
   private fun isValidTypeofExpr(expr: Expr): Bool {
