@@ -1976,9 +1976,15 @@ extension class TypeChecker {
       argExpr.value match {
       | Spread(spreadExpr) ->
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-        spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-          stypes.singleElt()
-        ) match {
+        spreadTy
+          .getSTypes(tcenv.subst, this, Covariant())
+          .flatMap(stypes ~> stypes.singleElt())
+          .map(sType ->
+            sType match {
+            | tObj @ TObject _ -> tObj.asTuple().default(tObj)
+            | _ -> sType
+            }
+          ) match {
         | Some(TObject(fields, _)) ->
           this.getIteratorElementType(tcenv.subst, fields, argExpr.pos) match {
           | None() ->
