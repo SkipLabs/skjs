@@ -8,3 +8,5 @@ docs/*.bbl
 docs/*.log
 docs/*.aux
 .claude/CLAUDE.md
+/.claude/settings.local.json
+/.skargoconfig
