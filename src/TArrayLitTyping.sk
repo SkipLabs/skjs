@@ -291,12 +291,17 @@ class ArrayLitTyping() {
       u2.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
         sTypes.getSingleTuple()
       ) match {
-      | Some(tuple2) ->
+      | Some(TTuple(elts, pos)) ->
         // Commit to tuple, then check subtyping.
         literalTupleTy = ArrayLitTyping::arrayLitToTupleType(arrLit);
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, literalTupleTy);
         return Some(
-          TType::isSub(subst, tenv, literalTupleTy, TType::single(tuple2)),
+          TType::isSub(
+            subst,
+            tenv,
+            literalTupleTy,
+            TType::tuple(pos, elts, false),
+          ),
         )
       | None() -> void
       }
