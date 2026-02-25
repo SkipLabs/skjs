@@ -53,7 +53,7 @@ test-in-docker:
 .PHONY: check-file-in-docker
 check-file-in-docker:
 	: $${FILE:?Usage: make check-file-in-docker FILE=path/to/file.ts [BIN=target/host/dev/skjs]}
-	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) sh -c '$(if $(BIN),,skargo build --bin skjs && )$(if $(BIN),$(BIN),./target/host/dev/skjs) check --import-stubs import-stubs "$(FILE)"'
+	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) $(if $(BIN),$(BIN),skargo run --) check --import-stubs import-stubs "$(FILE)"
 
 .PHONY: clean
 clean:

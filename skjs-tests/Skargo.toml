@@ -7,6 +7,4 @@ test-harness = "SKTest.main"
 std = { path = "../../skip/skiplang/prelude" }
 cli = { path = "../../skip/skiplang/cli" }
 skjs = { path = ".." }
-
-[dev-dependencies]
 sktest = { path = "../../skip/skiplang/sktest" }
