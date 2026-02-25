@@ -2029,27 +2029,25 @@ extension class TypeChecker {
       argExpr.value match {
       | Spread(spreadExpr) ->
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
+        // Try tuple detection: TTuple in clauses, then TupleN in insts (shallow).
+        tupEltsOpt: ?Array<TType> = None();
         spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
           stypes.singleElt()
         ) match {
-        | Some(TObject(fields, _)) ->
-          this.getIteratorElementType(tcenv.subst, fields, argExpr.pos) match {
-          | None() ->
-            tcenv.error(
-              Array[
-                (argExpr.pos, "Invalid spread argument"),
-                (spreadTy.pos, `It has type ${spreadTy}`),
-              ],
-            )
-          | Some(eltType) ->
-            !moreArgs = Some(
-              moreArgs match {
-              | None() -> eltType
-              | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
-              },
-            )
+        | Some(TTuple(elts, _)) -> !tupEltsOpt = Some(elts)
+        | _ -> void
+        };
+        if (tupEltsOpt.isNone()) {
+          for (inst in spreadTy.insts) {
+            inst match {
+            | TSInst(name, TArgs(tArgs)) if (isTupleName(name.value)) ->
+              !tupEltsOpt = Some(tArgs)
+            | _ -> void
+            }
           }
-        | Some(TTuple(tupElts, _)) ->
+        };
+        tupEltsOpt match {
+        | Some(tupElts) ->
           moreArgs match {
           | None() -> args.extend(tupElts)
           | Some(ma) ->
@@ -2058,13 +2056,39 @@ extension class TypeChecker {
             };
             !moreArgs = Some(ma)
           }
-        | _ ->
-          tcenv.error(
-            Array[
-              (argExpr.pos, "Invalid spread argument"),
-              (spreadTy.pos, `It has type ${spreadTy}`),
-            ],
-          )
+        | None() ->
+          spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+            stypes.singleElt()
+          ) match {
+          | Some(TObject(fields, _)) ->
+            this.getIteratorElementType(
+              tcenv.subst,
+              fields,
+              argExpr.pos,
+            ) match {
+            | None() ->
+              tcenv.error(
+                Array[
+                  (argExpr.pos, "Invalid spread argument"),
+                  (spreadTy.pos, `It has type ${spreadTy}`),
+                ],
+              )
+            | Some(eltType) ->
+              !moreArgs = Some(
+                moreArgs match {
+                | None() -> eltType
+                | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
+                },
+              )
+            }
+          | _ ->
+            tcenv.error(
+              Array[
+                (argExpr.pos, "Invalid spread argument"),
+                (spreadTy.pos, `It has type ${spreadTy}`),
+              ],
+            )
+          }
         }
       | _ ->
         argTy = this.expr(tcenv, argExpr, mostPrecise);
