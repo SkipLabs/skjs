@@ -244,7 +244,7 @@ class TType private {
       this
     } else {
       accum = TType::create(this.pos, this.insts, Clauses::empty());
-      for (clause in this.clauses.clauses) {
+      for (clause in this.clauses) {
         !accum = TType::union(subst, tenv, accum, f(clause));
       };
       accum
@@ -347,7 +347,7 @@ class TType private {
     expandTVars: ?Variance,
   ): ?(mutable Vector<TInst>, mutable Vector<Clause>) /* None is Top */ {
     if (this.isTop()) return None();
-    clauses = this.clauses.clauses.toVector().clone();
+    clauses = Vector::mcreateFromItems(this.clauses);
     insts: mutable Vector<TInst> = mutable Vector[];
     todo = Vector::mcreateFromItems(this.insts);
     seen = SortedSet::createFromItems(todo);
@@ -365,13 +365,10 @@ class TType private {
         }
       | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
       };
-      for (clause in tyDef.clauses.clauses) {
-        if (clause.isTop()) {
-          return None()
-        } else {
-          clauses.push(clause)
-        }
+      if (tyDef.clauses.isTop()) {
+        return None();
       };
+      clauses.extend(tyDef.clauses);
       for (newInst in tyDef.insts) {
         if (seen.contains(newInst)) continue;
         !seen = seen.set(newInst);
@@ -1577,7 +1574,7 @@ class Clause private (
 // 〚 clauses 〛 = ⨆ 〚 c 〛, for c in clauses.clauses
 class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
-) uses XXHashable, Orderable {
+) extends Sequence<Clause> uses XXHashable, Orderable {
   /*
     Invariant: if one of the clauses is Top, then there are no other clauses
    */
@@ -1595,12 +1592,16 @@ class Clauses private (
     Clauses(InternalKeyedArrayMap::single(Clause::top()))
   }
 
-  fun map(f: Clause -> ?Clause): Clauses {
+  fun filterMap(f: Clause -> ?Clause): Clauses {
     Clauses::create(
       InternalKeyedArrayMap::createFromIterator(
         this.clauses.values().filterMap(f),
       ),
     )
+  }
+
+  fun size(): Int {
+    this.clauses.size()
   }
 
   fun isEmpty(): Bool {

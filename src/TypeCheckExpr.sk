@@ -1102,7 +1102,7 @@ extension class TypeChecker {
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
         // Clone subst: this is a diagnostic check ("always false/true?"),
         // not a type assignment. It should not grow type variables.
-        if (ty1.clauses.clauses.isEmpty() && ty2.clauses.clauses.isEmpty()) {
+        if (ty1.clauses.isEmpty() && ty2.clauses.isEmpty()) {
           clonedSubst = tcenv.subst.clone();
           TType::isSub(clonedSubst, this, ty1, ty2) match {
           | STOk() -> void

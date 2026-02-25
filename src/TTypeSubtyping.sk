@@ -866,9 +866,9 @@ extension class Clauses {
     clauses2: Clauses,
   ): STResult<Clauses> {
     savedSubst = subst.save();
-    for (inter1 in clauses1.clauses) {
+    for (inter1 in clauses1) {
       errors = List[];
-      for (inter2 in clauses2.clauses) {
+      for (inter2 in clauses2) {
         if (!inter1.vars.contains(inter2.vars)) {
           continue;
         };
