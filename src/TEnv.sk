@@ -1440,6 +1440,9 @@ base class TEnv{
     PrimLiterals::ofSet(strings, pos) match {
     | None() -> void
     | strLits @ Some _ ->
+      for (str in strings) {
+        str.toIntOption().each(_intStr -> !numbers = numbers.set(str))
+      };
       litsType = PrimLiterals::ofSet(numbers, pos) match {
       | None() -> TType::single(TPrimValue(TString(), strLits, pos))
       | nbrLits @ Some _ ->
