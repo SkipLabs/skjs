@@ -182,6 +182,10 @@ class TType private {
     )
   }
 
+  static fun readonlyTuple(pos: PosRange, tArgs: Array<TType>): TType {
+    TType::tuple(pos, tArgs, true)
+  }
+
   static fun tuple(
     pos: PosRange,
     tArgs: Array<TType>,
