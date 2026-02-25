@@ -856,6 +856,13 @@ base class SType private (
     }
   }
 
+  fun isTuple(): Bool {
+    this match {
+    | TTuple _ -> true
+    | _ -> false
+    }
+  }
+
   fun project(): STypeTag {
     this.tag()
   }

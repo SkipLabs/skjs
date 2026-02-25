@@ -173,7 +173,7 @@ class ArrayLitTyping() {
   ): Bool {
     constraints.any(cstr ->
       cstr.getSTypes(subst, tenv, Covariant()) match {
-      | Some(stypes) -> stypes.any(stype -> stype is TTuple _)
+      | Some(stypes) -> stypes.any(stype -> stype.isTuple())
       | _ -> false
       }
     )
