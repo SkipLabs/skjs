@@ -321,13 +321,10 @@ class TType private {
         | TPrimUnit _
         | TPrimValue _ ->
           continue
-        | TTuple(tys, _) ->
-          for (ty in tys) {
-            if (!ty.isPrimitiveType(subst, tenv)) return false
-          }
         | TAlgebraic _
         | TObject _
-        | TPromise _ ->
+        | TPromise _
+        | TTuple _ ->
           return false
         }
       };
