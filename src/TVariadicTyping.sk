@@ -50,9 +50,8 @@ class VariadicTyping() {
     };
     saved = subst.save();
     // Expand (resolves type aliases, applies tvar bindings + constraints)
-    clauses = fullType.expandToClauses(subst, tenv, Contravariant());
-    clauses.getSingleTuple() match {
-    | Some(TTuple(tupleElts, _)) -> return Some(tupleElts)
+    fullType.getTupleElements(subst, tenv) match {
+    | Some((elts, _readOnly)) -> return Some(elts)
     | None() -> void
     };
     // Fallback: for a bound tvar, expandToClauses intersects the binding
