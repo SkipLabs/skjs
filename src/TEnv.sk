@@ -763,9 +763,7 @@ base class TEnv{
           Name(pos, "ReadonlyArray"),
           TArgs(Array[TType::bottom(pos)]),
         )
-      | TATuple _ ->
-        tcenvb.error(Array[(pos, "TODO readonly")]);
-        this.normalize(tcenvb, ro)
+      | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, true)
       | _ ->
         tcenvb.error(
           Array[
@@ -916,23 +914,35 @@ base class TEnv{
         this.normalize(tcenvb, ty1),
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
-    | TATuple(tupleElts) ->
-      typeVec = mutable Vector[];
-      for (ty in tupleElts) {
-        ty match {
-        | TEType(n, optional, x) ->
-          if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
-          if (optional is Some _) {
-            tcenvb.error(Array[(pos, "TODO optional element tuple")])
-          };
-          typeVec.push(x)
-        | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
-        }
-      };
-      types = typeVec.toArray();
-      TType::single(TTuple(types.map(ty -> this.normalize(tcenvb, ty)), pos))
+    | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
     | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
     }
+  }
+
+  private fun normalizeTuple(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    taTuple: TATuple,
+    isReadonly: Bool,
+  ): TType {
+    if (isReadonly) {
+      tcenvb.error(Array[(pos, "TODO readonly")])
+    };
+    tupleElts = taTuple match {
+    | TATuple(elts) -> elts
+    };
+    types = tupleElts.map(ty ->
+      ty match {
+      | TEType(n, optional, x) ->
+        if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
+        if (optional is Some _) {
+          tcenvb.error(Array[(pos, "TODO optional element tuple")])
+        };
+        this.normalize(tcenvb, x)
+      | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
+      }
+    );
+    TType::tuple(pos, types, isReadonly)
   }
 
   private fun isValidTypeofExpr(expr: Expr): Bool {
@@ -1430,6 +1440,9 @@ base class TEnv{
     PrimLiterals::ofSet(strings, pos) match {
     | None() -> void
     | strLits @ Some _ ->
+      for (str in strings) {
+        str.toIntOption().each(_intStr -> !numbers = numbers.set(str))
+      };
       litsType = PrimLiterals::ofSet(numbers, pos) match {
       | None() -> TType::single(TPrimValue(TString(), strLits, pos))
       | nbrLits @ Some _ ->

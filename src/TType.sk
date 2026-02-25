@@ -156,6 +156,14 @@ class TType private {
     )
   }
 
+  static fun tuple(
+    pos: PosRange,
+    tArgs: Array<TType>,
+    _isReadonly: Bool,
+  ): TType {
+    TType::single(TTuple(tArgs, pos))
+  }
+
   static fun fromTParamWithConstraint(
     subst: mutable Subst,
     tenv: TEnv,
@@ -313,13 +321,10 @@ class TType private {
         | TPrimUnit _
         | TPrimValue _ ->
           continue
-        | TTuple(tys, _) ->
-          for (ty in tys) {
-            if (!ty.isPrimitiveType(subst, tenv)) return false
-          }
         | TAlgebraic _
         | TObject _
-        | TPromise _ ->
+        | TPromise _
+        | TTuple _ ->
           return false
         }
       };
@@ -851,6 +856,13 @@ base class SType private (
     }
   }
 
+  fun isTuple(): Bool {
+    this match {
+    | TTuple _ -> true
+    | _ -> false
+    }
+  }
+
   fun project(): STypeTag {
     this.tag()
   }
@@ -1229,6 +1241,13 @@ class STypes private (
   fun getConstantString(): ?PrimLiteral {
     this.singleElt() match {
     | Some(TPrimValue(TString(), Some(lits), _)) -> lits.singleElt()
+    | _ -> None()
+    }
+  }
+
+  fun getSingleTuple(): ?TTuple {
+    this.singleElt() match {
+    | Some(tuple @ TTuple _) -> Some(tuple)
     | _ -> None()
     }
   }
@@ -1624,18 +1643,11 @@ class Clauses private (
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
   }
 
-  // Returns the tuple if clauses is a single clause whose only stype is a TTuple.
+  // Returns the tuple if clauses is a single clause whose only stype is a Tuple.
   fun getSingleTuple(): ?TTuple {
-    clause = this.clauses.singleElt() match {
-    | Some(c) -> c
-    | _ -> return None()
-    };
-    clause.stypes.flatMap(stypes -> {
-      stypes.singleElt() match {
-      | Some(tuple @ TTuple _) -> Some(tuple)
-      | _ -> None()
-      }
-    })
+    this.clauses.singleElt().flatMap(clause ->
+      clause.stypes.flatMap(sTypes -> sTypes.getSingleTuple())
+    )
   }
 
   // t.mapSTypes(f) is t with stypes updated by f

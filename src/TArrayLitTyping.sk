@@ -90,9 +90,9 @@ class ArrayLitTyping() {
     }
   }
 
-  // Converts ArrayLit<α, elts> to Tuple[elts...].
+  // Converts ArrayLit<α, elts> to readonly Tuple[elts...].
   static private fun arrayLitToTupleType(arrLit: TArrayLit): TType {
-    TType::single(TTuple(arrLit.tupleElts, arrLit.tvar.pos))
+    TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, true)
   }
 
   // Widens literal primitive types (e.g., 42 -> number) in ty.
@@ -173,7 +173,7 @@ class ArrayLitTyping() {
   ): Bool {
     constraints.any(cstr ->
       cstr.getSTypes(subst, tenv, Covariant()) match {
-      | Some(stypes) -> stypes.any(stype -> stype is TTuple _)
+      | Some(stypes) -> stypes.any(stype -> stype.isTuple())
       | _ -> false
       }
     )
@@ -288,17 +288,17 @@ class ArrayLitTyping() {
         return Some(result)
       };
       // Case 2c: ArrayLit<α, elts> <: Tuple[U1, ...]
-      u2.getSTypes(subst, tenv, Covariant()).flatMap(stypes ->
-        stypes.singleElt()
+      u2.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
+        sTypes.getSingleTuple()
       ) match {
-      | Some(tuple2 @ TTuple _) ->
+      | Some(tuple2) ->
         // Commit to tuple, then check subtyping.
         literalTupleTy = ArrayLitTyping::arrayLitToTupleType(arrLit);
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, literalTupleTy);
         return Some(
           TType::isSub(subst, tenv, literalTupleTy, TType::single(tuple2)),
         )
-      | _ -> void
+      | None() -> void
       }
     | None() -> void
     };
