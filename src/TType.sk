@@ -891,6 +891,7 @@ base class SType private (
   fun isTuple(): Bool {
     this match {
     | TTuple _ -> true
+    | TObject(fields, _pos) -> fields.isTuple()
     | _ -> false
     }
   }
@@ -1272,6 +1273,11 @@ class TFields private {
         ),
       }
     }
+  }
+
+  fun isTuple(): Bool {
+    this.fields.containsKey(FieldNameString("length")) &&
+      this.fields.containsKey(FieldNameString("0"))
   }
 
   fun asTuple(): ?Array<TType> {
