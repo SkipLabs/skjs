@@ -520,6 +520,10 @@ class TObject(fields: TFields) extends SType {
       this.map(fields -> fields.removeFields(fieldsToRemove))
     }
   }
+
+  fun asTuple(): ?TTuple {
+    this.fields.asTuple().map(elts -> TTuple(elts, this.pos))
+  }
 }
 
 const kAlgebraicBranchFieldName: String = "kind";
@@ -1270,6 +1274,20 @@ class TFields private {
     }
   }
 
+  fun asTuple(): ?Array<TType> {
+    if (!this.fields.containsKey(FieldNameString("length"))) {
+      return None()
+    };
+    elts = mutable Vector[];
+    loop {
+      this.maybeGet(elts.size().toString()) match {
+      | None() -> break void
+      | Some(field) -> elts.push(field.type)
+      }
+    };
+    if (elts.isEmpty()) None() else Some(elts.toArray())
+  }
+
   fun toString(): String {
     prettyPrintFields(this)
   }
@@ -1336,6 +1354,7 @@ class STypes private (
   fun getSingleTuple(): ?TTuple {
     this.singleElt() match {
     | Some(tuple @ TTuple _) -> Some(tuple)
+    | Some(tObj @ TObject _) -> tObj.asTuple()
     | _ -> None()
     }
   }
