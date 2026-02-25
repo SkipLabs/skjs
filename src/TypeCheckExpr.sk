@@ -52,9 +52,15 @@ extension class TypeChecker {
         notSupported(restName.pos, "Rest element in array destructuring")
       | None() -> void
       };
-      type.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
+      type
+        .getSTypes(tcenv.subst, this, Covariant())
+        .flatMap(sTypes ~> sTypes.singleElt())
+        .map(sType ->
+          sType match {
+          | tObj @ TObject _ -> tObj.asTuple().default(tObj)
+          | _ -> sType
+          }
+        ) match {
       | Some(TTuple(tyl, _)) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
           arrPat[i] match {
