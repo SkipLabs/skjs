@@ -131,7 +131,13 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
   mutable fun gen(pos: PosRange): TVar {
     id = this.version;
     this.!version = this.version + 1;
-    TVar::create(pos, TVarID(id))
+    TVar::create(pos, TVarID::create(id))
+  }
+
+  mutable fun genForField(pos: PosRange): TVar {
+    id = this.version;
+    this.!version = this.version + 1;
+    TVar::create(pos, TVarID::createForField(id))
   }
 
   readonly fun isOpen(tvar: TVar): Bool {

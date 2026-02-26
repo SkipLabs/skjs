@@ -748,7 +748,7 @@ extension class TypeChecker {
               y.value is Object _ ||
               ttype.isConcretePrimitive()
             ) {
-              this.makeBoundTVar(tcenv, ttype)
+              this.makeBoundTVarForField(tcenv, ttype)
             } else {
               ttype
             },

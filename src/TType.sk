@@ -1366,13 +1366,39 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
-value class TVarID(private value: Int) uses Orderable, XXHashable {
-  fun toString(): String {
-    this.value.toString()
+base class TVarID uses Orderable, XXHashable {
+  children =
+  // A normal type variable identifier
+  | TVID(value: Int)
+  // A type variable that was introduced to infer the type of a field
+  // in a literal object.
+  | TVIDForField(value: Int)
+
+  static fun create(id: Int): TVarID {
+    TVID(id)
+  }
+
+  static fun createForField(id: Int): TVarID {
+    TVIDForField(id)
+  }
+
+  fun valueForHash(): Int
+  | TVID(x) -> x
+  | TVIDForField(x) -> x
+
+  fun toString(): String
+  | TVID(x) -> x.toString()
+  | TVIDForField(x) -> x.toString()
+
+  fun isForField(): Bool {
+    this match {
+    | TVIDForField _ -> true
+    | _ -> false
+    }
   }
 
   fun xxhash(): XXHash {
-    XXHash(this.value)
+    XXHash(this.valueForHash())
   }
 }
 
@@ -1383,6 +1409,10 @@ class TVar private (
 ) extends TInst {
   static fun create(pos: PosRange, id: TVarID): TVar {
     TVar(pos, id, SortedSet[])
+  }
+
+  fun isForField(): Bool {
+    this.id.isForField()
   }
 
   fun addConstraint(ty: TType): TVar {
