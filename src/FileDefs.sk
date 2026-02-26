@@ -513,19 +513,54 @@ mutable class FileDefsState private {
     state.processDefs(defs)
   }
 
+  private mutable fun checkDuplicateDef(name: Name): void {
+    this.defs.maybeGet(name.value) match {
+    | None() -> void
+    | Some(existingDefs) ->
+      existingPos = static::fileDefPos(existingDefs[0]);
+      existingPos match {
+      | None() -> void
+      | Some(pos) ->
+        this.fileErrors.push(
+          TypingError(
+            Array[
+              (name.pos, `${name} is already defined`),
+              (pos, "Previous definition was here"),
+            ],
+          ),
+        )
+      }
+    }
+  }
+
+  private static fun fileDefPos(def: FileDef): ?PosRange {
+    def match {
+    | TopLevelFunDef{name => FNNormal(n)} -> Some(n.pos)
+    | TypeDef{name => n} -> Some(n.pos)
+    | Class{name => n} -> Some(n.pos)
+    | Enum(_, n, _) -> Some(n.pos)
+    | FDVar(_, n, _, _) -> Some(n.pos)
+    | FDNamespace _ -> None()
+    }
+  }
+
   private mutable fun newDef(isExport: Bool, def: Declarable): void {
     def match {
     | d @ TypeDef{name} ->
       if (isExport) mapPush(this.exported, name.value, name.value);
+      this.checkDuplicateDef(name);
       mapPush(this.defs, name.value, d)
     | d @ Class{name} ->
       if (isExport) mapPush(this.exported, name.value, name.value);
+      this.checkDuplicateDef(name);
       mapPush(this.defs, name.value, d)
     | d @ Enum(_, name, _) ->
       if (isExport) mapPush(this.exported, name.value, name.value);
+      this.checkDuplicateDef(name);
       mapPush(this.defs, name.value, d)
     | Namespace(name, defs) ->
       if (isExport) mapPush(this.exported, name.value, name.value);
+      this.checkDuplicateDef(name);
       mapPush(
         this.defs,
         name.value,
@@ -536,10 +571,11 @@ mutable class FileDefsState private {
       mapPush(this.modules, name.value, this.createSubFileDefs(defs))
     | d @ TopLevelFunDef{name} ->
       fname = name match {
-      | FNNormal(n) -> n.value
+      | FNNormal(n) -> n
       };
-      if (isExport) mapPush(this.exported, fname, fname);
-      mapPush(this.defs, fname, d)
+      if (isExport) mapPush(this.exported, fname.value, fname.value);
+      this.checkDuplicateDef(fname);
+      mapPush(this.defs, fname.value, d)
 
     | VarDefs(k, varDefs) ->
       for (varDef in varDefs) {
@@ -548,6 +584,7 @@ mutable class FileDefsState private {
           if (isExport) {
             mapPush(this.exported, exportName.value, exportName.value)
           };
+          this.checkDuplicateDef(exportName);
           mapPush(
             this.defs,
             exportName.value,

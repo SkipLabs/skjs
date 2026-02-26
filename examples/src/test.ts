@@ -11,7 +11,7 @@ function reverse<T>(l: list<T>): list<T> {
   return result;
 }
 
-function list<T>(...elts: T[]): list<T> {
+function list2<T>(...elts: T[]): list<T> {
   let result = null;
   for (let i = 0; i < elts.length; i++) {
     const elt = elts[i];
@@ -29,7 +29,7 @@ function myObject(): { field1: number } {
 }
 
 function main(): void {
-  console.log(list(1, 2, true));
+  console.log(list2(1, 2, true));
 }
 
 main();
