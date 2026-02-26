@@ -75,31 +75,31 @@ export interface EagerCollection<K extends Json, V extends Json>
 
   getUnique(key: K, _default?: { ifNone?: V; ifMany?: V }): V & DepSafe;
 
-  map<K2 extends Json, V2 extends Json, Params extends DepSafe[]>(
+  map<K2 extends Json, V2 extends Json, Params extends readonly DepSafe[]>(
     mapper: new (...params: Params) => Mapper<K, V, K2, V2>,
     ...params: Params
   ): EagerCollection<K2, V2>;
 
-  reduce<Accum extends Json, Params extends DepSafe[]>(
+  reduce<Accum extends Json, Params extends readonly DepSafe[]>(
     reducer: new (...params: Params) => Reducer<V, Accum>,
     ...params: Params
   ): EagerCollection<K, Accum>;
 
-  mapReduce<K2 extends Json, V2 extends Json, MapperParams extends DepSafe[]>(
+  mapReduce<K2 extends Json, V2 extends Json, MapperParams extends readonly DepSafe[]>(
     mapper: new (...params: MapperParams) => Mapper<K, V, K2, V2>,
     ...mapperParams: MapperParams
-  ): <Accum extends Json, ReducerParams extends DepSafe[]>(
+  ): <Accum extends Json, ReducerParams extends readonly DepSafe[]>(
     reducer: new (...params: ReducerParams) => Reducer<V2, Accum>,
     ...reducerParams: ReducerParams
   ) => EagerCollection<K2, Accum>;
 
   slice(start: K & DepSafe, end: K & DepSafe): EagerCollection<K, V>;
 
-  slices(...ranges: [K & DepSafe, K & DepSafe][]): EagerCollection<K, V>;
+  slices(...ranges: readonly [K & DepSafe, K & DepSafe][]): EagerCollection<K, V>;
 
   take(limit: int): EagerCollection<K, V>;
 
-  merge(...others: EagerCollection<K, V>[]): EagerCollection<K, V>;
+  merge(...others: readonly EagerCollection<K, V>[]): EagerCollection<K, V>;
 
   size(): number;
 }
