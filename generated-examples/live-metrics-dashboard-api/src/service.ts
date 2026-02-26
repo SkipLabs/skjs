@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   MetricId,
@@ -15,8 +16,8 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  metrics: Entry<MetricId, MetricValue>[];
+export type Inputs = {
+  metrics: InputDefinition<MetricId, MetricValue>;
 };
 
 export type InputCollections = {
@@ -29,8 +30,8 @@ export type GraphCollections = {
   metrics: EagerCollection<OrderedMetricKey, MetricValue>;
 };
 
-type Resources = {
-  "metrics": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "metrics": ResourceClass<GraphCollections, {}>;
 };
 
 class OrderByTimestampMapper implements Mapper<MetricId, MetricValue, OrderedMetricKey, MetricValue> {
@@ -39,10 +40,8 @@ class OrderByTimestampMapper implements Mapper<MetricId, MetricValue, OrderedMet
     values: Values<MetricValue>,
     _context: Context
   ): Iterable<[OrderedMetricKey, MetricValue]> {
-    const arr = values.toArray();
     const result: Array<[OrderedMetricKey, MetricValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const orderedKey: OrderedMetricKey = [v.timestamp, key];
       result.push([orderedKey, v]);
     }
@@ -51,7 +50,7 @@ class OrderByTimestampMapper implements Mapper<MetricId, MetricValue, OrderedMet
 }
 
 export class MetricsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -62,13 +61,12 @@ export class MetricsResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyMetrics: Entry<MetricId, MetricValue>[] = Array.of();
-    this.initialData = { metrics: emptyMetrics };
+        this.inputs = { metrics: new InputDefinition<MetricId, MetricValue>([]) };
     this.resources = { "metrics": MetricsResource };
   }
 
@@ -78,6 +76,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

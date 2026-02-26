@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   FileId,
@@ -34,8 +35,8 @@ export type File = {
   tags: Array<string>;
 };
 
-type Inputs = {
-  files: Entry<FileId, FileValue>[];
+export type Inputs = {
+  files: InputDefinition<FileId, FileValue>;
 };
 
 export type InputCollections = {
@@ -49,8 +50,8 @@ export type GraphCollections = {
   filesByTag: EagerCollection<FileByTagId, FileByTagValue>;
 };
 
-type Resources = {
-  "files": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "files": ResourceClass<GraphCollections, {}>;
 };
 
 export class FileToTypeKeyMapper implements Mapper<FileId, FileValue, string, File> {
@@ -62,10 +63,8 @@ export class FileToTypeKeyMapper implements Mapper<FileId, FileValue, string, Fi
     values: Values<FileValue>,
     _context: Context
   ): Iterable<[string, File]> {
-    const arr = values.toArray();
     const result: Array<[string, File]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const file: File = {
         id: key,
         name: v.name,
@@ -91,10 +90,8 @@ export class FilesByTypeOutputMapper implements Mapper<string, Array<File>, File
     values: Values<Array<File>>,
     _context: Context
   ): Iterable<[FileByTypeId, FileByTypeValue]> {
-    const arr = values.toArray();
     const result: Array<[FileByTypeId, FileByTypeValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const filesArray = arr[i]!;
+    for (const filesArray of values) {
       const value: FileByTypeValue = {
         extension: key,
         files: filesArray
@@ -114,10 +111,8 @@ export class FileToRecentFileMapper implements Mapper<FileId, FileValue, RecentF
     values: Values<FileValue>,
     _context: Context
   ): Iterable<[RecentFileId, RecentFileValue]> {
-    const arr = values.toArray();
     const result: Array<[RecentFileId, RecentFileValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const recentFile: RecentFileValue = {
         name: v.name,
         size: v.size,
@@ -140,10 +135,8 @@ export class FileToTagKeyMapper implements Mapper<FileId, FileValue, string, Fil
     values: Values<FileValue>,
     _context: Context
   ): Iterable<[string, File]> {
-    const arr = values.toArray();
     const result: Array<[string, File]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const file: File = {
         id: key,
         name: v.name,
@@ -155,8 +148,7 @@ export class FileToTagKeyMapper implements Mapper<FileId, FileValue, string, Fil
         tags: v.tags
       };
       const tags = v.tags;
-      for (let j = 0; j < tags.length; j++) {
-        const tag = tags[j]!;
+      for (const tag of tags) {
         result.push([tag, file]);
       }
     }
@@ -173,10 +165,8 @@ export class FilesByTagOutputMapper implements Mapper<string, Array<File>, FileB
     values: Values<Array<File>>,
     _context: Context
   ): Iterable<[FileByTagId, FileByTagValue]> {
-    const arr = values.toArray();
     const result: Array<[FileByTagId, FileByTagValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const filesArray = arr[i]!;
+    for (const filesArray of values) {
       const value: FileByTagValue = {
         tag: key,
         files: filesArray
@@ -198,8 +188,8 @@ export class FileArrayReducer implements Reducer<File, Array<File>> {
       return Array.of(value);
     }
     const newArray: Array<File> = Array.of();
-    for (let i = 0; i < accum.length; i++) {
-      newArray.push(accum[i]!);
+    for (const item of accum) {
+      newArray.push(item);
     }
     newArray.push(value);
     return newArray;
@@ -207,8 +197,7 @@ export class FileArrayReducer implements Reducer<File, Array<File>> {
 
   remove(accum: Array<File>, value: File & DepSafe): Nullable<Array<File>> {
     const newArray: Array<File> = Array.of();
-    for (let i = 0; i < accum.length; i++) {
-      const item = accum[i]!;
+    for (const item of accum) {
       if (item.id !== value.id) {
         newArray.push(item);
       }
@@ -221,7 +210,7 @@ export class FileArrayReducer implements Reducer<File, Array<File>> {
 }
 
 export class FilesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -232,13 +221,12 @@ export class FilesResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyFiles: Entry<FileId, FileValue>[] = Array.of();
-    this.initialData = { files: emptyFiles };
+        this.inputs = { files: new InputDefinition<FileId, FileValue>([]) };
     this.resources = { "files": FilesResource };
   }
 
@@ -257,6 +245,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

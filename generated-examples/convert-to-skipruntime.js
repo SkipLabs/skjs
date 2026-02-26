@@ -144,21 +144,64 @@ function convertServiceTs(serviceDir) {
   content = content.replace(/^type Inputs\s*=/gm, 'export type Inputs =');
 
   // Step 6: Update Resources type
+  // Build a map from resource name -> constructor param type by:
+  // 1. Finding `this.resources = { "name": ClassName, ... }`
+  // 2. Finding each class's constructor param type
+  const resourceParamTypes = {};
+  // Parse this.resources assignment to get name -> className mapping
+  const resourcesAssignRegex = /["']?([\w-]+)["']?\s*:\s*(\w+)/g;
+  const resourcesAssignMatch = content.match(/this\.(?:resources|initialData)\s*=\s*\{[^}]*\}/g);
+  const resourcesAssign = content.match(/this\.resources\s*=\s*\{([^}]+)\}/);
+  if (resourcesAssign) {
+    let m;
+    while ((m = resourcesAssignRegex.exec(resourcesAssign[1])) !== null) {
+      const resourceName = m[1];
+      const className = m[2];
+      // Find the class constructor param type
+      const ctorRegex = new RegExp(`class\\s+${className}[^{]*\\{[\\s\\S]*?constructor\\s*\\(([^)]*)\\)`, 'm');
+      const ctorMatch = content.match(ctorRegex);
+      if (ctorMatch) {
+        const paramStr = ctorMatch[1].trim();
+        if (!paramStr || paramStr.startsWith('_params')) {
+          // Unused params or no params -> {}
+          resourceParamTypes[resourceName] = '{}';
+        } else {
+          // Extract the type from "params: SomeType" or "params: SomeType = default"
+          const typeMatch = paramStr.match(/\w+:\s*([^=,]+)/);
+          if (typeMatch) {
+            const paramType = typeMatch[1].trim();
+            if (paramType === 'Json') {
+              resourceParamTypes[resourceName] = '{}';
+            } else {
+              resourceParamTypes[resourceName] = paramType;
+            }
+          } else {
+            resourceParamTypes[resourceName] = '{}';
+          }
+        }
+      } else {
+        resourceParamTypes[resourceName] = '{}';
+      }
+    }
+  }
+
   // Sort by length descending so longer names (like "webhooks-deliveries") are processed before shorter ones ("deliveries")
   if (resourcesMatch) {
     let newResourcesType = resourcesMatch[0];
     const sortedResources = resources.slice().sort((a, b) => b.length - a.length);
     for (const resourceName of sortedResources) {
+      const paramType = resourceParamTypes[resourceName] || '{}';
       // Handle quoted resource names - require quotes to avoid partial matches
       const escapedName = escapeRegex(resourceName);
       const pattern = new RegExp(`["']${escapedName}["']:\\s*new\\s*\\([^)]*\\)\\s*=>\\s*Resource<[^>]+>`, 'g');
-      newResourcesType = newResourcesType.replace(pattern, `"${resourceName}": ResourceClass<GraphCollections, {}>`);
+      newResourcesType = newResourcesType.replace(pattern, `"${resourceName}": ResourceClass<GraphCollections, ${paramType}>`);
     }
     // Also handle unquoted names (rare)
     for (const resourceName of sortedResources) {
       if (!resourceName.includes('-')) {
+        const paramType = resourceParamTypes[resourceName] || '{}';
         const pattern = new RegExp(`(?<![\\w-])${resourceName}:\\s*new\\s*\\([^)]*\\)\\s*=>\\s*Resource<[^>]+>`, 'g');
-        newResourcesType = newResourcesType.replace(pattern, `"${resourceName}": ResourceClass<GraphCollections, {}>`);
+        newResourcesType = newResourcesType.replace(pattern, `"${resourceName}": ResourceClass<GraphCollections, ${paramType}>`);
       }
     }
     // Handle index signature pattern: [name: string]: new (params: Json) => Resource<...>

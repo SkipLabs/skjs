@@ -1,14 +1,15 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   CustomerId,
@@ -22,10 +23,10 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  customers: Entry<CustomerId, CustomerValue>[];
-  products: Entry<ProductId, ProductValue>[];
-  orders: Entry<OrderId, OrderValue>[];
+export type Inputs = {
+  customers: InputDefinition<CustomerId, CustomerValue>;
+  products: InputDefinition<ProductId, ProductValue>;
+  orders: InputDefinition<OrderId, OrderValue>;
 };
 
 export type InputCollections = {
@@ -41,10 +42,10 @@ export type GraphCollections = {
   orderSummaries: EagerCollection<OrderSummaryId, OrderSummaryValue>;
 };
 
-type Resources = {
-  "customers": new (params: Json) => Resource<GraphCollections>;
-  "products": new (params: Json) => Resource<GraphCollections>;
-  "orders": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "customers": ResourceClass<GraphCollections, {}>;
+  "products": ResourceClass<GraphCollections, {}>;
+  "orders": ResourceClass<GraphCollections, {}>;
 };
 
 export class OrderSummaryMapper implements Mapper<OrderId, OrderValue, OrderSummaryId, OrderSummaryValue> {
@@ -60,19 +61,17 @@ export class OrderSummaryMapper implements Mapper<OrderId, OrderValue, OrderSumm
     _context: Context
   ): Iterable<[OrderSummaryId, OrderSummaryValue]> {
     const result: Array<[OrderSummaryId, OrderSummaryValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const order: OrderValue & DepSafe = arr[i]!;
+    for (const order of values) {
       const customerArr = this.customers.getArray(order.customerId);
       let customerName = "Unknown";
-      if (customerArr.length > 0) {
-        customerName = customerArr[0]!.name;
+      const customerEntry = customerArr[0];
+      if (customerEntry !== undefined) {
+        customerName = customerEntry.name;
       }
       let itemCount = 0;
       let totalAmount = 0;
       const items = order.items;
-      for (let j = 0; j < items.length; j++) {
-        const item = items[j]!;
+      for (const item of items) {
         itemCount = itemCount + item.quantity;
         totalAmount = totalAmount + (item.quantity * item.unitPrice);
       }
@@ -91,7 +90,7 @@ export class OrderSummaryMapper implements Mapper<OrderId, OrderValue, OrderSumm
 }
 
 export class CustomersResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -103,7 +102,7 @@ export class CustomersResource implements Resource<GraphCollections> {
 }
 
 export class ProductsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -115,7 +114,7 @@ export class ProductsResource implements Resource<GraphCollections> {
 }
 
 export class OrdersResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -126,15 +125,12 @@ export class OrdersResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyCustomers: Entry<CustomerId, CustomerValue>[] = Array.of();
-    const emptyProducts: Entry<ProductId, ProductValue>[] = Array.of();
-    const emptyOrders: Entry<OrderId, OrderValue>[] = Array.of();
-    this.initialData = { customers: emptyCustomers, products: emptyProducts, orders: emptyOrders };
+                this.inputs = { customers: new InputDefinition<CustomerId, CustomerValue>([]), products: new InputDefinition<ProductId, ProductValue>([]), orders: new InputDefinition<OrderId, OrderValue>([]) };
     this.resources = { "customers": CustomersResource, "products": ProductsResource, "orders": OrdersResource };
   }
 
@@ -149,6 +145,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

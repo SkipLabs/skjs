@@ -1,16 +1,17 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Reducer,
   Values,
   Nullable,
-  DepSafe,
-} from "@skipruntime/core";
+  DepSafe
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   ScoreId,
@@ -23,8 +24,8 @@ export type HighScoreAccum = {
   highScore: number;
 };
 
-type Inputs = {
-  scores: Entry<ScoreId, ScoreValue>[];
+export type Inputs = {
+  scores: InputDefinition<ScoreId, ScoreValue>;
 };
 
 export type InputCollections = {
@@ -36,8 +37,8 @@ export type GraphCollections = {
   userHighScores: EagerCollection<string, HighScoreAccum>;
 };
 
-type Resources = {
-  leaderboard: new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "leaderboard": ResourceClass<GraphCollections, {}>;
 };
 
 export class ScoreToUserMapper
@@ -50,10 +51,8 @@ export class ScoreToUserMapper
     values: Values<ScoreValue>,
     _context: Context
   ): Iterable<[string, number]> {
-    const arr = values.toArray();
     const result: Array<[string, number]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.userId, v.points]);
     }
     return result;
@@ -83,7 +82,9 @@ export class HighScoreToLeaderboardMapper
       return result;
     }
 
-    const currentHighScore = arr[0]!.highScore;
+    const firstEntry = arr[0];
+    if (firstEntry === undefined) return result;
+    const currentHighScore = firstEntry.highScore;
 
     const allScores: Array<{ userId: string; highScore: number }> = Array.of();
     const allUsers = this.allHighScores;
@@ -118,8 +119,9 @@ export class HighScoreToLeaderboardMapper
     let countHigher = 0;
     const checkRank = (userId: string): number => {
       const scores = allUsers.getArray(userId);
-      if (scores.length > 0) {
-        return scores[0]!.highScore;
+      const scoreEntry = scores[0];
+      if (scoreEntry !== undefined) {
+        return scoreEntry.highScore;
       }
       return 0;
     };
@@ -175,9 +177,10 @@ class HighScoreUserMapper
     _context: Context
   ): Iterable<[[HighScore, string], number]> {
     const arr = values.toArray();
-    if (arr.length > 0) {
+    const entry = arr[0];
+    if (entry !== undefined) {
       const result: Array<[[HighScore, string], number]> = Array.of();
-      result.push([[arr[0]!.highScore, key], 0]);
+      result.push([[entry.highScore, key], 0]);
       return result;
     }
     return Array.of();
@@ -227,7 +230,7 @@ class LeaderboardEntryMapper
 }
 
 export class LeaderboardResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {}
+  constructor(_params: {}) {}
 
   instantiate(
     cs: GraphCollections,
@@ -240,13 +243,12 @@ export class LeaderboardResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyScores: Entry<ScoreId, ScoreValue>[] = Array.of();
-    this.initialData = { scores: emptyScores };
+        this.inputs = { scores: new InputDefinition<ScoreId, ScoreValue>([]) };
     this.resources = { leaderboard: LeaderboardResource };
   }
 
@@ -261,6 +263,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   ClientId,
@@ -26,11 +27,11 @@ import type {
 
 export type AppointmentStatus = PendingConfirmed4egz6Enum;
 
-type Inputs = {
-  clients: Entry<ClientId, ClientValue>[];
-  providers: Entry<ProviderId, ProviderValue>[];
-  services: Entry<ServiceId, ServiceValue>[];
-  appointments: Entry<AppointmentId, AppointmentValue>[];
+export type Inputs = {
+  clients: InputDefinition<ClientId, ClientValue>;
+  providers: InputDefinition<ProviderId, ProviderValue>;
+  services: InputDefinition<ServiceId, ServiceValue>;
+  appointments: InputDefinition<AppointmentId, AppointmentValue>;
 };
 
 export type InputCollections = {
@@ -47,18 +48,18 @@ export type GraphCollections = {
   appointments: EagerCollection<AppointmentId, AppointmentValue>;
 };
 
-type Resources = {
-  "clients": new (params: Json) => Resource<GraphCollections>;
-  "providers": new (params: Json) => Resource<GraphCollections>;
-  "services": new (params: Json) => Resource<GraphCollections>;
-  "services-by-provider": new (params: Json) => Resource<GraphCollections>;
-  "appointments": new (params: Json) => Resource<GraphCollections>;
-  "appointments-by-client": new (params: Json) => Resource<GraphCollections>;
-  "appointments-by-provider": new (params: Json) => Resource<GraphCollections>;
-  "appointments-by-status-pending": new (params: Json) => Resource<GraphCollections>;
-  "appointments-by-status-confirmed": new (params: Json) => Resource<GraphCollections>;
-  "appointments-by-status-cancelled": new (params: Json) => Resource<GraphCollections>;
-  "appointments-by-status-completed": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "clients": ResourceClass<GraphCollections, {}>;
+  "providers": ResourceClass<GraphCollections, {}>;
+  "services": ResourceClass<GraphCollections, {}>;
+  "services-by-provider": ResourceClass<GraphCollections, ServicesByProviderResourceParams>;
+  "appointments": ResourceClass<GraphCollections, {}>;
+  "appointments-by-client": ResourceClass<GraphCollections, AppointmentsByClientResourceParams>;
+  "appointments-by-provider": ResourceClass<GraphCollections, AppointmentsByProviderResourceParams>;
+  "appointments-by-status-pending": ResourceClass<GraphCollections, {}>;
+  "appointments-by-status-confirmed": ResourceClass<GraphCollections, {}>;
+  "appointments-by-status-cancelled": ResourceClass<GraphCollections, {}>;
+  "appointments-by-status-completed": ResourceClass<GraphCollections, {}>;
 };
 
 export class FilterServicesByProviderMapper implements Mapper<ServiceId, ServiceValue, ServiceId, ServiceValue> {
@@ -74,9 +75,7 @@ export class FilterServicesByProviderMapper implements Mapper<ServiceId, Service
     _context: Context
   ): Iterable<[ServiceId, ServiceValue]> {
     const result: Array<[ServiceId, ServiceValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.providerId === this.providerId) {
         result.push([key, v]);
       }
@@ -98,9 +97,7 @@ export class FilterAppointmentsByClientMapper implements Mapper<AppointmentId, A
     _context: Context
   ): Iterable<[AppointmentId, AppointmentValue]> {
     const result: Array<[AppointmentId, AppointmentValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.clientId === this.clientId) {
         result.push([key, v]);
       }
@@ -122,9 +119,7 @@ export class FilterAppointmentsByProviderMapper implements Mapper<AppointmentId,
     _context: Context
   ): Iterable<[AppointmentId, AppointmentValue]> {
     const result: Array<[AppointmentId, AppointmentValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.providerId === this.providerId) {
         result.push([key, v]);
       }
@@ -146,9 +141,7 @@ export class FilterAppointmentsByStatusMapper implements Mapper<AppointmentId, A
     _context: Context
   ): Iterable<[AppointmentId, AppointmentValue]> {
     const result: Array<[AppointmentId, AppointmentValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.status === this.status) {
         result.push([key, v]);
       }
@@ -158,7 +151,7 @@ export class FilterAppointmentsByStatusMapper implements Mapper<AppointmentId, A
 }
 
 export class ClientsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -170,7 +163,7 @@ export class ClientsResource implements Resource<GraphCollections> {
 }
 
 export class ProvidersResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -182,7 +175,7 @@ export class ProvidersResource implements Resource<GraphCollections> {
 }
 
 export class ServicesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -196,9 +189,8 @@ export class ServicesResource implements Resource<GraphCollections> {
 export class ServicesByProviderResource implements Resource<GraphCollections> {
   private providerId: string;
 
-  constructor(params: Json) {
-    const typed = params as ServicesByProviderResourceParams;
-    this.providerId = typed.providerId;
+  constructor(params: ServicesByProviderResourceParams) {
+    this.providerId = params.providerId;
   }
 
   instantiate(
@@ -210,7 +202,7 @@ export class ServicesByProviderResource implements Resource<GraphCollections> {
 }
 
 export class AppointmentsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -224,9 +216,8 @@ export class AppointmentsResource implements Resource<GraphCollections> {
 export class AppointmentsByClientResource implements Resource<GraphCollections> {
   private clientId: string;
 
-  constructor(params: Json) {
-    const typed = params as AppointmentsByClientResourceParams;
-    this.clientId = typed.clientId;
+  constructor(params: AppointmentsByClientResourceParams) {
+    this.clientId = params.clientId;
   }
 
   instantiate(
@@ -240,9 +231,8 @@ export class AppointmentsByClientResource implements Resource<GraphCollections> 
 export class AppointmentsByProviderResource implements Resource<GraphCollections> {
   private providerId: string;
 
-  constructor(params: Json) {
-    const typed = params as AppointmentsByProviderResourceParams;
-    this.providerId = typed.providerId;
+  constructor(params: AppointmentsByProviderResourceParams) {
+    this.providerId = params.providerId;
   }
 
   instantiate(
@@ -254,63 +244,59 @@ export class AppointmentsByProviderResource implements Resource<GraphCollections
 }
 
 export class AppointmentsByStatusPendingResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<AppointmentId, AppointmentValue> {
-    return cs.appointments.map(FilterAppointmentsByStatusMapper, "pending" as AppointmentStatus);
+    return cs.appointments.map(FilterAppointmentsByStatusMapper, "pending");
   }
 }
 
 export class AppointmentsByStatusConfirmedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<AppointmentId, AppointmentValue> {
-    return cs.appointments.map(FilterAppointmentsByStatusMapper, "confirmed" as AppointmentStatus);
+    return cs.appointments.map(FilterAppointmentsByStatusMapper, "confirmed");
   }
 }
 
 export class AppointmentsByStatusCancelledResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<AppointmentId, AppointmentValue> {
-    return cs.appointments.map(FilterAppointmentsByStatusMapper, "cancelled" as AppointmentStatus);
+    return cs.appointments.map(FilterAppointmentsByStatusMapper, "cancelled");
   }
 }
 
 export class AppointmentsByStatusCompletedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<AppointmentId, AppointmentValue> {
-    return cs.appointments.map(FilterAppointmentsByStatusMapper, "completed" as AppointmentStatus);
+    return cs.appointments.map(FilterAppointmentsByStatusMapper, "completed");
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyClients: Entry<ClientId, ClientValue>[] = Array.of();
-    const emptyProviders: Entry<ProviderId, ProviderValue>[] = Array.of();
-    const emptyServices: Entry<ServiceId, ServiceValue>[] = Array.of();
-    const emptyAppointments: Entry<AppointmentId, AppointmentValue>[] = Array.of();
-    this.initialData = { clients: emptyClients, providers: emptyProviders, services: emptyServices, appointments: emptyAppointments };
+                    this.inputs = { clients: new InputDefinition<ClientId, ClientValue>([]), providers: new InputDefinition<ProviderId, ProviderValue>([]), services: new InputDefinition<ServiceId, ServiceValue>([]), appointments: new InputDefinition<AppointmentId, AppointmentValue>([]) };
     this.resources = { "clients": ClientsResource, "providers": ProvidersResource, "services": ServicesResource, "services-by-provider": ServicesByProviderResource, "appointments": AppointmentsResource, "appointments-by-client": AppointmentsByClientResource, "appointments-by-provider": AppointmentsByProviderResource, "appointments-by-status-pending": AppointmentsByStatusPendingResource, "appointments-by-status-confirmed": AppointmentsByStatusConfirmedResource, "appointments-by-status-cancelled": AppointmentsByStatusCancelledResource, "appointments-by-status-completed": AppointmentsByStatusCompletedResource };
   }
 
@@ -319,6 +305,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

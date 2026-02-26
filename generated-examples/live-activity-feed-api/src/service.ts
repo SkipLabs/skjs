@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   PostId,
@@ -23,11 +24,11 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  posts: Entry<PostId, PostValue>[];
-  comments: Entry<CommentId, CommentValue>[];
-  likes: Entry<LikeId, LikeValue>[];
-  users: Entry<UserId, UserValue>[];
+export type Inputs = {
+  posts: InputDefinition<PostId, PostValue>;
+  comments: InputDefinition<CommentId, CommentValue>;
+  likes: InputDefinition<LikeId, LikeValue>;
+  users: InputDefinition<UserId, UserValue>;
 };
 
 export type InputCollections = {
@@ -42,9 +43,9 @@ export type GraphCollections = {
   feed: EagerCollection<FeedItemId, FeedItemValue>;
 };
 
-type Resources = {
-  "feed": new (params: Json) => Resource<GraphCollections>;
-  "posts": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "feed": ResourceClass<GraphCollections, {}>;
+  "posts": ResourceClass<GraphCollections, {}>;
 };
 
 export class PostToFeedItemMapper implements Mapper<PostId, PostValue, FeedItemId, FeedItemValue> {
@@ -56,10 +57,8 @@ export class PostToFeedItemMapper implements Mapper<PostId, PostValue, FeedItemI
     values: Values<PostValue>,
     _context: Context
   ): Iterable<[FeedItemId, FeedItemValue]> {
-    const arr = values.toArray();
     const result: Array<[FeedItemId, FeedItemValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const feedItemId: FeedItemId = key;
       const feedItemValue: FeedItemValue = {
         type: "post",
@@ -83,10 +82,8 @@ export class CommentToFeedItemMapper implements Mapper<CommentId, CommentValue, 
     values: Values<CommentValue>,
     _context: Context
   ): Iterable<[FeedItemId, FeedItemValue]> {
-    const arr = values.toArray();
     const result: Array<[FeedItemId, FeedItemValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const feedItemId: FeedItemId = key;
       const feedItemValue: FeedItemValue = {
         type: "comment",
@@ -110,10 +107,8 @@ export class LikeToFeedItemMapper implements Mapper<LikeId, LikeValue, FeedItemI
     values: Values<LikeValue>,
     _context: Context
   ): Iterable<[FeedItemId, FeedItemValue]> {
-    const arr = values.toArray();
     const result: Array<[FeedItemId, FeedItemValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const feedItemId: FeedItemId = key;
       const feedItemValue: FeedItemValue = {
         type: "like",
@@ -130,7 +125,7 @@ export class LikeToFeedItemMapper implements Mapper<LikeId, LikeValue, FeedItemI
 
 
 export class FeedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -142,7 +137,7 @@ export class FeedResource implements Resource<GraphCollections> {
 }
 
 export class PostsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -153,16 +148,12 @@ export class PostsResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyPosts: Entry<PostId, PostValue>[] = Array.of();
-    const emptyComments: Entry<CommentId, CommentValue>[] = Array.of();
-    const emptyLikes: Entry<LikeId, LikeValue>[] = Array.of();
-    const emptyUsers: Entry<UserId, UserValue>[] = Array.of();
-    this.initialData = { posts: emptyPosts, comments: emptyComments, likes: emptyLikes, users: emptyUsers };
+                    this.inputs = { posts: new InputDefinition<PostId, PostValue>([]), comments: new InputDefinition<CommentId, CommentValue>([]), likes: new InputDefinition<LikeId, LikeValue>([]), users: new InputDefinition<UserId, UserValue>([]) };
     this.resources = { "feed": FeedResource, "posts": PostsResource };
   }
 
@@ -177,6 +168,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

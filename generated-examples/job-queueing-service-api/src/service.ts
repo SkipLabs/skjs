@@ -1,14 +1,15 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   JobId,
@@ -18,8 +19,8 @@ import type {
 
 type JobStatus = PendingProcessingo5ljfmEnum;
 
-type Inputs = {
-  jobs: Entry<JobId, JobValue>[];
+export type Inputs = {
+  jobs: InputDefinition<JobId, JobValue>;
 };
 
 export type InputCollections = {
@@ -30,12 +31,12 @@ export type GraphCollections = {
   jobs: EagerCollection<JobId, JobValue>;
 };
 
-type Resources = {
-  "jobs": new (params: Json) => Resource<GraphCollections>;
-  "jobs-pending": new (params: Json) => Resource<GraphCollections>;
-  "jobs-processing": new (params: Json) => Resource<GraphCollections>;
-  "jobs-completed": new (params: Json) => Resource<GraphCollections>;
-  "jobs-failed": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "jobs": ResourceClass<GraphCollections, {}>;
+  "jobs-pending": ResourceClass<GraphCollections, {}>;
+  "jobs-processing": ResourceClass<GraphCollections, {}>;
+  "jobs-completed": ResourceClass<GraphCollections, {}>;
+  "jobs-failed": ResourceClass<GraphCollections, {}>;
 };
 
 export class FilterByStatusMapper implements Mapper<JobId, JobValue, JobId, JobValue> {
@@ -50,10 +51,8 @@ export class FilterByStatusMapper implements Mapper<JobId, JobValue, JobId, JobV
     values: Values<JobValue>,
     _context: Context
   ): Iterable<[JobId, JobValue]> {
-    const arr = values.toArray();
     const result: Array<[JobId, JobValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.status === this.targetStatus) {
         result.push([key, v]);
       }
@@ -63,7 +62,7 @@ export class FilterByStatusMapper implements Mapper<JobId, JobValue, JobId, JobV
 }
 
 export class JobsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -75,60 +74,59 @@ export class JobsResource implements Resource<GraphCollections> {
 }
 
 export class JobsPendingResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<JobId, JobValue> {
-    return cs.jobs.map(FilterByStatusMapper, "pending" as JobStatus & DepSafe);
+    return cs.jobs.map(FilterByStatusMapper, "pending");
   }
 }
 
 export class JobsProcessingResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<JobId, JobValue> {
-    return cs.jobs.map(FilterByStatusMapper, "processing" as JobStatus & DepSafe);
+    return cs.jobs.map(FilterByStatusMapper, "processing");
   }
 }
 
 export class JobsCompletedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<JobId, JobValue> {
-    return cs.jobs.map(FilterByStatusMapper, "completed" as JobStatus & DepSafe);
+    return cs.jobs.map(FilterByStatusMapper, "completed");
   }
 }
 
 export class JobsFailedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<JobId, JobValue> {
-    return cs.jobs.map(FilterByStatusMapper, "failed" as JobStatus & DepSafe);
+    return cs.jobs.map(FilterByStatusMapper, "failed");
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyJobs: Entry<JobId, JobValue>[] = Array.of();
-    this.initialData = { jobs: emptyJobs };
+        this.inputs = { jobs: new InputDefinition<JobId, JobValue>([]) };
     this.resources = { "jobs": JobsResource, "jobs-pending": JobsPendingResource, "jobs-processing": JobsProcessingResource, "jobs-completed": JobsCompletedResource, "jobs-failed": JobsFailedResource };
   }
 
@@ -137,6 +135,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

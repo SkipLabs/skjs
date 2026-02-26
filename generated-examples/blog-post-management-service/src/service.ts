@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   AuthorId,
@@ -21,10 +22,10 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  authors: Entry<AuthorId, AuthorValue>[];
-  posts: Entry<PostId, PostValue>[];
-  comments: Entry<CommentId, CommentValue>[];
+export type Inputs = {
+  authors: InputDefinition<AuthorId, AuthorValue>;
+  posts: InputDefinition<PostId, PostValue>;
+  comments: InputDefinition<CommentId, CommentValue>;
 };
 
 export type InputCollections = {
@@ -39,12 +40,12 @@ export type GraphCollections = {
   comments: EagerCollection<CommentId, CommentValue>;
 };
 
-type Resources = {
-  "authors": new (params: Json) => Resource<GraphCollections>;
-  "posts": new (params: Json) => Resource<GraphCollections>;
-  "posts-published": new (params: Json) => Resource<GraphCollections>;
-  "authors-posts": new (params: Json) => Resource<GraphCollections>;
-  "posts-comments": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "authors": ResourceClass<GraphCollections, {}>;
+  "posts": ResourceClass<GraphCollections, {}>;
+  "posts-published": ResourceClass<GraphCollections, {}>;
+  "authors-posts": ResourceClass<GraphCollections, AuthorsPostsResourceParams>;
+  "posts-comments": ResourceClass<GraphCollections, PostsCommentsResourceParams>;
 };
 
 export class PublishedPostsFilterMapper implements Mapper<PostId, PostValue, PostId, PostValue> {
@@ -57,9 +58,7 @@ export class PublishedPostsFilterMapper implements Mapper<PostId, PostValue, Pos
     _context: Context
   ): Iterable<[PostId, PostValue]> {
     const result: Array<[PostId, PostValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.published === 1) {
         result.push([key, v]);
       }
@@ -81,9 +80,7 @@ export class PostsByAuthorFilterMapper implements Mapper<PostId, PostValue, Post
     _context: Context
   ): Iterable<[PostId, PostValue]> {
     const result: Array<[PostId, PostValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.authorId === this.authorId) {
         result.push([key, v]);
       }
@@ -105,9 +102,7 @@ export class CommentsByPostFilterMapper implements Mapper<CommentId, CommentValu
     _context: Context
   ): Iterable<[CommentId, CommentValue]> {
     const result: Array<[CommentId, CommentValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.postId === this.postId) {
         result.push([key, v]);
       }
@@ -118,7 +113,7 @@ export class CommentsByPostFilterMapper implements Mapper<CommentId, CommentValu
 
 
 export class AuthorsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -130,7 +125,7 @@ export class AuthorsResource implements Resource<GraphCollections> {
 }
 
 export class PostsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -142,7 +137,7 @@ export class PostsResource implements Resource<GraphCollections> {
 }
 
 export class PostsPublishedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -156,9 +151,8 @@ export class PostsPublishedResource implements Resource<GraphCollections> {
 export class AuthorsPostsResource implements Resource<GraphCollections> {
   private authorId: string;
 
-  constructor(params: Json) {
-    const typed = params as AuthorsPostsResourceParams;
-    this.authorId = typed.authorId;
+  constructor(params: AuthorsPostsResourceParams) {
+    this.authorId = params.authorId;
   }
 
   instantiate(
@@ -172,9 +166,8 @@ export class AuthorsPostsResource implements Resource<GraphCollections> {
 export class PostsCommentsResource implements Resource<GraphCollections> {
   private postId: string;
 
-  constructor(params: Json) {
-    const typed = params as PostsCommentsResourceParams;
-    this.postId = typed.postId;
+  constructor(params: PostsCommentsResourceParams) {
+    this.postId = params.postId;
   }
 
   instantiate(
@@ -185,15 +178,12 @@ export class PostsCommentsResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyAuthors: Entry<AuthorId, AuthorValue>[] = Array.of();
-    const emptyPosts: Entry<PostId, PostValue>[] = Array.of();
-    const emptyComments: Entry<CommentId, CommentValue>[] = Array.of();
-    this.initialData = { authors: emptyAuthors, posts: emptyPosts, comments: emptyComments };
+                this.inputs = { authors: new InputDefinition<AuthorId, AuthorValue>([]), posts: new InputDefinition<PostId, PostValue>([]), comments: new InputDefinition<CommentId, CommentValue>([]) };
     this.resources = { "authors": AuthorsResource, "posts": PostsResource, "posts-published": PostsPublishedResource, "authors-posts": AuthorsPostsResource, "posts-comments": PostsCommentsResource };
   }
 
@@ -202,6 +192,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

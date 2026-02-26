@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   BookId,
@@ -17,9 +18,9 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  books: Entry<BookId, BookValue>[];
-  loans: Entry<LoanId, LoanValue>[];
+export type Inputs = {
+  books: InputDefinition<BookId, BookValue>;
+  loans: InputDefinition<LoanId, LoanValue>;
 };
 
 export type InputCollections = {
@@ -32,8 +33,8 @@ export type GraphCollections = {
   loans: EagerCollection<LoanId, LoanValue>;
 };
 
-type Resources = {
-  [name: string]: new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  [name: string]: ResourceClass<GraphCollections, Json>;
 };
 
 export class AvailableBooksMapper implements Mapper<BookId, BookValue, BookId, BookValue> {
@@ -45,10 +46,8 @@ export class AvailableBooksMapper implements Mapper<BookId, BookValue, BookId, B
     values: Values<BookValue>,
     _context: Context
   ): Iterable<[BookId, BookValue]> {
-    const arr = values.toArray();
     const result: Array<[BookId, BookValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.available === 1) {
         result.push([key, v]);
       }
@@ -96,14 +95,12 @@ export class LoansResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyBooks: Entry<BookId, BookValue>[] = Array.of();
-    const emptyLoans: Entry<LoanId, LoanValue>[] = Array.of();
-    this.initialData = { books: emptyBooks, loans: emptyLoans };
+            this.inputs = { books: new InputDefinition<BookId, BookValue>([]), loans: new InputDefinition<LoanId, LoanValue>([]) };
     this.resources = { 
       "books": BooksResource, 
       "books-available": BooksAvailableResource, 
@@ -117,6 +114,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

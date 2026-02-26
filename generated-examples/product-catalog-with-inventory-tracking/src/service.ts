@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   ProductId,
@@ -19,9 +20,9 @@ import type {
   ProductsCategoryResourceParams,
 } from "./types.js";
 
-type Inputs = {
-  products: Entry<ProductId, ProductValue>[];
-  inventory: Entry<InventoryId, InventoryValue>[];
+export type Inputs = {
+  products: InputDefinition<ProductId, ProductValue>;
+  inventory: InputDefinition<InventoryId, InventoryValue>;
 };
 
 export type InputCollections = {
@@ -33,10 +34,10 @@ export type GraphCollections = {
   productsWithInventory: EagerCollection<ProductWithInventoryId, ProductWithInventoryValue>;
 };
 
-type Resources = {
-  "products": new (params: Json) => Resource<GraphCollections>;
-  "products-category": new (params: Json) => Resource<GraphCollections>;
-  "inventory-low-stock": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  "products": ResourceClass<GraphCollections, {}>;
+  "products-category": ResourceClass<GraphCollections, ProductsCategoryResourceParams>;
+  "inventory-low-stock": ResourceClass<GraphCollections, {}>;
 };
 
 export class ProductInventoryJoinMapper implements Mapper<ProductId, ProductValue, ProductWithInventoryId, ProductWithInventoryValue> {
@@ -52,14 +53,12 @@ export class ProductInventoryJoinMapper implements Mapper<ProductId, ProductValu
     _context: Context
   ): Iterable<[ProductWithInventoryId, ProductWithInventoryValue]> {
     const result: Array<[ProductWithInventoryId, ProductWithInventoryValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const product = arr[i]!;
+    for (const product of values) {
       const inventoryArr = this.inventory.getArray(key);
       let quantity = 0;
       let reservedQuantity = 0;
-      if (inventoryArr.length > 0) {
-        const inv = inventoryArr[0]!;
+      const inv = inventoryArr[0];
+      if (inv !== undefined) {
         quantity = inv.quantity;
         reservedQuantity = inv.reservedQuantity;
       }
@@ -93,9 +92,7 @@ export class CategoryFilterMapper implements Mapper<ProductWithInventoryId, Prod
     _context: Context
   ): Iterable<[ProductWithInventoryId, ProductWithInventoryValue]> {
     const result: Array<[ProductWithInventoryId, ProductWithInventoryValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const product = arr[i]!;
+    for (const product of values) {
       if (product.category === this.categoryName) {
         result.push([key, product]);
       }
@@ -114,9 +111,7 @@ export class LowStockFilterMapper implements Mapper<ProductWithInventoryId, Prod
     _context: Context
   ): Iterable<[ProductWithInventoryId, ProductWithInventoryValue]> {
     const result: Array<[ProductWithInventoryId, ProductWithInventoryValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const product = arr[i]!;
+    for (const product of values) {
       if (product.availableQuantity <= 10) {
         result.push([key, product]);
       }
@@ -126,7 +121,7 @@ export class LowStockFilterMapper implements Mapper<ProductWithInventoryId, Prod
 }
 
 export class ProductsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -140,9 +135,8 @@ export class ProductsResource implements Resource<GraphCollections> {
 export class ProductsCategoryResource implements Resource<GraphCollections> {
   private categoryName: string;
 
-  constructor(params: Json) {
-    const typed = params as ProductsCategoryResourceParams;
-    this.categoryName = typed.categoryName;
+  constructor(params: ProductsCategoryResourceParams) {
+    this.categoryName = params.categoryName;
   }
 
   instantiate(
@@ -154,7 +148,7 @@ export class ProductsCategoryResource implements Resource<GraphCollections> {
 }
 
 export class InventoryLowStockResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -165,14 +159,12 @@ export class InventoryLowStockResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public inputs: Inputs;
   public resources: Resources;
 
   constructor() {
-    const emptyProducts: Entry<ProductId, ProductValue>[] = Array.of();
-    const emptyInventorys: Entry<InventoryId, InventoryValue>[] = Array.of();
-    this.initialData = { products: emptyProducts, inventory: emptyInventorys };
+            this.inputs = { products: new InputDefinition<ProductId, ProductValue>([]), inventory: new InputDefinition<InventoryId, InventoryValue>([]) };
     this.resources = { "products": ProductsResource, "products-category": ProductsCategoryResource, "inventory-low-stock": InventoryLowStockResource };
   }
 
@@ -182,6 +174,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }
