@@ -131,7 +131,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
     defs: readonly Vector<FileDef> = Vector[
-      FDNamespace(false, this.getFileDefs(tcenvb, fileName)),
+      FDNamespace(false, None(), this.getFileDefs(tcenvb, fileName)),
     ];
     pathElts = path.split(".");
     for (i => pathElt in pathElts) {
@@ -156,7 +156,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
       | Enum(_isConst, Name(pos, _), _fields)
       | FDVar(_kind, Name(pos, _), _type, _value) ->
         tcenvb.error(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
-      | FDNamespace(nsTypeOnly, nsDefs) ->
+      | FDNamespace(nsTypeOnly, _posOpt, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
         this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result)
       }
@@ -218,7 +218,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
   ): void {
     fileDefs = this.getFileDefs(tcenvb, fileName);
     if (name == "") {
-      result.push(FDNamespace(typeOnly, fileDefs))
+      result.push(FDNamespace(typeOnly, None(), fileDefs))
     } else {
       this.getExportedInDefs(tcenvb, fileDefs, name, typeOnly, result)
     }
@@ -320,7 +320,11 @@ class FDVar(
   type: ?Type,
   value: ?Expr,
 ) extends FileDefElt
-class FDNamespace(typeOnly: Bool, defs: FileDefs) extends FileDef
+class FDNamespace(
+  typeOnly: Bool,
+  posOpt: ?PosRange,
+  defs: FileDefs,
+) extends FileDef
 
 base class TypeOnlyDef extends FileDefElt
 extension class TypeDef extends TypeOnlyDef
@@ -524,7 +528,7 @@ mutable class FileDefsState private {
     | d @ Class{name} -> this.pushDef(name, d, isExport)
     | d @ Enum(_, name, _) -> this.pushDef(name, d, isExport)
     | Namespace(name, defs) ->
-      d = FDNamespace(false, this.createSubFileDefs(defs));
+      d = FDNamespace(false, Some(name.pos), this.createSubFileDefs(defs));
       this.pushDef(name, d, isExport)
     | Module(name, Some(defs)) ->
       invariant(!isExport, "export module does not exist");
