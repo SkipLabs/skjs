@@ -1077,7 +1077,11 @@ extension class Parser {
     funName: FunDefName,
     parseBlock: Bool,
   ): T {
-    // Record method/function definition and set context
+    // Record method/function definition and set context.
+    // Only record for class methods; top-level functions are handled by
+    // the dedicated top-level function parser. Avoid recording SPFunction
+    // here because this method is also called for type annotation methods
+    // (e.g. { constructor(): void }) which would clash with real functions.
     (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
     | (FNNormal(name), SPClass(className)) ->
@@ -1085,13 +1089,7 @@ extension class Parser {
       symbolContextPos = this.lex.pos;
       this.recordSymbolDefinition(methodSymbol, symbolContextPos);
       this.setSymbolContext(methodSymbol, symbolContextPos)
-    | (FNNormal(name), _) ->
-      funcSymbol = SPFunction(name.value);
-      symbolContextPos = this.lex.pos;
-      this.recordSymbolDefinition(funcSymbol, symbolContextPos);
-      this.setSymbolContext(funcSymbol, symbolContextPos)
-    | _ ->
-      void // Keep current context for anonymous methods
+    | _ -> void
     };
 
     funStart = this.lex.getLastPos();
