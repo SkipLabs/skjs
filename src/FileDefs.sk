@@ -513,42 +513,31 @@ mutable class FileDefsState private {
     state.processDefs(defs)
   }
 
-  private mutable fun pushDef(name: Name, d: FileDef): void {
+  private mutable fun pushDef(name: Name, d: FileDef, isExport: Bool): void {
+    if (isExport) mapPush(this.exported, name.value, name.value);
     mapPush(this.defs, name.value, d)
   }
 
   private mutable fun newDef(isExport: Bool, def: Declarable): void {
     def match {
-    | d @ TypeDef{name} ->
-      if (isExport) mapPush(this.exported, name.value, name.value);
-      this.pushDef(name, d)
-    | d @ Class{name} ->
-      if (isExport) mapPush(this.exported, name.value, name.value);
-      this.pushDef(name, d)
-    | d @ Enum(_, name, _) ->
-      if (isExport) mapPush(this.exported, name.value, name.value);
-      this.pushDef(name, d)
+    | d @ TypeDef{name} -> this.pushDef(name, d, isExport)
+    | d @ Class{name} -> this.pushDef(name, d, isExport)
+    | d @ Enum(_, name, _) -> this.pushDef(name, d, isExport)
     | Namespace(name, defs) ->
-      if (isExport) mapPush(this.exported, name.value, name.value);
-      this.pushDef(name, FDNamespace(false, this.createSubFileDefs(defs)))
+      d = FDNamespace(false, this.createSubFileDefs(defs));
+      this.pushDef(name, d, isExport)
     | Module(name, Some(defs)) ->
       invariant(!isExport, "export module does not exist");
       mapPush(this.modules, name.value, this.createSubFileDefs(defs))
     | d @ TopLevelFunDef{name => FNNormal(fname)} ->
-      if (isExport) mapPush(this.exported, fname.value, fname.value);
-      this.pushDef(fname, d)
+      this.pushDef(fname, d, isExport)
 
     | VarDefs(k, varDefs) ->
       for (varDef in varDefs) {
         varDef.pat.value match {
         | PVar(exportName) ->
-          if (isExport) {
-            mapPush(this.exported, exportName.value, exportName.value)
-          };
-          this.pushDef(
-            exportName,
-            FDVar(k, exportName, varDef.type, varDef.value),
-          )
+          d = FDVar(k, exportName, varDef.type, varDef.value);
+          this.pushDef(exportName, d, isExport)
         | _ ->
           this.fileErrors.push(
             TypingError(
