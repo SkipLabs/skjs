@@ -17,7 +17,7 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
     symbol: SymbolicPos,
     pos: Int,
   ): void {
-    this.lex.recordSymbolLocation(symbol, pos);
+    !pos = this.lex.recordSymbolLocation(symbol, pos);
     this.setSymbolContext(symbol, pos)
   }
 
