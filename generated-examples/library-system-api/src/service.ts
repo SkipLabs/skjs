@@ -1,6 +1,5 @@
 import type {
   EagerCollection,
-  Json,
   Resource,
   ResourceClass,
   SkipService,
@@ -34,7 +33,10 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  [name: string]: ResourceClass<GraphCollections, Json>;
+  "books": ResourceClass<GraphCollections, {}>;
+  "books-available": ResourceClass<GraphCollections, {}>;
+  "loans": ResourceClass<GraphCollections, {}>;
+  "availableBooks": ResourceClass<GraphCollections, {}>;
 };
 
 export class AvailableBooksMapper implements Mapper<BookId, BookValue, BookId, BookValue> {
@@ -58,7 +60,7 @@ export class AvailableBooksMapper implements Mapper<BookId, BookValue, BookId, B
 
 
 export class BooksResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -70,7 +72,7 @@ export class BooksResource implements Resource<GraphCollections> {
 }
 
 export class BooksAvailableResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -81,10 +83,9 @@ export class BooksAvailableResource implements Resource<GraphCollections> {
   }
 }
 
-export const AvailableBooksResource = BooksAvailableResource;
 
 export class LoansResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
