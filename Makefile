@@ -66,6 +66,11 @@ check-file-in-docker:
 	: $${FILE:?Usage: make check-file-in-docker FILE=path/to/file.ts [BIN=target/host/dev/skjs]}
 	$(DOCKER_RUN) $(if $(BIN),$(BIN),skargo run --) check --import-stubs import-stubs "$(FILE)"
 
+.PHONY: check-project-in-docker
+check-project-in-docker:
+	: $${PROJECT:?Usage: make check-project-in-docker PROJECT=path/to/project}
+	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) $(if $(BIN),$(BIN),skargo run --) check --import-stubs import-stubs --project "$(PROJECT)"
+
 .PHONY: clean
 clean:
 	skargo clean

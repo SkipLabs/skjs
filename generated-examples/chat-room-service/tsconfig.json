@@ -30,5 +30,5 @@
     // Root
     "rootDir": "."
   },
-  "include": ["main.ts", "test.ts", "src/**/*.ts", "skipruntime/**/*.ts"]
+  "include": ["src/**/*.ts", "skipruntime/core.ts"]
 }

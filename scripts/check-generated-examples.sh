@@ -263,7 +263,7 @@ run_skjs() {
   fi
 
   start_ms="$(now_ms)"
-  "${SKJS_BIN}" check --import-stubs "${IMPORT_STUBS_DIR}" "${PROJECT_ROOT}/${project_rel}" > "${out_file}" 2>&1
+  "${SKJS_BIN}" check --import-stubs "${IMPORT_STUBS_DIR}" --project "${PROJECT_ROOT}/${project_rel}" > "${out_file}" 2>&1
   ec=$?
   end_ms="$(now_ms)"
   dur_ms="$((end_ms - start_ms))"
