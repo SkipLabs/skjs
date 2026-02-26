@@ -26,7 +26,7 @@ export type MetricValue = {
   name: string;
   value: number;
   timestamp: number;
-  tags: { [name: string]: string };
+  tags: string;
 };
 
 export type BucketAccum = {

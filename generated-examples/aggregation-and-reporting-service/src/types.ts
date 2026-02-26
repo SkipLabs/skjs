@@ -4,7 +4,7 @@ export type MetricValue = {
   name: string;
   value: number;
   timestamp: number;
-  tags: { [name: string]: string };
+  tags: string;
 };
 
 export type AggregatedMetricValue = {
@@ -36,7 +36,7 @@ export type MetricData = {
   name: string;
   value: number;
   timestamp: number;
-  tags: { [name: string]: string };
+  tags: string;
 };
 
 export type AggregatedMetricId = string;

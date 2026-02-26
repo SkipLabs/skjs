@@ -5,7 +5,7 @@ export type WebhookId = string;
 export type WebhookValue = {
   name: string;
   url: string;
-  eventTypes: Array<string>;
+  eventTypes: string;
   enabled: number;
   createdAt: number;
   secret: string | null;

@@ -17,7 +17,7 @@ export type PostValue = {
   createdAt: number;
   updatedAt: number;
   published: number;
-  tags: Array<string>;
+  tags: string;
 };
 
 export type Post = PostValue & { id: PostId };

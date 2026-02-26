@@ -5,7 +5,7 @@ export type UserId = string;
 export type UserValue = {
   name: string;
   email: string;
-  preferences: Array<string>;
+  preferences: string;
   createdAt: number;
 };
 
@@ -18,7 +18,7 @@ export type ProductValue = {
   description: string;
   category: string;
   price: number;
-  tags: Array<string>;
+  tags: string;
   popularity: number;
 };
 

@@ -16,7 +16,7 @@ export type PlanValue = {
   name: string;
   price: number;
   billingPeriodDays: number;
-  features: Array<string>;
+  features: string;
 };
 
 export type Plan = PlanValue & { id: PlanId };

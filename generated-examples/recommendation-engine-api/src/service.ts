@@ -123,12 +123,12 @@ export class ProductsByCategoryMapper implements Mapper<ProductId, ProductValue,
 
 export class RecommendationMapper implements Mapper<ProductId, ProductValue, RecommendationId, RecommendationValue> {
   private userId: string;
-  private userPreferences: Array<string>;
+  private userPreferences: string;
   private userInteractions: Array<InteractionValue>;
   private popularityMap: Map<ProductId, PopularityAccum>;
   private interactedProductIds: Set<string>;
 
-  constructor(userId: string, userPreferences: Array<string>, userInteractions: Array<InteractionValue>, popularityMap: Map<ProductId, PopularityAccum>) {
+  constructor(userId: string, userPreferences: string, userInteractions: Array<InteractionValue>, popularityMap: Map<ProductId, PopularityAccum>) {
     this.userId = userId;
     this.userPreferences = userPreferences;
     this.userInteractions = userInteractions;
@@ -156,9 +156,10 @@ export class RecommendationMapper implements Mapper<ProductId, ProductValue, Rec
       let score = 0;
       const reasons: Array<string> = Array.of();
       
+      const prefsArr = this.userPreferences === "" ? [] : this.userPreferences.split(",");
       let categoryMatch = false;
-      for (let j = 0; j < this.userPreferences.length; j++) {
-        if (product.category === this.userPreferences[j]) {
+      for (let j = 0; j < prefsArr.length; j++) {
+        if (product.category === prefsArr[j]) {
           categoryMatch = true;
           break;
         }
@@ -167,11 +168,12 @@ export class RecommendationMapper implements Mapper<ProductId, ProductValue, Rec
         score = score + 30;
         reasons.push("category match");
       }
-      
+
+      const tagsArr = product.tags === "" ? [] : product.tags.split(",");
       let tagMatchCount = 0;
-      for (const tag of product.tags) {
-        for (let k = 0; k < this.userPreferences.length; k++) {
-          if (tag === this.userPreferences[k]) {
+      for (const tag of tagsArr) {
+        for (let k = 0; k < prefsArr.length; k++) {
+          if (tag === prefsArr[k]) {
             tagMatchCount = tagMatchCount + 1;
             break;
           }
@@ -346,7 +348,7 @@ export class RecommendationsResource implements Resource<GraphCollections> {
     _context: Context
   ): EagerCollection<RecommendationId, RecommendationValue> {
     const userValues = cs.users.getArray(this.userId);
-    let userPreferences: Array<string> = Array.of();
+    let userPreferences: string = "";
     const userEntry = userValues[0];
     if (userEntry !== undefined) {
       userPreferences = userEntry.preferences;

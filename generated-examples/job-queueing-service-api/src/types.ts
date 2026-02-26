@@ -8,7 +8,7 @@ export type JobValue = {
   priority: number;
   createdAt: number;
   updatedAt: number;
-  payload: { [name: string]: string } | null;
+  payload: string | null;
   result: string | null;
   errorMessage: string | null;
   retryCount: number | null;
