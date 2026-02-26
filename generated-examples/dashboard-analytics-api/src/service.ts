@@ -67,7 +67,7 @@ export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [stri
     return result;
   }
 
-  private computePeriodStart(timestamp: number): number {
+  computePeriodStart(timestamp: number): number {
     const date = new Date(timestamp);
     if (this.period === "hour") {
       date.setUTCMinutes(0, 0, 0);

@@ -215,7 +215,7 @@ class LeaderboardEntryMapper
     values: Values<[HighScore, string]>,
     _context: Context
   ): Iterable<[LeaderboardEntryId, LeaderboardEntryValue]> {
-    const allUserScores = values.toArray().sort((a, b) => b[0] - a[0]);
+    const allUserScores = values.toArray().sort((a: [HighScore, string], b: [HighScore, string]) => b[0] - a[0]);
     const result: Array<[string, LeaderboardEntryValue]> = Array.of();
     for (const [index, userScore] of allUserScores.entries()) {
       const leaderboardEntry: LeaderboardEntryValue = {

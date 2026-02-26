@@ -89,12 +89,10 @@ export class StatusAccumToSystemStatusMapper implements Mapper<SystemStatusId, S
   ): Iterable<[SystemStatusId, SystemStatusValue]> {
     const result: Array<[SystemStatusId, SystemStatusValue]> = Array.of();
     for (const accum of values) {
-      let overallStatus: HealthyDegradedUnhealthyEnum = "healthy";
-      if (accum.unhealthyCount > 0) {
-        overallStatus = "unhealthy";
-      } else if (accum.degradedCount > 0) {
-        overallStatus = "degraded";
-      }
+      const overallStatus: HealthyDegradedUnhealthyEnum =
+        accum.unhealthyCount > 0 ? "unhealthy" :
+        accum.degradedCount > 0 ? "degraded" :
+        "healthy";
       const systemStatusValue: SystemStatusValue = {
         overallStatus: overallStatus,
         componentCount: accum.componentCount,
