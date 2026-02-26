@@ -12,20 +12,17 @@ function makeAsyncClosure(): () => Promise<number> {
   return async (): Promise<number> => 0;
 }
 
-// @skjs-expect-error makeAsyncClosure is already defined
-function makeAsyncClosure(): () => Promise<number> {
+function makeAsyncClosure2(): () => Promise<number> {
   return async () => 0;
 }
 
-// @skjs-expect-error makeAsyncClosure is already defined
-function makeAsyncClosure(): () => Promise<number> {
+function makeAsyncClosure3(): () => Promise<number> {
   return async () => {
     return 0;
   };
 }
 
-// @skjs-expect-error makeAsyncClosure is already defined
-function makeAsyncClosure(): () => Promise<number> {
+function makeAsyncClosure4(): () => Promise<number> {
   return async (): Promise<number> => {
     return 0;
   };
