@@ -524,13 +524,25 @@ mutable class TypePp{
             };
             pp.out(level, margin, ">")
           | TInter(tys) ->
-            for (j => ity in tys) {
-              if (j > 0) pp.out(level, margin, " & ");
+            j = 0;
+            for (ity in tys) {
               pp.out(level, margin, "(");
               pp.type(level, margin, ity);
               pp.out(level, margin, ")");
+              if (j < tys.size() - 1) pp.out(level, margin, " & ");
+              !j = j + 1;
             }
-          | x @ TVar _ -> pp.tvar(level, margin, x)
+          | TVar(_, id, constraints) ->
+            pp.out(level, margin, "'" + id.toString());
+            if (!constraints.isEmpty()) {
+              pp.out(level, margin, " extends ");
+              first = true;
+              for (cstr in constraints) {
+                if (!first) pp.out(level, margin, " & ");
+                !first = false;
+                pp.type(level, margin, cstr);
+              }
+            }
           }
         }
       },
@@ -561,11 +573,23 @@ mutable class TypePp{
             };
             pp.out(level, margin, ">")
           | TInter(tys) ->
-            for (i => ity in tys) {
-              if (i > 0) pp.out(level, margin, " & ");
+            i = 0;
+            for (ity in tys) {
               pp.type(level, margin, ity);
+              if (i < tys.size() - 1) pp.out(level, margin, " & ");
+              !i = i + 1;
             }
-          | x @ TVar _ -> pp.tvar(level, margin, x)
+          | TVar(_, id, constraints) ->
+            pp.out(level, margin, "'" + id.toString());
+            if (!constraints.isEmpty()) {
+              pp.out(level, margin, " extends ");
+              first = true;
+              for (cstr in constraints) {
+                if (!first) pp.out(level, margin, " & ");
+                !first = false;
+                pp.type(level, margin, cstr);
+              }
+            }
           }
         }
       },
