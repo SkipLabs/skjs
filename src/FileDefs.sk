@@ -513,33 +513,30 @@ mutable class FileDefsState private {
     state.processDefs(defs)
   }
 
+  private mutable fun pushDef(name: Name, d: FileDef): void {
+    mapPush(this.defs, name.value, d)
+  }
+
   private mutable fun newDef(isExport: Bool, def: Declarable): void {
     def match {
     | d @ TypeDef{name} ->
       if (isExport) mapPush(this.exported, name.value, name.value);
-      mapPush(this.defs, name.value, d)
+      this.pushDef(name, d)
     | d @ Class{name} ->
       if (isExport) mapPush(this.exported, name.value, name.value);
-      mapPush(this.defs, name.value, d)
+      this.pushDef(name, d)
     | d @ Enum(_, name, _) ->
       if (isExport) mapPush(this.exported, name.value, name.value);
-      mapPush(this.defs, name.value, d)
+      this.pushDef(name, d)
     | Namespace(name, defs) ->
       if (isExport) mapPush(this.exported, name.value, name.value);
-      mapPush(
-        this.defs,
-        name.value,
-        FDNamespace(false, this.createSubFileDefs(defs)),
-      )
+      this.pushDef(name, FDNamespace(false, this.createSubFileDefs(defs)))
     | Module(name, Some(defs)) ->
       invariant(!isExport, "export module does not exist");
       mapPush(this.modules, name.value, this.createSubFileDefs(defs))
-    | d @ TopLevelFunDef{name} ->
-      fname = name match {
-      | FNNormal(n) -> n.value
-      };
-      if (isExport) mapPush(this.exported, fname, fname);
-      mapPush(this.defs, fname, d)
+    | d @ TopLevelFunDef{name => FNNormal(fname)} ->
+      if (isExport) mapPush(this.exported, fname.value, fname.value);
+      this.pushDef(fname, d)
 
     | VarDefs(k, varDefs) ->
       for (varDef in varDefs) {
@@ -548,9 +545,8 @@ mutable class FileDefsState private {
           if (isExport) {
             mapPush(this.exported, exportName.value, exportName.value)
           };
-          mapPush(
-            this.defs,
-            exportName.value,
+          this.pushDef(
+            exportName,
             FDVar(k, exportName, varDef.type, varDef.value),
           )
         | _ ->
