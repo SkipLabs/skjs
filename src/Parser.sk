@@ -12,8 +12,13 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
   }
 
   // Record a symbol definition (only call this when a symbol is actually defined)
-  mutable fun recordSymbolDefinition(symbol: SymbolicPos, pos: Int): void {
+  // and set the symbol context in the lexer
+  mutable fun recordSymbolDefinitionAndSetSymbolContext(
+    symbol: SymbolicPos,
+    pos: Int,
+  ): void {
     this.lex.recordSymbolLocation(symbol, pos);
+    this.setSymbolContext(symbol, pos)
   }
 
   // Get current symbol context from the lexer

@@ -699,8 +699,10 @@ extension class Parser {
           constSymbol = SPConstant(name.value);
           symbolContextPos = name.pos.relStart.value;
           // Use the relative position since we're at top level (SPTopLevel)
-          this.recordSymbolDefinition(constSymbol, symbolContextPos);
-          this.setSymbolContext(constSymbol, symbolContextPos)
+          this.recordSymbolDefinitionAndSetSymbolContext(
+            constSymbol,
+            symbolContextPos,
+          )
         | _ ->
           void // Only track simple variable patterns
         }
@@ -811,8 +813,10 @@ extension class Parser {
     (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     classSymbol = SPClass(name.value);
     symbolContextPos = this.lex.pos;
-    this.recordSymbolDefinition(classSymbol, symbolContextPos);
-    this.setSymbolContext(classSymbol, symbolContextPos);
+    this.recordSymbolDefinitionAndSetSymbolContext(
+      classSymbol,
+      symbolContextPos,
+    );
 
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
@@ -1036,8 +1040,10 @@ extension class Parser {
     (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     funcSymbol = SPFunction(funName.value);
     symbolContextPos = this.lex.pos;
-    this.recordSymbolDefinition(funcSymbol, symbolContextPos);
-    this.setSymbolContext(funcSymbol, symbolContextPos);
+    this.recordSymbolDefinitionAndSetSymbolContext(
+      funcSymbol,
+      symbolContextPos,
+    );
 
     cgNode = None(); // TODO: Add call graph support back
 
@@ -1087,8 +1093,10 @@ extension class Parser {
     | (FNNormal(name), SPClass(className)) ->
       methodSymbol = SPMethod(className, name.value);
       symbolContextPos = this.lex.pos;
-      this.recordSymbolDefinition(methodSymbol, symbolContextPos);
-      this.setSymbolContext(methodSymbol, symbolContextPos)
+      this.recordSymbolDefinitionAndSetSymbolContext(
+        methodSymbol,
+        symbolContextPos,
+      )
     | _ -> void
     };
 
