@@ -16,6 +16,13 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
     this.lex.recordSymbolLocation(symbol, pos);
   }
 
+  // Update a symbol definition to the latest occurrence. Used for top-level
+  // definitions (functions, classes, consts) so that duplicate definitions
+  // have their positions resolved correctly.
+  mutable fun updateSymbolDefinition(symbol: SymbolicPos, pos: Int): void {
+    this.lex.updateSymbolLocation(symbol, pos);
+  }
+
   // Get current symbol context from the lexer
   readonly fun getCurrentSymbol(): SymbolicPos {
     this.lex.currentSymbol

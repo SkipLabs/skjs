@@ -448,15 +448,20 @@ mutable class Lexer private {
     }
   }
 
-  // Record a symbol location for tracking - only stores first occurrence
+  // Record a symbol location for tracking - only stores first occurrence.
+  // Used for methods in type annotations and other non-definition contexts.
   mutable fun recordSymbolLocation(symbol: SymbolicPos, position: Int): void {
     this.symbolLocations.maybeGet(symbol) match {
     | None() -> this.symbolLocations.set(symbol, position)
-    | Some(_existingPos) ->
-      // Symbol already exists - keep the first occurrence, ignore subsequent ones
-      // This allows for TypeScript method overloads and interface redeclarations
-      void
+    | Some(_) -> void
     }
+  }
+
+  // Update a symbol location to the latest occurrence. Used for top-level
+  // definitions so that positions inside the current definition's body
+  // resolve correctly when there are duplicate definitions.
+  mutable fun updateSymbolLocation(symbol: SymbolicPos, position: Int): void {
+    this.symbolLocations.set(symbol, position)
   }
 
   // Get recorded location for a symbol
