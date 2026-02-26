@@ -97,20 +97,20 @@ declare class Array<T> implements Iterable<T> {
 
 declare type Tuple0 = {
   readonly length: number;
-  [Symbol.iterator](): { next(): { value: never; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: never; done: boolean } };
 };
 
 declare type Tuple1<T0> = {
   readonly length: number;
   0: T0;
-  [Symbol.iterator](): { next(): { value: T0; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: T0; done: boolean } };
 };
 
 declare type Tuple2<T0, T1> = {
   readonly length: number;
   0: T0;
   1: T1;
-  [Symbol.iterator](): { next(): { value: T0 | T1; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: T0 | T1; done: boolean } };
 };
 
 declare type Tuple3<T0, T1, T2> = {
@@ -118,7 +118,7 @@ declare type Tuple3<T0, T1, T2> = {
   0: T0;
   1: T1;
   2: T2;
-  [Symbol.iterator](): { next(): { value: T0 | T1 | T2; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: T0 | T1 | T2; done: boolean } };
 };
 
 declare type Tuple4<T0, T1, T2, T3> = {
@@ -127,7 +127,7 @@ declare type Tuple4<T0, T1, T2, T3> = {
   1: T1;
   2: T2;
   3: T3;
-  [Symbol.iterator](): { next(): { value: T0 | T1 | T2 | T3; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: T0 | T1 | T2 | T3; done: boolean } };
 };
 
 declare type Tuple5<T0, T1, T2, T3, T4> = {
@@ -137,9 +137,9 @@ declare type Tuple5<T0, T1, T2, T3, T4> = {
   2: T2;
   3: T3;
   4: T4;
-  [Symbol.iterator](): {
-    next(): { value: T0 | T1 | T2 | T3 | T4; done: boolean };
-  };
+  // [Symbol.iterator](): {
+  //   next(): { value: T0 | T1 | T2 | T3 | T4; done: boolean };
+  // };
 };
 
 declare type Tuple6<T0, T1, T2, T3, T4, T5> = {
@@ -150,9 +150,9 @@ declare type Tuple6<T0, T1, T2, T3, T4, T5> = {
   3: T3;
   4: T4;
   5: T5;
-  [Symbol.iterator](): {
-    next(): { value: T0 | T1 | T2 | T3 | T4 | T5; done: boolean };
-  };
+  // [Symbol.iterator](): {
+  //   next(): { value: T0 | T1 | T2 | T3 | T4 | T5; done: boolean };
+  // };
 };
 
 declare type Tuple7<T0, T1, T2, T3, T4, T5, T6> = {
@@ -164,9 +164,9 @@ declare type Tuple7<T0, T1, T2, T3, T4, T5, T6> = {
   4: T4;
   5: T5;
   6: T6;
-  [Symbol.iterator](): {
-    next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6; done: boolean };
-  };
+  // [Symbol.iterator](): {
+  //   next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6; done: boolean };
+  // };
 };
 
 declare type Tuple8<T0, T1, T2, T3, T4, T5, T6, T7> = {
@@ -179,9 +179,9 @@ declare type Tuple8<T0, T1, T2, T3, T4, T5, T6, T7> = {
   5: T5;
   6: T6;
   7: T7;
-  [Symbol.iterator](): {
-    next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7; done: boolean };
-  };
+  // [Symbol.iterator](): {
+  //   next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7; done: boolean };
+  // };
 };
 
 declare type Tuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8> = {
@@ -195,12 +195,12 @@ declare type Tuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8> = {
   6: T6;
   7: T7;
   8: T8;
-  [Symbol.iterator](): {
-    next(): {
-      value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8;
-      done: boolean;
-    };
-  };
+  // [Symbol.iterator](): {
+  //   next(): {
+  //     value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8;
+  //     done: boolean;
+  //   };
+  // };
 };
 
 declare type Tuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> = {
@@ -215,30 +215,30 @@ declare type Tuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> = {
   7: T7;
   8: T8;
   9: T9;
-  [Symbol.iterator](): {
-    next(): {
-      value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9;
-      done: boolean;
-    };
-  };
+  // [Symbol.iterator](): {
+  //   next(): {
+  //     value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9;
+  //     done: boolean;
+  //   };
+  // };
 };
 
 declare type ReadonlyTuple0 = {
   readonly length: number;
-  [Symbol.iterator](): { next(): { value: never; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: never; done: boolean } };
 };
 
 declare type ReadonlyTuple1<T0> = {
   readonly length: number;
   readonly 0: T0;
-  [Symbol.iterator](): { next(): { value: T0; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: T0; done: boolean } };
 };
 
 declare type ReadonlyTuple2<T0, T1> = {
   readonly length: number;
   readonly 0: T0;
   readonly 1: T1;
-  [Symbol.iterator](): { next(): { value: T0 | T1; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: T0 | T1; done: boolean } };
 };
 
 declare type ReadonlyTuple3<T0, T1, T2> = {
@@ -246,7 +246,7 @@ declare type ReadonlyTuple3<T0, T1, T2> = {
   readonly 0: T0;
   readonly 1: T1;
   readonly 2: T2;
-  [Symbol.iterator](): { next(): { value: T0 | T1 | T2; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: T0 | T1 | T2; done: boolean } };
 };
 
 declare type ReadonlyTuple4<T0, T1, T2, T3> = {
@@ -255,7 +255,7 @@ declare type ReadonlyTuple4<T0, T1, T2, T3> = {
   readonly 1: T1;
   readonly 2: T2;
   readonly 3: T3;
-  [Symbol.iterator](): { next(): { value: T0 | T1 | T2 | T3; done: boolean } };
+  // [Symbol.iterator](): { next(): { value: T0 | T1 | T2 | T3; done: boolean } };
 };
 
 declare type ReadonlyTuple5<T0, T1, T2, T3, T4> = {
@@ -265,9 +265,9 @@ declare type ReadonlyTuple5<T0, T1, T2, T3, T4> = {
   readonly 2: T2;
   readonly 3: T3;
   readonly 4: T4;
-  [Symbol.iterator](): {
-    next(): { value: T0 | T1 | T2 | T3 | T4; done: boolean };
-  };
+  // [Symbol.iterator](): {
+  //   next(): { value: T0 | T1 | T2 | T3 | T4; done: boolean };
+  // };
 };
 
 declare type ReadonlyTuple6<T0, T1, T2, T3, T4, T5> = {
@@ -278,9 +278,9 @@ declare type ReadonlyTuple6<T0, T1, T2, T3, T4, T5> = {
   readonly 3: T3;
   readonly 4: T4;
   readonly 5: T5;
-  [Symbol.iterator](): {
-    next(): { value: T0 | T1 | T2 | T3 | T4 | T5; done: boolean };
-  };
+  // [Symbol.iterator](): {
+  //   next(): { value: T0 | T1 | T2 | T3 | T4 | T5; done: boolean };
+  // };
 };
 
 declare type ReadonlyTuple7<T0, T1, T2, T3, T4, T5, T6> = {
@@ -292,9 +292,9 @@ declare type ReadonlyTuple7<T0, T1, T2, T3, T4, T5, T6> = {
   readonly 4: T4;
   readonly 5: T5;
   readonly 6: T6;
-  [Symbol.iterator](): {
-    next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6; done: boolean };
-  };
+  // [Symbol.iterator](): {
+  //   next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6; done: boolean };
+  // };
 };
 
 declare type ReadonlyTuple8<T0, T1, T2, T3, T4, T5, T6, T7> = {
@@ -307,9 +307,9 @@ declare type ReadonlyTuple8<T0, T1, T2, T3, T4, T5, T6, T7> = {
   readonly 5: T5;
   readonly 6: T6;
   readonly 7: T7;
-  [Symbol.iterator](): {
-    next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7; done: boolean };
-  };
+  // [Symbol.iterator](): {
+  //   next(): { value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7; done: boolean };
+  // };
 };
 
 declare type ReadonlyTuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8> = {
@@ -323,12 +323,12 @@ declare type ReadonlyTuple9<T0, T1, T2, T3, T4, T5, T6, T7, T8> = {
   readonly 6: T6;
   readonly 7: T7;
   readonly 8: T8;
-  [Symbol.iterator](): {
-    next(): {
-      value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8;
-      done: boolean;
-    };
-  };
+  // [Symbol.iterator](): {
+  //   next(): {
+  //     value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8;
+  //     done: boolean;
+  //   };
+  // };
 };
 
 declare type ReadonlyTuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> = {
@@ -343,12 +343,12 @@ declare type ReadonlyTuple10<T0, T1, T2, T3, T4, T5, T6, T7, T8, T9> = {
   readonly 7: T7;
   readonly 8: T8;
   readonly 9: T9;
-  [Symbol.iterator](): {
-    next(): {
-      value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9;
-      done: boolean;
-    };
-  };
+  // [Symbol.iterator](): {
+  //   next(): {
+  //     value: T0 | T1 | T2 | T3 | T4 | T5 | T6 | T7 | T8 | T9;
+  //     done: boolean;
+  //   };
+  // };
 };
 
 declare const Math: {
@@ -556,7 +556,7 @@ interface MapIterator<T> {
 
 // Updated Map class declaration
 declare class Map<K, V> {
-  constructor(elts?: Array<[K, V]> | Iterable<[K, V]>);
+  constructor(elts?: ReadonlyArray<[K, V]> | Iterable<[K, V]>);
   size: number;
 
   // Existing methods
