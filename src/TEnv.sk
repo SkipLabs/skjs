@@ -1045,7 +1045,13 @@ base class TEnv{
       uniqueId -> fields.maybeGetSymbolType(subst, this, uniqueId, pos),
     ) match {
     | Some(t) -> t
-    | None() -> return None()
+    | None() -> // Hack for tuples
+      return fields.asTuple().map(elts ->
+        elts.reduce(
+          (acc, ty) -> TType::union(subst, this, acc, ty),
+          TType::bottom(pos),
+        )
+      )
     };
 
     // Step 2: Get return type of calling [Symbol.iterator]()
