@@ -51,7 +51,18 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
   // concat(other: ReadonlyArray<T>): ReadonlyArray<T>;
 }
 
-declare class Array<T> implements ReadonlyArray<T> {
+declare interface SKJS_ArrayAndTupleBase<T> extends ReadonlyArray<T> {
+  indexOf(x: T): number;
+  map<T2>(f: (item: T) => T2): Array<T2>;
+  filter(f: (item: T) => boolean): Array<T>;
+  slice(start: number, end?: number): Array<T>;
+  concat(other: Array<T>): Array<T>;
+  includes(element: T): boolean;
+  lastIndexOf(element: T): number;
+  flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
+}
+
+declare class Array<T> implements SKJS_ArrayAndTupleBase<T> {
   readonly __SKJS_isArray: true;
   constructor(...items: T[]);
   length: number;
