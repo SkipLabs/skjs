@@ -948,6 +948,33 @@ extension class TType {
         } else {
           subst.restore(substCopy)
         }
+      | TInter(tys) ->
+        // When inter(T, U) produced TInter(T, U) because both TVars
+        // were unbound, those TVars are invisible to the bare-TVar
+        // case above. Extract them and grow any that are still unbound.
+        // Already-bound TVars are skipped: their values participate
+        // through TInter.expand during clause expansion instead.
+        for (ty in tys) {
+          ty.getSingleVar() match {
+          | Some(tvar @ TVar(_, _, constraints)) if (subst.isUnbound(tvar)) ->
+            substCopy = subst.save();
+            if (
+              constraints.all(cstr ->
+                TType::isSub(subst, tenv, u1, cstr) is STOk()
+              )
+            ) {
+              subst.grow(
+                tenv,
+                tvar,
+                TType::diff(subst, tenv, u1, u2),
+                Contravariant(),
+              )
+            } else {
+              subst.restore(substCopy)
+            }
+          | _ -> void
+          }
+        }
       | _ -> void
       }
     };

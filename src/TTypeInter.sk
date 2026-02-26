@@ -86,10 +86,19 @@ extension class TType {
   ): TType {
     if (ty1 == ty2) return ty1;
     pair = (ty1, ty2);
-    subst.seenInter.maybeGet(pair) match {
-    | Some(ty) -> ty
-    | None() ->
-      result = TType::inter_(subst, tenv, ty1, ty2);
+    hasTVar = ty1.getSingleVar().isSome() || ty2.getSingleVar().isSome();
+    if (!hasTVar) {
+      subst.seenInter.maybeGet(pair) match {
+      | Some(ty) -> return ty
+      | None() -> void
+      }
+    };
+    result = TType::inter_(subst, tenv, ty1, ty2);
+    // Don't cache when either operand is a TVar: TVar binding state
+    // changes over time, which would make the cached result stale.
+    if (hasTVar) {
+      result
+    } else {
       subst.seenInter.maybeGet(pair) match {
       | Some(ty) ->
         // Re-entrant cycle: a recursive call during inter_ already cached a
@@ -116,13 +125,15 @@ extension class TType {
       return TType::unexpandedInter(ty1, ty2);
     };
     !tenv.seenInter = tenv.seenInter.set((ty1, ty2));
-    ty1.getSingleVar() match {
-    | None() -> void
-    | Some(tvar) -> return TType::var(tvar.addConstraint(ty2))
-    };
-    ty2.getSingleVar() match {
-    | None() -> void
-    | Some(tvar) -> return TType::var(tvar.addConstraint(ty1))
+    (ty1.getSingleVar(), ty2.getSingleVar()) match {
+    | (
+      Some(tvar1),
+      Some(tvar2),
+    ) if (subst.isUnbound(tvar1) && subst.isUnbound(tvar2)) ->
+      return TType::unexpandedInter(ty1, ty2)
+    | (Some(tvar), _) -> return TType::var(tvar.addConstraint(ty2))
+    | (_, Some(tvar)) -> return TType::var(tvar.addConstraint(ty1))
+    | _ -> void
     };
     // Absorption: (A | B) & B = B
     if (ty1.containsType(ty2)) return ty2;
