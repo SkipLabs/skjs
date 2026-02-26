@@ -6,9 +6,9 @@ module SKJS;
 
 mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
   // Set symbol context in the lexer
-  mutable fun setSymbolContext(symbol: SymbolicPos, pos: Int): void {
-    this.lex.!currentSymbol = symbol;
-    this.lex.!currentSymbolPos = pos;
+  mutable fun setSymbolContext(symbolAndPos: (SymbolicPos, Int)): void {
+    this.lex.!currentSymbol = symbolAndPos.i0;
+    this.lex.!currentSymbolPos = symbolAndPos.i1;
   }
 
   // Record a symbol definition (only call this when a symbol is actually defined)
@@ -18,7 +18,7 @@ mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
     pos: Int,
   ): void {
     !pos = this.lex.recordSymbolLocation(symbol, pos);
-    this.setSymbolContext(symbol, pos)
+    this.setSymbolContext((symbol, pos))
   }
 
   // Get current symbol context from the lexer

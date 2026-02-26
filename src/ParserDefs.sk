@@ -738,10 +738,7 @@ extension class Parser {
     };
 
     // Restore previous symbol context if we were parsing constants
-    contextInfo match {
-    | Some((prevSymbol, prevPos)) -> this.setSymbolContext(prevSymbol, prevPos)
-    | None() -> void
-    };
+    contextInfo.each(this.setSymbolContext);
 
     VarDefs(kind, defs.toArray())
   }
@@ -810,7 +807,7 @@ extension class Parser {
   mutable fun class_(kind: ClassKind): Class {
     name = this.getName();
     // Record the class definition and set context
-    (prevSymbol, prevPos) = this.getCurrentSymbolContext();
+    prevSymbolContext = this.getCurrentSymbolContext();
     classSymbol = SPClass(name.value);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
@@ -854,7 +851,7 @@ extension class Parser {
     fields = this.classFields();
 
     // Restore previous context
-    this.setSymbolContext(prevSymbol, prevPos);
+    this.setSymbolContext(prevSymbolContext);
 
     /* Desugar parameter properties */
 
@@ -1037,7 +1034,7 @@ extension class Parser {
   ): TopLevelFunDef {
     funName = this.getName();
     // Record the function definition and set context
-    (prevSymbol, prevPos) = this.getCurrentSymbolContext();
+    prevSymbolContext = this.getCurrentSymbolContext();
     funcSymbol = SPFunction(funName.value);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
@@ -1067,7 +1064,7 @@ extension class Parser {
     );
 
     // Restore previous context
-    this.setSymbolContext(prevSymbol, prevPos);
+    this.setSymbolContext(prevSymbolContext);
     result
   }
 
@@ -1088,7 +1085,7 @@ extension class Parser {
     // the dedicated top-level function parser. Avoid recording SPFunction
     // here because this method is also called for type annotation methods
     // (e.g. { constructor(): void }) which would clash with real functions.
-    (prevSymbol, prevPos) = this.getCurrentSymbolContext();
+    prevSymbolContext = this.getCurrentSymbolContext();
     (funName, this.getCurrentSymbol()) match {
     | (FNNormal(name), SPClass(className)) ->
       methodSymbol = SPMethod(className, name.value);
@@ -1196,7 +1193,7 @@ extension class Parser {
     funEnd = this.lex.getLastPos();
 
     // Restore previous context
-    this.setSymbolContext(prevSymbol, prevPos);
+    this.setSymbolContext(prevSymbolContext);
     mk{
       pos => PosRange::create(this.lex, funStart, funEnd),
       tparams => tparams,
