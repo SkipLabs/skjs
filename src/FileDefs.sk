@@ -308,7 +308,18 @@ class FileDefs{
   errors: Array<TypingError> = Array[],
 } extends S.File
 
-base class FileDef
+base class FileDef {
+  fun getPos(): ?PosRange {
+    this match {
+    | TopLevelFunDef{name => FNNormal(n)} -> Some(n.pos)
+    | TypeDef{name => n} -> Some(n.pos)
+    | Class{name => n} -> Some(n.pos)
+    | Enum(_, n, _) -> Some(n.pos)
+    | FDVar(_, n, _, _) -> Some(n.pos)
+    | FDNamespace(_, posOpt, _) -> posOpt
+    }
+  }
+}
 base class FileDefElt extends FileDef
 extension class TopLevelFunDef extends FileDefElt
 extension class TypeDef extends FileDefElt
@@ -338,6 +349,35 @@ value class Imported{
 }
 
 value class ModuleName{name: String, fileName: FAbsolute}
+
+// Tracks which TypeScript declaration spaces a definition occupies.
+// Some declarations occupy multiple spaces (e.g., class occupies both
+// value and type).
+value class DeclSpaces private {private val: Bool, private typ: Bool} {
+  const value: this = DeclSpaces{val => true, typ => false};
+  const type: this = DeclSpaces{val => false, typ => true};
+  const valueAndType: this = DeclSpaces{val => true, typ => true};
+
+  fun overlaps(other: this): Bool {
+    (this.val && other.val) || (this.typ && other.typ)
+  }
+
+  static fun ofFileDef(def: FileDef): this {
+    def match {
+    | TopLevelFunDef _
+    | FDVar _
+    | FDNamespace _ ->
+      static::value
+    | TypeDef _
+    | Class{kind => CKInterface()} ->
+      static::type
+    | Class{kind => CKClass()}
+    | Class{kind => CKAbstract()}
+    | Enum _ ->
+      static::valueAndType
+    }
+  }
+}
 
 fun mapPush<K: Hashable & Equality, V>(
   m: mutable Map<K, mutable Vector<V>>,
@@ -519,7 +559,25 @@ mutable class FileDefsState private {
 
   private mutable fun pushDef(name: Name, d: FileDef, isExport: Bool): void {
     if (isExport) mapPush(this.exported, name.value, name.value);
-    mapPush(this.defs, name.value, d)
+    this.defs.maybeGet(name.value) match {
+    | None() -> this.defs![name.value] = mutable Vector[d]
+    | Some(existingDefs) ->
+      dSpaces = DeclSpaces::ofFileDef(d);
+      existingDefs
+        .find(existingDef ->
+          DeclSpaces::ofFileDef(existingDef).overlaps(dSpaces)
+        )
+        .each(existingDef -> {
+          msg1 = (name.pos, `${name} is already defined`);
+          msgs = existingDef.getPos() match {
+          | None() -> Array[msg1]
+          | Some(existingPos) ->
+            Array[msg1, (existingPos, "Previous definition was here")]
+          };
+          this.fileErrors.push(TypingError(msgs))
+        });
+      existingDefs.push(d)
+    }
   }
 
   private mutable fun newDef(isExport: Bool, def: Declarable): void {

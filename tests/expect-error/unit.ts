@@ -10,14 +10,17 @@ function generic<T1, T2>(arg: T1 & T2): T1 {
   return arg;
 }
 
+// @skjs-expect-error generic is already defined
 function generic<T1, T2>(arg: T1 & T2): T2 {
   return arg;
 }
 
+// @skjs-expect-error generic is already defined
 function generic<T1, T2>(arg: T1): T1 | T2 {
   return arg;
 }
 
+// @skjs-expect-error generic is already defined
 function generic<T1, T2>(arg: T2): T1 | T2 {
   return arg;
 }
@@ -30,10 +33,12 @@ function checkObject(obj: { field1: number }): {} {
   return obj;
 }
 
+// @skjs-expect-error checkObject is already defined
 function checkObject(obj: { field1: number }): { field1: number } {
   return obj;
 }
 
+// @skjs-expect-error checkObject is already defined
 function checkObject(obj: { field1: number } & { field2: number }): {
   field1: number;
   field2: number;
@@ -41,10 +46,12 @@ function checkObject(obj: { field1: number } & { field2: number }): {
   return obj;
 }
 
+// @skjs-expect-error checkObject is already defined
 function checkObject(obj: { field1: number } | { field2: number }): {} {
   return obj;
 }
 
+// @skjs-expect-error checkObject is already defined
 function checkObject(
   obj: { field1: number } | { field1: number; field2: number },
 ): { field1: number } {
@@ -66,23 +73,28 @@ function check(data: adt): boolean {
 // Tuples
 ///////////////////////////////////////////////////////////////////////////////
 
+// @skjs-expect-error check is already defined
 function check(t1: [number, boolean]): number {
   return t1[0];
 }
 
+// @skjs-expect-error check is already defined
 function check(t1: [number, boolean]): boolean {
   return t1[1];
 }
 
+// @skjs-expect-error check is already defined
 function check(t1: [number] | [boolean]): [number | boolean] {
   return t1;
 }
 
+// @skjs-expect-error check is already defined
 function check(t1: [number] | [boolean]): number | boolean {
   let [x] = t1;
   return x;
 }
 
+// @skjs-expect-error check is already defined
 function check(
   t1: [{ field1: number }] & [{ field2: boolean }],
 ): [{ field1: number; field2: boolean }] {
@@ -93,12 +105,14 @@ function checkTuple(tuple: [number, string]): [number, string] {
   return tuple;
 }
 
+// @skjs-expect-error checkTuple is already defined
 function checkTuple(
   tuple: [number, string] | [string, number],
 ): [number | string, number | string] {
   return tuple;
 }
 
+// @skjs-expect-error checkTuple is already defined
 function checkTuple(
   tuple: [number, string, boolean],
 ): [number, string, boolean] {
@@ -111,18 +125,21 @@ function checkTuple(
 
 const x: number = 0;
 
+// @skjs-expect-error check is already defined
 function check(): number {
   return x;
 }
 
 const n: 0 = 0;
 
+// @skjs-expect-error check is already defined
 function check(): 0 {
   return n;
 }
 
 const n2 = 1;
 
+// @skjs-expect-error check is already defined
 function check(): 0 | 1 {
   if (true) return n2;
   return n;
@@ -130,12 +147,14 @@ function check(): 0 | 1 {
 
 const s = "hello";
 
+// @skjs-expect-error check is already defined
 function check(): "hello" {
   return s;
 }
 
 const b = true;
 
+// @skjs-expect-error check is already defined
 function check(): true {
   return b;
 }
@@ -148,10 +167,12 @@ function checkArray(arr: number[]): number[] {
   return arr;
 }
 
+// @skjs-expect-error checkArray is already defined
 function checkArray(arr: (number | string)[]): (number | string)[] {
   return arr;
 }
 
+// @skjs-expect-error checkArray is already defined
 function checkArray(arr: (number & string)[]): never[] {
   return arr;
 }
@@ -164,12 +185,14 @@ function checkFunction(func: (x: number) => number): (x: number) => number {
   return func;
 }
 
+// @skjs-expect-error checkFunction is already defined
 function checkFunction(
   func: (x: number) => number | string,
 ): (x: number) => number | string {
   return func;
 }
 
+// @skjs-expect-error checkFunction is already defined
 function checkFunction(
   func: (x: number) => number & string,
 ): (x: number) => never {
@@ -189,12 +212,14 @@ function checkLiteralType(
   return obj;
 }
 
+// @skjs-expect-error checkLiteralType is already defined
 function checkLiteralType(
   obj: LiteralType1 | LiteralType2,
 ): LiteralType1 | LiteralType2 {
   return obj;
 }
 
+// @skjs-expect-error checkLiteralType is already defined
 function checkLiteralType(obj: {
   field1: number;
   field2: string;
@@ -202,6 +227,7 @@ function checkLiteralType(obj: {
   return obj;
 }
 
+// @skjs-expect-error checkLiteralType is already defined
 function checkLiteralType(
   obj: { field1: number } | { field2: string },
 ): LiteralType1 | LiteralType2 {
@@ -221,6 +247,7 @@ function checkNestedType(obj: NestedType1 & NestedType2): {
   return obj;
 }
 
+// @skjs-expect-error checkNestedType is already defined
 function checkNestedType(obj: NestedType1 | NestedType2): {
   a: { b: { c?: number; d?: string } };
 } {
@@ -250,6 +277,7 @@ function checkAliasAndInterface(obj: AliasType & InterfaceType): {
   return obj;
 }
 
+// @skjs-expect-error checkAliasAndInterface is already defined
 function checkAliasAndInterface(obj: AliasType | InterfaceType): {
   field: number;
 } {
@@ -865,6 +893,7 @@ function checkIfElseExpression(input: number | string): number {
   }
 }
 
+// @skjs-expect-error checkIfElseExpression is already defined
 function checkIfElseExpression(input: number | string): string {
   if (typeof input === "string") {
     return input;
