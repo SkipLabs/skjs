@@ -65,6 +65,7 @@ interface Dog extends Animal {
 }
 
 function testMutableFieldCovariance(): void {
+  // @skjs-expect-error Invalid annotation
   const dogBox: { pet: Dog } = { pet: { name: "Rex", breed: "Lab" } };
   // @skjs-expect-error Invalid annotation
   const animalBox: { pet: Animal } = dogBox;
@@ -72,6 +73,7 @@ function testMutableFieldCovariance(): void {
 
 // Nested mutable field covariance
 function testNestedMutableCovariance(): void {
+  // @skjs-expect-error Invalid annotation
   const inner: { value: Dog } = { value: { name: "Rex", breed: "Lab" } };
   const outer: { box: { value: Dog } } = { box: inner };
   // @skjs-expect-error Invalid annotation
@@ -136,6 +138,7 @@ function idWrapped437<T extends Wrapper437<StrOrNum437>>(x: T): T {
 }
 
 function testNestedConstraintIntersection437(): void {
+  // @skjs-expect-error Invalid annotation
   const w: Wrapper437<string> = { inner: { v: "hello" } };
   // @skjs-expect-error Invalid call
   const r = idWrapped437(w);

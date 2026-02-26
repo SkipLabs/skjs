@@ -43,34 +43,16 @@ class TInter private (tys: ArraySet<TType>) extends TInst {
     result
   }
 
-  // Maps f over all types in the intersection, preserving invariants.
-  // Returns:
-  //   Success(None())       if result is bottom
-  //   Success(Some(inter))  if result is a valid TInter (>= 2 types)
-  //   Failure(ty)           if result collapsed to a single type
-  fun map(f: TType -> TType): Result<?TInter, TType> {
-    result = mutable Vector[];
-    for (ty in this.tys) {
-      mapped = f(ty);
-      if (mapped.isTop()) continue;
-      if (mapped.isBottom()) return Success(None());
-      mapped.getSingleInter() match {
-      | Some(TInter(innerTys)) -> result.extend(innerTys)
-      | None() -> result.push(mapped)
-      }
-    };
-    result.size() match {
-    | 0 -> Success(None())
-    | 1 -> Failure(result[0])
-    | _ -> Success(Some(TInter(ArraySet::createFromMVector(result))))
-    }
+  fun map(f: TType -> TType): this {
+    !this.tys = this.tys.mapToSet(f);
+    this
   }
 }
 
 extension class TType {
   // Unexpanded intersection. Flattens nested TInters:
   // (A & B) & (C & D) → A & B & C & D
-  static private fun unexpandedInter(ty1: TType, ty2: TType): TType {
+  static fun unexpandedInter(ty1: TType, ty2: TType): TType {
     TInter::create(ty1, ty2) match {
     | None() -> TType::bottom(ty1.pos)
     | Some(tinter) ->
@@ -121,23 +103,26 @@ extension class TType {
     expandPrim = (primClassName) -> TType::inst(primClassName, TArgs(Array[]));
     if (ty2.isTop() || ty1.isBottom()) return ty1;
     if (ty1.isTop() || ty2.isBottom()) return ty2;
-    if (tenv.seenInter.contains((ty1, ty2))) {
-      return TType::unexpandedInter(ty1, ty2);
-    };
-    !tenv.seenInter = tenv.seenInter.set((ty1, ty2));
     (ty1.getSingleVar(), ty2.getSingleVar()) match {
     | (
       Some(tvar1),
       Some(tvar2),
     ) if (subst.isUnbound(tvar1) && subst.isUnbound(tvar2)) ->
       return TType::unexpandedInter(ty1, ty2)
-    | (Some(tvar), _) -> return TType::var(tvar.addConstraint(ty2))
-    | (_, Some(tvar)) -> return TType::var(tvar.addConstraint(ty1))
+    | (Some(tvar), _) if (subst.isUnbound(tvar)) ->
+      return TType::var(tvar.addConstraint(ty2))
+    | (Some(tvar), _) if (subst.isOpen(tvar) && tvar.isForField()) ->
+      return TType::var(tvar.addConstraint(ty2))
+    | (_, Some(tvar)) if (subst.isUnbound(tvar)) ->
+      return TType::var(tvar.addConstraint(ty1))
+    | (_, Some(tvar)) if (subst.isOpen(tvar) && tvar.isForField()) ->
+      return TType::var(tvar.addConstraint(ty1))
     | _ -> void
     };
-    // Absorption: (A | B) & B = B
-    if (ty1.containsType(ty2)) return ty2;
-    if (ty2.containsType(ty1)) return ty1;
+    if (tenv.seenInter.contains((ty1, ty2))) {
+      return TType::unexpandedInter(ty1, ty2);
+    };
+    !tenv.seenInter = tenv.seenInter.set((ty1, ty2));
     clauses1 = ty1.expandToClauses(subst, tenv, Covariant());
     clauses2 = ty2.expandToClauses(subst, tenv, Covariant());
     // TODO: These speculative isSub checks use subst directly. They only
@@ -220,12 +205,18 @@ extension class TField {
     y: TField,
   ): TField {
     if (x.name != y.name) internal_error("field names must match");
+    // The union should be processed first, it leads to better inference
+    set = TType::union(subst, tenv, x.set, y.set);
     TField{
       pos => x.pos,
       name => x.name,
       isOptional => x.isOptional && y.isOptional,
-      get => TType::inter(subst, tenv, x.get, y.get),
-      set => TType::union(subst, tenv, x.set, y.set),
+      get => if (tenv.expandInter) {
+        TType::inter(subst, tenv, x.get, y.get)
+      } else {
+        TType::unexpandedInter(x.get, y.get)
+      },
+      set,
     }
   }
 }

@@ -98,12 +98,18 @@ extension class TField {
     y: TField,
   ): TField {
     if (x.name != y.name) internal_error("field names must match");
+    // The union should be processed first, it leads to better inference
+    get = TType::union(subst, tenv, x.get, y.get);
     TField{
       pos => x.pos,
       name => x.name,
       isOptional => x.isOptional || y.isOptional,
-      get => TType::union(subst, tenv, x.get, y.get),
-      set => TType::inter(subst, tenv, x.set, y.set),
+      get,
+      set => if (tenv.expandInter) {
+        TType::inter(subst, tenv, x.set, y.set)
+      } else {
+        TType::unexpandedInter(x.set, y.set)
+      },
     }
   }
 }

@@ -65,6 +65,8 @@ base class TEnv{
   // the process of checking. If a cycle occurs, the subtyping
   // relation is considered correct (by co-induction).
   seenSub: SortedSet<(Int, TType, TType)> = SortedSet[],
+
+  expandInter: Bool = false,
 } {
   // Given a type name and type arguments, first retrieves the type
   // definition (using the defMap) and then produces a type where the

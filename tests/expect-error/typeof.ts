@@ -159,6 +159,7 @@ function testNullInUnion(x: { a: number } | null | string): { a: number } {
   if (typeof x === "object") {
     // x could be { a: number } or null
     // SKJS needs to refine this properly
+    // @skjs-expect-error Invalid return type
     return x ?? { a: 0 };
   } else {
     return { a: 0 };

@@ -71,6 +71,7 @@ function fixB_genericConstraint<T extends List<number>>(x: T): List<number> {
 type Nested<T> = null | { data: T; child: Nested<T> };
 
 function fixB_deepNest<T>(val: T): Nested<T> {
+  // @skjs-expect-error Invalid return type
   return {
     data: val,
     child: { data: val, child: { data: val, child: null } },

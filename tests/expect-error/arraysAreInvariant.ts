@@ -9,7 +9,6 @@ function interWithTop<T>(...x: T[] & arrayNumberOrArrayString): T {
 }
 
 function checkIntersectionWithTopIsNotBottom(): number {
-  // @skjs-expect-error Invalid call. Unexpected type for ...
   return interWithTop<number>(0) + 1;
 }
 
@@ -22,7 +21,6 @@ function interWithTopS<S>(...x: S[] & arrayNumberOrArrayString): S {
 
 function checkIntersectionWithTopSIsNotBottom(): number {
   // Name-sensitive behavior probe: this call differs from the T-binder version.
-  // @skjs-expect-error Invalid call. Unexpected type for ...
   return interWithTopS<number>(0) + 1;
 }
 
