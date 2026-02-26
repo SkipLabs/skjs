@@ -808,10 +808,10 @@ extension class Parser {
   mutable fun class_(kind: ClassKind): Class {
     name = this.getName();
     // Record the class definition and set context
+    (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     classSymbol = SPClass(name.value);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinition(classSymbol, symbolContextPos);
-    (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     this.setSymbolContext(classSymbol, symbolContextPos);
 
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
@@ -1033,10 +1033,10 @@ extension class Parser {
   ): TopLevelFunDef {
     funName = this.getName();
     // Record the function definition and set context
+    (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     funcSymbol = SPFunction(funName.value);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinition(funcSymbol, symbolContextPos);
-    (prevSymbol, prevPos) = this.getCurrentSymbolContext();
     this.setSymbolContext(funcSymbol, symbolContextPos);
 
     cgNode = None(); // TODO: Add call graph support back
