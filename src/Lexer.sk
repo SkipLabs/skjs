@@ -449,13 +449,16 @@ mutable class Lexer private {
   }
 
   // Record a symbol location for tracking - only stores first occurrence
-  mutable fun recordSymbolLocation(symbol: SymbolicPos, position: Int): void {
+  // and returns it
+  mutable fun recordSymbolLocation(symbol: SymbolicPos, position: Int): Int {
     this.symbolLocations.maybeGet(symbol) match {
-    | None() -> this.symbolLocations.set(symbol, position)
-    | Some(_existingPos) ->
+    | None() ->
+      this.symbolLocations.set(symbol, position);
+      position
+    | Some(existingPos) ->
       // Symbol already exists - keep the first occurrence, ignore subsequent ones
       // This allows for TypeScript method overloads and interface redeclarations
-      void
+      existingPos
     }
   }
 
