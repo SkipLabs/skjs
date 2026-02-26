@@ -1018,27 +1018,32 @@ base class TEnv{
     }
   }
 
-  fun getIteratorElementType(
-    subst: mutable Subst,
-    fields: TFields,
-    pos: PosRange,
-  ): ?TType {
-    // Step 1: Resolve Symbol.iterator's unique ID via synthetic expression
+  // Resolve Symbol.iterator's unique ID via synthetic expression
+  fun getSymbolIteratorUniqueId(subst: mutable Subst, pos: PosRange): ?String {
     symbolExpr = Expr(pos, Var(Name(pos, "Symbol")));
     iteratorExpr = Expr(
       pos,
       Dot(NormalDot(), symbolExpr, Name(pos, "iterator")),
     );
     iteratorSymType = this.typeOfExpr(subst, iteratorExpr);
-    uniqueId = iteratorSymType
-      .getSTypes(subst, this, Covariant())
-      .flatMap(stypes ~> stypes.singleElt()) match {
+    iteratorSymType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
     | Some(TPrimValue(TSymbol(), Some(lits), _)) ->
-      lits.singleElt() match {
-      | Some(lit) -> lit.val
-      | None() -> return None()
-      }
-    | _ -> return None()
+      lits.singleElt().map(lit -> lit.val)
+    | _ -> None()
+    }
+  }
+
+  fun getIteratorElementType(
+    subst: mutable Subst,
+    fields: TFields,
+    pos: PosRange,
+  ): ?TType {
+    // Step 1: Resolve Symbol.iterator's unique ID via synthetic expression
+    uniqueId = this.getSymbolIteratorUniqueId(subst, pos) match {
+    | Some(uniqueId) -> uniqueId
+    | None() -> return None()
     };
 
     // Step 2: Look up [Symbol.iterator] symbol field
