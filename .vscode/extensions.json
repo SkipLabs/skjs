@@ -1,0 +1,17 @@
+{
+  "recommendations": [
+    "better-ts-errors.better-ts-errors",
+    "circleci.circleci",
+    "davidanson.vscode-markdownlint",
+    "dbaeumer.vscode-eslint",
+    "esbenp.prettier-vscode",
+    "ms-azuretools.vscode-docker",
+    "ms-vscode.makefile-tools",
+    "ms-vscode.vscode-typescript-next",
+    "skiplabs.skip",
+    "streetsidesoftware.code-spell-checker",
+    "tamasfe.even-better-toml",
+    "valmack.circleci-config-validator",
+    "yzhang.markdown-all-in-one"
+  ]
+}
