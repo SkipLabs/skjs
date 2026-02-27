@@ -529,7 +529,10 @@ base class STErrorOnTFields(
     | STRecFieldsNew(None(), _fields1, _fields2) ->
       (List.Nil(), List[(pos1, "Missing constructor signature")])
     | STRecFieldsField(None(), field, _fields1, _fields2) ->
-      (List.Nil(), List[(field.pos, `The field '${field.name}' is missing`)])
+      (
+        List.Nil(),
+        List[(field.pos, `The field '${field.name.value}' is missing`)],
+      )
     | STRecFieldsCall(Some(err), _fields1, _fields2) ->
       (
         List[(pos1, `They differ in their call signature`)],
@@ -565,7 +568,7 @@ base class STErrorOnTFields(
     | STRecFieldsFieldIndex(err, field1, index2, _fields1, _fields2) ->
       (
         List[
-          (field1.pos, `Field '${field1.name}'`),
+          (field1.pos, `Field '${field1.name.value}'`),
           (index2.pos, `is not compatible with index field ${index2}`),
         ],
         err.toError(detailForRec),
@@ -574,13 +577,15 @@ base class STErrorOnTFields(
       (
         List[
           (index1.pos, `Index field ${index1}`),
-          (field2.pos, `is not compatible with field '${field2.name}'`),
+          (field2.pos, `is not compatible with field '${field2.name.value}'`),
         ],
         err.toError(detailForRec),
       )
     | STRecFieldsField(Some(err), field, _fields1, _fields2) ->
       (
-        List[(field.pos, `Their field '${field.name}' are not compatible`)],
+        List[
+          (field.pos, `Their field '${field.name.value}' are not compatible`),
+        ],
         err.toError(detailForRec),
       )
     };
@@ -708,7 +713,7 @@ extension class TFields {
     | (None(), Some(index2)) ->
       for (f1 in fields1.fields) {
         f1keyType = TType::single(
-          TPrimValue::single(TString(), f1.name, f1.pos),
+          TPrimValue::single(TString(), f1.name.value, f1.pos),
         );
         TType::isSub(subst.clone(), tenv, f1keyType, index2.keyType) match {
         | STError _ -> void
@@ -732,7 +737,7 @@ extension class TFields {
         | None() -> void
         | Some(index1) ->
           f2keyType = TType::single(
-            TPrimValue::single(TString(), f2.name, f2.pos),
+            TPrimValue::single(TString(), f2.name.value, f2.pos),
           );
           TType::isSub(subst.clone(), tenv, f2keyType, index1.keyType) match {
           | STError _ -> void

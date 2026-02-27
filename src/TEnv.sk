@@ -385,8 +385,8 @@ base class TEnv{
   // Returns the type of the constructor, if any.
   private fun addFields(
     tcenvb: mutable TCEnvBase,
-    acc: mutable Map<String, TField>,
-    symbolFields: mutable Map<String, TField>,
+    acc: mutable Map<FieldNameString, TField>,
+    symbolFields: mutable Map<FieldNameString, TField>,
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
     isStatic: ?Array<TypeParam>,
@@ -1391,10 +1391,10 @@ base class TEnv{
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | TObject(fields, _) ->
           for (field in fields.fields) {
-            !strings = strings.set(field.name);
+            !strings = strings.set(field.name.value);
           };
           for (symbolField in fields.symbolFields) {
-            !symbols = symbols.set(symbolField.name);
+            !symbols = symbols.set(symbolField.name.value);
           };
           for (index in fields.indexes) {
             // TODO: convert numbers to strings
@@ -1404,10 +1404,10 @@ base class TEnv{
           !strings = strings.set(kAlgebraicBranchFieldName);
           for (branch in branches) {
             for (field in branch.fields.fields) {
-              !strings = strings.set(field.name);
+              !strings = strings.set(field.name.value);
             };
             for (symbolField in branch.fields.symbolFields) {
-              !symbols = symbols.set(symbolField.name);
+              !symbols = symbols.set(symbolField.name.value);
             };
             for (index in branch.fields.indexes) {
               // TODO: convert numbers to strings

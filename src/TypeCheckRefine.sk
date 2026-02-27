@@ -286,9 +286,9 @@ extension class TypeChecker {
               | Some(_) ->
                 key match {
                 | FKSymbol(_, keyName) ->
-                  Some(tObj.filterSymbolFields(sf -> sf.name != keyName))
+                  Some(tObj.filterSymbolFields(sf -> sf.name.value != keyName))
                 | FKName(Name(_, keyName), _) ->
-                  Some(tObj.filterFields(f -> f.name != keyName))
+                  Some(tObj.filterFields(f -> f.name.value != keyName))
                 }
               | _ -> Some(stype)
               }

@@ -851,7 +851,7 @@ extension class TypeChecker {
             )
           | None() -> !algebraicBranchField = Some((name.pos, ty))
           }
-        | Some(field) -> fields![name.value] = field
+        | Some(field) -> fields![field.name] = field
         }
       };
       obj = createObject(
@@ -1274,7 +1274,7 @@ extension class TypeChecker {
                 true // broad type, could be any key
               | Some(Some(fieldsToCheck)) ->
                 fieldsToCheck.values().any(fieldToCheck ->
-                  fields.maybeGet(fieldToCheck.val) match {
+                  fields.maybeGet(FieldNameString(fieldToCheck.val)) match {
                   | Some(tField) -> tField.isOptional
                   | None() -> true
                   }
@@ -1287,7 +1287,7 @@ extension class TypeChecker {
                 true // broad symbol, could be any key
               | Some(Some(symFieldsToCheck)) ->
                 symFieldsToCheck.values().any(symToCheck ->
-                  symbolFields.maybeGet(symToCheck.val) match {
+                  symbolFields.maybeGet(FieldNameString(symToCheck.val)) match {
                   | Some(tField) -> tField.isOptional
                   | None() -> true
                   }
