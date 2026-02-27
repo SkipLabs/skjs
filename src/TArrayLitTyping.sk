@@ -92,7 +92,7 @@ class ArrayLitTyping() {
 
   // Converts ArrayLit<α, elts> to readonly Tuple[elts...].
   static private fun arrayLitToTupleType(arrLit: TArrayLit): TType {
-    TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, true)
+    TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, false)
   }
 
   // Widens literal primitive types (e.g., 42 -> number) in ty.
