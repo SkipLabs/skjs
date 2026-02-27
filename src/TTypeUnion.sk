@@ -120,7 +120,16 @@ extension class TIndexField {
        but we return { [f: 0 | 1 | 2]: 4 | 5 | 6 } */
     valueType = TType::union(subst, tenv, x.valueType, y.valueType);
     keyType = TType::union(subst, tenv, x.keyType, y.keyType);
-    Some(TIndexField{pos => x.pos, keyName => x.keyName, keyType, valueType})
+    isReadonly = x.isReadonly && y.isReadonly;
+    Some(
+      TIndexField{
+        pos => x.pos,
+        keyName => x.keyName,
+        keyType,
+        isReadonly,
+        valueType,
+      },
+    )
   }
 }
 
