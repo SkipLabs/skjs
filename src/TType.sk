@@ -292,26 +292,6 @@ class TType private {
     this.clauses.isTop()
   }
 
-  /* Syntactic containment: returns true when every inst and clause
-     of `other` also appears in `this` (checked by structural equality).
-
-     Since a TType represents the union of its insts and clauses,
-     this implies this ⊇ other (but the converse does not hold:
-     two semantically equal types can have different representations).
-
-     Unlike isSub, this is a cheap O(n log n) check that never expands
-     type aliases or solves constraints — it only compares the pre-expansion
-     representations. It can therefore be used inside inter/union without
-     risk of divergence. The trade-off is that it misses cases where
-     containment holds semantically but not syntactically.
-
-     Used for the absorption law: (A | B) & B = B. */
-  fun containsType(other: TType): Bool {
-    this != other &&
-      this.insts.contains(other.insts) &&
-      this.clauses.contains(other.clauses)
-  }
-
   fun isConcretePrimitive(): Bool {
     if (!this.insts.isEmpty()) return false;
     for (clause in this.clauses) {
@@ -1504,10 +1484,6 @@ class TInsts private (
     this.insts.getUnique()
   }
 
-  fun contains(that: TInsts): Bool {
-    this.insts.contains(that.insts)
-  }
-
   fun getSingleInter(): ?TInter {
     this.getUnique() match {
     | Some(inter @ TInter _) -> Some(inter)
@@ -1713,13 +1689,6 @@ class Clauses private (
 
   fun isEmpty(): Bool {
     this.clauses.isEmpty()
-  }
-
-  /* Syntactic subset: returns true when every clause in `other`
-     also appears in `this` (looked up by vars key, compared by
-     structural equality). Empty `other` is trivially contained. */
-  fun contains(other: Clauses): Bool {
-    !other.clauses.any(c -> this.clauses.maybeGet(c.project()) != Some(c))
   }
 
   fun isTop(): Bool {
