@@ -962,6 +962,31 @@ class TIndexField private {
   fun toString(): String {
     prettyPrintIndexField(this)
   }
+
+  // Deduplicate indexes that share the same key type and value type.
+  // If one is not readonly, the merged result is not readonly.
+  // Indexes with different value types are kept as-is (proper merging
+  // requires subst/tenv which is not available here).
+  static fun mergeByKeyType(
+    indexes: readonly Vector<TIndexField>,
+  ): Array<TIndexField> {
+    if (indexes.size() <= 1) return indexes.toArray();
+    merged: mutable Vector<TIndexField> = mutable Vector[];
+    for (idx in indexes) {
+      existingIdx = merged.findIndex(e ->
+        e.keyType == idx.keyType && e.valueType == idx.valueType
+      );
+      existingIdx match {
+      | None() -> merged.push(idx)
+      | Some(i) ->
+        existing = merged[i];
+        if (existing.isReadonly && !idx.isReadonly) {
+          merged![i] = existing with {isReadonly => false}
+        }
+      }
+    };
+    merged.toArray()
+  }
 }
 
 // Wrapper around String that sorts numeric field names (tuple indices)
@@ -1027,7 +1052,7 @@ class TFields private {
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
-      indexes => indexes.toArray(),
+      indexes => TIndexField::mergeByKeyType(indexes),
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
     }
