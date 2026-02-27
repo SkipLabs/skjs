@@ -934,6 +934,7 @@ class TIndexField private {
   pos: PosRange,
   keyName: String,
   keyType: TType,
+  isReadonly: Bool,
   valueType: TType,
 } uses XXHashable, Orderable {
   static fun create{
@@ -943,8 +944,13 @@ class TIndexField private {
     isReadonly: ?PosRange,
     valueType: TType,
   }: TIndexField {
-    _ = isReadonly; // Will be used when get/set types are introduced
-    TIndexField{pos, keyName, keyType, valueType}
+    TIndexField{
+      pos,
+      keyName,
+      keyType,
+      isReadonly => isReadonly.isSome(),
+      valueType,
+    }
   }
 
   fun mapTypes(f: TType -> TType): TIndexField {
