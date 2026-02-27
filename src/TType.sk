@@ -998,7 +998,7 @@ class TFields private {
   }
 
   static fun create{
-    fields: Array<TField> = Array[],
+    fields: readonly Map<String, TField> = Map[],
     symbolFields: readonly Vector<TField> = Vector[],
     indexes: Array<TIndexField> = Array[],
     new: ?TFuns = None(),
@@ -1006,7 +1006,7 @@ class TFields private {
   }: TFields {
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
-        fields.sortedBy(x ~> x.name).values(),
+        fields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields.sortedBy(x ~> x.name).values(),

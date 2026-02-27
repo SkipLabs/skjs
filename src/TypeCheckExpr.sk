@@ -859,11 +859,7 @@ extension class TypeChecker {
         tcenv,
         pos,
         algebraicBranchField,
-        TFields::create{
-          fields => fields.values().collect(Array),
-          symbolFields,
-          indexes => indexes.toArray(),
-        },
+        TFields::create{fields, symbolFields, indexes => indexes.toArray()},
       );
       for (efield in efields) {
         efield match {
@@ -1767,7 +1763,7 @@ extension class TypeChecker {
     | Some(TObject(fields, objPos)) ->
       // For each key, check existing fields/index sigs and collect
       // new fields to grow.
-      newFieldsVec = mutable Vector[];
+      newFieldsMap = mutable Map[];
       newSymbolFieldsVec = mutable Vector[];
       needsGrowth = false;
       for (key in fieldKeys) {
@@ -1818,7 +1814,7 @@ extension class TypeChecker {
               )
             | Some(field) ->
               key match {
-              | FKName _ -> newFieldsVec.push(field)
+              | FKName _ -> newFieldsMap![field.name] = field
               | FKSymbol _ -> newSymbolFieldsVec.push(field)
               }
             }
@@ -1845,7 +1841,7 @@ extension class TypeChecker {
           )
         };
         allNewFields = TFields::create{
-          fields => newFieldsVec.toArray(),
+          fields => newFieldsMap,
           symbolFields => newSymbolFieldsVec,
         };
         newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
