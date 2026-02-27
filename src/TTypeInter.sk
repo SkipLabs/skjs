@@ -362,26 +362,8 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): ?TFields {
-    call = (fields1.call, fields2.call) match {
-    | (None(), call)
-    | (call, None()) ->
-      call
-    | (Some((opt1, call1)), Some((opt2, call2))) ->
-      TFuns::inter(subst, tenv, call1, call2) match {
-      | None() -> return None()
-      | Some(f) -> Some((opt1 && opt2, f))
-      }
-    };
-    new = (fields1.new, fields2.new) match {
-    | (None(), new)
-    | (new, None()) ->
-      new
-    | (Some((opt1, new1)), Some((opt2, new2))) ->
-      TFuns::inter(subst, tenv, new1, new2) match {
-      | None() -> return None()
-      | Some(f) -> Some((opt1 && opt2, f))
-      }
-    };
+    // Process fields first so that tuple index type variables are resolved
+    // before call/new signatures with union types.
     fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
       TField::inter(subst, tenv, x, y)
     );
@@ -403,6 +385,26 @@ extension class TFields {
       } match {
       | None() -> Array[]
       | Some(index) -> Array[index]
+      }
+    };
+    call = (fields1.call, fields2.call) match {
+    | (None(), call)
+    | (call, None()) ->
+      call
+    | (Some((opt1, call1)), Some((opt2, call2))) ->
+      TFuns::inter(subst, tenv, call1, call2) match {
+      | None() -> return None()
+      | Some(f) -> Some((opt1 && opt2, f))
+      }
+    };
+    new = (fields1.new, fields2.new) match {
+    | (None(), new)
+    | (new, None()) ->
+      new
+    | (Some((opt1, new1)), Some((opt2, new2))) ->
+      TFuns::inter(subst, tenv, new1, new2) match {
+      | None() -> return None()
+      | Some(f) -> Some((opt1 && opt2, f))
       }
     };
     Some(TFields{fields, symbolFields, indexes, call, new})

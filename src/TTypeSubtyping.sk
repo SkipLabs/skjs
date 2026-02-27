@@ -529,7 +529,10 @@ base class STErrorOnTFields(
     | STRecFieldsNew(None(), _fields1, _fields2) ->
       (List.Nil(), List[(pos1, "Missing constructor signature")])
     | STRecFieldsField(None(), field, _fields1, _fields2) ->
-      (List.Nil(), List[(field.pos, `The field '${field.name}' is missing`)])
+      (
+        List.Nil(),
+        List[(field.pos, `The field '${field.name.value}' is missing`)],
+      )
     | STRecFieldsCall(Some(err), _fields1, _fields2) ->
       (
         List[(pos1, `They differ in their call signature`)],
@@ -565,7 +568,7 @@ base class STErrorOnTFields(
     | STRecFieldsFieldIndex(err, field1, index2, _fields1, _fields2) ->
       (
         List[
-          (field1.pos, `Field '${field1.name}'`),
+          (field1.pos, `Field '${field1.name.value}'`),
           (index2.pos, `is not compatible with index field ${index2}`),
         ],
         err.toError(detailForRec),
@@ -574,13 +577,15 @@ base class STErrorOnTFields(
       (
         List[
           (index1.pos, `Index field ${index1}`),
-          (field2.pos, `is not compatible with field '${field2.name}'`),
+          (field2.pos, `is not compatible with field '${field2.name.value}'`),
         ],
         err.toError(detailForRec),
       )
     | STRecFieldsField(Some(err), field, _fields1, _fields2) ->
       (
-        List[(field.pos, `Their field '${field.name}' are not compatible`)],
+        List[
+          (field.pos, `Their field '${field.name.value}' are not compatible`),
+        ],
         err.toError(detailForRec),
       )
     };
@@ -678,49 +683,10 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult<TFields> {
-    TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
-    | None() -> return STRecFieldsCall(None(), fields1, fields2)
-    | Some(STOk()) -> void
-    | Some(err @ STErrorOnTFuns _) ->
-      return STRecFieldsCall(Some(err), fields1, fields2)
-    };
-    TFields::isSubOptTFuns(subst, tenv, fields1.new, fields2.new) match {
-    | None() -> return STRecFieldsNew(None(), fields1, fields2)
-    | Some(STOk()) -> void
-    | Some(err @ STErrorOnTFuns _) ->
-      return STRecFieldsNew(Some(err), fields1, fields2)
-    };
+    // Process fields first so that tuple index type variables are resolved
+    // before call/new signatures with union types.
     index1o = fields1.maybeSingleIndex();
     index2o = fields2.maybeSingleIndex();
-    (index1o, index2o) match {
-    | (_, None()) -> void
-    | (Some(index1), Some(index2)) ->
-      TType::isSub(subst, tenv, index2.keyType, index1.keyType) match {
-      | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexKey(err, index1, index2, fields1, fields2)
-      | STOk() -> void
-      };
-      TType::isSub(subst, tenv, index1.valueType, index2.valueType) match {
-      | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
-      | STOk() -> void
-      }
-    | (None(), Some(index2)) ->
-      for (f1 in fields1.fields) {
-        f1keyType = TType::single(
-          TPrimValue::single(TString(), f1.name, f1.pos),
-        );
-        TType::isSub(subst.clone(), tenv, f1keyType, index2.keyType) match {
-        | STError _ -> void
-        | STOk() ->
-          TType::isSub(subst, tenv, f1.type, index2.valueType) match {
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
-          | STOk() -> void
-          }
-        }
-      }
-    };
     for (ior in fields1.fields.iterDiffInterDiff(fields2.fields)) {
       ior match {
       | Left(_) -> void
@@ -732,7 +698,7 @@ extension class TFields {
         | None() -> void
         | Some(index1) ->
           f2keyType = TType::single(
-            TPrimValue::single(TString(), f2.name, f2.pos),
+            TPrimValue::single(TString(), f2.name.value, f2.pos),
           );
           TType::isSub(subst.clone(), tenv, f2keyType, index1.keyType) match {
           | STError _ -> void
@@ -786,6 +752,47 @@ extension class TFields {
           }
         }
       }
+    };
+    (index1o, index2o) match {
+    | (_, None()) -> void
+    | (Some(index1), Some(index2)) ->
+      TType::isSub(subst, tenv, index2.keyType, index1.keyType) match {
+      | err @ STErrorOnTType _ ->
+        return STRecFieldsIndexKey(err, index1, index2, fields1, fields2)
+      | STOk() -> void
+      };
+      TType::isSub(subst, tenv, index1.valueType, index2.valueType) match {
+      | err @ STErrorOnTType _ ->
+        return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
+      | STOk() -> void
+      }
+    | (None(), Some(index2)) ->
+      for (f1 in fields1.fields) {
+        f1keyType = TType::single(
+          TPrimValue::single(TString(), f1.name.value, f1.pos),
+        );
+        TType::isSub(subst.clone(), tenv, f1keyType, index2.keyType) match {
+        | STError _ -> void
+        | STOk() ->
+          TType::isSub(subst, tenv, f1.type, index2.valueType) match {
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
+          | STOk() -> void
+          }
+        }
+      }
+    };
+    TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
+    | None() -> return STRecFieldsCall(None(), fields1, fields2)
+    | Some(STOk()) -> void
+    | Some(err @ STErrorOnTFuns _) ->
+      return STRecFieldsCall(Some(err), fields1, fields2)
+    };
+    TFields::isSubOptTFuns(subst, tenv, fields1.new, fields2.new) match {
+    | None() -> return STRecFieldsNew(None(), fields1, fields2)
+    | Some(STOk()) -> void
+    | Some(err @ STErrorOnTFuns _) ->
+      return STRecFieldsNew(Some(err), fields1, fields2)
     };
     STOk()
   }

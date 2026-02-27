@@ -539,21 +539,10 @@ class TConstr(
 }
 
 fun createObject(
-  tcenvb: mutable TCEnvBase,
   pos: PosRange,
   algebraicBranchField: ?(PosRange, TType),
   fields: TFields,
 ): TType {
-  for (fieldArray in Array[fields.fields, fields.symbolFields]) {
-    seen = mutable Set<String>[];
-    for (field in fieldArray) {
-      if (seen.contains(field.name)) {
-        tcenvb.error(Array[(field.pos, "Duplicate field")])
-      } else {
-        seen.insert(field.name)
-      }
-    }
-  };
   algebraicBranchField match {
   | Some((algebraicBranchFieldPos, algebraicBranchFieldType)) ->
     algebraicBranchFieldType.getConstantString() match {
@@ -911,10 +900,10 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 
 class TField private {
   pos: PosRange,
-  name: /* Invariant: name != kAlgebraicBranchFieldName */ String,
+  name: /* Invariant: name != kAlgebraicBranchFieldName */ FieldNameString,
   isOptional: Bool,
   type: TType,
-} uses XXHashable, Orderable, Projectable<String> {
+} uses XXHashable, Orderable, Projectable<FieldNameString> {
   static fun create{
     pos: PosRange,
     name: String,
@@ -923,7 +912,7 @@ class TField private {
     type: TType,
   }: ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
-      Some(TField{pos, name, isOptional, type})
+      Some(TField{pos, name => FieldNameString(name), isOptional, type})
     }
   }
 
@@ -935,7 +924,7 @@ class TField private {
     this with {type => f(this.type)}
   }
 
-  fun project(): String {
+  fun project(): FieldNameString {
     this.name
   }
 }
@@ -969,11 +958,38 @@ class TIndexField private {
   }
 }
 
-class TFields{
-  fields: InternalKeyedArrayMap<String, TField>,
+// Wrapper around String that sorts numeric field names (tuple indices)
+// before non-numeric ones. This ensures tuple fields are processed first
+// in intersection, union, and subtyping, so their type variables are
+// resolved before other fields/methods with union types.
+value class FieldNameString(
+  value: String,
+) uses Orderable, Hashable, Show, XXHashable {
+  fun compare(other: FieldNameString): Order {
+    (this.value.toIntOption(), other.value.toIntOption()) match {
+    | (Some(a), Some(b)) -> a.compare(b)
+    | (Some(_), None()) -> LT()
+    | (None(), Some(_)) -> GT()
+    | (None(), None()) -> this.value.compare(other.value)
+    }
+  }
+
+  fun toString(): String {
+    this.value
+  }
+}
+
+class TFields private {
+  fields: InternalKeyedArrayMap<
+    FieldNameString,
+    TField,
+  > = InternalKeyedArrayMap::empty(),
   // Fields keyed by unique symbol ID (e.g. Symbol.iterator)
-  symbolFields: InternalKeyedArrayMap<String, TField>,
-  indexes: Array<TIndexField>,
+  symbolFields: InternalKeyedArrayMap<
+    FieldNameString,
+    TField,
+  > = InternalKeyedArrayMap::empty(),
+  indexes: Array<TIndexField> = Array[],
   /* There can be several index fields.
      Typescript allows only one per object, but is fine with
      intersecting two objects with index fields, so it's like having
@@ -984,37 +1000,39 @@ class TFields{
      TODO: if a field name is included an index key type, then its
       type must be a subtype of the index key type
   */
-  new: ?(/* optional */ Bool, TFuns),
-  call: ?(/* optional */ Bool, TFuns),
+  new: ?(/* optional */ Bool, TFuns) = None(),
+  call: ?(/* optional */ Bool, TFuns) = None(),
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
-    TFields{
-      fields => InternalKeyedArrayMap::empty(),
-      symbolFields => InternalKeyedArrayMap::empty(),
-      indexes => Array[],
-      new => None(),
-      call => None(),
-    }
+    TFields{}
   }
 
   static fun create{
-    fields: Array<TField> = Array[],
-    symbolFields: readonly Vector<TField> = Vector[],
+    fields: readonly Map<FieldNameString, TField> = Map[],
+    symbolFields: readonly Map<FieldNameString, TField> = Map[],
     indexes: Array<TIndexField> = Array[],
     new: ?TFuns = None(),
     call: ?TFuns = None(),
   }: TFields {
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
-        fields.sortedBy(x ~> x.name).values(),
+        fields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
-        symbolFields.sortedBy(x ~> x.name).values(),
+        symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
       indexes,
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
     }
+  }
+
+  static fun singleField(field: TField): TFields {
+    TFields{fields => InternalKeyedArrayMap::single(field)}
+  }
+
+  static fun singleSymbolField(field: TField): TFields {
+    TFields{symbolFields => InternalKeyedArrayMap::single(field)}
   }
 
   fun isEmpty(): Bool {
@@ -1066,11 +1084,11 @@ class TFields{
   }
 
   fun maybeGet(fieldName: String): ?TField {
-    this.fields.maybeGet(fieldName)
+    this.fields.maybeGet(FieldNameString(fieldName))
   }
 
   fun maybeGetSymbol(uniqueId: String): ?TField {
-    this.symbolFields.maybeGet(uniqueId)
+    this.symbolFields.maybeGet(FieldNameString(uniqueId))
   }
 
   fun maybeGetType(
@@ -1109,8 +1127,8 @@ class TFields{
 
   fun maybeGetField(key: FieldKey): ?TField {
     key match {
-    | FKName(name, _) -> this.fields.maybeGet(name.value)
-    | FKSymbol(_, uniqueId) -> this.symbolFields.maybeGet(uniqueId)
+    | FKName(name, _) -> this.maybeGet(name.value)
+    | FKSymbol(_, uniqueId) -> this.maybeGetSymbol(uniqueId)
     }
   }
 
@@ -1173,7 +1191,7 @@ class TFields{
       // TODO: better approximation of removing fields that may intersect with indexes
       this with {
         fields => this.fields.filterKeyed(field ->
-          !fieldsToRemove.contains(field.name)
+          !fieldsToRemove.contains(field.name.value)
         ),
       }
     }

@@ -322,7 +322,7 @@ mutable class TypePp{
     symbolFieldArray = fields.symbolFields;
     indexes = fields.indexes;
     for (i => field in fieldArray) {
-      fieldName = field.name;
+      fieldName = field.name.value;
       fieldType = field.type;
       this.out(level, margin, TypePp::escapeName(fieldName));
       if (field.isOptional) {
@@ -344,7 +344,7 @@ mutable class TypePp{
       }
     };
     for (i => field in symbolFieldArray) {
-      this.out(level, margin, `[${field.name}]`);
+      this.out(level, margin, `[${field.name.value}]`);
       if (field.isOptional) {
         this.out(level, margin, "?")
       };

@@ -730,7 +730,7 @@ extension class TypeChecker {
     | Object(efields) ->
       algebraicBranchField: ?(PosRange, TType) = None();
       fields = mutable Map[];
-      symbolFields = mutable Vector[];
+      symbolFields = mutable Map[];
       indexes = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
@@ -771,7 +771,7 @@ extension class TypeChecker {
                   fields![spreadField.name] = spreadField
                 };
                 for (spreadSymbolField in spreadSymbolFields) {
-                  symbolFields.push(spreadSymbolField)
+                  symbolFields![spreadSymbolField.name] = spreadSymbolField
                 };
                 for (spreadIndex in spreadIndexes) {
                   indexes.push(spreadIndex)
@@ -808,15 +808,14 @@ extension class TypeChecker {
             .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype)) match {
           | Some(FKName(name, _)) -> (name, valueTy)
           | Some(FKSymbol(_, uniqueId)) ->
-            symbolFields.push(
-              TField::create{
-                pos => keyExpr.pos,
-                name => uniqueId,
-                isOptional => false,
-                isReadonly => None(),
-                type => valueTy,
-              }.fromSome(),
-            );
+            field = TField::create{
+              pos => keyExpr.pos,
+              name => uniqueId,
+              isOptional => false,
+              isReadonly => None(),
+              type => valueTy,
+            }.fromSome();
+            symbolFields![field.name] = field;
             continue
           | None() ->
             tcenv.error(
@@ -852,18 +851,13 @@ extension class TypeChecker {
             )
           | None() -> !algebraicBranchField = Some((name.pos, ty))
           }
-        | Some(field) -> fields![name.value] = field
+        | Some(field) -> fields![field.name] = field
         }
       };
       obj = createObject(
-        tcenv,
         pos,
         algebraicBranchField,
-        TFields::create{
-          fields => fields.values().collect(Array),
-          symbolFields,
-          indexes => indexes.toArray(),
-        },
+        TFields::create{fields, symbolFields, indexes => indexes.toArray()},
       );
       for (efield in efields) {
         efield match {
@@ -1280,7 +1274,7 @@ extension class TypeChecker {
                 true // broad type, could be any key
               | Some(Some(fieldsToCheck)) ->
                 fieldsToCheck.values().any(fieldToCheck ->
-                  fields.maybeGet(fieldToCheck.val) match {
+                  fields.maybeGet(FieldNameString(fieldToCheck.val)) match {
                   | Some(tField) -> tField.isOptional
                   | None() -> true
                   }
@@ -1293,7 +1287,7 @@ extension class TypeChecker {
                 true // broad symbol, could be any key
               | Some(Some(symFieldsToCheck)) ->
                 symFieldsToCheck.values().any(symToCheck ->
-                  symbolFields.maybeGet(symToCheck.val) match {
+                  symbolFields.maybeGet(FieldNameString(symToCheck.val)) match {
                   | Some(tField) -> tField.isOptional
                   | None() -> true
                   }
@@ -1767,8 +1761,8 @@ extension class TypeChecker {
     | Some(TObject(fields, objPos)) ->
       // For each key, check existing fields/index sigs and collect
       // new fields to grow.
-      newFieldsVec = mutable Vector[];
-      newSymbolFieldsVec = mutable Vector[];
+      newFieldsMap = mutable Map[];
+      newSymbolFieldsMap = mutable Map[];
       needsGrowth = false;
       for (key in fieldKeys) {
         fields.maybeGetField(key) match {
@@ -1818,8 +1812,8 @@ extension class TypeChecker {
               )
             | Some(field) ->
               key match {
-              | FKName _ -> newFieldsVec.push(field)
-              | FKSymbol _ -> newSymbolFieldsVec.push(field)
+              | FKName _ -> newFieldsMap![field.name] = field
+              | FKSymbol _ -> newSymbolFieldsMap![field.name] = field
               }
             }
           }
@@ -1845,8 +1839,8 @@ extension class TypeChecker {
           )
         };
         allNewFields = TFields::create{
-          fields => newFieldsVec.toArray(),
-          symbolFields => newSymbolFieldsVec,
+          fields => newFieldsMap,
+          symbolFields => newSymbolFieldsMap,
         };
         newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
         | None() -> TType::bottom(objPos)
