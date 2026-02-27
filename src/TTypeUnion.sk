@@ -22,10 +22,14 @@ extension class TType {
     ty2: TType,
   ): TType {
     if (ty1 == ty2) return ty1;
-    subst.seenUnion.maybeGet((ty1, ty2)) match {
+    // Include subst version in cache key when operands contain TVars,
+    // so cached results are invalidated when TVar bindings change.
+    hasTVar = ty1.containsTVar() || ty2.containsTVar();
+    key = (if (hasTVar) subst.version else 0, ty1, ty2);
+    subst.seenUnion.maybeGet(key) match {
     | None() ->
       result = TType::union_(subst, tenv, ty1, ty2);
-      subst.!seenUnion[(ty1, ty2)] = result;
+      subst.!seenUnion[key] = result;
       result
     | Some(ty) -> ty
     }

@@ -12,8 +12,8 @@ base class SubstValue uses Equality {
 
 mutable base class SubstState private {
   mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
-  mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
-  mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
+  mutable seenInter: SortedMap<(Int, TType, TType), TType> = SortedMap[],
+  mutable seenUnion: SortedMap<(Int, TType, TType), TType> = SortedMap[],
   mutable seenExpansion: SortedMap<TSInst, TType> = SortedMap[],
   mutable version: Int = 0,
   mutable values: SortedMap<TVarID, SubstValue> = SortedMap[],

@@ -94,30 +94,25 @@ extension class TType {
     ty2: TType,
   ): TType {
     if (ty1 == ty2) return ty1;
-    pair = (ty1, ty2);
-    hasTVar = ty1.getSingleVar().isSome() || ty2.getSingleVar().isSome();
-    if (!hasTVar) {
-      subst.seenInter.maybeGet(pair) match {
-      | Some(ty) -> return ty
-      | None() -> void
-      }
+    // Include subst version in cache key when operands contain TVars,
+    // so cached results are invalidated when TVar bindings change.
+    // Use 0 for TVar-free types (their results never become stale).
+    hasTVar = ty1.containsTVar() || ty2.containsTVar();
+    key = (if (hasTVar) subst.version else 0, ty1, ty2);
+    subst.seenInter.maybeGet(key) match {
+    | Some(ty) -> return ty
+    | None() -> void
     };
     result = TType::inter_(subst, tenv, ty1, ty2);
-    // Don't cache when either operand is a TVar: TVar binding state
-    // changes over time, which would make the cached result stale.
-    if (hasTVar) {
+    subst.seenInter.maybeGet(key) match {
+    | Some(ty) ->
+      // Re-entrant cycle: a recursive call during inter_ already cached a
+      // result for this pair. Return the already-cached (and already-used)
+      // result for consistency with intermediate callers that consumed it.
+      ty
+    | None() ->
+      subst.!seenInter[key] = result;
       result
-    } else {
-      subst.seenInter.maybeGet(pair) match {
-      | Some(ty) ->
-        // Re-entrant cycle: a recursive call during inter_ already cached a
-        // result for this pair. Return the already-cached (and already-used)
-        // result for consistency with intermediate callers that consumed it.
-        ty
-      | None() ->
-        subst.!seenInter[pair] = result;
-        result
-      }
     }
   }
 

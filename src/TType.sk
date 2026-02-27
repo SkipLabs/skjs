@@ -476,6 +476,33 @@ class TType private {
       None()
     }
   }
+
+  fun containsTVar(): Bool {
+    this.insts.any(inst ->
+      inst match {
+      | TVar _ -> true
+      | TInter(tys) -> tys.any(ty -> ty.containsTVar())
+      | TSInst(_, TArgs(targs)) -> targs.any(ty -> ty.containsTVar())
+      | TArrayLit _ -> true
+      }
+    ) ||
+      this.clauses.any(clause ->
+        clause.stypes match {
+        | None() -> false
+        | Some(stypes) ->
+          stypes.any(stype ->
+            stype match {
+            | TTuple(elts, _) -> elts.any(ty -> ty.containsTVar())
+            | TPromise(inner, _) -> inner.containsTVar()
+            | obj @ TObject _ -> obj.getBranches().any(b -> b.containsTVar())
+            | TPrimValue _
+            | TPrimUnit _ ->
+              false
+            }
+          )
+        }
+      )
+  }
 }
 
 base class Variance {
@@ -714,6 +741,15 @@ class TFun(
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     prettyPrintTFun(subst, tenv, this)
   }
+
+  fun containsTVar(): Bool {
+    this.tparams.any(tp -> tp.cstr.test(c -> c.containsTVar())) ||
+      this.thisParam.test(t -> t.containsTVar()) ||
+      this.params.any(p -> p.containsTVar()) ||
+      this.optionalParams.any(p -> p.containsTVar()) ||
+      this.spreadParam.test(s -> s.containsTVar()) ||
+      this.retType.containsTVar()
+  }
 }
 
 /***************************************************************************/
@@ -722,6 +758,7 @@ class TFun(
 
 base class ArrayType uses XXHashable, Orderable {
   fun getPos(): PosRange;
+  fun containsTVar(): Bool;
   fun maybeGetEltType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -754,6 +791,10 @@ class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
     this.pos
   }
 
+  fun containsTVar(): Bool {
+    this.eltType.containsTVar()
+  }
+
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     `ReadonlyArray<${this.eltType.toString(subst, tenv)}>`
   }
@@ -774,6 +815,10 @@ class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
 class ATFullType(fullType: TType) extends ArrayType {
   fun getPos(): PosRange {
     this.fullType.pos
+  }
+
+  fun containsTVar(): Bool {
+    this.fullType.containsTVar()
   }
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
@@ -1076,6 +1121,10 @@ class TField private {
     this with {name}
   }
 
+  fun containsTVar(): Bool {
+    this.get.containsTVar() || this.set.containsTVar()
+  }
+
   fun mapType(f: TType -> TType): TField {
     this with {get => f(this.get), set => f(this.set)}
   }
@@ -1338,6 +1387,16 @@ class TFields protected {
       !this.hasNonSyntheticIndex() &&
       this.new.isNone() &&
       this.call.isNone()
+  }
+
+  fun containsTVar(): Bool {
+    this.fields.any(f -> f.containsTVar()) ||
+      this.symbolFields.any(f -> f.containsTVar()) ||
+      this.stringIndex.test(f -> f.containsTVar()) ||
+      this.numberIndex.test(f -> f.containsTVar()) ||
+      this.symbolIndex.test(f -> f.containsTVar()) ||
+      this.new.test(p -> p.i1.fun_.containsTVar()) ||
+      this.call.test(p -> p.i1.fun_.containsTVar())
   }
 
   fun map(fField: TField -> TField, fTFuns: TFuns -> TFuns): TFields {
