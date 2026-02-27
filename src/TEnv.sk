@@ -476,7 +476,7 @@ base class TEnv{
                 (field.pos, `Forbidden field name '${fieldName}' in a class`),
               ],
             )
-          | Some(f) -> acc![fieldName] = f
+          | Some(f) -> acc![f.name] = f
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
@@ -539,7 +539,7 @@ base class TEnv{
           } match {
           | None() ->
             tcenvb.error(Array[(fd.pos, `Forbidden method name '${name}'`)])
-          | Some(field) -> acc![name.value] = field
+          | Some(field) -> acc![field.name] = field
           }
         }
       }

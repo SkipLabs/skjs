@@ -1106,8 +1106,8 @@ class TFields private {
 
   fun maybeGetField(key: FieldKey): ?TField {
     key match {
-    | FKName(name, _) -> this.fields.maybeGet(name.value)
-    | FKSymbol(_, uniqueId) -> this.symbolFields.maybeGet(uniqueId)
+    | FKName(name, _) -> this.maybeGet(name.value)
+    | FKSymbol(_, uniqueId) -> this.maybeGetSymbol(uniqueId)
     }
   }
 
