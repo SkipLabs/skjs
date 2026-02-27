@@ -50,7 +50,7 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
   // concat(other: ReadonlyArray<T>): ReadonlyArray<T>;
 }
 
-declare class Array<T> implements Iterable<T> {
+declare class Array<T> implements ReadonlyArray<T> {
   readonly __SKJS_isArray: true;
   constructor(...items: T[]);
   length: number;
