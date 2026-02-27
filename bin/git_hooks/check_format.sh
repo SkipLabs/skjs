@@ -24,7 +24,7 @@ check-file () {
     # read the staged source
     code=$(git show :"$file");
     # check if formatting changes code
-    diff=$(echo "$code" | $fmt | diff <(echo "$code") -)
+    diff=$(printf '%s\n' "$code" | $fmt | diff <(printf '%s\n' "$code") -)
     if [ -n "$diff" ]; then
         # report file and diff
         echo -e "\n$file\n$diff";
