@@ -234,10 +234,7 @@ base class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
-    TObject(
-      TFields::create{fields, symbolFields, indexes => indexes.toArray()},
-      className.pos,
-    )
+    TObject(TFields::create{fields, symbolFields, indexes}, className.pos)
   }
 
   fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {
@@ -272,12 +269,7 @@ base class TEnv{
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
     TObject(
-      TFields::create{
-        fields,
-        symbolFields,
-        indexes => indexes.toArray(),
-        new => Some(new),
-      },
+      TFields::create{fields, symbolFields, indexes, new => Some(new)},
       pos,
     )
   }
@@ -1352,7 +1344,7 @@ base class TEnv{
     tFields = TFields::create{
       fields => fieldsMap,
       symbolFields,
-      indexes => indexes.toArray(),
+      indexes,
       new,
       call,
     };
