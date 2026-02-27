@@ -539,7 +539,6 @@ class TConstr(
 }
 
 fun createObject(
-  _tcenvb: mutable TCEnvBase,
   pos: PosRange,
   algebraicBranchField: ?(PosRange, TType),
   fields: TFields,
