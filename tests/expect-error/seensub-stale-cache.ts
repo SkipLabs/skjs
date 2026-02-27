@@ -59,7 +59,12 @@ function getFirst3<U>(
 // Control: both arguments valid — should pass
 // ============================================================
 
-function testBothValid(): void {
+function testBothValidWithoutAnnot(): void {
   const box = getFirst({ value: 42 }, { value: 100 });
+  const n: number = box.value;
+}
+
+function testBothValidWithAnnot(): void {
+  const box = getFirst<42 | 100>({ value: 42 }, { value: 100 });
   const n: number = box.value;
 }
