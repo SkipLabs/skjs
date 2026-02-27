@@ -1017,6 +1017,14 @@ class TFields{
     }
   }
 
+  static fun singleField(field: TField): TFields {
+    TFields::create{fields => Array[field]}
+  }
+
+  static fun singleSymbolField(field: TField): TFields {
+    TFields::create{symbolFields => Vector[field]}
+  }
+
   fun isEmpty(): Bool {
     this.fields.isEmpty() &&
       this.symbolFields.isEmpty() &&

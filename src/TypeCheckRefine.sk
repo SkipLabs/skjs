@@ -236,9 +236,9 @@ extension class TypeChecker {
             type => TType::top(e.pos),
           }.map(field ->
             if (key is FKSymbol _) {
-              TObject(TFields::create{symbolFields => Vector[field]}, e1.pos)
+              TObject(TFields::singleSymbolField(field), e1.pos)
             } else {
-              TObject(TFields::create{fields => Array[field]}, e1.pos)
+              TObject(TFields::singleField(field), e1.pos)
             }
           )
         })
