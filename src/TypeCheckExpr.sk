@@ -1015,7 +1015,14 @@ extension class TypeChecker {
         ArrayLitTyping::typeFromLiteral(
           tcenv,
           pos,
-          arr.map(x -> this.expr(tcenv, x, mostPrecise)),
+          arr.map(x -> {
+            ty = this.expr(tcenv, x, mostPrecise);
+            if (x.value is Object _ || ty.isConcretePrimitive()) {
+              this.makeBoundTVar(tcenv, ty)
+            } else {
+              ty
+            }
+          }),
         )
       }
 
