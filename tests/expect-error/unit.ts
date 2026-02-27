@@ -10,15 +10,15 @@ function generic<T1, T2>(arg: T1 & T2): T1 {
   return arg;
 }
 
-function generic<T1, T2>(arg: T1 & T2): T2 {
+function generic2<T1, T2>(arg: T1 & T2): T2 {
   return arg;
 }
 
-function generic<T1, T2>(arg: T1): T1 | T2 {
+function generic3<T1, T2>(arg: T1): T1 | T2 {
   return arg;
 }
 
-function generic<T1, T2>(arg: T2): T1 | T2 {
+function generic4<T1, T2>(arg: T2): T1 | T2 {
   return arg;
 }
 
@@ -30,22 +30,22 @@ function checkObject(obj: { field1: number }): {} {
   return obj;
 }
 
-function checkObject(obj: { field1: number }): { field1: number } {
+function checkObject2(obj: { field1: number }): { field1: number } {
   return obj;
 }
 
-function checkObject(obj: { field1: number } & { field2: number }): {
+function checkObject3(obj: { field1: number } & { field2: number }): {
   field1: number;
   field2: number;
 } {
   return obj;
 }
 
-function checkObject(obj: { field1: number } | { field2: number }): {} {
+function checkObject4(obj: { field1: number } | { field2: number }): {} {
   return obj;
 }
 
-function checkObject(
+function checkObject5(
   obj: { field1: number } | { field1: number; field2: number },
 ): { field1: number } {
   return obj;
@@ -66,24 +66,24 @@ function check(data: adt): boolean {
 // Tuples
 ///////////////////////////////////////////////////////////////////////////////
 
-function check(t1: [number, boolean]): number {
+function check2(t1: [number, boolean]): number {
   return t1[0];
 }
 
-function check(t1: [number, boolean]): boolean {
+function check3(t1: [number, boolean]): boolean {
   return t1[1];
 }
 
-function check(t1: [number] | [boolean]): [number | boolean] {
+function check4(t1: [number] | [boolean]): [number | boolean] {
   return t1;
 }
 
-function check(t1: [number] | [boolean]): number | boolean {
+function check5(t1: [number] | [boolean]): number | boolean {
   let [x] = t1;
   return x;
 }
 
-function check(
+function check6(
   t1: [{ field1: number }] & [{ field2: boolean }],
 ): [{ field1: number; field2: boolean }] {
   return t1;
@@ -93,13 +93,13 @@ function checkTuple(tuple: [number, string]): [number, string] {
   return tuple;
 }
 
-function checkTuple(
+function checkTuple2(
   tuple: [number, string] | [string, number],
 ): [number | string, number | string] {
   return tuple;
 }
 
-function checkTuple(
+function checkTuple3(
   tuple: [number, string, boolean],
 ): [number, string, boolean] {
   return tuple;
@@ -111,32 +111,32 @@ function checkTuple(
 
 const x: number = 0;
 
-function check(): number {
+function check7(): number {
   return x;
 }
 
 const n: 0 = 0;
 
-function check(): 0 {
+function check8(): 0 {
   return n;
 }
 
 const n2 = 1;
 
-function check(): 0 | 1 {
+function check9(): 0 | 1 {
   if (true) return n2;
   return n;
 }
 
 const s = "hello";
 
-function check(): "hello" {
+function check10(): "hello" {
   return s;
 }
 
 const b = true;
 
-function check(): true {
+function check11(): true {
   return b;
 }
 
@@ -148,11 +148,11 @@ function checkArray(arr: number[]): number[] {
   return arr;
 }
 
-function checkArray(arr: (number | string)[]): (number | string)[] {
+function checkArray2(arr: (number | string)[]): (number | string)[] {
   return arr;
 }
 
-function checkArray(arr: (number & string)[]): never[] {
+function checkArray3(arr: (number & string)[]): never[] {
   return arr;
 }
 
@@ -164,13 +164,13 @@ function checkFunction(func: (x: number) => number): (x: number) => number {
   return func;
 }
 
-function checkFunction(
+function checkFunction2(
   func: (x: number) => number | string,
 ): (x: number) => number | string {
   return func;
 }
 
-function checkFunction(
+function checkFunction3(
   func: (x: number) => number & string,
 ): (x: number) => never {
   return func;
@@ -189,20 +189,20 @@ function checkLiteralType(
   return obj;
 }
 
-function checkLiteralType(
+function checkLiteralType2(
   obj: LiteralType1 | LiteralType2,
 ): LiteralType1 | LiteralType2 {
   return obj;
 }
 
-function checkLiteralType(obj: {
+function checkLiteralType3(obj: {
   field1: number;
   field2: string;
 }): LiteralType1 & LiteralType2 {
   return obj;
 }
 
-function checkLiteralType(
+function checkLiteralType4(
   obj: { field1: number } | { field2: string },
 ): LiteralType1 | LiteralType2 {
   return obj;
@@ -221,7 +221,7 @@ function checkNestedType(obj: NestedType1 & NestedType2): {
   return obj;
 }
 
-function checkNestedType(obj: NestedType1 | NestedType2): {
+function checkNestedTypeUnion(obj: NestedType1 | NestedType2): {
   a: { b: { c?: number; d?: string } };
 } {
   return obj;
@@ -250,7 +250,7 @@ function checkAliasAndInterface(obj: AliasType & InterfaceType): {
   return obj;
 }
 
-function checkAliasAndInterface(obj: AliasType | InterfaceType): {
+function checkAliasOrInterface(obj: AliasType | InterfaceType): {
   field: number;
 } {
   return obj;
@@ -865,7 +865,7 @@ function checkIfElseExpression(input: number | string): number {
   }
 }
 
-function checkIfElseExpression(input: number | string): string {
+function checkIfElseExpressionString(input: number | string): string {
   if (typeof input === "string") {
     return input;
   } else {
@@ -882,11 +882,11 @@ function checkTernaryExpression(input: boolean): number {
   return input ? 1 : 0;
 }
 
-function checkTernaryExpression(input: boolean): string {
+function checkTernaryExpression2(input: boolean): string {
   return input ? "true" : "false";
 }
 
-function checkTernaryExpression(input: number): number | string {
+function checkTernaryExpression3(input: number): number | string {
   return input > 0 ? input : "negative";
 }
 */
@@ -907,7 +907,7 @@ function checkSwitchExpression(value: number): string {
   }
 }
 
-function checkSwitchExpression(value: number | string): number {
+function checkSwitchExpression2(value: number | string): number {
   switch (typeof value) {
     case "number":
       return value;
