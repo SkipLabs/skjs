@@ -212,7 +212,7 @@ base class TEnv{
     };
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    symbolFields = mutable Vector[];
+    symbolFields = mutable Map[];
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
     !this.subst["this"] = (false, thisType);
@@ -253,7 +253,7 @@ base class TEnv{
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
-    symbolFields = mutable Vector[];
+    symbolFields = mutable Map[];
     indexes = mutable Vector[];
     constructor = this.addFields(
       tcenvb,
@@ -386,7 +386,7 @@ base class TEnv{
   private fun addFields(
     tcenvb: mutable TCEnvBase,
     acc: mutable Map<String, TField>,
-    symbolFields: mutable Vector<TField>,
+    symbolFields: mutable Map<String, TField>,
     indexes: mutable Vector<TIndexField>,
     visitedClasses: SortedSet<String>,
     isStatic: ?Array<TypeParam>,
@@ -521,15 +521,14 @@ base class TEnv{
           this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
         } match {
         | FKSymbol(exprPos, uniqueId) ->
-          symbolFields.push(
-            TField::create{
-              pos => exprPos,
-              name => uniqueId,
-              isOptional => false,
-              isReadonly => Some(fd.pos),
-              type => metType,
-            }.fromSome(),
-          )
+          field = TField::create{
+            pos => exprPos,
+            name => uniqueId,
+            isOptional => false,
+            isReadonly => Some(fd.pos),
+            type => metType,
+          }.fromSome();
+          symbolFields![field.name] = field
         | FKName(name, _) ->
           TField::create{
             pos => name.pos,
@@ -1231,7 +1230,7 @@ base class TEnv{
   ): (?(PosRange, TType), TFields) {
     algebraicBranchField: ?(PosRange, TType) = None();
     fieldsMap = mutable Map[];
-    symbolFields = mutable Vector[];
+    symbolFields = mutable Map[];
     indexes = mutable Vector[];
     call: ?TFuns = None();
     new: ?TFuns = None();
@@ -1269,7 +1268,7 @@ base class TEnv{
               isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
             }.fromSome();
-            symbolFields.push(field)
+            symbolFields![field.name] = field
           | FKName(name, _) ->
             TField::create{
               pos => name.pos,
@@ -1326,15 +1325,14 @@ base class TEnv{
             this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
           } match {
           | FKSymbol(exprPos, uniqueId) ->
-            symbolFields.push(
-              TField::create{
-                pos => exprPos,
-                name => uniqueId,
-                isOptional => false,
-                isReadonly => Some(exprPos),
-                type => decl,
-              }.fromSome(),
-            )
+            field = TField::create{
+              pos => exprPos,
+              name => uniqueId,
+              isOptional => false,
+              isReadonly => Some(exprPos),
+              type => decl,
+            }.fromSome();
+            symbolFields![field.name] = field
           | FKName(name, _) ->
             TField::create{
               pos => name.pos,
