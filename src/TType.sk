@@ -969,7 +969,7 @@ class TIndexField private {
   }
 }
 
-class TFields{
+class TFields private {
   fields: InternalKeyedArrayMap<String, TField>,
   // Fields keyed by unique symbol ID (e.g. Symbol.iterator)
   symbolFields: InternalKeyedArrayMap<String, TField>,
