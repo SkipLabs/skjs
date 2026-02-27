@@ -958,7 +958,9 @@ class TIndexField private {
   }
 }
 
-value class FieldNameString(value: String) uses Orderable {
+value class FieldNameString(
+  value: String,
+) uses Orderable, Hashable, Show, XXHashable {
   fun compare(other: FieldNameString): Order {
     (this.value.toIntOption(), other.value.toIntOption()) match {
     | (Some(a), Some(b)) -> a.compare(b)
