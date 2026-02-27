@@ -958,6 +958,21 @@ class TIndexField private {
   }
 }
 
+value class FieldNameString(value: String) uses Orderable {
+  fun compare(other: FieldNameString): Order {
+    (this.value.toIntOption(), other.value.toIntOption()) match {
+    | (Some(a), Some(b)) -> a.compare(b)
+    | (Some(_), None()) -> LT()
+    | (None(), Some(_)) -> GT()
+    | (None(), None()) -> this.value.compare(other.value)
+    }
+  }
+
+  fun toString(): String {
+    this.value
+  }
+}
+
 class TFields private {
   fields: InternalKeyedArrayMap<
     String,
