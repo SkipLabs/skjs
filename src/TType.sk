@@ -958,6 +958,10 @@ class TIndexField private {
   }
 }
 
+// Wrapper around String that sorts numeric field names (tuple indices)
+// before non-numeric ones. This ensures tuple fields are processed first
+// in intersection, union, and subtyping, so their type variables are
+// resolved before other fields/methods with union types.
 value class FieldNameString(
   value: String,
 ) uses Orderable, Hashable, Show, XXHashable {

@@ -683,6 +683,8 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): STResult<TFields> {
+    // Process fields first so that tuple index type variables are resolved
+    // before call/new signatures with union types.
     index1o = fields1.maybeSingleIndex();
     index2o = fields2.maybeSingleIndex();
     for (ior in fields1.fields.iterDiffInterDiff(fields2.fields)) {

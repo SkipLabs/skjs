@@ -362,6 +362,8 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): ?TFields {
+    // Process fields first so that tuple index type variables are resolved
+    // before call/new signatures with union types.
     fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
       TField::inter(subst, tenv, x, y)
     );
