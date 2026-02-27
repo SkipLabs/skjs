@@ -1018,11 +1018,11 @@ class TFields private {
   }
 
   static fun singleField(field: TField): TFields {
-    TFields::create{fields => Array[field]}
+    TFields{fields => InternalKeyedArrayMap::single(field)}
   }
 
   static fun singleSymbolField(field: TField): TFields {
-    TFields::create{symbolFields => Vector[field]}
+    TFields{symbolFields => InternalKeyedArrayMap::single(field)}
   }
 
   fun isEmpty(): Bool {
