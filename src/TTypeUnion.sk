@@ -278,7 +278,7 @@ extension class TFields {
       | Right(z) ->
         TField::create{
           pos => z.pos,
-          name => z.name,
+          name => z.name.value,
           isOptional => true,
           isReadonly => None(),
           type => z.get,

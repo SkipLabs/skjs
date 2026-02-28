@@ -926,7 +926,15 @@ class TField private {
       | Some(roPos) -> TType::bottom(roPos)
       | None() -> type
       };
-      Some(TField{pos, name => FieldNameString(name), isOptional, get => type, set => setType})
+      Some(
+        TField{
+          pos,
+          name => FieldNameString(name),
+          isOptional,
+          get => type,
+          set => setType,
+        },
+      )
     }
   }
 
@@ -981,15 +989,13 @@ class TIndexField private {
     merged: mutable Vector<TIndexField> = mutable Vector[];
     for (idx in indexes) {
       existingIdx = merged.findIndex(e ->
-        e.keyType == idx.keyType && e.valueType == idx.valueType
+        e.keyType == idx.keyType &&
+          e.valueTypeGet == idx.valueTypeGet &&
+          e.valueTypeSet == idx.valueTypeSet
       );
       existingIdx match {
       | None() -> merged.push(idx)
-      | Some(i) ->
-        existing = merged[i];
-        if (existing.isReadonly && !idx.isReadonly) {
-          merged![i] = existing with {isReadonly => false}
-        }
+      | Some(_) -> void
       }
     };
     merged.toArray()
