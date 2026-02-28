@@ -64,7 +64,7 @@ interface Dog extends Animal {
   breed: string;
 }
 
-function fixRex(arg: { name: "Rex", breed: "Lab" }): void {}
+function fixRex(arg: { name: "Rex"; breed: "Lab" }): void {}
 
 function testMutableFieldCovariance(): void {
   const obj = { pet: { name: "Rex", breed: "Lab" } };
