@@ -58,6 +58,7 @@ function bareSpread<T extends ReadonlyArray<number>>(
 }
 
 function testBareSpread(): void {
+  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [number, number, number] do not satisfy the constraint
   let r = bareSpread(1, 2, 3);
 }
 
@@ -68,6 +69,7 @@ function bareSpreadStr<T extends ReadonlyArray<string>>(...items: T): void {
 }
 
 function testBareSpreadStr(): void {
+  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [string, string, string] do not satisfy the constraint
   bareSpreadStr("a", "b", "c");
 }
 

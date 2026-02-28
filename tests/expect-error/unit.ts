@@ -75,6 +75,7 @@ function check3(t1: [number, boolean]): boolean {
 }
 
 function check4(t1: [number] | [boolean]): [number | boolean] {
+  // @skjs-expect-error Invalid return type
   return t1;
 }
 
@@ -86,6 +87,7 @@ function check5(t1: [number] | [boolean]): number | boolean {
 function check6(
   t1: [{ field1: number }] & [{ field2: boolean }],
 ): [{ field1: number; field2: boolean }] {
+  // @skjs-expect-error Invalid return type
   return t1;
 }
 

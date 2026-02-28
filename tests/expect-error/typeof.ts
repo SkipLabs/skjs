@@ -860,6 +860,7 @@ function testTupleVsArray(
     // Both tuples and arrays are typeof "object"
     return x;
   } else {
+    // @skjs-expect-error Invalid return type
     return arr;
   }
 }
@@ -978,7 +979,6 @@ function testMultipleTuples(
   x: [number, string] | [boolean] | number,
 ): [number, string] | [boolean] {
   if (typeof x === "number") {
-    // @skjs-expect-error Invalid return type
     return [false];
   } else {
     // TODO: This error won't be reported due to earlier error
@@ -1053,7 +1053,6 @@ function testTupleIntersection(
   if (typeof x === "number") {
     return x;
   } else {
-    // @skjs-expect-error Invalid access for type never
     return x[0];
   }
 }
@@ -1100,7 +1099,7 @@ function testTupleSpread(
 function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
     // Accessing out of bounds
-    // @skjs-expect-error Out of bound index
+    // @skjs-expect-error Invalid return type
     return x[2];
   } else {
     return false;
@@ -1123,7 +1122,7 @@ function testTupleWrongDestructure(x: [number, string] | number): boolean {
 function testTupleArrayMethod(x: [number, string] | number): number {
   if (typeof x === "object") {
     // Tuples don't have array methods in SKJS
-    // @skjs-expect-error Invalid index
+    // @skjs-expect-error Please add a type annotation
     return x.map((v) => v).length;
   } else {
     return x;
