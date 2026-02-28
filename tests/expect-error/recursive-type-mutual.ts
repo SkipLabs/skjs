@@ -32,6 +32,5 @@ function mutualMismatch(a: A<number>, b: B<string>): void {
 
 // Positive: nested mutual construction
 function mutualNested<T>(val: T): A<T> {
-  // @skjs-expect-error Invalid return type
   return { data: val, other: { data: val, other: null } };
 }

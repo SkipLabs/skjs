@@ -8,7 +8,6 @@ function reverse<T>(l: list<T>): list<T> {
     result = { head: l.head, tail: result };
     l = l.tail;
   }
-  // @skjs-expect-error Invalid return type
   return result;
 }
 
@@ -20,7 +19,6 @@ function list<T>(...elts: T[]): list<T> {
       result = { head: elt, tail: result };
     }
   }
-  // @skjs-expect-error Invalid call
   return reverse(result);
 }
 

@@ -326,12 +326,12 @@ extension class TFields {
 
 extension class TObject {
   static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
+    _subst: mutable Subst,
+    _tenv: TEnv,
     obj1: TObject,
     obj2: TObject,
   ): TObject {
-    TObject(TFields::union(subst, tenv, obj1.fields, obj2.fields), obj1.pos)
+    TObject(obj1.fields.union(obj2.fields), obj1.pos)
   }
 }
 

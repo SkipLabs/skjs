@@ -112,7 +112,7 @@ extension class TypeChecker {
           if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };
-      default = if (target) Some(TObject::createEmpty(typePos)) else {
+      default = if (target) Some(TObject::createEmpty(this, typePos)) else {
         None()
       };
       this.setLocalFilterMap(tcenv, local, default, filterMap)
@@ -161,8 +161,12 @@ extension class TypeChecker {
         x match {
         | TTuple _ -> Some(x)
         | tObj @ TObject _ ->
-          tvar = TType::var(tcenv.subst.gen(local.pos));
-          arrObj = this.newObject(tcenv, Name(local.pos, "Array"), Array[tvar]);
+          tparam = TType::top(local.pos);
+          arrObj = this.newObject(
+            tcenv,
+            Name(local.pos, "Array"),
+            Array[tparam],
+          );
           TObject::inter(tcenv.subst, this, tObj, arrObj)
         | _ -> None()
         };
@@ -236,9 +240,15 @@ extension class TypeChecker {
             type => TType::top(e.pos),
           }.map(field ->
             if (key is FKSymbol _) {
-              TObject(TFields::singleSymbolField(field), e1.pos)
+              TObject(
+                ArraySet::single(TFields::singleSymbolField(field)),
+                e1.pos,
+              )
             } else {
-              TObject(TFields::singleField(field), e1.pos)
+              TObject(
+                ArraySet::single(TFields::singleField(field)),
+                e1.pos,
+              )
             }
           )
         })
@@ -254,7 +264,7 @@ extension class TypeChecker {
         | TAlgebraic _
         | TPromise _ ->
           Some(stype) /* TODO */
-        | tObj @ TObject(tFields, _pos) ->
+        | tObj @ TObject(_, _pos) ->
           singleKey match {
           | None() -> Some(stype)
           | Some(key) ->
@@ -281,17 +291,25 @@ extension class TypeChecker {
                 ),
               )
             } else {
-              tFields.maybeGetField(key) match {
-              | Some(TField{isOptional => false}) -> None()
-              | Some(_) ->
-                key match {
-                | FKSymbol(_, keyName) ->
-                  Some(tObj.filterSymbolFields(sf -> sf.name.value != keyName))
-                | FKName(Name(_, keyName), _) ->
-                  Some(tObj.filterFields(f -> f.name.value != keyName))
+              tObj.mapOpt(tFields ->
+                tFields.maybeGetField(key) match {
+                | Some(TField{isOptional => false}) -> None()
+                | Some(_) ->
+                  key match {
+                  | FKSymbol(_, keyName) ->
+                    Some(
+                      tFields.filterSymbolFields(sf ->
+                        sf.name.value != keyName
+                      ),
+                    )
+                  | FKName(Name(_, keyName), _) ->
+                    Some(
+                      tFields.filterFields(f -> f.name.value != keyName),
+                    )
+                  }
+                | None() -> Some(tFields)
                 }
-              | _ -> Some(stype)
-              }
+              )
             }
           }
         };

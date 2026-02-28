@@ -415,8 +415,20 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): ?TObject {
-    TFields::inter(subst, tenv, obj1.fields, obj2.fields).map(fields ->
-      TObject(fields, obj1.pos)
+    fresult = mutable Vector[];
+    for (field1 in obj1.fields) {
+      for (field2 in obj2.fields) {
+        TFields::inter(subst, tenv, field1, field2) match {
+        | None() -> void
+        | Some(x) -> fresult.push(x)
+        }
+      }
+    };
+    Some(
+      TObject(
+        ArraySet::createFromVector(fresult.chill()),
+        obj1.pos,
+      ),
     )
   }
 }

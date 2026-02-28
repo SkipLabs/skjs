@@ -75,7 +75,6 @@ function nestedExpansionDeep<T>(t: Tree<T>): Tree<T> {
 
 // Positive: building nested recursive values
 function wrongRecursiveType<T>(x: T): List<T> {
-  // @skjs-expect-error Invalid annotation
   const result: List<T> = { head: x, tail: { head: x, tail: null } };
   return result;
 }

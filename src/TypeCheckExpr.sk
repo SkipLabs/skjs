@@ -82,7 +82,8 @@ extension class TypeChecker {
             ],
           )
         }
-      | Some(TObject(fields, _)) ->
+      | Some(obj @ TObject(_, _)) ->
+        fields = obj.getFields(tcenv.subst, this);
         eltType = this.getIteratorElementType(tcenv.subst, fields, pos) match {
         | Some(t) -> t
         | None() ->
@@ -141,8 +142,8 @@ extension class TypeChecker {
       | Some(stypes) ->
         for (stype in stypes) {
           (branches, typeForRest) = stype match {
-          | tobj @ TObject(fields, _) ->
-            (Array[fields], tobj.removeFields(fieldsToRemoveForRest))
+          | tobj @ TObject(_, _) ->
+            (tobj.getBranches(), tobj.removeFields(fieldsToRemoveForRest))
           | a @ TAlgebraic _ ->
             (
               a.branches.toArray().map(x -> x.fields),
@@ -355,79 +356,85 @@ extension class TypeChecker {
         };
         !result = TType::union(tcenv.subst, this, result, tyAtN)
 
-      | TObject(fields, objectPos) if (fields.isEmpty()) ->
-        !result = TType::top(objectPos)
-
-      | TObject(fields, _) if (idxSType is TPrimValue(TSymbol(), _, _)) ->
-        uniqueId = idxSType match {
-        | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
-        | _ -> None()
-        } match {
-        | Some(id) -> id
-        | None() -> typingError(Array[(idx.pos, "Expected a unique symbol")])
-        };
-        fields.maybeGetSymbolType(tcenv.subst, this, uniqueId, pos) match {
-        | Some(ty) -> !result = TType::union(tcenv.subst, this, result, ty)
-        | None() ->
-          typingError(Array[(pos, "Symbol property not found on object")])
-        }
-
-      | TObject(fields, objectPos) ->
-        idxSType.literals match {
-        | None() -> Some(idxSType)
-        | Some(lits) ->
-          lits
-            .filterLiterals(fieldLit ->
-              fields.maybeGetType(
-                tcenv.subst,
-                this,
-                fieldLit.val,
-                fieldLit.pos,
-                isLValue,
-              ) match {
-              | Some(ty) ->
-                !result = TType::union(tcenv.subst, this, result, ty);
-                false
-              | None() -> true
-              }
-            )
-            .map(remainingLits ->
-              idxSType with {literals => Some(remainingLits)}
-            )
-        } match {
-        | None() -> void
-        | Some(remainingIdxSType) ->
-          fields.maybeSingleIndex() match {
+      | obj @ TObject(_, objectPos) ->
+        fields = obj.getFields(tcenv.subst, this);
+        if (fields.isEmpty()) {
+          !result = TType::top(objectPos)
+        } else if (idxSType is TPrimValue(TSymbol(), _, _)) {
+          uniqueId = idxSType match {
+          | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
+          | _ -> None()
+          } match {
+          | Some(id) -> id
+          | None() -> typingError(Array[(idx.pos, "Expected a unique symbol")])
+          };
+          fields.maybeGetSymbolType(tcenv.subst, this, uniqueId, pos) match {
+          | Some(ty) -> !result = TType::union(tcenv.subst, this, result, ty)
           | None() ->
-            remainingIdxSType.literals match {
-            | None() ->
-              typingError(
-                Array[
-                  (pos, "Invalid access"),
-                  (
-                    idx.pos,
-                    `Index has non-literal type ${remainingIdxSType.kind}`,
-                  ),
-                  (objectPos, "But object has no index field"),
-                ],
+            typingError(Array[(pos, "Symbol property not found on object")])
+          }
+        } else {
+          idxSType.literals match {
+          | None() -> Some(idxSType)
+          | Some(lits) ->
+            lits
+              .filterLiterals(fieldLit ->
+                fields.maybeGetType(
+                  tcenv.subst,
+                  this,
+                  fieldLit.val,
+                  fieldLit.pos,
+                  isLValue,
+                ) match {
+                | Some(ty) ->
+                  !result = TType::union(tcenv.subst, this, result, ty);
+                  false
+                | None() -> true
+                }
               )
-            | Some(lits) -> fields.getTypeTypingError(lits.toStringList(), pos)
+              .map(remainingLits ->
+                idxSType with {literals => Some(remainingLits)}
+              )
+          } match {
+          | None() -> void
+          | Some(remainingIdxSType) ->
+            fields.maybeSingleIndex() match {
+            | None() ->
+              remainingIdxSType.literals match {
+              | None() ->
+                typingError(
+                  Array[
+                    (pos, "Invalid access"),
+                    (
+                      idx.pos,
+                      `Index has non-literal type ${remainingIdxSType.kind}`,
+                    ),
+                    (objectPos, "But object has no index field"),
+                  ],
+                )
+              | Some(lits) ->
+                fields.getTypeTypingError(lits.toStringList(), pos)
+              }
+            | Some(index) ->
+              this.checkSubType(
+                tcenv,
+                pos,
+                "Invalid index key",
+                TType::single(remainingIdxSType),
+                index.keyType,
+              );
+              ty = if (isLValue) index.valueTypeSet else {
+                TType::unionUndefined(
+                  tcenv.subst,
+                  this,
+                  index.valueTypeGet,
+                  pos,
+                )
+              };
+              !result = TType::union(tcenv.subst, this, result, ty)
             }
-          | Some(index) ->
-            this.checkSubType(
-              tcenv,
-              pos,
-              "Invalid index key",
-              TType::single(remainingIdxSType),
-              index.keyType,
-            );
-            ty = if (isLValue) index.valueTypeSet else {
-              TType::unionUndefined(tcenv.subst, this, index.valueTypeGet, pos)
-            };
-            !result = TType::union(tcenv.subst, this, result, ty)
           }
         }
-
       | TAlgebraic(branches, _) ->
         idxSType match {
         | TPrimValue(TString(), Some(lits), _) -> lits.singleElt()
@@ -706,7 +713,7 @@ extension class TypeChecker {
               | None() -> CGNode::create(AnonymousFunDef(fd))
               },
             );
-            break TType::single(TObject::createCall(tFuns))
+            break TType::single(TObject::createCall(this, tFuns))
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv, c.name);
             break staticClass
@@ -767,32 +774,24 @@ extension class TypeChecker {
           | Some(spreadSTypes) ->
             for (spreadSType in spreadSTypes) {
               spreadSType match {
-              | TObject(
-                TFields{
-                  fields => spreadFields,
-                  symbolFields => spreadSymbolFields,
-                  indexes => spreadIndexes,
-                  call => spreadCall,
-                  new => spreadNew,
-                },
-                _pos,
-              ) ->
-                for (spreadField in spreadFields) {
+              | obj @ TObject(_, _pos) ->
+                spreadTFields = obj.getFields(tcenv.subst, this);
+                for (spreadField in spreadTFields.fields) {
                   fields![spreadField.name] = spreadField
                 };
-                for (spreadSymbolField in spreadSymbolFields) {
+                for (spreadSymbolField in spreadTFields.symbolFields) {
                   symbolFields![spreadSymbolField.name] = spreadSymbolField
                 };
-                for (spreadIndex in spreadIndexes) {
+                for (spreadIndex in spreadTFields.indexes) {
                   indexes.push(spreadIndex)
                 };
-                spreadCall.each(_ ->
+                spreadTFields.call.each(_ ->
                   tcenv.notSupported(
                     spreadExpr.pos,
                     "call signature in spread object",
                   )
                 );
-                spreadNew.each(_ ->
+                spreadTFields.new.each(_ ->
                   tcenv.notSupported(
                     spreadExpr.pos,
                     "constructor signature in spread object",
@@ -841,7 +840,7 @@ extension class TypeChecker {
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           tFuns = this.funDecl(tcenv, false, fd, cgNode);
-          (name, TType::single(TObject::createCall(tFuns)))
+          (name, TType::single(TObject::createCall(this, tFuns)))
         };
         TField::create{
           pos => name.pos,
@@ -867,7 +866,7 @@ extension class TypeChecker {
       obj = createObject(
         pos,
         algebraicBranchField,
-        TFields::create{fields, symbolFields, indexes},
+        TFields::create{tenv => this, pos, fields, symbolFields, indexes},
       );
       for (efield in efields) {
         efield match {
@@ -910,16 +909,26 @@ extension class TypeChecker {
       tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(TObject(TFields{call => Some((optional, tfuns))}, _)) ->
-        if (optional) {
-          tcenv.error(
+      | Some(obj @ TObject(_, _)) ->
+        obj.getFields(tcenv.subst, this) match {
+        | TFields{call => Some((optional, tfuns))} ->
+          if (optional) {
+            tcenv.error(
+              Array[
+                (pos, "Invalid call"),
+                (fty.pos, `Type ${fty} may not be a function`),
+              ],
+            )
+          };
+          tfuns
+        | _ ->
+          typingError(
             Array[
               (pos, "Invalid call"),
-              (fty.pos, `Type ${fty} may not be a function`),
+              (fty.pos, `Type ${fty} is not a function`),
             ],
           )
-        };
-        tfuns
+        }
       | _ ->
         typingError(
           Array[
@@ -961,23 +970,26 @@ extension class TypeChecker {
         subExprTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
           stypes.singleElt()
         ) match {
-        | Some(TObject(TFields{new => Some((optional, f))}, objPos)) ->
-          if (optional) {
-            tcenv.error(
+        | Some(obj @ TObject(_, objPos)) ->
+          obj.getFields(tcenv.subst, this) match {
+          | TFields{new => Some((optional, f))} ->
+            if (optional) {
+              tcenv.error(
+                Array[
+                  (pos, "Invalid new"),
+                  (objPos, `${subExprTy} may not have a constructor`),
+                ],
+              )
+            };
+            this.call(tcenv, pos, f, tArgs, args, mostPrecise)
+          | TFields{new => None()} ->
+            typingError(
               Array[
                 (pos, "Invalid new"),
-                (objPos, `${subExprTy} may not have a constructor`),
+                (objPos, `${subExprTy} has no constructor`),
               ],
             )
-          };
-          this.call(tcenv, pos, f, tArgs, args, mostPrecise)
-        | Some(TObject(TFields{new => None()}, objPos)) ->
-          typingError(
-            Array[
-              (pos, "Invalid new"),
-              (objPos, `${subExprTy} has no constructor`),
-            ],
-          )
+          }
         | _ ->
           typingError(
             Array[
@@ -1279,7 +1291,12 @@ extension class TypeChecker {
             );
             !canBeTrue = true;
             !canBeFalse = true
-          | TObject(TFields{fields, symbolFields, indexes}, _pos) ->
+          | obj @ TObject(_, _pos) ->
+            objFields = obj.getFields(tcenv.subst, this);
+            (fields, symbolFields, indexes) = objFields match {
+            | TFields{fields, symbolFields, indexes} ->
+              (fields, symbolFields, indexes)
+            };
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
@@ -1596,6 +1613,7 @@ extension class TypeChecker {
 
     TType::single(
       TObject::createCall(
+        this,
         TFuns::singleFun(
           TFun(
             Array[],
@@ -1779,7 +1797,8 @@ extension class TypeChecker {
       .get(local)
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(TObject(fields, objPos)) ->
+    | Some(obj @ TObject(_, objPos)) ->
+      fields = obj.getFields(tcenv.subst, this);
       // For each key, check existing fields/index sigs and collect
       // new fields to grow.
       newFieldsMap = mutable Map[];
@@ -1860,12 +1879,15 @@ extension class TypeChecker {
           )
         };
         allNewFields = TFields::create{
+          tenv => this,
+          pos,
           fields => newFieldsMap,
           symbolFields => newSymbolFieldsMap,
         };
         newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
         | None() -> TType::bottom(objPos)
-        | Some(mergedFields) -> TType::single(TObject(mergedFields, objPos))
+        | Some(mergedFields) ->
+          TType::single(TObject(ArraySet::single(mergedFields), objPos))
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
           this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
@@ -1891,7 +1913,8 @@ extension class TypeChecker {
       .get(local)
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(TObject(fields, _)) ->
+    | Some(obj @ TObject(_, _)) ->
+      fields = obj.getFields(tcenv.subst, this);
       matchingIndex = fields.indexes.find(indexField -> {
         clonedSubst = tcenv.subst.clone();
         TType::isSub(clonedSubst, this, keyType, indexField.keyType) is STOk _
@@ -1979,7 +2002,8 @@ extension class TypeChecker {
         spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
           stypes.singleElt()
         ) match {
-        | Some(TObject(fields, _)) ->
+        | Some(obj @ TObject(_, _)) ->
+          fields = obj.getFields(tcenv.subst, this);
           this.getIteratorElementType(tcenv.subst, fields, argExpr.pos) match {
           | None() ->
             tcenv.error(

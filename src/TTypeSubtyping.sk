@@ -1334,6 +1334,22 @@ extension base class ArrayType {
   }
 }
 
+class STErrorOnTObject(
+  object1: TObject,
+  object2: TObject,
+) extends STErrorOnSTypeBase<TObject> {
+  fun toError(
+    _pos1: PosRange,
+    _pos2: PosRange,
+    _detail: STErrorDetail,
+  ): List<(PosRange, String)> {
+    List[
+      (this.object1.pos, `This is of type ${this.object1}`),
+      (this.object2.pos, `is not compatible with type ${this.object2}`),
+    ]
+  }
+}
+
 extension class TObject {
   static fun isSub(
     subst: mutable Subst,
@@ -1341,10 +1357,21 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): STResult<TObject> {
-    TFields::isSub(subst, tenv, obj1.fields, obj2.fields) match {
-    | STOk() -> STOk()
-    | err @ STErrorOnTFields _ -> STRecObject(err, obj1, obj2)
-    }
+    for (fields1 in obj1.fields) {
+      isSub = for (fields2 in obj2.fields) {
+        savedSubst = subst.save();
+        TFields::isSub(subst, tenv, fields1, fields2) match {
+        | STOk() -> break true
+        | _ ->
+          subst.restore(savedSubst);
+          continue
+        }
+      } else {
+        false
+      };
+      if (!isSub) return STErrorOnTObject(obj1, obj2);
+    };
+    STOk()
   }
 }
 
