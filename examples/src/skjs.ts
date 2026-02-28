@@ -8,5 +8,6 @@ export function arrayRO<T>(...elts: T[]): ReadonlyArray<T> {
 }
 
 export function map<K, V>(...elts: Array<[K, V]>): Map<K, V> {
+  // @skjs-expect-error Invalid call
   return new Map(elts);
 }

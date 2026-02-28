@@ -11,7 +11,7 @@ class WithReadonlyOutsideConstructor {
     this.x = 1;
   }
   mutate(): void {
-    // FIXME: SKJS should reject this (readonly field write outside constructor)
+    // @skjs-expect-error Invalid assignment
     this.x = 2;
   }
 }

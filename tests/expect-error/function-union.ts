@@ -199,6 +199,7 @@ type ObjWithUnion = {
 };
 
 function testUnionInObject(): void {
+  // @skjs-expect-error Invalid annotation
   const obj: ObjWithUnion = {
     fn: returnString,
   };

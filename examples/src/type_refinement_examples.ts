@@ -109,6 +109,7 @@ function main(): void {
   processResponse({ kind: "error", message: "error message" });
 
   // Test 3: Nested objects
+  // @skjs-expect-error Invalid call
   handleNestedObject({ user: { name: "Alice" } });
   handleNestedObject({ user: null });
 

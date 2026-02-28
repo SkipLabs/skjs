@@ -4,7 +4,7 @@ type ObjectWithReadonlyField = {
 };
 
 function writesOnReadonlyAndMutableFields(x: ObjectWithReadonlyField): void {
-  // FIXME: SKJS should reject this (readonly)
+  // @skjs-expect-error Invalid assignment
   x.ro = 1;
   x.mut = 2;
 }
@@ -16,7 +16,7 @@ type ObjectWithReadonlyOptionalField = {
 function writesOnReadonlyOptionalField(
   x: ObjectWithReadonlyOptionalField,
 ): void {
-  // FIXME: SKJS should reject this (readonly)
+  // @skjs-expect-error Invalid assignment
   x.opt = 3;
 }
 
@@ -25,16 +25,16 @@ type ObjectWithReadonlyIndex = {
 };
 
 function writesOnReadonlyIndex(x: ObjectWithReadonlyIndex): void {
-  // FIXME: SKJS should reject this (readonly)
+  // @skjs-expect-error Invalid assignment
   x["a"] = 1;
-  // FIXME: SKJS should reject this (readonly)
+  // @skjs-expect-error Invalid assignment
   x.b = 2;
 }
 
 type UnionReadonlyAndMutable = { readonly a: number } | { a: number };
 
 function writeOnUnionReadonlyAndMutable(x: UnionReadonlyAndMutable): void {
-  // FIXME: SKJS should reject this (readonly)
+  // @skjs-expect-error Invalid assignment
   x.a = 1;
 }
 
@@ -46,8 +46,8 @@ function assignNumberToOptional(x: ObjectWithOptionalField): void {
   x.opt = 3;
 }
 
-// FIXME: should error with exactOptionalPropertyTypes semantics
 function assignUndefinedToOptional(x: ObjectWithOptionalField): void {
+  // @skjs-expect-error Invalid assignment
   x.opt = undefined;
 }
 
@@ -58,9 +58,9 @@ type NestedReadonlyObject = {
 };
 
 function nestedReadonlyObjectWritesAreRejected(x: NestedReadonlyObject): void {
-  // FIXME: SKJS should reject this (readonly)
+  // @skjs-expect-error Invalid assignment
   x.cfg = { port: 2 };
-  // FIXME: SKJS should reject this (readonly)
+  // @skjs-expect-error Invalid assignment
   x.cfg.port = 3;
 }
 

@@ -186,7 +186,7 @@ extension class TypeChecker {
                         tcenv.subst.clone(),
                         this,
                         undefined(defaultPos),
-                        tfield.type,
+                        tfield.get,
                       ) is STOk()
                     ) {
                       !defaultIsUseless = None();
@@ -194,19 +194,19 @@ extension class TypeChecker {
                         TType::diff(
                           tcenv.subst,
                           this,
-                          tfield.type,
+                          tfield.get,
                           undefined(defaultPos),
                         ),
                         defaultType,
                       )
                     } else {
-                      tfield.type
+                      tfield.get
                     }
                   | None() ->
                     if (tfield.isOptional) {
-                      union(tfield.type, undefined(tfield.pos))
+                      union(tfield.get, undefined(tfield.pos))
                     } else {
-                      tfield.type
+                      tfield.get
                     }
                   },
                 )
@@ -421,7 +421,9 @@ extension class TypeChecker {
               TType::single(remainingIdxSType),
               index.keyType,
             );
-            ty = TType::unionUndefined(tcenv.subst, this, index.valueType, pos);
+            ty = if (isLValue) index.valueTypeSet else {
+              TType::unionUndefined(tcenv.subst, this, index.valueTypeGet, pos)
+            };
             !result = TType::union(tcenv.subst, this, result, ty)
           }
         }
@@ -746,7 +748,7 @@ extension class TypeChecker {
               y.value is Object _ ||
               ttype.isConcretePrimitive()
             ) {
-              this.makeBoundTVar(tcenv, ttype)
+              this.makeBoundTVarForField(tcenv, ttype)
             } else {
               ttype
             },
@@ -1758,6 +1760,10 @@ extension class TypeChecker {
       bound match {
       | None() -> void
       | Some(objectType) ->
+        /* Not using the setter type here:
+           LOCanGrow with a bound is only used for the this type in constructors
+           so getters and setters have the same type, except for readonly-fields.
+           But in constructors, all fields are writable, hence the usage of the getter type. */
         this.checkSubType(
           tcenv,
           fieldType.pos,
@@ -1787,7 +1793,7 @@ extension class TypeChecker {
             fieldType.pos,
             "Invalid assignment",
             fieldType,
-            fd.type,
+            fd.set,
           )
         | None() ->
           matchingIndex = fields.indexes.find(indexField -> {
@@ -1806,7 +1812,7 @@ extension class TypeChecker {
               fieldType.pos,
               "Invalid assignment",
               fieldType,
-              indexField.valueType,
+              indexField.valueTypeSet,
             )
           | None() ->
             !needsGrowth = true;
@@ -1897,7 +1903,7 @@ extension class TypeChecker {
           fieldType.pos,
           "Invalid assignment",
           fieldType,
-          indexField.valueType,
+          indexField.valueTypeSet,
         )
       | None() ->
         tcenv.error(

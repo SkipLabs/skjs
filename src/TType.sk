@@ -292,26 +292,6 @@ class TType private {
     this.clauses.isTop()
   }
 
-  /* Syntactic containment: returns true when every inst and clause
-     of `other` also appears in `this` (checked by structural equality).
-
-     Since a TType represents the union of its insts and clauses,
-     this implies this ⊇ other (but the converse does not hold:
-     two semantically equal types can have different representations).
-
-     Unlike isSub, this is a cheap O(n log n) check that never expands
-     type aliases or solves constraints — it only compares the pre-expansion
-     representations. It can therefore be used inside inter/union without
-     risk of divergence. The trade-off is that it misses cases where
-     containment holds semantically but not syntactically.
-
-     Used for the absorption law: (A | B) & B = B. */
-  fun containsType(other: TType): Bool {
-    this != other &&
-      this.insts.contains(other.insts) &&
-      this.clauses.contains(other.clauses)
-  }
-
   fun isConcretePrimitive(): Bool {
     if (!this.insts.isEmpty()) return false;
     for (clause in this.clauses) {
@@ -371,7 +351,20 @@ class TType private {
       inst = todo.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> tenv.instantiate(subst, name, targs)
-      | tinter @ TInter _ -> tinter.expand(subst, tenv)
+      | TInter(tys) ->
+        for (ty1 in tys) {
+          for (ty2 in tys) {
+            !ty1 = TType::inter(
+              subst,
+              tenv with {expandInter => true},
+              ty1,
+              ty2,
+            );
+          };
+          break ty1
+        } else {
+          internal_error("Unexpected empty TInter")
+        }
       | tvar @ TVar _ ->
         expandTVars match {
         | Some(variance) -> subst.get(tenv, tvar, variance)
@@ -918,7 +911,8 @@ class TField private {
   pos: PosRange,
   name: /* Invariant: name != kAlgebraicBranchFieldName */ FieldNameString,
   isOptional: Bool,
-  type: TType,
+  get: TType,
+  set: TType,
 } uses XXHashable, Orderable, Projectable<FieldNameString> {
   static fun create{
     pos: PosRange,
@@ -928,16 +922,24 @@ class TField private {
     type: TType,
   }: ?TField {
     if (name == kAlgebraicBranchFieldName) None() else {
-      Some(TField{pos, name => FieldNameString(name), isOptional, type})
+      setType = isReadonly match {
+      | Some(roPos) -> TType::bottom(roPos)
+      | None() -> type
+      };
+      Some(
+        TField{
+          pos,
+          name => FieldNameString(name),
+          isOptional,
+          get => type,
+          set => setType,
+        },
+      )
     }
   }
 
-  fun withOptional(): TField {
-    this with {isOptional => true}
-  }
-
   fun mapType(f: TType -> TType): TField {
-    this with {type => f(this.type)}
+    this with {get => f(this.get), set => f(this.set)}
   }
 
   fun project(): FieldNameString {
@@ -950,29 +952,26 @@ class TIndexField private {
   pos: PosRange,
   keyName: String,
   keyType: TType,
-  isReadonly: Bool,
-  valueType: TType,
+  valueTypeGet: TType,
+  valueTypeSet: TType,
 } uses XXHashable, Orderable {
   static fun create{
     pos: PosRange,
     keyName: String,
     keyType: TType,
     isReadonly: ?PosRange,
-    valueType: TType,
+    valueTypeGet: TType,
+    valueTypeSet: TType,
   }: TIndexField {
-    TIndexField{
-      pos,
-      keyName,
-      keyType,
-      isReadonly => isReadonly.isSome(),
-      valueType,
-    }
+    _ = isReadonly;
+    TIndexField{pos, keyName, keyType, valueTypeGet, valueTypeSet}
   }
 
   fun mapTypes(f: TType -> TType): TIndexField {
     keyType = f(this.keyType);
-    valueType = f(this.valueType);
-    this with {keyType, valueType}
+    valueTypeGet = f(this.valueTypeGet);
+    valueTypeSet = f(this.valueTypeSet);
+    this with {keyType, valueTypeGet, valueTypeSet}
   }
 
   fun toString(): String {
@@ -990,15 +989,13 @@ class TIndexField private {
     merged: mutable Vector<TIndexField> = mutable Vector[];
     for (idx in indexes) {
       existingIdx = merged.findIndex(e ->
-        e.keyType == idx.keyType && e.valueType == idx.valueType
+        e.keyType == idx.keyType &&
+          e.valueTypeGet == idx.valueTypeGet &&
+          e.valueTypeSet == idx.valueTypeSet
       );
       existingIdx match {
       | None() -> merged.push(idx)
-      | Some(i) ->
-        existing = merged[i];
-        if (existing.isReadonly && !idx.isReadonly) {
-          merged![i] = existing with {isReadonly => false}
-        }
+      | Some(_) -> void
       }
     };
     merged.toArray()
@@ -1143,15 +1140,15 @@ class TFields private {
     tenv: TEnv,
     fieldName: String,
     pos: PosRange,
-    isLValue: Bool = false,
+    isLValue: Bool,
   ): ?TType {
-    _ = isLValue; // Will be used when get/set types are introduced
     this.maybeGet(fieldName).map(fd -> {
-      ty = fd.type;
-      if (fd.isOptional) {
-        TType::unionUndefined(subst, tenv, ty, pos)
+      if (isLValue) {
+        fd.set
+      } else if (fd.isOptional) {
+        TType::unionUndefined(subst, tenv, fd.get, pos)
       } else {
-        ty
+        fd.get
       }
     })
   }
@@ -1163,7 +1160,7 @@ class TFields private {
     pos: PosRange,
   ): ?TType {
     this.maybeGetSymbol(uniqueId).map(fd -> {
-      ty = fd.type;
+      ty = fd.get;
       if (fd.isOptional) {
         TType::unionUndefined(subst, tenv, ty, pos)
       } else {
@@ -1197,8 +1194,9 @@ class TFields private {
     tenv: TEnv,
     fieldName: String,
     pos: PosRange,
+    isLValue: Bool = false,
   ): TType {
-    this.maybeGetType(subst, tenv, fieldName, pos) match {
+    this.maybeGetType(subst, tenv, fieldName, pos, isLValue) match {
     | None() -> this.getTypeTypingError(fieldName, pos)
     | Some(ty) -> ty
     }
@@ -1367,13 +1365,39 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
-value class TVarID(private value: Int) uses Orderable, XXHashable {
-  fun toString(): String {
-    this.value.toString()
+base class TVarID uses Orderable, XXHashable {
+  children =
+  // A normal type variable identifier
+  | TVID(value: Int)
+  // A type variable that was introduced to infer the type of a field
+  // in a literal object.
+  | TVIDForField(value: Int)
+
+  static fun create(id: Int): TVarID {
+    TVID(id)
+  }
+
+  static fun createForField(id: Int): TVarID {
+    TVIDForField(id)
+  }
+
+  fun valueForHash(): Int
+  | TVID(x) -> x
+  | TVIDForField(x) -> x
+
+  fun toString(): String
+  | TVID(x) -> x.toString()
+  | TVIDForField(x) -> x.toString()
+
+  fun isForField(): Bool {
+    this match {
+    | TVIDForField _ -> true
+    | _ -> false
+    }
   }
 
   fun xxhash(): XXHash {
-    XXHash(this.value)
+    XXHash(this.valueForHash())
   }
 }
 
@@ -1384,6 +1408,10 @@ class TVar private (
 ) extends TInst {
   static fun create(pos: PosRange, id: TVarID): TVar {
     TVar(pos, id, SortedSet[])
+  }
+
+  fun isForField(): Bool {
+    this.id.isForField()
   }
 
   fun addConstraint(ty: TType): TVar {
@@ -1460,10 +1488,6 @@ class TInsts private (
 
   fun getUnique(): ?TInst {
     this.insts.getUnique()
-  }
-
-  fun contains(that: TInsts): Bool {
-    this.insts.contains(that.insts)
   }
 
   fun getSingleInter(): ?TInter {
@@ -1671,13 +1695,6 @@ class Clauses private (
 
   fun isEmpty(): Bool {
     this.clauses.isEmpty()
-  }
-
-  /* Syntactic subset: returns true when every clause in `other`
-     also appears in `this` (looked up by vars key, compared by
-     structural equality). Empty `other` is trivially contained. */
-  fun contains(other: Clauses): Bool {
-    !other.clauses.any(c -> this.clauses.maybeGet(c.project()) != Some(c))
   }
 
   fun isTop(): Bool {

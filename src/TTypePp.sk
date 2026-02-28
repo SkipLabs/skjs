@@ -323,13 +323,29 @@ mutable class TypePp{
     indexes = fields.indexes;
     for (i => field in fieldArray) {
       fieldName = field.name.value;
-      fieldType = field.type;
-      this.out(level, margin, TypePp::escapeName(fieldName));
-      if (field.isOptional) {
-        this.out(level, margin, "?")
+      escapedName = TypePp::escapeName(fieldName);
+      if (field.set.isBottom()) {
+        this.out(level, margin, "readonly ");
+        this.out(level, margin, escapedName);
+        if (field.isOptional) this.out(level, margin, "?");
+        this.out(level, margin, ": ");
+        this.type(level, margin, field.get);
+      } else if (field.get != field.set) {
+        this.out(level, margin, "get ");
+        this.out(level, margin, escapedName);
+        this.out(level, margin, "(): ");
+        this.type(level, margin, field.get);
+        this.out(level, margin, ", set ");
+        this.out(level, margin, escapedName);
+        this.out(level, margin, "(v: ");
+        this.type(level, margin, field.set);
+        this.out(level, margin, ")");
+      } else {
+        this.out(level, margin, escapedName);
+        if (field.isOptional) this.out(level, margin, "?");
+        this.out(level, margin, ": ");
+        this.type(level, margin, field.get);
       };
-      this.out(level, margin, ": ");
-      this.type(level, margin, fieldType);
       if (
         i != fieldArray.size() - 1 ||
         !symbolFieldArray.isEmpty() ||
@@ -349,7 +365,7 @@ mutable class TypePp{
         this.out(level, margin, "?")
       };
       this.out(level, margin, ": ");
-      this.type(level, margin, field.type);
+      this.type(level, margin, field.get);
       if (
         i != symbolFieldArray.size() - 1 ||
         !indexes.isEmpty() ||
@@ -397,12 +413,23 @@ mutable class TypePp{
   }
 
   mutable fun indexField(level: Int, margin: Margin, index: TIndexField): void {
+    if (index.valueTypeSet.isBottom()) {
+      this.out(level, margin, "readonly ")
+    };
     this.out(level, margin, "[ ");
     this.out(level, margin, TypePp::escapeName(index.keyName));
     this.out(level, margin, ": ");
     this.type(level, margin, index.keyType);
     this.out(level, margin, " ]: ");
-    this.type(level, margin, index.valueType);
+    this.type(level, margin, index.valueTypeGet);
+    if (
+      !index.valueTypeSet.isBottom() &&
+      index.valueTypeGet != index.valueTypeSet
+    ) {
+      this.out(level, margin, " (set: ");
+      this.type(level, margin, index.valueTypeSet);
+      this.out(level, margin, ")");
+    }
   }
 
   static fun escapeName(name: String): String {
@@ -497,13 +524,25 @@ mutable class TypePp{
             };
             pp.out(level, margin, ">")
           | TInter(tys) ->
-            for (j => ity in tys) {
-              if (j > 0) pp.out(level, margin, " & ");
+            j = 0;
+            for (ity in tys) {
               pp.out(level, margin, "(");
               pp.type(level, margin, ity);
               pp.out(level, margin, ")");
+              if (j < tys.size() - 1) pp.out(level, margin, " & ");
+              !j = j + 1;
             }
-          | x @ TVar _ -> pp.tvar(level, margin, x)
+          | TVar(_, id, constraints) ->
+            pp.out(level, margin, "'" + id.toString());
+            if (!constraints.isEmpty()) {
+              pp.out(level, margin, " extends ");
+              first = true;
+              for (cstr in constraints) {
+                if (!first) pp.out(level, margin, " & ");
+                !first = false;
+                pp.type(level, margin, cstr);
+              }
+            }
           }
         }
       },
@@ -534,11 +573,23 @@ mutable class TypePp{
             };
             pp.out(level, margin, ">")
           | TInter(tys) ->
-            for (i => ity in tys) {
-              if (i > 0) pp.out(level, margin, " & ");
+            i = 0;
+            for (ity in tys) {
               pp.type(level, margin, ity);
+              if (i < tys.size() - 1) pp.out(level, margin, " & ");
+              !i = i + 1;
             }
-          | x @ TVar _ -> pp.tvar(level, margin, x)
+          | TVar(_, id, constraints) ->
+            pp.out(level, margin, "'" + id.toString());
+            if (!constraints.isEmpty()) {
+              pp.out(level, margin, " extends ");
+              first = true;
+              for (cstr in constraints) {
+                if (!first) pp.out(level, margin, " & ");
+                !first = false;
+                pp.type(level, margin, cstr);
+              }
+            }
           }
         }
       },

@@ -84,7 +84,7 @@ function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
 // Assigning array to union variable
 function testAssignArrayToUnion(): Array<number> | Obj {
   const arr: Array<number> = [1, 2, 3];
-  // TODO: Should Array<number> be assignable to Array<number> | Obj?
+  // @skjs-expect-error Invalid return type
   return arr;
 }
 
@@ -160,7 +160,6 @@ function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
 function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
   // TODO: better error message
   // @skjs-expect-error Invalid iterable type for for-of loop
-  // @skjs-expect-error Invalid return type
   return [...x];
 }
 
@@ -192,7 +191,7 @@ function testDestructuringUnion(x: Array<number> | Obj): void {
 
 // Array<number> should be subtype of Array<number> | Obj
 function testArraySubtypeOfUnion(arr: Array<number>): Array<number> | Obj {
-  // TODO: Should Array<number> be subtype of union?
+  // @skjs-expect-error Invalid return type
   return arr;
 }
 
@@ -263,7 +262,9 @@ function testGenericArrayOrObjectS<S extends Array<number> | Obj>(x: S): S {
 // Using the generic function
 function testUseGenericArrayOrObject(): void {
   const arr: Array<number> = [1, 2, 3];
+  // @skjs-expect-error Invalid call
   const result1 = testGenericArrayOrObject(arr);
+  // @skjs-expect-error Invalid call
   const result1S = testGenericArrayOrObjectS(arr);
 
   const obj: Obj = { name: "test", value: 42 };

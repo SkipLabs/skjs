@@ -25,6 +25,7 @@ function mutatePet(p: MutablePet): void {
 function testReadonlyToMutable(): void {
   const r: ReadonlyPet = { name: "original" };
   // TODO: should be rejected — readonly field passed where mutable field expected
+  // @skjs-expect-error Invalid call
   mutatePet(r);
 }
 
@@ -48,6 +49,7 @@ function setBoxValue<T>(box: MutableBox<T>, val: T): void {
 function testReadonlyBoxToMutableBox(): void {
   const rb: ReadonlyBox<string> = { value: "immutable" };
   // TODO: should be rejected — readonly value passed where mutable value expected
+  // @skjs-expect-error Invalid call
   setBoxValue(rb, "mutated");
 }
 
@@ -73,6 +75,7 @@ function changeTag(obj: WideObj): void {
 function testNarrowToWide(): void {
   const narrow: NarrowObj = { tag: "a", data: "hello" };
   // TODO: should be rejected — readonly "a" tag passed where mutable string expected
+  // @skjs-expect-error Invalid call
   changeTag(narrow);
 }
 
@@ -96,6 +99,7 @@ function breakDiscriminant(s: MutableType): void {
 function testBrokenDiscriminant(s: Shape): void {
   // TODO: should be rejected — readonly discriminant passed where mutable field expected
   // Allows corrupting the discriminant used for union narrowing
+  // @skjs-expect-error Invalid call
   breakDiscriminant(s);
 }
 
@@ -105,8 +109,10 @@ function testBrokenDiscriminant(s: Shape): void {
 // ============================================================
 
 function testReadonlyTupleField(): void {
+  // @skjs-expect-error Invalid annotation
   const obj: { readonly pair: [string, number] } = { pair: ["a", 1] };
   // TODO: should be rejected — readonly pair assigned to mutable pair
+  // @skjs-expect-error Invalid annotation
   const mutable_alias: { pair: [string, number] } = obj;
   mutable_alias.pair = ["b", 2];
 }
@@ -131,5 +137,6 @@ function replaceHandler(obj: MutableCallback): void {
 function testReadonlyCallbackToMutable(): void {
   const rc: ReadonlyCallback = { handler: (x: string) => console.log(x) };
   // TODO: should be rejected — readonly handler passed where mutable handler expected
+  // @skjs-expect-error Invalid call
   replaceHandler(rc);
 }
