@@ -47,16 +47,23 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     this.setLocalFilterMap(tcenv, local, None(), stype ~>
-      Some(
-        stype match {
-        | TAlgebraic(branches, aPos) ->
-          TAlgebraic(
-            branches.filterKeyed(branch -> (branch.tag == tag) == target),
-            aPos,
-          )
-        | x -> x
-        },
-      )
+      stype match {
+      | tObj @ TObject _ ->
+        tObj.mapOpt(tFields -> {
+          tFields.maybeGetField(
+            FKName(Name(local.pos, kAlgebraicBranchFieldName), TString()),
+          ) match {
+          | Some(kindField) ->
+            kindField.get.getConstantString() match {
+            | Some(lit) ->
+              if ((lit.val == tag) == target) Some(tFields) else None()
+            | None() -> Some(tFields)
+            }
+          | None() -> Some(tFields)
+          }
+        })
+      | x -> Some(x)
+      }
     )
   }
 
@@ -105,7 +112,6 @@ extension class TypeChecker {
             | None() -> if (target) Some(call) else None()
             }
           )
-        | TAlgebraic _
         | TPrimUnit(TNull(), _)
         | TTuple _
         | TPromise _ ->
@@ -231,26 +237,19 @@ extension class TypeChecker {
       | _ -> None()
       };
       default = if (target) {
-        singleKey.flatMap(key -> {
-          TField::create{
+        singleKey.map(key -> {
+          field = TField::create{
             pos => e1.pos,
             name => key.value(),
             isOptional => false,
             isReadonly => Some(e1.pos),
             type => TType::top(e.pos),
-          }.map(field ->
-            if (key is FKSymbol _) {
-              TObject(
-                ArraySet::single(TFields::singleSymbolField(field)),
-                e1.pos,
-              )
-            } else {
-              TObject(
-                ArraySet::single(TFields::singleField(field)),
-                e1.pos,
-              )
-            }
-          )
+          };
+          if (key is FKSymbol _) {
+            TObject(ArraySet::single(TFields::singleSymbolField(field)), e1.pos)
+          } else {
+            TObject(ArraySet::single(TFields::singleField(field)), e1.pos)
+          }
         })
       } else {
         None()
@@ -261,7 +260,6 @@ extension class TypeChecker {
         | TPrimValue _ ->
           if (target) None() else Some(stype)
         | TTuple _
-        | TAlgebraic _
         | TPromise _ ->
           Some(stype) /* TODO */
         | tObj @ TObject(_, _pos) ->
@@ -272,21 +270,18 @@ extension class TypeChecker {
               Some(
                 tObj.map(tf ->
                   if (!tf.indexes.isEmpty()) /* TODO: refine */ tf else {
-                    TField::create{
+                    fieldToAdd = TField::create{
                       pos => e1.pos,
                       name => key.value(),
                       isOptional => false,
                       isReadonly => Some(e1.pos),
                       type => TType::top(e.pos),
-                    }
-                      .flatMap(fieldToAdd ->
-                        if (key is FKSymbol _) {
-                          tf.addSymbolField(fieldToAdd)
-                        } else {
-                          tf.addField(fieldToAdd)
-                        }
-                      )
-                      .default(tf)
+                    };
+                    (if (key is FKSymbol _) {
+                      tf.addSymbolField(fieldToAdd)
+                    } else {
+                      tf.addField(fieldToAdd)
+                    }).default(tf)
                   }
                 ),
               )
@@ -303,9 +298,7 @@ extension class TypeChecker {
                       ),
                     )
                   | FKName(Name(_, keyName), _) ->
-                    Some(
-                      tFields.filterFields(f -> f.name.value != keyName),
-                    )
+                    Some(tFields.filterFields(f -> f.name.value != keyName))
                   }
                 | None() -> Some(tFields)
                 }

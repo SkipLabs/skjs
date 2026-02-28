@@ -406,88 +406,6 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
   }
 }
 
-base class STErrorOnTAlgebraic(
-  a1: TAlgebraic,
-  a2: TAlgebraic,
-) extends STErrorOnSTypeBase<TAlgebraic> {
-  children =
-  | STTooManyTConstr(TConstr)
-  | STRecAlgebraicOnBranch(STErrorOnTConstr, TConstr)
-
-  fun toError(
-    _pos1: PosRange,
-    _pos2: PosRange,
-    detail: STErrorDetail,
-  ): List<(PosRange, String)> {
-    (printTypes, msgs) = this match {
-    | STTooManyTConstr(constr, _a1, _a2) ->
-      (
-        true,
-        List[
-          (
-            constr.tagPos,
-            `Case field ${kAlgebraicBranchFieldName} = '${
-              constr.tag
-            }' is missing`,
-          ),
-        ],
-      )
-    | STRecAlgebraicOnBranch(err, constr, a1, a2) ->
-      printTypes =
-        detail.maxIntermediateDepth > 0 &&
-        (a1.branches.size() != 1 || a2.branches.size() != 1);
-      msgs = err.toError(
-        a1.pos,
-        a2.pos,
-        if (printTypes) detail.decreaseIntermediate() else detail,
-      );
-      if (printTypes && detail.showIntermediateMessages) {
-        !msgs = List.Cons(
-          (
-            constr.tagPos,
-            `They differ on case field ${kAlgebraicBranchFieldName} = '${
-              constr.tag
-            }'`,
-          ),
-          msgs,
-        );
-      };
-      (printTypes, msgs)
-    };
-    if (printTypes) {
-      List.Cons(
-        (this.a1.pos, `Type ${this.a1}`),
-        List.Cons(
-          (this.a2.pos, `is not compatible with type ${this.a2}`),
-          msgs,
-        ),
-      )
-    } else {
-      msgs
-    }
-  }
-}
-base class STErrorOnTConstr(c1: TConstr, c2: TConstr) extends STError<TConstr> {
-  children =
-  | STRecConstr(STErrorOnTFields)
-
-  fun toError(
-    pos1: PosRange,
-    pos2: PosRange,
-    detail: STErrorDetail,
-  ): List<(PosRange, String)>
-  | STRecConstr(err, c1, c2) ->
-    msgs = err.toError(pos1, pos2, detail.decreaseIntermediate());
-    if (detail.maxIntermediateDepth > 0) {
-      List.Cons(
-        (c1.tagPos, `Type ${c1}`),
-        List.Cons((c2.tagPos, `is not compatible with type ${c2}`), msgs),
-      )
-    } else {
-      msgs
-    }
-}
-
 base class STErrorOnTFields(
   fields1: TFields,
   fields2: TFields,
@@ -602,50 +520,6 @@ base class STErrorOnTFields(
       )
     } else {
       msgs
-    }
-  }
-}
-
-extension class TAlgebraic {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    a1: TAlgebraic,
-    a2: TAlgebraic,
-  ): STResult<TAlgebraic> {
-    savedSubst = subst.save();
-    a1.branches.leq(a2.branches, (b1, b2O) ->
-      b2O match {
-      | Some(b2) ->
-        TConstr::isSub(subst, tenv, b1, b2) match {
-        | STOk() -> Success(void)
-        | err @ STErrorOnTConstr _ ->
-          Failure(STRecAlgebraicOnBranch(err, b1, a1, a2))
-        }
-      | None() -> Failure(STTooManyTConstr(b1, a1, a2))
-      }
-    ) match {
-    | Success(void) -> STOk()
-    | Failure(err) ->
-      subst.restore(savedSubst);
-      err
-    }
-  }
-}
-
-extension class TConstr {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    x: TConstr,
-    y: TConstr,
-  ): STResult<TConstr> {
-    if (x.tag != y.tag) {
-      invariant_violation(`TConstr::isSub called on tags ${x.tag} != ${y.tag}`)
-    };
-    TFields::isSub(subst, tenv, x.fields, y.fields) match {
-    | STOk() -> STOk()
-    | err @ STErrorOnTFields _ -> STRecConstr(err, x, y)
     }
   }
 }
@@ -899,9 +773,6 @@ extension class STypes {
 
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::isSub(subst, tenv, obj1, obj2)
-
-        | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-          TAlgebraic::isSub(subst, tenv, a1, a2)
 
         | _ -> internal_error("Internal error")
         } match {

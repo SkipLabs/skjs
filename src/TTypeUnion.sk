@@ -50,34 +50,6 @@ extension class TType {
   }
 }
 
-extension class TAlgebraic {
-  static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
-    a1: TAlgebraic,
-    a2: TAlgebraic,
-  ): TAlgebraic {
-    TAlgebraic(
-      a1.branches.mapUnion(a2.branches, (x, y) ->
-        TConstr::union(subst, tenv, x, y)
-      ),
-      a1.pos,
-    )
-  }
-}
-
-extension class TConstr {
-  static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
-    x: TConstr,
-    y: TConstr,
-  ): TConstr {
-    invariant(x.tag == y.tag, "TConstr::union expects identical tags");
-    TConstr(x.tag, x.tagPos, TFields::union(subst, tenv, x.fields, y.fields))
-  }
-}
-
 extension class TFuns {
   static fun union(
     subst: mutable Subst,
@@ -164,8 +136,6 @@ extension class STypes {
           TTuple::union(subst, tenv, tuple1, tuple2)
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::union(subst, tenv, obj1, obj2)
-        | (a1 @ TAlgebraic _, a2 @ TAlgebraic _) ->
-          TAlgebraic::union(subst, tenv, a1, a2)
         | _ -> internal_error("Internal error")
         }
       }),
@@ -276,13 +246,15 @@ extension class TFields {
       ior match {
       | Left(z)
       | Right(z) ->
-        TField::create{
-          pos => z.pos,
-          name => z.name.value,
-          isOptional => true,
-          isReadonly => None(),
-          type => z.get,
-        }
+        Some(
+          TField::create{
+            pos => z.pos,
+            name => z.name.value,
+            isOptional => true,
+            isReadonly => None(),
+            type => z.get,
+          },
+        )
       | Both(x, y) -> Some(TField::union(subst, tenv, x, y))
       }
     );

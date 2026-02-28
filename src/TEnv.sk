@@ -477,21 +477,14 @@ base class TEnv{
         | FNNormal(fdName) ->
           fieldName = fdName.value;
           type = this.normalize(tcenvb, fieldTy);
-          TField::create{
+          f = TField::create{
             pos => field.pos,
             name => fieldName,
             isOptional => field.optional is Some _,
             isReadonly => fieldIsReadonly,
             type,
-          } match {
-          | None() ->
-            tcenvb.error(
-              Array[
-                (field.pos, `Forbidden field name '${fieldName}' in a class`),
-              ],
-            )
-          | Some(f) -> acc![f.name] = f
-          }
+          };
+          acc![f.name] = f
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
           valueType = this.normalize(tcenvb, fieldTy);
@@ -546,20 +539,17 @@ base class TEnv{
             isOptional => false,
             isReadonly => Some(fd.pos),
             type => metType,
-          }.fromSome();
+          };
           symbolFields![field.name] = field
         | FKName(name, _) ->
-          TField::create{
+          field = TField::create{
             pos => name.pos,
             name => name.value,
             isOptional => false,
             isReadonly => Some(fd.pos),
             type => metType,
-          } match {
-          | None() ->
-            tcenvb.error(Array[(fd.pos, `Forbidden method name '${name}'`)])
-          | Some(field) -> acc![field.name] = field
-          }
+          };
+          acc![field.name] = field
         }
       }
     };
@@ -806,13 +796,8 @@ base class TEnv{
         },
       )
     | TAObject(fields) ->
-      (algebraicBranchField, tFields) = this.createTFields(
-        tcenvb,
-        fields,
-        pos,
-        isTopLevelConst,
-      );
-      createObject(pos, algebraicBranchField, tFields)
+      tFields = this.createTFields(tcenvb, fields, pos, isTopLevelConst);
+      TType::single(TObject(ArraySet::single(tFields), pos))
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])
@@ -1081,7 +1066,9 @@ base class TEnv{
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
-      obj.getFields(subst, this).maybeGetType(subst, this, "next", pos, false) match {
+      obj
+        .getFields(subst, this)
+        .maybeGetType(subst, this, "next", pos, false) match {
       | Some(t) -> t
       | None() -> return None()
       }
@@ -1248,15 +1235,12 @@ base class TEnv{
     }
   }
 
-  // Returns (algebraicBranchField, fields). The first element is the
-  // position and the type of the algebraic branch field, if present.
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
     pos: PosRange,
     isTopLevelConst: Bool = false,
-  ): (?(PosRange, TType), TFields) {
-    algebraicBranchField: ?(PosRange, TType) = None();
+  ): TFields {
     fieldsMap = mutable Map[];
     symbolFields = mutable Map[];
     indexes = mutable Vector[];
@@ -1295,36 +1279,17 @@ base class TEnv{
               isOptional => fd.optional is Some _,
               isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
-            }.fromSome();
+            };
             symbolFields![field.name] = field
           | FKName(name, _) ->
-            TField::create{
+            field = TField::create{
               pos => name.pos,
               name => name.value,
               isOptional => fd.optional is Some _,
               isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
-            } match {
-            | Some(field) -> fieldsMap![field.name] = field
-            | None() ->
-              algebraicBranchField match {
-              | Some((existingPos, _existingType)) ->
-                tcenvb.error(
-                  Array[
-                    (name.pos, `Duplicate field ${name}`),
-                    (existingPos, "Previously declared here"),
-                  ],
-                );
-                continue
-              | None() -> void
-              };
-              fd.optional.each(optionalPos ->
-                tcenvb.error(
-                  Array[(optionalPos, `Field ${name} cannot be optional`)],
-                )
-              );
-              !algebraicBranchField = Some((name.pos, normalizedType))
-            }
+            };
+            fieldsMap![field.name] = field
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
@@ -1363,20 +1328,17 @@ base class TEnv{
               isOptional => false,
               isReadonly => Some(exprPos),
               type => decl,
-            }.fromSome();
+            };
             symbolFields![field.name] = field
           | FKName(name, _) ->
-            TField::create{
+            field = TField::create{
               pos => name.pos,
               name => name.value,
               isOptional => false,
               isReadonly => Some(name.pos),
               type => decl,
-            } match {
-            | Some(field) -> fieldsMap![field.name] = field
-            | None() ->
-              tcenvb.error(Array[(name.pos, `Forbidden method name ${name}`)])
-            }
+            };
+            fieldsMap![field.name] = field
           }
         }
       }
@@ -1390,7 +1352,7 @@ base class TEnv{
       new,
       call,
     };
-    (algebraicBranchField, tFields)
+    tFields
   }
 
   /* Over-approximates keyof ty
@@ -1432,20 +1394,6 @@ base class TEnv{
               !symbols = symbols.set(symbolField.name.value);
             };
             for (index in fields.indexes) {
-              // TODO: convert numbers to strings
-              !result = TType::union(subst, this, result, index.keyType);
-            }
-          }
-        | TAlgebraic(branches, _) ->
-          !strings = strings.set(kAlgebraicBranchFieldName);
-          for (branch in branches) {
-            for (field in branch.fields.fields) {
-              !strings = strings.set(field.name.value);
-            };
-            for (symbolField in branch.fields.symbolFields) {
-              !symbols = symbols.set(symbolField.name.value);
-            };
-            for (index in branch.fields.indexes) {
               // TODO: convert numbers to strings
               !result = TType::union(subst, this, result, index.keyType);
             }

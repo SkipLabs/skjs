@@ -114,31 +114,8 @@ mutable class TypePp{
     | TPrimValue(_, Some(arr), _) ->
       this.out(level, margin, arr.toStringList(true))
 
-    | TAlgebraic(branches, _) ->
-      this.branch(
-        level,
-        margin,
-        (pp, level, margin) ~> {
-          for (i => branch in branches) {
-            if (i != 0) pp.out(level, margin, " | ");
-            pp.constr(level, margin, branch)
-          }
-        },
-        (pp, level, _prevMargin, margin) ~> {
-          pp.newLine();
-          for (branch in branches) {
-            pp.out(level, margin, "| ");
-            pp.constr(level, margin, branch);
-            pp.newLine()
-          }
-        },
-      )
     | TTuple(arr, _) -> this.tuple(level, margin, arr)
     }
-  }
-
-  mutable fun constr(level: Int, margin: Margin, constr: TConstr): void {
-    this.object(level, margin, constr.fields, Some(constr.tag))
   }
 
   mutable fun tfun(level: Int, margin: Margin, arg: (Bool, TFun)): void {
@@ -272,22 +249,16 @@ mutable class TypePp{
     )
   }
 
-  mutable fun object(
-    level: Int,
-    margin: Margin,
-    fields: TFields,
-    tagOpt: ?String = None(),
-  ): void {
+  mutable fun object(level: Int, margin: Margin, fields: TFields): void {
     (
       fields.fields.isEmpty(),
       fields.indexes.isEmpty(),
       fields.call,
       fields.new,
-      tagOpt,
     ) match {
-    | (true, true, Some((false, TFuns(tfun, _pos))), None(), None()) ->
+    | (true, true, Some((false, TFuns(tfun, _pos))), None()) ->
       this.tfun(level, margin, (false, tfun))
-    | (true, true, None(), Some((false, TFuns(tfun, _pos))), None()) ->
+    | (true, true, None(), Some((false, TFuns(tfun, _pos)))) ->
       this.out(level, margin, "new ");
       this.tfun(level, margin, (false, tfun))
     | _ ->
@@ -297,18 +268,11 @@ mutable class TypePp{
         margin,
         (pp, level, margin) ~> {
           pp.out(level, margin, " ");
-          tagOpt.each(tag ->
-            pp.out(level, margin, `${kAlgebraicBranchFieldName}: "${tag}", `)
-          );
           pp.fields(level, margin, fields, false);
           pp.out(level, margin, " }");
         },
         (pp, level, prevMargin, margin) -> {
           pp.newLine();
-          tagOpt.each(tag -> {
-            pp.out(level, margin, `${kAlgebraicBranchFieldName}: "${tag}",`);
-            pp.newLine()
-          });
           pp.fields(level, margin, fields, true);
           pp.newLine();
           pp.out(level, prevMargin, "}");
@@ -710,14 +674,6 @@ fun prettyPrintTFun(
   max_depth: Int = kDefaultMaxDepth,
 ): String {
   prettyPrint(compact, pp -> pp.tfun(0, Margin{max_depth}, (false, tFun)))
-}
-
-fun prettyPrintConstr(
-  constr: TConstr,
-  compact: Bool = false,
-  max_depth: Int = kDefaultMaxDepth,
-): String {
-  prettyPrint(compact, pp -> pp.constr(0, Margin{max_depth}, constr))
 }
 
 fun prettyPrintFields(

@@ -144,11 +144,6 @@ extension class TypeChecker {
           (branches, typeForRest) = stype match {
           | tobj @ TObject(_, _) ->
             (tobj.getBranches(), tobj.removeFields(fieldsToRemoveForRest))
-          | a @ TAlgebraic _ ->
-            (
-              a.branches.toArray().map(x -> x.fields),
-              a.removeFields(fieldsToRemoveForRest),
-            )
           | _ ->
             typingError(
               Array[
@@ -435,29 +430,6 @@ extension class TypeChecker {
             }
           }
         }
-      | TAlgebraic(branches, _) ->
-        idxSType match {
-        | TPrimValue(TString(), Some(lits), _) -> lits.singleElt()
-        | _ -> None()
-        } match {
-        | None() ->
-          typingError(
-            Array[
-              (idx.pos, "Invalid index"),
-              (pos, "An algebraic expects a static index"),
-            ],
-          )
-        | Some(lit) ->
-          for (branch in branches) {
-            !result = TType::union(
-              tcenv.subst,
-              this,
-              result,
-              branch.getType(tcenv.subst, this, lit.val, lit.pos),
-            )
-          }
-        }
-
       | prim @ TPrimValue _ ->
         obj = this.newObject(tcenv, prim.asClassName(), Array[]);
         stypes.push(obj)
@@ -737,7 +709,6 @@ extension class TypeChecker {
       | Some(localDef) -> localDef
       }
     | Object(efields) ->
-      algebraicBranchField: ?(PosRange, TType) = None();
       fields = mutable Map[];
       symbolFields = mutable Map[];
       indexes = mutable Vector[];
@@ -751,10 +722,7 @@ extension class TypeChecker {
           );
           (
             name,
-            if (name.value == kAlgebraicBranchFieldName) ttype else if (
-              y.value is Object _ ||
-              ttype.isConcretePrimitive()
-            ) {
+            if (y.value is Object _ || ttype.isConcretePrimitive()) {
               this.makeBoundTVarForField(tcenv, ttype)
             } else {
               ttype
@@ -823,7 +791,7 @@ extension class TypeChecker {
               isOptional => false,
               isReadonly => None(),
               type => valueTy,
-            }.fromSome();
+            };
             symbolFields![field.name] = field;
             continue
           | None() ->
@@ -842,31 +810,22 @@ extension class TypeChecker {
           tFuns = this.funDecl(tcenv, false, fd, cgNode);
           (name, TType::single(TObject::createCall(this, tFuns)))
         };
-        TField::create{
+        field = TField::create{
           pos => name.pos,
           name => name.value,
           isOptional => false,
           isReadonly => None(),
           type => ty,
-        } match {
-        | None() ->
-          algebraicBranchField match {
-          | Some((existingPos, _existingType)) ->
-            tcenv.error(
-              Array[
-                (name.pos, `Duplicate field ${name}`),
-                (existingPos, "Previously declared here"),
-              ],
-            )
-          | None() -> !algebraicBranchField = Some((name.pos, ty))
-          }
-        | Some(field) -> fields![field.name] = field
-        }
+        };
+        fields![field.name] = field
       };
-      obj = createObject(
-        pos,
-        algebraicBranchField,
-        TFields::create{tenv => this, pos, fields, symbolFields, indexes},
+      obj = TType::single(
+        TObject(
+          ArraySet::single(
+            TFields::create{tenv => this, pos, fields, symbolFields, indexes},
+          ),
+          pos,
+        ),
       );
       for (efield in efields) {
         efield match {
@@ -1328,8 +1287,7 @@ extension class TypeChecker {
                 )
               }
           | TTuple _
-          | TPromise _
-          | TAlgebraic _ ->
+          | TPromise _ ->
             tcenv.error(Array[(pos, "TODO: in"), (e2.pos, `For type ${t2}`)]);
             !canBeTrue = true;
             !canBeFalse = true
@@ -1711,7 +1669,7 @@ extension class TypeChecker {
    * Errors if:
    * - Object has been used (LOUsed state)
    * - Adding field inside a loop
-   * - Field would convert object to algebraic (special kAlgebraicBranchFieldName)
+   * - Field is the discriminant kind field
    */
   private fun assignLocalObject(
     tcenv: mutable TCEnv,
@@ -1835,26 +1793,16 @@ extension class TypeChecker {
             )
           | None() ->
             !needsGrowth = true;
-            TField::create{
+            field = TField::create{
               pos => key.pos(),
               name => key.value(),
               isOptional,
               isReadonly => None(),
               type => fieldType,
-            } match {
-            | None() ->
-              tcenv.error(
-                Array[
-                  (pos, "TODO: converting an object to an algebraic"),
-                  (key.pos(), `For field ${key.value()}`),
-                  (fieldType.pos, `Of type ${fieldType}`),
-                ],
-              )
-            | Some(field) ->
-              key match {
-              | FKName _ -> newFieldsMap![field.name] = field
-              | FKSymbol _ -> newSymbolFieldsMap![field.name] = field
-              }
+            };
+            key match {
+            | FKName _ -> newFieldsMap![field.name] = field
+            | FKSymbol _ -> newSymbolFieldsMap![field.name] = field
             }
           }
         }
