@@ -13,7 +13,7 @@ type Foo = {
 };
 
 // Test basic refinement - Array | Foo
-function testBasicArrayRefinement(x: Array<number> | Foo): Array<number> {
+function testBasicArrayRefinement(x: Array<number> | Foo): Array<unknown> {
   if (Array.isArray(x)) {
     // x should be refined to Array<number>
     return x;
@@ -34,7 +34,7 @@ function testNegativeArrayRefinement(x: Array<number> | Foo): Foo {
 }
 
 // Test with different array type
-function testStringArrayRefinement(x: Array<string> | Foo): Array<string> {
+function testStringArrayRefinement(x: Array<string> | Foo): Array<unknown> {
   if (Array.isArray(x)) {
     return x;
   } else {
@@ -66,7 +66,7 @@ function testArrayPushAfterRefinement(x: Array<number> | Foo): void {
 // Multiple union types
 ///////////////////////////////////////////////////////////////////////////////
 
-function testMultipleUnion(x: Array<number> | Foo | string): Array<number> {
+function testMultipleUnion(x: Array<number> | Foo | string): Array<unknown> {
   if (Array.isArray(x)) {
     return x;
   } else {
@@ -170,11 +170,11 @@ function testObjectPropOnArray(x: Array<number> | Foo): unknown {
 // Early return pattern
 ///////////////////////////////////////////////////////////////////////////////
 
-function testEarlyReturn(x: Array<number> | Foo): Array<number> {
+function testEarlyReturn(x: Array<number> | Foo): Array<unknown> {
   if (!Array.isArray(x)) {
     return [];
   }
-  // x should be refined to Array<number> here
+  // x should be refined to Array<unknown> here
   return x;
 }
 
@@ -192,7 +192,7 @@ function testEarlyReturnWithLength(x: Array<number> | Foo): number {
 
 function testCombinedWithTypeof(
   x: Array<number> | Foo | string,
-): Array<number> {
+): Array<unknown> {
   if (typeof x === "string") {
     return [];
   } else if (Array.isArray(x)) {

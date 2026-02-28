@@ -317,7 +317,6 @@ class TType private {
         | TPrimUnit _
         | TPrimValue _ ->
           continue
-        | TAlgebraic _
         | TObject _
         | TPromise _
         | TTuple _ ->
@@ -440,34 +439,68 @@ base class Variance {
 /***************************************************************************/
 
 // Regular Typescript (open) object type
-// but disjoint from types in TAlgebraic
-class TObject(fields: TFields) extends SType {
+class TObject(private fields: ArraySet<TFields>) extends SType {
   /* Constructors */
 
-  static fun createEmpty(pos: PosRange): TObject {
-    TObject(TFields::empty(), pos)
+  fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
+    result: ?TFields = None();
+    for (f in this.fields) {
+      !result = Some(
+        result match {
+        | None() -> f
+        | Some(acc) -> TFields::union(subst, tenv, acc, f)
+        },
+      );
+    };
+    result match {
+    | None() -> TFields::empty(tenv, this.pos)
+    | Some(ty) -> ty
+    }
   }
 
-  static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
-    TObject(TFields::create{call => Some(tFuns)}, pos)
+  fun getAllFields(): mutable Iterator<TFields> {
+    this.fields.values()
   }
 
-  static fun createCall(tFuns: TFuns): TObject {
-    TObject::createCallWithPos(tFuns, tFuns.pos)
+  fun getBranches(): Array<TFields> {
+    this.fields.toArray()
   }
 
-  static fun createNew(tFuns: TFuns, pos: PosRange): TObject {
-    TObject(TFields::create{new => Some(tFuns)}, pos)
+  static fun createEmpty(tenv: TEnv, pos: PosRange): TObject {
+    TObject(ArraySet::single(TFields::empty(tenv, pos)), pos)
+  }
+
+  static fun createCallWithPos(
+    tenv: TEnv,
+    tFuns: TFuns,
+    pos: PosRange,
+  ): TObject {
+    TObject(
+      ArraySet::single(TFields::create{tenv, pos, call => Some(tFuns)}),
+      pos,
+    )
+  }
+
+  static fun createCall(tenv: TEnv, tFuns: TFuns): TObject {
+    TObject::createCallWithPos(tenv, tFuns, tFuns.pos)
+  }
+
+  static fun createNew(tenv: TEnv, tFuns: TFuns, pos: PosRange): TObject {
+    TObject(
+      ArraySet::single(TFields::create{tenv, pos, new => Some(tFuns)}),
+      pos,
+    )
   }
 
   /* Transformers */
 
   fun map(f: TFields -> TFields): TObject {
-    TObject(f(this.fields), this.pos)
+    TObject(this.fields.mapToSet(f), this.pos)
   }
 
   fun mapOpt(f: TFields -> ?TFields): ?TObject {
-    f(this.fields).map(fields -> this with {fields})
+    newFields = this.fields.filterMap(f);
+    if (newFields.isEmpty()) None() else Some(this with {fields => newFields})
   }
 
   fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TObject {
@@ -490,92 +523,6 @@ class TObject(fields: TFields) extends SType {
 }
 
 const kAlgebraicBranchFieldName: String = "kind";
-
-class TAlgebraic(
-  branches: InternalKeyedArrayMap<String, TConstr>,
-) extends SType {
-  static fun single(x: TConstr, pos: PosRange): TAlgebraic {
-    TAlgebraic(InternalKeyedArrayMap::single(x), pos)
-  }
-
-  fun removeFields(fieldsToRemove: SortedSet<String>): TAlgebraic {
-    if (fieldsToRemove.isEmpty()) this else {
-      this with {
-        branches => this.branches.mapKeyed(branch ->
-          branch.removeFields(fieldsToRemove)
-        ),
-      }
-    }
-  }
-}
-
-class TConstr(
-  tag: String,
-  tagPos: PosRange,
-  // TODO: make fields private so that we don't try to access "kind" from fields
-  fields: TFields,
-) uses XXHashable, Orderable, Projectable<String> {
-  fun map(f: TFields -> TFields): TConstr {
-    TConstr(this.tag, this.tagPos, f(this.fields))
-  }
-
-  fun getType(
-    subst: mutable Subst,
-    tenv: TEnv,
-    fieldName: String,
-    pos: PosRange,
-  ): TType {
-    if (fieldName == kAlgebraicBranchFieldName) {
-      TType::single(TPrimValue::single(TString(), this.tag, this.tagPos))
-    } else {
-      this.fields.getType(subst, tenv, fieldName, pos)
-    }
-  }
-
-  fun removeFields(fieldsToRemove: SortedSet<String>): TConstr {
-    if (fieldsToRemove.isEmpty()) this else {
-      this with {fields => this.fields.removeFields(fieldsToRemove)}
-    }
-  }
-
-  fun project(): String {
-    this.tag
-  }
-
-  fun toString(): String {
-    prettyPrintConstr(this)
-  }
-}
-
-fun createObject(
-  pos: PosRange,
-  algebraicBranchField: ?(PosRange, TType),
-  fields: TFields,
-): TType {
-  algebraicBranchField match {
-  | Some((algebraicBranchFieldPos, algebraicBranchFieldType)) ->
-    algebraicBranchFieldType.getConstantString() match {
-    | None() ->
-      typingError(
-        Array[
-          (
-            pos,
-            `Algebraic field ${kAlgebraicBranchFieldName} was expected to be a constant string`,
-          ),
-          (algebraicBranchFieldPos, `Got ${algebraicBranchFieldType} instead.`),
-        ],
-      )
-    | Some(lit) ->
-      TType::single(
-        TAlgebraic::single(
-          TConstr(lit.val, lit.pos, fields),
-          algebraicBranchFieldPos,
-        ),
-      )
-    }
-  | None() -> TType::single(TObject(fields, pos))
-  }
-}
 
 /***************************************************************************/
 /* Functions */
@@ -682,7 +629,8 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(TObject(fields, objectPos)) ->
+    | Some(obj @ TObject(_, objectPos)) ->
+      fields = obj.getFields(subst, tenv);
       tenv.getIteratorElementType(subst, fields, objectPos)
     | _ -> None()
     }
@@ -825,7 +773,6 @@ base class STypeTag final () uses Orderable {
   | TagTuple
   | TagPromise
   | TagObject
-  | TagAlgebraic
 }
 
 base class SType private (
@@ -847,7 +794,6 @@ base class SType private (
     | TTuple _ -> TagTuple()
     | TPromise _ -> TagPromise()
     | TObject _ -> TagObject()
-    | TAlgebraic _ -> TagAlgebraic()
     }
   }
 
@@ -909,7 +855,7 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 
 class TField private {
   pos: PosRange,
-  name: /* Invariant: name != kAlgebraicBranchFieldName */ FieldNameString,
+  name: FieldNameString,
   isOptional: Bool,
   get: TType,
   set: TType,
@@ -920,21 +866,17 @@ class TField private {
     isOptional: Bool,
     isReadonly: ?PosRange,
     type: TType,
-  }: ?TField {
-    if (name == kAlgebraicBranchFieldName) None() else {
-      setType = isReadonly match {
-      | Some(roPos) -> TType::bottom(roPos)
-      | None() -> type
-      };
-      Some(
-        TField{
-          pos,
-          name => FieldNameString(name),
-          isOptional,
-          get => type,
-          set => setType,
-        },
-      )
+  }: TField {
+    setType = isReadonly match {
+    | Some(roPos) -> TType::bottom(roPos)
+    | None() -> type
+    };
+    TField{
+      pos,
+      name => FieldNameString(name),
+      isOptional,
+      get => type,
+      set => setType,
     }
   }
 
@@ -1047,11 +989,13 @@ class TFields private {
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
 } uses XXHashable, Orderable {
-  static fun empty(): TFields {
+  static fun empty(_tenv: TEnv, _pos: PosRange): TFields {
     TFields{}
   }
 
   static fun create{
+    tenv: TEnv,
+    pos: PosRange,
     fields: readonly Map<FieldNameString, TField> = Map[],
     symbolFields: readonly Map<FieldNameString, TField> = Map[],
     indexes: readonly Vector<TIndexField> = Vector[],

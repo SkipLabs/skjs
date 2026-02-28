@@ -218,6 +218,8 @@ type NestedType2 = { a: { b: { d: string } } };
 function checkNestedTypeIntersection(obj: NestedType1 & NestedType2): {
   a: { b: { c: number; d: string } };
 } {
+  // Would be correct if the objects were readonly
+  // @skjs-expect-error Invalid return type
   return obj;
 }
 

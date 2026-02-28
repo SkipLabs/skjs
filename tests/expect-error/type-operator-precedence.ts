@@ -206,11 +206,11 @@ function testUnionIntersectionMixed(): void {
   const b: UnionIntersectionMixed = { b: 42, c: true };
 
   // Should fail: B alone is not B & C
-  // TODO: SKJS not detecting this error (separate issue from precedence)
+  // @skjs-expect-error Invalid annotation
   const c: UnionIntersectionMixed = { b: 42 };
 
   // Should fail: C alone is not B & C
-  // TODO: SKJS not detecting this error (separate issue from precedence)
+  // @skjs-expect-error Invalid annotation
   const d: UnionIntersectionMixed = { c: true };
 }
 

@@ -89,27 +89,9 @@ mutable base class ApplyType(
     | x @ TPrimValue _ ->
       x
     | TPromise(ty, pos) -> TPromise(this.type(env, ty), pos)
-    | algs @ TAlgebraic _ -> this.algebraic(env, algs)
     | obj @ TObject _ -> this.object(env, obj)
     | tuples @ TTuple _ -> this.tuple(env, tuples)
     }
-  }
-
-  overridable deferred mutable fun algebraic(
-    env: this::Env,
-    algebraic: TAlgebraic,
-  ): TAlgebraic {
-    TAlgebraic(
-      algebraic.branches.mapKeyed(x -> this.constr(env, x)),
-      algebraic.pos,
-    )
-  }
-
-  overridable deferred mutable fun constr(
-    env: this::Env,
-    constr: TConstr,
-  ): TConstr {
-    constr.map(fields -> this.fields(env, fields))
   }
 
   overridable deferred mutable fun object(

@@ -278,7 +278,7 @@ function wrongFn1(_x: string): string {
 
 function testIncompatibleAssignment(): void {
   // wrongFn1 takes string but union requires number & boolean
-  // Actually OK because we can't call it
+  // @skjs-expect-error Invalid annotation
   const union: IncompatibleUnion1 = wrongFn1;
 }
 

@@ -64,17 +64,23 @@ interface Dog extends Animal {
   breed: string;
 }
 
+function fixRex(arg: { name: "Rex"; breed: "Lab" }): void {}
+
 function testMutableFieldCovariance(): void {
+  const obj = { pet: { name: "Rex", breed: "Lab" } };
+  fixRex(obj.pet);
   // @skjs-expect-error Invalid annotation
-  const dogBox: { pet: Dog } = { pet: { name: "Rex", breed: "Lab" } };
+  const dogBox: { pet: Dog } = obj;
   // @skjs-expect-error Invalid annotation
   const animalBox: { pet: Animal } = dogBox;
 }
 
 // Nested mutable field covariance
 function testNestedMutableCovariance(): void {
+  const obj = { value: { name: "Rex", breed: "Lab" } };
+  fixRex(obj.value);
   // @skjs-expect-error Invalid annotation
-  const inner: { value: Dog } = { value: { name: "Rex", breed: "Lab" } };
+  const inner: { value: Dog } = obj;
   const outer: { box: { value: Dog } } = { box: inner };
   // @skjs-expect-error Invalid annotation
   const widened: { box: { value: Animal } } = outer;
@@ -137,9 +143,13 @@ function idWrapped437<T extends Wrapper437<StrOrNum437>>(x: T): T {
   return x;
 }
 
+function fixHello(arg: { v: "hello" }): void {}
+
 function testNestedConstraintIntersection437(): void {
+  const obj = { inner: { v: "hello" } };
+  fixHello(obj.inner);
   // @skjs-expect-error Invalid annotation
-  const w: Wrapper437<string> = { inner: { v: "hello" } };
+  const w: Wrapper437<string> = obj;
   // @skjs-expect-error Invalid call
   const r = idWrapped437(w);
   // @skjs-expect-error Invalid annotation

@@ -159,8 +159,8 @@ function testNullInUnion(x: { a: number } | null | string): { a: number } {
   if (typeof x === "object") {
     // x could be { a: number } or null
     // SKJS needs to refine this properly
-    // @skjs-expect-error Invalid return type
-    return x ?? { a: 0 };
+    const d: { a: number } = { a: 0 };
+    return x ?? d;
   } else {
     return { a: 0 };
   }
@@ -268,7 +268,6 @@ function testComplexUnion2(
   } else if (typeof x === "function") {
     return { a: 0 };
   } else {
-    // @skjs-expect-error Invalid return type
     return x;
   }
 }
