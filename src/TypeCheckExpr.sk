@@ -103,17 +103,20 @@ extension class TypeChecker {
               "Default value in array destructuring",
             )
           | Some((eltPat, None())) ->
-            optionalEltType = TType::unionUndefined(
-              tcenv.subst,
-              this,
-              eltType,
-              eltPat.pos,
-            );
             this.bind(
               tcenv,
               kind,
               eltPat,
-              optionalEltType,
+              fields.fields.maybeGet(FieldNameString(i.toString())) match {
+              | None() ->
+                TType::unionUndefined(tcenv.subst, this, eltType, eltPat.pos)
+              | Some(fd) ->
+                if (fd.isOptional) {
+                  TType::unionUndefined(tcenv.subst, this, fd.get, eltPat.pos)
+                } else {
+                  fd.get
+                }
+              },
               isInitialized,
               false,
             )
