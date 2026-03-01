@@ -7,7 +7,7 @@
 
 module SKJS;
 
-value class CstrType(cstr: ?TFuns, tArgs: Array<TType>)
+value class CstrType(cstr: ?TFun, tArgs: Array<TType>)
 
 base class TEnv{
   // The defMap associates an AST to a type name.
@@ -305,7 +305,7 @@ base class TEnv{
     pos: PosRange,
     className: Name,
     c: Class,
-  ): TFuns {
+  ): TFun {
     cgNode = CGNode::create(Constructor(className, c.name.pos.fileName));
     targs = c.tparams.map(x -> Type(x.name.pos, TAInst(x.name, Array[])));
     retType = Type(pos, TAInst(className, targs));
@@ -411,7 +411,7 @@ base class TEnv{
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldTypeValue ~> Bool,
-  ): ?TFuns {
+  ): ?TFun {
     (!this, cls) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -438,7 +438,7 @@ base class TEnv{
       | _ -> tcenvb.error(Array[(extend.pos, "Unexpected extend")])
       }
     };
-    constructor: ?TFuns = None();
+    constructor: ?TFun = None();
     for (fieldType in cls.fields) {
       fieldType match {
       | field @ ClassFieldTypeValue _ ->
@@ -561,7 +561,7 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?TFuns {
+  ): ?TFun {
     this.findConstructorMethod(
       tcenvb,
       visitedClasses,
@@ -625,7 +625,7 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     fd: ClassFieldTypeMethod,
-  ): TFuns {
+  ): TFun {
     cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
       // We give the tparams a different name to make sure they are
@@ -669,7 +669,7 @@ base class TEnv{
     isMethod: Bool,
     fd: FunDef<FunDefName>,
     cgNode: CGNode,
-  ): TFuns {
+  ): TFun {
     retType = fd.retType match {
     | (pos, None()) ->
       // constructors must use makeConstructor
@@ -1055,7 +1055,7 @@ base class TEnv{
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
       obj.getFields(subst, this) match {
-      | TFields{call => Some((_, TFuns(fun_, _)))} -> fun_.retType
+      | TFields{call => Some((_, fun_))} -> fun_.retType
       | _ -> return None()
       }
     | _ -> return None()
@@ -1081,7 +1081,7 @@ base class TEnv{
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
       obj.getFields(subst, this) match {
-      | TFields{call => Some((_, TFuns(nextFun, _)))} -> nextFun.retType
+      | TFields{call => Some((_, nextFun))} -> nextFun.retType
       | _ -> return None()
       }
     | _ -> return None()
@@ -1101,9 +1101,9 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     pos: PosRange,
     tafun: TAFun,
-  ): TFuns {
+  ): TFun {
     tafun match {
-    | TAFun(isMethod, clauses, params, retType, cgNode) ->
+    | TAFun(_isMethod, clauses, params, retType, cgNode) ->
       subst = Subst::mcreate(tcenvb);
       TypeChecker::checkTypeParams(
         tcenvb,
@@ -1194,7 +1194,7 @@ base class TEnv{
           )
         }
       };
-      tfun = TFun(
+      TFun(
         funClauses.toArray(),
         thisParam,
         normalParams.toArray(),
@@ -1202,12 +1202,8 @@ base class TEnv{
         spreadParam,
         this.normalize(tcenvb, retType),
         CGNodes::singleton(cgNode),
-      );
-      if (isMethod) {
-        TFuns::singleMethod(tfun, pos)
-      } else {
-        TFuns::singleFun(tfun, pos)
-      }
+        pos,
+      )
     }
   }
 
@@ -1244,8 +1240,8 @@ base class TEnv{
     fieldsMap = mutable Map[];
     symbolFields = mutable Map[];
     indexes = mutable Vector[];
-    call: ?TFuns = None();
-    new: ?TFuns = None();
+    call: ?TFun = None();
+    new: ?TFun = None();
 
     for (elt in fieldTypes) {
       elt match {

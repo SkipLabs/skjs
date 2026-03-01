@@ -457,24 +457,20 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
     TObject(ArraySet::single(TFields::empty(tenv, pos)), pos)
   }
 
-  static fun createCallWithPos(
-    tenv: TEnv,
-    tFuns: TFuns,
-    pos: PosRange,
-  ): TObject {
+  static fun createCallWithPos(tenv: TEnv, tFun: TFun, pos: PosRange): TObject {
     TObject(
-      ArraySet::single(TFields::create{tenv, pos, call => Some(tFuns)}),
+      ArraySet::single(TFields::create{tenv, pos, call => Some(tFun)}),
       pos,
     )
   }
 
-  static fun createCall(tenv: TEnv, tFuns: TFuns): TObject {
-    TObject::createCallWithPos(tenv, tFuns, tFuns.pos)
+  static fun createCall(tenv: TEnv, tFun: TFun): TObject {
+    TObject::createCallWithPos(tenv, tFun, tFun.pos)
   }
 
-  static fun createNew(tenv: TEnv, tFuns: TFuns, pos: PosRange): TObject {
+  static fun createNew(tenv: TEnv, tFun: TFun, pos: PosRange): TObject {
     TObject(
-      ArraySet::single(TFields::create{tenv, pos, new => Some(tFuns)}),
+      ArraySet::single(TFields::create{tenv, pos, new => Some(tFun)}),
       pos,
     )
   }
@@ -490,7 +486,7 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
     if (newFields.isEmpty()) None() else Some(this with {fields => newFields})
   }
 
-  fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TObject {
+  fun mapCall(f: (?(Bool, TFun)) -> ??(Bool, TFun)): ?TObject {
     this.mapOpt(fields -> fields.mapCall(f))
   }
 
@@ -516,20 +512,6 @@ const kAlgebraicBranchFieldName: String = "kind";
 /* Use only as the call and new 'fields' of objects (TFields) */
 /***************************************************************************/
 
-class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
-  static fun singleFun(x: TFun, pos: PosRange): TFuns {
-    TFuns(x, pos)
-  }
-
-  static fun singleMethod(x: TFun, pos: PosRange): TFuns {
-    TFuns(x, pos)
-  }
-
-  fun mapFuns(f: TFun -> TFun): TFuns {
-    TFuns(f(this.fun_), this.pos)
-  }
-}
-
 class TFun(
   tparams: Array<TParamWithConstraint>,
   thisParam: ?TType,
@@ -538,6 +520,7 @@ class TFun(
   spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   retType: TType,
   cgNodes: CGNodes,
+  pos: PosRange,
 ) uses XXHashable, Orderable {
   fun toString(): String {
     prettyPrintTFun(this)
@@ -976,8 +959,8 @@ class TFields private {
      TODO: if a field name is included an index key type, then its
       type must be a subtype of the index key type
   */
-  new: ?(/* optional */ Bool, TFuns) = None(),
-  call: ?(/* optional */ Bool, TFuns) = None(),
+  new: ?(/* optional */ Bool, TFun) = None(),
+  call: ?(/* optional */ Bool, TFun) = None(),
 } uses XXHashable, Orderable {
   static fun empty(_tenv: TEnv, _pos: PosRange): TFields {
     TFields{}
@@ -989,8 +972,8 @@ class TFields private {
     fields: readonly Map<FieldNameString, TField> = Map[],
     symbolFields: readonly Map<FieldNameString, TField> = Map[],
     indexes: readonly Vector<TIndexField> = Vector[],
-    new: ?TFuns = None(),
-    call: ?TFuns = None(),
+    new: ?TFun = None(),
+    call: ?TFun = None(),
   }: TFields {
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
@@ -1000,8 +983,8 @@ class TFields private {
         symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
       indexes => TIndexField::mergeByKeyType(indexes),
-      new => new.map(tfuns ~> (false, tfuns)),
-      call => call.map(tfuns ~> (false, tfuns)),
+      new => new.map(tfun ~> (false, tfun)),
+      call => call.map(tfun ~> (false, tfun)),
     }
   }
 
@@ -1024,18 +1007,18 @@ class TFields private {
   fun map(
     fField: TField -> TField,
     fIndexField: TIndexField -> TIndexField,
-    fTFuns: TFuns -> TFuns,
+    fTFun: TFun -> TFun,
   ): TFields {
     TFields{
       fields => this.fields.mapKeyed(fField),
       symbolFields => this.symbolFields.mapKeyed(fField),
       indexes => this.indexes.map(fIndexField),
-      new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
-      call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
+      new => this.new.map(opt_tfun -> (opt_tfun.i0, fTFun(opt_tfun.i1))),
+      call => this.call.map(opt_tfun -> (opt_tfun.i0, fTFun(opt_tfun.i1))),
     }
   }
 
-  fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TFields {
+  fun mapCall(f: (?(Bool, TFun)) -> ??(Bool, TFun)): ?TFields {
     f(this.call).map(call -> this with {call})
   }
 

@@ -50,18 +50,6 @@ extension class TType {
   }
 }
 
-extension class TFuns {
-  static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
-    f1: TFuns,
-    f2: TFuns,
-  ): TFuns {
-    f = TFun::union(subst, tenv, f1.fun_, f2.fun_);
-    TFuns(f, f1.pos)
-  }
-}
-
 extension class TField {
   static fun union(
     subst: mutable Subst,
@@ -270,15 +258,15 @@ extension class TFields {
   static fun unionOptTFuns(
     subst: mutable Subst,
     tenv: TEnv,
-    f1opt: ?(Bool, TFuns),
-    f2opt: ?(Bool, TFuns),
-  ): ?(Bool, TFuns) {
+    f1opt: ?(Bool, TFun),
+    f2opt: ?(Bool, TFun),
+  ): ?(Bool, TFun) {
     (f1opt, f2opt) match {
     | (None(), Some((_, f)))
     | (Some((_, f)), None()) ->
       Some((true, f))
     | (Some((opt1, f1)), Some((opt2, f2))) ->
-      Some((opt1 || opt2, TFuns::union(subst, tenv, f1, f2)))
+      Some((opt1 || opt2, TFun::union(subst, tenv, f1, f2)))
     | (None(), None()) -> None()
     }
   }
@@ -405,6 +393,7 @@ extension class TFun {
       spreadParam,
       retType,
       cgNodes,
+      f1.pos,
     )
   }
 }

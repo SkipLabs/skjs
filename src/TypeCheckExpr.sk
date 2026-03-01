@@ -1581,16 +1581,14 @@ extension class TypeChecker {
     TType::single(
       TObject::createCall(
         this,
-        TFuns::singleFun(
-          TFun(
-            Array[],
-            None(),
-            paramTypes.map(x -> x.i1),
-            Array[],
-            None(),
-            retType,
-            CGNodes::singleton(callingContext),
-          ),
+        TFun(
+          Array[],
+          None(),
+          paramTypes.map(x -> x.i1),
+          Array[],
+          None(),
+          retType,
+          CGNodes::singleton(callingContext),
           pos,
         ),
       ),
@@ -1944,7 +1942,7 @@ extension class TypeChecker {
   fun call(
     tcenv: mutable TCEnv,
     pos: PosRange,
-    tfuns: TFuns,
+    tfun: TFun,
     targs: Array<TType>,
     argExprs: Array<Expr>,
     mostPrecise: Bool,
@@ -2004,104 +2002,95 @@ extension class TypeChecker {
       }
     };
 
-    tfuns match {
-    | TFuns(tfun, fPos) ->
-      tcenv.recordCalls(tfun.cgNodes);
-      if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
-        tcenv.error(
-          Array[
-            (
-              pos,
-              `Incompatible number of type arguments: ${targs.size()} passed`,
-            ),
-            (fPos, `Expected: ${tfun.tparams.size()}`),
-          ],
-        )
+    tcenv.recordCalls(tfun.cgNodes);
+    if (targs.size() != 0 && targs.size() != tfun.tparams.size()) {
+      tcenv.error(
+        Array[
+          (
+            pos,
+            `Incompatible number of type arguments: ${targs.size()} passed`,
+          ),
+          (tfun.pos, `Expected: ${tfun.tparams.size()}`),
+        ],
+      )
+    };
+    map = SortedMap[];
+    for (i => tparamDecl in tfun.tparams) {
+      !map[tparamDecl.id] = if (i < targs.size()) {
+        targs[i]
+      } else {
+        this.newTVar(tcenv, pos)
       };
-      map = SortedMap[];
-      for (i => tparamDecl in tfun.tparams) {
-        !map[tparamDecl.id] = if (i < targs.size()) {
-          targs[i]
+    };
+    !tfun = (mutable Instantiate()).fun_(
+      (tcenv.subst, this, map.chill()),
+      tfun with {tparams => Array[]},
+    );
+    totalSize = tfun.params.size() + tfun.optionalParams.size();
+    // Unified rest-argument mechanism (Stage A): if spreadParam is an unbound generic
+    // type variable, infer/bind it from call-site arguments before param checking.
+    callInvalid = VariadicTyping::inferRestTypeVar(
+      tcenv,
+      this,
+      pos,
+      tfun.spreadParam,
+      totalSize,
+      args,
+      moreArgs,
+    );
+
+    if (callInvalid) {
+      // Skip further param checking and return the function's return type
+      // to avoid cascading diagnostics from void/return-type mismatches.
+      return tfun.retType
+    };
+
+    version = tcenv.subst.version;
+    loop {
+      for (i in Range(0, tfun.params.size())) {
+        if (i >= args.size()) {
+          tcenv.error(
+            Array[
+              (pos, "Invalid call"),
+              (tfun.pos, `This function has ${tfun.params.size()} parameters`),
+            ],
+          );
+          break void
         } else {
-          this.newTVar(tcenv, pos)
-        };
+          this.checkSubType(tcenv, pos, "Invalid call", args[i], tfun.params[i])
+        }
       };
-      !tfun = (mutable Instantiate()).fun_(
-        (tcenv.subst, this, map.chill()),
-        tfun with {tparams => Array[]},
-      );
-      totalSize = tfun.params.size() + tfun.optionalParams.size();
-      // Unified rest-argument mechanism (Stage A): if spreadParam is an unbound generic
-      // type variable, infer/bind it from call-site arguments before param checking.
-      callInvalid = VariadicTyping::inferRestTypeVar(
-        tcenv,
-        this,
-        pos,
-        tfun.spreadParam,
-        totalSize,
-        args,
-        moreArgs,
-      );
-
-      if (callInvalid) {
-        // Skip further param checking and return the function's return type
-        // to avoid cascading diagnostics from void/return-type mismatches.
-        return tfun.retType
-      };
-
-      version = tcenv.subst.version;
-      loop {
-        for (i in Range(0, tfun.params.size())) {
-          if (i >= args.size()) {
-            tcenv.error(
-              Array[
-                (pos, "Invalid call"),
-                (fPos, `This function has ${tfun.params.size()} parameters`),
-              ],
-            );
-            break void
-          } else {
-            this.checkSubType(
-              tcenv,
-              pos,
-              "Invalid call",
-              args[i],
-              tfun.params[i],
-            )
+      for (j in Range(0, tfun.optionalParams.size())) {
+        i = tfun.params.size() + j;
+        arg = if (i < args.size()) {
+          args[i]
+        } else {
+          moreArgs match {
+          | None() -> break void
+          | Some(ma) -> ma
           }
         };
-        for (j in Range(0, tfun.optionalParams.size())) {
-          i = tfun.params.size() + j;
-          arg = if (i < args.size()) {
-            args[i]
-          } else {
-            moreArgs match {
-            | None() -> break void
-            | Some(ma) -> ma
-            }
-          };
-          this.checkSubType(
-            tcenv,
-            pos,
-            "Invalid call",
-            arg,
-            tfun.optionalParams[j],
-          )
-        };
-        if (tcenv.subst.version == version) break void;
-        !version = tcenv.subst.version;
+        this.checkSubType(
+          tcenv,
+          pos,
+          "Invalid call",
+          arg,
+          tfun.optionalParams[j],
+        )
       };
-      VariadicTyping::checkRestArgs(
-        tcenv,
-        this,
-        pos,
-        tfun.spreadParam,
-        totalSize,
-        args,
-        moreArgs,
-      );
-      tfun.retType
-    }
+      if (tcenv.subst.version == version) break void;
+      !version = tcenv.subst.version;
+    };
+    VariadicTyping::checkRestArgs(
+      tcenv,
+      this,
+      pos,
+      tfun.spreadParam,
+      totalSize,
+      args,
+      moreArgs,
+    );
+    tfun.retType
   }
 }
 

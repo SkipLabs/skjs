@@ -101,10 +101,6 @@ mutable base class ApplyType(
     object.map(fields -> this.fields(env, fields))
   }
 
-  overridable deferred mutable fun funs(env: this::Env, funs: TFuns): TFuns {
-    funs.mapFuns(x -> this.fun_(env, x))
-  }
-
   overridable deferred mutable fun fun_(env: this::Env, f: TFun): TFun {
     TFun(
       f.tparams.map(x -> this.typeParamWithConstraint(env, x)),
@@ -114,6 +110,7 @@ mutable base class ApplyType(
       f.spreadParam.map(x -> this.arrayType(env, x)),
       this.type(env, f.retType),
       f.cgNodes,
+      f.pos,
     )
   }
 
@@ -134,7 +131,7 @@ mutable base class ApplyType(
     fields.map(
       x -> this.field(env, x),
       x -> this.indexField(env, x),
-      x -> this.funs(env, x),
+      x -> this.fun_(env, x),
     )
   }
 

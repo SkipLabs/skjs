@@ -160,17 +160,6 @@ extension class TType {
   }
 }
 
-extension class TFuns {
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
-    f1: TFuns,
-    f2: TFuns,
-  ): ?TFuns {
-    TFun::inter(subst, tenv, f1.fun_, f2.fun_).map(f -> TFuns(f, f1.pos))
-  }
-}
-
 extension class TField {
   static fun inter(
     subst: mutable Subst,
@@ -357,7 +346,7 @@ extension class TFields {
     | (call, None()) ->
       call
     | (Some((opt1, call1)), Some((opt2, call2))) ->
-      TFuns::inter(subst, tenv, call1, call2) match {
+      TFun::inter(subst, tenv, call1, call2) match {
       | None() -> return None()
       | Some(f) -> Some((opt1 && opt2, f))
       }
@@ -367,7 +356,7 @@ extension class TFields {
     | (new, None()) ->
       new
     | (Some((opt1, new1)), Some((opt2, new2))) ->
-      TFuns::inter(subst, tenv, new1, new2) match {
+      TFun::inter(subst, tenv, new1, new2) match {
       | None() -> return None()
       | Some(f) -> Some((opt1 && opt2, f))
       }
