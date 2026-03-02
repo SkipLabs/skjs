@@ -902,10 +902,13 @@ class TIndexField private {
     keyName: String,
     keyType: TType,
     isReadonly: ?PosRange,
-    valueTypeGet: TType,
-    valueTypeSet: TType,
+    valueType: TType,
   }: TIndexField {
-    _ = isReadonly;
+    valueTypeGet = valueType;
+    valueTypeSet = isReadonly match {
+    | None() -> valueType
+    | Some(roPos) -> TType::bottom(roPos)
+    };
     TIndexField{pos, keyName, keyType, valueTypeGet, valueTypeSet}
   }
 
