@@ -96,9 +96,14 @@ export type InitialData<_Inputs extends NamedCollections> = {
 
 export type int = number;
 
-export type Json = boolean | number | string | (Json | null)[] | JsonObject;
+export type Json =
+  | boolean
+  | number
+  | string
+  | readonly (Json | null)[]
+  | JsonObject;
 
-export type JsonObject = { [key: string]: Json | null };
+export type JsonObject = { readonly [key: string]: Json | null };
 
 export interface LazyCollection<K extends Json, V extends Json>
   extends Managed {

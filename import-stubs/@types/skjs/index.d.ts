@@ -5,7 +5,7 @@ declare const console: {
 };
 
 declare interface Iterable<T> {
-  [Symbol.iterator](): { next(): { value: T; done: boolean } };
+  [Symbol.iterator](): { next(): { readonly value: T; done: boolean } };
 }
 
 declare interface ArrayLike<T> {
@@ -92,7 +92,7 @@ declare class Array<T> implements Iterable<T> {
   // static from<T, U>(arrayLike: Array<T>, mapFn: (item: T) => U): Array<U>;
   static of<T>(...elements: T[]): Array<T>;
 
-  [Symbol.iterator](): { next(): { value: T; done: boolean } };
+  [Symbol.iterator](): { next(): { readonly value: T; done: boolean } };
 }
 
 declare const Math: {
@@ -282,7 +282,7 @@ declare class Object {
 // Define the MapIterator interface
 interface MapIterator<T> {
   // Core iteration protocol
-  next(): { value: T; done: boolean };
+  next(): { readonly value: T; done: boolean };
 
   // Functional utility methods
   map<U>(fn: (value: T) => U): MapIterator<U>;
@@ -316,7 +316,7 @@ declare class Map<K, V> {
   keys(): MapIterator<K>;
   values(): MapIterator<V>;
 
-  [Symbol.iterator](): { next(): { value: [K, V]; done: boolean } };
+  [Symbol.iterator](): { next(): { readonly value: [K, V]; done: boolean } };
 }
 
 declare class Set<T> {
@@ -333,7 +333,7 @@ declare class Set<T> {
   keys(): MapIterator<T>;
   values(): MapIterator<T>;
 
-  [Symbol.iterator](): { next(): { value: T; done: boolean } };
+  [Symbol.iterator](): { next(): { readonly value: T; done: boolean } };
 }
 
 declare class WeakMap<K, V> {
