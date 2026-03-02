@@ -162,17 +162,20 @@ mutable base class ApplyType(
   overridable deferred mutable fun insts(
     env: this::Env,
     insts: TInsts,
-  ): TInsts {
-    insts.filterMap(x -> this.inst(env, x))
+  ): (TInsts, readonly Vector<Clauses>) {
+    insts.filterMap(inst -> this.inst(env, inst))
   }
 
-  overridable deferred mutable fun inst(env: this::Env, inst: TInst): ?TInst {
+  overridable deferred mutable fun inst(
+    env: this::Env,
+    inst: TInst,
+  ): Result<TInst, TType> {
     inst match {
-    | TSInst(name, targs) -> Some(TSInst(name, this.targs(env, targs)))
-    | tinter @ TInter _ -> Some(tinter.map(x -> this.type(env, x)))
-    | tvar @ TVar _ -> Some(tvar.mapConstraints(ty -> this.type(env, ty)))
+    | TSInst(name, targs) -> Success(TSInst(name, this.targs(env, targs)))
+    | tInter @ TInter _ -> tInter.map(x -> this.type(env, x))
+    | tvar @ TVar _ -> Success(tvar.mapConstraints(ty -> this.type(env, ty)))
     | TArrayLit(tvar, tupleElts) ->
-      Some(
+      Success(
         TArrayLit(
           tvar.mapConstraints(ty -> this.type(env, ty)),
           tupleElts.map(ty -> this.type(env, ty)),

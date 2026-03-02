@@ -200,8 +200,24 @@ class TType private {
     this with {pos}
   }
 
-  fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): TType {
-    TType::create(this.pos, insts(this.insts), clauses(this.clauses))
+  fun rawMap(
+    fInsts: (TInsts) -> (TInsts, readonly Vector<Clauses>),
+    fClauses: (Clauses) -> Clauses,
+  ): TType {
+    (insts, extraClauses) = fInsts(this.insts);
+    clauses = fClauses(this.clauses);
+    if (!extraClauses.isEmpty()) {
+      if (clauses.isEmpty() && extraClauses.size() == 1) {
+        !clauses = extraClauses[0];
+      } else {
+        internal_error(
+          `Unexpected extra clauses when mapping ${this} to ${insts} | ${extraClauses.join(
+            " | ",
+          )} | ${clauses}`,
+        )
+      }
+    };
+    TType::create(this.pos, insts, clauses)
   }
 
   // t.mapSTypes(subst, env, expandTVars, f) is t expanded, with f applied
@@ -1069,6 +1085,22 @@ class TFields private {
     this.symbolFields.maybeGet(FieldNameString(uniqueId))
   }
 
+  private static fun resolveFieldType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fd: TField,
+    pos: PosRange,
+    isLValue: Bool,
+  ): TType {
+    if (isLValue) {
+      fd.set
+    } else if (fd.isOptional) {
+      TType::unionUndefined(subst, tenv, fd.get, pos)
+    } else {
+      fd.get
+    }
+  }
+
   fun maybeGetType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1076,15 +1108,9 @@ class TFields private {
     pos: PosRange,
     isLValue: Bool,
   ): ?TType {
-    this.maybeGet(fieldName).map(fd -> {
-      if (isLValue) {
-        fd.set
-      } else if (fd.isOptional) {
-        TType::unionUndefined(subst, tenv, fd.get, pos)
-      } else {
-        fd.get
-      }
-    })
+    this.maybeGet(fieldName).map(fd ->
+      TFields::resolveFieldType(subst, tenv, fd, pos, isLValue)
+    )
   }
 
   fun maybeGetSymbolType(
@@ -1094,15 +1120,9 @@ class TFields private {
     pos: PosRange,
     isLValue: Bool,
   ): ?TType {
-    this.maybeGetSymbol(uniqueId).map(fd -> {
-      if (isLValue) {
-        fd.set
-      } else if (fd.isOptional) {
-        TType::unionUndefined(subst, tenv, fd.get, pos)
-      } else {
-        fd.get
-      }
-    })
+    this.maybeGetSymbol(uniqueId).map(fd ->
+      TFields::resolveFieldType(subst, tenv, fd, pos, isLValue)
+    )
   }
 
   fun maybeGetField(key: FieldKey): ?TField {
@@ -1395,8 +1415,20 @@ class TInsts private (
     TInsts(this.insts.mapToSet(f))
   }
 
-  fun filterMap(f: TInst -> ?TInst): TInsts {
-    TInsts(this.insts.filterMap(f))
+  fun filterMap(
+    f: TInst -> Result<TInst, TType>,
+  ): (TInsts, readonly Vector<Clauses>) {
+    insts = mutable Vector[];
+    extraClauses = mutable Vector[];
+    for (inst in this.insts) {
+      f(inst) match {
+      | Success(i) -> insts.push(i)
+      | Failure(t) ->
+        insts.extend(t.insts);
+        extraClauses.push(t.clauses)
+      }
+    };
+    (TInsts(ArraySet::createFromMVector(insts)), extraClauses)
   }
 
   fun size(): Int {
@@ -1445,6 +1477,10 @@ class TInsts private (
    */
   static fun diff(left: TInsts, right: TInsts): TInsts {
     TInsts(left.insts.diff(right.insts))
+  }
+
+  fun toString(): String {
+    prettyPrintTInsts(this)
   }
 }
 
@@ -1498,7 +1534,7 @@ class TParam(
 class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
-) uses XXHashable, Orderable, Projectable<ArraySet<TParam>> {
+) uses XXHashable, Orderable, Projectable<ArraySet<TParam>>, Show {
   /* Invariant: Clause cannot be bottom */
 
   // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
@@ -1592,7 +1628,7 @@ class Clause private (
 // 〚 clauses 〛 = ⨆ 〚 c 〛, for c in clauses.clauses
 class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
-) extends Sequence<Clause> uses XXHashable, Orderable {
+) extends Sequence<Clause> uses XXHashable, Orderable, Show {
   /*
     Invariant: if one of the clauses is Top, then there are no other clauses
    */
