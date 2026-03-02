@@ -605,6 +605,21 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     };
     Some(result)
   }
+
+  fun maybeGetNew(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
+    result: ?(Bool, TFuns) = None();
+    for (fields in this.branches) {
+      (fields, result) match {
+      | (TFields{new => None()}, _) -> return None()
+      | (TFields{new => first @ Some _}, None()) -> !result = first
+      | (TFields{new => Some((opt2, tFuns2))}, Some((opt1, tFuns1))) ->
+        !result = Some(
+          (opt1 || opt2, TFuns::union(subst, tenv, tFuns1, tFuns2)),
+        )
+      }
+    };
+    result
+  }
 }
 
 const kAlgebraicBranchFieldName: String = "kind";

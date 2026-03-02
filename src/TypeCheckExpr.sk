@@ -932,23 +932,23 @@ extension class TypeChecker {
         subExprTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
           stypes.singleElt()
         ) match {
-        | Some(obj @ TObject(_, objPos)) ->
-          obj.getFields(tcenv.subst, this) match {
-          | TFields{new => Some((optional, f))} ->
+        | Some(obj @ TObject _) ->
+          obj.maybeGetNew(tcenv.subst, this) match {
+          | Some((optional, f)) ->
             if (optional) {
               tcenv.error(
                 Array[
                   (pos, "Invalid new"),
-                  (objPos, `${subExprTy} may not have a constructor`),
+                  (obj.pos, `${subExprTy} may not have a constructor`),
                 ],
               )
             };
             this.call(tcenv, pos, f, tArgs, args, mostPrecise)
-          | TFields{new => None()} ->
+          | None() ->
             typingError(
               Array[
                 (pos, "Invalid new"),
-                (objPos, `${subExprTy} has no constructor`),
+                (obj.pos, `${subExprTy} has no constructor`),
               ],
             )
           }
