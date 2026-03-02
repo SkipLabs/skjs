@@ -200,8 +200,24 @@ class TType private {
     this with {pos}
   }
 
-  fun rawMap(insts: (TInsts) -> TInsts, clauses: (Clauses) -> Clauses): TType {
-    TType::create(this.pos, insts(this.insts), clauses(this.clauses))
+  fun rawMap(
+    fInsts: (TInsts) -> (TInsts, readonly Vector<Clauses>),
+    fClauses: (Clauses) -> Clauses,
+  ): TType {
+    (insts, extraClauses) = fInsts(this.insts);
+    clauses = fClauses(this.clauses);
+    if (!extraClauses.isEmpty()) {
+      if (clauses.isEmpty() && extraClauses.size() == 1) {
+        !clauses = extraClauses[0];
+      } else {
+        internal_error(
+          `Unexpected extra clauses when mapping ${this} to ${insts} | ${extraClauses.join(
+            " | ",
+          )} | ${clauses}`,
+        )
+      }
+    };
+    TType::create(this.pos, insts, clauses)
   }
 
   // t.mapSTypes(subst, env, expandTVars, f) is t expanded, with f applied
@@ -1399,8 +1415,20 @@ class TInsts private (
     TInsts(this.insts.mapToSet(f))
   }
 
-  fun filterMap(f: TInst -> ?TInst): TInsts {
-    TInsts(this.insts.filterMap(f))
+  fun filterMap(
+    f: TInst -> Result<TInst, TType>,
+  ): (TInsts, readonly Vector<Clauses>) {
+    insts = mutable Vector[];
+    extraClauses = mutable Vector[];
+    for (inst in this.insts) {
+      f(inst) match {
+      | Success(i) -> insts.push(i)
+      | Failure(t) ->
+        insts.extend(t.insts);
+        extraClauses.push(t.clauses)
+      }
+    };
+    (TInsts(ArraySet::createFromMVector(insts)), extraClauses)
   }
 
   fun size(): Int {
