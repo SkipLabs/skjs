@@ -442,6 +442,11 @@ base class Variance {
 /***************************************************************************/
 
 // Regular Typescript (open) object type
+//
+// Interpretation:
+// 〚 obj 〛 = ⨆ 〚 b 〛, for b in obj.branches
+//
+// Invariant: branches is not empty
 class TObject private (private branches: ArraySet<TFields>) extends SType {
   /* Constructors */
 
