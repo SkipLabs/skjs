@@ -332,9 +332,6 @@ extension class TypeChecker {
           !result = TType::union(tcenv.subst, this, result, elementType)
         | None() ->
           tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
-        };
-        for (index in fields.indexes) {
-          !result = TType::union(tcenv.subst, this, result, index.valueTypeGet)
         }
       | TTuple(tuple, _) ->
         for (elementType in tuple) {
