@@ -570,7 +570,8 @@ base class TEnv{
       targs,
     ) match {
     | None() -> None()
-    | Some(fd) -> Some(this.makeConstructor(tcenvb, className, tparams, fd))
+    | Some((tenv, fd)) ->
+      Some(tenv.makeConstructor(tcenvb, className, tparams, fd))
     }
   }
 
@@ -580,7 +581,7 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?ClassFieldTypeMethod {
+  ): ?(this, ClassFieldTypeMethod) {
     (!this, cls) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -593,7 +594,7 @@ base class TEnv{
       | fd @ ClassFieldTypeMethod _ if (
         fd.name is FNNormal(Name(_, "constructor"))
       ) ->
-        return Some(fd)
+        return Some((this, fd))
       | _ -> void
       }
     };
@@ -639,7 +640,7 @@ base class TEnv{
     | Some(x) ->
       tcenvb.error(Array[(x.pos, "Unexpected annotation for constructor")])
     };
-    retTypePos = fd.retType.i0;
+    retTypePos = className.pos;
     retType = Type(
       retTypePos,
       TAInst(
