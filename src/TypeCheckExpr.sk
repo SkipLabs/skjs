@@ -94,6 +94,14 @@ extension class TypeChecker {
             ],
           )
         };
+        // Only use precise integer-indexed field types for Array-like types
+        // (those with a number index signature). Non-array iterables with
+        // numeric fields (e.g. { 0: number; [Symbol.iterator]: ... }) should
+        // always use the iterator element type for destructuring.
+        hasNumberIndex = fields.indexes.any(idx -> {
+          numKey = TType::single(TPrimValue::single(TNum(), "0", pos));
+          TType::isSub(tcenv.subst.clone(), this, numKey, idx.keyType) is STOk()
+        });
         for (i in Range(0, arrPat.size())) {
           arrPat[i] match {
           | None() -> void
@@ -103,19 +111,28 @@ extension class TypeChecker {
               "Default value in array destructuring",
             )
           | Some((eltPat, None())) ->
+            optionalEltType = TType::unionUndefined(
+              tcenv.subst,
+              this,
+              eltType,
+              eltPat.pos,
+            );
             this.bind(
               tcenv,
               kind,
               eltPat,
-              fields.fields.maybeGet(FieldNameString(i.toString())) match {
-              | None() ->
-                TType::unionUndefined(tcenv.subst, this, eltType, eltPat.pos)
-              | Some(fd) ->
-                if (fd.isOptional) {
-                  TType::unionUndefined(tcenv.subst, this, fd.get, eltPat.pos)
-                } else {
-                  fd.get
+              if (hasNumberIndex) {
+                fields.fields.maybeGet(FieldNameString(i.toString())) match {
+                | None() -> optionalEltType
+                | Some(fd) ->
+                  if (fd.isOptional) {
+                    TType::unionUndefined(tcenv.subst, this, fd.get, eltPat.pos)
+                  } else {
+                    fd.get
+                  }
                 }
+              } else {
+                optionalEltType
               },
               isInitialized,
               false,
