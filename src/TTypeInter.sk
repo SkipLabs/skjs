@@ -44,9 +44,35 @@ class TInter private (tys: ArraySet<TType>) extends TInst {
     result
   }
 
-  fun map(f: TType -> TType): this {
-    !this.tys = this.tys.mapToSet(f);
-    this
+  // Maps f over all types in the intersection, preserving invariants.
+  // Returns:
+  //   Success(inter)  if result is a valid TInter (>= 2 types)
+  //   Failure(ty)     otherwise
+  fun map(f: TType -> TType): Result<TInter, TType> {
+    result = mutable Vector[];
+    for (ty in this.tys) {
+      mapped = f(ty);
+      if (mapped.isBottom()) return Failure(mapped);
+      if (mapped.isTop()) continue;
+      mapped.getSingleInter() match {
+      | Some(TInter(innerTys)) -> result.extend(innerTys)
+      | None() -> result.push(mapped)
+      }
+    };
+    if (result.isEmpty()) {
+      Failure(TType::top(this.tys.values().next().fromSome().pos))
+    } else {
+      arraySet = ArraySet::createFromMVector(result);
+      arraySet.getUnique() match {
+      | Some(ty) -> Failure(ty)
+      | None() ->
+        invariant(
+          !arraySet.isEmpty(),
+          "ArraySet::createFromMVector created an empty ArraySet from a non-empty Vector",
+        );
+        Success(TInter(arraySet))
+      }
+    }
   }
 }
 

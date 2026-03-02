@@ -172,7 +172,7 @@ mutable base class ApplyType(
   ): Result<TInst, TType> {
     inst match {
     | TSInst(name, targs) -> Success(TSInst(name, this.targs(env, targs)))
-    | tinter @ TInter _ -> Success(tinter.map(x -> this.type(env, x)))
+    | tInter @ TInter _ -> tInter.map(x -> this.type(env, x))
     | tvar @ TVar _ -> Success(tvar.mapConstraints(ty -> this.type(env, ty)))
     | TArrayLit(tvar, tupleElts) ->
       Success(
