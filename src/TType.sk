@@ -1301,13 +1301,13 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
-base class TVarID uses Orderable, XXHashable {
+base class TVarID private final (value: Int) uses Orderable, XXHashable {
   children =
   // A normal type variable identifier
-  | TVID(value: Int)
+  | TVID
   // A type variable that was introduced to infer the type of a field
   // in a literal object.
-  | TVIDForField(value: Int)
+  | TVIDForField
 
   static fun create(id: Int): TVarID {
     TVID(id)
@@ -1317,23 +1317,16 @@ base class TVarID uses Orderable, XXHashable {
     TVIDForField(id)
   }
 
-  fun valueForHash(): Int
-  | TVID(x) -> x
-  | TVIDForField(x) -> x
-
-  fun toString(): String
-  | TVID(x) -> x.toString()
-  | TVIDForField(x) -> x.toString()
-
-  fun isForField(): Bool {
-    this match {
-    | TVIDForField _ -> true
-    | _ -> false
-    }
+  fun toString(): String {
+    this.value.toString()
   }
 
+  fun isForField(): Bool
+  | TVIDForField _ -> true
+  | TVID _ -> false
+
   fun xxhash(): XXHash {
-    XXHash(this.valueForHash())
+    XXHash(this.value)
   }
 }
 
