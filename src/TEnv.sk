@@ -66,6 +66,10 @@ base class TEnv{
   // relation is considered correct (by co-induction).
   seenSub: SortedSet<(Int, TType, TType)> = SortedSet[],
 
+  // Controls whether field inter/union operations fully expand intersections.
+  // When false (default), defers via unexpandedInter to avoid infinite expansion
+  // during normal type operations. Set to true only during TInter expansion
+  // in getSTypes (TType.sk) where full expansion is safe and needed.
   expandInter: Bool = false,
 } {
   // Given a type name and type arguments, first retrieves the type
