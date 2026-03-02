@@ -418,7 +418,7 @@ extension class TObject {
         }
       }
     };
-    Some(TObject(ArraySet::createFromVector(branches.chill()), obj1.pos))
+    Some(TObject(ArraySet::createFromMVector(branches), obj1.pos))
   }
 }
 
