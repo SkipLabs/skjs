@@ -240,16 +240,14 @@ base class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
-    TObject(
-      ArraySet::single(
-        TFields::create{
-          tenv => this,
-          pos => className.pos,
-          fields,
-          symbolFields,
-          indexes,
-        },
-      ),
+    TObject::createSingleBranch(
+      TFields::create{
+        tenv => this,
+        pos => className.pos,
+        fields,
+        symbolFields,
+        indexes,
+      },
       className.pos,
     )
   }
@@ -285,17 +283,15 @@ base class TEnv{
     | Some(tfuns) -> tfuns
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
-    TObject(
-      ArraySet::single(
-        TFields::create{
-          tenv => this,
-          pos,
-          fields,
-          symbolFields,
-          indexes,
-          new => Some(new),
-        },
-      ),
+    TObject::createSingleBranch(
+      TFields::create{
+        tenv => this,
+        pos,
+        fields,
+        symbolFields,
+        indexes,
+        new => Some(new),
+      },
       pos,
     )
   }
@@ -797,7 +793,7 @@ base class TEnv{
       )
     | TAObject(fields) ->
       tFields = this.createTFields(tcenvb, fields, pos, isTopLevelConst);
-      TType::single(TObject(ArraySet::single(tFields), pos))
+      TType::single(TObject::createSingleBranch(tFields, pos))
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])

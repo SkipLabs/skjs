@@ -826,10 +826,8 @@ extension class TypeChecker {
         fields![field.name] = field
       };
       obj = TType::single(
-        TObject(
-          ArraySet::single(
-            TFields::create{tenv => this, pos, fields, symbolFields, indexes},
-          ),
+        TObject::createSingleBranch(
+          TFields::create{tenv => this, pos, fields, symbolFields, indexes},
           pos,
         ),
       );
@@ -1841,7 +1839,7 @@ extension class TypeChecker {
         newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
         | None() -> TType::bottom(objPos)
         | Some(mergedFields) ->
-          TType::single(TObject(ArraySet::single(mergedFields), objPos))
+          TType::single(TObject::createSingleBranch(mergedFields, objPos))
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
           this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
