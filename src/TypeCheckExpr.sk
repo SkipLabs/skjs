@@ -82,9 +82,8 @@ extension class TypeChecker {
             ],
           )
         }
-      | Some(obj @ TObject(_, _)) ->
-        fields = obj.getFields(tcenv.subst, this);
-        eltType = this.getIteratorElementType(tcenv.subst, fields, pos) match {
+      | Some(obj @ TObject _) ->
+        eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
         | Some(t) -> t
         | None() ->
           typingError(
@@ -1954,9 +1953,8 @@ extension class TypeChecker {
         spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
           stypes.singleElt()
         ) match {
-        | Some(obj @ TObject(_, _)) ->
-          fields = obj.getFields(tcenv.subst, this);
-          this.getIteratorElementType(tcenv.subst, fields, argExpr.pos) match {
+        | Some(obj @ TObject _) ->
+          this.getIteratorElementType(tcenv.subst, obj, argExpr.pos) match {
           | None() ->
             tcenv.error(
               Array[

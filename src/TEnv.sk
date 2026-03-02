@@ -1033,12 +1033,12 @@ base class TEnv{
 
   fun getIteratorElementType(
     subst: mutable Subst,
-    fields: TFields,
+    tObj: TObject,
     pos: PosRange,
   ): ?TType {
     // Step 1: Look up [Symbol.iterator] symbol field
     iteratorMethodType = this.getSymbolIteratorUniqueId(subst, pos).flatMap(
-      uniqueId -> fields.maybeGetSymbolType(subst, this, uniqueId, pos, false),
+      uniqueId -> tObj.maybeGetSymbolType(subst, this, uniqueId, pos),
     ) match {
     | Some(t) -> t
     | None() -> return None()

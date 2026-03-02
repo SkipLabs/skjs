@@ -325,9 +325,8 @@ extension class TypeChecker {
 
     for (stype in stypes) {
       stype match {
-      | obj @ TObject(_, _objectPos) ->
-        fields = obj.getFields(tcenv.subst, this);
-        this.getIteratorElementType(tcenv.subst, fields, pos) match {
+      | obj @ TObject _ ->
+        this.getIteratorElementType(tcenv.subst, obj, pos) match {
         | Some(elementType) ->
           !result = TType::union(tcenv.subst, this, result, elementType)
         | None() ->

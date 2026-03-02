@@ -563,6 +563,22 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     }
   }
 
+  fun maybeGetSymbolType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    uniqueId: String,
+    pos: PosRange,
+  ): ?TType {
+    result = TType::bottom(pos);
+    for (fields in this.branches) {
+      fields.maybeGetSymbolType(subst, tenv, uniqueId, pos, false) match {
+      | None() -> return None()
+      | Some(ty) -> !result = TType::union(subst, tenv, result, ty)
+      }
+    };
+    Some(result)
+  }
+
   fun maybeGetRetType(subst: mutable Subst, tenv: TEnv): ?TType {
     result: TType = TType::bottom(this.pos);
     for (fields in this.branches) {
@@ -684,8 +700,7 @@ class ATFullType(fullType: TType) extends ArrayType {
       stypes.singleElt()
     ) match {
     | Some(obj @ TObject(_, objectPos)) ->
-      fields = obj.getFields(subst, tenv);
-      tenv.getIteratorElementType(subst, fields, objectPos)
+      tenv.getIteratorElementType(subst, obj, objectPos)
     | _ -> None()
     }
   }
