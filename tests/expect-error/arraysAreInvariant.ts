@@ -33,8 +33,6 @@ interface Dog extends Animal {
 }
 
 function readonlyArrayIsCovariant(dogs: readonly Dog[]): readonly Animal[] {
-  // FIXME: ReadonlyArray covariance broken with get/set branch
-  // @skjs-expect-error Invalid return type
   return dogs;
 }
 

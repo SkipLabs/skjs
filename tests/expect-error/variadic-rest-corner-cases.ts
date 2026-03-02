@@ -93,10 +93,8 @@ function testOptionalBeforeTupleRest(): void {
 
 // 1) Empty-rest inference
 function testEmptyRestInference(): void {
-  // @skjs-expect-error Invalid call. Inferred rest arguments [] do not satisfy the constraint
   const empty0 = emptyInfer();
   // No empty tuple type syntax, so we use expanded show to assert tuple shape.
-  // @skjs-expect-error __SKJS_show: expected [], got {
   __SKJS_show_expanded(empty0, "[]");
   const empty0_as_ro_unknown_array: readonly unknown[] = empty0;
 }
@@ -117,10 +115,8 @@ function testTupleRestExactArity(): void {
 
 // 3) Generic tuple-rest inference from fixed args
 function testGenericTupleRestInference(): void {
-  // @skjs-expect-error Invalid call. Inferred rest arguments ['a', '1'] do not satisfy the constraint
   const t1 = inferTuple("a", 1);
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
-  // @skjs-expect-error Invalid annotation
   const t1_as_tuple: [string, number] = t1;
 
   // Constraint enforcement (DepSafe)
@@ -132,32 +128,26 @@ function testGenericTupleRestInference(): void {
 // 4) Inference from tuple spread: keeps tuple shape
 function testTupleSpreadInference(): void {
   const tup: [string, number] = ["x", 42];
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string, number] do not satisfy the constraint
   const t2 = inferTuple(...tup);
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
-  // @skjs-expect-error Invalid annotation
   const t2_as_tuple: [string, number] = t2;
 
   // Also works with readonly tuple
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
   const rtup: [string, number] = ["y", 99];
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string, number] do not satisfy the constraint
   const t3 = inferTuple(...rtup);
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
-  // @skjs-expect-error Invalid annotation
   const t3_as_tuple: [string, number] = t3;
 }
 
 // 5) Inference from array spread: degrades to array type, not tuple
 function testArraySpreadInference(): void {
   const arrS: string[] = ["a", "b"];
-  // @skjs-expect-error Invalid call. Inferred rest arguments ReadonlyArray<string> do not satisfy the constraint
   const a1 = inferTuple(...arrS);
   // Both fail: resolving the type variable intersects the binding with the constraint,
   // producing element type string & VariadicDepSafe instead of simplifying to string.
   // @skjs-expect-error Invalid annotation
   const a1_as_tuple: [string, string] = a1;
-  // @skjs-expect-error Invalid annotation
   const a1_as_array: readonly string[] = a1;
 }
 
@@ -176,20 +166,16 @@ function testTupleSpreadFollowedByPositional(): void {
 
 // 7) Motivating API
 function testMotivatingAPI(): void {
-  // @skjs-expect-error Invalid call. Inferred rest arguments [] do not satisfy the constraint
   variadicColl.map(Zero);
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string] do not satisfy the constraint
   variadicColl.map(One, "hello");
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string, number] do not satisfy the constraint
   variadicColl.map(Two, "hello", 42);
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string] do not satisfy the constraint
+  // @skjs-expect-error Invalid call
   variadicColl.map(Two, "hello");
   // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
   variadicColl.map(One, true);
 
   // Tuple spread into the rest args should preserve shape
   const args2: [string, number] = ["z", 7];
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string, number] do not satisfy the constraint
   variadicColl.map(Two, ...args2);
 
   const argsArr: VariadicDepSafe[] = ["z", 7];
@@ -197,11 +183,9 @@ function testMotivatingAPI(): void {
   variadicColl.map(Two, ...argsArr);
 
   // Mixed fixed + tuple-rest constructor pattern
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string] do not satisfy the constraint
   prefixedColl.mapWithPrefix("tag", PrefixOne, "hello");
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string, number] do not satisfy the constraint
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello", 42);
-  // @skjs-expect-error Invalid call. Inferred rest arguments [string] do not satisfy the constraint
+  // @skjs-expect-error Invalid call
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello");
   // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
   prefixedColl.mapWithPrefix("tag", PrefixOne, true);
