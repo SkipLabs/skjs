@@ -871,9 +871,9 @@ extension class TypeChecker {
       tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(obj @ TObject(_, _)) ->
-        obj.getFields(tcenv.subst, this) match {
-        | TFields{call => Some((optional, tfuns))} ->
+      | Some(obj @ TObject _) ->
+        obj.maybeGetCall(tcenv.subst, this) match {
+        | Some((optional, tfuns)) ->
           if (optional) {
             tcenv.error(
               Array[
@@ -883,7 +883,7 @@ extension class TypeChecker {
             )
           };
           tfuns
-        | _ ->
+        | None() ->
           typingError(
             Array[
               (pos, "Invalid call"),
