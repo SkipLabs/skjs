@@ -15,12 +15,12 @@ module SKJS;
 // - none of the inner TType is either bottom, top, or a single inter
 // - the size of tys is >= 2
 class TInter private (tys: ArraySet<TType>) extends TInst {
-  static fun create(ty1: TType, ty2: TType): ?TInter {
-    if (ty1.isTop() || ty2.isTop()) {
-      internal_error(`Unexpected Top in TInter: ${ty1} inter ${ty2}`)
+  static fun create(ty1: TType, ty2: TType): Result<TInter, TType> {
+    if (ty1.isBottom() || ty2.isTop()) {
+      return Failure(ty1)
     };
-    if (ty1.isBottom() || ty2.isBottom()) {
-      return None()
+    if (ty2.isBottom() || ty1.isTop()) {
+      return Failure(ty2)
     };
     tys = (ty1.getSingleInter(), ty2.getSingleInter()) match {
     | (Some(TInter(tys1)), Some(TInter(tys2))) -> tys1.union(tys2)
@@ -30,7 +30,7 @@ class TInter private (tys: ArraySet<TType>) extends TInst {
       vec = mutable Vector[ty1, ty2];
       ArraySet::createFromMVector(vec)
     };
-    Some(TInter(tys))
+    Success(TInter(tys))
   }
 
   // Compute the intersection of all types in this group.
@@ -81,9 +81,9 @@ extension class TType {
   // (A & B) & (C & D) → A & B & C & D
   static fun unexpandedInter(ty1: TType, ty2: TType): TType {
     TInter::create(ty1, ty2) match {
-    | None() -> TType::bottom(ty1.pos)
-    | Some(tinter) ->
-      TType::create(ty1.pos, TInsts::single(tinter), Clauses::empty())
+    | Failure(ty) -> ty
+    | Success(tInter) ->
+      TType::create(ty1.pos, TInsts::single(tInter), Clauses::empty())
     }
   }
 
