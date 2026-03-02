@@ -38,22 +38,33 @@ check-sh:
 # Override DOCKER_IMAGE or SKIP_DIR if needed:
 #   make test-in-docker SKIP_DIR=/path/to/skip
 #   make test-in-docker DOCKER_IMAGE=skiplabs/skip:0.1.0
+# When running inside a devcontainer, commands run directly (no docker).
 DOCKER_IMAGE?=skiplabs/skip:latest
 SKIP_DIR?=$(CURDIR)/../skip
 
 DOCKER_ENV_FLAGS=$(if $(UPDATE_EXPECT),-e UPDATE_EXPECT=$(UPDATE_EXPECT))
 
+ifdef DEVCONTAINER
+  DOCKER_RUN =
+else
+  DOCKER_RUN = docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE)
+endif
+
 .PHONY: test-in-docker
 test-in-docker:
+ifdef DEVCONTAINER
+	cd skjs-tests && skargo build && cd $(CURDIR) && ./skjs-tests/target/host/dev/test
+else
 	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) sh -c 'cd skjs-tests && skargo build && cd /work/skjs && ./skjs-tests/target/host/dev/test'
+endif
 
 %-in-docker:
-	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) skargo $*
+	$(DOCKER_RUN) skargo $*
 
 .PHONY: check-file-in-docker
 check-file-in-docker:
 	: $${FILE:?Usage: make check-file-in-docker FILE=path/to/file.ts [BIN=target/host/dev/skjs]}
-	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) $(if $(BIN),$(BIN),skargo run --) check --import-stubs import-stubs "$(FILE)"
+	$(DOCKER_RUN) $(if $(BIN),$(BIN),skargo run --) check --import-stubs import-stubs "$(FILE)"
 
 .PHONY: clean
 clean:
