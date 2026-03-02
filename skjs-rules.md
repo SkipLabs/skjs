@@ -259,6 +259,23 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Refinement scope**: Control-flow refinements occur when the RHS is a local variable without index signatures and the LHS is a single literal (string or symbol). The checker adds/removes the specific field or symbol field; it does not reason about dynamic keys or nested objects.
 - **Workaround**: To narrow on a field's presence, ensure the RHS object is held in a local variable and the LHS key is a literal type. For dynamic keys (e.g., string variables or values produced by expressions), prefer an explicit index signature or guarded property access (`const value = obj[key]; if (value !== undefined) { ... }`).
 
+### 27. Readonly Field Soundness (Stricter than TypeScript)
+- **Rule**: A type with a `readonly` field cannot be assigned where a mutable field is expected
+- **TypeScript difference**: TypeScript allows this (unsound — a mutable alias can write through a readonly field)
+- **SKJS enforcement**: Fields have separate get/set types internally; `readonly` fields have `set = bottom`. The contravariant set-type check rejects `bottom <: T`
+- **Examples**:
+  ```typescript
+  interface ReadonlyPet { readonly name: string; }
+  interface MutablePet { name: string; }
+  function mutate(p: MutablePet): void { p.name = "changed"; }
+  const r: ReadonlyPet = { name: "original" };
+  mutate(r); // Error in SKJS, allowed in TypeScript
+  ```
+- **Intersection**: `{readonly x: T} & {x: T}` makes `x` mutable (set = union(bottom, T) = T)
+- **Union**: `{readonly x: T} | {x: U}` makes `x` readonly (set = inter(bottom, U) = bottom)
+- **Class inheritance**: A subclass cannot make a mutable parent field readonly; a subclass can make a readonly parent field mutable
+- **Verified by**: `tests/expect-error/pr437-set-check-unsound.ts`, `tests/expect-error/readonly-inter-union.ts`, `tests/expect-error/readonly-inheritance.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
