@@ -445,8 +445,12 @@ base class Variance {
 class TObject(private fields: ArraySet<TFields>) extends SType {
   /* Constructors */
 
+  static fun createSingleBranch(tFields: TFields, pos: PosRange): TObject {
+    TObject(ArraySet::single(tFields), pos)
+  }
+
   static fun createEmpty(tenv: TEnv, pos: PosRange): TObject {
-    TObject(ArraySet::single(TFields::empty(tenv, pos)), pos)
+    TObject::createSingleBranch(TFields::empty(tenv, pos), pos)
   }
 
   static fun createCallWithPos(
@@ -454,8 +458,8 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
     tFuns: TFuns,
     pos: PosRange,
   ): TObject {
-    TObject(
-      ArraySet::single(TFields::create{tenv, pos, call => Some(tFuns)}),
+    TObject::createSingleBranch(
+      TFields::create{tenv, pos, call => Some(tFuns)},
       pos,
     )
   }
@@ -465,8 +469,8 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
   }
 
   static fun createNew(tenv: TEnv, tFuns: TFuns, pos: PosRange): TObject {
-    TObject(
-      ArraySet::single(TFields::create{tenv, pos, new => Some(tFuns)}),
+    TObject::createSingleBranch(
+      TFields::create{tenv, pos, new => Some(tFuns)},
       pos,
     )
   }
