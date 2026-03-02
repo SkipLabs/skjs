@@ -39,6 +39,5 @@ function testDoubleCollapse<V>(v: V): void {
 declare function getCallableInter(): ({ (): string } & { (): number }) | string;
 
 function testCallableInter(): string {
-  // @skjs-expect-error Invalid return type
   return getCallableInter();
 }

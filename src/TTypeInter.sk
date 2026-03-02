@@ -418,7 +418,11 @@ extension class TObject {
         }
       }
     };
-    Some(TObject(ArraySet::createFromMVector(branches), obj1.pos))
+    if (branches.isEmpty()) {
+      None()
+    } else {
+      Some(TObject(ArraySet::createFromMVector(branches), obj1.pos))
+    }
   }
 }
 
