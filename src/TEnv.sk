@@ -1038,7 +1038,7 @@ base class TEnv{
   ): ?TType {
     // Step 1: Look up [Symbol.iterator] symbol field
     iteratorMethodType = this.getSymbolIteratorUniqueId(subst, pos).flatMap(
-      uniqueId -> fields.maybeGetSymbolType(subst, this, uniqueId, pos),
+      uniqueId -> fields.maybeGetSymbolType(subst, this, uniqueId, pos, false),
     ) match {
     | Some(t) -> t
     | None() -> return None()
