@@ -920,14 +920,14 @@ class TIndexField private {
     if (indexes.size() <= 1) return indexes.toArray();
     merged: mutable Vector<TIndexField> = mutable Vector[];
     for (idx in indexes) {
-      existingIdx = merged.findIndex(e ->
-        e.keyType == idx.keyType &&
-          e.valueTypeGet == idx.valueTypeGet &&
-          e.valueTypeSet == idx.valueTypeSet
-      );
-      existingIdx match {
-      | None() -> merged.push(idx)
-      | Some(_) -> void
+      if (
+        !merged.any(e ->
+          e.keyType == idx.keyType &&
+            e.valueTypeGet == idx.valueTypeGet &&
+            e.valueTypeSet == idx.valueTypeSet
+        )
+      ) {
+        merged.push(idx)
       }
     };
     merged.toArray()
