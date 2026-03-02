@@ -350,20 +350,7 @@ class TType private {
       inst = todo.pop();
       tyDef = inst match {
       | TSInst(name, targs) -> tenv.instantiate(subst, name, targs)
-      | TInter(tys) ->
-        for (ty1 in tys) {
-          for (ty2 in tys) {
-            !ty1 = TType::inter(
-              subst,
-              tenv with {expandInter => true},
-              ty1,
-              ty2,
-            );
-          };
-          break ty1
-        } else {
-          internal_error("Unexpected empty TInter")
-        }
+      | tInter @ TInter _ -> tInter.expand(subst, tenv)
       | tvar @ TVar _ ->
         expandTVars match {
         | Some(variance) -> subst.get(tenv, tvar, variance)
@@ -902,10 +889,13 @@ class TIndexField private {
     keyName: String,
     keyType: TType,
     isReadonly: ?PosRange,
-    valueTypeGet: TType,
-    valueTypeSet: TType,
+    valueType: TType,
   }: TIndexField {
-    _ = isReadonly;
+    valueTypeGet = valueType;
+    valueTypeSet = isReadonly match {
+    | None() -> valueType
+    | Some(roPos) -> TType::bottom(roPos)
+    };
     TIndexField{pos, keyName, keyType, valueTypeGet, valueTypeSet}
   }
 
@@ -930,14 +920,14 @@ class TIndexField private {
     if (indexes.size() <= 1) return indexes.toArray();
     merged: mutable Vector<TIndexField> = mutable Vector[];
     for (idx in indexes) {
-      existingIdx = merged.findIndex(e ->
-        e.keyType == idx.keyType &&
-          e.valueTypeGet == idx.valueTypeGet &&
-          e.valueTypeSet == idx.valueTypeSet
-      );
-      existingIdx match {
-      | None() -> merged.push(idx)
-      | Some(_) -> void
+      if (
+        !merged.any(e ->
+          e.keyType == idx.keyType &&
+            e.valueTypeGet == idx.valueTypeGet &&
+            e.valueTypeSet == idx.valueTypeSet
+        )
+      ) {
+        merged.push(idx)
       }
     };
     merged.toArray()
@@ -1102,13 +1092,15 @@ class TFields private {
     tenv: TEnv,
     uniqueId: String,
     pos: PosRange,
+    isLValue: Bool,
   ): ?TType {
     this.maybeGetSymbol(uniqueId).map(fd -> {
-      ty = fd.get;
-      if (fd.isOptional) {
-        TType::unionUndefined(subst, tenv, ty, pos)
+      if (isLValue) {
+        fd.set
+      } else if (fd.isOptional) {
+        TType::unionUndefined(subst, tenv, fd.get, pos)
       } else {
-        ty
+        fd.get
       }
     })
   }
@@ -1309,13 +1301,13 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
-base class TVarID uses Orderable, XXHashable {
+base class TVarID private final (value: Int) uses Orderable, XXHashable {
   children =
   // A normal type variable identifier
-  | TVID(value: Int)
+  | TVID
   // A type variable that was introduced to infer the type of a field
   // in a literal object.
-  | TVIDForField(value: Int)
+  | TVIDForField
 
   static fun create(id: Int): TVarID {
     TVID(id)
@@ -1325,23 +1317,16 @@ base class TVarID uses Orderable, XXHashable {
     TVIDForField(id)
   }
 
-  fun valueForHash(): Int
-  | TVID(x) -> x
-  | TVIDForField(x) -> x
-
-  fun toString(): String
-  | TVID(x) -> x.toString()
-  | TVIDForField(x) -> x.toString()
-
-  fun isForField(): Bool {
-    this match {
-    | TVIDForField _ -> true
-    | _ -> false
-    }
+  fun toString(): String {
+    this.value.toString()
   }
 
+  fun isForField(): Bool
+  | TVIDForField _ -> true
+  | TVID _ -> false
+
   fun xxhash(): XXHash {
-    XXHash(this.valueForHash())
+    XXHash(this.value)
   }
 }
 

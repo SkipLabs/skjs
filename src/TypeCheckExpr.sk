@@ -363,7 +363,13 @@ extension class TypeChecker {
           | Some(id) -> id
           | None() -> typingError(Array[(idx.pos, "Expected a unique symbol")])
           };
-          fields.maybeGetSymbolType(tcenv.subst, this, uniqueId, pos) match {
+          fields.maybeGetSymbolType(
+            tcenv.subst,
+            this,
+            uniqueId,
+            pos,
+            isLValue,
+          ) match {
           | Some(ty) -> !result = TType::union(tcenv.subst, this, result, ty)
           | None() ->
             typingError(Array[(pos, "Symbol property not found on object")])
