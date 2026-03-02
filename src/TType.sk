@@ -1450,6 +1450,10 @@ class TInsts private (
   static fun diff(left: TInsts, right: TInsts): TInsts {
     TInsts(left.insts.diff(right.insts))
   }
+
+  fun toString(): String {
+    prettyPrintTInsts(this)
+  }
 }
 
 value class Id private (id: String) uses XXHashable, Orderable, Show {
@@ -1502,7 +1506,7 @@ class TParam(
 class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
-) uses XXHashable, Orderable, Projectable<ArraySet<TParam>> {
+) uses XXHashable, Orderable, Projectable<ArraySet<TParam>>, Show {
   /* Invariant: Clause cannot be bottom */
 
   // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
@@ -1596,7 +1600,7 @@ class Clause private (
 // 〚 clauses 〛 = ⨆ 〚 c 〛, for c in clauses.clauses
 class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
-) extends Sequence<Clause> uses XXHashable, Orderable {
+) extends Sequence<Clause> uses XXHashable, Orderable, Show {
   /*
     Invariant: if one of the clauses is Top, then there are no other clauses
    */
