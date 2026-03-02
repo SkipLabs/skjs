@@ -445,30 +445,6 @@ base class Variance {
 class TObject(private fields: ArraySet<TFields>) extends SType {
   /* Constructors */
 
-  fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
-    result: ?TFields = None();
-    for (f in this.fields) {
-      !result = Some(
-        result match {
-        | None() -> f
-        | Some(acc) -> TFields::union(subst, tenv, acc, f)
-        },
-      );
-    };
-    result match {
-    | None() -> TFields::empty(tenv, this.pos)
-    | Some(ty) -> ty
-    }
-  }
-
-  fun getAllFields(): mutable Iterator<TFields> {
-    this.fields.values()
-  }
-
-  fun getBranches(): Array<TFields> {
-    this.fields.toArray()
-  }
-
   static fun createEmpty(tenv: TEnv, pos: PosRange): TObject {
     TObject(ArraySet::single(TFields::empty(tenv, pos)), pos)
   }
@@ -522,6 +498,32 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
     if (fieldsToRemove.isEmpty()) this else {
       this.map(fields -> fields.removeFields(fieldsToRemove))
     }
+  }
+
+  /* Accessors */
+
+  fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
+    result: ?TFields = None();
+    for (f in this.fields) {
+      !result = Some(
+        result match {
+        | None() -> f
+        | Some(acc) -> TFields::union(subst, tenv, acc, f)
+        },
+      );
+    };
+    result match {
+    | None() -> TFields::empty(tenv, this.pos)
+    | Some(ty) -> ty
+    }
+  }
+
+  fun getAllFields(): mutable Iterator<TFields> {
+    this.fields.values()
+  }
+
+  fun getBranches(): Array<TFields> {
+    this.fields.toArray()
   }
 }
 
