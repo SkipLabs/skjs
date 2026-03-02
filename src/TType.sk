@@ -562,6 +562,18 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     | None() -> this.getFields(subst, tenv).getTypeTypingError(fieldName, pos)
     }
   }
+
+  fun maybeGetRetType(subst: mutable Subst, tenv: TEnv): ?TType {
+    result: TType = TType::bottom(this.pos);
+    for (fields in this.branches) {
+      fields match {
+      | TFields{call => Some((_, TFuns(fun_, _)))} ->
+        !result = TType::union(subst, tenv, result, fun_.retType)
+      | TFields{call => None()} -> return None()
+      }
+    };
+    Some(result)
+  }
 }
 
 const kAlgebraicBranchFieldName: String = "kind";

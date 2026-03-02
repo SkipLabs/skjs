@@ -1049,9 +1049,9 @@ base class TEnv{
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
-      obj.getFields(subst, this) match {
-      | TFields{call => Some((_, TFuns(fun_, _)))} -> fun_.retType
-      | _ -> return None()
+      obj.maybeGetRetType(subst, this) match {
+      | Some(retType) -> retType
+      | None() -> return None()
       }
     | _ -> return None()
     };
@@ -1073,9 +1073,9 @@ base class TEnv{
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
-      obj.getFields(subst, this) match {
-      | TFields{call => Some((_, TFuns(nextFun, _)))} -> nextFun.retType
-      | _ -> return None()
+      obj.maybeGetRetType(subst, this) match {
+      | Some(retType) -> retType
+      | None() -> return None()
       }
     | _ -> return None()
     };
