@@ -442,7 +442,7 @@ base class Variance {
 /***************************************************************************/
 
 // Regular Typescript (open) object type
-class TObject(private fields: ArraySet<TFields>) extends SType {
+class TObject private (private fields: ArraySet<TFields>) extends SType {
   /* Constructors */
 
   static fun createSingleBranch(tFields: TFields, pos: PosRange): TObject {
