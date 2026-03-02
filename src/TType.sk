@@ -442,7 +442,7 @@ base class Variance {
 /***************************************************************************/
 
 // Regular Typescript (open) object type
-class TObject private (private fields: ArraySet<TFields>) extends SType {
+class TObject private (private branches: ArraySet<TFields>) extends SType {
   /* Constructors */
 
   static fun createSingleBranch(tFields: TFields, pos: PosRange): TObject {
@@ -478,12 +478,12 @@ class TObject private (private fields: ArraySet<TFields>) extends SType {
   /* Transformers */
 
   fun map(f: TFields -> TFields): TObject {
-    TObject(this.fields.mapToSet(f), this.pos)
+    TObject(this.branches.mapToSet(f), this.pos)
   }
 
   fun mapOpt(f: TFields -> ?TFields): ?TObject {
-    newFields = this.fields.filterMap(f);
-    if (newFields.isEmpty()) None() else Some(this with {fields => newFields})
+    branches = this.branches.filterMap(f);
+    if (branches.isEmpty()) None() else Some(this with {branches})
   }
 
   fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TObject {
@@ -508,7 +508,7 @@ class TObject private (private fields: ArraySet<TFields>) extends SType {
 
   fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
     result: ?TFields = None();
-    for (f in this.fields) {
+    for (f in this.branches) {
       !result = Some(
         result match {
         | None() -> f
@@ -523,11 +523,11 @@ class TObject private (private fields: ArraySet<TFields>) extends SType {
   }
 
   fun getAllFields(): mutable Iterator<TFields> {
-    this.fields.values()
+    this.branches.values()
   }
 
   fun getBranches(): Array<TFields> {
-    this.fields.toArray()
+    this.branches.toArray()
   }
 }
 
