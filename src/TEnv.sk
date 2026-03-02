@@ -993,9 +993,8 @@ base class TEnv{
       baseType.getSTypes(subst, this, Covariant()).flatMap(sTypes ->
         sTypes.singleElt()
       ) match {
-      | Some(obj @ TObject(_, _)) ->
-        fields = obj.getFields(subst, this);
-        fields.getType(subst, this, propertyName.value, expr.pos)
+      | Some(obj @ TObject _) ->
+        obj.getType(subst, this, propertyName.value, expr.pos)
       | _ ->
         typingError(
           Array[
@@ -1062,9 +1061,7 @@ base class TEnv{
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
-      obj
-        .getFields(subst, this)
-        .maybeGetType(subst, this, "next", pos, false) match {
+      obj.maybeGetType(subst, this, "next", pos) match {
       | Some(t) -> t
       | None() -> return None()
       }
@@ -1087,8 +1084,7 @@ base class TEnv{
     nextResultType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(obj @ TObject(_, _)) ->
-      obj.getFields(subst, this).maybeGetType(subst, this, "value", pos, false)
+    | Some(obj @ TObject(_, _)) -> obj.maybeGetType(subst, this, "value", pos)
     | _ -> None()
     }
   }

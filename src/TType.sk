@@ -534,6 +534,34 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
   fun getBranches(): Array<TFields> {
     this.branches.toArray()
   }
+
+  fun maybeGetType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fieldName: String,
+    pos: PosRange,
+  ): ?TType {
+    result = TType::bottom(pos);
+    for (fields in this.branches) {
+      fields.maybeGetType(subst, tenv, fieldName, pos, false) match {
+      | None() -> return None()
+      | Some(ty) -> !result = TType::union(subst, tenv, result, ty)
+      }
+    };
+    Some(result)
+  }
+
+  fun getType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fieldName: String,
+    pos: PosRange,
+  ): TType {
+    this.maybeGetType(subst, tenv, fieldName, pos) match {
+    | Some(res) -> res
+    | None() -> this.getFields(subst, tenv).getTypeTypingError(fieldName, pos)
+    }
+  }
 }
 
 const kAlgebraicBranchFieldName: String = "kind";
