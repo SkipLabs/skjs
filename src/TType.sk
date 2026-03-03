@@ -365,7 +365,14 @@ class TType private {
     while (!todo.isEmpty()) {
       inst = todo.pop();
       tyDef = inst match {
-      | TSInst(name, targs) -> tenv.instantiate(subst, name, targs)
+      | tsinst @ TSInst(name, targs) ->
+        subst.seenExpansion.maybeGet(tsinst) match {
+        | None() ->
+          expandedType = tenv.instantiate(subst, name, targs);
+          subst.!seenExpansion[tsinst] = expandedType;
+          expandedType
+        | Some(expandedType) -> expandedType
+        }
       | tInter @ TInter _ -> tInter.expand(subst, tenv)
       | tvar @ TVar _ ->
         expandTVars match {
