@@ -510,7 +510,7 @@ base class TEnv{
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
-        metType = TType::single(TObject::createCall(this, metTFuns));
+        metType = TType::single(TObject::createCall(metTFuns));
         fd.name match {
         | FNNormal(name) -> FKName(name, TString())
         | FNComputed(keyExpr) ->
@@ -966,7 +966,7 @@ base class TEnv{
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.default(CGNode::create(AnonymousFunDef(fd)));
           return TType::single(
-            TObject::createCall(this, this.funDecl(tcenvb, false, fd, cgNode)),
+            TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
           )
         | Class _ -> return this.newStatic(tcenvb, varName)
         | _ -> void
@@ -1292,7 +1292,7 @@ base class TEnv{
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
         | FNEmpty() -> !call = Some(tFuns)
         | simpleFieldName @ SimpleFieldName _ ->
-          decl = TType::single(TObject::createCall(this, tFuns));
+          decl = TType::single(TObject::createCall(tFuns));
           simpleFieldName match {
           | FNNormal(name) -> FKName(name, TString())
           | FNComputed(keyExpr) ->
