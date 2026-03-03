@@ -456,6 +456,7 @@ base class STErrorOnTFields(
   | STRecFieldsCall(?STErrorOnTFuns)
   | STRecFieldsNew(?STErrorOnTFuns)
   | STRecFieldsIndexValue(STErrorOnTType, TIndexField, TIndexField)
+  | STRecFieldsIndexKeyKinds(TIndexField, TIndexField)
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TIndexField)
   | STRecFieldsIndexField(STErrorOnTType, TIndexField, TField)
   | STRecFieldsField(?STErrorOnTType, TField, FieldMismatchKind)
@@ -512,6 +513,17 @@ base class STErrorOnTFields(
           ),
         ],
         err.toError(detailForRec),
+      )
+    | STRecFieldsIndexKeyKinds(index1, index2, _fields1, _fields2) ->
+      (
+        List[
+          (
+            index1.pos,
+            `Index signature '${index1.keyKinds}' is missing in source type`,
+          ),
+          (index2.pos, `Required by index signature '${index2.keyKinds}'`),
+        ],
+        List.Nil(),
       )
     | STRecFieldsFieldIndex(err, field1, index2, _fields1, _fields2) ->
       (
@@ -598,6 +610,10 @@ extension class TFields {
     (index1o, index2o) match {
     | (_, None()) -> void
     | (Some(index1), Some(index2)) ->
+      // Check key coverage: sub's key space must cover super's key space
+      if (!index2.keyKinds.isCoveredBy(index1.keyKinds)) {
+        return STRecFieldsIndexKeyKinds(index1, index2, fields1, fields2)
+      };
       TType::isSub(
         subst,
         tenv,
