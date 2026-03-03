@@ -294,3 +294,47 @@ type LiteralIndex = { [k: "a" | "b"]: number };
 
 // @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type GenericIndex<K> = { [k: K]: number };
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 21: Cross-key-kind index assignability
+///////////////////////////////////////////////////////////////////////////////
+
+interface StringIdxNum {
+  [key: string]: number;
+}
+interface NumberIdxNum {
+  [key: number]: number;
+}
+
+// TS: number-indexed NOT assignable to string-indexed (missing string index)
+// TODO: Invalid return type
+function numIdxToStrIdx(n: NumberIdxNum): StringIdxNum {
+  return n;
+}
+
+// TS: string-indexed IS assignable to number-indexed
+// TODO: should not error, will fix in commit 7
+function strIdxToNumIdx(s: StringIdxNum): NumberIdxNum {
+  return s;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 22: Value type widening in cross-kind assignability
+///////////////////////////////////////////////////////////////////////////////
+
+interface StringIdxWide {
+  [key: string]: number | string;
+}
+
+// Narrow value type assignable to wide value type
+function narrowToWide(s: StringIdxNum): StringIdxWide {
+  // FIXME: TS accepts this (number is subtype of number | string)
+  // @skjs-expect-error Invalid return type
+  return s;
+}
+
+// Wide value type NOT assignable to narrow value type
+function wideToNarrow(w: StringIdxWide): StringIdxNum {
+  // @skjs-expect-error Invalid return type
+  return w;
+}
