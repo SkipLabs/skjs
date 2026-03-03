@@ -342,3 +342,34 @@ function wideToNarrow(w: StringIdxWide): StringIdxNum {
   // @skjs-expect-error Invalid return type
   return w;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 23: Field types must be compatible with index value types
+///////////////////////////////////////////////////////////////////////////////
+
+interface BadFieldIndex {
+  [key: string]: number;
+  x: string;
+}
+
+interface GoodFieldIndex {
+  [key: string]: number;
+  x: number;
+}
+
+// Number index value must be subtype of string index value
+interface BadDualIdx {
+  [key: string]: string;
+  [key: number]: number;
+}
+
+interface GoodDualIdx {
+  [key: string]: number | string;
+  [key: number]: number;
+}
+
+// Numeric-named field must be compatible with number index
+interface BadNumField {
+  [key: number]: number;
+  "0": string;
+}
