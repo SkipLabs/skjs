@@ -85,14 +85,16 @@ base class TEnv{
     };
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
 
-    tdef = this.defMap.getType(subst, name);
+    tcenvb: mutable TCEnvBase = subst;
+
+    tdef = this.defMap.getType(tcenvb, name);
     clauses = tdef match {
     | TypeDef{tdefParams} -> tdefParams
     | Class{tparams} -> tparams
     | Enum _ -> Array[]
     };
     if (targs.targs.size() > clauses.size()) {
-      subst.error(
+      tcenvb.error(
         Array[
           (
             name.pos,
@@ -110,9 +112,9 @@ base class TEnv{
     for (i => tparam in clauses) {
       targ = if (i < targs.targs.size()) targs.targs[i] else {
         tparam.default match {
-        | Some(default) -> this.normalize(subst, default)
+        | Some(default) -> this.normalize(tcenvb, default)
         | None() ->
-          subst.error(
+          tcenvb.error(
             Array[
               (
                 name.pos,
@@ -126,7 +128,7 @@ base class TEnv{
       tparam.constraint match {
       | None() -> void
       | Some(cstr) ->
-        cstrTy = this.normalize(subst, cstr);
+        cstrTy = this.normalize(tcenvb, cstr);
         // Clone substitution: constraint checking should verify compatibility
         // but NOT permanently grow type variables. Growing here would close the
         // variable to its constraint, preventing later unification with more
@@ -134,7 +136,7 @@ base class TEnv{
         TType::isSub(subst.clone(), this, targ, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
-          subst.error(
+          tcenvb.error(
             Array[
               (name.pos, "Constraint not satisfied"),
               (targ.pos, `This is of type: ${targ}`),
@@ -148,8 +150,8 @@ base class TEnv{
     };
 
     result = tdef match {
-    | ta @ TypeDef _ -> this.normalize(subst, ta.body)
-    | Class _ -> this.new(subst, name, targs.targs)
+    | ta @ TypeDef _ -> this.normalize(tcenvb, ta.body)
+    | Class _ -> this.new(tcenvb, name, targs.targs)
     | Enum _ -> typingError(Array[(name.pos, "TODO: instantiate Enum")])
     };
     !this.subst = savedTypeSubst;
