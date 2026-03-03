@@ -245,11 +245,12 @@ extension class TypeChecker {
             isReadonly => Some(e1.pos),
             type => TType::top(e.pos),
           };
-          if (key is FKSymbol _) {
-            TObject(ArraySet::single(TFields::singleSymbolField(field)), e1.pos)
+          tFields = if (key is FKSymbol _) {
+            TFields::singleSymbolField(field)
           } else {
-            TObject(ArraySet::single(TFields::singleField(field)), e1.pos)
-          }
+            TFields::singleField(field)
+          };
+          TObject::createSingleBranch(tFields, e1.pos)
         })
       } else {
         None()

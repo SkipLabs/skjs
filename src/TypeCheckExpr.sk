@@ -82,9 +82,8 @@ extension class TypeChecker {
             ],
           )
         }
-      | Some(obj @ TObject(_, _)) ->
-        fields = obj.getFields(tcenv.subst, this);
-        eltType = this.getIteratorElementType(tcenv.subst, fields, pos) match {
+      | Some(obj @ TObject _) ->
+        eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
         | Some(t) -> t
         | None() ->
           typingError(
@@ -826,10 +825,8 @@ extension class TypeChecker {
         fields![field.name] = field
       };
       obj = TType::single(
-        TObject(
-          ArraySet::single(
-            TFields::create{tenv => this, pos, fields, symbolFields, indexes},
-          ),
+        TObject::createSingleBranch(
+          TFields::create{tenv => this, pos, fields, symbolFields, indexes},
           pos,
         ),
       );
@@ -874,9 +871,9 @@ extension class TypeChecker {
       tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
-      | Some(obj @ TObject(_, _)) ->
-        obj.getFields(tcenv.subst, this) match {
-        | TFields{call => Some((optional, tfuns))} ->
+      | Some(obj @ TObject _) ->
+        obj.maybeGetCall(tcenv.subst, this) match {
+        | Some((optional, tfuns)) ->
           if (optional) {
             tcenv.error(
               Array[
@@ -886,7 +883,7 @@ extension class TypeChecker {
             )
           };
           tfuns
-        | _ ->
+        | None() ->
           typingError(
             Array[
               (pos, "Invalid call"),
@@ -935,23 +932,23 @@ extension class TypeChecker {
         subExprTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
           stypes.singleElt()
         ) match {
-        | Some(obj @ TObject(_, objPos)) ->
-          obj.getFields(tcenv.subst, this) match {
-          | TFields{new => Some((optional, f))} ->
+        | Some(obj @ TObject _) ->
+          obj.maybeGetNew(tcenv.subst, this) match {
+          | Some((optional, f)) ->
             if (optional) {
               tcenv.error(
                 Array[
                   (pos, "Invalid new"),
-                  (objPos, `${subExprTy} may not have a constructor`),
+                  (obj.pos, `${subExprTy} may not have a constructor`),
                 ],
               )
             };
             this.call(tcenv, pos, f, tArgs, args, mostPrecise)
-          | TFields{new => None()} ->
+          | None() ->
             typingError(
               Array[
                 (pos, "Invalid new"),
-                (objPos, `${subExprTy} has no constructor`),
+                (obj.pos, `${subExprTy} has no constructor`),
               ],
             )
           }
@@ -1841,7 +1838,7 @@ extension class TypeChecker {
         newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
         | None() -> TType::bottom(objPos)
         | Some(mergedFields) ->
-          TType::single(TObject(ArraySet::single(mergedFields), objPos))
+          TType::single(TObject::createSingleBranch(mergedFields, objPos))
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
           this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
@@ -1956,9 +1953,8 @@ extension class TypeChecker {
         spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
           stypes.singleElt()
         ) match {
-        | Some(obj @ TObject(_, _)) ->
-          fields = obj.getFields(tcenv.subst, this);
-          this.getIteratorElementType(tcenv.subst, fields, argExpr.pos) match {
+        | Some(obj @ TObject _) ->
+          this.getIteratorElementType(tcenv.subst, obj, argExpr.pos) match {
           | None() ->
             tcenv.error(
               Array[

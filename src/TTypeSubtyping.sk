@@ -1296,8 +1296,8 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): STResult<TObject> {
-    for (fields1 in obj1.fields) {
-      isSub = for (fields2 in obj2.fields) {
+    for (fields1 in obj1.branches) {
+      isSub = for (fields2 in obj2.branches) {
         savedSubst = subst.save();
         TFields::isSub(subst, tenv, fields1, fields2) match {
         | STOk() -> break true

@@ -240,16 +240,14 @@ base class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
-    TObject(
-      ArraySet::single(
-        TFields::create{
-          tenv => this,
-          pos => className.pos,
-          fields,
-          symbolFields,
-          indexes,
-        },
-      ),
+    TObject::createSingleBranch(
+      TFields::create{
+        tenv => this,
+        pos => className.pos,
+        fields,
+        symbolFields,
+        indexes,
+      },
       className.pos,
     )
   }
@@ -285,17 +283,15 @@ base class TEnv{
     | Some(tfuns) -> tfuns
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
-    TObject(
-      ArraySet::single(
-        TFields::create{
-          tenv => this,
-          pos,
-          fields,
-          symbolFields,
-          indexes,
-          new => Some(new),
-        },
-      ),
+    TObject::createSingleBranch(
+      TFields::create{
+        tenv => this,
+        pos,
+        fields,
+        symbolFields,
+        indexes,
+        new => Some(new),
+      },
       pos,
     )
   }
@@ -797,7 +793,7 @@ base class TEnv{
       )
     | TAObject(fields) ->
       tFields = this.createTFields(tcenvb, fields, pos, isTopLevelConst);
-      TType::single(TObject(ArraySet::single(tFields), pos))
+      TType::single(TObject::createSingleBranch(tFields, pos))
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])
@@ -997,9 +993,8 @@ base class TEnv{
       baseType.getSTypes(subst, this, Covariant()).flatMap(sTypes ->
         sTypes.singleElt()
       ) match {
-      | Some(obj @ TObject(_, _)) ->
-        fields = obj.getFields(subst, this);
-        fields.getType(subst, this, propertyName.value, expr.pos)
+      | Some(obj @ TObject _) ->
+        obj.getType(subst, this, propertyName.value, expr.pos)
       | _ ->
         typingError(
           Array[
@@ -1038,12 +1033,12 @@ base class TEnv{
 
   fun getIteratorElementType(
     subst: mutable Subst,
-    fields: TFields,
+    tObj: TObject,
     pos: PosRange,
   ): ?TType {
     // Step 1: Look up [Symbol.iterator] symbol field
     iteratorMethodType = this.getSymbolIteratorUniqueId(subst, pos).flatMap(
-      uniqueId -> fields.maybeGetSymbolType(subst, this, uniqueId, pos, false),
+      uniqueId -> tObj.maybeGetSymbolType(subst, this, uniqueId, pos),
     ) match {
     | Some(t) -> t
     | None() -> return None()
@@ -1054,9 +1049,9 @@ base class TEnv{
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
-      obj.getFields(subst, this) match {
-      | TFields{call => Some((_, TFuns(fun_, _)))} -> fun_.retType
-      | _ -> return None()
+      obj.maybeGetRetType(subst, this) match {
+      | Some(retType) -> retType
+      | None() -> return None()
       }
     | _ -> return None()
     };
@@ -1066,9 +1061,7 @@ base class TEnv{
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
-      obj
-        .getFields(subst, this)
-        .maybeGetType(subst, this, "next", pos, false) match {
+      obj.maybeGetType(subst, this, "next", pos) match {
       | Some(t) -> t
       | None() -> return None()
       }
@@ -1080,9 +1073,9 @@ base class TEnv{
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
-      obj.getFields(subst, this) match {
-      | TFields{call => Some((_, TFuns(nextFun, _)))} -> nextFun.retType
-      | _ -> return None()
+      obj.maybeGetRetType(subst, this) match {
+      | Some(retType) -> retType
+      | None() -> return None()
       }
     | _ -> return None()
     };
@@ -1091,8 +1084,7 @@ base class TEnv{
     nextResultType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(obj @ TObject(_, _)) ->
-      obj.getFields(subst, this).maybeGetType(subst, this, "value", pos, false)
+    | Some(obj @ TObject(_, _)) -> obj.maybeGetType(subst, this, "value", pos)
     | _ -> None()
     }
   }

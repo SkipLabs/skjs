@@ -442,35 +442,20 @@ base class Variance {
 /***************************************************************************/
 
 // Regular Typescript (open) object type
-class TObject(private fields: ArraySet<TFields>) extends SType {
+//
+// Interpretation:
+// 〚 obj 〛 = ⨆ 〚 b 〛, for b in obj.branches
+//
+// Invariant: branches is not empty
+class TObject private (private branches: ArraySet<TFields>) extends SType {
   /* Constructors */
 
-  fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
-    result: ?TFields = None();
-    for (f in this.fields) {
-      !result = Some(
-        result match {
-        | None() -> f
-        | Some(acc) -> TFields::union(subst, tenv, acc, f)
-        },
-      );
-    };
-    result match {
-    | None() -> TFields::empty(tenv, this.pos)
-    | Some(ty) -> ty
-    }
-  }
-
-  fun getAllFields(): mutable Iterator<TFields> {
-    this.fields.values()
-  }
-
-  fun getBranches(): Array<TFields> {
-    this.fields.toArray()
+  static fun createSingleBranch(tFields: TFields, pos: PosRange): TObject {
+    TObject(ArraySet::single(tFields), pos)
   }
 
   static fun createEmpty(tenv: TEnv, pos: PosRange): TObject {
-    TObject(ArraySet::single(TFields::empty(tenv, pos)), pos)
+    TObject::createSingleBranch(TFields::empty(tenv, pos), pos)
   }
 
   static fun createCallWithPos(
@@ -478,8 +463,8 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
     tFuns: TFuns,
     pos: PosRange,
   ): TObject {
-    TObject(
-      ArraySet::single(TFields::create{tenv, pos, call => Some(tFuns)}),
+    TObject::createSingleBranch(
+      TFields::create{tenv, pos, call => Some(tFuns)},
       pos,
     )
   }
@@ -489,8 +474,8 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
   }
 
   static fun createNew(tenv: TEnv, tFuns: TFuns, pos: PosRange): TObject {
-    TObject(
-      ArraySet::single(TFields::create{tenv, pos, new => Some(tFuns)}),
+    TObject::createSingleBranch(
+      TFields::create{tenv, pos, new => Some(tFuns)},
       pos,
     )
   }
@@ -498,12 +483,12 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
   /* Transformers */
 
   fun map(f: TFields -> TFields): TObject {
-    TObject(this.fields.mapToSet(f), this.pos)
+    TObject(this.branches.mapToSet(f), this.pos)
   }
 
   fun mapOpt(f: TFields -> ?TFields): ?TObject {
-    newFields = this.fields.filterMap(f);
-    if (newFields.isEmpty()) None() else Some(this with {fields => newFields})
+    branches = this.branches.filterMap(f);
+    if (branches.isEmpty()) None() else Some(this with {branches})
   }
 
   fun mapCall(f: (?(Bool, TFuns)) -> ??(Bool, TFuns)): ?TObject {
@@ -522,6 +507,118 @@ class TObject(private fields: ArraySet<TFields>) extends SType {
     if (fieldsToRemove.isEmpty()) this else {
       this.map(fields -> fields.removeFields(fieldsToRemove))
     }
+  }
+
+  /* Accessors */
+
+  fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
+    result: ?TFields = None();
+    for (f in this.branches) {
+      !result = Some(
+        result match {
+        | None() -> f
+        | Some(acc) -> TFields::union(subst, tenv, acc, f)
+        },
+      );
+    };
+    result match {
+    | None() -> TFields::empty(tenv, this.pos)
+    | Some(ty) -> ty
+    }
+  }
+
+  fun getAllFields(): mutable Iterator<TFields> {
+    this.branches.values()
+  }
+
+  fun getBranches(): Array<TFields> {
+    this.branches.toArray()
+  }
+
+  fun maybeGetType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fieldName: String,
+    pos: PosRange,
+  ): ?TType {
+    result = TType::bottom(pos);
+    for (fields in this.branches) {
+      fields.maybeGetType(subst, tenv, fieldName, pos, false) match {
+      | None() -> return None()
+      | Some(ty) -> !result = TType::union(subst, tenv, result, ty)
+      }
+    };
+    Some(result)
+  }
+
+  fun getType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fieldName: String,
+    pos: PosRange,
+  ): TType {
+    this.maybeGetType(subst, tenv, fieldName, pos) match {
+    | Some(res) -> res
+    | None() -> this.getFields(subst, tenv).getTypeTypingError(fieldName, pos)
+    }
+  }
+
+  fun maybeGetSymbolType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    uniqueId: String,
+    pos: PosRange,
+  ): ?TType {
+    result = TType::bottom(pos);
+    for (fields in this.branches) {
+      fields.maybeGetSymbolType(subst, tenv, uniqueId, pos, false) match {
+      | None() -> return None()
+      | Some(ty) -> !result = TType::union(subst, tenv, result, ty)
+      }
+    };
+    Some(result)
+  }
+
+  fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
+    result: ?(Bool, TFuns) = None();
+    for (fields in this.branches) {
+      (fields, result) match {
+      | (TFields{call => None()}, _) -> return None()
+      | (TFields{call => first @ Some _}, None()) -> !result = first
+      | (TFields{call => Some((opt2, tFuns2))}, Some((opt1, tFuns1))) ->
+        !result = Some(
+          (opt1 || opt2, TFuns::union(subst, tenv, tFuns1, tFuns2)),
+        )
+      }
+    };
+    result
+  }
+
+  fun maybeGetRetType(subst: mutable Subst, tenv: TEnv): ?TType {
+    result: TType = TType::bottom(this.pos);
+    for (fields in this.branches) {
+      fields match {
+      | TFields{call => Some((_, TFuns(fun_, _)))} ->
+        !result = TType::union(subst, tenv, result, fun_.retType)
+      | TFields{call => None()} -> return None()
+      }
+    };
+    Some(result)
+  }
+
+  fun maybeGetNew(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
+    result: ?(Bool, TFuns) = None();
+    for (fields in this.branches) {
+      (fields, result) match {
+      | (TFields{new => None()}, _) -> return None()
+      | (TFields{new => first @ Some _}, None()) -> !result = first
+      | (TFields{new => Some((opt2, tFuns2))}, Some((opt1, tFuns1))) ->
+        !result = Some(
+          (opt1 || opt2, TFuns::union(subst, tenv, tFuns1, tFuns2)),
+        )
+      }
+    };
+    result
   }
 }
 
@@ -633,8 +730,7 @@ class ATFullType(fullType: TType) extends ArrayType {
       stypes.singleElt()
     ) match {
     | Some(obj @ TObject(_, objectPos)) ->
-      fields = obj.getFields(subst, tenv);
-      tenv.getIteratorElementType(subst, fields, objectPos)
+      tenv.getIteratorElementType(subst, obj, objectPos)
     | _ -> None()
     }
   }
