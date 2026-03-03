@@ -868,30 +868,23 @@ extension class TypeChecker {
       this.showTypes(tcenv, args, true, pos)
     | Call(f, targs, args) ->
       fty = this.expr(tcenv, f, mostPrecise);
-      tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
+      tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
+        stypes.singleElt() match {
+        | Some(obj @ TObject _) -> obj.maybeGetCall(tcenv.subst, this)
+        | _ -> None()
+        }
       ) match {
-      | Some(obj @ TObject _) ->
-        obj.maybeGetCall(tcenv.subst, this) match {
-        | Some((optional, tfuns)) ->
-          if (optional) {
-            tcenv.error(
-              Array[
-                (pos, "Invalid call"),
-                (fty.pos, `Type ${fty} may not be a function`),
-              ],
-            )
-          };
-          tfuns
-        | None() ->
-          typingError(
+      | Some((optional, tfuns)) ->
+        if (optional) {
+          tcenv.error(
             Array[
               (pos, "Invalid call"),
-              (fty.pos, `Type ${fty} is not a function`),
+              (fty.pos, `Type ${fty} may not be a function`),
             ],
           )
-        }
-      | _ ->
+        };
+        tfuns
+      | None() ->
         typingError(
           Array[
             (pos, "Invalid call"),
