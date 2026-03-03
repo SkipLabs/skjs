@@ -486,8 +486,8 @@ declare class Error {
   constructor(cause?: string);
 }
 
-declare type Record<K extends string, V> = {
-  [index: K]: V;
+declare type StringRecord<V> = {
+  [index: string]: V;
 };
 
 type NonNullable<T> = T & {};
