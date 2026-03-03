@@ -1160,15 +1160,9 @@ class TFields private {
     TField,
   > = InternalKeyedArrayMap::empty(),
   indexes: Array<TIndexField> = Array[],
-  /* There can be several index fields.
-     Typescript allows only one per object, but is fine with
-     intersecting two objects with index fields, so it's like having
-     two of them. This array is expected to have zero or one element
-     most of the time, or at most a few elements.
-
-     TODO: allow only subtypes of string | number (| symbol)
-     TODO: if a field name is included an index key type, then its
-      type must be a subtype of the index key type
+  /* There can be several index fields (from intersections).
+     Key types are validated by resolveIndexKeyKinds.
+     Field/index value type compatibility is checked by createWithIndexes.
   */
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
