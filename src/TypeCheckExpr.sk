@@ -1664,7 +1664,6 @@ extension class TypeChecker {
    * Errors if:
    * - Object has been used (LOUsed state)
    * - Adding field inside a loop
-   * - Field is the discriminant kind field
    */
   private fun assignLocalObject(
     tcenv: mutable TCEnv,
