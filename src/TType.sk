@@ -1192,6 +1192,109 @@ class TFields private {
     }
   }
 
+  // Like create but validates field types against index value types.
+  static fun createWithIndexes{
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    fields: readonly Map<FieldNameString, TField> = Map[],
+    symbolFields: readonly Map<FieldNameString, TField> = Map[],
+    indexes: readonly Vector<TIndexField> = Vector[],
+    new: ?TFuns = None(),
+    call: ?TFuns = None(),
+  }: TFields {
+    mergedIndexes = TIndexField::mergeByKeyKinds(indexes);
+    for (idx in mergedIndexes) {
+      // Validate named fields against this index
+      for (field in fields.values()) {
+        if (idx.keyKinds.contains(TString())) {
+          subst = Subst::mcreate(tcenvb);
+          TType::isSub(subst, tenv, field.get, idx.valueTypeGet) match {
+          | STOk() -> void
+          | STErrorOnTType _ ->
+            tcenvb.error(
+              Array[
+                (
+                  field.pos,
+                  `Property '${field.name.value}' of type '${
+                    field.get
+                  }' is not assignable to '${idx.keyKinds}' index type '${
+                    idx.valueTypeGet
+                  }'`,
+                ),
+              ],
+            )
+          }
+        };
+        if (
+          idx.keyKinds.contains(TNum()) &&
+          field.name.value.toIntOption().isSome()
+        ) {
+          subst = Subst::mcreate(tcenvb);
+          TType::isSub(subst, tenv, field.get, idx.valueTypeGet) match {
+          | STOk() -> void
+          | STErrorOnTType _ ->
+            tcenvb.error(
+              Array[
+                (
+                  field.pos,
+                  `Property '${field.name.value}' of type '${
+                    field.get
+                  }' is not assignable to '${idx.keyKinds}' index type '${
+                    idx.valueTypeGet
+                  }'`,
+                ),
+              ],
+            )
+          }
+        }
+      };
+      // Validate number index value is subtype of string index value
+      if (idx.keyKinds.hasString) {
+        for (other in mergedIndexes) {
+          if (
+            other.keyKinds.hasNumber &&
+            !(other.keyKinds.hasString) &&
+            other != idx
+          ) {
+            subst = Subst::mcreate(tcenvb);
+            TType::isSub(
+              subst,
+              tenv,
+              other.valueTypeGet,
+              idx.valueTypeGet,
+            ) match {
+            | STOk() -> void
+            | STErrorOnTType _ ->
+              tcenvb.error(
+                Array[
+                  (
+                    other.pos,
+                    `'number' index type '${
+                      other.valueTypeGet
+                    }' is not assignable to 'string' index type '${
+                      idx.valueTypeGet
+                    }'`,
+                  ),
+                ],
+              )
+            }
+          }
+        }
+      }
+    };
+    TFields{
+      fields => InternalKeyedArrayMap::createFromSortedIterator(
+        fields.values().collect(Array).sortedBy(x ~> x.name).values(),
+      ),
+      symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
+        symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
+      ),
+      indexes => mergedIndexes,
+      new => new.map(tfuns ~> (false, tfuns)),
+      call => call.map(tfuns ~> (false, tfuns)),
+    }
+  }
+
   static fun singleField(field: TField): TFields {
     TFields{fields => InternalKeyedArrayMap::single(field)}
   }

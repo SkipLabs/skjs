@@ -337,3 +337,37 @@ function wideToNarrow(w: StringIdxWide): StringIdxNum {
   // @skjs-expect-error Invalid return type
   return w;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 23: Field types must be compatible with index value types
+///////////////////////////////////////////////////////////////////////////////
+
+interface BadFieldIndex {
+  [key: string]: number;
+  // @skjs-expect-error Property 'x' of type 'string' is not assignable to 'string' index type 'number'
+  x: string;
+}
+
+interface GoodFieldIndex {
+  [key: string]: number;
+  x: number;
+}
+
+// Number index value must be subtype of string index value
+interface BadDualIdx {
+  [key: string]: string;
+  // @skjs-expect-error 'number' index type 'number' is not assignable to 'string' index type 'string'
+  [key: number]: number;
+}
+
+interface GoodDualIdx {
+  [key: string]: number | string;
+  [key: number]: number;
+}
+
+// Numeric-named field must be compatible with number index
+interface BadNumField {
+  [key: number]: number;
+  // @skjs-expect-error Property '0' of type 'string' is not assignable to 'number' index type 'number'
+  "0": string;
+}
