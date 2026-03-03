@@ -196,14 +196,50 @@ base class STErrorOnObject(
   o2: TObject,
 ) extends STErrorOnSTypeBase<TObject> {
   children =
-  | STRecObject(STErrorOnTFields)
+  | STRecObject(List<(TFields, STErrorOnTFields)>, fields1: TFields)
 
   fun toError(
     _pos1: PosRange,
     _pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)>
-  | STRecObject(err, o1, o2) -> err.toError(o1.pos, o2.pos, detail)
+  | STRecObject(errs, fields1, o1, o2) ->
+    msgs = List::createFromItems(errs)
+      .map(fields2_err -> {
+        (fields2, err) = fields2_err;
+        if (o2.getBranches().size() > 1) {
+          msgs = err.toError(o1.pos, o2.pos, detail.decreaseIntermediate());
+          if (detail.maxIntermediateDepth > 0) {
+            List.Cons(
+              (o1.pos, `Type ${fields1}`),
+              List.Cons(
+                (o2.pos, `is not compatible with type ${fields2}`),
+                msgs,
+              ),
+            )
+          } else {
+            msgs
+          }
+        } else {
+          err.toError(o1.pos, o2.pos, detail)
+        }
+      })
+      .flatten();
+    if (detail.maxIntermediateDepth > 0) {
+      if (msgs.isEmpty()) {
+        !msgs = List[
+          (o1.pos, `Type ${fields1}`),
+          (o2.pos, `is not compatible with ${o2}`),
+        ];
+      };
+      if (o1.getBranches().size() > 1 != o2.getBranches().size() > 1) {
+        !msgs = List.Cons(
+          (o1.pos, `Type ${o1}`),
+          List.Cons((o2.pos, `is not compatible with ${o2}`), msgs),
+        )
+      }
+    };
+    msgs
 }
 
 base class STErrorOnSTypes(
@@ -1297,16 +1333,18 @@ extension class TObject {
     obj2: TObject,
   ): STResult<TObject> {
     for (fields1 in obj1.branches) {
+      errors = List[];
       for (fields2 in obj2.branches) {
         savedSubst = subst.save();
         TFields::isSub(subst, tenv, fields1, fields2) match {
         | STOk() -> break void
-        | _ ->
+        | err @ STErrorOnTFields _ ->
+          !errors = List.Cons((fields2, err), errors);
           subst.restore(savedSubst);
           continue
         }
       } else {
-        return STErrorOnTObject(obj1, obj2)
+        return STRecObject(errors, fields1, obj1, obj2)
       }
     };
     STOk()
