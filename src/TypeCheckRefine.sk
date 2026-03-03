@@ -332,7 +332,7 @@ extension class TypeChecker {
             if (target) {
               Some(
                 tObj.map(tf ->
-                  if (!tf.indexes.isEmpty()) /* TODO: refine */ tf else {
+                  if (tf.hasIndex()) /* TODO: refine */ tf else {
                     fieldToAdd = TField::create{
                       pos => e1.pos,
                       name => key.value(),

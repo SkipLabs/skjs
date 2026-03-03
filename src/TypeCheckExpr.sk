@@ -1839,9 +1839,7 @@ extension class TypeChecker {
           | Some(TPrimValue(k, _, _)) -> Some(k)
           | _ -> None()
           };
-          matchingIndex = keyKind.flatMap(k ->
-            fields.indexes.find(idx -> idx.keyKinds.contains(k))
-          );
+          matchingIndex = keyKind.flatMap(k -> fields.indexForKeyKind(k));
           matchingIndex match {
           | Some(indexField) ->
             this.checkSubType(
@@ -1929,9 +1927,7 @@ extension class TypeChecker {
       | Some(TPrimValue(k, _, _)) -> Some(k)
       | _ -> None()
       };
-      matchingIndex = keyKind.flatMap(k ->
-        fields.indexes.find(idx -> idx.keyKinds.contains(k))
-      );
+      matchingIndex = keyKind.flatMap(k -> fields.indexForKeyKind(k));
       matchingIndex match {
       | Some(indexField) ->
         this.checkSubType(
