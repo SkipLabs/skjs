@@ -1325,8 +1325,7 @@ extension class TObject {
         | STOk() -> break void
         | err @ STErrorOnTFields _ ->
           !errors = List.Cons((fields2, err), errors);
-          subst.restore(savedBranchSubst);
-          continue
+          subst.restore(savedBranchSubst)
         }
       } else {
         subst.restore(savedSubst);
