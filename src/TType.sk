@@ -463,7 +463,7 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     tFuns: TFuns,
     pos: PosRange,
   ): TObject {
-    TObject::createSingleBranch(TFields::create{pos, call => Some(tFuns)}, pos)
+    TObject::createSingleBranch(TFields::create{call => Some(tFuns)}, pos)
   }
 
   static fun createCall(tenv: TEnv, tFuns: TFuns): TObject {
@@ -471,7 +471,7 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
   }
 
   static fun createNew(_tenv: TEnv, tFuns: TFuns, pos: PosRange): TObject {
-    TObject::createSingleBranch(TFields::create{pos, new => Some(tFuns)}, pos)
+    TObject::createSingleBranch(TFields::create{new => Some(tFuns)}, pos)
   }
 
   /* Transformers */
@@ -1090,7 +1090,6 @@ class TFields private {
   }
 
   static fun create{
-    pos: PosRange,
     fields: readonly Map<FieldNameString, TField> = Map[],
     symbolFields: readonly Map<FieldNameString, TField> = Map[],
     indexes: readonly Vector<TIndexField> = Vector[],

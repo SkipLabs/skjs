@@ -243,7 +243,7 @@ base class TEnv{
     | None() -> void
     };
     TObject::createSingleBranch(
-      TFields::create{pos => className.pos, fields, symbolFields, indexes},
+      TFields::create{fields, symbolFields, indexes},
       className.pos,
     )
   }
@@ -280,7 +280,7 @@ base class TEnv{
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
     TObject::createSingleBranch(
-      TFields::create{pos, fields, symbolFields, indexes, new => Some(new)},
+      TFields::create{fields, symbolFields, indexes, new => Some(new)},
       pos,
     )
   }
@@ -1219,7 +1219,7 @@ base class TEnv{
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
-    pos: PosRange,
+    _pos: PosRange,
     isTopLevelConst: Bool = false,
   ): TFields {
     fieldsMap = mutable Map[];
@@ -1321,7 +1321,6 @@ base class TEnv{
       }
     };
     tFields = TFields::create{
-      pos,
       fields => fieldsMap,
       symbolFields,
       indexes,
