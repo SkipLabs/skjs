@@ -246,6 +246,7 @@ extension class TIndexField {
         pos => x.pos,
         keyName => x.keyName,
         keyType,
+        keyKinds => x.keyKinds,
         valueTypeGet,
         valueTypeSet,
       },

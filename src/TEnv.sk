@@ -488,12 +488,14 @@ base class TEnv{
           acc![f.name] = f
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
+          keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
+              keyKinds,
               isReadonly => fieldIsReadonly,
               valueType,
             },
@@ -1032,6 +1034,49 @@ base class TEnv{
     }
   }
 
+  fun resolveIndexKeyKinds(
+    tcenvb: mutable TCEnvBase,
+    pos: PosRange,
+    keyType: TType,
+  ): IndexKeyKinds {
+    subst = Subst::mcreate(tcenvb);
+    hasString = false;
+    hasNumber = false;
+    hasSymbol = false;
+    valid = keyType.getSTypes(subst, this, Covariant()) match {
+    | Some(stypes) ->
+      stypes.all(stype ->
+        stype match {
+        | TPrimValue(TString(), None(), _) ->
+          !hasString = true;
+          true
+        | TPrimValue(TNum(), None(), _) ->
+          !hasNumber = true;
+          true
+        | TPrimValue(TSymbol(), None(), _) ->
+          !hasSymbol = true;
+          true
+        | _ -> false
+        }
+      )
+    | _ -> false
+    };
+    if (valid) {
+      IndexKeyKinds::create(hasString, hasNumber, hasSymbol) match {
+      | Some(res) -> return res
+      | None() -> void
+      }
+    };
+    typingError(
+      Array[
+        (
+          pos,
+          "An index signature parameter type must be string, number, or symbol",
+        ),
+      ],
+    )
+  }
+
   fun getIteratorElementType(
     subst: mutable Subst,
     tObj: TObject,
@@ -1286,12 +1331,14 @@ base class TEnv{
           }
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
+          keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
               keyType,
+              keyKinds,
               isReadonly => readonly_.map(r -> r.pos),
               valueType,
             },

@@ -293,28 +293,28 @@ function aliasIndexAccess(x: AliasIndex): number | undefined {
 // Test 20: Invalid key types (all rejected)
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO: An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type NeverIndex = { [k: never]: number };
 
-// TODO: An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type BooleanIndex = { [k: boolean]: number };
 
-// TODO: An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type NullIndex = { [k: null]: number };
 
-// TODO: An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type UndefinedIndex = { [k: undefined]: number };
 
-// TODO: An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type StringOrBoolIndex = { [k: string | boolean]: number };
 
-// TODO: An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type ObjectIndex = { [k: object]: number };
 
-// TODO: An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type LiteralIndex = { [k: "a" | "b"]: number };
 
-// TODO: An index signature parameter type must be string, number, or symbol
+// @skjs-expect-error An index signature parameter type must be string, number, or symbol
 type GenericIndex<K> = { [k: K]: number };
 
 ///////////////////////////////////////////////////////////////////////////////
