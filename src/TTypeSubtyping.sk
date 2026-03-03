@@ -470,7 +470,6 @@ base class STErrorOnTFields(
   children =
   | STRecFieldsCall(?STErrorOnTFuns)
   | STRecFieldsNew(?STErrorOnTFuns)
-  | STRecFieldsIndexKey(STErrorOnTType, TIndexField, TIndexField)
   | STRecFieldsIndexValue(STErrorOnTType, TIndexField, TIndexField)
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TIndexField)
   | STRecFieldsIndexField(STErrorOnTType, TIndexField, TField)
@@ -517,17 +516,6 @@ base class STErrorOnTFields(
       (
         List[(pos1, `They differ in their constructor signature`)],
         err.toError(pos1, pos2, detailForRec),
-      )
-    | STRecFieldsIndexKey(err, index1, index2, _fields1, _fields2, _) ->
-      (
-        List[
-          (index1.pos, `Key type of index field ${index1}`),
-          (
-            index2.pos,
-            `is not compatible with key type of index field ${index2}`,
-          ),
-        ],
-        err.toError(detailForRec),
       )
     | STRecFieldsIndexValue(err, index1, index2, _fields1, _fields2, _) ->
       (
@@ -626,11 +614,6 @@ extension class TFields {
     (index1o, index2o) match {
     | (_, None()) -> void
     | (Some(index1), Some(index2)) ->
-      TType::isSub(subst, tenv, index2.keyType, index1.keyType) match {
-      | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexKey(err, index1, index2, fields1, fields2)
-      | STOk() -> void
-      };
       TType::isSub(
         subst,
         tenv,
@@ -662,29 +645,10 @@ extension class TFields {
       for (f1 in fields1.fields) {
         // Clone subst for all index compatibility checks to avoid growing
         // TVars that would interfere with subsequent named field checks.
-        // The named field checks in the Both case below are more specific
-        // and should drive TVar inference.
-        f1keyType = TType::single(
-          TPrimValue::single(TString(), f1.name.value, f1.pos),
-        );
-        keyMatches = TType::isSub(
-          subst.clone(),
-          tenv,
-          f1keyType,
-          index2.keyType,
-        ) is STOk();
+        keyMatches = index2.keyKinds.contains(TString());
         // For numeric field names, also try matching as a number key
-        // to handle number index signatures like [key: number]: T
         if (!keyMatches && isJSNumericString(f1.name.value)) {
-          f1keyTypeNum = TType::single(
-            TPrimValue::single(TNum(), f1.name.value, f1.pos),
-          );
-          !keyMatches = TType::isSub(
-            subst.clone(),
-            tenv,
-            f1keyTypeNum,
-            index2.keyType,
-          ) is STOk()
+          !keyMatches = index2.keyKinds.contains(TNum())
         };
         if (keyMatches) {
           TType::isSub(subst.clone(), tenv, f1.get, index2.valueTypeGet) match {
@@ -722,27 +686,10 @@ extension class TFields {
         index1o match {
         | None() -> void
         | Some(index1) ->
-          f2keyType = TType::single(
-            TPrimValue::single(TString(), f2.name.value, f2.pos),
-          );
-          keyMatches = TType::isSub(
-            subst.clone(),
-            tenv,
-            f2keyType,
-            index1.keyType,
-          ) is STOk();
+          keyMatches = index1.keyKinds.contains(TString());
           // For numeric field names, also try matching as a number key
-          // to handle number index signatures like [key: number]: T
           if (!keyMatches && isJSNumericString(f2.name.value)) {
-            f2keyTypeNum = TType::single(
-              TPrimValue::single(TNum(), f2.name.value, f2.pos),
-            );
-            !keyMatches = TType::isSub(
-              subst.clone(),
-              tenv,
-              f2keyTypeNum,
-              index1.keyType,
-            ) is STOk()
+            !keyMatches = index1.keyKinds.contains(TNum())
           };
           if (keyMatches) {
             TType::isSub(

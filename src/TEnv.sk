@@ -494,7 +494,6 @@ base class TEnv{
             TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
-              keyType,
               keyKinds,
               isReadonly => fieldIsReadonly,
               valueType,
@@ -1337,7 +1336,6 @@ base class TEnv{
             TIndexField::create{
               pos => indexName.pos,
               keyName => indexName.value,
-              keyType,
               keyKinds,
               isReadonly => readonly_.map(r -> r.pos),
               valueType,
@@ -1428,8 +1426,12 @@ base class TEnv{
               !symbols = symbols.set(symbolField.name.value);
             };
             for (index in fields.indexes) {
-              // TODO: convert numbers to strings
-              !result = TType::union(subst, this, result, index.keyType);
+              !result = TType::union(
+                subst,
+                this,
+                result,
+                index.keyKinds.toTType(subst, this, index.pos),
+              );
             }
           }
         | prim @ TPrimValue _ ->

@@ -422,44 +422,32 @@ extension class TypeChecker {
                 fields.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
-              remainingIdxType = TType::single(remainingIdxSType);
-              keyResult = TType::isSub(
-                tcenv.subst,
-                this,
-                remainingIdxType,
-                index.keyType,
-              );
+              keyMatches = index.keyKinds.contains(remainingIdxSType.kind);
               // If string literal access fails on a number index, retry as
               // number literal for canonical numeric strings (e.g. obj["0"]
               // on { [x: number]: T }).
-              !keyResult = keyResult match {
-              | STOk() -> keyResult
-              | origErr @ STErrorOnTType _ ->
-                remainingIdxSType match {
+              if (!keyMatches) {
+                !keyMatches = remainingIdxSType match {
                 | TPrimValue(
                   TString(),
                   Some(lits),
-                  litPos,
+                  _,
                 ) if (lits.values().all(lit -> isJSNumericString(lit.val))) ->
-                  numType = TType::single(
-                    TPrimValue(TNum(), Some(lits), litPos),
-                  );
-                  TType::isSub(
-                    tcenv.subst,
-                    this,
-                    numType,
-                    index.keyType,
-                  ) match {
-                  | STOk() -> STOk()
-                  | _ -> origErr
-                  }
-                | _ -> origErr
+                  index.keyKinds.contains(TNum())
+                | _ -> false
                 }
               };
-              keyResult match {
-              | STOk() -> void
-              | err @ STErrorOnTType _ ->
-                tcenv.error(Array[(pos, "Invalid index key")], Some(err))
+              if (!keyMatches) {
+                tcenv.error(
+                  Array[
+                    (
+                      pos,
+                      `Invalid index key: expected ${index.keyKinds}, got ${
+                        remainingIdxSType.kind
+                      }`,
+                    ),
+                  ],
+                )
               };
               ty = if (isLValue) index.valueTypeSet else {
                 TType::unionUndefined(
@@ -1844,15 +1832,16 @@ extension class TypeChecker {
             fd.set,
           )
         | None() ->
-          matchingIndex = fields.indexes.find(indexField -> {
-            clonedSubst = tcenv.subst.clone();
-            TType::isSub(
-              clonedSubst,
-              this,
-              key.toType(),
-              indexField.keyType,
-            ) is STOk _
-          });
+          keyKind = key
+            .toType()
+            .getSTypes(tcenv.subst, this, Covariant())
+            .flatMap(stypes ~> stypes.singleElt()) match {
+          | Some(TPrimValue(k, _, _)) -> Some(k)
+          | _ -> None()
+          };
+          matchingIndex = keyKind.flatMap(k ->
+            fields.indexes.find(idx -> idx.keyKinds.contains(k))
+          );
           matchingIndex match {
           | Some(indexField) ->
             this.checkSubType(
@@ -1934,10 +1923,15 @@ extension class TypeChecker {
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
       fields = obj.getFields(tcenv.subst, this);
-      matchingIndex = fields.indexes.find(indexField -> {
-        clonedSubst = tcenv.subst.clone();
-        TType::isSub(clonedSubst, this, keyType, indexField.keyType) is STOk _
-      });
+      keyKind = keyType
+        .getSTypes(tcenv.subst, this, Covariant())
+        .flatMap(stypes ~> stypes.singleElt()) match {
+      | Some(TPrimValue(k, _, _)) -> Some(k)
+      | _ -> None()
+      };
+      matchingIndex = keyKind.flatMap(k ->
+        fields.indexes.find(idx -> idx.keyKinds.contains(k))
+      );
       matchingIndex match {
       | Some(indexField) ->
         this.checkSubType(

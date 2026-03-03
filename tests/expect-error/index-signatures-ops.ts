@@ -141,13 +141,11 @@ function testCrossKindInterNum(x: StrNumInter): number | undefined {
 ///////////////////////////////////////////////////////////////////////////////
 
 function strIdxToNumIdx(s: StrIdx): NumIdx {
-  // @skjs-expect-error Invalid return type
   return s;
 }
 
 // Number-indexed NOT assignable to string-indexed
 function numIdxToStrIdx(n: NumIdx): StrIdx {
-  // @skjs-expect-error Invalid return type
   return n;
 }
 

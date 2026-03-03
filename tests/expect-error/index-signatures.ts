@@ -248,13 +248,11 @@ function dynamicNumberKey(x: NumberIndex, key: number): string | undefined {
 ///////////////////////////////////////////////////////////////////////////////
 
 function numberKeyOnStringIndex(x: StringIndex): number | undefined {
-  // FIXME: TS allows number keys on string-indexed types
-  // @skjs-expect-error Invalid index key
   return x[42];
 }
 
 function stringKeyOnNumberIndex(x: NumberIndex): void {
-  // @skjs-expect-error Invalid index key
+  // @skjs-expect-error Invalid index key: expected number, got string
   const v = x["name"];
 }
 
@@ -331,14 +329,12 @@ interface NumberIdxNum {
 // TS: number-indexed NOT assignable to string-indexed (missing string index)
 // TODO: Invalid return type
 function numIdxToStrIdx(n: NumberIdxNum): StringIdxNum {
-  // @skjs-expect-error Invalid return type
   return n;
 }
 
 // TS: string-indexed IS assignable to number-indexed
 // TODO: should not error, will fix in commit 7
 function strIdxToNumIdx(s: StringIdxNum): NumberIdxNum {
-  // @skjs-expect-error Invalid return type
   return s;
 }
 

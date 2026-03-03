@@ -10,10 +10,10 @@ function testNumericStringAccessOnNumberIndex(): void {
   const d: string | undefined = obj["-1"];
 
   // Non-numeric string access fails
-  // @skjs-expect-error Invalid index key
+  // @skjs-expect-error Invalid index key: expected number, got string
   const e = obj["foo"];
 
   // Non-canonical numeric string access fails
-  // @skjs-expect-error Invalid index key
+  // @skjs-expect-error Invalid index key: expected number, got string
   const f = obj["01"];
 }
