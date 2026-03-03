@@ -1297,18 +1297,17 @@ extension class TObject {
     obj2: TObject,
   ): STResult<TObject> {
     for (fields1 in obj1.branches) {
-      isSub = for (fields2 in obj2.branches) {
+      for (fields2 in obj2.branches) {
         savedSubst = subst.save();
         TFields::isSub(subst, tenv, fields1, fields2) match {
-        | STOk() -> break true
+        | STOk() -> break void
         | _ ->
           subst.restore(savedSubst);
           continue
         }
       } else {
-        false
-      };
-      if (!isSub) return STErrorOnTObject(obj1, obj2);
+        return STErrorOnTObject(obj1, obj2)
+      }
     };
     STOk()
   }
