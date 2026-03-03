@@ -259,6 +259,16 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Refinement scope**: Control-flow refinements occur when the RHS is a local variable without index signatures and the LHS is a single literal (string or symbol). The checker adds/removes the specific field or symbol field; it does not reason about dynamic keys or nested objects.
 - **Workaround**: To narrow on a field's presence, ensure the RHS object is held in a local variable and the LHS key is a literal type. For dynamic keys (e.g., string variables or values produced by expressions), prefer an explicit index signature or guarded property access (`const value = obj[key]; if (value !== undefined) { ... }`).
 
+### 28. Index Signatures
+- **Rule**: Index signatures `[key: T]: V` accept key types `string`, `number`, `symbol`, or unions of these. Other key types (boolean, object, never, literal types, generics) are rejected.
+- **Key kind coverage**: A `string` index covers number keys (since JS coerces numbers to strings). A `number` index only covers number keys.
+- **Field/index validation**: Named field types must be subtypes of the matching index value type. In dual-index types, the number index value must be a subtype of the string index value.
+- **Bracket access**: `obj[key]` returns `valueType | undefined` for matching index signatures. Number keys can access string-indexed types.
+- **Subtyping**: When comparing indexed types, the subtype's key coverage must cover the supertype's. A string-indexed type is assignable to a number-indexed type (string covers number), but not vice versa.
+- **Utility type**: Use `StringRecord<V>` instead of `Record<K, V>` for string-indexed record types.
+- **TypeScript difference**: SKJS checks index signatures with separate get/set types (like fields), making readonly index types stricter than TypeScript.
+- **Verified by**: `tests/expect-error/index-signatures.ts`, `tests/expect-error/index-signatures-ops.ts`
+
 ### 27. Readonly Field Soundness (Stricter than TypeScript)
 - **Rule**: A type with a `readonly` field cannot be assigned where a mutable field is expected
 - **TypeScript difference**: TypeScript allows this (unsound — a mutable alias can write through a readonly field)
