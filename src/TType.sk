@@ -454,8 +454,8 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     TObject(ArraySet::single(tFields), pos)
   }
 
-  static fun createEmpty(tenv: TEnv, pos: PosRange): TObject {
-    TObject::createSingleBranch(TFields::empty(tenv, pos), pos)
+  static fun createEmpty(_tenv: TEnv, pos: PosRange): TObject {
+    TObject::createSingleBranch(TFields::empty(), pos)
   }
 
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
@@ -512,7 +512,7 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
       );
     };
     result match {
-    | None() -> TFields::empty(tenv, this.pos)
+    | None() -> TFields::empty()
     | Some(ty) -> ty
     }
   }
@@ -1081,7 +1081,7 @@ class TFields private {
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
 } uses XXHashable, Orderable {
-  static fun empty(_tenv: TEnv, _pos: PosRange): TFields {
+  static fun empty(): TFields {
     TFields{}
   }
 
