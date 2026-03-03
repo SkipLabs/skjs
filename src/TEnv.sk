@@ -720,7 +720,7 @@ base class TEnv{
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
-      TType::single(TObject::createCallWithPos(this, tfuns, pos))
+      TType::single(TObject::createCallWithPos(tfuns, pos))
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
