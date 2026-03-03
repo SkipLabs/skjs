@@ -1306,7 +1306,7 @@ class TFields private {
   fun isEmpty(): Bool {
     this.fields.isEmpty() &&
       this.symbolFields.isEmpty() &&
-      this.indexes.isEmpty() &&
+      !this.hasIndex() &&
       this.new.isNone() &&
       this.call.isNone()
   }
@@ -1335,6 +1335,15 @@ class TFields private {
 
   fun filterMapFields(f: TField -> ?TField): TFields {
     this with {fields => this.fields.filterMap(f)}
+  }
+
+  fun hasIndex(): Bool {
+    !this.indexes.isEmpty()
+  }
+
+  // Find an index that accepts the given key kind.
+  fun indexForKeyKind(kind: TPrimValueKind): ?TIndexField {
+    this.indexes.find(idx -> idx.keyKinds.contains(kind))
   }
 
   fun maybeSingleIndex(): ?TIndexField {

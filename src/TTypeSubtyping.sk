@@ -468,9 +468,9 @@ base class STErrorOnTFields(
   ): List<(PosRange, String)> {
     showTypes =
       !this.fields1.fields.isEmpty() ||
-      !this.fields1.indexes.isEmpty() ||
+      this.fields1.hasIndex() ||
       !this.fields2.fields.isEmpty() ||
-      !this.fields2.indexes.isEmpty() ||
+      this.fields2.hasIndex() ||
       (
         this.fields1.new,
         this.fields1.call,
