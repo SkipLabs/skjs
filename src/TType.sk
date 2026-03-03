@@ -1026,6 +1026,14 @@ class IndexKeyKinds private {
     }
   }
 
+  // Returns true if `this` key space is covered by `other`.
+  // A string index covers number keys (TS coerces numbers to strings).
+  fun isCoveredBy(other: IndexKeyKinds): Bool {
+    (this.hasString <= other.hasString) &&
+      (this.hasNumber <= (other.hasNumber || other.hasString)) &&
+      (this.hasSymbol <= other.hasSymbol)
+  }
+
   fun toTType(subst: mutable Subst, tenv: TEnv, pos: PosRange): TType {
     result = TType::bottom(pos);
     if (this.hasString) {

@@ -146,6 +146,7 @@ function strIdxToNumIdx(s: StrIdx): NumIdx {
 
 // Number-indexed NOT assignable to string-indexed
 function numIdxToStrIdx(n: NumIdx): StrIdx {
+  // @skjs-expect-error Invalid return type
   return n;
 }
 
