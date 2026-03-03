@@ -1316,18 +1316,20 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): STResult<TObject> {
+    savedSubst = subst.save();
     for (fields1 in obj1.branches) {
       errors = List[];
       for (fields2 in obj2.branches) {
-        savedSubst = subst.save();
+        savedBranchSubst = subst.save();
         TFields::isSub(subst, tenv, fields1, fields2) match {
         | STOk() -> break void
         | err @ STErrorOnTFields _ ->
           !errors = List.Cons((fields2, err), errors);
-          subst.restore(savedSubst);
+          subst.restore(savedBranchSubst);
           continue
         }
       } else {
+        subst.restore(savedSubst);
         return STRecObject(errors, fields1, obj1, obj2)
       }
     };
