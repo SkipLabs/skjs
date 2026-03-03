@@ -1671,9 +1671,7 @@ class Clause private (
   }
 
   fun getConstantString(): ?PrimLiteral {
-    if (!this.vars.isEmpty()) None() else {
-      this.stypes.flatMap(sTypes -> sTypes.getConstantString())
-    }
+    this.stypes.flatMap(sTypes -> sTypes.getConstantString())
   }
 
   fun isTop(): Bool {
