@@ -1309,22 +1309,6 @@ extension base class ArrayType {
   }
 }
 
-class STErrorOnTObject(
-  object1: TObject,
-  object2: TObject,
-) extends STErrorOnSTypeBase<TObject> {
-  fun toError(
-    _pos1: PosRange,
-    _pos2: PosRange,
-    _detail: STErrorDetail,
-  ): List<(PosRange, String)> {
-    List[
-      (this.object1.pos, `This is of type ${this.object1}`),
-      (this.object2.pos, `is not compatible with type ${this.object2}`),
-    ]
-  }
-}
-
 extension class TObject {
   static fun isSub(
     subst: mutable Subst,
