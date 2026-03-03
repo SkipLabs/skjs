@@ -466,7 +466,7 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     TObject::createCallWithPos(tFuns, tFuns.pos)
   }
 
-  static fun createNew(_tenv: TEnv, tFuns: TFuns, pos: PosRange): TObject {
+  static fun createNew(tFuns: TFuns, pos: PosRange): TObject {
     TObject::createSingleBranch(TFields::create{new => Some(tFuns)}, pos)
   }
 

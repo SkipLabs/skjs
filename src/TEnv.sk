@@ -724,7 +724,7 @@ base class TEnv{
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
-      TType::single(TObject::createNew(this, tfuns, pos))
+      TType::single(TObject::createNew(tfuns, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
