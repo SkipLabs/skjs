@@ -148,7 +148,23 @@ const koString: keyof StringIndex = "anything";
 const koNumber: keyof NumberIndex = 42;
 
 ///////////////////////////////////////////////////////////////////////////////
-// Test 12: Index signature in interface
+// Test 12: StringRecord<V> utility type
+///////////////////////////////////////////////////////////////////////////////
+
+function stringRecordAccess(x: StringRecord<number>): number | undefined {
+  return x["key"];
+}
+
+function assignStringRecordToStringIndex(x: StringRecord<number>): StringIndex {
+  return x;
+}
+
+function assignStringIndexToStringRecord(x: StringIndex): StringRecord<number> {
+  return x;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 13: Index signature in interface
 ///////////////////////////////////////////////////////////////////////////////
 
 interface StringIndexed {
