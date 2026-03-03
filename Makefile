@@ -69,6 +69,7 @@ check-file-in-docker:
 .PHONY: clean
 clean:
 	skargo clean
+	cd skjs-tests && skargo clean
 
 # install the repo pre-commit hook locally
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh
