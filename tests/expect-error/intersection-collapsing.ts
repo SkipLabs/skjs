@@ -31,3 +31,14 @@ function testDoubleCollapse<V>(v: V): void {
   const result = merge4<V, V, V, V>(v, v, v, v);
   const x: V = result.value;
 }
+
+// FIXME: SKJS treats { (): string } & { (): number } as never (incompatible
+// call signatures), while TypeScript treats it as an overloaded callable.
+// Before commit 520787bb, TObject#inter returned an empty TObject instead of
+// None (bottom), keeping a phantom empty type in the union.
+declare function getCallableInter(): ({ (): string } & { (): number }) | string;
+
+function testCallableInter(): string {
+  // @skjs-expect-error Invalid return type
+  return getCallableInter();
+}
