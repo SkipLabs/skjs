@@ -502,19 +502,12 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
   /* Accessors */
 
   fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
-    result: ?TFields = None();
-    for (f in this.branches) {
-      !result = Some(
-        result match {
-        | None() -> f
-        | Some(acc) -> TFields::union(subst, tenv, acc, f)
-        },
-      );
+    branches = this.branches.values();
+    result = branches.next().fromSome();
+    for (fields in branches) {
+      !result = TFields::union(subst, tenv, result, fields)
     };
-    result match {
-    | None() -> TFields::empty()
-    | Some(ty) -> ty
-    }
+    result
   }
 
   fun getAllFields(): mutable Iterator<TFields> {
