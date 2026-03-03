@@ -454,30 +454,20 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     TObject(ArraySet::single(tFields), pos)
   }
 
-  static fun createEmpty(tenv: TEnv, pos: PosRange): TObject {
-    TObject::createSingleBranch(TFields::empty(tenv, pos), pos)
+  static fun createEmpty(pos: PosRange): TObject {
+    TObject::createSingleBranch(TFields::empty(), pos)
   }
 
-  static fun createCallWithPos(
-    tenv: TEnv,
-    tFuns: TFuns,
-    pos: PosRange,
-  ): TObject {
-    TObject::createSingleBranch(
-      TFields::create{tenv, pos, call => Some(tFuns)},
-      pos,
-    )
+  static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
+    TObject::createSingleBranch(TFields::create{call => Some(tFuns)}, pos)
   }
 
-  static fun createCall(tenv: TEnv, tFuns: TFuns): TObject {
-    TObject::createCallWithPos(tenv, tFuns, tFuns.pos)
+  static fun createCall(tFuns: TFuns): TObject {
+    TObject::createCallWithPos(tFuns, tFuns.pos)
   }
 
-  static fun createNew(tenv: TEnv, tFuns: TFuns, pos: PosRange): TObject {
-    TObject::createSingleBranch(
-      TFields::create{tenv, pos, new => Some(tFuns)},
-      pos,
-    )
+  static fun createNew(tFuns: TFuns, pos: PosRange): TObject {
+    TObject::createSingleBranch(TFields::create{new => Some(tFuns)}, pos)
   }
 
   /* Transformers */
@@ -512,19 +502,12 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
   /* Accessors */
 
   fun getFields(subst: mutable Subst, tenv: TEnv): TFields {
-    result: ?TFields = None();
-    for (f in this.branches) {
-      !result = Some(
-        result match {
-        | None() -> f
-        | Some(acc) -> TFields::union(subst, tenv, acc, f)
-        },
-      );
+    branches = this.branches.values();
+    result = branches.next().fromSome();
+    for (fields in branches) {
+      !result = TFields::union(subst, tenv, result, fields)
     };
-    result match {
-    | None() -> TFields::empty(tenv, this.pos)
-    | Some(ty) -> ty
-    }
+    result
   }
 
   fun getAllFields(): mutable Iterator<TFields> {
@@ -1091,13 +1074,11 @@ class TFields private {
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
 } uses XXHashable, Orderable {
-  static fun empty(_tenv: TEnv, _pos: PosRange): TFields {
+  static fun empty(): TFields {
     TFields{}
   }
 
   static fun create{
-    tenv: TEnv,
-    pos: PosRange,
     fields: readonly Map<FieldNameString, TField> = Map[],
     symbolFields: readonly Map<FieldNameString, TField> = Map[],
     indexes: readonly Vector<TIndexField> = Vector[],

@@ -690,7 +690,7 @@ extension class TypeChecker {
               | None() -> CGNode::create(AnonymousFunDef(fd))
               },
             );
-            break TType::single(TObject::createCall(this, tFuns))
+            break TType::single(TObject::createCall(tFuns))
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv, c.name);
             break staticClass
@@ -813,7 +813,7 @@ extension class TypeChecker {
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           tFuns = this.funDecl(tcenv, false, fd, cgNode);
-          (name, TType::single(TObject::createCall(this, tFuns)))
+          (name, TType::single(TObject::createCall(tFuns)))
         };
         field = TField::create{
           pos => name.pos,
@@ -826,7 +826,7 @@ extension class TypeChecker {
       };
       obj = TType::single(
         TObject::createSingleBranch(
-          TFields::create{tenv => this, pos, fields, symbolFields, indexes},
+          TFields::create{fields, symbolFields, indexes},
           pos,
         ),
       );
@@ -1574,7 +1574,6 @@ extension class TypeChecker {
 
     TType::single(
       TObject::createCall(
-        this,
         TFuns::singleFun(
           TFun(
             Array[],
@@ -1830,8 +1829,6 @@ extension class TypeChecker {
           )
         };
         allNewFields = TFields::create{
-          tenv => this,
-          pos,
           fields => newFieldsMap,
           symbolFields => newSymbolFieldsMap,
         };

@@ -243,13 +243,7 @@ base class TEnv{
     | None() -> void
     };
     TObject::createSingleBranch(
-      TFields::create{
-        tenv => this,
-        pos => className.pos,
-        fields,
-        symbolFields,
-        indexes,
-      },
+      TFields::create{fields, symbolFields, indexes},
       className.pos,
     )
   }
@@ -286,14 +280,7 @@ base class TEnv{
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
     TObject::createSingleBranch(
-      TFields::create{
-        tenv => this,
-        pos,
-        fields,
-        symbolFields,
-        indexes,
-        new => Some(new),
-      },
+      TFields::create{fields, symbolFields, indexes, new => Some(new)},
       pos,
     )
   }
@@ -523,7 +510,7 @@ base class TEnv{
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
-        metType = TType::single(TObject::createCall(this, metTFuns));
+        metType = TType::single(TObject::createCall(metTFuns));
         fd.name match {
         | FNNormal(name) -> FKName(name, TString())
         | FNComputed(keyExpr) ->
@@ -733,11 +720,11 @@ base class TEnv{
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
-      TType::single(TObject::createCallWithPos(this, tfuns, pos))
+      TType::single(TObject::createCallWithPos(tfuns, pos))
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
-      TType::single(TObject::createNew(this, tfuns, pos))
+      TType::single(TObject::createNew(tfuns, pos))
     | TANew _ -> typingError(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
@@ -800,7 +787,7 @@ base class TEnv{
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TObject::createEmpty(this, pos))
+      TType::single(TObject::createEmpty(pos))
 
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(tcenvb, ty)]))
@@ -979,7 +966,7 @@ base class TEnv{
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.default(CGNode::create(AnonymousFunDef(fd)));
           return TType::single(
-            TObject::createCall(this, this.funDecl(tcenvb, false, fd, cgNode)),
+            TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
           )
         | Class _ -> return this.newStatic(tcenvb, varName)
         | _ -> void
@@ -1232,7 +1219,7 @@ base class TEnv{
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
-    pos: PosRange,
+    _pos: PosRange,
     isTopLevelConst: Bool = false,
   ): TFields {
     fieldsMap = mutable Map[];
@@ -1305,7 +1292,7 @@ base class TEnv{
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
         | FNEmpty() -> !call = Some(tFuns)
         | simpleFieldName @ SimpleFieldName _ ->
-          decl = TType::single(TObject::createCall(this, tFuns));
+          decl = TType::single(TObject::createCall(tFuns));
           simpleFieldName match {
           | FNNormal(name) -> FKName(name, TString())
           | FNComputed(keyExpr) ->
@@ -1334,8 +1321,6 @@ base class TEnv{
       }
     };
     tFields = TFields::create{
-      tenv => this,
-      pos,
       fields => fieldsMap,
       symbolFields,
       indexes,

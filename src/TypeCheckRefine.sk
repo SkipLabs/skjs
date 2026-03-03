@@ -118,7 +118,7 @@ extension class TypeChecker {
           if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };
-      default = if (target) Some(TObject::createEmpty(this, typePos)) else {
+      default = if (target) Some(TObject::createEmpty(typePos)) else {
         None()
       };
       this.setLocalFilterMap(tcenv, local, default, filterMap)
