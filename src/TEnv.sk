@@ -243,13 +243,7 @@ base class TEnv{
     | None() -> void
     };
     TObject::createSingleBranch(
-      TFields::create{
-        tenv => this,
-        pos => className.pos,
-        fields,
-        symbolFields,
-        indexes,
-      },
+      TFields::create{pos => className.pos, fields, symbolFields, indexes},
       className.pos,
     )
   }
@@ -286,14 +280,7 @@ base class TEnv{
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
     TObject::createSingleBranch(
-      TFields::create{
-        tenv => this,
-        pos,
-        fields,
-        symbolFields,
-        indexes,
-        new => Some(new),
-      },
+      TFields::create{pos, fields, symbolFields, indexes, new => Some(new)},
       pos,
     )
   }
@@ -1334,7 +1321,6 @@ base class TEnv{
       }
     };
     tFields = TFields::create{
-      tenv => this,
       pos,
       fields => fieldsMap,
       symbolFields,
