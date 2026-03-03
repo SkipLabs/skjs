@@ -787,7 +787,7 @@ base class TEnv{
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])
       };
-      TType::single(TObject::createEmpty(this, pos))
+      TType::single(TObject::createEmpty(pos))
 
     | TAArray(ty) ->
       TType::inst(Name(pos, "Array"), TArgs(Array[this.normalize(tcenvb, ty)]))

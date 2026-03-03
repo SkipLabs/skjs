@@ -454,7 +454,7 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     TObject(ArraySet::single(tFields), pos)
   }
 
-  static fun createEmpty(_tenv: TEnv, pos: PosRange): TObject {
+  static fun createEmpty(pos: PosRange): TObject {
     TObject::createSingleBranch(TFields::empty(), pos)
   }
 
