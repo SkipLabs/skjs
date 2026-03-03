@@ -228,13 +228,11 @@ function dynamicNumberKey(x: NumberIndex, key: number): string | undefined {
 ///////////////////////////////////////////////////////////////////////////////
 
 function numberKeyOnStringIndex(x: StringIndex): number | undefined {
-  // FIXME: TS allows number keys on string-indexed types
-  // @skjs-expect-error Invalid index key
   return x[42];
 }
 
 function stringKeyOnNumberIndex(x: NumberIndex): void {
-  // @skjs-expect-error Invalid index key
+  // @skjs-expect-error Invalid index key: expected number, got string
   const v = x["name"];
 }
 

@@ -1065,7 +1065,6 @@ class IndexKeyKinds private {
 class TIndexField private {
   pos: PosRange,
   keyName: String,
-  keyType: TType,
   keyKinds: IndexKeyKinds,
   valueTypeGet: TType,
   valueTypeSet: TType,
@@ -1073,7 +1072,6 @@ class TIndexField private {
   static fun create{
     pos: PosRange,
     keyName: String,
-    keyType: TType,
     keyKinds: IndexKeyKinds,
     isReadonly: ?PosRange,
     valueType: TType,
@@ -1083,25 +1081,21 @@ class TIndexField private {
     | None() -> valueType
     | Some(roPos) -> TType::bottom(roPos)
     };
-    TIndexField{pos, keyName, keyType, keyKinds, valueTypeGet, valueTypeSet}
+    TIndexField{pos, keyName, keyKinds, valueTypeGet, valueTypeSet}
   }
 
   fun mapTypes(f: TType -> TType): TIndexField {
-    keyType = f(this.keyType);
     valueTypeGet = f(this.valueTypeGet);
     valueTypeSet = f(this.valueTypeSet);
-    this with {keyType, valueTypeGet, valueTypeSet}
+    this with {valueTypeGet, valueTypeSet}
   }
 
   fun toString(): String {
     prettyPrintIndexField(this)
   }
 
-  // Deduplicate indexes that share the same key type and value type.
-  // If one is not readonly, the merged result is not readonly.
-  // Indexes with different value types are kept as-is (proper merging
-  // requires subst/tenv which is not available here).
-  static fun mergeByKeyType(
+  // Deduplicate indexes that share the same key kinds and value type.
+  static fun mergeByKeyKinds(
     indexes: readonly Vector<TIndexField>,
   ): Array<TIndexField> {
     if (indexes.size() <= 1) return indexes.toArray();
@@ -1109,7 +1103,7 @@ class TIndexField private {
     for (idx in indexes) {
       if (
         !merged.any(e ->
-          e.keyType == idx.keyType &&
+          e.keyKinds == idx.keyKinds &&
             e.valueTypeGet == idx.valueTypeGet &&
             e.valueTypeSet == idx.valueTypeSet
         )
@@ -1184,7 +1178,7 @@ class TFields private {
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
-      indexes => TIndexField::mergeByKeyType(indexes),
+      indexes => TIndexField::mergeByKeyKinds(indexes),
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
     }

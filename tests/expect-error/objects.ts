@@ -51,7 +51,7 @@ function testMixedObjectNormalFieldIncorrectIndexing(obj: tIndex2): boolean {
 function testMixedObjectNormalFieldIncorrectIndexingType(
   obj: tIndex2,
 ): boolean | string | undefined {
-  // @ts-expect-error Invalid index key
+  // @ts-expect-error Invalid index key: expected number, got string
   return obj.missing;
 }
 

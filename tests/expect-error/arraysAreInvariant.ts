@@ -59,6 +59,6 @@ function readonlyArrayIsNotSubtypeOfArray(dogs: readonly Dog[]): Dog[] {
 // on ReadonlyArray because T in contravariant position prevents covariant subtyping.
 function readonlyArrayMissingMethods(xs: readonly number[]): void {
   // @skjs-expect-error Invalid call
-  // @skjs-expect-error Invalid index key
+  // @skjs-expect-error Invalid index key: expected number, got string
   xs.indexOf(1);
 }

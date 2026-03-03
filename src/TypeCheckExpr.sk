@@ -416,13 +416,18 @@ extension class TypeChecker {
                 fields.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
-              this.checkSubType(
-                tcenv,
-                pos,
-                "Invalid index key",
-                TType::single(remainingIdxSType),
-                index.keyType,
-              );
+              if (!index.keyKinds.contains(remainingIdxSType.kind)) {
+                tcenv.error(
+                  Array[
+                    (
+                      pos,
+                      `Invalid index key: expected ${index.keyKinds}, got ${
+                        remainingIdxSType.kind
+                      }`,
+                    ),
+                  ],
+                )
+              };
               ty = if (isLValue) index.valueTypeSet else {
                 TType::unionUndefined(
                   tcenv.subst,
@@ -1794,15 +1799,16 @@ extension class TypeChecker {
             fd.set,
           )
         | None() ->
-          matchingIndex = fields.indexes.find(indexField -> {
-            clonedSubst = tcenv.subst.clone();
-            TType::isSub(
-              clonedSubst,
-              this,
-              key.toType(),
-              indexField.keyType,
-            ) is STOk _
-          });
+          keyKind = key
+            .toType()
+            .getSTypes(tcenv.subst, this, Covariant())
+            .flatMap(stypes ~> stypes.singleElt()) match {
+          | Some(TPrimValue(k, _, _)) -> Some(k)
+          | _ -> None()
+          };
+          matchingIndex = keyKind.flatMap(k ->
+            fields.indexes.find(idx -> idx.keyKinds.contains(k))
+          );
           matchingIndex match {
           | Some(indexField) ->
             this.checkSubType(
@@ -1882,10 +1888,15 @@ extension class TypeChecker {
       .flatMap(stypes ~> stypes.singleElt()) match {
     | Some(obj @ TObject(_, _)) ->
       fields = obj.getFields(tcenv.subst, this);
-      matchingIndex = fields.indexes.find(indexField -> {
-        clonedSubst = tcenv.subst.clone();
-        TType::isSub(clonedSubst, this, keyType, indexField.keyType) is STOk _
-      });
+      keyKind = keyType
+        .getSTypes(tcenv.subst, this, Covariant())
+        .flatMap(stypes ~> stypes.singleElt()) match {
+      | Some(TPrimValue(k, _, _)) -> Some(k)
+      | _ -> None()
+      };
+      matchingIndex = keyKind.flatMap(k ->
+        fields.indexes.find(idx -> idx.keyKinds.contains(k))
+      );
       matchingIndex match {
       | Some(indexField) ->
         this.checkSubType(

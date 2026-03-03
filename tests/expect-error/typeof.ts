@@ -417,7 +417,7 @@ function testIncorrectFunctionRefinement(x: (() => number) | string): string {
 function testAccessWrongBranch(x: { a: number } | string): number {
   if (typeof x === "string") {
     // @skjs-expect-error Invalid return type
-    // @ts-expect-error Invalid index key
+    // @ts-expect-error Invalid index key: expected number, got string
     return x.a;
   } else {
     return x.a;

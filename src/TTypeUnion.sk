@@ -103,18 +103,12 @@ extension class TIndexField {
     x: TIndexField,
     y: TIndexField,
   ): ?TIndexField {
-    /* Currently over-approximating by a union
-       for { [f: 0 | 1]: 4 | 5 } | { [g: 1 | 2]: 5 | 6 },
-       the result would be { [f: 0]: 4 | 5, [fg: 1]: 4 | 5 | 6, [g: 2]: 5 | 6}
-       but we return { [f: 0 | 1 | 2]: 4 | 5 | 6 } */
     valueTypeGet = TType::union(subst, tenv, x.valueTypeGet, y.valueTypeGet);
     valueTypeSet = TType::inter(subst, tenv, x.valueTypeSet, y.valueTypeSet);
-    keyType = TType::union(subst, tenv, x.keyType, y.keyType);
     Some(
       TIndexField{
         pos => x.pos,
         keyName => x.keyName,
-        keyType,
         keyKinds => x.keyKinds,
         valueTypeGet,
         valueTypeSet,
