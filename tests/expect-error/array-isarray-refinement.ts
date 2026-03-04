@@ -138,7 +138,7 @@ function testWrongTypeInArrayBranch(x: Array<number> | Foo): Foo {
     // @ts-expect-error Invalid return type
     return x;
   } else {
-    // x is now refined to Foo, so this should work
+    // FIXME: x should be refined to Foo here, but SKJS doesn't narrow the else branch of Array.isArray()
     // @skjs-expect-error Invalid return type
     return x;
   }
