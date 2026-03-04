@@ -51,7 +51,34 @@ extension class TypeChecker {
   ): void {
     fieldType = this.expr(tcenv, otherExpr, true);
     fieldType.getSingleConstant() match {
-    | None() -> void
+    | None() ->
+      if (target) {
+        this.setLocalFilterMap(tcenv, local, None(), stype ->
+          stype match {
+          | tObj @ TObject _ ->
+            tObj.mapOpt(tFields -> {
+              tFields.maybeGetType(
+                tcenv.subst,
+                this,
+                fieldName,
+                local.pos,
+                false,
+              ) match {
+              | Some(branchFieldType) ->
+                overlap = TType::inter(
+                  tcenv.subst.clone(),
+                  this,
+                  branchFieldType,
+                  fieldType,
+                );
+                if (!overlap.isBottom()) Some(tFields) else None()
+              | None() -> Some(tFields)
+              }
+            })
+          | x -> Some(x)
+          }
+        )
+      }
     | Some(constant) ->
       this.setLocalFilterMap(tcenv, local, None(), stype ->
         stype match {

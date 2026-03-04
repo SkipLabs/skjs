@@ -205,7 +205,6 @@ type Tagged10 = { tag: 0 | 1; a: string } | { tag: 2; b: number };
 function testBasicNonSingletonFilter(obj: Tagged10, x: 0 | 1): void {
   if (obj.tag === x) {
     // { tag: 2 } filtered, .a accessible
-    // @skjs-expect-error Unbound field: a
     const a: string = obj.a;
   }
 }
@@ -216,7 +215,6 @@ type Wide10 = { field: 0 | 1 | 2 } | { field: 3 };
 function testFieldStaysWide(obj: Wide10, x: 0 | 1): void {
   if (obj.field === x) {
     // { field: 3 } filtered, but field NOT narrowed to 0|1
-    // @skjs-expect-error Invalid annotation
     const f: 0 | 1 | 2 = obj.field;
   }
 }
@@ -241,7 +239,6 @@ type Str10 = { kind: "a" | "b"; x: number } | { kind: "c"; y: string };
 function testStringNonSingletonFilter(obj: Str10, x: "a" | "b"): void {
   if (obj.kind === x) {
     // { kind: "c" } filtered
-    // @skjs-expect-error Unbound field: x
     const n: number = obj.x;
   }
 }
@@ -309,7 +306,6 @@ function testRhsFullNumber(obj: E10, x: number): void {
 // E2: Else branch of === not erroneously narrowed
 function testElseBranchNotNarrowed(obj: Tagged10, x: 0 | 1): void {
   if (obj.tag === x) {
-    // @skjs-expect-error Unbound field: a
     const a: string = obj.a;
   } else {
     // Else of === with non-singleton: no safe narrowing
@@ -320,7 +316,6 @@ function testElseBranchNotNarrowed(obj: Tagged10, x: 0 | 1): void {
 // E3: && chain propagates non-singleton refinement
 function testAndChain(obj: Tagged10, x: 0 | 1, cond: boolean): void {
   if (cond && obj.tag === x) {
-    // @skjs-expect-error Unbound field: a
     const a: string = obj.a;
   }
 }
