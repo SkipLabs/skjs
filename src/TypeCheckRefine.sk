@@ -8,16 +8,6 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     (e1, e2) match {
-    | (
-      Expr(_, EString(tag)),
-      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
-    )
-    | (
-      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
-      Expr(_, EString(tag)),
-    ) ->
-      this.evalFieldEquality(tcenv, local, fieldName, tag, target)
-
     | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
     | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
       this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
@@ -30,11 +20,23 @@ extension class TypeChecker {
     | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
       this.evalUndefinedEquality(tcenv, local, target)
 
+    | (
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
+      otherExpr,
+    )
+    | (
+      otherExpr,
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
+    ) ->
+      this.evalFieldEquality(tcenv, local, fieldName, otherExpr, target)
+
     | (Expr(pos, _), Expr(_, Var(Name(_, v @ "null"))))
     | (Expr(_, Var(Name(_, v @ "null"))), Expr(pos, _))
     | (Expr(pos, _), Expr(_, Var(Name(_, v @ "undefined"))))
     | (Expr(_, Var(Name(_, v @ "undefined"))), Expr(pos, _)) ->
-      tcenv.error(Array[(pos, `Only locals can be compared to ${v}`)])
+      tcenv.error(
+        Array[(pos, `Only locals and their fields can be compared to ${v}`)],
+      )
 
     | _ -> void
     }
@@ -44,11 +46,15 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     local: Name,
     fieldName: String,
-    tag: String,
+    otherExpr: Expr,
     target: Bool,
   ): void {
     if (fieldName != kAlgebraicBranchFieldName) return void;
-    this.evalAlgebraicBranchEquality(tcenv, local, fieldName, tag, target)
+    otherExpr.value match {
+    | EString(tag) ->
+      this.evalAlgebraicBranchEquality(tcenv, local, fieldName, tag, target)
+    | _ -> void
+    }
   }
 
   fun evalAlgebraicBranchEquality(

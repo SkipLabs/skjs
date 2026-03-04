@@ -22,11 +22,10 @@ function testLocalUndefinedRefinement(x: string | undefined): string {
 }
 
 // ============================================================
-// 2. obj.field === null / undefined (currently errors)
+// 2. obj.field === null / undefined (no refinement, no error)
 // ============================================================
 
 function testFieldNullComparison(obj: { val: string | null }): string {
-  // @skjs-expect-error Only locals can be compared to null
   if (obj.val === null) {
     return "null";
   }
@@ -36,7 +35,6 @@ function testFieldNullComparison(obj: { val: string | null }): string {
 function testFieldUndefinedComparison(obj: {
   val: string | undefined;
 }): string {
-  // @skjs-expect-error Only locals can be compared to undefined
   if (obj.val === undefined) {
     return "undef";
   }
@@ -44,7 +42,6 @@ function testFieldUndefinedComparison(obj: {
 }
 
 function testFieldNullReversed(obj: { val: number | null }): number {
-  // @skjs-expect-error Only locals can be compared to null
   if (null === obj.val) {
     return 0;
   }
@@ -175,7 +172,6 @@ function testProgressiveElimination(x: ABC): void {
 type NullableTag = { tag: "a"; va: number } | { tag: null; vn: string };
 
 function testFieldNullRefinement(x: NullableTag): void {
-  // @skjs-expect-error Only locals can be compared to null
   if (x.tag === null) {
     // @skjs-expect-error Invalid annotation
     const n: { tag: null; vn: string } = x;
@@ -183,7 +179,6 @@ function testFieldNullRefinement(x: NullableTag): void {
 }
 
 function testFieldNullElimination(x: NullableTag): void {
-  // @skjs-expect-error Only locals can be compared to null
   if (x.tag !== null) {
     // @skjs-expect-error Invalid annotation
     const n: { tag: "a"; va: number } = x;
@@ -193,7 +188,6 @@ function testFieldNullElimination(x: NullableTag): void {
 type UndefTag = { tag: "b"; vb: number } | { tag: undefined; vu: string };
 
 function testFieldUndefinedRefinement(x: UndefTag): void {
-  // @skjs-expect-error Only locals can be compared to undefined
   if (x.tag === undefined) {
     // @skjs-expect-error Invalid annotation
     const n: { tag: undefined; vu: string } = x;
@@ -201,7 +195,6 @@ function testFieldUndefinedRefinement(x: UndefTag): void {
 }
 
 function testFieldUndefinedElimination(x: UndefTag): void {
-  // @skjs-expect-error Only locals can be compared to undefined
   if (x.tag !== undefined) {
     // @skjs-expect-error Invalid annotation
     const n: { tag: "b"; vb: number } = x;
