@@ -192,3 +192,131 @@ function testFieldUndefinedElimination(x: UndefTag): void {
     const n: { tag: "b"; vb: number } = x;
   }
 }
+
+// ============================================================
+// 10. Non-singleton comparison type refinement
+// ============================================================
+
+// --- Positive tests (refinement filters branches) ---
+
+// P1: Basic — filter branch with no overlap
+type Tagged10 = { tag: 0 | 1; a: string } | { tag: 2; b: number };
+
+function testBasicNonSingletonFilter(obj: Tagged10, x: 0 | 1): void {
+  if (obj.tag === x) {
+    // { tag: 2 } filtered, .a accessible
+    const a: string = obj.a;
+  }
+}
+
+// P2: Partial overlap — kept branch field stays wide
+type Wide10 = { field: 0 | 1 | 2 } | { field: 3 };
+
+function testFieldStaysWide(obj: Wide10, x: 0 | 1): void {
+  if (obj.field === x) {
+    // { field: 3 } filtered, but field NOT narrowed to 0|1
+    // @skjs-expect-error Invalid annotation
+    const f: 0 | 1 = obj.field;
+  }
+}
+
+// P3: Three branches, x covers two singleton branches
+type Tri10 =
+  | { tag: 0; a: string }
+  | { tag: 1; b: number }
+  | { tag: 2; c: boolean };
+
+function testThreeBranchFilter(obj: Tri10, x: 0 | 1): void {
+  if (obj.tag === x) {
+    // { tag: 2 } filtered; result is { tag:0; a } | { tag:1; b }
+    // @skjs-expect-error Unbound field: a
+    const a: string = obj.a;
+  }
+}
+
+// P4: String union discriminant
+type Str10 = { kind: "a" | "b"; x: number } | { kind: "c"; y: string };
+
+function testStringNonSingletonFilter(obj: Str10, x: "a" | "b"): void {
+  if (obj.kind === x) {
+    // { kind: "c" } filtered
+    const n: number = obj.x;
+  }
+}
+
+// --- Negative tests (should error) ---
+
+// N1: Cannot narrow field type to comparison type
+function testCannotNarrowField(obj: Wide10, x: 0 | 1): void {
+  if (obj.field === x) {
+    // @skjs-expect-error Invalid annotation
+    const narrow: 0 | 1 = obj.field;
+  }
+}
+
+// N2: All branches overlap — no filtering, union stays full
+type AllOverlap10 = { field: 0 | 1 } | { field: 1 | 2 };
+
+function testAllBranchesOverlap(obj: AllOverlap10, x: 0 | 1): void {
+  if (obj.field === x) {
+    // Both branches overlap with 0|1
+    // @skjs-expect-error Invalid annotation
+    const b1: { field: 0 | 1 } = obj;
+  }
+}
+
+// N3: Accessing filtered-branch-only field — should error
+function testFilteredBranchAccess(obj: Tagged10, x: 0 | 1): void {
+  if (obj.tag === x) {
+    // @skjs-expect-error Unbound field: b
+    const b: number = obj.b;
+  }
+}
+
+// N4: !== with non-singleton — NO refinement
+function testNotEqualsNoRefine(obj: Tagged10, x: 0 | 1): void {
+  if (obj.tag !== x) {
+    // @skjs-expect-error Invalid annotation
+    const only2: { tag: 2; b: number } = obj;
+  }
+}
+
+// N5: All branches match — cannot narrow to specific branch
+type T10 = { field: 0 } | { field: 1 };
+
+function testBothBranchesKept(obj: T10, x: 0 | 1): void {
+  if (obj.field === x) {
+    // @skjs-expect-error Invalid annotation
+    const only0: { field: 0 } = obj;
+  }
+}
+
+// --- Edge cases ---
+
+// E1: RHS is full `number` type — overlaps everything, no filtering
+type E10 = { tag: 0; a: string } | { tag: 1; b: number };
+
+function testRhsFullNumber(obj: E10, x: number): void {
+  if (obj.tag === x) {
+    // number overlaps all branches — no filtering
+    // @skjs-expect-error Invalid annotation
+    const only0: { tag: 0; a: string } = obj;
+  }
+}
+
+// E2: Else branch of === not erroneously narrowed
+function testElseBranchNotNarrowed(obj: Tagged10, x: 0 | 1): void {
+  if (obj.tag === x) {
+    const a: string = obj.a;
+  } else {
+    // Else of === with non-singleton: no safe narrowing
+    const full: Tagged10 = obj;
+  }
+}
+
+// E3: && chain propagates non-singleton refinement
+function testAndChain(obj: Tagged10, x: 0 | 1, cond: boolean): void {
+  if (cond && obj.tag === x) {
+    const a: string = obj.a;
+  }
+}
