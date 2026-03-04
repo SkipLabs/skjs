@@ -15,8 +15,8 @@ extension class TypeChecker {
     | (
       Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
       Expr(_, EString(tag)),
-    ) if (fieldName == kAlgebraicBranchFieldName) ->
-      this.evalAlgebraicBranchEquality(tcenv, local, tag, target)
+    ) ->
+      this.evalFieldEquality(tcenv, local, fieldName, tag, target)
 
     | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
     | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
@@ -40,9 +40,21 @@ extension class TypeChecker {
     }
   }
 
+  fun evalFieldEquality(
+    tcenv: mutable TCEnv,
+    local: Name,
+    fieldName: String,
+    tag: String,
+    target: Bool,
+  ): void {
+    if (fieldName != kAlgebraicBranchFieldName) return void;
+    this.evalAlgebraicBranchEquality(tcenv, local, fieldName, tag, target)
+  }
+
   fun evalAlgebraicBranchEquality(
     tcenv: mutable TCEnv,
     local: Name,
+    fieldName: String,
     tag: String,
     target: Bool,
   ): void {
@@ -51,7 +63,7 @@ extension class TypeChecker {
       | tObj @ TObject _ ->
         tObj.mapOpt(tFields -> {
           tFields.maybeGetField(
-            FKName(Name(local.pos, kAlgebraicBranchFieldName), TString()),
+            FKName(Name(local.pos, fieldName), TString()),
           ) match {
           | Some(kindField) ->
             kindField.get.getConstantString() match {
