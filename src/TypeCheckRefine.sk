@@ -8,16 +8,6 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     (e1, e2) match {
-    | (
-      Expr(_, EString(tag)),
-      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
-    )
-    | (
-      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
-      Expr(_, EString(tag)),
-    ) if (fieldName == kAlgebraicBranchFieldName) ->
-      this.evalAlgebraicBranchEquality(tcenv, local, tag, target)
-
     | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
     | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
       this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
@@ -30,41 +20,61 @@ extension class TypeChecker {
     | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
       this.evalUndefinedEquality(tcenv, local, target)
 
+    | (
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
+      otherExpr,
+    )
+    | (
+      otherExpr,
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
+    ) ->
+      this.evalFieldEquality(tcenv, local, fieldName, otherExpr, target)
+
     | (Expr(pos, _), Expr(_, Var(Name(_, v @ "null"))))
     | (Expr(_, Var(Name(_, v @ "null"))), Expr(pos, _))
     | (Expr(pos, _), Expr(_, Var(Name(_, v @ "undefined"))))
     | (Expr(_, Var(Name(_, v @ "undefined"))), Expr(pos, _)) ->
-      tcenv.error(Array[(pos, `Only locals can be compared to ${v}`)])
+      tcenv.error(
+        Array[(pos, `Only locals and their fields can be compared to ${v}`)],
+      )
 
     | _ -> void
     }
   }
 
-  fun evalAlgebraicBranchEquality(
+  fun evalFieldEquality(
     tcenv: mutable TCEnv,
     local: Name,
-    tag: String,
+    fieldName: String,
+    otherExpr: Expr,
     target: Bool,
   ): void {
-    this.setLocalFilterMap(tcenv, local, None(), stype ~>
-      stype match {
-      | tObj @ TObject _ ->
-        tObj.mapOpt(tFields -> {
-          tFields.maybeGetField(
-            FKName(Name(local.pos, kAlgebraicBranchFieldName), TString()),
-          ) match {
-          | Some(kindField) ->
-            kindField.get.getConstantString() match {
-            | Some(lit) ->
-              if ((lit.val == tag) == target) Some(tFields) else None()
+    fieldType = this.expr(tcenv, otherExpr, true);
+    fieldType.getSingleConstant() match {
+    | None() -> void
+    | Some(constant) ->
+      this.setLocalFilterMap(tcenv, local, None(), stype ->
+        stype match {
+        | tObj @ TObject _ ->
+          tObj.mapOpt(tFields -> {
+            tFields
+              .maybeGetType(tcenv.subst, this, fieldName, local.pos, false)
+              .flatMap(branchFieldType ->
+                branchFieldType.getSingleConstant()
+              ) match {
+            | Some(branchConstant) ->
+              if (branchConstant.sameConstant(constant) == target) {
+                Some(tFields)
+              } else {
+                None()
+              }
             | None() -> Some(tFields)
             }
-          | None() -> Some(tFields)
-          }
-        })
-      | x -> Some(x)
-      }
-    )
+          })
+        | x -> Some(x)
+        }
+      )
+    }
   }
 
   fun evalTypeofEquality(
