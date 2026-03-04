@@ -24,7 +24,7 @@ type ObjWithLength = {
 // Accessing common property that exists in both branches
 function testCommonProperty(x: Array<number> | ObjWithLength): number {
   // length exists in both Array and ObjWithLength
-  // TODO: Should this work since both branches have length?
+  // Both branches have length — works in TS too
   return x.length;
 }
 
@@ -66,7 +66,7 @@ function testPushOnUnion(x: Array<number> | Obj): void {
 
 // Numeric index on array | object union
 function testNumericIndexOnUnion(x: Array<string> | Obj): string | undefined {
-  // TODO: Should this work or fail? Currently no error
+  // FIXME: TS errors here (index 0 doesn't exist on string[] | Obj), SKJS allows it
   return x[0];
 }
 
@@ -84,14 +84,14 @@ function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
 // Assigning array to union variable
 function testAssignArrayToUnion(): Array<number> | Obj {
   const arr: Array<number> = [1, 2, 3];
-  // TODO: Should Array<number> be assignable to Array<number> | Obj?
+  // Array<number> is assignable to Array<number> | Obj — matches TS
   return arr;
 }
 
 // Assigning object to union variable
 function testAssignObjectToUnion(): Array<number> | Obj {
   const obj: Obj = { name: "test", value: 42 };
-  // TODO: Should Obj be assignable to Array<number> | Obj?
+  // Obj is assignable to Array<number> | Obj — matches TS
   return obj;
 }
 
@@ -158,7 +158,7 @@ function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
 
 // Spreading array from union
 function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
-  // TODO: better error message
+  // TODO: better error message should mention ... rather than for-of
   // @skjs-expect-error Invalid iterable type for for-of loop
   // @skjs-expect-error Invalid return type
   return [...x];
@@ -192,13 +192,13 @@ function testDestructuringUnion(x: Array<number> | Obj): void {
 
 // Array<number> should be subtype of Array<number> | Obj
 function testArraySubtypeOfUnion(arr: Array<number>): Array<number> | Obj {
-  // TODO: Should Array<number> be subtype of union?
+  // Array<number> is subtype of Array<number> | Obj — matches TS
   return arr;
 }
 
 // Obj should be subtype of Array<number> | Obj
 function testObjectSubtypeOfUnion(obj: Obj): Array<number> | Obj {
-  // TODO: Should Obj be subtype of union?
+  // Obj is subtype of Array<number> | Obj — matches TS
   return obj;
 }
 
@@ -267,7 +267,7 @@ function testUseGenericArrayOrObject(): void {
   const result1S = testGenericArrayOrObjectS(arr);
 
   const obj: Obj = { name: "test", value: 42 };
-  // TODO: Should this work?
+  // Obj satisfies constraint Array<number> | Obj — matches TS
   const result2 = testGenericArrayOrObject(obj);
   const result2S = testGenericArrayOrObjectS(obj);
 }
@@ -297,6 +297,6 @@ function testIntersectionWithString(x: (Array<number> | Obj) & string): never {
 function testIntersectionWithObjectType(
   x: (Array<number> | Obj) & { extra: boolean },
 ): boolean {
-  // TODO: Should be able to access extra?
+  // Intersection distributes: extra is accessible — matches TS
   return x.extra;
 }
