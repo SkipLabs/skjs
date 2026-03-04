@@ -215,7 +215,8 @@ type Wide10 = { field: 0 | 1 | 2 } | { field: 3 };
 function testFieldStaysWide(obj: Wide10, x: 0 | 1): void {
   if (obj.field === x) {
     // { field: 3 } filtered, but field NOT narrowed to 0|1
-    const f: 0 | 1 | 2 = obj.field;
+    // @skjs-expect-error Invalid annotation
+    const f: 0 | 1 = obj.field;
   }
 }
 
