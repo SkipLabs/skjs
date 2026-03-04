@@ -49,39 +49,32 @@ extension class TypeChecker {
     otherExpr: Expr,
     target: Bool,
   ): void {
-    otherExpr.value match {
-    | EString(tag) ->
-      this.evalAlgebraicBranchEquality(tcenv, local, fieldName, tag, target)
-    | _ -> void
-    }
-  }
-
-  fun evalAlgebraicBranchEquality(
-    tcenv: mutable TCEnv,
-    local: Name,
-    fieldName: String,
-    tag: String,
-    target: Bool,
-  ): void {
-    this.setLocalFilterMap(tcenv, local, None(), stype ~>
-      stype match {
-      | tObj @ TObject _ ->
-        tObj.mapOpt(tFields -> {
-          tFields.maybeGetField(
-            FKName(Name(local.pos, fieldName), TString()),
-          ) match {
-          | Some(kindField) ->
-            kindField.get.getConstantString() match {
-            | Some(lit) ->
-              if ((lit.val == tag) == target) Some(tFields) else None()
+    fieldType = this.expr(tcenv, otherExpr, true);
+    fieldType.getSingleConstant() match {
+    | None() -> void
+    | Some(constant) ->
+      this.setLocalFilterMap(tcenv, local, None(), stype ->
+        stype match {
+        | tObj @ TObject _ ->
+          tObj.mapOpt(tFields -> {
+            tFields
+              .maybeGetType(tcenv.subst, this, fieldName, local.pos, false)
+              .flatMap(branchFieldType ->
+                branchFieldType.getSingleConstant()
+              ) match {
+            | Some(branchConstant) ->
+              if (branchConstant.sameConstant(constant) == target) {
+                Some(tFields)
+              } else {
+                None()
+              }
             | None() -> Some(tFields)
             }
-          | None() -> Some(tFields)
-          }
-        })
-      | x -> Some(x)
-      }
-    )
+          })
+        | x -> Some(x)
+        }
+      )
+    }
   }
 
   fun evalTypeofEquality(

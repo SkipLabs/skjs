@@ -425,6 +425,12 @@ class TType private {
     }
   }
 
+  fun getSingleConstant(): ?TPrim {
+    if (!this.insts.isEmpty()) None() else {
+      this.clauses.getSingleConstant()
+    }
+  }
+
   fun getSingleVar(): ?TVar {
     if (this.clauses.isEmpty()) this.insts.getSingleVar() else {
       None()
@@ -902,6 +908,19 @@ base class SType private (
   }
 }
 
+base class TPrim extends SType {
+  fun sameConstant(other: TPrim): Bool {
+    (this, other) match {
+    | (TPrimUnit(k1, _), TPrimUnit(k2, _)) -> k1 == k2
+    | (TPrimValue(k1, Some(l1), _), TPrimValue(k2, Some(l2), _)) ->
+      k1 == k2 && l1.size() == 1 && l1 == l2
+    | _ -> false
+    }
+  }
+}
+extension class TPrimUnit extends TPrim
+extension class TPrimValue extends TPrim
+
 class TPrimUnit(kind: TPrimUnitKind) extends SType
 
 class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
@@ -1345,6 +1364,16 @@ class STypes private (
     }
   }
 
+  fun getSingleConstant(): ?TPrim {
+    this.singleElt().flatMap(stype ->
+      stype match {
+      | prim @ TPrimValue(_, Some(lits), _) if (lits.size() == 1) -> Some(prim)
+      | prim @ TPrimUnit _ -> Some(prim)
+      | _ -> None()
+      }
+    )
+  }
+
   fun getSingleTuple(): ?TTuple {
     this.singleElt() match {
     | Some(tuple @ TTuple _) -> Some(tuple)
@@ -1674,6 +1703,10 @@ class Clause private (
     this.stypes.flatMap(sTypes -> sTypes.getConstantString())
   }
 
+  fun getSingleConstant(): ?TPrim {
+    this.stypes.flatMap(sTypes -> sTypes.getSingleConstant())
+  }
+
   fun isTop(): Bool {
     this.stypes is None() && this.vars.isEmpty()
   }
@@ -1771,6 +1804,10 @@ class Clauses private (
 
   fun getConstantString(): ?PrimLiteral {
     this.clauses.singleElt().flatMap(clause -> clause.getConstantString())
+  }
+
+  fun getSingleConstant(): ?TPrim {
+    this.clauses.singleElt().flatMap(clause -> clause.getSingleConstant())
   }
 
   // Returns the tuple if clauses is a single clause whose only stype is a Tuple.

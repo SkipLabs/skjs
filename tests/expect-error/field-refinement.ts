@@ -93,15 +93,14 @@ function testNonKindFieldElimination(e: Event): void {
 }
 
 // ============================================================
-// 5. Number literal discriminant (now refines)
+// 5. Number literal discriminant
 // ============================================================
 
 type Result = { code: 0; data: string } | { code: 1; error: string };
 
 function testNumberDiscriminant(r: Result): void {
   if (r.code === 0) {
-    // No refinement on number literal field yet (only strings)
-    // @skjs-expect-error Invalid annotation
+    // Refinement now works on number literal fields
     const ok: { code: 0; data: string } = r;
   }
 }
@@ -170,14 +169,12 @@ type NullableTag = { tag: "a"; va: number } | { tag: null; vn: string };
 
 function testFieldNullRefinement(x: NullableTag): void {
   if (x.tag === null) {
-    // @skjs-expect-error Invalid annotation
     const n: { tag: null; vn: string } = x;
   }
 }
 
 function testFieldNullElimination(x: NullableTag): void {
   if (x.tag !== null) {
-    // @skjs-expect-error Invalid annotation
     const n: { tag: "a"; va: number } = x;
   }
 }
@@ -186,14 +183,12 @@ type UndefTag = { tag: "b"; vb: number } | { tag: undefined; vu: string };
 
 function testFieldUndefinedRefinement(x: UndefTag): void {
   if (x.tag === undefined) {
-    // @skjs-expect-error Invalid annotation
     const n: { tag: undefined; vu: string } = x;
   }
 }
 
 function testFieldUndefinedElimination(x: UndefTag): void {
   if (x.tag !== undefined) {
-    // @skjs-expect-error Invalid annotation
     const n: { tag: "b"; vb: number } = x;
   }
 }
