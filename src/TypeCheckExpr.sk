@@ -720,11 +720,7 @@ extension class TypeChecker {
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
-          ttype = this.expr(
-            tcenv,
-            y,
-            mostPrecise || name.value == kAlgebraicBranchFieldName,
-          );
+          ttype = this.expr(tcenv, y, true);
           (
             name,
             if (y.value is Object _ || ttype.isConcretePrimitive()) {
