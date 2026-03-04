@@ -49,7 +49,6 @@ extension class TypeChecker {
     otherExpr: Expr,
     target: Bool,
   ): void {
-    if (fieldName != kAlgebraicBranchFieldName) return void;
     otherExpr.value match {
     | EString(tag) ->
       this.evalAlgebraicBranchEquality(tcenv, local, fieldName, tag, target)

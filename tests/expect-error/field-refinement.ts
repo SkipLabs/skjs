@@ -71,38 +71,36 @@ function testKindElimination(s: Shape): number {
 }
 
 // ============================================================
-// 4. Discriminated union with non-"kind" field (no refinement today)
+// 4. Discriminated union with non-"kind" field (now refines)
 // ============================================================
 
 type Event =
   | { type: "click"; x: number; y: number }
   | { type: "key"; key: string };
 
-function testNonKindFieldNoRefinement(e: Event): void {
+function testNonKindFieldRefinement(e: Event): void {
   if (e.type === "click") {
-    // No refinement on "type" field — e is still the full union
-    // @skjs-expect-error Invalid annotation
+    // Refinement now works on any discriminant field
     const c: { type: "click"; x: number; y: number } = e;
   }
 }
 
 function testNonKindFieldElimination(e: Event): void {
   if (e.type !== "click") {
-    // No elimination refinement either
-    // @skjs-expect-error Invalid annotation
+    // Elimination works too
     const k: { type: "key"; key: string } = e;
   }
 }
 
 // ============================================================
-// 5. Number literal discriminant (no refinement today)
+// 5. Number literal discriminant (now refines)
 // ============================================================
 
 type Result = { code: 0; data: string } | { code: 1; error: string };
 
 function testNumberDiscriminant(r: Result): void {
   if (r.code === 0) {
-    // No refinement on number literal field
+    // No refinement on number literal field yet (only strings)
     // @skjs-expect-error Invalid annotation
     const ok: { code: 0; data: string } = r;
   }
@@ -119,8 +117,7 @@ type TrafficLight =
 
 function testUnionLiteralFieldPositive(t: TrafficLight): void {
   if (t.color === "red") {
-    // No refinement on non-"kind" field
-    // @skjs-expect-error Invalid annotation
+    // Refinement now works on any discriminant field
     const r: { color: "red"; timer: number } = t;
   }
 }
