@@ -618,8 +618,6 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
   }
 }
 
-const kAlgebraicBranchFieldName: String = "kind";
-
 /***************************************************************************/
 /* Functions */
 /* Use only as the call and new 'fields' of objects (TFields) */
