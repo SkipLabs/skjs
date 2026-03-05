@@ -1,7 +1,8 @@
 // Tests for CallGraph.affectedFiles(): given a set of changed definitions,
 // computes the transitive set of files affected via the call graph.
-// Uses a small 4-file project (callgraph-affected/) with the call chain
-// a() -> helperB() -> helperC() plus an unrelated function.
+// Uses a project (callgraph-affected/) with the call chain
+// a() -> helperB() -> helperC(), an unrelated function, and a class
+// hierarchy Base -> Child -> useChild() for subclass propagation.
 module SKJSTests;
 
 // Finds Def AST nodes matching a given function name in a parsed file.
@@ -11,6 +12,7 @@ fun findDefsByName(defs: Array<SKJS.Def>, targetName: String): Array<SKJS.Def> {
     def.value match {
     | fd @ SKJS.TopLevelFunDef _ ->
       if (fd.name.getName() == targetName) results.push(def)
+    | c @ SKJS.Class _ -> if (c.name.value == targetName) results.push(def)
     | SKJS.Export(inner) ->
       innerDef = SKJS.Def(def.pos, inner);
       findDefsByName(Array[innerDef], targetName).each(results.push)
@@ -111,6 +113,37 @@ fun testAffectedFiles(): void {
   SKTest.expectFalse(
     affected2.contains(aFile),
     "a.ts should not be affected by unrelated change",
+  );
+
+  // Test: changing Base class should affect child.ts (extends Base)
+  // and user.ts (uses Child which extends Base) via class hierarchy.
+  baseFile = resolve("src/base.ts");
+  childFile = resolve("src/child.ts");
+  userFile = resolve("src/user.ts");
+
+  baseParsed = checker.parsedFiles.getArray(context, baseFile);
+  baseDefs = baseParsed[0].value match {
+  | SKJS.PROk(defs) -> findDefsByName(defs, "Base")
+  | _ -> invariant_violation("Expected parsed file for base.ts")
+  };
+  invariant(baseDefs.size() > 0, "Expected to find Base def");
+
+  affected3 = callGraph.affectedFiles(context, baseDefs);
+  SKTest.expectTrue(
+    affected3.contains(baseFile),
+    "base.ts should be affected by own change",
+  );
+  SKTest.expectTrue(
+    affected3.contains(childFile),
+    "child.ts should be affected (Child extends Base)",
+  );
+  SKTest.expectTrue(
+    affected3.contains(userFile),
+    "user.ts should be affected (uses Child which extends Base)",
+  );
+  SKTest.expectFalse(
+    affected3.contains(unrelatedFile),
+    "unrelated.ts should not be affected by Base change",
   );
 }
 
