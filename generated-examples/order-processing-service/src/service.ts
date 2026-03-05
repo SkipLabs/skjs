@@ -43,9 +43,9 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "customers": ResourceClass<GraphCollections, {}>;
-  "products": ResourceClass<GraphCollections, {}>;
-  "orders": ResourceClass<GraphCollections, {}>;
+  readonly "customers": ResourceClass<GraphCollections, {}>;
+  readonly "products": ResourceClass<GraphCollections, {}>;
+  readonly "orders": ResourceClass<GraphCollections, {}>;
 };
 
 export class OrderSummaryMapper implements Mapper<OrderId, OrderValue, OrderSummaryId, OrderSummaryValue> {
@@ -126,8 +126,8 @@ export class OrdersResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { customers: new InputDefinition<CustomerId, CustomerValue>([]), products: new InputDefinition<ProductId, ProductValue>([]), orders: new InputDefinition<OrderId, OrderValue>([]) };

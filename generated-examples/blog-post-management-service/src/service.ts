@@ -41,11 +41,11 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "authors": ResourceClass<GraphCollections, {}>;
-  "posts": ResourceClass<GraphCollections, {}>;
-  "posts-published": ResourceClass<GraphCollections, {}>;
-  "authors-posts": ResourceClass<GraphCollections, AuthorsPostsResourceParams>;
-  "posts-comments": ResourceClass<GraphCollections, PostsCommentsResourceParams>;
+  readonly "authors": ResourceClass<GraphCollections, {}>;
+  readonly "posts": ResourceClass<GraphCollections, {}>;
+  readonly "posts-published": ResourceClass<GraphCollections, {}>;
+  readonly "authors-posts": ResourceClass<GraphCollections, AuthorsPostsResourceParams>;
+  readonly "posts-comments": ResourceClass<GraphCollections, PostsCommentsResourceParams>;
 };
 
 export class PublishedPostsFilterMapper implements Mapper<PostId, PostValue, PostId, PostValue> {
@@ -179,8 +179,8 @@ export class PostsCommentsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { authors: new InputDefinition<AuthorId, AuthorValue>([]), posts: new InputDefinition<PostId, PostValue>([]), comments: new InputDefinition<CommentId, CommentValue>([]) };

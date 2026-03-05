@@ -45,11 +45,11 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "rooms": ResourceClass<GraphCollections, {}>;
-  "messages": ResourceClass<GraphCollections, {}>;
-  "rooms-messages": ResourceClass<GraphCollections, RoomsMessagesResourceParams>;
-  "users": ResourceClass<GraphCollections, {}>;
-  "rooms-members": ResourceClass<GraphCollections, RoomsMembersResourceParams>;
+  readonly "rooms": ResourceClass<GraphCollections, {}>;
+  readonly "messages": ResourceClass<GraphCollections, {}>;
+  readonly "rooms-messages": ResourceClass<GraphCollections, RoomsMessagesResourceParams>;
+  readonly "users": ResourceClass<GraphCollections, {}>;
+  readonly "rooms-members": ResourceClass<GraphCollections, RoomsMembersResourceParams>;
 };
 
 export class FilterMessagesByRoomMapper implements Mapper<MessageId, MessageValue, MessageId, MessageValue> {
@@ -164,8 +164,8 @@ export class RoomsMembersResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
     this.inputs = {

@@ -40,12 +40,12 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "customers": ResourceClass<GraphCollections, {}>;
-  "plans": ResourceClass<GraphCollections, {}>;
-  "subscriptions": ResourceClass<GraphCollections, {}>;
-  "subscriptions-active": ResourceClass<GraphCollections, {}>;
-  "subscriptions-by-customer": ResourceClass<GraphCollections, SubscriptionsByCustomerResourceParams>;
-  "subscriptions-expiring-soon": ResourceClass<GraphCollections, {}>;
+  readonly "customers": ResourceClass<GraphCollections, {}>;
+  readonly "plans": ResourceClass<GraphCollections, {}>;
+  readonly "subscriptions": ResourceClass<GraphCollections, {}>;
+  readonly "subscriptions-active": ResourceClass<GraphCollections, {}>;
+  readonly "subscriptions-by-customer": ResourceClass<GraphCollections, SubscriptionsByCustomerResourceParams>;
+  readonly "subscriptions-expiring-soon": ResourceClass<GraphCollections, {}>;
 };
 
 export class ActiveSubscriptionFilterMapper implements Mapper<SubscriptionId, SubscriptionValue, SubscriptionId, SubscriptionValue> {
@@ -192,8 +192,8 @@ export class SubscriptionsExpiringSoonResource implements Resource<GraphCollecti
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { customers: new InputDefinition<CustomerId, CustomerValue>([]), plans: new InputDefinition<PlanId, PlanValue>([]), subscriptions: new InputDefinition<SubscriptionId, SubscriptionValue>([]) };

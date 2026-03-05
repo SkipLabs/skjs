@@ -32,11 +32,11 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "jobs": ResourceClass<GraphCollections, {}>;
-  "jobs-pending": ResourceClass<GraphCollections, {}>;
-  "jobs-processing": ResourceClass<GraphCollections, {}>;
-  "jobs-completed": ResourceClass<GraphCollections, {}>;
-  "jobs-failed": ResourceClass<GraphCollections, {}>;
+  readonly "jobs": ResourceClass<GraphCollections, {}>;
+  readonly "jobs-pending": ResourceClass<GraphCollections, {}>;
+  readonly "jobs-processing": ResourceClass<GraphCollections, {}>;
+  readonly "jobs-completed": ResourceClass<GraphCollections, {}>;
+  readonly "jobs-failed": ResourceClass<GraphCollections, {}>;
 };
 
 export class FilterByStatusMapper implements Mapper<JobId, JobValue, JobId, JobValue> {
@@ -122,8 +122,8 @@ export class JobsFailedResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { jobs: new InputDefinition<JobId, JobValue>([]) };

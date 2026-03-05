@@ -31,7 +31,7 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "metrics": ResourceClass<GraphCollections, {}>;
+  readonly "metrics": ResourceClass<GraphCollections, {}>;
 };
 
 class OrderByTimestampMapper implements Mapper<MetricId, MetricValue, OrderedMetricKey, MetricValue> {
@@ -62,8 +62,8 @@ export class MetricsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { metrics: new InputDefinition<MetricId, MetricValue>([]) };

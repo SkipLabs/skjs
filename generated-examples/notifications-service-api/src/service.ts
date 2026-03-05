@@ -55,8 +55,8 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "notifications": ResourceClass<GraphCollections, {}>;
-  "notifications-by-user": ResourceClass<GraphCollections, { userId: string }>;
+  readonly "notifications": ResourceClass<GraphCollections, {}>;
+  readonly "notifications-by-user": ResourceClass<GraphCollections, { userId: string }>;
 };
 
 export class MentionToNotificationMapper implements Mapper<MentionId, MentionValue, [string, NotificationType], NotificationEventValue> {
@@ -242,8 +242,8 @@ export class NotificationsByUserResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { mentions: new InputDefinition<MentionId, MentionValue>([]), follows: new InputDefinition<FollowId, FollowValue>([]), likes: new InputDefinition<LikeId, LikeValue>([]) };

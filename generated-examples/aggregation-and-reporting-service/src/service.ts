@@ -29,6 +29,13 @@ export type MetricValue = {
   tags: { [name: string]: string };
 };
 
+// Using object instead of tuple BucketKey as readonly tuples are not yet supported by skjs.
+export type BucketKey = {
+  metricName: string;
+  period: Period;
+  periodStart: number;
+};
+
 export type BucketAccum = {
   count: number;
   sum: number;
@@ -74,14 +81,14 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "aggregatedMetrics-hourly": ResourceClass<GraphCollections, {}>;
-  "aggregatedMetrics-daily": ResourceClass<GraphCollections, {}>;
-  "aggregatedMetrics-weekly": ResourceClass<GraphCollections, {}>;
-  "aggregatedMetrics-monthly": ResourceClass<GraphCollections, {}>;
-  "reports-hourly": ResourceClass<GraphCollections, {}>;
-  "reports-daily": ResourceClass<GraphCollections, {}>;
-  "reports-weekly": ResourceClass<GraphCollections, {}>;
-  "reports-monthly": ResourceClass<GraphCollections, {}>;
+  readonly "aggregatedMetrics-hourly": ResourceClass<GraphCollections, {}>;
+  readonly "aggregatedMetrics-daily": ResourceClass<GraphCollections, {}>;
+  readonly "aggregatedMetrics-weekly": ResourceClass<GraphCollections, {}>;
+  readonly "aggregatedMetrics-monthly": ResourceClass<GraphCollections, {}>;
+  readonly "reports-hourly": ResourceClass<GraphCollections, {}>;
+  readonly "reports-daily": ResourceClass<GraphCollections, {}>;
+  readonly "reports-weekly": ResourceClass<GraphCollections, {}>;
+  readonly "reports-monthly": ResourceClass<GraphCollections, {}>;
 };
 
 function getPeriodStart(timestamp: number, period: Period): number {
@@ -119,20 +126,20 @@ function getPeriodEnd(periodStart: number, period: Period): number {
   return date.getTime();
 }
 
-export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [string, Period, number], number> {
+export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, BucketKey, number> {
   constructor() {}
 
   mapEntry(
     _key: MetricId,
     values: Values<MetricValue>,
     _context: Context
-  ): Iterable<[[string, Period, number], number]> {
-    const result: Array<[[string, Period, number], number]> = Array.of();
+  ): Iterable<[BucketKey, number]> {
+    const result: Array<[BucketKey, number]> = Array.of();
     const periods: Array<Period> = Array.of("hour", "day", "week", "month");
     for (const metric of values) {
       for (const period of periods) {
         const periodStart = getPeriodStart(metric.timestamp, period);
-        const bucketKey: [string, Period, number] = [metric.name, period, periodStart];
+        const bucketKey: BucketKey = { metricName: metric.name, period: period, periodStart: periodStart };
         result.push([bucketKey, metric.value]);
       }
     }
@@ -140,19 +147,19 @@ export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [stri
   }
 }
 
-export class BucketToAggregatedMetricMapper implements Mapper<[string, Period, number], BucketAccum, AggregatedMetricId, AggregatedMetricValue> {
+export class BucketToAggregatedMetricMapper implements Mapper<BucketKey, BucketAccum, AggregatedMetricId, AggregatedMetricValue> {
   constructor() {}
 
   mapEntry(
-    key: [string, Period, number],
+    key: BucketKey,
     values: Values<BucketAccum>,
     _context: Context
   ): Iterable<[AggregatedMetricId, AggregatedMetricValue]> {
     const result: Array<[AggregatedMetricId, AggregatedMetricValue]> = Array.of();
     for (const accum of values) {
-      const metricName = key[0];
-      const period = key[1];
-      const periodStart = key[2];
+      const metricName = key.metricName;
+      const period = key.period;
+      const periodStart = key.periodStart;
       const avg = accum.count > 0 ? accum.sum / accum.count : 0;
       const aggregatedMetricId: AggregatedMetricId = JSON.stringify(key);
       const aggregatedMetricValue: AggregatedMetricValue = {
@@ -359,8 +366,8 @@ export class ReportsMonthlyResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { metrics: new InputDefinition<MetricId, MetricData>([]) };

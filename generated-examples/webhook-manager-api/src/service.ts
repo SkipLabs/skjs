@@ -52,10 +52,10 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "webhooks": ResourceClass<GraphCollections, {}>;
-  "deliveries": ResourceClass<GraphCollections, {}>;
-  "webhooks-deliveries": ResourceClass<GraphCollections, WebhooksDeliveriesResourceParams>;
-  "stats": ResourceClass<GraphCollections, {}>;
+  readonly "webhooks": ResourceClass<GraphCollections, {}>;
+  readonly "deliveries": ResourceClass<GraphCollections, {}>;
+  readonly "webhooks-deliveries": ResourceClass<GraphCollections, WebhooksDeliveriesResourceParams>;
+  readonly "stats": ResourceClass<GraphCollections, {}>;
 };
 
 export class DeliveryToWebhookKeyMapper implements Mapper<DeliveryId, DeliveryValue, string, DeliveryAggregateInput> {
@@ -223,8 +223,8 @@ export class StatsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
             this.inputs = { webhooks: new InputDefinition<WebhookId, WebhookValue>([]), deliveries: new InputDefinition<DeliveryId, DeliveryValue>([]) };

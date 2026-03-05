@@ -51,7 +51,7 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "files": ResourceClass<GraphCollections, {}>;
+  readonly "files": ResourceClass<GraphCollections, {}>;
 };
 
 export class FileToTypeKeyMapper implements Mapper<FileId, FileValue, string, File> {
@@ -222,8 +222,8 @@ export class FilesResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { files: new InputDefinition<FileId, FileValue>([]) };

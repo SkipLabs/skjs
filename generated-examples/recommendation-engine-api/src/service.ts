@@ -58,11 +58,11 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "users": ResourceClass<GraphCollections, {}>;
-  "products": ResourceClass<GraphCollections, {}>;
-  "products-category": ResourceClass<GraphCollections, ProductsCategoryResourceParams>;
-  "products-popular": ResourceClass<GraphCollections, {}>;
-  "recommendations": ResourceClass<GraphCollections, RecommendationsResourceParams>;
+  readonly "users": ResourceClass<GraphCollections, {}>;
+  readonly "products": ResourceClass<GraphCollections, {}>;
+  readonly "products-category": ResourceClass<GraphCollections, ProductsCategoryResourceParams>;
+  readonly "products-popular": ResourceClass<GraphCollections, {}>;
+  readonly "recommendations": ResourceClass<GraphCollections, RecommendationsResourceParams>;
 };
 
 export class InteractionsByUserMapper implements Mapper<InteractionId, InteractionValue, UserId, InteractionValue> {
@@ -377,8 +377,8 @@ export class RecommendationsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { users: new InputDefinition<UserId, UserValue>([]), products: new InputDefinition<ProductId, ProductValue>([]), interactions: new InputDefinition<InteractionId, InteractionValue>([]) };
