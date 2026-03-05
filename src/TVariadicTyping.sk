@@ -284,10 +284,7 @@ class VariadicTyping() {
 
     // Build U = union of tuple element types, then check ReadonlyArray<U> <: rhs.
     pos = tuple.pos;
-    u = tuple.tuple.reduce(
-      (acc, elt) -> TType::union(subst, tenv, acc, elt),
-      TType::bottom(pos),
-    );
+    u = TType::unionN(subst, tenv, pos, tuple.tuple);
     readonlyArray = TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[u]));
     Some(TType::isSub(subst, tenv, readonlyArray, rhs))
   }
