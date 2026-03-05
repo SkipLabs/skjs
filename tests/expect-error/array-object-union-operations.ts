@@ -77,6 +77,14 @@ function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
   return x["name"];
 }
 
+// L-value index on tuple | indexed-object union: value must satisfy all branches
+function testLValueIndexOnTupleUnion(
+  x: [number, number] | { [k: number]: string },
+): void {
+  // FIXME: TS rejects this (number is not assignable to never), SKJS allows it
+  x[0] = 42;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Assignment to union types
 ///////////////////////////////////////////////////////////////////////////////
