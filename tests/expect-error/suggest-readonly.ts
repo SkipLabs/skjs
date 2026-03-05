@@ -32,9 +32,9 @@ function testGeneric(x: Box<number>): Box<number | string> {
 }
 
 // Index signature
-function testIndex(
-  x: { [k: string]: number },
-): { [k: string]: number | string } {
+function testIndex(x: { [k: string]: number }): {
+  [k: string]: number | string;
+} {
   // @skjs-expect-error Invalid return type
   return x;
 }
