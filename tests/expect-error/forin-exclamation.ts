@@ -167,7 +167,6 @@ function testForInCallWithIterableThenSafe(v: { [key: string]: number }): void {
 function testForInUnrelatedAssignment(v: { [key: string]: number }): void {
   for (const k in v) {
     let _y: number = 5;
-    // Safe: unrelated assignment doesn't affect v
     const val: number = v[k]!;
   }
 }
@@ -178,7 +177,7 @@ function testForInReassignIterable(
 ): void {
   for (const k in v) {
     v = other;
-    // FIXME: should error — iterable was reassigned
+    // @skjs-expect-error Do not use the postfix ! operator
     const val: number = v[k]!;
   }
 }
@@ -186,7 +185,7 @@ function testForInReassignIterable(
 function testForInAssignToIterableProperty(v: { [key: string]: number }): void {
   for (const k in v) {
     v[k] = 5;
-    // FIXME: should error — iterable was mutated via assignment
+    // @skjs-expect-error Do not use the postfix ! operator
     const val: number = v[k]!;
   }
 }

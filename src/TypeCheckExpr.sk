@@ -1064,7 +1064,9 @@ extension class TypeChecker {
             ],
           )
         }
-      | BOAssignment() -> this.assign(tcenv, pos, e1, e2, mostPrecise)
+      | BOAssignment() ->
+        tcenv.markForInImpure(pos);
+        this.assign(tcenv, pos, e1, e2, mostPrecise)
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
