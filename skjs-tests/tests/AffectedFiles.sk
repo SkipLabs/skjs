@@ -1,0 +1,117 @@
+// Tests for CallGraph.affectedFiles(): given a set of changed definitions,
+// computes the transitive set of files affected via the call graph.
+// Uses a small 4-file project (callgraph-affected/) with the call chain
+// a() -> helperB() -> helperC() plus an unrelated function.
+module SKJSTests;
+
+// Finds Def AST nodes matching a given function name in a parsed file.
+fun findDefsByName(defs: Array<SKJS.Def>, targetName: String): Array<SKJS.Def> {
+  results = mutable Vector[];
+  for (def in defs) {
+    def.value match {
+    | fd @ SKJS.TopLevelFunDef _ ->
+      if (fd.name.getName() == targetName) results.push(def)
+    | SKJS.Export(inner) ->
+      innerDef = SKJS.Def(def.pos, inner);
+      findDefsByName(Array[innerDef], targetName).each(results.push)
+    | SKJS.ExportDeclare(inner) ->
+      innerDef = SKJS.Def(def.pos, inner);
+      findDefsByName(Array[innerDef], targetName).each(results.push)
+    | SKJS.Declare(inner) ->
+      innerDef = SKJS.Def(def.pos, inner);
+      findDefsByName(Array[innerDef], targetName).each(results.push)
+    | _ -> void
+    }
+  };
+  results.toArray()
+}
+
+@test
+fun testAffectedFiles(): void {
+  projectDir = Path.resolve("./tests/projects/callgraph-affected");
+  configPath = Path.join(projectDir, "tsconfig.json");
+  (config, diagnostics) = SKJS.loadTsConfig(configPath);
+  SKTest.expectTrue(
+    diagnostics.isEmpty(),
+    `expected no tsconfig diagnostics, got ${diagnostics.size()}`,
+  );
+
+  srcFiles = SKJS.resolveConfigFiles(config);
+  builtinsFileName = Path.resolve(builtinsArgFileName);
+
+  context = SKStore.Context::mcreate{};
+
+  files =
+    SKJS.Files::create(
+      context,
+      projectDir,
+      builtinsFileName,
+      srcFiles,
+      false,
+      Array["./import-stubs"],
+    ) |> expectFilesSuccess;
+
+  checker = SKJS.Checker::create{
+    context,
+    files,
+    errorHandling => SKJS.EHKeepGoing(),
+    errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    compilerOptions => config.compilerOptions,
+  };
+
+  checked = checker.checkFiles(context);
+  callGraph = SKJS.CallGraph::build(context, checked);
+
+  // Helper to get FAbsolute for a source file
+  resolve = (name: String) ~>
+    SKJS.FAbsolute::create(Path.resolve(Path.join(projectDir, name)));
+  aFile = resolve("src/a.ts");
+  bFile = resolve("src/b.ts");
+  cFile = resolve("src/c.ts");
+  unrelatedFile = resolve("src/unrelated.ts");
+
+  // Extract Def for helperC from c.ts
+  cParsed = checker.parsedFiles.getArray(context, cFile);
+  cDefs = cParsed[0].value match {
+  | SKJS.PROk(defs) -> findDefsByName(defs, "helperC")
+  | _ -> invariant_violation("Expected parsed file for c.ts")
+  };
+  invariant(cDefs.size() > 0, "Expected to find helperC def");
+
+  // Test: changing helperC transitively affects b.ts and a.ts via the
+  // call chain a() -> helperB() -> helperC().
+  affected = callGraph.affectedFiles(context, cDefs);
+  SKTest.expectTrue(affected.contains(cFile), "c.ts should be affected");
+  SKTest.expectTrue(
+    affected.contains(bFile),
+    "b.ts should be affected (calls helperC)",
+  );
+  SKTest.expectTrue(
+    affected.contains(aFile),
+    "a.ts should be affected (calls helperB which calls helperC)",
+  );
+  SKTest.expectFalse(
+    affected.contains(unrelatedFile),
+    "unrelated.ts should not be affected",
+  );
+
+  // Test: changing unrelated should only affect unrelated.ts
+  unrelatedParsed = checker.parsedFiles.getArray(context, unrelatedFile);
+  unrelatedDefs = unrelatedParsed[0].value match {
+  | SKJS.PROk(defs) -> findDefsByName(defs, "unrelated")
+  | _ -> invariant_violation("Expected parsed file for unrelated.ts")
+  };
+  invariant(unrelatedDefs.size() > 0, "Expected to find unrelated def");
+
+  affected2 = callGraph.affectedFiles(context, unrelatedDefs);
+  SKTest.expectTrue(
+    affected2.contains(unrelatedFile),
+    "unrelated.ts should be affected by own change",
+  );
+  SKTest.expectFalse(
+    affected2.contains(aFile),
+    "a.ts should not be affected by unrelated change",
+  );
+}
+
+module end;

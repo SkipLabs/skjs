@@ -1,0 +1,353 @@
+// Converts a CGNode_ to a short descriptor string for test assertions.
+// Format: "fn:<name>", "method:<class>.<name>", "static:<class>.<name>",
+//         "ctor:<class>", "toplevel", "arrow-annot", "lambda", "anonFun:<name>"
+module SKJS;
+
+extension base class CGNode_ {
+  fun descriptor(): String {
+    this match {
+    | TopLevelFunction(name, _) -> `fn:${name.getName()}`
+    | Method(name, class_, _, static_) ->
+      prefix = if (static_) "static" else "method";
+      `${prefix}:${class_.value}.${name.getName()}`
+    | Constructor(class_, _) -> `ctor:${class_.value}`
+    | Toplevel(_) -> "toplevel"
+    | ArrowTypeAnnot(_) -> "arrow-annot"
+    | AnonymousLambda(pos, _) -> `lambda:${pos.symbol}@${pos.relStart.value}`
+    | AnonymousFunDef(fd) -> `anonFun:${fd.name.getName()}`
+    }
+  }
+
+  fun isSynthetic(): Bool {
+    this is ArrowTypeAnnot _ || this is AnonymousLambda _
+  }
+}
+
+module end;
+
+module SKJSTests;
+
+// Parsed callgraph block: entries, full mode flag, directive line index,
+// and block end index (first line after the entries).
+value class ParsedCallgraph(
+  entries: Array<(String, Array<String>)>,
+  full: Bool,
+  directiveIdx: Int,
+  blockEnd: Int,
+)
+
+// Parses a @skjs-callgraph or @skjs-callgraph-full block from file contents.
+// Returns Success(None()) if no directive, Success(Some(parsed)) on success,
+// or Failure(msg) on error.
+fun parseCallgraph(contents: String): Result<?ParsedCallgraph, String> {
+  lines = contents.split("\n").map(l -> l.trim());
+  // Find the directive line, error on duplicates or stray occurrences
+  directiveIdx = -1;
+  full = false;
+  for (i => line in lines) {
+    isFull = line == "// @skjs-callgraph-full";
+    if (isFull || line == "// @skjs-callgraph") {
+      !full = isFull;
+      if (directiveIdx >= 0) {
+        return Failure(
+          `duplicate directives at lines ${directiveIdx + 1} and ${i + 1}`,
+        )
+      };
+      !directiveIdx = i;
+    } else if (line.contains("@skjs-callgraph")) {
+      return Failure(`stray @skjs-callgraph at line ${i + 1}: ${line}`)
+    }
+  };
+  if (directiveIdx < 0) return Success(None());
+
+  entries = mutable Vector[];
+  blockEnd = directiveIdx + 1;
+  for (i in Range(directiveIdx + 1, lines.size())) {
+    line = lines[i];
+    if (!line.startsWith("// ")) break void;
+    rest = line.sub(line.getIter().forward(3), line.length() - 3).trim();
+    if (rest == "") break void;
+    // Split on ": " (colon-space) to separate caller from callees.
+    // Can't split on just ":" since descriptors like "fn:bar" contain colons.
+    parts = rest.split(": ");
+    if (parts.size() != 2) {
+      return Failure(`malformed callgraph entry at line ${i + 1}: ${rest}`)
+    };
+    caller = parts[0].trim();
+    calleesStr = parts[1].trim();
+    callees = calleesStr
+      .split(",")
+      .map(s -> s.trim())
+      .filter(s -> s != "")
+      .collect(Array);
+    entries.push((caller, callees));
+    !blockEnd = i + 1
+  };
+  Success(
+    Some(ParsedCallgraph(entries.toArray(), full, directiveIdx, blockEnd)),
+  )
+}
+
+// Formats an adjacency map as a readable string for error messages.
+fun formatAdjMap(adjMap: readonly Map<String, readonly Set<String>>): String {
+  if (adjMap.size() == 0) return "(empty)";
+  lines = mutable Vector[];
+  for (caller in adjMap.keys().collect(Array).sorted()) {
+    calleeStr = adjMap[caller].collect(Array).sorted().join(", ");
+    lines.push(`${caller}: ${calleeStr}`)
+  };
+  lines.join("\n")
+}
+
+// Updates callgraph annotations in a file based on the actual callgraph.
+fun updateCallgraphAnnotations(
+  fileName: SKJS.FAbsolute,
+  fileContents: String,
+  actual: readonly Map<String, readonly Set<String>>,
+  parsed: ParsedCallgraph,
+  update: UMDoUpdate,
+): void {
+  rawLines = fileContents.split("\n");
+  directiveIdx = parsed.directiveIdx;
+  blockEnd = parsed.blockEnd;
+  full = parsed.full;
+  existingEntries = parsed.entries;
+
+  result = mutable Vector[];
+  for (i in Range(0, directiveIdx)) {
+    result.push(rawLines[i])
+  };
+
+  directive = if (full) "// @skjs-callgraph-full" else "// @skjs-callgraph";
+  result.push(directive);
+
+  update match {
+  | UMFullRewrite() ->
+    // Level 3: sort callers and callees
+    for (caller in actual.keys().collect(Array).sorted()) {
+      callees = actual[caller].collect(Array).sorted().join(", ");
+      result.push(`// ${caller}: ${callees}`)
+    }
+  | UMFullMessages() ->
+    // Level 2: sort callers, preserve callee order (+ append new, - stale)
+    existingCalleesOrder = Map::createFromItems(
+      existingEntries.map(entry -> (entry.i0, entry.i1)),
+    );
+    for (caller in actual.keys().collect(Array).sorted()) {
+      actualCallees = actual[caller];
+      calleeList = existingCalleesOrder.maybeGet(caller) match {
+      | Some(oldCallees) ->
+        // Keep existing order for callees that still exist, append new ones
+        kept = oldCallees.filter(c -> actualCallees.contains(c));
+        newOnes = actualCallees.collect(Array).filter(c ->
+          !Set::createFromItems(oldCallees).contains(c)
+        );
+        kept.concat(newOnes)
+      | None() ->
+        // New caller: use sorted order
+        actualCallees.collect(Array)
+      };
+      result.push(`// ${caller}: ${calleeList.join(", ")}`)
+    }
+  | UMUpdate() ->
+    // Level 1: preserve existing caller order, insert new at sorted position
+    existingCallers = existingEntries.map(e -> e.i0);
+    existingCalleesOrder = Map::createFromItems(
+      existingEntries.map(entry -> (entry.i0, entry.i1)),
+    );
+    // Callers that still exist, in original order
+    keptCallers = existingCallers.filter(c -> actual.containsKey(c));
+    // New callers not in original
+    newCallers = actual
+      .keys()
+      .collect(Array)
+      .filter(c -> !existingCalleesOrder.containsKey(c))
+      .sorted();
+
+    // Merge: insert each new caller at its sorted position among kept callers
+    allCallers = mutable Vector[];
+    newIdx = 0;
+    for (caller in keptCallers) {
+      while (newIdx < newCallers.size() && newCallers[newIdx] < caller) {
+        allCallers.push(newCallers[newIdx]);
+        !newIdx = newIdx + 1
+      };
+      allCallers.push(caller)
+    };
+    while (newIdx < newCallers.size()) {
+      allCallers.push(newCallers[newIdx]);
+      !newIdx = newIdx + 1
+    };
+
+    for (caller in allCallers) {
+      actualCallees = actual[caller];
+      calleeList = existingCalleesOrder.maybeGet(caller) match {
+      | Some(oldCallees) ->
+        kept = oldCallees.filter(c -> actualCallees.contains(c));
+        newOnes = actualCallees.collect(Array).filter(c ->
+          !Set::createFromItems(oldCallees).contains(c)
+        );
+        kept.concat(newOnes)
+      | None() -> actualCallees.collect(Array)
+      };
+      result.push(`// ${caller}: ${calleeList.join(", ")}`)
+    }
+  };
+
+  for (i in Range(blockEnd, rawLines.size())) {
+    result.push(rawLines[i])
+  };
+
+  updatedContents = result.toArray().join("\n");
+  FileSystem.writeTextFile(fileName.toString(), updatedContents);
+  print_string(`Updated: ${fileName}\n`)
+}
+
+// Main validator for callgraph tests.
+fun validateCallGraph(
+  context: mutable SKStore.Context,
+  checker: SKJS.Checker,
+  checkResult: SKJS.CheckResult,
+  update: UpdateMode,
+): Array<SKTest.ExpectationError> {
+  (fileName, parseErrorOpt, typeErrors) = checkResult match {
+  | SKJS.CheckResult(x, y, z, _, _) -> (x, y, z)
+  };
+
+  if (parseErrorOpt is Some _) {
+    return Array[
+      SKTest.ExpectationError(
+        `${fileName}: Parse error in callgraph test`,
+        "no parse errors",
+        "parse error found",
+      ),
+    ]
+  };
+
+  if (typeErrors.size() > 0) {
+    return Array[
+      SKTest.ExpectationError(
+        `${fileName}: Type errors in callgraph test`,
+        "no type errors",
+        `${typeErrors.size()} type error(s) found`,
+      ),
+    ]
+  };
+
+  fileContents = checker.files.filesContent.get(context, fileName).value;
+
+  parsed = parseCallgraph(fileContents) match {
+  | Failure(msg) ->
+    return Array[
+      SKTest.ExpectationError(
+        `${fileName}: Callgraph parse error`,
+        "valid callgraph block",
+        msg,
+      ),
+    ]
+  | Success(None()) ->
+    // Skip declaration files (stubs/builtins) silently
+    if (fileName.toString().endsWith(".d.ts")) return Array[];
+    return Array[
+      SKTest.ExpectationError(
+        `${fileName}: No @skjs-callgraph directive found`,
+        "@skjs-callgraph or @skjs-callgraph-full",
+        "no directive",
+      ),
+    ]
+  | Success(Some(x)) -> x
+  };
+  expectedAdj: Map<String, Set<String>> = Map::createFromItems(
+    parsed.entries.map(e -> (e.i0, Set::createFromItems(e.i1))),
+  );
+  full = parsed.full;
+  // Build actual adjacency map
+  actualAdj: mutable Map<String, mutable Set<String>> = mutable Map[];
+  checkResult.callgraph.each((caller, callees) -> {
+    if (!full && caller.id.isSynthetic()) return void;
+    callerDesc = caller.id.descriptor();
+    for (callee in callees) {
+      if (!full && callee.id.isSynthetic()) continue;
+      calleeDesc = callee.id.descriptor();
+      if (!actualAdj.containsKey(callerDesc)) {
+        actualAdj![callerDesc] = mutable Set[];
+      };
+      actualAdj[callerDesc].insert(calleeDesc);
+    }
+  });
+  // In update mode, rewrite the file and skip validation
+  update match {
+  | doUpdate @ UMDoUpdate _ ->
+    updateCallgraphAnnotations(
+      fileName,
+      fileContents,
+      actualAdj,
+      parsed,
+      doUpdate,
+    );
+    return Array[]
+  | _ -> void
+  };
+
+  errors = mutable Vector[];
+
+  // Check expected callers/edges
+  for (caller => expectedCallees in expectedAdj) {
+    actualAdj.maybeGet(caller) match {
+    | None() ->
+      errors.push(
+        SKTest.ExpectationError(
+          `${fileName}: Missing caller in callgraph`,
+          `${caller}: ${expectedCallees.collect(Array).sorted().join(", ")}`,
+          `actual callgraph:\n${formatAdjMap(actualAdj)}`,
+        ),
+      )
+    | Some(actualCallees) ->
+      for (callee in expectedCallees) {
+        if (!actualCallees.contains(callee)) {
+          errors.push(
+            SKTest.ExpectationError(
+              `${fileName}: Missing callee for ${caller}`,
+              `${caller}: ${expectedCallees
+                .collect(Array)
+                .sorted()
+                .join(", ")}`,
+              `${caller}: ${actualCallees.collect(Array).sorted().join(", ")}`,
+            ),
+          )
+        }
+      };
+      for (callee in actualCallees) {
+        if (!expectedCallees.contains(callee)) {
+          errors.push(
+            SKTest.ExpectationError(
+              `${fileName}: Unexpected callee for ${caller}`,
+              `${caller}: ${expectedCallees
+                .collect(Array)
+                .sorted()
+                .join(", ")}`,
+              `${caller}: ${actualCallees.collect(Array).sorted().join(", ")}`,
+            ),
+          )
+        }
+      }
+    }
+  };
+
+  // Check for unexpected callers
+  for (caller => actualCallees in actualAdj) {
+    if (!expectedAdj.containsKey(caller)) {
+      errors.push(
+        SKTest.ExpectationError(
+          `${fileName}: Unexpected caller in callgraph`,
+          "no extra callers",
+          `${caller}: ${actualCallees.collect(Array).sorted().join(", ")}`,
+        ),
+      )
+    }
+  };
+
+  errors.toArray()
+}
+
+module end;

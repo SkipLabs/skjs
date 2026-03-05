@@ -577,6 +577,11 @@ fun validateTsConfigDiags(
 }
 
 @test
+fun testCallGraph(): void {
+  testDirectory("./tests/callgraph/", validateCallGraph, UpdateMode::fromEnv())
+}
+
+@test
 fun testProjects(): void {
   update = UpdateMode::fromEnv();
   dir = Path.resolve("./tests/projects/");
@@ -624,6 +629,7 @@ fun testNoLostTest(): void {
     "expect-error", // handled in testExpectError
     "ts-conformance", // handled in testTypeScriptConformance and testNotSupportedTypeScriptConformance
     "projects", // handled in testProjects
+    "callgraph", // handled in testCallGraph
   ];
   for (subDir in FileSystem.readDirectory(testsDir)) {
     if (coveredTestDirs.contains(subDir)) continue;
