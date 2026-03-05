@@ -35,17 +35,17 @@ mutable class TCEnvLight{} extends TCEnvBase {}
 // is a dotted path (e.g. `for (k in v)` or `for (k in a.b)`).
 private class ForInContext{
   keyVar: String, // "k" in for(k in v)
-  iterableKey: String, // canonical key for iterable
+  iterableKey: List<String>, // path segments for iterable (e.g. List["a", "b", "c"])
   impureCall: ?PosRange = None(), // position of first call/new that broke purity
   outer: ?ForInContext = None(), // enclosing for-in context (stack)
 } {
-  // Convert an expression to a canonical key for iterable matching.
+  // Convert an expression to a path key for iterable matching.
   // Supports simple variables and dotted paths (e.g. `v`, `a.b.c`).
-  static fun exprToKey(e: Expr): ?String {
+  static fun exprToKey(e: Expr, suffix: List<String> = List[]): ?List<String> {
     e.value match {
-    | Var(name) -> Some(name.value)
+    | Var(name) -> Some(List.Cons(name.value, suffix))
     | Dot(NormalDot(), inner, field) ->
-      static::exprToKey(inner).map(k -> k + "." + field.value)
+      static::exprToKey(inner, List.Cons(field.value, suffix))
     | _ -> None()
     }
   }
@@ -156,7 +156,7 @@ mutable class TCEnv private {
     this.forInContext
   }
 
-  mutable fun enterForIn(keyVar: String, iterableKey: String): void {
+  mutable fun enterForIn(keyVar: String, iterableKey: List<String>): void {
     this.!forInContext = Some(
       ForInContext{keyVar, iterableKey, outer => this.forInContext},
     )

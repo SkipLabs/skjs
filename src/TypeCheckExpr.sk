@@ -1340,9 +1340,9 @@ extension class TypeChecker {
                 (callPos, "This call could have modified the collection"),
                 (
                   subExpr.pos,
-                  `Move this to the beginning of the for-in loop, e.g.: const value = ${
-                    ctx.iterableKey
-                  }[${ctx.keyVar}]!`,
+                  `Move this to the beginning of the for-in loop, e.g.: const value = ${ctx.iterableKey
+                    .collect(Array)
+                    .join(".")}[${ctx.keyVar}]!`,
                 ),
               ],
             )
