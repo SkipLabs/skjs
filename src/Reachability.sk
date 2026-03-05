@@ -33,7 +33,7 @@ base class CGNode_ uses XXHashable, Show {
       strStatic = if (static_) "static " else "";
       `${strStatic}${class_}.${name.getName()} (${file})`
     | Constructor(class_, file) -> `${class_}.constructor (${file})`
-    | Toplevel(file) -> `top-level expr (${file}`
+    | Toplevel(file) -> `top-level expr (${file})`
     | ArrowTypeAnnot(file) -> `arrow-type annotation (${file})`
     | AnonymousLambda(pos, _closure) ->
       `lambda (${pos.fileName}:${pos.relStart.value})`
