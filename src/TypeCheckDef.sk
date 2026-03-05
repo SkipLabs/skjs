@@ -43,9 +43,8 @@ extension class TypeChecker {
       ty = this.expr(tcenv, e, true);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ TopLevelFunDef _ ->
-      cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
       subst = Subst::mcreate(tcenvl);
-      this.funDef(subst, None(), fd, cgNode)
+      this.funDef(subst, None(), fd, fd.cgNode.fromSome())
     | Declare(VarDefs(_, varDefs))
     | ExportDeclare(VarDefs(_, varDefs)) ->
       for (varDef in varDefs) {

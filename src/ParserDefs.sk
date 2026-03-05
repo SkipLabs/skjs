@@ -1042,8 +1042,6 @@ extension class Parser {
       symbolContextPos,
     );
 
-    cgNode = None(); // TODO: Add call graph support back
-
     result = this.methodDef(
       {pos, tparams, params, retType, body} ->
         TopLevelFunDef{
@@ -1057,7 +1055,9 @@ extension class Parser {
           params,
           retType,
           body,
-          cgNode,
+          cgNode => Some(
+            CGNode::create(TopLevelFunction(FNNormal(funName), pos.fileName)),
+          ),
         },
       FNNormal(funName),
       parseBlock,

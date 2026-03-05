@@ -256,17 +256,14 @@ private fun checkDef(
   classes: mutable Set<(String, FAbsolute)>,
 ): void {
   def.value match {
-  // Unsupported syntactic forms
+  // Syntactic forms which can't be called or don't define callable entities
   | ExportImport _
   | Global _
   | ExportAs _
   | ExportEq _
   | Module _
   | Namespace _
-  | ExportDefault _
-  | Enum _ ->
-    notSupported(def.pos, "this kind of definition (for reachability)")
-  // Syntactic forms which can't be called
+  | Enum _
   | ImportExpr _
   | TypeDef _
   | ExportNames _
@@ -274,13 +271,14 @@ private fun checkDef(
   | Import _
   | VarDefs _ ->
     void
-  | Declare(d) -> checkDef(Def(def.pos, d), nodes, classes)
-  | ExportDeclare(d) -> checkDef(Def(def.pos, d), nodes, classes)
-  | Export(d) -> checkDef(Def(def.pos, d), nodes, classes)
+  // Wrappers: unwrap and recurse
+  | Declare(d)
+  | ExportDeclare(d)
+  | Export(d) ->
+    checkDef(Def(def.pos, d), nodes, classes)
+  | ExportDefault(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
-  | fd @ TopLevelFunDef _ ->
-    cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
-    nodes.insert(cgNode)
+  | fd @ TopLevelFunDef _ -> nodes.insert(fd.cgNode.fromSome())
   | c @ Class _ -> classes.insert((c.name.value, def.pos.fileName))
   }
 }
