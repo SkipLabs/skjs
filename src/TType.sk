@@ -1000,6 +1000,12 @@ class IndexKeyKinds{
   hasNumber: Bool,
   hasSymbol: Bool,
 } uses XXHashable, Orderable {
+  const empty: IndexKeyKinds = IndexKeyKinds{
+    hasString => false,
+    hasNumber => false,
+    hasSymbol => false,
+  };
+
   /* Returns None() if all three values are false */
   static fun create{
     hasString: Bool,
@@ -1011,6 +1017,13 @@ class IndexKeyKinds{
     } else {
       None()
     }
+  }
+
+  fun merge(other: IndexKeyKinds): IndexKeyKinds {
+    hasString = this.hasString || other.hasString;
+    hasNumber = this.hasNumber || other.hasNumber;
+    hasSymbol = this.hasSymbol || other.hasSymbol;
+    IndexKeyKinds{hasString, hasNumber, hasSymbol}
   }
 
   fun contains(kind: TPrimValueKind): Bool {

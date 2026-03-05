@@ -1409,7 +1409,7 @@ base class TEnv{
         TType::single(TPrimValue(TNum(), None(), pos)),
       )
     };
-    result = TType::bottom(pos);
+    ikk = IndexKeyKinds::empty;
     maxRange = -1;
     strings = SortedSet[];
     symbols = SortedSet[];
@@ -1422,19 +1422,18 @@ base class TEnv{
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | obj @ TObject(_, _) ->
           for (fields in obj.getAllFields()) {
-            for (field in fields.fields) {
-              !strings = strings.set(field.name.value);
+            if (!ikk.hasString || !ikk.hasNumber) {
+              for (field in fields.fields) {
+                !strings = strings.set(field.name.value);
+              }
             };
-            for (symbolField in fields.symbolFields) {
-              !symbols = symbols.set(symbolField.name.value);
+            if (!ikk.hasSymbol) {
+              for (symbolField in fields.symbolFields) {
+                !symbols = symbols.set(symbolField.name.value);
+              }
             };
             for (index in fields.indexes) {
-              !result = TType::union(
-                subst,
-                this,
-                result,
-                index.keyKinds.toTType(subst, this, index.pos),
-              );
+              !ikk = ikk.merge(index.keyKinds);
             }
           }
         | prim @ TPrimValue _ ->
@@ -1446,35 +1445,32 @@ base class TEnv{
         }
       }
     };
-    numbers = SortedSet::createFromItems(
-      Range(0, maxRange).map(i -> i.toString()),
-    );
-    !strings = strings.union(numbers);
-    PrimLiterals::ofSet(strings, pos) match {
-    | None() -> void
-    | strLits @ Some _ ->
+    resultTys = mutable Vector[ikk.toTType(subst, this, pos)];
+    numbers = if (!ikk.hasString || !ikk.hasNumber) {
+      SortedSet::createFromItems(Range(0, maxRange).map(i -> i.toString()))
+    } else {
+      SortedSet[]
+    };
+    if (!ikk.hasString) {
+      allStrings = strings.union(numbers);
+      PrimLiterals::ofSet(allStrings, pos).each(strLits ->
+        resultTys.push(TType::single(TPrimValue(TString(), Some(strLits), pos)))
+      )
+    };
+    if (!ikk.hasNumber) {
       for (str in strings) {
         str.toIntOption().each(_intStr -> !numbers = numbers.set(str))
       };
-      litsType = PrimLiterals::ofSet(numbers, pos) match {
-      | None() -> TType::single(TPrimValue(TString(), strLits, pos))
-      | nbrLits @ Some _ ->
-        TType::union(
-          subst,
-          this,
-          TType::single(TPrimValue(TString(), strLits, pos)),
-          TType::single(TPrimValue(TNum(), nbrLits, pos)),
-        )
-      };
-      !result = TType::union(subst, this, result, litsType)
+      PrimLiterals::ofSet(numbers, pos).each(nbrLits ->
+        resultTys.push(TType::single(TPrimValue(TNum(), Some(nbrLits), pos)))
+      )
     };
-    PrimLiterals::ofSet(symbols, pos) match {
-    | None() -> void
-    | symbolLits @ Some _ ->
-      symbolType = TType::single(TPrimValue(TSymbol(), symbolLits, pos));
-      !result = TType::union(subst, this, result, symbolType)
+    if (!ikk.hasSymbol) {
+      PrimLiterals::ofSet(symbols, pos).each(symLits ->
+        resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
+      )
     };
-    result
+    TType::unionN(subst, this, pos, resultTys)
   }
 }
 
