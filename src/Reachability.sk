@@ -208,21 +208,23 @@ class CallGraph private (
     for (def in changedDefs) {
       checkDef(def, affectedCGNodes, affectedClasses)
     };
-    for (item in this.depgraph.items(context)) {
-      node = item.i0;
-      node.id match {
-      | Method(_, class_, fileName, _)
-      | Constructor(class_, fileName) ->
-        classIdent = (class_.value, fileName);
-        if (affectedClasses.contains(classIdent)) {
-          affectedCGNodes.insert(node)
+    if (!affectedClasses.isEmpty()) {
+      for (item in this.depgraph.items(context)) {
+        node = item.i0;
+        node.id match {
+        | Method(_, class_, fileName, _)
+        | Constructor(class_, fileName) ->
+          classIdent = (class_.value, fileName);
+          if (affectedClasses.contains(classIdent)) {
+            affectedCGNodes.insert(node)
+          }
+        | TopLevelFunction _
+        | Toplevel _
+        | ArrowTypeAnnot _
+        | AnonymousLambda _
+        | AnonymousFunDef _ ->
+          void
         }
-      | TopLevelFunction _
-      | Toplevel _
-      | ArrowTypeAnnot _
-      | AnonymousLambda _
-      | AnonymousFunDef _ ->
-        void
       }
     };
     closure = this.transitiveClosure(context, affectedCGNodes);
