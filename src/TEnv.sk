@@ -1059,7 +1059,7 @@ base class TEnv{
         | _ -> false
         }
       )
-    | _ -> false
+    | None() -> false
     };
     if (valid) {
       IndexKeyKinds::create(hasString, hasNumber, hasSymbol) match {
