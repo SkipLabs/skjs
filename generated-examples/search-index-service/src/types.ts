@@ -53,5 +53,5 @@ export type SearchDocumentValue = {
   authorId: string;
   authorUsername: string;
   authorDisplayName: string;
-  tagNames: string;
+  tagNames: Array<string>;
 };

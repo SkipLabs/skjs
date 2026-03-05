@@ -1,5 +1,6 @@
 import type {
   EagerCollection,
+  Json,
   Resource,
   ResourceClass,
   SkipService,
@@ -23,9 +24,15 @@ import type {
   FileByTagValue,
 } from "./types.js";
 
-export type FileIdAccum = {
-  fileIds: string;
-  fileCount: number;
+export type File = {
+  id: string;
+  name: string;
+  size: number;
+  mimeType: string;
+  extension: string;
+  createdAt: number;
+  modifiedAt: number;
+  tags: Array<string>;
 };
 
 export type Inputs = {
@@ -47,7 +54,7 @@ export type Resources = {
   "files": ResourceClass<GraphCollections, {}>;
 };
 
-export class FileToTypeKeyMapper implements Mapper<FileId, FileValue, string, string> {
+export class FileToTypeKeyMapper implements Mapper<FileId, FileValue, string, File> {
   constructor() {
   }
 
@@ -55,61 +62,39 @@ export class FileToTypeKeyMapper implements Mapper<FileId, FileValue, string, st
     key: FileId,
     values: Values<FileValue>,
     _context: Context
-  ): Iterable<[string, string]> {
-    const result: Array<[string, string]> = Array.of();
+  ): Iterable<[string, File]> {
+    const result: Array<[string, File]> = Array.of();
     for (const v of values) {
-      result.push([v.extension, key]);
+      const file: File = {
+        id: key,
+        name: v.name,
+        size: v.size,
+        mimeType: v.mimeType,
+        extension: v.extension,
+        createdAt: v.createdAt,
+        modifiedAt: v.modifiedAt,
+        tags: v.tags
+      };
+      result.push([v.extension, file]);
     }
     return result;
   }
 }
 
-export class FileIdAccumReducer implements Reducer<string, FileIdAccum> {
-  initial: Nullable<FileIdAccum> = null;
-
-  constructor() {
-  }
-
-  add(accum: Nullable<FileIdAccum>, value: string & DepSafe): FileIdAccum {
-    if (accum === null) {
-      return { fileIds: value, fileCount: 1 };
-    }
-    return {
-      fileIds: accum.fileIds + "," + value,
-      fileCount: accum.fileCount + 1,
-    };
-  }
-
-  remove(accum: FileIdAccum, value: string & DepSafe): Nullable<FileIdAccum> {
-    const ids = accum.fileIds.split(",");
-    const newIds: Array<string> = Array.of();
-    for (const id of ids) {
-      if (id !== value) {
-        newIds.push(id);
-      }
-    }
-    if (newIds.length === 0) {
-      return null;
-    }
-    return { fileIds: newIds.join(","), fileCount: newIds.length };
-  }
-}
-
-export class FilesByTypeOutputMapper implements Mapper<string, FileIdAccum, FileByTypeId, FileByTypeValue> {
+export class FilesByTypeOutputMapper implements Mapper<string, Array<File>, FileByTypeId, FileByTypeValue> {
   constructor() {
   }
 
   mapEntry(
     key: string,
-    values: Values<FileIdAccum>,
+    values: Values<Array<File>>,
     _context: Context
   ): Iterable<[FileByTypeId, FileByTypeValue]> {
     const result: Array<[FileByTypeId, FileByTypeValue]> = Array.of();
-    for (const accum of values) {
+    for (const filesArray of values) {
       const value: FileByTypeValue = {
         extension: key,
-        fileIds: accum.fileIds,
-        fileCount: accum.fileCount,
+        files: filesArray
       };
       result.push([key, value]);
     }
@@ -141,7 +126,7 @@ export class FileToRecentFileMapper implements Mapper<FileId, FileValue, RecentF
   }
 }
 
-export class FileToTagKeyMapper implements Mapper<FileId, FileValue, string, string> {
+export class FileToTagKeyMapper implements Mapper<FileId, FileValue, string, File> {
   constructor() {
   }
 
@@ -149,39 +134,78 @@ export class FileToTagKeyMapper implements Mapper<FileId, FileValue, string, str
     key: FileId,
     values: Values<FileValue>,
     _context: Context
-  ): Iterable<[string, string]> {
-    const result: Array<[string, string]> = Array.of();
+  ): Iterable<[string, File]> {
+    const result: Array<[string, File]> = Array.of();
     for (const v of values) {
-      const tags = v.tags.split(",");
+      const file: File = {
+        id: key,
+        name: v.name,
+        size: v.size,
+        mimeType: v.mimeType,
+        extension: v.extension,
+        createdAt: v.createdAt,
+        modifiedAt: v.modifiedAt,
+        tags: v.tags
+      };
+      const tags = v.tags;
       for (const tag of tags) {
-        if (tag !== "") {
-          result.push([tag, key]);
-        }
+        result.push([tag, file]);
       }
     }
     return result;
   }
 }
 
-export class FilesByTagOutputMapper implements Mapper<string, FileIdAccum, FileByTagId, FileByTagValue> {
+export class FilesByTagOutputMapper implements Mapper<string, Array<File>, FileByTagId, FileByTagValue> {
   constructor() {
   }
 
   mapEntry(
     key: string,
-    values: Values<FileIdAccum>,
+    values: Values<Array<File>>,
     _context: Context
   ): Iterable<[FileByTagId, FileByTagValue]> {
     const result: Array<[FileByTagId, FileByTagValue]> = Array.of();
-    for (const accum of values) {
+    for (const filesArray of values) {
       const value: FileByTagValue = {
         tag: key,
-        fileIds: accum.fileIds,
-        fileCount: accum.fileCount,
+        files: filesArray
       };
       result.push([key, value]);
     }
     return result;
+  }
+}
+
+export class FileArrayReducer implements Reducer<File, Array<File>> {
+  initial: Nullable<Array<File>> = null;
+
+  constructor() {
+  }
+
+  add(accum: Nullable<Array<File>>, value: File & DepSafe): Array<File> {
+    if (accum === null) {
+      return Array.of(value);
+    }
+    const newArray: Array<File> = Array.of();
+    for (const item of accum) {
+      newArray.push(item);
+    }
+    newArray.push(value);
+    return newArray;
+  }
+
+  remove(accum: Array<File>, value: File & DepSafe): Nullable<Array<File>> {
+    const newArray: Array<File> = Array.of();
+    for (const item of accum) {
+      if (item.id !== value.id) {
+        newArray.push(item);
+      }
+    }
+    if (newArray.length === 0) {
+      return null;
+    }
+    return newArray;
   }
 }
 
@@ -208,15 +232,15 @@ class Service implements SkipService<Inputs, InputCollections, GraphCollections,
 
   createGraph(inputs: InputCollections, _context: Context): GraphCollections {
     const files = inputs.files;
-
-    const filesByTypeGrouped = files.map(FileToTypeKeyMapper).reduce(FileIdAccumReducer);
+    
+    const filesByTypeGrouped = files.map(FileToTypeKeyMapper).reduce(FileArrayReducer);
     const filesByType = filesByTypeGrouped.map(FilesByTypeOutputMapper);
-
+    
     const recentFiles = files.map(FileToRecentFileMapper);
-
-    const filesByTagGrouped = files.map(FileToTagKeyMapper).reduce(FileIdAccumReducer);
+    
+    const filesByTagGrouped = files.map(FileToTagKeyMapper).reduce(FileArrayReducer);
     const filesByTag = filesByTagGrouped.map(FilesByTagOutputMapper);
-
+    
     return { files, filesByType, recentFiles, filesByTag };
   }
 }

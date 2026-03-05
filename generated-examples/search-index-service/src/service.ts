@@ -93,12 +93,12 @@ export class SearchDocumentMapper
       const author = authorArr[0];
       if (author !== undefined) {
         const tagIds = this.postTagsByPostId.getArray(key);
-        let tagNames: string = "";
+        const tagNames: Array<string> = Array.of();
         for (const tagId of tagIds) {
           const tagArr = this.tags.getArray(tagId);
           const tagEntry = tagArr[0];
           if (tagEntry !== undefined) {
-            tagNames = tagNames === "" ? tagEntry.name : tagNames + "," + tagEntry.name;
+            tagNames.push(tagEntry.name);
           }
         }
         const searchDoc: SearchDocumentValue = {

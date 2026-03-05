@@ -49,7 +49,7 @@ export type Resources = {
 };
 
 export class OrderSummaryMapper implements Mapper<OrderId, OrderValue, OrderSummaryId, OrderSummaryValue> {
-  customers: EagerCollection<CustomerId, CustomerValue>;
+  private customers: EagerCollection<CustomerId, CustomerValue>;
 
   constructor(customers: EagerCollection<CustomerId, CustomerValue>) {
     this.customers = customers;
@@ -68,11 +68,18 @@ export class OrderSummaryMapper implements Mapper<OrderId, OrderValue, OrderSumm
       if (customerEntry !== undefined) {
         customerName = customerEntry.name;
       }
+      let itemCount = 0;
+      let totalAmount = 0;
+      const items = order.items;
+      for (const item of items) {
+        itemCount = itemCount + item.quantity;
+        totalAmount = totalAmount + (item.quantity * item.unitPrice);
+      }
       const summary: OrderSummaryValue = {
         customerId: order.customerId,
         customerName: customerName,
-        itemCount: order.itemCount,
-        totalAmount: order.totalAmount,
+        itemCount: itemCount,
+        totalAmount: totalAmount,
         status: order.status,
         createdAt: order.createdAt
       };

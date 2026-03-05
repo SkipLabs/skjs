@@ -5,7 +5,7 @@ export type MetricValue = {
   value: number;
   unit: string;
   timestamp: number;
-  tags: string | null;
+  tags: { [name: string]: string } | null;
 };
 
 export type Metric = MetricValue & { id: MetricId };

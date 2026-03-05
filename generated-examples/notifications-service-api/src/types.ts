@@ -39,7 +39,7 @@ export type NotificationValue = {
   type: MentionFollowLikeEnum;
   count: number;
   latestTimestamp: number;
-  actorIds: string;
+  actorIds: Array<string>;
 };
 
 export type Notification = NotificationValue & { id: NotificationId };

@@ -35,7 +35,7 @@ export type NotificationEventValue = {
 export type NotificationAccum = {
   count: number;
   latestTimestamp: number;
-  actorIds: string;
+  actorIds: Array<string>;
 };
 
 export type Inputs = {
@@ -185,17 +185,20 @@ export class NotificationReducer implements Reducer<NotificationEventValue, Noti
       return {
         count: 1,
         latestTimestamp: value.timestamp,
-        actorIds: value.actorId
+        actorIds: Array.of(value.actorId)
       };
     }
-    const existing = accum.actorIds;
+    const newActorIds: Array<string> = Array.of();
     let found = false;
-    for (const aid of existing.split(",")) {
+    for (const aid of accum.actorIds) {
+      newActorIds.push(aid);
       if (aid === value.actorId) {
         found = true;
       }
     }
-    const newActorIds = found ? existing : (existing === "" ? value.actorId : existing + "," + value.actorId);
+    if (!found) {
+      newActorIds.push(value.actorId);
+    }
     return {
       count: accum.count + 1,
       latestTimestamp: value.timestamp > accum.latestTimestamp ? value.timestamp : accum.latestTimestamp,

@@ -7,7 +7,7 @@ export type FileValue = {
   extension: string;
   createdAt: number;
   modifiedAt: number;
-  tags: string;
+  tags: Array<string>;
 };
 
 export type File = FileValue & { id: FileId };
@@ -16,8 +16,7 @@ export type FileByTypeId = string;
 
 export type FileByTypeValue = {
   extension: string;
-  fileIds: string;
-  fileCount: number;
+  files: Array<File>;
 };
 
 export type FileByType = FileByTypeValue & { id: FileByTypeId };
@@ -38,8 +37,7 @@ export type FileByTagId = string;
 
 export type FileByTagValue = {
   tag: string;
-  fileIds: string;
-  fileCount: number;
+  files: Array<File>;
 };
 
 export type FileByTag = FileByTagValue & { id: FileByTagId };

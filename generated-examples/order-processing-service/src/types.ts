@@ -1,5 +1,10 @@
 export type PendingConfirmedmpnxwyEnum = "cancelled" | "confirmed" | "delivered" | "pending" | "shipped";
 
+export type OrderItem = {
+  productId: string;
+  quantity: number;
+  unitPrice: number;
+};
 
 export type CustomerId = string;
 
@@ -26,8 +31,7 @@ export type OrderId = string;
 
 export type OrderValue = {
   customerId: string;
-  itemCount: number;
-  totalAmount: number;
+  items: Array<OrderItem>;
   status: PendingConfirmedmpnxwyEnum;
   createdAt: number;
   updatedAt: number | null;
