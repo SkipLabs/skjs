@@ -116,15 +116,8 @@ class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
   static fun singleton(node: CGNode): this {
     static(SortedSet::create().add(node))
   }
-  static fun empty(): this {
-    static(SortedSet::create())
-  }
-
   fun union(that: CGNodes): this {
     static(this.nodes.union(that.nodes))
-  }
-  fun intersection(that: CGNodes): this {
-    static(this.nodes.intersection(that.nodes))
   }
   fun compare(other: CGNodes): Order {
     this.nodes.inner.compare(other.nodes.inner)
