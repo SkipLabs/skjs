@@ -970,7 +970,7 @@ extension class TypeChecker {
           xEltTy = x.value match {
           | Spread(spreadExpr) ->
             spreadTy = this.expr(tcenv, spreadExpr, true);
-            this.getValueType(tcenv, x.pos, spreadTy)
+            this.getValueType(tcenv, x.pos, spreadTy, "spread")
           | _ -> this.expr(tcenv, x, mostPrecise)
           };
           !eltType = TType::union(tcenv.subst, this, eltType, xEltTy)

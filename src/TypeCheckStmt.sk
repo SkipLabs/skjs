@@ -89,7 +89,8 @@ extension class TypeChecker {
       | ForIn() ->
         this.checkForInIterable(tcenv, iterable.pos, iterableType);
         TType::single(TPrimValue::string(st.pos))
-      | ForOf() -> this.getValueType(tcenv, iterable.pos, iterableType)
+      | ForOf() ->
+        this.getValueType(tcenv, iterable.pos, iterableType, "for-of loop")
       };
 
       this.bindLoopVar(tcenv, initStmt, ty);
@@ -313,13 +314,14 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     pos: PosRange,
     iterableType: TType,
+    iterationKind: String,
   ): TType {
     result = TType::bottom(pos);
 
     stypes = iterableType.getSTypes(tcenv.subst, this, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> stypes
     | _ ->
-      tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")]);
+      tcenv.error(Array[(pos, `Invalid iterable type for ${iterationKind}`)]);
       return result
     };
 
@@ -330,7 +332,9 @@ extension class TypeChecker {
         | Some(elementType) ->
           !result = TType::union(tcenv.subst, this, result, elementType)
         | None() ->
-          tcenv.error(Array[(pos, "Invalid iterable type for for-of loop")])
+          tcenv.error(
+            Array[(pos, `Invalid iterable type for ${iterationKind}`)],
+          )
         }
       | TTuple(tuple, _) ->
         for (elementType in tuple) {
@@ -346,7 +350,10 @@ extension class TypeChecker {
       | _ ->
         tcenv.error(
           Array[
-            (pos, "for-of loop requires an array, string, or iterable type"),
+            (
+              pos,
+              `${iterationKind} requires an array, string, or iterable type`,
+            ),
           ],
         )
       }
