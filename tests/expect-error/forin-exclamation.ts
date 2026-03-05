@@ -142,8 +142,59 @@ function testNestedInnerCallInnerStillSafe(
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Method call on iterable (caught — it's a Call expression)
+///////////////////////////////////////////////////////////////////////////////
+
+function testForInCallWithIterable(v: { [key: string]: number }): void {
+  for (const k in v) {
+    mutate(v);
+    // @skjs-expect-error Do not use the postfix ! operator
+    const val: number = v[k]!;
+  }
+}
+
+function testForInCallWithIterableThenSafe(v: { [key: string]: number }): void {
+  for (const k in v) {
+    const val: number = v[k]!;
+    mutate(v);
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Assignments between loop head and v[k]!
+///////////////////////////////////////////////////////////////////////////////
+
+function testForInUnrelatedAssignment(v: { [key: string]: number }): void {
+  for (const k in v) {
+    let _y: number = 5;
+    // Safe: unrelated assignment doesn't affect v
+    const val: number = v[k]!;
+  }
+}
+
+function testForInReassignIterable(
+  v: { [key: string]: number },
+  other: { [key: string]: number },
+): void {
+  for (const k in v) {
+    v = other;
+    // FIXME: should error — iterable was reassigned
+    const val: number = v[k]!;
+  }
+}
+
+function testForInAssignToIterableProperty(v: { [key: string]: number }): void {
+  for (const k in v) {
+    v[k] = 5;
+    // FIXME: should error — iterable was mutated via assignment
+    const val: number = v[k]!;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Helpers (type-only, never called)
 ///////////////////////////////////////////////////////////////////////////////
 
 declare function someFunc(): void;
+declare function mutate(v: object): void;
 declare class SomeClass {}
