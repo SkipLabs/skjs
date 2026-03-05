@@ -20,6 +20,7 @@ function compare<T>(a: T, b: T): number {
   }
 
   if (typeof a === "object" && typeof b === "object") {
+    // @skjs-expect-error Invalid call
     return compareObjects(a, b);
   }
 
@@ -54,6 +55,7 @@ function compareObjects(a: object, b: object): number {
     if (keyA > keyB) {
       return 1;
     }
+    // @skjs-expect-error Invalid access
     const valueA = a[keyA];
     const valueB = b[keyB];
     if (valueA === undefined && valueB === undefined) {

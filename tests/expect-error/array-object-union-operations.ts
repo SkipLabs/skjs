@@ -77,6 +77,24 @@ function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
   return x["name"];
 }
 
+// L-value index on tuple | indexed-object union
+// FIXME: TS allows this, SKJS rejects because tuples are not yet mutable
+function testLValueIndexOnTupleUnion(
+  x: [number, number] | { [k: number]: string },
+): void {
+  // @skjs-expect-error Invalid assignment
+  x[0] = 42;
+}
+
+// L-value with multi-literal key: value must satisfy all matching fields
+function testLValueMultiLiteralKey(
+  obj: { a: number; b: string },
+  key: "a" | "b",
+): void {
+  // @skjs-expect-error Invalid assignment
+  obj[key] = 42;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Assignment to union types
 ///////////////////////////////////////////////////////////////////////////////

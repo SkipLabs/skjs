@@ -155,7 +155,16 @@ extension class TypeChecker {
           if (target) Some(x) else None()
         | _ -> if (target) None() else Some(x)
         };
-      default = if (target) Some(TObject::createEmpty(typePos)) else {
+      default = if (target) {
+        Some(
+          STypes::union(
+            tcenv.subst,
+            this,
+            STypes::single(TPrimUnit(TNull(), typePos)),
+            STypes::single(TObject::createEmpty(typePos)),
+          ),
+        )
+      } else {
         None()
       };
       this.setLocalFilterMap(tcenv, local, default, filterMap)
@@ -172,8 +181,7 @@ extension class TypeChecker {
           )
         | _ -> if (target) None() else Some(x)
         };
-      default = None();
-      this.setLocalFilterMap(tcenv, local, default, filterMap)
+      this.setLocalFilterMap(tcenv, local, None(), filterMap)
     | _ ->
       tcenv.error(
         Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
@@ -213,9 +221,7 @@ extension class TypeChecker {
           TObject::inter(tcenv.subst, this, tObj, arrObj)
         | _ -> None()
         };
-
-      default = None();
-      this.setLocalFilterMap(tcenv, local, default, filterMap)
+      this.setLocalFilterMap(tcenv, local, None(), filterMap)
     }
   }
 
@@ -287,7 +293,7 @@ extension class TypeChecker {
           } else {
             TFields::singleField(field)
           };
-          TObject::createSingleBranch(tFields, e1.pos)
+          STypes::single(TObject::createSingleBranch(tFields, e1.pos))
         })
       } else {
         None()
@@ -363,12 +369,12 @@ extension class TypeChecker {
   fun setLocalFilterMap(
     tcenv: mutable TCEnv,
     local: Name,
-    default: ?SType,
+    default: ?STypes,
     filterMap: SType -> ?SType,
   ): void {
     f = (sTypesOpt) ->
       sTypesOpt match {
-      | None() -> default.map(STypes::single)
+      | None() -> default
       | Some(sTypes) -> Some(sTypes.filterMap(filterMap))
       };
     ty = tcenv.scope.get(local);
@@ -383,7 +389,7 @@ extension class TypeChecker {
     filter: SType ~> Bool,
   ): void {
     filterMap = sType -> if (filter(sType)) Some(sType) else None();
-    this.setLocalFilterMap(tcenv, local, default, filterMap)
+    this.setLocalFilterMap(tcenv, local, default.map(STypes::single), filterMap)
   }
 }
 

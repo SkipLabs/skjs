@@ -319,11 +319,19 @@ extension class TypeChecker {
         ],
       )
     };
-    result = TType::bottom(pos);
     isOptionalChaining = accessKind is AKOptionalChain _;
     isLValue = accessKind is AKLValue _;
     optionalChainingIsUseless = isOptionalChaining;
     optionalChainingIsAlwaysUndefined = isOptionalChaining;
+
+    (addResultCase, getResult) = {
+      (init, add) = if (isLValue) (TType::top, TType::inter) else {
+        (TType::bottom, TType::union)
+      };
+      result = init(pos);
+      (ty -> !result = add(tcenv.subst, this, result, ty), () -> result)
+    };
+
     while (!stypes.isEmpty()) {
       stype = stypes.pop();
 
@@ -348,13 +356,11 @@ extension class TypeChecker {
         | Some(tyAtN) -> tyAtN
         | None() -> typingError(Array[(pos, "Out of bound index")])
         };
-        !result = TType::union(tcenv.subst, this, result, tyAtN)
+        addResultCase(tyAtN)
 
       | obj @ TObject(_, objectPos) ->
         fields = obj.getFields(tcenv.subst, this);
-        if (fields.isEmpty()) {
-          !result = TType::top(objectPos)
-        } else if (idxSType is TPrimValue(TSymbol(), _, _)) {
+        if (idxSType is TPrimValue(TSymbol(), _, _)) {
           uniqueId = idxSType match {
           | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
           | _ -> None()
@@ -369,7 +375,7 @@ extension class TypeChecker {
             pos,
             isLValue,
           ) match {
-          | Some(ty) -> !result = TType::union(tcenv.subst, this, result, ty)
+          | Some(ty) -> addResultCase(ty)
           | None() ->
             typingError(Array[(pos, "Symbol property not found on object")])
           }
@@ -387,7 +393,7 @@ extension class TypeChecker {
                   isLValue,
                 ) match {
                 | Some(ty) ->
-                  !result = TType::union(tcenv.subst, this, result, ty);
+                  addResultCase(ty);
                   false
                 | None() -> true
                 }
@@ -431,7 +437,7 @@ extension class TypeChecker {
                   pos,
                 )
               };
-              !result = TType::union(tcenv.subst, this, result, ty)
+              addResultCase(ty)
             }
           }
         }
@@ -446,7 +452,8 @@ extension class TypeChecker {
       ) if (isOptionalChaining) ->
         !optionalChainingIsUseless = false;
         !optionalChainingIsAlwaysUndefinedForThisSType = true;
-        !result = TType::unionUndefined(tcenv.subst, this, result, undefPos)
+        invariant(!isLValue);
+        addResultCase(TType::single(TPrimUnit(TUndefined(), undefPos)))
 
       | _ ->
         typingError(
@@ -479,7 +486,7 @@ extension class TypeChecker {
         ],
       )
     };
-    result
+    getResult()
   }
 
   fun exprWithoutNullish(
