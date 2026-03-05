@@ -1,14 +1,15 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   WorkspaceId,
@@ -27,11 +28,11 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  workspaces: Entry<WorkspaceId, WorkspaceValue>[];
-  teams: Entry<TeamId, TeamValue>[];
-  members: Entry<MemberId, MemberValue>[];
-  channels: Entry<ChannelId, ChannelValue>[];
+export type Inputs = {
+  workspaces: InputDefinition<WorkspaceId, WorkspaceValue>;
+  teams: InputDefinition<TeamId, TeamValue>;
+  members: InputDefinition<MemberId, MemberValue>;
+  channels: InputDefinition<ChannelId, ChannelValue>;
 };
 
 export type InputCollections = {
@@ -48,13 +49,13 @@ export type GraphCollections = {
   channels: EagerCollection<ChannelId, ChannelValue>;
 };
 
-type Resources = {
-  "workspaces": new (params: Json) => Resource<GraphCollections>;
-  "workspaces-teams": new (params: Json) => Resource<GraphCollections>;
-  "workspaces-members": new (params: Json) => Resource<GraphCollections>;
-  "workspaces-channels": new (params: Json) => Resource<GraphCollections>;
-  "teams-members": new (params: Json) => Resource<GraphCollections>;
-  "teams-channels": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "workspaces": ResourceClass<GraphCollections, {}>;
+  readonly "workspaces-teams": ResourceClass<GraphCollections, WorkspacesTeamsResourceParams>;
+  readonly "workspaces-members": ResourceClass<GraphCollections, WorkspacesMembersResourceParams>;
+  readonly "workspaces-channels": ResourceClass<GraphCollections, WorkspacesChannelsResourceParams>;
+  readonly "teams-members": ResourceClass<GraphCollections, TeamsMembersResourceParams>;
+  readonly "teams-channels": ResourceClass<GraphCollections, TeamsChannelsResourceParams>;
 };
 
 export class FilterTeamsByWorkspaceMapper implements Mapper<TeamId, TeamValue, TeamId, TeamValue> {
@@ -70,9 +71,7 @@ export class FilterTeamsByWorkspaceMapper implements Mapper<TeamId, TeamValue, T
     _context: Context
   ): Iterable<[TeamId, TeamValue]> {
     const result: Array<[TeamId, TeamValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.workspaceId === this.workspaceId) {
         result.push([key, v]);
       }
@@ -94,9 +93,7 @@ export class FilterMembersByWorkspaceMapper implements Mapper<MemberId, MemberVa
     _context: Context
   ): Iterable<[MemberId, MemberValue]> {
     const result: Array<[MemberId, MemberValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.workspaceId === this.workspaceId) {
         result.push([key, v]);
       }
@@ -118,9 +115,7 @@ export class FilterChannelsByWorkspaceMapper implements Mapper<ChannelId, Channe
     _context: Context
   ): Iterable<[ChannelId, ChannelValue]> {
     const result: Array<[ChannelId, ChannelValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.workspaceId === this.workspaceId) {
         result.push([key, v]);
       }
@@ -142,9 +137,7 @@ export class FilterMembersByTeamMapper implements Mapper<MemberId, MemberValue, 
     _context: Context
   ): Iterable<[MemberId, MemberValue]> {
     const result: Array<[MemberId, MemberValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.teamId === this.teamId) {
         result.push([key, v]);
       }
@@ -166,9 +159,7 @@ export class FilterChannelsByTeamMapper implements Mapper<ChannelId, ChannelValu
     _context: Context
   ): Iterable<[ChannelId, ChannelValue]> {
     const result: Array<[ChannelId, ChannelValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.teamId === this.teamId) {
         result.push([key, v]);
       }
@@ -179,7 +170,7 @@ export class FilterChannelsByTeamMapper implements Mapper<ChannelId, ChannelValu
 
 
 export class WorkspacesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -193,9 +184,8 @@ export class WorkspacesResource implements Resource<GraphCollections> {
 export class WorkspacesTeamsResource implements Resource<GraphCollections> {
   private workspaceId: string;
 
-  constructor(params: Json) {
-    const typed = params as WorkspacesTeamsResourceParams;
-    this.workspaceId = typed.workspaceId;
+  constructor(params: WorkspacesTeamsResourceParams) {
+    this.workspaceId = params.workspaceId;
   }
 
   instantiate(
@@ -209,9 +199,8 @@ export class WorkspacesTeamsResource implements Resource<GraphCollections> {
 export class WorkspacesMembersResource implements Resource<GraphCollections> {
   private workspaceId: string;
 
-  constructor(params: Json) {
-    const typed = params as WorkspacesMembersResourceParams;
-    this.workspaceId = typed.workspaceId;
+  constructor(params: WorkspacesMembersResourceParams) {
+    this.workspaceId = params.workspaceId;
   }
 
   instantiate(
@@ -225,9 +214,8 @@ export class WorkspacesMembersResource implements Resource<GraphCollections> {
 export class WorkspacesChannelsResource implements Resource<GraphCollections> {
   private workspaceId: string;
 
-  constructor(params: Json) {
-    const typed = params as WorkspacesChannelsResourceParams;
-    this.workspaceId = typed.workspaceId;
+  constructor(params: WorkspacesChannelsResourceParams) {
+    this.workspaceId = params.workspaceId;
   }
 
   instantiate(
@@ -241,9 +229,8 @@ export class WorkspacesChannelsResource implements Resource<GraphCollections> {
 export class TeamsMembersResource implements Resource<GraphCollections> {
   private teamId: string;
 
-  constructor(params: Json) {
-    const typed = params as TeamsMembersResourceParams;
-    this.teamId = typed.teamId;
+  constructor(params: TeamsMembersResourceParams) {
+    this.teamId = params.teamId;
   }
 
   instantiate(
@@ -257,9 +244,8 @@ export class TeamsMembersResource implements Resource<GraphCollections> {
 export class TeamsChannelsResource implements Resource<GraphCollections> {
   private teamId: string;
 
-  constructor(params: Json) {
-    const typed = params as TeamsChannelsResourceParams;
-    this.teamId = typed.teamId;
+  constructor(params: TeamsChannelsResourceParams) {
+    this.teamId = params.teamId;
   }
 
   instantiate(
@@ -270,16 +256,12 @@ export class TeamsChannelsResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyWorkspaces: Entry<WorkspaceId, WorkspaceValue>[] = Array.of();
-    const emptyTeams: Entry<TeamId, TeamValue>[] = Array.of();
-    const emptyMembers: Entry<MemberId, MemberValue>[] = Array.of();
-    const emptyChannels: Entry<ChannelId, ChannelValue>[] = Array.of();
-    this.initialData = { workspaces: emptyWorkspaces, teams: emptyTeams, members: emptyMembers, channels: emptyChannels };
+                    this.inputs = { workspaces: new InputDefinition<WorkspaceId, WorkspaceValue>([]), teams: new InputDefinition<TeamId, TeamValue>([]), members: new InputDefinition<MemberId, MemberValue>([]), channels: new InputDefinition<ChannelId, ChannelValue>([]) };
     this.resources = { "workspaces": WorkspacesResource, "workspaces-teams": WorkspacesTeamsResource, "workspaces-members": WorkspacesMembersResource, "workspaces-channels": WorkspacesChannelsResource, "teams-members": TeamsMembersResource, "teams-channels": TeamsChannelsResource };
   }
 
@@ -288,6 +270,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

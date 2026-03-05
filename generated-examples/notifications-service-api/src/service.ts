@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   MentionId,
@@ -37,10 +38,10 @@ export type NotificationAccum = {
   actorIds: Array<string>;
 };
 
-type Inputs = {
-  mentions: Entry<MentionId, MentionValue>[];
-  follows: Entry<FollowId, FollowValue>[];
-  likes: Entry<LikeId, LikeValue>[];
+export type Inputs = {
+  mentions: InputDefinition<MentionId, MentionValue>;
+  follows: InputDefinition<FollowId, FollowValue>;
+  likes: InputDefinition<LikeId, LikeValue>;
 };
 
 export type InputCollections = {
@@ -53,9 +54,9 @@ export type GraphCollections = {
   notifications: EagerCollection<NotificationId, NotificationValue>;
 };
 
-type Resources = {
-  "notifications": new (params: Json) => Resource<GraphCollections>;
-  "notifications-by-user": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "notifications": ResourceClass<GraphCollections, {}>;
+  readonly "notifications-by-user": ResourceClass<GraphCollections, { userId: string }>;
 };
 
 export class MentionToNotificationMapper implements Mapper<MentionId, MentionValue, [string, NotificationType], NotificationEventValue> {
@@ -67,10 +68,8 @@ export class MentionToNotificationMapper implements Mapper<MentionId, MentionVal
     values: Values<MentionValue>,
     _context: Context
   ): Iterable<[[string, NotificationType], NotificationEventValue]> {
-    const arr = values.toArray();
     const result: Array<[[string, NotificationType], NotificationEventValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const outputKey: [string, NotificationType] = [v.toUserId, "mention"];
       const outputValue: NotificationEventValue = {
         actorId: v.fromUserId,
@@ -91,10 +90,8 @@ export class FollowToNotificationMapper implements Mapper<FollowId, FollowValue,
     values: Values<FollowValue>,
     _context: Context
   ): Iterable<[[string, NotificationType], NotificationEventValue]> {
-    const arr = values.toArray();
     const result: Array<[[string, NotificationType], NotificationEventValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const outputKey: [string, NotificationType] = [v.toUserId, "follow"];
       const outputValue: NotificationEventValue = {
         actorId: v.fromUserId,
@@ -115,10 +112,8 @@ export class LikeToNotificationMapper implements Mapper<LikeId, LikeValue, [stri
     values: Values<LikeValue>,
     _context: Context
   ): Iterable<[[string, NotificationType], NotificationEventValue]> {
-    const arr = values.toArray();
     const result: Array<[[string, NotificationType], NotificationEventValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const outputKey: [string, NotificationType] = [v.toUserId, "like"];
       const outputValue: NotificationEventValue = {
         actorId: v.fromUserId,
@@ -139,10 +134,8 @@ export class NotificationOutputMapper implements Mapper<[string, NotificationTyp
     values: Values<NotificationAccum>,
     _context: Context
   ): Iterable<[NotificationId, NotificationValue]> {
-    const arr = values.toArray();
     const result: Array<[NotificationId, NotificationValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const userId = key[0];
       const notificationType = key[1];
       const notificationId: NotificationId = JSON.stringify([userId, notificationType]);
@@ -171,10 +164,8 @@ export class FilterByUserMapper implements Mapper<NotificationId, NotificationVa
     values: Values<NotificationValue>,
     _context: Context
   ): Iterable<[NotificationId, NotificationValue]> {
-    const arr = values.toArray();
     const result: Array<[NotificationId, NotificationValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.userId === this.userId) {
         result.push([key, v]);
       }
@@ -199,8 +190,7 @@ export class NotificationReducer implements Reducer<NotificationEventValue, Noti
     }
     const newActorIds: Array<string> = Array.of();
     let found = false;
-    for (let i = 0; i < accum.actorIds.length; i++) {
-      const aid = accum.actorIds[i]!;
+    for (const aid of accum.actorIds) {
       newActorIds.push(aid);
       if (aid === value.actorId) {
         found = true;
@@ -225,7 +215,7 @@ export class NotificationReducer implements Reducer<NotificationEventValue, Noti
 }
 
 export class NotificationsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -239,8 +229,8 @@ export class NotificationsResource implements Resource<GraphCollections> {
 export class NotificationsByUserResource implements Resource<GraphCollections> {
   private userId: string;
 
-  constructor(params: Json) {
-    this.userId = params as string;
+  constructor(params: { userId: string }) {
+    this.userId = params.userId;
   }
 
   instantiate(
@@ -251,15 +241,12 @@ export class NotificationsByUserResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyMentions: Entry<MentionId, MentionValue>[] = Array.of();
-    const emptyFollows: Entry<FollowId, FollowValue>[] = Array.of();
-    const emptyLikes: Entry<LikeId, LikeValue>[] = Array.of();
-    this.initialData = { mentions: emptyMentions, follows: emptyFollows, likes: emptyLikes };
+                this.inputs = { mentions: new InputDefinition<MentionId, MentionValue>([]), follows: new InputDefinition<FollowId, FollowValue>([]), likes: new InputDefinition<LikeId, LikeValue>([]) };
     this.resources = { 
       "notifications": NotificationsResource,
       "notifications-by-user": NotificationsByUserResource
@@ -283,6 +270,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

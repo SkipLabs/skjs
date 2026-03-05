@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   ComponentId,
@@ -35,8 +36,8 @@ export type StatusAccum = {
   lastUpdated: number;
 };
 
-type Inputs = {
-  components: Entry<ComponentId, ComponentValue>[];
+export type Inputs = {
+  components: InputDefinition<ComponentId, ComponentValue>;
 };
 
 export type InputCollections = {
@@ -48,12 +49,12 @@ export type GraphCollections = {
   systemStatus: EagerCollection<SystemStatusId, SystemStatusValue>;
 };
 
-type Resources = {
-  "status": new (params: Json) => Resource<GraphCollections>;
-  "components": new (params: Json) => Resource<GraphCollections>;
-  "components-healthy": new (params: Json) => Resource<GraphCollections>;
-  "components-degraded": new (params: Json) => Resource<GraphCollections>;
-  "components-unhealthy": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "status": ResourceClass<GraphCollections, {}>;
+  readonly "components": ResourceClass<GraphCollections, {}>;
+  readonly "components-healthy": ResourceClass<GraphCollections, {}>;
+  readonly "components-degraded": ResourceClass<GraphCollections, {}>;
+  readonly "components-unhealthy": ResourceClass<GraphCollections, {}>;
 };
 
 export class ComponentToStatusMapper implements Mapper<ComponentId, ComponentValue, SystemStatusId, StatusCount> {
@@ -65,10 +66,8 @@ export class ComponentToStatusMapper implements Mapper<ComponentId, ComponentVal
     values: Values<ComponentValue>,
     _context: Context
   ): Iterable<[SystemStatusId, StatusCount]> {
-    const arr = values.toArray();
     const result: Array<[SystemStatusId, StatusCount]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const statusCount: StatusCount = {
         status: v.status,
         lastChecked: v.lastChecked
@@ -88,16 +87,12 @@ export class StatusAccumToSystemStatusMapper implements Mapper<SystemStatusId, S
     values: Values<StatusAccum>,
     _context: Context
   ): Iterable<[SystemStatusId, SystemStatusValue]> {
-    const arr = values.toArray();
     const result: Array<[SystemStatusId, SystemStatusValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const accum = arr[i]!;
-      let overallStatus: HealthyDegradedUnhealthyEnum = "healthy";
-      if (accum.unhealthyCount > 0) {
-        overallStatus = "unhealthy";
-      } else if (accum.degradedCount > 0) {
-        overallStatus = "degraded";
-      }
+    for (const accum of values) {
+      const overallStatus: HealthyDegradedUnhealthyEnum =
+        accum.unhealthyCount > 0 ? "unhealthy" :
+        accum.degradedCount > 0 ? "degraded" :
+        "healthy";
       const systemStatusValue: SystemStatusValue = {
         overallStatus: overallStatus,
         componentCount: accum.componentCount,
@@ -124,10 +119,8 @@ export class FilterByStatusMapper implements Mapper<ComponentId, ComponentValue,
     values: Values<ComponentValue>,
     _context: Context
   ): Iterable<[ComponentId, ComponentValue]> {
-    const arr = values.toArray();
     const result: Array<[ComponentId, ComponentValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.status === this.targetStatus) {
         result.push([key, v]);
       }
@@ -187,7 +180,7 @@ export class StatusAggregatorReducer implements Reducer<StatusCount, StatusAccum
 }
 
 export class StatusResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -199,7 +192,7 @@ export class StatusResource implements Resource<GraphCollections> {
 }
 
 export class ComponentsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -211,48 +204,47 @@ export class ComponentsResource implements Resource<GraphCollections> {
 }
 
 export class ComponentsHealthyResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<ComponentId, ComponentValue> {
-    return cs.components.map(FilterByStatusMapper, "healthy" as ComponentStatus);
+    return cs.components.map(FilterByStatusMapper, "healthy");
   }
 }
 
 export class ComponentsDegradedResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<ComponentId, ComponentValue> {
-    return cs.components.map(FilterByStatusMapper, "degraded" as ComponentStatus);
+    return cs.components.map(FilterByStatusMapper, "degraded");
   }
 }
 
 export class ComponentsUnhealthyResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
     cs: GraphCollections,
     _context: Context
   ): EagerCollection<ComponentId, ComponentValue> {
-    return cs.components.map(FilterByStatusMapper, "unhealthy" as ComponentStatus);
+    return cs.components.map(FilterByStatusMapper, "unhealthy");
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyComponents: Entry<ComponentId, ComponentValue>[] = Array.of();
-    this.initialData = { components: emptyComponents };
+        this.inputs = { components: new InputDefinition<ComponentId, ComponentValue>([]) };
     this.resources = {
       "status": StatusResource,
       "components": ComponentsResource,
@@ -273,6 +265,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

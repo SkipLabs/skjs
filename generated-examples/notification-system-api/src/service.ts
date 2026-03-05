@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   NotificationId,
@@ -16,8 +17,8 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  notifications: Entry<NotificationId, NotificationValue>[];
+export type Inputs = {
+  notifications: InputDefinition<NotificationId, NotificationValue>;
 };
 
 export type InputCollections = {
@@ -28,10 +29,10 @@ export type GraphCollections = {
   notifications: EagerCollection<NotificationId, NotificationValue>;
 };
 
-type Resources = {
-  "notifications": new (params: Json) => Resource<GraphCollections>;
-  "notifications-unread": new (params: Json) => Resource<GraphCollections>;
-  "notifications-user": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "notifications": ResourceClass<GraphCollections, {}>;
+  readonly "notifications-unread": ResourceClass<GraphCollections, {}>;
+  readonly "notifications-user": ResourceClass<GraphCollections, NotificationsUserResourceParams>;
 };
 
 export class UnreadNotificationsMapper implements Mapper<NotificationId, NotificationValue, NotificationId, NotificationValue> {
@@ -44,9 +45,7 @@ export class UnreadNotificationsMapper implements Mapper<NotificationId, Notific
     _context: Context
   ): Iterable<[NotificationId, NotificationValue]> {
     const result: Array<[NotificationId, NotificationValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.read === 0) {
         result.push([key, v]);
       }
@@ -68,9 +67,7 @@ export class NotificationsByUserMapper implements Mapper<NotificationId, Notific
     _context: Context
   ): Iterable<[NotificationId, NotificationValue]> {
     const result: Array<[NotificationId, NotificationValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.userId === this.userId) {
         result.push([key, v]);
       }
@@ -81,7 +78,7 @@ export class NotificationsByUserMapper implements Mapper<NotificationId, Notific
 
 
 export class NotificationsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -93,7 +90,7 @@ export class NotificationsResource implements Resource<GraphCollections> {
 }
 
 export class NotificationsUnreadResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -107,9 +104,8 @@ export class NotificationsUnreadResource implements Resource<GraphCollections> {
 export class NotificationsUserResource implements Resource<GraphCollections> {
   private userId: string;
 
-  constructor(params: Json) {
-    const typed = params as NotificationsUserResourceParams;
-    this.userId = typed.userId;
+  constructor(params: NotificationsUserResourceParams) {
+    this.userId = params.userId;
   }
 
   instantiate(
@@ -120,13 +116,12 @@ export class NotificationsUserResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyNotifications: Entry<NotificationId, NotificationValue>[] = Array.of();
-    this.initialData = { notifications: emptyNotifications };
+        this.inputs = { notifications: new InputDefinition<NotificationId, NotificationValue>([]) };
     this.resources = { "notifications": NotificationsResource, "notifications-unread": NotificationsUnreadResource, "notifications-user": NotificationsUserResource };
   }
 
@@ -135,6 +130,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

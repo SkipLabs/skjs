@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 
 import type {
@@ -26,8 +27,15 @@ export type AggregatedData = {
   sum: number;
 };
 
-type Inputs = {
-  metrics: Entry<MetricId, MetricValue>[];
+// Using object instead of tuple as readonly tuples are not yet supported by skjs.
+export type BucketKey = {
+  metricName: string;
+  period: Period;
+  periodStart: number;
+};
+
+export type Inputs = {
+  metrics: InputDefinition<MetricId, MetricValue>;
 };
 
 export type InputCollections = {
@@ -38,14 +46,14 @@ export type GraphCollections = {
   metrics: EagerCollection<MetricId, MetricValue>;
 };
 
-type Resources = {
-  "stats-hourly": new (params: Json) => Resource<GraphCollections>;
-  "stats-daily": new (params: Json) => Resource<GraphCollections>;
-  "stats-weekly": new (params: Json) => Resource<GraphCollections>;
-  "stats-monthly": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "stats-hourly": ResourceClass<GraphCollections, {}>;
+  readonly "stats-daily": ResourceClass<GraphCollections, {}>;
+  readonly "stats-weekly": ResourceClass<GraphCollections, {}>;
+  readonly "stats-monthly": ResourceClass<GraphCollections, {}>;
 };
 
-export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [string, Period, number], number> {
+export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, BucketKey, number> {
   private period: Period;
 
   constructor(period: Period) {
@@ -56,19 +64,17 @@ export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [stri
     _key: MetricId,
     values: Values<MetricValue>,
     _context: Context
-  ): Iterable<[[string, Period, number], number]> {
-    const arr = values.toArray();
-    const result: Array<[[string, Period, number], number]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+  ): Iterable<[BucketKey, number]> {
+    const result: Array<[BucketKey, number]> = Array.of();
+    for (const v of values) {
       const periodStart = this.computePeriodStart(v.timestamp);
-      const bucketKey: [string, Period, number] = [v.name, this.period, periodStart];
+      const bucketKey: BucketKey = { metricName: v.name, period: this.period, periodStart: periodStart };
       result.push([bucketKey, v.value]);
     }
     return result;
   }
 
-  private computePeriodStart(timestamp: number): number {
+  computePeriodStart(timestamp: number): number {
     const date = new Date(timestamp);
     if (this.period === "hour") {
       date.setUTCMinutes(0, 0, 0);
@@ -90,22 +96,20 @@ export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [stri
   }
 }
 
-export class BucketToAggregatedMetricMapper implements Mapper<[string, Period, number], AggregatedData, AggregatedMetricId, AggregatedMetricValue> {
+export class BucketToAggregatedMetricMapper implements Mapper<BucketKey, AggregatedData, AggregatedMetricId, AggregatedMetricValue> {
   constructor() {
   }
 
   mapEntry(
-    key: [string, Period, number],
+    key: BucketKey,
     values: Values<AggregatedData>,
     _context: Context
   ): Iterable<[AggregatedMetricId, AggregatedMetricValue]> {
-    const arr = values.toArray();
     const result: Array<[AggregatedMetricId, AggregatedMetricValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
-      const metricName = key[0];
-      const period = key[1];
-      const periodStart = key[2];
+    for (const v of values) {
+      const metricName = key.metricName;
+      const period = key.period;
+      const periodStart = key.periodStart;
       const avg = v.count > 0 ? v.sum / v.count : 0;
       const aggregatedId: AggregatedMetricId = JSON.stringify(key);
       const aggregatedValue: AggregatedMetricValue = {
@@ -134,10 +138,8 @@ export class FilterByMetricNameMapper implements Mapper<AggregatedMetricId, Aggr
     values: Values<AggregatedMetricValue>,
     _context: Context
   ): Iterable<[AggregatedMetricId, AggregatedMetricValue]> {
-    const arr = values.toArray();
     const result: Array<[AggregatedMetricId, AggregatedMetricValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.metricName === this.metricName) {
         result.push([key, v]);
       }
@@ -172,9 +174,8 @@ export class MetricAggregationReducer implements Reducer<number, AggregatedData>
 export class StatsHourlyResource implements Resource<GraphCollections> {
   private metricName: string | null;
 
-  constructor(params: Json = {}) {
-    const p = params as { metricName?: string };
-    this.metricName = p.metricName ?? null;
+  constructor(params: { metricName?: string } = {}) {
+    this.metricName = params.metricName ?? null;
   }
 
   instantiate(
@@ -195,9 +196,8 @@ export class StatsHourlyResource implements Resource<GraphCollections> {
 export class StatsDailyResource implements Resource<GraphCollections> {
   private metricName: string | null;
 
-  constructor(params: Json = {}) {
-    const p = params as { metricName?: string };
-    this.metricName = p.metricName ?? null;
+  constructor(params: { metricName?: string } = {}) {
+    this.metricName = params.metricName ?? null;
   }
 
   instantiate(
@@ -218,9 +218,8 @@ export class StatsDailyResource implements Resource<GraphCollections> {
 export class StatsWeeklyResource implements Resource<GraphCollections> {
   private metricName: string | null;
 
-  constructor(params: Json = {}) {
-    const p = params as { metricName?: string };
-    this.metricName = p.metricName ?? null;
+  constructor(params: { metricName?: string } = {}) {
+    this.metricName = params.metricName ?? null;
   }
 
   instantiate(
@@ -241,9 +240,8 @@ export class StatsWeeklyResource implements Resource<GraphCollections> {
 export class StatsMonthlyResource implements Resource<GraphCollections> {
   private metricName: string | null;
 
-  constructor(params: Json = {}) {
-    const p = params as { metricName?: string };
-    this.metricName = p.metricName ?? null;
+  constructor(params: { metricName?: string } = {}) {
+    this.metricName = params.metricName ?? null;
   }
 
   instantiate(
@@ -261,13 +259,12 @@ export class StatsMonthlyResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyMetrics: Entry<MetricId, MetricValue>[] = Array.of();
-    this.initialData = { metrics: emptyMetrics };
+        this.inputs = { metrics: new InputDefinition<MetricId, MetricValue>([]) };
     this.resources = {
       "stats-hourly": StatsHourlyResource,
       "stats-daily": StatsDailyResource,
@@ -281,6 +278,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

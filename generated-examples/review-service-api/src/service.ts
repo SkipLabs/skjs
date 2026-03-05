@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   ReviewId,
@@ -17,8 +18,8 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  reviews: Entry<ReviewId, ReviewValue>[];
+export type Inputs = {
+  reviews: InputDefinition<ReviewId, ReviewValue>;
 };
 
 export type InputCollections = {
@@ -29,9 +30,9 @@ export type GraphCollections = {
   reviews: EagerCollection<ReviewId, ReviewValue>;
 };
 
-type Resources = {
-  "reviews-by-item": new (params: Json) => Resource<GraphCollections>;
-  "reviews-by-user": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "reviews-by-item": ResourceClass<GraphCollections, ReviewsByItemResourceParams>;
+  readonly "reviews-by-user": ResourceClass<GraphCollections, ReviewsByUserResourceParams>;
 };
 
 export class FilterByItemMapper implements Mapper<ReviewId, ReviewValue, ReviewId, ReviewValue> {
@@ -47,9 +48,7 @@ export class FilterByItemMapper implements Mapper<ReviewId, ReviewValue, ReviewI
     _context: Context
   ): Iterable<[ReviewId, ReviewValue]> {
     const result: Array<[ReviewId, ReviewValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.itemId === this.itemId) {
         result.push([key, v]);
       }
@@ -71,9 +70,7 @@ export class FilterByUserMapper implements Mapper<ReviewId, ReviewValue, ReviewI
     _context: Context
   ): Iterable<[ReviewId, ReviewValue]> {
     const result: Array<[ReviewId, ReviewValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.userId === this.userId) {
         result.push([key, v]);
       }
@@ -86,9 +83,8 @@ export class FilterByUserMapper implements Mapper<ReviewId, ReviewValue, ReviewI
 export class ReviewsByItemResource implements Resource<GraphCollections> {
   private itemId: string;
 
-  constructor(params: Json) {
-    const typed = params as ReviewsByItemResourceParams;
-    this.itemId = typed.itemId;
+  constructor(params: ReviewsByItemResourceParams) {
+    this.itemId = params.itemId;
   }
 
   instantiate(
@@ -102,9 +98,8 @@ export class ReviewsByItemResource implements Resource<GraphCollections> {
 export class ReviewsByUserResource implements Resource<GraphCollections> {
   private userId: string;
 
-  constructor(params: Json) {
-    const typed = params as ReviewsByUserResourceParams;
-    this.userId = typed.userId;
+  constructor(params: ReviewsByUserResourceParams) {
+    this.userId = params.userId;
   }
 
   instantiate(
@@ -115,13 +110,12 @@ export class ReviewsByUserResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyReviews: Entry<ReviewId, ReviewValue>[] = Array.of();
-    this.initialData = { reviews: emptyReviews };
+        this.inputs = { reviews: new InputDefinition<ReviewId, ReviewValue>([]) };
     this.resources = { "reviews-by-item": ReviewsByItemResource, "reviews-by-user": ReviewsByUserResource };
   }
 
@@ -130,6 +124,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

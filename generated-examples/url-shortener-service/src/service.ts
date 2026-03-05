@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   UrlId,
@@ -30,9 +31,9 @@ export type ClickStatsAccum = {
   lastClickAt: number | null;
 };
 
-type Inputs = {
-  urls: Entry<UrlId, UrlValue>[];
-  clicks: Entry<ClickId, ClickValue>[];
+export type Inputs = {
+  urls: InputDefinition<UrlId, UrlValue>;
+  clicks: InputDefinition<ClickId, ClickValue>;
 };
 
 export type InputCollections = {
@@ -46,9 +47,9 @@ export type GraphCollections = {
   clickStatsByUrl: EagerCollection<UrlId, ClickStatsAccum>;
 };
 
-type Resources = {
-  "urls": new (params: Json) => Resource<GraphCollections>;
-  "stats": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "urls": ResourceClass<GraphCollections, {}>;
+  readonly "stats": ResourceClass<GraphCollections, {}>;
 };
 
 export class ClickToUrlKeyMapper implements Mapper<ClickId, ClickValue, UrlId, ClickForAggregation> {
@@ -60,10 +61,8 @@ export class ClickToUrlKeyMapper implements Mapper<ClickId, ClickValue, UrlId, C
     values: Values<ClickValue>,
     _context: Context
   ): Iterable<[UrlId, ClickForAggregation]> {
-    const arr = values.toArray();
     const result: Array<[UrlId, ClickForAggregation]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const click = arr[i]!;
+    for (const click of values) {
       result.push([click.urlId, { timestamp: click.timestamp }]);
     }
     return result;
@@ -79,10 +78,8 @@ export class StatsOutputMapper implements Mapper<UrlId, ClickStatsAccum, UrlStat
     values: Values<ClickStatsAccum>,
     _context: Context
   ): Iterable<[UrlStatsId, UrlStatsValue]> {
-    const arr = values.toArray();
     const result: Array<[UrlStatsId, UrlStatsValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const stats = arr[i]!;
+    for (const stats of values) {
       const urlStatsId: UrlStatsId = key;
       const urlStatsValue: UrlStatsValue = {
         totalClicks: stats.totalClicks,
@@ -107,9 +104,10 @@ export class ClickStatsReducer implements Reducer<ClickForAggregation, ClickStat
         lastClickAt: value.timestamp
       };
     }
-    const newLastClickAt = accum.lastClickAt === null 
-      ? value.timestamp 
-      : (value.timestamp > accum.lastClickAt ? value.timestamp : accum.lastClickAt);
+    const lastClickAt = accum.lastClickAt;
+    const newLastClickAt = lastClickAt === null
+      ? value.timestamp
+      : (value.timestamp > lastClickAt ? value.timestamp : lastClickAt);
     return {
       totalClicks: accum.totalClicks + 1,
       lastClickAt: newLastClickAt
@@ -125,7 +123,7 @@ export class ClickStatsReducer implements Reducer<ClickForAggregation, ClickStat
 }
 
 export class UrlsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -137,7 +135,7 @@ export class UrlsResource implements Resource<GraphCollections> {
 }
 
 export class StatsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -148,14 +146,12 @@ export class StatsResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyUrls: Entry<UrlId, UrlValue>[] = Array.of();
-    const emptyClicks: Entry<ClickId, ClickValue>[] = Array.of();
-    this.initialData = { urls: emptyUrls, clicks: emptyClicks };
+            this.inputs = { urls: new InputDefinition<UrlId, UrlValue>([]), clicks: new InputDefinition<ClickId, ClickValue>([]) };
     this.resources = { "urls": UrlsResource, "stats": StatsResource };
   }
 
@@ -171,6 +167,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

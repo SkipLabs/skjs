@@ -1,11 +1,12 @@
 import type {
   EagerCollection,
-  Entry,
   SkipService,
   Context,
   Mapper,
   Values,
-} from "@skipruntime/core";
+  ResourceClass
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   UserId,
@@ -20,11 +21,11 @@ import type {
   SearchDocumentValue,
 } from "./types.js";
 
-type Inputs = {
-  users: Entry<UserId, UserValue>[];
-  posts: Entry<PostId, PostValue>[];
-  tags: Entry<TagId, TagValue>[];
-  postTags: Entry<PostTagId, PostTagValue>[];
+export type Inputs = {
+  users: InputDefinition<UserId, UserValue>;
+  posts: InputDefinition<PostId, PostValue>;
+  tags: InputDefinition<TagId, TagValue>;
+  postTags: InputDefinition<PostTagId, PostTagValue>;
 };
 
 export type InputCollections = {
@@ -41,7 +42,7 @@ export type GraphCollections = {
   searchDocuments: EagerCollection<SearchDocumentId, SearchDocumentValue>;
 };
 
-type Resources = {};
+export type Resources = {};
 
 export class PostTagsByPostIdMapper
   implements Mapper<PostTagId, PostTagValue, PostId, TagId>
@@ -54,9 +55,7 @@ export class PostTagsByPostIdMapper
     _context: Context
   ): Iterable<[PostId, TagId]> {
     const result: Array<[PostId, TagId]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       result.push([v.postId, v.tagId]);
     }
     return result;
@@ -86,53 +85,49 @@ export class SearchDocumentMapper
     _context: Context
   ): Iterable<[SearchDocumentId, SearchDocumentValue]> {
     const result: Array<[SearchDocumentId, SearchDocumentValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const post = arr[i]!;
+    for (const post of values) {
       const authorArr = this.users.getArray(post.authorId);
       if (authorArr.length === 0) {
         continue;
       }
-      const author = authorArr[0]!;
-      const tagIds = this.postTagsByPostId.getArray(key);
-      const tagNames: Array<string> = Array.of();
-      for (let j = 0; j < tagIds.length; j++) {
-        const tagId = tagIds[j]!;
-        const tagArr = this.tags.getArray(tagId);
-        if (tagArr.length > 0) {
-          tagNames.push(tagArr[0]!.name);
+      const author = authorArr[0];
+      if (author !== undefined) {
+        const tagIds = this.postTagsByPostId.getArray(key);
+        const tagNames: Array<string> = Array.of();
+        for (const tagId of tagIds) {
+          const tagArr = this.tags.getArray(tagId);
+          const tagEntry = tagArr[0];
+          if (tagEntry !== undefined) {
+            tagNames.push(tagEntry.name);
+          }
         }
+        const searchDoc: SearchDocumentValue = {
+          postId: key,
+          title: post.title,
+          content: post.content,
+          createdAt: post.createdAt,
+          authorId: post.authorId,
+          authorUsername: author.username,
+          authorDisplayName: author.displayName,
+          tagNames: tagNames,
+        };
+        result.push([key, searchDoc]);
       }
-      const searchDoc: SearchDocumentValue = {
-        postId: key,
-        title: post.title,
-        content: post.content,
-        createdAt: post.createdAt,
-        authorId: post.authorId,
-        authorUsername: author.username,
-        authorDisplayName: author.displayName,
-        tagNames: tagNames,
-      };
-      result.push([key, searchDoc]);
     }
     return result;
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyUsers: Entry<UserId, UserValue>[] = Array.of();
-    const emptyPosts: Entry<PostId, PostValue>[] = Array.of();
-    const emptyTags: Entry<TagId, TagValue>[] = Array.of();
-    const emptyPostTags: Entry<PostTagId, PostTagValue>[] = Array.of();
-    this.initialData = {
-      users: emptyUsers,
-      posts: emptyPosts,
-      tags: emptyTags,
-      postTags: emptyPostTags,
+                    this.inputs = {
+      users: new InputDefinition<UserId, UserValue>([]),
+      posts: new InputDefinition<PostId, PostValue>([]),
+      tags: new InputDefinition<TagId, TagValue>([]),
+      postTags: new InputDefinition<PostTagId, PostTagValue>([]),
     };
     this.resources = {};
   }
@@ -154,6 +149,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

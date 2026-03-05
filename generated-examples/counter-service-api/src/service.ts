@@ -1,11 +1,11 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   CounterId,
@@ -13,8 +13,8 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  counters: Entry<CounterId, CounterValue>[];
+export type Inputs = {
+  counters: InputDefinition<CounterId, CounterValue>;
 };
 
 export type InputCollections = {
@@ -25,14 +25,14 @@ export type GraphCollections = {
   counters: EagerCollection<CounterId, CounterValue>;
 };
 
-type Resources = {
-  "counters": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "counters": ResourceClass<GraphCollections, {}>;
 };
 
 
 
 export class CountersResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -43,13 +43,12 @@ export class CountersResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyCounters: Entry<CounterId, CounterValue>[] = Array.of();
-    this.initialData = { counters: emptyCounters };
+    this.inputs = { counters: new InputDefinition<CounterId, CounterValue>([]) };
     this.resources = { "counters": CountersResource };
   }
 
@@ -58,6 +57,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

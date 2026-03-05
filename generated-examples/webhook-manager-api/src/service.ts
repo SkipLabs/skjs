@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   WebhookId,
@@ -34,9 +35,9 @@ export type StatsAccum = {
   lastDeliveryAt: number | null;
 };
 
-type Inputs = {
-  webhooks: Entry<WebhookId, WebhookValue>[];
-  deliveries: Entry<DeliveryId, DeliveryValue>[];
+export type Inputs = {
+  webhooks: InputDefinition<WebhookId, WebhookValue>;
+  deliveries: InputDefinition<DeliveryId, DeliveryValue>;
 };
 
 export type InputCollections = {
@@ -50,11 +51,11 @@ export type GraphCollections = {
   stats: EagerCollection<WebhookStatsId, WebhookStatsValue>;
 };
 
-type Resources = {
-  "webhooks": new (params: Json) => Resource<GraphCollections>;
-  "deliveries": new (params: Json) => Resource<GraphCollections>;
-  "webhooks-deliveries": new (params: Json) => Resource<GraphCollections>;
-  "stats": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "webhooks": ResourceClass<GraphCollections, {}>;
+  readonly "deliveries": ResourceClass<GraphCollections, {}>;
+  readonly "webhooks-deliveries": ResourceClass<GraphCollections, WebhooksDeliveriesResourceParams>;
+  readonly "stats": ResourceClass<GraphCollections, {}>;
 };
 
 export class DeliveryToWebhookKeyMapper implements Mapper<DeliveryId, DeliveryValue, string, DeliveryAggregateInput> {
@@ -66,10 +67,8 @@ export class DeliveryToWebhookKeyMapper implements Mapper<DeliveryId, DeliveryVa
     values: Values<DeliveryValue>,
     _context: Context
   ): Iterable<[string, DeliveryAggregateInput]> {
-    const arr = values.toArray();
     const result: Array<[string, DeliveryAggregateInput]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const output: DeliveryAggregateInput = {
         status: v.status,
         attemptedAt: v.attemptedAt
@@ -89,10 +88,8 @@ export class StatsAccumToValueMapper implements Mapper<string, StatsAccum, Webho
     values: Values<StatsAccum>,
     _context: Context
   ): Iterable<[WebhookStatsId, WebhookStatsValue]> {
-    const arr = values.toArray();
     const result: Array<[WebhookStatsId, WebhookStatsValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const statsValue: WebhookStatsValue = {
         webhookId: key,
         totalDeliveries: v.totalDeliveries,
@@ -118,10 +115,8 @@ export class FilterDeliveriesByWebhookMapper implements Mapper<DeliveryId, Deliv
     values: Values<DeliveryValue>,
     _context: Context
   ): Iterable<[DeliveryId, DeliveryValue]> {
-    const arr = values.toArray();
     const result: Array<[DeliveryId, DeliveryValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.webhookId === this.webhookId) {
         result.push([key, v]);
       }
@@ -145,9 +140,10 @@ export class DeliveryStatsReducer implements Reducer<DeliveryAggregateInput, Sta
         lastDeliveryAt: value.attemptedAt
       };
     }
-    const newLastDeliveryAt = accum.lastDeliveryAt === null 
-      ? value.attemptedAt 
-      : (value.attemptedAt > accum.lastDeliveryAt ? value.attemptedAt : accum.lastDeliveryAt);
+    const lastDeliveryAt = accum.lastDeliveryAt;
+    const newLastDeliveryAt = lastDeliveryAt === null
+      ? value.attemptedAt
+      : (value.attemptedAt > lastDeliveryAt ? value.attemptedAt : lastDeliveryAt);
     return {
       totalDeliveries: accum.totalDeliveries + 1,
       successCount: accum.successCount + (value.status === "success" ? 1 : 0),
@@ -176,7 +172,7 @@ export class DeliveryStatsReducer implements Reducer<DeliveryAggregateInput, Sta
 }
 
 export class WebhooksResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -188,7 +184,7 @@ export class WebhooksResource implements Resource<GraphCollections> {
 }
 
 export class DeliveriesResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -202,9 +198,8 @@ export class DeliveriesResource implements Resource<GraphCollections> {
 export class WebhooksDeliveriesResource implements Resource<GraphCollections> {
   private webhookId: string;
 
-  constructor(params: Json) {
-    const typed = params as WebhooksDeliveriesResourceParams;
-    this.webhookId = typed.webhookId;
+  constructor(params: WebhooksDeliveriesResourceParams) {
+    this.webhookId = params.webhookId;
   }
 
   instantiate(
@@ -216,7 +211,7 @@ export class WebhooksDeliveriesResource implements Resource<GraphCollections> {
 }
 
 export class StatsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -227,14 +222,12 @@ export class StatsResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyWebhooks: Entry<WebhookId, WebhookValue>[] = Array.of();
-    const emptyDeliveries: Entry<DeliveryId, DeliveryValue>[] = Array.of();
-    this.initialData = { webhooks: emptyWebhooks, deliveries: emptyDeliveries };
+            this.inputs = { webhooks: new InputDefinition<WebhookId, WebhookValue>([]), deliveries: new InputDefinition<DeliveryId, DeliveryValue>([]) };
     this.resources = { 
       "webhooks": WebhooksResource, 
       "deliveries": DeliveriesResource, 
@@ -256,6 +249,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

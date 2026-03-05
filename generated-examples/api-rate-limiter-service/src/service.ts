@@ -1,8 +1,8 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
@@ -10,7 +10,8 @@ import type {
   Values,
   Nullable,
   DepSafe
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   RateLimitConfigId,
@@ -38,9 +39,9 @@ export type ClientAggregateAccum = {
   limitedEndpoints: number;
 };
 
-type Inputs = {
-  rateLimitConfigs: Entry<RateLimitConfigId, RateLimitConfigValue>[];
-  requestEvents: Entry<RequestEventId, RequestEventValue>[];
+export type Inputs = {
+  rateLimitConfigs: InputDefinition<RateLimitConfigId, RateLimitConfigValue>;
+  requestEvents: InputDefinition<RequestEventId, RequestEventValue>;
 };
 
 export type InputCollections = {
@@ -55,12 +56,18 @@ export type GraphCollections = {
   clientStatus: EagerCollection<ClientStatusId, ClientStatusValue>;
 };
 
-type Resources = {
-  "rateLimitStatus": new (params: Json) => Resource<GraphCollections>;
-  "clientStatus": new (params: Json) => Resource<GraphCollections>;
+// Using object instead of tuple as readonly tuples are not yet supported by skjs.
+export type ClientEndpointKey = {
+  clientId: string;
+  endpoint: string;
 };
 
-export class RequestEventToClientEndpointMapper implements Mapper<RequestEventId, RequestEventValue, [string, string], RequestEventValue> {
+export type Resources = {
+  readonly "rateLimitStatus": ResourceClass<GraphCollections, {}>;
+  readonly "clientStatus": ResourceClass<GraphCollections, {}>;
+};
+
+export class RequestEventToClientEndpointMapper implements Mapper<RequestEventId, RequestEventValue, ClientEndpointKey, RequestEventValue> {
   constructor() {
   }
 
@@ -68,19 +75,17 @@ export class RequestEventToClientEndpointMapper implements Mapper<RequestEventId
     _key: RequestEventId,
     values: Values<RequestEventValue>,
     _context: Context
-  ): Iterable<[[string, string], RequestEventValue]> {
-    const arr = values.toArray();
-    const result: Array<[[string, string], RequestEventValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
-      const compositeKey: [string, string] = [v.clientId, v.endpoint];
+  ): Iterable<[ClientEndpointKey, RequestEventValue]> {
+    const result: Array<[ClientEndpointKey, RequestEventValue]> = Array.of();
+    for (const v of values) {
+      const compositeKey: ClientEndpointKey = { clientId: v.clientId, endpoint: v.endpoint };
       result.push([compositeKey, v]);
     }
     return result;
   }
 }
 
-export class RequestCountToRateLimitStatusMapper implements Mapper<[string, string], RequestCountAccum, RateLimitStatusId, RateLimitStatusValue> {
+export class RequestCountToRateLimitStatusMapper implements Mapper<ClientEndpointKey, RequestCountAccum, RateLimitStatusId, RateLimitStatusValue> {
   private configs: EagerCollection<RateLimitConfigId, RateLimitConfigValue>;
 
   constructor(configs: EagerCollection<RateLimitConfigId, RateLimitConfigValue>) {
@@ -88,24 +93,22 @@ export class RequestCountToRateLimitStatusMapper implements Mapper<[string, stri
   }
 
   mapEntry(
-    key: [string, string],
+    key: ClientEndpointKey,
     values: Values<RequestCountAccum>,
     _context: Context
   ): Iterable<[RateLimitStatusId, RateLimitStatusValue]> {
-    const arr = values.toArray();
     const result: Array<[RateLimitStatusId, RateLimitStatusValue]> = Array.of();
-    const clientId = key[0];
-    const endpoint = key[1];
-    
-    for (let i = 0; i < arr.length; i++) {
-      const accum = arr[i]!;
+    const clientId = key.clientId;
+    const endpoint = key.endpoint;
+
+    for (const accum of values) {
       const configArr = this.configs.getArray(endpoint);
-      
+
       let maxRequests = 100;
       let windowMs = 60000;
-      
-      if (configArr.length > 0) {
-        const config = configArr[0]!;
+
+      const config = configArr[0];
+      if (config !== undefined) {
         maxRequests = config.maxRequests;
         windowMs = config.windowMs;
       }
@@ -143,10 +146,8 @@ export class RateLimitStatusToClientMapper implements Mapper<RateLimitStatusId, 
     values: Values<RateLimitStatusValue>,
     _context: Context
   ): Iterable<[ClientStatusId, ClientAggregateInput]> {
-    const arr = values.toArray();
     const result: Array<[ClientStatusId, ClientAggregateInput]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       const clientId: ClientStatusId = v.clientId;
       const input: ClientAggregateInput = {
         requestCount: v.currentCount,
@@ -167,10 +168,8 @@ export class ClientAggregateToStatusMapper implements Mapper<ClientStatusId, Cli
     values: Values<ClientAggregateAccum>,
     _context: Context
   ): Iterable<[ClientStatusId, ClientStatusValue]> {
-    const arr = values.toArray();
     const result: Array<[ClientStatusId, ClientStatusValue]> = Array.of();
-    for (let i = 0; i < arr.length; i++) {
-      const accum = arr[i]!;
+    for (const accum of values) {
       const statusValue: ClientStatusValue = {
         clientId: key,
         totalRequests: accum.totalRequests,
@@ -249,7 +248,7 @@ export class ClientAggregateReducer implements Reducer<ClientAggregateInput, Cli
 }
 
 export class RateLimitStatusResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -261,7 +260,7 @@ export class RateLimitStatusResource implements Resource<GraphCollections> {
 }
 
 export class ClientStatusResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -272,14 +271,12 @@ export class ClientStatusResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyRateLimitConfigs: Entry<RateLimitConfigId, RateLimitConfigValue>[] = Array.of();
-    const emptyRequestEvents: Entry<RequestEventId, RequestEventValue>[] = Array.of();
-    this.initialData = { rateLimitConfigs: emptyRateLimitConfigs, requestEvents: emptyRequestEvents };
+            this.inputs = { rateLimitConfigs: new InputDefinition<RateLimitConfigId, RateLimitConfigValue>([]), requestEvents: new InputDefinition<RequestEventId, RequestEventValue>([]) };
     this.resources = { "rateLimitStatus": RateLimitStatusResource, "clientStatus": ClientStatusResource };
   }
 
@@ -309,6 +306,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

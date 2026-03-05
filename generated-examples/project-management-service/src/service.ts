@@ -1,11 +1,12 @@
 import type {
   EagerCollection,
-  Entry,
   Json,
   Resource,
+  ResourceClass,
   SkipService,
   Context
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   TaskId,
@@ -13,8 +14,8 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  tasks: Entry<TaskId, TaskValue>[];
+export type Inputs = {
+  tasks: InputDefinition<TaskId, TaskValue>;
 };
 
 export type InputCollections = {
@@ -25,13 +26,13 @@ export type GraphCollections = {
   tasks: EagerCollection<TaskId, TaskValue>;
 };
 
-type Resources = {
-  "tasks": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "tasks": ResourceClass<GraphCollections, {}>;
 };
 
 
 export class TasksResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -42,13 +43,12 @@ export class TasksResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyTasks: Entry<TaskId, TaskValue>[] = Array.of();
-    this.initialData = { tasks: emptyTasks };
+        this.inputs = { tasks: new InputDefinition<TaskId, TaskValue>([]) };
     this.resources = { "tasks": TasksResource };
   }
 
@@ -57,6 +57,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

@@ -1,13 +1,14 @@
 import type {
   EagerCollection,
-  Entry,
-  Json,
+
   Resource,
+  ResourceClass,
   SkipService,
   Context,
   Mapper,
   Values
-} from "@skipruntime/core";
+} from "../skipruntime/core.js";
+import { InputDefinition } from "../skipruntime/core.js";
 
 import type {
   CustomerId,
@@ -20,10 +21,10 @@ import type {
 } from "./types.js";
 
 
-type Inputs = {
-  customers: Entry<CustomerId, CustomerValue>[];
-  plans: Entry<PlanId, PlanValue>[];
-  subscriptions: Entry<SubscriptionId, SubscriptionValue>[];
+export type Inputs = {
+  customers: InputDefinition<CustomerId, CustomerValue>;
+  plans: InputDefinition<PlanId, PlanValue>;
+  subscriptions: InputDefinition<SubscriptionId, SubscriptionValue>;
 };
 
 export type InputCollections = {
@@ -38,13 +39,13 @@ export type GraphCollections = {
   subscriptions: EagerCollection<SubscriptionId, SubscriptionValue>;
 };
 
-type Resources = {
-  "customers": new (params: Json) => Resource<GraphCollections>;
-  "plans": new (params: Json) => Resource<GraphCollections>;
-  "subscriptions": new (params: Json) => Resource<GraphCollections>;
-  "subscriptions-active": new (params: Json) => Resource<GraphCollections>;
-  "subscriptions-by-customer": new (params: Json) => Resource<GraphCollections>;
-  "subscriptions-expiring-soon": new (params: Json) => Resource<GraphCollections>;
+export type Resources = {
+  readonly "customers": ResourceClass<GraphCollections, {}>;
+  readonly "plans": ResourceClass<GraphCollections, {}>;
+  readonly "subscriptions": ResourceClass<GraphCollections, {}>;
+  readonly "subscriptions-active": ResourceClass<GraphCollections, {}>;
+  readonly "subscriptions-by-customer": ResourceClass<GraphCollections, SubscriptionsByCustomerResourceParams>;
+  readonly "subscriptions-expiring-soon": ResourceClass<GraphCollections, {}>;
 };
 
 export class ActiveSubscriptionFilterMapper implements Mapper<SubscriptionId, SubscriptionValue, SubscriptionId, SubscriptionValue> {
@@ -57,9 +58,7 @@ export class ActiveSubscriptionFilterMapper implements Mapper<SubscriptionId, Su
     _context: Context
   ): Iterable<[SubscriptionId, SubscriptionValue]> {
     const result: Array<[SubscriptionId, SubscriptionValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.status === "active") {
         result.push([key, v]);
       }
@@ -81,9 +80,7 @@ export class SubscriptionByCustomerFilterMapper implements Mapper<SubscriptionId
     _context: Context
   ): Iterable<[SubscriptionId, SubscriptionValue]> {
     const result: Array<[SubscriptionId, SubscriptionValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.customerId === this.customerId) {
         result.push([key, v]);
       }
@@ -108,9 +105,7 @@ export class ExpiringSoonFilterMapper implements Mapper<SubscriptionId, Subscrip
     _context: Context
   ): Iterable<[SubscriptionId, SubscriptionValue]> {
     const result: Array<[SubscriptionId, SubscriptionValue]> = Array.of();
-    const arr = values.toArray();
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.endDate >= this.now && v.endDate <= this.thirtyDaysFromNow) {
         result.push([key, v]);
       }
@@ -121,7 +116,7 @@ export class ExpiringSoonFilterMapper implements Mapper<SubscriptionId, Subscrip
 
 
 export class CustomersResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -133,7 +128,7 @@ export class CustomersResource implements Resource<GraphCollections> {
 }
 
 export class PlansResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -145,7 +140,7 @@ export class PlansResource implements Resource<GraphCollections> {
 }
 
 export class SubscriptionsResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -157,7 +152,7 @@ export class SubscriptionsResource implements Resource<GraphCollections> {
 }
 
 export class SubscriptionsActiveResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -171,9 +166,8 @@ export class SubscriptionsActiveResource implements Resource<GraphCollections> {
 export class SubscriptionsByCustomerResource implements Resource<GraphCollections> {
   private customerId: string;
 
-  constructor(params: Json) {
-    const typed = params as SubscriptionsByCustomerResourceParams;
-    this.customerId = typed.customerId;
+  constructor(params: SubscriptionsByCustomerResourceParams) {
+    this.customerId = params.customerId;
   }
 
   instantiate(
@@ -185,7 +179,7 @@ export class SubscriptionsByCustomerResource implements Resource<GraphCollection
 }
 
 export class SubscriptionsExpiringSoonResource implements Resource<GraphCollections> {
-  constructor(_params: Json = {}) {
+  constructor(_params: {}) {
   }
 
   instantiate(
@@ -197,15 +191,12 @@ export class SubscriptionsExpiringSoonResource implements Resource<GraphCollecti
   }
 }
 
-class Service implements SkipService<InputCollections, GraphCollections> {
-  public initialData: Inputs;
-  public resources: Resources;
+class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
-    const emptyCustomers: Entry<CustomerId, CustomerValue>[] = Array.of();
-    const emptyPlans: Entry<PlanId, PlanValue>[] = Array.of();
-    const emptySubscriptions: Entry<SubscriptionId, SubscriptionValue>[] = Array.of();
-    this.initialData = { customers: emptyCustomers, plans: emptyPlans, subscriptions: emptySubscriptions };
+                this.inputs = { customers: new InputDefinition<CustomerId, CustomerValue>([]), plans: new InputDefinition<PlanId, PlanValue>([]), subscriptions: new InputDefinition<SubscriptionId, SubscriptionValue>([]) };
     this.resources = { "customers": CustomersResource, "plans": PlansResource, "subscriptions": SubscriptionsResource, "subscriptions-active": SubscriptionsActiveResource, "subscriptions-by-customer": SubscriptionsByCustomerResource, "subscriptions-expiring-soon": SubscriptionsExpiringSoonResource };
   }
 
@@ -214,6 +205,6 @@ class Service implements SkipService<InputCollections, GraphCollections> {
   }
 }
 
-export function service(): SkipService<InputCollections, GraphCollections> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
   return new Service();
 }

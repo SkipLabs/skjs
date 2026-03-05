@@ -68,15 +68,14 @@ export class UserToRoleAssignmentsMapper implements Mapper<UserId, UserValue, [s
   }
 
   private collectAllGroupIds(groupIds: Array<string>, visited: Set<string>): void {
-    for (let i = 0; i < groupIds.length; i++) {
-      const groupId = groupIds[i]!;
+    for (const groupId of groupIds) {
       if (visited.has(groupId)) {
         continue;
       }
       visited.add(groupId);
       const groupValues = this.groups.getArray(groupId);
       if (groupValues.length > 0) {
-        const group = groupValues[0]!;
+        const group = groupValues[0];
         if (group.parentGroupId !== null) {
           this.collectAllGroupIds(Array.of(group.parentGroupId), visited);
         }
@@ -89,15 +88,12 @@ export class UserToRoleAssignmentsMapper implements Mapper<UserId, UserValue, [s
     values: Values<UserValue>,
     _context: Context
   ): Iterable<[[string, string, string, string], RoleAssignmentValue]> {
-    const arr = values.toArray();
     const result: Array<[[string, string, string, string], RoleAssignmentValue]> = Array.of();
     
-    for (let i = 0; i < arr.length; i++) {
-      const user = arr[i]!;
+    for (const user of values) {
       const userId = key;
       
-      for (let j = 0; j < user.directRoleIds.length; j++) {
-        const roleId = user.directRoleIds[j]!;
+      for (const roleId of user.directRoleIds) {
         const compositeKey: [string, string, string, string] = [userId, roleId, "direct", userId];
         const assignment: RoleAssignmentValue = {
           userId: userId,
@@ -112,13 +108,11 @@ export class UserToRoleAssignmentsMapper implements Mapper<UserId, UserValue, [s
       this.collectAllGroupIds(user.groupIds, allGroupIds);
       
       const groupIdArray = Array.from(allGroupIds);
-      for (let g = 0; g < groupIdArray.length; g++) {
-        const groupId = groupIdArray[g]!;
+      for (const groupId of groupIdArray) {
         const groupValues = this.groups.getArray(groupId);
         if (groupValues.length > 0) {
-          const group = groupValues[0]!;
-          for (let r = 0; r < group.roleIds.length; r++) {
-            const roleId = group.roleIds[r]!;
+          const group = groupValues[0];
+          for (const roleId of group.roleIds) {
             const compositeKey: [string, string, string, string] = [userId, roleId, "group", groupId];
             const assignment: RoleAssignmentValue = {
               userId: userId,
@@ -150,22 +144,19 @@ export class RoleAssignmentToEffectivePermissionMapper implements Mapper<[string
     values: Values<RoleAssignmentValue>,
     _context: Context
   ): Iterable<[EffectivePermissionId, EffectivePermissionValue]> {
-    const arr = values.toArray();
     const result: Array<[EffectivePermissionId, EffectivePermissionValue]> = Array.of();
     
-    for (let i = 0; i < arr.length; i++) {
-      const assignment = arr[i]!;
+    for (const assignment of values) {
       const roleValues = this.roles.getArray(assignment.roleId);
       
       if (roleValues.length > 0) {
-        const role = roleValues[0]!;
+        const role = roleValues[0];
         
-        for (let p = 0; p < role.permissionIds.length; p++) {
-          const permissionId = role.permissionIds[p]!;
+        for (const permissionId of role.permissionIds) {
           const permissionValues = this.permissions.getArray(permissionId);
           
           if (permissionValues.length > 0) {
-            const permission = permissionValues[0]!;
+            const permission = permissionValues[0];
             const effectivePermissionId: EffectivePermissionId = JSON.stringify([assignment.userId, permissionId, assignment.sourceType, assignment.sourceId]);
             const effectivePermission: EffectivePermissionValue = {
               userId: assignment.userId,
@@ -198,11 +189,9 @@ export class FilterByUserIdMapper implements Mapper<EffectivePermissionId, Effec
     values: Values<EffectivePermissionValue>,
     _context: Context
   ): Iterable<[EffectivePermissionId, EffectivePermissionValue]> {
-    const arr = values.toArray();
     const result: Array<[EffectivePermissionId, EffectivePermissionValue]> = Array.of();
     
-    for (let i = 0; i < arr.length; i++) {
-      const v = arr[i]!;
+    for (const v of values) {
       if (v.userId === this.userId) {
         result.push([key, v]);
       }
