@@ -185,11 +185,11 @@ extension class TType {
     TType::fromClauses(ty1.pos, clauses);
   }
 
-  static fun interN(
+  static fun interN<Seq: IntoIterator<TType>>(
     subst: mutable Subst,
     tenv: TEnv,
     pos: PosRange,
-    tys: Sequence<TType>,
+    tys: Seq,
   ): TType {
     tysIt = tys.iterator();
     tysIt.next() match {
