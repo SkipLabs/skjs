@@ -191,11 +191,12 @@ extension class TType {
     pos: PosRange,
     tys: Sequence<TType>,
   ): TType {
-    result = TType::top(pos);
-    for (ty in tys) {
-      !result = TType::inter(subst, tenv, result, ty);
-    };
-    result
+    tysIt = tys.iterator();
+    tysIt.next() match {
+    | None() -> TType::top(pos)
+    | Some(first) ->
+      tysIt.reduce((res, ty) -> TType::inter(subst, tenv, res, ty), first)
+    }
   }
 }
 
