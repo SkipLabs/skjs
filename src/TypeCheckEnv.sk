@@ -38,6 +38,17 @@ private class ForInContext{
   iterableKey: String, // canonical key for iterable
   impureCall: ?PosRange = None(), // position of first call/new that broke purity
   outer: ?ForInContext = None(), // enclosing for-in context (stack)
+} {
+  // Convert an expression to a canonical key for iterable matching.
+  // Supports simple variables and dotted paths (e.g. `v`, `a.b.c`).
+  static fun exprToKey(e: Expr): ?String {
+    e.value match {
+    | Var(name) -> Some(name.value)
+    | Dot(NormalDot(), inner, field) ->
+      static::exprToKey(inner).map(k -> k + "." + field.value)
+    | _ -> None()
+    }
+  }
 }
 
 /*

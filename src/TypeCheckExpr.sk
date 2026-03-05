@@ -1322,7 +1322,7 @@ extension class TypeChecker {
               Expr(_, Var(keyName)),
             ) if (
               keyName.value == ctx.keyVar &&
-              exprToKey(objExpr) == Some(ctx.iterableKey)
+              ForInContext::exprToKey(objExpr) == Some(ctx.iterableKey)
             ) ->
               Some(ctx)
             | _ -> None()
@@ -2109,17 +2109,6 @@ extension class TypeChecker {
       );
       tfun.retType
     }
-  }
-}
-
-// Convert an expression to a canonical key for for-in iterable matching.
-// Returns None() for expressions that can't be reliably compared.
-fun exprToKey(e: Expr): ?String {
-  e.value match {
-  | Var(name) -> Some(name.value)
-  | Dot(NormalDot(), inner, field) ->
-    exprToKey(inner).map(k -> k + "." + field.value)
-  | _ -> None()
   }
 }
 

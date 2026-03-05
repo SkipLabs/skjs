@@ -109,7 +109,7 @@ extension class TypeChecker {
           };
           keyVarName
             .flatMap(kv ->
-              exprToKey(iterable).map(ik -> {
+              ForInContext::exprToKey(iterable).map(ik -> {
                 tcenv.enterForIn(kv, ik);
                 true
               })
