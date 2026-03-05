@@ -152,17 +152,17 @@ mutable class TCEnv private {
   }
 
   mutable fun exitForIn(): void {
-    this.forInContext.each(inner -> {
-      outer = inner.outer;
-      // If inner became impure, propagate to outer
-      this.!forInContext = inner.impureCall match {
-      | Some(pos) ->
-        outer.map(o ->
-          if (o.impureCall is None()) o with {impureCall => Some(pos)} else o
-        )
-      | None() -> outer
-      }
-    })
+    this.forInContext match {
+    | None() -> internal_error("Exiting empty for-in context")
+    | Some(
+      ForInContext{
+        outer => Some(outer @ ForInContext{impureCall => None()}),
+        impureCall => impureCall @ Some _,
+      },
+    ) ->
+      this.!forInContext = Some(outer with {impureCall})
+    | Some(ForInContext{outer}) -> this.!forInContext = outer
+    }
   }
 
   mutable fun markForInImpure(pos: PosRange): void {
