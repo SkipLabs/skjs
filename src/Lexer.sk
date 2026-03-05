@@ -11,6 +11,13 @@ base class SymbolicPos uses Orderable, Hashable, XXHashable {
   | SPMethod(className: String, metName: String)
   | SPFunction(funName: String)
   | SPConstant(constName: String)
+
+  fun toString(): String
+  | SPTopLevel() -> "toplevel"
+  | SPClass(className) -> `class(${className})`
+  | SPMethod(className, metName) -> `method(${className}.${metName})`
+  | SPFunction(funName) -> `function(${funName})`
+  | SPConstant(constName) -> `constant(${constName})`
 }
 
 mutable class Lexer private {

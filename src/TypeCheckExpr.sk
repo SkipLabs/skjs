@@ -681,15 +681,7 @@ extension class TypeChecker {
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
-            tFuns = this.funDecl(
-              tcenv,
-              false,
-              fd,
-              fd.cgNode match {
-              | Some(n) -> n
-              | None() -> CGNode::create(AnonymousFunDef(fd))
-              },
-            );
+            tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
             break TType::single(TObject::createCall(tFuns))
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv, c.name);

@@ -964,7 +964,7 @@ base class TEnv{
         | FDVar(kind, _, Some(t), _) ->
           return this.normalize(tcenvb, t, kind is VDKConst _)
         | fd @ TopLevelFunDef _ ->
-          cgNode = fd.cgNode.default(CGNode::create(AnonymousFunDef(fd)));
+          cgNode = fd.cgNode.fromSome();
           return TType::single(
             TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
           )

@@ -33,7 +33,7 @@ base class CGNode_ uses XXHashable, Show {
       strStatic = if (static_) "static " else "";
       `${strStatic}${class_}.${name.getName()} (${file})`
     | Constructor(class_, file) -> `${class_}.constructor (${file})`
-    | Toplevel(file) -> `top-level expr (${file}`
+    | Toplevel(file) -> `top-level expr (${file})`
     | ArrowTypeAnnot(file) -> `arrow-type annotation (${file})`
     | AnonymousLambda(pos, _closure) ->
       `lambda (${pos.fileName}:${pos.relStart.value})`
@@ -116,15 +116,8 @@ class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
   static fun singleton(node: CGNode): this {
     static(SortedSet::create().add(node))
   }
-  static fun empty(): this {
-    static(SortedSet::create())
-  }
-
   fun union(that: CGNodes): this {
     static(this.nodes.union(that.nodes))
-  }
-  fun intersection(that: CGNodes): this {
-    static(this.nodes.intersection(that.nodes))
   }
   fun compare(other: CGNodes): Order {
     this.nodes.inner.compare(other.nodes.inner)
@@ -263,17 +256,14 @@ private fun checkDef(
   classes: mutable Set<(String, FAbsolute)>,
 ): void {
   def.value match {
-  // Unsupported syntactic forms
+  // Syntactic forms which can't be called or don't define callable entities
   | ExportImport _
   | Global _
   | ExportAs _
   | ExportEq _
   | Module _
   | Namespace _
-  | ExportDefault _
-  | Enum _ ->
-    notSupported(def.pos, "this kind of definition (for reachability)")
-  // Syntactic forms which can't be called
+  | Enum _
   | ImportExpr _
   | TypeDef _
   | ExportNames _
@@ -281,13 +271,14 @@ private fun checkDef(
   | Import _
   | VarDefs _ ->
     void
-  | Declare(d) -> checkDef(Def(def.pos, d), nodes, classes)
-  | ExportDeclare(d) -> checkDef(Def(def.pos, d), nodes, classes)
-  | Export(d) -> checkDef(Def(def.pos, d), nodes, classes)
+  // Wrappers: unwrap and recurse
+  | Declare(d)
+  | ExportDeclare(d)
+  | Export(d) ->
+    checkDef(Def(def.pos, d), nodes, classes)
+  | ExportDefault(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
-  | fd @ TopLevelFunDef _ ->
-    cgNode = CGNode::create(TopLevelFunction(fd.name, fd.pos.fileName));
-    nodes.insert(cgNode)
+  | fd @ TopLevelFunDef _ -> nodes.insert(fd.cgNode.fromSome())
   | c @ Class _ -> classes.insert((c.name.value, def.pos.fileName))
   }
 }
