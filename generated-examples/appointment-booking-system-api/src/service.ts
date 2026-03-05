@@ -49,17 +49,17 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "clients": ResourceClass<GraphCollections, {}>;
-  "providers": ResourceClass<GraphCollections, {}>;
-  "services": ResourceClass<GraphCollections, {}>;
-  "services-by-provider": ResourceClass<GraphCollections, ServicesByProviderResourceParams>;
-  "appointments": ResourceClass<GraphCollections, {}>;
-  "appointments-by-client": ResourceClass<GraphCollections, AppointmentsByClientResourceParams>;
-  "appointments-by-provider": ResourceClass<GraphCollections, AppointmentsByProviderResourceParams>;
-  "appointments-by-status-pending": ResourceClass<GraphCollections, {}>;
-  "appointments-by-status-confirmed": ResourceClass<GraphCollections, {}>;
-  "appointments-by-status-cancelled": ResourceClass<GraphCollections, {}>;
-  "appointments-by-status-completed": ResourceClass<GraphCollections, {}>;
+  readonly "clients": ResourceClass<GraphCollections, {}>;
+  readonly "providers": ResourceClass<GraphCollections, {}>;
+  readonly "services": ResourceClass<GraphCollections, {}>;
+  readonly "services-by-provider": ResourceClass<GraphCollections, ServicesByProviderResourceParams>;
+  readonly "appointments": ResourceClass<GraphCollections, {}>;
+  readonly "appointments-by-client": ResourceClass<GraphCollections, AppointmentsByClientResourceParams>;
+  readonly "appointments-by-provider": ResourceClass<GraphCollections, AppointmentsByProviderResourceParams>;
+  readonly "appointments-by-status-pending": ResourceClass<GraphCollections, {}>;
+  readonly "appointments-by-status-confirmed": ResourceClass<GraphCollections, {}>;
+  readonly "appointments-by-status-cancelled": ResourceClass<GraphCollections, {}>;
+  readonly "appointments-by-status-completed": ResourceClass<GraphCollections, {}>;
 };
 
 export class FilterServicesByProviderMapper implements Mapper<ServiceId, ServiceValue, ServiceId, ServiceValue> {
@@ -292,8 +292,8 @@ export class AppointmentsByStatusCompletedResource implements Resource<GraphColl
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                     this.inputs = { clients: new InputDefinition<ClientId, ClientValue>([]), providers: new InputDefinition<ProviderId, ProviderValue>([]), services: new InputDefinition<ServiceId, ServiceValue>([]), appointments: new InputDefinition<AppointmentId, AppointmentValue>([]) };

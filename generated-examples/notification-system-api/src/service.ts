@@ -30,9 +30,9 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "notifications": ResourceClass<GraphCollections, {}>;
-  "notifications-unread": ResourceClass<GraphCollections, {}>;
-  "notifications-user": ResourceClass<GraphCollections, NotificationsUserResourceParams>;
+  readonly "notifications": ResourceClass<GraphCollections, {}>;
+  readonly "notifications-unread": ResourceClass<GraphCollections, {}>;
+  readonly "notifications-user": ResourceClass<GraphCollections, NotificationsUserResourceParams>;
 };
 
 export class UnreadNotificationsMapper implements Mapper<NotificationId, NotificationValue, NotificationId, NotificationValue> {
@@ -117,8 +117,8 @@ export class NotificationsUserResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { notifications: new InputDefinition<NotificationId, NotificationValue>([]) };

@@ -57,10 +57,10 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "comments": ResourceClass<GraphCollections, {}>;
-  "repliesByComment": ResourceClass<GraphCollections, RepliesByCommentResourceParams>;
-  "likesByComment": ResourceClass<GraphCollections, LikesByCommentResourceParams>;
-  "feed": ResourceClass<GraphCollections, {}>;
+  readonly "comments": ResourceClass<GraphCollections, {}>;
+  readonly "repliesByComment": ResourceClass<GraphCollections, RepliesByCommentResourceParams>;
+  readonly "likesByComment": ResourceClass<GraphCollections, LikesByCommentResourceParams>;
+  readonly "feed": ResourceClass<GraphCollections, {}>;
 };
 
 export class ReplyToCommentKeyMapper implements Mapper<ReplyId, ReplyValue, CommentId, number> {
@@ -330,8 +330,8 @@ export class FeedResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { comments: new InputDefinition<CommentId, CommentValue>([]), replies: new InputDefinition<ReplyId, ReplyValue>([]), likes: new InputDefinition<LikeId, LikeValue>([]) };

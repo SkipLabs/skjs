@@ -49,11 +49,11 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "products": ResourceClass<GraphCollections, {}>;
-  "promotions": ResourceClass<GraphCollections, {}>;
-  "taxRates": ResourceClass<GraphCollections, {}>;
-  "shippingRules": ResourceClass<GraphCollections, {}>;
-  "finalPrices": ResourceClass<GraphCollections, {}>;
+  readonly "products": ResourceClass<GraphCollections, {}>;
+  readonly "promotions": ResourceClass<GraphCollections, {}>;
+  readonly "taxRates": ResourceClass<GraphCollections, {}>;
+  readonly "shippingRules": ResourceClass<GraphCollections, {}>;
+  readonly "finalPrices": ResourceClass<GraphCollections, {}>;
 };
 
 export class PromotionsByProductMapper implements Mapper<PromotionId, PromotionValue, ProductId, PromotionValue> {
@@ -246,8 +246,8 @@ export class FinalPricesResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                     this.inputs = { products: new InputDefinition<ProductId, ProductValue>([]), promotions: new InputDefinition<PromotionId, PromotionValue>([]), taxRates: new InputDefinition<TaxRateId, TaxRateValue>([]), shippingRules: new InputDefinition<ShippingRuleId, ShippingRuleValue>([]) };

@@ -44,8 +44,8 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "feed": ResourceClass<GraphCollections, {}>;
-  "posts": ResourceClass<GraphCollections, {}>;
+  readonly "feed": ResourceClass<GraphCollections, {}>;
+  readonly "posts": ResourceClass<GraphCollections, {}>;
 };
 
 export class PostToFeedItemMapper implements Mapper<PostId, PostValue, FeedItemId, FeedItemValue> {
@@ -149,8 +149,8 @@ export class PostsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                     this.inputs = { posts: new InputDefinition<PostId, PostValue>([]), comments: new InputDefinition<CommentId, CommentValue>([]), likes: new InputDefinition<LikeId, LikeValue>([]), users: new InputDefinition<UserId, UserValue>([]) };

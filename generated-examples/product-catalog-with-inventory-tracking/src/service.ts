@@ -35,9 +35,9 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "products": ResourceClass<GraphCollections, {}>;
-  "products-category": ResourceClass<GraphCollections, ProductsCategoryResourceParams>;
-  "inventory-low-stock": ResourceClass<GraphCollections, {}>;
+  readonly "products": ResourceClass<GraphCollections, {}>;
+  readonly "products-category": ResourceClass<GraphCollections, ProductsCategoryResourceParams>;
+  readonly "inventory-low-stock": ResourceClass<GraphCollections, {}>;
 };
 
 export class ProductInventoryJoinMapper implements Mapper<ProductId, ProductValue, ProductWithInventoryId, ProductWithInventoryValue> {
@@ -160,8 +160,8 @@ export class InventoryLowStockResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
             this.inputs = { products: new InputDefinition<ProductId, ProductValue>([]), inventory: new InputDefinition<InventoryId, InventoryValue>([]) };

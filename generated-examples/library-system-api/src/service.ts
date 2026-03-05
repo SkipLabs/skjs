@@ -33,10 +33,10 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "books": ResourceClass<GraphCollections, {}>;
-  "books-available": ResourceClass<GraphCollections, {}>;
-  "loans": ResourceClass<GraphCollections, {}>;
-  "availableBooks": ResourceClass<GraphCollections, {}>;
+  readonly "books": ResourceClass<GraphCollections, {}>;
+  readonly "books-available": ResourceClass<GraphCollections, {}>;
+  readonly "loans": ResourceClass<GraphCollections, {}>;
+  readonly "availableBooks": ResourceClass<GraphCollections, {}>;
 };
 
 export class AvailableBooksMapper implements Mapper<BookId, BookValue, BookId, BookValue> {
@@ -97,8 +97,8 @@ export class LoansResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
             this.inputs = { books: new InputDefinition<BookId, BookValue>([]), loans: new InputDefinition<LoanId, LoanValue>([]) };

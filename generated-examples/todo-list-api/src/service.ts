@@ -26,7 +26,7 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "todos": ResourceClass<GraphCollections, {}>;
+  readonly "todos": ResourceClass<GraphCollections, {}>;
 };
 
 
@@ -44,8 +44,8 @@ export class TodosResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
     this.inputs = {

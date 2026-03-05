@@ -61,14 +61,14 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "users": ResourceClass<GraphCollections, {}>;
-  "referrals": ResourceClass<GraphCollections, {}>;
-  "referrals-by-referrer": ResourceClass<GraphCollections, ReferralsByReferrerResourceParams>;
-  "referrals-by-status-pending": ResourceClass<GraphCollections, {}>;
-  "referrals-by-status-completed": ResourceClass<GraphCollections, {}>;
-  "rewards": ResourceClass<GraphCollections, {}>;
-  "rewards-by-user": ResourceClass<GraphCollections, RewardsByUserResourceParams>;
-  "stats": ResourceClass<GraphCollections, {}>;
+  readonly "users": ResourceClass<GraphCollections, {}>;
+  readonly "referrals": ResourceClass<GraphCollections, {}>;
+  readonly "referrals-by-referrer": ResourceClass<GraphCollections, ReferralsByReferrerResourceParams>;
+  readonly "referrals-by-status-pending": ResourceClass<GraphCollections, {}>;
+  readonly "referrals-by-status-completed": ResourceClass<GraphCollections, {}>;
+  readonly "rewards": ResourceClass<GraphCollections, {}>;
+  readonly "rewards-by-user": ResourceClass<GraphCollections, RewardsByUserResourceParams>;
+  readonly "stats": ResourceClass<GraphCollections, {}>;
 };
 
 export class ReferralToUserKeyMapper implements Mapper<ReferralId, ReferralValue, UserId, ReferralForStats> {
@@ -332,8 +332,8 @@ export class StatsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { users: new InputDefinition<UserId, UserValue>([]), referrals: new InputDefinition<ReferralId, ReferralValue>([]), rewards: new InputDefinition<RewardId, RewardValue>([]) };

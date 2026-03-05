@@ -41,11 +41,11 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "courses": ResourceClass<GraphCollections, {}>;
-  "lessons": ResourceClass<GraphCollections, {}>;
-  "enrollments": ResourceClass<GraphCollections, {}>;
-  "courses-lessons": ResourceClass<GraphCollections, CoursesLessonsResourceParams>;
-  "students-enrollments": ResourceClass<GraphCollections, StudentsEnrollmentsResourceParams>;
+  readonly "courses": ResourceClass<GraphCollections, {}>;
+  readonly "lessons": ResourceClass<GraphCollections, {}>;
+  readonly "enrollments": ResourceClass<GraphCollections, {}>;
+  readonly "courses-lessons": ResourceClass<GraphCollections, CoursesLessonsResourceParams>;
+  readonly "students-enrollments": ResourceClass<GraphCollections, StudentsEnrollmentsResourceParams>;
 };
 
 export class LessonsByCourseMapper implements Mapper<LessonId, LessonValue, LessonId, LessonValue> {
@@ -160,8 +160,8 @@ export class StudentsEnrollmentsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { courses: new InputDefinition<CourseId, CourseValue>([]), lessons: new InputDefinition<LessonId, LessonValue>([]), enrollments: new InputDefinition<EnrollmentId, EnrollmentValue>([]) };

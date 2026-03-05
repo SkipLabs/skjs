@@ -48,8 +48,8 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "urls": ResourceClass<GraphCollections, {}>;
-  "stats": ResourceClass<GraphCollections, {}>;
+  readonly "urls": ResourceClass<GraphCollections, {}>;
+  readonly "stats": ResourceClass<GraphCollections, {}>;
 };
 
 export class ClickToUrlKeyMapper implements Mapper<ClickId, ClickValue, UrlId, ClickForAggregation> {
@@ -147,8 +147,8 @@ export class StatsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
             this.inputs = { urls: new InputDefinition<UrlId, UrlValue>([]), clicks: new InputDefinition<ClickId, ClickValue>([]) };

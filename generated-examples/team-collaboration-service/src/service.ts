@@ -50,12 +50,12 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "workspaces": ResourceClass<GraphCollections, {}>;
-  "workspaces-teams": ResourceClass<GraphCollections, WorkspacesTeamsResourceParams>;
-  "workspaces-members": ResourceClass<GraphCollections, WorkspacesMembersResourceParams>;
-  "workspaces-channels": ResourceClass<GraphCollections, WorkspacesChannelsResourceParams>;
-  "teams-members": ResourceClass<GraphCollections, TeamsMembersResourceParams>;
-  "teams-channels": ResourceClass<GraphCollections, TeamsChannelsResourceParams>;
+  readonly "workspaces": ResourceClass<GraphCollections, {}>;
+  readonly "workspaces-teams": ResourceClass<GraphCollections, WorkspacesTeamsResourceParams>;
+  readonly "workspaces-members": ResourceClass<GraphCollections, WorkspacesMembersResourceParams>;
+  readonly "workspaces-channels": ResourceClass<GraphCollections, WorkspacesChannelsResourceParams>;
+  readonly "teams-members": ResourceClass<GraphCollections, TeamsMembersResourceParams>;
+  readonly "teams-channels": ResourceClass<GraphCollections, TeamsChannelsResourceParams>;
 };
 
 export class FilterTeamsByWorkspaceMapper implements Mapper<TeamId, TeamValue, TeamId, TeamValue> {
@@ -257,8 +257,8 @@ export class TeamsChannelsResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                     this.inputs = { workspaces: new InputDefinition<WorkspaceId, WorkspaceValue>([]), teams: new InputDefinition<TeamId, TeamValue>([]), members: new InputDefinition<MemberId, MemberValue>([]), channels: new InputDefinition<ChannelId, ChannelValue>([]) };

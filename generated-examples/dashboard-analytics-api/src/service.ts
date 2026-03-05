@@ -27,6 +27,13 @@ export type AggregatedData = {
   sum: number;
 };
 
+// Using object instead of tuple as readonly tuples are not yet supported by skjs.
+export type BucketKey = {
+  metricName: string;
+  period: Period;
+  periodStart: number;
+};
+
 export type Inputs = {
   metrics: InputDefinition<MetricId, MetricValue>;
 };
@@ -40,13 +47,13 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "stats-hourly": ResourceClass<GraphCollections, {}>;
-  "stats-daily": ResourceClass<GraphCollections, {}>;
-  "stats-weekly": ResourceClass<GraphCollections, {}>;
-  "stats-monthly": ResourceClass<GraphCollections, {}>;
+  readonly "stats-hourly": ResourceClass<GraphCollections, {}>;
+  readonly "stats-daily": ResourceClass<GraphCollections, {}>;
+  readonly "stats-weekly": ResourceClass<GraphCollections, {}>;
+  readonly "stats-monthly": ResourceClass<GraphCollections, {}>;
 };
 
-export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [string, Period, number], number> {
+export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, BucketKey, number> {
   private period: Period;
 
   constructor(period: Period) {
@@ -57,11 +64,11 @@ export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [stri
     _key: MetricId,
     values: Values<MetricValue>,
     _context: Context
-  ): Iterable<[[string, Period, number], number]> {
-    const result: Array<[[string, Period, number], number]> = Array.of();
+  ): Iterable<[BucketKey, number]> {
+    const result: Array<[BucketKey, number]> = Array.of();
     for (const v of values) {
       const periodStart = this.computePeriodStart(v.timestamp);
-      const bucketKey: [string, Period, number] = [v.name, this.period, periodStart];
+      const bucketKey: BucketKey = { metricName: v.name, period: this.period, periodStart: periodStart };
       result.push([bucketKey, v.value]);
     }
     return result;
@@ -89,20 +96,20 @@ export class MetricToBucketMapper implements Mapper<MetricId, MetricValue, [stri
   }
 }
 
-export class BucketToAggregatedMetricMapper implements Mapper<[string, Period, number], AggregatedData, AggregatedMetricId, AggregatedMetricValue> {
+export class BucketToAggregatedMetricMapper implements Mapper<BucketKey, AggregatedData, AggregatedMetricId, AggregatedMetricValue> {
   constructor() {
   }
 
   mapEntry(
-    key: [string, Period, number],
+    key: BucketKey,
     values: Values<AggregatedData>,
     _context: Context
   ): Iterable<[AggregatedMetricId, AggregatedMetricValue]> {
     const result: Array<[AggregatedMetricId, AggregatedMetricValue]> = Array.of();
     for (const v of values) {
-      const metricName = key[0];
-      const period = key[1];
-      const periodStart = key[2];
+      const metricName = key.metricName;
+      const period = key.period;
+      const periodStart = key.periodStart;
       const avg = v.count > 0 ? v.sum / v.count : 0;
       const aggregatedId: AggregatedMetricId = JSON.stringify(key);
       const aggregatedValue: AggregatedMetricValue = {
@@ -253,8 +260,8 @@ export class StatsMonthlyResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { metrics: new InputDefinition<MetricId, MetricValue>([]) };

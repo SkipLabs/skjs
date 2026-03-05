@@ -43,13 +43,13 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "invoices": ResourceClass<GraphCollections, {}>;
-  "invoices-draft": ResourceClass<GraphCollections, {}>;
-  "invoices-sent": ResourceClass<GraphCollections, {}>;
-  "invoices-paid": ResourceClass<GraphCollections, {}>;
-  "invoices-overdue": ResourceClass<GraphCollections, {}>;
-  "invoices-lineItems": ResourceClass<GraphCollections, InvoicesLineItemsResourceParams>;
-  "customers-invoices": ResourceClass<GraphCollections, CustomersInvoicesResourceParams>;
+  readonly "invoices": ResourceClass<GraphCollections, {}>;
+  readonly "invoices-draft": ResourceClass<GraphCollections, {}>;
+  readonly "invoices-sent": ResourceClass<GraphCollections, {}>;
+  readonly "invoices-paid": ResourceClass<GraphCollections, {}>;
+  readonly "invoices-overdue": ResourceClass<GraphCollections, {}>;
+  readonly "invoices-lineItems": ResourceClass<GraphCollections, InvoicesLineItemsResourceParams>;
+  readonly "customers-invoices": ResourceClass<GraphCollections, CustomersInvoicesResourceParams>;
 };
 
 export class InvoiceStatusFilterMapper implements Mapper<InvoiceId, InvoiceValue, InvoiceId, InvoiceValue> {
@@ -210,8 +210,8 @@ export class CustomersInvoicesResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { invoices: new InputDefinition<InvoiceId, InvoiceValue>([]), lineItems: new InputDefinition<LineItemId, LineItemValue>([]), customers: new InputDefinition<CustomerId, CustomerValue>([]) };

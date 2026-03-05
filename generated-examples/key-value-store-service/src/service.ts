@@ -27,7 +27,7 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "entries": ResourceClass<GraphCollections, {}>;
+  readonly "entries": ResourceClass<GraphCollections, {}>;
 };
 
 export class EntriesResource implements Resource<GraphCollections> {
@@ -43,8 +43,8 @@ export class EntriesResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { entries: new InputDefinition<KVEntryId, KVEntryValue>([]) };

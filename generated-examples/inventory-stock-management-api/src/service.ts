@@ -54,7 +54,7 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "availability": ResourceClass<GraphCollections, {}>;
+  readonly "availability": ResourceClass<GraphCollections, {}>;
 };
 
 export class OrderToProductMapper implements Mapper<OrderId, OrderValue, ProductId, StockChange> {
@@ -165,8 +165,8 @@ export class AvailabilityResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
                 this.inputs = { products: new InputDefinition<ProductId, ProductValue>([]), orders: new InputDefinition<OrderId, OrderValue>([]), receipts: new InputDefinition<ReceiptId, ReceiptValue>([]) };

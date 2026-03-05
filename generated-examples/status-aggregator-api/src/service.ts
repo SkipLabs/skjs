@@ -50,11 +50,11 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "status": ResourceClass<GraphCollections, {}>;
-  "components": ResourceClass<GraphCollections, {}>;
-  "components-healthy": ResourceClass<GraphCollections, {}>;
-  "components-degraded": ResourceClass<GraphCollections, {}>;
-  "components-unhealthy": ResourceClass<GraphCollections, {}>;
+  readonly "status": ResourceClass<GraphCollections, {}>;
+  readonly "components": ResourceClass<GraphCollections, {}>;
+  readonly "components-healthy": ResourceClass<GraphCollections, {}>;
+  readonly "components-degraded": ResourceClass<GraphCollections, {}>;
+  readonly "components-unhealthy": ResourceClass<GraphCollections, {}>;
 };
 
 export class ComponentToStatusMapper implements Mapper<ComponentId, ComponentValue, SystemStatusId, StatusCount> {
@@ -240,8 +240,8 @@ export class ComponentsUnhealthyResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { components: new InputDefinition<ComponentId, ComponentValue>([]) };

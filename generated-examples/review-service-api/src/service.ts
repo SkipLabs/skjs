@@ -31,8 +31,8 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "reviews-by-item": ResourceClass<GraphCollections, ReviewsByItemResourceParams>;
-  "reviews-by-user": ResourceClass<GraphCollections, ReviewsByUserResourceParams>;
+  readonly "reviews-by-item": ResourceClass<GraphCollections, ReviewsByItemResourceParams>;
+  readonly "reviews-by-user": ResourceClass<GraphCollections, ReviewsByUserResourceParams>;
 };
 
 export class FilterByItemMapper implements Mapper<ReviewId, ReviewValue, ReviewId, ReviewValue> {
@@ -111,8 +111,8 @@ export class ReviewsByUserResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { reviews: new InputDefinition<ReviewId, ReviewValue>([]) };

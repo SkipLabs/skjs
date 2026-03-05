@@ -38,7 +38,7 @@ export type GraphCollections = {
 };
 
 export type Resources = {
-  "leaderboard": ResourceClass<GraphCollections, {}>;
+  readonly "leaderboard": ResourceClass<GraphCollections, {}>;
 };
 
 export class ScoreToUserMapper
@@ -168,19 +168,25 @@ export class HighScoreReducer implements Reducer<number, HighScoreAccum> {
 type HighScore = number;
 type Rank = number;
 
+// Using object instead of tuple as readonly tuples are not yet supported by skjs.
+export type HighScoreUserKey = {
+  highScore: HighScore;
+  userId: string;
+};
+
 class HighScoreUserMapper
-  implements Mapper<string, HighScoreAccum, [HighScore, string], number>
+  implements Mapper<string, HighScoreAccum, HighScoreUserKey, number>
 {
   mapEntry(
     key: string,
     values: Values<HighScoreAccum>,
     _context: Context
-  ): Iterable<[[HighScore, string], number]> {
+  ): Iterable<[HighScoreUserKey, number]> {
     const arr = values.toArray();
     const entry = arr[0];
     if (entry !== undefined) {
-      const result: Array<[[HighScore, string], number]> = Array.of();
-      result.push([[entry.highScore, key], 0]);
+      const result: Array<[HighScoreUserKey, number]> = Array.of();
+      result.push([{ highScore: entry.highScore, userId: key }, 0]);
       return result;
     }
     return Array.of();
@@ -188,14 +194,14 @@ class HighScoreUserMapper
 }
 
 class AllHighScoreUserMapper
-  implements Mapper<[HighScore, string], number, number, [HighScore, string]>
+  implements Mapper<HighScoreUserKey, number, number, HighScoreUserKey>
 {
   mapEntry(
-    key: [HighScore, string],
+    key: HighScoreUserKey,
     _values: Values<number>,
     _context: Context
-  ): Iterable<[number, [HighScore, string]]> {
-    const result: Array<[number, [HighScore, string]]> = Array.of();
+  ): Iterable<[number, HighScoreUserKey]> {
+    const result: Array<[number, HighScoreUserKey]> = Array.of();
     result.push([0, key]);
     return result;
   }
@@ -244,8 +250,8 @@ export class LeaderboardResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
         this.inputs = { scores: new InputDefinition<ScoreId, ScoreValue>([]) };

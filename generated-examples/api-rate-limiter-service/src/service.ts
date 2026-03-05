@@ -56,12 +56,18 @@ export type GraphCollections = {
   clientStatus: EagerCollection<ClientStatusId, ClientStatusValue>;
 };
 
-export type Resources = {
-  "rateLimitStatus": ResourceClass<GraphCollections, {}>;
-  "clientStatus": ResourceClass<GraphCollections, {}>;
+// Using object instead of tuple as readonly tuples are not yet supported by skjs.
+export type ClientEndpointKey = {
+  clientId: string;
+  endpoint: string;
 };
 
-export class RequestEventToClientEndpointMapper implements Mapper<RequestEventId, RequestEventValue, [string, string], RequestEventValue> {
+export type Resources = {
+  readonly "rateLimitStatus": ResourceClass<GraphCollections, {}>;
+  readonly "clientStatus": ResourceClass<GraphCollections, {}>;
+};
+
+export class RequestEventToClientEndpointMapper implements Mapper<RequestEventId, RequestEventValue, ClientEndpointKey, RequestEventValue> {
   constructor() {
   }
 
@@ -69,17 +75,17 @@ export class RequestEventToClientEndpointMapper implements Mapper<RequestEventId
     _key: RequestEventId,
     values: Values<RequestEventValue>,
     _context: Context
-  ): Iterable<[[string, string], RequestEventValue]> {
-    const result: Array<[[string, string], RequestEventValue]> = Array.of();
+  ): Iterable<[ClientEndpointKey, RequestEventValue]> {
+    const result: Array<[ClientEndpointKey, RequestEventValue]> = Array.of();
     for (const v of values) {
-      const compositeKey: [string, string] = [v.clientId, v.endpoint];
+      const compositeKey: ClientEndpointKey = { clientId: v.clientId, endpoint: v.endpoint };
       result.push([compositeKey, v]);
     }
     return result;
   }
 }
 
-export class RequestCountToRateLimitStatusMapper implements Mapper<[string, string], RequestCountAccum, RateLimitStatusId, RateLimitStatusValue> {
+export class RequestCountToRateLimitStatusMapper implements Mapper<ClientEndpointKey, RequestCountAccum, RateLimitStatusId, RateLimitStatusValue> {
   private configs: EagerCollection<RateLimitConfigId, RateLimitConfigValue>;
 
   constructor(configs: EagerCollection<RateLimitConfigId, RateLimitConfigValue>) {
@@ -87,13 +93,13 @@ export class RequestCountToRateLimitStatusMapper implements Mapper<[string, stri
   }
 
   mapEntry(
-    key: [string, string],
+    key: ClientEndpointKey,
     values: Values<RequestCountAccum>,
     _context: Context
   ): Iterable<[RateLimitStatusId, RateLimitStatusValue]> {
     const result: Array<[RateLimitStatusId, RateLimitStatusValue]> = Array.of();
-    const clientId = key[0];
-    const endpoint = key[1];
+    const clientId = key.clientId;
+    const endpoint = key.endpoint;
 
     for (const accum of values) {
       const configArr = this.configs.getArray(endpoint);
@@ -266,8 +272,8 @@ export class ClientStatusResource implements Resource<GraphCollections> {
 }
 
 class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
-  public inputs: Inputs;
-  public resources: Resources;
+  public readonly inputs: Inputs;
+  public readonly resources: Resources;
 
   constructor() {
             this.inputs = { rateLimitConfigs: new InputDefinition<RateLimitConfigId, RateLimitConfigValue>([]), requestEvents: new InputDefinition<RequestEventId, RequestEventValue>([]) };
