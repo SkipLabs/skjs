@@ -229,9 +229,11 @@ class CallGraph private (
     };
     // Expand affected classes to include subclasses
     allAffected: mutable Set<(String, FAbsolute)> = mutable Set[];
+    affectedClassFiles: mutable Set<FAbsolute> = mutable Set[];
     while (affectedClasses.size() > 0) {
       chNode = affectedClasses.pop();
       if (allAffected.maybeInsert((chNode.name, chNode.fileName))) {
+        affectedClassFiles.insert(chNode.fileName);
         this.subclasses.getIter(context, chNode).each(affectedClasses.push)
       }
     };
@@ -266,14 +268,15 @@ class CallGraph private (
       }
     };
 
-    closure
+    result = closure
       .iterator()
       .foldl(
-        (affectedFiles, cgNode) -> {
-          affectedFiles.set(cgNode.id.getFileName())
-        },
+        (acc, cgNode) -> acc.set(cgNode.id.getFileName()),
         SortedSet<FAbsolute>[],
-      )
+      );
+    // Include files of affected classes (even if no members are in the depgraph)
+    affectedClassFiles.each(f -> !result = result.set(f));
+    result
   }
 }
 
