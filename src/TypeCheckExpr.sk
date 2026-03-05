@@ -855,9 +855,7 @@ extension class TypeChecker {
     | Call(Expr(_, Var(Name(_, "__SKJS_show_expanded"))), _, args) ->
       this.showTypes(tcenv, args, true, pos)
     | Call(f, targs, args) ->
-      if (tcenv.forInImpureCall is None()) {
-        tcenv.!forInImpureCall = Some(pos)
-      };
+      tcenv.markForInImpure(pos);
       fty = this.expr(tcenv, f, mostPrecise);
       tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
         stypes.singleElt() match {
@@ -902,9 +900,7 @@ extension class TypeChecker {
       };
       rty
     | New(subExpr, targsAst, args) ->
-      if (tcenv.forInImpureCall is None()) {
-        tcenv.!forInImpureCall = Some(pos)
-      };
+      tcenv.markForInImpure(pos);
       tArgs = targsAst.map(targ -> this.normalize(tcenv, targ));
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
@@ -1319,32 +1315,38 @@ extension class TypeChecker {
         );
         if (isValid) {
           // Check if this is a for-in v[k]! pattern
-          matchesForIn = subExpr.value match {
-          | Get(objExpr, Expr(_, Var(keyName))) ->
-            tcenv.forInKeyVar == Some(keyName.value) &&
-              tcenv.forInIterableKey.isSome() &&
-              tcenv.forInIterableKey == exprToKey(objExpr)
-          | _ -> false
-          };
-          if (matchesForIn && tcenv.forInImpureCall is None()) {
+          forInMatch = tcenv.getForInContext().flatMap(ctx -> {
+            subExpr.value match {
+            | Get(
+              objExpr,
+              Expr(_, Var(keyName)),
+            ) if (
+              keyName.value == ctx.keyVar &&
+              exprToKey(objExpr) == Some(ctx.iterableKey)
+            ) ->
+              Some(ctx)
+            | _ -> None()
+            }
+          });
+          forInMatch match {
+          | Some(ForInContext{impureCall => None()}) ->
             // Safe: v[k]! at beginning of for-in loop — allow it
             void
-          } else if (matchesForIn && tcenv.forInImpureCall is Some _) {
+          | Some(ctx @ ForInContext{impureCall => Some(callPos)}) ->
             // Unsafe: v[k]! after side effects in for-in loop
-            callPos = tcenv.forInImpureCall.fromSome();
-            iterKey = tcenv.forInIterableKey.fromSome();
-            keyVar = tcenv.forInKeyVar.fromSome();
             tcenv.error(
               Array[
                 (pos, "Do not use the postfix ! operator"),
                 (callPos, "This call could have modified the collection"),
                 (
                   subExpr.pos,
-                  `Move this to the beginning of the for-in loop, e.g.: const value = ${iterKey}[${keyVar}]!`,
+                  `Move this to the beginning of the for-in loop, e.g.: const value = ${
+                    ctx.iterableKey
+                  }[${ctx.keyVar}]!`,
                 ),
               ],
             )
-          } else {
+          | None() ->
             // Not a for-in pattern — original error
             tcenv.error(
               Array[

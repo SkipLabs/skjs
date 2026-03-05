@@ -30,6 +30,15 @@ mutable base class TCEnvBase private {
 
 mutable class TCEnvLight{} extends TCEnvBase {}
 
+// For-in loop context: tracks whether v[k]! is safe inside a for-in loop.
+// Only created when the loop variable is a simple binding and the iterable
+// is a dotted path (e.g. `for (k in v)` or `for (k in a.b)`).
+private class ForInContext{
+  keyVar: String, // "k" in for(k in v)
+  iterableKey: String, // canonical key for iterable
+  impureCall: ?PosRange = None(), // position of first call/new that broke purity
+}
+
 /*
  * State tracking for local objects (object literals bound to variables).
  *
@@ -91,10 +100,7 @@ mutable class TCEnv private {
    * See examples/src/tree.ts:Node() for real usage.
    */
   localObjects: mutable Map<String, LocalObjectState> = mutable Map[],
-  // For-in loop context: tracks whether v[k]! is safe inside a for-in loop
-  mutable forInKeyVar: ?String = None(), // "k" in for(k in v)
-  mutable forInIterableKey: ?String = None(), // canonical key for iterable
-  mutable forInImpureCall: ?PosRange = None(), // position of first call/new that broke purity
+  mutable forInContext: ?ForInContext = None(),
   private mutable counter: Int = 0,
 } extends TCEnvBase {
   static fun mcreate(
@@ -130,6 +136,28 @@ mutable class TCEnv private {
 
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
+  }
+
+  /* For-in context for safe v[k]! detection */
+
+  readonly fun getForInContext(): ?ForInContext {
+    this.forInContext
+  }
+
+  mutable fun enterForIn(keyVar: String, iterableKey: String): void {
+    this.!forInContext = Some(ForInContext{keyVar, iterableKey})
+  }
+
+  mutable fun restoreForInContext(saved: ?ForInContext): void {
+    this.!forInContext = saved
+  }
+
+  mutable fun markForInImpure(pos: PosRange): void {
+    this.forInContext.each(ctx -> {
+      if (ctx.impureCall is None()) {
+        this.!forInContext = Some(ctx with {impureCall => Some(pos)})
+      }
+    })
   }
 
   /* On results */
