@@ -139,10 +139,14 @@ const callGraphDirName: SKStore.DirName = SKStore.DirName::create(
 const depGraphDirName: SKStore.DirName = SKStore.DirName::create(
   "/dependency-graph/",
 );
+const subclassesDirName: SKStore.DirName = SKStore.DirName::create(
+  "/subclasses/",
+);
 
 class CallGraph private (
   callgraph: SKStore.EHandle<CGNode, CGNode>,
   depgraph: SKStore.EHandle<CGNode, CGNode>,
+  subclasses: SKStore.EHandle<CHNode, CHNode>,
 ) {
   static fun build(
     context: mutable SKStore.Context,
@@ -168,7 +172,21 @@ class CallGraph private (
         }
       },
     );
-    static(callgraph, depgraph)
+    // Inverted class hierarchy: parent → children (subclasses)
+    subclasses = checked.map(
+      CHNode::keyType,
+      CHNode::type,
+      context,
+      subclassesDirName,
+      (_context, writer, _fileName, res) ~> {
+        res.first.classHierarchy.each((child, parents) -> {
+          for (parent in parents) {
+            writer.append(parent, child)
+          }
+        })
+      },
+    );
+    static(callgraph, depgraph, subclasses)
   }
 
   static fun create(context: readonly SKStore.Context): ?this {
@@ -176,6 +194,7 @@ class CallGraph private (
       static(
         SKStore.EHandle(CGNode::keyType, CGNode::type, callGraphDirName),
         SKStore.EHandle(CGNode::keyType, CGNode::type, depGraphDirName),
+        SKStore.EHandle(CHNode::keyType, CHNode::type, subclassesDirName),
       )
     )
   }
@@ -204,18 +223,30 @@ class CallGraph private (
     debug: Bool = false,
   ): SortedSet<FAbsolute> {
     affectedCGNodes: mutable Set<CGNode> = mutable Set[];
-    affectedClasses: mutable Set<(String, FAbsolute)> = mutable Set[]; // (className, fileName) pairs
+    affectedClasses: mutable Vector<CHNode> = mutable Vector[];
     for (def in changedDefs) {
       checkDef(def, affectedCGNodes, affectedClasses)
     };
     if (!affectedClasses.isEmpty()) {
+      // Expand affected classes to include subclasses
+      allAffected: mutable Set<(String, FAbsolute)> = mutable Set[];
+      frontier = affectedClasses;
+      while (frontier.size() > 0) {
+        chNode = frontier.pop();
+        ident = (chNode.name, chNode.fileName);
+        if (!allAffected.contains(ident)) {
+          allAffected.insert(ident);
+          for (child in this.subclasses.getIter(context, chNode)) {
+            frontier.push(child)
+          }
+        }
+      };
       for (item in this.depgraph.items(context)) {
         node = item.i0;
         node.id match {
         | Method(_, class_, fileName, _)
         | Constructor(class_, fileName) ->
-          classIdent = (class_.value, fileName);
-          if (affectedClasses.contains(classIdent)) {
+          if (allAffected.contains((class_.value, fileName))) {
             affectedCGNodes.insert(node)
           }
         | TopLevelFunction _
@@ -255,7 +286,7 @@ class CallGraph private (
 private fun checkDef(
   def: Def,
   nodes: mutable Set<CGNode>,
-  classes: mutable Set<(String, FAbsolute)>,
+  classes: mutable Vector<CHNode>,
 ): void {
   def.value match {
   // Syntactic forms which can't be called or don't define callable entities
@@ -281,7 +312,7 @@ private fun checkDef(
   | ExportDefault(d) -> checkDef(Def(def.pos, d), nodes, classes)
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
   | fd @ TopLevelFunDef _ -> nodes.insert(fd.cgNode.fromSome())
-  | c @ Class _ -> classes.insert((c.name.value, def.pos.fileName))
+  | c @ Class _ -> classes.push(CHNode::ofClass(c))
   }
 }
 
