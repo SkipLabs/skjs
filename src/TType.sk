@@ -276,14 +276,17 @@ class TType private {
     f: (TParam) -> ?TType,
   ): TType {
     this.mapClauses(subst, tenv, clause0 -> {
-      clause1 = TType::top(this.pos);
-      for (tparam in clause0.vars) {
-        paramTy = f(tparam) match {
-        | None() -> TType::fromTParam(this.pos, tparam)
-        | Some(ty) -> ty
-        };
-        !clause1 = TType::inter(subst, tenv, clause1, paramTy)
-      };
+      clause1 = TType::interN(
+        subst,
+        tenv,
+        this.pos,
+        clause0.vars.values().map(tparam ->
+          f(tparam) match {
+          | None() -> TType::fromTParam(this.pos, tparam)
+          | Some(ty) -> ty
+          }
+        ),
+      );
       clause0.stypes match {
       | None() -> clause1
       | Some(stypes) ->
