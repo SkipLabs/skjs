@@ -101,6 +101,47 @@ function testForOfExclamation(v: { [key: string]: number }): void {
 }
 
 ///////////////////////////////////////////////////////////////////////////////
+// Nested for-in loops
+///////////////////////////////////////////////////////////////////////////////
+
+function testNestedSafe(
+  v1: { [key: string]: number },
+  v2: { [key: string]: number },
+): void {
+  for (const x1 in v1) {
+    const a1: number = v1[x1]!;
+    for (const x2 in v2) {
+      const a2: number = v2[x2]!;
+    }
+  }
+}
+
+function testNestedInnerCallTaintsOuter(
+  v1: { [key: string]: number },
+  v2: { [key: string]: number },
+): void {
+  for (const x1 in v1) {
+    for (const x2 in v2) {
+      someFunc();
+    }
+    // FIXME: should error — inner loop call taints outer context
+    const a1: number = v1[x1]!;
+  }
+}
+
+function testNestedInnerCallInnerStillSafe(
+  v1: { [key: string]: number },
+  v2: { [key: string]: number },
+): void {
+  for (const x1 in v1) {
+    for (const x2 in v2) {
+      const a2: number = v2[x2]!;
+      someFunc();
+    }
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
 // Helpers (type-only, never called)
 ///////////////////////////////////////////////////////////////////////////////
 
