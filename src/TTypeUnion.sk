@@ -53,13 +53,14 @@ extension class TType {
     subst: mutable Subst,
     tenv: TEnv,
     pos: PosRange,
-    tys: Sequence<TType>,
+    tys: readonly Sequence<TType>,
   ): TType {
-    result = TType::bottom(pos);
-    for (ty in tys) {
-      !result = TType::union(subst, tenv, result, ty);
-    };
-    result
+    tysIt = tys.iterator();
+    tysIt.next() match {
+    | None() -> TType::bottom(pos)
+    | Some(first) ->
+      tysIt.reduce((res, ty) -> TType::union(subst, tenv, res, ty), first)
+    }
   }
 }
 
