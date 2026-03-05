@@ -537,14 +537,14 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     fieldName: String,
     pos: PosRange,
   ): ?TType {
-    result = TType::bottom(pos);
+    tys = mutable Vector[];
     for (fields in this.branches) {
       fields.maybeGetType(subst, tenv, fieldName, pos, false) match {
       | None() -> return None()
-      | Some(ty) -> !result = TType::union(subst, tenv, result, ty)
+      | Some(ty) -> tys.push(ty)
       }
     };
-    Some(result)
+    Some(TType::unionN(subst, tenv, pos, tys))
   }
 
   fun getType(
@@ -565,14 +565,14 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     uniqueId: String,
     pos: PosRange,
   ): ?TType {
-    result = TType::bottom(pos);
+    tys = mutable Vector[];
     for (fields in this.branches) {
       fields.maybeGetSymbolType(subst, tenv, uniqueId, pos, false) match {
       | None() -> return None()
-      | Some(ty) -> !result = TType::union(subst, tenv, result, ty)
+      | Some(ty) -> tys.push(ty)
       }
     };
-    Some(result)
+    Some(TType::unionN(subst, tenv, pos, tys))
   }
 
   fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
@@ -591,15 +591,14 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
   }
 
   fun maybeGetRetType(subst: mutable Subst, tenv: TEnv): ?TType {
-    result: TType = TType::bottom(this.pos);
+    tys = mutable Vector[];
     for (fields in this.branches) {
       fields match {
-      | TFields{call => Some((_, TFuns(fun_, _)))} ->
-        !result = TType::union(subst, tenv, result, fun_.retType)
+      | TFields{call => Some((_, TFuns(fun_, _)))} -> tys.push(fun_.retType)
       | TFields{call => None()} -> return None()
       }
     };
-    Some(result)
+    Some(TType::unionN(subst, tenv, this.pos, tys))
   }
 
   fun maybeGetNew(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
