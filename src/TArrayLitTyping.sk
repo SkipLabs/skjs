@@ -119,12 +119,14 @@ class ArrayLitTyping() {
     tenv: TEnv,
     arrLit: TArrayLit,
   ): TType {
-    eltType = TType::bottom(arrLit.tvar.pos);
-    for (elt in arrLit.tupleElts) {
-      widenedElt = ArrayLitTyping::widenLiteralType(subst, tenv, elt);
-      !eltType = TType::union(subst, tenv, eltType, widenedElt)
-    };
-    eltType
+    TType::unionN(
+      subst,
+      tenv,
+      arrLit.tvar.pos,
+      arrLit.tupleElts.values().map(elt ->
+        ArrayLitTyping::widenLiteralType(subst, tenv, elt)
+      ),
+    )
   }
 
   // Converts ArrayLit<α, elts> to Array<U> by widening and unioning all elements.

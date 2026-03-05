@@ -957,16 +957,19 @@ extension class TypeChecker {
     | EArray(arr) ->
       hasSpread = arr.any(x -> x.value is Spread _);
       if (hasSpread) {
-        eltType = TType::bottom(pos);
-        for (x in arr) {
-          xEltTy = x.value match {
-          | Spread(spreadExpr) ->
-            spreadTy = this.expr(tcenv, spreadExpr, true);
-            this.getValueType(tcenv, x.pos, spreadTy, "spread")
-          | _ -> this.expr(tcenv, x, mostPrecise)
-          };
-          !eltType = TType::union(tcenv.subst, this, eltType, xEltTy)
-        };
+        eltType = TType::unionN(
+          tcenv.subst,
+          this,
+          pos,
+          arr.values().map(x ->
+            x.value match {
+            | Spread(spreadExpr) ->
+              spreadTy = this.expr(tcenv, spreadExpr, true);
+              this.getValueType(tcenv, x.pos, spreadTy, "spread")
+            | _ -> this.expr(tcenv, x, mostPrecise)
+            }
+          ),
+        );
         TType::inst(Name(pos, "Array"), TArgs(Array[eltType]))
       } else {
         ArrayLitTyping::typeFromLiteral(
