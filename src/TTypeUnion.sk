@@ -266,9 +266,9 @@ extension class TFields {
       index2o = fields2.maybeSingleIndex();
       (index1o, index2o) match {
       | (None(), None()) -> None()
-      | (Some(index), None())
-      | (None(), Some(index)) ->
-        Some(index)
+      | (Some(_), None())
+      | (None(), Some(_)) ->
+        None()
       | (Some(index1), Some(index2)) ->
         TIndexField::union(subst, tenv, index1, index2)
       } match {

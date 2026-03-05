@@ -30,15 +30,13 @@ function testCommonProperty(x: Array<number> | ObjWithLength): number {
 
 // Accessing array-only property
 function testArrayOnlyProperty(x: Array<number> | Obj): number {
-  // @skjs-expect-error Invalid index key
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Unbound field: length
   return x.length;
 }
 
 // Accessing object-only property
 function testObjectOnlyProperty(x: Array<number> | Obj): string {
-  // @skjs-expect-error Invalid index key
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Unbound field: name
   return x.name;
 }
 
@@ -48,15 +46,13 @@ function testObjectOnlyProperty(x: Array<number> | Obj): string {
 
 // Calling array method on union
 function testArrayMethodOnUnion(x: Array<number> | Obj): Array<number> {
-  // @skjs-expect-error Invalid call
-  // @skjs-expect-error Invalid index key
+  // @skjs-expect-error Unbound field: map
   return x.map((n) => n * 2);
 }
 
 // Calling push on union
 function testPushOnUnion(x: Array<number> | Obj): void {
-  // @skjs-expect-error Invalid call
-  // @skjs-expect-error Invalid index key
+  // @skjs-expect-error Unbound field: push
   x.push(42);
 }
 
@@ -66,13 +62,13 @@ function testPushOnUnion(x: Array<number> | Obj): void {
 
 // Numeric index on array | object union
 function testNumericIndexOnUnion(x: Array<string> | Obj): string | undefined {
+  // @skjs-expect-error Unbound field: 0
   return x[0];
 }
 
 // String index on array | object union
 function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
-  // @skjs-expect-error Invalid index key
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Unbound field: name
   return x["name"];
 }
 
@@ -158,14 +154,12 @@ type Obj3 = {
 
 function testMultipleObjectsGetName(x: Array<number> | Obj | Obj3): string {
   // Can't access any specific property without refinement
-  // @skjs-expect-error Invalid index key
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Unbound field: name
   return x.name;
 }
 
 function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
-  // @skjs-expect-error Invalid index key
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Unbound field: label
   return x.label;
 }
 
@@ -260,7 +254,7 @@ function testNestedUnionsGetFirst(
   x: (Array<number> | Obj) | (Array<string> | Obj3),
 ): number | string {
   // Should require refinement to access anything
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Unbound field: 0
   return x[0];
 }
 
