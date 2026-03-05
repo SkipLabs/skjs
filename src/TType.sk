@@ -564,15 +564,18 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     tenv: TEnv,
     uniqueId: String,
     pos: PosRange,
+    isLValue: Bool = false,
   ): ?TType {
     tys = mutable Vector[];
     for (fields in this.branches) {
-      fields.maybeGetSymbolType(subst, tenv, uniqueId, pos, false) match {
+      fields.maybeGetSymbolType(subst, tenv, uniqueId, pos, isLValue) match {
       | None() -> return None()
       | Some(ty) -> tys.push(ty)
       }
     };
-    Some(TType::unionN(subst, tenv, pos, tys))
+    Some(
+      (if (isLValue) TType::interN else TType::unionN)(subst, tenv, pos, tys),
+    )
   }
 
   fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
