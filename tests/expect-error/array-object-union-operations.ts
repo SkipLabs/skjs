@@ -66,7 +66,6 @@ function testPushOnUnion(x: Array<number> | Obj): void {
 
 // Numeric index on array | object union
 function testNumericIndexOnUnion(x: Array<string> | Obj): string | undefined {
-  // FIXME: TS errors here (index 0 doesn't exist on string[] | Obj), SKJS allows it
   return x[0];
 }
 
