@@ -152,7 +152,17 @@ mutable class TCEnv private {
   }
 
   mutable fun exitForIn(): void {
-    this.!forInContext = this.forInContext.flatMap(ctx -> ctx.outer)
+    this.forInContext.each(inner -> {
+      outer = inner.outer;
+      // If inner became impure, propagate to outer
+      this.!forInContext = inner.impureCall match {
+      | Some(pos) ->
+        outer.map(o ->
+          if (o.impureCall is None()) o with {impureCall => Some(pos)} else o
+        )
+      | None() -> outer
+      }
+    })
   }
 
   mutable fun markForInImpure(pos: PosRange): void {

@@ -124,7 +124,7 @@ function testNestedInnerCallTaintsOuter(
     for (const x2 in v2) {
       someFunc();
     }
-    // FIXME: should error — inner loop call taints outer context
+    // @skjs-expect-error Do not use the postfix ! operator
     const a1: number = v1[x1]!;
   }
 }
