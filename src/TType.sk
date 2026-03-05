@@ -995,13 +995,12 @@ class TField private {
 }
 
 /* Which primitive key kinds an index signature accepts */
-class IndexKeyKinds private {
+class IndexKeyKinds{
   hasString: Bool,
   hasNumber: Bool,
   hasSymbol: Bool,
 } uses XXHashable, Orderable {
-  /* Invariant: hasString || hasNumber || hasSymbol */
-
+  /* Returns None() if all three values are false */
   static fun create{
     hasString: Bool,
     hasNumber: Bool,
@@ -1046,7 +1045,7 @@ class IndexKeyKinds private {
     if (this.hasString) parts.push("string");
     if (this.hasNumber) parts.push("number");
     if (this.hasSymbol) parts.push("symbol");
-    parts.join(" | ")
+    if (parts.isEmpty()) "never" else parts.join(" | ")
   }
 }
 
