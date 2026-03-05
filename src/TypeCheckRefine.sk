@@ -172,8 +172,7 @@ extension class TypeChecker {
           )
         | _ -> if (target) None() else Some(x)
         };
-      default = None();
-      this.setLocalFilterMap(tcenv, local, default, filterMap)
+      this.setLocalFilterMap(tcenv, local, None(), filterMap)
     | _ ->
       tcenv.error(
         Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
@@ -213,9 +212,7 @@ extension class TypeChecker {
           TObject::inter(tcenv.subst, this, tObj, arrObj)
         | _ -> None()
         };
-
-      default = None();
-      this.setLocalFilterMap(tcenv, local, default, filterMap)
+      this.setLocalFilterMap(tcenv, local, None(), filterMap)
     }
   }
 
