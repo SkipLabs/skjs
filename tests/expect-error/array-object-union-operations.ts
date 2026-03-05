@@ -85,6 +85,15 @@ function testLValueIndexOnTupleUnion(
   x[0] = 42;
 }
 
+// L-value with multi-literal key: value must satisfy all matching fields
+// FIXME: TS rejects this (number is not assignable to never), SKJS allows it
+function testLValueMultiLiteralKey(
+  obj: { a: number; b: string },
+  key: "a" | "b",
+): void {
+  obj[key] = 42;
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Assignment to union types
 ///////////////////////////////////////////////////////////////////////////////
