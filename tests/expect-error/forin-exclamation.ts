@@ -167,6 +167,17 @@ function testForInCallWithIterableThenSafe(v: { [key: string]: number }): void {
 function testForInUnrelatedAssignment(v: { [key: string]: number }): void {
   for (const k in v) {
     let _y: number = 5;
+    // Safe: unrelated assignment doesn't affect v
+    const val: number = v[k]!;
+  }
+}
+
+function testForInUnrelatedAssignment2(v: { [key: string]: number }): void {
+  let y: number = 4;
+  for (const k in v) {
+    // Safe: unrelated assignment doesn't affect v but SKJS is too conservative
+    y = 5;
+    // @skjs-expect-error Do not use the postfix ! operator
     const val: number = v[k]!;
   }
 }
