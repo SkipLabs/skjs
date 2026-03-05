@@ -5,9 +5,9 @@
 
 // ===================== Core Types =====================
 
-export type Json = null | boolean | number | string | Json[] | JsonObject;
+export type Json = null | boolean | number | string | readonly Json[] | JsonObject;
 
-export type JsonObject = { [key: string]: Json | null };
+export type JsonObject = { readonly [key: string]: Json | null };
 
 export type int = number;
 
@@ -53,17 +53,19 @@ export interface Mapper<
 
 // ===================== Reducer =====================
 
+// Note: Nullable<A> is expanded to A | null here to work around a skjs bug
+// where type alias applications in interface members break type parameter resolution.
 export interface Reducer<V extends Json, A extends Json> {
-  initial: Nullable<A>;
-  add(accum: Nullable<A>, value: V & DepSafe): A;
-  remove(accum: A, value: V & DepSafe): Nullable<A>;
+  initial: A | null;
+  add(accum: A | null, value: V & DepSafe): A;
+  remove(accum: A, value: V & DepSafe): A | null;
 }
 
 // ===================== EagerCollection =====================
 
 // Branded base class representing ∃K,V. EagerCollection<K,V>
 export abstract class AbstractEagerCollection implements Managed {
-  protected __sk_collectionBrand: undefined;
+  protected readonly __sk_collectionBrand: undefined;
   constructor() {
     this.__sk_collectionBrand = undefined;
   }
@@ -108,7 +110,7 @@ export interface EagerCollection<K extends Json, V extends Json>
 
 // Branded base class representing ∃K,V. InputDefinition<K,V>
 export abstract class AbstractInputDefinition {
-  protected __sk_inputDefBrand: undefined;
+  protected readonly __sk_inputDefBrand: undefined;
   constructor() {
     this.__sk_inputDefBrand = undefined;
   }
@@ -129,9 +131,9 @@ export class InputDefinition<
 
 // ===================== Named Collections =====================
 
-export type NamedInputDefinitions = { [name: string]: AbstractInputDefinition };
+export type NamedInputDefinitions = { readonly [name: string]: AbstractInputDefinition };
 
-export type NamedEagerCollections = { [name: string]: AbstractEagerCollection };
+export type NamedEagerCollections = { readonly [name: string]: AbstractEagerCollection };
 
 // ===================== Resource =====================
 
@@ -150,15 +152,17 @@ export type ResourceClass<
 
 // ===================== SkipService =====================
 
+// Resources must use readonly fields for sound subtyping of ResourceClass values.
+// Example: type Resources = { readonly "items": ResourceClass<Collections, {}> };
 export interface SkipService<
   InputDefs extends NamedInputDefinitions,
   Inputs extends NamedEagerCollections,
   ResourceInputs extends NamedEagerCollections,
   Resources,
 > {
-  inputs: InputDefs;
+  readonly inputs: InputDefs;
 
-  resources: Resources;
+  readonly resources: Resources;
 
   createGraph(inputs: Inputs, context: Context): ResourceInputs;
 }
