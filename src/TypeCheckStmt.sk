@@ -98,23 +98,19 @@ extension class TypeChecker {
       // Enter for-in context for safe v[k]! detection
       enteredForIn =
         kind is ForIn() &&
-        {
-          keyVarName: ?String = initStmt.value match {
-          | Bind(_, bindings) if (bindings.size() == 1) ->
-            bindings[0].pat.value match {
-            | PVar(name) -> Some(name.value)
-            | _ -> None()
+        initStmt.value match {
+        | Bind(_, bindings) if (bindings.size() == 1) ->
+          bindings[0].pat.value match {
+          | PVar(keyVar) ->
+            ForInContext::exprToKey(iterable) match {
+            | Some(iterableKey) ->
+              tcenv.enterForIn(keyVar.value, iterableKey);
+              true
+            | None() -> false
             }
-          | _ -> None()
-          };
-          keyVarName
-            .flatMap(kv ->
-              ForInContext::exprToKey(iterable).map(ik -> {
-                tcenv.enterForIn(kv, ik);
-                true
-              })
-            )
-            .default(false)
+          | _ -> false
+          }
+        | _ -> false
         };
 
       loopScope = tcenv.mcreateSubScope{isLoop => true};
