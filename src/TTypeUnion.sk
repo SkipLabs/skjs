@@ -48,6 +48,20 @@ extension class TType {
     clauses = Clauses::union(subst, tenv, ty1.clauses, ty2.clauses);
     TType::create(ty1.pos, types, clauses)
   }
+
+  static fun unionN(
+    subst: mutable Subst,
+    tenv: TEnv,
+    pos: PosRange,
+    tys: readonly Sequence<TType>,
+  ): TType {
+    tysIt = tys.iterator();
+    tysIt.next() match {
+    | None() -> TType::bottom(pos)
+    | Some(first) ->
+      tysIt.reduce((res, ty) -> TType::union(subst, tenv, res, ty), first)
+    }
+  }
 }
 
 extension class TFuns {

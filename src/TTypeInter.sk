@@ -36,12 +36,12 @@ class TInter private (tys: ArraySet<TType>) extends TInst {
   // Compute the intersection of all types in this group.
   fun expand(subst: mutable Subst, tenv: TEnv): TType {
     !tenv.expandInter = true;
-    iter = this.tys.values();
-    result = iter.next().fromSome();
-    for (ty in iter) {
-      !result = TType::inter(subst, tenv, result, ty);
-    };
-    result
+    TType::interN(
+      subst,
+      tenv,
+      this.tys.values().next().fromSome().pos,
+      this.tys,
+    )
   }
 
   // Maps f over all types in the intersection, preserving invariants.
@@ -183,6 +183,20 @@ extension class TType {
     };
     clauses = Clauses::inter(subst, tenv, clauses1, clauses2);
     TType::fromClauses(ty1.pos, clauses);
+  }
+
+  static fun interN(
+    subst: mutable Subst,
+    tenv: TEnv,
+    pos: PosRange,
+    tys: readonly Sequence<TType>,
+  ): TType {
+    tysIt = tys.iterator();
+    tysIt.next() match {
+    | None() -> TType::top(pos)
+    | Some(first) ->
+      tysIt.reduce((res, ty) -> TType::inter(subst, tenv, res, ty), first)
+    }
   }
 }
 

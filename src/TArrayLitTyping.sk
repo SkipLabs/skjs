@@ -273,9 +273,11 @@ class ArrayLitTyping() {
       arrayCandidates = ArrayLitTyping::arrayInstArgs(u2);
       if (!arrayCandidates.isEmpty()) {
         litEltType = ArrayLitTyping::arrayLitEltType(subst, tenv, arrLit);
-        expectedEltType = arrayCandidates.reduce(
-          (acc, candidate) -> TType::union(subst, tenv, acc, candidate),
-          TType::bottom(arrLit.tvar.pos),
+        expectedEltType = TType::unionN(
+          subst,
+          tenv,
+          arrLit.tvar.pos,
+          arrayCandidates,
         );
         result = TType::isSub(subst, tenv, litEltType, expectedEltType);
         // Covariance is sound here: we're committing an uncommitted literal,
