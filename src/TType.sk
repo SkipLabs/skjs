@@ -1002,11 +1002,11 @@ class IndexKeyKinds private {
 } uses XXHashable, Orderable {
   /* Invariant: hasString || hasNumber || hasSymbol */
 
-  static fun create(
+  static fun create{
     hasString: Bool,
     hasNumber: Bool,
     hasSymbol: Bool,
-  ): ?IndexKeyKinds {
+  }: ?IndexKeyKinds {
     if (hasString || hasNumber || hasSymbol) {
       Some(IndexKeyKinds{hasString, hasNumber, hasSymbol})
     } else {
