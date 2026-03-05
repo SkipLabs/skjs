@@ -182,8 +182,8 @@ class CallGraph private (
 
   private fun transitiveClosure(
     context: mutable SKStore.Context,
-    roots: Sequence<CGNode>,
-  ): Set<CGNode> {
+    roots: readonly Sequence<CGNode>,
+  ): readonly Set<CGNode> {
     frontier: mutable Vector<CGNode> = Vector::mcreateFromItems(roots);
     closure: mutable Set<CGNode> = Set::mcreateFromItems(roots);
     while (frontier.size() > 0) {
@@ -195,7 +195,7 @@ class CallGraph private (
         }
       }
     };
-    closure.chill()
+    closure
   }
 
   fun affectedFiles(
@@ -225,7 +225,7 @@ class CallGraph private (
         void
       }
     };
-    closure = this.transitiveClosure(context, affectedCGNodes.chill());
+    closure = this.transitiveClosure(context, affectedCGNodes);
 
     if (debug) {
       print_error("[debug] Directly-affected CG nodes:");
