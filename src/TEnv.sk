@@ -71,6 +71,11 @@ base class TEnv{
   // during normal type operations. Set to true only during TInter expansion
   // in getSTypes (TType.sk) where full expansion is safe and needed.
   expandInter: Bool = false,
+
+  // True if we are in the process of checking a setter of a field.
+  // The reason is we want to suggest to make the field readonly to
+  // fix the problem.
+  inSetterSubtyping: ?PosRange = None(),
 } {
   // Given a type name and type arguments, first retrieves the type
   // definition (using the defMap) and then produces a type where the
