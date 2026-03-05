@@ -59,6 +59,7 @@ function canAccessFieldConstructor(
   obj: object,
   f: "constructor" | "banana",
 ): void {
+  // @skjs-expect-error Unbound field: banana | constructor
   const whatever = obj[f];
 }
 

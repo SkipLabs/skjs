@@ -352,9 +352,7 @@ extension class TypeChecker {
 
       | obj @ TObject(_, objectPos) ->
         fields = obj.getFields(tcenv.subst, this);
-        if (fields.isEmpty()) {
-          !result = TType::top(objectPos)
-        } else if (idxSType is TPrimValue(TSymbol(), _, _)) {
+        if (idxSType is TPrimValue(TSymbol(), _, _)) {
           uniqueId = idxSType match {
           | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
           | _ -> None()

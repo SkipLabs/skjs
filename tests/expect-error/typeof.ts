@@ -428,7 +428,7 @@ function testAccessWrongBranch(x: { a: number } | string): number {
 function testWrongProperty(x: { a: number } | { b: string }): number {
   if (typeof x === "object") {
     // Both branches are objects, can't distinguish with typeof
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Unbound field: a
     return x.a;
   } else {
     return 0;

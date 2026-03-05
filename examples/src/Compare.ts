@@ -55,6 +55,7 @@ function compareObjects(a: object, b: object): number {
     if (keyA > keyB) {
       return 1;
     }
+    // @skjs-expect-error Invalid access
     const valueA = a[keyA];
     const valueB = b[keyB];
     if (valueA === undefined && valueB === undefined) {
