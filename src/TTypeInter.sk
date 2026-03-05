@@ -184,6 +184,19 @@ extension class TType {
     clauses = Clauses::inter(subst, tenv, clauses1, clauses2);
     TType::fromClauses(ty1.pos, clauses);
   }
+
+  static fun interN(
+    subst: mutable Subst,
+    tenv: TEnv,
+    pos: PosRange,
+    tys: Sequence<TType>,
+  ): TType {
+    result = TType::top(pos);
+    for (ty in tys) {
+      !result = TType::inter(subst, tenv, result, ty);
+    };
+    result
+  }
 }
 
 extension class TFuns {
