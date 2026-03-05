@@ -564,7 +564,7 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
     tenv: TEnv,
     uniqueId: String,
     pos: PosRange,
-    isLValue: Bool = false,
+    isLValue: Bool,
   ): ?TType {
     tys = mutable Vector[];
     for (fields in this.branches) {
