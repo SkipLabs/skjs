@@ -20,6 +20,7 @@ function compare<T>(a: T, b: T): number {
   }
 
   if (typeof a === "object" && typeof b === "object") {
+    // @skjs-expect-error Invalid call
     return compareObjects(a, b);
   }
 

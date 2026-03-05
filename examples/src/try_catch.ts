@@ -28,7 +28,7 @@ function tryCatchFinally(): void {
   try {
     throw new Error("test");
   } catch (e) {
-    if (typeof e === "object") {
+    if (typeof e === "object" && e !== null) {
       let msg = e["message"];
       if (msg !== undefined) {
         console.log("caught:", e.message);

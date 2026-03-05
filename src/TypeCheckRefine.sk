@@ -156,7 +156,14 @@ extension class TypeChecker {
         | _ -> if (target) None() else Some(x)
         };
       default = if (target) {
-        Some(STypes::single(TObject::createEmpty(typePos)))
+        Some(
+          STypes::union(
+            tcenv.subst,
+            this,
+            STypes::single(TPrimUnit(TNull(), typePos)),
+            STypes::single(TObject::createEmpty(typePos)),
+          ),
+        )
       } else {
         None()
       };
