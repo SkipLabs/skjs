@@ -227,20 +227,15 @@ class CallGraph private (
     for (def in changedDefs) {
       checkDef(def, affectedCGNodes, affectedClasses)
     };
-    if (!affectedClasses.isEmpty()) {
-      // Expand affected classes to include subclasses
-      allAffected: mutable Set<(String, FAbsolute)> = mutable Set[];
-      frontier = affectedClasses;
-      while (frontier.size() > 0) {
-        chNode = frontier.pop();
-        ident = (chNode.name, chNode.fileName);
-        if (!allAffected.contains(ident)) {
-          allAffected.insert(ident);
-          for (child in this.subclasses.getIter(context, chNode)) {
-            frontier.push(child)
-          }
-        }
-      };
+    // Expand affected classes to include subclasses
+    allAffected: mutable Set<(String, FAbsolute)> = mutable Set[];
+    while (affectedClasses.size() > 0) {
+      chNode = affectedClasses.pop();
+      if (allAffected.maybeInsert((chNode.name, chNode.fileName))) {
+        this.subclasses.getIter(context, chNode).each(affectedClasses.push)
+      }
+    };
+    if (!allAffected.isEmpty()) {
       for (item in this.depgraph.items(context)) {
         node = item.i0;
         node.id match {
