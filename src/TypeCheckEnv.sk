@@ -37,6 +37,7 @@ private class ForInContext{
   keyVar: String, // "k" in for(k in v)
   iterableKey: String, // canonical key for iterable
   impureCall: ?PosRange = None(), // position of first call/new that broke purity
+  outer: ?ForInContext = None(), // enclosing for-in context (stack)
 }
 
 /*
@@ -145,11 +146,13 @@ mutable class TCEnv private {
   }
 
   mutable fun enterForIn(keyVar: String, iterableKey: String): void {
-    this.!forInContext = Some(ForInContext{keyVar, iterableKey})
+    this.!forInContext = Some(
+      ForInContext{keyVar, iterableKey, outer => this.forInContext},
+    )
   }
 
-  mutable fun restoreForInContext(saved: ?ForInContext): void {
-    this.!forInContext = saved
+  mutable fun exitForIn(): void {
+    this.!forInContext = this.forInContext.flatMap(ctx -> ctx.outer)
   }
 
   mutable fun markForInImpure(pos: PosRange): void {

@@ -95,22 +95,27 @@ extension class TypeChecker {
 
       this.bindLoopVar(tcenv, initStmt, ty);
 
-      // Save and set for-in context for safe v[k]! detection
-      savedForIn = tcenv.getForInContext();
-
-      if (kind is ForIn()) {
-        keyVarName: ?String = initStmt.value match {
-        | Bind(_, bindings) if (bindings.size() == 1) ->
-          bindings[0].pat.value match {
-          | PVar(name) -> Some(name.value)
+      // Enter for-in context for safe v[k]! detection
+      enteredForIn =
+        kind is ForIn() &&
+        {
+          keyVarName: ?String = initStmt.value match {
+          | Bind(_, bindings) if (bindings.size() == 1) ->
+            bindings[0].pat.value match {
+            | PVar(name) -> Some(name.value)
+            | _ -> None()
+            }
           | _ -> None()
-          }
-        | _ -> None()
+          };
+          keyVarName
+            .flatMap(kv ->
+              exprToKey(iterable).map(ik -> {
+                tcenv.enterForIn(kv, ik);
+                true
+              })
+            )
+            .default(false)
         };
-        keyVarName.each(kv ->
-          exprToKey(iterable).each(ik -> tcenv.enterForIn(kv, ik))
-        );
-      };
 
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
@@ -121,8 +126,7 @@ extension class TypeChecker {
       tcenv.!scope = scopeCopy;
       tcenv.popScopeReplace(initScope);
 
-      // Restore for-in context
-      tcenv.restoreForInContext(savedForIn)
+      if (enteredForIn) tcenv.exitForIn()
 
     | Throw(e) -> _ = this.expr(tcenv, e, false)
     | While(cond, block) ->
