@@ -855,6 +855,7 @@ extension class TypeChecker {
     | Call(Expr(_, Var(Name(_, "__SKJS_show_expanded"))), _, args) ->
       this.showTypes(tcenv, args, true, pos)
     | Call(f, targs, args) ->
+      tcenv.markForInImpure(pos);
       fty = this.expr(tcenv, f, mostPrecise);
       tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
         stypes.singleElt() match {
@@ -899,6 +900,7 @@ extension class TypeChecker {
       };
       rty
     | New(subExpr, targsAst, args) ->
+      tcenv.markForInImpure(pos);
       tArgs = targsAst.map(targ -> this.normalize(tcenv, targ));
       subExpr.value match {
       | Var(className) if (tcenv.scope.maybeGet(className) is None()) ->
@@ -1062,7 +1064,9 @@ extension class TypeChecker {
             ],
           )
         }
-      | BOAssignment() -> this.assign(tcenv, pos, e1, e2, mostPrecise)
+      | BOAssignment() ->
+        tcenv.markForInImpure(pos);
+        this.assign(tcenv, pos, e1, e2, mostPrecise)
       | op_ @ BOStrictComparison() ->
         ty1 = this.nonVoidExpr(pos, tcenv, e1, true);
         ty2 = this.nonVoidExpr(pos, tcenv, e2, true);
@@ -1312,15 +1316,50 @@ extension class TypeChecker {
           mostPrecise,
         );
         if (isValid) {
-          tcenv.error(
-            Array[
-              (pos, "Do not use the postfix ! operator"),
-              (
-                subExpr.pos,
-                "This assertion is unsound and may cause runtime errors",
-              ),
-            ],
-          )
+          // Check if this is a for-in v[k]! pattern
+          forInMatch = tcenv.getForInContext().flatMap(ctx -> {
+            subExpr.value match {
+            | Get(
+              objExpr,
+              Expr(_, Var(keyName)),
+            ) if (
+              keyName.value == ctx.keyVar &&
+              ForInContext::exprToKey(objExpr) == Some(ctx.iterableKey)
+            ) ->
+              Some(ctx)
+            | _ -> None()
+            }
+          });
+          forInMatch match {
+          | Some(ForInContext{impureCall => None()}) ->
+            // Safe: v[k]! at beginning of for-in loop — allow it
+            void
+          | Some(ctx @ ForInContext{impureCall => Some(callPos)}) ->
+            // Unsafe: v[k]! after side effects in for-in loop
+            tcenv.error(
+              Array[
+                (pos, "Do not use the postfix ! operator"),
+                (callPos, "This call could have modified the collection"),
+                (
+                  subExpr.pos,
+                  `Move this to the beginning of the for-in loop, e.g.: const value = ${ctx.iterableKey
+                    .collect(Array)
+                    .join(".")}[${ctx.keyVar}]!`,
+                ),
+              ],
+            )
+          | None() ->
+            // Not a for-in pattern — original error
+            tcenv.error(
+              Array[
+                (pos, "Do not use the postfix ! operator"),
+                (
+                  subExpr.pos,
+                  "This assertion is unsound and may cause runtime errors",
+                ),
+              ],
+            )
+          }
         };
         tyWithoutNullish
       }

@@ -95,6 +95,24 @@ extension class TypeChecker {
 
       this.bindLoopVar(tcenv, initStmt, ty);
 
+      // Enter for-in context for safe v[k]! detection
+      enteredForIn =
+        kind is ForIn() &&
+        initStmt.value match {
+        | Bind(_, bindings) if (bindings.size() == 1) ->
+          bindings[0].pat.value match {
+          | PVar(keyVar) ->
+            ForInContext::exprToKey(iterable) match {
+            | Some(iterableKey) ->
+              tcenv.enterForIn(keyVar.value, iterableKey);
+              true
+            | None() -> false
+            }
+          | _ -> false
+          }
+        | _ -> false
+        };
+
       loopScope = tcenv.mcreateSubScope{isLoop => true};
       tcenv.!scope = loopScope;
       loopBody = this.block(tcenv, block);
@@ -102,7 +120,9 @@ extension class TypeChecker {
       tcenv.!scope = initScope;
       tcenv.popScope(this, loopScope);
       tcenv.!scope = scopeCopy;
-      tcenv.popScopeReplace(initScope)
+      tcenv.popScopeReplace(initScope);
+
+      if (enteredForIn) tcenv.exitForIn()
 
     | Throw(e) -> _ = this.expr(tcenv, e, false)
     | While(cond, block) ->

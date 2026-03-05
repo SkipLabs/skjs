@@ -30,6 +30,27 @@ mutable base class TCEnvBase private {
 
 mutable class TCEnvLight{} extends TCEnvBase {}
 
+// For-in loop context: tracks whether v[k]! is safe inside a for-in loop.
+// Only created when the loop variable is a simple binding and the iterable
+// is a dotted path (e.g. `for (k in v)` or `for (k in a.b)`).
+private class ForInContext{
+  keyVar: String, // "k" in for(k in v)
+  iterableKey: List<String>, // path segments for iterable (e.g. List["a", "b", "c"])
+  impureCall: ?PosRange = None(), // position of first call/new that broke purity
+  outer: ?ForInContext = None(), // enclosing for-in context (stack)
+} {
+  // Convert an expression to a path key for iterable matching.
+  // Supports simple variables and dotted paths (e.g. `v`, `a.b.c`).
+  static fun exprToKey(e: Expr, suffix: List<String> = List[]): ?List<String> {
+    e.value match {
+    | Var(name) -> Some(List.Cons(name.value, suffix))
+    | Dot(NormalDot(), inner, field) ->
+      static::exprToKey(inner, List.Cons(field.value, suffix))
+    | _ -> None()
+    }
+  }
+}
+
 /*
  * State tracking for local objects (object literals bound to variables).
  *
@@ -91,6 +112,7 @@ mutable class TCEnv private {
    * See examples/src/tree.ts:Node() for real usage.
    */
   localObjects: mutable Map<String, LocalObjectState> = mutable Map[],
+  mutable forInContext: ?ForInContext = None(),
   private mutable counter: Int = 0,
 } extends TCEnvBase {
   static fun mcreate(
@@ -126,6 +148,40 @@ mutable class TCEnv private {
 
   mutable fun mcreateSubScope{isLoop: Bool}: mutable Scope {
     mutable Scope{id => this.next(), isLoop, up => Some(this.scope)}
+  }
+
+  /* For-in context for safe v[k]! detection */
+
+  readonly fun getForInContext(): ?ForInContext {
+    this.forInContext
+  }
+
+  mutable fun enterForIn(keyVar: String, iterableKey: List<String>): void {
+    this.!forInContext = Some(
+      ForInContext{keyVar, iterableKey, outer => this.forInContext},
+    )
+  }
+
+  mutable fun exitForIn(): void {
+    this.forInContext match {
+    | None() -> internal_error("Exiting empty for-in context")
+    | Some(
+      ForInContext{
+        outer => Some(outer @ ForInContext{impureCall => None()}),
+        impureCall => impureCall @ Some _,
+      },
+    ) ->
+      this.!forInContext = Some(outer with {impureCall})
+    | Some(ForInContext{outer}) -> this.!forInContext = outer
+    }
+  }
+
+  mutable fun markForInImpure(pos: PosRange): void {
+    this.forInContext.each(ctx -> {
+      if (ctx.impureCall is None()) {
+        this.!forInContext = Some(ctx with {impureCall => Some(pos)})
+      }
+    })
   }
 
   /* On results */
