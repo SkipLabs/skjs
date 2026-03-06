@@ -261,10 +261,12 @@ let tags = ['urgent' as const, 'priority' as const];
 
 ### 28. Index Signatures
 - **Rule**: Index signatures `[key: T]: V` accept key types `string`, `number`, `symbol`, or unions of these. Other key types (boolean, object, never, literal types, generics) are rejected.
+- **Internal representation**: `TFields` stores at most 3 non-overlapping indexes: `stringIndex`, `numberIndex`, `symbolIndex` (all optional `?TIndexField`). Multi-kind key types like `string | number` are split into separate per-kind entries by `splitAndMergeIndexes`. When multiple indexes map to the same kind, their value types are merged with proper variance (getter: intersection, setter: union).
 - **Key kind coverage**: A `string` index covers number keys (since JS coerces numbers to strings). A `number` index only covers number keys.
 - **Field/index validation**: Named field types must be subtypes of the matching index value type. In dual-index types, the number index value must be a subtype of the string index value.
-- **Bracket access**: `obj[key]` returns `valueType | undefined` for matching index signatures. Number keys can access string-indexed types.
-- **Subtyping**: When comparing indexed types, the subtype's key coverage must cover the supertype's. A string-indexed type is assignable to a number-indexed type (string covers number), but not vice versa.
+- **Bracket access**: `obj[key]` returns `valueType | undefined` for matching index signatures. Number keys can access string-indexed types via `indexForKeyKind(TNum())` fallback.
+- **Subtyping**: Per-kind index checks via `isSub_IndexPair`. A string-indexed type is assignable to a number-indexed type (string covers number), but not vice versa. A type with only a number index cannot satisfy a string index requirement.
+- **Union/intersection**: Operates per-kind via `unionOptIndex`/`interOptIndex`. Union: getter = union, setter = intersection. Intersection: getter = intersection, setter = union.
 - **Utility type**: Use `StringRecord<V>` instead of `Record<K, V>` for string-indexed record types.
 - **TypeScript difference**: SKJS checks index signatures with separate get/set types (like fields), making readonly index types stricter than TypeScript.
 - **Verified by**: `tests/expect-error/index-signatures.ts`, `tests/expect-error/index-signatures-ops.ts`
