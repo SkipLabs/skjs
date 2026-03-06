@@ -73,6 +73,16 @@ base class STError<+T>(
   overridable fun !=<U>(other: STError<U>): Bool {
     !(this == other)
   }
+
+  static fun readonlyHint(
+    suggestReadonly: ?PosRange,
+  ): List<(PosRange, String)> {
+    suggestReadonly match {
+    | None() -> List[]
+    | Some(pos) ->
+      List[(pos, "This error would go away if this field was readonly")]
+    }
+  }
 }
 
 base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
@@ -100,13 +110,7 @@ base class STErrorOnSType extends STErrorOnSTypeBase<SType> {
     List[
       (sType1.pos, `Type ${sType1}`),
       (pos2, `is not compatible with type ${sTypes2}`),
-    ].concat(
-      suggestReadonly match {
-      | None() -> List[]
-      | Some(pos) ->
-        List[(pos, "This error would go away if this field was readonly")]
-      },
-    )
+    ].concat(STError::readonlyHint(suggestReadonly))
 }
 
 base class STErrorOnTPrimValue(
@@ -126,25 +130,13 @@ base class STErrorOnTPrimValue(
     List[
       (prim1.pos, `Full type ${prim1}`),
       (prim2.pos, `is not compatible with specific type ${prim2}`),
-    ].concat(
-      suggestReadonly match {
-      | None() -> List[]
-      | Some(pos) ->
-        List[(pos, "This error would go away if this field was readonly")]
-      },
-    )
+    ].concat(STError::readonlyHint(suggestReadonly))
   | STPrimMissingValue(elt, prim1, prim2, suggestReadonly) ->
     List[
       (prim1.pos, `Type ${prim1}`),
       (prim2.pos, `is not compatible with type ${prim2}`),
       (elt.pos, `Value '${elt.val}' is missing`),
-    ].concat(
-      suggestReadonly match {
-      | None() -> List[]
-      | Some(pos) ->
-        List[(pos, "This error would go away if this field was readonly")]
-      },
-    )
+    ].concat(STError::readonlyHint(suggestReadonly))
 }
 
 base class STErrorOnTTuple(
@@ -167,13 +159,7 @@ base class STErrorOnTTuple(
         tup2.pos,
         `is not compatible with tuple type of size ${tup2.tuple.size()} ${tup2}`,
       ),
-    ].concat(
-      suggestReadonly match {
-      | None() -> List[]
-      | Some(pos) ->
-        List[(pos, "This error would go away if this field was readonly")]
-      },
-    )
+    ].concat(STError::readonlyHint(suggestReadonly))
   | STRecTuple(err, i, tup1, tup2, _) ->
     pos1 = tup1.tuple[i].pos;
     msgs = err.toError(detail.decreaseIntermediate());
@@ -579,13 +565,7 @@ base class STErrorOnTFields(
       };
       (List[(field.pos, msg)], err.toError(detailForRec))
     };
-    !msgs = msgs.concat(
-      this.suggestReadonly match {
-      | None() -> List[]
-      | Some(pos) ->
-        List[(pos, "This error would go away if this field was readonly")]
-      },
-    );
+    !msgs = msgs.concat(STError::readonlyHint(this.suggestReadonly));
     if (
       recMsgs is List.Nil() ||
       (showTypes && detail.maxIntermediateDepth > 0)
