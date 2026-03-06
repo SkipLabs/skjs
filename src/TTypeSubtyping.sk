@@ -52,9 +52,7 @@ base class STResult<+T>
 class STOk<+T>() extends STResult<T>
 
 /* All other cases: T1 ⋢ T2 */
-base class STError<+T>(
-  suggestReadonly: ?PosRange = None(),
-) extends STResult<T> uses Equality {
+base class STError<+T> extends STResult<T> uses Equality {
   overridable macro fun ==<U>(other: STError<U>): Bool {
     other match {
     | otherTyped @ #ThisClass _ ->
@@ -93,7 +91,9 @@ base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
   ): List<(PosRange, String)>;
 }
 
-base class STErrorOnSType extends STErrorOnSTypeBase<SType> {
+base class STErrorOnSType(
+  suggestReadonly: ?PosRange = None(),
+) extends STErrorOnSTypeBase<SType> {
   children =
   | STTooManySType(sType1: SType, sTypes2: STypes)
 
@@ -116,6 +116,7 @@ base class STErrorOnSType extends STErrorOnSTypeBase<SType> {
 base class STErrorOnTPrimValue(
   prim1: TPrimValue,
   prim2: TPrimValue,
+  suggestReadonly: ?PosRange = None(),
 ) extends STErrorOnSTypeBase<TPrimValue> {
   children =
   | STPrimValueFullSpecific()
@@ -142,6 +143,7 @@ base class STErrorOnTPrimValue(
 base class STErrorOnTTuple(
   tup1: TTuple,
   tup2: TTuple,
+  suggestReadonly: ?PosRange = None(),
 ) extends STErrorOnSTypeBase<TTuple> {
   children =
   | STTooManyTTuple()
@@ -191,7 +193,7 @@ base class STErrorOnTPromise(
     _pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)>
-  | STRecPromise(err, p1, p2, _) ->
+  | STRecPromise(err, p1, p2) ->
     msgs = err.toError(detail.decreaseIntermediate());
     if (detail.maxIntermediateDepth > 0) {
       List.Cons(
@@ -215,7 +217,7 @@ base class STErrorOnObject(
     _pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)>
-  | STRecObject(errs, fields1, o1, o2, _) ->
+  | STRecObject(errs, fields1, o1, o2) ->
     msgs = List::createFromItems(errs)
       .map(fields2_err -> {
         (fields2, err) = fields2_err;
@@ -266,7 +268,7 @@ base class STErrorOnSTypes(
     pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)>
-  | STRecSTypes(err, sTypes1, sTypes2, _) ->
+  | STRecSTypes(err, sTypes1, sTypes2) ->
     !pos1 = sTypes1.singleElt().map(sType -> sType.pos).default(pos1);
     !pos2 = sTypes2.singleElt().map(sType -> sType.pos).default(pos2);
     if (sTypes1.size() != 1 || sTypes2.size() != 1) {
@@ -296,7 +298,7 @@ base class STErrorOnClauses(
     pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)>
-  | STRecClauses(errs, clause1, clauses1, clauses2, _) ->
+  | STRecClauses(errs, clause1, clauses1, clauses2) ->
     msgs = List::createFromItems(errs)
       .map(clause2_err -> {
         (clause2, err) = clause2_err;
@@ -337,7 +339,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   | STRecType(STErrorOnClauses)
 
   fun toError(detail: STErrorDetail): List<(PosRange, String)>
-  | STRecType(err, ty1, ty2, _) ->
+  | STRecType(err, ty1, ty2) ->
     if (!ty1.insts.isEmpty() || !ty2.insts.isEmpty()) {
       msgs = err.toError(ty1.pos, ty2.pos, detail.decreaseRecType());
       if (detail.maxRecTypeDepth > 0) {
@@ -362,7 +364,7 @@ base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
     pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)>
-  | STRecTFuns(err, _f1, _f2, _) -> err.toError(pos1, pos2, detail)
+  | STRecTFuns(err, _f1, _f2) -> err.toError(pos1, pos2, detail)
 }
 
 base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
@@ -382,39 +384,39 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     detail: STErrorDetail,
   ): List<(PosRange, String)> {
     (recMsg, msgs) = this match {
-    | STRecFunTParam(None(), i, f1, _f2, _) ->
+    | STRecFunTParam(None(), i, f1, _f2) ->
       iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
       (
         None(),
         List[(pos1, `The type parameter${iStr} does not define a constraint`)],
       )
-    | STRecFunThisParam(None(), _f1, _f2, _) ->
+    | STRecFunThisParam(None(), _f1, _f2) ->
       (None(), List[(pos1, "The this parameter is missing")])
-    | STRecFunParam(None(), i, _f1, _f2, _) ->
+    | STRecFunParam(None(), i, _f1, _f2) ->
       (None(), List[(pos2, `The parameter ${i + 1} is missing`)])
-    | STRecFunSpread(None(), _f1, _f2, _) ->
+    | STRecFunSpread(None(), _f1, _f2) ->
       (None(), List[(pos2, "The rest parameter is missing")])
-    | STTypeParameterMismatch(_f1, _f2, _) ->
+    | STTypeParameterMismatch(_f1, _f2) ->
       (None(), List[(pos1, "Their number of type parameters differ")])
-    | STInvalidSpread(rest, _f1, _f2, _) ->
+    | STInvalidSpread(rest, _f1, _f2) ->
       (None(), List[(pos1, `Invalid type for a rest parameter: ${rest}`)])
-    | STRecFunTParam(Some(err), i, f1, _f2, _) ->
+    | STRecFunTParam(Some(err), i, f1, _f2) ->
       iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
       (
         Some((pos1, `Their type parameters${iStr} are not compatible`)),
         err.toError(detail.decreaseIntermediate()),
       )
-    | STRecFunThisParam(Some(err), _f1, _f2, _) ->
+    | STRecFunThisParam(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their this parameters are not compatible")),
         err.toError(detail.decreaseIntermediate()),
       )
-    | STRecFunParam(Some(err), i, _f1, _f2, _) ->
+    | STRecFunParam(Some(err), i, _f1, _f2) ->
       (
         Some((pos1, `Their parameters ${i + 1} are not compatible`)),
         err.toError(detail.decreaseIntermediate()),
       )
-    | STRecFunOptionalSpread(err, i, _f1, _f2, _) ->
+    | STRecFunOptionalSpread(err, i, _f1, _f2) ->
       (
         Some(
           (
@@ -424,12 +426,12 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
         ),
         err.toError(detail.decreaseIntermediate()),
       )
-    | STRecFunSpread(Some(err), _f1, _f2, _) ->
+    | STRecFunSpread(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their rest parameters are not compatible")),
         err.toError(detail.decreaseIntermediate()),
       )
-    | STRecFunReturn(err, _f1, _f2, _) ->
+    | STRecFunReturn(err, _f1, _f2) ->
       (
         Some((pos1, "Their return types are not compatible")),
         err.toError(detail.decreaseIntermediate()),
@@ -463,6 +465,7 @@ base class FieldMismatchKind uses Equality {
 base class STErrorOnTFields(
   fields1: TFields,
   fields2: TFields,
+  suggestReadonly: ?PosRange = None(),
 ) extends STError<TFields> {
   children =
   | STRecFieldsCall(?STErrorOnTFuns)
