@@ -413,13 +413,13 @@ extension class TFields {
       }
     };
     isArray = (fields1.isArray, fields2.isArray) match {
-    | (Some(a), Some(b)) ->
-      if (a != b) return None();
-      Some(a)
-    | (Some(a), None())
-    | (None(), Some(a)) ->
-      Some(a)
+    | (Some(true), Some(false))
+    | (Some(false), Some(true)) ->
+      return None()
     | (None(), None()) -> None()
+    | (some @ Some _, _)
+    | (_, some @ Some _) ->
+      some
     };
     Some(TFields{fields, symbolFields, indexes, call, new, isArray})
   }

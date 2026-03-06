@@ -1116,23 +1116,22 @@ class TFields private {
     call: ?TFuns = None(),
   }: TFields {
     brandKey = FieldNameString(kArrayBrandFieldName);
-    (isArray, filteredFields) = fields.maybeGet(brandKey) match {
-    | Some(brandField) ->
-      value: ?Bool = brandField.get.getSingleConstant() match {
-      | Some(TPrimValue(TBool(), Some(lits), _)) if (lits.size() == 1) ->
-        lits.first().val match {
-        | "true" -> Some(true)
-        | "false" -> Some(false)
+    isArray = fields.maybeGet(brandKey).flatMap(brandField -> {
+      !fields = fields.filter((k, _) -> k != brandKey);
+      isArray = brandField.get.getSingleConstant() match {
+      | Some(TPrimValue(TBool(), Some(lits), _)) ->
+        lits.singleElt() match {
+        | Some(PrimLiteral(_pos, "true")) -> Some(true)
+        | Some(PrimLiteral(_pos, "false")) -> Some(false)
         | _ -> None()
         }
       | _ -> None()
       };
-      (value, fields.filter((k, _) -> k != brandKey))
-    | None() -> (None(), fields)
-    };
+      isArray
+    });
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
-        filteredFields.values().collect(Array).sortedBy(x ~> x.name).values(),
+        fields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
