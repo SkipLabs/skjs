@@ -775,7 +775,7 @@ extension class TypeChecker {
                     }
                   };
                   indexes.push(
-                    TIndexField::create{
+                    TIndexField{
                       pos => spreadIdx.pos,
                       keyName => spreadIdx.name.value,
                       keyKinds,

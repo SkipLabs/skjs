@@ -492,7 +492,7 @@ base class TEnv{
           keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField::create{
+            TIndexField{
               pos => indexName.pos,
               keyName => indexName.value,
               keyKinds,
@@ -1334,7 +1334,7 @@ base class TEnv{
           keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField::create{
+            TIndexField{
               pos => indexName.pos,
               keyName => indexName.value,
               keyKinds,

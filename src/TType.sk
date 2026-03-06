@@ -989,14 +989,22 @@ class TField private {
     this with {get => f(this.get), set => f(this.set)}
   }
 
+  fun withGetSet(get: TType, set: TType): TField {
+    this with {get, set}
+  }
+
   // Create a TField from a TIndexField (dropping keyKinds).
   static fun fromIndexField(idx: TIndexField): TField {
+    set = idx.isReadonly match {
+    | Some(roPos) -> TType::bottom(roPos)
+    | None() -> idx.valueType
+    };
     TField{
       pos => idx.pos,
       name => FieldNameString(idx.keyName),
       isOptional => false,
-      get => idx.valueTypeGet,
-      set => idx.valueTypeSet,
+      get => idx.valueType,
+      set,
     }
   }
 
@@ -1074,38 +1082,13 @@ class IndexKeyKinds{
 }
 
 /* Fields such as { [keyName: KeyType]: ValueType } */
-class TIndexField private {
+class TIndexField{
   pos: PosRange,
   keyName: String,
   keyKinds: IndexKeyKinds,
-  valueTypeGet: TType,
-  valueTypeSet: TType,
+  isReadonly: ?PosRange = None(),
+  valueType: TType,
 } uses XXHashable, Orderable {
-  static fun create{
-    pos: PosRange,
-    keyName: String,
-    keyKinds: IndexKeyKinds,
-    isReadonly: ?PosRange,
-    valueType: TType,
-  }: TIndexField {
-    valueTypeGet = valueType;
-    valueTypeSet = isReadonly match {
-    | None() -> valueType
-    | Some(roPos) -> TType::bottom(roPos)
-    };
-    TIndexField{pos, keyName, keyKinds, valueTypeGet, valueTypeSet}
-  }
-
-  fun mapTypes(f: TType -> TType): TIndexField {
-    valueTypeGet = f(this.valueTypeGet);
-    valueTypeSet = f(this.valueTypeSet);
-    this with {valueTypeGet, valueTypeSet}
-  }
-
-  fun toString(): String {
-    prettyPrintIndexField(this)
-  }
-
   // Split indexes by key kind and merge duplicates per kind.
   // Returns at most 3 non-overlapping indexes (string, number, symbol).
   // When multiple indexes cover the same kind, their value types are merged:
@@ -1124,69 +1107,27 @@ class TIndexField private {
       if (idx.keyKinds.hasNumber) numberIndexes.push(idx);
       if (idx.keyKinds.hasSymbol) symbolIndexes.push(idx);
     };
-    stringKinds = IndexKeyKinds{
-      hasString => true,
-      hasNumber => false,
-      hasSymbol => false,
-    };
-    numberKinds = IndexKeyKinds{
-      hasString => false,
-      hasNumber => true,
-      hasSymbol => false,
-    };
-    symbolKinds = IndexKeyKinds{
-      hasString => false,
-      hasNumber => false,
-      hasSymbol => true,
-    };
-    stringIndex = TIndexField::mergeIndexesForKind(
-      tcenvb,
-      tenv,
-      stringIndexes,
-      stringKinds,
-    ).map(TField::fromIndexField);
-    numberIndex = TIndexField::mergeIndexesForKind(
-      tcenvb,
-      tenv,
-      numberIndexes,
-      numberKinds,
-    ).map(TField::fromIndexField);
-    symbolIndex = TIndexField::mergeIndexesForKind(
-      tcenvb,
-      tenv,
-      symbolIndexes,
-      symbolKinds,
-    ).map(TField::fromIndexField);
+    stringIndex = TIndexField::mergeIndexesForKind(tcenvb, tenv, stringIndexes);
+    numberIndex = TIndexField::mergeIndexesForKind(tcenvb, tenv, numberIndexes);
+    symbolIndex = TIndexField::mergeIndexesForKind(tcenvb, tenv, symbolIndexes);
     (stringIndex, numberIndex, symbolIndex)
   }
 
-  // Merge multiple indexes that map to the same key kind.
+  // Merge multiple indexes for the same key kind into a single TField.
+  // Getter (covariant) → intersection, setter (contravariant) → union.
   static fun mergeIndexesForKind(
     tcenvb: mutable TCEnvBase,
     tenv: TEnv,
     indexes: mutable Vector<TIndexField>,
-    keyKinds: IndexKeyKinds,
-  ): ?TIndexField {
+  ): ?TField {
     if (indexes.isEmpty()) return None();
-    result = indexes[0] with {keyKinds};
+    result = TField::fromIndexField(indexes[0]);
     subst = Subst::mcreate(tcenvb);
     for (i in Range(1, indexes.size())) {
-      other = indexes[i];
-      // Getter: covariant → intersection (narrowest type)
-      valueTypeGet = TType::inter(
-        subst,
-        tenv,
-        result.valueTypeGet,
-        other.valueTypeGet,
-      );
-      // Setter: contravariant → union (widest acceptable type)
-      valueTypeSet = TType::union(
-        subst,
-        tenv,
-        result.valueTypeSet,
-        other.valueTypeSet,
-      );
-      !result = result with {valueTypeGet, valueTypeSet};
+      other = TField::fromIndexField(indexes[i]);
+      get = TType::inter(subst, tenv, result.get, other.get);
+      set = TType::union(subst, tenv, result.set, other.set);
+      !result = result.withGetSet(get, set);
     };
     Some(result)
   }
