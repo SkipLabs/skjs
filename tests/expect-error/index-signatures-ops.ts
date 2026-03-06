@@ -67,3 +67,79 @@ function assignStrIdxToUnion(s: StrIdx): StrIdxUnion {
 function assignStrIdxStrToUnion(s: StrIdxStr): StrIdxUnion {
   return s;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 6: Dual-index types (string + number)
+///////////////////////////////////////////////////////////////////////////////
+
+interface DualIdx {
+  [key: string]: number | string;
+  [key: number]: number;
+}
+
+function testDualIdxString(x: DualIdx): number | string | undefined {
+  return x["key"];
+}
+
+function testDualIdxNumber(x: DualIdx): number | undefined {
+  return x[0];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 7: Cross-kind union
+///////////////////////////////////////////////////////////////////////////////
+
+interface NumIdx {
+  [key: number]: number;
+}
+
+type StrNumUnion = StrIdx | NumIdx;
+
+// TS: Property '0' does not exist on type 'StrNumUnion'
+// Union means access must work on BOTH sides; NumIdx has no string index
+// TODO: x[0] on StrNumUnion (TS errors, SKJS allows since StrIdx has string index covering number)
+function testCrossKindUnionNum(x: StrNumUnion): number | undefined {
+  return x[0];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 8: Cross-kind intersection
+///////////////////////////////////////////////////////////////////////////////
+
+type StrNumInter = StrIdx & NumIdx;
+
+// Intersection: string index has number, number index also has number
+function testCrossKindInterStr(x: StrNumInter): number | undefined {
+  return x["key"];
+}
+
+function testCrossKindInterNum(x: StrNumInter): number | undefined {
+  return x[0];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 9: String-indexed assignable to number-indexed (string covers number)
+///////////////////////////////////////////////////////////////////////////////
+
+function strIdxToNumIdx(s: StrIdx): NumIdx {
+  return s;
+}
+
+// Number-indexed NOT assignable to string-indexed
+function numIdxToStrIdx(n: NumIdx): StrIdx {
+  // @skjs-expect-error Invalid return type
+  return n;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 10: Dual-index assignability
+///////////////////////////////////////////////////////////////////////////////
+
+function dualToStrIdx(d: DualIdx): StrIdxUnion {
+  // @skjs-expect-error Invalid return type
+  return d;
+}
+
+function dualToNumIdx(d: DualIdx): NumIdx {
+  return d;
+}
