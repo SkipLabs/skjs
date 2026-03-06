@@ -1408,7 +1408,9 @@ base class TEnv{
         TType::single(TPrimValue(TNum(), None(), pos)),
       )
     };
-    ikk = IndexKeyKinds::empty;
+    allStrings = false;
+    allNumbers = false;
+    allSymbols = false;
     maxRange = -1;
     strings = SortedSet[];
     symbols = SortedSet[];
@@ -1421,43 +1423,19 @@ base class TEnv{
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | obj @ TObject(_, _) ->
           for (fields in obj.getAllFields()) {
-            if (!ikk.hasString || !ikk.hasNumber) {
+            if (!allStrings || !allNumbers) {
               for (field in fields.fields) {
                 !strings = strings.set(field.name.value);
               }
             };
-            if (!ikk.hasSymbol) {
+            if (!allSymbols) {
               for (symbolField in fields.symbolFields) {
                 !symbols = symbols.set(symbolField.name.value);
               }
             };
-            if (fields.stringIndex.isSome()) {
-              !ikk = ikk.merge(
-                IndexKeyKinds{
-                  hasString => true,
-                  hasNumber => false,
-                  hasSymbol => false,
-                },
-              )
-            };
-            if (fields.numberIndex.isSome()) {
-              !ikk = ikk.merge(
-                IndexKeyKinds{
-                  hasString => false,
-                  hasNumber => true,
-                  hasSymbol => false,
-                },
-              )
-            };
-            if (fields.symbolIndex.isSome()) {
-              !ikk = ikk.merge(
-                IndexKeyKinds{
-                  hasString => false,
-                  hasNumber => false,
-                  hasSymbol => true,
-                },
-              )
-            }
+            if (fields.stringIndex.isSome()) !allStrings = true;
+            if (fields.numberIndex.isSome()) !allNumbers = true;
+            if (fields.symbolIndex.isSome()) !allSymbols = true;
           }
         | prim @ TPrimValue _ ->
           obj = this.newObject(subst, prim.asClassName(), Array[]);
@@ -1468,19 +1446,23 @@ base class TEnv{
         }
       }
     };
-    resultTys = mutable Vector[ikk.toTType(subst, this, pos)];
-    numbers = if (!ikk.hasString || !ikk.hasNumber) {
+    resultTys = mutable Vector[];
+    numbers = if (!allStrings || !allNumbers) {
       SortedSet::createFromItems(Range(0, maxRange).map(i -> i.toString()))
     } else {
       SortedSet[]
     };
-    if (!ikk.hasString) {
-      allStrings = strings.union(numbers);
-      PrimLiterals::ofSet(allStrings, pos).each(strLits ->
+    if (allStrings) {
+      resultTys.push(TType::single(TPrimValue::string(pos)))
+    } else {
+      stringsAndNumbers = strings.union(numbers);
+      PrimLiterals::ofSet(stringsAndNumbers, pos).each(strLits ->
         resultTys.push(TType::single(TPrimValue(TString(), Some(strLits), pos)))
       )
     };
-    if (!ikk.hasNumber) {
+    if (allNumbers) {
+      resultTys.push(TType::single(TPrimValue::number(pos)))
+    } else {
       for (str in strings) {
         str.toIntOption().each(_intStr -> !numbers = numbers.set(str))
       };
@@ -1488,7 +1470,9 @@ base class TEnv{
         resultTys.push(TType::single(TPrimValue(TNum(), Some(nbrLits), pos)))
       )
     };
-    if (!ikk.hasSymbol) {
+    if (allSymbols) {
+      resultTys.push(TType::single(TPrimValue::symbol(pos)))
+    } else {
       PrimLiterals::ofSet(symbols, pos).each(symLits ->
         resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
       )
