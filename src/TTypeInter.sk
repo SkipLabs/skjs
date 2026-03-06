@@ -423,6 +423,13 @@ extension class TFields {
     };
     Some(TFields{fields, symbolFields, indexes, call, new, isArray})
   }
+
+  fun interIsArray(isArray: Bool): ?TFields {
+    this.isArray match {
+    | None() -> Some(this with {isArray => Some(isArray)})
+    | Some(ia) -> if (ia == isArray) Some(this) else None()
+    }
+  }
 }
 
 extension class TObject {

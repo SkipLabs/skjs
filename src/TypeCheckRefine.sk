@@ -219,9 +219,7 @@ extension class TypeChecker {
             Array[tparam],
           );
           TObject::inter(tcenv.subst, this, tObj, arrObj).flatMap(tObj ->
-            tObj.mapOpt(tFields ->
-              if (tFields.isArray == Some(false)) None() else Some(tFields)
-            )
+            tObj.mapOpt(tFields -> tFields.interIsArray(true))
           )
         | _ -> None()
         };
@@ -231,9 +229,7 @@ extension class TypeChecker {
         stype match {
         | TTuple _ -> None()
         | tObj @ TObject _ ->
-          tObj.mapOpt(tFields -> {
-            if (tFields.isArray == Some(true)) None() else Some(tFields)
-          })
+          tObj.mapOpt(tFields -> tFields.interIsArray(false))
         | _ -> Some(stype)
         }
       )
