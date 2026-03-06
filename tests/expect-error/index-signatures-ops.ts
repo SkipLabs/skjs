@@ -74,7 +74,24 @@ function assignStrIdxStrToUnion(s: StrIdxStr): StrIdxUnion {
 
 interface DualIdx {
   [key: string]: number | string;
+  // @skjs-expect-error 'number' index type 'number' is not assignable from 'string' index type 'number | string'
   [key: number]: number;
+}
+
+// Readonly: no setter check, getter passes (number <: number | string)
+interface DualIdxReadonly {
+  readonly [key: string]: number | string;
+  readonly [key: number]: number;
+}
+
+function testDualIdxReadonlyString(
+  x: DualIdxReadonly,
+): number | string | undefined {
+  return x["key"];
+}
+
+function testDualIdxReadonlyNumber(x: DualIdxReadonly): number | undefined {
+  return x[0];
 }
 
 function testDualIdxString(x: DualIdx): number | string | undefined {
@@ -159,6 +176,7 @@ interface NumIdxBool {
 
 interface DualIdxBadCross {
   [key: string]: boolean;
+  // @skjs-expect-error 'number' index type 'number' is not assignable from 'string' index type 'boolean'
   // @skjs-expect-error 'number' index type 'number' is not assignable to 'string' index type 'boolean'
   [key: number]: number;
 }
@@ -170,10 +188,24 @@ function dualBadCrossToStrBool(d: DualIdxBadCross): StrIdxBool {
   return d;
 }
 
-// Good: number index compatible with string index
+// Good: number index compatible with string index (getter direction)
+// SKJS also checks setter: string index set (number | boolean) is not subtype of number index set (number)
 interface DualIdxGoodCross {
   [key: string]: number | boolean;
+  // @skjs-expect-error 'number' index type 'number' is not assignable from 'string' index type 'boolean | number'
   [key: number]: number;
+}
+
+// Readonly: no setter check, getter passes (number <: number | boolean)
+interface DualIdxGoodCrossReadonly {
+  readonly [key: string]: number | boolean;
+  readonly [key: number]: number;
+}
+
+function dualGoodCrossReadonlyToStrWide(d: DualIdxGoodCrossReadonly): {
+  readonly [key: string]: number | boolean;
+} {
+  return d;
 }
 
 function dualGoodCrossToStrWide(d: DualIdxGoodCross): {

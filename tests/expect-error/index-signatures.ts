@@ -53,7 +53,28 @@ function symbolIndexBracketAccess(x: SymbolIndex): boolean | undefined {
 // Test 4: Mixed named fields and string index
 ///////////////////////////////////////////////////////////////////////////////
 
+// @skjs-expect-error Property 'name' of type 'string' is not assignable from 'string' index type 'number | string'
 type MixedStringIndex = { name: string; [k: string]: string | number };
+
+// Readonly: no setter check, getter passes (string <: string | number)
+type MixedStringIndexReadonly = {
+  readonly name: string;
+  readonly [k: string]: string | number;
+};
+
+function mixedReadonlyNamedFieldDot(x: MixedStringIndexReadonly): string {
+  return x.name;
+}
+
+function mixedReadonlyNamedFieldBracket(x: MixedStringIndexReadonly): string {
+  return x["name"];
+}
+
+function mixedReadonlyIndexAccess(
+  x: MixedStringIndexReadonly,
+): string | number | undefined {
+  return x["other"];
+}
 
 function mixedNamedFieldDot(x: MixedStringIndex): string {
   return x.name;
@@ -344,6 +365,7 @@ function wideToNarrow(w: StringIdxWide): StringIdxNum {
 
 interface BadFieldIndex {
   [key: string]: number;
+  // @skjs-expect-error Property 'x' of type 'string' is not assignable from 'string' index type 'number'
   // @skjs-expect-error Property 'x' of type 'string' is not assignable to 'string' index type 'number'
   x: string;
 }
@@ -356,18 +378,37 @@ interface GoodFieldIndex {
 // Number index value must be subtype of string index value
 interface BadDualIdx {
   [key: string]: string;
+  // @skjs-expect-error 'number' index type 'number' is not assignable from 'string' index type 'string'
   // @skjs-expect-error 'number' index type 'number' is not assignable to 'string' index type 'string'
   [key: number]: number;
 }
 
 interface GoodDualIdx {
   [key: string]: number | string;
+  // @skjs-expect-error 'number' index type 'number' is not assignable from 'string' index type 'number | string'
   [key: number]: number;
+}
+
+// Readonly: no setter check, getter passes (number <: number | string)
+interface GoodDualIdxReadonly {
+  readonly [key: string]: number | string;
+  readonly [key: number]: number;
+}
+
+function goodDualIdxReadonlyString(
+  x: GoodDualIdxReadonly,
+): number | string | undefined {
+  return x["key"];
+}
+
+function goodDualIdxReadonlyNumber(x: GoodDualIdxReadonly): number | undefined {
+  return x[0];
 }
 
 // Numeric-named field must be compatible with number index
 interface BadNumField {
   [key: number]: number;
+  // @skjs-expect-error Property '0' of type 'string' is not assignable from 'number' index type 'number'
   // @skjs-expect-error Property '0' of type 'string' is not assignable to 'number' index type 'number'
   "0": string;
 }

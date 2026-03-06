@@ -1144,6 +1144,60 @@ class TFields private {
     }
   }
 
+  // Check that sub is assignable to an index:
+  //   getter (covariant):     sub.get  <: index.get
+  //   setter (contravariant): index.set <: sub.set
+  // subKind: how to describe the sub in the error (e.g. Some("string"),
+  // Some("number"), or None() for named fields).
+  private static fun checkAssignableToIndex(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    sub: TField,
+    subKind: ?String,
+    index: TField,
+    indexKind: String,
+  ): void {
+    subst = Subst::mcreate(tcenvb);
+    // Getter: covariant
+    TType::isSub(subst, tenv, sub.get, index.get) match {
+    | STOk() -> void
+    | STErrorOnTType _ ->
+      subDesc = subKind match {
+      | Some(k) -> `'${k}' index type '${sub.get}'`
+      | None() -> `Property '${sub.name.value}' of type '${sub.get}'`
+      };
+      tcenvb.error(
+        Array[
+          (
+            sub.pos,
+            `${subDesc} is not assignable to '${indexKind}' index type '${
+              index.get
+            }'`,
+          ),
+        ],
+      )
+    };
+    // Setter: contravariant (index.set must be subtype of sub.set)
+    TType::isSub(subst, tenv, index.set, sub.set) match {
+    | STOk() -> void
+    | STErrorOnTType _ ->
+      subDesc = subKind match {
+      | Some(k) -> `'${k}' index type '${sub.set}'`
+      | None() -> `Property '${sub.name.value}' of type '${sub.set}'`
+      };
+      tcenvb.error(
+        Array[
+          (
+            sub.pos,
+            `${subDesc} is not assignable from '${indexKind}' index type '${
+              index.set
+            }'`,
+          ),
+        ],
+      )
+    }
+  }
+
   // Like create but validates field types against index value types.
   static fun createWithIndexes{
     tcenvb: mutable TCEnvBase,
@@ -1163,62 +1217,41 @@ class TFields private {
     // TS only checks the getter direction (covariant).
     (stringIndex, numberIndex) match {
     | (Some(strIdx), Some(numIdx)) ->
-      subst = Subst::mcreate(tcenvb);
-      TType::isSub(subst, tenv, numIdx.get, strIdx.get) match {
-      | STOk() -> void
-      | STErrorOnTType _ ->
-        tcenvb.error(
-          Array[
-            (
-              numIdx.pos,
-              `'number' index type '${
-                numIdx.get
-              }' is not assignable to 'string' index type '${strIdx.get}'`,
-            ),
-          ],
-        )
-      }
+      TFields::checkAssignableToIndex(
+        tcenvb,
+        tenv,
+        numIdx,
+        Some("number"),
+        strIdx,
+        "string",
+      )
     | _ -> void
     };
     // Validate named fields against string index
     stringIndex.each(strIdx -> {
       for (field in fields.values()) {
-        subst = Subst::mcreate(tcenvb);
-        TType::isSub(subst, tenv, field.get, strIdx.get) match {
-        | STOk() -> void
-        | STErrorOnTType _ ->
-          tcenvb.error(
-            Array[
-              (
-                field.pos,
-                `Property '${field.name.value}' of type '${
-                  field.get
-                }' is not assignable to 'string' index type '${strIdx.get}'`,
-              ),
-            ],
-          )
-        }
+        TFields::checkAssignableToIndex(
+          tcenvb,
+          tenv,
+          field,
+          None(),
+          strIdx,
+          "string",
+        )
       }
     });
     // Validate numeric-named fields against number index
     numberIndex.each(numIdx -> {
       for (field in fields.values()) {
         if (field.name.value.toIntOption().isSome()) {
-          subst = Subst::mcreate(tcenvb);
-          TType::isSub(subst, tenv, field.get, numIdx.get) match {
-          | STOk() -> void
-          | STErrorOnTType _ ->
-            tcenvb.error(
-              Array[
-                (
-                  field.pos,
-                  `Property '${field.name.value}' of type '${
-                    field.get
-                  }' is not assignable to 'number' index type '${numIdx.get}'`,
-                ),
-              ],
-            )
-          }
+          TFields::checkAssignableToIndex(
+            tcenvb,
+            tenv,
+            field,
+            None(),
+            numIdx,
+            "number",
+          )
         }
       }
     });
