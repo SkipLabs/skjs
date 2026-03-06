@@ -652,7 +652,7 @@ extension class TFields {
         ) is STOk();
         // For numeric field names, also try matching as a number key
         // to handle number index signatures like [key: number]: T
-        if (!keyMatches && f1.name.value.toIntOption().isSome()) {
+        if (!keyMatches && isJSNumericString(f1.name.value)) {
           f1keyTypeNum = TType::single(
             TPrimValue::single(TNum(), f1.name.value, f1.pos),
           );
@@ -703,7 +703,7 @@ extension class TFields {
           ) is STOk();
           // For numeric field names, also try matching as a number key
           // to handle number index signatures like [key: number]: T
-          if (!keyMatches && f2.name.value.toIntOption().isSome()) {
+          if (!keyMatches && isJSNumericString(f2.name.value)) {
             f2keyTypeNum = TType::single(
               TPrimValue::single(TNum(), f2.name.value, f2.pos),
             );
