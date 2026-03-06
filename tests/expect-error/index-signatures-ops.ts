@@ -143,3 +143,41 @@ function dualToStrIdx(d: DualIdx): StrIdxUnion {
 function dualToNumIdx(d: DualIdx): NumIdx {
   return d;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 11: Cross-kind subtyping — number index must be compatible with
+// super's string index (number keys are a subset of string keys)
+///////////////////////////////////////////////////////////////////////////////
+
+interface StrIdxBool {
+  [key: string]: boolean;
+}
+
+interface NumIdxBool {
+  [key: number]: boolean;
+}
+
+interface DualIdxBadCross {
+  [key: string]: boolean;
+  // @skjs-expect-error 'number' index type 'number' is not assignable to 'string' index type 'boolean'
+  [key: number]: number;
+}
+
+// DualIdxBadCross's number index (number) is not compatible with
+// StrIdxBool's string index (boolean)
+function dualBadCrossToStrBool(d: DualIdxBadCross): StrIdxBool {
+  // @skjs-expect-error Invalid return type
+  return d;
+}
+
+// Good: number index compatible with string index
+interface DualIdxGoodCross {
+  [key: string]: number | boolean;
+  [key: number]: number;
+}
+
+function dualGoodCrossToStrWide(d: DualIdxGoodCross): {
+  [key: string]: number | boolean;
+} {
+  return d;
+}

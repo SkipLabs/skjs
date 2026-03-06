@@ -726,6 +726,24 @@ extension class TFields {
       }
     | _ -> void
     };
+    // When super has stringIndex and sub has numberIndex,
+    // sub's number index value must also be compatible with super's string index
+    // (since number keys are a subset of string keys).
+    // Only check getter (covariant) — TS doesn't enforce setter direction here.
+    (fields1.numberIndex, fields2.stringIndex) match {
+    | (Some(numIdx1), Some(strIdx2)) ->
+      TType::isSub(
+        subst,
+        tenv,
+        numIdx1.valueTypeGet,
+        strIdx2.valueTypeGet,
+      ) match {
+      | err @ STErrorOnTType _ ->
+        return STRecFieldsIndexValue(err, numIdx1, strIdx2, fields1, fields2)
+      | STOk() -> void
+      }
+    | _ -> void
+    };
     // When super has an index but sub doesn't, check sub's named fields
     // against the super's index.
     if (

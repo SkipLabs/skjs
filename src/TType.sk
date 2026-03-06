@@ -1303,7 +1303,8 @@ class TFields private {
         }
       }
     });
-    // Validate number index value is subtype of string index value
+    // Validate number index value type is subtype of string index value type.
+    // TS only checks the getter direction (covariant).
     (stringIndex, numberIndex) match {
     | (Some(strIdx), Some(numIdx)) ->
       subst = Subst::mcreate(tcenvb);
