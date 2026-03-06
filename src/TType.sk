@@ -1034,7 +1034,7 @@ class TIndexField{
   pos: PosRange,
   keyName: String,
   keyKinds: IndexKeyKinds,
-  isReadonly: ?PosRange = None(),
+  isReadonly: ?PosRange,
   valueType: TType,
 } {
   // Split indexes by key kind and merge duplicates per kind.
