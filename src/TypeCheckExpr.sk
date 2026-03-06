@@ -819,7 +819,13 @@ extension class TypeChecker {
       };
       obj = TType::single(
         TObject::createSingleBranch(
-          TFields::create{fields, symbolFields, indexes},
+          TFields::createWithIndexes{
+            tcenvb => tcenv,
+            tenv => this,
+            fields,
+            symbolFields,
+            indexes,
+          },
           pos,
         ),
       );
