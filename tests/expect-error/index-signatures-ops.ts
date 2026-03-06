@@ -79,6 +79,23 @@ interface DualIdx {
   [key: number]: number;
 }
 
+// Readonly: no setter check, getter passes (number <: number | string)
+interface DualIdxReadonly {
+  // @skjs-expect-error TODO: multiple indexes
+  readonly [key: string]: number | string;
+  readonly [key: number]: number;
+}
+
+function testDualIdxReadonlyString(
+  x: DualIdxReadonly,
+): number | string | undefined {
+  return x["key"];
+}
+
+function testDualIdxReadonlyNumber(x: DualIdxReadonly): number | undefined {
+  return x[0];
+}
+
 function testDualIdxString(x: DualIdx): number | string | undefined {
   return x["key"];
 }
@@ -171,11 +188,25 @@ function dualBadCrossToStrBool(d: DualIdxBadCross): StrIdxBool {
   return d;
 }
 
-// Good: number index compatible with string index
+// Good: number index compatible with string index (getter direction)
+// SKJS also checks setter: string index set (number | boolean) is not subtype of number index set (number)
 interface DualIdxGoodCross {
   // @skjs-expect-error TODO: multiple indexes
   [key: string]: number | boolean;
   [key: number]: number;
+}
+
+// Readonly: no setter check, getter passes (number <: number | boolean)
+interface DualIdxGoodCrossReadonly {
+  // @skjs-expect-error TODO: multiple indexes
+  readonly [key: string]: number | boolean;
+  readonly [key: number]: number;
+}
+
+function dualGoodCrossReadonlyToStrWide(d: DualIdxGoodCrossReadonly): {
+  readonly [key: string]: number | boolean;
+} {
+  return d;
 }
 
 function dualGoodCrossToStrWide(d: DualIdxGoodCross): {

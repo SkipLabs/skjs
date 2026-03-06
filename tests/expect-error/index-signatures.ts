@@ -55,6 +55,26 @@ function symbolIndexBracketAccess(x: SymbolIndex): boolean | undefined {
 
 type MixedStringIndex = { name: string; [k: string]: string | number };
 
+// Readonly: no setter check, getter passes (string <: string | number)
+type MixedStringIndexReadonly = {
+  readonly name: string;
+  readonly [k: string]: string | number;
+};
+
+function mixedReadonlyNamedFieldDot(x: MixedStringIndexReadonly): string {
+  return x.name;
+}
+
+function mixedReadonlyNamedFieldBracket(x: MixedStringIndexReadonly): string {
+  return x["name"];
+}
+
+function mixedReadonlyIndexAccess(
+  x: MixedStringIndexReadonly,
+): string | number | undefined {
+  return x["other"];
+}
+
 function mixedNamedFieldDot(x: MixedStringIndex): string {
   return x.name;
 }
@@ -366,6 +386,23 @@ interface BadDualIdx {
 interface GoodDualIdx {
   [key: string]: number | string;
   [key: number]: number;
+}
+
+// Readonly: no setter check, getter passes (number <: number | string)
+interface GoodDualIdxReadonly {
+  // @skjs-expect-error TODO: multiple indexes
+  readonly [key: string]: number | string;
+  readonly [key: number]: number;
+}
+
+function goodDualIdxReadonlyString(
+  x: GoodDualIdxReadonly,
+): number | string | undefined {
+  return x["key"];
+}
+
+function goodDualIdxReadonlyNumber(x: GoodDualIdxReadonly): number | undefined {
+  return x[0];
 }
 
 // Numeric-named field must be compatible with number index
