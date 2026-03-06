@@ -229,18 +229,16 @@ extension class TField {
     isOptional = x.isOptional && y.isOptional;
     TField{pos => x.pos, name => x.name, isOptional, get, set}
   }
-}
 
-extension class TField {
   static fun interIndex(
     subst: mutable Subst,
     tenv: TEnv,
     x: TField,
     y: TField,
-  ): ?TField {
+  ): TField {
     get = TType::inter(subst, tenv, x.get, y.get);
     set = TType::union(subst, tenv, x.set, y.set);
-    Some(TField{pos => x.pos, name => x.name, isOptional => false, get, set})
+    TField{pos => x.pos, name => x.name, isOptional => false, get, set}
   }
 }
 
@@ -431,7 +429,7 @@ extension class TFields {
     | (None(), Some(index)) ->
       Some(index)
     | (Some(index1), Some(index2)) ->
-      TField::interIndex(subst, tenv, index1, index2)
+      Some(TField::interIndex(subst, tenv, index1, index2))
     }
   }
 }

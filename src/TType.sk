@@ -1073,7 +1073,7 @@ class TIndexField{
     subst = Subst::mcreate(tcenvb);
     for (i in Range(1, indexes.size())) {
       other = TField::fromIndexField(indexes[i]);
-      !result = TField::interIndex(subst, tenv, result, other).fromSome();
+      !result = TField::interIndex(subst, tenv, result, other);
     };
     Some(result)
   }
