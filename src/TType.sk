@@ -1109,8 +1109,8 @@ class TFields private {
   }
 
   static fun create{
-    fields: readonly Map<FieldNameString, TField> = Map[],
-    symbolFields: readonly Map<FieldNameString, TField> = Map[],
+    fields: mutable Map<FieldNameString, TField> = mutable Map[],
+    symbolFields: mutable Map<FieldNameString, TField> = mutable Map[],
     indexes: readonly Vector<TIndexField> = Vector[],
     new: ?TFuns = None(),
     call: ?TFuns = None(),
@@ -1119,7 +1119,7 @@ class TFields private {
     brandKey = FieldNameString(kArrayBrandFieldName);
     fields.maybeGet(brandKey) match {
     | Some(brandField) ->
-      !fields = fields.filter((k, _) -> k != brandKey);
+      fields.remove(brandKey);
       brandField.get.getSingleConstant() match {
       | Some(TPrimValue(TBool(), Some(lits), _)) ->
         lits.singleElt() match {
