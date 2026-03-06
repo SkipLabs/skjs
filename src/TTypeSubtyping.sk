@@ -657,7 +657,6 @@ extension class TFields {
       | err @ STErrorOnTType _ ->
         return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
       | STOk() ->
-        !tenv.inSetterSubtyping = Some(index2.pos);
         TType::isSub(
           subst,
           tenv,
@@ -671,7 +670,7 @@ extension class TFields {
             index2,
             fields1,
             fields2,
-            tenv.inSetterSubtyping,
+            Some(index2.pos),
           )
         | STOk() -> void
         }
@@ -709,7 +708,6 @@ extension class TFields {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
           | STOk() ->
-            !tenv.inSetterSubtyping = Some(index2.pos);
             TType::isSub(
               subst.clone(),
               tenv,
@@ -723,7 +721,7 @@ extension class TFields {
                 index2,
                 fields1,
                 fields2,
-                tenv.inSetterSubtyping,
+                Some(index2.pos),
               )
             | STOk() -> void
             }
@@ -773,7 +771,6 @@ extension class TFields {
             | err @ STErrorOnTType _ ->
               return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
             | STOk() ->
-              !tenv.inSetterSubtyping = Some(f2.pos);
               TType::isSub(
                 subst.clone(),
                 tenv,
@@ -787,7 +784,7 @@ extension class TFields {
                   f2,
                   fields1,
                   fields2,
-                  tenv.inSetterSubtyping,
+                  Some(f2.pos),
                 )
               | STOk() -> void
               }
@@ -798,7 +795,6 @@ extension class TFields {
         if (f1.isOptional && !f2.isOptional) {
           return STRecFieldsField(None(), f1, FMKGetter(), fields1, fields2)
         } else {
-          !tenv.inSetterSubtyping = Some(f2.pos);
           TType::isSub(subst, tenv, f2.set, f1.set) match {
           | STOk() -> void
           | err @ STErrorOnTType _ ->
@@ -808,7 +804,7 @@ extension class TFields {
               FMKSetter(),
               fields1,
               fields2,
-              tenv.inSetterSubtyping,
+              Some(f2.pos),
             )
           };
           f2type = if (f2.isOptional) {
@@ -843,7 +839,6 @@ extension class TFields {
         if (f1.isOptional && !f2.isOptional) {
           return STRecFieldsField(None(), f1, FMKGetter(), fields1, fields2)
         } else {
-          !tenv.inSetterSubtyping = Some(f2.pos);
           TType::isSub(subst, tenv, f2.set, f1.set) match {
           | STOk() -> void
           | err @ STErrorOnTType _ ->
@@ -853,7 +848,7 @@ extension class TFields {
               FMKSetter(),
               fields1,
               fields2,
-              tenv.inSetterSubtyping,
+              Some(f2.pos),
             )
           };
           f2type = if (f2.isOptional) {
