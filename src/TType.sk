@@ -1117,19 +1117,19 @@ class TFields private {
     isArray: ?Bool = None(),
   }: TFields {
     brandKey = FieldNameString(kArrayBrandFieldName);
-    !isArray = fields.maybeGet(brandKey) match {
+    fields.maybeGet(brandKey) match {
     | Some(brandField) ->
       !fields = fields.filter((k, _) -> k != brandKey);
       brandField.get.getSingleConstant() match {
       | Some(TPrimValue(TBool(), Some(lits), _)) ->
         lits.singleElt() match {
-        | Some(PrimLiteral(_pos, "true")) -> Some(true)
-        | Some(PrimLiteral(_pos, "false")) -> Some(false)
-        | _ -> isArray
+        | Some(PrimLiteral(_pos, "true")) -> !isArray = Some(true)
+        | Some(PrimLiteral(_pos, "false")) -> !isArray = Some(false)
+        | _ -> void
         }
-      | _ -> isArray
+      | _ -> void
       }
-    | None() -> isArray
+    | None() -> void
     };
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
