@@ -582,6 +582,15 @@ fun testCallGraph(): void {
 }
 
 @test
+fun testCallGraphUnsupported(): void {
+  testDirectory(
+    "./tests/callgraph-unsupported/",
+    validateExpectErrorComments,
+    UpdateMode::fromEnv(),
+  )
+}
+
+@test
 fun testProjects(): void {
   update = UpdateMode::fromEnv();
   dir = Path.resolve("./tests/projects/");
@@ -630,6 +639,7 @@ fun testNoLostTest(): void {
     "ts-conformance", // handled in testTypeScriptConformance and testNotSupportedTypeScriptConformance
     "projects", // handled in testProjects
     "callgraph", // handled in testCallGraph
+    "callgraph-unsupported", // handled in testCallGraphUnsupported
   ];
   for (subDir in FileSystem.readDirectory(testsDir)) {
     if (coveredTestDirs.contains(subDir)) continue;
