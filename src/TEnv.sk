@@ -286,7 +286,13 @@ base class TEnv{
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
     TObject::createSingleBranch(
-      TFields::create{fields, symbolFields, indexes, new => Some(new)},
+      TFields::create{
+        fields,
+        symbolFields,
+        indexes,
+        new => Some(new),
+        isArray => Some(false),
+      },
       pos,
     )
   }
