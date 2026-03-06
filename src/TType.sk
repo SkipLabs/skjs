@@ -989,10 +989,6 @@ class TField private {
     this with {get => f(this.get), set => f(this.set)}
   }
 
-  fun withGetSet(get: TType, set: TType): TField {
-    this with {get, set}
-  }
-
   // Create a TField from a TIndexField (dropping keyKinds).
   static fun fromIndexField(idx: TIndexField): TField {
     set = idx.isReadonly match {
@@ -1125,9 +1121,7 @@ class TIndexField{
     subst = Subst::mcreate(tcenvb);
     for (i in Range(1, indexes.size())) {
       other = TField::fromIndexField(indexes[i]);
-      get = TType::inter(subst, tenv, result.get, other.get);
-      set = TType::union(subst, tenv, result.set, other.set);
-      !result = result.withGetSet(get, set);
+      !result = TField::interIndex(subst, tenv, result, other).fromSome();
     };
     Some(result)
   }
