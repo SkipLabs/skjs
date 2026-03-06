@@ -359,7 +359,6 @@ extension class TypeChecker {
         addResultCase(tyAtN)
 
       | obj @ TObject(_, objectPos) ->
-        fields = obj.getFields(tcenv.subst, this);
         if (idxSType is TPrimValue(TSymbol(), _, _)) {
           uniqueId = idxSType match {
           | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
@@ -368,7 +367,7 @@ extension class TypeChecker {
           | Some(id) -> id
           | None() -> typingError(Array[(idx.pos, "Expected a unique symbol")])
           };
-          fields.maybeGetSymbolType(
+          obj.maybeGetSymbolType(
             tcenv.subst,
             this,
             uniqueId,
@@ -380,6 +379,7 @@ extension class TypeChecker {
             typingError(Array[(pos, "Symbol property not found on object")])
           }
         } else {
+          fields = obj.getFields(tcenv.subst, this);
           idxSType.literals match {
           | None() -> Some(idxSType)
           | Some(lits) ->

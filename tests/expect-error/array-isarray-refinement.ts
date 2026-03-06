@@ -127,7 +127,7 @@ function testArrayMethodOnNonArray(x: Array<number> | Foo): unknown {
   if (Array.isArray(x)) {
     return x.length;
   } else {
-    // @skjs-expect-error Invalid index key
+    // @skjs-expect-error Unbound field: length
     return x.length;
   }
 }
@@ -161,7 +161,7 @@ function testObjectPropOnArray(x: Array<number> | Foo): unknown {
     // @skjs-expect-error Invalid index key
     return x.a;
   } else {
-    // @skjs-expect-error Invalid index key
+    // @skjs-expect-error Unbound field: a
     return x.a;
   }
 }
