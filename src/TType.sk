@@ -1095,24 +1095,88 @@ class TIndexField private {
     prettyPrintIndexField(this)
   }
 
-  // Deduplicate indexes that share the same key kinds and value type.
-  static fun mergeByKeyKinds(
+  // Split indexes by key kind and merge duplicates per kind.
+  // Returns at most 3 non-overlapping indexes (string, number, symbol).
+  // When multiple indexes cover the same kind, their value types are merged:
+  //   getter (covariant) → intersection, setter (contravariant) → union.
+  static fun splitAndMergeIndexes(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
     indexes: readonly Vector<TIndexField>,
-  ): Array<TIndexField> {
-    if (indexes.size() <= 1) return indexes.toArray();
-    merged: mutable Vector<TIndexField> = mutable Vector[];
+  ): (?TIndexField, ?TIndexField, ?TIndexField) {
+    stringIndexes: mutable Vector<TIndexField> = mutable Vector[];
+    numberIndexes: mutable Vector<TIndexField> = mutable Vector[];
+    symbolIndexes: mutable Vector<TIndexField> = mutable Vector[];
     for (idx in indexes) {
-      if (
-        !merged.any(e ->
-          e.keyKinds == idx.keyKinds &&
-            e.valueTypeGet == idx.valueTypeGet &&
-            e.valueTypeSet == idx.valueTypeSet
-        )
-      ) {
-        merged.push(idx)
-      }
+      if (idx.keyKinds.hasString) stringIndexes.push(idx);
+      if (idx.keyKinds.hasNumber) numberIndexes.push(idx);
+      if (idx.keyKinds.hasSymbol) symbolIndexes.push(idx);
     };
-    merged.toArray()
+    stringKinds = IndexKeyKinds{
+      hasString => true,
+      hasNumber => false,
+      hasSymbol => false,
+    };
+    numberKinds = IndexKeyKinds{
+      hasString => false,
+      hasNumber => true,
+      hasSymbol => false,
+    };
+    symbolKinds = IndexKeyKinds{
+      hasString => false,
+      hasNumber => false,
+      hasSymbol => true,
+    };
+    stringIndex = TIndexField::mergeIndexesForKind(
+      tcenvb,
+      tenv,
+      stringIndexes,
+      stringKinds,
+    );
+    numberIndex = TIndexField::mergeIndexesForKind(
+      tcenvb,
+      tenv,
+      numberIndexes,
+      numberKinds,
+    );
+    symbolIndex = TIndexField::mergeIndexesForKind(
+      tcenvb,
+      tenv,
+      symbolIndexes,
+      symbolKinds,
+    );
+    (stringIndex, numberIndex, symbolIndex)
+  }
+
+  // Merge multiple indexes that map to the same key kind.
+  static fun mergeIndexesForKind(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    indexes: mutable Vector<TIndexField>,
+    keyKinds: IndexKeyKinds,
+  ): ?TIndexField {
+    if (indexes.isEmpty()) return None();
+    result = indexes[0] with {keyKinds};
+    subst = Subst::mcreate(tcenvb);
+    for (i in Range(1, indexes.size())) {
+      other = indexes[i];
+      // Getter: covariant → intersection (narrowest type)
+      valueTypeGet = TType::inter(
+        subst,
+        tenv,
+        result.valueTypeGet,
+        other.valueTypeGet,
+      );
+      // Setter: contravariant → union (widest acceptable type)
+      valueTypeSet = TType::union(
+        subst,
+        tenv,
+        result.valueTypeSet,
+        other.valueTypeSet,
+      );
+      !result = result with {valueTypeGet, valueTypeSet};
+    };
+    Some(result)
   }
 }
 
@@ -1147,11 +1211,12 @@ class TFields private {
     FieldNameString,
     TField,
   > = InternalKeyedArrayMap::empty(),
-  indexes: Array<TIndexField> = Array[],
-  /* There can be several index fields (from intersections).
-     Key types are validated by resolveIndexKeyKinds.
-     Field/index value type compatibility is checked by createWithIndexes.
-  */
+  // At most one index per key kind: string, number, symbol.
+  // Key types are validated by resolveIndexKeyKinds.
+  // Field/index value type compatibility is checked by createWithIndexes.
+  stringIndex: ?TIndexField = None(),
+  numberIndex: ?TIndexField = None(),
+  symbolIndex: ?TIndexField = None(),
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
 } uses XXHashable, Orderable {
@@ -1187,85 +1252,83 @@ class TFields private {
     new: ?TFuns = None(),
     call: ?TFuns = None(),
   }: TFields {
-    mergedIndexes = TIndexField::mergeByKeyKinds(indexes);
-    for (idx in mergedIndexes) {
-      // Validate named fields against this index
+    (stringIndex, numberIndex, symbolIndex) = TIndexField::splitAndMergeIndexes(
+      tcenvb,
+      tenv,
+      indexes,
+    );
+    // Validate named fields against string index
+    stringIndex.each(strIdx -> {
       for (field in fields.values()) {
-        if (idx.keyKinds.contains(TString())) {
-          subst = Subst::mcreate(tcenvb);
-          TType::isSub(subst, tenv, field.get, idx.valueTypeGet) match {
-          | STOk() -> void
-          | STErrorOnTType _ ->
-            tcenvb.error(
-              Array[
-                (
-                  field.pos,
-                  `Property '${field.name.value}' of type '${
-                    field.get
-                  }' is not assignable to '${idx.keyKinds}' index type '${
-                    idx.valueTypeGet
-                  }'`,
-                ),
-              ],
-            )
-          }
-        };
-        if (
-          idx.keyKinds.contains(TNum()) &&
-          field.name.value.toIntOption().isSome()
-        ) {
-          subst = Subst::mcreate(tcenvb);
-          TType::isSub(subst, tenv, field.get, idx.valueTypeGet) match {
-          | STOk() -> void
-          | STErrorOnTType _ ->
-            tcenvb.error(
-              Array[
-                (
-                  field.pos,
-                  `Property '${field.name.value}' of type '${
-                    field.get
-                  }' is not assignable to '${idx.keyKinds}' index type '${
-                    idx.valueTypeGet
-                  }'`,
-                ),
-              ],
-            )
-          }
+        subst = Subst::mcreate(tcenvb);
+        TType::isSub(subst, tenv, field.get, strIdx.valueTypeGet) match {
+        | STOk() -> void
+        | STErrorOnTType _ ->
+          tcenvb.error(
+            Array[
+              (
+                field.pos,
+                `Property '${field.name.value}' of type '${
+                  field.get
+                }' is not assignable to 'string' index type '${
+                  strIdx.valueTypeGet
+                }'`,
+              ),
+            ],
+          )
         }
-      };
-      // Validate number index value is subtype of string index value
-      if (idx.keyKinds.hasString) {
-        for (other in mergedIndexes) {
-          if (
-            other.keyKinds.hasNumber &&
-            !(other.keyKinds.hasString) &&
-            other != idx
-          ) {
-            subst = Subst::mcreate(tcenvb);
-            TType::isSub(
-              subst,
-              tenv,
-              other.valueTypeGet,
-              idx.valueTypeGet,
-            ) match {
-            | STOk() -> void
-            | STErrorOnTType _ ->
-              tcenvb.error(
-                Array[
-                  (
-                    other.pos,
-                    `'number' index type '${
-                      other.valueTypeGet
-                    }' is not assignable to 'string' index type '${
-                      idx.valueTypeGet
-                    }'`,
-                  ),
-                ],
-              )
-            }
+      }
+    });
+    // Validate numeric-named fields against number index
+    numberIndex.each(numIdx -> {
+      for (field in fields.values()) {
+        if (field.name.value.toIntOption().isSome()) {
+          subst = Subst::mcreate(tcenvb);
+          TType::isSub(subst, tenv, field.get, numIdx.valueTypeGet) match {
+          | STOk() -> void
+          | STErrorOnTType _ ->
+            tcenvb.error(
+              Array[
+                (
+                  field.pos,
+                  `Property '${field.name.value}' of type '${
+                    field.get
+                  }' is not assignable to 'number' index type '${
+                    numIdx.valueTypeGet
+                  }'`,
+                ),
+              ],
+            )
           }
         }
       }
+    });
+    // Validate number index value is subtype of string index value
+    (stringIndex, numberIndex) match {
+    | (Some(strIdx), Some(numIdx)) ->
+      subst = Subst::mcreate(tcenvb);
+      TType::isSub(
+        subst,
+        tenv,
+        numIdx.valueTypeGet,
+        strIdx.valueTypeGet,
+      ) match {
+      | STOk() -> void
+      | STErrorOnTType _ ->
+        tcenvb.error(
+          Array[
+            (
+              numIdx.pos,
+              `'number' index type '${
+                numIdx.valueTypeGet
+              }' is not assignable to 'string' index type '${
+                strIdx.valueTypeGet
+              }'`,
+            ),
+          ],
+        )
+      }
+    | _ -> void
     };
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
@@ -1274,7 +1337,9 @@ class TFields private {
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
-      indexes => mergedIndexes,
+      stringIndex,
+      numberIndex,
+      symbolIndex,
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
     }
@@ -1304,7 +1369,9 @@ class TFields private {
     TFields{
       fields => this.fields.mapKeyed(fField),
       symbolFields => this.symbolFields.mapKeyed(fField),
-      indexes => this.indexes.map(fIndexField),
+      stringIndex => this.stringIndex.map(fIndexField),
+      numberIndex => this.numberIndex.map(fIndexField),
+      symbolIndex => this.symbolIndex.map(fIndexField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
     }
@@ -1323,25 +1390,46 @@ class TFields private {
   }
 
   fun hasIndex(): Bool {
-    !this.indexes.isEmpty()
+    this.stringIndex.isSome() ||
+      this.numberIndex.isSome() ||
+      this.symbolIndex.isSome()
+  }
+
+  // Collect non-None indexes into an array (for iteration/pretty-printing).
+  fun indexArray(): Array<TIndexField> {
+    result: mutable Vector<TIndexField> = mutable Vector[];
+    this.stringIndex.each(idx -> result.push(idx));
+    this.numberIndex.each(idx -> result.push(idx));
+    this.symbolIndex.each(idx -> result.push(idx));
+    result.toArray()
   }
 
   // Find an index that accepts the given key kind.
+  // For number keys, try numberIndex first, then fall back to stringIndex
+  // (since JS coerces number keys to strings).
   fun indexForKeyKind(kind: TPrimValueKind): ?TIndexField {
-    this.indexes.find(idx -> idx.keyKinds.contains(kind))
+    kind match {
+    | TString() -> this.stringIndex
+    | TNum() ->
+      this.numberIndex match {
+      | Some _ -> this.numberIndex
+      | None() -> this.stringIndex
+      }
+    | TSymbol() -> this.symbolIndex
+    | _ -> None()
+    }
   }
 
+  // Temporary: used by subtyping/TypeCheckExpr until they're updated to per-kind.
+  // Returns the string index if present, otherwise number, otherwise symbol.
   fun maybeSingleIndex(): ?TIndexField {
-    this.indexes.size() match {
-    | 0 -> None()
-    | 1 -> Some(this.indexes[0])
-    | _ ->
-      typingError(
-        Array[
-          (this.indexes[0].pos, "TODO: multiple indexes"),
-          (this.indexes[1].pos, "Second one is here"),
-        ],
-      )
+    this.stringIndex match {
+    | Some _ -> this.stringIndex
+    | None() ->
+      this.numberIndex match {
+      | Some _ -> this.numberIndex
+      | None() -> this.symbolIndex
+      }
     }
   }
 

@@ -748,7 +748,7 @@ extension class TypeChecker {
                 for (spreadSymbolField in spreadTFields.symbolFields) {
                   symbolFields![spreadSymbolField.name] = spreadSymbolField
                 };
-                for (spreadIndex in spreadTFields.indexes) {
+                for (spreadIndex in spreadTFields.indexArray()) {
                   indexes.push(spreadIndex)
                 };
                 spreadTFields.call.each(_ ->
@@ -1251,14 +1251,13 @@ extension class TypeChecker {
             !canBeFalse = true
           | obj @ TObject(_, _pos) ->
             objFields = obj.getFields(tcenv.subst, this);
-            (fields, symbolFields, indexes) = objFields match {
-            | TFields{fields, symbolFields, indexes} ->
-              (fields, symbolFields, indexes)
+            (fields, symbolFields) = objFields match {
+            | TFields{fields, symbolFields} -> (fields, symbolFields)
             };
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
-              !indexes.isEmpty() /* TODO: refine */ ||
+              objFields.hasIndex() /* TODO: refine */ ||
               fieldsOpt match {
               | None() ->
                 false // no field keys to check

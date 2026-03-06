@@ -256,24 +256,51 @@ extension class TFields {
       }
     );
     // TODO: handle intersection between normal fields and index fields
-    indexes = {
-      index1o = fields1.maybeSingleIndex();
-      index2o = fields2.maybeSingleIndex();
-      (index1o, index2o) match {
-      | (None(), None()) -> None()
-      | (Some(index), None())
-      | (None(), Some(index)) ->
-        Some(index)
-      | (Some(index1), Some(index2)) ->
-        TIndexField::union(subst, tenv, index1, index2)
-      } match {
-      | None() -> Array[]
-      | Some(index) -> Array[index]
-      }
-    };
+    stringIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.stringIndex,
+      fields2.stringIndex,
+    );
+    numberIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.numberIndex,
+      fields2.numberIndex,
+    );
+    symbolIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.symbolIndex,
+      fields2.symbolIndex,
+    );
     call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
     new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
-    TFields{fields, symbolFields, indexes, call, new}
+    TFields{
+      fields,
+      symbolFields,
+      stringIndex,
+      numberIndex,
+      symbolIndex,
+      call,
+      new,
+    }
+  }
+
+  static fun unionOptIndex(
+    subst: mutable Subst,
+    tenv: TEnv,
+    idx1: ?TIndexField,
+    idx2: ?TIndexField,
+  ): ?TIndexField {
+    (idx1, idx2) match {
+    | (None(), None()) -> None()
+    | (Some(index), None())
+    | (None(), Some(index)) ->
+      Some(index)
+    | (Some(index1), Some(index2)) ->
+      TIndexField::union(subst, tenv, index1, index2)
+    }
   }
 
   static fun unionOptTFuns(

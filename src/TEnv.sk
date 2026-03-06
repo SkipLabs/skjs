@@ -1432,7 +1432,7 @@ base class TEnv{
                 !symbols = symbols.set(symbolField.name.value);
               }
             };
-            for (index in fields.indexes) {
+            for (index in fields.indexArray()) {
               !ikk = ikk.merge(index.keyKinds);
             }
           }
