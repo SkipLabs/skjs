@@ -398,7 +398,30 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            fields.maybeSingleIndex() match {
+            matchedIndex = fields.indexForKeyKind(remainingIdxSType.kind);
+            if (matchedIndex.isNone() && fields.hasIndex()) {
+              // Object has indexes but not for this key kind
+              tcenv.error(
+                Array[
+                  (
+                    pos,
+                    `Invalid index key: expected ${fields.indexKeyKindsString()}, got ${
+                      remainingIdxSType.kind
+                    }`,
+                  ),
+                ],
+              );
+              // Use any available index to continue type checking
+              !matchedIndex = fields.stringIndex match {
+              | Some _ -> fields.stringIndex
+              | None() ->
+                fields.numberIndex match {
+                | Some _ -> fields.numberIndex
+                | None() -> fields.symbolIndex
+                }
+              }
+            };
+            matchedIndex match {
             | None() ->
               remainingIdxSType.literals match {
               | None() ->
@@ -416,18 +439,6 @@ extension class TypeChecker {
                 fields.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
-              if (!index.keyKinds.contains(remainingIdxSType.kind)) {
-                tcenv.error(
-                  Array[
-                    (
-                      pos,
-                      `Invalid index key: expected ${index.keyKinds}, got ${
-                        remainingIdxSType.kind
-                      }`,
-                    ),
-                  ],
-                )
-              };
               ty = if (isLValue) index.valueTypeSet else {
                 TType::unionUndefined(
                   tcenv.subst,

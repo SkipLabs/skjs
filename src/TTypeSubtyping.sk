@@ -597,23 +597,19 @@ extension class TFields {
     res
   }
 
-  private static fun isSub_(
+  // Check a single index kind: if super has an index, sub must also
+  // have a compatible index for that kind.
+  private static fun isSub_IndexPair(
     subst: mutable Subst,
     tenv: TEnv,
+    idx1: ?TIndexField,
+    idx2: ?TIndexField,
     fields1: TFields,
     fields2: TFields,
   ): STResult<TFields> {
-    // Process fields first so that tuple index type variables are resolved
-    // before call/new signatures with union types.
-    index1o = fields1.maybeSingleIndex();
-    index2o = fields2.maybeSingleIndex();
-    (index1o, index2o) match {
-    | (_, None()) -> void
+    (idx1, idx2) match {
+    | (_, None()) -> STOk()
     | (Some(index1), Some(index2)) ->
-      // Check key coverage: sub's key space must cover super's key space
-      if (!index2.keyKinds.isCoveredBy(index1.keyKinds)) {
-        return STRecFieldsIndexKeyKinds(index1, index2, fields1, fields2)
-      };
       TType::isSub(
         subst,
         tenv,
@@ -621,7 +617,7 @@ extension class TFields {
         index2.valueTypeGet,
       ) match {
       | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
+        STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
       | STOk() ->
         TType::isSub(
           subst,
@@ -630,20 +626,131 @@ extension class TFields {
           index1.valueTypeSet,
         ) match {
         | err @ STErrorOnTType _ ->
-          return STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
+          STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
+        | STOk() -> STOk()
+        }
+      }
+    | (None(), Some(_index2)) ->
+      // Sub has no index for this kind — named field checks happen separately.
+      // Note: this is OK for number/symbol indexes where sub might use string
+      // index fallback. For string indexes, sub MUST have a string index —
+      // but we can't distinguish the kind here, so the caller handles that.
+      STOk()
+    }
+  }
+
+  private static fun isSub_(
+    subst: mutable Subst,
+    tenv: TEnv,
+    fields1: TFields,
+    fields2: TFields,
+  ): STResult<TFields> {
+    // Process fields first so that tuple index type variables are resolved
+    // before call/new signatures with union types.
+    // Per-kind index checks: for each kind, if super has an index,
+    // sub must also have a compatible index (or named fields that satisfy it).
+    TFields::isSub_IndexPair(
+      subst,
+      tenv,
+      fields1.stringIndex,
+      fields2.stringIndex,
+      fields1,
+      fields2,
+    ) match {
+    | err @ STError _ -> return err
+    | STOk() -> void
+    };
+    TFields::isSub_IndexPair(
+      subst,
+      tenv,
+      fields1.numberIndex,
+      fields2.numberIndex,
+      fields1,
+      fields2,
+    ) match {
+    | err @ STError _ -> return err
+    | STOk() -> void
+    };
+    TFields::isSub_IndexPair(
+      subst,
+      tenv,
+      fields1.symbolIndex,
+      fields2.symbolIndex,
+      fields1,
+      fields2,
+    ) match {
+    | err @ STError _ -> return err
+    | STOk() -> void
+    };
+    // If super has string index and sub doesn't, sub can't satisfy arbitrary
+    // string key access — fail. (Number/symbol indexes don't cover string.)
+    // If super has string index and sub has an index but not string:
+    // sub can't satisfy arbitrary string key access → fail.
+    // (If sub has no index at all, named field checks handle it.)
+    if (
+      fields2.stringIndex.isSome() &&
+      fields1.stringIndex.isNone() &&
+      fields1.hasIndex()
+    ) {
+      index2 = fields2.stringIndex.fromSome();
+      // Find any sub index for the error message
+      subIdx = fields1.numberIndex match {
+      | Some(idx) -> idx
+      | None() -> fields1.symbolIndex.fromSome()
+      };
+      return STRecFieldsIndexKeyKinds(subIdx, index2, fields1, fields2)
+    };
+    // When super has numberIndex and sub has no numberIndex but has stringIndex,
+    // string index covers number keys, so check value compatibility.
+    (fields1.stringIndex, fields1.numberIndex, fields2.numberIndex) match {
+    | (Some(strIdx1), None(), Some(numIdx2)) ->
+      TType::isSub(
+        subst,
+        tenv,
+        strIdx1.valueTypeGet,
+        numIdx2.valueTypeGet,
+      ) match {
+      | err @ STErrorOnTType _ ->
+        return STRecFieldsIndexValue(err, strIdx1, numIdx2, fields1, fields2)
+      | STOk() ->
+        TType::isSub(
+          subst,
+          tenv,
+          numIdx2.valueTypeSet,
+          strIdx1.valueTypeSet,
+        ) match {
+        | err @ STErrorOnTType _ ->
+          return STRecFieldsIndexValue(err, strIdx1, numIdx2, fields1, fields2)
         | STOk() -> void
         }
       }
-    | (None(), Some(index2)) ->
+    | _ -> void
+    };
+    // When super has an index but sub doesn't, check sub's named fields
+    // against the super's index.
+    if (
+      fields1.stringIndex.isNone() &&
+      fields1.numberIndex.isNone() &&
+      fields2.stringIndex.isSome()
+    ) {
+      index2 = fields2.stringIndex.fromSome();
       for (f1 in fields1.fields) {
-        // Clone subst for all index compatibility checks to avoid growing
-        // TVars that would interfere with subsequent named field checks.
-        keyMatches = index2.keyKinds.contains(TString());
-        // For numeric field names, also try matching as a number key
-        if (!keyMatches && f1.name.value.toIntOption().isSome()) {
-          !keyMatches = index2.keyKinds.contains(TNum())
-        };
-        if (keyMatches) {
+        TType::isSub(subst.clone(), tenv, f1.get, index2.valueTypeGet) match {
+        | err @ STErrorOnTType _ ->
+          return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
+        | STOk() ->
+          TType::isSub(subst.clone(), tenv, index2.valueTypeSet, f1.set) match {
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
+          | STOk() -> void
+          }
+        }
+      }
+    };
+    if (fields1.numberIndex.isNone() && fields2.numberIndex.isSome()) {
+      index2 = fields2.numberIndex.fromSome();
+      for (f1 in fields1.fields) {
+        if (f1.name.value.toIntOption().isSome()) {
           TType::isSub(subst.clone(), tenv, f1.get, index2.valueTypeGet) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
@@ -669,34 +776,20 @@ extension class TFields {
         if (!f2.isOptional) {
           return STRecFieldsField(None(), f2, FMKGetter(), fields1, fields2)
         };
-        index1o match {
+        // When sub has an index, use it to satisfy super's optional fields
+        fields1.indexForKeyKind(
+          if (f2.name.value.toIntOption().isSome()) TNum() else TString(),
+        ) match {
         | None() -> void
-        | Some(index1) ->
-          keyMatches = index1.keyKinds.contains(TString());
-          // For numeric field names, also try matching as a number key
-          if (!keyMatches && f2.name.value.toIntOption().isSome()) {
-            !keyMatches = index1.keyKinds.contains(TNum())
-          };
-          if (keyMatches) {
-            TType::isSub(
-              subst.clone(),
-              tenv,
-              index1.valueTypeGet,
-              f2.get,
-            ) match {
+        | Some(idx1) ->
+          TType::isSub(subst.clone(), tenv, idx1.valueTypeGet, f2.get) match {
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsIndexField(err, idx1, f2, fields1, fields2)
+          | STOk() ->
+            TType::isSub(subst.clone(), tenv, f2.set, idx1.valueTypeSet) match {
             | err @ STErrorOnTType _ ->
-              return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
-            | STOk() ->
-              TType::isSub(
-                subst.clone(),
-                tenv,
-                f2.set,
-                index1.valueTypeSet,
-              ) match {
-              | err @ STErrorOnTType _ ->
-                return STRecFieldsIndexField(err, index1, f2, fields1, fields2)
-              | STOk() -> void
-              }
+              return STRecFieldsIndexField(err, idx1, f2, fields1, fields2)
+            | STOk() -> void
             }
           }
         }

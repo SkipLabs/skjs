@@ -1395,6 +1395,15 @@ class TFields private {
       this.symbolIndex.isSome()
   }
 
+  // Human-readable string of supported index key kinds (e.g. "number").
+  fun indexKeyKindsString(): String {
+    parts: mutable Vector<String> = mutable Vector[];
+    if (this.stringIndex.isSome()) parts.push("string");
+    if (this.numberIndex.isSome()) parts.push("number");
+    if (this.symbolIndex.isSome()) parts.push("symbol");
+    parts.join(" | ")
+  }
+
   // Collect non-None indexes into an array (for iteration/pretty-printing).
   fun indexArray(): Array<TIndexField> {
     result: mutable Vector<TIndexField> = mutable Vector[];
@@ -1417,19 +1426,6 @@ class TFields private {
       }
     | TSymbol() -> this.symbolIndex
     | _ -> None()
-    }
-  }
-
-  // Temporary: used by subtyping/TypeCheckExpr until they're updated to per-kind.
-  // Returns the string index if present, otherwise number, otherwise symbol.
-  fun maybeSingleIndex(): ?TIndexField {
-    this.stringIndex match {
-    | Some _ -> this.stringIndex
-    | None() ->
-      this.numberIndex match {
-      | Some _ -> this.numberIndex
-      | None() -> this.symbolIndex
-      }
     }
   }
 
