@@ -422,13 +422,45 @@ extension class TypeChecker {
                 fields.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
-              this.checkSubType(
-                tcenv,
-                pos,
-                "Invalid index key",
-                TType::single(remainingIdxSType),
+              remainingIdxType = TType::single(remainingIdxSType);
+              keyResult = TType::isSub(
+                tcenv.subst,
+                this,
+                remainingIdxType,
                 index.keyType,
               );
+              // If string literal access fails on a number index, retry as
+              // number literal for canonical numeric strings (e.g. obj["0"]
+              // on { [x: number]: T }).
+              !keyResult = keyResult match {
+              | STOk() -> keyResult
+              | origErr @ STErrorOnTType _ ->
+                remainingIdxSType match {
+                | TPrimValue(
+                  TString(),
+                  Some(lits),
+                  litPos,
+                ) if (lits.values().all(lit -> isJSNumericString(lit.val))) ->
+                  numType = TType::single(
+                    TPrimValue(TNum(), Some(lits), litPos),
+                  );
+                  TType::isSub(
+                    tcenv.subst,
+                    this,
+                    numType,
+                    index.keyType,
+                  ) match {
+                  | STOk() -> STOk()
+                  | _ -> origErr
+                  }
+                | _ -> origErr
+                }
+              };
+              keyResult match {
+              | STOk() -> void
+              | err @ STErrorOnTType _ ->
+                tcenv.error(Array[(pos, "Invalid index key")], Some(err))
+              };
               ty = if (isLValue) index.valueTypeSet else {
                 TType::unionUndefined(
                   tcenv.subst,
