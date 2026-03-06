@@ -1183,7 +1183,7 @@ class TFields private {
     tenv: TEnv,
     fields: readonly Map<FieldNameString, TField> = Map[],
     symbolFields: readonly Map<FieldNameString, TField> = Map[],
-    indexes: readonly Vector<TIndexField> = Vector[],
+    indexes: readonly Vector<TIndexField>,
     new: ?TFuns = None(),
     call: ?TFuns = None(),
   }: TFields {
