@@ -1047,13 +1047,14 @@ class TIndexField{
     tenv: TEnv,
     indexes: readonly Vector<TIndexField>,
   ): (?TField, ?TField, ?TField) {
-    stringIndexes: mutable Vector<TIndexField> = mutable Vector[];
-    numberIndexes: mutable Vector<TIndexField> = mutable Vector[];
-    symbolIndexes: mutable Vector<TIndexField> = mutable Vector[];
+    stringIndexes: mutable Vector<TField> = mutable Vector[];
+    numberIndexes: mutable Vector<TField> = mutable Vector[];
+    symbolIndexes: mutable Vector<TField> = mutable Vector[];
     for (idx in indexes) {
-      if (idx.keyKinds.hasString) stringIndexes.push(idx);
-      if (idx.keyKinds.hasNumber) numberIndexes.push(idx);
-      if (idx.keyKinds.hasSymbol) symbolIndexes.push(idx);
+      f = TField::fromIndexField(idx);
+      if (idx.keyKinds.hasString) stringIndexes.push(f);
+      if (idx.keyKinds.hasNumber) numberIndexes.push(f);
+      if (idx.keyKinds.hasSymbol) symbolIndexes.push(f);
     };
     stringIndex = TIndexField::mergeIndexesForKind(tcenvb, tenv, stringIndexes);
     numberIndex = TIndexField::mergeIndexesForKind(tcenvb, tenv, numberIndexes);
@@ -1066,13 +1067,15 @@ class TIndexField{
   static fun mergeIndexesForKind(
     tcenvb: mutable TCEnvBase,
     tenv: TEnv,
-    indexes: mutable Vector<TIndexField>,
+    indexes: readonly Vector<TField>,
   ): ?TField {
-    if (indexes.isEmpty()) return None();
-    result = TField::fromIndexField(indexes[0]);
+    indexesIt = indexes.iterator();
+    result = indexesIt.next() match {
+    | None() -> return None()
+    | Some(first) -> first
+    };
     subst = Subst::mcreate(tcenvb);
-    for (i in Range(1, indexes.size())) {
-      other = TField::fromIndexField(indexes[i]);
+    for (other in indexesIt) {
       !result = TField::interIndex(subst, tenv, result, other);
     };
     Some(result)
