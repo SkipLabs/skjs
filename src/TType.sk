@@ -1015,12 +1015,6 @@ class IndexKeyKinds{
   hasNumber: Bool,
   hasSymbol: Bool,
 } uses XXHashable, Orderable {
-  const empty: IndexKeyKinds = IndexKeyKinds{
-    hasString => false,
-    hasNumber => false,
-    hasSymbol => false,
-  };
-
   /* Returns None() if all three values are false */
   static fun create{
     hasString: Bool,
@@ -1032,48 +1026,6 @@ class IndexKeyKinds{
     } else {
       None()
     }
-  }
-
-  fun merge(other: IndexKeyKinds): IndexKeyKinds {
-    hasString = this.hasString || other.hasString;
-    hasNumber = this.hasNumber || other.hasNumber;
-    hasSymbol = this.hasSymbol || other.hasSymbol;
-    IndexKeyKinds{hasString, hasNumber, hasSymbol}
-  }
-
-  fun contains(kind: TPrimValueKind): Bool {
-    kind match {
-    | TString() -> this.hasString
-    | TNum() -> this.hasNumber || this.hasString
-    | TSymbol() -> this.hasSymbol
-    | TBool()
-    | TBigInt() ->
-      false
-    }
-  }
-
-  // Returns true if `this` key space is covered by `other`.
-  // A string index covers number keys (TS coerces numbers to strings).
-  fun isCoveredBy(other: IndexKeyKinds): Bool {
-    (this.hasString <= other.hasString) &&
-      (this.hasNumber <= (other.hasNumber || other.hasString)) &&
-      (this.hasSymbol <= other.hasSymbol)
-  }
-
-  fun toTType(subst: mutable Subst, tenv: TEnv, pos: PosRange): TType {
-    tys = mutable Vector[];
-    if (this.hasString) tys.push(TType::single(TPrimValue::string(pos)));
-    if (this.hasNumber) tys.push(TType::single(TPrimValue::number(pos)));
-    if (this.hasSymbol) tys.push(TType::single(TPrimValue::symbol(pos)));
-    TType::unionN(subst, tenv, pos, tys)
-  }
-
-  fun toString(): String {
-    parts = mutable Vector[];
-    if (this.hasString) parts.push("string");
-    if (this.hasNumber) parts.push("number");
-    if (this.hasSymbol) parts.push("symbol");
-    if (parts.isEmpty()) "never" else parts.join(" | ")
   }
 }
 
