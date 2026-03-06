@@ -1123,11 +1123,24 @@ class TFields private {
       brandField.get.getSingleConstant() match {
       | Some(TPrimValue(TBool(), Some(lits), _)) ->
         lits.singleElt() match {
-        | Some(PrimLiteral(_pos, "true")) -> !isArray = Some(true)
-        | Some(PrimLiteral(_pos, "false")) -> !isArray = Some(false)
-        | _ -> void
+        | Some(PrimLiteral(_pos, "true")) -> Some(true)
+        | Some(PrimLiteral(_pos, "false")) -> Some(false)
+        | _ -> None()
         }
-      | _ -> void
+      | _ -> None()
+      } match {
+      | None() ->
+        typingError(
+          Array[
+            (
+              brandField.get.pos,
+              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${
+                brandField.get
+              }`,
+            ),
+          ],
+        )
+      | brandIsArray @ Some _ -> !isArray = brandIsArray
       }
     | None() -> void
     };
