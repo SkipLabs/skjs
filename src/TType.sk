@@ -1181,8 +1181,8 @@ class TFields private {
   static fun createWithIndexes{
     tcenvb: mutable TCEnvBase,
     tenv: TEnv,
-    fields: readonly Map<FieldNameString, TField> = Map[],
-    symbolFields: readonly Map<FieldNameString, TField> = Map[],
+    fields: mutable Map<FieldNameString, TField> = mutable Map[],
+    symbolFields: mutable Map<FieldNameString, TField> = mutable Map[],
     indexes: readonly Vector<TIndexField>,
     new: ?TFuns = None(),
     call: ?TFuns = None(),
