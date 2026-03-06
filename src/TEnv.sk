@@ -1432,8 +1432,32 @@ base class TEnv{
                 !symbols = symbols.set(symbolField.name.value);
               }
             };
-            for (index in fields.indexArray()) {
-              !ikk = ikk.merge(index.keyKinds);
+            if (fields.stringIndex.isSome()) {
+              !ikk = ikk.merge(
+                IndexKeyKinds{
+                  hasString => true,
+                  hasNumber => false,
+                  hasSymbol => false,
+                },
+              )
+            };
+            if (fields.numberIndex.isSome()) {
+              !ikk = ikk.merge(
+                IndexKeyKinds{
+                  hasString => false,
+                  hasNumber => true,
+                  hasSymbol => false,
+                },
+              )
+            };
+            if (fields.symbolIndex.isSome()) {
+              !ikk = ikk.merge(
+                IndexKeyKinds{
+                  hasString => false,
+                  hasNumber => false,
+                  hasSymbol => true,
+                },
+              )
             }
           }
         | prim @ TPrimValue _ ->

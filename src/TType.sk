@@ -989,6 +989,17 @@ class TField private {
     this with {get => f(this.get), set => f(this.set)}
   }
 
+  // Create a TField from a TIndexField (dropping keyKinds).
+  static fun fromIndexField(idx: TIndexField): TField {
+    TField{
+      pos => idx.pos,
+      name => FieldNameString(idx.keyName),
+      isOptional => false,
+      get => idx.valueTypeGet,
+      set => idx.valueTypeSet,
+    }
+  }
+
   fun project(): FieldNameString {
     this.name
   }
@@ -1099,11 +1110,12 @@ class TIndexField private {
   // Returns at most 3 non-overlapping indexes (string, number, symbol).
   // When multiple indexes cover the same kind, their value types are merged:
   //   getter (covariant) → intersection, setter (contravariant) → union.
+  // Results are converted to TField since key kind is implicit in position.
   static fun splitAndMergeIndexes(
     tcenvb: mutable TCEnvBase,
     tenv: TEnv,
     indexes: readonly Vector<TIndexField>,
-  ): (?TIndexField, ?TIndexField, ?TIndexField) {
+  ): (?TField, ?TField, ?TField) {
     stringIndexes: mutable Vector<TIndexField> = mutable Vector[];
     numberIndexes: mutable Vector<TIndexField> = mutable Vector[];
     symbolIndexes: mutable Vector<TIndexField> = mutable Vector[];
@@ -1132,19 +1144,19 @@ class TIndexField private {
       tenv,
       stringIndexes,
       stringKinds,
-    );
+    ).map(TField::fromIndexField);
     numberIndex = TIndexField::mergeIndexesForKind(
       tcenvb,
       tenv,
       numberIndexes,
       numberKinds,
-    );
+    ).map(TField::fromIndexField);
     symbolIndex = TIndexField::mergeIndexesForKind(
       tcenvb,
       tenv,
       symbolIndexes,
       symbolKinds,
-    );
+    ).map(TField::fromIndexField);
     (stringIndex, numberIndex, symbolIndex)
   }
 
@@ -1214,9 +1226,10 @@ class TFields private {
   // At most one index per key kind: string, number, symbol.
   // Key types are validated by resolveIndexKeyKinds.
   // Field/index value type compatibility is checked by createWithIndexes.
-  stringIndex: ?TIndexField = None(),
-  numberIndex: ?TIndexField = None(),
-  symbolIndex: ?TIndexField = None(),
+  // Stored as TField (key kind is implicit in which field).
+  stringIndex: ?TField = None(),
+  numberIndex: ?TField = None(),
+  symbolIndex: ?TField = None(),
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
 } uses XXHashable, Orderable {
@@ -1261,7 +1274,7 @@ class TFields private {
     stringIndex.each(strIdx -> {
       for (field in fields.values()) {
         subst = Subst::mcreate(tcenvb);
-        TType::isSub(subst, tenv, field.get, strIdx.valueTypeGet) match {
+        TType::isSub(subst, tenv, field.get, strIdx.get) match {
         | STOk() -> void
         | STErrorOnTType _ ->
           tcenvb.error(
@@ -1270,9 +1283,7 @@ class TFields private {
                 field.pos,
                 `Property '${field.name.value}' of type '${
                   field.get
-                }' is not assignable to 'string' index type '${
-                  strIdx.valueTypeGet
-                }'`,
+                }' is not assignable to 'string' index type '${strIdx.get}'`,
               ),
             ],
           )
@@ -1284,7 +1295,7 @@ class TFields private {
       for (field in fields.values()) {
         if (field.name.value.toIntOption().isSome()) {
           subst = Subst::mcreate(tcenvb);
-          TType::isSub(subst, tenv, field.get, numIdx.valueTypeGet) match {
+          TType::isSub(subst, tenv, field.get, numIdx.get) match {
           | STOk() -> void
           | STErrorOnTType _ ->
             tcenvb.error(
@@ -1293,9 +1304,7 @@ class TFields private {
                   field.pos,
                   `Property '${field.name.value}' of type '${
                     field.get
-                  }' is not assignable to 'number' index type '${
-                    numIdx.valueTypeGet
-                  }'`,
+                  }' is not assignable to 'number' index type '${numIdx.get}'`,
                 ),
               ],
             )
@@ -1308,12 +1317,7 @@ class TFields private {
     (stringIndex, numberIndex) match {
     | (Some(strIdx), Some(numIdx)) ->
       subst = Subst::mcreate(tcenvb);
-      TType::isSub(
-        subst,
-        tenv,
-        numIdx.valueTypeGet,
-        strIdx.valueTypeGet,
-      ) match {
+      TType::isSub(subst, tenv, numIdx.get, strIdx.get) match {
       | STOk() -> void
       | STErrorOnTType _ ->
         tcenvb.error(
@@ -1321,10 +1325,8 @@ class TFields private {
             (
               numIdx.pos,
               `'number' index type '${
-                numIdx.valueTypeGet
-              }' is not assignable to 'string' index type '${
-                strIdx.valueTypeGet
-              }'`,
+                numIdx.get
+              }' is not assignable to 'string' index type '${strIdx.get}'`,
             ),
           ],
         )
@@ -1362,17 +1364,13 @@ class TFields private {
       this.call.isNone()
   }
 
-  fun map(
-    fField: TField -> TField,
-    fIndexField: TIndexField -> TIndexField,
-    fTFuns: TFuns -> TFuns,
-  ): TFields {
+  fun map(fField: TField -> TField, fTFuns: TFuns -> TFuns): TFields {
     TFields{
       fields => this.fields.mapKeyed(fField),
       symbolFields => this.symbolFields.mapKeyed(fField),
-      stringIndex => this.stringIndex.map(fIndexField),
-      numberIndex => this.numberIndex.map(fIndexField),
-      symbolIndex => this.symbolIndex.map(fIndexField),
+      stringIndex => this.stringIndex.map(fField),
+      numberIndex => this.numberIndex.map(fField),
+      symbolIndex => this.symbolIndex.map(fField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
     }
@@ -1406,18 +1404,27 @@ class TFields private {
   }
 
   // Collect non-None indexes into an array (for iteration/pretty-printing).
-  fun indexArray(): Array<TIndexField> {
-    result: mutable Vector<TIndexField> = mutable Vector[];
+  fun indexArray(): Array<TField> {
+    result: mutable Vector<TField> = mutable Vector[];
     this.stringIndex.each(idx -> result.push(idx));
     this.numberIndex.each(idx -> result.push(idx));
     this.symbolIndex.each(idx -> result.push(idx));
     result.toArray()
   }
 
+  // Collect non-None indexes with their key kind label.
+  fun indexEntries(): Array<(String, TField)> {
+    result: mutable Vector<(String, TField)> = mutable Vector[];
+    this.stringIndex.each(idx -> result.push(("string", idx)));
+    this.numberIndex.each(idx -> result.push(("number", idx)));
+    this.symbolIndex.each(idx -> result.push(("symbol", idx)));
+    result.toArray()
+  }
+
   // Find an index that accepts the given key kind.
   // For number keys, try numberIndex first, then fall back to stringIndex
   // (since JS coerces number keys to strings).
-  fun indexForKeyKind(kind: TPrimValueKind): ?TIndexField {
+  fun indexForKeyKind(kind: TPrimValueKind): ?TField {
     kind match {
     | TString() -> this.stringIndex
     | TNum() ->

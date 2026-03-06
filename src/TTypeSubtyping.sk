@@ -455,10 +455,10 @@ base class STErrorOnTFields(
   children =
   | STRecFieldsCall(?STErrorOnTFuns)
   | STRecFieldsNew(?STErrorOnTFuns)
-  | STRecFieldsIndexValue(STErrorOnTType, TIndexField, TIndexField)
-  | STRecFieldsIndexKeyKinds(TIndexField, TIndexField)
-  | STRecFieldsFieldIndex(STErrorOnTType, TField, TIndexField)
-  | STRecFieldsIndexField(STErrorOnTType, TIndexField, TField)
+  | STRecFieldsIndexValue(STErrorOnTType, TField, TField)
+  | STRecFieldsIndexKeyKinds(TField, TField)
+  | STRecFieldsFieldIndex(STErrorOnTType, TField, TField)
+  | STRecFieldsIndexField(STErrorOnTType, TField, TField)
   | STRecFieldsField(?STErrorOnTType, TField, FieldMismatchKind)
 
   fun toError(
@@ -506,22 +506,24 @@ base class STErrorOnTFields(
     | STRecFieldsIndexValue(err, index1, index2, _fields1, _fields2) ->
       (
         List[
-          (index1.pos, `Value type of index field ${index1}`),
+          (index1.pos, `Value type of index field '${index1.name.value}'`),
           (
             index2.pos,
-            `is not compatible with value type of index field ${index2}`,
+            `is not compatible with value type of index field '${
+              index2.name.value
+            }'`,
           ),
         ],
         err.toError(detailForRec),
       )
-    | STRecFieldsIndexKeyKinds(index1, index2, _fields1, _fields2) ->
+    | STRecFieldsIndexKeyKinds(index1, index2, fields1, _fields2) ->
       (
         List[
           (
             index1.pos,
-            `Index signature '${index1.keyKinds}' is missing in source type`,
+            `Index signature '${fields1.indexKeyKindsString()}' is missing in source type`,
           ),
-          (index2.pos, `Required by index signature '${index2.keyKinds}'`),
+          (index2.pos, `Required by index signature '${index2.name.value}'`),
         ],
         List.Nil(),
       )
@@ -529,14 +531,17 @@ base class STErrorOnTFields(
       (
         List[
           (field1.pos, `Field '${field1.name.value}'`),
-          (index2.pos, `is not compatible with index field ${index2}`),
+          (
+            index2.pos,
+            `is not compatible with index field '${index2.name.value}'`,
+          ),
         ],
         err.toError(detailForRec),
       )
     | STRecFieldsIndexField(err, index1, field2, _fields1, _fields2) ->
       (
         List[
-          (index1.pos, `Index field ${index1}`),
+          (index1.pos, `Index field '${index1.name.value}'`),
           (field2.pos, `is not compatible with field '${field2.name.value}'`),
         ],
         err.toError(detailForRec),
@@ -602,29 +607,19 @@ extension class TFields {
   private static fun isSub_IndexPair(
     subst: mutable Subst,
     tenv: TEnv,
-    idx1: ?TIndexField,
-    idx2: ?TIndexField,
+    idx1: ?TField,
+    idx2: ?TField,
     fields1: TFields,
     fields2: TFields,
   ): STResult<TFields> {
     (idx1, idx2) match {
     | (_, None()) -> STOk()
     | (Some(index1), Some(index2)) ->
-      TType::isSub(
-        subst,
-        tenv,
-        index1.valueTypeGet,
-        index2.valueTypeGet,
-      ) match {
+      TType::isSub(subst, tenv, index1.get, index2.get) match {
       | err @ STErrorOnTType _ ->
         STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
       | STOk() ->
-        TType::isSub(
-          subst,
-          tenv,
-          index2.valueTypeSet,
-          index1.valueTypeSet,
-        ) match {
+        TType::isSub(subst, tenv, index2.set, index1.set) match {
         | err @ STErrorOnTType _ ->
           STRecFieldsIndexValue(err, index1, index2, fields1, fields2)
         | STOk() -> STOk()
@@ -704,21 +699,11 @@ extension class TFields {
     // string index covers number keys, so check value compatibility.
     (fields1.stringIndex, fields1.numberIndex, fields2.numberIndex) match {
     | (Some(strIdx1), None(), Some(numIdx2)) ->
-      TType::isSub(
-        subst,
-        tenv,
-        strIdx1.valueTypeGet,
-        numIdx2.valueTypeGet,
-      ) match {
+      TType::isSub(subst, tenv, strIdx1.get, numIdx2.get) match {
       | err @ STErrorOnTType _ ->
         return STRecFieldsIndexValue(err, strIdx1, numIdx2, fields1, fields2)
       | STOk() ->
-        TType::isSub(
-          subst,
-          tenv,
-          numIdx2.valueTypeSet,
-          strIdx1.valueTypeSet,
-        ) match {
+        TType::isSub(subst, tenv, numIdx2.set, strIdx1.set) match {
         | err @ STErrorOnTType _ ->
           return STRecFieldsIndexValue(err, strIdx1, numIdx2, fields1, fields2)
         | STOk() -> void
@@ -732,12 +717,7 @@ extension class TFields {
     // Only check getter (covariant) — TS doesn't enforce setter direction here.
     (fields1.numberIndex, fields2.stringIndex) match {
     | (Some(numIdx1), Some(strIdx2)) ->
-      TType::isSub(
-        subst,
-        tenv,
-        numIdx1.valueTypeGet,
-        strIdx2.valueTypeGet,
-      ) match {
+      TType::isSub(subst, tenv, numIdx1.get, strIdx2.get) match {
       | err @ STErrorOnTType _ ->
         return STRecFieldsIndexValue(err, numIdx1, strIdx2, fields1, fields2)
       | STOk() -> void
@@ -753,11 +733,11 @@ extension class TFields {
     ) {
       index2 = fields2.stringIndex.fromSome();
       for (f1 in fields1.fields) {
-        TType::isSub(subst.clone(), tenv, f1.get, index2.valueTypeGet) match {
+        TType::isSub(subst.clone(), tenv, f1.get, index2.get) match {
         | err @ STErrorOnTType _ ->
           return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
         | STOk() ->
-          TType::isSub(subst.clone(), tenv, index2.valueTypeSet, f1.set) match {
+          TType::isSub(subst.clone(), tenv, index2.set, f1.set) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
           | STOk() -> void
@@ -769,16 +749,11 @@ extension class TFields {
       index2 = fields2.numberIndex.fromSome();
       for (f1 in fields1.fields) {
         if (f1.name.value.toIntOption().isSome()) {
-          TType::isSub(subst.clone(), tenv, f1.get, index2.valueTypeGet) match {
+          TType::isSub(subst.clone(), tenv, f1.get, index2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
           | STOk() ->
-            TType::isSub(
-              subst.clone(),
-              tenv,
-              index2.valueTypeSet,
-              f1.set,
-            ) match {
+            TType::isSub(subst.clone(), tenv, index2.set, f1.set) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsFieldIndex(err, f1, index2, fields1, fields2)
             | STOk() -> void
@@ -800,11 +775,11 @@ extension class TFields {
         ) match {
         | None() -> void
         | Some(idx1) ->
-          TType::isSub(subst.clone(), tenv, idx1.valueTypeGet, f2.get) match {
+          TType::isSub(subst.clone(), tenv, idx1.get, f2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsIndexField(err, idx1, f2, fields1, fields2)
           | STOk() ->
-            TType::isSub(subst.clone(), tenv, f2.set, idx1.valueTypeSet) match {
+            TType::isSub(subst.clone(), tenv, f2.set, idx1.set) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsIndexField(err, idx1, f2, fields1, fields2)
             | STOk() -> void

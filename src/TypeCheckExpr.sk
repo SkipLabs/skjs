@@ -439,13 +439,8 @@ extension class TypeChecker {
                 fields.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
-              ty = if (isLValue) index.valueTypeSet else {
-                TType::unionUndefined(
-                  tcenv.subst,
-                  this,
-                  index.valueTypeGet,
-                  pos,
-                )
+              ty = if (isLValue) index.set else {
+                TType::unionUndefined(tcenv.subst, this, index.get, pos)
               };
               !result = TType::union(tcenv.subst, this, result, ty)
             }
@@ -759,8 +754,39 @@ extension class TypeChecker {
                 for (spreadSymbolField in spreadTFields.symbolFields) {
                   symbolFields![spreadSymbolField.name] = spreadSymbolField
                 };
-                for (spreadIndex in spreadTFields.indexArray()) {
-                  indexes.push(spreadIndex)
+                for ((keyKind, spreadIdx) in spreadTFields.indexEntries()) {
+                  keyKinds = if (keyKind == "string") {
+                    IndexKeyKinds{
+                      hasString => true,
+                      hasNumber => false,
+                      hasSymbol => false,
+                    }
+                  } else if (keyKind == "number") {
+                    IndexKeyKinds{
+                      hasString => false,
+                      hasNumber => true,
+                      hasSymbol => false,
+                    }
+                  } else {
+                    IndexKeyKinds{
+                      hasString => false,
+                      hasNumber => false,
+                      hasSymbol => true,
+                    }
+                  };
+                  indexes.push(
+                    TIndexField::create{
+                      pos => spreadIdx.pos,
+                      keyName => spreadIdx.name.value,
+                      keyKinds,
+                      isReadonly => if (spreadIdx.set.isBottom()) {
+                        Some(spreadIdx.pos)
+                      } else {
+                        None()
+                      },
+                      valueType => spreadIdx.get,
+                    },
+                  )
                 };
                 spreadTFields.call.each(_ ->
                   tcenv.notSupported(
@@ -1830,7 +1856,7 @@ extension class TypeChecker {
               fieldType.pos,
               "Invalid assignment",
               fieldType,
-              indexField.valueTypeSet,
+              indexField.set,
             )
           | None() ->
             !needsGrowth = true;
@@ -1916,7 +1942,7 @@ extension class TypeChecker {
           fieldType.pos,
           "Invalid assignment",
           fieldType,
-          indexField.valueTypeSet,
+          indexField.set,
         )
       | None() ->
         tcenv.error(

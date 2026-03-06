@@ -96,24 +96,16 @@ extension class TField {
   }
 }
 
-extension class TIndexField {
-  static fun union(
+extension class TField {
+  static fun unionIndex(
     subst: mutable Subst,
     tenv: TEnv,
-    x: TIndexField,
-    y: TIndexField,
-  ): ?TIndexField {
-    valueTypeGet = TType::union(subst, tenv, x.valueTypeGet, y.valueTypeGet);
-    valueTypeSet = TType::inter(subst, tenv, x.valueTypeSet, y.valueTypeSet);
-    Some(
-      TIndexField{
-        pos => x.pos,
-        keyName => x.keyName,
-        keyKinds => x.keyKinds,
-        valueTypeGet,
-        valueTypeSet,
-      },
-    )
+    x: TField,
+    y: TField,
+  ): ?TField {
+    get = TType::union(subst, tenv, x.get, y.get);
+    set = TType::inter(subst, tenv, x.set, y.set);
+    Some(TField{pos => x.pos, name => x.name, isOptional => false, get, set})
   }
 }
 
@@ -290,16 +282,16 @@ extension class TFields {
   static fun unionOptIndex(
     subst: mutable Subst,
     tenv: TEnv,
-    idx1: ?TIndexField,
-    idx2: ?TIndexField,
-  ): ?TIndexField {
+    idx1: ?TField,
+    idx2: ?TField,
+  ): ?TField {
     (idx1, idx2) match {
     | (None(), None()) -> None()
     | (Some(index), None())
     | (None(), Some(index)) ->
       Some(index)
     | (Some(index1), Some(index2)) ->
-      TIndexField::union(subst, tenv, index1, index2)
+      TField::unionIndex(subst, tenv, index1, index2)
     }
   }
 

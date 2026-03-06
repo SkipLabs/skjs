@@ -231,24 +231,16 @@ extension class TField {
   }
 }
 
-extension class TIndexField {
-  static fun inter(
+extension class TField {
+  static fun interIndex(
     subst: mutable Subst,
     tenv: TEnv,
-    x: TIndexField,
-    y: TIndexField,
-  ): ?TIndexField {
-    valueTypeGet = TType::inter(subst, tenv, x.valueTypeGet, y.valueTypeGet);
-    valueTypeSet = TType::union(subst, tenv, x.valueTypeSet, y.valueTypeSet);
-    Some(
-      TIndexField{
-        pos => x.pos,
-        keyName => x.keyName,
-        keyKinds => x.keyKinds,
-        valueTypeGet,
-        valueTypeSet,
-      },
-    )
+    x: TField,
+    y: TField,
+  ): ?TField {
+    get = TType::inter(subst, tenv, x.get, y.get);
+    set = TType::union(subst, tenv, x.set, y.set);
+    Some(TField{pos => x.pos, name => x.name, isOptional => false, get, set})
   }
 }
 
@@ -430,16 +422,16 @@ extension class TFields {
   static fun interOptIndex(
     subst: mutable Subst,
     tenv: TEnv,
-    idx1: ?TIndexField,
-    idx2: ?TIndexField,
-  ): ?TIndexField {
+    idx1: ?TField,
+    idx2: ?TField,
+  ): ?TField {
     (idx1, idx2) match {
     | (None(), None()) -> None()
     | (Some(index), None())
     | (None(), Some(index)) ->
       Some(index)
     | (Some(index1), Some(index2)) ->
-      TIndexField::inter(subst, tenv, index1, index2)
+      TField::interIndex(subst, tenv, index1, index2)
     }
   }
 }

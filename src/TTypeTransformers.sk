@@ -131,11 +131,7 @@ mutable base class ApplyType(
     env: this::Env,
     fields: TFields,
   ): TFields {
-    fields.map(
-      x -> this.field(env, x),
-      x -> this.indexField(env, x),
-      x -> this.funs(env, x),
-    )
+    fields.map(x -> this.field(env, x), x -> this.funs(env, x))
   }
 
   overridable deferred mutable fun field(
@@ -143,13 +139,6 @@ mutable base class ApplyType(
     field: TField,
   ): TField {
     field.mapType(ty -> this.type(env, ty))
-  }
-
-  overridable deferred mutable fun indexField(
-    env: this::Env,
-    indexField: TIndexField,
-  ): TIndexField {
-    indexField.mapTypes(ty -> this.type(env, ty))
   }
 
   overridable deferred mutable fun tuple(
