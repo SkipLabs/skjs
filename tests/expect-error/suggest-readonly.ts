@@ -1,7 +1,8 @@
 // Tests that subtyping errors involving setter checks suggest making
 // the field readonly, in various subtyping positions.
-
-function test(): void {}
+// NOTE: expect-error annotations only validate the primary error
+// message, not sub-messages. The "readonly" hint is a sub-message
+// and cannot be asserted here; verify with check-file-in-docker.
 
 // Return type position
 function testReturn(x: { x: number }): { x: number | string } {
