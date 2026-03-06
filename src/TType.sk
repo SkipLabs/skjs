@@ -1010,7 +1010,11 @@ class TField private {
 }
 
 /* Which primitive key kinds an index signature accepts */
-class IndexKeyKinds{hasString: Bool, hasNumber: Bool, hasSymbol: Bool} {
+class IndexKeyKinds{
+  hasString: Bool = false,
+  hasNumber: Bool = false,
+  hasSymbol: Bool = false,
+} {
   /* Returns None() if all three values are false */
   static fun create{
     hasString: Bool,

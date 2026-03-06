@@ -756,23 +756,11 @@ extension class TypeChecker {
                 };
                 for ((keyKind, spreadIdx) in spreadTFields.indexEntries()) {
                   keyKinds = if (keyKind == "string") {
-                    IndexKeyKinds{
-                      hasString => true,
-                      hasNumber => false,
-                      hasSymbol => false,
-                    }
+                    IndexKeyKinds{hasString => true}
                   } else if (keyKind == "number") {
-                    IndexKeyKinds{
-                      hasString => false,
-                      hasNumber => true,
-                      hasSymbol => false,
-                    }
+                    IndexKeyKinds{hasNumber => true}
                   } else {
-                    IndexKeyKinds{
-                      hasString => false,
-                      hasNumber => false,
-                      hasSymbol => true,
-                    }
+                    IndexKeyKinds{hasSymbol => true}
                   };
                   indexes.push(
                     TIndexField{
