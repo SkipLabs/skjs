@@ -80,7 +80,6 @@ base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
     _pos1: PosRange,
     _pos2: PosRange,
     _detail: STErrorDetail,
-    _suggestReadonly: ?PosRange,
   ): List<(PosRange, String)>;
 }
 
@@ -92,7 +91,6 @@ base class STErrorOnSType extends STErrorOnSTypeBase<SType> {
     _pos1: PosRange,
     pos2: PosRange,
     _detail: STErrorDetail,
-    _suggestReadonly: ?PosRange,
   ): List<(PosRange, String)>
   | STTooManySType(sType1, sTypes2, suggestReadonly) ->
     sTypes2.singleElt() match {
@@ -123,7 +121,6 @@ base class STErrorOnTPrimValue(
     _pos1: PosRange,
     _pos2: PosRange,
     _detail: STErrorDetail,
-    _suggestReadonly: ?PosRange,
   ): List<(PosRange, String)>
   | STPrimValueFullSpecific(prim1, prim2, suggestReadonly) ->
     List[
@@ -162,7 +159,6 @@ base class STErrorOnTTuple(
     _pos1: PosRange,
     _pos2: PosRange,
     detail: STErrorDetail,
-    _suggestReadonly: ?PosRange,
   ): List<(PosRange, String)>
   | STTooManyTTuple(tup1, tup2, suggestReadonly) ->
     List[
@@ -208,7 +204,6 @@ base class STErrorOnTPromise(
     _pos1: PosRange,
     _pos2: PosRange,
     detail: STErrorDetail,
-    _suggestReadonly: ?PosRange,
   ): List<(PosRange, String)>
   | STRecPromise(err, p1, p2, _) ->
     msgs = err.toError(detail.decreaseIntermediate());
@@ -233,7 +228,6 @@ base class STErrorOnObject(
     _pos1: PosRange,
     _pos2: PosRange,
     detail: STErrorDetail,
-    _suggestReadonly: ?PosRange,
   ): List<(PosRange, String)>
   | STRecObject(errs, fields1, o1, o2, _) ->
     msgs = List::createFromItems(errs)
@@ -286,16 +280,11 @@ base class STErrorOnSTypes(
     pos2: PosRange,
     detail: STErrorDetail,
   ): List<(PosRange, String)>
-  | STRecSTypes(err, sTypes1, sTypes2, suggestReadonly) ->
+  | STRecSTypes(err, sTypes1, sTypes2, _) ->
     !pos1 = sTypes1.singleElt().map(sType -> sType.pos).default(pos1);
     !pos2 = sTypes2.singleElt().map(sType -> sType.pos).default(pos2);
     if (sTypes1.size() != 1 || sTypes2.size() != 1) {
-      msgs = err.toError(
-        pos1,
-        pos2,
-        detail.decreaseIntermediate(),
-        suggestReadonly,
-      );
+      msgs = err.toError(pos1, pos2, detail.decreaseIntermediate());
       if (detail.maxIntermediateDepth > 0) {
         List.Cons(
           (pos1, `Type ${sTypes1}`),
@@ -305,7 +294,7 @@ base class STErrorOnSTypes(
         msgs
       }
     } else {
-      err.toError(pos1, pos2, detail, suggestReadonly)
+      err.toError(pos1, pos2, detail)
     }
 }
 
