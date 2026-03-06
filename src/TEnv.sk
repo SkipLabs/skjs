@@ -795,7 +795,7 @@ base class TEnv{
         },
       )
     | TAObject(fields) ->
-      tFields = this.createTFields(tcenvb, fields, pos, isTopLevelConst);
+      tFields = this.createTFields(tcenvb, fields, isTopLevelConst);
       TType::single(TObject::createSingleBranch(tFields, pos))
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
@@ -1276,7 +1276,6 @@ base class TEnv{
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
-    _pos: PosRange,
     isTopLevelConst: Bool = false,
   ): TFields {
     fieldsMap = mutable Map[];
