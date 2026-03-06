@@ -1106,7 +1106,7 @@ extension class TType {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
       subst.restore(savedSubst);
-      STRecType(err, u1, u2, tenv.inSetterSubtyping)
+      STRecType(err, u1, u2)
     }
   }
 }
