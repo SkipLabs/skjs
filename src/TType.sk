@@ -1159,6 +1159,27 @@ class TFields private {
       tenv,
       indexes,
     );
+    // Validate number index value type is subtype of string index value type.
+    // TS only checks the getter direction (covariant).
+    (stringIndex, numberIndex) match {
+    | (Some(strIdx), Some(numIdx)) ->
+      subst = Subst::mcreate(tcenvb);
+      TType::isSub(subst, tenv, numIdx.get, strIdx.get) match {
+      | STOk() -> void
+      | STErrorOnTType _ ->
+        tcenvb.error(
+          Array[
+            (
+              numIdx.pos,
+              `'number' index type '${
+                numIdx.get
+              }' is not assignable to 'string' index type '${strIdx.get}'`,
+            ),
+          ],
+        )
+      }
+    | _ -> void
+    };
     // Validate named fields against string index
     stringIndex.each(strIdx -> {
       for (field in fields.values()) {
@@ -1201,27 +1222,6 @@ class TFields private {
         }
       }
     });
-    // Validate number index value type is subtype of string index value type.
-    // TS only checks the getter direction (covariant).
-    (stringIndex, numberIndex) match {
-    | (Some(strIdx), Some(numIdx)) ->
-      subst = Subst::mcreate(tcenvb);
-      TType::isSub(subst, tenv, numIdx.get, strIdx.get) match {
-      | STOk() -> void
-      | STErrorOnTType _ ->
-        tcenvb.error(
-          Array[
-            (
-              numIdx.pos,
-              `'number' index type '${
-                numIdx.get
-              }' is not assignable to 'string' index type '${strIdx.get}'`,
-            ),
-          ],
-        )
-      }
-    | _ -> void
-    };
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
         fields.values().collect(Array).sortedBy(x ~> x.name).values(),
