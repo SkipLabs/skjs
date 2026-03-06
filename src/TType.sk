@@ -1010,11 +1010,7 @@ class TField private {
 }
 
 /* Which primitive key kinds an index signature accepts */
-class IndexKeyKinds{
-  hasString: Bool,
-  hasNumber: Bool,
-  hasSymbol: Bool,
-} uses XXHashable, Orderable {
+class IndexKeyKinds{hasString: Bool, hasNumber: Bool, hasSymbol: Bool} {
   /* Returns None() if all three values are false */
   static fun create{
     hasString: Bool,
@@ -1036,7 +1032,7 @@ class TIndexField{
   keyKinds: IndexKeyKinds,
   isReadonly: ?PosRange = None(),
   valueType: TType,
-} uses XXHashable, Orderable {
+} {
   // Split indexes by key kind and merge duplicates per kind.
   // Returns at most 3 non-overlapping indexes (string, number, symbol).
   // When multiple indexes cover the same kind, their value types are merged:
