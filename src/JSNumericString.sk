@@ -13,111 +13,107 @@
 module SKJS;
 
 fun isJSNumericString(s: String): Bool {
-  chars = s.chars().toArray();
-  len = chars.size();
-  if (len == 0) return false;
-
-  i = 0;
+  it = s.getIter();
   hasSign = false;
 
   // Optional negative sign
-  if (chars[i] == '-') {
+  if (it.current() == Some('-')) {
     !hasSign = true;
-    !i = i + 1;
-    if (i >= len) return false;
+    _ = it.next();
   };
 
-  // First digit
-  firstDigit = chars[i];
-  if (firstDigit < '0' || firstDigit > '9') return false;
-  !i = i + 1;
+  // Must have at least one digit
+  firstDigit = it.current();
+  if (!isDigitChar(firstDigit)) return false;
+  _ = it.next();
 
-  if (firstDigit == '0') {
+  if (firstDigit == Some('0')) {
     // After '0': end, or '.' for decimal. No exponent (0e+N is not canonical).
-    if (i == len) {
+    if (it.current().isNone()) {
       // "-0" is not canonical (String(Number("-0")) = "0")
       return !hasSign
     };
-    if (chars[i] == '.') {
-      !i = i + 1;
-      isJSNumericDecimalPart(chars, i, false)
+    if (it.current() == Some('.')) {
+      _ = it.next();
+      isJSNumericDecimalPartIter(it, false)
     } else {
       false
     }
   } else {
     // firstDigit is '1'-'9'. Count integer digits.
     intDigits = 1;
-    while (i < len && chars[i] >= '0' && chars[i] <= '9') {
+    while (isDigitChar(it.current())) {
       !intDigits = intDigits + 1;
-      !i = i + 1;
+      _ = it.next();
     };
-    if (i == len) return true; // plain integer
-    if (chars[i] == '.') {
-      !i = i + 1;
-      // Exponent only valid after single-digit integer part
-      isJSNumericDecimalPart(chars, i, intDigits == 1)
-    } else if (chars[i] == 'e' && intDigits == 1) {
-      !i = i + 1;
-      isJSNumericExponentPart(chars, i)
+    if (it.current().isNone()) return true; // plain integer
+    if (it.current() == Some('.')) {
+      _ = it.next();
+      isJSNumericDecimalPartIter(it, intDigits == 1)
+    } else if (it.current() == Some('e') && intDigits == 1) {
+      _ = it.next();
+      isJSNumericExponentPartIter(it)
     } else {
       false
     }
   }
 }
 
+fun isDigitChar(c: ?Char): Bool {
+  c match {
+  | Some(ch) -> ch >= '0' && ch <= '9'
+  | _ -> false
+  }
+}
+
 // Parse decimal digits after '.'. No trailing zeros allowed.
-// allowExponent: whether 'e' can follow (only for single-digit integer part).
-fun isJSNumericDecimalPart(
-  chars: Array<Char>,
-  startIdx: Int,
+fun isJSNumericDecimalPartIter(
+  it: mutable String.StringIterator,
   allowExponent: Bool,
 ): Bool {
-  len = chars.size();
-  i = startIdx;
-
   // Must have at least one digit after '.'
-  if (i >= len || chars[i] < '0' || chars[i] > '9') return false;
+  if (!isDigitChar(it.current())) return false;
 
   // Consume digits, track last digit
-  lastDigit = chars[i];
-  !i = i + 1;
-  while (i < len && chars[i] >= '0' && chars[i] <= '9') {
-    !lastDigit = chars[i];
-    !i = i + 1;
+  lastDigit = it.current().fromSome();
+  _ = it.next();
+  while (isDigitChar(it.current())) {
+    !lastDigit = it.current().fromSome();
+    _ = it.next();
   };
 
   // No trailing zeros in decimal part
   if (lastDigit == '0') return false;
 
-  if (i == len) return true;
-  if (chars[i] == 'e' && allowExponent) {
-    isJSNumericExponentPart(chars, i + 1)
+  if (it.current().isNone()) return true;
+  if (it.current() == Some('e') && allowExponent) {
+    _ = it.next();
+    isJSNumericExponentPartIter(it)
   } else {
     false
   }
 }
 
 // Parse exponent part after 'e'. Requires +/- sign, non-zero exponent.
-fun isJSNumericExponentPart(chars: Array<Char>, startIdx: Int): Bool {
-  len = chars.size();
-  i = startIdx;
-
+fun isJSNumericExponentPartIter(it: mutable String.StringIterator): Bool {
   // Must have + or - sign
-  if (i >= len) return false;
-  if (chars[i] != '+' && chars[i] != '-') return false;
-  !i = i + 1;
+  c = it.current();
+  if (c != Some('+') && c != Some('-')) return false;
+  _ = it.next();
 
   // First exponent digit must be 1-9 (no leading zeros, no zero exponent)
-  if (i >= len) return false;
-  if (chars[i] < '1' || chars[i] > '9') return false;
-  !i = i + 1;
+  first = it.current();
+  if (first.isNone()) return false;
+  ch = first.fromSome();
+  if (ch < '1' || ch > '9') return false;
+  _ = it.next();
 
   // Remaining exponent digits
-  while (i < len && chars[i] >= '0' && chars[i] <= '9') {
-    !i = i + 1;
+  while (isDigitChar(it.current())) {
+    _ = it.next();
   };
 
-  i == len
+  it.current().isNone()
 }
 
 module end;
