@@ -104,5 +104,49 @@ function extendWithSpread(x: { f1: number; f2: string }): {
   f2: number;
   f3: string;
 } {
+  // @skjs-expect-error Invalid return type
+  return { f0: true, ...x, f2: 0, f3: "a" };
+}
+
+// Spread soundness: fields after the last spread are safe
+function spreadFieldsAfterSpread(): { a: string } {
+  const obj: {} = { a: 1 };
+  return { ...obj, a: "" };
+}
+
+// Spread soundness: spread with no fields before it
+function spreadNoFieldsBefore(): { a: number; b: string } {
+  const obj: { a: number } = { a: 1 };
+  return { ...obj, b: "hello" };
+}
+
+// Spread soundness: fields before spread are forgotten
+function spreadFieldsBeforeSpread(): { a: string } {
+  const obj: {} = { a: 1 };
+  // @skjs-expect-error Invalid return type
+  return { a: "", ...obj };
+}
+
+// Spread soundness: multiple spreads, only last spread + trailing fields safe
+function spreadMultipleSpreads(): {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+} {
+  const obj1: { b: number } = { b: 1 };
+  const obj2: { c: number } = { c: 2 };
+  // @skjs-expect-error Invalid return type
+  return { a: 0, ...obj1, ...obj2, d: 0 };
+}
+
+// Spread soundness: fields before spread with typed spread are forgotten
+function spreadFieldsBeforeTypedSpread(x: { f1: number; f2: string }): {
+  f0: boolean;
+  f1: number;
+  f2: number;
+  f3: string;
+} {
+  // @skjs-expect-error Invalid return type
   return { f0: true, ...x, f2: 0, f3: "a" };
 }

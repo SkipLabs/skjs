@@ -276,6 +276,29 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Class inheritance**: A subclass cannot make a mutable parent field readonly; a subclass can make a readonly parent field mutable
 - **Verified by**: `tests/expect-error/pr437-set-check-unsound.ts`, `tests/expect-error/readonly-inter-union.ts`, `tests/expect-error/readonly-inheritance.ts`
 
+### 28. Object Spread Soundness (Stricter than TypeScript)
+- **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
+- **TypeScript difference**: TypeScript keeps pre-spread fields in the result type, which is unsound — the spread value could overwrite them at runtime (structural subtyping allows extra properties)
+- **SKJS enforcement**: When encountering a spread, all previously accumulated fields are cleared. Only the spread's own fields plus fields explicitly set after the last spread appear in the result type
+- **Examples**:
+  ```typescript
+  const obj: {} = { a: 1 };
+
+  // Error: 'a' is before the spread, so it's forgotten
+  const bad: { a: string } = { a: "", ...obj };
+
+  // OK: 'a' is after the spread, so it's kept
+  const good: { a: string } = { ...obj, a: "" };
+
+  // Only fields from the last spread + trailing fields survive
+  function extend(x: { f1: number }): { f0: boolean; f1: number; f2: string } {
+    // Error: f0 is before the spread, forgotten from result type
+    return { f0: true, ...x, f2: "a" };
+  }
+  ```
+- **Workaround**: Move fields after the spread, or restructure the object literal so that fields you need in the result type appear after the last spread
+- **Verified by**: `tests/expect-error/objects.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
