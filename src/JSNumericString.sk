@@ -1,0 +1,119 @@
+/***************************************************************************/
+/* Check if a string is a canonical JS Number.toString() representation.  */
+/*                                                                         */
+/* In JavaScript, all property keys are strings. A string is considered   */
+/* numeric (matching [x: number] index signatures) if it round-trips      */
+/* through Number(): String(Number(s)) === s && isFinite(Number(s)).      */
+/*                                                                         */
+/* Canonical forms:                                                        */
+/*   Plain:      [-](0|[1-9][0-9]*)(.[0-9]*[1-9])?                       */
+/*   Scientific: [-][1-9](.[0-9]*[1-9])?e[+-][1-9][0-9]*                 */
+/***************************************************************************/
+
+module SKJS;
+
+fun isJSNumericString(s: String): Bool {
+  it = s.getIter();
+  hasSign = false;
+
+  // Optional negative sign
+  if (it.current() == Some('-')) {
+    !hasSign = true;
+    _ = it.next();
+  };
+
+  // Must have at least one digit
+  firstDigit = it.current();
+  if (!isDigitChar(firstDigit)) return false;
+  _ = it.next();
+
+  if (firstDigit == Some('0')) {
+    // After '0': end, or '.' for decimal. No exponent (0e+N is not canonical).
+    if (it.current().isNone()) {
+      // "-0" is not canonical (String(Number("-0")) = "0")
+      return !hasSign
+    };
+    if (it.current() == Some('.')) {
+      _ = it.next();
+      isJSNumericDecimalPartIter(it, false)
+    } else {
+      false
+    }
+  } else {
+    // firstDigit is '1'-'9'. Count integer digits.
+    intDigits = 1;
+    while (isDigitChar(it.current())) {
+      !intDigits = intDigits + 1;
+      _ = it.next();
+    };
+    if (it.current().isNone()) return true; // plain integer
+    if (it.current() == Some('.')) {
+      _ = it.next();
+      isJSNumericDecimalPartIter(it, intDigits == 1)
+    } else if (it.current() == Some('e') && intDigits == 1) {
+      _ = it.next();
+      isJSNumericExponentPartIter(it)
+    } else {
+      false
+    }
+  }
+}
+
+fun isDigitChar(c: ?Char): Bool {
+  c match {
+  | Some(ch) -> ch >= '0' && ch <= '9'
+  | _ -> false
+  }
+}
+
+// Parse decimal digits after '.'. No trailing zeros allowed.
+fun isJSNumericDecimalPartIter(
+  it: mutable String.StringIterator,
+  allowExponent: Bool,
+): Bool {
+  // Must have at least one digit after '.'
+  if (!isDigitChar(it.current())) return false;
+
+  // Consume digits, track last digit
+  lastDigit = it.current().fromSome();
+  _ = it.next();
+  while (isDigitChar(it.current())) {
+    !lastDigit = it.current().fromSome();
+    _ = it.next();
+  };
+
+  // No trailing zeros in decimal part
+  if (lastDigit == '0') return false;
+
+  if (it.current().isNone()) return true;
+  if (it.current() == Some('e') && allowExponent) {
+    _ = it.next();
+    isJSNumericExponentPartIter(it)
+  } else {
+    false
+  }
+}
+
+// Parse exponent part after 'e'. Requires +/- sign, non-zero exponent.
+fun isJSNumericExponentPartIter(it: mutable String.StringIterator): Bool {
+  // Must have + or - sign
+  c = it.current();
+  if (c != Some('+') && c != Some('-')) return false;
+  _ = it.next();
+
+  // First exponent digit must be 1-9 (no leading zeros, no zero exponent)
+  first = it.current();
+  if (first.isNone()) return false;
+  ch = first.fromSome();
+  if (ch < '1' || ch > '9') return false;
+  _ = it.next();
+
+  // Remaining exponent digits
+  while (isDigitChar(it.current())) {
+    _ = it.next();
+  };
+
+  it.current().isNone()
+}
+
+module end;

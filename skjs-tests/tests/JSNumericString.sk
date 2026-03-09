@@ -1,0 +1,124 @@
+module SKJSTests;
+
+@test
+fun testJSNumericStringValidIntegers(): void {
+  SKTest.expectTrue(SKJS.isJSNumericString("0"));
+  SKTest.expectTrue(SKJS.isJSNumericString("1"));
+  SKTest.expectTrue(SKJS.isJSNumericString("9"));
+  SKTest.expectTrue(SKJS.isJSNumericString("42"));
+  SKTest.expectTrue(SKJS.isJSNumericString("100"));
+  SKTest.expectTrue(SKJS.isJSNumericString("999999"));
+}
+
+@test
+fun testJSNumericStringValidNegativeIntegers(): void {
+  SKTest.expectTrue(SKJS.isJSNumericString("-1"));
+  SKTest.expectTrue(SKJS.isJSNumericString("-42"));
+  SKTest.expectTrue(SKJS.isJSNumericString("-999"));
+}
+
+@test
+fun testJSNumericStringValidDecimals(): void {
+  SKTest.expectTrue(SKJS.isJSNumericString("1.5"));
+  SKTest.expectTrue(SKJS.isJSNumericString("0.5"));
+  SKTest.expectTrue(SKJS.isJSNumericString("0.1"));
+  SKTest.expectTrue(SKJS.isJSNumericString("42.123"));
+  SKTest.expectTrue(SKJS.isJSNumericString("0.123456789"));
+}
+
+@test
+fun testJSNumericStringValidNegativeDecimals(): void {
+  SKTest.expectTrue(SKJS.isJSNumericString("-0.5"));
+  SKTest.expectTrue(SKJS.isJSNumericString("-1.5"));
+  SKTest.expectTrue(SKJS.isJSNumericString("-42.7"));
+}
+
+@test
+fun testJSNumericStringValidScientific(): void {
+  // Large numbers: single-digit integer + e+N
+  SKTest.expectTrue(SKJS.isJSNumericString("1e+21"));
+  SKTest.expectTrue(SKJS.isJSNumericString("5e+100"));
+  SKTest.expectTrue(SKJS.isJSNumericString("9e+308"));
+  // Small numbers: single-digit integer + e-N
+  SKTest.expectTrue(SKJS.isJSNumericString("1e-7"));
+  SKTest.expectTrue(SKJS.isJSNumericString("5e-7"));
+  SKTest.expectTrue(SKJS.isJSNumericString("9e-324"));
+  // With decimal in significand
+  SKTest.expectTrue(SKJS.isJSNumericString("1.5e+22"));
+  SKTest.expectTrue(SKJS.isJSNumericString("3.14e-8"));
+  // Negative scientific
+  SKTest.expectTrue(SKJS.isJSNumericString("-1e+21"));
+  SKTest.expectTrue(SKJS.isJSNumericString("-5e-7"));
+  SKTest.expectTrue(SKJS.isJSNumericString("-1.5e+22"));
+}
+
+@test
+fun testJSNumericStringRejectsEmpty(): void {
+  SKTest.expectFalse(SKJS.isJSNumericString(""));
+}
+
+@test
+fun testJSNumericStringRejectsNegativeZero(): void {
+  SKTest.expectFalse(SKJS.isJSNumericString("-0"));
+}
+
+@test
+fun testJSNumericStringRejectsLeadingZeros(): void {
+  SKTest.expectFalse(SKJS.isJSNumericString("01"));
+  SKTest.expectFalse(SKJS.isJSNumericString("007"));
+  SKTest.expectFalse(SKJS.isJSNumericString("00"));
+}
+
+@test
+fun testJSNumericStringRejectsTrailingDecimalZeros(): void {
+  SKTest.expectFalse(SKJS.isJSNumericString("1.0"));
+  SKTest.expectFalse(SKJS.isJSNumericString("1.50"));
+  SKTest.expectFalse(SKJS.isJSNumericString("0.10"));
+  SKTest.expectFalse(SKJS.isJSNumericString("42.00"));
+}
+
+@test
+fun testJSNumericStringRejectsMalformedDecimals(): void {
+  SKTest.expectFalse(SKJS.isJSNumericString(".5"));
+  SKTest.expectFalse(SKJS.isJSNumericString("1."));
+  SKTest.expectFalse(SKJS.isJSNumericString("."));
+  SKTest.expectFalse(SKJS.isJSNumericString("-.5"));
+}
+
+@test
+fun testJSNumericStringRejectsNonCanonicalScientific(): void {
+  // Missing sign on exponent
+  SKTest.expectFalse(SKJS.isJSNumericString("1e3"));
+  // Zero exponent (not canonical)
+  SKTest.expectFalse(SKJS.isJSNumericString("1e+0"));
+  SKTest.expectFalse(SKJS.isJSNumericString("1e-0"));
+  // Leading zero in exponent
+  SKTest.expectFalse(SKJS.isJSNumericString("1e+01"));
+  // Multi-digit integer with exponent (not canonical)
+  SKTest.expectFalse(SKJS.isJSNumericString("42e+5"));
+  SKTest.expectFalse(SKJS.isJSNumericString("10e+1"));
+  // Zero with exponent
+  SKTest.expectFalse(SKJS.isJSNumericString("0e+1"));
+  // Trailing zero in significand decimal
+  SKTest.expectFalse(SKJS.isJSNumericString("1.50e+21"));
+}
+
+@test
+fun testJSNumericStringRejectsSpecialValues(): void {
+  SKTest.expectFalse(SKJS.isJSNumericString("NaN"));
+  SKTest.expectFalse(SKJS.isJSNumericString("Infinity"));
+  SKTest.expectFalse(SKJS.isJSNumericString("-Infinity"));
+}
+
+@test
+fun testJSNumericStringRejectsNonNumeric(): void {
+  SKTest.expectFalse(SKJS.isJSNumericString("foo"));
+  SKTest.expectFalse(SKJS.isJSNumericString("abc"));
+  SKTest.expectFalse(SKJS.isJSNumericString(" 1"));
+  SKTest.expectFalse(SKJS.isJSNumericString("1 "));
+  SKTest.expectFalse(SKJS.isJSNumericString("1x"));
+  SKTest.expectFalse(SKJS.isJSNumericString("-"));
+  SKTest.expectFalse(SKJS.isJSNumericString("+1"));
+}
+
+module end;

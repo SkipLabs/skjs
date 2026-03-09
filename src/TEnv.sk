@@ -1390,7 +1390,7 @@ base class TEnv{
     | None() -> void
     | strLits @ Some _ ->
       for (str in strings) {
-        str.toIntOption().each(_intStr -> !numbers = numbers.set(str))
+        if (isJSNumericString(str)) !numbers = numbers.set(str)
       };
       litsType = PrimLiterals::ofSet(numbers, pos) match {
       | None() -> TType::single(TPrimValue(TString(), strLits, pos))
