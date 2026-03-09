@@ -201,3 +201,108 @@ function testCombinedWithTypeof(
     return [];
   }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Negative refinement combined with other checks
+///////////////////////////////////////////////////////////////////////////////
+
+function testNegativeWithNull(x: Array<number> | Foo | null): Foo {
+  if (x === null) {
+    return { a: "", b: 0 };
+  } else if (Array.isArray(x)) {
+    return { a: "", b: 0 };
+  } else {
+    // TODO: x should be refined to Foo (null and Array eliminated)
+    // @skjs-expect-error Invalid return type
+    return x;
+  }
+}
+
+function testMultipleArrays(x: Array<string> | Array<number> | Foo): Foo {
+  if (Array.isArray(x)) {
+    return { a: "", b: 0 };
+  } else {
+    // TODO: Both Array<string> and Array<number> should be eliminated
+    // @skjs-expect-error Invalid return type
+    return x;
+  }
+}
+
+// After negative refinement, Foo fields should be accessible
+function testFieldAccessAfterNegative(x: Array<number> | Foo): string {
+  if (Array.isArray(x)) {
+    return "";
+  }
+  // TODO: x should be refined to Foo
+  // @skjs-expect-error Unbound field: a
+  return x.a;
+}
+
+// After negative refinement via early return
+function testNegativeEarlyReturn(x: Array<number> | Foo): Foo {
+  if (Array.isArray(x)) {
+    return { a: "", b: 0 };
+  }
+  // TODO: x should be refined to Foo
+  // @skjs-expect-error Invalid return type
+  return x;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Tuple types interact correctly with Array.isArray
+///////////////////////////////////////////////////////////////////////////////
+
+// Tuples survive positive Array.isArray branch
+function testTuplePositive(x: [number, string] | number): [number, string] {
+  if (Array.isArray(x)) {
+    return x;
+  } else {
+    return [0, ""];
+  }
+}
+
+// Tuples removed in negative Array.isArray branch
+function testTupleNegative(x: [number, string] | number): number {
+  if (!Array.isArray(x)) {
+    // TODO: tuple should be eliminated, x is number
+    // @skjs-expect-error Invalid return type
+    return x;
+  }
+  return 0;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Object literal expressions have isArray=false and cannot fake Array.isArray
+///////////////////////////////////////////////////////////////////////////////
+
+// TODO: An object literal expression that structurally matches Array should be
+// eliminated in the positive Array.isArray branch because it has isArray=false.
+function testObjectLiteralEliminatedInPositiveBranch(): number {
+  const x = { length: 42, push(elt: number): void {} };
+  if (Array.isArray(x)) {
+    return x.length;
+  } else {
+    return x.length;
+  }
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Class instances have isArray=false and are eliminated by Array.isArray
+///////////////////////////////////////////////////////////////////////////////
+
+class NumHolder<T> {
+  value: T;
+  constructor(v: T) {
+    this.value = v;
+  }
+}
+
+// TODO: Class instances should have isArray=false and be eliminated in the
+// positive Array.isArray branch.
+function testClassInstanceNotArray(x: NumHolder<number>): number {
+  if (Array.isArray(x)) {
+    return x.value;
+  } else {
+    return x.value;
+  }
+}
