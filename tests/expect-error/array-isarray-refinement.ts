@@ -289,10 +289,11 @@ class NumHolder<T> {
   }
 }
 
-// TODO: Class instances should have isArray=false and be eliminated in the
+// Class instances have isArray=false and are eliminated in the
 // positive Array.isArray branch.
 function testClassInstanceNotArray(x: NumHolder<number>): number {
   if (Array.isArray(x)) {
+    // @skjs-expect-error Invalid access for type never
     return x.value;
   } else {
     return x.value;
