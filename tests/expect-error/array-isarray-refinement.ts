@@ -266,11 +266,12 @@ function testTupleNegative(x: [number, string] | number): number {
 // Object literal expressions have isArray=false and cannot fake Array.isArray
 ///////////////////////////////////////////////////////////////////////////////
 
-// TODO: An object literal expression that structurally matches Array should be
-// eliminated in the positive Array.isArray branch because it has isArray=false.
+// An object literal expression that structurally matches Array is eliminated
+// in the positive Array.isArray branch because it has isArray=false.
 function testObjectLiteralEliminatedInPositiveBranch(): number {
   const x = { length: 42, push(elt: number): void {} };
   if (Array.isArray(x)) {
+    // @skjs-expect-error Invalid access for type never
     return x.length;
   } else {
     return x.length;

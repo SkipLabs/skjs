@@ -1114,21 +1114,23 @@ class TFields private {
     indexes: readonly Vector<TIndexField> = Vector[],
     new: ?TFuns = None(),
     call: ?TFuns = None(),
+    isArray: ?Bool = None(),
   }: TFields {
     brandKey = FieldNameString(kArrayBrandFieldName);
-    isArray = fields.maybeGet(brandKey).flatMap(brandField -> {
+    !isArray = fields.maybeGet(brandKey) match {
+    | Some(brandField) ->
       !fields = fields.filter((k, _) -> k != brandKey);
-      isArray = brandField.get.getSingleConstant() match {
+      brandField.get.getSingleConstant() match {
       | Some(TPrimValue(TBool(), Some(lits), _)) ->
         lits.singleElt() match {
         | Some(PrimLiteral(_pos, "true")) -> Some(true)
         | Some(PrimLiteral(_pos, "false")) -> Some(false)
-        | _ -> None()
+        | _ -> isArray
         }
-      | _ -> None()
-      };
-      isArray
-    });
+      | _ -> isArray
+      }
+    | None() -> isArray
+    };
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
         fields.values().collect(Array).sortedBy(x ~> x.name).values(),
