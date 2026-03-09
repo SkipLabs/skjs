@@ -19,8 +19,7 @@ extension class Parser {
 
   readonly fun getNumber(tok: Token): String {
     if (tok.kind is TKNumber()) {
-      // TODO: check and normalize somehow
-      this.lex.getTokenRawStringContent(tok)
+      normalizeJSNumber(this.lex.getTokenRawStringContent(tok))
     } else {
       this.error(this.lex.posStart(tok), ExpectedToken(TKNumber()))
     }
