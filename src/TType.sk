@@ -1076,6 +1076,8 @@ value class FieldNameString(
   }
 }
 
+const kArrayBrandFieldName: String = "__SKJS_isArray";
+
 class TFields private {
   fields: InternalKeyedArrayMap<
     FieldNameString,
@@ -1099,6 +1101,8 @@ class TFields private {
   */
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
+  // None = unknown, Some(true) = is array, Some(false) = not array
+  isArray: ?Bool = None(),
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
@@ -1111,9 +1115,24 @@ class TFields private {
     new: ?TFuns = None(),
     call: ?TFuns = None(),
   }: TFields {
+    brandKey = FieldNameString(kArrayBrandFieldName);
+    (isArray, filteredFields) = fields.maybeGet(brandKey) match {
+    | Some(brandField) ->
+      value: ?Bool = brandField.get.getSingleConstant() match {
+      | Some(TPrimValue(TBool(), Some(lits), _)) if (lits.size() == 1) ->
+        lits.first().val match {
+        | "true" -> Some(true)
+        | "false" -> Some(false)
+        | _ -> None()
+        }
+      | _ -> None()
+      };
+      (value, fields.filter((k, _) -> k != brandKey))
+    | None() -> (None(), fields)
+    };
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
-        fields.values().collect(Array).sortedBy(x ~> x.name).values(),
+        filteredFields.values().collect(Array).sortedBy(x ~> x.name).values(),
       ),
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
@@ -1121,6 +1140,7 @@ class TFields private {
       indexes => TIndexField::mergeByKeyType(indexes),
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
+      isArray,
     }
   }
 

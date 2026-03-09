@@ -222,6 +222,17 @@ extension class TypeChecker {
         | _ -> None()
         };
       this.setLocalFilterMap(tcenv, local, None(), filterMap)
+    } else {
+      this.setLocalFilterMap(tcenv, local, None(), stype ->
+        stype match {
+        | TTuple _ -> None()
+        | tObj @ TObject _ ->
+          tObj.mapOpt(tFields -> {
+            if (tFields.isArray == Some(true)) None() else Some(tFields)
+          })
+        | _ -> Some(stype)
+        }
+      )
     }
   }
 

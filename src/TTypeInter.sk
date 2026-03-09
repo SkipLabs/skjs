@@ -412,7 +412,16 @@ extension class TFields {
       | Some(f) -> Some((opt1 && opt2, f))
       }
     };
-    Some(TFields{fields, symbolFields, indexes, call, new})
+    isArray = (fields1.isArray, fields2.isArray) match {
+    | (Some(a), Some(b)) ->
+      if (a != b) return None();
+      Some(a)
+    | (Some(a), None())
+    | (None(), Some(a)) ->
+      Some(a)
+    | (None(), None()) -> None()
+    };
+    Some(TFields{fields, symbolFields, indexes, call, new, isArray})
   }
 }
 

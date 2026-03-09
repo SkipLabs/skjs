@@ -239,7 +239,7 @@ function testNarrowToArray(x: Array<number> | Obj): Array<unknown> {
 // After negative Array.isArray, should be narrowed to object
 function testNarrowToObject(x: Array<number> | Obj): Obj {
   if (!Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
+    // x is refined to Obj
     return x;
   }
   return { name: "", value: 0 };

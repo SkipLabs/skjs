@@ -27,8 +27,7 @@ function testNegativeArrayRefinement(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
     return { a: "", b: 0 };
   } else {
-    // TODO: x is now refined to Foo
-    // @skjs-expect-error Invalid return type
+    // x is refined to Foo
     return x;
   }
 }
@@ -81,8 +80,7 @@ function testMultipleUnionElseBranch(
     // @skjs-expect-error Invalid return type
     return x;
   } else {
-    // x is now refined to Foo | string (no array)
-    // @skjs-expect-error Invalid return type
+    // x is refined to Foo | string (no array)
     return x;
   }
 }
@@ -138,8 +136,7 @@ function testWrongTypeInArrayBranch(x: Array<number> | Foo): Foo {
     // @ts-expect-error Invalid return type
     return x;
   } else {
-    // FIXME: x should be refined to Foo here, but SKJS doesn't narrow the else branch of Array.isArray()
-    // @skjs-expect-error Invalid return type
+    // x is refined to Foo
     return x;
   }
 }
@@ -149,8 +146,7 @@ function testElseBranchRefined(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
     return { a: "", b: 0 };
   } else {
-    // x is now refined to Foo
-    // @skjs-expect-error Invalid return type
+    // x is refined to Foo
     return x;
   }
 }
@@ -161,7 +157,7 @@ function testObjectPropOnArray(x: Array<number> | Foo): unknown {
     // @skjs-expect-error Invalid index key
     return x.a;
   } else {
-    // @skjs-expect-error Unbound field: a
+    // x is refined to Foo, x.a is valid
     return x.a;
   }
 }
@@ -212,8 +208,7 @@ function testNegativeWithNull(x: Array<number> | Foo | null): Foo {
   } else if (Array.isArray(x)) {
     return { a: "", b: 0 };
   } else {
-    // TODO: x should be refined to Foo (null and Array eliminated)
-    // @skjs-expect-error Invalid return type
+    // x is refined to Foo (null and Array eliminated)
     return x;
   }
 }
@@ -222,8 +217,7 @@ function testMultipleArrays(x: Array<string> | Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
     return { a: "", b: 0 };
   } else {
-    // TODO: Both Array<string> and Array<number> should be eliminated
-    // @skjs-expect-error Invalid return type
+    // Both Array<string> and Array<number> are eliminated
     return x;
   }
 }
@@ -233,8 +227,7 @@ function testFieldAccessAfterNegative(x: Array<number> | Foo): string {
   if (Array.isArray(x)) {
     return "";
   }
-  // TODO: x should be refined to Foo
-  // @skjs-expect-error Unbound field: a
+  // x is refined to Foo
   return x.a;
 }
 
@@ -243,8 +236,7 @@ function testNegativeEarlyReturn(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
     return { a: "", b: 0 };
   }
-  // TODO: x should be refined to Foo
-  // @skjs-expect-error Invalid return type
+  // x is refined to Foo
   return x;
 }
 
@@ -264,8 +256,7 @@ function testTuplePositive(x: [number, string] | number): [number, string] {
 // Tuples removed in negative Array.isArray branch
 function testTupleNegative(x: [number, string] | number): number {
   if (!Array.isArray(x)) {
-    // TODO: tuple should be eliminated, x is number
-    // @skjs-expect-error Invalid return type
+    // tuple is eliminated, x is number
     return x;
   }
   return 0;
