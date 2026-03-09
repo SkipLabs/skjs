@@ -730,6 +730,12 @@ extension class TypeChecker {
           )
 
         | FDSpread(spreadExpr) ->
+          // Sound spread typing: forget all fields before the spread,
+          // since the spread value could have any property at runtime
+          // (structural subtyping allows extra properties).
+          fields.clear();
+          symbolFields.clear();
+          indexes.clear();
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
           spreadTy.getSTypes(tcenv.subst, this, Covariant()) match {
           | None() ->
