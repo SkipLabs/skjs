@@ -106,3 +106,46 @@ function extendWithSpread(x: { f1: number; f2: string }): {
 } {
   return { f0: true, ...x, f2: 0, f3: "a" };
 }
+
+// Spread soundness: fields after the last spread are safe
+function spreadFieldsAfterSpread(): { a: string } {
+  const obj: {} = { a: 1 };
+  return { ...obj, a: "" };
+}
+
+// Spread soundness: spread with no fields before it
+function spreadNoFieldsBefore(): { a: number; b: string } {
+  const obj: { a: number } = { a: 1 };
+  return { ...obj, b: "hello" };
+}
+
+// Spread soundness: fields before spread are unsound
+// FIXME: SKJS accepts this but obj could overwrite a at runtime
+function spreadFieldsBeforeSpread(): { a: string } {
+  const obj: {} = { a: 1 };
+  return { a: "", ...obj };
+}
+
+// Spread soundness: multiple spreads, only last spread + trailing fields safe
+// FIXME: SKJS accepts this but a and b could be overwritten
+function spreadMultipleSpreads(): {
+  a: number;
+  b: number;
+  c: number;
+  d: number;
+} {
+  const obj1: { b: number } = { b: 1 };
+  const obj2: { c: number } = { c: 2 };
+  return { a: 0, ...obj1, ...obj2, d: 0 };
+}
+
+// Spread soundness: fields before spread with typed spread are unsound
+// FIXME: SKJS accepts this but x could overwrite f0 at runtime
+function spreadFieldsBeforeTypedSpread(x: { f1: number; f2: string }): {
+  f0: boolean;
+  f1: number;
+  f2: number;
+  f3: string;
+} {
+  return { f0: true, ...x, f2: 0, f3: "a" };
+}
