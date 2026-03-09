@@ -4,13 +4,21 @@
 /* isJSNumericString: checks canonical Number.toString() form.             */
 /* normalizeJSNumber: converts any JS numeric literal to canonical form.   */
 /*                                                                         */
-/* In JavaScript, all property keys are strings. A string is considered   */
-/* numeric (matching [x: number] index signatures) if it round-trips      */
-/* through Number(): String(Number(s)) === s && isFinite(Number(s)).      */
+/* Implements Number::toString (ECMA-262 §6.1.6.1.20):                     */
+/*   Given significant digits s of length k and decimal position n:        */
+/*   - k ≤ n ≤ 21:  integer with trailing zeros                           */
+/*   - 0 < n < k:   decimal point inside digits                           */
+/*   - -5 ≤ n ≤ 0:  "0." + leading zeros + digits                        */
+/*   - otherwise:    scientific notation d.ddd...e±N                       */
 /*                                                                         */
-/* Canonical forms:                                                        */
+/* Canonical forms (regex):                                                */
 /*   Plain:      [-](0|[1-9][0-9]*)(.[0-9]*[1-9])?                       */
 /*   Scientific: [-][1-9](.[0-9]*[1-9])?e[+-][1-9][0-9]*                 */
+/*                                                                         */
+/* Limitations / TODO:                                                      */
+/*   - Hex/binary/octal values > 2^53 use exact Int arithmetic instead of  */
+/*     IEEE 754 double rounding, so may differ from JS for huge literals   */
+/*   - BigInt normalization is out of scope (handled separately)           */
 /***************************************************************************/
 
 module SKJS;
