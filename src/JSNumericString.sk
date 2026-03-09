@@ -1,5 +1,8 @@
 /***************************************************************************/
-/* Check if a string is a canonical JS Number.toString() representation.  */
+/* JS numeric string utilities.                                            */
+/*                                                                         */
+/* isJSNumericString: checks canonical Number.toString() form.             */
+/* normalizeJSNumber: converts any JS numeric literal to canonical form.   */
 /*                                                                         */
 /* In JavaScript, all property keys are strings. A string is considered   */
 /* numeric (matching [x: number] index signatures) if it round-trips      */
@@ -127,6 +130,204 @@ fun isJSNumericExponentPartIter(it: mutable String.StringIterator): Bool {
   };
 
   it.current().isNone()
+}
+
+// Normalize a JS numeric literal to its canonical String(Number(x)) form.
+// Handles underscores (1_000), hex (0x10), binary (0b10), trailing
+// decimal zeros (1.0), and non-canonical scientific notation (1e3).
+fun normalizeJSNumber(raw: String): String {
+  s0 = raw.replace("_", "");
+
+  // Handle negative sign
+  (negative, s) = if (s0.startsWith("-")) {
+    (true, s0.stripPrefix("-"))
+  } else {
+    (false, s0)
+  };
+
+  result = normalizeUnsignedJSNumber(s);
+  if (negative && result != "0") "-" + result else result
+}
+
+fun normalizeUnsignedJSNumber(s: String): String {
+  if (s.length() >= 2) {
+    c0 = s.chars().toArray()[0];
+    c1 = s.chars().toArray()[1];
+    if (c0 == '0' && (c1 == 'x' || c1 == 'X')) {
+      hex = s.sub(s.getIter().forward(2), s.length() - 2);
+      return parseHexInt(hex).toString()
+    };
+    if (c0 == '0' && (c1 == 'b' || c1 == 'B')) {
+      bin = s.sub(s.getIter().forward(2), s.length() - 2);
+      return parseBinaryInt(bin).toString()
+    };
+    if (c0 == '0' && (c1 == 'o' || c1 == 'O')) {
+      oct = s.sub(s.getIter().forward(2), s.length() - 2);
+      return parseOctalInt(oct).toString()
+    };
+  };
+  normalizeDecimalJS(s)
+}
+
+fun parseHexInt(s: String): Int {
+  result = 0;
+  for (c in s) {
+    digit = if (c >= '0' && c <= '9') {
+      c.code() - '0'.code()
+    } else if (c >= 'a' && c <= 'f') {
+      c.code() - 'a'.code() + 10
+    } else {
+      c.code() - 'A'.code() + 10
+    };
+    !result = result * 16 + digit;
+  };
+  result
+}
+
+fun parseBinaryInt(s: String): Int {
+  result = 0;
+  for (c in s) {
+    !result = result * 2 + (if (c == '1') 1 else 0);
+  };
+  result
+}
+
+fun parseOctalInt(s: String): Int {
+  result = 0;
+  for (c in s) {
+    !result = result * 8 + (c.code() - '0'.code());
+  };
+  result
+}
+
+// Parse a possibly-signed integer from a string (for exponent parts).
+fun parseIntStr(s: String): Int {
+  it = s.getIter();
+  sign = 1;
+  if (it.current() == Some('+')) {
+    _ = it.next();
+  } else if (it.current() == Some('-')) {
+    !sign = -1;
+    _ = it.next();
+  };
+  result = 0;
+  while (isDigitChar(it.current())) {
+    !result = result * 10 + (it.current().fromSome().code() - '0'.code());
+    _ = it.next();
+  };
+  sign * result
+}
+
+// Normalize a decimal literal (no hex/binary prefix, no underscores).
+// Input may contain '.', 'e'/'E'.
+fun normalizeDecimalJS(s: String): String {
+  chars = s.chars().toArray();
+
+  // Find 'e'/'E'
+  ePos = {
+    r = -1;
+    for (i in Range(0, chars.size())) {
+      if (chars[i] == 'e' || chars[i] == 'E') !r = i;
+    };
+    r
+  };
+
+  mantissaEnd = if (ePos >= 0) ePos else chars.size();
+  rawExp = if (ePos >= 0) {
+    parseIntStr(s.sub(s.getIter().forward(ePos + 1), s.length() - ePos - 1))
+  } else {
+    0
+  };
+
+  // Find '.' in mantissa
+  dotPos = {
+    r = -1;
+    for (i in Range(0, mantissaEnd)) {
+      if (chars[i] == '.') !r = i;
+    };
+    r
+  };
+
+  // Collect all digits (skipping dot), track fractional length
+  allDigits = mutable Vector[];
+  fracLen = 0;
+  for (i in Range(0, mantissaEnd)) {
+    if (i != dotPos) {
+      allDigits.push(chars[i]);
+      if (dotPos >= 0 && i > dotPos) !fracLen = fracLen + 1;
+    };
+  };
+
+  exp = rawExp - fracLen;
+  sz = allDigits.size();
+
+  // Strip leading zeros (keep at least one)
+  lead = 0;
+  while (lead < sz - 1 && allDigits[lead] == '0') {
+    !lead = lead + 1;
+  };
+
+  // Strip trailing zeros, adjust exponent
+  trail = sz;
+  while (trail > lead + 1 && allDigits[trail - 1] == '0') {
+    !trail = trail - 1;
+    !exp = exp + 1;
+  };
+
+  // Check for zero
+  if (trail - lead == 1 && allDigits[lead] == '0') return "0";
+
+  // Build significant digits string
+  sigChars = mutable Vector[];
+  for (i in Range(lead, trail)) {
+    sigChars.push(allDigits[i]);
+  };
+  sigDigits = String::fromChars(sigChars.toArray());
+  sigLen = sigDigits.length();
+
+  // n = number of digits before decimal point in canonical form
+  n = sigLen + exp;
+
+  formatCanonicalJSNumber(sigDigits, sigLen, n)
+}
+
+// Format a number from its significant digits and decimal point position.
+// n = number of digits before the decimal point.
+fun formatCanonicalJSNumber(digits: String, len: Int, n: Int): String {
+  if (n > 21 || n <= -6) {
+    // Scientific notation: d.ddd...e[+|-]N
+    sciExp = n - 1;
+    expSign = if (sciExp > 0) "+" else "-";
+    absExp = if (sciExp >= 0) sciExp else -sciExp;
+    if (len == 1) {
+      digits + "e" + expSign + absExp.toString()
+    } else {
+      first = digits.sub(digits.getIter(), 1);
+      rest = digits.sub(digits.getIter().forward(1), len - 1);
+      first + "." + rest + "e" + expSign + absExp.toString()
+    }
+  } else if (n >= len) {
+    // Plain integer: digits followed by zeros
+    digits + nZeroChars(n - len)
+  } else if (n > 0) {
+    // Decimal point inside digits
+    before = digits.sub(digits.getIter(), n);
+    after = digits.sub(digits.getIter().forward(n), len - n);
+    before + "." + after
+  } else if (n == 0) {
+    "0." + digits
+  } else {
+    // n < 0: leading zeros after decimal point
+    "0." + nZeroChars(-n) + digits
+  }
+}
+
+fun nZeroChars(count: Int): String {
+  result = "";
+  for (_ in Range(0, count)) {
+    !result = result + "0";
+  };
+  result
 }
 
 module end;

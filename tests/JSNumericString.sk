@@ -147,4 +147,138 @@ fun testJSNumberKeyNameRejectsNonNumeric(): void {
   SKTest.expectFalse(SKJS.isJSNumberKeyName("01"));
 }
 
+// --- normalizeJSNumber tests ---
+
+@test
+fun testNormalizeAlreadyCanonical(): void {
+  // Already canonical values pass through unchanged
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("0"));
+  SKTest.expectEq("1", SKJS.normalizeJSNumber("1"));
+  SKTest.expectEq("42", SKJS.normalizeJSNumber("42"));
+  SKTest.expectEq("1000", SKJS.normalizeJSNumber("1000"));
+  SKTest.expectEq("1.5", SKJS.normalizeJSNumber("1.5"));
+  SKTest.expectEq("0.1", SKJS.normalizeJSNumber("0.1"));
+  SKTest.expectEq("-1", SKJS.normalizeJSNumber("-1"));
+  SKTest.expectEq("-0.5", SKJS.normalizeJSNumber("-0.5"));
+}
+
+@test
+fun testNormalizeUnderscores(): void {
+  SKTest.expectEq("1000", SKJS.normalizeJSNumber("1_000"));
+  SKTest.expectEq("1000000", SKJS.normalizeJSNumber("1_000_000"));
+  SKTest.expectEq("100", SKJS.normalizeJSNumber("1_0_0"));
+}
+
+@test
+fun testNormalizeHex(): void {
+  SKTest.expectEq("16", SKJS.normalizeJSNumber("0x10"));
+  SKTest.expectEq("255", SKJS.normalizeJSNumber("0xFF"));
+  SKTest.expectEq("255", SKJS.normalizeJSNumber("0XFF"));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("0x0"));
+  SKTest.expectEq("1", SKJS.normalizeJSNumber("0x1"));
+  SKTest.expectEq("10", SKJS.normalizeJSNumber("0xA"));
+  SKTest.expectEq("256", SKJS.normalizeJSNumber("0x100"));
+}
+
+@test
+fun testNormalizeBinary(): void {
+  SKTest.expectEq("2", SKJS.normalizeJSNumber("0b10"));
+  SKTest.expectEq("5", SKJS.normalizeJSNumber("0b101"));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("0b0"));
+  SKTest.expectEq("1", SKJS.normalizeJSNumber("0b1"));
+  SKTest.expectEq("255", SKJS.normalizeJSNumber("0b11111111"));
+  SKTest.expectEq("7", SKJS.normalizeJSNumber("0B111"));
+}
+
+@test
+fun testNormalizeOctal(): void {
+  SKTest.expectEq("15", SKJS.normalizeJSNumber("0o17"));
+  SKTest.expectEq("8", SKJS.normalizeJSNumber("0o10"));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("0o0"));
+  SKTest.expectEq("1", SKJS.normalizeJSNumber("0o1"));
+  SKTest.expectEq("511", SKJS.normalizeJSNumber("0o777"));
+  SKTest.expectEq("7", SKJS.normalizeJSNumber("0O7"));
+}
+
+@test
+fun testNormalizeTrailingDecimalZeros(): void {
+  SKTest.expectEq("1", SKJS.normalizeJSNumber("1.0"));
+  SKTest.expectEq("1.5", SKJS.normalizeJSNumber("1.50"));
+  SKTest.expectEq("42", SKJS.normalizeJSNumber("42.00"));
+  SKTest.expectEq("0.1", SKJS.normalizeJSNumber("0.10"));
+  SKTest.expectEq("100", SKJS.normalizeJSNumber("100.0"));
+}
+
+@test
+fun testNormalizeScientific(): void {
+  // Scientific to plain integer
+  SKTest.expectEq("1000", SKJS.normalizeJSNumber("1e3"));
+  SKTest.expectEq("1000", SKJS.normalizeJSNumber("1E3"));
+  SKTest.expectEq("1000", SKJS.normalizeJSNumber("1e+3"));
+  SKTest.expectEq("500", SKJS.normalizeJSNumber("5e2"));
+  SKTest.expectEq("15000", SKJS.normalizeJSNumber("1.5e4"));
+  // Scientific to plain decimal
+  SKTest.expectEq("0.001", SKJS.normalizeJSNumber("1e-3"));
+  SKTest.expectEq("0.015", SKJS.normalizeJSNumber("1.5e-2"));
+  SKTest.expectEq("0.000001", SKJS.normalizeJSNumber("1e-6"));
+}
+
+@test
+fun testNormalizeScientificToScientific(): void {
+  // Large exponents stay scientific (n > 21)
+  SKTest.expectEq("1e+21", SKJS.normalizeJSNumber("1e21"));
+  SKTest.expectEq("1e+21", SKJS.normalizeJSNumber("1e+21"));
+  SKTest.expectEq("1.5e+22", SKJS.normalizeJSNumber("1.5e22"));
+  SKTest.expectEq("1.5e+22", SKJS.normalizeJSNumber("1.5e+22"));
+  // Small exponents stay scientific (n <= -6)
+  SKTest.expectEq("1e-7", SKJS.normalizeJSNumber("1e-7"));
+  SKTest.expectEq("1.5e-8", SKJS.normalizeJSNumber("1.5e-8"));
+}
+
+@test
+fun testNormalizeNegative(): void {
+  SKTest.expectEq("-1", SKJS.normalizeJSNumber("-1.0"));
+  SKTest.expectEq("-1000", SKJS.normalizeJSNumber("-1e3"));
+  SKTest.expectEq("-16", SKJS.normalizeJSNumber("-0x10"));
+  SKTest.expectEq("-2", SKJS.normalizeJSNumber("-0b10"));
+  SKTest.expectEq("-15", SKJS.normalizeJSNumber("-0o17"));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("-0"));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("-0.0"));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("-0x0"));
+  SKTest.expectEq("0", SKJS.normalizeJSNumber("-0o0"));
+}
+
+@test
+fun testNormalizeResultIsCanonical(): void {
+  // Every normalized result should pass isJSNumericString
+  inputs = Array[
+    "0",
+    "1",
+    "42",
+    "1_000",
+    "0x10",
+    "0xFF",
+    "0b10",
+    "0o17",
+    "1.0",
+    "1.50",
+    "1e3",
+    "1e+3",
+    "1e-3",
+    "1e21",
+    "1e-7",
+    "1.5e4",
+    "1.5e22",
+    "-1",
+    "-1.0",
+    "-0x10",
+    "-0b10",
+    "-0o17",
+  ];
+  for (input in inputs) {
+    result = SKJS.normalizeJSNumber(input);
+    SKTest.expectTrue(SKJS.isJSNumericString(result));
+  };
+}
+
 module end;
