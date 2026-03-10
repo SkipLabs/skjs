@@ -1,9 +1,7 @@
-import { array } from "./skjs.js";
-
 // program to remove duplicate values from an array
 
 function getUnique<T>(arr: Array<T>): Array<T> {
-  let uniqueArr = array();
+  let uniqueArr = [];
 
   // loop through array
   for (let i = 0; i < arr.length; i++) {
@@ -17,4 +15,4 @@ function getUnique<T>(arr: Array<T>): Array<T> {
 
 // calling the function
 // passing array argument
-console.log(getUnique(array(1, 2, 3, 2, 3)));
+console.log(getUnique([1, 2, 3, 2, 3]));
