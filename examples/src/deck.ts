@@ -1,11 +1,9 @@
-import { array } from "./skjs.js";
-
 // program to shuffle the deck of cards
 
 function main(): void {
   // declare card elements
-  const suits = array("Spades", "Diamonds", "Club", "Heart");
-  const values = array(
+  const suits = ["Spades", "Diamonds", "Club", "Heart"];
+  const values = [
     "Ace",
     "2",
     "3",
@@ -19,10 +17,10 @@ function main(): void {
     "Jack",
     "Queen",
     "King",
-  );
+  ];
 
   // empty array to contain cards
-  let deck = array();
+  let deck = [];
 
   // create a deck of cards
   for (let i = 0; i < suits.length; i++) {

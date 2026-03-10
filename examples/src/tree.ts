@@ -1,5 +1,3 @@
-import { array } from "./skjs.js";
-
 type node = {
   item: number;
   height: number;

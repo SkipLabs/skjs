@@ -1,5 +1,3 @@
-import { array } from "./skjs.js";
-
 type list<T> = null | { head: T; tail: list<T> };
 
 function reverse<T>(l: list<T>): list<T> {
