@@ -198,9 +198,13 @@ fun updateCallgraphAnnotations(
     result.push(rawLines[i])
   };
 
-  updatedContents = result.toArray().join("\n");
-  FileSystem.writeTextFile(fileName.toString(), updatedContents);
-  print_string(`Updated: ${fileName}\n`)
+  if (
+    result.size() != rawLines.size() ||
+    !result.items().all(p -> p.i1 == rawLines[p.i0])
+  ) {
+    FileSystem.writeTextFile(fileName.toString(), "\n".join(result));
+    print_string(`Updated: ${fileName}\n`)
+  }
 }
 
 // Main validator for callgraph tests.
