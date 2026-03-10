@@ -198,12 +198,11 @@ fun updateCallgraphAnnotations(
     result.push(rawLines[i])
   };
 
-  resultArray = result.toArray();
   if (
-    resultArray.size() != rawLines.size() ||
-    !resultArray.items().all(p -> p.i1 == rawLines[p.i0])
+    result.size() != rawLines.size() ||
+    !result.items().all(p -> p.i1 == rawLines[p.i0])
   ) {
-    FileSystem.writeTextFile(fileName.toString(), "\n".join(resultArray));
+    FileSystem.writeTextFile(fileName.toString(), "\n".join(result));
     print_string(`Updated: ${fileName}\n`)
   }
 }
