@@ -259,7 +259,7 @@ export class StatsMonthlyResource implements Resource<GraphCollections> {
   }
 }
 
-class Service implements SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+class Service implements SkipService<Inputs, InputCollections, GraphCollections> {
   public readonly inputs: Inputs;
   public readonly resources: Resources;
 
@@ -278,6 +278,6 @@ class Service implements SkipService<Inputs, InputCollections, GraphCollections,
   }
 }
 
-export function service(): SkipService<Inputs, InputCollections, GraphCollections, Resources> {
+export function service(): SkipService<Inputs, InputCollections, GraphCollections> {
   return new Service();
 }

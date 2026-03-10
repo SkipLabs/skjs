@@ -158,7 +158,6 @@ export interface SkipService<
   InputDefs extends NamedInputDefinitions,
   Inputs extends NamedEagerCollections,
   ResourceInputs extends NamedEagerCollections,
-  Resources,
 > {
   readonly inputs: InputDefs;
 

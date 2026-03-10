@@ -34,9 +34,8 @@ function adaptService<
   InputDefs extends NamedInputDefinitions,
   Inputs extends NamedEagerCollections,
   ResourceInputs extends NamedEagerCollections,
-  Resources,
 >(
-  safeService: SkipService<InputDefs, Inputs, ResourceInputs, Resources>,
+  safeService: SkipService<InputDefs, Inputs, ResourceInputs>,
 ): RuntimeSkipService<never, never> {
   // Extract initial data from service.inputs
   const initialData: Record<string, Entry<Json, Json>[]> = {};
@@ -73,9 +72,8 @@ export function runService<
   InputDefs extends NamedInputDefinitions,
   Inputs extends NamedEagerCollections,
   ResourceInputs extends NamedEagerCollections,
-  Resources,
 >(
-  service: SkipService<InputDefs, Inputs, ResourceInputs, Resources>,
+  service: SkipService<InputDefs, Inputs, ResourceInputs>,
   options?: ServiceOptions,
 ): Promise<SkipServer> {
   const adapted = adaptService(service);
