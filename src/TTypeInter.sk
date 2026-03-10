@@ -238,7 +238,8 @@ extension class TField {
   ): TField {
     get = TType::inter(subst, tenv, x.get, y.get);
     set = TType::union(subst, tenv, x.set, y.set);
-    TField{pos => x.pos, name => x.name, isOptional => x.isOptional, get, set}
+    isOptional = x.isOptional && y.isOptional;
+    TField{pos => x.pos, name => x.name, isOptional, get, set}
   }
 }
 
