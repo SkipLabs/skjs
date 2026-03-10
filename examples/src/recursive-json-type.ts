@@ -29,3 +29,28 @@ function testJsonUsage(): void {
   foo<string>("hello");
   foo<{ name: string; age: number }>({ name: "John", age: 30 });
 }
+
+// Readonly version
+
+type roJson = { readonly [key: string]: roJson } | number | string;
+
+function rofoo<T extends roJson>(x: T): void {}
+
+rofoo<{ x: number; y: string }>({ x: 0, y: "" });
+
+function testroJsonUsage(): void {
+  let num: roJson = 42;
+  let str: roJson = "hello";
+
+  let nested: roJson = {
+    name: "test",
+    value: 123,
+    nested: {
+      inner: "value",
+    },
+  };
+
+  rofoo<number>(42);
+  rofoo<string>("hello");
+  rofoo<{ name: string; age: number }>({ name: "John", age: 30 });
+}
