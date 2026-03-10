@@ -1011,17 +1011,19 @@ extension class TType {
       inst match {
       | tvar @ TVar(_, _, constraints) ->
         substCopy = subst.save();
-        if (
-          constraints.all(cstr -> TType::isSub(subst, tenv, u1, cstr) is STOk())
-        ) {
+        constraintsOk = constraints.all(cstr ->
+          TType::isSub(subst, tenv, u1, cstr) is STOk()
+        );
+        // Restore after constraint check to undo any side-effects
+        // (e.g., widening of tvars in u1), then re-check and grow.
+        subst.restore(substCopy);
+        if (constraintsOk) {
           subst.grow(
             tenv,
             tvar,
             TType::diff(subst, tenv, u1, u2),
             Contravariant(),
           )
-        } else {
-          subst.restore(substCopy)
         }
       | TInter(tys) ->
         // When inter(T, U) produced TInter(T, U) because both TVars
@@ -1033,19 +1035,17 @@ extension class TType {
           ty.getSingleVar() match {
           | Some(tvar @ TVar(_, _, constraints)) if (subst.isUnbound(tvar)) ->
             substCopy = subst.save();
-            if (
-              constraints.all(cstr ->
-                TType::isSub(subst, tenv, u1, cstr) is STOk()
-              )
-            ) {
+            constraintsOk = constraints.all(cstr ->
+              TType::isSub(subst, tenv, u1, cstr) is STOk()
+            );
+            subst.restore(substCopy);
+            if (constraintsOk) {
               subst.grow(
                 tenv,
                 tvar,
                 TType::diff(subst, tenv, u1, u2),
                 Contravariant(),
               )
-            } else {
-              subst.restore(substCopy)
             }
           | _ -> void
           }
@@ -1057,12 +1057,12 @@ extension class TType {
       inst match {
       | tvar @ TVar(_, _, constraints) ->
         substCopy = subst.save();
-        if (
-          constraints.all(cstr -> TType::isSub(subst, tenv, u2, cstr) is STOk())
-        ) {
+        constraintsOk = constraints.all(cstr ->
+          TType::isSub(subst, tenv, u2, cstr) is STOk()
+        );
+        subst.restore(substCopy);
+        if (constraintsOk) {
           subst.grow(tenv, tvar, TType::diff(subst, tenv, u2, u1), Covariant())
-        } else {
-          subst.restore(substCopy)
         }
       | _ -> void
       }
