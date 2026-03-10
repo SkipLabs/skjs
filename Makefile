@@ -76,11 +76,10 @@ check-all-projects-in-docker:
 	@projects=$$(find generated-examples -maxdepth 1 -mindepth 1 -type d | sort); \
 	echo "Checking $$(echo "$$projects" | wc -l | tr -d ' ') projects..."; \
 	echo "$$projects" | xargs -P 8 -n 1 sh -c ' \
-		result=$$(make -s check-project-in-docker PROJECT="$$1" 2>&1); \
-		if echo "$$result" | grep -q "error:"; then \
-			echo "FAIL: $$1"; echo "$$result" | grep "error:"; \
-		else \
+		if result=$$(make -s check-project-in-docker PROJECT="$$1" 2>&1); then \
 			echo "OK: $$(basename $$1)"; \
+		else \
+			echo "FAIL: $$1"; echo "$$result" | tail -5; \
 		fi' _
 
 .PHONY: clean

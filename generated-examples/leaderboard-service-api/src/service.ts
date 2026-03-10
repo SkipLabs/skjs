@@ -211,25 +211,25 @@ class LeaderboardEntryMapper
   implements
     Mapper<
       number,
-      [HighScore, string],
+      HighScoreUserKey,
       LeaderboardEntryId,
       LeaderboardEntryValue
     >
 {
   mapEntry(
     _key: number,
-    values: Values<[HighScore, string]>,
+    values: Values<HighScoreUserKey>,
     _context: Context
   ): Iterable<[LeaderboardEntryId, LeaderboardEntryValue]> {
-    const allUserScores = values.toArray().sort((a: [HighScore, string], b: [HighScore, string]) => b[0] - a[0]);
+    const allUserScores = values.toArray().sort((a: HighScoreUserKey, b: HighScoreUserKey) => b.highScore - a.highScore);
     const result: Array<[string, LeaderboardEntryValue]> = Array.of();
     for (const [index, userScore] of allUserScores.entries()) {
       const leaderboardEntry: LeaderboardEntryValue = {
-        userId: userScore[1],
-        highScore: userScore[0],
+        userId: userScore.userId,
+        highScore: userScore.highScore,
         rank: index + 1,
       };
-      result.push([userScore[1], leaderboardEntry]);
+      result.push([userScore.userId, leaderboardEntry]);
     }
     return result;
   }

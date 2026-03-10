@@ -162,7 +162,7 @@ export interface SkipService<
 > {
   readonly inputs: InputDefs;
 
-  readonly resources: Resources;
+  readonly resources: {readonly [name: string]: ResourceClass<ResourceInputs, never>};
 
   createGraph(inputs: Inputs, context: Context): ResourceInputs;
 }
