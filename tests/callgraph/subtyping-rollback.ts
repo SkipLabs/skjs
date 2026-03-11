@@ -3,12 +3,11 @@
 // TObject::isSub tries each branch. Matching BranchA: method 'a'
 // succeeds (Obj.a <: BranchA.a, recording subtypingEdge) but field
 // 'b' fails (number vs string), so subst is restored and BranchB is
-// tried instead. Without save/restore for subtypingEdges, the edge
-// from the failed BranchA attempt persists as a spurious dependency.
+// tried instead. The subtypingEdge from the failed BranchA attempt
+// is rolled back along with the rest of the subst state.
 //
-// SPURIOUS: method:Obj.a reaches fn:useBranchA through the spurious
-// subtypingEdge method:Obj.a → method:BranchA.a from the failed
-// BranchA check.
+// method:Obj.a should NOT reach fn:useBranchA — it only reaches
+// method:BranchB.a (the matching branch).
 
 interface BranchA {
   a(x: number): void;
@@ -32,7 +31,7 @@ function useBranchA(t: BranchA): void {
 function useMixed(t: BranchA | BranchB): void {}
 
 // @skjs-callgraph-closure
-// method:Obj.a: fn:useBranchA
+// method:Obj.a: method:BranchB.a
 function test(): void {
   const obj = new Obj();
   useMixed(obj);

@@ -237,7 +237,8 @@ extension class TypeChecker {
         | ClassFieldTypeMethod _ -> void
         }
       }
-    }
+    };
+    subst.flushSubtypingEdges()
   }
 
   fun constructor(

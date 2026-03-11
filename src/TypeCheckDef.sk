@@ -41,10 +41,12 @@ extension class TypeChecker {
       subst = Subst::mcreate(tcenvl);
       tcenv = TCEnv::mcreate(subst, CGNode::toplevel(def.pos.fileName));
       ty = this.expr(tcenv, e, true);
-      this.checkIsVoid(tcenv, e.pos, ty)
+      this.checkIsVoid(tcenv, e.pos, ty);
+      subst.flushSubtypingEdges()
     | fd @ TopLevelFunDef _ ->
       subst = Subst::mcreate(tcenvl);
-      this.funDef(subst, None(), fd, fd.cgNode.fromSome())
+      this.funDef(subst, None(), fd, fd.cgNode.fromSome());
+      subst.flushSubtypingEdges()
     | Declare(VarDefs(_, varDefs))
     | ExportDeclare(VarDefs(_, varDefs)) ->
       for (varDef in varDefs) {
@@ -122,7 +124,8 @@ extension class TypeChecker {
         )
       }
     | _ -> void
-    }
+    };
+    subst.flushSubtypingEdges()
   }
 
   fun varDefs(
@@ -172,6 +175,7 @@ extension class TypeChecker {
     !this = this.addTParams(subst, typeDef.tdefParams);
 
     tcenvl.collectErrors(() -> _ = this.normalize(subst, typeDef.body));
+    subst.flushSubtypingEdges()
   }
 
   static fun checkTypeParams(
