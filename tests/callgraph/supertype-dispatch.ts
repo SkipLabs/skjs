@@ -1,10 +1,7 @@
 // @skjs-callgraph
 // fn:makeSpeak: method:Animal.speak
 // fn:test: fn:makeSpeak
-//
-// Missing edge: fn:makeSpeak should also depend on method:Dog.speak, since
-// a.speak() can dispatch to Dog's override at runtime. Currently only
-// method:Animal.speak is recorded because a is typed as Animal.
+// method:Animal.speak: method:Dog.speak
 interface Animal {
   speak(): string;
 }

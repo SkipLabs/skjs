@@ -150,7 +150,12 @@ class CallGraph private (
       context,
       callGraphDirName,
       (_context, writer, _fileName, res) ~> {
-        res.first.callgraph.each((k, v) -> writer.setArray(k, v))
+        res.first.callgraph.each((k, v) -> writer.setArray(k, v));
+        // subtypingEdges: (sub, sup) means sup can reach sub through subtyping,
+        // so add sup -> sub to the callgraph
+        for ((sub, sup) in res.first.subtypingEdges) {
+          writer.append(sup, sub)
+        }
       },
     );
     depgraph = callgraph.map(
