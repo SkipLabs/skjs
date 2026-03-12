@@ -242,8 +242,14 @@ base class TEnv{
       tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
+    isArray = c.kind match {
+    | CKInterface() -> None()
+    | CKAbstract()
+    | CKClass() ->
+      Some(false) /* Unless overridden by brand field */
+    };
     TObject::createSingleBranch(
-      TFields::create{fields, symbolFields, indexes},
+      TFields::create{fields, symbolFields, indexes, isArray},
       className.pos,
     )
   }
@@ -280,7 +286,13 @@ base class TEnv{
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
     TObject::createSingleBranch(
-      TFields::create{fields, symbolFields, indexes, new => Some(new)},
+      TFields::create{
+        fields,
+        symbolFields,
+        indexes,
+        new => Some(new),
+        isArray => Some(false),
+      },
       pos,
     )
   }

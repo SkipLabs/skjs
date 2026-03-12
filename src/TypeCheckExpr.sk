@@ -859,7 +859,12 @@ extension class TypeChecker {
       };
       obj = TType::single(
         TObject::createSingleBranch(
-          TFields::create{fields, symbolFields, indexes},
+          TFields::create{
+            fields,
+            symbolFields,
+            indexes,
+            isArray => Some(false),
+          },
           pos,
         ),
       );
@@ -1895,6 +1900,8 @@ extension class TypeChecker {
         allNewFields = TFields::create{
           fields => newFieldsMap,
           symbolFields => newSymbolFieldsMap,
+          /* Local objects are not arrays but a type annotation may lose this information */
+          isArray => Some(false),
         };
         newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
         | None() -> TType::bottom(objPos)

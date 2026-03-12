@@ -278,7 +278,11 @@ extension class TFields {
     };
     call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
     new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
-    TFields{fields, symbolFields, indexes, call, new}
+    isArray = (fields1.isArray, fields2.isArray) match {
+    | (Some(a), Some(b)) if (a == b) -> Some(a)
+    | _ -> None()
+    };
+    TFields{fields, symbolFields, indexes, call, new, isArray}
   }
 
   static fun unionOptTFuns(

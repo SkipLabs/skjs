@@ -1076,6 +1076,8 @@ value class FieldNameString(
   }
 }
 
+const kArrayBrandFieldName: String = "__SKJS_isArray";
+
 class TFields private {
   fields: InternalKeyedArrayMap<
     FieldNameString,
@@ -1099,18 +1101,49 @@ class TFields private {
   */
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
+  // None = unknown, Some(true) = is array, Some(false) = not array
+  isArray: ?Bool = None(),
 } uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
   }
 
   static fun create{
-    fields: readonly Map<FieldNameString, TField> = Map[],
-    symbolFields: readonly Map<FieldNameString, TField> = Map[],
+    fields: mutable Map<FieldNameString, TField> = mutable Map[],
+    symbolFields: mutable Map<FieldNameString, TField> = mutable Map[],
     indexes: readonly Vector<TIndexField> = Vector[],
     new: ?TFuns = None(),
     call: ?TFuns = None(),
+    isArray: ?Bool = None(),
   }: TFields {
+    brandKey = FieldNameString(kArrayBrandFieldName);
+    fields.maybeGet(brandKey) match {
+    | Some(brandField) ->
+      fields.remove(brandKey);
+      brandField.get.getSingleConstant() match {
+      | Some(TPrimValue(TBool(), Some(lits), _)) ->
+        lits.singleElt() match {
+        | Some(PrimLiteral(_pos, "true")) -> Some(true)
+        | Some(PrimLiteral(_pos, "false")) -> Some(false)
+        | _ -> None()
+        }
+      | _ -> None()
+      } match {
+      | None() ->
+        typingError(
+          Array[
+            (
+              brandField.get.pos,
+              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${
+                brandField.get
+              }`,
+            ),
+          ],
+        )
+      | brandIsArray @ Some _ -> !isArray = brandIsArray
+      }
+    | None() -> void
+    };
     TFields{
       fields => InternalKeyedArrayMap::createFromSortedIterator(
         fields.values().collect(Array).sortedBy(x ~> x.name).values(),
@@ -1121,6 +1154,7 @@ class TFields private {
       indexes => TIndexField::mergeByKeyType(indexes),
       new => new.map(tfuns ~> (false, tfuns)),
       call => call.map(tfuns ~> (false, tfuns)),
+      isArray,
     }
   }
 
@@ -1151,6 +1185,7 @@ class TFields private {
       indexes => this.indexes.map(fIndexField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
+      isArray => this.isArray,
     }
   }
 

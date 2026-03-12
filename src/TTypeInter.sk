@@ -412,7 +412,23 @@ extension class TFields {
       | Some(f) -> Some((opt1 && opt2, f))
       }
     };
-    Some(TFields{fields, symbolFields, indexes, call, new})
+    isArray = (fields1.isArray, fields2.isArray) match {
+    | (Some(true), Some(false))
+    | (Some(false), Some(true)) ->
+      return None()
+    | (None(), None()) -> None()
+    | (some @ Some _, _)
+    | (_, some @ Some _) ->
+      some
+    };
+    Some(TFields{fields, symbolFields, indexes, call, new, isArray})
+  }
+
+  fun interIsArray(isArray: Bool): ?TFields {
+    this.isArray match {
+    | None() -> Some(this with {isArray => Some(isArray)})
+    | Some(ia) -> if (ia == isArray) Some(this) else None()
+    }
   }
 }
 

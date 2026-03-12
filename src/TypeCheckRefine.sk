@@ -218,10 +218,21 @@ extension class TypeChecker {
             Name(local.pos, "Array"),
             Array[tparam],
           );
-          TObject::inter(tcenv.subst, this, tObj, arrObj)
+          TObject::inter(tcenv.subst, this, tObj, arrObj).flatMap(tObj ->
+            tObj.mapOpt(tFields -> tFields.interIsArray(true))
+          )
         | _ -> None()
         };
       this.setLocalFilterMap(tcenv, local, None(), filterMap)
+    } else {
+      this.setLocalFilterMap(tcenv, local, None(), stype ->
+        stype match {
+        | TTuple _ -> None()
+        | tObj @ TObject _ ->
+          tObj.mapOpt(tFields -> tFields.interIsArray(false))
+        | _ -> Some(stype)
+        }
+      )
     }
   }
 

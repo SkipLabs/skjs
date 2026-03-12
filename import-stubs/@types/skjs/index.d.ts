@@ -47,6 +47,7 @@ declare interface ReadonlyArray<T> extends Iterable<T> {
 }
 
 declare class Array<T> implements Iterable<T> {
+  readonly __SKJS_isArray: true;
   constructor(...items: T[]);
   length: number;
 
