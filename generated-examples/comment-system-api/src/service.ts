@@ -344,8 +344,8 @@ class Service implements SkipService<Inputs, InputCollections, GraphCollections>
     const commentsWithStats = inputs.comments.map(CommentWithStatsMapper, replyCountsByComment, likeCountsByComment);
     const repliesByComment = inputs.replies.map(ReplyByCommentMapper);
     const likesByComment = inputs.likes.map(LikeByCommentMapper);
-    const commentFeedItems = inputs.comments.map(CommentToFeedItemMapper);
-    const replyFeedItems = inputs.replies.map(ReplyToFeedItemMapper);
+    const commentFeedItems: EagerCollection<FeedItemId, FeedItemValue> = inputs.comments.map(CommentToFeedItemMapper);
+    const replyFeedItems: EagerCollection<FeedItemId, FeedItemValue> = inputs.replies.map(ReplyToFeedItemMapper);
     const feed = commentFeedItems.merge(replyFeedItems);
     return {
       comments: inputs.comments,

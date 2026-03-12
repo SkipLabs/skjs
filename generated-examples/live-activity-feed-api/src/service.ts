@@ -158,9 +158,9 @@ class Service implements SkipService<Inputs, InputCollections, GraphCollections>
   }
 
   createGraph(inputs: InputCollections, _context: Context): GraphCollections {
-    const postFeedItems = inputs.posts.map(PostToFeedItemMapper);
-    const commentFeedItems = inputs.comments.map(CommentToFeedItemMapper);
-    const likeFeedItems = inputs.likes.map(LikeToFeedItemMapper);
+    const postFeedItems: EagerCollection<FeedItemId, FeedItemValue> = inputs.posts.map(PostToFeedItemMapper);
+    const commentFeedItems: EagerCollection<FeedItemId, FeedItemValue> = inputs.comments.map(CommentToFeedItemMapper);
+    const likeFeedItems: EagerCollection<FeedItemId, FeedItemValue> = inputs.likes.map(LikeToFeedItemMapper);
     
     const feed = postFeedItems.merge(commentFeedItems, likeFeedItems);
     

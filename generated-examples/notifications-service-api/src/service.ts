@@ -27,6 +27,8 @@ import type {
 
 export type NotificationType = MentionFollowLikeEnum;
 
+export type NotificationEventKey = { userId: string; type: NotificationType };
+
 export type NotificationEventValue = {
   actorId: string;
   timestamp: number;
@@ -59,7 +61,7 @@ export type Resources = {
   readonly "notifications-by-user": ResourceClass<GraphCollections, { userId: string }>;
 };
 
-export class MentionToNotificationMapper implements Mapper<MentionId, MentionValue, [string, NotificationType], NotificationEventValue> {
+export class MentionToNotificationMapper implements Mapper<MentionId, MentionValue, NotificationEventKey, NotificationEventValue> {
   constructor() {
   }
 
@@ -67,10 +69,10 @@ export class MentionToNotificationMapper implements Mapper<MentionId, MentionVal
     _key: MentionId,
     values: Values<MentionValue>,
     _context: Context
-  ): Iterable<[[string, NotificationType], NotificationEventValue]> {
-    const result: Array<[[string, NotificationType], NotificationEventValue]> = Array.of();
+  ): Iterable<[NotificationEventKey, NotificationEventValue]> {
+    const result: Array<[NotificationEventKey, NotificationEventValue]> = Array.of();
     for (const v of values) {
-      const outputKey: [string, NotificationType] = [v.toUserId, "mention"];
+      const outputKey: NotificationEventKey = { userId: v.toUserId, type: "mention" };
       const outputValue: NotificationEventValue = {
         actorId: v.fromUserId,
         timestamp: v.timestamp
@@ -81,7 +83,7 @@ export class MentionToNotificationMapper implements Mapper<MentionId, MentionVal
   }
 }
 
-export class FollowToNotificationMapper implements Mapper<FollowId, FollowValue, [string, NotificationType], NotificationEventValue> {
+export class FollowToNotificationMapper implements Mapper<FollowId, FollowValue, NotificationEventKey, NotificationEventValue> {
   constructor() {
   }
 
@@ -89,10 +91,10 @@ export class FollowToNotificationMapper implements Mapper<FollowId, FollowValue,
     _key: FollowId,
     values: Values<FollowValue>,
     _context: Context
-  ): Iterable<[[string, NotificationType], NotificationEventValue]> {
-    const result: Array<[[string, NotificationType], NotificationEventValue]> = Array.of();
+  ): Iterable<[NotificationEventKey, NotificationEventValue]> {
+    const result: Array<[NotificationEventKey, NotificationEventValue]> = Array.of();
     for (const v of values) {
-      const outputKey: [string, NotificationType] = [v.toUserId, "follow"];
+      const outputKey: NotificationEventKey = { userId: v.toUserId, type: "follow" };
       const outputValue: NotificationEventValue = {
         actorId: v.fromUserId,
         timestamp: v.timestamp
@@ -103,7 +105,7 @@ export class FollowToNotificationMapper implements Mapper<FollowId, FollowValue,
   }
 }
 
-export class LikeToNotificationMapper implements Mapper<LikeId, LikeValue, [string, NotificationType], NotificationEventValue> {
+export class LikeToNotificationMapper implements Mapper<LikeId, LikeValue, NotificationEventKey, NotificationEventValue> {
   constructor() {
   }
 
@@ -111,10 +113,10 @@ export class LikeToNotificationMapper implements Mapper<LikeId, LikeValue, [stri
     _key: LikeId,
     values: Values<LikeValue>,
     _context: Context
-  ): Iterable<[[string, NotificationType], NotificationEventValue]> {
-    const result: Array<[[string, NotificationType], NotificationEventValue]> = Array.of();
+  ): Iterable<[NotificationEventKey, NotificationEventValue]> {
+    const result: Array<[NotificationEventKey, NotificationEventValue]> = Array.of();
     for (const v of values) {
-      const outputKey: [string, NotificationType] = [v.toUserId, "like"];
+      const outputKey: NotificationEventKey = { userId: v.toUserId, type: "like" };
       const outputValue: NotificationEventValue = {
         actorId: v.fromUserId,
         timestamp: v.timestamp
@@ -125,19 +127,19 @@ export class LikeToNotificationMapper implements Mapper<LikeId, LikeValue, [stri
   }
 }
 
-export class NotificationOutputMapper implements Mapper<[string, NotificationType], NotificationAccum, NotificationId, NotificationValue> {
+export class NotificationOutputMapper implements Mapper<NotificationEventKey, NotificationAccum, NotificationId, NotificationValue> {
   constructor() {
   }
 
   mapEntry(
-    key: [string, NotificationType],
+    key: NotificationEventKey,
     values: Values<NotificationAccum>,
     _context: Context
   ): Iterable<[NotificationId, NotificationValue]> {
     const result: Array<[NotificationId, NotificationValue]> = Array.of();
     for (const v of values) {
-      const userId = key[0];
-      const notificationType = key[1];
+      const userId = key.userId;
+      const notificationType = key.type;
       const notificationId: NotificationId = JSON.stringify([userId, notificationType]);
       const notificationValue: NotificationValue = {
         userId: userId,
@@ -254,9 +256,9 @@ class Service implements SkipService<Inputs, InputCollections, GraphCollections>
   }
 
   createGraph(inputs: InputCollections, _context: Context): GraphCollections {
-    const mentionNotifications = inputs.mentions.map(MentionToNotificationMapper);
-    const followNotifications = inputs.follows.map(FollowToNotificationMapper);
-    const likeNotifications = inputs.likes.map(LikeToNotificationMapper);
+    const mentionNotifications: EagerCollection<NotificationEventKey, NotificationEventValue> = inputs.mentions.map(MentionToNotificationMapper);
+    const followNotifications: EagerCollection<NotificationEventKey, NotificationEventValue> = inputs.follows.map(FollowToNotificationMapper);
+    const likeNotifications: EagerCollection<NotificationEventKey, NotificationEventValue> = inputs.likes.map(LikeToNotificationMapper);
     
     const mergedEvents = mentionNotifications
       .merge(followNotifications)
