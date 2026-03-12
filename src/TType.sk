@@ -188,9 +188,45 @@ class TType private {
   ): TType {
     leftExpanded = left.expand(subst, tenv, None());
     rightExpanded = right.expand(subst, tenv, None());
+    // Resolve bound tvars so the diff result contains concrete types
+    // instead of raw tvar references.  In isSub_, the u1/u2 tvar loops
+    // call grow(tvar, diff(...), ...) on both sides; without resolution,
+    // diff('2,'0) returns '2 and diff('0,'2) returns '0, so the two
+    // grows create circular cross-references ('0->boolean|'2, '2->boolean|'0).
+    !leftExpanded = leftExpanded.resolveBoundTVarInsts(subst, tenv);
+    !rightExpanded = rightExpanded.resolveBoundTVarInsts(subst, tenv);
     diffInsts = TInsts::diff(leftExpanded.insts, rightExpanded.insts);
     diffClauses = Clauses::diff(leftExpanded.clauses, rightExpanded.clauses);
     TType::create(left.pos, diffInsts, diffClauses)
+  }
+
+  // Replace bound TVar insts with their resolved values (applying constraints).
+  // Uses peekRaw for the side-effect-free bound check, and peek for the actual
+  // replacement to get the constraint-intersected value.
+  // Used by diff() to prevent isSub_'s tvar loops from creating circular
+  // cross-references when grow() stores the diff result (see comment in diff).
+  private fun resolveBoundTVarInsts(subst: mutable Subst, tenv: TEnv): TType {
+    anyBound = this.insts.any(inst ->
+      inst match {
+      | tvar @ TVar _ -> subst.peekRaw(tvar).isSome()
+      | _ -> false
+      }
+    );
+    if (!anyBound) return this;
+    result = TType::create(this.pos, TInsts::empty(), this.clauses);
+    for (inst in this.insts) {
+      resolved = inst match {
+      | tvar @ TVar _ ->
+        subst.peek(tenv, tvar) match {
+        | Some(resolvedTy) -> resolvedTy
+        | None() ->
+          TType::create(this.pos, TInsts::single(inst), Clauses::empty())
+        }
+      | _ -> TType::create(this.pos, TInsts::single(inst), Clauses::empty())
+      };
+      !result = TType::union(subst, tenv, result, resolved);
+    };
+    result
   }
 
   // TRANSFORMERS

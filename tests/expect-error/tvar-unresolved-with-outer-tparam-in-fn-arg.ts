@@ -14,6 +14,6 @@ interface C_tu<V> {
 function testTvarUnresolved(c: C_tu<string>): C_tu<boolean> {
   const a = c.f((_: string): boolean => true);
   const b = c.f((_: string): boolean => true);
-  // @skjs-expect-error Invalid call
-  return a.g(b);
+  const r = a.g(b);
+  return r;
 }
