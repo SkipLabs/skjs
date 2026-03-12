@@ -150,3 +150,41 @@ function spreadFieldsBeforeTypedSpread(x: { f1: number; f2: string }): {
   // @skjs-expect-error Invalid return type
   return { f0: true, ...x, f2: 0, f3: "a" };
 }
+
+// Spread with optional field overlap → union types, non-optional
+// FIXME: SKJS should infer a as string | number
+function spreadOptionalOverlap(): { a: string | number } {
+  const obj: { a?: number } = {};
+  // @skjs-expect-error Invalid return type
+  return { a: "", ...obj };
+}
+
+// Spread with optional field, assigned to narrow type → error
+// FIXME: SKJS should error because a is string | number, not string
+function spreadOptionalOverlapNarrow(): { a: string } {
+  const obj: { a?: number } = {};
+  // @skjs-expect-error Invalid return type
+  return { a: "", ...obj };
+}
+
+// Spread with index signature → union types
+// FIXME: SKJS should infer a as string | number
+function spreadIndexOverlap(): { a: string | number } {
+  const obj: { [k: string]: number } = {};
+  // @skjs-expect-error Invalid return type
+  return { a: "", ...obj };
+}
+
+// Spread with index signature, assigned to narrow type → error
+// FIXME: SKJS should error because a is string | number, not string
+function spreadIndexOverlapNarrow(): { a: string } {
+  const obj: { [k: string]: number } = {};
+  // @skjs-expect-error Invalid return type
+  return { a: "", ...obj };
+}
+
+// Spread with required field → spread wins completely
+function spreadRequiredOverwrites(): { a: number } {
+  const obj: { a: number } = { a: 1 };
+  return { a: 0, ...obj };
+}
