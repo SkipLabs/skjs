@@ -1186,6 +1186,7 @@ class TFields private {
     }
   }
 
+  // Create TFields from pre-sorted SortedMaps (object literal handler).
   static fun createFromSorted{
     fields: SortedMap<FieldNameString, TField> = SortedMap[],
     symbolFields: SortedMap<FieldNameString, TField> = SortedMap[],

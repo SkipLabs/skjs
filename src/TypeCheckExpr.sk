@@ -733,8 +733,8 @@ extension class TypeChecker {
       | Some(localDef) -> localDef
       }
     | Object(efields) ->
-      fields = mutable Map[];
-      symbolFields = mutable Map[];
+      fields = SortedMap<FieldNameString, TField>[];
+      symbolFields = SortedMap<FieldNameString, TField>[];
       indexes = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
@@ -753,8 +753,8 @@ extension class TypeChecker {
           // Sound spread typing: forget all fields before the spread,
           // since the spread value could have any property at runtime
           // (structural subtyping allows extra properties).
-          fields.clear();
-          symbolFields.clear();
+          !fields = SortedMap[];
+          !symbolFields = SortedMap[];
           indexes.clear();
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
           spreadTy.getSTypes(tcenv.subst, this, Covariant()) match {
@@ -771,10 +771,10 @@ extension class TypeChecker {
               | obj @ TObject(_, _pos) ->
                 spreadTFields = obj.getFields(tcenv.subst, this);
                 for (spreadField in spreadTFields.fields) {
-                  fields![spreadField.name] = spreadField
+                  !fields[spreadField.name] = spreadField
                 };
                 for (spreadSymbolField in spreadTFields.symbolFields) {
-                  symbolFields![spreadSymbolField.name] = spreadSymbolField
+                  !symbolFields[spreadSymbolField.name] = spreadSymbolField
                 };
                 for (spreadIndex in spreadTFields.indexes) {
                   indexes.push(spreadIndex)
@@ -818,7 +818,7 @@ extension class TypeChecker {
               isReadonly => None(),
               type => valueTy,
             };
-            symbolFields![field.name] = field;
+            !symbolFields[field.name] = field;
             continue
           | None() ->
             tcenv.error(
@@ -843,11 +843,11 @@ extension class TypeChecker {
           isReadonly => None(),
           type => ty,
         };
-        fields![field.name] = field
+        !fields[field.name] = field
       };
       obj = TType::single(
         TObject::createSingleBranch(
-          TFields::create{
+          TFields::createFromSorted{
             fields,
             symbolFields,
             indexes,
