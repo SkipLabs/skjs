@@ -1185,6 +1185,7 @@ class TFields private {
       indexes => this.indexes.map(fIndexField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
+      isArray => this.isArray,
     }
   }
 
