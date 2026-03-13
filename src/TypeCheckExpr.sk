@@ -750,57 +750,48 @@ extension class TypeChecker {
           )
 
         | FDSpread(spreadExpr) ->
+          spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
+          obj = spreadTy
+            .getSTypes(tcenv.subst, this, Covariant())
+            .flatMap(sTypes -> sTypes.singleElt()) match {
+          | Some(obj @ TObject _) -> obj
+          | _ ->
+            tcenv.error(
+              Array[
+                (spreadExpr.pos, "Invalid spread"),
+                (spreadTy.pos, "This has type unknown"),
+              ],
+            );
+            continue
+          };
           // Sound spread typing: forget all fields before the spread,
           // since the spread value could have any property at runtime
           // (structural subtyping allows extra properties).
           !fields = SortedMap[];
           !symbolFields = SortedMap[];
           indexes.clear();
-          spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-          spreadTy.getSTypes(tcenv.subst, this, Covariant()) match {
-          | None() ->
-            tcenv.error(
-              Array[
-                (spreadExpr.pos, "Invalid spread"),
-                (spreadTy.pos, "This has type unknown"),
-              ],
-            )
-          | Some(spreadSTypes) ->
-            for (spreadSType in spreadSTypes) {
-              spreadSType match {
-              | obj @ TObject(_, _pos) ->
-                spreadTFields = obj.getFields(tcenv.subst, this);
-                for (spreadField in spreadTFields.fields) {
-                  !fields[spreadField.name] = spreadField
-                };
-                for (spreadSymbolField in spreadTFields.symbolFields) {
-                  !symbolFields[spreadSymbolField.name] = spreadSymbolField
-                };
-                for (spreadIndex in spreadTFields.indexes) {
-                  indexes.push(spreadIndex)
-                };
-                spreadTFields.call.each(_ ->
-                  tcenv.notSupported(
-                    spreadExpr.pos,
-                    "call signature in spread object",
-                  )
-                );
-                spreadTFields.new.each(_ ->
-                  tcenv.notSupported(
-                    spreadExpr.pos,
-                    "constructor signature in spread object",
-                  )
-                )
-              | _ ->
-                tcenv.error(
-                  Array[
-                    (spreadExpr.pos, "Invalid spread"),
-                    (spreadTy.pos, `This has type ${spreadTy}`),
-                  ],
-                )
-              }
-            }
+          spreadTFields = obj.getFields(tcenv.subst, this);
+          for (spreadField in spreadTFields.fields) {
+            !fields[spreadField.name] = spreadField
           };
+          for (spreadSymbolField in spreadTFields.symbolFields) {
+            !symbolFields[spreadSymbolField.name] = spreadSymbolField
+          };
+          for (spreadIndex in spreadTFields.indexes) {
+            indexes.push(spreadIndex)
+          };
+          spreadTFields.call.each(_ ->
+            tcenv.notSupported(
+              spreadExpr.pos,
+              "call signature in spread object",
+            )
+          );
+          spreadTFields.new.each(_ ->
+            tcenv.notSupported(
+              spreadExpr.pos,
+              "constructor signature in spread object",
+            )
+          );
           continue
         | FDComputed(keyExpr, valueExpr) ->
           keyType = this.expr(tcenv, keyExpr, true);
