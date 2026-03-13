@@ -307,8 +307,8 @@ function testClassInstanceNotArray(x: NumHolder<number>): number {
 // Array.isArray should not widen ReadonlyArray to mutable Array.
 function testReadonlyArrayPreserved(x: readonly number[] | string): void {
   if (Array.isArray(x)) {
-    // FIXME: push should error — x is readonly, but Array.isArray
-    // currently widens to mutable Array<T>
+    // @skjs-expect-error Invalid call
+    // @skjs-expect-error Invalid index key
     x.push(1);
   }
 }
