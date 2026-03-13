@@ -213,9 +213,17 @@ extension class TypeChecker {
         | TTuple _ -> Some(x)
         | tObj @ TObject _ ->
           tparam = TType::top(local.pos);
+          // Use ReadonlyArray for readonly inputs to avoid adding
+          // mutable methods (push, pop, etc.) to readonly arrays.
+          // Use Array for mutable inputs so the intersection
+          // preserves the wider set type (unknown vs T).
+          hasReadonlyIndex = tObj.getBranches().any(b ->
+            b.indexes.any(idx -> idx.valueTypeSet.isBottom())
+          );
+          arrName = if (hasReadonlyIndex) "ReadonlyArray" else "Array";
           arrObj = this.newObject(
             tcenv,
-            Name(local.pos, "Array"),
+            Name(local.pos, arrName),
             Array[tparam],
           );
           TObject::inter(tcenv.subst, this, tObj, arrObj).flatMap(tObj ->

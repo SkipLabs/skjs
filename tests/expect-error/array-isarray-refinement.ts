@@ -299,3 +299,23 @@ function testClassInstanceNotArray(x: NumHolder<number>): number {
     return x.value;
   }
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// ReadonlyArray preservation through Array.isArray
+///////////////////////////////////////////////////////////////////////////////
+
+// Array.isArray should not widen ReadonlyArray to mutable Array.
+function testReadonlyArrayPreserved(x: readonly number[] | string): void {
+  if (Array.isArray(x)) {
+    // @skjs-expect-error Invalid call
+    // @skjs-expect-error Invalid index key
+    x.push(1);
+  }
+}
+
+// Mutable arrays should stay mutable after Array.isArray.
+function testMutableArrayStillMutable(x: number[] | string): void {
+  if (Array.isArray(x)) {
+    x.push(1);
+  }
+}
