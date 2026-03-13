@@ -733,8 +733,8 @@ extension class TypeChecker {
       | Some(localDef) -> localDef
       }
     | Object(efields) ->
-      fields = mutable Map[];
-      symbolFields = mutable Map[];
+      fields = SortedMap<FieldNameString, TField>[];
+      symbolFields = SortedMap<FieldNameString, TField>[];
       indexes = mutable Vector[];
       for (efield in efields) {
         (name, ty) = efield match {
@@ -750,57 +750,48 @@ extension class TypeChecker {
           )
 
         | FDSpread(spreadExpr) ->
-          // Sound spread typing: forget all fields before the spread,
-          // since the spread value could have any property at runtime
-          // (structural subtyping allows extra properties).
-          fields.clear();
-          symbolFields.clear();
-          indexes.clear();
           spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-          spreadTy.getSTypes(tcenv.subst, this, Covariant()) match {
-          | None() ->
+          obj = spreadTy
+            .getSTypes(tcenv.subst, this, Covariant())
+            .flatMap(sTypes -> sTypes.singleElt()) match {
+          | Some(obj @ TObject _) -> obj
+          | _ ->
             tcenv.error(
               Array[
                 (spreadExpr.pos, "Invalid spread"),
                 (spreadTy.pos, "This has type unknown"),
               ],
-            )
-          | Some(spreadSTypes) ->
-            for (spreadSType in spreadSTypes) {
-              spreadSType match {
-              | obj @ TObject(_, _pos) ->
-                spreadTFields = obj.getFields(tcenv.subst, this);
-                for (spreadField in spreadTFields.fields) {
-                  fields![spreadField.name] = spreadField
-                };
-                for (spreadSymbolField in spreadTFields.symbolFields) {
-                  symbolFields![spreadSymbolField.name] = spreadSymbolField
-                };
-                for (spreadIndex in spreadTFields.indexes) {
-                  indexes.push(spreadIndex)
-                };
-                spreadTFields.call.each(_ ->
-                  tcenv.notSupported(
-                    spreadExpr.pos,
-                    "call signature in spread object",
-                  )
-                );
-                spreadTFields.new.each(_ ->
-                  tcenv.notSupported(
-                    spreadExpr.pos,
-                    "constructor signature in spread object",
-                  )
-                )
-              | _ ->
-                tcenv.error(
-                  Array[
-                    (spreadExpr.pos, "Invalid spread"),
-                    (spreadTy.pos, `This has type ${spreadTy}`),
-                  ],
-                )
-              }
-            }
+            );
+            continue
           };
+          // Sound spread typing: forget all fields before the spread,
+          // since the spread value could have any property at runtime
+          // (structural subtyping allows extra properties).
+          !fields = SortedMap[];
+          !symbolFields = SortedMap[];
+          indexes.clear();
+          spreadTFields = obj.getFields(tcenv.subst, this);
+          for (spreadField in spreadTFields.fields) {
+            !fields[spreadField.name] = spreadField
+          };
+          for (spreadSymbolField in spreadTFields.symbolFields) {
+            !symbolFields[spreadSymbolField.name] = spreadSymbolField
+          };
+          for (spreadIndex in spreadTFields.indexes) {
+            indexes.push(spreadIndex)
+          };
+          spreadTFields.call.each(_ ->
+            tcenv.notSupported(
+              spreadExpr.pos,
+              "call signature in spread object",
+            )
+          );
+          spreadTFields.new.each(_ ->
+            tcenv.notSupported(
+              spreadExpr.pos,
+              "constructor signature in spread object",
+            )
+          );
           continue
         | FDComputed(keyExpr, valueExpr) ->
           keyType = this.expr(tcenv, keyExpr, true);
@@ -818,7 +809,7 @@ extension class TypeChecker {
               isReadonly => None(),
               type => valueTy,
             };
-            symbolFields![field.name] = field;
+            !symbolFields[field.name] = field;
             continue
           | None() ->
             tcenv.error(
@@ -843,11 +834,11 @@ extension class TypeChecker {
           isReadonly => None(),
           type => ty,
         };
-        fields![field.name] = field
+        !fields[field.name] = field
       };
       obj = TType::single(
         TObject::createSingleBranch(
-          TFields::create{
+          TFields::createFromSorted{
             fields,
             symbolFields,
             indexes,
@@ -1890,10 +1881,10 @@ extension class TypeChecker {
           /* Local objects are not arrays but a type annotation may lose this information */
           isArray => Some(false),
         };
-        newTy = TFields::inter(tcenv.subst, this, fields, allNewFields) match {
+        allNewObj = TObject::createSingleBranch(allNewFields, objPos);
+        newTy = TObject::inter(tcenv.subst, this, obj, allNewObj) match {
         | None() -> TType::bottom(objPos)
-        | Some(mergedFields) ->
-          TType::single(TObject::createSingleBranch(mergedFields, objPos))
+        | Some(mergedObj) -> TType::single(mergedObj)
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
           this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)

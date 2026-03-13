@@ -1166,6 +1166,41 @@ class TFields private {
     TFields{}
   }
 
+  static fun createFromSortedIterator{
+    fields: mutable Iterator<TField>,
+    symbolFields: mutable Iterator<TField>,
+    indexes: readonly Vector<TIndexField> = Vector[],
+    new: ?TFuns = None(),
+    call: ?TFuns = None(),
+    isArray: ?Bool = None(),
+  }: TFields {
+    TFields{
+      fields => InternalKeyedArrayMap::createFromSortedIterator(fields),
+      symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
+        symbolFields,
+      ),
+      indexes => TIndexField::mergeByKeyKinds(indexes),
+      new => new.map(tfuns ~> (false, tfuns)),
+      call => call.map(tfuns ~> (false, tfuns)),
+      isArray,
+    }
+  }
+
+  // Create TFields from pre-sorted SortedMaps (object literal handler).
+  static fun createFromSorted{
+    fields: SortedMap<FieldNameString, TField> = SortedMap[],
+    symbolFields: SortedMap<FieldNameString, TField> = SortedMap[],
+    indexes: readonly Vector<TIndexField> = Vector[],
+    isArray: ?Bool = None(),
+  }: TFields {
+    TFields::createFromSortedIterator{
+      fields => fields.values(),
+      symbolFields => symbolFields.values(),
+      indexes,
+      isArray,
+    }
+  }
+
   static fun create{
     fields: mutable Map<FieldNameString, TField> = mutable Map[],
     symbolFields: mutable Map<FieldNameString, TField> = mutable Map[],
@@ -1202,16 +1237,16 @@ class TFields private {
       }
     | None() -> void
     };
-    TFields{
-      fields => InternalKeyedArrayMap::createFromSortedIterator(
-        fields.values().collect(Array).sortedBy(x ~> x.name).values(),
-      ),
-      symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
-        symbolFields.values().collect(Array).sortedBy(x ~> x.name).values(),
-      ),
-      indexes => TIndexField::mergeByKeyKinds(indexes),
-      new => new.map(tfuns ~> (false, tfuns)),
-      call => call.map(tfuns ~> (false, tfuns)),
+    TFields::createFromSortedIterator{
+      fields => fields.values().collect(Array).sortedBy(x ~> x.name).values(),
+      symbolFields => symbolFields
+        .values()
+        .collect(Array)
+        .sortedBy(x ~> x.name)
+        .values(),
+      indexes,
+      new,
+      call,
       isArray,
     }
   }
