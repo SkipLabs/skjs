@@ -188,3 +188,33 @@ function spreadRequiredOverwrites(): { a: number } {
   const obj: { a: number } = { a: 1 };
   return { a: 0, ...obj };
 }
+
+// Both spreads have optional field → result stays optional
+function spreadOptionalThenOptional(): { a?: string | number } {
+  const obj1: { a?: string } = {};
+  const obj2: { a?: number } = {};
+  // @skjs-expect-error Invalid return type
+  return { ...obj1, ...obj2 };
+}
+
+// Optional field spread + index signature spread → result stays optional
+function spreadOptionalThenIndex(): { a?: string | number } {
+  const obj1: { a?: string } = {};
+  const obj2: { [k: string]: number } = {};
+  // @skjs-expect-error Invalid return type
+  return { ...obj1, ...obj2 };
+}
+
+function spreadIndexThenOptional(): { a?: string | number } {
+  const obj1: { [k: string]: number } = {};
+  const obj2: { a?: string } = {};
+  // @skjs-expect-error Invalid return type
+  return { ...obj1, ...obj2 };
+}
+
+function spreadIndexThenIndex(): { [k: string]: string | number } {
+  const obj1: { [k: string]: number } = {};
+  const obj2: { [k: string]: string } = {};
+  // @skjs-expect-error Invalid return type
+  return { ...obj1, ...obj2 };
+}
