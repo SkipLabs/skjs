@@ -154,7 +154,7 @@ function testElseBranchRefined(x: Array<number> | Foo): Foo {
 // Accessing object properties on array branch
 function testObjectPropOnArray(x: Array<number> | Foo): unknown {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid index key
+    // @skjs-expect-error Invalid index key: expected number, got string
     return x.a;
   } else {
     // x is refined to Foo, x.a is valid
@@ -308,7 +308,7 @@ function testClassInstanceNotArray(x: NumHolder<number>): number {
 function testReadonlyArrayPreserved(x: readonly number[] | string): void {
   if (Array.isArray(x)) {
     // @skjs-expect-error Invalid call
-    // @skjs-expect-error Invalid index key
+    // @skjs-expect-error Invalid index key: expected number, got string
     x.push(1);
   }
 }

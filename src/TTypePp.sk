@@ -252,7 +252,7 @@ mutable class TypePp{
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
     (
       fields.fields.isEmpty(),
-      fields.indexes.isEmpty(),
+      !fields.hasIndex(),
       fields.call,
       fields.new,
     ) match {
@@ -389,7 +389,7 @@ mutable class TypePp{
     this.out(level, margin, "[ ");
     this.out(level, margin, TypePp::escapeName(index.keyName));
     this.out(level, margin, ": ");
-    this.type(level, margin, index.keyType);
+    this.out(level, margin, index.keyKinds.toString());
     this.out(level, margin, " ]: ");
     this.type(level, margin, index.valueTypeGet);
     if (

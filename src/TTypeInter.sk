@@ -240,12 +240,11 @@ extension class TIndexField {
   ): ?TIndexField {
     valueTypeGet = TType::inter(subst, tenv, x.valueTypeGet, y.valueTypeGet);
     valueTypeSet = TType::union(subst, tenv, x.valueTypeSet, y.valueTypeSet);
-    keyType = TType::union(subst, tenv, x.keyType, y.keyType);
     Some(
       TIndexField{
         pos => x.pos,
         keyName => x.keyName,
-        keyType,
+        keyKinds => x.keyKinds,
         valueTypeGet,
         valueTypeSet,
       },
