@@ -242,4 +242,41 @@ fun expandTVars(subst: mutable Subst, tenv: TEnv, ty: TType): TType {
   (mutable ExpandTVars()).type((subst, tenv), ty)
 }
 
+mutable class SolveInferenceVars() extends ApplyType {
+  type Env = (mutable Subst, TEnv, SortedSet<TVarID>);
+
+  mutable fun inst(env: this::Env, inst: TInst): Result<TInst, TType> {
+    (subst, _tenv, flexibleVars) = env;
+    inst match {
+    | TSInst(name, targs) -> Success(TSInst(name, this.targs(env, targs)))
+    | tInter @ TInter _ -> tInter.map(x -> this.type(env, x))
+    | tvar @ TVar _ ->
+      if (flexibleVars.contains(tvar.id)) {
+        subst.peekRaw(tvar) match {
+        | Some(ty) -> Failure(this.type(env, ty))
+        | None() -> Success(tvar.mapConstraints(ty -> this.type(env, ty)))
+        }
+      } else {
+        Success(tvar.mapConstraints(ty -> this.type(env, ty)))
+      }
+    | TArrayLit(tvar, tupleElts) ->
+      Success(
+        TArrayLit(
+          tvar.mapConstraints(ty -> this.type(env, ty)),
+          tupleElts.map(ty -> this.type(env, ty)),
+        ),
+      )
+    }
+  }
+}
+
+fun solveInferenceVars(
+  subst: mutable Subst,
+  tenv: TEnv,
+  flexibleVars: SortedSet<TVarID>,
+  ty: TType,
+): TType {
+  (mutable SolveInferenceVars()).type((subst, tenv, flexibleVars), ty)
+}
+
 module end;

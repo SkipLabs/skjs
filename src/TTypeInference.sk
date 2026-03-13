@@ -1,0 +1,53 @@
+/***************************************************************************/
+/* Per-call inference context. */
+/***************************************************************************/
+
+module SKJS;
+
+mutable class InferenceContext private {
+  mutable flexibleVars: SortedSet<TVarID> = SortedSet[],
+} {
+  static fun mcreate(): mutable this {
+    mutable static{}
+  }
+
+  mutable fun freshTVar(tcenv: mutable TCEnv, pos: PosRange): TType {
+    tvar = tcenv.subst.gen(pos);
+    this.!flexibleVars = this.flexibleVars.set(tvar.id);
+    TType::var(tvar)
+  }
+
+  readonly fun hasFlexibleVars(): Bool {
+    !this.flexibleVars.isEmpty()
+  }
+
+  readonly fun finalizeSolvedType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): TType {
+    if (!this.hasFlexibleVars()) return ty;
+    solveInferenceVars(subst, tenv, this.flexibleVars, ty)
+  }
+
+  // This intentionally defers finalization rather than using the expected
+  // type to guide inference. The outer subtype check still gets a chance to
+  // constrain these call-local flexible vars.
+  readonly fun deferFinalization(ty: TType): TType {
+    ty
+  }
+
+  readonly fun finalizeCallResult(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+    expectedType: ?TType,
+  ): TType {
+    expectedType match {
+    | Some(_) -> this.deferFinalization(ty)
+    | None() -> this.finalizeSolvedType(subst, tenv, ty)
+    }
+  }
+}
+
+module end;

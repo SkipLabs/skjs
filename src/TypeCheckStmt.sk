@@ -19,7 +19,7 @@ extension class TypeChecker {
       };
       (epos, etype) = eOpt match {
       | None() -> (pos, TType::single(TPrimUnit(TVoid(), pos)))
-      | Some(e) -> (e.pos, this.expr(tcenv, e, true))
+      | Some(e) -> (e.pos, this.expr(tcenv, e, true, false, Some(retType)))
       };
       rtype = if (this.isAsync) {
         TType::single(TPromise(etype, epos))

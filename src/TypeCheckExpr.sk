@@ -255,11 +255,12 @@ extension class TypeChecker {
         (ty, false)
       }
     | Some(e) ->
-      ty = this.expr(tcenv, e, kind is BKConst());
+      expectedType = type.map(annotAst -> this.normalize(tcenv, annotAst));
+      ty = this.expr(tcenv, e, kind is BKConst(), false, expectedType);
       type match {
       | None() -> (ty, true)
       | Some(annotAst) ->
-        annot = this.normalize(tcenv, annotAst);
+        annot = expectedType.fromSome();
         this.checkSubType(tcenv, annotAst.pos, "Invalid annotation", ty, annot);
         (annot, true)
       }
@@ -667,6 +668,7 @@ extension class TypeChecker {
     e: Expr,
     mostPrecise: Bool,
     isLValue: Bool = false,
+    expectedType: ?TType = None(),
   ): TType {
     if (mostPrecise) {
       if (isLValue) {
@@ -933,6 +935,7 @@ extension class TypeChecker {
         targs.map(ty -> this.normalize(tcenv, ty)),
         args,
         mostPrecise,
+        expectedType,
       );
       f.value match {
       | Dot(
@@ -2003,6 +2006,7 @@ extension class TypeChecker {
     targs: Array<TType>,
     argExprs: Array<Expr>,
     mostPrecise: Bool,
+    expectedType: ?TType = None(),
   ): TType {
     args = mutable Vector<TType>[];
     moreArgs: ?TType = None();
@@ -2072,12 +2076,13 @@ extension class TypeChecker {
           ],
         )
       };
+      inference = InferenceContext::mcreate();
       map = SortedMap[];
       for (i => tparamDecl in tfun.tparams) {
         !map[tparamDecl.id] = if (i < targs.size()) {
           targs[i]
         } else {
-          this.newTVar(tcenv, pos)
+          inference.freshTVar(tcenv, pos)
         };
       };
       !tfun = (mutable Instantiate()).fun_(
@@ -2154,7 +2159,7 @@ extension class TypeChecker {
         args,
         moreArgs,
       );
-      tfun.retType
+      inference.finalizeCallResult(tcenv.subst, this, tfun.retType, expectedType)
     }
   }
 }
