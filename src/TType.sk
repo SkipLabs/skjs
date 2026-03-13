@@ -998,18 +998,23 @@ class TField private {
 }
 
 /* Which primitive key kinds an index signature accepts */
-class IndexKeyKinds private {
+class IndexKeyKinds{
   hasString: Bool,
   hasNumber: Bool,
   hasSymbol: Bool,
 } uses XXHashable, Orderable {
-  /* Invariant: hasString || hasNumber || hasSymbol */
+  const empty: IndexKeyKinds = IndexKeyKinds{
+    hasString => false,
+    hasNumber => false,
+    hasSymbol => false,
+  };
 
-  static fun create(
+  /* Returns None() if all three values are false */
+  static fun create{
     hasString: Bool,
     hasNumber: Bool,
     hasSymbol: Bool,
-  ): ?IndexKeyKinds {
+  }: ?IndexKeyKinds {
     if (hasString || hasNumber || hasSymbol) {
       Some(IndexKeyKinds{hasString, hasNumber, hasSymbol})
     } else {
@@ -1017,12 +1022,21 @@ class IndexKeyKinds private {
     }
   }
 
+  fun merge(other: IndexKeyKinds): IndexKeyKinds {
+    hasString = this.hasString || other.hasString;
+    hasNumber = this.hasNumber || other.hasNumber;
+    hasSymbol = this.hasSymbol || other.hasSymbol;
+    IndexKeyKinds{hasString, hasNumber, hasSymbol}
+  }
+
   fun contains(kind: TPrimValueKind): Bool {
     kind match {
     | TString() -> this.hasString
     | TNum() -> this.hasNumber || this.hasString
     | TSymbol() -> this.hasSymbol
-    | _ -> false
+    | TBool()
+    | TBigInt() ->
+      false
     }
   }
 
@@ -1035,32 +1049,11 @@ class IndexKeyKinds private {
   }
 
   fun toTType(subst: mutable Subst, tenv: TEnv, pos: PosRange): TType {
-    result = TType::bottom(pos);
-    if (this.hasString) {
-      !result = TType::union(
-        subst,
-        tenv,
-        result,
-        TType::single(TPrimValue::string(pos)),
-      )
-    };
-    if (this.hasNumber) {
-      !result = TType::union(
-        subst,
-        tenv,
-        result,
-        TType::single(TPrimValue::number(pos)),
-      )
-    };
-    if (this.hasSymbol) {
-      !result = TType::union(
-        subst,
-        tenv,
-        result,
-        TType::single(TPrimValue::symbol(pos)),
-      )
-    };
-    result
+    tys = mutable Vector[];
+    if (this.hasString) tys.push(TType::single(TPrimValue::string(pos)));
+    if (this.hasNumber) tys.push(TType::single(TPrimValue::number(pos)));
+    if (this.hasSymbol) tys.push(TType::single(TPrimValue::symbol(pos)));
+    TType::unionN(subst, tenv, pos, tys)
   }
 
   fun toString(): String {
@@ -1068,7 +1061,7 @@ class IndexKeyKinds private {
     if (this.hasString) parts.push("string");
     if (this.hasNumber) parts.push("number");
     if (this.hasSymbol) parts.push("symbol");
-    parts.join(" | ")
+    if (parts.isEmpty()) "never" else parts.join(" | ")
   }
 }
 
