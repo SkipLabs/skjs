@@ -1186,6 +1186,20 @@ class TFields private {
     }
   }
 
+  static fun createFromSorted{
+    fields: SortedMap<FieldNameString, TField> = SortedMap[],
+    symbolFields: SortedMap<FieldNameString, TField> = SortedMap[],
+    indexes: readonly Vector<TIndexField> = Vector[],
+    isArray: ?Bool = None(),
+  }: TFields {
+    TFields::createFromSortedIterator{
+      fields => fields.values(),
+      symbolFields => symbolFields.values(),
+      indexes,
+      isArray,
+    }
+  }
+
   static fun create{
     fields: mutable Map<FieldNameString, TField> = mutable Map[],
     symbolFields: mutable Map<FieldNameString, TField> = mutable Map[],
