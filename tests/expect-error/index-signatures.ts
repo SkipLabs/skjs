@@ -372,7 +372,6 @@ interface GoodFieldIndex {
   x: number;
 }
 
-// Number index value must be subtype of string index value
 interface BadDualIdx {
   [key: string]: string;
   [key: number]: number;
@@ -385,7 +384,6 @@ interface GoodDualIdx {
 
 // Readonly: no setter check, getter passes (number <: number | string)
 interface GoodDualIdxReadonly {
-  // @skjs-expect-error TODO: multiple indexes
   readonly [key: string]: number | string;
   readonly [key: number]: number;
 }

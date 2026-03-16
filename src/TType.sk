@@ -998,17 +998,11 @@ class TField private {
 }
 
 /* Which primitive key kinds an index signature accepts */
-class IndexKeyKinds{
+value class IndexKeyKinds private {
   hasString: Bool,
   hasNumber: Bool,
   hasSymbol: Bool,
-} uses XXHashable, Orderable {
-  const empty: IndexKeyKinds = IndexKeyKinds{
-    hasString => false,
-    hasNumber => false,
-    hasSymbol => false,
-  };
-
+} {
   /* Returns None() if all three values are false */
   static fun create{
     hasString: Bool,
@@ -1020,102 +1014,6 @@ class IndexKeyKinds{
     } else {
       None()
     }
-  }
-
-  fun merge(other: IndexKeyKinds): IndexKeyKinds {
-    hasString = this.hasString || other.hasString;
-    hasNumber = this.hasNumber || other.hasNumber;
-    hasSymbol = this.hasSymbol || other.hasSymbol;
-    IndexKeyKinds{hasString, hasNumber, hasSymbol}
-  }
-
-  fun contains(kind: TPrimValueKind): Bool {
-    kind match {
-    | TString() -> this.hasString
-    | TNum() -> this.hasNumber || this.hasString
-    | TSymbol() -> this.hasSymbol
-    | TBool()
-    | TBigInt() ->
-      false
-    }
-  }
-
-  // Returns true if `this` key space is covered by `other`.
-  // A string index covers number keys (TS coerces numbers to strings).
-  fun isCoveredBy(other: IndexKeyKinds): Bool {
-    (this.hasString <= other.hasString) &&
-      (this.hasNumber <= (other.hasNumber || other.hasString)) &&
-      (this.hasSymbol <= other.hasSymbol)
-  }
-
-  fun toTType(subst: mutable Subst, tenv: TEnv, pos: PosRange): TType {
-    tys = mutable Vector[];
-    if (this.hasString) tys.push(TType::single(TPrimValue::string(pos)));
-    if (this.hasNumber) tys.push(TType::single(TPrimValue::number(pos)));
-    if (this.hasSymbol) tys.push(TType::single(TPrimValue::symbol(pos)));
-    TType::unionN(subst, tenv, pos, tys)
-  }
-
-  fun toString(): String {
-    parts = mutable Vector[];
-    if (this.hasString) parts.push("string");
-    if (this.hasNumber) parts.push("number");
-    if (this.hasSymbol) parts.push("symbol");
-    if (parts.isEmpty()) "never" else parts.join(" | ")
-  }
-}
-
-/* Fields such as { [keyName: KeyType]: ValueType } */
-class TIndexField private {
-  pos: PosRange,
-  keyName: String,
-  keyKinds: IndexKeyKinds,
-  valueTypeGet: TType,
-  valueTypeSet: TType,
-} uses XXHashable, Orderable {
-  static fun create{
-    pos: PosRange,
-    keyName: String,
-    keyKinds: IndexKeyKinds,
-    isReadonly: ?PosRange,
-    valueType: TType,
-  }: TIndexField {
-    valueTypeGet = valueType;
-    valueTypeSet = isReadonly match {
-    | None() -> valueType
-    | Some(roPos) -> TType::bottom(roPos)
-    };
-    TIndexField{pos, keyName, keyKinds, valueTypeGet, valueTypeSet}
-  }
-
-  fun mapTypes(f: TType -> TType): TIndexField {
-    valueTypeGet = f(this.valueTypeGet);
-    valueTypeSet = f(this.valueTypeSet);
-    this with {valueTypeGet, valueTypeSet}
-  }
-
-  fun toString(): String {
-    prettyPrintIndexField(this)
-  }
-
-  // Deduplicate indexes that share the same key kinds and value type.
-  static fun mergeByKeyKinds(
-    indexes: readonly Vector<TIndexField>,
-  ): Array<TIndexField> {
-    if (indexes.size() <= 1) return indexes.toArray();
-    merged: mutable Vector<TIndexField> = mutable Vector[];
-    for (idx in indexes) {
-      if (
-        !merged.any(e ->
-          e.keyKinds == idx.keyKinds &&
-            e.valueTypeGet == idx.valueTypeGet &&
-            e.valueTypeSet == idx.valueTypeSet
-        )
-      ) {
-        merged.push(idx)
-      }
-    };
-    merged.toArray()
   }
 }
 
@@ -1142,7 +1040,65 @@ value class FieldNameString(
 
 const kArrayBrandFieldName: String = "__SKJS_isArray";
 
-class TFields private {
+base class TIndexesBase protected {
+  // At most one index per key kind: string, number, symbol.
+  // Key types are validated by resolveIndexKeyKinds.
+  // Field/index value type compatibility is checked during subtyping.
+  // Stored as TField (key kind is implicit in which field).
+  // Indexes are optional (isOptional = true): any indexed key may not exist.
+  // The pretty-printer uses a separate indexField() path that doesn't
+  // print `?`, so this doesn't affect display.
+  stringIndex: ?TField = None(),
+  numberIndex: ?TField = None(),
+  symbolIndex: ?TField = None(),
+}
+
+class TIndexes protected {} extends TIndexesBase {
+  const empty: TIndexes = TIndexes{};
+
+  // Split indexes by key kind and merge duplicates per kind.
+  // When multiple indexes cover the same kind, their value types are merged:
+  //   getter (covariant) → intersection, setter (contravariant) → union.
+  static fun create(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    indexes: readonly Vector<(IndexKeyKinds, TField)>,
+  ): TIndexes {
+    stringIndexes: mutable Vector<TField> = mutable Vector[];
+    numberIndexes: mutable Vector<TField> = mutable Vector[];
+    symbolIndexes: mutable Vector<TField> = mutable Vector[];
+    for ((keyKinds, f) in indexes) {
+      if (keyKinds.hasString) stringIndexes.push(f);
+      if (keyKinds.hasNumber) numberIndexes.push(f);
+      if (keyKinds.hasSymbol) symbolIndexes.push(f);
+    };
+    stringIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, stringIndexes);
+    numberIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, numberIndexes);
+    symbolIndex = TIndexes::mergeIndexesForKind(tcenvb, tenv, symbolIndexes);
+    TIndexes{stringIndex, numberIndex, symbolIndex}
+  }
+
+  // Merge multiple indexes for the same key kind into a single TField.
+  // Getter (covariant) → intersection, setter (contravariant) → union.
+  private static fun mergeIndexesForKind(
+    tcenvb: mutable TCEnvBase,
+    tenv: TEnv,
+    indexes: readonly Vector<TField>,
+  ): ?TField {
+    indexesIt = indexes.iterator();
+    result = indexesIt.next() match {
+    | None() -> return None()
+    | Some(first) -> first
+    };
+    subst = Subst::mcreate(tcenvb);
+    for (other in indexesIt) {
+      !result = TField::interIndex(subst, tenv, result, other);
+    };
+    Some(result)
+  }
+}
+
+class TFields protected {
   fields: InternalKeyedArrayMap<
     FieldNameString,
     TField,
@@ -1152,24 +1108,19 @@ class TFields private {
     FieldNameString,
     TField,
   > = InternalKeyedArrayMap::empty(),
-  indexes: Array<TIndexField> = Array[],
-  /* There can be several index fields (from intersections).
-     Key types are validated by resolveIndexKeyKinds.
-     Field/index value type compatibility is checked by createWithIndexes.
-  */
   new: ?(/* optional */ Bool, TFuns) = None(),
   call: ?(/* optional */ Bool, TFuns) = None(),
   // None = unknown, Some(true) = is array, Some(false) = not array
   isArray: ?Bool = None(),
-} uses XXHashable, Orderable {
+} extends TIndexesBase uses XXHashable, Orderable {
   static fun empty(): TFields {
     TFields{}
   }
 
-  static fun createFromSortedIterator{
+  private static fun createFromSortedIterator{
     fields: mutable Iterator<TField>,
     symbolFields: mutable Iterator<TField>,
-    indexes: readonly Vector<TIndexField> = Vector[],
+    tIndexes: TIndexesBase,
     new: ?TFuns = None(),
     call: ?TFuns = None(),
     isArray: ?Bool = None(),
@@ -1179,9 +1130,11 @@ class TFields private {
       symbolFields => InternalKeyedArrayMap::createFromSortedIterator(
         symbolFields,
       ),
-      indexes => TIndexField::mergeByKeyKinds(indexes),
-      new => new.map(tfuns ~> (false, tfuns)),
-      call => call.map(tfuns ~> (false, tfuns)),
+      stringIndex => tIndexes.stringIndex,
+      numberIndex => tIndexes.numberIndex,
+      symbolIndex => tIndexes.symbolIndex,
+      new => new.map(tFuns ~> (false, tFuns)),
+      call => call.map(tFuns ~> (false, tFuns)),
       isArray,
     }
   }
@@ -1190,21 +1143,21 @@ class TFields private {
   static fun createFromSorted{
     fields: SortedMap<FieldNameString, TField> = SortedMap[],
     symbolFields: SortedMap<FieldNameString, TField> = SortedMap[],
-    indexes: readonly Vector<TIndexField> = Vector[],
+    tIndexes: TIndexesBase = TIndexes::empty,
     isArray: ?Bool = None(),
   }: TFields {
     TFields::createFromSortedIterator{
       fields => fields.values(),
       symbolFields => symbolFields.values(),
-      indexes,
+      tIndexes,
       isArray,
     }
   }
 
   static fun create{
     fields: mutable Map<FieldNameString, TField> = mutable Map[],
-    symbolFields: mutable Map<FieldNameString, TField> = mutable Map[],
-    indexes: readonly Vector<TIndexField> = Vector[],
+    symbolFields: readonly Map<FieldNameString, TField> = Map[],
+    tIndexes: TIndexesBase = TIndexes::empty,
     new: ?TFuns = None(),
     call: ?TFuns = None(),
     isArray: ?Bool = None(),
@@ -1244,7 +1197,7 @@ class TFields private {
         .collect(Array)
         .sortedBy(x ~> x.name)
         .values(),
-      indexes,
+      tIndexes,
       new,
       call,
       isArray,
@@ -1267,15 +1220,13 @@ class TFields private {
       this.call.isNone()
   }
 
-  fun map(
-    fField: TField -> TField,
-    fIndexField: TIndexField -> TIndexField,
-    fTFuns: TFuns -> TFuns,
-  ): TFields {
+  fun map(fField: TField -> TField, fTFuns: TFuns -> TFuns): TFields {
     TFields{
       fields => this.fields.mapKeyed(fField),
       symbolFields => this.symbolFields.mapKeyed(fField),
-      indexes => this.indexes.map(fIndexField),
+      stringIndex => this.stringIndex.map(fField),
+      numberIndex => this.numberIndex.map(fField),
+      symbolIndex => this.symbolIndex.map(fField),
       new => this.new.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       call => this.call.map(opt_tfuns -> (opt_tfuns.i0, fTFuns(opt_tfuns.i1))),
       isArray => this.isArray,
@@ -1295,25 +1246,33 @@ class TFields private {
   }
 
   fun hasIndex(): Bool {
-    !this.indexes.isEmpty()
+    this.stringIndex.isSome() ||
+      this.numberIndex.isSome() ||
+      this.symbolIndex.isSome()
+  }
+
+  // Human-readable string of supported index key kinds (e.g. "number").
+  fun indexKeyKindsString(): String {
+    parts: mutable Vector<String> = mutable Vector[];
+    if (this.stringIndex.isSome()) parts.push("string");
+    if (this.numberIndex.isSome()) parts.push("number");
+    if (this.symbolIndex.isSome()) parts.push("symbol");
+    parts.join(" | ")
   }
 
   // Find an index that accepts the given key kind.
-  fun indexForKeyKind(kind: TPrimValueKind): ?TIndexField {
-    this.indexes.find(idx -> idx.keyKinds.contains(kind))
-  }
-
-  fun maybeSingleIndex(): ?TIndexField {
-    this.indexes.size() match {
-    | 0 -> None()
-    | 1 -> Some(this.indexes[0])
-    | _ ->
-      typingError(
-        Array[
-          (this.indexes[0].pos, "TODO: multiple indexes"),
-          (this.indexes[1].pos, "Second one is here"),
-        ],
-      )
+  // For number keys, try numberIndex first, then fall back to stringIndex
+  // (since JS coerces number keys to strings).
+  fun indexForKeyKind(kind: TPrimValueKind): ?TField {
+    kind match {
+    | TString() -> this.stringIndex
+    | TNum() ->
+      this.numberIndex match {
+      | Some _ -> this.numberIndex
+      | None() -> this.stringIndex
+      }
+    | TSymbol() -> this.symbolIndex
+    | _ -> None()
     }
   }
 
