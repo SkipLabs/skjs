@@ -248,8 +248,9 @@ base class TEnv{
     | CKClass() ->
       Some(false) /* Unless overridden by brand field */
     };
+    tIndexes = TIndexes::create(tcenvb, this, indexes);
     TObject::createSingleBranch(
-      TFields::create{fields, symbolFields, indexes, isArray},
+      TFields::create{fields, symbolFields, tIndexes, isArray},
       className.pos,
     )
   }
@@ -285,11 +286,12 @@ base class TEnv{
     | Some(tfuns) -> tfuns
     | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
     };
+    tIndexes = TIndexes::create(tcenvb, this, indexes);
     TObject::createSingleBranch(
       TFields::create{
         fields,
         symbolFields,
-        indexes,
+        tIndexes,
         new => Some(new),
         isArray => Some(false),
       },
@@ -402,7 +404,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     acc: mutable Map<FieldNameString, TField>,
     symbolFields: mutable Map<FieldNameString, TField>,
-    indexes: mutable Vector<TIndexField>,
+    indexes: mutable Vector<(IndexKeyKinds, TField)>,
     visitedClasses: SortedSet<String>,
     isStatic: ?Array<TypeParam>,
     className: Name,
@@ -491,13 +493,16 @@ base class TEnv{
           keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField::create{
-              pos => indexName.pos,
-              keyName => indexName.value,
+            (
               keyKinds,
-              isReadonly => fieldIsReadonly,
-              valueType,
-            },
+              TField::create{
+                pos => indexName.pos,
+                name => indexName.value,
+                isOptional => true,
+                isReadonly => fieldIsReadonly,
+                type => valueType,
+              },
+            ),
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
         }
@@ -794,7 +799,7 @@ base class TEnv{
         },
       )
     | TAObject(fields) ->
-      tFields = this.createTFields(tcenvb, fields, pos, isTopLevelConst);
+      tFields = this.createTFields(tcenvb, fields, isTopLevelConst);
       TType::single(TObject::createSingleBranch(tFields, pos))
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
@@ -1275,7 +1280,6 @@ base class TEnv{
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
     fieldTypes: Array<ObjectFieldType>,
-    _pos: PosRange,
     isTopLevelConst: Bool = false,
   ): TFields {
     fieldsMap = mutable Map[];
@@ -1333,13 +1337,16 @@ base class TEnv{
           keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
           valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
-            TIndexField::create{
-              pos => indexName.pos,
-              keyName => indexName.value,
+            (
               keyKinds,
-              isReadonly => readonly_.map(r -> r.pos),
-              valueType,
-            },
+              TField::create{
+                pos => indexName.pos,
+                name => indexName.value,
+                isOptional => true,
+                isReadonly => readonly_.map(r -> r.pos),
+                type => valueType,
+              },
+            ),
           )
         }
       | fd @ ObjectFieldTypeMethod _ ->
@@ -1377,10 +1384,11 @@ base class TEnv{
         }
       }
     };
+    tIndexes = TIndexes::create(tcenvb, this, indexes);
     tFields = TFields::create{
       fields => fieldsMap,
       symbolFields,
-      indexes,
+      tIndexes,
       new,
       call,
     };
@@ -1406,7 +1414,9 @@ base class TEnv{
         TType::single(TPrimValue(TNum(), None(), pos)),
       )
     };
-    ikk = IndexKeyKinds::empty;
+    allStrings = false;
+    allNumbers = false;
+    allSymbols = false;
     maxRange = -1;
     strings = SortedSet[];
     symbols = SortedSet[];
@@ -1419,19 +1429,19 @@ base class TEnv{
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | obj @ TObject(_, _) ->
           for (fields in obj.getAllFields()) {
-            if (!ikk.hasString || !ikk.hasNumber) {
+            if (!allStrings || !allNumbers) {
               for (field in fields.fields) {
                 !strings = strings.set(field.name.value);
               }
             };
-            if (!ikk.hasSymbol) {
+            if (!allSymbols) {
               for (symbolField in fields.symbolFields) {
                 !symbols = symbols.set(symbolField.name.value);
               }
             };
-            for (index in fields.indexes) {
-              !ikk = ikk.merge(index.keyKinds);
-            }
+            if (fields.stringIndex.isSome()) !allStrings = true;
+            if (fields.numberIndex.isSome()) !allNumbers = true;
+            if (fields.symbolIndex.isSome()) !allSymbols = true;
           }
         | prim @ TPrimValue _ ->
           obj = this.newObject(subst, prim.asClassName(), Array[]);
@@ -1442,19 +1452,23 @@ base class TEnv{
         }
       }
     };
-    resultTys = mutable Vector[ikk.toTType(subst, this, pos)];
-    numbers = if (!ikk.hasString || !ikk.hasNumber) {
+    resultTys = mutable Vector[];
+    numbers = if (!allStrings || !allNumbers) {
       SortedSet::createFromItems(Range(0, maxRange).map(i -> i.toString()))
     } else {
       SortedSet[]
     };
-    if (!ikk.hasString) {
-      allStrings = strings.union(numbers);
-      PrimLiterals::ofSet(allStrings, pos).each(strLits ->
+    if (allStrings) {
+      resultTys.push(TType::single(TPrimValue::string(pos)))
+    } else {
+      stringsAndNumbers = strings.union(numbers);
+      PrimLiterals::ofSet(stringsAndNumbers, pos).each(strLits ->
         resultTys.push(TType::single(TPrimValue(TString(), Some(strLits), pos)))
       )
     };
-    if (!ikk.hasNumber) {
+    if (allNumbers) {
+      resultTys.push(TType::single(TPrimValue::number(pos)))
+    } else {
       for (str in strings) {
         if (isJSNumericString(str)) !numbers = numbers.set(str)
       };
@@ -1462,7 +1476,9 @@ base class TEnv{
         resultTys.push(TType::single(TPrimValue(TNum(), Some(nbrLits), pos)))
       )
     };
-    if (!ikk.hasSymbol) {
+    if (allSymbols) {
+      resultTys.push(TType::single(TPrimValue::symbol(pos)))
+    } else {
       PrimLiterals::ofSet(symbols, pos).each(symLits ->
         resultTys.push(TType::single(TPrimValue(TSymbol(), Some(symLits), pos)))
       )

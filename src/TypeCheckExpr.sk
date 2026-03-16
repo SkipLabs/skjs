@@ -404,7 +404,44 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            fields.maybeSingleIndex() match {
+            matchedIndex = fields.indexForKeyKind(remainingIdxSType.kind);
+            // If string literal access fails on a number index, retry as
+            // number for canonical numeric strings (e.g. obj["0"]
+            // on { [x: number]: T }).
+            if (matchedIndex.isNone()) {
+              !matchedIndex = remainingIdxSType match {
+              | TPrimValue(
+                TString(),
+                Some(lits),
+                _,
+              ) if (lits.values().all(lit -> isJSNumericString(lit.val))) ->
+                fields.indexForKeyKind(TNum())
+              | _ -> None()
+              }
+            };
+            if (matchedIndex.isNone() && fields.hasIndex()) {
+              // Object has indexes but not for this key kind
+              tcenv.error(
+                Array[
+                  (
+                    pos,
+                    `Invalid index key: expected ${fields.indexKeyKindsString()}, got ${
+                      remainingIdxSType.kind
+                    }`,
+                  ),
+                ],
+              );
+              // Use any available index to continue type checking
+              !matchedIndex = fields.stringIndex match {
+              | Some _ -> fields.stringIndex
+              | None() ->
+                fields.numberIndex match {
+                | Some _ -> fields.numberIndex
+                | None() -> fields.symbolIndex
+                }
+              }
+            };
+            matchedIndex match {
             | None() ->
               remainingIdxSType.literals match {
               | None() ->
@@ -422,40 +459,8 @@ extension class TypeChecker {
                 fields.getTypeTypingError(lits.toStringList(), pos)
               }
             | Some(index) ->
-              keyMatches = index.keyKinds.contains(remainingIdxSType.kind);
-              // If string literal access fails on a number index, retry as
-              // number literal for canonical numeric strings (e.g. obj["0"]
-              // on { [x: number]: T }).
-              if (!keyMatches) {
-                !keyMatches = remainingIdxSType match {
-                | TPrimValue(
-                  TString(),
-                  Some(lits),
-                  _,
-                ) if (lits.values().all(lit -> isJSNumericString(lit.val))) ->
-                  index.keyKinds.contains(TNum())
-                | _ -> false
-                }
-              };
-              if (!keyMatches) {
-                tcenv.error(
-                  Array[
-                    (
-                      pos,
-                      `Invalid index key: expected ${index.keyKinds}, got ${
-                        remainingIdxSType.kind
-                      }`,
-                    ),
-                  ],
-                )
-              };
-              ty = if (isLValue) index.valueTypeSet else {
-                TType::unionUndefined(
-                  tcenv.subst,
-                  this,
-                  index.valueTypeGet,
-                  pos,
-                )
+              ty = if (isLValue) index.set else {
+                TType::unionUndefined(tcenv.subst, this, index.get, pos)
               };
               addResultCase(ty)
             }
@@ -735,7 +740,7 @@ extension class TypeChecker {
     | Object(efields) ->
       fields = SortedMap<FieldNameString, TField>[];
       symbolFields = SortedMap<FieldNameString, TField>[];
-      indexes = mutable Vector[];
+      tIndexes: TIndexesBase = TIndexes::empty;
       for (efield in efields) {
         (name, ty) = efield match {
         | FDNormal(name, y) ->
@@ -759,7 +764,7 @@ extension class TypeChecker {
             tcenv.error(
               Array[
                 (spreadExpr.pos, "Invalid spread"),
-                (spreadTy.pos, "This has type unknown"),
+                (spreadTy.pos, `This has type ${spreadTy}`),
               ],
             );
             continue
@@ -769,7 +774,7 @@ extension class TypeChecker {
           // (structural subtyping allows extra properties).
           !fields = SortedMap[];
           !symbolFields = SortedMap[];
-          indexes.clear();
+          !tIndexes = TIndexes::empty;
           spreadTFields = obj.getFields(tcenv.subst, this);
           for (spreadField in spreadTFields.fields) {
             !fields[spreadField.name] = spreadField
@@ -777,9 +782,7 @@ extension class TypeChecker {
           for (spreadSymbolField in spreadTFields.symbolFields) {
             !symbolFields[spreadSymbolField.name] = spreadSymbolField
           };
-          for (spreadIndex in spreadTFields.indexes) {
-            indexes.push(spreadIndex)
-          };
+          !tIndexes = spreadTFields;
           spreadTFields.call.each(_ ->
             tcenv.notSupported(
               spreadExpr.pos,
@@ -841,7 +844,7 @@ extension class TypeChecker {
           TFields::createFromSorted{
             fields,
             symbolFields,
-            indexes,
+            tIndexes,
             isArray => Some(false),
           },
           pos,
@@ -1269,14 +1272,13 @@ extension class TypeChecker {
             !canBeFalse = true
           | obj @ TObject(_, _pos) ->
             objFields = obj.getFields(tcenv.subst, this);
-            (fields, symbolFields, indexes) = objFields match {
-            | TFields{fields, symbolFields, indexes} ->
-              (fields, symbolFields, indexes)
+            (fields, symbolFields) = objFields match {
+            | TFields{fields, symbolFields} -> (fields, symbolFields)
             };
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
-              !indexes.isEmpty() /* TODO: refine */ ||
+              objFields.hasIndex() /* TODO: refine */ ||
               fieldsOpt match {
               | None() ->
                 false // no field keys to check
@@ -1838,7 +1840,7 @@ extension class TypeChecker {
               fieldType.pos,
               "Invalid assignment",
               fieldType,
-              indexField.valueTypeSet,
+              indexField.set,
             )
           | None() ->
             !needsGrowth = true;
@@ -1926,7 +1928,7 @@ extension class TypeChecker {
           fieldType.pos,
           "Invalid assignment",
           fieldType,
-          indexField.valueTypeSet,
+          indexField.set,
         )
       | None() ->
         tcenv.error(

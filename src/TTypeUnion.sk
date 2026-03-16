@@ -96,22 +96,22 @@ extension class TField {
   }
 }
 
-extension class TIndexField {
-  static fun union(
+extension class TField {
+  static fun unionIndex(
     subst: mutable Subst,
     tenv: TEnv,
-    x: TIndexField,
-    y: TIndexField,
-  ): ?TIndexField {
-    valueTypeGet = TType::union(subst, tenv, x.valueTypeGet, y.valueTypeGet);
-    valueTypeSet = TType::inter(subst, tenv, x.valueTypeSet, y.valueTypeSet);
+    x: TField,
+    y: TField,
+  ): ?TField {
+    get = TType::union(subst, tenv, x.get, y.get);
+    set = TType::inter(subst, tenv, x.set, y.set);
     Some(
-      TIndexField{
+      TField{
         pos => x.pos,
-        keyName => x.keyName,
-        keyKinds => x.keyKinds,
-        valueTypeGet,
-        valueTypeSet,
+        name => x.name,
+        isOptional => x.isOptional,
+        get,
+        set,
       },
     )
   }
@@ -256,28 +256,55 @@ extension class TFields {
       }
     );
     // TODO: handle intersection between normal fields and index fields
-    indexes = {
-      index1o = fields1.maybeSingleIndex();
-      index2o = fields2.maybeSingleIndex();
-      (index1o, index2o) match {
-      | (None(), None()) -> None()
-      | (Some(_), None())
-      | (None(), Some(_)) ->
-        None()
-      | (Some(index1), Some(index2)) ->
-        TIndexField::union(subst, tenv, index1, index2)
-      } match {
-      | None() -> Array[]
-      | Some(index) -> Array[index]
-      }
-    };
+    stringIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.stringIndex,
+      fields2.stringIndex,
+    );
+    numberIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.numberIndex,
+      fields2.numberIndex,
+    );
+    symbolIndex = TFields::unionOptIndex(
+      subst,
+      tenv,
+      fields1.symbolIndex,
+      fields2.symbolIndex,
+    );
     call = TFields::unionOptTFuns(subst, tenv, fields1.call, fields2.call);
     new = TFields::unionOptTFuns(subst, tenv, fields1.new, fields2.new);
     isArray = (fields1.isArray, fields2.isArray) match {
     | (Some(a), Some(b)) if (a == b) -> Some(a)
     | _ -> None()
     };
-    TFields{fields, symbolFields, indexes, call, new, isArray}
+    TFields{
+      fields,
+      symbolFields,
+      stringIndex,
+      numberIndex,
+      symbolIndex,
+      call,
+      new,
+      isArray,
+    }
+  }
+
+  static fun unionOptIndex(
+    subst: mutable Subst,
+    tenv: TEnv,
+    idx1: ?TField,
+    idx2: ?TField,
+  ): ?TField {
+    (idx1, idx2) match {
+    | (None(), _)
+    | (_, None()) ->
+      None()
+    | (Some(index1), Some(index2)) ->
+      TField::unionIndex(subst, tenv, index1, index2)
+    }
   }
 
   static fun unionOptTFuns(

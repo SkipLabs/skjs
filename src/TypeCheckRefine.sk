@@ -218,7 +218,10 @@ extension class TypeChecker {
           // Use Array for mutable inputs so the intersection
           // preserves the wider set type (unknown vs T).
           hasReadonlyIndex = tObj.getBranches().any(b ->
-            b.indexes.any(idx -> idx.valueTypeSet.isBottom())
+            b.numberIndex match {
+            | Some(idx) -> idx.set.isBottom()
+            | None() -> false
+            }
           );
           arrName = if (hasReadonlyIndex) "ReadonlyArray" else "Array";
           arrObj = this.newObject(

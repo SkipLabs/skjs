@@ -229,26 +229,16 @@ extension class TField {
     isOptional = x.isOptional && y.isOptional;
     TField{pos => x.pos, name => x.name, isOptional, get, set}
   }
-}
 
-extension class TIndexField {
-  static fun inter(
+  static fun interIndex(
     subst: mutable Subst,
     tenv: TEnv,
-    x: TIndexField,
-    y: TIndexField,
-  ): ?TIndexField {
-    valueTypeGet = TType::inter(subst, tenv, x.valueTypeGet, y.valueTypeGet);
-    valueTypeSet = TType::union(subst, tenv, x.valueTypeSet, y.valueTypeSet);
-    Some(
-      TIndexField{
-        pos => x.pos,
-        keyName => x.keyName,
-        keyKinds => x.keyKinds,
-        valueTypeGet,
-        valueTypeSet,
-      },
-    )
+    x: TField,
+    y: TField,
+  ): TField {
+    get = TType::inter(subst, tenv, x.get, y.get);
+    set = TType::union(subst, tenv, x.set, y.set);
+    TField{pos => x.pos, name => x.name, isOptional => x.isOptional, get, set}
   }
 }
 
@@ -376,21 +366,24 @@ extension class TFields {
       (x, y) -> TField::inter(subst, tenv, x, y),
     );
     // TODO: handle intersection between normal fields and index fields
-    indexes = {
-      index1o = fields1.maybeSingleIndex();
-      index2o = fields2.maybeSingleIndex();
-      (index1o, index2o) match {
-      | (None(), None()) -> None()
-      | (Some(index), None())
-      | (None(), Some(index)) ->
-        Some(index)
-      | (Some(index1), Some(index2)) ->
-        TIndexField::inter(subst, tenv, index1, index2)
-      } match {
-      | None() -> Array[]
-      | Some(index) -> Array[index]
-      }
-    };
+    stringIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      fields1.stringIndex,
+      fields2.stringIndex,
+    );
+    numberIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      fields1.numberIndex,
+      fields2.numberIndex,
+    );
+    symbolIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      fields1.symbolIndex,
+      fields2.symbolIndex,
+    );
     call = (fields1.call, fields2.call) match {
     | (None(), call)
     | (call, None()) ->
@@ -420,13 +413,40 @@ extension class TFields {
     | (_, some @ Some _) ->
       some
     };
-    Some(TFields{fields, symbolFields, indexes, call, new, isArray})
+    Some(
+      TFields{
+        fields,
+        symbolFields,
+        stringIndex,
+        numberIndex,
+        symbolIndex,
+        call,
+        new,
+        isArray,
+      },
+    )
   }
 
   fun interIsArray(isArray: Bool): ?TFields {
     this.isArray match {
     | None() -> Some(this with {isArray => Some(isArray)})
     | Some(ia) -> if (ia == isArray) Some(this) else None()
+    }
+  }
+
+  static fun interOptIndex(
+    subst: mutable Subst,
+    tenv: TEnv,
+    idx1: ?TField,
+    idx2: ?TField,
+  ): ?TField {
+    (idx1, idx2) match {
+    | (None(), None()) -> None()
+    | (Some(index), None())
+    | (None(), Some(index)) ->
+      Some(index)
+    | (Some(index1), Some(index2)) ->
+      Some(TField::interIndex(subst, tenv, index1, index2))
     }
   }
 }

@@ -74,14 +74,12 @@ function assignStrIdxStrToUnion(s: StrIdxStr): StrIdxUnion {
 ///////////////////////////////////////////////////////////////////////////////
 
 interface DualIdx {
-  // @skjs-expect-error TODO: multiple indexes
   [key: string]: number | string;
   [key: number]: number;
 }
 
 // Readonly: no setter check, getter passes (number <: number | string)
 interface DualIdxReadonly {
-  // @skjs-expect-error TODO: multiple indexes
   readonly [key: string]: number | string;
   readonly [key: number]: number;
 }
@@ -116,8 +114,8 @@ type StrNumUnion = StrIdx | NumIdx;
 
 // TS: Property '0' does not exist on type 'StrNumUnion'
 // Union means access must work on BOTH sides; NumIdx has no string index
-// TODO: x[0] on StrNumUnion (TS errors, SKJS allows since StrIdx has string index covering number)
 function testCrossKindUnionNum(x: StrNumUnion): number | undefined {
+  // @ts-expect-error Unbound field: 0
   return x[0];
 }
 
@@ -155,6 +153,7 @@ function numIdxToStrIdx(n: NumIdx): StrIdx {
 ///////////////////////////////////////////////////////////////////////////////
 
 function dualToStrIdx(d: DualIdx): StrIdxUnion {
+  // @ts-expect-error Invalid return type
   return d;
 }
 
@@ -176,7 +175,6 @@ interface NumIdxBool {
 }
 
 interface DualIdxBadCross {
-  // @skjs-expect-error TODO: multiple indexes
   [key: string]: boolean;
   [key: number]: number;
 }
@@ -184,20 +182,18 @@ interface DualIdxBadCross {
 // DualIdxBadCross's number index (number) is not compatible with
 // StrIdxBool's string index (boolean)
 function dualBadCrossToStrBool(d: DualIdxBadCross): StrIdxBool {
+  // @skjs-expect-error Invalid return type
   return d;
 }
 
-// Good: number index compatible with string index (getter direction)
-// SKJS also checks setter: string index set (number | boolean) is not subtype of number index set (number)
+// Good: number index compatible with string index
 interface DualIdxGoodCross {
-  // @skjs-expect-error TODO: multiple indexes
   [key: string]: number | boolean;
   [key: number]: number;
 }
 
 // Readonly: no setter check, getter passes (number <: number | boolean)
 interface DualIdxGoodCrossReadonly {
-  // @skjs-expect-error TODO: multiple indexes
   readonly [key: string]: number | boolean;
   readonly [key: number]: number;
 }
