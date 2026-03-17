@@ -1158,6 +1158,17 @@ extension class TypeChecker {
     mostPrecise: Bool,
     isLValue: Bool = false,
   ): TType {
+    ty = this.exprImpl(tcenv, e, mostPrecise, isLValue);
+    tcenv.!exprTypes[e.pos] = ty;
+    ty
+  }
+
+  private fun exprImpl(
+    tcenv: mutable TCEnv,
+    e: Expr,
+    mostPrecise: Bool,
+    isLValue: Bool,
+  ): TType {
     if (mostPrecise) {
       if (isLValue) {
         tcenv.error(
