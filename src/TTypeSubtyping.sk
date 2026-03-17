@@ -658,25 +658,47 @@ extension class TFields {
   }
 
   // Check subtyping for named fields (sub vs super).
-  // indexOfSub looks up the index that covers a given field name in the sub type.
+  // indexFor looks up the index covering a given field name in the given TFields.
   private static fun isSub_NamedFields(
     subst: mutable Subst,
     tenv: TEnv,
     namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
     namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
-    indexOfSub: FieldNameString -> ?TField,
+    indexFor: (TFields, FieldNameString) -> ?TField,
     fields1: TFields,
     fields2: TFields,
   ): STResult<TFields> {
     for (ior in namedFields1.iterDiffInterDiff(namedFields2)) {
       ior match {
-      | Left(_) -> void
+      | Left(f1) ->
+        // Sub has extra field: check it against super's index
+        indexFor(fields2, f1.name) match {
+        | None() -> void
+        | Some(idx2) ->
+          TType::isSub(subst, tenv, f1.get, idx2.get) match {
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsFieldIndex(err, f1, idx2, fields1, fields2)
+          | STOk() ->
+            TType::isSub(subst, tenv, idx2.set, f1.set) match {
+            | err @ STErrorOnTType _ ->
+              return STRecFieldsFieldIndex(
+                err,
+                f1,
+                idx2,
+                fields1,
+                fields2,
+                Some(f1.pos),
+              )
+            | STOk() -> void
+            }
+          }
+        }
       | Right(f2) ->
         if (!f2.isOptional) {
           return STRecFieldsField(None(), f2, FMKGetter(), fields1, fields2)
         };
         // When sub has an index, use it to satisfy super's optional fields
-        indexOfSub(f2.name) match {
+        indexFor(fields1, f2.name) match {
         | None() -> void
         | Some(idx1) ->
           TType::isSub(subst, tenv, idx1.get, f2.get) match {
@@ -748,7 +770,7 @@ extension class TFields {
       tenv,
       fields1.fields,
       fields2.fields,
-      name -> fields1.indexForFieldName(name.value),
+      (fs, name) -> fs.indexForFieldName(name.value),
       fields1,
       fields2,
     ) match {
@@ -888,7 +910,7 @@ extension class TFields {
       tenv,
       fields1.symbolFields,
       fields2.symbolFields,
-      _ -> fields1.symbolIndex,
+      (fs, _) -> fs.symbolIndex,
       fields1,
       fields2,
     ) match {
