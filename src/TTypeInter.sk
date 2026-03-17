@@ -349,6 +349,40 @@ extension class TPrimValue {
   }
 }
 
+extension class TIndexes {
+  static fun inter(
+    subst: mutable Subst,
+    tenv: TEnv,
+    indexes1: TIndexesBase,
+    indexes2: TIndexesBase,
+  ): TIndexes {
+    stringIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      indexes1.stringIndex,
+      indexes2.stringIndex,
+    );
+    numberIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      indexes1.numberIndex,
+      indexes2.numberIndex,
+    );
+    symbolIndex = TFields::interOptIndex(
+      subst,
+      tenv,
+      indexes1.symbolIndex,
+      indexes2.symbolIndex,
+    );
+    (stringIndex, numberIndex) match {
+    | (Some(strIdx), Some(numIdx)) ->
+      !numberIndex = Some(TField::interIndex(subst, tenv, strIdx, numIdx))
+    | _ -> void
+    };
+    TIndexes{stringIndex, numberIndex, symbolIndex}
+  }
+}
+
 extension class TFields {
   static fun inter(
     subst: mutable Subst,
@@ -361,28 +395,31 @@ extension class TFields {
     fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
       TField::inter(subst, tenv, x, y)
     );
+    indexes = TIndexes::inter(subst, tenv, fields1, fields2);
+    if (indexes.stringIndex.isSome() || indexes.numberIndex.isSome()) {
+      !fields = fields.mapKeyed(f -> {
+        idx = (indexes.numberIndex, indexes.stringIndex) match {
+        | (Some(nbrIdx), _) if (isJSNumericString(f.name.value)) -> nbrIdx
+        | (_, Some(strIdx)) -> strIdx
+        | _ -> return f
+        };
+        TField::interIndex(subst, tenv, f, idx)
+      });
+    };
+    interSym = indexes.symbolIndex match {
+    | None() -> (x, y) -> TField::inter(subst, tenv, x, y)
+    | Some(symIdx) ->
+      (x, y) ->
+        TField::interIndex(
+          subst,
+          tenv,
+          TField::inter(subst, tenv, x, y),
+          symIdx,
+        )
+    };
     symbolFields = fields1.symbolFields.mapUnion(
       fields2.symbolFields,
-      (x, y) -> TField::inter(subst, tenv, x, y),
-    );
-    // TODO: handle intersection between normal fields and index fields
-    stringIndex = TFields::interOptIndex(
-      subst,
-      tenv,
-      fields1.stringIndex,
-      fields2.stringIndex,
-    );
-    numberIndex = TFields::interOptIndex(
-      subst,
-      tenv,
-      fields1.numberIndex,
-      fields2.numberIndex,
-    );
-    symbolIndex = TFields::interOptIndex(
-      subst,
-      tenv,
-      fields1.symbolIndex,
-      fields2.symbolIndex,
+      interSym,
     );
     call = (fields1.call, fields2.call) match {
     | (None(), call)
@@ -417,9 +454,9 @@ extension class TFields {
       TFields{
         fields,
         symbolFields,
-        stringIndex,
-        numberIndex,
-        symbolIndex,
+        stringIndex => indexes.stringIndex,
+        numberIndex => indexes.numberIndex,
+        symbolIndex => indexes.symbolIndex,
         call,
         new,
         isArray,

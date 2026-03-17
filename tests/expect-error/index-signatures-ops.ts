@@ -39,7 +39,6 @@ type MixedUnion = StrIdx | HasName;
 // On StrIdx: x.name gives number | undefined; on HasName: string
 // Union should give string | number | undefined
 function testMixedUnionField(x: MixedUnion): string | number | undefined {
-  // @skjs-expect-error Unbound field: name
   return x.name;
 }
 
@@ -115,7 +114,6 @@ type StrNumUnion = StrIdx | NumIdx;
 // TS: Property '0' does not exist on type 'StrNumUnion'
 // Union means access must work on BOTH sides; NumIdx has no string index
 function testCrossKindUnionNum(x: StrNumUnion): number | undefined {
-  // @ts-expect-error Unbound field: 0
   return x[0];
 }
 

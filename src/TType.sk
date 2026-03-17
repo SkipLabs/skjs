@@ -988,6 +988,12 @@ class TField private {
     }
   }
 
+  // Create a virtual field from an index, renamed for use in union.
+  // Indexes are already optional (isOptional = true).
+  fun asNamed(name: FieldNameString): TField {
+    this with {name}
+  }
+
   fun mapType(f: TType -> TType): TField {
     this with {get => f(this.get), set => f(this.set)}
   }
@@ -1051,6 +1057,17 @@ base class TIndexesBase protected {
   stringIndex: ?TField = None(),
   numberIndex: ?TField = None(),
   symbolIndex: ?TField = None(),
+} {
+  // Find the matching index for a named field:
+  // numeric string names try numberIndex first, then stringIndex;
+  // all other names use stringIndex.
+  fun indexForFieldName(name: String): ?TField {
+    if (isJSNumericString(name) && this.numberIndex.isSome()) {
+      this.numberIndex
+    } else {
+      this.stringIndex
+    }
+  }
 }
 
 class TIndexes protected {} extends TIndexesBase {
