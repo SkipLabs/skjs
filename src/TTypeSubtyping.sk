@@ -882,14 +882,13 @@ extension class TFields {
         }
       }
     };
-    // Symbol fields: same logic as string fields, but not checked against index signatures
-    // TODO: will be fixed in subsequent PR
+    // Symbol fields: same logic as string fields
     TFields::isSub_NamedFields(
       subst,
       tenv,
       fields1.symbolFields,
       fields2.symbolFields,
-      _ -> None(),
+      _ -> fields1.symbolIndex,
       fields1,
       fields2,
     ) match {
