@@ -743,6 +743,18 @@ extension class TFields {
   ): STResult<TFields> {
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
+    TFields::isSub_NamedFields(
+      subst,
+      tenv,
+      fields1.fields,
+      fields2.fields,
+      name -> fields1.indexForFieldName(name.value),
+      fields1,
+      fields2,
+    ) match {
+    | err @ STError _ -> return err
+    | STOk() -> void
+    };
     // Per-kind index checks: for each kind, if super has an index,
     // sub must also have a compatible index (or named fields that satisfy it).
     TFields::isSub_IndexPair(
@@ -869,18 +881,6 @@ extension class TFields {
           }
         }
       }
-    };
-    TFields::isSub_NamedFields(
-      subst,
-      tenv,
-      fields1.fields,
-      fields2.fields,
-      name -> fields1.indexForFieldName(name.value),
-      fields1,
-      fields2,
-    ) match {
-    | err @ STError _ -> return err
-    | STOk() -> void
     };
     // Symbol fields: same logic as string fields, but not checked against index signatures
     // TODO: will be fixed in subsequent PR
