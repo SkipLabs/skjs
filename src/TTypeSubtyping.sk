@@ -679,11 +679,11 @@ extension class TFields {
         indexOfSub(f2.name) match {
         | None() -> void
         | Some(idx1) ->
-          TType::isSub(subst.clone(), tenv, idx1.get, f2.get) match {
+          TType::isSub(subst, tenv, idx1.get, f2.get) match {
           | err @ STErrorOnTType _ ->
             return STRecFieldsIndexField(err, idx1, f2, fields1, fields2)
           | STOk() ->
-            TType::isSub(subst.clone(), tenv, f2.set, idx1.set) match {
+            TType::isSub(subst, tenv, f2.set, idx1.set) match {
             | err @ STErrorOnTType _ ->
               return STRecFieldsIndexField(
                 err,
