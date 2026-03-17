@@ -722,35 +722,28 @@ extension class TFields {
       | Both(f1, f2) ->
         if (f1.isOptional && !f2.isOptional) {
           return STRecFieldsField(None(), f1, FMKGetter(), fields1, fields2)
+        };
+        TType::isSub(subst, tenv, f2.set, f1.set) match {
+        | STOk() -> void
+        | err @ STErrorOnTType _ ->
+          return STRecFieldsField(
+            Some(err),
+            f1,
+            FMKSetter(),
+            fields1,
+            fields2,
+            Some(f2.pos),
+          )
+        };
+        f2type = if (f2.isOptional) {
+          TType::unionUndefined(subst, tenv, f2.get, f2.pos)
         } else {
-          TType::isSub(subst, tenv, f2.set, f1.set) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsField(
-              Some(err),
-              f1,
-              FMKSetter(),
-              fields1,
-              fields2,
-              Some(f2.pos),
-            )
-          };
-          f2type = if (f2.isOptional) {
-            TType::unionUndefined(subst, tenv, f2.get, f2.pos)
-          } else {
-            f2.get
-          };
-          TType::isSub(subst, tenv, f1.get, f2type) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsField(
-              Some(err),
-              f1,
-              FMKGetter(),
-              fields1,
-              fields2,
-            )
-          }
+          f2.get
+        };
+        TType::isSub(subst, tenv, f1.get, f2type) match {
+        | STOk() -> void
+        | err @ STErrorOnTType _ ->
+          return STRecFieldsField(Some(err), f1, FMKGetter(), fields1, fields2)
         }
       }
     };
