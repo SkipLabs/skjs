@@ -657,6 +657,84 @@ extension class TFields {
     }
   }
 
+  // Check subtyping for named fields (sub vs super).
+  // indexOfSub looks up the index that covers a given field name in the sub type.
+  private static fun isSub_NamedFields(
+    subst: mutable Subst,
+    tenv: TEnv,
+    namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
+    namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
+    indexOfSub: FieldNameString -> ?TField,
+    fields1: TFields,
+    fields2: TFields,
+  ): STResult<TFields> {
+    for (ior in namedFields1.iterDiffInterDiff(namedFields2)) {
+      ior match {
+      | Left(_) -> void
+      | Right(f2) ->
+        if (!f2.isOptional) {
+          return STRecFieldsField(None(), f2, FMKGetter(), fields1, fields2)
+        };
+        // When sub has an index, use it to satisfy super's optional fields
+        indexOfSub(f2.name) match {
+        | None() -> void
+        | Some(idx1) ->
+          TType::isSub(subst.clone(), tenv, idx1.get, f2.get) match {
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsIndexField(err, idx1, f2, fields1, fields2)
+          | STOk() ->
+            TType::isSub(subst.clone(), tenv, f2.set, idx1.set) match {
+            | err @ STErrorOnTType _ ->
+              return STRecFieldsIndexField(
+                err,
+                idx1,
+                f2,
+                fields1,
+                fields2,
+                Some(f2.pos),
+              )
+            | STOk() -> void
+            }
+          }
+        }
+      | Both(f1, f2) ->
+        if (f1.isOptional && !f2.isOptional) {
+          return STRecFieldsField(None(), f1, FMKGetter(), fields1, fields2)
+        } else {
+          TType::isSub(subst, tenv, f2.set, f1.set) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsField(
+              Some(err),
+              f1,
+              FMKSetter(),
+              fields1,
+              fields2,
+              Some(f2.pos),
+            )
+          };
+          f2type = if (f2.isOptional) {
+            TType::unionUndefined(subst, tenv, f2.get, f2.pos)
+          } else {
+            f2.get
+          };
+          TType::isSub(subst, tenv, f1.get, f2type) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            return STRecFieldsField(
+              Some(err),
+              f1,
+              FMKGetter(),
+              fields1,
+              fields2,
+            )
+          }
+        }
+      }
+    };
+    STOk()
+  }
+
   private static fun isSub_(
     subst: mutable Subst,
     tenv: TEnv,
@@ -792,115 +870,31 @@ extension class TFields {
         }
       }
     };
-    for (ior in fields1.fields.iterDiffInterDiff(fields2.fields)) {
-      ior match {
-      | Left(_) -> void
-      | Right(f2) ->
-        if (!f2.isOptional) {
-          return STRecFieldsField(None(), f2, FMKGetter(), fields1, fields2)
-        };
-        // When sub has an index, use it to satisfy super's optional fields
-        fields1.indexForKeyKind(
-          if (isJSNumericString(f2.name.value)) TNum() else TString(),
-        ) match {
-        | None() -> void
-        | Some(idx1) ->
-          TType::isSub(subst.clone(), tenv, idx1.get, f2.get) match {
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsIndexField(err, idx1, f2, fields1, fields2)
-          | STOk() ->
-            TType::isSub(subst.clone(), tenv, f2.set, idx1.set) match {
-            | err @ STErrorOnTType _ ->
-              return STRecFieldsIndexField(
-                err,
-                idx1,
-                f2,
-                fields1,
-                fields2,
-                Some(f2.pos),
-              )
-            | STOk() -> void
-            }
-          }
-        }
-      | Both(f1, f2) ->
-        if (f1.isOptional && !f2.isOptional) {
-          return STRecFieldsField(None(), f1, FMKGetter(), fields1, fields2)
-        } else {
-          TType::isSub(subst, tenv, f2.set, f1.set) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsField(
-              Some(err),
-              f1,
-              FMKSetter(),
-              fields1,
-              fields2,
-              Some(f2.pos),
-            )
-          };
-          f2type = if (f2.isOptional) {
-            TType::unionUndefined(subst, tenv, f2.get, f2.pos)
-          } else {
-            f2.get
-          };
-          TType::isSub(subst, tenv, f1.get, f2type) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsField(
-              Some(err),
-              f1,
-              FMKGetter(),
-              fields1,
-              fields2,
-            )
-          }
-        }
-      }
+    TFields::isSub_NamedFields(
+      subst,
+      tenv,
+      fields1.fields,
+      fields2.fields,
+      name -> fields1.indexForFieldName(name.value),
+      fields1,
+      fields2,
+    ) match {
+    | err @ STError _ -> return err
+    | STOk() -> void
     };
     // Symbol fields: same logic as string fields, but not checked against index signatures
     // TODO: will be fixed in subsequent PR
-    for (ior in fields1.symbolFields.iterDiffInterDiff(fields2.symbolFields)) {
-      ior match {
-      | Left(_) -> void
-      | Right(f2) ->
-        if (!f2.isOptional) {
-          return STRecFieldsField(None(), f2, FMKGetter(), fields1, fields2)
-        }
-      | Both(f1, f2) ->
-        if (f1.isOptional && !f2.isOptional) {
-          return STRecFieldsField(None(), f1, FMKGetter(), fields1, fields2)
-        } else {
-          TType::isSub(subst, tenv, f2.set, f1.set) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsField(
-              Some(err),
-              f1,
-              FMKSetter(),
-              fields1,
-              fields2,
-              Some(f2.pos),
-            )
-          };
-          f2type = if (f2.isOptional) {
-            TType::unionUndefined(subst, tenv, f2.get, f2.pos)
-          } else {
-            f2.get
-          };
-          TType::isSub(subst, tenv, f1.get, f2type) match {
-          | STOk() -> void
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsField(
-              Some(err),
-              f1,
-              FMKGetter(),
-              fields1,
-              fields2,
-            )
-          }
-        }
-      }
+    TFields::isSub_NamedFields(
+      subst,
+      tenv,
+      fields1.symbolFields,
+      fields2.symbolFields,
+      _ -> None(),
+      fields1,
+      fields2,
+    ) match {
+    | err @ STError _ -> return err
+    | STOk() -> void
     };
     TFields::isSubOptTFuns(subst, tenv, fields1.call, fields2.call) match {
     | None() -> return STRecFieldsCall(None(), fields1, fields2)
