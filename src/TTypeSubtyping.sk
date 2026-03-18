@@ -562,17 +562,17 @@ base class STErrorOnTFields(
         ],
         err.toError(detailForRec),
       )
-    | STRecFieldsField(err, field, _, kind, _fields1, _fields2, _) ->
+    | STRecFieldsField(err, field1, _field2, kind, _fields1, _fields2, _) ->
       msg = kind match {
-      | FMKSetter() if (field.set.isBottom()) ->
+      | FMKSetter() if (field1.set.isBottom()) ->
         `Field '${
-          field.name.value
+          field1.name.value
         }' is readonly and cannot be used where a mutable field is expected`
       | FMKSetter() ->
-        `Their field '${field.name.value}' have incompatible set types`
-      | FMKGetter() -> `Their field '${field.name.value}' are not compatible`
+        `Their field '${field1.name.value}' have incompatible set types`
+      | FMKGetter() -> `Their field '${field1.name.value}' are not compatible`
       };
-      (List[(field.pos, msg)], err.toError(detailForRec))
+      (List[(field1.pos, msg)], err.toError(detailForRec))
     };
     !msgs = msgs.concat(STError::readonlyHint(this.suggestReadonly));
     if (
