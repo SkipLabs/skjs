@@ -141,7 +141,7 @@ extension class TypeChecker {
       | Some(stypes) ->
         for (stype in stypes) {
           (branches, typeForRest) = stype match {
-          | tobj @ TObject(_, _) ->
+          | tobj @ TObject(_, _, _) ->
             (tobj.getBranches(), tobj.removeFields(fieldsToRemoveForRest))
           | _ ->
             typingError(
@@ -358,7 +358,7 @@ extension class TypeChecker {
         };
         addResultCase(tyAtN)
 
-      | obj @ TObject(_, objectPos) ->
+      | obj @ TObject(_, _, objectPos) ->
         if (idxSType is TPrimValue(TSymbol(), _, _)) {
           uniqueId = idxSType match {
           | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
@@ -847,6 +847,7 @@ extension class TypeChecker {
             tIndexes,
             isArray => Some(false),
           },
+          None(),
           pos,
         ),
       );
@@ -1270,7 +1271,7 @@ extension class TypeChecker {
             );
             !canBeTrue = true;
             !canBeFalse = true
-          | obj @ TObject(_, _pos) ->
+          | obj @ TObject(_, _, _pos) ->
             objFields = obj.getFields(tcenv.subst, this);
             (fields, symbolFields) = objFields match {
             | TFields{fields, symbolFields} -> (fields, symbolFields)
@@ -1807,7 +1808,7 @@ extension class TypeChecker {
       .get(local)
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, objPos)) ->
+    | Some(obj @ TObject(_, _, objPos)) ->
       fields = obj.getFields(tcenv.subst, this);
       // For each key, check existing fields/index sigs and collect
       // new fields to grow.
@@ -1883,7 +1884,7 @@ extension class TypeChecker {
           /* Local objects are not arrays but a type annotation may lose this information */
           isArray => Some(false),
         };
-        allNewObj = TObject::createSingleBranch(allNewFields, objPos);
+        allNewObj = TObject::createSingleBranch(allNewFields, None(), objPos);
         newTy = TObject::inter(tcenv.subst, this, obj, allNewObj) match {
         | None() -> TType::bottom(objPos)
         | Some(mergedObj) -> TType::single(mergedObj)
@@ -1912,7 +1913,7 @@ extension class TypeChecker {
       .get(local)
       .getSTypes(tcenv.subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _)) ->
+    | Some(obj @ TObject(_, _, _)) ->
       fields = obj.getFields(tcenv.subst, this);
       keyKind = keyType
         .getSTypes(tcenv.subst, this, Covariant())

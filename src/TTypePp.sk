@@ -84,7 +84,8 @@ mutable class TypePp{
 
   mutable fun stype(level: Int, margin: Margin, sty: SType): void {
     sty match {
-    | obj @ TObject(_, _) ->
+    | TObject(_, Some(inst), _) -> this.inst(level, margin, inst)
+    | obj @ TObject(_, _, _) ->
       first = true;
       for (fields in obj.getAllFields()) {
         if (!first) this.out(level, margin, " | ");
@@ -504,16 +505,7 @@ mutable class TypePp{
         for (i => inst in insts) {
           if (i != 0) pp.out(level, margin, " | ");
           inst match {
-          | TSInst(x, targs) ->
-            pp.out(level, margin, x.value);
-            if (targs.targs.size() != 0) {
-              pp.out(level, margin, "<");
-              for (j => targ in targs.targs) {
-                if (j != 0) pp.out(level, margin, ", ");
-                pp.type(level, margin, targ);
-              };
-              pp.out(level, margin, ">");
-            }
+          | tsinst @ TSInst _ -> pp.inst(level, margin, tsinst)
           | TArrayLit(_tvar, tupleElts) ->
             pp.out(level, margin, "ArrayLit<");
             for (j => eltTy in tupleElts) {
@@ -553,16 +545,7 @@ mutable class TypePp{
           | _ -> pp.newLine()
           };
           inst match {
-          | TSInst(x, targs) ->
-            pp.out(level, margin, x.value);
-            if (targs.targs.size() != 0) {
-              pp.out(level, margin, "<");
-              for (i => targ in targs.targs) {
-                if (i != 0) pp.out(level, margin, ", ");
-                pp.type(level, margin, targ);
-              };
-              pp.out(level, margin, ">");
-            }
+          | tsinst @ TSInst _ -> pp.inst(level, margin, tsinst)
           | TArrayLit(_tvar, tupleElts) ->
             pp.out(level, margin, "ArrayLit<");
             for (i => eltTy in tupleElts) {
@@ -592,6 +575,19 @@ mutable class TypePp{
         }
       },
     );
+  }
+
+  mutable fun inst(level: Int, margin: Margin, inst: TSInst): void {
+    this.out(level, margin, inst.name.value);
+    targs = inst.targs;
+    if (targs.targs.size() != 0) {
+      this.out(level, margin, "<");
+      for (i => targ in targs.targs) {
+        if (i != 0) this.out(level, margin, ", ");
+        this.type(level, margin, targ);
+      };
+      this.out(level, margin, ">");
+    }
   }
 
   mutable fun tvar(level: Int, margin: Margin, tvar: TVar): void {
