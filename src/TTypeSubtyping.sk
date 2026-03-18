@@ -475,7 +475,7 @@ base class STErrorOnTFields(
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsIndexField(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsMissingField(TField)
-  | STRecFieldsField(STErrorOnTType, TField, FieldMismatchKind)
+  | STRecFieldsField(STErrorOnTType, TField, TField, FieldMismatchKind)
 
   fun toError(
     pos1: PosRange,
@@ -562,7 +562,7 @@ base class STErrorOnTFields(
         ],
         err.toError(detailForRec),
       )
-    | STRecFieldsField(err, field, kind, _fields1, _fields2, _) ->
+    | STRecFieldsField(err, field, _, kind, _fields1, _fields2, _) ->
       msg = kind match {
       | FMKSetter() if (field.set.isBottom()) ->
         `Field '${
@@ -754,6 +754,7 @@ extension class TFields {
           return STRecFieldsField(
             err,
             f1,
+            f2,
             FMKSetter(),
             fields1,
             fields2,
@@ -768,7 +769,7 @@ extension class TFields {
         TType::isSub(subst, tenv, f1.get, f2type) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
-          return STRecFieldsField(err, f1, FMKGetter(), fields1, fields2)
+          return STRecFieldsField(err, f1, f2, FMKGetter(), fields1, fields2)
         }
       }
     };
