@@ -95,25 +95,7 @@ class ArrayLitTyping() {
     TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, true)
   }
 
-  // Widens literal primitive types (e.g., 42 -> number) in ty.
-  static private fun widenLiteralType(
-    subst: mutable Subst,
-    tenv: TEnv,
-    ty: TType,
-  ): TType {
-    ty.mapSTypes(subst, tenv, Some(Covariant()), stypesOpt ->
-      stypesOpt.map(stypes ->
-        stypes.mapSTypes(stype ->
-          stype match {
-          | TPrimValue(kind, Some(_), pos) -> TPrimValue::full(kind, pos)
-          | _ -> stype
-          }
-        )
-      )
-    )
-  }
-
-  // Computes the element type for an array literal by widening and unioning all elements.
+  // Computes the element type for an array literal by unioning all elements.
   static private fun arrayLitEltType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -121,13 +103,12 @@ class ArrayLitTyping() {
   ): TType {
     eltType = TType::bottom(arrLit.tvar.pos);
     for (elt in arrLit.tupleElts) {
-      widenedElt = ArrayLitTyping::widenLiteralType(subst, tenv, elt);
-      !eltType = TType::union(subst, tenv, eltType, widenedElt)
+      !eltType = TType::union(subst, tenv, eltType, elt)
     };
     eltType
   }
 
-  // Converts ArrayLit<α, elts> to Array<U> by widening and unioning all elements.
+  // Converts ArrayLit<α, elts> to Array<U> by unioning all elements.
   static private fun arrayLitToArrayType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -207,7 +188,7 @@ class ArrayLitTyping() {
   // Returns ty unchanged if:
   //   - the index type doesn't force array refinement, or
   //   - ty is not an uncommitted array literal.
-  // Otherwise commits the literal to Array<union(widened elts)> and returns it.
+  // Otherwise commits the literal to Array<union(elts)> and returns it.
   static fun refineForArrayUse(
     tcenv: mutable TCEnv,
     tenv: TEnv,
@@ -218,7 +199,7 @@ class ArrayLitTyping() {
     ArrayLitTyping::getSingleArrayLitUncommitted(tcenv.subst, tenv, ty) match {
     | None() -> ty
     | Some(arrLit) ->
-      // Commit to Array<union(widened elts)>
+      // Commit to Array<union(elts)>
       arrayTy = ArrayLitTyping::arrayLitToArrayType(tcenv.subst, tenv, arrLit);
       ArrayLitTyping::arrayLitCommitType(tcenv.subst, tenv, arrLit, arrayTy);
       arrayTy
