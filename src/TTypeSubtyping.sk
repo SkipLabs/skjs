@@ -474,7 +474,8 @@ base class STErrorOnTFields(
   | STRecFieldsIndexKeyKinds(TField, TField)
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsIndexField(STErrorOnTType, TField, TField, FieldMismatchKind)
-  | STRecFieldsField(?STErrorOnTType, TField, FieldMismatchKind)
+  | STRecFieldsMissingField(TField)
+  | STRecFieldsField(STErrorOnTType, TField, FieldMismatchKind)
 
   fun toError(
     pos1: PosRange,
@@ -503,7 +504,7 @@ base class STErrorOnTFields(
       (List.Nil(), List[(pos1, "Missing call signature")])
     | STRecFieldsNew(None(), _fields1, _fields2, _) ->
       (List.Nil(), List[(pos1, "Missing constructor signature")])
-    | STRecFieldsField(None(), field, _, _fields1, _fields2, _) ->
+    | STRecFieldsMissingField(field, _fields1, _fields2, _) ->
       (
         List.Nil(),
         List[(field.pos, `The field '${field.name.value}' is missing`)],
@@ -561,7 +562,7 @@ base class STErrorOnTFields(
         ],
         err.toError(detailForRec),
       )
-    | STRecFieldsField(Some(err), field, kind, _fields1, _fields2, _) ->
+    | STRecFieldsField(err, field, kind, _fields1, _fields2, _) ->
       msg = kind match {
       | FMKSetter() if (field.set.isBottom()) ->
         `Field '${
@@ -711,7 +712,7 @@ extension class TFields {
         }
       | Right(f2) ->
         if (!f2.isOptional) {
-          return STRecFieldsField(None(), f2, FMKGetter(), fields1, fields2)
+          return STRecFieldsMissingField(f2, fields1, fields2)
         };
         // When sub has an index, use it to satisfy super's optional fields
         indexFor(fields1, f2.name) match {
@@ -745,13 +746,13 @@ extension class TFields {
         }
       | Both(f1, f2) ->
         if (f1.isOptional && !f2.isOptional) {
-          return STRecFieldsField(None(), f1, FMKGetter(), fields1, fields2)
+          return STRecFieldsMissingField(f1, fields1, fields2)
         };
         TType::isSub(subst, tenv, f2.set, f1.set) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
           return STRecFieldsField(
-            Some(err),
+            err,
             f1,
             FMKSetter(),
             fields1,
@@ -767,7 +768,7 @@ extension class TFields {
         TType::isSub(subst, tenv, f1.get, f2type) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
-          return STRecFieldsField(Some(err), f1, FMKGetter(), fields1, fields2)
+          return STRecFieldsField(err, f1, FMKGetter(), fields1, fields2)
         }
       }
     };
