@@ -125,4 +125,12 @@ function testMultiLiteralKey(key: "a" | "b"): void {
   const result: { a?: number; b?: number } = obj;
 }
 
+// Test 15: Growth after spread with index — field should override index
+function testGrowthAfterSpreadWithIndex(src: { [key: string]: number }): void {
+  let obj = { ...src };
+  // TODO: local object growth should ignore index and add field directly
+  // @skjs-expect-error Invalid assignment
+  obj.x = "hello";
+}
+
 // TODO: handle growth on the same field with different type, should probably union
