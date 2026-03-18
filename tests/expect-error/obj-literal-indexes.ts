@@ -13,7 +13,7 @@ function testDualIndexedAssignment(): void {
 // Test: local object growth with type annotation should not grow
 function testAnnotatedLocalObject(): void {
   let obj: { x: number } = { x: 1 };
-  // TODO: SKJS should error here - annotated local objects should not grow
+  // @skjs-expect-error Unbound field: y
   obj.y = 2;
 }
 
