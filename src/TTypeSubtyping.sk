@@ -490,9 +490,9 @@ base class STErrorOnTFields(
   ): List<(PosRange, String)> {
     showTypes =
       !this.fields1.fields.isEmpty() ||
-      this.fields1.hasIndex() ||
+      this.fields1.hasNonSyntheticIndex() ||
       !this.fields2.fields.isEmpty() ||
-      this.fields2.hasIndex() ||
+      this.fields2.hasNonSyntheticIndex() ||
       (
         this.fields1.new,
         this.fields1.call,
@@ -547,7 +547,7 @@ base class STErrorOnTFields(
         List[
           (
             index1.pos,
-            `Index signature '${fields1.indexKeyKindsString()}' is missing in source type`,
+            `Index signature '${fields1.nonSyntheticIndexKeyKindsString()}' is missing in source type`,
           ),
           (index2.pos, `Required by index signature '${index2.name.value}'`),
         ],

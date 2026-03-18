@@ -404,7 +404,9 @@ extension class TypeChecker {
           } match {
           | None() -> void
           | Some(remainingIdxSType) ->
-            matchedIndex = fields.indexForKeyKind(remainingIdxSType.kind);
+            matchedIndex = fields.nonSyntheticIndexForKeyKind(
+              remainingIdxSType.kind,
+            );
             // If string literal access fails on a number index, retry as
             // number for canonical numeric strings (e.g. obj["0"]
             // on { [x: number]: T }).
@@ -416,17 +418,17 @@ extension class TypeChecker {
                 _,
               ) if (lits.values().all(lit -> isJSNumericString(lit.val))) ->
                 // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
-                fields.indexForKeyKind(TNum())
+                fields.nonSyntheticIndexForKeyKind(TNum())
               | _ -> None()
               }
             };
-            if (matchedIndex.isNone() && fields.hasIndex()) {
+            if (matchedIndex.isNone() && fields.hasNonSyntheticIndex()) {
               // Object has indexes but not for this key kind
               tcenv.error(
                 Array[
                   (
                     pos,
-                    `Invalid index key: expected ${fields.indexKeyKindsString()}, got ${
+                    `Invalid index key: expected ${fields.nonSyntheticIndexKeyKindsString()}, got ${
                       remainingIdxSType.kind
                     }`,
                   ),
@@ -843,6 +845,33 @@ extension class TypeChecker {
           type => ty,
         };
         !fields[field.name] = field
+      };
+      // Add synthetic index type variables so fresh object literals can be
+      // assigned to indexed types via subtyping. These are invisible
+      // to field resolution (filtered by nonSyntheticIndexForKeyKind/hasNonSyntheticIndex).
+      if (tIndexes.stringIndex.isNone()) {
+        strTVar = this.newTVar(tcenv, pos);
+        !tIndexes.stringIndex = Some(
+          TField::create{
+            pos,
+            name => kSyntheticIndexName,
+            isOptional => true,
+            isReadonly => None(),
+            type => strTVar,
+          },
+        )
+      };
+      if (tIndexes.symbolIndex.isNone()) {
+        symTVar = this.newTVar(tcenv, pos);
+        !tIndexes.symbolIndex = Some(
+          TField::create{
+            pos,
+            name => kSyntheticIndexName,
+            isOptional => true,
+            isReadonly => None(),
+            type => symTVar,
+          },
+        )
       };
       obj = TType::single(
         TObject::createSingleBranch(
@@ -1284,7 +1313,7 @@ extension class TypeChecker {
             !canBeTrue = true; // object types are open
             !canBeFalse =
               canBeFalse ||
-              objFields.hasIndex() /* TODO: refine */ ||
+              objFields.hasNonSyntheticIndex() /* TODO: refine */ ||
               fieldsOpt match {
               | None() ->
                 false // no field keys to check
@@ -1910,7 +1939,9 @@ extension class TypeChecker {
       | Some(TPrimValue(k, _, _)) -> Some(k)
       | _ -> None()
       };
-      matchingIndex = keyKind.flatMap(k -> fields.indexForKeyKind(k));
+      matchingIndex = keyKind.flatMap(k ->
+        fields.nonSyntheticIndexForKeyKind(k)
+      );
       matchingIndex match {
       | Some(indexField) ->
         this.checkSubType(

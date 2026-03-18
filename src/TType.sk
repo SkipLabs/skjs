@@ -1060,6 +1060,22 @@ value class FieldNameString(
 }
 
 const kArrayBrandFieldName: String = "__SKJS_isArray";
+// Synthetic index signatures on object literals.
+//
+// Object literals like `{ x: 1, y: 2 }` get fresh type variables as string
+// and symbol index signatures. This allows them to be assigned to indexed
+// types like `{ [k: string]: number }` via normal subtyping: the TVar
+// unifies with the target index's value type.
+//
+// These synthetic indexes are named __SKJS_internal_index to distinguish them
+// from user-declared indexes. They must be:
+// - Visible to subtyping (indexForFieldName, isSub_IndexPair) so that object
+//   literals can satisfy indexed type constraints.
+// - Invisible to field resolution (hasNonSyntheticIndex,
+//   nonSyntheticIndexForKeyKind, nonSyntheticIndexKeyKindsString) so that
+//   `obj.z` on `{ x: 1 }` still reports "Unbound field" rather than resolving
+//   through the synthetic index.
+const kSyntheticIndexName: String = "__SKJS_internal_index";
 
 base class TIndexesBase protected {
   // At most one index per key kind: string, number, symbol.
@@ -1247,7 +1263,7 @@ class TFields protected {
   fun isEmpty(): Bool {
     this.fields.isEmpty() &&
       this.symbolFields.isEmpty() &&
-      !this.hasIndex() &&
+      !this.hasNonSyntheticIndex() &&
       this.new.isNone() &&
       this.call.isNone()
   }
@@ -1277,26 +1293,33 @@ class TFields protected {
     this with {fields => this.fields.filterMap(f)}
   }
 
-  fun hasIndex(): Bool {
-    this.stringIndex.isSome() ||
-      this.numberIndex.isSome() ||
-      this.symbolIndex.isSome()
+  private static fun nonSynthetic(index: ?TField): ?TField {
+    index.flatMap(f ->
+      if (f.name.value == kSyntheticIndexName) None() else Some(f)
+    )
+  }
+
+  fun hasNonSyntheticIndex(): Bool {
+    TFields::nonSynthetic(this.stringIndex).isSome() ||
+      TFields::nonSynthetic(this.numberIndex).isSome() ||
+      TFields::nonSynthetic(this.symbolIndex).isSome()
   }
 
   // Human-readable string of supported index key kinds (e.g. "number").
-  fun indexKeyKindsString(): String {
+  fun nonSyntheticIndexKeyKindsString(): String {
     parts: mutable Vector<String> = mutable Vector[];
-    if (this.stringIndex.isSome()) parts.push("string");
-    if (this.numberIndex.isSome()) parts.push("number");
-    if (this.symbolIndex.isSome()) parts.push("symbol");
+    if (TFields::nonSynthetic(this.stringIndex).isSome()) parts.push("string");
+    if (TFields::nonSynthetic(this.numberIndex).isSome()) parts.push("number");
+    if (TFields::nonSynthetic(this.symbolIndex).isSome()) parts.push("symbol");
     parts.join(" | ")
   }
 
   // Find an index that accepts the given key kind.
   // For number keys, try numberIndex first, then fall back to stringIndex
   // (since JS coerces number keys to strings).
-  fun indexForKeyKind(kind: TPrimValueKind): ?TField {
-    kind match {
+  // Excludes synthetic indexes (used only for subtyping object literals).
+  fun nonSyntheticIndexForKeyKind(kind: TPrimValueKind): ?TField {
+    idx = kind match {
     | TString() -> this.stringIndex
     | TNum() ->
       this.numberIndex match {
@@ -1305,7 +1328,8 @@ class TFields protected {
       }
     | TSymbol() -> this.symbolIndex
     | _ -> None()
-    }
+    };
+    TFields::nonSynthetic(idx)
   }
 
   fun maybeGet(fieldName: String): ?TField {
