@@ -426,7 +426,6 @@ extension class TFields {
       name -> fields1.indexForFieldName(name.value),
       name -> fields2.indexForFieldName(name.value),
     );
-    indexes = TIndexes::inter(subst, tenv, fields1, fields2);
     symbolFields = TFields::interNamedFields(
       subst,
       tenv,
@@ -435,6 +434,7 @@ extension class TFields {
       _ -> fields1.symbolIndex,
       _ -> fields2.symbolIndex,
     );
+    indexes = TIndexes::inter(subst, tenv, fields1, fields2);
     call = (fields1.call, fields2.call) match {
     | (None(), call)
     | (call, None()) ->
