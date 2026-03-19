@@ -817,24 +817,27 @@ extension class TFields {
     };
     // Effective number index: fall back to string when no number index,
     // since string index covers numeric keys.
-    effectiveNum1 = fields1.numberIndex match {
-    | Some _ -> fields1.numberIndex
-    | None() -> fields1.stringIndex
-    };
-    effectiveNum2 = fields2.numberIndex match {
-    | Some _ -> fields2.numberIndex
-    | None() -> fields2.stringIndex
-    };
-    TFields::isSub_IndexPair(
-      subst,
-      tenv,
-      effectiveNum1,
-      effectiveNum2,
-      fields1,
-      fields2,
+    (
+      fields1.numberIndex,
+      fields1.stringIndex,
+      fields2.numberIndex,
+      fields2.stringIndex,
     ) match {
-    | err @ STError _ -> return err
-    | STOk() -> void
+    | (None(), _, None(), _) -> void
+    | (effectiveNum1 @ Some _, _, None(), effectiveNum2)
+    | (effectiveNum1 @ Some _, _, effectiveNum2, _)
+    | (None(), effectiveNum1, effectiveNum2, _) ->
+      TFields::isSub_IndexPair(
+        subst,
+        tenv,
+        effectiveNum1,
+        effectiveNum2,
+        fields1,
+        fields2,
+      ) match {
+      | err @ STError _ -> return err
+      | STOk() -> void
+      }
     };
     TFields::isSub_IndexPair(
       subst,
