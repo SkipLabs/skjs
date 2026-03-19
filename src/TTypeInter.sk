@@ -411,9 +411,11 @@ extension class TFields {
       fields2.fields,
     );
     indexes = TIndexes::inter(subst, tenv, fields1, fields2);
-    symbolFields = fields1.symbolFields.mapUnion(
+    symbolFields = TFields::interNamedFields(
+      subst,
+      tenv,
+      fields1.symbolFields,
       fields2.symbolFields,
-      (x, y) -> TField::inter(subst, tenv, x, y),
     );
     call = (fields1.call, fields2.call) match {
     | (None(), call)
