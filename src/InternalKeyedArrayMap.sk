@@ -148,7 +148,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       assert(x.project() == y.project());
       y
     };
-    static::createFromSortedIterator(this.inner.values().map(f1))
+    static(this.inner.map(f1))
   }
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
