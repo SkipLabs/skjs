@@ -416,6 +416,14 @@ extension class TFields {
     fields1: TFields,
     fields2: TFields,
   ): ?TFields {
+    isArray = (fields1.isArray, fields2.isArray) match {
+    | (Some(true), Some(false))
+    | (Some(false), Some(true)) ->
+      return None()
+    | (None(), ia)
+    | (ia, _) ->
+      ia
+    };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
     fields = TFields::interNamedFields(
@@ -454,15 +462,6 @@ extension class TFields {
       | None() -> return None()
       | Some(f) -> Some((opt1 && opt2, f))
       }
-    };
-    isArray = (fields1.isArray, fields2.isArray) match {
-    | (Some(true), Some(false))
-    | (Some(false), Some(true)) ->
-      return None()
-    | (None(), None()) -> None()
-    | (some @ Some _, _)
-    | (_, some @ Some _) ->
-      some
     };
     Some(
       TFields{
