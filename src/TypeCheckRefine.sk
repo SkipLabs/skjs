@@ -315,7 +315,7 @@ extension class TypeChecker {
           } else {
             TFields::singleField(field)
           };
-          STypes::single(TObject::createSingleBranch(tFields, e1.pos))
+          STypes::single(TObject::createSingleBranch(tFields, None(), e1.pos))
         })
       } else {
         None()
@@ -328,7 +328,7 @@ extension class TypeChecker {
         | TTuple _
         | TPromise _ ->
           Some(stype) /* TODO */
-        | tObj @ TObject(_, _pos) ->
+        | tObj @ TObject(_, _, _pos) ->
           singleKey match {
           | None() -> Some(stype)
           | Some(key) ->

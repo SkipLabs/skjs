@@ -355,7 +355,7 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): TObject {
-    TObject(obj1.branches.union(obj2.branches), obj1.pos)
+    TObject(obj1.branches.union(obj2.branches), None(), obj1.pos)
   }
 }
 

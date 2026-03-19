@@ -508,7 +508,7 @@ extension class TObject {
     if (branches.isEmpty()) {
       None()
     } else {
-      Some(TObject(ArraySet::createFromMVector(branches), obj1.pos))
+      Some(TObject(ArraySet::createFromMVector(branches), None(), obj1.pos))
     }
   }
 }

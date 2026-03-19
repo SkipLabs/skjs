@@ -460,19 +460,30 @@ base class Variance {
 // 〚 obj 〛 = ⨆ 〚 b 〛, for b in obj.branches
 //
 // Invariant: branches is not empty
-class TObject private (private branches: ArraySet<TFields>) extends SType {
+class TObject private (
+  private branches: ArraySet<TFields>,
+  unexpandedType: ?TSInst,
+) extends SType {
   /* Constructors */
 
-  static fun createSingleBranch(tFields: TFields, pos: PosRange): TObject {
-    TObject(ArraySet::single(tFields), pos)
+  static fun createSingleBranch(
+    tFields: TFields,
+    inst: ?TSInst,
+    pos: PosRange,
+  ): TObject {
+    TObject(ArraySet::single(tFields), inst, pos)
   }
 
   static fun createEmpty(pos: PosRange): TObject {
-    TObject::createSingleBranch(TFields::empty(), pos)
+    TObject::createSingleBranch(TFields::empty(), None(), pos)
   }
 
   static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
-    TObject::createSingleBranch(TFields::create{call => Some(tFuns)}, pos)
+    TObject::createSingleBranch(
+      TFields::create{call => Some(tFuns)},
+      None(),
+      pos,
+    )
   }
 
   static fun createCall(tFuns: TFuns): TObject {
@@ -480,13 +491,17 @@ class TObject private (private branches: ArraySet<TFields>) extends SType {
   }
 
   static fun createNew(tFuns: TFuns, pos: PosRange): TObject {
-    TObject::createSingleBranch(TFields::create{new => Some(tFuns)}, pos)
+    TObject::createSingleBranch(
+      TFields::create{new => Some(tFuns)},
+      None(),
+      pos,
+    )
   }
 
   /* Transformers */
 
   fun map(f: TFields -> TFields): TObject {
-    TObject(this.branches.mapToSet(f), this.pos)
+    TObject(this.branches.mapToSet(f), None(), this.pos)
   }
 
   fun mapOpt(f: TFields -> ?TFields): ?TObject {
@@ -725,7 +740,7 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(obj @ TObject(_, objectPos)) ->
+    | Some(obj @ TObject(_, _, objectPos)) ->
       tenv.getIteratorElementType(subst, obj, objectPos)
     | _ -> None()
     }

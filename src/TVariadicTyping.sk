@@ -274,7 +274,7 @@ class VariadicTyping() {
     hasLength = rhsClauses.getSTypes(subst, tenv) match {
     | Some(stypes) ->
       stypes.singleElt() match {
-      | Some(obj @ TObject(_, _)) ->
+      | Some(obj @ TObject(_, _, _)) ->
         obj.getAllFields().any(fields -> fields.maybeGet("length") is Some _)
       | _ -> false
       }

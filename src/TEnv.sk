@@ -251,6 +251,7 @@ base class TEnv{
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     TObject::createSingleBranch(
       TFields::create{fields, symbolFields, tIndexes, isArray},
+      Some(TSInst(className, TArgs(targs))),
       className.pos,
     )
   }
@@ -295,6 +296,7 @@ base class TEnv{
         new => Some(new),
         isArray => Some(false),
       },
+      Some(TSInst(className, TArgs(targs))),
       pos,
     )
   }
@@ -800,7 +802,7 @@ base class TEnv{
       )
     | TAObject(fields) ->
       tFields = this.createTFields(tcenvb, fields, isTopLevelConst);
-      TType::single(TObject::createSingleBranch(tFields, pos))
+      TType::single(TObject::createSingleBranch(tFields, None(), pos))
     | TAInst(Name(p, "object"), targs) ->
       if (targs.size() != 0) {
         tcenvb.error(Array[(p, "Invalid number of type arguments")])
@@ -1098,7 +1100,7 @@ base class TEnv{
     iteratorType = iteratorMethodType
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _)) ->
+    | Some(obj @ TObject(_, _, _)) ->
       obj.maybeGetRetType(subst, this) match {
       | Some(retType) -> retType
       | None() -> return None()
@@ -1110,7 +1112,7 @@ base class TEnv{
     nextMethodType = iteratorType
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _)) ->
+    | Some(obj @ TObject(_, _, _)) ->
       obj.maybeGetType(subst, this, "next", pos) match {
       | Some(t) -> t
       | None() -> return None()
@@ -1122,7 +1124,7 @@ base class TEnv{
     nextResultType = nextMethodType
       .getSTypes(subst, this, Covariant())
       .flatMap(stypes ~> stypes.singleElt()) match {
-    | Some(obj @ TObject(_, _)) ->
+    | Some(obj @ TObject(_, _, _)) ->
       obj.maybeGetRetType(subst, this) match {
       | Some(retType) -> retType
       | None() -> return None()
@@ -1134,7 +1136,8 @@ base class TEnv{
     nextResultType.getSTypes(subst, this, Covariant()).flatMap(stypes ~>
       stypes.singleElt()
     ) match {
-    | Some(obj @ TObject(_, _)) -> obj.maybeGetType(subst, this, "value", pos)
+    | Some(obj @ TObject(_, _, _)) ->
+      obj.maybeGetType(subst, this, "value", pos)
     | _ -> None()
     }
   }
@@ -1427,7 +1430,7 @@ base class TEnv{
         stype = stypes.pop();
         stype match {
         | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
-        | obj @ TObject(_, _) ->
+        | obj @ TObject(_, _, _) ->
           for (fields in obj.getAllFields()) {
             if (!allStrings || !allNumbers) {
               for (field in fields.fields) {
