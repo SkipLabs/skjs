@@ -905,41 +905,6 @@ extension class TFields {
       }
     | _ -> void
     };
-    // When super has an index but sub doesn't, check sub's named fields
-    // against the super's index.
-    if (
-      fields1.stringIndex.isNone() &&
-      fields1.numberIndex.isNone() &&
-      fields2.stringIndex.isSome()
-    ) {
-      index2 = fields2.stringIndex.fromSome();
-      for (f1 in fields1.fields) {
-        TType::isSub(subst.clone(), tenv, f1.get, index2.get) match {
-        | err @ STErrorOnTType _ ->
-          return STRecFieldsFieldIndex(
-            err,
-            f1,
-            index2,
-            FMKGetter(),
-            fields1,
-            fields2,
-          )
-        | STOk() ->
-          TType::isSub(subst.clone(), tenv, index2.set, f1.set) match {
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsFieldIndex(
-              err,
-              f1,
-              index2,
-              FMKSetter(),
-              fields1,
-              fields2,
-            )
-          | STOk() -> void
-          }
-        }
-      }
-    };
     if (fields1.numberIndex.isNone() && fields2.numberIndex.isSome()) {
       index2 = fields2.numberIndex.fromSome();
       for (f1 in fields1.fields) {
