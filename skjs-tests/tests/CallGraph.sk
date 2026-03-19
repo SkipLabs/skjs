@@ -245,10 +245,10 @@ fun computeTransitiveClosure(
     // Remove self from reachable set
     visited.remove(node);
     if (visited.size() > 0) {
-      result![node] = Set::createFromItems(visited.toArray())
+      result![node] = Set::createFromIterator(visited.values())
     }
   };
-  Map::createFromItems(result.items().collect(Array))
+  Map::createFromIterator(result.items())
 }
 
 // Main validator for callgraph tests.
@@ -357,16 +357,15 @@ fun validateCallGraph(
           .collect(Array),
       )
     } else {
-      Map::createFromItems(
+      Map::createFromIterator(
         fullAdj
           .items()
           .filter(p -> !syntheticDescs.contains(p.i0))
           .map(p -> {
-            filtered = p.i1.filter(s -> !syntheticDescs.contains(s));
-            (p.i0, Set::createFromItems(filtered.collect(Array)))
+            filtered = p.i1.filter(s -> !syntheticDescs.contains(s)).values();
+            (p.i0, Set::createFromIterator(filtered))
           })
-          .filter(p -> p.i1.size() > 0)
-          .collect(Array),
+          .filter(p -> p.i1.size() > 0),
       )
     };
 
@@ -402,16 +401,15 @@ fun validateCallGraph(
       if (full) {
         closureAdj
       } else {
-        Map::createFromItems(
+        Map::createFromIterator(
           closureAdj
             .items()
             .filter(p -> !syntheticDescs.contains(p.i0))
             .map(p -> {
               filtered = p.i1.filter(s -> !syntheticDescs.contains(s));
-              (p.i0, Set::createFromItems(filtered.collect(Array)))
+              (p.i0, filtered)
             })
-            .filter(p -> p.i1.size() > 0)
-            .collect(Array),
+            .filter(p -> p.i1.size() > 0),
         )
       }
     } else {
