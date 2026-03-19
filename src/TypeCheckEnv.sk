@@ -283,6 +283,7 @@ mutable class TCResultsAcc private {
   callgraph: mutable Vector<(CGNode, CGNodes)> = mutable Vector[],
   classHierarchy: mutable Vector<(Class, Class)> = mutable Vector[],
   mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
+  mutable cfgs: SortedMap<CGNode, CFG> = SortedMap[],
 } {
   static fun mcreate{errorHandling: ErrorHandling}: mutable this {
     mutable static{errorHandling}

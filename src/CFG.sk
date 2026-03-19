@@ -1,0 +1,57 @@
+/***************************************************************************/
+/* CFG data structures for the typed control-flow graph. */
+/***************************************************************************/
+
+module SKJS;
+
+// Unique block identifier within a function CFG
+value class CFGBlockId(id: Int) uses Orderable, Show {
+  fun toString(): String {
+    `BB_${this.id}`
+  }
+}
+
+value class TypedExpr(ty: TType, expr: Expr)
+
+base class CFGInstr {
+  children =
+  | CFGIBind(kind: BindKind, pat: Pattern, ty: TType, init: ?TypedExpr)
+  | CFGIAssign(target: TypedExpr, value: TypedExpr)
+  | CFGIExpr(e: TypedExpr)
+}
+
+base class BBTerminator {
+  children =
+  | CFGTJump(target: CFGBlockId)
+  | CFGTBranch(cond: TypedExpr, thenTarget: CFGBlockId, elseTarget: CFGBlockId)
+  | CFGTSwitch(
+    scrutinee: TypedExpr,
+    branches: Array<(SwitchCase, CFGBlockId)>,
+    default_: CFGBlockId,
+  )
+  | CFGTReturn(value: ?TypedExpr)
+  | CFGTThrow(value: TypedExpr)
+  | CFGTUnreachable()
+}
+
+// A basic block
+value class CFGBlock(
+  id: CFGBlockId,
+  instrs: Array<CFGInstr>,
+  terminator: BBTerminator,
+  exnTarget: ?CFGBlockId,
+)
+
+// Typed CFG for one function
+value class CFG(
+  name: String,
+  pos: PosRange,
+  params: Array<(Name, TType)>,
+  retType: TType,
+  entry: CFGBlockId,
+  normalExit: CFGBlockId,
+  exnExit: CFGBlockId,
+  blocks: SortedMap<CFGBlockId, CFGBlock>,
+)
+
+module end;
