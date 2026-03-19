@@ -68,6 +68,7 @@ extension class TypeChecker {
         isLocalObject =
           binding.type.isNone() &&
           binding.value is Some(Expr(_, Object _));
+        tcenv.!exprTypes[binding.pat.pos] = ty;
         this.bind(tcenv, bkind, binding.pat, ty, isInitialized, isLocalObject)
       }
 
@@ -188,6 +189,7 @@ extension class TypeChecker {
             this.normalize(tcenv, t)
           | None() -> TType::top(pat.pos)
           };
+          tcenv.!exprTypes[pat.pos] = errorType;
           this.bind(tcenv, BKLet(), pat, errorType, true, false)
         | None() -> void
         };
@@ -360,6 +362,7 @@ extension class TypeChecker {
         )
       };
       for (binding in bindings) {
+        tcenv.!exprTypes[binding.pat.pos] = varType;
         this.bind(tcenv, kind, binding.pat, varType, true, false)
       }
     | _ ->

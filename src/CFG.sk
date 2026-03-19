@@ -1,5 +1,6 @@
+
 /***************************************************************************/
-/* CFG data structures for the typed control-flow graph. */
+/* CFG data structures and builder for the typed control-flow graph. */
 /***************************************************************************/
 
 module SKJS;
@@ -53,5 +54,298 @@ value class CFG(
   exnExit: CFGBlockId,
   blocks: SortedMap<CFGBlockId, CFGBlock>,
 )
+
+mutable class CFGBuilder {
+  mutable blocks: SortedMap<CFGBlockId, CFGBlock> = SortedMap[],
+  mutable currentInstrs: mutable Vector<CFGInstr> = mutable Vector[],
+  mutable currentBlockId: CFGBlockId,
+  mutable sealed: Bool = false,
+  mutable exnStack: mutable Vector<CFGBlockId> = mutable Vector[],
+  mutable breakStack: mutable Vector<CFGBlockId> = mutable Vector[],
+  mutable continueStack: mutable Vector<CFGBlockId> = mutable Vector[],
+  mutable nextId: Int,
+  exprTypes: SortedMap<PosRange, TType>,
+  normalExit: CFGBlockId,
+  exnExit: CFGBlockId,
+} {
+  static fun build(
+    name: String,
+    pos: PosRange,
+    params: Array<(Name, TType)>,
+    retType: TType,
+    body: Array<Stmt>,
+    exprTypes: SortedMap<PosRange, TType>,
+  ): CFG {
+    entryId = CFGBlockId(0);
+    normalExitId = CFGBlockId(1);
+    exnExitId = CFGBlockId(2);
+    builder = mutable CFGBuilder{
+      currentBlockId => entryId,
+      exprTypes,
+      normalExit => normalExitId,
+      exnExit => exnExitId,
+      nextId => 3,
+    };
+    builder.lowerBlock(body);
+    if (!builder.sealed) {
+      builder.finishBlock(CFGTJump(normalExitId))
+    };
+    sentinel = CFGTUnreachable();
+    builder.!blocks[normalExitId] = CFGBlock(normalExitId, Array[], sentinel, None());
+    builder.!blocks[exnExitId] = CFGBlock(exnExitId, Array[], sentinel, None());
+    CFG{name, pos, params, retType, entry => entryId, normalExit => normalExitId, exnExit => exnExitId, blocks => builder.blocks}
+  }
+
+  mutable fun allocId(): CFGBlockId {
+    id = CFGBlockId(this.nextId);
+    this.!nextId = this.nextId + 1;
+    id
+  }
+
+  fun currentExnTarget(): ?CFGBlockId {
+    if (this.exnStack.isEmpty()) {
+      None()
+    } else {
+      Some(this.exnStack[this.exnStack.size() - 1])
+    }
+  }
+
+  mutable fun finishBlock(term: BBTerminator): void {
+    if (this.sealed) return void;
+    block = CFGBlock(
+      this.currentBlockId,
+      this.currentInstrs.toArray(),
+      term,
+      this.currentExnTarget(),
+    );
+    this.!blocks[this.currentBlockId] = block;
+    this.!sealed = true;
+    this.!currentInstrs = mutable Vector[]
+  }
+
+  mutable fun startBlock(id: CFGBlockId): void {
+    this.!currentBlockId = id;
+    this.!sealed = false
+  }
+
+  mutable fun emit(instr: CFGInstr): void {
+    if (!this.sealed) {
+      this.currentInstrs.push(instr)
+    }
+  }
+
+  fun typed(e: Expr): TypedExpr {
+    ty = this.exprTypes.maybeGet(e.pos) match {
+    | Some(t) -> t
+    | None() -> internal_error("CFGBuilder: missing type for expression")
+    };
+    TypedExpr(ty, e)
+  }
+
+  mutable fun lowerBlock(stmts: Array<Stmt>): void {
+    for (st in stmts) {
+      if (this.sealed) break void;
+      this.lowerStmt(st)
+    }
+  }
+
+  mutable fun lowerStmt(st: Stmt): void {
+    st.value match {
+    | StmtEmpty() -> void
+
+    | StmtExpr(e) ->
+      e.value match {
+      | Binop(BOAssignment(), lhs, rhs) ->
+        this.emit(CFGIAssign(this.typed(lhs), this.typed(rhs)))
+      | _ -> this.emit(CFGIExpr(this.typed(e)))
+      }
+
+    | Bind(kind, bindings) ->
+      for (binding in bindings) {
+        ty = this.exprTypes.maybeGet(binding.pat.pos) match {
+        | Some(t) -> t
+        | None() -> internal_error("CFGBuilder: missing binding type")
+        };
+        initOpt = binding.value.map(initExpr ->
+          TypedExpr(
+            this.exprTypes.maybeGet(initExpr.pos) match {
+            | Some(t) -> t
+            | None() -> internal_error("CFGBuilder: missing init type")
+            },
+            initExpr,
+          )
+        );
+        this.emit(CFGIBind(kind, binding.pat, ty, initOpt))
+      }
+
+    | Return(_pos, eOpt) ->
+      this.finishBlock(CFGTReturn(eOpt.map(e -> this.typed(e))))
+
+    | Throw(e) -> this.finishBlock(CFGTThrow(this.typed(e)))
+
+    | Break() ->
+      target = if (!this.breakStack.isEmpty()) {
+        this.breakStack[this.breakStack.size() - 1]
+      } else {
+        this.exnExit // unreachable in well-formed code
+      };
+      this.finishBlock(CFGTJump(target))
+
+    | Continue() ->
+      target = if (!this.continueStack.isEmpty()) {
+        this.continueStack[this.continueStack.size() - 1]
+      } else {
+        this.exnExit // unreachable in well-formed code
+      };
+      this.finishBlock(CFGTJump(target))
+
+    | Block(stmts) -> this.lowerBlock(stmts)
+
+    | If(cond, thenStmts, elseStmtsOpt) ->
+      thenId = this.allocId();
+      elseId = this.allocId();
+      mergeId = this.allocId();
+      this.finishBlock(CFGTBranch(this.typed(cond), thenId, elseId));
+      this.startBlock(thenId);
+      this.lowerBlock(thenStmts);
+      this.finishBlock(CFGTJump(mergeId));
+      this.startBlock(elseId);
+      this.lowerBlock(elseStmtsOpt.default(Array[]));
+      this.finishBlock(CFGTJump(mergeId));
+      this.startBlock(mergeId)
+
+    | While(cond, body) ->
+      headId = this.allocId();
+      bodyId = this.allocId();
+      exitId = this.allocId();
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(headId);
+      this.finishBlock(CFGTBranch(this.typed(cond), bodyId, exitId));
+      this.startBlock(bodyId);
+      this.continueStack.push(headId);
+      this.breakStack.push(exitId);
+      this.lowerBlock(body);
+      _ = this.continueStack.pop();
+      _ = this.breakStack.pop();
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(exitId)
+
+    | For(initStmt, cond, incr, body) ->
+      headId = this.allocId();
+      bodyId = this.allocId();
+      incrId = this.allocId();
+      exitId = this.allocId();
+      this.lowerStmt(initStmt);
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(headId);
+      this.finishBlock(CFGTBranch(this.typed(cond), bodyId, exitId));
+      this.startBlock(bodyId);
+      this.continueStack.push(incrId);
+      this.breakStack.push(exitId);
+      this.lowerBlock(body);
+      _ = this.continueStack.pop();
+      _ = this.breakStack.pop();
+      this.finishBlock(CFGTJump(incrId));
+      this.startBlock(incrId);
+      this.emit(CFGIExpr(this.typed(incr)));
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(exitId)
+
+    | ForInOf(_kind, initStmt, iterable, body) ->
+      // initStmt sets up the loop variable via Bind; its type is recorded by
+      // bindLoopVar in TypeCheckStmt. headId uses the iterable as a placeholder
+      // condition representing "more elements available".
+      headId = this.allocId();
+      bodyId = this.allocId();
+      exitId = this.allocId();
+      this.lowerStmt(initStmt);
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(headId);
+      this.finishBlock(CFGTBranch(this.typed(iterable), bodyId, exitId));
+      this.startBlock(bodyId);
+      this.continueStack.push(headId);
+      this.breakStack.push(exitId);
+      this.lowerBlock(body);
+      _ = this.continueStack.pop();
+      _ = this.breakStack.pop();
+      this.finishBlock(CFGTJump(headId));
+      this.startBlock(exitId)
+
+    | Switch(scrutinee, branches) ->
+      exitId = this.allocId();
+      mutable defaultId = exitId; // overwritten if a Default branch exists
+      branchIds = mutable Vector[];
+      for (b in branches) {
+        id = this.allocId();
+        branchIds.push(id);
+        if (b.case is Default()) {
+          !defaultId = id
+        }
+      };
+      // Only non-default branches go into the CFGTSwitch branches array
+      caseEntries = mutable Vector[];
+      for (i in Range(0, branches.size())) {
+        b = branches[i];
+        b.case match {
+        | Case _ -> caseEntries.push((b.case, branchIds[i]))
+        | Default() -> void
+        }
+      };
+      this.finishBlock(
+        CFGTSwitch(this.typed(scrutinee), caseEntries.toArray(), defaultId),
+      );
+      this.breakStack.push(exitId);
+      for (i in Range(0, branches.size())) {
+        this.startBlock(branchIds[i]);
+        this.lowerBlock(branches[i].block);
+        this.finishBlock(CFGTJump(exitId))
+      };
+      _ = this.breakStack.pop();
+      this.startBlock(exitId)
+
+    | Try(tryStmts, catchClauseOpt, finallyStmtsOpt) ->
+      finallyId = this.allocId();
+      mergeId = this.allocId();
+      catchClauseOpt match {
+      | None() ->
+        // No catch: try falls straight through to finally
+        this.lowerBlock(tryStmts);
+        this.finishBlock(CFGTJump(finallyId))
+      | Some(CatchClause(paramOpt, _type, catchStmts)) ->
+        catchId = this.allocId();
+        afterTryId = this.allocId();
+        // Lowerlock; any block inside gets exnTarget = catchId
+        this.exnStack.push(catchId);
+        this.lowerBlock(tryStmts);
+        _ = this.exnStack.pop();
+        this.finishBlock(CFGTJump(afterTryId));
+        // Normal try completion jumps to finally
+        this.startBlock(afterTryId);
+        this.finishBlock(CFGTJump(finallyId));
+        // Catch block
+        this.startBlock(catchId);
+        paramOpt match {
+        | Some(pat) ->
+          catchTy = this.exprTypes.maybeGet(pat.pos) match {
+          | Some(t) -> t
+          | None() -> TType::top(pat.pos)
+          };
+          this.emit(CFGIBind(BKLet(), pat, catchTy, None()))
+        | None() -> void
+        };
+        this.lowerBlock(catchStmts);
+        this.finishBlock(CFGTJump(finallyId))
+      };
+      // Finally block
+      this.startBlock(finallyId);
+      finallyStmtsOpt match {
+      | Some(finallyStmts) -> this.lowerBlock(finallyStmts)
+      | None() -> void
+      };
+      this.finishBlock(CFGTJump(mergeId));
+      this.startBlock(mergeId)
+    }
+  }
+}
 
 module end;
