@@ -168,7 +168,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     InternalKeyedArrayMap::createFromSortedIterator(this.iterDiff(that))
   }
 
-  // s.merge(t, f) is the set of elements v where Some(v) is returned by f
+  // s.mergeOpt(t, f) is the set of elements v where Some(v) is returned by f
   // from Left(x) for every element in s but not t, Right(y) for every y in
   // t but not s, and Both(x, y) for every pair of elements that are in both
   // s and t. If f returns None, it indicates the unit of the merge
@@ -177,11 +177,11 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // REQUIRES: f must preserve project:
   // x.project() == f(Left(x)).each(project) for any x and
   // y.project() == f(Right(y)).each(project) for any y
-  fun merge(that: this, f: InclusiveOr<T, T> -> ?T): this {
+  fun mergeOpt(that: this, f: InclusiveOr<T, T> -> ?T): this {
     static::createFromSortedIterator(this.iterDiffInterDiff(that).filterMap(f))
   }
 
-  // mergeOption is a generalization of merge where f may return None() to
+  // mergeOption is a generalization of mergeOpt where f may return None() to
   // indicate the zero of the merge operation, causing mergeOption to return
   // None() immediately, Some(None()) indicating the unit of the merge
   // operation, and Some(Some(z)) indicating an element.
@@ -205,7 +205,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun inter(that: this): this {
-    this.merge(that, ior ~>
+    this.mergeOpt(that, ior ~>
       ior match {
       | Both(x, _) -> Some(x)
       | _ -> None()
@@ -214,7 +214,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun union(that: this): this {
-    this.merge(that, ior ~>
+    this.mergeOpt(that, ior ~>
       ior match {
       | Left(x)
       | Right(x)
@@ -225,7 +225,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun mapInter(that: this, f: (T, T) -> T): this {
-    this.merge(that, ior ->
+    this.mergeOpt(that, ior ->
       ior match {
       | Both(x, y) -> Some(f(x, y))
       | _ -> None()
@@ -234,7 +234,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun mapUnion(that: this, f: (T, T) -> T): this {
-    this.merge(that, ior ->
+    this.mergeOpt(that, ior ->
       ior match {
       | Left(x)
       | Right(x) ->
@@ -265,7 +265,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun mapDiff(that: this, f: (T, T) -> ?T): this {
-    this.merge(that, ior ->
+    this.mergeOpt(that, ior ->
       ior match {
       | Left(x) -> Some(x)
       | Right(_) -> None()
