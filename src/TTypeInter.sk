@@ -390,12 +390,21 @@ extension class TFields {
     tenv: TEnv,
     namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
     namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
+    indexFor1: (FieldNameString) -> ?TField,
+    indexFor2: (FieldNameString) -> ?TField,
   ): InternalKeyedArrayMap<FieldNameString, TField> {
     namedFields1.merge(namedFields2, ior ->
       ior match {
-      | Left(x)
-      | Right(x) ->
-        x
+      | Left(f1) ->
+        indexFor2(f1.name) match {
+        | None() -> f1
+        | Some(idx) -> TField::interIndex(subst, tenv, f1, idx)
+        }
+      | Right(f2) ->
+        indexFor1(f2.name) match {
+        | None() -> f2
+        | Some(idx) -> TField::interIndex(subst, tenv, f2, idx)
+        }
       | Both(x, y) -> TField::inter(subst, tenv, x, y)
       }
     )
@@ -414,6 +423,8 @@ extension class TFields {
       tenv,
       fields1.fields,
       fields2.fields,
+      name -> fields1.indexForFieldName(name.value),
+      name -> fields2.indexForFieldName(name.value),
     );
     indexes = TIndexes::inter(subst, tenv, fields1, fields2);
     symbolFields = TFields::interNamedFields(
@@ -421,6 +432,8 @@ extension class TFields {
       tenv,
       fields1.symbolFields,
       fields2.symbolFields,
+      _ -> fields1.symbolIndex,
+      _ -> fields2.symbolIndex,
     );
     call = (fields1.call, fields2.call) match {
     | (None(), call)
