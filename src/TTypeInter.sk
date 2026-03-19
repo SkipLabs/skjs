@@ -385,43 +385,64 @@ extension class TIndexes {
 }
 
 extension class TFields {
+  private static fun interNamedFields(
+    subst: mutable Subst,
+    tenv: TEnv,
+    namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
+    namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
+    indexFor1: (FieldNameString) -> ?TField,
+    indexFor2: (FieldNameString) -> ?TField,
+  ): InternalKeyedArrayMap<FieldNameString, TField> {
+    namedFields1.merge(namedFields2, ior ->
+      ior match {
+      | Left(f1) ->
+        indexFor2(f1.name) match {
+        | None() -> f1
+        | Some(idx) -> TField::interIndex(subst, tenv, f1, idx)
+        }
+      | Right(f2) ->
+        indexFor1(f2.name) match {
+        | None() -> f2
+        | Some(idx) -> TField::interIndex(subst, tenv, f2, idx)
+        }
+      | Both(x, y) -> TField::inter(subst, tenv, x, y)
+      }
+    )
+  }
+
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
     fields1: TFields,
     fields2: TFields,
   ): ?TFields {
+    isArray = (fields1.isArray, fields2.isArray) match {
+    | (Some(true), Some(false))
+    | (Some(false), Some(true)) ->
+      return None()
+    | (None(), ia)
+    | (ia, _) ->
+      ia
+    };
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
-    fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
-      TField::inter(subst, tenv, x, y)
+    fields = TFields::interNamedFields(
+      subst,
+      tenv,
+      fields1.fields,
+      fields2.fields,
+      name -> fields1.indexForFieldName(name.value),
+      name -> fields2.indexForFieldName(name.value),
+    );
+    symbolFields = TFields::interNamedFields(
+      subst,
+      tenv,
+      fields1.symbolFields,
+      fields2.symbolFields,
+      _ -> fields1.symbolIndex,
+      _ -> fields2.symbolIndex,
     );
     indexes = TIndexes::inter(subst, tenv, fields1, fields2);
-    if (indexes.stringIndex.isSome() || indexes.numberIndex.isSome()) {
-      !fields = fields.mapKeyed(f -> {
-        idx = (indexes.numberIndex, indexes.stringIndex) match {
-        | (Some(nbrIdx), _) if (isJSNumericString(f.name.value)) -> nbrIdx
-        | (_, Some(strIdx)) -> strIdx
-        | _ -> return f
-        };
-        TField::interIndex(subst, tenv, f, idx)
-      });
-    };
-    interSym = indexes.symbolIndex match {
-    | None() -> (x, y) -> TField::inter(subst, tenv, x, y)
-    | Some(symIdx) ->
-      (x, y) ->
-        TField::interIndex(
-          subst,
-          tenv,
-          TField::inter(subst, tenv, x, y),
-          symIdx,
-        )
-    };
-    symbolFields = fields1.symbolFields.mapUnion(
-      fields2.symbolFields,
-      interSym,
-    );
     call = (fields1.call, fields2.call) match {
     | (None(), call)
     | (call, None()) ->
@@ -441,15 +462,6 @@ extension class TFields {
       | None() -> return None()
       | Some(f) -> Some((opt1 && opt2, f))
       }
-    };
-    isArray = (fields1.isArray, fields2.isArray) match {
-    | (Some(true), Some(false))
-    | (Some(false), Some(true)) ->
-      return None()
-    | (None(), None()) -> None()
-    | (some @ Some _, _)
-    | (_, some @ Some _) ->
-      some
     };
     Some(
       TFields{
