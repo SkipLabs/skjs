@@ -1,4 +1,3 @@
-
 /***************************************************************************/
 /* CFG data structures and builder for the typed control-flow graph. */
 /***************************************************************************/
@@ -44,7 +43,7 @@ value class CFGBlock(
 )
 
 // Typed CFG for one function
-value class CFG(
+value class CFG{
   name: String,
   pos: PosRange,
   params: Array<(Name, TType)>,
@@ -53,18 +52,19 @@ value class CFG(
   normalExit: CFGBlockId,
   exnExit: CFGBlockId,
   blocks: SortedMap<CFGBlockId, CFGBlock>,
-)
+}
 
-mutable class CFGBuilder {
+mutable class CFGBuilder{
   mutable blocks: SortedMap<CFGBlockId, CFGBlock> = SortedMap[],
   mutable currentInstrs: mutable Vector<CFGInstr> = mutable Vector[],
   mutable currentBlockId: CFGBlockId,
-  mutable sealed: Bool = false,
+  mutable terminated: Bool = false,
   mutable exnStack: mutable Vector<CFGBlockId> = mutable Vector[],
   mutable breakStack: mutable Vector<CFGBlockId> = mutable Vector[],
   mutable continueStack: mutable Vector<CFGBlockId> = mutable Vector[],
   mutable nextId: Int,
   exprTypes: SortedMap<PosRange, TType>,
+  stmtTerminations: SortedMap<PosRange, StmtTermination>,
   normalExit: CFGBlockId,
   exnExit: CFGBlockId,
 } {
@@ -75,6 +75,7 @@ mutable class CFGBuilder {
     retType: TType,
     body: Array<Stmt>,
     exprTypes: SortedMap<PosRange, TType>,
+    stmtTerminations: SortedMap<PosRange, StmtTermination>,
   ): CFG {
     entryId = CFGBlockId(0);
     normalExitId = CFGBlockId(1);
@@ -82,18 +83,31 @@ mutable class CFGBuilder {
     builder = mutable CFGBuilder{
       currentBlockId => entryId,
       exprTypes,
+      stmtTerminations,
       normalExit => normalExitId,
       exnExit => exnExitId,
       nextId => 3,
     };
     builder.lowerBlock(body);
-    if (!builder.sealed) {
-      builder.finishBlock(CFGTJump(normalExitId))
-    };
+    builder.finishBlock(CFGTJump(normalExitId));
     sentinel = CFGTUnreachable();
-    builder.!blocks[normalExitId] = CFGBlock(normalExitId, Array[], sentinel, None());
+    builder.!blocks[normalExitId] = CFGBlock(
+      normalExitId,
+      Array[],
+      sentinel,
+      None(),
+    );
     builder.!blocks[exnExitId] = CFGBlock(exnExitId, Array[], sentinel, None());
-    CFG{name, pos, params, retType, entry => entryId, normalExit => normalExitId, exnExit => exnExitId, blocks => builder.blocks}
+    CFG{
+      name,
+      pos,
+      params,
+      retType,
+      entry => entryId,
+      normalExit => normalExitId,
+      exnExit => exnExitId,
+      blocks => builder.blocks,
+    }
   }
 
   mutable fun allocId(): CFGBlockId {
@@ -102,7 +116,7 @@ mutable class CFGBuilder {
     id
   }
 
-  fun currentExnTarget(): ?CFGBlockId {
+  readonly fun currentExnTarget(): ?CFGBlockId {
     if (this.exnStack.isEmpty()) {
       None()
     } else {
@@ -111,7 +125,6 @@ mutable class CFGBuilder {
   }
 
   mutable fun finishBlock(term: BBTerminator): void {
-    if (this.sealed) return void;
     block = CFGBlock(
       this.currentBlockId,
       this.currentInstrs.toArray(),
@@ -119,33 +132,43 @@ mutable class CFGBuilder {
       this.currentExnTarget(),
     );
     this.!blocks[this.currentBlockId] = block;
-    this.!sealed = true;
     this.!currentInstrs = mutable Vector[]
   }
 
   mutable fun startBlock(id: CFGBlockId): void {
     this.!currentBlockId = id;
-    this.!sealed = false
+    this.!terminated = false
   }
 
   mutable fun emit(instr: CFGInstr): void {
-    if (!this.sealed) {
+    if (!this.terminated) {
       this.currentInstrs.push(instr)
     }
   }
 
-  fun typed(e: Expr): TypedExpr {
+  readonly fun typed(e: Expr): TypedExpr {
     ty = this.exprTypes.maybeGet(e.pos) match {
     | Some(t) -> t
-    | None() -> internal_error("CFGBuilder: missing type for expression")
+    | None() ->
+      internal_error("CFGBuilder: missing type for expression: " + inspect(e).toString())
     };
     TypedExpr(ty, e)
   }
 
   mutable fun lowerBlock(stmts: Array<Stmt>): void {
     for (st in stmts) {
-      if (this.sealed) break void;
-      this.lowerStmt(st)
+      this.lowerStmt(st);
+      mayFallthrough = this.stmtTerminations.maybeGet(st.pos) match {
+      | Some(t) -> t.mayFallthrough
+      | None() -> true
+      };
+      if (!mayFallthrough) {
+        // Statement never falls through: close any orphan open block (e.g. the
+        // merge block left open by an If where both branches terminate) and
+        // start a fresh block for any subsequent dead statements.
+        this.finishBlock(CFGTUnreachable());
+        this.startBlock(this.allocId())
+      }
     }
   }
 
@@ -187,7 +210,8 @@ mutable class CFGBuilder {
       target = if (!this.breakStack.isEmpty()) {
         this.breakStack[this.breakStack.size() - 1]
       } else {
-        this.exnExit // unreachable in well-formed code
+        this
+          .exnExit // unreachable in well-formed code
       };
       this.finishBlock(CFGTJump(target))
 
@@ -195,7 +219,8 @@ mutable class CFGBuilder {
       target = if (!this.continueStack.isEmpty()) {
         this.continueStack[this.continueStack.size() - 1]
       } else {
-        this.exnExit // unreachable in well-formed code
+        this
+          .exnExit // unreachable in well-formed code
       };
       this.finishBlock(CFGTJump(target))
 
@@ -273,7 +298,7 @@ mutable class CFGBuilder {
 
     | Switch(scrutinee, branches) ->
       exitId = this.allocId();
-      mutable defaultId = exitId; // overwritten if a Default branch exists
+      defaultId = exitId; // overwritten if a Default branch exists
       branchIds = mutable Vector[];
       for (b in branches) {
         id = this.allocId();

@@ -2,6 +2,7 @@ module SKJS;
 
 extension class TypeChecker {
   fun stmt(tcenv: mutable TCEnv, st: Stmt): void {
+    tcenv.!stmtTerminations[st.pos] = StmtTermination::stmt(tcenv, st);
     st.value match {
     | Break() -> void
     | Continue() -> void

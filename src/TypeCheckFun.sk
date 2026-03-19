@@ -316,6 +316,7 @@ extension class TypeChecker {
           retType,
           body,
           tcenv.exprTypes,
+          tcenv.stmtTerminations,
         );
         tcenv.results.!cfgs[cgNode] = cfg
       }

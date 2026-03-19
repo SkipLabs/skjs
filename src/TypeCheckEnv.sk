@@ -102,6 +102,7 @@ mutable class TCEnv private {
   mutable scope: mutable Scope,
   mutable callingContext: CGNode,
   mutable exprTypes: SortedMap<PosRange, TType> = SortedMap[],
+  mutable stmtTerminations: SortedMap<PosRange, StmtTermination> = SortedMap[],
   /*
    * Tracks local objects: object literals bound to variables that can grow.
    *
