@@ -391,8 +391,13 @@ extension class TFields {
     namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
     namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
   ): InternalKeyedArrayMap<FieldNameString, TField> {
-    namedFields1.mapUnion(namedFields2, (x, y) ->
-      TField::inter(subst, tenv, x, y)
+    namedFields1.merge(namedFields2, ior ->
+      ior match {
+      | Left(x)
+      | Right(x) ->
+        x
+      | Both(x, y) -> TField::inter(subst, tenv, x, y)
+      }
     )
   }
 
