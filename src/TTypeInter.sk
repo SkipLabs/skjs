@@ -385,6 +385,17 @@ extension class TIndexes {
 }
 
 extension class TFields {
+  private static fun interNamedFields(
+    subst: mutable Subst,
+    tenv: TEnv,
+    namedFields1: InternalKeyedArrayMap<FieldNameString, TField>,
+    namedFields2: InternalKeyedArrayMap<FieldNameString, TField>,
+  ): InternalKeyedArrayMap<FieldNameString, TField> {
+    namedFields1.mapUnion(namedFields2, (x, y) ->
+      TField::inter(subst, tenv, x, y)
+    )
+  }
+
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
@@ -393,8 +404,11 @@ extension class TFields {
   ): ?TFields {
     // Process fields first so that tuple index type variables are resolved
     // before call/new signatures with union types.
-    fields = fields1.fields.mapUnion(fields2.fields, (x, y) ->
-      TField::inter(subst, tenv, x, y)
+    fields = TFields::interNamedFields(
+      subst,
+      tenv,
+      fields1.fields,
+      fields2.fields,
     );
     indexes = TIndexes::inter(subst, tenv, fields1, fields2);
     symbolFields = fields1.symbolFields.mapUnion(
