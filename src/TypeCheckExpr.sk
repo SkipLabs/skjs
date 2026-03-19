@@ -415,6 +415,7 @@ extension class TypeChecker {
                 Some(lits),
                 _,
               ) if (lits.values().all(lit -> isJSNumericString(lit.val))) ->
+                // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
                 fields.indexForKeyKind(TNum())
               | _ -> None()
               }
