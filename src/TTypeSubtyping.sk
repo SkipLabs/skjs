@@ -815,11 +815,21 @@ extension class TFields {
     | err @ STError _ -> return err
     | STOk() -> void
     };
+    // Effective number index: fall back to string when no number index,
+    // since string index covers numeric keys.
+    effectiveNum1 = fields1.numberIndex match {
+    | Some _ -> fields1.numberIndex
+    | None() -> fields1.stringIndex
+    };
+    effectiveNum2 = fields2.numberIndex match {
+    | Some _ -> fields2.numberIndex
+    | None() -> fields2.stringIndex
+    };
     TFields::isSub_IndexPair(
       subst,
       tenv,
-      fields1.numberIndex,
-      fields2.numberIndex,
+      effectiveNum1,
+      effectiveNum2,
       fields1,
       fields2,
     ) match {
@@ -836,105 +846,6 @@ extension class TFields {
     ) match {
     | err @ STError _ -> return err
     | STOk() -> void
-    };
-    // If super has string index and sub doesn't, sub can't satisfy arbitrary
-    // string key access — fail. (Number/symbol indexes don't cover string.)
-    // If super has string index and sub has an index but not string:
-    // sub can't satisfy arbitrary string key access → fail.
-    // (If sub has no index at all, named field checks handle it.)
-    if (
-      fields2.stringIndex.isSome() &&
-      fields1.stringIndex.isNone() &&
-      fields1.hasIndex()
-    ) {
-      index2 = fields2.stringIndex.fromSome();
-      // Find any sub index for the error message
-      subIdx = fields1.numberIndex match {
-      | Some(idx) -> idx
-      | None() -> fields1.symbolIndex.fromSome()
-      };
-      return STRecFieldsIndexKeyKinds(subIdx, index2, fields1, fields2)
-    };
-    // When super has numberIndex and sub has no numberIndex but has stringIndex,
-    // string index covers number keys, so check value compatibility.
-    (fields1.stringIndex, fields1.numberIndex, fields2.numberIndex) match {
-    | (Some(strIdx1), None(), Some(numIdx2)) ->
-      TType::isSub(subst, tenv, strIdx1.get, numIdx2.get) match {
-      | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexValue(
-          err,
-          strIdx1,
-          numIdx2,
-          FMKGetter(),
-          fields1,
-          fields2,
-        )
-      | STOk() ->
-        TType::isSub(subst, tenv, numIdx2.set, strIdx1.set) match {
-        | err @ STErrorOnTType _ ->
-          return STRecFieldsIndexValue(
-            err,
-            strIdx1,
-            numIdx2,
-            FMKSetter(),
-            fields1,
-            fields2,
-          )
-        | STOk() -> void
-        }
-      }
-    | _ -> void
-    };
-    // When super has stringIndex and sub has numberIndex,
-    // sub's number index value must also be compatible with super's string index
-    // (since number keys are a subset of string keys).
-    // Only check getter (covariant) — TS doesn't enforce setter direction here.
-    (fields1.numberIndex, fields2.stringIndex) match {
-    | (Some(numIdx1), Some(strIdx2)) ->
-      TType::isSub(subst, tenv, numIdx1.get, strIdx2.get) match {
-      | err @ STErrorOnTType _ ->
-        return STRecFieldsIndexValue(
-          err,
-          numIdx1,
-          strIdx2,
-          FMKGetter(),
-          fields1,
-          fields2,
-        )
-      | STOk() -> void
-      }
-    | _ -> void
-    };
-    if (fields1.numberIndex.isNone() && fields2.numberIndex.isSome()) {
-      index2 = fields2.numberIndex.fromSome();
-      for (f1 in fields1.fields) {
-        if (isJSNumericString(f1.name.value)) {
-          TType::isSub(subst.clone(), tenv, f1.get, index2.get) match {
-          | err @ STErrorOnTType _ ->
-            return STRecFieldsFieldIndex(
-              err,
-              f1,
-              index2,
-              FMKGetter(),
-              fields1,
-              fields2,
-            )
-          | STOk() ->
-            TType::isSub(subst.clone(), tenv, index2.set, f1.set) match {
-            | err @ STErrorOnTType _ ->
-              return STRecFieldsFieldIndex(
-                err,
-                f1,
-                index2,
-                FMKSetter(),
-                fields1,
-                fields2,
-              )
-            | STOk() -> void
-            }
-          }
-        }
-      }
     };
     // Symbol fields: same logic as string fields
     TFields::isSub_NamedFields(

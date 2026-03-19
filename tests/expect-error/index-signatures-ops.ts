@@ -142,7 +142,6 @@ function strIdxToNumIdx(s: StrIdx): NumIdx {
 
 // Number-indexed NOT assignable to string-indexed
 function numIdxToStrIdx(n: NumIdx): StrIdx {
-  // @skjs-expect-error Invalid return type
   return n;
 }
 
@@ -205,5 +204,6 @@ function dualGoodCrossReadonlyToStrWide(d: DualIdxGoodCrossReadonly): {
 function dualGoodCrossToStrWide(d: DualIdxGoodCross): {
   [key: string]: number | boolean;
 } {
+  // @skjs-expect-error Invalid return type
   return d;
 }
