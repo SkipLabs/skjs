@@ -1085,7 +1085,7 @@ base class TIndexesBase protected {
   }
 }
 
-class TIndexes protected {} extends TIndexesBase {
+class TIndexes{} extends TIndexesBase {
   const empty: TIndexes = TIndexes{};
 
   // Split indexes by key kind and merge duplicates per kind.
