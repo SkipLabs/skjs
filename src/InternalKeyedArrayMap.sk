@@ -226,12 +226,12 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun union(that: this): this {
-    this.mergeOpt(that, ior ~>
+    this.merge(that, ior ~>
       ior match {
       | Left(x)
       | Right(x)
       | Both(x, _) ->
-        Some(x)
+        x
       }
     )
   }
@@ -246,12 +246,12 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun mapUnion(that: this, f: (T, T) -> T): this {
-    this.mergeOpt(that, ior ->
+    this.merge(that, ior ->
       ior match {
       | Left(x)
       | Right(x) ->
-        Some(x)
-      | Both(x, y) -> Some(f(x, y))
+        x
+      | Both(x, y) -> f(x, y)
       }
     )
   }
