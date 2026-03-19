@@ -9,7 +9,8 @@ module InternalKeyedArrayMap;
 class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   private inner: Vector<T>,
 ) extends Sequence<T> uses Orderable[T: Orderable], XXHashable[T: XXHashable] {
-  //
+  /* Constructors */
+
   private static fun createFromSortedVector(inner: Vector<T>): this {
     // inner must be strictly increasing under project, which is expected to
     // hold since every transformation of T, such as the argument of map,
@@ -53,6 +54,8 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     static(Vector[x])
   }
 
+  /* Getters */
+
   fun isEmpty(): Bool {
     this.inner.isEmpty()
   }
@@ -87,6 +90,8 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     this.maybeGet(k).isSome()
   }
 
+  /* Iterations */
+
   fun toVector(): Vector<T> {
     this.inner
   }
@@ -103,6 +108,19 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     this.inner.items()
   }
 
+  // s.iterDiffInterDiff(t) contains Left(x) for every x in s but not t,
+  // Right(y) for every y in t but not s, and Both(x, y) for every pair of
+  // elements that are in both s and t.
+  fun iterDiffInterDiff(that: this): mutable Iterator<InclusiveOr<T, T>> {
+    this.inner.values().zipSortedBy(that.inner.values())
+  }
+
+  fun iterDiff(that: this): mutable Iterator<T> {
+    this.iterDiffInterDiff(that).filterMap(v -> v.maybeLeft())
+  }
+
+  /* Searching */
+
   fun any(f: T -> Bool): Bool {
     this.inner.any(f)
   }
@@ -114,6 +132,8 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   fun find(f: T -> Bool): ?T {
     this.inner.find(f)
   }
+
+  /* Transformers */
 
   fun filterKeyed(f: T -> Bool): this {
     // don't need to call create since Vector.filter returns a subset and
@@ -128,7 +148,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       assert(x.project() == y.project());
       y
     };
-    static::createFromSortedIterator(this.inner.values().map(f1))
+    static(this.inner.map(f1))
   }
 
   // REQUIRES: f must preserve project: x.project() == f(x).project() for any x
@@ -144,44 +164,23 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     static::createFromSortedIterator(this.inner.values().filterMap(f1))
   }
 
-  // s.iterDiffInterDiff(t) contains Left(x) for every x in s but not t,
-  // Right(y) for every y in t but not s, and Both(x, y) for every pair of
-  // elements that are in both s and t.
-  fun iterDiffInterDiff(that: this): mutable Iterator<InclusiveOr<T, T>> {
-    this.inner.values().zipSortedBy(that.inner.values())
-  }
-
-  fun iterDiff(that: this): mutable Iterator<T> {
-    this.iterDiffInterDiff(that).filterMap(v -> v.maybeLeft())
-  }
-
   fun diff(that: this): this {
     InternalKeyedArrayMap::createFromSortedIterator(this.iterDiff(that))
   }
 
-  // s.leq(t, leqT) is Success if leqT(x, t.maybeGet(x)) is Success for every
-  // x in s, otherwise the first Failure encountered is returned
-  // immediately. Note that any extra elements in t are ignored.
-  fun leq<E>(that: this, leqT: (T, ?T) -> Result<void, E>): Result<void, E> {
-    this.iterDiffInterDiff(that)
-      .findMap(ior ->
-        ior match {
-        | Left(x) -> leqT(x, None()).maybeFailure()
-        | Both(x, y) -> leqT(x, Some(y)).maybeFailure()
-        | Right(_) -> None()
-        }
-      )
-      .failureOr(void)
+  // s.merge(t, f) is the set of elements returned by f
+  // from Left(x) for every element in s but not t, Right(y) for every y in
+  // t but not s, and Both(x, y) for every pair of elements that are in both
+  // s and t.
+  //
+  // REQUIRES: f must preserve project:
+  // x.project() == f(Left(x)).project() for any x and
+  // y.project() == f(Right(y)).project() for any y
+  fun merge(that: this, f: InclusiveOr<T, T> -> T): this {
+    static::createFromSortedIterator(this.iterDiffInterDiff(that).map(f))
   }
 
-  // s.geq(t, geqT) is Success if geqT(s.maybeGet(y), y) is Success for every
-  // y in t, otherwise the first Failure encountered is returned
-  // immediately. Note that any extra elements in s are ignored.
-  fun geq<E>(that: this, geqT: (?T, T) -> Result<void, E>): Result<void, E> {
-    that.leq(this, (y, xO) -> geqT(xO, y))
-  }
-
-  // s.merge(t, f) is the set of elements v where Some(v) is returned by f
+  // s.mergeOpt(t, f) is the set of elements v where Some(v) is returned by f
   // from Left(x) for every element in s but not t, Right(y) for every y in
   // t but not s, and Both(x, y) for every pair of elements that are in both
   // s and t. If f returns None, it indicates the unit of the merge
@@ -190,11 +189,11 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   // REQUIRES: f must preserve project:
   // x.project() == f(Left(x)).each(project) for any x and
   // y.project() == f(Right(y)).each(project) for any y
-  fun merge(that: this, f: InclusiveOr<T, T> -> ?T): this {
+  fun mergeOpt(that: this, f: InclusiveOr<T, T> -> ?T): this {
     static::createFromSortedIterator(this.iterDiffInterDiff(that).filterMap(f))
   }
 
-  // mergeOption is a generalization of merge where f may return None() to
+  // mergeOption is a generalization of mergeOpt where f may return None() to
   // indicate the zero of the merge operation, causing mergeOption to return
   // None() immediately, Some(None()) indicating the unit of the merge
   // operation, and Some(Some(z)) indicating an element.
@@ -218,7 +217,7 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun inter(that: this): this {
-    this.merge(that, ior ~>
+    this.mergeOpt(that, ior ~>
       ior match {
       | Both(x, _) -> Some(x)
       | _ -> None()
@@ -232,13 +231,13 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       | Left(x)
       | Right(x)
       | Both(x, _) ->
-        Some(x)
+        x
       }
     )
   }
 
   fun mapInter(that: this, f: (T, T) -> T): this {
-    this.merge(that, ior ->
+    this.mergeOpt(that, ior ->
       ior match {
       | Both(x, y) -> Some(f(x, y))
       | _ -> None()
@@ -251,8 +250,8 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
       ior match {
       | Left(x)
       | Right(x) ->
-        Some(x)
-      | Both(x, y) -> Some(f(x, y))
+        x
+      | Both(x, y) -> f(x, y)
       }
     )
   }
@@ -278,13 +277,37 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
   }
 
   fun mapDiff(that: this, f: (T, T) -> ?T): this {
-    this.merge(that, ior ->
+    this.mergeOpt(that, ior ->
       ior match {
       | Left(x) -> Some(x)
       | Right(_) -> None()
       | Both(x, y) -> f(x, y)
       }
     )
+  }
+
+  /* Comparisons */
+
+  // s.leq(t, leqT) is Success if leqT(x, t.maybeGet(x)) is Success for every
+  // x in s, otherwise the first Failure encountered is returned
+  // immediately. Note that any extra elements in t are ignored.
+  fun leq<E>(that: this, leqT: (T, ?T) -> Result<void, E>): Result<void, E> {
+    this.iterDiffInterDiff(that)
+      .findMap(ior ->
+        ior match {
+        | Left(x) -> leqT(x, None()).maybeFailure()
+        | Both(x, y) -> leqT(x, Some(y)).maybeFailure()
+        | Right(_) -> None()
+        }
+      )
+      .failureOr(void)
+  }
+
+  // s.geq(t, geqT) is Success if geqT(s.maybeGet(y), y) is Success for every
+  // y in t, otherwise the first Failure encountered is returned
+  // immediately. Note that any extra elements in s are ignored.
+  fun geq<E>(that: this, geqT: (?T, T) -> Result<void, E>): Result<void, E> {
+    that.leq(this, (y, xO) -> geqT(xO, y))
   }
 }
 
