@@ -168,6 +168,18 @@ class .InternalKeyedArrayMap<K: Orderable, T: Projectable<K>> private (
     InternalKeyedArrayMap::createFromSortedIterator(this.iterDiff(that))
   }
 
+  // s.merge(t, f) is the set of elements returned by f
+  // from Left(x) for every element in s but not t, Right(y) for every y in
+  // t but not s, and Both(x, y) for every pair of elements that are in both
+  // s and t.
+  //
+  // REQUIRES: f must preserve project:
+  // x.project() == f(Left(x)).project() for any x and
+  // y.project() == f(Right(y)).project() for any y
+  fun merge(that: this, f: InclusiveOr<T, T> -> T): this {
+    static::createFromSortedIterator(this.iterDiffInterDiff(that).map(f))
+  }
+
   // s.mergeOpt(t, f) is the set of elements v where Some(v) is returned by f
   // from Left(x) for every element in s but not t, Right(y) for every y in
   // t but not s, and Both(x, y) for every pair of elements that are in both
