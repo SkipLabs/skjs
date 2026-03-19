@@ -481,7 +481,7 @@ base class STErrorOnTFields(
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsIndexField(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsMissingField(TField)
-  | STRecFieldsField(STErrorOnTType, TField, TField, FieldMismatchKind)
+  | STRecFieldsField(?STErrorOnTType, TField, TField, FieldMismatchKind)
 
   fun toError(
     pos1: PosRange,
@@ -586,7 +586,7 @@ base class STErrorOnTFields(
       };
       (
         List[(field1.pos, msg)],
-        err.toError(detailForRec),
+        err.map(e -> e.toError(detailForRec)).default(List.Nil()),
         kind.readonlyHintPos(field2.pos),
       )
     };
@@ -769,10 +769,22 @@ extension class TFields {
         if (f1.isOptional && !f2.isOptional) {
           return STRecFieldsMissingField(f1, fields1, fields2)
         };
+        // Readonly field cannot satisfy a mutable field: skip the setter isSub
+        // to avoid spurious success from TVar inference.
+        if (f1.set.isBottom() && !f2.set.isBottom()) {
+          return STRecFieldsField(None(), f1, f2, FMKSetter(), fields1, fields2)
+        };
         TType::isSub(subst, tenv, f2.set, f1.set) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
-          return STRecFieldsField(err, f1, f2, FMKSetter(), fields1, fields2)
+          return STRecFieldsField(
+            Some(err),
+            f1,
+            f2,
+            FMKSetter(),
+            fields1,
+            fields2,
+          )
         };
         f2type = if (f2.isOptional) {
           TType::unionUndefined(subst, tenv, f2.get, f2.pos)
@@ -782,7 +794,14 @@ extension class TFields {
         TType::isSub(subst, tenv, f1.get, f2type) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
-          return STRecFieldsField(err, f1, f2, FMKGetter(), fields1, fields2)
+          return STRecFieldsField(
+            Some(err),
+            f1,
+            f2,
+            FMKGetter(),
+            fields1,
+            fields2,
+          )
         }
       }
     };
