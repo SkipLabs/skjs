@@ -50,7 +50,9 @@ function testWithIndexSignature(): void {
 // Test 5b: Index signature with numeric key (field name doesn't match)
 function testWithNumericIndexSignature(): void {
   let obj: { [key: number]: string } = {};
+  // @skjs-expect-error Invalid index key: expected number, got string
   obj.x = "hello"; // OK: "x" is NOT a subtype of number, so add as field
+  // @skjs-expect-error Invalid annotation
   const result: { x: string } = obj;
 }
 
@@ -121,6 +123,12 @@ function testMultiLiteralKey(key: "a" | "b"): void {
   let obj = {};
   obj[key] = 42;
   const result: { a?: number; b?: number } = obj;
+}
+
+// Test 15: Growth after spread with index — field should override index
+function testGrowthAfterSpreadWithIndex(src: { [key: string]: number }): void {
+  let obj = { ...src };
+  obj.x = "hello";
 }
 
 // TODO: handle growth on the same field with different type, should probably union

@@ -44,7 +44,9 @@ extension class TypeChecker {
         // Detect local objects: object literals (Object _) bound to variables.
         // These can grow by adding fields via assignment (obj.newField = value)
         // before being used. See TypeCheckEnv.sk:LocalObjectState for details.
-        isLocalObject = binding.value is Some(Expr(_, Object _));
+        isLocalObject =
+          binding.type.isNone() &&
+          binding.value is Some(Expr(_, Object _));
         this.bind(tcenv, bkind, binding.pat, ty, isInitialized, isLocalObject)
       }
 

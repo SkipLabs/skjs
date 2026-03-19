@@ -1826,36 +1826,20 @@ extension class TypeChecker {
             fd.set,
           )
         | None() ->
-          keyKind = key
-            .toType()
-            .getSTypes(tcenv.subst, this, Covariant())
-            .flatMap(stypes ~> stypes.singleElt()) match {
-          | Some(TPrimValue(k, _, _)) -> Some(k)
-          | _ -> None()
+          // Always grow: don't check index signatures on local objects.
+          // Indexes may come from a spread, but since local objects are
+          // unused fresh objects, we can just add fields directly.
+          !needsGrowth = true;
+          field = TField::create{
+            pos => key.pos(),
+            name => key.value(),
+            isOptional,
+            isReadonly => None(),
+            type => fieldType,
           };
-          matchingIndex = keyKind.flatMap(k -> fields.indexForKeyKind(k));
-          matchingIndex match {
-          | Some(indexField) ->
-            this.checkSubType(
-              tcenv,
-              fieldType.pos,
-              "Invalid assignment",
-              fieldType,
-              indexField.set,
-            )
-          | None() ->
-            !needsGrowth = true;
-            field = TField::create{
-              pos => key.pos(),
-              name => key.value(),
-              isOptional,
-              isReadonly => None(),
-              type => fieldType,
-            };
-            key match {
-            | FKName _ -> newFieldsMap![field.name] = field
-            | FKSymbol _ -> newSymbolFieldsMap![field.name] = field
-            }
+          key match {
+          | FKName _ -> newFieldsMap![field.name] = field
+          | FKSymbol _ -> newSymbolFieldsMap![field.name] = field
           }
         }
       };
