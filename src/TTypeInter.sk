@@ -532,12 +532,13 @@ extension class TFun {
     f1: TFun,
     f2: TFun,
   ): ?TFun {
+    merged = f1.cgNodes.union(f2.cgNodes);
     TFun::isSub(subst, tenv, f1, f2) match {
-    | STOk() -> return Some(f1)
+    | STOk() -> return Some(f1 with {cgNodes => merged})
     | STError _ -> void
     };
     TFun::isSub(subst, tenv, f2, f1) match {
-    | STOk() -> return Some(f2)
+    | STOk() -> return Some(f2 with {cgNodes => merged})
     | STError _ -> void
     };
     None()
