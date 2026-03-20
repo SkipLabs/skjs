@@ -772,19 +772,128 @@ extension class TypeChecker {
             );
             continue
           };
-          // Sound spread typing: forget all fields before the spread,
-          // since the spread value could have any property at runtime
-          // (structural subtyping allows extra properties).
-          !fields = SortedMap[];
-          !symbolFields = SortedMap[];
-          !tIndexes = TIndexes::empty;
+          // Sound spread typing: merge existing fields with spread.
+          // - Non-optional spread field wins (replaces existing).
+          // - Otherwise: keep existing optionality, union get type with
+          //   spread's contribution (optional field / index / Top).
+          // - Always use only get type (spread reads via getter).
           spreadTFields = obj.getFields(tcenv.subst, this);
+          newFields = SortedMap<FieldNameString, TField>[];
+          for (existingField in fields) {
+            spreadTFields.fields.maybeGet(existingField.name) match {
+            | Some(spreadField) if (!spreadField.isOptional) ->
+              !newFields[spreadField.name] = TField::create{
+                pos => spreadField.pos,
+                name => spreadField.name.value,
+                isOptional => false,
+                isReadonly => None(),
+                type => spreadField.get,
+              }
+            | optSpreadField ->
+              spreadGet = optSpreadField match {
+              | Some(sf) -> sf.get
+              | None() ->
+                spreadTFields.indexForFieldName(
+                  existingField.name.value,
+                ) match {
+                | Some(idx) -> idx.get
+                | None() -> TType::top(spreadExpr.pos)
+                }
+              };
+              mergedGet = TType::union(
+                tcenv.subst,
+                this,
+                existingField.get,
+                spreadGet,
+              );
+              !newFields[existingField.name] = TField::create{
+                pos => existingField.pos,
+                name => existingField.name.value,
+                isOptional => existingField.isOptional,
+                isReadonly => None(),
+                type => mergedGet,
+              }
+            }
+          };
           for (spreadField in spreadTFields.fields) {
-            !fields[spreadField.name] = spreadField
+            if (!newFields.containsKey(spreadField.name)) {
+              fieldGet = if (spreadField.isOptional) {
+                // Union with existing index if present
+                tIndexes.indexForFieldName(spreadField.name.value) match {
+                | Some(idx) ->
+                  TType::union(tcenv.subst, this, idx.get, spreadField.get)
+                | None() -> spreadField.get
+                }
+              } else {
+                spreadField.get
+              };
+              !newFields[spreadField.name] = TField::create{
+                pos => spreadField.pos,
+                name => spreadField.name.value,
+                isOptional => spreadField.isOptional,
+                isReadonly => None(),
+                type => fieldGet,
+              }
+            }
           };
-          for (spreadSymbolField in spreadTFields.symbolFields) {
-            !symbolFields[spreadSymbolField.name] = spreadSymbolField
+          !fields = newFields;
+          // Same merge for symbol fields (using symbolIndex as fallback)
+          newSymbolFields = SortedMap<FieldNameString, TField>[];
+          for (existingField in symbolFields) {
+            spreadTFields.symbolFields.maybeGet(existingField.name) match {
+            | Some(spreadField) if (!spreadField.isOptional) ->
+              !newSymbolFields[spreadField.name] = TField::create{
+                pos => spreadField.pos,
+                name => spreadField.name.value,
+                isOptional => false,
+                isReadonly => None(),
+                type => spreadField.get,
+              }
+            | optSpreadField ->
+              spreadGet = optSpreadField match {
+              | Some(sf) -> sf.get
+              | None() ->
+                spreadTFields.symbolIndex match {
+                | Some(idx) -> idx.get
+                | None() -> TType::top(spreadExpr.pos)
+                }
+              };
+              mergedGet = TType::union(
+                tcenv.subst,
+                this,
+                existingField.get,
+                spreadGet,
+              );
+              !newSymbolFields[existingField.name] = TField::create{
+                pos => existingField.pos,
+                name => existingField.name.value,
+                isOptional => existingField.isOptional,
+                isReadonly => None(),
+                type => mergedGet,
+              }
+            }
           };
+          for (spreadField in spreadTFields.symbolFields) {
+            if (!newSymbolFields.containsKey(spreadField.name)) {
+              fieldGet = if (spreadField.isOptional) {
+                tIndexes.symbolIndex match {
+                | Some(idx) ->
+                  TType::union(tcenv.subst, this, idx.get, spreadField.get)
+                | None() -> spreadField.get
+                }
+              } else {
+                spreadField.get
+              };
+              !newSymbolFields[spreadField.name] = TField::create{
+                pos => spreadField.pos,
+                name => spreadField.name.value,
+                isOptional => spreadField.isOptional,
+                isReadonly => None(),
+                type => fieldGet,
+              }
+            }
+          };
+          !symbolFields = newSymbolFields;
           !tIndexes = TIndexes{
             stringIndex => spreadTFields.stringIndex,
             numberIndex => spreadTFields.numberIndex,

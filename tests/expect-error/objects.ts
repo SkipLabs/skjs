@@ -154,8 +154,6 @@ function spreadFieldsBeforeTypedSpread(x: { f1: number; f2: string }): {
 // Spread with optional field overlap → union types, non-optional
 function spreadOptionalOverlap(): { a: string | number } {
   const obj: { a?: number } = {};
-  // TODO: should pass — a is string | number (non-optional, existing wins optionality)
-  // @skjs-expect-error Invalid return type
   return { a: "", ...obj };
 }
 
@@ -169,8 +167,6 @@ function spreadOptionalOverlapNarrow(): { a: string } {
 // Spread with index signature → union types
 function spreadIndexOverlap(): { a: string | number } {
   const obj: { [k: string]: number } = {};
-  // TODO: should pass — a is string | number (unioned with index)
-  // @skjs-expect-error Invalid return type
   return { a: "", ...obj };
 }
 
@@ -191,8 +187,6 @@ function spreadRequiredOverwrites(): { a: number } {
 function spreadOptionalThenOptional(): { a?: string | number } {
   const obj1: { a?: string } = {};
   const obj2: { a?: number } = {};
-  // TODO: should pass — a is string | number, optional
-  // @skjs-expect-error Invalid return type
   return { ...obj1, ...obj2 };
 }
 
@@ -200,23 +194,18 @@ function spreadOptionalThenOptional(): { a?: string | number } {
 function spreadOptionalThenIndex(): { a?: string | number } {
   const obj1: { a?: string } = {};
   const obj2: { [k: string]: number } = {};
-  // TODO: should pass — a? string unioned with index number
-  // @skjs-expect-error Invalid return type
   return { ...obj1, ...obj2 };
 }
 
 function spreadIndexThenOptional(): { a?: string | number } {
   const obj1: { [k: string]: number } = {};
   const obj2: { a?: string } = {};
-  // TODO: should pass — index number unioned with a? string
-  // @skjs-expect-error Invalid return type
   return { ...obj1, ...obj2 };
 }
 
 // Spread with no matching field or index → union with Top (structural subtyping)
 function spreadUnrelatedFieldUnionTop(): void {
   const obj: { b: number } = { b: 1 };
-  // TODO: a should be string | top = top, so assigning to string should error
   // @skjs-expect-error Invalid annotation
   const result: { a: string } = { a: "hello", ...obj };
 }
@@ -225,8 +214,6 @@ function spreadUnrelatedFieldUnionTop(): void {
 function spreadReadonlyBecomesMutable(): void {
   const obj: { readonly a: number } = { a: 1 };
   const result = { ...obj };
-  // TODO: should be OK — spread creates mutable copy
-  // @skjs-expect-error Invalid assignment
   result.a = 42;
 }
 
