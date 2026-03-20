@@ -894,10 +894,115 @@ extension class TypeChecker {
             }
           };
           !symbolFields = newSymbolFields;
+          if (tIndexes.numberIndex.isSome() && tIndexes.stringIndex.isNone()) {
+            invariant_violation(
+              "Spread with existing number index but no string index",
+            );
+          };
+          spreadStrIdx = spreadTFields.stringIndex
+            .map(f -> f.get)
+            .default(TType::top(spreadExpr.pos));
+          mergedNumberIndex = (
+            tIndexes.numberIndex,
+            tIndexes.stringIndex,
+            spreadTFields.numberIndex,
+          ) match {
+          | (None(), _, None()) -> None()
+          | (None(), None(), Some(spreadNumIdx)) ->
+            Some(
+              TField::create{
+                pos => spreadNumIdx.pos,
+                name => spreadNumIdx.name.value,
+                isOptional => true,
+                isReadonly => None(),
+                type => spreadNumIdx.get,
+              },
+            )
+          | (None(), Some(existingIdx), spreadNumIdx @ Some _)
+          | (Some(existingIdx), _, spreadNumIdx) ->
+            type = TType::union(
+              tcenv.subst,
+              this,
+              existingIdx.get,
+              spreadNumIdx.map(f -> f.get).default(spreadStrIdx),
+            );
+            Some(
+              TField::create{
+                pos => existingIdx.pos,
+                name => existingIdx.name.value,
+                isOptional => true,
+                isReadonly => None(),
+                type,
+              },
+            )
+          };
+          mergedStringIndex = Some(
+            tIndexes.stringIndex match {
+            | None() ->
+              TField::create{
+                pos => spreadTFields.stringIndex
+                  .map(f -> f.pos)
+                  .default(spreadExpr.pos),
+                name => spreadTFields.stringIndex
+                  .map(f -> f.name.value)
+                  .default("SKJS_ObjectSpread"),
+                isOptional => true,
+                isReadonly => None(),
+                type => spreadStrIdx,
+              }
+            | Some(existingIdx) ->
+              type = TType::union(
+                tcenv.subst,
+                this,
+                existingIdx.get,
+                spreadStrIdx,
+              );
+              TField::create{
+                pos => existingIdx.pos,
+                name => existingIdx.name.value,
+                isOptional => true,
+                isReadonly => None(),
+                type,
+              }
+            },
+          );
+          spreadSymIdx = spreadTFields.symbolIndex
+            .map(f -> f.get)
+            .default(TType::top(spreadExpr.pos));
+          mergedSymbolIndex = Some(
+            tIndexes.symbolIndex match {
+            | None() ->
+              TField::create{
+                pos => spreadTFields.symbolIndex
+                  .map(f -> f.pos)
+                  .default(spreadExpr.pos),
+                name => spreadTFields.symbolIndex
+                  .map(f -> f.name.value)
+                  .default("SKJS_ObjectSpread"),
+                isOptional => true,
+                isReadonly => None(),
+                type => spreadSymIdx,
+              }
+            | Some(existingIdx) ->
+              type = TType::union(
+                tcenv.subst,
+                this,
+                existingIdx.get,
+                spreadSymIdx,
+              );
+              TField::create{
+                pos => existingIdx.pos,
+                name => existingIdx.name.value,
+                isOptional => true,
+                isReadonly => None(),
+                type,
+              }
+            },
+          );
           !tIndexes = TIndexes{
-            stringIndex => spreadTFields.stringIndex,
-            numberIndex => spreadTFields.numberIndex,
-            symbolIndex => spreadTFields.symbolIndex,
+            stringIndex => mergedStringIndex,
+            numberIndex => mergedNumberIndex,
+            symbolIndex => mergedSymbolIndex,
           };
           spreadTFields.call.each(_ ->
             tcenv.notSupported(

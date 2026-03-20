@@ -230,6 +230,5 @@ function missingOptional(x: { x: number }): { x: number; a?: string } {
 function spreadIndexThenIndex(): { [k: string]: string | number } {
   const obj1: { [k: string]: number } = {};
   const obj2: { [k: string]: string } = {};
-  // @skjs-expect-error Invalid return type
   return { ...obj1, ...obj2 };
 }
