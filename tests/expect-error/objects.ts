@@ -212,6 +212,16 @@ function spreadIndexThenOptional(): { a?: string | number } {
   return { ...obj1, ...obj2 };
 }
 
+// Stricter optional field subtyping: sub without the optional field (and no
+// index) must not satisfy super's optional field. Otherwise:
+//   const obj = { x: 1, a: 2 };
+//   const obj2 = missingOptional(obj); // obj2: { x: number, a?: string }
+//   obj2.a  // typed string | undefined, actually number — unsound
+function missingOptional(x: { x: number }): { x: number; a?: string } {
+  // @skjs-expect-error Invalid return type
+  return x;
+}
+
 function spreadIndexThenIndex(): { [k: string]: string | number } {
   const obj1: { [k: string]: number } = {};
   const obj2: { [k: string]: string } = {};

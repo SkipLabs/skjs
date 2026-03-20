@@ -738,7 +738,7 @@ extension class TFields {
         };
         // When sub has an index, use it to satisfy super's optional fields
         indexFor(fields1, f2.name) match {
-        | None() -> void
+        | None() -> return STRecFieldsMissingField(f2, fields1, fields2)
         | Some(idx1) ->
           TType::isSub(subst, tenv, idx1.get, f2.get) match {
           | err @ STErrorOnTType _ ->
