@@ -152,15 +152,12 @@ function spreadFieldsBeforeTypedSpread(x: { f1: number; f2: string }): {
 }
 
 // Spread with optional field overlap → union types, non-optional
-// FIXME: SKJS should infer a as string | number
 function spreadOptionalOverlap(): { a: string | number } {
   const obj: { a?: number } = {};
-  // @skjs-expect-error Invalid return type
   return { a: "", ...obj };
 }
 
 // Spread with optional field, assigned to narrow type → error
-// FIXME: SKJS should error because a is string | number, not string
 function spreadOptionalOverlapNarrow(): { a: string } {
   const obj: { a?: number } = {};
   // @skjs-expect-error Invalid return type
@@ -168,15 +165,12 @@ function spreadOptionalOverlapNarrow(): { a: string } {
 }
 
 // Spread with index signature → union types
-// FIXME: SKJS should infer a as string | number
 function spreadIndexOverlap(): { a: string | number } {
   const obj: { [k: string]: number } = {};
-  // @skjs-expect-error Invalid return type
   return { a: "", ...obj };
 }
 
 // Spread with index signature, assigned to narrow type → error
-// FIXME: SKJS should error because a is string | number, not string
 function spreadIndexOverlapNarrow(): { a: string } {
   const obj: { [k: string]: number } = {};
   // @skjs-expect-error Invalid return type
@@ -193,7 +187,6 @@ function spreadRequiredOverwrites(): { a: number } {
 function spreadOptionalThenOptional(): { a?: string | number } {
   const obj1: { a?: string } = {};
   const obj2: { a?: number } = {};
-  // @skjs-expect-error Invalid return type
   return { ...obj1, ...obj2 };
 }
 
@@ -201,15 +194,27 @@ function spreadOptionalThenOptional(): { a?: string | number } {
 function spreadOptionalThenIndex(): { a?: string | number } {
   const obj1: { a?: string } = {};
   const obj2: { [k: string]: number } = {};
-  // @skjs-expect-error Invalid return type
   return { ...obj1, ...obj2 };
 }
 
 function spreadIndexThenOptional(): { a?: string | number } {
   const obj1: { [k: string]: number } = {};
   const obj2: { a?: string } = {};
-  // @skjs-expect-error Invalid return type
   return { ...obj1, ...obj2 };
+}
+
+// Spread with no matching field or index → union with Top (structural subtyping)
+function spreadUnrelatedFieldUnionTop(): void {
+  const obj: { b: number } = { b: 1 };
+  // @skjs-expect-error Invalid annotation
+  const result: { a: string } = { a: "hello", ...obj };
+}
+
+// Spread forgets set type — readonly fields become mutable
+function spreadReadonlyBecomesMutable(): void {
+  const obj: { readonly a: number } = { a: 1 };
+  const result = { ...obj };
+  result.a = 42;
 }
 
 // Stricter optional field subtyping: sub without the optional field (and no
@@ -225,6 +230,5 @@ function missingOptional(x: { x: number }): { x: number; a?: string } {
 function spreadIndexThenIndex(): { [k: string]: string | number } {
   const obj1: { [k: string]: number } = {};
   const obj2: { [k: string]: string } = {};
-  // @skjs-expect-error Invalid return type
   return { ...obj1, ...obj2 };
 }
