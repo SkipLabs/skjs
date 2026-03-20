@@ -477,7 +477,7 @@ base class STErrorOnTFields(
   | STRecFieldsCall(?STErrorOnTFuns)
   | STRecFieldsNew(?STErrorOnTFuns)
   | STRecFieldsIndexValue(STErrorOnTType, TField, TField, FieldMismatchKind)
-  | STRecFieldsMissingIndex(TField)
+  | STRecFieldsMissingIndex(STErrorOnTType, TField)
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsIndexField(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsMissingField(TField)
@@ -542,7 +542,7 @@ base class STErrorOnTFields(
         err.toError(detailForRec),
         kind.readonlyHintPos(index2.pos),
       )
-    | STRecFieldsMissingIndex(index2, _fields1, _fields2) ->
+    | STRecFieldsMissingIndex(err, index2, _fields1, _fields2) ->
       (
         List[
           (
@@ -550,7 +550,7 @@ base class STErrorOnTFields(
             `Missing index signature '${index2.name.value}' in source type`,
           ),
         ],
-        List.Nil(),
+        err.toError(detailForRec),
         None(),
       )
     | STRecFieldsFieldIndex(err, field1, index2, kind, _fields1, _fields2) ->
@@ -673,8 +673,19 @@ extension class TFields {
         }
       }
     | (None(), Some(index2)) ->
-      // Sub has no index for this kind — it cannot satisfy super's index.
-      STRecFieldsMissingIndex(index2, fields1, fields2)
+      // Sub has no index for this kind. Check against top/bottom so that
+      // TVars in index2 still get unified. For concrete types this fails;
+      // for synthetic index TVars this succeeds (unifying with top/bottom).
+      TType::isSub(subst, tenv, TType::top(index2.pos), index2.get) match {
+      | err @ STErrorOnTType _ ->
+        STRecFieldsMissingIndex(err, index2, fields1, fields2)
+      | STOk() ->
+        TType::isSub(subst, tenv, index2.set, TType::bottom(index2.pos)) match {
+        | err @ STErrorOnTType _ ->
+          STRecFieldsMissingIndex(err, index2, fields1, fields2)
+        | STOk() -> STOk()
+        }
+      }
     }
   }
 
