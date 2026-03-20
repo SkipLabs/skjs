@@ -218,7 +218,7 @@ function spreadIndexThenOptional(): { a?: string | number } {
 //   const obj2 = missingOptional(obj); // obj2: { x: number, a?: string }
 //   obj2.a  // typed string | undefined, actually number — unsound
 function missingOptional(x: { x: number }): { x: number; a?: string } {
-  // TODO: should error — sub has no field 'a' and no index to cover it
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
