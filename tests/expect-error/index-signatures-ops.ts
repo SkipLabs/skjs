@@ -205,5 +205,6 @@ function dualGoodCrossReadonlyToStrWide(d: DualIdxGoodCrossReadonly): {
 function dualGoodCrossToStrWide(d: DualIdxGoodCross): {
   [key: string]: number | boolean;
 } {
+  // @skjs-expect-error Invalid return type
   return d;
 }

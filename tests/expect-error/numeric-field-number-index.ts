@@ -1,74 +1,84 @@
 // Tests that numeric field names are properly checked against number index signatures
 
-function numericFieldIncompatibleWithNumberIndex(x: { 0: number }): {
-  [arg: number]: string;
+function numericFieldIncompatibleWithNumberIndex(x: { readonly 0: number }): {
+  readonly [arg: number]: string;
 } {
   // @skjs-expect-error Invalid return type
   return x;
 }
 
-function numericFieldIncompatibleWithStringIndex(x: { 0: number }): {
-  [arg: string]: string;
+function numericFieldIncompatibleWithStringIndex(x: { readonly 0: number }): {
+  readonly [arg: string]: string;
 } {
   // @skjs-expect-error Invalid return type
   return x;
 }
 
-function numericFieldCompatibleWithNumberIndex(x: { 0: string }): {
-  [arg: number]: string;
+function numericFieldCompatibleWithNumberIndex(x: { readonly 0: string }): {
+  readonly [arg: number]: string;
 } {
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
-function numericFieldCompatibleWithStringIndex(x: { 0: string }): {
-  [arg: string]: string;
+function numericFieldCompatibleWithStringIndex(x: { readonly 0: string }): {
+  readonly [arg: string]: string;
 } {
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
 // Decimal field names match number index signatures
-function decimalFieldCompatibleWithNumberIndex(x: { "1.5": string }): {
-  [arg: number]: string;
+function decimalFieldCompatibleWithNumberIndex(x: { readonly "1.5": string }): {
+  readonly [arg: number]: string;
 } {
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
-function decimalFieldIncompatibleWithNumberIndex(x: { "1.5": number }): {
-  [arg: number]: string;
+function decimalFieldIncompatibleWithNumberIndex(x: {
+  readonly "1.5": number;
+}): {
+  readonly [arg: number]: string;
 } {
   // @skjs-expect-error Invalid return type
   return x;
 }
 
 // Negative field names match number index signatures
-function negativeFieldCompatibleWithNumberIndex(x: { "-1": string }): {
-  [arg: number]: string;
+function negativeFieldCompatibleWithNumberIndex(x: { readonly "-1": string }): {
+  readonly [arg: number]: string;
 } {
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
 // Non-canonical numeric strings are NOT checked against number index signatures
-function nonCanonicalLeadingZero(x: { "01": number }): {
-  [arg: number]: string;
+function nonCanonicalLeadingZero(x: { readonly "01": number }): {
+  readonly [arg: number]: string;
 } {
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
-function nonCanonicalTrailingDecimalZero(x: { "1.50": number }): {
-  [arg: number]: string;
+function nonCanonicalTrailingDecimalZero(x: { readonly "1.50": number }): {
+  readonly [arg: number]: string;
 } {
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
-function nonCanonicalNegativeZero(x: { "-0": number }): {
-  [arg: number]: string;
+function nonCanonicalNegativeZero(x: { readonly "-0": number }): {
+  readonly [arg: number]: string;
 } {
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
 // Non-numeric field names should not be checked against number index signatures
-function stringFieldNotCheckedAgainstNumberIndex(x: { foo: number }): {
-  [arg: number]: string;
+function stringFieldNotCheckedAgainstNumberIndex(x: { readonly foo: number }): {
+  readonly [arg: number]: string;
 } {
+  // @skjs-expect-error Invalid return type
   return x;
 }

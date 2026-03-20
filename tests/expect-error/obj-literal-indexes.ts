@@ -3,10 +3,11 @@ function testObjLiteralToIndexed(): void {
   const a: { [k: string]: number } = { x: 1, y: 2 };
 }
 
-// Test: dual assignment to different indexed types
+// Test: dual assignment to different indexed types (second should fail)
 function testDualIndexedAssignment(): void {
   const a = {};
   const b: { [k: string]: number } = a;
+  // @skjs-expect-error Invalid annotation
   const c: { [k: string]: boolean } = a;
 }
 

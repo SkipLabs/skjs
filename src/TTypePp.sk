@@ -253,7 +253,7 @@ mutable class TypePp{
   mutable fun object(level: Int, margin: Margin, fields: TFields): void {
     (
       fields.fields.isEmpty(),
-      !fields.hasIndex(),
+      !fields.hasNonSyntheticIndex(),
       fields.call,
       fields.new,
     ) match {
