@@ -107,7 +107,7 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           parentName.pos,
-          "Invalid implements",
+          `Invalid implements: ${parentName}`,
           thisType,
           super,
         )
