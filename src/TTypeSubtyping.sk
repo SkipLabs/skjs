@@ -477,7 +477,7 @@ base class STErrorOnTFields(
   | STRecFieldsCall(?STErrorOnTFuns)
   | STRecFieldsNew(?STErrorOnTFuns)
   | STRecFieldsIndexValue(STErrorOnTType, TField, TField, FieldMismatchKind)
-  | STRecFieldsIndexKeyKinds(TField, TField)
+  | STRecFieldsMissingIndex(TField)
   | STRecFieldsFieldIndex(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsIndexField(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsMissingField(TField)
@@ -542,14 +542,13 @@ base class STErrorOnTFields(
         err.toError(detailForRec),
         kind.readonlyHintPos(index2.pos),
       )
-    | STRecFieldsIndexKeyKinds(index1, index2, fields1, _fields2) ->
+    | STRecFieldsMissingIndex(index2, _fields1, _fields2) ->
       (
         List[
           (
-            index1.pos,
-            `Index signature '${fields1.nonSyntheticIndexKeyKindsString()}' is missing in source type`,
+            index2.pos,
+            `Missing index signature '${index2.name.value}' in source type`,
           ),
-          (index2.pos, `Required by index signature '${index2.name.value}'`),
         ],
         List.Nil(),
         None(),
@@ -673,12 +672,9 @@ extension class TFields {
         | STOk() -> STOk()
         }
       }
-    | (None(), Some(_index2)) ->
-      // Sub has no index for this kind — named field checks happen separately.
-      // Note: this is OK for number/symbol indexes where sub might use string
-      // index fallback. For string indexes, sub MUST have a string index —
-      // but we can't distinguish the kind here, so the caller handles that.
-      STOk()
+    | (None(), Some(index2)) ->
+      // Sub has no index for this kind — it cannot satisfy super's index.
+      STRecFieldsMissingIndex(index2, fields1, fields2)
     }
   }
 

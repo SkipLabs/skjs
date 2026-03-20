@@ -328,6 +328,7 @@ interface NumberIdxNum {
 
 // TS: number-indexed NOT assignable to string-indexed (missing string index)
 function numIdxToStrIdx(n: NumberIdxNum): StringIdxNum {
+  // @skjs-expect-error Invalid return type
   return n;
 }
 
