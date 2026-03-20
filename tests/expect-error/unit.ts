@@ -472,7 +472,6 @@ class ClassWithComplexConstructor implements InitComplexInterface {
     field2: string;
   };
   list: number[];
-  // @skjs-expect-error Invalid initialization
   constructor(field1: number, field2: string, list: number[]) {
     this.nested = { field1, field2 };
     this.list = list;

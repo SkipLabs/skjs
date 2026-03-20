@@ -204,7 +204,6 @@ function testMultipleVariance(): void {
 
 // Test 25: Function type in object (covariance + contravariance)
 function testFunctionInObject(): void {
-  // @skjs-expect-error Invalid annotation
   const obj1: { fn: (a: Animal) => Dog } = {
     fn: (_a: Animal) => ({ name: "Fido", breed: "Lab" }),
   };

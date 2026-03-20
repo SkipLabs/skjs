@@ -1003,6 +1003,21 @@ class TField private {
     }
   }
 
+  // Create a synthetic index field with separate get/set TVars.
+  // Used for object literal indexes that should be transparent to the
+  // setter direction of subtyping (see kSyntheticIndexName).
+  static fun createSyntheticIndex(subst: mutable Subst, pos: PosRange): TField {
+    get = TType::var(subst.gen(pos));
+    set = TType::var(subst.gen(pos));
+    TField{
+      pos,
+      name => FieldNameString(kSyntheticIndexName),
+      isOptional => true,
+      get,
+      set,
+    }
+  }
+
   // Create a virtual field from an index, renamed for use in union.
   // Indexes are already optional (isOptional = true).
   fun asNamed(name: FieldNameString): TField {

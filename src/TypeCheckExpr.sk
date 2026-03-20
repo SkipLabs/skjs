@@ -850,27 +850,13 @@ extension class TypeChecker {
       // assigned to indexed types via subtyping. These are invisible
       // to field resolution (filtered by nonSyntheticIndexForKeyKind/hasNonSyntheticIndex).
       if (tIndexes.stringIndex.isNone()) {
-        strTVar = this.newTVar(tcenv, pos);
         !tIndexes.stringIndex = Some(
-          TField::create{
-            pos,
-            name => kSyntheticIndexName,
-            isOptional => true,
-            isReadonly => None(),
-            type => strTVar,
-          },
+          TField::createSyntheticIndex(tcenv.subst, pos),
         )
       };
       if (tIndexes.symbolIndex.isNone()) {
-        symTVar = this.newTVar(tcenv, pos);
         !tIndexes.symbolIndex = Some(
-          TField::create{
-            pos,
-            name => kSyntheticIndexName,
-            isOptional => true,
-            isReadonly => None(),
-            type => symTVar,
-          },
+          TField::createSyntheticIndex(tcenv.subst, pos),
         )
       };
       obj = TType::single(
