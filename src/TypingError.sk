@@ -182,7 +182,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
 }
 
 class TypingError(
-  savedSubst: (SubstState, TCResults),
+  savedSubst: (SubstState, TCResultsAcc),
   tenv: TEnv,
   messages: Array<(PosRange, String)>,
   stErr: STErrorOnTType,
