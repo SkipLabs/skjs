@@ -168,9 +168,9 @@ extension class TypeChecker {
       }
     };
     fd.body match {
-    | FDBNone(pos) ->
+    | FDBNone() ->
       if (thisTypeOpt is Some((CKClass(), _))) {
-        subst.error(Array[(pos, "Missing definition")])
+        subst.error(Array[(fd.pos, "Missing definition")])
       }
     | FDBSome(body) ->
       if (thisTypeOpt is Some((CKInterface(), _))) {

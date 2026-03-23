@@ -1394,7 +1394,7 @@ base class TEnv{
         tFuns = this.funDecl(tcenvb, false, fd, cgNode);
         fd.name match {
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
-        | FNEmpty() -> !call = Some(tFuns)
+        | FNEmpty(_) -> !call = Some(tFuns)
         | simpleFieldName @ SimpleFieldName _ ->
           decl = TType::single(
             TObject::createCall(Subst::mcreate(tcenvb), this, tFuns),

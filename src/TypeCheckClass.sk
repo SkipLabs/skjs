@@ -270,7 +270,7 @@ extension class TypeChecker {
       subst.error(Array[(asyncPos, "Constructors cannot be async")])
     };
     fd.body match {
-    | FDBNone(pos) -> subst.error(Array[(pos, "Missing definition")])
+    | FDBNone() -> subst.error(Array[(fd.pos, "Missing definition")])
     | FDBSome(body) ->
       blockScope = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fd.pos, "this"));

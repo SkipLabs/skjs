@@ -303,8 +303,8 @@ private fun checkDef(
   | Declare(d)
   | ExportDeclare(d)
   | Export(d) ->
-    checkDef(Def(def.pos, d), nodes, classes)
-  | ExportDefault(d) -> checkDef(Def(def.pos, d), nodes, classes)
+    checkDef(Def::create(def.pos, d), nodes, classes)
+  | ExportDefault(d) -> checkDef(Def::create(def.pos, d), nodes, classes)
   | Expr _ -> nodes.insert(CGNode::toplevel(def.pos.fileName))
   | fd @ TopLevelFunDef _ -> nodes.insert(fd.cgNode.fromSome())
   | c @ Class _ -> classes.push(CHNode::ofClass(c))

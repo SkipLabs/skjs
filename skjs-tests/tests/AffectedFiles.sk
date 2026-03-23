@@ -14,13 +14,13 @@ fun findDefsByName(defs: Array<SKJS.Def>, targetName: String): Array<SKJS.Def> {
       if (fd.name.getName() == targetName) results.push(def)
     | c @ SKJS.Class _ -> if (c.name.value == targetName) results.push(def)
     | SKJS.Export(inner) ->
-      innerDef = SKJS.Def(def.pos, inner);
+      innerDef = SKJS.Def::create(def.pos, inner);
       findDefsByName(Array[innerDef], targetName).each(results.push)
     | SKJS.ExportDeclare(inner) ->
-      innerDef = SKJS.Def(def.pos, inner);
+      innerDef = SKJS.Def::create(def.pos, inner);
       findDefsByName(Array[innerDef], targetName).each(results.push)
     | SKJS.Declare(inner) ->
-      innerDef = SKJS.Def(def.pos, inner);
+      innerDef = SKJS.Def::create(def.pos, inner);
       findDefsByName(Array[innerDef], targetName).each(results.push)
     | _ -> void
     }

@@ -17,6 +17,14 @@ extension class Parser {
     }
   }
 
+  // <name> ::= <string>
+  mutable fun peekName(): Name {
+    this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
+    | Some(tok) -> Name(this.lex.posRange(tok), this.getVar(tok))
+    }
+  }
+
   // <string> | "<string>" | '<string>'
   mutable fun getNameOrString(): Name {
     this.lex.next() match {
@@ -379,7 +387,7 @@ extension class Parser {
   // Helper for parsing definitions with position tracking
   mutable fun defHelper(): Def {
     (pos, def_) = this.withPos(this.defHelper_, UnterminatedDef());
-    Def(pos, def_)
+    Def::create(pos, def_)
   }
 
   // Internal definition parsing implementation
@@ -805,15 +813,15 @@ extension class Parser {
 
   // Parse class definitions
   mutable fun class_(kind: ClassKind): Class {
-    name = this.getName();
     // Record the class definition and set context
     prevSymbolContext = this.getCurrentSymbolContext();
-    classSymbol = SPClass(name.value);
+    classSymbol = SPClass(this.peekName().value);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
       classSymbol,
       symbolContextPos,
     );
+    name = this.getName();
 
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
@@ -1032,20 +1040,20 @@ extension class Parser {
     isAsync: ?PosRange,
     parseBlock: Bool,
   ): TopLevelFunDef {
-    funName = this.getName();
     // Record the function definition and set context
     prevSymbolContext = this.getCurrentSymbolContext();
-    funcSymbol = SPFunction(funName.value);
+    funcSymbol = SPFunction(this.peekName().value);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
       funcSymbol,
       symbolContextPos,
     );
+    funName = this.getName();
 
     result = this.methodDef(
       {pos, tparams, params, retType, body} ->
         TopLevelFunDef{
-          pos,
+          pos => funName.pos,
           isAsync,
           modifiers => Modifiers::empty(),
           isGetSet => None(),
@@ -1097,7 +1105,6 @@ extension class Parser {
     | _ -> void
     };
 
-    funStart = this.lex.getLastPos();
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
       this.typeParams();
@@ -1185,17 +1192,16 @@ extension class Parser {
       };
       bodyTok.kind match {
       | TKOpenCurly() -> FDBSome(this.blockOrStmt())
-      | _ -> FDBNone(this.lex.posRange(bodyTok))
+      | _ -> FDBNone()
       }
     } else {
-      FDBNone(this.lex.posRange(this.lex.lastTok.fromSome()))
+      FDBNone()
     };
-    funEnd = this.lex.getLastPos();
 
     // Restore previous context
     this.setSymbolContext(prevSymbolContext);
     mk{
-      pos => PosRange::create(this.lex, funStart, funEnd),
+      pos => funName.getPos(),
       tparams => tparams,
       params => params.toArray(),
       retType,

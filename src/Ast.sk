@@ -40,7 +40,14 @@ value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
 //   | <var-def-kind> { <var-def>* }
 /***************************************************************************/
 
-class Def(pos: PosRange, value: Def_) uses XXHashable
+class Def private (pos: PosRange, value: Def_) uses XXHashable {
+  static fun create(pos: PosRange, value: Def_): this {
+    value.defStableName() match {
+    | None() -> static(pos, value)
+    | Some(Name(p, _)) -> static(p, value)
+    }
+  }
+}
 
 base class Def_ uses XXHashable {
   children =
@@ -56,6 +63,17 @@ base class Def_ uses XXHashable {
   | Import(isType: ?PosRange, Array<ImportModuleNames>, importFrom: Name)
   | ImportExpr(Name)
   | Declare(Declarable)
+
+  fun defStableName(): ?Name {
+    this match {
+    | TopLevelFunDef{name => FNNormal(n)} -> Some(n)
+    | Class{name => n} -> Some(n)
+    | TypeDef{name => n} -> Some(n)
+    | Export(inner) -> inner.defStableName()
+    | ExportDeclare(inner) -> inner.defStableName()
+    | _ -> None()
+    }
+  }
 }
 
 base class Declarable extends Def_ {
@@ -139,7 +157,7 @@ base class FunDefWithModifiers<+N: FunDefName>{
 
 base class FunDefBody uses XXHashable {
   children =
-  | FDBNone(PosRange)
+  | FDBNone()
   | FDBSome(Array<Stmt>)
 }
 
@@ -391,12 +409,19 @@ base class FieldName uses XXHashable {
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
-  | FNEmpty() -> "(anonymous)"
+  | FNEmpty(_) -> "(anonymous)"
   | FNComputed(_) -> "(computed)"
+
+  fun getPos(): PosRange
+  | FNNormal(n) -> n.pos
+  | FNIn(n, _, _, _) -> n.pos
+  | FNColon(n, _) -> n.pos
+  | FNEmpty(pos) -> pos
+  | FNComputed(e) -> e.pos
 }
 
 base class NonEmptyFieldName extends FieldName
-class FNEmpty() extends FieldName
+class FNEmpty(PosRange) extends FieldName
 
 base class SimpleFieldName extends NonEmptyFieldName {
   children =
