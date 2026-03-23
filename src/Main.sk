@@ -480,6 +480,12 @@ class Checker private {
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
   symbolsMap: SymbolsMap,
+  funDefSigMap: FunDefSigMap,
+  funDefBodyMap: FunDefBodyMap,
+  classBodyMap: ClassBodyMap,
+  classFieldMap: ClassFieldMap,
+  typeDefBodyMap: TypeDefBodyMap,
+  methodBodyMap: MethodBodyMap,
   errorDetailConfig: ErrorDetailConfig,
 } {
   static fun create{
@@ -490,11 +496,16 @@ class Checker private {
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
-    (parsedAndSymbolsFiles, symbolsMap) = files.parse(
-      context,
-      newLinesMap,
-      errorHandling,
-    );
+    (
+      parsedAndSymbolsFiles,
+      symbolsMap,
+      funDefSigMap,
+      funDefBodyMap,
+      classBodyMap,
+      classFieldMap,
+      typeDefBodyMap,
+      methodBodyMap,
+    ) = files.parse(context, newLinesMap, errorHandling);
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
@@ -505,13 +516,28 @@ class Checker private {
       parsedFiles,
       compilerOptions,
     );
-    checker = TypeChecker{defMap, errorHandling};
+    checker = TypeChecker{
+      defMap,
+      errorHandling,
+      funDefSigMap,
+      funDefBodyMap,
+      classBodyMap,
+      classFieldMap,
+      typeDefBodyMap,
+      methodBodyMap,
+    };
     static{
       files,
       parsedFiles,
       checker,
       newLinesMap,
       symbolsMap,
+      funDefSigMap,
+      funDefBodyMap,
+      classBodyMap,
+      classFieldMap,
+      typeDefBodyMap,
+      methodBodyMap,
       errorDetailConfig,
     }
   }
