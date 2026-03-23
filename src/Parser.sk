@@ -4,7 +4,23 @@
 
 module SKJS;
 
-mutable class Parser(lex: mutable Lexer, mutable id: Int = 1) {
+mutable class Parser(
+  lex: mutable Lexer,
+  mutable id: Int = 1,
+  nameCounts: mutable Map<String, Int> = mutable Map[],
+  funDefSigs: mutable Vector<(FunDefRef, FunDefSigData)> = mutable Vector[],
+  funDefBodies: mutable Vector<(FunDefRef, FunDefBodyData)> = mutable Vector[],
+  classBodies: mutable Vector<(ClassBodyRef, ClassBodyData)> = mutable Vector[],
+  classFieldEntries: mutable Vector<
+    (ClassFieldRef, ClassFieldData),
+  > = mutable Vector[],
+  typeDefBodies: mutable Vector<
+    (TypeDefBodyRef, TypeDefBodyData),
+  > = mutable Vector[],
+  methodBodyEntries: mutable Vector<
+    (MethodBodyRef, MethodBodyData),
+  > = mutable Vector[],
+) {
   // Set symbol context in the lexer
   mutable fun setSymbolContext(symbolAndPos: (SymbolicPos, Int)): void {
     this.lex.!currentSymbol = symbolAndPos.i0;

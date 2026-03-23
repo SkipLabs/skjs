@@ -15,6 +15,12 @@ base class ParsedResult {
 class ParsedResultAndSymbolsFile(
   value: ParsedResult,
   symbols: Map<SymbolicPos, Int>,
+  funDefSigs: Map<FunDefRef, FunDefSigData> = Map[],
+  funDefBodies: Map<FunDefRef, FunDefBodyData> = Map[],
+  classBodies: Map<ClassBodyRef, ClassBodyData> = Map[],
+  classFieldEntries: Map<ClassFieldRef, ClassFieldData> = Map[],
+  typeDefBodies: Map<TypeDefBodyRef, TypeDefBodyData> = Map[],
+  methodBodyEntries: Map<MethodBodyRef, MethodBodyData> = Map[],
 ) extends SKStore.File
 
 class ParsedResultFile(value: ParsedResult) extends SKStore.File
@@ -125,7 +131,16 @@ class Files(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
     errorHandling: ErrorHandling,
-  ): (SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>, SymbolsMap) {
+  ): (
+    SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    SymbolsMap,
+    FunDefSigMap,
+    FunDefBodyMap,
+    ClassBodyMap,
+    ClassFieldMap,
+    TypeDefBodyMap,
+    MethodBodyMap,
+  ) {
     parsedFiles = this.filesContent.map(
       FAbsolute::keyType,
       ParsedResultAndSymbolsFile::type,
@@ -160,18 +175,60 @@ class Files(
           | exn -> throw exn
           }
         };
+        funDefSigs = {
+          m = mutable Map[];
+          for ((ref, data) in parser.funDefSigs) m.set(ref, data);
+          m.chill()
+        };
+        funDefBodies = {
+          m = mutable Map[];
+          for ((ref, data) in parser.funDefBodies) m.set(ref, data);
+          m.chill()
+        };
+        classBodies = {
+          m = mutable Map[];
+          for ((ref, data) in parser.classBodies) m.set(ref, data);
+          m.chill()
+        };
+        classFieldEntries = {
+          m = mutable Map[];
+          for ((ref, data) in parser.classFieldEntries) m.set(ref, data);
+          m.chill()
+        };
+        typeDefBodies = {
+          m = mutable Map[];
+          for ((ref, data) in parser.typeDefBodies) m.set(ref, data);
+          m.chill()
+        };
+        methodBodyEntries = {
+          m = mutable Map[];
+          for ((ref, data) in parser.methodBodyEntries) m.set(ref, data);
+          m.chill()
+        };
         writer.setArray(
           fileName,
           Array[
             ParsedResultAndSymbolsFile(
               parsingResult,
               lexer.getAllSymbolLocations(),
+              funDefSigs,
+              funDefBodies,
+              classBodies,
+              classFieldEntries,
+              typeDefBodies,
+              methodBodyEntries,
             ),
           ],
         )
       },
     );
     symbolsMap = SymbolsMap::create(context, parsedFiles);
+    funDefSigMap = FunDefSigMap::create(context, parsedFiles);
+    funDefBodyMap = FunDefBodyMap::create(context, parsedFiles);
+    classBodyMap = ClassBodyMap::create(context, parsedFiles);
+    classFieldMap = ClassFieldMap::create(context, parsedFiles);
+    typeDefBodyMap = TypeDefBodyMap::create(context, parsedFiles);
+    methodBodyMap = MethodBodyMap::create(context, parsedFiles);
     errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
     if (errors.size() != 0) {
       invariant(
@@ -187,7 +244,16 @@ class Files(
       };
       throw Exit(2);
     };
-    (parsedFiles, symbolsMap)
+    (
+      parsedFiles,
+      symbolsMap,
+      funDefSigMap,
+      funDefBodyMap,
+      classBodyMap,
+      classFieldMap,
+      typeDefBodyMap,
+      methodBodyMap,
+    )
   }
 
   // (added-defs, removed-defs) since last run

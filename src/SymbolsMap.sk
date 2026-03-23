@@ -44,4 +44,181 @@ class SymbolsMap{dir: SKStore.EHandle<FAbsolute, SymbolsFile>} {
   }
 }
 
+/***************************************************************************/
+/* Body maps (one per def kind) */
+/***************************************************************************/
+
+class FunDefSigMapKey(value: FunDefRef) extends SKStore.Key
+class FunDefSigMapFile(value: FunDefSigData) extends SKStore.File
+
+class FunDefSigMap{dir: SKStore.EHandle<FunDefSigMapKey, FunDefSigMapFile>} {
+  static fun create(
+    context: mutable SKStore.Context,
+    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+  ): this {
+    static{
+      dir => parsedFiles.map(
+        FunDefSigMapKey::keyType,
+        FunDefSigMapFile::type,
+        context,
+        SKStore.DirName::create("/skjs/bodies/funsig/"),
+        (_context, writer, _fileName, values) ~> {
+          for (ref => data in values.first.funDefSigs) {
+            writer.set(FunDefSigMapKey(ref), FunDefSigMapFile(data))
+          }
+        },
+      ),
+    }
+  }
+  fun get(context: mutable SKStore.Context, key: FunDefRef): FunDefSigData {
+    this.dir.get(context, FunDefSigMapKey(key)).value
+  }
+}
+
+class FunDefBodyMapKey(value: FunDefRef) extends SKStore.Key
+class FunDefBodyMapFile(value: FunDefBodyData) extends SKStore.File
+
+class FunDefBodyMap{dir: SKStore.EHandle<FunDefBodyMapKey, FunDefBodyMapFile>} {
+  static fun create(
+    context: mutable SKStore.Context,
+    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+  ): this {
+    static{
+      dir => parsedFiles.map(
+        FunDefBodyMapKey::keyType,
+        FunDefBodyMapFile::type,
+        context,
+        SKStore.DirName::create("/skjs/bodies/funbody/"),
+        (_context, writer, _fileName, values) ~> {
+          for (ref => data in values.first.funDefBodies) {
+            writer.set(FunDefBodyMapKey(ref), FunDefBodyMapFile(data))
+          }
+        },
+      ),
+    }
+  }
+  fun get(context: mutable SKStore.Context, key: FunDefRef): FunDefBodyData {
+    this.dir.get(context, FunDefBodyMapKey(key)).value
+  }
+}
+
+class ClassBodyMapKey(value: ClassBodyRef) extends SKStore.Key
+class ClassBodyMapFile(value: ClassBodyData) extends SKStore.File
+
+class ClassBodyMap{dir: SKStore.EHandle<ClassBodyMapKey, ClassBodyMapFile>} {
+  static fun create(
+    context: mutable SKStore.Context,
+    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+  ): this {
+    static{
+      dir => parsedFiles.map(
+        ClassBodyMapKey::keyType,
+        ClassBodyMapFile::type,
+        context,
+        SKStore.DirName::create("/skjs/bodies/class/"),
+        (_context, writer, _fileName, values) ~> {
+          for (ref => data in values.first.classBodies) {
+            writer.set(ClassBodyMapKey(ref), ClassBodyMapFile(data))
+          }
+        },
+      ),
+    }
+  }
+  fun get(context: mutable SKStore.Context, key: ClassBodyRef): ClassBodyData {
+    this.dir.get(context, ClassBodyMapKey(key)).value
+  }
+}
+
+class ClassFieldMapKey(value: ClassFieldRef) extends SKStore.Key
+class ClassFieldMapFile(value: ClassFieldData) extends SKStore.File
+
+class ClassFieldMap{dir: SKStore.EHandle<ClassFieldMapKey, ClassFieldMapFile>} {
+  static fun create(
+    context: mutable SKStore.Context,
+    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+  ): this {
+    static{
+      dir => parsedFiles.map(
+        ClassFieldMapKey::keyType,
+        ClassFieldMapFile::type,
+        context,
+        SKStore.DirName::create("/skjs/bodies/classfield/"),
+        (_context, writer, _fileName, values) ~> {
+          for (ref => data in values.first.classFieldEntries) {
+            writer.set(ClassFieldMapKey(ref), ClassFieldMapFile(data))
+          }
+        },
+      ),
+    }
+  }
+  fun get(
+    context: mutable SKStore.Context,
+    key: ClassFieldRef,
+  ): ClassFieldData {
+    this.dir.get(context, ClassFieldMapKey(key)).value
+  }
+}
+
+class TypeDefBodyMapKey(value: TypeDefBodyRef) extends SKStore.Key
+class TypeDefBodyMapFile(value: TypeDefBodyData) extends SKStore.File
+
+class TypeDefBodyMap{
+  dir: SKStore.EHandle<TypeDefBodyMapKey, TypeDefBodyMapFile>,
+} {
+  static fun create(
+    context: mutable SKStore.Context,
+    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+  ): this {
+    static{
+      dir => parsedFiles.map(
+        TypeDefBodyMapKey::keyType,
+        TypeDefBodyMapFile::type,
+        context,
+        SKStore.DirName::create("/skjs/bodies/typedef/"),
+        (_context, writer, _fileName, values) ~> {
+          for (ref => data in values.first.typeDefBodies) {
+            writer.set(TypeDefBodyMapKey(ref), TypeDefBodyMapFile(data))
+          }
+        },
+      ),
+    }
+  }
+  fun get(
+    context: mutable SKStore.Context,
+    key: TypeDefBodyRef,
+  ): TypeDefBodyData {
+    this.dir.get(context, TypeDefBodyMapKey(key)).value
+  }
+}
+
+class MethodBodyMapKey(value: MethodBodyRef) extends SKStore.Key
+class MethodBodyMapFile(value: MethodBodyData) extends SKStore.File
+
+class MethodBodyMap{dir: SKStore.EHandle<MethodBodyMapKey, MethodBodyMapFile>} {
+  static fun create(
+    context: mutable SKStore.Context,
+    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+  ): this {
+    static{
+      dir => parsedFiles.map(
+        MethodBodyMapKey::keyType,
+        MethodBodyMapFile::type,
+        context,
+        SKStore.DirName::create("/skjs/bodies/methodbody/"),
+        (_context, writer, _fileName, values) ~> {
+          for (ref => data in values.first.methodBodyEntries) {
+            writer.set(MethodBodyMapKey(ref), MethodBodyMapFile(data))
+          }
+        },
+      ),
+    }
+  }
+  fun get(
+    context: mutable SKStore.Context,
+    key: MethodBodyRef,
+  ): MethodBodyData {
+    this.dir.get(context, MethodBodyMapKey(key)).value
+  }
+}
+
 module end;
