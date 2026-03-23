@@ -276,7 +276,8 @@ extension class TypeChecker {
     subst = Subst::mcreate(tcenvl);
     !this = this.addTParams(subst, typeDef.tdefParams);
 
-    tcenvl.collectErrors(() -> _ = this.normalize(subst, typeDef.body));
+    body = this.getTypeDefBody(tcenvl.context, typeDef);
+    tcenvl.collectErrors(() -> _ = this.normalize(subst, body));
   }
 
   static fun checkTypeParams(

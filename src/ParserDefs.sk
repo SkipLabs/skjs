@@ -813,7 +813,12 @@ extension class Parser {
     if (this.lex.peekKind() is Some(TKSemi())) {
       _ = this.lex.next();
     };
-    TypeDef{name, body, tdefParams}
+    nameStr = name.value;
+    occ = this.nameCounts.maybeGet(nameStr).default(0);
+    this.nameCounts.set(nameStr, occ + 1);
+    ref = TypeDefBodyRef(this.lex.fileName, nameStr, occ);
+    this.typeDefBodies.push((ref, TypeDefBodyData(tdefParams, body)));
+    TypeDef{name, tdefParams, bodyRef => Some(ref)}
   }
 
   // Parse enum definitions
