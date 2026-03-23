@@ -147,7 +147,7 @@ base class FunDef<+N: FunDefName>{
   tparams: Array<TypeParam>,
   params: Array<Param>,
   retType: (PosRange, ?(Type)),
-  body: FunDefBody,
+  body: FunBody,
   cgNode: ?CGNode,
 } uses XXHashable
 
@@ -159,6 +159,12 @@ base class FunDefBody uses XXHashable {
   children =
   | FDBNone()
   | FDBSome(Array<Stmt>)
+}
+
+base class FunBody uses XXHashable {
+  children =
+  | FBInline(FunDefBody)
+  | FBRef(BodyRef)
 }
 
 /***************************************************************************/
@@ -716,6 +722,60 @@ base class BOStrictComparison() extends BinaryOperator {
   children =
   | BOStrictEquality()
   | BOStrictInequality()
+}
+
+/***************************************************************************/
+/* Body references and body data for incremental checking. */
+/***************************************************************************/
+
+class FunDefRef(
+  fileName: FAbsolute,
+  defName: String,
+  occurrence: Int,
+) uses XXHashable, Hashable, Orderable
+
+class ClassBodyRef(
+  fileName: FAbsolute,
+  defName: String,
+  occurrence: Int,
+) uses XXHashable, Hashable, Orderable
+
+class TypeDefBodyRef(
+  fileName: FAbsolute,
+  defName: String,
+  occurrence: Int,
+) uses XXHashable, Hashable, Orderable
+
+class FunDefSigData(
+  tparams: Array<TypeParam>,
+  params: Array<Param>,
+  retType: (PosRange, ?(Type)),
+) uses XXHashable
+class FunDefBodyData(body: FunDefBody) uses XXHashable
+class ClassBodyData(fieldRefs: Array<ClassFieldRef>) uses XXHashable
+class TypeDefBodyData(tdefParams: Array<TypeParam>, body: Type) uses XXHashable
+
+class ClassFieldRef(
+  fileName: FAbsolute,
+  className: String,
+  index: Int,
+) uses XXHashable, Hashable, Orderable
+
+class ClassFieldData(field: ClassField) uses XXHashable
+
+class MethodBodyRef(
+  fileName: FAbsolute,
+  className: String,
+  methodName: String,
+  occurrence: Int,
+) uses XXHashable, Hashable, Orderable
+
+class MethodBodyData(body: FunDefBody) uses XXHashable
+
+base class BodyRef uses XXHashable {
+  children =
+  | BRFunDef(FunDefRef)
+  | BRMethod(MethodBodyRef)
 }
 
 module end;
