@@ -158,7 +158,8 @@ base class TEnv{
     };
 
     result = tdef match {
-    | ta @ TypeDef _ -> this.normalize(tcenvb, ta.body)
+    | ta @ TypeDef _ ->
+      this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(tcenvb, name, targs.targs)
     | Enum _ -> typingError(Array[(name.pos, "TODO: instantiate Enum")])
     };
@@ -185,6 +186,13 @@ base class TEnv{
       fieldRefs = this.classBodyMap.get(context, ref).fieldRefs;
       fieldRefs.map(fieldRef -> this.classFieldMap.get(context, fieldRef).field)
     | None() -> Array[]
+    }
+  }
+
+  fun getTypeDefBody(context: mutable SKStore.Context, td: TypeDef): Type {
+    td.bodyRef match {
+    | Some(ref) -> this.typeDefBodyMap.get(context, ref).body
+    | None() -> internal_error("TypeDef has no bodyRef")
     }
   }
 
