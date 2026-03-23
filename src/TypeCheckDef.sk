@@ -127,6 +127,7 @@ extension class TypeChecker {
       ty = this.expr(tcenv, e, true);
       this.checkIsVoid(tcenv, e.pos, ty)
     | fd @ TopLevelFunDef _ ->
+      !fd = this.resolveFunDef(tcenvl.context, fd);
       subst = Subst::mcreate(tcenvl);
       this.funDef(subst, None(), fd, fd.cgNode.fromSome())
     | Declare(VarDefs(_, varDefs))
@@ -148,6 +149,24 @@ extension class TypeChecker {
     | Enum _ -> tcenvl.notSupported(def.pos, "enum")
     | VarDefs(kind, varDefs) -> this.varDefs(tcenvl, kind, varDefs)
     | td @ TypeDef _ -> this.typeDef(tcenvl, td)
+    }
+  }
+
+  fun resolveFunDef(
+    context: mutable SKStore.Context,
+    fd: TopLevelFunDef,
+  ): TopLevelFunDef {
+    fd.body match {
+    | FBInline _ -> fd
+    | FBRef(BRFunDef(ref)) ->
+      sig = this.funDefSigMap.get(context, ref);
+      fd with {
+        tparams => sig.tparams,
+        params => sig.params,
+        retType => sig.retType,
+        body => FBInline(this.funDefBodyMap.get(context, ref).body),
+      }
+    | FBRef(BRMethod _) -> internal_error("TopLevelFunDef has BRMethod body")
     }
   }
 
