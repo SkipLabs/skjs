@@ -205,12 +205,12 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse class fields
-  mutable fun classFields(): Array<ClassFieldType> {
+  mutable fun classFields(): Array<ClassField> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
       return Array[];
     };
-    fields = mutable Vector<ClassFieldType>[];
+    fields = mutable Vector<ClassField>[];
     loop {
       modifiers = this.modifiers();
       fieldGetSet = this.isGetSet();
@@ -231,7 +231,7 @@ extension class Parser {
       ) ->
         this.methodDef(
           {pos, tparams, params, retType, body} ->
-            ClassFieldTypeMethod{
+            ClassFieldMethod{
               pos,
               isAsync => None(),
               modifiers,
@@ -266,7 +266,7 @@ extension class Parser {
         } else {
           None()
         };
-        ClassFieldTypeValue{
+        ClassFieldValue{
           pos => PosRange::create(
             this.lex,
             fieldPosStart,
@@ -858,7 +858,7 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
+      | fd @ ClassFieldMethod{name => FNNormal(Name(_, "constructor"))} ->
         initializationStatements = mutable Vector[];
         !fd.params = fd.params.map(param -> {
           param match {
@@ -885,7 +885,7 @@ extension class Parser {
             );
             if (isParameterProperty) {
               parameterProperties.push(
-                ClassFieldTypeValue{
+                ClassFieldValue{
                   pos,
                   name => FNNormal(pName),
                   optional => None(),
