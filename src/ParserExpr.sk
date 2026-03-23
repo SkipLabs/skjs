@@ -556,7 +556,7 @@ extension class Parser {
               tparams,
               params,
               retType,
-              body,
+              body => FBInline(body),
               cgNode => None(),
             },
           FNNormal(fieldName),

@@ -249,7 +249,7 @@ extension class Parser {
               tparams,
               params,
               retType,
-              body,
+              body => FBInline(body),
               cgNode => None(),
             },
           methodName,
@@ -913,10 +913,11 @@ extension class Parser {
           param
         });
         fd.body match {
-        | FDBNone _ -> void
-        | FDBSome(stmts) ->
+        | FBInline(FDBNone _) -> void
+        | FBInline(FDBSome(stmts)) ->
           !stmts = initializationStatements.toArray().concat(stmts);
-          !fd.body = FDBSome(stmts)
+          !fd.body = FBInline(FDBSome(stmts))
+        | FBRef _ -> internal_error("expected inline body during parsing")
         };
         fd
       | _ -> field
@@ -1062,7 +1063,7 @@ extension class Parser {
           tparams,
           params,
           retType,
-          body,
+          body => FBInline(body),
           cgNode => Some(
             CGNode::create(TopLevelFunction(FNNormal(funName), pos.fileName)),
           ),
