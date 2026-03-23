@@ -469,12 +469,12 @@ extension class Parser {
   }
 
   // Parse object type fields
-  mutable fun objectTypeFields(): Array<ObjectFieldType> {
+  mutable fun objectTypeFields(): Array<ObjectField> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
       return Array[];
     };
-    fields = mutable Vector<ObjectFieldType>[];
+    fields = mutable Vector<ObjectField>[];
     loop {
       if (
         this.lex.peekKind() is Some(TKOpenParen()) ||
@@ -482,7 +482,7 @@ extension class Parser {
       ) {
         method = this.methodDef(
           {pos, tparams, params, retType, body} ->
-            ObjectFieldTypeMethod{
+            ObjectFieldMethod{
               pos,
               isGetSet => None(),
               name => FNEmpty(),
@@ -525,7 +525,7 @@ extension class Parser {
           };
           this.methodDef(
             {pos, tparams, params, retType, body} ->
-              ObjectFieldTypeMethod{
+              ObjectFieldMethod{
                 pos,
                 isGetSet => fieldGetSet,
                 name => methodName,
@@ -552,7 +552,7 @@ extension class Parser {
           } else {
             None()
           };
-          ObjectFieldTypeValue{
+          ObjectFieldValue{
             pos => PosRange::create(
               this.lex,
               fieldPosStart,

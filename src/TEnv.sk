@@ -182,7 +182,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldTypeValue ~> Bool = _ ~> true,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TType {
     obj = this.newObject(tcenvb, className, targs, filter);
     TType::single(obj)
@@ -210,7 +210,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldTypeValue ~> Bool = _ ~> true,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TObject {
     c = this.getClass(tcenvb, className);
     if (c.tparams.size() != targs.size()) {
@@ -411,7 +411,7 @@ base class TEnv{
     isStatic: ?Array<TypeParam>,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldTypeValue ~> Bool,
+    filter: ClassFieldValue ~> Bool,
   ): ?TFuns {
     (!this, cls) = this.processClassSetup(
       tcenvb,
@@ -442,7 +442,7 @@ base class TEnv{
     constructor: ?TFuns = None();
     for (fieldType in cls.fields) {
       fieldType match {
-      | field @ ClassFieldTypeValue _ ->
+      | field @ ClassFieldValue _ ->
         if (!filter(field)) continue;
         fieldIsStatic = false;
         fieldIsReadonly: ?PosRange = None();
@@ -508,7 +508,7 @@ base class TEnv{
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
         }
-      | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
+      | fd @ ClassFieldMethod{name => FNNormal(Name(_, "constructor"))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
@@ -523,7 +523,7 @@ base class TEnv{
         !constructor = Some(
           this.makeConstructor(tcenvb, className, isStatic.fromSome(), fd),
         )
-      | fd @ ClassFieldTypeMethod _ ->
+      | fd @ ClassFieldMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(
@@ -586,7 +586,7 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?(this, ClassFieldTypeMethod) {
+  ): ?(this, ClassFieldMethod) {
     (!this, cls) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -596,7 +596,7 @@ base class TEnv{
     );
     for (fieldType in cls.fields) {
       fieldType match {
-      | fd @ ClassFieldTypeMethod _ if (
+      | fd @ ClassFieldMethod _ if (
         fd.name is FNNormal(Name(_, "constructor"))
       ) ->
         return Some((this, fd))
@@ -629,7 +629,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     className: Name,
     tparams: Array<TypeParam>,
-    fd: ClassFieldTypeMethod,
+    fd: ClassFieldMethod,
   ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
@@ -1282,7 +1282,7 @@ base class TEnv{
 
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
-    fieldTypes: Array<ObjectFieldType>,
+    fieldTypes: Array<ObjectField>,
     isTopLevelConst: Bool = false,
   ): TFields {
     fieldsMap = mutable Map[];
@@ -1293,7 +1293,7 @@ base class TEnv{
 
     for (elt in fieldTypes) {
       elt match {
-      | fd @ ObjectFieldTypeValue{readonly_} ->
+      | fd @ ObjectFieldValue{readonly_} ->
         readonly_.each(r ->
           if (r is OFRemoveReadonly _ && !(fd.name is FNIn _)) {
             tcenvb.error(
@@ -1352,7 +1352,7 @@ base class TEnv{
             ),
           )
         }
-      | fd @ ObjectFieldTypeMethod _ ->
+      | fd @ ObjectFieldMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
         tFuns = this.funDecl(tcenvb, false, fd, cgNode);
         fd.name match {

@@ -219,7 +219,7 @@ fun checkUniqueSymbolReadonly(tcenvl: mutable TCEnvLight, t: Type): void {
   | TAObject(fields) ->
     for (field in fields) {
       field match {
-      | fd @ ObjectFieldTypeValue _ ->
+      | fd @ ObjectFieldValue _ ->
         fd.type match {
         | Some(
           Type(_, TAUniqueSymbol()),

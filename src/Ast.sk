@@ -74,7 +74,7 @@ base class Exportable extends Declarable {
     extends_: Array<Type>,
     implements: Array<Type>,
     tparams: Array<TypeParam>,
-    fields: Array<ClassFieldType>,
+    fields: Array<ClassField>,
   }
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
@@ -417,36 +417,40 @@ extension class FNEmpty extends FunDefName
 class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 
 /***************************************************************************/
-// <field-type-value> ::=
-//    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
+// Object field types (used in object type literals: { field: Type })
 /***************************************************************************/
 
-base class FieldTypeValue{
+base class ObjectField uses XXHashable
+
+class ObjectFieldValue{
+  pos: PosRange,
+  readonly_: ?ObjectFieldReadonly,
+  name: NonEmptyFieldName,
+  optional: ?PosRange,
+  type: ?Type,
+} extends ObjectField
+
+class ObjectFieldMethod extends FunDef<FunDefName>, ObjectField
+
+/***************************************************************************/
+// Class field types (used in class/interface bodies)
+/***************************************************************************/
+
+base class ClassField uses XXHashable {
+  fun isStatic(): Bool;
+}
+
+class ClassFieldValue{
   pos: PosRange,
   name: NonEmptyFieldName,
   optional: ?PosRange,
   type: ?Type,
-}
-
-base class ObjectFieldType uses XXHashable
-
-class ObjectFieldTypeValue{
-  readonly_: ?ObjectFieldReadonly,
-} extends ObjectFieldType, FieldTypeValue {}
-
-class ObjectFieldTypeMethod extends FunDef<FunDefName>, ObjectFieldType
-
-base class ClassFieldType uses XXHashable {
-  fun isStatic(): Bool;
-}
-
-class ClassFieldTypeValue{
   value: ?Expr,
-} extends ClassFieldType, FieldTypeValue, WithModifiers
+} extends ClassField, WithModifiers
 
-class ClassFieldTypeMethod extends
+class ClassFieldMethod extends
   FunDefWithModifiers<SimpleFieldName>,
-  ClassFieldType,
+  ClassField,
 {}
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
@@ -499,7 +503,7 @@ base class Type_ uses XXHashable {
   | TAPrim(TPrimKind)
   | TATypeOf(Expr)
   | TAArray(Type)
-  | TAObject(Array<ObjectFieldType>)
+  | TAObject(Array<ObjectField>)
   | TAInst(Name, Array<Type>)
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
