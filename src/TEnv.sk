@@ -176,6 +176,18 @@ base class TEnv{
     };
   }
 
+  fun getClassFields(
+    context: mutable SKStore.Context,
+    c: Class,
+  ): Array<ClassField> {
+    c.bodyRef match {
+    | Some(ref) ->
+      fieldRefs = this.classBodyMap.get(context, ref).fieldRefs;
+      fieldRefs.map(fieldRef -> this.classFieldMap.get(context, fieldRef).field)
+    | None() -> Array[]
+    }
+  }
+
   fun getFunSig(
     context: mutable SKStore.Context,
     fd: FunDef<FunDefName>,
@@ -469,7 +481,8 @@ base class TEnv{
       }
     };
     constructor: ?TFuns = None();
-    for (fieldType in cls.fields) {
+    fields = this.getClassFields(tcenvb.context, cls);
+    for (fieldType in fields) {
       fieldType match {
       | field @ ClassFieldValue _ ->
         if (!filter(field)) continue;
@@ -623,7 +636,8 @@ base class TEnv{
       className,
       targs,
     );
-    for (fieldType in cls.fields) {
+    clsFields = this.getClassFields(tcenvb.context, cls);
+    for (fieldType in clsFields) {
       fieldType match {
       | fd @ ClassFieldMethod _ if (
         fd.name is FNNormal(Name(_, "constructor"))
