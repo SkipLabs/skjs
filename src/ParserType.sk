@@ -480,12 +480,13 @@ extension class Parser {
         this.lex.peekKind() is Some(TKOpenParen()) ||
         this.lex.peekKind() is Some(TKLessThan())
       ) {
+        emptyPos = this.lex.posRange(this.lex.peek().fromSome());
         method = this.methodDef(
           {pos, tparams, params, retType, body} ->
             ObjectFieldMethod{
               pos,
               isGetSet => None(),
-              name => FNEmpty(),
+              name => FNEmpty(emptyPos),
               optional => None(),
               tparams,
               params,
@@ -493,7 +494,7 @@ extension class Parser {
               body,
               cgNode => None(),
             },
-          FNEmpty(),
+          FNEmpty(emptyPos),
           false,
         );
         fields.push(method);

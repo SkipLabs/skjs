@@ -54,7 +54,7 @@ extension class TypeChecker {
     | ExportDeclare _ ->
       void
     | Namespace _ -> tcenvl.notSupported(def.pos, "namespace")
-    | Export(d) -> this.checkDef(tcenvl, Def(def.pos, d))
+    | Export(d) -> this.checkDef(tcenvl, Def::create(def.pos, d))
     | ExportDefault _ -> tcenvl.notSupported(def.pos, "export default")
     | ExportNames _
     | ExportNamesFrom _ ->
