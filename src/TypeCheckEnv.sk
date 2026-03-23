@@ -6,7 +6,7 @@ module SKJS;
 
 mutable base class TCEnvBase private {
   context: mutable SKStore.Context,
-  results: mutable TCResults,
+  results: mutable TCResultsAcc,
 } {
   mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
     this.results.recordClassHierarchy{child, parent}
@@ -202,6 +202,10 @@ mutable class TCResults private {
     mutable TCResults{errorHandling}
   }
 
+  mutable fun appendErrors(errors: readonly Vector<TypingError>): void {
+    this.errors.extend(errors)
+  }
+
   mutable fun error(
     messages: Array<(PosRange, String)>,
     stErr: ?STErrorOnTType = None(),
@@ -252,6 +256,88 @@ mutable class TCResults private {
     current = this.classHierarchy.maybeGet(childNode).default(SortedSet[]);
     new = current.set(parentNode);
     this.!classHierarchy[childNode] = new;
+  }
+}
+
+mutable class TCResultsAcc private {
+  errorHandling: ErrorHandling,
+  errors: mutable Vector<TypingError> = mutable Vector[],
+  callgraph: mutable Vector<(CGNode, CGNodes)> = mutable Vector[],
+  classHierarchy: mutable Vector<(Class, Class)> = mutable Vector[],
+} {
+  static fun mcreate{errorHandling: ErrorHandling}: mutable this {
+    mutable static{errorHandling}
+  }
+
+  mutable fun append(other: readonly TCResultsAcc): void {
+    if (this.errorHandling != other.errorHandling) {
+      internal_error("Cannot append incompatible TCResultsAcc")
+    };
+    this.errors.extend(other.errors);
+    this.callgraph.extend(other.callgraph);
+    this.classHierarchy.extend(other.classHierarchy);
+  }
+
+  readonly fun chill(): this {
+    static{
+      errorHandling => this.errorHandling,
+      errors => this.errors.chill(),
+      callgraph => this.callgraph.chill(),
+      classHierarchy => this.classHierarchy.chill(),
+    }
+  }
+
+  readonly fun toTCResults(): mutable TCResults {
+    results = TCResults::mcreate{errorHandling => this.errorHandling};
+    results.appendErrors(this.errors);
+    for (kv in this.callgraph) {
+      (k, v) = kv;
+      results.recordCalls(k, v);
+    };
+    for (kv in this.classHierarchy) {
+      (child, parent) = kv;
+      results.recordClassHierarchy{child, parent};
+    };
+    results
+  }
+
+  mutable fun error(
+    messages: Array<(PosRange, String)>,
+    stErr: ?STErrorOnTType = None(),
+  ): void {
+    this.errorHandling match {
+    | EHKeepGoing() -> this.errors.push(TypingError(messages, stErr))
+    | EHBacktrace()
+    | EHDefault() ->
+      typingError(messages, stErr)
+    }
+  }
+
+  mutable fun notSupported(pos: PosRange, what: String): void {
+    this.error(Array[(pos, `Construction not supported: ${what} (ignored)`)])
+  }
+
+  mutable fun collectErrors(f: () -> void): void {
+    this.errorHandling match {
+    | EHKeepGoing() ->
+      try {
+        f()
+      } catch {
+      | ErrorExn(err @ TypingError _) -> this.errors.push(err)
+      | exn -> throw exn
+      }
+    | EHBacktrace()
+    | EHDefault() ->
+      f()
+    }
+  }
+
+  mutable fun recordCalls(caller: CGNode, newCallees: CGNodes): void {
+    this.callgraph.push((caller, newCallees));
+  }
+
+  mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
+    this.classHierarchy.push((child, parent))
   }
 }
 

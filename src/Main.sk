@@ -519,19 +519,26 @@ class Checker private {
   fun checkFiles(
     context: mutable SKStore.Context,
   ): SKStore.EHandle<FAbsolute, CheckResult> {
+    checkDir = SKStore.LHandle::create(
+      DefKey::keyType,
+      TCResultsAccFile::type,
+      context,
+      SKStore.DirName::create("/defs/"),
+      (context, _self, key) ~> {
+        results = this.checker.checkDef(context, key.def);
+        Array[TCResultsAccFile(results)]
+      },
+    );
     this.parsedFiles.map(
       FAbsolute::keyType,
       CheckResult::type,
       context,
       SKStore.DirName::create("/check-results/"),
       (context, writer, fileName, valueIter) ~> {
-        parsedFile = valueIter.getUnique() match {
-        | None() -> internal_error("File not parsed")
-        | Some(x) -> x
-        };
+        parsedFile = valueIter.first;
         parsedFile.value match {
         | PROk(defs) ->
-          results = this.checker.check(context, defs);
+          results = this.checker.check(context, checkDir, fileName, defs);
           fileDefErrors = this.checker.defMap.getFileErrors(context, fileName);
           errors = fileDefErrors.concat(results.errors.toArray());
           writer.set(
@@ -562,7 +569,7 @@ class Checker private {
   }
 }
 
-base class ErrorHandling {
+base class ErrorHandling uses Orderable {
   children =
   | EHDefault()
   | EHBacktrace()
