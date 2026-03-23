@@ -2,8 +2,9 @@ module SKJS;
 
 extension class TypeChecker {
   fun class_(tcenvl: mutable TCEnvLight, c: Class): void {
+    classFields = this.getClassFields(tcenvl.context, c);
     constructor: ?ClassFieldMethod = None();
-    for (fieldType in c.fields) {
+    for (fieldType in classFields) {
       fieldType match {
       | fd @ ClassFieldMethod _ if (
         fd.name is FNNormal(Name(_, "constructor"))
@@ -115,7 +116,7 @@ extension class TypeChecker {
       }
     };
     hasConstructor = false;
-    for (fieldType in c.fields) {
+    for (fieldType in classFields) {
       fieldType match {
       | field @ ClassFieldValue _ ->
         isStatic = false;
@@ -187,7 +188,7 @@ extension class TypeChecker {
           partialThisType = this.new(subst, c.name, targs.targs, fieldType ~>
             (fieldType is ClassFieldValue{value => Some _})
           );
-          methods = c.fields
+          methods = classFields
             .iterator()
             .filterMap(fieldType ->
               fieldType match {
@@ -221,7 +222,7 @@ extension class TypeChecker {
       }
     };
     if (c.kind is CKClass() && !hasConstructor) {
-      for (fieldType in c.fields) {
+      for (fieldType in classFields) {
         fieldType match {
         | field @ ClassFieldValue _ ->
           // Skip static fields (already validated)

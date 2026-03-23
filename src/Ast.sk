@@ -92,7 +92,7 @@ base class Exportable extends Declarable {
     extends_: Array<Type>,
     implements: Array<Type>,
     tparams: Array<TypeParam>,
-    fields: Array<ClassField>,
+    bodyRef: ?ClassBodyRef = None(),
   }
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
