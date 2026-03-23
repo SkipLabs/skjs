@@ -167,12 +167,12 @@ extension class TypeChecker {
         )
       }
     };
-    fd.body match {
-    | FBInline(FDBNone()) ->
+    this.getFunBody(subst.context, fd) match {
+    | FDBNone() ->
       if (thisTypeOpt is Some((CKClass(), _))) {
         subst.error(Array[(fd.pos, "Missing definition")])
       }
-    | FBInline(FDBSome(body)) ->
+    | FDBSome(body) ->
       if (thisTypeOpt is Some((CKInterface(), _))) {
         subst.error(Array[(fd.pos, "An interface cannot implement a method")])
       };
@@ -187,7 +187,6 @@ extension class TypeChecker {
           )
         }
       }
-    | FBRef _ -> internal_error("unexpected FBRef in funDef")
     };
   }
 }

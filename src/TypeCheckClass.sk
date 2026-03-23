@@ -269,9 +269,9 @@ extension class TypeChecker {
     | Some(asyncPos) ->
       subst.error(Array[(asyncPos, "Constructors cannot be async")])
     };
-    fd.body match {
-    | FBInline(FDBNone()) -> subst.error(Array[(fd.pos, "Missing definition")])
-    | FBInline(FDBSome(body)) ->
+    this.getFunBody(subst.context, fd) match {
+    | FDBNone() -> subst.error(Array[(fd.pos, "Missing definition")])
+    | FDBSome(body) ->
       blockScope = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fd.pos, "this"));
       objType = static::filterMethods(
@@ -288,7 +288,6 @@ extension class TypeChecker {
         objType,
         fullType,
       )
-    | FBRef _ -> internal_error("unexpected FBRef in constructor")
     };
   }
 }

@@ -344,9 +344,53 @@ extension class Parser {
     defs = mutable Vector[];
     loop {
       this.maybeDef() match {
-      | None() -> return defs.toArray()
+      | None() -> return this.extractBodies(defs.toArray())
       | Some(def) -> defs.push(def)
       }
+    }
+  }
+
+  // Extract bodies from defs into this.bodies, replacing body fields with
+  // dummy values and setting bodyRef on each named def.
+  private mutable fun extractBodies(defs: Array<Def>): Array<Def> {
+    fileName = this.lex.fileName;
+    defs.map(def -> {
+      newValue: Def_ = def.value match {
+      | Export(inner) -> Export(this.extractBodyFromExportable(fileName, inner))
+      | ExportDeclare(inner) ->
+        ExportDeclare(this.extractBodyFromExportable(fileName, inner))
+      | exp @ Exportable _ -> this.extractBodyFromExportable(fileName, exp)
+      | other -> other
+      };
+      Def::create(def.pos, newValue)
+    })
+  }
+
+  private mutable fun extractBodyFromExportable(
+    fileName: FAbsolute,
+    exp: Exportable,
+  ): Exportable {
+    exp match {
+    | fd @ TopLevelFunDef{name => FNNormal(n)} ->
+      nameStr = n.value;
+      occ = this.nameCounts.maybeGet(nameStr).default(0);
+      this.nameCounts.set(nameStr, occ + 1);
+      ref = FunDefRef(fileName, nameStr, occ);
+      this.funDefSigs.push(
+        (ref, FunDefSigData(fd.tparams, fd.params, fd.retType)),
+      );
+      funDefBody = fd.body match {
+      | FBInline(b) -> b
+      | FBRef _ -> internal_error("expected inline body")
+      };
+      this.funDefBodies.push((ref, FunDefBodyData(funDefBody)));
+      fd with {
+        tparams => Array[],
+        params => Array[],
+        retType => (fd.pos, None()),
+        body => FBRef(BRFunDef(ref)),
+      }
+    | _ -> exp
     }
   }
 

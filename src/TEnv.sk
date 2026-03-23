@@ -189,6 +189,27 @@ base class TEnv{
     };
   }
 
+  fun getFunSig(
+    context: mutable SKStore.Context,
+    fd: FunDef<FunDefName>,
+  ): FunDefSigData {
+    fd.body match {
+    | FBRef(BRFunDef(ref)) -> this.funDefSigMap.get(context, ref)
+    | _ -> FunDefSigData(fd.tparams, fd.params, fd.retType)
+    }
+  }
+
+  fun getFunBody(
+    context: mutable SKStore.Context,
+    fd: FunDef<FunDefName>,
+  ): FunDefBody {
+    fd.body match {
+    | FBInline(body) -> body
+    | FBRef(BRFunDef(ref)) -> this.funDefBodyMap.get(context, ref).body
+    | FBRef(BRMethod(ref)) -> this.methodBodyMap.get(context, ref).body
+    }
+  }
+
   fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
     this.getClass(tcenv, className).tparams.map(tparam -> {
       tvar = tcenv.subst.gen(className.pos);
@@ -707,7 +728,8 @@ base class TEnv{
     fd: FunDef<FunDefName>,
     cgNode: CGNode,
   ): TFuns {
-    retType = fd.retType match {
+    sig = this.getFunSig(tcenvb.context, fd);
+    retType = sig.retType match {
     | (pos, None()) ->
       // constructors must use makeConstructor
       error(Array[(pos, "Missing return type annotation")])
@@ -715,8 +737,8 @@ base class TEnv{
     };
     tafun = TAFun(
       isMethod,
-      fd.tparams,
-      fd.params.map(this.convertParam),
+      sig.tparams,
+      sig.params.map(this.convertParam),
       retType,
       cgNode,
     );
