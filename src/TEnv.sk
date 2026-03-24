@@ -213,9 +213,10 @@ base class TEnv{
     context: mutable SKStore.Context,
     fd: FunDef<FunDefName>,
   ): FunDefSigData {
-    fd.body match {
-    | FBRef(BRFunDef(ref)) -> this.funDefSigMap.get(context, ref)
-    | _ -> FunDefSigData(fd.tparams, fd.params, fd.retType)
+    fd.sig match {
+    | FSInline(tparams, params, retType) ->
+      FunDefSigData(tparams, params, retType)
+    | FSRef(ref) -> this.funDefSigMap.get(context, ref)
     }
   }
 
@@ -713,8 +714,9 @@ base class TEnv{
       !x.id = x.id.prefixWith("$");
       x
     });
-    params = fd.params.map(this.convertParam);
-    fd.retType.i1 match {
+    sig = this.getFunSig(tcenvb.context, fd);
+    params = sig.params.map(this.convertParam);
+    sig.retType.i1 match {
     | None() -> // constructor
       void
     | Some(x) ->

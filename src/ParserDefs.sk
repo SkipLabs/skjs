@@ -246,9 +246,7 @@ extension class Parser {
               isGetSet => fieldGetSet,
               name => methodName,
               optional => isOptional,
-              tparams,
-              params,
-              retType,
+              sig => FSInline(tparams, params, retType),
               body => FBInline(body),
               cgNode => None(),
             },
@@ -376,20 +374,18 @@ extension class Parser {
       occ = this.nameCounts.maybeGet(nameStr).default(0);
       this.nameCounts.set(nameStr, occ + 1);
       ref = FunDefRef(fileName, nameStr, occ);
-      this.funDefSigs.push(
-        (ref, FunDefSigData(fd.tparams, fd.params, fd.retType)),
-      );
+      sigData = fd.sig match {
+      | FSInline(tparams, params, retType) ->
+        FunDefSigData(tparams, params, retType)
+      | FSRef _ -> internal_error("expected inline sig")
+      };
+      this.funDefSigs.push((ref, sigData));
       funDefBody = fd.body match {
       | FBInline(b) -> b
       | FBRef _ -> internal_error("expected inline body")
       };
       this.funDefBodies.push((ref, FunDefBodyData(funDefBody)));
-      fd with {
-        tparams => Array[],
-        params => Array[],
-        retType => (fd.pos, None()),
-        body => FBRef(BRFunDef(ref)),
-      }
+      fd with {sig => FSRef(ref), body => FBRef(BRFunDef(ref))}
     | _ -> exp
     }
   }
@@ -915,9 +911,12 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ ClassFieldMethod{name => FNNormal(Name(_, "constructor"))} ->
+      | fd @ ClassFieldMethod{
+        name => FNNormal(Name(_, "constructor")),
+        sig => FSInline(sigTparams, sigParams, sigRetType),
+      } ->
         initializationStatements = mutable Vector[];
-        !fd.params = fd.params.map(param -> {
+        newParams = sigParams.map(param -> {
           param match {
           | Param(
             _pos,
@@ -961,6 +960,7 @@ extension class Parser {
           };
           param
         });
+        !fd.sig = FSInline(sigTparams, newParams, sigRetType);
         fd.body match {
         | FBInline(FDBNone _) -> void
         | FBInline(FDBSome(stmts)) ->
@@ -1143,9 +1143,7 @@ extension class Parser {
           isGetSet => None(),
           name => FNNormal(funName),
           optional => None(),
-          tparams,
-          params,
-          retType,
+          sig => FSInline(tparams, params, retType),
           body => FBInline(body),
           cgNode => Some(
             CGNode::create(TopLevelFunction(FNNormal(funName), pos.fileName)),

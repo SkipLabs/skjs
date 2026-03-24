@@ -249,9 +249,10 @@ extension class TypeChecker {
     className: ?Name,
     methods: SortedSet<String>,
   ): void {
-    if (fd.retType.i1 is Some _) {
+    cstrSig = this.getFunSig(subst.context, fd);
+    if (cstrSig.retType.i1 is Some _) {
       subst.error(
-        Array[(fd.retType.i0, "Constructors don't have return types")],
+        Array[(cstrSig.retType.i0, "Constructors don't have return types")],
       );
     };
     for (modifier in fd.modifiers.modifiers) {
