@@ -139,10 +139,21 @@ base class TEnv{
           tcenvb.error(
             Array[
               (name.pos, "Constraint not satisfied"),
-              (targ.pos, `This is of type: ${targ}`),
-              (cstr.pos, `It does not implement: ${cstrTy}`),
+              (
+                targ.pos,
+                `This is of type: ${prettyPrintType(false, targ, subst)}`,
+              ),
+              (
+                cstr.pos,
+                `It does not implement: ${prettyPrintType(
+                  false,
+                  cstrTy,
+                  subst,
+                )}`,
+              ),
             ],
             Some(err),
+            subst.values,
           )
         }
       };
@@ -1009,7 +1020,11 @@ base class TEnv{
           Array[
             (
               propertyName.pos,
-              `Cannot get type for property of non-object type ${baseType}`,
+              `Cannot get type for property of non-object type ${prettyPrintType(
+                false,
+                baseType,
+                subst,
+              )}`,
             ),
           ],
         )
@@ -1451,7 +1466,18 @@ base class TEnv{
           stypes.push(obj)
         | TPrimUnit _ -> void /* bottom */
         | TPromise _ ->
-          typingError(Array[(pos, `TODO: keyof ${prettyPrintSType(stype)}`)])
+          typingError(
+            Array[
+              (
+                pos,
+                `TODO: keyof ${prettyPrintType(
+                  false,
+                  TType::single(stype),
+                  subst,
+                )}`,
+              ),
+            ],
+          )
         }
       }
     };

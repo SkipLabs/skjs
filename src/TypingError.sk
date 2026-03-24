@@ -184,6 +184,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
 class TypingError(
   messages: Array<(PosRange, String)>,
   stErr: ?STErrorOnTType = None(),
+  substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
 ) extends Error {
   fun toString(
     context: mutable SKStore.Context,
@@ -214,7 +215,10 @@ class TypingError(
     | ErrorDetailMinimal() -> void
     | detail @ STErrorDetail _ ->
       this.stErr match {
-      | Some(e) -> !messages = messages.concat(e.toError(detail).toArray())
+      | Some(e) ->
+        !messages = messages.concat(
+          e.toError(detail, this.substValues).toArray(),
+        )
       | None() -> void
       }
     };
@@ -234,8 +238,9 @@ class TypingError(
 fun typingError<T>(
   messages: Array<(PosRange, String)>,
   stErr: ?STErrorOnTType = None(),
+  substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
 ): T {
-  throw ErrorExn(TypingError(messages, stErr))
+  throw ErrorExn(TypingError(messages, stErr, substValues))
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {

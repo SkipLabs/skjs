@@ -4,7 +4,7 @@
 
 module SKJS;
 
-base class SubstValue {
+base class SubstValue uses Equality {
   children =
   | SVOpen(TType)
   | SVClosed(TType)

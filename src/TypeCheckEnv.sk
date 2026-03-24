@@ -15,8 +15,9 @@ mutable base class TCEnvBase private {
   mutable fun error(
     messages: Array<(PosRange, String)>,
     stErr: ?STErrorOnTType = None(),
+    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): void {
-    this.results.error(messages, stErr)
+    this.results.error(messages, stErr, substValues)
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
@@ -205,12 +206,14 @@ mutable class TCResults private {
   mutable fun error(
     messages: Array<(PosRange, String)>,
     stErr: ?STErrorOnTType = None(),
+    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): void {
     this.errorHandling match {
-    | EHKeepGoing() -> this.errors.push(TypingError(messages, stErr))
+    | EHKeepGoing() ->
+      this.errors.push(TypingError(messages, stErr, substValues))
     | EHBacktrace()
     | EHDefault() ->
-      typingError(messages, stErr)
+      typingError(messages, stErr, substValues)
     }
   }
 

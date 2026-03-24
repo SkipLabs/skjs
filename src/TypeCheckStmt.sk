@@ -327,7 +327,14 @@ extension class TypeChecker {
     tcenv.error(
       Array[
         (pos, "for-in loop requires an object or array type"),
-        (iterableType.pos, `Here it has type ${iterableType}`),
+        (
+          iterableType.pos,
+          `Here it has type ${prettyPrintType(
+            false,
+            iterableType,
+            tcenv.subst,
+          )}`,
+        ),
       ],
     )
   }
