@@ -77,7 +77,10 @@ extension class .String {
   }
 }
 
-class ExpectError{expectedErrors: SortedSet<String>} extends ReferenceError {
+class ExpectError{
+  expectedErrors: SortedSet<String>,
+  expectedLineNAnnotations: Map<Int, String>,
+} extends ReferenceError {
   fun validate(
     fileName: SKJS.FAbsolute,
     errors: Sequence<SKJS.Error>,
@@ -90,6 +93,39 @@ class ExpectError{expectedErrors: SortedSet<String>} extends ReferenceError {
             `${fileName}:${this.line} Wrong error message(s)`,
             this.getMessage(),
             actuals.toArray().join(" / "),
+          ),
+        )
+      }
+    };
+    // @skjs-expect-error-lineN is only valid when exactly one @skjs-expect-error
+    // is present. Continuation lines are checked against the first reported error
+    // on that source line.
+    if (!this.expectedLineNAnnotations.isEmpty()) {
+      if (this.expectedErrors.size() != 1) {
+        return Some(
+          SKTest.ExpectationError(
+            `${fileName}:${
+              this.line
+            } @skjs-expect-error-lineN requires exactly one @skjs-expect-error`,
+            "(1 @skjs-expect-error annotation)",
+            `(${this.expectedErrors.size()} @skjs-expect-error annotations)`,
+          ),
+        )
+      }
+    };
+    for ((n, expectedForN) in this.expectedLineNAnnotations.items()) {
+      actualForN = if (errors.isEmpty()) {
+        ""
+      } else {
+        err = errors.first();
+        getErrorMessageN(err, n).trimMessage(true)
+      };
+      if (actualForN != expectedForN) {
+        return Some(
+          SKTest.ExpectationError(
+            `${fileName}:${this.line} Wrong error message on line ${n}`,
+            expectedForN,
+            actualForN,
           ),
         )
       }
@@ -130,6 +166,7 @@ fun tryMatchAnnotation(
 class AnnotationLine{
   commentLineNumber: Int,
   annot: Concrete<AnnotationKind>,
+  lineN: Int,
   message: String,
   originalMessage: String,
 }
@@ -141,6 +178,40 @@ fun errorToFullMessage(error: SKJS.Error): String {
   | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
   | SKJS.TypingError(messages, _stErr, _) -> messages[0].i1
   }
+}
+
+// Returns all message lines for one error. For TypingError this includes the
+// primary messages followed by the expanded stErr detail lines.
+fun getErrorMessages(error: SKJS.Error): Array<String> {
+  error match {
+  | SKJS.SinglePosError(_, _) -> Array[errorToFullMessage(error)]
+  | SKJS.TypingError(messages, stErr, _) ->
+    stErrMsgs = stErr match {
+    | None() -> Array[]
+    | Some(e) -> e.toError(SKJS.STErrorDetail::default).toArray().map(m -> m.i1)
+    };
+    messages.map(m -> m.i1).concat(stErrMsgs)
+  }
+}
+
+// Returns the trimmed text of the Nth message of an error (1-indexed).
+fun getErrorMessageN(error: SKJS.Error, n: Int): String {
+  allMsgs = getErrorMessages(error);
+  if (n < 1 || n > allMsgs.size()) "" else allMsgs[n - 1]
+}
+
+fun getLineNAnnotationsFromError(error: SKJS.Error): Map<Int, String> {
+  result = mutable Map[];
+  allMsgs = getErrorMessages(error);
+  for (lineIdx => lineText in allMsgs) {
+    n = lineIdx + 1;
+    if (n == 1) continue;
+    trimmed = lineText.trimMessage(true);
+    if (trimmed != "") {
+      result.set(n, trimmed)
+    }
+  };
+  result.chill()
 }
 
 fun errorToExpectMessage(error: SKJS.Error): String {
@@ -220,6 +291,16 @@ fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
       if (!isFullMatch) continue;
       annot
     };
+    // Try to match -lineN suffix for @skjs-expect-error-lineN annotations
+    lineN = 1;
+    if (annot::str == SKJS_EXPECT_ERROR::str) {
+      tryMatchLineN(chars, pos) match {
+      | Some((n, newPos)) ->
+        !lineN = n;
+        !pos = newPos
+      | None() -> void
+      }
+    };
     while (pos < chars.size() && (chars[pos] == ' ' || chars[pos] == '\t')) {
       !pos = pos + 1
     };
@@ -248,6 +329,7 @@ fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
       AnnotationLine{
         commentLineNumber => lineNumber,
         annot,
+        lineN,
         message => rawMessage.trimMessage(true),
         originalMessage => rawMessage,
       },
@@ -268,17 +350,33 @@ fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
 fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
   findAnnotationLines(contents).map(group -> {
     expectedErrors = SortedSet[];
+    expectedLineNAnnotations = mutable Map[];
     for (a in group.annotations) {
-      if (expectedErrors.contains(a.message)) {
-        invariant_violation(
-          `Line ${a.commentLineNumber}: duplicate annotation: ${
-            a.originalMessage
-          }`,
-        )
-      };
-      !expectedErrors = expectedErrors.set(a.message)
+      if (a.lineN == 1) {
+        if (expectedErrors.contains(a.message)) {
+          invariant_violation(
+            `Line ${a.commentLineNumber}: duplicate annotation: ${
+              a.originalMessage
+            }`,
+          )
+        };
+        !expectedErrors = expectedErrors.set(a.message)
+      } else {
+        if (expectedLineNAnnotations.containsKey(a.lineN)) {
+          invariant_violation(
+            `Line ${a.commentLineNumber}: duplicate annotation: ${
+              a.originalMessage
+            }`,
+          )
+        };
+        expectedLineNAnnotations.set(a.lineN, a.message)
+      }
     };
-    ExpectError{line => group.errorLine, expectedErrors}
+    ExpectError{
+      line => group.errorLine,
+      expectedErrors,
+      expectedLineNAnnotations => expectedLineNAnnotations.chill(),
+    }
   })
 }
 
@@ -294,30 +392,49 @@ fun getIndent(line: String): String {
  * - Removes annotations where errors no longer occur
  * - Adds @skjs-expect-error annotations for new errors
  * - At most one @ts-expect-error per group, always last */
+fun emitLineNAnnotations(
+  result: mutable Vector<String>,
+  indent: String,
+  lineNAnnotations: Map<Int, String>,
+): void {
+  for ((n, trimmed) in lineNAnnotations.items()) {
+    if (trimmed != "") {
+      result.push(`${indent}// @${SKJS_EXPECT_ERROR::str}-line${n} ${trimmed}`)
+    }
+  }
+}
+
 fun updateFileAnnotations(
   contents: String,
   actualErrorsByLine: Map<Int, SortedSet<String>>,
   fullMessages: Map<String, String>,
   update: UMDoUpdate = UMUpdate(),
+  actualLineNAnnotationsByLine: Map<Int, Map<Int, String>> = Map[],
 ): ?String {
   groups = findAnnotationLines(contents);
   lines = contents.split("\n");
 
   // Build set of annotation comment line numbers and maps for lookup
   commentLineNumbers = SortedSet[];
-  origMessageMap = mutable Map[]; // (errorLine, message) -> originalMessage
   lastTsExpect = mutable Map[]; // errorLine -> message (last @ts-expect-error)
   existingGroups = mutable Map[]; // errorLine -> AnnotationGroup
   for (group in groups) {
     existingGroups.set(group.errorLine, group);
     for (a in group.annotations) {
       !commentLineNumbers = commentLineNumbers.add(a.commentLineNumber);
-      origMessageMap.set((group.errorLine, a.message), a.originalMessage);
     };
-    // Only track @ts-expect-error for "emit last" if it's the last annotation
-    lastAnnot = group.annotations[group.annotations.size() - 1];
-    if (lastAnnot.annot::str == TS_EXPECT_ERROR::str) {
-      lastTsExpect.set(group.errorLine, lastAnnot.message)
+    // Only track @ts-expect-error for "emit last" if it's the last line-1 annotation
+    lastLine1AnnotIdx = -1;
+    for (aIdx in Range(0, group.annotations.size())) {
+      if (group.annotations[aIdx].lineN == 1) {
+        !lastLine1AnnotIdx = aIdx
+      }
+    };
+    if (lastLine1AnnotIdx >= 0) {
+      lastAnnot = group.annotations[lastLine1AnnotIdx];
+      if (lastAnnot.annot::str == TS_EXPECT_ERROR::str) {
+        lastTsExpect.set(group.errorLine, lastAnnot.message)
+      }
     }
   };
   result = mutable Vector[];
@@ -329,13 +446,38 @@ fun updateFileAnnotations(
     // Insert updated annotations before this code line
     actualErrorsByLine.maybeGet(lineNum) match {
     | Some(errors) ->
+      actualLineNAnnotationsOpt = actualLineNAnnotationsByLine.maybeGet(
+        lineNum,
+      );
+      actualLineNAnnotations = actualLineNAnnotationsOpt.default(Map[]);
+      hasLineNData = actualLineNAnnotationsOpt is Some(_);
+      existingHasLineN = existingGroups
+        .maybeGet(lineNum)
+        .map(g -> g.annotations.any(a -> a.lineN != 1))
+        .default(false);
+      shouldEmitLineN = hasLineNData && existingHasLineN;
       // Check if existing annotations already match — preserve original order
       existingMatch = if (update is UMUpdate()) {
         existingGroups.maybeGet(lineNum) match {
-        | Some(
-          g,
-        ) if (g.annotations.map(a -> a.message).collect(SortedSet) == errors) ->
-          Some(g)
+        | Some(g) ->
+          line1Msgs = SortedSet[];
+          lineNAnnotations = mutable Map[];
+          for (a in g.annotations) {
+            if (a.lineN == 1) {
+              !line1Msgs = line1Msgs.set(a.message)
+            } else {
+              lineNAnnotations.set(a.lineN, a.message)
+            }
+          };
+          if (
+            line1Msgs == errors &&
+            (!existingHasLineN ||
+              lineNAnnotations.chill() == actualLineNAnnotations)
+          ) {
+            Some(g)
+          } else {
+            None()
+          }
         | _ -> None()
         }
       } else {
@@ -361,11 +503,13 @@ fun updateFileAnnotations(
         };
         // Phase 1: Emit existing annotations still in errors, preserving order
         // (skip last @ts-expect-error — Phase 3 emits it; skip entirely when reordering)
+        // (skip lineN annotations — they are re-emitted after all line-1 annotations)
         emitted = SortedSet[];
         if (!(update is UMFullRewrite())) {
           existingGroups.maybeGet(lineNum) match {
           | Some(g) ->
             for (a in g.annotations) {
+              if (a.lineN != 1) continue;
               isTsMsg = tsMsg match {
               | Some(msg) if (msg == a.message) -> true
               | _ -> false
@@ -399,6 +543,10 @@ fun updateFileAnnotations(
           msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
           result.push(`${groupIndent}// @${TS_EXPECT_ERROR::str} ${msgText}`)
         | _ -> void
+        };
+        // Emit lineN annotations after all line-1 annotations
+        if (shouldEmitLineN) {
+          emitLineNAnnotations(result, groupIndent, actualLineNAnnotations)
         }
       }
     | None() -> void
@@ -425,6 +573,34 @@ fun isFileNameChar(c: Char): Bool {
 
 fun isNotEOL(c: Char): Bool {
   c != '\n' && c != '\r'
+}
+
+// Tries to match "-lineN" (N >= 2) at pos. Returns (N, newPos) or None.
+fun tryMatchLineN(chars: Array<Char>, pos: Int): ?(Int, Int) {
+  suffix = "-line";
+  suffixChars = suffix.chars().toArray();
+  p = pos;
+  matched = true;
+  i = 0;
+  while (matched && i < suffixChars.size()) {
+    if (p >= chars.size() || chars[p] != suffixChars[i]) {
+      !matched = false
+    } else {
+      !p = p + 1;
+      !i = i + 1
+    }
+  };
+  if (!matched || p >= chars.size() || !isDigit(chars[p])) {
+    None()
+  } else {
+    numStart = p;
+    !p = p + 1;
+    while (p < chars.size() && isDigit(chars[p])) {
+      !p = p + 1
+    };
+    n = String::fromChars(chars.slice(numStart, p)).toInt();
+    if (n < 2) None() else Some((n, p))
+  }
 }
 
 class TSConformanceReferenceError{
