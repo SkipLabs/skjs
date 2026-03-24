@@ -7,7 +7,8 @@ extension class TypeChecker {
     fd: FunDef<SimpleFieldName>,
     callingContext: CGNode,
   ): (this, mutable TCEnv) {
-    static::checkTypeParams(subst, fd.tparams, OptionalTypeParamsForbidden());
+    sig = this.getFunSig(subst.context, fd);
+    static::checkTypeParams(subst, sig.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst, callingContext);
     thisType = thisTypeOpt match {
     | None() ->
@@ -18,8 +19,8 @@ extension class TypeChecker {
     };
     !this.subst["this"] = (false, thisType);
     tcenv.scope.bind(tcenv, Name(fd.pos, "this"), thisType, true);
-    !this = this.addTParams(subst, fd.tparams);
-    for (i => param in fd.params) {
+    !this = this.addTParams(subst, sig.tparams);
+    for (i => param in sig.params) {
       param.isRest match {
       | Some(restPos) ->
         param.optional match {
@@ -38,7 +39,7 @@ extension class TypeChecker {
             ],
           )
         };
-        if (i != fd.params.size() - 1) {
+        if (i != sig.params.size() - 1) {
           subst.error(
             Array[
               (restPos, "A rest parameter must be last in a parameter list"),
@@ -51,7 +52,7 @@ extension class TypeChecker {
             this,
             restPos,
             paramType,
-            fd.tparams,
+            sig.tparams,
           )
         )
       | None() -> void
@@ -114,7 +115,7 @@ extension class TypeChecker {
       };
       tcenv.scope.bind(tcenv, paramName, paramType, true)
     };
-    !this.retType = fd.retType.i1.map(rty -> this.normalize(subst, rty));
+    !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
     (this, tcenv)
   }
 
@@ -147,7 +148,8 @@ extension class TypeChecker {
       cgNode,
     );
     if (this.retType is None()) {
-      subst.error(Array[(fd.retType.i0, "Missing return type")])
+      funSig = this.getFunSig(subst.context, fd);
+      subst.error(Array[(funSig.retType.i0, "Missing return type")])
     };
     fd.isAsync match {
     | None() -> !this.isAsync = false

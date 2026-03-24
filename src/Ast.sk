@@ -148,9 +148,7 @@ base class FunDef<+N: FunDefName>{
   isGetSet: ?FieldGetSet,
   name: N,
   optional: ?PosRange,
-  tparams: Array<TypeParam>,
-  params: Array<Param>,
-  retType: (PosRange, ?(Type)),
+  sig: FunSig,
   body: FunBody,
   cgNode: ?CGNode,
 } uses XXHashable
@@ -169,6 +167,16 @@ base class FunBody uses XXHashable {
   children =
   | FBInline(FunDefBody)
   | FBRef(BodyRef)
+}
+
+base class FunSig uses XXHashable {
+  children =
+  | FSInline(
+    tparams: Array<TypeParam>,
+    params: Array<Param>,
+    retType: (PosRange, ?(Type)),
+  )
+  | FSRef(FunDefRef)
 }
 
 /***************************************************************************/
