@@ -47,6 +47,7 @@ function setBoxValue<T>(box: MutableBox<T>, val: T): void {
 function testReadonlyBoxToMutableBox(): void {
   const rb: ReadonlyBox<string> = { value: "immutable" };
   // Correctly rejected — readonly value passed where mutable value expected
+  // (error includes: "This error would go away if this field was readonly")
   // @skjs-expect-error Invalid call
   setBoxValue(rb, "mutated");
 }
