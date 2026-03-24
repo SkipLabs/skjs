@@ -1172,7 +1172,18 @@ extension class TFun {
   ): STResult<TFun> {
     savedSubst = subst.save();
     res = TFun::isSub_(subst, tenv, f1, f2);
-    if (res is STError _) subst.restore(savedSubst);
+    if (res is STError _) {
+      subst.restore(savedSubst)
+    } else {
+      // Record subtyping edges: f1's cgNodes should be reachable from f2's
+      f1.cgNodes.nodes.each(subNode -> {
+        f2.cgNodes.nodes.each(supNode -> {
+          if (subNode != supNode) {
+            subst.results.recordSubtypingEdge(subNode, supNode)
+          }
+        })
+      })
+    };
     res
   }
 

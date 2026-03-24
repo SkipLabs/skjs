@@ -414,7 +414,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
               (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
               | None() ->
                 internal_error("Unexpected missing value in print-errors")
-              | Some(CheckResult(_, x, y, _, _)) -> (x, y)
+              | Some(CheckResult(_, x, y, _, _, _)) -> (x, y)
               };
               errors = mutable Vector[];
               parseErrorOpt match {
@@ -471,6 +471,7 @@ class CheckResult(
   errors: Array<TypingError>,
   callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
+  subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
 ) extends SKStore.File
 
 class Checker private {
@@ -541,6 +542,7 @@ class Checker private {
               errors,
               results.callgraph,
               results.classHierarchy,
+              results.subtypingEdges,
             ),
           )
         | PRError(err) ->

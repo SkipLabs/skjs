@@ -1,4 +1,5 @@
 // @skjs-callgraph-full
+// arrow-annot: fn:double
 // fn:apply: arrow-annot
 // fn:test: fn:apply
 

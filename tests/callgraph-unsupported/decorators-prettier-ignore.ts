@@ -1,4 +1,6 @@
 // FIXME: missing callgraph edge for decorator calls
+// skjs-callgraph
+// toplevel: fn:myDecorator
 function myDecorator(target: any): any {
   return target;
 }
