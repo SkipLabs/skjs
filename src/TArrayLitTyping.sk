@@ -170,6 +170,7 @@ class ArrayLitTyping() {
   ): TType {
     invariant(!elementTypes.isEmpty());
     tvar = tcenv.subst.gen(pos);
+    tcenv.subst.setOrigin(tvar, FromArrayLiteral(pos));
     TType::arrayLit(tvar, elementTypes)
   }
 

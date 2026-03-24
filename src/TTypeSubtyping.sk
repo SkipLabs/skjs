@@ -425,6 +425,7 @@ base class STErrorOnClauses(
 base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   children =
   | STRecType(STErrorOnClauses)
+  | STRecTypeWithHint(STErrorOnClauses, List<(PosRange, String)>)
 
   fun toError(
     subst: mutable Subst,
@@ -459,6 +460,9 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
         detail.ensureIntermediateDepth(),
       )
     }
+  | STRecTypeWithHint(err, hints, ty1, ty2) ->
+    msgs = STRecType(err, ty1, ty2).toError(detail);
+    msgs.concat(hints)
 }
 
 base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
@@ -1146,6 +1150,81 @@ extension class TType {
     res
   }
 
+  private static fun originSuggestions(
+    subst: mutable Subst,
+    tenv: TEnv,
+    u1: TType,
+    u2: TType,
+  ): List<(PosRange, String)> {
+    hints = List<(PosRange, String)>[];
+    // Use a clone so that union side effects don't affect the real subst.
+    clonedSubst = subst.clone();
+    for (inst in u2.insts) {
+      inst match {
+      | tvar @ TVar _ if (clonedSubst.isClosed(tvar)) ->
+        sealedType = clonedSubst.peekRaw(tvar) match {
+        | Some(ty) -> ty
+        | None() -> continue
+        };
+        widerType = TType::union(clonedSubst, tenv, sealedType, u1);
+        widerStr = widerType.toString(clonedSubst);
+        clonedSubst.getOrigin(tvar) match {
+        | Some(FromGenericInst(pos, allTVars))
+        | Some(FromGenericCall(pos, allTVars)) ->
+          targs = allTVars.map(tv -> {
+            if (tv.id == tvar.id) {
+              widerStr
+            } else {
+              clonedSubst.peekRaw(tv) match {
+              | Some(ty) -> ty.toString(clonedSubst)
+              | None() -> "unknown"
+              }
+            }
+          });
+          targsStr = targs.join(", ");
+          !hints = List.Cons(
+            (
+              pos,
+              `Consider adding explicit type arguments, e.g., <${targsStr}>`,
+            ),
+            hints,
+          )
+        | Some(FromEmptyArray(pos))
+        | Some(FromArrayLiteral(pos)) ->
+          !hints = List.Cons(
+            (
+              pos,
+              `Consider adding a type annotation, e.g., Array<${widerStr}>`,
+            ),
+            hints,
+          )
+        | Some(FromAsyncReturn(pos))
+        | Some(FromLambdaReturn(pos)) ->
+          !hints = List.Cons(
+            (
+              pos,
+              `Consider adding a return type annotation, e.g., ${widerStr}`,
+            ),
+            hints,
+          )
+        | Some(FromNullLiteral(pos))
+        | Some(FromUndefinedLiteral(pos))
+        | Some(FromUntypedVar(pos))
+        | Some(FromObjectField(pos))
+        | Some(FromArrayElement(pos))
+        | Some(FromSyntheticIndex(pos)) ->
+          !hints = List.Cons(
+            (pos, `Consider adding a type annotation, e.g., ${widerStr}`),
+            hints,
+          )
+        | None() -> void
+        }
+      | _ -> void
+      }
+    };
+    hints
+  }
+
   private static fun isSub_(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1244,8 +1323,13 @@ extension class TType {
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
+      hints = static::originSuggestions(subst, tenv, u1, u2);
       subst.restore(savedSubst);
-      STRecType(err, u1, u2)
+      if (hints is List.Nil()) {
+        STRecType(err, u1, u2)
+      } else {
+        STRecTypeWithHint(err, hints, u1, u2)
+      }
     }
   }
 }

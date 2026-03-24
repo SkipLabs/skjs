@@ -1047,8 +1047,12 @@ class TField private {
   // Used for object literal indexes that should be transparent to the
   // setter direction of subtyping (see kSyntheticIndexName).
   static fun createSyntheticIndex(subst: mutable Subst, pos: PosRange): TField {
-    get = TType::var(subst.gen(pos));
-    set = TType::var(subst.gen(pos));
+    getTvar = subst.gen(pos);
+    subst.setOrigin(getTvar, FromSyntheticIndex(pos));
+    get = TType::var(getTvar);
+    setTvar = subst.gen(pos);
+    subst.setOrigin(setTvar, FromSyntheticIndex(pos));
+    set = TType::var(setTvar);
     TField{
       pos,
       name => FieldNameString(kSyntheticIndexName),
@@ -1673,6 +1677,22 @@ base class TVarID private final (value: Int) uses Orderable, XXHashable {
   fun xxhash(): XXHash {
     XXHash(this.value)
   }
+}
+
+base class TVarOrigin {
+  children =
+  | FromGenericCall(PosRange, Array<TVar>)
+  | FromGenericInst(PosRange, Array<TVar>)
+  | FromArrayLiteral(PosRange)
+  | FromEmptyArray(PosRange)
+  | FromAsyncReturn(PosRange)
+  | FromLambdaReturn(PosRange)
+  | FromNullLiteral(PosRange)
+  | FromUndefinedLiteral(PosRange)
+  | FromObjectField(PosRange)
+  | FromSyntheticIndex(PosRange)
+  | FromArrayElement(PosRange)
+  | FromUntypedVar(PosRange)
 }
 
 class TVar private (
