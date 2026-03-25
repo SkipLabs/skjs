@@ -139,7 +139,7 @@ class AnnotationGroup{errorLine: Int, annotations: Array<AnnotationLine>}
 fun errorToFullMessage(error: SKJS.Error): String {
   error match {
   | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
-  | SKJS.TypingError(messages, _stErr) -> messages[0].i1
+  | SKJS.TypingError(messages, _stErr, _) -> messages[0].i1
   }
 }
 

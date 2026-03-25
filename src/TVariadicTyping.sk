@@ -132,11 +132,19 @@ class VariadicTyping() {
               Array[
                 (
                   pos,
-                  `Invalid call. Inferred rest arguments ${inferred} do not satisfy the constraint`,
+                  `Invalid call. Inferred rest arguments ${prettyPrintType(
+                    false,
+                    inferred,
+                    tcenv.subst,
+                  )} do not satisfy the constraint`,
                 ),
-                (cstr.pos, `Constraint ${cstr}`),
+                (
+                  cstr.pos,
+                  `Constraint ${prettyPrintType(false, cstr, tcenv.subst)}`,
+                ),
               ],
               Some(stErr),
+              tcenv.subst.values,
             );
             return true
           }
@@ -209,7 +217,11 @@ class VariadicTyping() {
             TType::isSub(tcenv.subst, tenv, knownRest[i], tupleElts[i]) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.error(Array[(pos, "Invalid argument")], Some(err))
+              tcenv.error(
+                Array[(pos, "Invalid argument")],
+                Some(err),
+                tcenv.subst.values,
+              )
             }
           }
         }
@@ -222,21 +234,36 @@ class VariadicTyping() {
             TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.error(Array[(pos, "Invalid argument")], Some(err))
+              tcenv.error(
+                Array[(pos, "Invalid argument")],
+                Some(err),
+                tcenv.subst.values,
+              )
             }
           };
           moreArgs.each(ma -> {
             TType::isSub(tcenv.subst, tenv, ma, eltType) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.error(Array[(pos, "Invalid argument")], Some(err))
+              tcenv.error(
+                Array[(pos, "Invalid argument")],
+                Some(err),
+                tcenv.subst.values,
+              )
             }
           })
         | None() ->
           tcenv.error(
             Array[
               (pos, "Invalid call. Unexpected type for ..."),
-              (spreadType.getPos(), `${spreadType} is not an array`),
+              (
+                spreadType.getPos(),
+                `${prettyPrintType(
+                  false,
+                  spreadType.full(),
+                  tcenv.subst,
+                )} is not an array`,
+              ),
             ],
           )
         }

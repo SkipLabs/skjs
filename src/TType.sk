@@ -210,11 +210,14 @@ class TType private {
       if (clauses.isEmpty() && extraClauses.size() == 1) {
         !clauses = extraClauses[0];
       } else {
-        internal_error(
-          `Unexpected extra clauses when mapping ${this} to ${insts} | ${extraClauses.join(
-            " | ",
-          )} | ${clauses}`,
-        )
+        // internal_error: no subst available because rawMap is called from
+        // generic type transformers (e.g. RenameClauses) whose Env may not
+        // contain a substitution.
+        from = prettyPrint(false, pp -> pp.type(0, Margin{}, this));
+        to = prettyPrint(false, pp ->
+          pp.type(0, Margin{}, TType::create(this.pos, insts, Clauses::top()))
+        );
+        internal_error(`Unexpected extra clauses when mapping ${from} to ${to}`)
       }
     };
     TType::create(this.pos, insts, clauses)
@@ -294,8 +297,8 @@ class TType private {
 
   // UTILITIES
 
-  fun toString(): String {
-    prettyPrintType(false, this)
+  fun toString(subst: readonly Subst): String {
+    prettyPrintType(false, this, subst)
   }
 
   // BOOLEAN PROPERTIES
@@ -672,7 +675,7 @@ class TFun(
 /* ArrayType for the spread parameter of functions */
 /***************************************************************************/
 
-base class ArrayType uses XXHashable, Orderable, Show {
+base class ArrayType uses XXHashable, Orderable {
   fun getPos(): PosRange;
   fun maybeGetEltType(
     subst: mutable Subst,
@@ -706,8 +709,8 @@ class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
     this.pos
   }
 
-  fun toString(): String {
-    `ReadonlyArray<${this.eltType}>`
+  fun toString(subst: readonly Subst): String {
+    `ReadonlyArray<${this.eltType.toString(subst)}>`
   }
 
   fun maybeGetEltType(
@@ -728,8 +731,8 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.pos
   }
 
-  fun toString(): String {
-    this.fullType.toString()
+  fun toString(subst: readonly Subst): String {
+    this.fullType.toString(subst)
   }
 
   fun maybeGetEltType(
@@ -1218,6 +1221,7 @@ class TFields protected {
   }
 
   static fun create{
+    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
     fields: mutable Map<FieldNameString, TField> = mutable Map[],
     symbolFields: readonly Map<FieldNameString, TField> = Map[],
     tIndexes: TIndexesBase = TIndexes::empty,
@@ -1243,9 +1247,11 @@ class TFields protected {
           Array[
             (
               brandField.get.pos,
-              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${
-                brandField.get
-              }`,
+              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${prettyPrint(
+                false,
+                pp -> pp.type(0, Margin{}, brandField.get),
+                substValues,
+              )}`,
             ),
           ],
         )
