@@ -40,8 +40,17 @@ base class ResolvedDef uses XXHashable {
   | RDOther(d) -> d
 }
 
+class TypedHash<T> private (value: T) {
+  static fun create(value: T): this {
+    static(value)
+  }
+}
+
 class ResolvedDefKey(value: String) extends SKStore.Key
-class ResolvedDefFile(value: ResolvedDef) extends SKStore.File
+class ResolvedDefFile(
+  orig: Def,
+  value: TypedHash<ResolvedDef>,
+) extends SKStore.File
 
 const parseErrorKey: FAbsolute = FAbsolute::nil;
 
@@ -361,7 +370,10 @@ fun makeResolvedDefs(
           | _ ->
             def.value.defStableName() match {
             | Some(name) ->
-              writer.set(ResolvedDefKey(name.value), ResolvedDefFile(resolved))
+              writer.set(
+                ResolvedDefKey(name.value),
+                ResolvedDefFile(def, TypedHash::create(resolved)),
+              )
             | None() -> void
             }
           }

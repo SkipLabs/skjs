@@ -462,7 +462,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             }
           };
           callgraph
-            .affectedFiles(context, defs.map(x -> x.value.toDef()).toArray())
+            .affectedFiles(context, defs.map(x -> x.orig).toArray())
             .each(f -> print_string(f.toString()));
         })
       };
