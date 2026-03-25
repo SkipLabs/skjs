@@ -148,13 +148,13 @@ fun updateCallgraphAnnotations(
       | Some(oldCallees) ->
         // Keep existing order for callees that still exist, append new ones
         kept = oldCallees.filter(c -> actualCallees.contains(c));
-        newOnes = actualCallees.collect(Array).filter(c ->
+        newOnes = actualCallees.collect(Array).sorted().filter(c ->
           !Set::createFromItems(oldCallees).contains(c)
         );
         kept.concat(newOnes)
       | None() ->
         // New caller: use sorted order
-        actualCallees.collect(Array)
+        actualCallees.collect(Array).sorted()
       };
       result.push(`// ${caller}: ${calleeList.join(", ")}`)
     }
@@ -193,11 +193,11 @@ fun updateCallgraphAnnotations(
       calleeList = existingCalleesOrder.maybeGet(caller) match {
       | Some(oldCallees) ->
         kept = oldCallees.filter(c -> actualCallees.contains(c));
-        newOnes = actualCallees.collect(Array).filter(c ->
+        newOnes = actualCallees.collect(Array).sorted().filter(c ->
           !Set::createFromItems(oldCallees).contains(c)
         );
         kept.concat(newOnes)
-      | None() -> actualCallees.collect(Array)
+      | None() -> actualCallees.collect(Array).sorted()
       };
       result.push(`// ${caller}: ${calleeList.join(", ")}`)
     }
