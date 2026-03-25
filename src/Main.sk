@@ -387,7 +387,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         root,
         builtinsFileName,
         srcFiles,
-        logAffectedFiles,
         importStubs,
       ) match {
       | Failure(err) ->

@@ -49,9 +49,6 @@ const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
 const parsesDirName: SKStore.DirName = SKStore.DirName::create(
   "/skjs/parsed_with_errors/",
 );
-const oldParsesDirName: SKStore.DirName = SKStore.DirName::create(
-  "/skjs/changed_file_old_parse_results/",
-);
 const resolvedDefsDirName: SKStore.DirName = SKStore.DirName::create(
   "/skjs/resolvedDefs/",
 );
@@ -61,14 +58,12 @@ class Files(
   builtinsFileName: FAbsolute,
   filesContent: SKStore.EHandle<FAbsolute, SKStore.StringFile>,
   importStubs: Array<DAbsolute>,
-  changedFileOldParsedResults: ?SortedMap<FAbsolute, ParsedResult>,
 ) {
   static fun create(
     context: mutable SKStore.Context,
     root: String,
     builtinsFileNameStr: String,
     srcFileSeq: Sequence<String>,
-    trackChangedFiles: Bool = false,
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
     builtinsFileName = FAbsolute::create(builtinsFileNameStr);
@@ -106,35 +101,16 @@ class Files(
       SKStore.StringFile::type,
       filesDirName,
     );
-    fileDir = context.unsafeGetEagerDir(filesDirName);
-    oldParses: SortedMap<FAbsolute, ParsedResult> = SortedMap::create();
 
     for (fileName in srcFiles) {
       key = FAbsolute::create(fileName);
       content = FileSystem.readTextFile(fileName);
-      if (!isInit && trackChangedFiles) {
-        oldFile = fileDir.getArrayRaw(key);
-        if (
-          oldFile.size() == 1 &&
-          SKStore.StringFile::type(oldFile[0]).value != content
-        ) {
-          // stash defs from previous run to compare against new versions
-          oldParsedResult = context
-            .unsafeGetEagerDir(parsesDirName)
-            .getArrayRaw(key)
-            .map(ParsedResultAndSymbolsFile::type)[0].value;
-          !oldParses = oldParses.set(key, oldParsedResult);
-        }
-      };
       fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
     for ((fileName, _) in fileHdl.items(context)) {
       if (!srcFiles.contains(fileName.toString())) {
         fileHdl.writeArray(context, fileName, Array[]);
       };
-    };
-    changedFileOldParsedResults = if (trackChangedFiles) Some(oldParses) else {
-      None()
     };
     Success(
       Files(
@@ -143,7 +119,6 @@ class Files(
         builtinsFileName,
         fileHdl,
         importStubs.map(DAbsolute::create),
-        changedFileOldParsedResults,
       ),
     )
   }
@@ -276,56 +251,6 @@ class Files(
       typeDefBodyMap,
       methodBodyMap,
     )
-  }
-
-  // (added-defs, removed-defs) since last run
-  fun getChangedDefs(
-    context: mutable SKStore.Context,
-  ): (Array<Def>, Array<Def>) {
-    added: mutable Vector<Def> = mutable Vector[];
-    removed: mutable Vector<Def> = mutable Vector[];
-
-    oldParses = this.changedFileOldParsedResults match {
-    | Some(oldParses) -> oldParses
-    | None() ->
-      invariant_violation(
-        "getChangedDefs called without any old parsed results",
-      )
-    };
-    currentParses = context.unsafeMaybeGetEagerDir(parsesDirName) match {
-    | Some _ ->
-      SKStore.EHandle(
-        FAbsolute::keyType,
-        ParsedResultAndSymbolsFile::type,
-        parsesDirName,
-      )
-    | None() ->
-      invariant_violation(
-        "getChangedDefs called without any current parsed results ",
-      )
-    };
-    for ((fileName, previousParsedResult) in oldParses.items()) {
-      currentParsedResult = currentParses.get(context, fileName).value;
-      (previousParsedResult, currentParsedResult) match {
-      | (PRError(_), PRError(_)) -> continue
-      | (PROk(prevDefs), PRError(_)) -> removed.extend(prevDefs)
-      | (PRError(_), PROk(currDefs)) -> added.extend(currDefs)
-      | (PROk(prevDefs), PROk(currDefs)) ->
-        prevDefsByHash = SortedMap::createFromIterator(
-          prevDefs.values().map((def) -> (def.xxhash(), def)),
-        );
-        currDefsByHash = SortedMap::createFromIterator(
-          currDefs.values().map((def) -> (def.xxhash(), def)),
-        );
-        for ((hash, def) in prevDefsByHash.items()) {
-          if (!currDefsByHash.containsKey(hash)) removed.push(def)
-        };
-        for ((hash, def) in currDefsByHash.items()) {
-          if (!prevDefsByHash.containsKey(hash)) added.push(def)
-        }
-      }
-    };
-    (added.toArray(), removed.toArray())
   }
 }
 

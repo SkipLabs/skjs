@@ -354,7 +354,6 @@ fun checkFilesWithRoot(
       root,
       builtinsFileName,
       srcFiles,
-      false,
       importStubs,
     ) |> expectFilesSuccess;
 

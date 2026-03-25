@@ -49,7 +49,6 @@ fun testAffectedFiles(): void {
       projectDir,
       builtinsFileName,
       srcFiles,
-      false,
       Array["./import-stubs"],
     ) |> expectFilesSuccess;
 
