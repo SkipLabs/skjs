@@ -25,6 +25,33 @@ class ParsedResultAndSymbolsFile(
 
 class ParsedResultFile(value: ParsedResult) extends SKStore.File
 
+base class ResolvedDef uses XXHashable {
+  children =
+  | RDFunDef(TopLevelFunDef)
+  | RDClass(Class, Array<ClassField>)
+  | RDTypeDef(TypeDef, TypeDefBodyData)
+  | RDOther(Def)
+
+  fun toDef(): Def
+  | RDFunDef(d)
+  | RDClass(d, _)
+  | RDTypeDef(d, _) ->
+    Def::create(d.defStableName().fromSome().pos, d)
+  | RDOther(d) -> d
+}
+
+class TypedHash<T> private (value: T) {
+  static fun create(value: T): this {
+    static(value)
+  }
+}
+
+class ResolvedDefKey(value: String) extends SKStore.Key
+class ResolvedDefFile(
+  orig: Def,
+  value: TypedHash<ResolvedDef>,
+) extends SKStore.File
+
 const parseErrorKey: FAbsolute = FAbsolute::nil;
 
 const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
@@ -33,6 +60,9 @@ const parsesDirName: SKStore.DirName = SKStore.DirName::create(
 );
 const oldParsesDirName: SKStore.DirName = SKStore.DirName::create(
   "/skjs/changed_file_old_parse_results/",
+);
+const resolvedDefsDirName: SKStore.DirName = SKStore.DirName::create(
+  "/skjs/resolvedDefs/",
 );
 class Files(
   isInit: Bool,
@@ -229,6 +259,7 @@ class Files(
     classFieldMap = ClassFieldMap::create(context, parsedFiles);
     typeDefBodyMap = TypeDefBodyMap::create(context, parsedFiles);
     methodBodyMap = MethodBodyMap::create(context, parsedFiles);
+    _ = makeResolvedDefs(context, parsedFiles);
     errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
     if (errors.size() != 0) {
       invariant(
@@ -321,6 +352,109 @@ fun removeSymbols(
     SKStore.DirName::create("/parsed/nosymbols/"),
     (_context, writer, key, values) ~> {
       writer.set(key, ParsedResultFile(values.first.value))
+    },
+  )
+}
+
+fun resolveDef(file: ParsedResultAndSymbolsFile, def: Def): ResolvedDef {
+  exportable: ?Exportable = def.value match {
+  | Export(e) -> Some(e)
+  | ExportDeclare(e) -> Some(e)
+  | e @ TopLevelFunDef _ -> Some(e)
+  | e @ Class _ -> Some(e)
+  | e @ TypeDef _ -> Some(e)
+  | _ -> None()
+  };
+  exportable match {
+  | Some(fd @ TopLevelFunDef _) -> resolveFunDef(file, fd)
+  | Some(cls @ Class{bodyRef => Some(ref)}) -> resolveClass(file, cls, ref)
+  | Some(td @ TypeDef{bodyRef => Some(ref)}) -> resolveTypeDef(file, td, ref)
+  | _ -> RDOther(def)
+  }
+}
+
+fun resolveFunDef(
+  file: ParsedResultAndSymbolsFile,
+  fd: TopLevelFunDef,
+): ResolvedDef {
+  resolvedSig = fd.sig match {
+  | FSRef(ref) ->
+    sigData = file.funDefSigs.maybeGet(ref).fromSome();
+    FSInline(sigData.tparams, sigData.params, sigData.retType)
+  | s @ FSInline _ -> s
+  };
+  resolvedBody = fd.body match {
+  | FBRef(BRFunDef(ref)) ->
+    FBInline(file.funDefBodies.maybeGet(ref).fromSome().body)
+  | b -> b
+  };
+  RDFunDef(fd with {sig => resolvedSig, body => resolvedBody})
+}
+
+fun resolveClass(
+  file: ParsedResultAndSymbolsFile,
+  cls: Class,
+  bodyRef: ClassBodyRef,
+): ResolvedDef {
+  bodyData = file.classBodies.maybeGet(bodyRef).fromSome();
+  fields = bodyData.fieldRefs.map(fieldRef -> {
+    fieldData = file.classFieldEntries.maybeGet(fieldRef).fromSome();
+    resolveClassField(file, fieldData.field)
+  });
+  RDClass(cls, fields)
+}
+
+fun resolveClassField(
+  file: ParsedResultAndSymbolsFile,
+  field: ClassField,
+): ClassField {
+  field match {
+  | method @ ClassFieldMethod{body => FBRef(BRMethod(ref))} ->
+    method with {
+      body => FBInline(file.methodBodyEntries.maybeGet(ref).fromSome().body),
+    }
+  | _ -> field
+  }
+}
+
+fun resolveTypeDef(
+  file: ParsedResultAndSymbolsFile,
+  td: TypeDef,
+  ref: TypeDefBodyRef,
+): ResolvedDef {
+  RDTypeDef(td, file.typeDefBodies.maybeGet(ref).fromSome())
+}
+
+fun makeResolvedDefs(
+  context: mutable SKStore.Context,
+  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+): SKStore.EHandle<ResolvedDefKey, ResolvedDefFile> {
+  parsedFiles.map(
+    ResolvedDefKey::keyType,
+    ResolvedDefFile::type,
+    context,
+    resolvedDefsDirName,
+    (_context, writer, _fileName, values) ~> {
+      file = values.first;
+      file.value match {
+      | PROk(defs) ->
+        for (def in defs) {
+          resolved = resolveDef(file, def);
+          resolved match {
+          | RDOther _ -> void
+          | _ ->
+            def.value.defStableName() match {
+            | Some(name) ->
+              writer.set(
+                ResolvedDefKey(name.value),
+                ResolvedDefFile(def, TypedHash::create(resolved)),
+              )
+            | None() -> void
+            }
+          }
+        }
+      | PRError _ -> void
+      }
     },
   )
 }

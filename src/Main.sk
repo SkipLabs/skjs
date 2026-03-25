@@ -436,13 +436,29 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
           _ = CallGraph::build(context, checked);
         },
       );
+      tick = context.getTick();
       context.update();
       if (logAffectedFiles) {
         CallGraph::create(context).each(callgraph -> {
-          (_addedDefs, removedDefs) = files.getChangedDefs(context);
-          callgraph.affectedFiles(context, removedDefs).each(f ->
-            print_string(f.toString())
+          handle = SKStore.EHandle(
+            ResolvedDefKey::keyType,
+            ResolvedDefFile::type,
+            resolvedDefsDirName,
           );
+          (_reset, keys) = context
+            .unsafeGetEagerDir(resolvedDefsDirName)
+            .getChangesAfter(tick);
+          defs = mutable Vector[];
+          for (key in keys) {
+            key match {
+            | k @ ResolvedDefKey _ ->
+              defs.extend(handle.unsafeGetArray(context, k))
+            | _ -> internal_error("Unexpected key type")
+            }
+          };
+          callgraph
+            .affectedFiles(context, defs.map(x -> x.orig).toArray())
+            .each(f -> print_string(f.toString()));
         })
       };
 
