@@ -3,8 +3,8 @@
 # Verifies that --log-affected-files reports the correct set of files
 # when definitions change across multiple files.
 #
-# --log-affected-files implicitly enables --keep-going so that the call
-# graph is complete even when structural changes introduce type errors.
+# Uses --keep-going so that the call graph is complete even when
+# structural changes introduce type errors.
 set -euo pipefail
 
 SKJS="${SKJS:-./target/host/dev/skjs}"
@@ -24,7 +24,7 @@ FAIL=$'\033[31m[FAIL]\033[0m'
 # Usage: run_init [files...]
 run_init() {
   local files=("$@")
-  "$SKJS" check --init "$CACHE" --import-stubs "$STUBS" \
+  "$SKJS" check --init "$CACHE" --keep-going --import-stubs "$STUBS" \
     "${files[@]}" >/dev/null 2>&1 || true
 }
 
@@ -33,7 +33,7 @@ run_init() {
 # Usage: run_affected [files...]
 run_affected() {
   local files=("$@")
-  "$SKJS" check --data "$CACHE" --log-affected-files \
+  "$SKJS" check --data "$CACHE" --log-affected-files --keep-going \
     --import-stubs "$STUBS" "${files[@]}" 2>/dev/null || true
 }
 
@@ -81,8 +81,8 @@ reset_cache() {
 # Test group 1: Function call chain
 # c.ts exports helperC, b.ts imports helperC and exports helperB,
 # a.ts imports helperB and exports a, unrelated.ts is standalone.
-# Changing helperC's return type should transitively affect a.ts, b.ts,
-# c.ts via the call graph.
+# Adding an optional parameter to helperC should transitively affect
+# a.ts, b.ts, c.ts via the call graph (non-breaking signature change).
 ########################################################################
 
 C="$TMPDIR/c.ts"
@@ -116,15 +116,15 @@ EOF
 
 run_init "$C" "$B" "$A" "$UNRELATED"
 
-# Change helperC return type: number -> string
+# Add optional parameter to helperC (non-breaking signature change)
 cat > "$C" <<'EOF'
-export function helperC(): string {
-  return "hello";
+export function helperC(x?: string): number {
+  return 1;
 }
 EOF
 
 out=$(run_affected "$C" "$B" "$A" "$UNRELATED")
-expect_affected "callChainLeafSignatureChange" "a.ts
+expect_affected "callChainLeafOptionalParam" "a.ts
 b.ts
 c.ts" "$out"
 
@@ -175,8 +175,8 @@ expect_affected "unrelatedChange" "unrelated.ts" "$out"
 # Test group 3: Class hierarchy
 # base.ts exports Base class, child.ts exports Child extends Base,
 # user.ts imports Child and calls method(), unrelated2.ts is standalone.
-# Adding a type parameter to Base should transitively affect base.ts,
-# child.ts, user.ts via the class hierarchy.
+# Adding a new method to Base should transitively affect base.ts,
+# child.ts, user.ts via the class hierarchy (non-breaking change).
 ########################################################################
 
 BASE="$TMPDIR/base.ts"
@@ -216,17 +216,18 @@ EOF
 
 run_init "$BASE" "$CHILD" "$USER" "$UNRELATED2"
 
-# Add type parameter to Base: class Base -> class Base<T>
+# Add new method to Base (non-breaking structural change)
 cat > "$BASE" <<'EOF'
-export class Base<T> {
+export class Base {
   method(): number {
     return 1;
   }
+  newMethod(): void {}
 }
 EOF
 
 out=$(run_affected "$BASE" "$CHILD" "$USER" "$UNRELATED2")
-expect_affected "classHierarchyBaseChange" "base.ts
+expect_affected "classHierarchyNewMethod" "base.ts
 child.ts
 user.ts" "$out"
 

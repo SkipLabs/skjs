@@ -250,13 +250,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     throw Exit(2)
   | (true, false) -> EHBacktrace()
   | (false, true) -> EHKeepGoing()
-  | (false, false) -> EHKeepGoing()
-  };
-  if (args.getBool("log-affected-files") && !(errorHandling is EHKeepGoing())) {
-    print_error(
-      "--log-affected-files requires --keep-going (the default); it is incompatible with --backtrace",
-    );
-    throw Exit(2)
+  | (false, false) -> EHDefault()
   };
   cliSrcFiles = args.getArray("src-file");
   importStubs = args.getArray("import-stubs");
@@ -443,7 +437,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       );
       tick = context.getTick();
       context.update();
-      if (logAffectedFiles) {
+      hasErrors = context
+        .maybeGetEagerDir(errorsDirName)
+        .map(dir -> dir.getArrayRaw(SKStore.UnitID::singleton).size() != 0)
+        .default(true);
+      if (logAffectedFiles && !hasErrors) {
         CallGraph::create(context).each(callgraph -> {
           handle = SKStore.EHandle(
             ResolvedDefKey::keyType,
