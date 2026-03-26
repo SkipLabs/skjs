@@ -1061,6 +1061,49 @@ extension class Clauses {
 }
 
 extension class TType {
+  // Peel only TSInst wrappers so head-transparent aliases/classes like
+  // `type Maybe<T> = T | null` expose the same growable TVars as their
+  // inline form. We intentionally do not expand TInter or descend into
+  // clauses: those paths rely on their existing specialized handling.
+  private static fun instsForGrowth(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): mutable Vector<TInst> {
+    hasTSInst = false;
+    for (inst in ty.insts) {
+      if (inst is TSInst _) {
+        !hasTSInst = true;
+        break void
+      }
+    };
+    if (!hasTSInst) return Vector::mcreateFromItems(ty.insts);
+
+    insts: mutable Vector<TInst> = mutable Vector[];
+    todo = Vector::mcreateFromItems(ty.insts);
+    seen = SortedSet::createFromItems(todo);
+    while (!todo.isEmpty()) {
+      inst = todo.pop();
+      inst match {
+      | tsinst @ TSInst(name, targs) ->
+        expandedType = subst.seenExpansion.maybeGet(tsinst) match {
+        | None() ->
+          expandedType = tenv.instantiate(subst, name, targs);
+          subst.!seenExpansion[tsinst] = expandedType;
+          expandedType
+        | Some(expandedType) -> expandedType
+        };
+        for (newInst in expandedType.insts) {
+          if (seen.contains(newInst)) continue;
+          !seen = seen.set(newInst);
+          todo.push(newInst);
+        }
+      | _ -> insts.push(inst)
+      }
+    };
+    insts
+  }
+
   static fun isSub(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1099,7 +1142,7 @@ extension class TType {
     };
 
     savedSubst = subst.save();
-    for (inst in u2.insts) {
+    for (inst in TType::instsForGrowth(subst, tenv, u2)) {
       inst match {
       | tvar @ TVar(_, _, constraints) ->
         substCopy = subst.save();
@@ -1145,7 +1188,7 @@ extension class TType {
       | _ -> void
       }
     };
-    for (inst in u1.insts) {
+    for (inst in TType::instsForGrowth(subst, tenv, u1)) {
       inst match {
       | tvar @ TVar(_, _, constraints) ->
         substCopy = subst.save();
