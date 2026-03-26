@@ -49,6 +49,7 @@ function testReadonlyBoxToMutableBox(): void {
   // Correctly rejected — readonly value passed where mutable value expected
   // (error includes: "This error would go away if this field was readonly")
   // @skjs-expect-error Invalid call
+  // @skjs-expect-error-line2 This error would go away if this field was readonly
   setBoxValue(rb, "mutated");
 }
 

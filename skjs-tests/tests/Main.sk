@@ -133,7 +133,15 @@ fun doUpdateExpectErrorComments(
   linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
   errorsByLine = mutable Map[];
   fullMessages = mutable Map[];
+  actualLineNAnnotationsByLine = mutable Map[];
   for (lineErrs in linedErrors) {
+    if (!lineErrs.i1.isEmpty()) {
+      err = lineErrs.i1.first();
+      actualLineNAnnotationsByLine.set(
+        lineErrs.i0,
+        getLineNAnnotationsFromError(err),
+      )
+    };
     trimmedMsgs = SortedSet[];
     for (err in lineErrs.i1) {
       full = errorToFullMessage(err);
@@ -148,6 +156,7 @@ fun doUpdateExpectErrorComments(
     errorsByLine.chill(),
     fullMessages.chill(),
     update,
+    actualLineNAnnotationsByLine.chill(),
   ).each(updatedContents -> {
     FileSystem.writeTextFile(fileName.toString(), updatedContents);
     print_string(`Updated: ${fileName}\n`)

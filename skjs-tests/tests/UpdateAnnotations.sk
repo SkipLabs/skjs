@@ -507,6 +507,127 @@ fun testUpdateFileAnnotations(): void {
     ),
     "Original annotation indentation preserved",
   );
+
+  // 25. lineN annotation — no changes needed
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line2 This error would go away if this field was readonly",
+          "testFoo();",
+        ],
+      ),
+      Map[3 => SortedSet["Invalid call"]],
+      noFull,
+      UMUpdate(),
+      Map[3 => Map[2 => "This error would go away if this field was readonly"]],
+    ),
+    None(),
+    "lineN annotation — no changes needed",
+  );
+
+  // 26. lineN annotation not added automatically
+  SKTest.expectEq(
+    updateFileAnnotations(
+      "testFoo();",
+      Map[1 => SortedSet["Invalid call"]],
+      Map["Invalid call" => "Invalid call"],
+      UMUpdate(),
+      Map[1 => Map[2 => "This error would go away if this field was readonly"]],
+    ),
+    Some(lines(Array["// @skjs-expect-error Invalid call", "testFoo();"])),
+    "lineN annotation not added automatically",
+  );
+
+  // 27. lineN annotation removed when error has no second line
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line2 Stale hint",
+          "testFoo();",
+        ],
+      ),
+      Map[3 => SortedSet["Invalid call"]],
+      Map["Invalid call" => "Invalid call"],
+      UMUpdate(),
+      Map[3 => Map[]],
+    ),
+    Some(lines(Array["// @skjs-expect-error Invalid call", "testFoo();"])),
+    "lineN annotation removed when error has no second line",
+  );
+
+  // 28. lineN annotation updated when second line changes
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line2 Old hint",
+          "testFoo();",
+        ],
+      ),
+      Map[3 => SortedSet["Invalid call"]],
+      Map["Invalid call" => "Invalid call"],
+      UMUpdate(),
+      Map[3 => Map[2 => "New hint"]],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Invalid call",
+          "// @skjs-expect-error-line2 New hint",
+          "testFoo();",
+        ],
+      ),
+    ),
+    "lineN annotation updated when second line changes",
+  );
+
+  // 29. Multiple errors on line — no lineN data means plain annotations only
+  SKTest.expectEq(
+    updateFileAnnotations(
+      "testFoo();",
+      Map[1 => SortedSet["Error A", "Error B"]],
+      Map["Error A" => "Error A", "Error B" => "Error B"],
+      UMUpdate(),
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Error A",
+          "// @skjs-expect-error Error B",
+          "testFoo();",
+        ],
+      ),
+    ),
+    "Multiple errors without lineN data",
+  );
+}
+
+@test
+fun testLineNValidation(): void {
+  ref = findExpectErrors(
+    lines(Array["// @skjs-expect-error-line2 Hint only", "testFoo();"]),
+  )[0];
+  fileName = SKJS.FAbsolute::create(Path.resolve("./tmp.ts"));
+  emptyErrors: Array<SKJS.Error> = Array[];
+  ref.validate(fileName, emptyErrors) match {
+  | Some(err) ->
+    SKTest.expectEq(
+      err.getMessage(),
+      SKTest.ExpectationError(
+        `${fileName}:2 @skjs-expect-error-lineN requires exactly one @skjs-expect-error`,
+        "(1 @skjs-expect-error annotation)",
+        "(0 @skjs-expect-error annotations)",
+      ).getMessage(),
+      "lineN without primary annotation is rejected",
+    )
+  | None() ->
+    invariant_violation("Expected lineN without primary annotation to fail")
+  }
 }
 
 module end;
