@@ -2003,7 +2003,7 @@ extension class TypeChecker {
         )
       };
       param.i1 match {
-      | None() -> error(Array[(param.i0.pos, "Please add a type annotation")])
+      | None() -> error(Array[(param.i0.pos, "Missing type annotation")])
       | Some(ty) -> (param.i0, this.normalize(tcenv, ty))
       }
     });
