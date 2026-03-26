@@ -226,7 +226,7 @@ fun paramsError<T>(pos: PosRange): T {
     Array[
       (
         pos,
-        "Type annotations in parentheses are not valid in an expression." +
+        "Type annotations in parentheses are not valid in an expression. " +
           "Use type assertions with 'as' keyword instead",
       ),
     ],
