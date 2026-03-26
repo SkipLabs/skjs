@@ -177,10 +177,7 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
   }
 
   readonly fun isClosed(tvar: TVar): Bool {
-    this.values.maybeGet(tvar.id) match {
-    | Some(SVClosed _) -> true
-    | _ -> false
-    }
+    this.values.maybeGet(tvar.id) is Some(SVClosed _)
   }
 
   // Returns true if the type variable has no binding at all

@@ -1325,11 +1325,7 @@ extension class TType {
     | err @ STErrorOnClauses _ ->
       hints = static::originSuggestions(subst, tenv, u1, u2);
       subst.restore(savedSubst);
-      if (hints is List.Nil()) {
-        STRecType(err, u1, u2)
-      } else {
-        STRecTypeWithHint(err, hints, u1, u2)
-      }
+      STRecTypeWithHint(err, hints, u1, u2)
     }
   }
 }
