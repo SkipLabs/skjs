@@ -25,7 +25,7 @@ class StaticReadonlySymbol {
 
 // Test static field without readonly modifier (should error: must be readonly)
 class StaticWithoutReadonly {
-  // @skjs-expect-error static fields must be readonly
+  // @skjs-expect-error Static fields must be readonly
   static num: number = 42;
 }
 
@@ -42,7 +42,7 @@ class StaticReadonlyNoType {
 
 // Test static readonly with optional modifier (should error: static fields cannot be optional)
 class StaticReadonlyOptional {
-  // @skjs-expect-error static fields cannot be optional
+  // @skjs-expect-error Static fields cannot be optional
   static readonly optField?: number = 42;
 }
 

@@ -810,7 +810,9 @@ extension class TypeChecker {
             break staticClass
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
-              tcenv.error(Array[(name.pos, "Non-const not supported")]);
+              tcenv.error(
+                Array[(name.pos, "Non-const members are not supported")],
+              );
             };
             break type match {
             | None() ->
@@ -1877,7 +1879,7 @@ extension class TypeChecker {
       | Some(ty) -> TType::single(ty)
       | None() ->
         tcenv.error(
-          Array[(pos, "'as const' can only be used with some literals")],
+          Array[(pos, "'as const' can only be used with literal expressions")],
         );
         this.expr(tcenv, subExpr, true)
       }
