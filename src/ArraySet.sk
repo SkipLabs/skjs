@@ -83,6 +83,27 @@ class .ArraySet<T: Orderable> private (
     ArraySet::createFromVector(this.inner.concat(that.inner))
   }
 
+  // Merge adjacent elements using f when eq returns true.
+  fun mergeDuplicates(eq: (T, T) -> Bool, f: (T, T) -> T): ArraySet<T> {
+    if (this.inner.size() <= 1) {
+      this
+    } else {
+      result = Vector::mcreate(this.inner.size());
+      acc = this.inner[0];
+      for (i in Range(1, this.inner.size())) {
+        next = this.inner[i];
+        if (eq(acc, next)) {
+          !acc = f(acc, next)
+        } else {
+          result.push(acc);
+          !acc = next
+        }
+      };
+      result.push(acc);
+      ArraySet(unsafe_chill_trust_me(result.chill()))
+    }
+  }
+
   fun filter(f: T -> Bool): ArraySet<T> {
     ArraySet(this.inner.filter(f))
   }

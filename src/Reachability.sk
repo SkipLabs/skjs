@@ -105,6 +105,9 @@ class CGNodes(nodes: SortedSet<CGNode>) uses XXHashable, Orderable {
     `CGNodes[${nodes}]`
   }
 
+  static fun empty(): CGNodes {
+    CGNodes(SortedSet[])
+  }
   static fun singleton(node: CGNode): this {
     static(SortedSet::create().add(node))
   }

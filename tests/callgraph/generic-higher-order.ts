@@ -25,6 +25,7 @@ function foo<V>(a: V, f: (x: V) => void, b: V): void {
 // @skjs-callgraph-full
 // arrow-annot: fn:apply, fn:double, fn:triple
 // fn:apply: arrow-annot
+// fn:double: fn:triple
 // fn:foo: arrow-annot
 // fn:test: fn:foo
 //

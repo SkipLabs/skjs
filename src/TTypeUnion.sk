@@ -355,7 +355,18 @@ extension class TObject {
     obj1: TObject,
     obj2: TObject,
   ): TObject {
-    TObject(obj1.branches.union(obj2.branches), None(), obj1.pos)
+    // After set union, merge adjacent branches that are structurally
+    // identical but carry different callgraph metadata (cgNodes). Without
+    // this, such branches remain separate and their iteration order
+    // (which depends on path-sensitive cgNode hashes) causes
+    // non-deterministic callgraph edges.
+    branches = obj1.branches
+      .union(obj2.branches)
+      .mergeDuplicates(
+        (a, b) -> a.structurallyEqual(b),
+        (a, b) -> a.mergeCGNodes(b),
+      );
+    TObject(branches, None(), obj1.pos)
   }
 }
 

@@ -655,6 +655,15 @@ class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
   fun mapFuns(f: TFun -> TFun): TFuns {
     TFuns(f(this.fun_), this.pos)
   }
+
+  fun mergeCGNodes(other: TFuns): TFuns {
+    TFuns(this.fun_.mergeCGNodes(other.fun_), this.pos)
+  }
+
+  // Strip cgNodes and pos for structural comparison.
+  fun stripCGNodes(): TFuns {
+    TFuns(this.fun_ with {cgNodes => CGNodes::empty()}, PosRange::none)
+  }
 }
 
 class TFun(
@@ -666,6 +675,10 @@ class TFun(
   retType: TType,
   cgNodes: CGNodes,
 ) uses XXHashable, Orderable {
+  fun mergeCGNodes(other: TFun): TFun {
+    this with {cgNodes => this.cgNodes.union(other.cgNodes)}
+  }
+
   fun toString(): String {
     prettyPrintTFun(this)
   }
@@ -1179,6 +1192,29 @@ class TFields protected {
   // None = unknown, Some(true) = is array, Some(false) = not array
   isArray: ?Bool = None(),
 } extends TIndexesBase uses XXHashable, Orderable {
+  // Merge cgNodes from another structurally-equal TFields into this one.
+  fun mergeCGNodes(other: TFields): TFields {
+    mergeOpt = (a, b) -> {
+      (a, b) match {
+      | (Some((opt1, f1)), Some((_, f2))) -> Some((opt1, f1.mergeCGNodes(f2)))
+      | _ -> a
+      }
+    };
+    this with {
+      call => mergeOpt(this.call, other.call),
+      new => mergeOpt(this.new, other.new),
+    }
+  }
+
+  // Whether two TFields are structurally identical ignoring callgraph
+  // metadata (cgNodes) and TFuns position.
+  fun structurallyEqual(other: TFields): Bool {
+    strip = opt -> opt.map(p -> (p.i0, p.i1.stripCGNodes()));
+    a = this with {call => strip(this.call), new => strip(this.new)};
+    b = other with {call => strip(other.call), new => strip(other.new)};
+    a == b
+  }
+
   static fun empty(): TFields {
     TFields{}
   }
