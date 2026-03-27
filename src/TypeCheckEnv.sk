@@ -245,8 +245,8 @@ mutable class TCResults private {
     this.!callgraph[caller] = callees.toArray();
   }
 
-  mutable fun recordSubtypingEdge(sub: CGNode, sup: CGNode): void {
-    this.!subtypingEdges = this.subtypingEdges.set((sub, sup))
+  mutable fun mergeSubtypingEdges(edges: SortedSet<(CGNode, CGNode)>): void {
+    this.!subtypingEdges = this.subtypingEdges.union(edges)
   }
 
   mutable fun recordClassHierarchy{child: Class, parent: Class}: void {

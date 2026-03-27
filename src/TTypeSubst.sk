@@ -17,6 +17,7 @@ mutable base class SubstState private {
   mutable seenExpansion: SortedMap<TSInst, TType> = SortedMap[],
   mutable version: Int = 0,
   mutable values: SortedMap<TVarID, SubstValue> = SortedMap[],
+  mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
 } {
   readonly fun save(): SavedSubst {
     SavedSubst::create(this)
@@ -29,6 +30,7 @@ mutable base class SubstState private {
     this.!seenInter = saved.seenInter;
     this.!seenUnion = saved.seenUnion;
     this.!seenExpansion = saved.seenExpansion;
+    this.!subtypingEdges = saved.subtypingEdges;
   }
 }
 
@@ -42,6 +44,7 @@ mutable class SavedSubst private {} extends SubstState {
       seenExpansion => state.seenExpansion,
       version => state.version,
       values => state.values,
+      subtypingEdges => state.subtypingEdges,
     }
   }
 }
@@ -68,7 +71,12 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
       seenExpansion => this.seenExpansion,
       version => this.version,
       values => this.values,
+      subtypingEdges => this.subtypingEdges,
     }
+  }
+
+  mutable fun flushSubtypingEdges(): void {
+    this.results.mergeSubtypingEdges(this.subtypingEdges)
   }
 
   mutable fun grow(

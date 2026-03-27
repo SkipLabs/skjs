@@ -1254,7 +1254,7 @@ extension class TFun {
       f1.cgNodes.nodes.each(subNode -> {
         f2.cgNodes.nodes.each(supNode -> {
           if (subNode != supNode) {
-            subst.results.recordSubtypingEdge(subNode, supNode)
+            subst.!subtypingEdges = subst.subtypingEdges.set((subNode, supNode))
           }
         })
       })
