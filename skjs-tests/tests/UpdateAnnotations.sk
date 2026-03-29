@@ -613,14 +613,8 @@ fun testLineNValidation(): void {
   builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
   files =
-    SKJS.Files::create(
-      context,
-      ".",
-      builtinsFileName,
-      Array[],
-      false,
-      Array[],
-    ) |> expectFilesSuccess;
+    SKJS.Files::create(context, ".", builtinsFileName, Array[], Array[]) |>
+    expectFilesSuccess;
   checker = SKJS.Checker::create{
     context,
     files,
@@ -629,7 +623,7 @@ fun testLineNValidation(): void {
     compilerOptions,
   };
   tenv = checker.checker;
-  results = SKJS.TCResults::mcreate{errorHandling => SKJS.EHDefault()};
+  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   tcenvb = mutable SKJS.TCEnvLight{context, results};
   subst = SKJS.Subst::mcreate(tcenvb);
   ref = findExpectErrors(

@@ -50,7 +50,7 @@ fun validateReferenceErrors<R: ReferenceError>(
   referenceErrors: mutable Iterator<R>,
 ): Array<SKTest.ExpectationError> {
   tenv = checker.checker;
-  results = SKJS.TCResults::mcreate{errorHandling => SKJS.EHDefault()};
+  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   tcenvb = mutable SKJS.TCEnvLight{context, results};
   subst = SKJS.Subst::mcreate(tcenvb);
 
@@ -140,7 +140,7 @@ fun doUpdateExpectErrorComments(
 ): void {
   linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
   tenv = checker.checker;
-  results = SKJS.TCResults::mcreate{errorHandling => SKJS.EHDefault()};
+  results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   tcenvb = mutable SKJS.TCEnvLight{context, results};
   subst = SKJS.Subst::mcreate(tcenvb);
   errorsByLine = mutable Map[];
