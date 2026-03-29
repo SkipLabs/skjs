@@ -1,7 +1,7 @@
 // @skjs-callgraph-full
-// fn:outer: lambda:function(outer)@26
-// fn:withNested: lambda:function(withNested)@25
-// lambda:function(withNested)@25: lambda:function(withNested)@64
+// fn:outer: lambda:function(outer)@32
+// fn:withNested: lambda:function(withNested)@36
+// lambda:function(withNested)@36: lambda:function(withNested)@75
 
 function outer(): number {
   const fn = (x: number): number => x + 1;

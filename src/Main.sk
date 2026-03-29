@@ -381,7 +381,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         root,
         builtinsFileName,
         srcFiles,
-        logAffectedFiles,
         importStubs,
       ) match {
       | Failure(err) ->
@@ -436,13 +435,33 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
           _ = CallGraph::build(context, checked);
         },
       );
+      tick = context.getTick();
       context.update();
-      if (logAffectedFiles) {
+      hasErrors = context
+        .maybeGetEagerDir(errorsDirName)
+        .map(dir -> dir.getArrayRaw(SKStore.UnitID::singleton).size() != 0)
+        .default(true);
+      if (logAffectedFiles && !hasErrors) {
         CallGraph::create(context).each(callgraph -> {
-          (_addedDefs, removedDefs) = files.getChangedDefs(context);
-          callgraph.affectedFiles(context, removedDefs).each(f ->
-            print_string(f.toString())
+          handle = SKStore.EHandle(
+            ResolvedDefKey::keyType,
+            ResolvedDefFile::type,
+            resolvedDefsDirName,
           );
+          (_reset, keys) = context
+            .unsafeGetEagerDir(resolvedDefsDirName)
+            .getChangesAfter(tick);
+          defs = mutable Vector[];
+          for (key in keys) {
+            key match {
+            | k @ ResolvedDefKey _ ->
+              defs.extend(handle.unsafeGetArray(context, k))
+            | _ -> internal_error("Unexpected key type")
+            }
+          };
+          callgraph
+            .affectedFiles(context, defs.map(x -> x.orig).toArray())
+            .each(f -> print_string(f.toString()));
         })
       };
 
@@ -480,6 +499,12 @@ class Checker private {
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
   symbolsMap: SymbolsMap,
+  funDefSigMap: FunDefSigMap,
+  funDefBodyMap: FunDefBodyMap,
+  classBodyMap: ClassBodyMap,
+  classFieldMap: ClassFieldMap,
+  typeDefBodyMap: TypeDefBodyMap,
+  methodBodyMap: MethodBodyMap,
   errorDetailConfig: ErrorDetailConfig,
 } {
   static fun create{
@@ -490,11 +515,16 @@ class Checker private {
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   }: this {
     newLinesMap = NewLinesMap::create(context, files);
-    (parsedAndSymbolsFiles, symbolsMap) = files.parse(
-      context,
-      newLinesMap,
-      errorHandling,
-    );
+    (
+      parsedAndSymbolsFiles,
+      symbolsMap,
+      funDefSigMap,
+      funDefBodyMap,
+      classBodyMap,
+      classFieldMap,
+      typeDefBodyMap,
+      methodBodyMap,
+    ) = files.parse(context, newLinesMap, errorHandling);
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
@@ -505,13 +535,28 @@ class Checker private {
       parsedFiles,
       compilerOptions,
     );
-    checker = TypeChecker{defMap, errorHandling};
+    checker = TypeChecker{
+      defMap,
+      errorHandling,
+      funDefSigMap,
+      funDefBodyMap,
+      classBodyMap,
+      classFieldMap,
+      typeDefBodyMap,
+      methodBodyMap,
+    };
     static{
       files,
       parsedFiles,
       checker,
       newLinesMap,
       symbolsMap,
+      funDefSigMap,
+      funDefBodyMap,
+      classBodyMap,
+      classFieldMap,
+      typeDefBodyMap,
+      methodBodyMap,
       errorDetailConfig,
     }
   }
@@ -519,19 +564,26 @@ class Checker private {
   fun checkFiles(
     context: mutable SKStore.Context,
   ): SKStore.EHandle<FAbsolute, CheckResult> {
+    checkDir = SKStore.LHandle::create(
+      DefKey::keyType,
+      TCResultsAccFile::type,
+      context,
+      SKStore.DirName::create("/defs/"),
+      (context, _self, key) ~> {
+        results = this.checker.checkDef(context, key.def);
+        Array[TCResultsAccFile(results)]
+      },
+    );
     this.parsedFiles.map(
       FAbsolute::keyType,
       CheckResult::type,
       context,
       SKStore.DirName::create("/check-results/"),
       (context, writer, fileName, valueIter) ~> {
-        parsedFile = valueIter.getUnique() match {
-        | None() -> internal_error("File not parsed")
-        | Some(x) -> x
-        };
+        parsedFile = valueIter.first;
         parsedFile.value match {
         | PROk(defs) ->
-          results = this.checker.check(context, defs);
+          results = this.checker.check(context, checkDir, fileName, defs);
           fileDefErrors = this.checker.defMap.getNamingErrors(
             context,
             fileName,
@@ -565,7 +617,7 @@ class Checker private {
   }
 }
 
-base class ErrorHandling {
+base class ErrorHandling uses Orderable {
   children =
   | EHDefault()
   | EHBacktrace()

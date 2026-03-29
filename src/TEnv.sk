@@ -13,6 +13,14 @@ base class TEnv{
   // The defMap associates an AST to a type name.
   defMap: IDefMap,
 
+  // Body maps resolve bodyRef references to their bodies.
+  funDefSigMap: FunDefSigMap,
+  funDefBodyMap: FunDefBodyMap,
+  classBodyMap: ClassBodyMap,
+  classFieldMap: ClassFieldMap,
+  typeDefBodyMap: TypeDefBodyMap,
+  methodBodyMap: MethodBodyMap,
+
   // The type-parameters that are currently in scope. So if we see a
   // type definition with a matching name, we know we are dealing with
   // a universally quantified type variable.
@@ -163,7 +171,8 @@ base class TEnv{
     };
 
     result = tdef match {
-    | ta @ TypeDef _ -> this.normalize(tcenvb, ta.body)
+    | ta @ TypeDef _ ->
+      this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(tcenvb, name, targs.targs)
     | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
     };
@@ -181,6 +190,47 @@ base class TEnv{
     };
   }
 
+  fun getClassFields(
+    context: mutable SKStore.Context,
+    c: Class,
+  ): Array<ClassField> {
+    c.bodyRef match {
+    | Some(ref) ->
+      fieldRefs = this.classBodyMap.get(context, ref).fieldRefs;
+      fieldRefs.map(fieldRef -> this.classFieldMap.get(context, fieldRef).field)
+    | None() -> Array[]
+    }
+  }
+
+  fun getTypeDefBody(context: mutable SKStore.Context, td: TypeDef): Type {
+    td.bodyRef match {
+    | Some(ref) -> this.typeDefBodyMap.get(context, ref).body
+    | None() -> internal_error("TypeDef has no bodyRef")
+    }
+  }
+
+  fun getFunSig(
+    context: mutable SKStore.Context,
+    fd: FunDef<FunDefName>,
+  ): FunDefSigData {
+    fd.sig match {
+    | FSInline(tparams, params, retType) ->
+      FunDefSigData(tparams, params, retType)
+    | FSRef(ref) -> this.funDefSigMap.get(context, ref)
+    }
+  }
+
+  fun getFunBody(
+    context: mutable SKStore.Context,
+    fd: FunDef<FunDefName>,
+  ): FunDefBody {
+    fd.body match {
+    | FBInline(body) -> body
+    | FBRef(BRFunDef(ref)) -> this.funDefBodyMap.get(context, ref).body
+    | FBRef(BRMethod(ref)) -> this.methodBodyMap.get(context, ref).body
+    }
+  }
+
   fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
     this.getClass(tcenv, className).tparams.map(tparam -> {
       tvar = tcenv.subst.gen(className.pos);
@@ -195,7 +245,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldTypeValue ~> Bool = _ ~> true,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TType {
     obj = this.newObject(tcenvb, className, targs, filter);
     TType::single(obj)
@@ -223,7 +273,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldTypeValue ~> Bool = _ ~> true,
+    filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TObject {
     c = this.getClass(tcenvb, className);
     if (c.tparams.size() != targs.size()) {
@@ -433,7 +483,7 @@ base class TEnv{
     isStatic: ?Array<TypeParam>,
     className: Name,
     targs: Array<TType>,
-    filter: ClassFieldTypeValue ~> Bool,
+    filter: ClassFieldValue ~> Bool,
   ): ?TFuns {
     (!this, cls) = this.processClassSetup(
       tcenvb,
@@ -462,9 +512,10 @@ base class TEnv{
       }
     };
     constructor: ?TFuns = None();
-    for (fieldType in cls.fields) {
+    fields = this.getClassFields(tcenvb.context, cls);
+    for (fieldType in fields) {
       fieldType match {
-      | field @ ClassFieldTypeValue _ ->
+      | field @ ClassFieldValue _ ->
         if (!filter(field)) continue;
         fieldIsStatic = false;
         fieldIsReadonly: ?PosRange = None();
@@ -530,7 +581,7 @@ base class TEnv{
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
         }
-      | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
+      | fd @ ClassFieldMethod{name => FNNormal(Name(_, "constructor"))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
@@ -545,7 +596,7 @@ base class TEnv{
         !constructor = Some(
           this.makeConstructor(tcenvb, className, isStatic.fromSome(), fd),
         )
-      | fd @ ClassFieldTypeMethod _ ->
+      | fd @ ClassFieldMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(
@@ -610,7 +661,7 @@ base class TEnv{
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
-  ): ?(this, ClassFieldTypeMethod) {
+  ): ?(this, ClassFieldMethod) {
     (!this, cls) = this.processClassSetup(
       tcenvb,
       visitedClasses,
@@ -618,9 +669,10 @@ base class TEnv{
       className,
       targs,
     );
-    for (fieldType in cls.fields) {
+    clsFields = this.getClassFields(tcenvb.context, cls);
+    for (fieldType in clsFields) {
       fieldType match {
-      | fd @ ClassFieldTypeMethod _ if (
+      | fd @ ClassFieldMethod _ if (
         fd.name is FNNormal(Name(_, "constructor"))
       ) ->
         return Some((this, fd))
@@ -653,7 +705,7 @@ base class TEnv{
     tcenvb: mutable TCEnvBase,
     className: Name,
     tparams: Array<TypeParam>,
-    fd: ClassFieldTypeMethod,
+    fd: ClassFieldMethod,
   ): TFuns {
     cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
     !tparams = tparams.map(x -> {
@@ -662,8 +714,9 @@ base class TEnv{
       !x.id = x.id.prefixWith("$");
       x
     });
-    params = fd.params.map(this.convertParam);
-    fd.retType.i1 match {
+    sig = this.getFunSig(tcenvb.context, fd);
+    params = sig.params.map(this.convertParam);
+    sig.retType.i1 match {
     | None() -> // constructor
       void
     | Some(x) ->
@@ -699,7 +752,8 @@ base class TEnv{
     fd: FunDef<FunDefName>,
     cgNode: CGNode,
   ): TFuns {
-    retType = fd.retType match {
+    sig = this.getFunSig(tcenvb.context, fd);
+    retType = sig.retType match {
     | (pos, None()) ->
       // constructors must use makeConstructor
       error(Array[(pos, "Missing return type annotation")])
@@ -707,8 +761,8 @@ base class TEnv{
     };
     tafun = TAFun(
       isMethod,
-      fd.tparams,
-      fd.params.map(this.convertParam),
+      sig.tparams,
+      sig.params.map(this.convertParam),
       retType,
       cgNode,
     );
@@ -1319,7 +1373,7 @@ base class TEnv{
 
   private fun createTFields(
     tcenvb: mutable TCEnvBase,
-    fieldTypes: Array<ObjectFieldType>,
+    fieldTypes: Array<ObjectField>,
     isTopLevelConst: Bool = false,
   ): TFields {
     fieldsMap = mutable Map[];
@@ -1330,7 +1384,7 @@ base class TEnv{
 
     for (elt in fieldTypes) {
       elt match {
-      | fd @ ObjectFieldTypeValue{readonly_} ->
+      | fd @ ObjectFieldValue{readonly_} ->
         readonly_.each(r ->
           if (r is OFRemoveReadonly _ && !(fd.name is FNIn _)) {
             tcenvb.error(
@@ -1389,12 +1443,12 @@ base class TEnv{
             ),
           )
         }
-      | fd @ ObjectFieldTypeMethod _ ->
+      | fd @ ObjectFieldMethod _ ->
         cgNode = CGNode::create(AnonymousFunDef(fd));
         tFuns = this.funDecl(tcenvb, false, fd, cgNode);
         fd.name match {
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
-        | FNEmpty() -> !call = Some(tFuns)
+        | FNEmpty(_) -> !call = Some(tFuns)
         | simpleFieldName @ SimpleFieldName _ ->
           decl = TType::single(
             TObject::createCall(Subst::mcreate(tcenvb), this, tFuns),

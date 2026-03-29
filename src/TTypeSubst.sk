@@ -54,13 +54,13 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
     mutable Subst{context => tcenvb.context, results => tcenvb.results}
   }
 
-  readonly fun saveAll(): (SubstState, TCResults) {
+  readonly fun saveAll(): (SubstState, TCResultsAcc) {
     (this.save(), this.results.chill())
   }
 
   static fun mcreateFromSaved(
     context: mutable SKStore.Context,
-    stateAndResults: (SubstState, TCResults),
+    stateAndResults: (SubstState, TCResultsAcc),
   ): mutable this {
     (state, results) = stateAndResults;
     mutable static{

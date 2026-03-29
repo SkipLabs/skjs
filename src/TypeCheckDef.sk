@@ -6,20 +6,90 @@ base class OptionalTypeParamsPermission {
   | OptionalTypeParamsForbidden()
 }
 
+// Key for caching checkDef results in an LHandle.
+// Uses (fileName, defName, occurrenceNumber) so that results are stable
+// across position changes within a file.
+class DefKey private (
+  fileName: FAbsolute,
+  defName: String,
+  occurrence: Int,
+  def: Def,
+) extends SKStore.Key {
+  static fun create(
+    fileName: FAbsolute,
+    defName: String,
+    occurrence: Int,
+    def: Def,
+  ): this {
+    static(fileName, defName, occurrence, def)
+  }
+  fun compare(other: SKStore.Key): Order {
+    other match {
+    | o @ DefKey _ ->
+      this.fileName.compare(o.fileName) match {
+      | EQ() ->
+        this.defName.compare(o.defName) match {
+        | EQ() -> this.occurrence.compare(o.occurrence)
+        | x -> x
+        }
+      | x -> x
+      }
+    | _ -> internal_error("Invalid comparison")
+    }
+  }
+}
+class TCResultsAccFile(
+  value: Result<TCResultsAcc, Exception>,
+) extends SKStore.File
+
 extension class TypeChecker {
   fun check(
     context: mutable SKStore.Context,
+    checkDir: SKStore.LHandle<DefKey, TCResultsAccFile>,
+    fileName: FAbsolute,
     defs: Array<Def>,
   ): readonly TCResults {
-    results = TCResults::mcreate{errorHandling => this.errorHandling};
-    tcenvl = mutable TCEnvLight{context, results};
+    results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
+    // Count occurrences of each name to assign stable occurrence numbers
+    nameCounts: mutable Map<String, Int> = mutable Map[];
     for (def in defs) {
       this.errorHandling match {
-      | EHBacktrace() -> this.checkDef(tcenvl, def)
+      | EHBacktrace() ->
+        def.value.defStableName() match {
+        | Some(Name(_, name)) ->
+          occ = nameCounts.maybeGet(name).default(0);
+          nameCounts.set(name, occ + 1);
+          key = DefKey::create(fileName, name, occ, def);
+          arr = checkDir.getArray(context, key);
+          arr[0].value match {
+          | Success(x) -> results.append(x)
+          | Failure(exn) -> throw exn
+          }
+        | None() ->
+          this.checkDef(context, def) match {
+          | Success(x) -> results.append(x)
+          | Failure(exn) -> throw exn
+          }
+        }
       | EHDefault()
       | EHKeepGoing() ->
         try {
-          this.checkDef(tcenvl, def)
+          def.value.defStableName() match {
+          | Some(Name(_, name)) ->
+            occ = nameCounts.maybeGet(name).default(0);
+            nameCounts.set(name, occ + 1);
+            key = DefKey::create(fileName, name, occ, def);
+            arr = checkDir.getArray(context, key);
+            arr[0].value match {
+            | Success(x) -> results.append(x)
+            | Failure(exn) -> throw exn
+            }
+          | None() ->
+            this.checkDef(context, def) match {
+            | Success(x) -> results.append(x)
+            | Failure(exn) -> throw exn
+            }
+          }
         } catch {
         | ErrorExn(err @ TypingError _)
         | ErrorExn(err @ NamingError _) ->
@@ -28,10 +98,24 @@ extension class TypeChecker {
         }
       }
     };
-    results
+    results.toTCResults()
   }
 
-  fun checkDef(tcenvl: mutable TCEnvLight, def: Def): void {
+  fun checkDef(
+    context: mutable SKStore.Context,
+    def: Def,
+  ): Result<TCResultsAcc, Exception> {
+    try {
+      results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
+      tcenvl = mutable TCEnvLight{context, results};
+      results.collectErrors(() -> this.checkDef_(tcenvl, def));
+      Success(results.chill())
+    } catch {
+    | e -> Failure(e)
+    }
+  }
+
+  fun checkDef_(tcenvl: mutable TCEnvLight, def: Def): void {
     def.value match {
     | ExportImport _ -> tcenvl.notSupported(def.pos, "export import")
     | ImportExpr _ -> void
@@ -56,7 +140,7 @@ extension class TypeChecker {
     | ExportDeclare _ ->
       void
     | Namespace _ -> tcenvl.notSupported(def.pos, "namespace")
-    | Export(d) -> this.checkDef(tcenvl, Def(def.pos, d))
+    | Export(d) -> this.checkDef_(tcenvl, Def::create(def.pos, d))
     | ExportDefault _ -> tcenvl.notSupported(def.pos, "export default")
     | ExportNames _
     | ExportNamesFrom _ ->
@@ -173,7 +257,8 @@ extension class TypeChecker {
     subst = Subst::mcreate(tcenvl);
     !this = this.addTParams(subst, typeDef.tdefParams);
 
-    tcenvl.collectErrors(() -> _ = this.normalize(subst, typeDef.body));
+    body = this.getTypeDefBody(tcenvl.context, typeDef);
+    tcenvl.collectErrors(() -> _ = this.normalize(subst, body));
   }
 
   static fun checkTypeParams(
@@ -221,7 +306,7 @@ fun checkUniqueSymbolReadonly(tcenvl: mutable TCEnvLight, t: Type): void {
   | TAObject(fields) ->
     for (field in fields) {
       field match {
-      | fd @ ObjectFieldTypeValue _ ->
+      | fd @ ObjectFieldValue _ ->
         fd.type match {
         | Some(
           Type(_, TAUniqueSymbol()),

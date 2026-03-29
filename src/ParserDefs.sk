@@ -17,6 +17,14 @@ extension class Parser {
     }
   }
 
+  // <name> ::= <string>
+  mutable fun peekName(): Name {
+    this.lex.peek() match {
+    | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
+    | Some(tok) -> Name(this.lex.posRange(tok), this.getVar(tok))
+    }
+  }
+
   // <string> | "<string>" | '<string>'
   mutable fun getNameOrString(): Name {
     this.lex.next() match {
@@ -205,12 +213,12 @@ extension class Parser {
   /***************************************************************************/
 
   // Parse class fields
-  mutable fun classFields(): Array<ClassFieldType> {
+  mutable fun classFields(): Array<ClassField> {
     if (this.lex.peekKind() is Some(TKCloseCurly())) {
       _ = this.lex.next();
       return Array[];
     };
-    fields = mutable Vector<ClassFieldType>[];
+    fields = mutable Vector<ClassField>[];
     loop {
       modifiers = this.modifiers();
       fieldGetSet = this.isGetSet();
@@ -231,17 +239,15 @@ extension class Parser {
       ) ->
         this.methodDef(
           {pos, tparams, params, retType, body} ->
-            ClassFieldTypeMethod{
+            ClassFieldMethod{
               pos,
               isAsync => None(),
               modifiers,
               isGetSet => fieldGetSet,
               name => methodName,
               optional => isOptional,
-              tparams,
-              params,
-              retType,
-              body,
+              sig => FSInline(tparams, params, retType),
+              body => FBInline(body),
               cgNode => None(),
             },
           methodName,
@@ -266,7 +272,7 @@ extension class Parser {
         } else {
           None()
         };
-        ClassFieldTypeValue{
+        ClassFieldValue{
           pos => PosRange::create(
             this.lex,
             fieldPosStart,
@@ -336,9 +342,51 @@ extension class Parser {
     defs = mutable Vector[];
     loop {
       this.maybeDef() match {
-      | None() -> return defs.toArray()
+      | None() -> return this.extractBodies(defs.toArray())
       | Some(def) -> defs.push(def)
       }
+    }
+  }
+
+  // Extract bodies from defs into this.bodies, replacing body fields with
+  // dummy values and setting bodyRef on each named def.
+  private mutable fun extractBodies(defs: Array<Def>): Array<Def> {
+    fileName = this.lex.fileName;
+    defs.map(def -> {
+      newValue: Def_ = def.value match {
+      | Export(inner) -> Export(this.extractBodyFromExportable(fileName, inner))
+      | ExportDeclare(inner) ->
+        ExportDeclare(this.extractBodyFromExportable(fileName, inner))
+      | exp @ Exportable _ -> this.extractBodyFromExportable(fileName, exp)
+      | other -> other
+      };
+      Def::create(def.pos, newValue)
+    })
+  }
+
+  private mutable fun extractBodyFromExportable(
+    fileName: FAbsolute,
+    exp: Exportable,
+  ): Exportable {
+    exp match {
+    | fd @ TopLevelFunDef{name => FNNormal(n)} ->
+      nameStr = n.value;
+      occ = this.nameCounts.maybeGet(nameStr).default(0);
+      this.nameCounts.set(nameStr, occ + 1);
+      ref = FunDefRef(fileName, nameStr, occ);
+      sigData = fd.sig match {
+      | FSInline(tparams, params, retType) ->
+        FunDefSigData(tparams, params, retType)
+      | FSRef _ -> internal_error("expected inline sig")
+      };
+      this.funDefSigs.push((ref, sigData));
+      funDefBody = fd.body match {
+      | FBInline(b) -> b
+      | FBRef _ -> internal_error("expected inline body")
+      };
+      this.funDefBodies.push((ref, FunDefBodyData(funDefBody)));
+      fd with {sig => FSRef(ref), body => FBRef(BRFunDef(ref))}
+    | _ -> exp
     }
   }
 
@@ -379,7 +427,7 @@ extension class Parser {
   // Helper for parsing definitions with position tracking
   mutable fun defHelper(): Def {
     (pos, def_) = this.withPos(this.defHelper_, UnterminatedDef());
-    Def(pos, def_)
+    Def::create(pos, def_)
   }
 
   // Internal definition parsing implementation
@@ -761,7 +809,12 @@ extension class Parser {
     if (this.lex.peekKind() is Some(TKSemi())) {
       _ = this.lex.next();
     };
-    TypeDef{name, body, tdefParams}
+    nameStr = name.value;
+    occ = this.nameCounts.maybeGet(nameStr).default(0);
+    this.nameCounts.set(nameStr, occ + 1);
+    ref = TypeDefBodyRef(this.lex.fileName, nameStr, occ);
+    this.typeDefBodies.push((ref, TypeDefBodyData(tdefParams, body)));
+    TypeDef{name, tdefParams, bodyRef => Some(ref)}
   }
 
   // Parse enum definitions
@@ -805,15 +858,15 @@ extension class Parser {
 
   // Parse class definitions
   mutable fun class_(kind: ClassKind): Class {
-    name = this.getName();
     // Record the class definition and set context
     prevSymbolContext = this.getCurrentSymbolContext();
-    classSymbol = SPClass(name.value);
+    classSymbol = SPClass(this.peekName().value);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
       classSymbol,
       symbolContextPos,
     );
+    name = this.getName();
 
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
@@ -858,9 +911,12 @@ extension class Parser {
     parameterProperties = mutable Vector[];
     !fields = fields.map(field ->
       field match {
-      | fd @ ClassFieldTypeMethod{name => FNNormal(Name(_, "constructor"))} ->
+      | fd @ ClassFieldMethod{
+        name => FNNormal(Name(_, "constructor")),
+        sig => FSInline(sigTparams, sigParams, sigRetType),
+      } ->
         initializationStatements = mutable Vector[];
-        !fd.params = fd.params.map(param -> {
+        newParams = sigParams.map(param -> {
           param match {
           | Param(
             _pos,
@@ -885,7 +941,7 @@ extension class Parser {
             );
             if (isParameterProperty) {
               parameterProperties.push(
-                ClassFieldTypeValue{
+                ClassFieldValue{
                   pos,
                   name => FNNormal(pName),
                   optional => None(),
@@ -904,11 +960,13 @@ extension class Parser {
           };
           param
         });
+        !fd.sig = FSInline(sigTparams, newParams, sigRetType);
         fd.body match {
-        | FDBNone _ -> void
-        | FDBSome(stmts) ->
+        | FBInline(FDBNone _) -> void
+        | FBInline(FDBSome(stmts)) ->
           !stmts = initializationStatements.toArray().concat(stmts);
-          !fd.body = FDBSome(stmts)
+          !fd.body = FBInline(FDBSome(stmts))
+        | FBRef _ -> internal_error("expected inline body during parsing")
         };
         fd
       | _ -> field
@@ -916,7 +974,41 @@ extension class Parser {
     );
     !fields = fields.concat(parameterProperties.toArray());
 
-    Class{kind, name, extends_, implements, tparams, fields}
+    // Extract method bodies into methodBodyEntries
+    fileName = this.lex.fileName;
+    nameStr = name.value;
+    methodNameCounts: mutable Map<String, Int> = mutable Map[];
+    extractedFields = mutable Vector[];
+    for (field in fields) {
+      field match {
+      | fd @ ClassFieldMethod _ ->
+        methodName = fd.name.getName();
+        occ = methodNameCounts.maybeGet(methodName).default(0);
+        methodNameCounts.set(methodName, occ + 1);
+        ref = MethodBodyRef(fileName, nameStr, methodName, occ);
+        funDefBody = fd.body match {
+        | FBInline(b) -> b
+        | FBRef _ -> internal_error("expected inline body")
+        };
+        this.methodBodyEntries.push((ref, MethodBodyData(funDefBody)));
+        extractedFields.push(fd with {body => FBRef(BRMethod(ref))})
+      | _ -> extractedFields.push(field)
+      }
+    };
+    !fields = extractedFields.toArray();
+
+    // Create ClassFieldRef/ClassFieldData entries and ClassBodyData
+    occ = this.nameCounts.maybeGet(nameStr).default(0);
+    this.nameCounts.set(nameStr, occ + 1);
+    fieldRefs = fields.mapWithIndex((index, field) -> {
+      ref = ClassFieldRef(fileName, nameStr, index);
+      this.classFieldEntries.push((ref, ClassFieldData(field)));
+      ref
+    });
+    bodyRef = ClassBodyRef(fileName, nameStr, occ);
+    this.classBodies.push((bodyRef, ClassBodyData(fieldRefs)));
+
+    Class{kind, name, extends_, implements, tparams, bodyRef => Some(bodyRef)}
   }
 
   /***************************************************************************/
@@ -1032,29 +1124,27 @@ extension class Parser {
     isAsync: ?PosRange,
     parseBlock: Bool,
   ): TopLevelFunDef {
-    funName = this.getName();
     // Record the function definition and set context
     prevSymbolContext = this.getCurrentSymbolContext();
-    funcSymbol = SPFunction(funName.value);
+    funcSymbol = SPFunction(this.peekName().value);
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
       funcSymbol,
       symbolContextPos,
     );
+    funName = this.getName();
 
     result = this.methodDef(
       {pos, tparams, params, retType, body} ->
         TopLevelFunDef{
-          pos,
+          pos => funName.pos,
           isAsync,
           modifiers => Modifiers::empty(),
           isGetSet => None(),
           name => FNNormal(funName),
           optional => None(),
-          tparams,
-          params,
-          retType,
-          body,
+          sig => FSInline(tparams, params, retType),
+          body => FBInline(body),
           cgNode => Some(
             CGNode::create(TopLevelFunction(FNNormal(funName), pos.fileName)),
           ),
@@ -1097,7 +1187,6 @@ extension class Parser {
     | _ -> void
     };
 
-    funStart = this.lex.getLastPos();
     tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
       _ = this.lex.next();
       this.typeParams();
@@ -1185,17 +1274,16 @@ extension class Parser {
       };
       bodyTok.kind match {
       | TKOpenCurly() -> FDBSome(this.blockOrStmt())
-      | _ -> FDBNone(this.lex.posRange(bodyTok))
+      | _ -> FDBNone()
       }
     } else {
-      FDBNone(this.lex.posRange(this.lex.lastTok.fromSome()))
+      FDBNone()
     };
-    funEnd = this.lex.getLastPos();
 
     // Restore previous context
     this.setSymbolContext(prevSymbolContext);
     mk{
-      pos => PosRange::create(this.lex, funStart, funEnd),
+      pos => funName.getPos(),
       tparams => tparams,
       params => params.toArray(),
       retType,

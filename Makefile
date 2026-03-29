@@ -13,6 +13,8 @@ build:
 test:
 	cd skjs-tests && skargo build
 	./skjs-tests/target/host/dev/test
+	./tests/test_incremental.sh
+	./tests/test_affected_files.sh
 
 .PHONY: fmt-sk
 fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh

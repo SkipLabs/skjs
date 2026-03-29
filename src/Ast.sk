@@ -40,7 +40,14 @@ value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
 //   | <var-def-kind> { <var-def>* }
 /***************************************************************************/
 
-class Def(pos: PosRange, value: Def_) uses XXHashable
+class Def private (pos: PosRange, value: Def_) uses XXHashable {
+  static fun create(pos: PosRange, value: Def_): this {
+    value.defStableName() match {
+    | None() -> static(pos, value)
+    | Some(Name(p, _)) -> static(p, value)
+    }
+  }
+}
 
 base class Def_ uses XXHashable {
   children =
@@ -56,6 +63,17 @@ base class Def_ uses XXHashable {
   | Import(isType: ?PosRange, Array<ImportModuleNames>, importFrom: Name)
   | ImportExpr(Name)
   | Declare(Declarable)
+
+  fun defStableName(): ?Name {
+    this match {
+    | TopLevelFunDef{name => FNNormal(n)} -> Some(n)
+    | Class{name => n} -> Some(n)
+    | TypeDef{name => n} -> Some(n)
+    | Export(inner) -> inner.defStableName()
+    | ExportDeclare(inner) -> inner.defStableName()
+    | _ -> None()
+    }
+  }
 }
 
 base class Declarable extends Def_ {
@@ -67,14 +85,18 @@ base class Declarable extends Def_ {
 base class Exportable extends Declarable {
   children =
   | TopLevelFunDef
-  | TypeDef{name: Name, tdefParams: Array<TypeParam>, body: Type}
+  | TypeDef{
+    name: Name,
+    tdefParams: Array<TypeParam>,
+    bodyRef: ?TypeDefBodyRef = None(),
+  }
   | Class{
     kind: ClassKind,
     name: Name,
     extends_: Array<Type>,
     implements: Array<Type>,
     tparams: Array<TypeParam>,
-    fields: Array<ClassFieldType>,
+    bodyRef: ?ClassBodyRef = None(),
   }
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
@@ -126,10 +148,8 @@ base class FunDef<+N: FunDefName>{
   isGetSet: ?FieldGetSet,
   name: N,
   optional: ?PosRange,
-  tparams: Array<TypeParam>,
-  params: Array<Param>,
-  retType: (PosRange, ?(Type)),
-  body: FunDefBody,
+  sig: FunSig,
+  body: FunBody,
   cgNode: ?CGNode,
 } uses XXHashable
 
@@ -139,8 +159,24 @@ base class FunDefWithModifiers<+N: FunDefName>{
 
 base class FunDefBody uses XXHashable {
   children =
-  | FDBNone(PosRange)
+  | FDBNone()
   | FDBSome(Array<Stmt>)
+}
+
+base class FunBody uses XXHashable {
+  children =
+  | FBInline(FunDefBody)
+  | FBRef(BodyRef)
+}
+
+base class FunSig uses XXHashable {
+  children =
+  | FSInline(
+    tparams: Array<TypeParam>,
+    params: Array<Param>,
+    retType: (PosRange, ?(Type)),
+  )
+  | FSRef(FunDefRef)
 }
 
 /***************************************************************************/
@@ -391,12 +427,19 @@ base class FieldName uses XXHashable {
   | FNIn(n, _, _, _)
   | FNColon(n, _) ->
     n.value
-  | FNEmpty() -> "(anonymous)"
+  | FNEmpty(_) -> "(anonymous)"
   | FNComputed(_) -> "(computed)"
+
+  fun getPos(): PosRange
+  | FNNormal(n) -> n.pos
+  | FNIn(n, _, _, _) -> n.pos
+  | FNColon(n, _) -> n.pos
+  | FNEmpty(pos) -> pos
+  | FNComputed(e) -> e.pos
 }
 
 base class NonEmptyFieldName extends FieldName
-class FNEmpty() extends FieldName
+class FNEmpty(PosRange) extends FieldName
 
 base class SimpleFieldName extends NonEmptyFieldName {
   children =
@@ -417,36 +460,40 @@ extension class FNEmpty extends FunDefName
 class FieldGetSet(kind: FieldGetSetKind, pos: PosRange) uses XXHashable
 
 /***************************************************************************/
-// <field-type-value> ::=
-//    <field-get-set>? <modifiers> <symbol> "?"? : <type> = <expr>?
+// Object field types (used in object type literals: { field: Type })
 /***************************************************************************/
 
-base class FieldTypeValue{
+base class ObjectField uses XXHashable
+
+class ObjectFieldValue{
+  pos: PosRange,
+  readonly_: ?ObjectFieldReadonly,
+  name: NonEmptyFieldName,
+  optional: ?PosRange,
+  type: ?Type,
+} extends ObjectField
+
+class ObjectFieldMethod extends FunDef<FunDefName>, ObjectField
+
+/***************************************************************************/
+// Class field types (used in class/interface bodies)
+/***************************************************************************/
+
+base class ClassField uses XXHashable {
+  fun isStatic(): Bool;
+}
+
+class ClassFieldValue{
   pos: PosRange,
   name: NonEmptyFieldName,
   optional: ?PosRange,
   type: ?Type,
-}
-
-base class ObjectFieldType uses XXHashable
-
-class ObjectFieldTypeValue{
-  readonly_: ?ObjectFieldReadonly,
-} extends ObjectFieldType, FieldTypeValue {}
-
-class ObjectFieldTypeMethod extends FunDef<FunDefName>, ObjectFieldType
-
-base class ClassFieldType uses XXHashable {
-  fun isStatic(): Bool;
-}
-
-class ClassFieldTypeValue{
   value: ?Expr,
-} extends ClassFieldType, FieldTypeValue, WithModifiers
+} extends ClassField, WithModifiers
 
-class ClassFieldTypeMethod extends
+class ClassFieldMethod extends
   FunDefWithModifiers<SimpleFieldName>,
-  ClassFieldType,
+  ClassField,
 {}
 
 base class WithModifiers{modifiers: Modifiers} uses XXHashable {
@@ -499,7 +546,7 @@ base class Type_ uses XXHashable {
   | TAPrim(TPrimKind)
   | TATypeOf(Expr)
   | TAArray(Type)
-  | TAObject(Array<ObjectFieldType>)
+  | TAObject(Array<ObjectField>)
   | TAInst(Name, Array<Type>)
   | TAUnion(Type, Type)
   | TAInter(Type, Type)
@@ -687,6 +734,60 @@ base class BOStrictComparison() extends BinaryOperator {
   children =
   | BOStrictEquality()
   | BOStrictInequality()
+}
+
+/***************************************************************************/
+/* Body references and body data for incremental checking. */
+/***************************************************************************/
+
+class FunDefRef(
+  fileName: FAbsolute,
+  defName: String,
+  occurrence: Int,
+) uses XXHashable, Hashable, Orderable
+
+class ClassBodyRef(
+  fileName: FAbsolute,
+  defName: String,
+  occurrence: Int,
+) uses XXHashable, Hashable, Orderable
+
+class TypeDefBodyRef(
+  fileName: FAbsolute,
+  defName: String,
+  occurrence: Int,
+) uses XXHashable, Hashable, Orderable
+
+class FunDefSigData(
+  tparams: Array<TypeParam>,
+  params: Array<Param>,
+  retType: (PosRange, ?(Type)),
+) uses XXHashable
+class FunDefBodyData(body: FunDefBody) uses XXHashable
+class ClassBodyData(fieldRefs: Array<ClassFieldRef>) uses XXHashable
+class TypeDefBodyData(tdefParams: Array<TypeParam>, body: Type) uses XXHashable
+
+class ClassFieldRef(
+  fileName: FAbsolute,
+  className: String,
+  index: Int,
+) uses XXHashable, Hashable, Orderable
+
+class ClassFieldData(field: ClassField) uses XXHashable
+
+class MethodBodyRef(
+  fileName: FAbsolute,
+  className: String,
+  methodName: String,
+  occurrence: Int,
+) uses XXHashable, Hashable, Orderable
+
+class MethodBodyData(body: FunDefBody) uses XXHashable
+
+base class BodyRef uses XXHashable {
+  children =
+  | BRFunDef(FunDefRef)
+  | BRMethod(MethodBodyRef)
 }
 
 module end;

@@ -15,9 +15,42 @@ base class ParsedResult {
 class ParsedResultAndSymbolsFile(
   value: ParsedResult,
   symbols: Map<SymbolicPos, Int>,
+  funDefSigs: Map<FunDefRef, FunDefSigData> = Map[],
+  funDefBodies: Map<FunDefRef, FunDefBodyData> = Map[],
+  classBodies: Map<ClassBodyRef, ClassBodyData> = Map[],
+  classFieldEntries: Map<ClassFieldRef, ClassFieldData> = Map[],
+  typeDefBodies: Map<TypeDefBodyRef, TypeDefBodyData> = Map[],
+  methodBodyEntries: Map<MethodBodyRef, MethodBodyData> = Map[],
 ) extends SKStore.File
 
 class ParsedResultFile(value: ParsedResult) extends SKStore.File
+
+base class ResolvedDef uses XXHashable {
+  children =
+  | RDFunDef(TopLevelFunDef)
+  | RDClass(Class, Array<ClassField>)
+  | RDTypeDef(TypeDef, TypeDefBodyData)
+  | RDOther(Def)
+
+  fun toDef(): Def
+  | RDFunDef(d)
+  | RDClass(d, _)
+  | RDTypeDef(d, _) ->
+    Def::create(d.defStableName().fromSome().pos, d)
+  | RDOther(d) -> d
+}
+
+class TypedHash<T> private (value: T) {
+  static fun create(value: T): this {
+    static(value)
+  }
+}
+
+class ResolvedDefKey(value: String) extends SKStore.Key
+class ResolvedDefFile(
+  orig: Def,
+  value: TypedHash<ResolvedDef>,
+) extends SKStore.File
 
 const parseErrorKey: FAbsolute = FAbsolute::nil;
 
@@ -25,8 +58,8 @@ const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
 const parsesDirName: SKStore.DirName = SKStore.DirName::create(
   "/skjs/parsed_with_errors/",
 );
-const oldParsesDirName: SKStore.DirName = SKStore.DirName::create(
-  "/skjs/changed_file_old_parse_results/",
+const resolvedDefsDirName: SKStore.DirName = SKStore.DirName::create(
+  "/skjs/resolvedDefs/",
 );
 class Files(
   isInit: Bool,
@@ -34,14 +67,12 @@ class Files(
   builtinsFileName: FAbsolute,
   filesContent: SKStore.EHandle<FAbsolute, SKStore.StringFile>,
   importStubs: Array<DAbsolute>,
-  changedFileOldParsedResults: ?SortedMap<FAbsolute, ParsedResult>,
 ) {
   static fun create(
     context: mutable SKStore.Context,
     root: String,
     builtinsFileNameStr: String,
     srcFileSeq: Sequence<String>,
-    trackChangedFiles: Bool = false,
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
     builtinsFileName = FAbsolute::create(builtinsFileNameStr);
@@ -79,35 +110,16 @@ class Files(
       SKStore.StringFile::type,
       filesDirName,
     );
-    fileDir = context.unsafeGetEagerDir(filesDirName);
-    oldParses: SortedMap<FAbsolute, ParsedResult> = SortedMap::create();
 
     for (fileName in srcFiles) {
       key = FAbsolute::create(fileName);
       content = FileSystem.readTextFile(fileName);
-      if (!isInit && trackChangedFiles) {
-        oldFile = fileDir.getArrayRaw(key);
-        if (
-          oldFile.size() == 1 &&
-          SKStore.StringFile::type(oldFile[0]).value != content
-        ) {
-          // stash defs from previous run to compare against new versions
-          oldParsedResult = context
-            .unsafeGetEagerDir(parsesDirName)
-            .getArrayRaw(key)
-            .map(ParsedResultAndSymbolsFile::type)[0].value;
-          !oldParses = oldParses.set(key, oldParsedResult);
-        }
-      };
       fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
     for ((fileName, _) in fileHdl.items(context)) {
       if (!srcFiles.contains(fileName.toString())) {
         fileHdl.writeArray(context, fileName, Array[]);
       };
-    };
-    changedFileOldParsedResults = if (trackChangedFiles) Some(oldParses) else {
-      None()
     };
     Success(
       Files(
@@ -116,7 +128,6 @@ class Files(
         builtinsFileName,
         fileHdl,
         importStubs.map(DAbsolute::create),
-        changedFileOldParsedResults,
       ),
     )
   }
@@ -125,7 +136,16 @@ class Files(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
     errorHandling: ErrorHandling,
-  ): (SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>, SymbolsMap) {
+  ): (
+    SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    SymbolsMap,
+    FunDefSigMap,
+    FunDefBodyMap,
+    ClassBodyMap,
+    ClassFieldMap,
+    TypeDefBodyMap,
+    MethodBodyMap,
+  ) {
     parsedFiles = this.filesContent.map(
       FAbsolute::keyType,
       ParsedResultAndSymbolsFile::type,
@@ -160,18 +180,61 @@ class Files(
           | exn -> throw exn
           }
         };
+        funDefSigs = {
+          m = mutable Map[];
+          for ((ref, data) in parser.funDefSigs) m.set(ref, data);
+          m.chill()
+        };
+        funDefBodies = {
+          m = mutable Map[];
+          for ((ref, data) in parser.funDefBodies) m.set(ref, data);
+          m.chill()
+        };
+        classBodies = {
+          m = mutable Map[];
+          for ((ref, data) in parser.classBodies) m.set(ref, data);
+          m.chill()
+        };
+        classFieldEntries = {
+          m = mutable Map[];
+          for ((ref, data) in parser.classFieldEntries) m.set(ref, data);
+          m.chill()
+        };
+        typeDefBodies = {
+          m = mutable Map[];
+          for ((ref, data) in parser.typeDefBodies) m.set(ref, data);
+          m.chill()
+        };
+        methodBodyEntries = {
+          m = mutable Map[];
+          for ((ref, data) in parser.methodBodyEntries) m.set(ref, data);
+          m.chill()
+        };
         writer.setArray(
           fileName,
           Array[
             ParsedResultAndSymbolsFile(
               parsingResult,
               lexer.getAllSymbolLocations(),
+              funDefSigs,
+              funDefBodies,
+              classBodies,
+              classFieldEntries,
+              typeDefBodies,
+              methodBodyEntries,
             ),
           ],
         )
       },
     );
     symbolsMap = SymbolsMap::create(context, parsedFiles);
+    funDefSigMap = FunDefSigMap::create(context, parsedFiles);
+    funDefBodyMap = FunDefBodyMap::create(context, parsedFiles);
+    classBodyMap = ClassBodyMap::create(context, parsedFiles);
+    classFieldMap = ClassFieldMap::create(context, parsedFiles);
+    typeDefBodyMap = TypeDefBodyMap::create(context, parsedFiles);
+    methodBodyMap = MethodBodyMap::create(context, parsedFiles);
+    _ = makeResolvedDefs(context, parsedFiles);
     errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
     if (errors.size() != 0) {
       invariant(
@@ -187,57 +250,16 @@ class Files(
       };
       throw Exit(2);
     };
-    (parsedFiles, symbolsMap)
-  }
-
-  // (added-defs, removed-defs) since last run
-  fun getChangedDefs(
-    context: mutable SKStore.Context,
-  ): (Array<Def>, Array<Def>) {
-    added: mutable Vector<Def> = mutable Vector[];
-    removed: mutable Vector<Def> = mutable Vector[];
-
-    oldParses = this.changedFileOldParsedResults match {
-    | Some(oldParses) -> oldParses
-    | None() ->
-      invariant_violation(
-        "getChangedDefs called without any old parsed results",
-      )
-    };
-    currentParses = context.unsafeMaybeGetEagerDir(parsesDirName) match {
-    | Some _ ->
-      SKStore.EHandle(
-        FAbsolute::keyType,
-        ParsedResultAndSymbolsFile::type,
-        parsesDirName,
-      )
-    | None() ->
-      invariant_violation(
-        "getChangedDefs called without any current parsed results ",
-      )
-    };
-    for ((fileName, previousParsedResult) in oldParses.items()) {
-      currentParsedResult = currentParses.get(context, fileName).value;
-      (previousParsedResult, currentParsedResult) match {
-      | (PRError(_), PRError(_)) -> continue
-      | (PROk(prevDefs), PRError(_)) -> removed.extend(prevDefs)
-      | (PRError(_), PROk(currDefs)) -> added.extend(currDefs)
-      | (PROk(prevDefs), PROk(currDefs)) ->
-        prevDefsByHash = SortedMap::createFromIterator(
-          prevDefs.values().map((def) -> (def.xxhash(), def)),
-        );
-        currDefsByHash = SortedMap::createFromIterator(
-          currDefs.values().map((def) -> (def.xxhash(), def)),
-        );
-        for ((hash, def) in prevDefsByHash.items()) {
-          if (!currDefsByHash.containsKey(hash)) removed.push(def)
-        };
-        for ((hash, def) in currDefsByHash.items()) {
-          if (!prevDefsByHash.containsKey(hash)) added.push(def)
-        }
-      }
-    };
-    (added.toArray(), removed.toArray())
+    (
+      parsedFiles,
+      symbolsMap,
+      funDefSigMap,
+      funDefBodyMap,
+      classBodyMap,
+      classFieldMap,
+      typeDefBodyMap,
+      methodBodyMap,
+    )
   }
 }
 
@@ -255,6 +277,109 @@ fun removeSymbols(
     SKStore.DirName::create("/parsed/nosymbols/"),
     (_context, writer, key, values) ~> {
       writer.set(key, ParsedResultFile(values.first.value))
+    },
+  )
+}
+
+fun resolveDef(file: ParsedResultAndSymbolsFile, def: Def): ResolvedDef {
+  exportable: ?Exportable = def.value match {
+  | Export(e) -> Some(e)
+  | ExportDeclare(e) -> Some(e)
+  | e @ TopLevelFunDef _ -> Some(e)
+  | e @ Class _ -> Some(e)
+  | e @ TypeDef _ -> Some(e)
+  | _ -> None()
+  };
+  exportable match {
+  | Some(fd @ TopLevelFunDef _) -> resolveFunDef(file, fd)
+  | Some(cls @ Class{bodyRef => Some(ref)}) -> resolveClass(file, cls, ref)
+  | Some(td @ TypeDef{bodyRef => Some(ref)}) -> resolveTypeDef(file, td, ref)
+  | _ -> RDOther(def)
+  }
+}
+
+fun resolveFunDef(
+  file: ParsedResultAndSymbolsFile,
+  fd: TopLevelFunDef,
+): ResolvedDef {
+  resolvedSig = fd.sig match {
+  | FSRef(ref) ->
+    sigData = file.funDefSigs.maybeGet(ref).fromSome();
+    FSInline(sigData.tparams, sigData.params, sigData.retType)
+  | s @ FSInline _ -> s
+  };
+  resolvedBody = fd.body match {
+  | FBRef(BRFunDef(ref)) ->
+    FBInline(file.funDefBodies.maybeGet(ref).fromSome().body)
+  | b -> b
+  };
+  RDFunDef(fd with {sig => resolvedSig, body => resolvedBody})
+}
+
+fun resolveClass(
+  file: ParsedResultAndSymbolsFile,
+  cls: Class,
+  bodyRef: ClassBodyRef,
+): ResolvedDef {
+  bodyData = file.classBodies.maybeGet(bodyRef).fromSome();
+  fields = bodyData.fieldRefs.map(fieldRef -> {
+    fieldData = file.classFieldEntries.maybeGet(fieldRef).fromSome();
+    resolveClassField(file, fieldData.field)
+  });
+  RDClass(cls, fields)
+}
+
+fun resolveClassField(
+  file: ParsedResultAndSymbolsFile,
+  field: ClassField,
+): ClassField {
+  field match {
+  | method @ ClassFieldMethod{body => FBRef(BRMethod(ref))} ->
+    method with {
+      body => FBInline(file.methodBodyEntries.maybeGet(ref).fromSome().body),
+    }
+  | _ -> field
+  }
+}
+
+fun resolveTypeDef(
+  file: ParsedResultAndSymbolsFile,
+  td: TypeDef,
+  ref: TypeDefBodyRef,
+): ResolvedDef {
+  RDTypeDef(td, file.typeDefBodies.maybeGet(ref).fromSome())
+}
+
+fun makeResolvedDefs(
+  context: mutable SKStore.Context,
+  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+): SKStore.EHandle<ResolvedDefKey, ResolvedDefFile> {
+  parsedFiles.map(
+    ResolvedDefKey::keyType,
+    ResolvedDefFile::type,
+    context,
+    resolvedDefsDirName,
+    (_context, writer, _fileName, values) ~> {
+      file = values.first;
+      file.value match {
+      | PROk(defs) ->
+        for (def in defs) {
+          resolved = resolveDef(file, def);
+          resolved match {
+          | RDOther _ -> void
+          | _ ->
+            def.value.defStableName() match {
+            | Some(name) ->
+              writer.set(
+                ResolvedDefKey(name.value),
+                ResolvedDefFile(def, TypedHash::create(resolved)),
+              )
+            | None() -> void
+            }
+          }
+        }
+      | PRError _ -> void
+      }
     },
   )
 }

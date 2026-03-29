@@ -8,11 +8,11 @@ executors:
   skip-executor-large:
     docker:
       - image: skiplabs/skip:latest
-    resource_class: large
+    resource_class: xlarge
 
 jobs:
   build_and_test:
-    executor: skip-executor
+    executor: skip-executor-large
     steps:
       - checkout
       - run:
