@@ -333,6 +333,7 @@ extension class TypeChecker {
             false,
             iterableType,
             tcenv.subst,
+            this,
           )}`,
         ),
       ],

@@ -61,7 +61,7 @@ extension class TypeChecker {
     TType::isSub(tcenv.subst, this, ty1, ty2) match {
     | STOk() -> void
     | err @ STErrorOnTType _ ->
-      tcenv.error(Array[(pos, msg)], Some(err), tcenv.subst.values)
+      tcenv.complexError(tcenv.subst, this, Array[(pos, msg)], err)
     }
   }
 
@@ -172,7 +172,7 @@ extension class TypeChecker {
     | Some(TPrimValue(kind @ TBigInt(), _, _)) ->
       kind
     | _ ->
-      typingError(
+      error(
         Array[
           (pos, msg),
           (ty.pos, "This is not a numeric type (number or bigint)"),
@@ -211,7 +211,7 @@ extension class TypeChecker {
 }
 
 fun paramsError<T>(pos: PosRange): T {
-  typingError(
+  error(
     Array[
       (
         pos,

@@ -2,6 +2,8 @@ module SKJSTests;
 
 base class ReferenceError{line: Int} {
   fun validate(
+    subst: mutable SKJS.Subst,
+    tenv: SKJS.TEnv,
     fileName: SKJS.FAbsolute,
     errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError;
@@ -82,6 +84,8 @@ class ExpectError{
   expectedLineNAnnotations: Map<Int, String>,
 } extends ReferenceError {
   fun validate(
+    subst: mutable SKJS.Subst,
+    tenv: SKJS.TEnv,
     fileName: SKJS.FAbsolute,
     errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {
@@ -118,7 +122,7 @@ class ExpectError{
         ""
       } else {
         err = errors.first();
-        getErrorMessageN(err, n).trimMessage(true)
+        getErrorMessageN(subst, tenv, err, n).trimMessage(true)
       };
       if (actualForN != expectedForN) {
         return Some(
@@ -176,33 +180,48 @@ class AnnotationGroup{errorLine: Int, annotations: Array<AnnotationLine>}
 fun errorToFullMessage(error: SKJS.Error): String {
   error match {
   | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
-  | SKJS.TypingError(messages, _stErr, _) -> messages[0].i1
+  | SKJS.TypingError(_, _, messages, _stErr) -> messages[0].i1
+  | SKJS.NamingError(messages) -> messages[0].i1
   }
 }
 
 // Returns all message lines for one error. For TypingError this includes the
 // primary messages followed by the expanded stErr detail lines.
-fun getErrorMessages(error: SKJS.Error): Array<String> {
+fun getErrorMessages(
+  subst: mutable SKJS.Subst,
+  tenv: SKJS.TEnv,
+  error: SKJS.Error,
+): Array<String> {
   error match {
   | SKJS.SinglePosError(_, _) -> Array[errorToFullMessage(error)]
-  | SKJS.TypingError(messages, stErr, _) ->
-    stErrMsgs = stErr match {
-    | None() -> Array[]
-    | Some(e) -> e.toError(SKJS.STErrorDetail::default).toArray().map(m -> m.i1)
-    };
+  | SKJS.TypingError(_, _, messages, e) ->
+    stErrMsgs = e
+      .toError(subst, tenv, SKJS.STErrorDetail::default)
+      .toArray()
+      .map(m -> m.i1);
     messages.map(m -> m.i1).concat(stErrMsgs)
+  | SKJS.NamingError(messages) -> messages.map(m -> m.i1)
   }
 }
 
 // Returns the trimmed text of the Nth message of an error (1-indexed).
-fun getErrorMessageN(error: SKJS.Error, n: Int): String {
-  allMsgs = getErrorMessages(error);
+fun getErrorMessageN(
+  subst: mutable SKJS.Subst,
+  tenv: SKJS.TEnv,
+  error: SKJS.Error,
+  n: Int,
+): String {
+  allMsgs = getErrorMessages(subst, tenv, error);
   if (n < 1 || n > allMsgs.size()) "" else allMsgs[n - 1]
 }
 
-fun getLineNAnnotationsFromError(error: SKJS.Error): Map<Int, String> {
+fun getLineNAnnotationsFromError(
+  subst: mutable SKJS.Subst,
+  tenv: SKJS.TEnv,
+  error: SKJS.Error,
+): Map<Int, String> {
   result = mutable Map[];
-  allMsgs = getErrorMessages(error);
+  allMsgs = getErrorMessages(subst, tenv, error);
   for (lineIdx => lineText in allMsgs) {
     n = lineIdx + 1;
     if (n == 1) continue;
@@ -611,6 +630,8 @@ class TSConformanceReferenceError{
   extraMessages: Array<String>,
 } extends ReferenceError {
   fun validate(
+    _subst: mutable SKJS.Subst,
+    _tenv: SKJS.TEnv,
     _fileName: SKJS.FAbsolute,
     _errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {

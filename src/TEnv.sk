@@ -136,12 +136,14 @@ base class TEnv{
         TType::isSub(subst.clone(), this, targ, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
-          tcenvb.error(
+          tcenvb.complexError(
+            subst,
+            this,
             Array[
               (name.pos, "Constraint not satisfied"),
               (
                 targ.pos,
-                `This is of type: ${prettyPrintType(false, targ, subst)}`,
+                `This is of type: ${prettyPrintType(false, targ, subst, this)}`,
               ),
               (
                 cstr.pos,
@@ -149,11 +151,11 @@ base class TEnv{
                   false,
                   cstrTy,
                   subst,
+                  this,
                 )}`,
               ),
             ],
-            Some(err),
-            subst.values,
+            err,
           )
         }
       };
@@ -163,7 +165,7 @@ base class TEnv{
     result = tdef match {
     | ta @ TypeDef _ -> this.normalize(tcenvb, ta.body)
     | Class _ -> this.new(tcenvb, name, targs.targs)
-    | Enum _ -> typingError(Array[(name.pos, "TODO: instantiate Enum")])
+    | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
     };
     !this.subst = savedTypeSubst;
     result
@@ -175,7 +177,7 @@ base class TEnv{
     | ca @ Class _ -> ca
     | TypeDef _
     | Enum _ ->
-      typingError(Array[(className.pos, "Expected a class name")])
+      error(Array[(className.pos, "Expected a class name")])
     };
   }
 
@@ -261,7 +263,14 @@ base class TEnv{
     };
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     TObject::createSingleBranch(
-      TFields::create{fields, symbolFields, tIndexes, isArray},
+      TFields::create{
+        subst => Subst::mcreate(tcenvb),
+        tenv => this,
+        fields,
+        symbolFields,
+        tIndexes,
+        isArray,
+      },
       Some(TSInst(className, TArgs(targs))),
       className.pos,
     )
@@ -301,6 +310,8 @@ base class TEnv{
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     TObject::createSingleBranch(
       TFields::create{
+        subst => Subst::mcreate(tcenvb),
+        tenv => this,
         fields,
         symbolFields,
         tIndexes,
@@ -360,7 +371,7 @@ base class TEnv{
     targs: Array<TType>,
   ): (this, Class) {
     if (visitedClasses.contains(className.value)) {
-      typingError(Array[(className.pos, "Cyclic class definition")]);
+      error(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
     defs = this.defMap.getAll(tcenvb, className);
@@ -371,7 +382,7 @@ base class TEnv{
       }
     );
     defsCls.size() match {
-    | 0 -> typingError(Array[(className.pos, "Unbound class")])
+    | 0 -> error(Array[(className.pos, "Unbound class")])
     | 1 -> void
     | _ ->
       tcenvb.error(
@@ -486,7 +497,7 @@ base class TEnv{
           )
         };
         fieldTy = field.type match {
-        | None() -> typingError(Array[(field.pos, "Type annotation expected")])
+        | None() -> error(Array[(field.pos, "Type annotation expected")])
         | Some(ty) -> ty
         };
         field.name match {
@@ -541,7 +552,9 @@ base class TEnv{
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
-        metType = TType::single(TObject::createCall(metTFuns));
+        metType = TType::single(
+          TObject::createCall(Subst::mcreate(tcenvb), this, metTFuns),
+        );
         fd.name match {
         | FNNormal(name) -> FKName(name, TString())
         | FNComputed(keyExpr) ->
@@ -670,7 +683,7 @@ base class TEnv{
 
   private fun convertParam(param: Param): TAFunParam {
     ty = param.type match {
-    | None() -> typingError(Array[(param.pos, "Missing type annotation")])
+    | None() -> error(Array[(param.pos, "Missing type annotation")])
     | Some(ty) -> ty
     };
     optional = param.default match {
@@ -689,7 +702,7 @@ base class TEnv{
     retType = fd.retType match {
     | (pos, None()) ->
       // constructors must use makeConstructor
-      typingError(Array[(pos, "Missing return type annotation")])
+      error(Array[(pos, "Missing return type annotation")])
     | (_, Some(x)) -> x
     };
     tafun = TAFun(
@@ -731,8 +744,8 @@ base class TEnv{
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
-    | TAAssertIs _ -> typingError(Array[(pos, "TODO assertIs")])
-    | TAAbstract _ -> typingError(Array[(pos, "TODO abstract")])
+    | TAAssertIs _ -> error(Array[(pos, "TODO assertIs")])
+    | TAAbstract _ -> error(Array[(pos, "TODO abstract")])
     | TAUniqueSymbol() ->
       if (isTopLevelConst) {
         // Each unique symbol gets a distinct type based on its position
@@ -741,26 +754,30 @@ base class TEnv{
         }`;
         TType::single(TPrimValue::single(TSymbol(), uniqueId, pos))
       } else {
-        typingError(Array[(pos, "unique symbol type cannot be used here")])
+        error(Array[(pos, "unique symbol type cannot be used here")])
       }
-    | TAAsserts _ -> typingError(Array[(pos, "TODO asserts")])
-    | TAIs _ -> typingError(Array[(pos, "TODO is ")])
+    | TAAsserts _ -> error(Array[(pos, "TODO asserts")])
+    | TAIs _ -> error(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
       subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
-      TType::single(TObject::createCallWithPos(tfuns, pos))
+      TType::single(
+        TObject::createCallWithPos(Subst::mcreate(tcenvb), this, tfuns, pos),
+      )
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
-      TType::single(TObject::createNew(tfuns, pos))
-    | TANew _ -> typingError(Array[(pos, "Invalid new")])
-    | TAEmptyArray _ -> typingError(Array[(pos, "TODO emptyArray")])
-    | TAInfer _ -> typingError(Array[(pos, "TODO infer")])
-    | TATemplate _ -> typingError(Array[(pos, "TODO template")])
-    | TAImport _ -> typingError(Array[(pos, "TODO import")])
+      TType::single(
+        TObject::createNew(Subst::mcreate(tcenvb), this, tfuns, pos),
+      )
+    | TANew _ -> error(Array[(pos, "Invalid new")])
+    | TAEmptyArray _ -> error(Array[(pos, "TODO emptyArray")])
+    | TAInfer _ -> error(Array[(pos, "TODO infer")])
+    | TATemplate _ -> error(Array[(pos, "TODO template")])
+    | TAImport _ -> error(Array[(pos, "TODO import")])
     | TAReadonly(ro) ->
       ro.value match {
       | TAArray(ty) ->
@@ -795,8 +812,8 @@ base class TEnv{
         ); // TS1354
         this.normalize(tcenvb, ro)
       }
-    | TAExtends _ -> typingError(Array[(pos, "TODO extends")])
-    | TAExtendsQuestion _ -> typingError(Array[(pos, "TODO extendsQuestion")])
+    | TAExtends _ -> error(Array[(pos, "TODO extends")])
+    | TAExtendsQuestion _ -> error(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
@@ -885,7 +902,7 @@ base class TEnv{
         (keepPos, ty) = substEntry.fromSome();
         if (keepPos) ty else ty.withPos(pos)
       } else if (this.forbiddenInsts.contains(n.value)) {
-        typingError(Array[(n.pos, "Cyclic definition")])
+        error(Array[(n.pos, "Cyclic definition")])
       } else {
         // No bound-name match: treat n as a named type definition.
         tdef = this.defMap.getType(tcenvb, n);
@@ -931,7 +948,7 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
-    | TAGet _ -> typingError(Array[(pos, "TODO TAGet")])
+    | TAGet _ -> error(Array[(pos, "TODO TAGet")])
     }
   }
 
@@ -955,7 +972,7 @@ base class TEnv{
           tcenvb.error(Array[(pos, "TODO optional element tuple")])
         };
         this.normalize(tcenvb, x)
-      | TESpread _ -> typingError(Array[(pos, "TODO tuple spread")])
+      | TESpread _ -> error(Array[(pos, "TODO tuple spread")])
       }
     );
     TType::tuple(pos, types, isReadonly)
@@ -997,13 +1014,17 @@ base class TEnv{
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.fromSome();
           return TType::single(
-            TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
+            TObject::createCall(
+              Subst::mcreate(tcenvb),
+              this,
+              this.funDecl(tcenvb, false, fd, cgNode),
+            ),
           )
         | Class _ -> return this.newStatic(tcenvb, varName)
         | _ -> void
         }
       };
-      typingError(Array[(varName.pos, `Variable ${varName} not found`)])
+      error(Array[(varName.pos, `Variable ${varName} not found`)])
     | Dot(_, baseExpr, propertyName) ->
       if (propertyName.value == "prototype") {
         notSupported(propertyName.pos, "prototype access")
@@ -1016,7 +1037,7 @@ base class TEnv{
       | Some(obj @ TObject _) ->
         obj.getType(subst, this, propertyName.value, expr.pos)
       | _ ->
-        typingError(
+        error(
           Array[
             (
               propertyName.pos,
@@ -1024,13 +1045,14 @@ base class TEnv{
                 false,
                 baseType,
                 subst,
+                this,
               )}`,
             ),
           ],
         )
       }
     | _ ->
-      typingError(
+      error(
         Array[
           (expr.pos, "typeof operand must be an identifier or property access"),
         ],
@@ -1088,7 +1110,7 @@ base class TEnv{
       | None() -> void
       }
     };
-    typingError(
+    error(
       Array[
         (
           pos,
@@ -1284,7 +1306,7 @@ base class TEnv{
       .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype)) match {
     | Some(res) -> res
     | None() ->
-      typingError(
+      error(
         Array[
           (
             keyExpr.pos,
@@ -1319,11 +1341,11 @@ base class TEnv{
           }
         );
         fieldTy = fd.type match {
-        | None() -> typingError(Array[(fd.pos, "Type annotation expected")])
+        | None() -> error(Array[(fd.pos, "Type annotation expected")])
         | Some(ty) -> ty
         };
         fd.name match {
-        | FNIn _ -> typingError(Array[(fd.pos, "TODO fnIn")])
+        | FNIn _ -> error(Array[(fd.pos, "TODO fnIn")])
         | simpleFieldName @ SimpleFieldName _ ->
           normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
           simpleFieldName match {
@@ -1374,7 +1396,9 @@ base class TEnv{
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
         | FNEmpty() -> !call = Some(tFuns)
         | simpleFieldName @ SimpleFieldName _ ->
-          decl = TType::single(TObject::createCall(tFuns));
+          decl = TType::single(
+            TObject::createCall(Subst::mcreate(tcenvb), this, tFuns),
+          );
           simpleFieldName match {
           | FNNormal(name) -> FKName(name, TString())
           | FNComputed(keyExpr) ->
@@ -1404,6 +1428,8 @@ base class TEnv{
     };
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     tFields = TFields::create{
+      subst => Subst::mcreate(tcenvb),
+      tenv => this,
       fields => fieldsMap,
       symbolFields,
       tIndexes,
@@ -1466,7 +1492,7 @@ base class TEnv{
           stypes.push(obj)
         | TPrimUnit _ -> void /* bottom */
         | TPromise _ ->
-          typingError(
+          error(
             Array[
               (
                 pos,
@@ -1474,6 +1500,7 @@ base class TEnv{
                   false,
                   TType::single(stype),
                   subst,
+                  this,
                 )}`,
               ),
             ],
@@ -1527,7 +1554,7 @@ fun checkPatternDoesNotContainThis(pat: Pattern): void {
     rest
   } match {
   | Some(Name(thisPos, "this")) ->
-    typingError(Array[(thisPos, "this forbidden here")])
+    error(Array[(thisPos, "this forbidden here")])
   | _ -> void
   }
 }

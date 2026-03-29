@@ -13,7 +13,8 @@ fun getLinedErrors(
   m = mutable Map[];
   for (err in errors) {
     errPos = err match {
-    | SKJS.TypingError(messages, _stErr, _) ->
+    | SKJS.NamingError(messages)
+    | SKJS.TypingError(_, _, messages, _stErr) ->
       invariant(!messages.isEmpty(), "Empty typing error");
       SKJS.EPRange(messages[0].i0)
     | SKJS.SinglePosError(errPos, _errKind) -> errPos
@@ -48,6 +49,11 @@ fun validateReferenceErrors<R: ReferenceError>(
   allActualErrors: Array<SKJS.Error>,
   referenceErrors: mutable Iterator<R>,
 ): Array<SKTest.ExpectationError> {
+  tenv = checker.checker;
+  results = SKJS.TCResults::mcreate{errorHandling => SKJS.EHDefault()};
+  tcenvb = mutable SKJS.TCEnvLight{context, results};
+  subst = SKJS.Subst::mcreate(tcenvb);
+
   referenceErrorOpt = referenceErrors.next();
 
   linedActualErrors = getLinedErrors(
@@ -68,7 +74,9 @@ fun validateReferenceErrors<R: ReferenceError>(
       Some((actualLine, actualErrors)),
       Some(ref @ ReferenceError{line => expectedLine}),
     ) if (actualLine == expectedLine) ->
-      ref.validate(fileName, actualErrors).each(expectationErrors.push);
+      ref
+        .validate(subst, tenv, fileName, actualErrors)
+        .each(expectationErrors.push);
       !i = i + 1;
       if (
         i >= linedActualErrors.size() ||
@@ -131,6 +139,10 @@ fun doUpdateExpectErrorComments(
   update: UMDoUpdate,
 ): void {
   linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
+  tenv = checker.checker;
+  results = SKJS.TCResults::mcreate{errorHandling => SKJS.EHDefault()};
+  tcenvb = mutable SKJS.TCEnvLight{context, results};
+  subst = SKJS.Subst::mcreate(tcenvb);
   errorsByLine = mutable Map[];
   fullMessages = mutable Map[];
   actualLineNAnnotationsByLine = mutable Map[];
@@ -139,7 +151,7 @@ fun doUpdateExpectErrorComments(
       err = lineErrs.i1.first();
       actualLineNAnnotationsByLine.set(
         lineErrs.i0,
-        getLineNAnnotationsFromError(err),
+        getLineNAnnotationsFromError(subst, tenv, err),
       )
     };
     trimmedMsgs = SortedSet[];
@@ -216,7 +228,7 @@ fun validateTSConformance(
   | SKJS.CheckResult(x, y, z, _, _, _) -> (x, y, z)
   };
 
-  SKTest.expectEq(parseErrorOpt, None(), "Expected no parse errors");
+  SKTest.expectEq(parseErrorOpt is None(), true, "Expected no parse errors");
 
   fileContents = checker.files.filesContent.get(context, fileName).value;
   if (fileContents.startsWith("// @")) {

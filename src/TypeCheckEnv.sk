@@ -12,12 +12,17 @@ mutable base class TCEnvBase private {
     this.results.recordClassHierarchy{child, parent}
   }
 
-  mutable fun error(
+  mutable fun error(messages: Array<(PosRange, String)>): void {
+    this.results.error(messages)
+  }
+
+  mutable fun complexError(
+    subst: mutable Subst,
+    tenv: TEnv,
     messages: Array<(PosRange, String)>,
-    stErr: ?STErrorOnTType = None(),
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+    stErr: STErrorOnTType,
   ): void {
-    this.results.error(messages, stErr, substValues)
+    this.results.complexError(subst, tenv, messages, stErr)
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
@@ -194,7 +199,7 @@ mutable class TCEnv private {
 
 mutable class TCResults private {
   errorHandling: ErrorHandling,
-  errors: mutable Vector<TypingError> = mutable Vector[],
+  errors: mutable Vector<Error> = mutable Vector[],
   mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
@@ -203,17 +208,47 @@ mutable class TCResults private {
     mutable TCResults{errorHandling}
   }
 
-  mutable fun error(
+  readonly fun chill(): TCResults {
+    static{
+      errorHandling => this.errorHandling,
+      errors => this.errors.chill(),
+      callgraph => this.callgraph,
+      classHierarchy => this.classHierarchy,
+      subtypingEdges => this.subtypingEdges,
+    }
+  }
+
+  fun mclone(): mutable this {
+    mutable static{
+      errorHandling => this.errorHandling,
+      errors => Vector::mcreateFromItems(this.errors),
+      callgraph => this.callgraph,
+      classHierarchy => this.classHierarchy,
+      subtypingEdges => this.subtypingEdges,
+    }
+  }
+
+  mutable fun error(messages: Array<(PosRange, String)>): void {
+    this.errorHandling match {
+    | EHKeepGoing() -> this.errors.push(NamingError(messages))
+    | EHBacktrace()
+    | EHDefault() ->
+      error(messages)
+    }
+  }
+
+  mutable fun complexError(
+    subst: mutable Subst,
+    tenv: TEnv,
     messages: Array<(PosRange, String)>,
-    stErr: ?STErrorOnTType = None(),
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+    stErr: STErrorOnTType,
   ): void {
     this.errorHandling match {
     | EHKeepGoing() ->
-      this.errors.push(TypingError(messages, stErr, substValues))
+      this.errors.push(TypingError(subst.saveAll(), tenv, messages, stErr))
     | EHBacktrace()
     | EHDefault() ->
-      typingError(messages, stErr, substValues)
+      complexError(subst, tenv, messages, stErr)
     }
   }
 
@@ -227,7 +262,9 @@ mutable class TCResults private {
       try {
         f()
       } catch {
-      | ErrorExn(err @ TypingError _) -> this.errors.push(err)
+      | ErrorExn(err @ TypingError _)
+      | ErrorExn(err @ NamingError _) ->
+        this.errors.push(err)
       | exn -> throw exn
       }
     | EHBacktrace()

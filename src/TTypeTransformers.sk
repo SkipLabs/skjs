@@ -12,9 +12,7 @@ mutable base class ApplyType(
 
   overridable deferred mutable fun type(env: this::Env, ty: TType): TType {
     if (this.visiting.contains(ty)) {
-      typingError(
-        Array[(ty.pos, "Internal error:  found a Cyclic type in ApplyType")],
-      )
+      internal_error("Internal error:  found a Cyclic type in ApplyType")
     };
     this.seen.maybeGet(ty) match {
     | None() ->

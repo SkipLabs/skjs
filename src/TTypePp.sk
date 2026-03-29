@@ -14,17 +14,26 @@ value class Margin{
   str: String = "",
 }
 
+class TTypePpSaved{
+  compact: Bool,
+  cols: Int,
+  buffer: List<String>,
+  substValues: SortedMap<TVarID, SubstValue>,
+  expandingTVars: SortedSet<TVarID>,
+}
+
 mutable class TypePp{
   compact: Bool,
   mutable cols: Int = 0,
   mutable buffer: List<String> = List[],
   substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   mutable expandingTVars: SortedSet<TVarID> = SortedSet[],
+  mutable applyType: (TType -> TType) = x -> x,
 } {
   const MAX_COLS: Int = 80;
 
-  readonly fun chill(): TypePp {
-    TypePp{
+  readonly fun chill(): TTypePpSaved {
+    TTypePpSaved{
       compact => this.compact,
       cols => this.cols,
       buffer => this.buffer,
@@ -33,7 +42,7 @@ mutable class TypePp{
     }
   }
 
-  mutable fun replace(saved: readonly TypePp): void {
+  mutable fun replace(saved: TTypePpSaved): void {
     this.!cols = saved.cols;
     this.!buffer = saved.buffer;
     this.!expandingTVars = saved.expandingTVars;
@@ -487,6 +496,7 @@ mutable class TypePp{
   }
 
   mutable fun type(level: Int, margin: Margin, ty: TType): void {
+    !ty = this.applyType(ty);
     !margin.max_depth = margin.max_depth - 1;
     if (margin.max_depth < 0) {
       this.out(level, margin, "...");
@@ -629,12 +639,36 @@ mutable class TypePp{
   }
 }
 
-fun prettyPrint(
+fun rawPrettyPrint(
   compact: Bool,
   f: mutable TypePp -> void,
   substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+  applyType: TType -> TType = x ~> x,
 ): String {
-  pp = mutable TypePp{compact, substValues};
+  pp = mutable TypePp{compact, substValues, applyType};
+  f(pp);
+  strings = pp.buffer.reversed();
+  if (compact) {
+    !strings = strings.map(str ~> {
+      String::fromChars(
+        str
+          .getIter()
+          .filter(c ~> c != '\t' && c != '\n' && c != ' ')
+          .collect(Array),
+      )
+    })
+  };
+  result = "".join(strings);
+  result
+}
+
+fun prettyPrint(
+  subst: mutable Subst,
+  tenv: TEnv,
+  compact: Bool,
+  f: mutable TypePp -> void,
+): String {
+  pp = mutable TypePp{compact, applyType => ty -> ty.expandTVars(subst, tenv)};
   f(pp);
   strings = pp.buffer.reversed();
   if (compact) {
@@ -654,78 +688,100 @@ fun prettyPrint(
 fun prettyPrintType(
   compact: Bool,
   ty: TType,
-  subst: readonly Subst,
+  subst: mutable Subst,
+  tenv: TEnv,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  prettyPrint(
-    compact,
-    pp -> {
-      pp.type(0, Margin{max_depth}, ty);
-    },
-    subst.values,
-  )
+  !subst = subst.clone();
+  prettyPrint(subst, tenv, compact, pp -> {
+    pp.type(0, Margin{max_depth}, ty);
+  })
 }
 
 fun prettyPrintSType(
+  subst: mutable Subst,
+  tenv: TEnv,
   stype: SType,
   compact: Bool = false,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  prettyPrint(compact, pp -> pp.stype(0, Margin{max_depth}, stype))
+  prettyPrint(subst, tenv, compact, pp -> pp.stype(0, Margin{max_depth}, stype))
 }
 
 fun prettyPrintSTypes(
+  subst: mutable Subst,
+  tenv: TEnv,
   sTypes: STypes,
   compact: Bool = false,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  prettyPrint(compact, pp -> pp.sTypes(0, Margin{max_depth}, sTypes))
+  prettyPrint(subst, tenv, compact, pp ->
+    pp.sTypes(0, Margin{max_depth}, sTypes)
+  )
 }
 
 fun prettyPrintClause(
+  subst: mutable Subst,
+  tenv: TEnv,
   clause: Clause,
   compact: Bool = false,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
   if (clause.isTop()) {
-    prettyPrint(compact, pp -> pp.out(0, Margin{max_depth}, "unknown"))
+    prettyPrint(subst, tenv, compact, pp ->
+      pp.out(0, Margin{max_depth}, "unknown")
+    )
   } else {
-    prettyPrint(compact, pp -> {
+    prettyPrint(subst, tenv, compact, pp -> {
       pp.clause(0, Margin{max_depth}, clause);
     })
   }
 }
 
 fun prettyPrintClauses(
+  subst: mutable Subst,
+  tenv: TEnv,
   clauses: Clauses,
   compact: Bool = false,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  prettyPrint(compact, pp -> pp.clauses(0, Margin{max_depth}, clauses))
+  prettyPrint(subst, tenv, compact, pp ->
+    pp.clauses(0, Margin{max_depth}, clauses)
+  )
 }
 
 fun prettyPrintTInsts(
+  subst: mutable Subst,
+  tenv: TEnv,
   insts: TInsts,
   compact: Bool = false,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  prettyPrint(compact, pp -> pp.insts(0, Margin{max_depth}, insts))
+  prettyPrint(subst, tenv, compact, pp -> pp.insts(0, Margin{max_depth}, insts))
 }
 
 fun prettyPrintTFun(
+  subst: mutable Subst,
+  tenv: TEnv,
   tFun: TFun,
   compact: Bool = false,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  prettyPrint(compact, pp -> pp.tfun(0, Margin{max_depth}, (false, tFun)))
+  prettyPrint(subst, tenv, compact, pp ->
+    pp.tfun(0, Margin{max_depth}, (false, tFun))
+  )
 }
 
 fun prettyPrintFields(
+  subst: mutable Subst,
+  tenv: TEnv,
   fields: TFields,
   compact: Bool = false,
   max_depth: Int = kDefaultMaxDepth,
 ): String {
-  prettyPrint(compact, pp -> pp.object(0, Margin{max_depth}, fields))
+  prettyPrint(subst, tenv, compact, pp ->
+    pp.object(0, Margin{max_depth}, fields)
+  )
 }
 
 module end;

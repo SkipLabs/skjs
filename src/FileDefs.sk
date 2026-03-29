@@ -23,10 +23,10 @@ base class IDefMap {
     Name,
     typeOnly: Bool = false,
   ): Array<FileDefElt>;
-  fun getFileErrors(
+  fun getNamingErrors(
     _context: mutable S.Context,
     _fileName: FAbsolute,
-  ): Array<TypingError>;
+  ): Array<NamingError>;
 }
 
 class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
@@ -78,10 +78,10 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     )
   }
 
-  fun getFileErrors(
+  fun getNamingErrors(
     context: mutable S.Context,
     fileName: FAbsolute,
-  ): Array<TypingError> {
+  ): Array<NamingError> {
     this.fileDefsDir.maybeGet(context, fileName) match {
     | Some(fileDefs) -> fileDefs.errors
     | None() -> Array[]
@@ -96,7 +96,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
         invariant_violation("Passing typeOnly should return only TypeOnlyDef")
       }
     };
-    typingError(Array[(path.pos, `Type ${path} not found`)])
+    error(Array[(path.pos, `Type ${path} not found`)])
   }
 
   fun getAll(
@@ -155,7 +155,9 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields)
       | FDVar(_kind, Name(pos, _), _type, _value) ->
-        tcenvb.error(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
+        tcenvb.error(
+          Array[(pos, `TODO: DefMap#dot while getting ${name}`)],
+        )
       | FDNamespace(nsTypeOnly, _posOpt, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
         this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result)
@@ -305,7 +307,7 @@ class FileDefs{
   reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
   includes: Array<FAbsolute>,
-  errors: Array<TypingError> = Array[],
+  errors: Array<NamingError> = Array[],
 } extends S.File
 
 base class FileDef {
@@ -405,7 +407,7 @@ mutable class FileDefsState private {
   reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
   includes: mutable Vector<FAbsolute> = mutable Vector[],
-  fileErrors: mutable Vector<TypingError> = mutable Vector[],
+  fileErrors: mutable Vector<NamingError> = mutable Vector[],
 } {
   static fun createFileDefs(
     context: mutable S.Context,
@@ -434,7 +436,7 @@ mutable class FileDefsState private {
         if (!this.compilerOptions.allowImportingTsExtensions) {
           suffix = Path.extname(name);
           this.fileErrors.push(
-            TypingError(
+            NamingError(
               Array[
                 (
                   mname.pos,
@@ -449,7 +451,7 @@ mutable class FileDefsState private {
         !this.compilerOptions.moduleResolution.isBundlerMode()
       ) {
         this.fileErrors.push(
-          TypingError(
+          NamingError(
             Array[
               (
                 mname.pos,
@@ -472,7 +474,7 @@ mutable class FileDefsState private {
     | Some(fileName) -> Some(ModuleName{name, fileName})
     | None() ->
       this.fileErrors.push(
-        TypingError(Array[(mname.pos, `Could not find module '${mname}'`)]),
+        NamingError(Array[(mname.pos, `Could not find module '${mname}'`)]),
       );
       None()
     }
@@ -527,7 +529,7 @@ mutable class FileDefsState private {
       | ImportExpr _
       | ExportImport _ ->
         this.fileErrors.push(
-          TypingError(Array[(def.pos, "TODO: unsupported export")]),
+          NamingError(Array[(def.pos, "TODO: unsupported export")]),
         )
       }
     };
@@ -574,7 +576,7 @@ mutable class FileDefsState private {
           | Some(existingPos) ->
             Array[msg1, (existingPos, "Previous definition was here")]
           };
-          this.fileErrors.push(TypingError(msgs))
+          this.fileErrors.push(NamingError(msgs))
         });
       existingDefs.push(d)
     }
@@ -602,7 +604,7 @@ mutable class FileDefsState private {
           this.pushDef(exportName, d, isExport)
         | _ ->
           this.fileErrors.push(
-            TypingError(
+            NamingError(
               Array[
                 (varDef.pat.pos, "TODO: cannot have exports based on names"),
               ],
@@ -612,12 +614,12 @@ mutable class FileDefsState private {
       }
     | Global(defs) ->
       if (defs.size() > 0) {
-        this.fileErrors.push(TypingError(Array[(defs[0].pos, "TODO: global")]))
+        this.fileErrors.push(NamingError(Array[(defs[0].pos, "TODO: global")]))
       } else {
         internal_error("TODO: global")
       }
     | Module(Name(pos, _), _defsOpt) ->
-      this.fileErrors.push(TypingError(Array[(pos, "TODO: module")]))
+      this.fileErrors.push(NamingError(Array[(pos, "TODO: module")]))
     }
   }
 
