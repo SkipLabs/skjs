@@ -85,7 +85,7 @@ mutable class Scope{
     | None() -> None()
     | Some((_, ref)) ->
       if (!ref.isInitialized) {
-        typingError(Array[(name.pos, "This local is not fully initialized")])
+        error(Array[(name.pos, "This local is not fully initialized")])
       } else {
         Some(ref.type)
       }
@@ -94,7 +94,7 @@ mutable class Scope{
 
   readonly fun get(name: Name): TType {
     this.maybeGet(name) match {
-    | None() -> typingError(Array[(name.pos, "Unbound name")])
+    | None() -> error(Array[(name.pos, "Unbound name")])
     | Some(x) -> x
     }
   }
@@ -105,7 +105,7 @@ mutable class Scope{
     isSubType: (TType, TType) -> void,
   ): void {
     (throughLoop, upRef) = this.maybeGetRef(name.value) match {
-    | None() -> typingError(Array[(name.pos, "Unbound name: " + name.value)])
+    | None() -> error(Array[(name.pos, "Unbound name: " + name.value)])
     | Some(x) -> x
     };
     if (throughLoop) {

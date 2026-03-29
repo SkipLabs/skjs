@@ -85,10 +85,11 @@ base class STError<+T> extends STResult<T> uses Equality {
 
 base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
   fun toError(
+    mutable Subst,
+    TEnv,
     _pos1: PosRange,
     _pos2: PosRange,
     _detail: STErrorDetail,
-    _substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>;
 }
 
@@ -99,10 +100,11 @@ base class STErrorOnSType(
   | STTooManySType(sType1: SType, sTypes2: STypes)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     _pos1: PosRange,
     pos2: PosRange,
     _detail: STErrorDetail,
-    _substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
   | STTooManySType(sType1, sTypes2, suggestReadonly) ->
     sTypes2.singleElt() match {
@@ -110,8 +112,8 @@ base class STErrorOnSType(
     | None() -> void
     };
     List[
-      (sType1.pos, `Type ${sType1}`),
-      (pos2, `is not compatible with type ${sTypes2}`),
+      (sType1.pos, `Type ${sType1.toString(subst, tenv)}`),
+      (pos2, `is not compatible with type ${sTypes2.toString(subst, tenv)}`),
     ].concat(STError::readonlyHint(suggestReadonly))
 }
 
@@ -125,20 +127,24 @@ base class STErrorOnTPrimValue(
   | STPrimMissingValue(elt: PrimLiteral)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     _pos1: PosRange,
     _pos2: PosRange,
     _detail: STErrorDetail,
-    _substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
   | STPrimValueFullSpecific(prim1, prim2, suggestReadonly) ->
     List[
-      (prim1.pos, `Full type ${prim1}`),
-      (prim2.pos, `is not compatible with specific type ${prim2}`),
+      (prim1.pos, `Full type ${prim1.toString(subst, tenv)}`),
+      (
+        prim2.pos,
+        `is not compatible with specific type ${prim2.toString(subst, tenv)}`,
+      ),
     ].concat(STError::readonlyHint(suggestReadonly))
   | STPrimMissingValue(elt, prim1, prim2, suggestReadonly) ->
     List[
-      (prim1.pos, `Type ${prim1}`),
-      (prim2.pos, `is not compatible with type ${prim2}`),
+      (prim1.pos, `Type ${prim1.toString(subst, tenv)}`),
+      (prim2.pos, `is not compatible with type ${prim2.toString(subst, tenv)}`),
       (elt.pos, `Value '${elt.val}' is missing`),
     ].concat(STError::readonlyHint(suggestReadonly))
 }
@@ -153,30 +159,40 @@ base class STErrorOnTTuple(
   | STRecTuple(STErrorOnTType, Int)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     _pos1: PosRange,
     _pos2: PosRange,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
   | STTooManyTTuple(tup1, tup2, suggestReadonly) ->
     List[
-      (tup1.pos, `Tuple type of size ${tup1.tuple.size()} ${tup1}`),
+      (
+        tup1.pos,
+        `Tuple type of size ${tup1.tuple.size()} ${tup1.toString(subst, tenv)}`,
+      ),
       (
         tup2.pos,
-        `is not compatible with tuple type of size ${tup2.tuple.size()} ${tup2}`,
+        `is not compatible with tuple type of size ${tup2.tuple.size()} ${tup2.toString(
+          subst,
+          tenv,
+        )}`,
       ),
     ].concat(STError::readonlyHint(suggestReadonly))
   | STRecTuple(err, i, tup1, tup2, _) ->
     pos1 = tup1.tuple[i].pos;
-    msgs = err.toError(detail.decreaseIntermediate(), substValues);
+    msgs = err.toError(subst, tenv, detail.decreaseIntermediate());
     if (detail.maxIntermediateDepth > 0) {
       if (tup1.tuple.size() > 1 && detail.showIntermediateMessages) {
         !msgs = List.Cons((pos1, `They differ in element ${i}`), msgs)
       };
       List.Cons(
-        (tup1.pos, `Tuple type ${tup1}`),
+        (tup1.pos, `Tuple type ${tup1.toString(subst, tenv)}`),
         List.Cons(
-          (tup2.pos, `is not compatible with tuple type ${tup2}`),
+          (
+            tup2.pos,
+            `is not compatible with tuple type ${tup2.toString(subst, tenv)}`,
+          ),
           msgs,
         ),
       )
@@ -193,17 +209,24 @@ base class STErrorOnTPromise(
   | STRecPromise(STErrorOnTType)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     _pos1: PosRange,
     _pos2: PosRange,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
   | STRecPromise(err, p1, p2) ->
-    msgs = err.toError(detail.decreaseIntermediate(), substValues);
+    msgs = err.toError(subst, tenv, detail.decreaseIntermediate());
     if (detail.maxIntermediateDepth > 0) {
       List.Cons(
-        (p1.pos, `Promise type ${p1}`),
-        List.Cons((p2.pos, `is not compatible with promise type ${p2}`), msgs),
+        (p1.pos, `Promise type ${p1.toString(subst, tenv)}`),
+        List.Cons(
+          (
+            p2.pos,
+            `is not compatible with promise type ${p2.toString(subst, tenv)}`,
+          ),
+          msgs,
+        ),
       )
     } else {
       msgs
@@ -218,10 +241,11 @@ base class STErrorOnObject(
   | STRecObject(List<(TFields, STErrorOnTFields)>, fields1: TFields)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     _pos1: PosRange,
     _pos2: PosRange,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
   | STRecObject(errs, fields1, o1, o2) ->
     msgs = List::createFromItems(errs)
@@ -229,16 +253,23 @@ base class STErrorOnObject(
         (fields2, err) = fields2_err;
         if (o2.getBranches().size() > 1) {
           msgs = err.toError(
+            subst,
+            tenv,
             o1.pos,
             o2.pos,
             detail.decreaseIntermediate(),
-            substValues,
           );
           if (detail.maxIntermediateDepth > 0) {
             List.Cons(
-              (o1.pos, `Type ${fields1}`),
+              (o1.pos, `Type ${fields1.toString(subst, tenv)}`),
               List.Cons(
-                (o2.pos, `is not compatible with type ${fields2}`),
+                (
+                  o2.pos,
+                  `is not compatible with type ${fields2.toString(
+                    subst,
+                    tenv,
+                  )}`,
+                ),
                 msgs,
               ),
             )
@@ -246,21 +277,24 @@ base class STErrorOnObject(
             msgs
           }
         } else {
-          err.toError(o1.pos, o2.pos, detail, substValues)
+          err.toError(subst, tenv, o1.pos, o2.pos, detail)
         }
       })
       .flatten();
     if (detail.maxIntermediateDepth > 0) {
       if (msgs.isEmpty()) {
         !msgs = List[
-          (o1.pos, `Type ${fields1}`),
-          (o2.pos, `is not compatible with ${o2}`),
+          (o1.pos, `Type ${fields1.toString(subst, tenv)}`),
+          (o2.pos, `is not compatible with ${o2.toString(subst, tenv)}`),
         ];
       };
       if (o1.getBranches().size() > 1 != o2.getBranches().size() > 1) {
         !msgs = List.Cons(
-          (o1.pos, `Type ${o1}`),
-          List.Cons((o2.pos, `is not compatible with ${o2}`), msgs),
+          (o1.pos, `Type ${o1.toString(subst, tenv)}`),
+          List.Cons(
+            (o2.pos, `is not compatible with ${o2.toString(subst, tenv)}`),
+            msgs,
+          ),
         )
       }
     };
@@ -275,31 +309,39 @@ base class STErrorOnSTypes(
   | STRecSTypes(STErrorOnSTypeBase<SType>)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     pos1: PosRange,
     pos2: PosRange,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
   | STRecSTypes(err, sTypes1, sTypes2) ->
     !pos1 = sTypes1.singleElt().map(sType -> sType.pos).default(pos1);
     !pos2 = sTypes2.singleElt().map(sType -> sType.pos).default(pos2);
     if (sTypes1.size() != 1 || sTypes2.size() != 1) {
       msgs = err.toError(
+        subst,
+        tenv,
         pos1,
         pos2,
         detail.decreaseIntermediate(),
-        substValues,
       );
       if (detail.maxIntermediateDepth > 0) {
         List.Cons(
-          (pos1, `Type ${sTypes1}`),
-          List.Cons((pos2, `is not compatible with type ${sTypes2}`), msgs),
+          (pos1, `Type ${sTypes1.toString(subst, tenv)}`),
+          List.Cons(
+            (
+              pos2,
+              `is not compatible with type ${sTypes2.toString(subst, tenv)}`,
+            ),
+            msgs,
+          ),
         )
       } else {
         msgs
       }
     } else {
-      err.toError(pos1, pos2, detail, substValues)
+      err.toError(subst, tenv, pos1, pos2, detail)
     }
 }
 
@@ -311,10 +353,11 @@ base class STErrorOnClauses(
   | STRecClauses(List<(Clause, STErrorOnSTypes)>, clause1: Clause)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     pos1: PosRange,
     pos2: PosRange,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
   | STRecClauses(errs, clause1, clauses1, clauses2) ->
     msgs = List::createFromItems(errs)
@@ -322,35 +365,57 @@ base class STErrorOnClauses(
         (clause2, err) = clause2_err;
         if (!clause1.vars.isEmpty() || !clause2.vars.isEmpty()) {
           msgs = err.toError(
+            subst,
+            tenv,
             pos1,
             pos2,
             detail.decreaseIntermediate(),
-            substValues,
           );
           if (detail.maxIntermediateDepth > 0) {
             List.Cons(
-              (pos1, `Type ${clause1}`),
-              List.Cons((pos2, `is not compatible with type ${clause2}`), msgs),
+              (pos1, `Type ${clause1.toString(subst, tenv)}`),
+              List.Cons(
+                (
+                  pos2,
+                  `is not compatible with type ${clause2.toString(
+                    subst,
+                    tenv,
+                  )}`,
+                ),
+                msgs,
+              ),
             )
           } else {
             msgs
           }
         } else {
-          err.toError(pos1, pos2, detail, substValues)
+          err.toError(subst, tenv, pos1, pos2, detail)
         }
       })
       .flatten();
     if (detail.maxIntermediateDepth > 0) {
       if (msgs.isEmpty() || clauses2.clauses.size() > errs.size()) {
         !msgs = List.Cons(
-          (pos1, `Type ${clause1}`),
-          List.Cons((pos2, `is not compatible with type ${clauses2}`), msgs),
+          (pos1, `Type ${clause1.toString(subst, tenv)}`),
+          List.Cons(
+            (
+              pos2,
+              `is not compatible with type ${clauses2.toString(subst, tenv)}`,
+            ),
+            msgs,
+          ),
         )
       };
       if (clauses1.clauses.size() > 1) {
         !msgs = List.Cons(
-          (pos1, `Type ${clauses1}`),
-          List.Cons((pos2, `is not compatible with type ${clauses2}`), msgs),
+          (pos1, `Type ${clauses1.toString(subst, tenv)}`),
+          List.Cons(
+            (
+              pos2,
+              `is not compatible with type ${clauses2.toString(subst, tenv)}`,
+            ),
+            msgs,
+          ),
         )
       }
     };
@@ -362,30 +427,22 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   | STRecType(STErrorOnClauses)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
   | STRecType(err, ty1, ty2) ->
     if (!ty1.insts.isEmpty() || !ty2.insts.isEmpty()) {
       msgs = err.toError(
+        subst,
+        tenv,
         ty1.pos,
         ty2.pos,
         detail.decreaseRecType(),
-        substValues,
       );
       if (detail.maxRecTypeDepth > 0) {
-        // Uses prettyPrint directly because TypingError stores a frozen
-        // substValues snapshot (SortedMap), not a readonly Subst.
-        ty1Str = prettyPrint(
-          false,
-          pp -> pp.type(0, Margin{}, ty1),
-          substValues,
-        );
-        ty2Str = prettyPrint(
-          false,
-          pp -> pp.type(0, Margin{}, ty2),
-          substValues,
-        );
+        ty1Str = prettyPrintType(false, ty1, subst, tenv);
+        ty2Str = prettyPrintType(false, ty2, subst, tenv);
         List.Cons(
           (ty1.pos, `Type ${ty1Str}`),
           List.Cons((ty2.pos, `is not compatible with type ${ty2Str}`), msgs),
@@ -395,10 +452,11 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
       }
     } else {
       err.toError(
+        subst,
+        tenv,
         ty1.pos,
         ty2.pos,
         detail.ensureIntermediateDepth(),
-        substValues,
       )
     }
 }
@@ -408,12 +466,13 @@ base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
   | STRecTFuns(STErrorOnTFun)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     pos1: PosRange,
     pos2: PosRange,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)>
-  | STRecTFuns(err, _f1, _f2) -> err.toError(pos1, pos2, detail, substValues)
+  | STRecTFuns(err, _f1, _f2) -> err.toError(subst, tenv, pos1, pos2, detail)
 }
 
 base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
@@ -428,10 +487,11 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
   | STRecFunReturn(STErrorOnTType)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     pos1: PosRange,
     pos2: PosRange,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)> {
     (recMsg, msgs) = this match {
     | STRecFunTParam(None(), i, f1, _f2) ->
@@ -449,27 +509,23 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     | STTypeParameterMismatch(_f1, _f2) ->
       (None(), List[(pos1, "Their number of type parameters differ")])
     | STInvalidSpread(rest, _f1, _f2) ->
-      restStr = prettyPrint(
-        false,
-        pp -> pp.type(0, Margin{}, rest.full()),
-        substValues,
-      );
+      restStr = prettyPrintType(false, rest.full(), subst, tenv);
       (None(), List[(pos1, `Invalid type for a rest parameter: ${restStr}`)])
     | STRecFunTParam(Some(err), i, f1, _f2) ->
       iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
       (
         Some((pos1, `Their type parameters${iStr} are not compatible`)),
-        err.toError(detail.decreaseIntermediate(), substValues),
+        err.toError(subst, tenv, detail.decreaseIntermediate()),
       )
     | STRecFunThisParam(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their this parameters are not compatible")),
-        err.toError(detail.decreaseIntermediate(), substValues),
+        err.toError(subst, tenv, detail.decreaseIntermediate()),
       )
     | STRecFunParam(Some(err), i, _f1, _f2) ->
       (
         Some((pos1, `Their parameters ${i + 1} are not compatible`)),
-        err.toError(detail.decreaseIntermediate(), substValues),
+        err.toError(subst, tenv, detail.decreaseIntermediate()),
       )
     | STRecFunOptionalSpread(err, i, _f1, _f2) ->
       (
@@ -479,17 +535,17 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
             `The parameter ${i + 1} is not compatible with the rest parameter`,
           ),
         ),
-        err.toError(detail.decreaseIntermediate(), substValues),
+        err.toError(subst, tenv, detail.decreaseIntermediate()),
       )
     | STRecFunSpread(Some(err), _f1, _f2) ->
       (
         Some((pos1, "Their rest parameters are not compatible")),
-        err.toError(detail.decreaseIntermediate(), substValues),
+        err.toError(subst, tenv, detail.decreaseIntermediate()),
       )
     | STRecFunReturn(err, _f1, _f2) ->
       (
         Some((pos1, "Their return types are not compatible")),
-        err.toError(detail.decreaseIntermediate(), substValues),
+        err.toError(subst, tenv, detail.decreaseIntermediate()),
       )
     };
     recMsg match {
@@ -502,9 +558,15 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     | None() -> void
     };
     List.Cons(
-      (pos1, `Function type ${this.f1}`),
+      (pos1, `Function type ${this.f1.toString(subst, tenv)}`),
       List.Cons(
-        (pos2, `is not compatible with function type ${this.f2}`),
+        (
+          pos2,
+          `is not compatible with function type ${this.f2.toString(
+            subst,
+            tenv,
+          )}`,
+        ),
         msgs,
       ),
     )
@@ -539,10 +601,11 @@ base class STErrorOnTFields(
   | STRecFieldsField(?STErrorOnTType, TField, TField, FieldMismatchKind)
 
   fun toError(
+    subst: mutable Subst,
+    tenv: TEnv,
     pos1: PosRange,
     pos2: PosRange,
     detail: STErrorDetail,
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   ): List<(PosRange, String)> {
     showTypes =
       !this.fields1.fields.isEmpty() ||
@@ -575,13 +638,13 @@ base class STErrorOnTFields(
     | STRecFieldsCall(Some(err), _fields1, _fields2) ->
       (
         List[(pos1, `They differ in their call signature`)],
-        err.toError(pos1, pos2, detailForRec, substValues),
+        err.toError(subst, tenv, pos1, pos2, detailForRec),
         None(),
       )
     | STRecFieldsNew(Some(err), _fields1, _fields2) ->
       (
         List[(pos1, `They differ in their constructor signature`)],
-        err.toError(pos1, pos2, detailForRec, substValues),
+        err.toError(subst, tenv, pos1, pos2, detailForRec),
         None(),
       )
     | STRecFieldsIndexValue(err, index1, index2, kind, _fields1, _fields2) ->
@@ -595,7 +658,7 @@ base class STErrorOnTFields(
             }'`,
           ),
         ],
-        err.toError(detailForRec, substValues),
+        err.toError(subst, tenv, detailForRec),
         kind.readonlyHintPos(index2.pos),
       )
     | STRecFieldsMissingIndex(err, index2, _fields1, _fields2) ->
@@ -606,7 +669,7 @@ base class STErrorOnTFields(
             `Missing index signature '${index2.name.value}' in source type`,
           ),
         ],
-        err.toError(detailForRec, substValues),
+        err.toError(subst, tenv, detailForRec),
         None(),
       )
     | STRecFieldsFieldIndex(err, field1, index2, kind, _fields1, _fields2) ->
@@ -618,7 +681,7 @@ base class STErrorOnTFields(
             `is not compatible with index field '${index2.name.value}'`,
           ),
         ],
-        err.toError(detailForRec, substValues),
+        err.toError(subst, tenv, detailForRec),
         kind.readonlyHintPos(index2.pos),
       )
     | STRecFieldsIndexField(err, index1, field2, kind, _fields1, _fields2) ->
@@ -627,7 +690,7 @@ base class STErrorOnTFields(
           (index1.pos, `Index field '${index1.name.value}'`),
           (field2.pos, `is not compatible with field '${field2.name.value}'`),
         ],
-        err.toError(detailForRec, substValues),
+        err.toError(subst, tenv, detailForRec),
         kind.readonlyHintPos(field2.pos),
       )
     | STRecFieldsField(err, field1, field2, kind, _fields1, _fields2) ->
@@ -642,7 +705,7 @@ base class STErrorOnTFields(
       };
       (
         List[(field1.pos, msg)],
-        err.map(e -> e.toError(detailForRec, substValues)).default(List.Nil()),
+        err.map(e -> e.toError(subst, tenv, detailForRec)).default(List.Nil()),
         kind.readonlyHintPos(field2.pos),
       )
     };
@@ -655,8 +718,14 @@ base class STErrorOnTFields(
         !msgs = recMsgs.concat(msgs)
       };
       List.Cons(
-        (pos1, `Type ${this.fields1}`),
-        List.Cons((pos2, `is not compatible with type ${this.fields2}`), msgs),
+        (pos1, `Type ${this.fields1.toString(subst, tenv)}`),
+        List.Cons(
+          (
+            pos2,
+            `is not compatible with type ${this.fields2.toString(subst, tenv)}`,
+          ),
+          msgs,
+        ),
       )
     } else {
       msgs

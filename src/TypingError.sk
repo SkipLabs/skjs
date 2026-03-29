@@ -182,9 +182,10 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
 }
 
 class TypingError(
+  savedSubst: (SubstState, TCResults),
+  tenv: TEnv,
   messages: Array<(PosRange, String)>,
-  stErr: ?STErrorOnTType = None(),
-  substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+  stErr: STErrorOnTType,
 ) extends Error {
   fun toString(
     context: mutable SKStore.Context,
@@ -214,13 +215,9 @@ class TypingError(
     | ErrorDetailHide() -> return ""
     | ErrorDetailMinimal() -> void
     | detail @ STErrorDetail _ ->
-      this.stErr match {
-      | Some(e) ->
-        !messages = messages.concat(
-          e.toError(detail, this.substValues).toArray(),
-        )
-      | None() -> void
-      }
+      e = this.stErr;
+      subst = Subst::mcreateFromSaved(context, this.savedSubst);
+      !messages = messages.concat(e.toError(subst, this.tenv, detail).toArray())
     };
 
     result = mutable Vector[];
@@ -235,16 +232,41 @@ class TypingError(
   }
 }
 
-fun typingError<T>(
+class NamingError(messages: Array<(PosRange, String)>) extends Error {
+  fun toString(
+    context: mutable SKStore.Context,
+    newLinesMap: NewLinesMap,
+    symbolsMap: SymbolsMap,
+    _errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
+  ): String {
+    result = mutable Vector[];
+    messages = this.messages;
+    for (message in messages) {
+      pos = message.i0;
+      fileName = pos.fileName;
+      resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
+      result.push(resolver.relPosRange(message.i0).toString());
+      result.push(message.i1);
+    };
+    result.join("\n")
+  }
+}
+
+fun error<T>(messages: Array<(PosRange, String)>): T {
+  throw ErrorExn(NamingError(messages))
+}
+
+fun complexError<T>(
+  subst: mutable Subst,
+  tenv: TEnv,
   messages: Array<(PosRange, String)>,
-  stErr: ?STErrorOnTType = None(),
-  substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+  stErr: STErrorOnTType,
 ): T {
-  throw ErrorExn(TypingError(messages, stErr, substValues))
+  throw ErrorExn(TypingError(subst.saveAll(), tenv, messages, stErr))
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {
-  typingError(Array[(pos, `Construction not supported: ${what}`)])
+  error(Array[(pos, `Construction not supported: ${what}`)])
 }
 
 module end;

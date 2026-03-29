@@ -468,7 +468,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 class CheckResult(
   fileName: FAbsolute,
   parseError: ?LexingOrParsingError,
-  errors: Array<TypingError>,
+  errors: Array<Error>,
   callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
@@ -532,7 +532,10 @@ class Checker private {
         parsedFile.value match {
         | PROk(defs) ->
           results = this.checker.check(context, defs);
-          fileDefErrors = this.checker.defMap.getFileErrors(context, fileName);
+          fileDefErrors = this.checker.defMap.getNamingErrors(
+            context,
+            fileName,
+          );
           errors = fileDefErrors.concat(results.errors.toArray());
           writer.set(
             fileName,

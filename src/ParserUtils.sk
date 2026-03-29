@@ -6,7 +6,7 @@ extension class Parser {
   /***************************************************************************/
 
   readonly fun error<T>(pos: ErrorPos, kind: ParsingKind): T {
-    error(ParsingError(pos, kind))
+    throw ErrorExn(ParsingError(pos, kind))
   }
 
   readonly fun getVar(tok: Token): String {

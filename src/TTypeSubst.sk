@@ -54,6 +54,27 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
     mutable Subst{context => tcenvb.context, results => tcenvb.results}
   }
 
+  readonly fun saveAll(): (SubstState, TCResults) {
+    (this.save(), this.results.chill())
+  }
+
+  static fun mcreateFromSaved(
+    context: mutable SKStore.Context,
+    stateAndResults: (SubstState, TCResults),
+  ): mutable this {
+    (state, results) = stateAndResults;
+    mutable static{
+      context,
+      seenSub => state.seenSub,
+      seenInter => state.seenInter,
+      seenUnion => state.seenUnion,
+      seenExpansion => state.seenExpansion,
+      version => state.version,
+      values => state.values,
+      results => results.mclone(),
+    }
+  }
+
   /* Use Subst#clone to create a temporary subst when there is already
      one that shouldn't be polluted.
      One would typically do this to check subtyping relations that are

@@ -609,12 +609,35 @@ fun testUpdateFileAnnotations(): void {
 
 @test
 fun testLineNValidation(): void {
+  compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{};
+  builtinsFileName = Path.resolve(builtinsArgFileName);
+  context = SKStore.Context::mcreate{};
+  files =
+    SKJS.Files::create(
+      context,
+      ".",
+      builtinsFileName,
+      Array[],
+      false,
+      Array[],
+    ) |> expectFilesSuccess;
+  checker = SKJS.Checker::create{
+    context,
+    files,
+    errorHandling => SKJS.EHKeepGoing(),
+    errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
+    compilerOptions,
+  };
+  tenv = checker.checker;
+  results = SKJS.TCResults::mcreate{errorHandling => SKJS.EHDefault()};
+  tcenvb = mutable SKJS.TCEnvLight{context, results};
+  subst = SKJS.Subst::mcreate(tcenvb);
   ref = findExpectErrors(
     lines(Array["// @skjs-expect-error-line2 Hint only", "testFoo();"]),
   )[0];
   fileName = SKJS.FAbsolute::create(Path.resolve("./tmp.ts"));
   emptyErrors: Array<SKJS.Error> = Array[];
-  ref.validate(fileName, emptyErrors) match {
+  ref.validate(subst, tenv, fileName, emptyErrors) match {
   | Some(err) ->
     SKTest.expectEq(
       err.getMessage(),

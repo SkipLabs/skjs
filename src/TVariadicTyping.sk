@@ -128,7 +128,9 @@ class VariadicTyping() {
           | STOk() -> void
           | stErr @ STErrorOnTType _ ->
             subst.restore(saved);
-            tcenv.error(
+            tcenv.complexError(
+              subst,
+              tenv,
               Array[
                 (
                   pos,
@@ -136,15 +138,20 @@ class VariadicTyping() {
                     false,
                     inferred,
                     tcenv.subst,
+                    tenv,
                   )} do not satisfy the constraint`,
                 ),
                 (
                   cstr.pos,
-                  `Constraint ${prettyPrintType(false, cstr, tcenv.subst)}`,
+                  `Constraint ${prettyPrintType(
+                    false,
+                    cstr,
+                    tcenv.subst,
+                    tenv,
+                  )}`,
                 ),
               ],
-              Some(stErr),
-              tcenv.subst.values,
+              stErr,
             );
             return true
           }
@@ -217,10 +224,11 @@ class VariadicTyping() {
             TType::isSub(tcenv.subst, tenv, knownRest[i], tupleElts[i]) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.error(
+              tcenv.complexError(
+                tcenv.subst,
+                tenv,
                 Array[(pos, "Invalid argument")],
-                Some(err),
-                tcenv.subst.values,
+                err,
               )
             }
           }
@@ -234,10 +242,11 @@ class VariadicTyping() {
             TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.error(
+              tcenv.complexError(
+                tcenv.subst,
+                tenv,
                 Array[(pos, "Invalid argument")],
-                Some(err),
-                tcenv.subst.values,
+                err,
               )
             }
           };
@@ -245,10 +254,11 @@ class VariadicTyping() {
             TType::isSub(tcenv.subst, tenv, ma, eltType) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.error(
+              tcenv.complexError(
+                tcenv.subst,
+                tenv,
                 Array[(pos, "Invalid argument")],
-                Some(err),
-                tcenv.subst.values,
+                err,
               )
             }
           })
@@ -262,6 +272,7 @@ class VariadicTyping() {
                   false,
                   spreadType.full(),
                   tcenv.subst,
+                  tenv,
                 )} is not an array`,
               ),
             ],

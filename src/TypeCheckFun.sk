@@ -62,7 +62,7 @@ extension class TypeChecker {
         )
       };
       paramType = param.type match {
-      | None() -> typingError(Array[(param.pos, "Missing type annotation")])
+      | None() -> error(Array[(param.pos, "Missing type annotation")])
       | Some(ty) -> this.normalize(subst, ty)
       };
       param.isRest.each(_ ->
@@ -103,14 +103,14 @@ extension class TypeChecker {
       paramName = param.name.value match {
       | PVar(n) -> n
       | _ ->
-        typingError(
+        error(
           Array[
             (param.pos, "TODO: support for patterns in function parameters"),
           ],
         )
       };
       if (paramName.value == "this") {
-        typingError(Array[(paramName.pos, "TODO: support this parameter")])
+        error(Array[(paramName.pos, "TODO: support this parameter")])
       };
       tcenv.scope.bind(tcenv, paramName, paramType, true)
     };

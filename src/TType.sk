@@ -213,8 +213,8 @@ class TType private {
         // internal_error: no subst available because rawMap is called from
         // generic type transformers (e.g. RenameClauses) whose Env may not
         // contain a substitution.
-        from = prettyPrint(false, pp -> pp.type(0, Margin{}, this));
-        to = prettyPrint(false, pp ->
+        from = rawPrettyPrint(false, pp -> pp.type(0, Margin{}, this));
+        to = rawPrettyPrint(false, pp ->
           pp.type(0, Margin{}, TType::create(this.pos, insts, Clauses::top()))
         );
         internal_error(`Unexpected extra clauses when mapping ${from} to ${to}`)
@@ -297,8 +297,8 @@ class TType private {
 
   // UTILITIES
 
-  fun toString(subst: readonly Subst): String {
-    prettyPrintType(false, this, subst)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    prettyPrintType(false, this, subst, tenv)
   }
 
   // BOOLEAN PROPERTIES
@@ -344,6 +344,29 @@ class TType private {
       };
       true
     }
+  }
+
+  fun expandTVars(subst: mutable Subst, tenv: TEnv): TType {
+    expanded = mutable Vector[];
+    others = mutable Vector[];
+    for (inst in this.insts) {
+      inst match {
+      | tv @ TVar _ -> expanded.push(subst.get(tenv, tv, Covariant()))
+      | arrLit @ TArrayLit _ ->
+        expanded.push(ArrayLitTyping::expand(subst, tenv, arrLit))
+      | o -> others.push(o)
+      };
+    };
+    if (expanded.isEmpty()) return this;
+    acc = static::create(
+      this.pos,
+      TInsts::createFromMVector(others),
+      this.clauses,
+    );
+    for (ty in expanded) {
+      !acc = TType::union(subst, tenv, acc, ty);
+    };
+    acc
   }
 
   // OTHER PROPERTIES
@@ -481,21 +504,35 @@ class TObject private (
     TObject::createSingleBranch(TFields::empty(), None(), pos)
   }
 
-  static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
+  static fun createCallWithPos(
+    subst: mutable Subst,
+    tenv: TEnv,
+    tFuns: TFuns,
+    pos: PosRange,
+  ): TObject {
     TObject::createSingleBranch(
-      TFields::create{call => Some(tFuns)},
+      TFields::create{subst, tenv, call => Some(tFuns)},
       None(),
       pos,
     )
   }
 
-  static fun createCall(tFuns: TFuns): TObject {
-    TObject::createCallWithPos(tFuns, tFuns.pos)
+  static fun createCall(
+    subst: mutable Subst,
+    tenv: TEnv,
+    tFuns: TFuns,
+  ): TObject {
+    TObject::createCallWithPos(subst, tenv, tFuns, tFuns.pos)
   }
 
-  static fun createNew(tFuns: TFuns, pos: PosRange): TObject {
+  static fun createNew(
+    subst: mutable Subst,
+    tenv: TEnv,
+    tFuns: TFuns,
+    pos: PosRange,
+  ): TObject {
     TObject::createSingleBranch(
-      TFields::create{new => Some(tFuns)},
+      TFields::create{subst, tenv, new => Some(tFuns)},
       None(),
       pos,
     )
@@ -666,8 +703,8 @@ class TFun(
   retType: TType,
   cgNodes: CGNodes,
 ) uses XXHashable, Orderable {
-  fun toString(): String {
-    prettyPrintTFun(this)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    prettyPrintTFun(subst, tenv, this)
   }
 }
 
@@ -709,8 +746,8 @@ class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
     this.pos
   }
 
-  fun toString(subst: readonly Subst): String {
-    `ReadonlyArray<${this.eltType.toString(subst)}>`
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    `ReadonlyArray<${this.eltType.toString(subst, tenv)}>`
   }
 
   fun maybeGetEltType(
@@ -731,8 +768,8 @@ class ATFullType(fullType: TType) extends ArrayType {
     this.fullType.pos
   }
 
-  fun toString(subst: readonly Subst): String {
-    this.fullType.toString(subst)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    this.fullType.toString(subst, tenv)
   }
 
   fun maybeGetEltType(
@@ -921,8 +958,8 @@ base class SType private (
     this.tag()
   }
 
-  fun toString(): String {
-    prettyPrintSType(this, false)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    prettyPrintSType(subst, tenv, this, false)
   }
 }
 
@@ -1221,7 +1258,8 @@ class TFields protected {
   }
 
   static fun create{
-    substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+    subst: mutable Subst,
+    tenv: TEnv,
     fields: mutable Map<FieldNameString, TField> = mutable Map[],
     symbolFields: readonly Map<FieldNameString, TField> = Map[],
     tIndexes: TIndexesBase = TIndexes::empty,
@@ -1243,14 +1281,15 @@ class TFields protected {
       | _ -> None()
       } match {
       | None() ->
-        typingError(
+        error(
           Array[
             (
               brandField.get.pos,
-              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${prettyPrint(
+              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${prettyPrintType(
                 false,
-                pp -> pp.type(0, Margin{}, brandField.get),
-                substValues,
+                brandField.get,
+                subst,
+                tenv,
               )}`,
             ),
           ],
@@ -1409,7 +1448,7 @@ class TFields protected {
   }
 
   fun getTypeTypingError<T>(fieldName: String, pos: PosRange): T {
-    typingError(
+    error(
       Array[
         (pos, `Unbound field: ${fieldName}`),
         (
@@ -1474,8 +1513,8 @@ class TFields protected {
     }
   }
 
-  fun toString(): String {
-    prettyPrintFields(this)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    prettyPrintFields(subst, tenv, this)
   }
 }
 
@@ -1561,8 +1600,8 @@ class STypes private (
     }
   }
 
-  fun toString(): String {
-    prettyPrintSTypes(this)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    prettyPrintSTypes(subst, tenv, this)
   }
 
   /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
@@ -1697,6 +1736,10 @@ class TInsts private (
     TInsts(ArraySet::single(inst))
   }
 
+  static fun createFromMVector(insts: mutable Vector<TInst>): this {
+    static(ArraySet::createFromMVector(insts))
+  }
+
   fun mapInsts(f: TInst -> TInst): TInsts {
     TInsts(this.insts.mapToSet(f))
   }
@@ -1765,8 +1808,8 @@ class TInsts private (
     TInsts(left.insts.diff(right.insts))
   }
 
-  fun toString(): String {
-    prettyPrintTInsts(this)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    prettyPrintTInsts(subst, tenv, this)
   }
 }
 
@@ -1820,7 +1863,7 @@ class TParam(
 class Clause private (
   vars: ArraySet<TParam>,
   stypes: ?STypes,
-) uses XXHashable, Orderable, Projectable<ArraySet<TParam>>, Show {
+) uses XXHashable, Orderable, Projectable<ArraySet<TParam>> {
   /* Invariant: Clause cannot be bottom */
 
   // Returns None if the result is bottom (i.e. if stypes is Some(bottom))
@@ -1888,8 +1931,8 @@ class Clause private (
     this.vars
   }
 
-  fun toString(): String {
-    prettyPrintClause(this)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    prettyPrintClause(subst, tenv, this)
   }
 
   /*
@@ -1916,7 +1959,7 @@ class Clause private (
 // 〚 clauses 〛 = ⨆ 〚 c 〛, for c in clauses.clauses
 class Clauses private (
   clauses: InternalKeyedArrayMap<ArraySet<TParam>, Clause>,
-) extends Sequence<Clause> uses XXHashable, Orderable, Show {
+) extends Sequence<Clause> uses XXHashable, Orderable {
   /*
     Invariant: if one of the clauses is Top, then there are no other clauses
    */
@@ -2077,8 +2120,8 @@ class Clauses private (
     this.clauses.values()
   }
 
-  fun toString(): String {
-    prettyPrintClauses(this)
+  fun toString(subst: mutable Subst, tenv: TEnv): String {
+    prettyPrintClauses(subst, tenv, this)
   }
 }
 

@@ -69,7 +69,7 @@ extension class TypeChecker {
           };
         };
         if (arrPat.size() != tyl.size()) {
-          typingError(
+          error(
             Array[
               (
                 pos,
@@ -86,7 +86,7 @@ extension class TypeChecker {
         eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
         | Some(t) -> t
         | None() ->
-          typingError(
+          error(
             Array[
               (pos, "Invalid tuple pattern"),
               (
@@ -95,6 +95,7 @@ extension class TypeChecker {
                   false,
                   type,
                   tcenv.subst,
+                  this,
                 )}`,
               ),
             ],
@@ -126,7 +127,7 @@ extension class TypeChecker {
           }
         }
       | _ ->
-        typingError(
+        error(
           Array[
             (pos, "Invalid tuple pattern"),
             (
@@ -135,6 +136,7 @@ extension class TypeChecker {
                 false,
                 type,
                 tcenv.subst,
+                this,
               )}`,
             ),
           ],
@@ -149,10 +151,13 @@ extension class TypeChecker {
       };
       type.getSTypes(tcenv.subst, this, Covariant()) match {
       | None() ->
-        typingError(
+        error(
           Array[
             (pos, "Invalid object pattern"),
-            (type.pos, `This is ${prettyPrintType(false, type, tcenv.subst)}`),
+            (
+              type.pos,
+              `This is ${prettyPrintType(false, type, tcenv.subst, this)}`,
+            ),
           ],
         )
       | Some(stypes) ->
@@ -161,12 +166,12 @@ extension class TypeChecker {
           | tobj @ TObject(_, _, _) ->
             (tobj.getBranches(), tobj.removeFields(fieldsToRemoveForRest))
           | _ ->
-            typingError(
+            error(
               Array[
                 (pos, "Invalid object pattern"),
                 (
                   type.pos,
-                  `This is ${prettyPrintType(false, type, tcenv.subst)}`,
+                  `This is ${prettyPrintType(false, type, tcenv.subst, this)}`,
                 ),
               ],
             )
@@ -186,7 +191,12 @@ extension class TypeChecker {
                     (fieldName.pos, `The field ${fieldName} is missing`),
                     (
                       type.pos,
-                      `Out of ${prettyPrintType(false, type, tcenv.subst)}`,
+                      `Out of ${prettyPrintType(
+                        false,
+                        type,
+                        tcenv.subst,
+                        this,
+                      )}`,
                     ),
                   ],
                 )
@@ -272,7 +282,7 @@ extension class TypeChecker {
         tcenv.error(Array[(pos, "Const must be bound to a value")]);
       };
       type match {
-      | None() -> typingError(Array[(pos, "Was expecting a type or a value")])
+      | None() -> error(Array[(pos, "Was expecting a type or a value")])
       | Some(annotAst) ->
         ty = this.normalize(tcenv, annotAst);
         (ty, false)
@@ -325,7 +335,7 @@ extension class TypeChecker {
     | Some(ty @ TPrimValue(TNum(), _, _))
     | Some(ty @ TPrimValue(TSymbol(), _, _)) ->
       ty
-    | _ -> typingError(Array[(idx.pos, "Invalid index type")])
+    | _ -> error(Array[(idx.pos, "Invalid index type")])
     };
     objType2 = ArrayLitTyping::refineForArrayUse(
       tcenv,
@@ -336,7 +346,7 @@ extension class TypeChecker {
     stypes = objType2.getSTypes(tcenv.subst, this, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
     | _ ->
-      typingError(
+      error(
         Array[
           (
             pos,
@@ -344,6 +354,7 @@ extension class TypeChecker {
               false,
               objType2,
               tcenv.subst,
+              this,
             )}`,
           ),
         ],
@@ -374,7 +385,7 @@ extension class TypeChecker {
         | _ -> None()
         } match {
         | None() ->
-          typingError(
+          error(
             Array[
               (idx.pos, "Invalid index"),
               (tuplePos, "A tuple expects a static index"),
@@ -384,7 +395,7 @@ extension class TypeChecker {
         };
         tyAtN = tyArr.maybeGet(n) match {
         | Some(tyAtN) -> tyAtN
-        | None() -> typingError(Array[(pos, "Out of bound index")])
+        | None() -> error(Array[(pos, "Out of bound index")])
         };
         addResultCase(tyAtN)
 
@@ -395,7 +406,7 @@ extension class TypeChecker {
           | _ -> None()
           } match {
           | Some(id) -> id
-          | None() -> typingError(Array[(idx.pos, "Expected a unique symbol")])
+          | None() -> error(Array[(idx.pos, "Expected a unique symbol")])
           };
           obj.maybeGetSymbolType(
             tcenv.subst,
@@ -405,8 +416,7 @@ extension class TypeChecker {
             isLValue,
           ) match {
           | Some(ty) -> addResultCase(ty)
-          | None() ->
-            typingError(Array[(pos, "Symbol property not found on object")])
+          | None() -> error(Array[(pos, "Symbol property not found on object")])
           }
         } else {
           fields = obj.getFields(tcenv.subst, this);
@@ -478,7 +488,7 @@ extension class TypeChecker {
             | None() ->
               remainingIdxSType.literals match {
               | None() ->
-                typingError(
+                error(
                   Array[
                     (pos, "Invalid access"),
                     (
@@ -514,13 +524,13 @@ extension class TypeChecker {
         addResultCase(TType::single(TPrimUnit(TUndefined(), undefPos)))
 
       | _ ->
-        typingError(
+        error(
           Array[
             (pos, "Type cannot be accessed"),
             (
               idxType.pos,
               "This is a " +
-                prettyPrintType(false, TType::single(stype), tcenv.subst),
+                prettyPrintType(false, TType::single(stype), tcenv.subst, this),
             ),
           ],
         )
@@ -539,6 +549,7 @@ extension class TypeChecker {
               false,
               objType,
               tcenv.subst,
+              this,
             )} is never null nor undefined`,
           ),
         ],
@@ -554,6 +565,7 @@ extension class TypeChecker {
               false,
               objType,
               tcenv.subst,
+              this,
             )} is always null or undefined`,
           ),
         ],
@@ -611,6 +623,7 @@ extension class TypeChecker {
               false,
               ty,
               tcenv.subst,
+              this,
             )}`,
           ),
         ],
@@ -652,6 +665,7 @@ extension class TypeChecker {
               false,
               ty,
               tcenv.subst,
+              this,
             )}`,
           ),
         ],
@@ -669,17 +683,22 @@ extension class TypeChecker {
     if (!args.isEmpty()) {
       subst = tcenv.subst.clone();
       exprTy = this.expr(tcenv, args[0], true);
-      ty = if (expand) {
+      max_depth = 10;
+      actual = if (expand) {
         // Resolve single tvar to raw binding (without constraint intersection)
         // to avoid e.g. [string, number] & readonly unknown[] -> never.
-        exprTy.getSingleVar().flatMap(tvar -> subst.peekRaw(tvar)) match {
+        ty = exprTy.getSingleVar().flatMap(tvar -> subst.peekRaw(tvar)) match {
         | Some(rawBinding) -> rawBinding.expand(subst, this, Some(Covariant()))
         | None() -> exprTy.expand(subst, this, Some(Covariant()))
-        }
+        };
+        prettyPrintType(false, ty, subst, this, max_depth)
       } else {
-        exprTy
+        rawPrettyPrint(
+          false,
+          pp -> pp.type(0, Margin{max_depth}, exprTy),
+          subst.values,
+        )
       };
-      actual = prettyPrintType(false, ty, tcenv.subst);
       print_error(actual);
       if (args.size() >= 2) {
         expectedTy = this.expr(tcenv, args[1], true);
@@ -776,7 +795,7 @@ extension class TypeChecker {
           def match {
           | fd @ TopLevelFunDef _ ->
             tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
-            break TType::single(TObject::createCall(tFuns))
+            break TType::single(TObject::createCall(tcenv.subst, this, tFuns))
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv, c.name);
             break staticClass
@@ -795,7 +814,7 @@ extension class TypeChecker {
           | _ -> void
           }
         } else {
-          typingError(Array[(pos, "Unbound name")])
+          error(Array[(pos, "Unbound name")])
         }
       | Some(localDef) -> localDef
       }
@@ -832,6 +851,7 @@ extension class TypeChecker {
                     false,
                     spreadTy,
                     tcenv.subst,
+                    this,
                   )}`,
                 ),
               ],
@@ -1115,7 +1135,7 @@ extension class TypeChecker {
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           tFuns = this.funDecl(tcenv, false, fd, cgNode);
-          (name, TType::single(TObject::createCall(tFuns)))
+          (name, TType::single(TObject::createCall(tcenv.subst, this, tFuns)))
         };
         field = TField::create{
           pos => name.pos,
@@ -1207,6 +1227,7 @@ extension class TypeChecker {
                   false,
                   fty,
                   tcenv.subst,
+                  this,
                 )} may not be a function`,
               ),
             ],
@@ -1214,7 +1235,7 @@ extension class TypeChecker {
         };
         tfuns
       | None() ->
-        typingError(
+        error(
           Array[
             (pos, "Invalid call"),
             (
@@ -1223,6 +1244,7 @@ extension class TypeChecker {
                 false,
                 fty,
                 tcenv.subst,
+                this,
               )} is not a function`,
             ),
           ],
@@ -1275,6 +1297,7 @@ extension class TypeChecker {
                       false,
                       subExprTy,
                       tcenv.subst,
+                      this,
                     )} may not have a constructor`,
                   ),
                 ],
@@ -1282,7 +1305,7 @@ extension class TypeChecker {
             };
             this.call(tcenv, pos, f, tArgs, args, mostPrecise)
           | None() ->
-            typingError(
+            error(
               Array[
                 (pos, "Invalid new"),
                 (
@@ -1291,13 +1314,14 @@ extension class TypeChecker {
                     false,
                     subExprTy,
                     tcenv.subst,
+                    this,
                   )} has no constructor`,
                 ),
               ],
             )
           }
         | _ ->
-          typingError(
+          error(
             Array[
               (pos, "Invalid new"),
               (
@@ -1306,6 +1330,7 @@ extension class TypeChecker {
                   false,
                   subExprTy,
                   tcenv.subst,
+                  this,
                 )} is not an object`,
               ),
             ],
@@ -1383,12 +1408,17 @@ extension class TypeChecker {
           }
         );
         if (invalid) {
-          typingError(
+          error(
             Array[
               (pos, `Invalid unary operation ${nuop}`),
               (
                 subExpr.pos,
-                `This has type ${prettyPrintType(false, ty, tcenv.subst)}`,
+                `This has type ${prettyPrintType(
+                  false,
+                  ty,
+                  tcenv.subst,
+                  this,
+                )}`,
               ),
             ],
           )
@@ -1428,7 +1458,7 @@ extension class TypeChecker {
           this.checkSubType(tcenv, e2.pos, "Invalid + operand", ty2, res);
           res
         | _ ->
-          typingError(
+          error(
             Array[
               (pos, "Invalid + operation"),
               (
@@ -1437,6 +1467,7 @@ extension class TypeChecker {
                   false,
                   ty1,
                   tcenv.subst,
+                  this,
                 )}`,
               ),
             ],
@@ -1518,7 +1549,7 @@ extension class TypeChecker {
                 ),
                 (
                   e1.pos,
-                  `This is a ${prettyPrintType(false, ty, tcenv.subst)}`,
+                  `This is a ${prettyPrintType(false, ty, tcenv.subst, this)}`,
                 ),
               ],
             );
@@ -1566,7 +1597,7 @@ extension class TypeChecker {
         ty2 = this.expr(tcenv, e2, true);
         kind2 = this.checkIsNumeric(tcenv, e2.pos, "Invalid operation", ty2);
         if (kind1 != kind2) {
-          typingError(
+          error(
             Array[
               (
                 pos,
@@ -1594,7 +1625,7 @@ extension class TypeChecker {
       _ = this.expr(tcenv, e1, true);
       _ = this.getClass(tcenv, className);
       TType::single(TPrimValue::boolean(pos))
-    | InstanceOf(_, e2) -> typingError(Array[(e2.pos, "Unexpected instanceof")])
+    | InstanceOf(_, e2) -> error(Array[(e2.pos, "Unexpected instanceof")])
     | In(e1, e2) ->
       (t1, fieldsOpt, symFieldsOpt) = this.getInLhsTypeAndFields(
         tcenv,
@@ -1619,7 +1650,12 @@ extension class TypeChecker {
                 (pos, "Invalid in"),
                 (
                   e2.pos,
-                  `This has type ${prettyPrintType(false, t2, tcenv.subst)}`,
+                  `This has type ${prettyPrintType(
+                    false,
+                    t2,
+                    tcenv.subst,
+                    this,
+                  )}`,
                 ),
               ],
             );
@@ -1665,7 +1701,10 @@ extension class TypeChecker {
             tcenv.error(
               Array[
                 (pos, "TODO: in"),
-                (e2.pos, `For type ${prettyPrintType(false, t2, tcenv.subst)}`),
+                (
+                  e2.pos,
+                  `For type ${prettyPrintType(false, t2, tcenv.subst, this)}`,
+                ),
               ],
             );
             !canBeTrue = true;
@@ -1680,11 +1719,21 @@ extension class TypeChecker {
               (pos, "Unexpected in"),
               (
                 e1.pos,
-                `This has type ${prettyPrintType(false, t1, tcenv.subst)}`,
+                `This has type ${prettyPrintType(
+                  false,
+                  t1,
+                  tcenv.subst,
+                  this,
+                )}`,
               ),
               (
                 e2.pos,
-                `This has type ${prettyPrintType(false, t2, tcenv.subst)}`,
+                `This has type ${prettyPrintType(
+                  false,
+                  t2,
+                  tcenv.subst,
+                  this,
+                )}`,
               ),
             ],
           )
@@ -1774,7 +1823,7 @@ extension class TypeChecker {
         body,
       )
     | As _ -> notSupported(pos, "operator as")
-    | Async _ -> typingError(Array[(pos, "Invalid async")])
+    | Async _ -> error(Array[(pos, "Invalid async")])
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
       aeType.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
@@ -1782,7 +1831,7 @@ extension class TypeChecker {
       ) match {
       | Some(TPromise(ty, _)) -> ty
       | _ ->
-        typingError(
+        error(
           Array[(pos, "Invalid await"), (aeType.pos, "This is not a promise")],
         )
       }
@@ -1824,8 +1873,8 @@ extension class TypeChecker {
         this.expr(tcenv, subExpr, true)
       }
     | Params _ -> paramsError(pos)
-    | Regexp _ -> typingError(Array[(pos, "TODO: regexp")])
-    | Spread _ -> typingError(Array[(pos, "TODO: ...")])
+    | Regexp _ -> error(Array[(pos, "TODO: regexp")])
+    | Spread _ -> error(Array[(pos, "TODO: ...")])
     }
   }
 
@@ -1872,11 +1921,12 @@ extension class TypeChecker {
                 false,
                 TType::single(stype),
                 tcenvb.subst,
+                this,
               )}`,
             )
           }
         | _ ->
-          typingError(
+          error(
             Array[
               (pos, "Invalid unary !"),
               (
@@ -1885,6 +1935,7 @@ extension class TypeChecker {
                   false,
                   TType::single(stype),
                   tcenvb.subst,
+                  this,
                 )}`,
               ),
             ],
@@ -1934,15 +1985,14 @@ extension class TypeChecker {
   ): TType {
     paramTypes = params.map(param -> {
       if (param.i0.value == "this") {
-        typingError(
+        error(
           Array[
             (param.i0.pos, "Parameter this forbidden in anonymous functions"),
           ],
         )
       };
       param.i1 match {
-      | None() ->
-        typingError(Array[(param.i0.pos, "Please add a type annotation")])
+      | None() -> error(Array[(param.i0.pos, "Please add a type annotation")])
       | Some(ty) -> (param.i0, this.normalize(tcenv, ty))
       }
     });
@@ -2002,6 +2052,8 @@ extension class TypeChecker {
 
     TType::single(
       TObject::createCall(
+        tcenv.subst,
+        this,
         TFuns::singleFun(
           TFun(
             Array[],
@@ -2239,7 +2291,8 @@ extension class TypeChecker {
           )
         };
         allNewFields = TFields::create{
-          substValues => tcenv.subst.values,
+          subst => tcenv.subst,
+          tenv => this,
           fields => newFieldsMap,
           symbolFields => newSymbolFieldsMap,
           /* Local objects are not arrays but a type annotation may lose this information */
@@ -2339,12 +2392,17 @@ extension class TypeChecker {
             Some(symLits.map(more -> existing.union(more)))
           }
         | _ ->
-          typingError(
+          error(
             Array[
               (pos, "Invalid in"),
               (
                 e1.pos,
-                `This has type ${prettyPrintType(false, t1, tcenv.subst)}`,
+                `This has type ${prettyPrintType(
+                  false,
+                  t1,
+                  tcenv.subst,
+                  this,
+                )}`,
               ),
             ],
           )
@@ -2352,10 +2410,13 @@ extension class TypeChecker {
       };
       (t1, fieldLitsOpt, symLitsOpt)
     | _ ->
-      typingError(
+      error(
         Array[
           (pos, "Invalid in"),
-          (e1.pos, `This has type ${prettyPrintType(false, t1, tcenv.subst)}`),
+          (
+            e1.pos,
+            `This has type ${prettyPrintType(false, t1, tcenv.subst, this)}`,
+          ),
         ],
       )
     }
@@ -2391,6 +2452,7 @@ extension class TypeChecker {
                     false,
                     spreadTy,
                     tcenv.subst,
+                    this,
                   )}`,
                 ),
               ],
@@ -2418,7 +2480,12 @@ extension class TypeChecker {
               (argExpr.pos, "Invalid spread argument"),
               (
                 spreadTy.pos,
-                `It has type ${prettyPrintType(false, spreadTy, tcenv.subst)}`,
+                `It has type ${prettyPrintType(
+                  false,
+                  spreadTy,
+                  tcenv.subst,
+                  this,
+                )}`,
               ),
             ],
           )
