@@ -347,26 +347,34 @@ class TType private {
   }
 
   fun expandTVars(subst: mutable Subst, tenv: TEnv): TType {
-    expanded = mutable Vector[];
-    others = mutable Vector[];
-    for (inst in this.insts) {
-      inst match {
-      | tv @ TVar _ -> expanded.push(subst.get(tenv, tv, Covariant()))
-      | arrLit @ TArrayLit _ ->
-        expanded.push(ArrayLitTyping::expand(subst, tenv, arrLit))
-      | o -> others.push(o)
+    seenTVars = mutable Set[];
+    loop {
+      expanded = mutable Vector[];
+      otherInsts = mutable Vector[];
+      for (inst in this.insts) {
+        inst match {
+        | tv @ TVar _ ->
+          if (!seenTVars.contains(tv.id)) {
+            seenTVars.insert(tv.id);
+            expanded.push(subst.get(tenv, tv, Covariant()))
+          }
+        | arrLit @ TArrayLit _ ->
+          expanded.push(ArrayLitTyping::expand(subst, tenv, arrLit))
+        | o -> otherInsts.push(o)
+        };
       };
-    };
-    if (expanded.isEmpty()) return this;
-    acc = static::create(
-      this.pos,
-      TInsts::createFromMVector(others),
-      this.clauses,
-    );
-    for (ty in expanded) {
-      !acc = TType::union(subst, tenv, acc, ty);
-    };
-    acc
+      !this = static::create(
+        this.pos,
+        TInsts::createFromMVector(otherInsts),
+        this.clauses,
+      );
+      if (expanded.isEmpty()) {
+        return this;
+      };
+      for (ty in expanded) {
+        !this = TType::union(subst, tenv, this, ty);
+      }
+    }
   }
 
   // OTHER PROPERTIES
@@ -1650,7 +1658,9 @@ class STypes private (
 // 〚 constraints 〛 = ⨅ 〚 c 〛 for c in constraints
 //
 // *see Subst#get
-base class TVarID private final (value: Int) uses Orderable, XXHashable {
+base class TVarID private final (
+  value: Int,
+) uses Orderable, XXHashable, Hashable {
   children =
   // A normal type variable identifier
   | TVID

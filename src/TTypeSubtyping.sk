@@ -461,7 +461,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
       )
     }
   | STRecTypeWithHint(err, hints, ty1, ty2) ->
-    msgs = STRecType(err, ty1, ty2).toError(detail);
+    msgs = STRecType(err, ty1, ty2).toError(subst, tenv, detail);
     msgs.concat(hints)
 }
 
@@ -1162,12 +1162,14 @@ extension class TType {
     for (inst in u2.insts) {
       inst match {
       | tvar @ TVar _ if (clonedSubst.isClosed(tvar)) ->
-        sealedType = clonedSubst.peekRaw(tvar) match {
+        rawSealed = clonedSubst.peekRaw(tvar) match {
         | Some(ty) -> ty
         | None() -> continue
         };
-        widerType = TType::union(clonedSubst, tenv, sealedType, u1);
-        widerStr = widerType.toString(clonedSubst);
+        sealedType = rawSealed.expandTVars(clonedSubst, tenv);
+        expandedU1 = u1.expandTVars(clonedSubst, tenv);
+        widerType = TType::union(clonedSubst, tenv, sealedType, expandedU1);
+        widerStr = widerType.toString(clonedSubst, tenv);
         clonedSubst.getOrigin(tvar) match {
         | Some(FromGenericInst(pos, allTVars))
         | Some(FromGenericCall(pos, allTVars)) ->
@@ -1176,7 +1178,8 @@ extension class TType {
               widerStr
             } else {
               clonedSubst.peekRaw(tv) match {
-              | Some(ty) -> ty.toString(clonedSubst)
+              | Some(ty) ->
+                ty.expandTVars(clonedSubst, tenv).toString(clonedSubst, tenv)
               | None() -> "unknown"
               }
             }
