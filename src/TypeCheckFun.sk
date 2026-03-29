@@ -159,6 +159,7 @@ extension class TypeChecker {
       | None() -> void
       | Some(retType) ->
         tvar = tcenv.subst.gen(asyncPos);
+        tcenv.subst.setOrigin(tvar, FromAsyncReturn(asyncPos));
         type = TType::var(tvar);
         this.checkSubType(
           tcenv,

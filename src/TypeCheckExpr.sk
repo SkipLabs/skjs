@@ -289,6 +289,17 @@ extension class TypeChecker {
       }
     | Some(e) ->
       ty = this.expr(tcenv, e, kind is BKConst());
+      // Wrap null/undefined initializers in a bound TVar so the variable
+      // can be widened later (e.g., `let x = null; x = 1`).
+      // We only do this here (not in expr) to avoid sealing container TVars
+      // when null/undefined is passed as an argument (e.g., `x.push(null)`).
+      !ty = e.value match {
+      | Var(Name(_, "null")) if (type is None()) ->
+        this.makeBoundTVar(tcenv, ty, FromNullLiteral(e.pos))
+      | Var(Name(_, "undefined")) if (type is None()) ->
+        this.makeBoundTVar(tcenv, ty, FromUndefinedLiteral(e.pos))
+      | _ -> ty
+      };
       type match {
       | None() -> (ty, true)
       | Some(annotAst) ->
@@ -776,10 +787,8 @@ extension class TypeChecker {
     | Var(Name(_, "true"))
     | Var(Name(_, "false")) ->
       TType::single(TPrimValue::boolean(pos))
-    | Var(Name(_, "null")) ->
-      this.makeBoundTVar(tcenv, TType::single(TPrimUnit(TNull(), pos)))
-    | Var(Name(_, "undefined")) ->
-      this.makeBoundTVar(tcenv, TType::single(TPrimUnit(TUndefined(), pos)))
+    | Var(Name(_, "null")) -> TType::single(TPrimUnit(TNull(), pos))
+    | Var(Name(_, "undefined")) -> TType::single(TPrimUnit(TUndefined(), pos))
     | Var(local) ->
       // Transition local objects to LOUsed state when read/referenced.
       // Once used, the type is frozen - no more fields can be added.
@@ -806,7 +815,7 @@ extension class TypeChecker {
             break type match {
             | None() ->
               value.flatMap(e -> this.asConstExpr(tcenv, e)) match {
-              | None() -> this.newTVar(tcenv, pos)
+              | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
               | Some(ty) -> TType::single(ty)
               }
             | Some(ty) -> this.normalize(tcenv, ty, kind is VDKConst _)
@@ -829,7 +838,7 @@ extension class TypeChecker {
           (
             name,
             if (y.value is Object _ || ttype.isConcretePrimitive()) {
-              this.makeBoundTVarForField(tcenv, ttype)
+              this.makeBoundTVarForField(tcenv, ttype, FromObjectField(y.pos))
             } else {
               ttype
             },
@@ -1346,7 +1355,7 @@ extension class TypeChecker {
     // We always interpret `[]` as an array, not a tuple.
     // Because an empty tuple is not very meaningful.
     | EArray(arr) if (arr.size() == 0) ->
-      tvar = this.newTVar(tcenv, pos);
+      tvar = this.newTVar(tcenv, pos, FromEmptyArray(pos));
       TType::inst(Name(pos, "Array"), TArgs(Array[tvar]))
 
     | EArray(arr) ->
@@ -1370,7 +1379,7 @@ extension class TypeChecker {
           arr.map(x -> {
             ty = this.expr(tcenv, x, mostPrecise);
             if (x.value is Object _ || ty.isConcretePrimitive()) {
-              this.makeBoundTVar(tcenv, ty)
+              this.makeBoundTVar(tcenv, ty, FromArrayElement(x.pos))
             } else {
               ty
             }
@@ -2032,9 +2041,11 @@ extension class TypeChecker {
     | (None(), CBBlock(bl)) ->
       if (isAsync is Some _) !this.isAsync = true;
       tvar = isAsync match {
-      | None() -> this.newTVar(tcenv, pos)
+      | None() -> this.newTVar(tcenv, pos, FromLambdaReturn(pos))
       | Some(asyncPos) ->
-        TType::single(TPromise(this.newTVar(tcenv, pos), asyncPos))
+        TType::single(
+          TPromise(this.newTVar(tcenv, pos, FromLambdaReturn(pos)), asyncPos),
+        )
       };
       !this.retType = Some(tvar);
       _ = this.block(tcenv, bl);
@@ -2515,12 +2526,21 @@ extension class TypeChecker {
         )
       };
       map = SortedMap[];
+      newTVars = mutable Vector[];
       for (i => tparamDecl in tfun.tparams) {
         !map[tparamDecl.id] = if (i < targs.size()) {
           targs[i]
         } else {
-          this.newTVar(tcenv, pos)
+          tv = tcenv.subst.gen(pos);
+          newTVars.push(tv);
+          TType::var(tv)
         };
+      };
+      if (!newTVars.isEmpty()) {
+        allNewTVars = newTVars.collect(Array);
+        for (tv in allNewTVars) {
+          tcenv.subst.setOrigin(tv, FromGenericCall(pos, allNewTVars))
+        }
       };
       !tfun = (mutable Instantiate()).fun_(
         (tcenv.subst, this, map.chill()),

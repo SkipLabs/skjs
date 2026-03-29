@@ -232,11 +232,18 @@ base class TEnv{
   }
 
   fun makeTArgs(tcenv: mutable TCEnv, className: Name): Array<TType> {
-    this.getClass(tcenv, className).tparams.map(tparam -> {
-      tvar = tcenv.subst.gen(className.pos);
-      tparam.constraint.each(cstr ->
-        !tvar = tvar.addConstraint(this.normalize(tcenv, cstr))
-      );
+    tparams = this.getClass(tcenv, className).tparams;
+    allTVars = tparams
+      .map(tparam -> {
+        tvar = tcenv.subst.gen(className.pos);
+        tparam.constraint.each(cstr ->
+          !tvar = tvar.addConstraint(this.normalize(tcenv, cstr))
+        );
+        tvar
+      })
+      .collect(Array);
+    allTVars.map(tvar -> {
+      tcenv.subst.setOrigin(tvar, FromGenericInst(className.pos, allTVars));
       TType::var(tvar)
     })
   }

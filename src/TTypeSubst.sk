@@ -17,6 +17,7 @@ mutable base class SubstState private {
   mutable seenExpansion: SortedMap<TSInst, TType> = SortedMap[],
   mutable version: Int = 0,
   mutable values: SortedMap<TVarID, SubstValue> = SortedMap[],
+  mutable origins: SortedMap<TVarID, TVarOrigin> = SortedMap[],
 } {
   readonly fun save(): SavedSubst {
     SavedSubst::create(this)
@@ -25,6 +26,7 @@ mutable base class SubstState private {
   mutable fun restore(saved: SavedSubst): void {
     this.!version = saved.version;
     this.!values = saved.values;
+    this.!origins = saved.origins;
     this.!seenSub = saved.seenSub;
     this.!seenInter = saved.seenInter;
     this.!seenUnion = saved.seenUnion;
@@ -42,6 +44,7 @@ mutable class SavedSubst private {} extends SubstState {
       seenExpansion => state.seenExpansion,
       version => state.version,
       values => state.values,
+      origins => state.origins,
     }
   }
 }
@@ -89,6 +92,7 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
       seenExpansion => this.seenExpansion,
       version => this.version,
       values => this.values,
+      origins => this.origins,
     }
   }
 
@@ -172,9 +176,21 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
     }
   }
 
+  readonly fun isClosed(tvar: TVar): Bool {
+    this.values.maybeGet(tvar.id) is Some(SVClosed _)
+  }
+
   // Returns true if the type variable has no binding at all
   readonly fun isUnbound(tvar: TVar): Bool {
     this.values.maybeGet(tvar.id) is None()
+  }
+
+  mutable fun setOrigin(tvar: TVar, origin: TVarOrigin): void {
+    this.!origins[tvar.id] = origin;
+  }
+
+  readonly fun getOrigin(tvar: TVar): ?TVarOrigin {
+    this.origins.maybeGet(tvar.id)
   }
 
   // Returns the raw bound value without applying constraints
