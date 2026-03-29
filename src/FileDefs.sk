@@ -155,9 +155,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields)
       | FDVar(_kind, Name(pos, _), _type, _value) ->
-        tcenvb.error(
-          Array[(pos, `TODO: DefMap#dot while getting ${name}`)],
-        )
+        tcenvb.error(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
       | FDNamespace(nsTypeOnly, _posOpt, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
         this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result)
