@@ -319,17 +319,16 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     }
   };
 
-  builtinsFileName = importStubs.size() match {
-  | 0 ->
+  if (importStubs.isEmpty()) {
     print_error("--import-stubs is required");
     throw Exit(2)
-  | 1 -> Path.join(importStubs[0], "@types/skjs/index.d.ts")
-  | _ ->
+  };
+  if (importStubs.size() > 1) {
     print_error(
       "More than one --import-stubs specified; using first one for builtins file",
     );
-    Path.join(importStubs[0], "@types/skjs/index.d.ts")
   };
+  builtinsFileName = Path.join(importStubs[0], "@types/skjs/index.d.ts");
   logAffectedFiles = args.getBool("log-affected-files");
   if (logAffectedFiles) {
     if (args.maybeGetString("init").isSome()) {
