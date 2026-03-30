@@ -187,11 +187,6 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Base directory from which to resolve modules (default: working directory)",
     ),
-  Cli.Arg::string("builtins-file")
-    .value_name("PATH")
-    .about(
-      "Path to the file containing type declarations for JavaScript builtins (default: IMPORT-PATH/@types/skjs/index.d.ts)",
-    ),
   Cli.Arg::string("import-stubs")
     .value_name("IMPORT-PATH")
     .repeatable()
@@ -324,22 +319,16 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     }
   };
 
-  builtinsFileName = args.maybeGetString("builtins-file") match {
-  | Some(x) -> x
-  | None() ->
-    importStubs.size() match {
-    | 0 ->
-      print_error(
-        "--builtins-file unspecified but --import-stubs unspecified as well",
-      );
-      throw Exit(2)
-    | 1 -> Path.join(importStubs[0], "@types/skjs/index.d.ts")
-    | _ ->
-      print_error(
-        "--builtins-file unspecified but more than one --import-stubs specified",
-      );
-      throw Exit(2)
-    }
+  builtinsFileName = importStubs.size() match {
+  | 0 ->
+    print_error("--import-stubs is required");
+    throw Exit(2)
+  | 1 -> Path.join(importStubs[0], "@types/skjs/index.d.ts")
+  | _ ->
+    print_error(
+      "More than one --import-stubs specified; cannot determine builtins file",
+    );
+    throw Exit(2)
   };
   logAffectedFiles = args.getBool("log-affected-files");
   if (logAffectedFiles) {
