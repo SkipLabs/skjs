@@ -91,6 +91,8 @@ base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
     _pos2: PosRange,
     _detail: STErrorDetail,
   ): List<(PosRange, String)>;
+
+  fun readonlyHintPos(): ?PosRange;
 }
 
 base class STErrorOnSType(
@@ -115,6 +117,10 @@ base class STErrorOnSType(
       (sType1.pos, `Type ${sType1.toString(subst, tenv)}`),
       (pos2, `is not compatible with type ${sTypes2.toString(subst, tenv)}`),
     ].concat(STError::readonlyHint(suggestReadonly))
+
+  fun readonlyHintPos(): ?PosRange {
+    this.suggestReadonly
+  }
 }
 
 base class STErrorOnTPrimValue(
@@ -147,6 +153,10 @@ base class STErrorOnTPrimValue(
       (prim2.pos, `is not compatible with type ${prim2.toString(subst, tenv)}`),
       (elt.pos, `Value '${elt.val}' is missing`),
     ].concat(STError::readonlyHint(suggestReadonly))
+
+  fun readonlyHintPos(): ?PosRange {
+    this.suggestReadonly
+  }
 }
 
 base class STErrorOnTTuple(
@@ -199,6 +209,10 @@ base class STErrorOnTTuple(
     } else {
       msgs
     }
+
+  fun readonlyHintPos(): ?PosRange
+  | STTooManyTTuple(_, _, suggestReadonly) -> suggestReadonly
+  | STRecTuple(err, _, _, _, _) -> err.readonlyHintPos()
 }
 
 base class STErrorOnTPromise(
@@ -231,6 +245,9 @@ base class STErrorOnTPromise(
     } else {
       msgs
     }
+
+  fun readonlyHintPos(): ?PosRange
+  | STRecPromise(err, _, _) -> err.readonlyHintPos()
 }
 
 base class STErrorOnObject(
@@ -299,6 +316,10 @@ base class STErrorOnObject(
       }
     };
     msgs
+
+  fun readonlyHintPos(): ?PosRange
+  | STRecObject(errs, _, _, _) ->
+    errs.values().findMap(item ~> item.i1.readonlyHintPos())
 }
 
 base class STErrorOnSTypes(
@@ -343,6 +364,9 @@ base class STErrorOnSTypes(
     } else {
       err.toError(subst, tenv, pos1, pos2, detail)
     }
+
+  fun readonlyHintPos(): ?PosRange
+  | STRecSTypes(err, _, _) -> err.readonlyHintPos()
 }
 
 base class STErrorOnClauses(
@@ -420,6 +444,10 @@ base class STErrorOnClauses(
       }
     };
     msgs
+
+  fun readonlyHintPos(): ?PosRange
+  | STRecClauses(errs, _, _, _) ->
+    errs.values().findMap(item ~> item.i1.readonlyHintPos())
 }
 
 base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
@@ -463,6 +491,10 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   | STRecTypeWithHint(err, hints, ty1, ty2) ->
     msgs = STRecType(err, ty1, ty2).toError(subst, tenv, detail);
     msgs.concat(hints)
+
+  fun readonlyHintPos(): ?PosRange
+  | STRecType(err, _, _) -> err.readonlyHintPos()
+  | STRecTypeWithHint(err, _, _, _) -> err.readonlyHintPos()
 }
 
 base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
@@ -733,6 +765,17 @@ base class STErrorOnTFields(
       )
     } else {
       msgs
+    }
+  }
+
+  fun readonlyHintPos(): ?PosRange {
+    this match {
+    | STRecFieldsField(_, _, f2, kind, _, _)
+    | STRecFieldsIndexValue(_, _, f2, kind, _, _)
+    | STRecFieldsFieldIndex(_, _, f2, kind, _, _)
+    | STRecFieldsIndexField(_, _, f2, kind, _, _) ->
+      kind.readonlyHintPos(f2.pos)
+    | _ -> None()
     }
   }
 }
@@ -1249,14 +1292,27 @@ extension class TType {
     | None() -> void
     };
 
+    constraintReadonlyPos: ?PosRange = None();
+
     savedSubst = subst.save();
     for (inst in u2.insts) {
       inst match {
       | tvar @ TVar(_, _, constraints) ->
         substCopy = subst.save();
-        if (
-          constraints.all(cstr -> TType::isSub(subst, tenv, u1, cstr) is STOk())
-        ) {
+        allOk = true;
+        for (cstr in constraints) {
+          TType::isSub(subst, tenv, u1, cstr) match {
+          | STOk() -> void
+          | err @ STErrorOnTType _ ->
+            constraintReadonlyPos match {
+            | None() -> !constraintReadonlyPos = err.readonlyHintPos()
+            | Some _ -> void
+            };
+            !allOk = false;
+            break void
+          }
+        };
+        if (allOk) {
           subst.grow(
             tenv,
             tvar,
@@ -1276,11 +1332,20 @@ extension class TType {
           ty.getSingleVar() match {
           | Some(tvar @ TVar(_, _, constraints)) if (subst.isUnbound(tvar)) ->
             substCopy = subst.save();
-            if (
-              constraints.all(cstr ->
-                TType::isSub(subst, tenv, u1, cstr) is STOk()
-              )
-            ) {
+            allOk = true;
+            for (cstr in constraints) {
+              TType::isSub(subst, tenv, u1, cstr) match {
+              | STOk() -> void
+              | err @ STErrorOnTType _ ->
+                constraintReadonlyPos match {
+                | None() -> !constraintReadonlyPos = err.readonlyHintPos()
+                | Some _ -> void
+                };
+                !allOk = false;
+                break void
+              }
+            };
+            if (allOk) {
               subst.grow(
                 tenv,
                 tvar,
@@ -1327,6 +1392,7 @@ extension class TType {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
       hints = static::originSuggestions(subst, tenv, u1, u2);
+      !hints = hints.concat(STError::readonlyHint(constraintReadonlyPos));
       subst.restore(savedSubst);
       STRecTypeWithHint(err, hints, u1, u2)
     }
