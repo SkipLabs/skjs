@@ -326,9 +326,9 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | 1 -> Path.join(importStubs[0], "@types/skjs/index.d.ts")
   | _ ->
     print_error(
-      "More than one --import-stubs specified; cannot determine builtins file",
+      "More than one --import-stubs specified; using first one for builtins file",
     );
-    throw Exit(2)
+    Path.join(importStubs[0], "@types/skjs/index.d.ts")
   };
   logAffectedFiles = args.getBool("log-affected-files");
   if (logAffectedFiles) {
