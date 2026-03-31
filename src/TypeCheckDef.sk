@@ -175,7 +175,10 @@ extension class TypeChecker {
         | _ ->
           tcenvl.error(
             Array[
-              (pos, "unique symbol type requires Symbol() call as initializer"),
+              (
+                pos,
+                "A unique symbol type requires a Symbol() call as initializer",
+              ),
             ],
           )
         }

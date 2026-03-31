@@ -78,7 +78,7 @@ base class STError<+T> extends STResult<T> uses Equality {
     suggestReadonly match {
     | None() -> List[]
     | Some(pos) ->
-      List[(pos, "This error would go away if this field was readonly")]
+      List[(pos, "This would not be an error if this field were readonly")]
     }
   }
 }

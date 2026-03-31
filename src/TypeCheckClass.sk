@@ -84,11 +84,11 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             parentName.pos,
-            "Invalid extends",
+            "Invalid extension",
             thisType,
             super,
           )
-        | _ -> tcenvl.error(Array[(c.name.pos, "Invalid extend")])
+        | _ -> tcenvl.error(Array[(c.name.pos, "Invalid extension")])
         }
       }
     };
@@ -154,10 +154,10 @@ extension class TypeChecker {
             )
           };
           if (!isReadonly) {
-            tcenvl.error(Array[(field.pos, "static fields must be readonly")])
+            tcenvl.error(Array[(field.pos, "Static fields must be readonly")])
           };
           field.optional.each(pos ->
-            tcenvl.error(Array[(pos, "static fields cannot be optional")])
+            tcenvl.error(Array[(pos, "Static fields cannot be optional")])
           );
           this.validateToplevelConst(tcenvl, field.pos, field.type, field.value)
         } else {

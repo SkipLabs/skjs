@@ -3,6 +3,6 @@
 function testMissingAnnotations(): void {
   let numbers: Array<number> = new Array<number>();
 
-  // @skjs-expect-error Please add a type annotation
+  // @skjs-expect-error Missing type annotation
   numbers.map((x) => x * 2);
 }

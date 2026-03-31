@@ -275,9 +275,7 @@ value class StmtTermination private {
   static fun branchCase(tcenvb: mutable TCEnvBase, e: Expr): void {
     static::expr(e).mayNonThrough().each(term ->
       tcenvb.error(
-        Array[
-          (e.pos, `Invalid switch branch case expression, it may ${term}.`),
-        ],
+        Array[(e.pos, `Invalid switch case expression: it may ${term}.`)],
       )
     )
   }
@@ -289,7 +287,7 @@ value class StmtTermination private {
   static fun forVar(tcenvb: mutable TCEnvBase, stmt: Stmt): void {
     static::stmt(tcenvb, stmt).mayNonThrough().each(term ->
       tcenvb.error(
-        Array[(stmt.pos, `Invalid for variable initializer, it may ${term}.`)],
+        Array[(stmt.pos, `Invalid for variable initializer: it may ${term}.`)],
       )
     )
   }

@@ -810,7 +810,9 @@ extension class TypeChecker {
             break staticClass
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
-              tcenv.error(Array[(name.pos, "Non-const not supported")]);
+              tcenv.error(
+                Array[(name.pos, "Non-const members are not supported")],
+              );
             };
             break type match {
             | None() ->
@@ -1877,7 +1879,7 @@ extension class TypeChecker {
       | Some(ty) -> TType::single(ty)
       | None() ->
         tcenv.error(
-          Array[(pos, "'as const' can only be used with some literals")],
+          Array[(pos, "'as const' can only be used with literal expressions")],
         );
         this.expr(tcenv, subExpr, true)
       }
@@ -2001,7 +2003,7 @@ extension class TypeChecker {
         )
       };
       param.i1 match {
-      | None() -> error(Array[(param.i0.pos, "Please add a type annotation")])
+      | None() -> error(Array[(param.i0.pos, "Missing type annotation")])
       | Some(ty) -> (param.i0, this.normalize(tcenv, ty))
       }
     });
@@ -2291,7 +2293,7 @@ extension class TypeChecker {
               (pos, "You are trying to add a field to this object"),
               (
                 usedPos,
-                "But this object has been already been used for something else",
+                "But this object has already been used for something else",
               ),
             ],
           )
