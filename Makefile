@@ -9,10 +9,12 @@ check:
 build:
 	skargo build
 
+JUNITXML_FLAGS=$(if $(JUNITXML),--junitxml $(JUNITXML))
+
 .PHONY: test
-test:
+test: build
 	cd skjs-tests && skargo build
-	./skjs-tests/target/host/dev/test
+	./skjs-tests/target/host/dev/test $(JUNITXML_FLAGS)
 	./tests/test_incremental.sh
 	./tests/test_affected_files.sh
 
