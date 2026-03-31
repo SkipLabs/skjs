@@ -280,7 +280,7 @@ fun parseTsConfigFile(path: String): (JSON.Object, String, DAbsolute) {
   stripped = stripJsonComments(contents);
   json = JSON.decode(stripped);
   obj = json.expectObject();
-  configDir = DAbsolute::create(Path.dirname(path));
+  configDir = DAbsolute::createRoot(Path.dirname(path));
   (obj, contents, configDir)
 }
 

@@ -30,9 +30,6 @@ mutable class Lexer private {
   // The name of the file that we are lexing
   fileName: FAbsolute,
 
-  // The hash of the relative path for consistent ID generation across machines
-  relativeFileNameHash: Int,
-
   // The contents of the file
   contents: Array<Char>,
 
@@ -104,20 +101,8 @@ mutable class Lexer private {
     result
   }
 
-  static fun mcreate(
-    fileName: FAbsolute,
-    contents: String,
-    root: DAbsolute,
-  ): mutable this {
-    // Compute relative path for consistent ID generation across machines
-    path = fileName.toString();
-    base = root.toString();
-    relativeFileNameHash = Path.relativeTo{path, base}.hash();
-    mutable static{
-      fileName,
-      relativeFileNameHash,
-      contents => contents.chars().toArray(),
-    }
+  static fun mcreate(fileName: FAbsolute, contents: String): mutable this {
+    mutable static{fileName, contents => contents.chars().toArray()}
   }
 
   readonly fun peekKind(): ?TokenKind {
