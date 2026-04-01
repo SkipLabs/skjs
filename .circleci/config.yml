@@ -28,15 +28,10 @@ jobs:
           command: |
             git clone --depth=1 --shallow-submodules --recurse-submodules https://github.com/SkipLabs/skip ../skip
       - run:
-          name: Check
-          command: |
-            skargo check
-      - run:
-          name: Tests
+          name: Test
           command: |
             mkdir -p ~/test-results
-            (cd skjs-tests && skargo build)
-            ./skjs-tests/target/host/dev/test --jobs 8 --junitxml ~/test-results/skjs.xml
+            make test JUNITXML=~/test-results/skjs.xml
       - store_test_results:
           path: ~/test-results/skjs.xml
 
