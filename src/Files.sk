@@ -75,7 +75,8 @@ class Files(
     srcFileSeq: Sequence<String>,
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
-    builtinsFileName = FAbsolute::create(builtinsFileNameStr);
+    rootDir = DAbsolute::createRoot(root);
+    builtinsFileName = FAbsolute::create(rootDir, builtinsFileNameStr);
     if (srcFileSeq.isEmpty()) {
       !srcFileSeq = Array[root]
     };
@@ -112,7 +113,7 @@ class Files(
     );
 
     for (fileName in srcFiles) {
-      key = FAbsolute::create(fileName);
+      key = FAbsolute::create(rootDir, fileName);
       content = FileSystem.readTextFile(fileName);
       fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
@@ -124,10 +125,10 @@ class Files(
     Success(
       Files(
         isInit,
-        DAbsolute::create(root),
+        rootDir,
         builtinsFileName,
         fileHdl,
-        importStubs.map(DAbsolute::create),
+        importStubs.map(s -> DAbsolute::create(rootDir, s)),
       ),
     )
   }
@@ -153,7 +154,7 @@ class Files(
       parsesDirName,
       (_context, writer, fileName, contentIter) ~> {
         content = contentIter.first.value;
-        lexer = Lexer::mcreate(fileName, content, this.root);
+        lexer = Lexer::mcreate(fileName, content);
         parser = mutable Parser(lexer);
         parsingResult = errorHandling match {
         | EHBacktrace() -> PROk(parser.toplevelDefs())

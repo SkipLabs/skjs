@@ -629,7 +629,10 @@ fun testLineNValidation(): void {
   ref = findExpectErrors(
     lines(Array["// @skjs-expect-error-line2 Hint only", "testFoo();"]),
   )[0];
-  fileName = SKJS.FAbsolute::create(Path.resolve("./tmp.ts"));
+  fileName = SKJS.FAbsolute::create(
+    SKJS.DAbsolute{root => Array[], path => Array[]},
+    Path.resolve("./tmp.ts"),
+  );
   emptyErrors: Array<SKJS.Error> = Array[];
   ref.validate(subst, tenv, fileName, emptyErrors) match {
   | Some(err) ->

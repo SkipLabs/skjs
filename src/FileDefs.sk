@@ -32,7 +32,6 @@ base class IDefMap {
 class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
-    root: DAbsolute,
     builtinsFileName: FAbsolute,
     importStubs: Array<DAbsolute>,
     parsedFiles: S.EHandle<FAbsolute, ParsedResultFile>,
@@ -63,7 +62,6 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
             Array[
               FileDefsState::createFileDefs(
                 context,
-                root,
                 fileName.dirName,
                 includes,
                 importStubs,
@@ -392,7 +390,6 @@ fun mapPush<K: Hashable & Equality, V>(
 
 mutable class FileDefsState private {
   context: mutable S.Context,
-  root: DAbsolute,
   dirName: DAbsolute,
   importStubs: Array<DAbsolute>,
   compilerOptions: TsCompilerOptions,
@@ -409,20 +406,13 @@ mutable class FileDefsState private {
 } {
   static fun createFileDefs(
     context: mutable S.Context,
-    root: DAbsolute,
     dirName: DAbsolute,
     includes: Array<FAbsolute>,
     importStubs: Array<DAbsolute>,
     compilerOptions: TsCompilerOptions,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable static{
-      context,
-      root,
-      dirName,
-      importStubs,
-      compilerOptions,
-    };
+    state = mutable static{context, dirName, importStubs, compilerOptions};
     state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
@@ -463,7 +453,11 @@ mutable class FileDefsState private {
       resolveName(this.dirName, name)
     } else {
       // Try path alias resolution first
-      resolvePathAlias(this.root, this.compilerOptions, name) match {
+      resolvePathAlias(
+        this.dirName.rootDir(),
+        this.compilerOptions,
+        name,
+      ) match {
       | some @ Some(_) -> some
       | None() -> resolveStubs(this.importStubs, name)
       }
@@ -549,7 +543,6 @@ mutable class FileDefsState private {
   private mutable fun createSubFileDefs(defs: Array<Def>): FileDefs {
     state = mutable static{
       context => this.context,
-      root => this.root,
       dirName => this.dirName,
       importStubs => this.importStubs,
       compilerOptions => this.compilerOptions,

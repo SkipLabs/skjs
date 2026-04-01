@@ -64,8 +64,9 @@ fun testAffectedFiles(): void {
   callGraph = SKJS.CallGraph::build(context, checked);
 
   // Helper to get FAbsolute for a source file
+  rootDir = SKJS.DAbsolute::createRoot(projectDir);
   resolve = (name: String) ~>
-    SKJS.FAbsolute::create(Path.resolve(Path.join(projectDir, name)));
+    SKJS.FAbsolute::create(rootDir, Path.resolve(Path.join(projectDir, name)));
   aFile = resolve("src/a.ts");
   bFile = resolve("src/b.ts");
   cFile = resolve("src/c.ts");
