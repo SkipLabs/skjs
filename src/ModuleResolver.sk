@@ -14,7 +14,7 @@ fun splitPath(dirNameStr: String): Array<String> {
   dirNameStr.splitIterator("/").filter(x -> x != "" && x != ".").collect(Array)
 }
 
-trait DirName{path: Array<String>}
+trait DirName(path: Array<String>)
 
 value class DRelative uses DirName {
   static fun create(dirNameStr: String): DRelative {
@@ -22,59 +22,18 @@ value class DRelative uses DirName {
       Path.isRelative(dirNameStr),
       "Trying to create a relative directory from an absolute path",
     );
-    DRelative{path => splitPath(dirNameStr)}
+    DRelative(splitPath(dirNameStr))
   }
 }
 
-// path (from DirName trait) is relative to root.
-class DAbsolute{
-  root: Array<String>,
-} extends S.Key uses DirName, Hashable, XXHashable {
-  // Create a root directory (path is empty, root is the full path).
-  static fun createRoot(dirNameStr: String): DAbsolute {
-    DAbsolute{root => splitPath(Path.resolve(dirNameStr)), path => Array[]}
-  }
-
-  // Create a directory under an existing root.
-  // If the path is outside the root, ".." segments are resolved by
-  // consuming root segments so that toString() produces a valid path.
-  static fun create(root: DAbsolute, dirNameStr: String): DAbsolute {
-    rootSegs = Vector::mcreateFromItems(root.root.concat(root.path));
-    resolved = Path.resolve(dirNameStr);
-    relSegs = splitPath(
-      Path.relativeTo{path => resolved, base => root.toString()},
-    );
-    relStart = 0;
-    while (relStart < relSegs.size() && relSegs[relStart] == "..") {
-      _ = rootSegs.pop();
-      !relStart = relStart + 1;
-    };
-    DAbsolute{
-      root => rootSegs.toArray(),
-      path => relSegs.slice(relStart, relSegs.size()),
-    }
-  }
-
-  // Hash and compare using only the relative path (worktree-independent).
-  fun xxhash(): XXHash {
-    this.path.xxhash()
-  }
-
-  fun hash(): Int {
-    this.path.hash()
-  }
-
-  fun compare(other: S.Key): Order {
-    other match {
-    | o @ DAbsolute _ -> this.path.compare(o.path)
-    | _ -> invariant_violation("DAbsolute comparison to non-DAbsolute Key")
-    }
+class DAbsolute extends S.Key uses DirName, Hashable, XXHashable {
+  static fun create(dirNameStr: String): DAbsolute {
+    DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
 
   fun toString(): String {
-    fullPath = this.root.concat(this.path);
-    if (fullPath.size() == 0) return "/";
-    "/" + fullPath.join("/") + "/"
+    if (this.path.size() == 0) return "/";
+    "/" + this.path.join("/") + "/"
   }
 
   fun isRoot(): Bool {
@@ -90,11 +49,8 @@ class DAbsolute{
   }
 
   fun parent(): this {
-    DAbsolute{root => this.root, path => this.path.slice(0, -1)}
-  }
-
-  fun rootDir(): this {
-    DAbsolute{root => this.root, path => Array[]}
+    path = this.path.slice(0, -1);
+    static(path)
   }
 
   fun +(other: FRelative): FAbsolute {
@@ -108,17 +64,14 @@ class DAbsolute{
         result.maybePop() match {
         | None() ->
           internal_error(
-            `Invalid path: ${DAbsolute{
-              root => this.root,
-              path => this.path.concat(other.path),
-            }}`,
+            `Invalid path: ${static(this.path.concat(other.path))}`,
           )
         | Some(_) -> continue
         }
       };
       result.push(elt)
     };
-    DAbsolute{root => this.root, path => result.toArray()}
+    static(result.toArray())
   }
 }
 
@@ -127,37 +80,17 @@ trait FileNameBase<D: DirName>(dirName: D, baseName: String)
 class FAbsolute
   extends S.Key
   uses FileNameBase<DAbsolute>, Hashable, XXHashable {
-  const nil: FAbsolute = FAbsolute(
-    DAbsolute{root => Array[], path => Array[]},
-    "",
-  );
+  const nil: FAbsolute = FAbsolute(DAbsolute(Array[]), "");
 
-  static fun create(root: DAbsolute, fileName: String): this {
+  static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
     };
-    resolved = Path.resolve(fileName);
-    vec = splitPath(resolved);
-    dirName = DAbsolute::create(root, Path.dirname(resolved));
+    vec = splitPath(Path.resolve(fileName));
+    path = vec.slice(0, vec.size() - 1);
+    dirName = DAbsolute(path);
     baseName = vec[vec.size() - 1];
     FAbsolute(dirName, baseName)
-  }
-
-  // Hash and compare using the relative path (worktree-independent).
-  fun xxhash(): XXHash {
-    (this.dirName.path, this.baseName).xxhash()
-  }
-
-  fun hash(): Int {
-    (this.dirName.path, this.baseName).hash()
-  }
-
-  fun compare(other: S.Key): Order {
-    other match {
-    | o @ FAbsolute _ ->
-      (this.dirName.path, this.baseName).compare((o.dirName.path, o.baseName))
-    | _ -> invariant_violation("FAbsolute comparison to non-FAbsolute Key")
-    }
   }
 
   fun toString(): String {
@@ -180,7 +113,7 @@ value class FRelative uses FileNameBase<DRelative> {
     );
     vec = splitPath(fileName);
     path = vec.slice(0, vec.size() - 1);
-    dirName = DRelative{path};
+    dirName = DRelative(path);
     baseName = vec[vec.size() - 1];
     FRelative(dirName, baseName)
   }
@@ -311,7 +244,7 @@ fun resolvePathAlias(
         ]) {
           fullPath = Path.resolve(Path.join(root.toString(), resolved + ext));
           if (FileSystem.exists(fullPath)) {
-            return Some(FAbsolute::create(root, fullPath))
+            return Some(FAbsolute::create(fullPath))
           }
         }
       }

@@ -74,12 +74,10 @@ class Files(
     srcFileSeq: Sequence<String>,
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
-    rootDir = DAbsolute::createRoot(root);
     if (importStubs.isEmpty()) {
       return Failure("--import-stubs is required");
     };
     builtinsFileName = FAbsolute::create(
-      rootDir,
       Path.join(importStubs[0], "@types/skjs/index.d.ts"),
     );
     if (srcFileSeq.isEmpty()) {
@@ -118,7 +116,7 @@ class Files(
     );
 
     for (fileName in srcFiles) {
-      key = FAbsolute::create(rootDir, fileName);
+      key = FAbsolute::create(fileName);
       content = FileSystem.readTextFile(fileName);
       fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
@@ -130,10 +128,10 @@ class Files(
     Success(
       Files(
         isInit,
-        rootDir,
+        DAbsolute::create(root),
         builtinsFileName,
         fileHdl,
-        importStubs.map(s -> DAbsolute::create(rootDir, s)),
+        importStubs.map(DAbsolute::create),
       ),
     )
   }
@@ -159,7 +157,7 @@ class Files(
       parsesDirName,
       (_context, writer, fileName, contentIter) ~> {
         content = contentIter.first.value;
-        lexer = Lexer::mcreate(fileName, content);
+        lexer = Lexer::mcreate(fileName, content, this.root);
         parser = mutable Parser(lexer);
         parsingResult = errorHandling match {
         | EHBacktrace() -> PROk(parser.toplevelDefs())

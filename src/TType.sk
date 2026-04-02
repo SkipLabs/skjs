@@ -1845,7 +1845,7 @@ class TInsts private (
 
 value class Id private (id: String) uses XXHashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): Id {
-    Id(`${name}:${id}:${lexer.fileName.xxhash().value}`)
+    Id(`${name}:${id}:${lexer.relativeFileNameHash}`)
   }
 
   fun prefixWith(pre: String): Id {
