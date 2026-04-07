@@ -213,11 +213,7 @@ fun resolveName(cwd: DAbsolute, moduleName: String): ?FAbsolute {
     print_error("Could not resolve module '.'");
     return None();
   };
-  fullName = if (Path.isAbsolute(moduleName)) {
-    FAbsolute::create(cwd, moduleName)
-  } else {
-    cwd + FRelative::create(moduleName)
-  };
+  fullName = cwd + FRelative::create(moduleName);
   suffix = Path.extname(moduleName);
   suffix match {
   | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
