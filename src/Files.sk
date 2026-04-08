@@ -72,7 +72,7 @@ class Files(
     context: mutable SKStore.Context,
     root: String,
     srcFileSeq: Sequence<String>,
-    importStubs: Array<String> = Array[],
+    importStubs: Array<String>,
   ): Result<Files, String> {
     if (importStubs.isEmpty()) {
       return Failure("--import-stubs is required");
