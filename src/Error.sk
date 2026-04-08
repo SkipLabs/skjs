@@ -42,7 +42,8 @@ base class Error {
   ): PositionResolver {
     newLines = newLinesMap.get(context, fileName);
     symbols = symbolsMap.get(context, fileName);
-    PositionResolver{fileName, newLines, symbols}
+    absFileName = fileName;
+    PositionResolver{absFileName, newLines, symbols}
   }
 }
 
