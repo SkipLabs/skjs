@@ -3,7 +3,7 @@
 TypeScript type checker implemented in the Skip language. It checks a sound subset of TypeScript — programs that pass SKJS will not fail at runtime for type reasons.
 
 - **`.sk` files** in `src/` are the checker implementation (Skip language)
-- **`.sk` files** in `skjs-tests/tests/` are the test harness (separate skargo package)
+- **`.sk` files** in `tests/` are the test harness
 - **`.ts` files** in `tests/` and `examples/` are TypeScript user programs checked by SKJS
 
 ## Commands
@@ -46,7 +46,7 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
 | Path | Contents |
 | --- | --- |
 | `src/*.sk` | Type checker implementation (~49 files): lexer, parser, type checker, module resolver |
-| `skjs-tests/` | Separate skargo package for test harness (`.sk` test files in `skjs-tests/tests/`) |
+| `tests/*.sk` | Test harness (Skip test files) |
 | `tests/expect-error/*.ts` | Negative + positive type-checking tests with error annotations |
 | `examples/src/*.ts` | Working example programs demonstrating supported features |
 | `tests/projects/*/` | Multi-file test projects (auto-discovered — all must pass at every commit) |
