@@ -3,7 +3,7 @@ module SKJSTests;
 fun getLinedErrors(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
-  fileName: SKJS.FAbsolute,
+  fileName: SKJS.FPath,
   errors: Array<SKJS.Error>,
 ): Array<(Int, Sequence<SKJS.Error>)> {
   newLines = checker.newLinesMap.get(context, fileName);
@@ -45,7 +45,7 @@ fun getLinedErrors(
 fun validateReferenceErrors<R: ReferenceError>(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
-  fileName: SKJS.FAbsolute,
+  fileName: SKJS.FPath,
   allActualErrors: Array<SKJS.Error>,
   referenceErrors: mutable Iterator<R>,
 ): Array<SKTest.ExpectationError> {
@@ -133,7 +133,7 @@ fun validateReferenceErrors<R: ReferenceError>(
 fun doUpdateExpectErrorComments(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
-  fileName: SKJS.FAbsolute,
+  fileName: SKJS.FPath,
   fileContents: String,
   actualErrors: Array<SKJS.Error>,
   update: UMDoUpdate,

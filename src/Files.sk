@@ -52,7 +52,7 @@ class ResolvedDefFile(
   value: TypedHash<ResolvedDef>,
 ) extends SKStore.File
 
-const parseErrorKey: FAbsolute = FAbsolute::nil;
+const parseErrorKey: FPath = FPath::nil;
 
 const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
 const parsesDirName: SKStore.DirName = SKStore.DirName::create(
@@ -64,8 +64,8 @@ const resolvedDefsDirName: SKStore.DirName = SKStore.DirName::create(
 class Files(
   isInit: Bool,
   root: DAbsolute,
-  builtinsFileName: FAbsolute,
-  filesContent: SKStore.EHandle<FAbsolute, SKStore.StringFile>,
+  builtinsFileName: FPath,
+  filesContent: SKStore.EHandle<FPath, SKStore.StringFile>,
   importStubs: Array<DAbsolute>,
 ) {
   static fun create(
@@ -110,7 +110,7 @@ class Files(
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
       context,
-      FAbsolute::keyType,
+      FPath::keyType,
       SKStore.StringFile::type,
       filesDirName,
     );
@@ -141,7 +141,7 @@ class Files(
     newLinesMap: NewLinesMap,
     errorHandling: ErrorHandling,
   ): (
-    SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
     SymbolsMap,
     FunDefSigMap,
     FunDefBodyMap,
@@ -151,7 +151,7 @@ class Files(
     MethodBodyMap,
   ) {
     parsedFiles = this.filesContent.map(
-      FAbsolute::keyType,
+      FPath::keyType,
       ParsedResultAndSymbolsFile::type,
       context,
       parsesDirName,
@@ -269,13 +269,10 @@ class Files(
 
 fun removeSymbols(
   context: mutable SKStore.Context,
-  parsedResultAndSymbols: SKStore.EHandle<
-    FAbsolute,
-    ParsedResultAndSymbolsFile,
-  >,
-): SKStore.EHandle<FAbsolute, ParsedResultFile> {
+  parsedResultAndSymbols: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
+): SKStore.EHandle<FPath, ParsedResultFile> {
   parsedResultAndSymbols.map(
-    FAbsolute::keyType,
+    FPath::keyType,
     ParsedResultFile::type,
     context,
     SKStore.DirName::create("/parsed/nosymbols/"),
@@ -356,7 +353,7 @@ fun resolveTypeDef(
 
 fun makeResolvedDefs(
   context: mutable SKStore.Context,
-  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+  parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
 ): SKStore.EHandle<ResolvedDefKey, ResolvedDefFile> {
   parsedFiles.map(
     ResolvedDefKey::keyType,

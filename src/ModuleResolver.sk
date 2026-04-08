@@ -119,6 +119,10 @@ value class FRelative uses FileNameBase<DRelative> {
   }
 }
 
+// Alias: will be replaced by a concrete class in a later commit.
+type FPath = FAbsolute;
+type DPath = DAbsolute;
+
 /***************************************************************************/
 // Resolve a relative import path ("./" or "../"):
 //   1. If the path has a JS-like extension (.js, .mjs, .cjs), replace it

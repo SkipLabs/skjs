@@ -7,7 +7,7 @@ const kClassHierarchyDirName: SKStore.DirName = SKStore.DirName::create(
 class CHNode private (
   name: String,
   kind: ClassKind,
-  fileName: FAbsolute,
+  fileName: FPath,
   symbol: SymbolicPos,
 ) extends SKStore.File, SKStore.Key uses XXHashable {
   static fun ofClass(c: Class): this {

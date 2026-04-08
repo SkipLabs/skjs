@@ -25,22 +25,22 @@ base class IDefMap {
   ): Array<FileDefElt>;
   fun getNamingErrors(
     _context: mutable S.Context,
-    _fileName: FAbsolute,
+    _fileName: FPath,
   ): Array<NamingError>;
 }
 
-class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
+class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
     root: DAbsolute,
-    builtinsFileName: FAbsolute,
+    builtinsFileName: FPath,
     importStubs: Array<DAbsolute>,
-    parsedFiles: S.EHandle<FAbsolute, ParsedResultFile>,
+    parsedFiles: S.EHandle<FPath, ParsedResultFile>,
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   ): this {
     static(
       S.LHandle::create(
-        FAbsolute::keyType,
+        FPath::keyType,
         FileDefs::type,
         context,
         S.DirName::create("/skjs/fileDefs/"),
@@ -80,7 +80,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
 
   fun getNamingErrors(
     context: mutable S.Context,
-    fileName: FAbsolute,
+    fileName: FPath,
   ): Array<NamingError> {
     this.fileDefsDir.maybeGet(context, fileName) match {
     | Some(fileDefs) -> fileDefs.errors
@@ -126,7 +126,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
 
   private fun getPath(
     tcenvb: mutable TCEnvBase,
-    fileName: FAbsolute,
+    fileName: FPath,
     path: String,
     typeOnly: Bool,
   ): readonly Vector<FileDef> {
@@ -211,7 +211,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
 
   private fun getExported(
     tcenvb: mutable TCEnvBase,
-    fileName: FAbsolute,
+    fileName: FPath,
     name: String,
     typeOnly: Bool,
     result: mutable Vector<FileDef>,
@@ -293,7 +293,7 @@ class DefMap(fileDefsDir: S.LHandle<FAbsolute, FileDefs>) extends IDefMap {
     }
   }
 
-  private fun getFileDefs(tcenvb: mutable TCEnvBase, fn: FAbsolute): FileDefs {
+  private fun getFileDefs(tcenvb: mutable TCEnvBase, fn: FPath): FileDefs {
     this.fileDefsDir.get(tcenvb.context, fn)
   }
 }
@@ -304,7 +304,7 @@ class FileDefs{
   exported: Map<String, Array<String>>,
   reexports: Map<String, Array<Imported>>,
   modules: Map<String, Vector/* Array makes skc fail */ <FileDefs>>,
-  includes: Array<FAbsolute>,
+  includes: Array<FPath>,
   errors: Array<NamingError> = Array[],
 } extends S.File
 
@@ -348,7 +348,7 @@ value class Imported{
   from: ModuleName,
 }
 
-value class ModuleName{name: String, fileName: FAbsolute}
+value class ModuleName{name: String, fileName: FPath}
 
 // Tracks which TypeScript declaration spaces a definition occupies.
 // Some declarations occupy multiple spaces (e.g., class occupies both
@@ -393,7 +393,7 @@ fun mapPush<K: Hashable & Equality, V>(
 mutable class FileDefsState private {
   context: mutable S.Context,
   root: DAbsolute,
-  dirName: DAbsolute,
+  dirName: DPath,
   importStubs: Array<DAbsolute>,
   compilerOptions: TsCompilerOptions,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
@@ -404,14 +404,14 @@ mutable class FileDefsState private {
   > = mutable Map[],
   reexports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
   modules: mutable Map<String, mutable Vector<FileDefs>> = mutable Map[],
-  includes: mutable Vector<FAbsolute> = mutable Vector[],
+  includes: mutable Vector<FPath> = mutable Vector[],
   fileErrors: mutable Vector<NamingError> = mutable Vector[],
 } {
   static fun createFileDefs(
     context: mutable S.Context,
     root: DAbsolute,
-    dirName: DAbsolute,
-    includes: Array<FAbsolute>,
+    dirName: DPath,
+    includes: Array<FPath>,
     importStubs: Array<DAbsolute>,
     compilerOptions: TsCompilerOptions,
     parsedDefs: Array<Def>,

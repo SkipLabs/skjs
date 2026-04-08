@@ -365,7 +365,7 @@ extension class Parser {
   }
 
   private mutable fun extractBodyFromExportable(
-    fileName: FAbsolute,
+    fileName: FPath,
     exp: Exportable,
   ): Exportable {
     exp match {

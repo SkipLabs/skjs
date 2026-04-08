@@ -12,10 +12,10 @@ class NewLinesFile(newLines: Array<Int>) extends SKStore.File
 
 fun makeNewLinesDir(
   context: mutable SKStore.Context,
-  files: SKStore.EHandle<FAbsolute, SKStore.StringFile>,
-): SKStore.LHandle<FAbsolute, NewLinesFile> {
+  files: SKStore.EHandle<FPath, SKStore.StringFile>,
+): SKStore.LHandle<FPath, NewLinesFile> {
   SKStore.LHandle::create(
-    FAbsolute::keyType,
+    FPath::keyType,
     NewLinesFile::type,
     context,
     SKStore.DirName::create("/skjs/newlines/"),
@@ -37,11 +37,11 @@ fun makeNewLinesDir(
 /* Newlines map (associates Newlines to a filename) */
 /***************************************************************************/
 
-class NewLinesMap{dir: SKStore.LHandle<FAbsolute, NewLinesFile>} {
+class NewLinesMap{dir: SKStore.LHandle<FPath, NewLinesFile>} {
   static fun create(context: mutable SKStore.Context, files: Files): this {
     static{dir => makeNewLinesDir(context, files.filesContent)}
   }
-  fun get(context: mutable SKStore.Context, fileName: FAbsolute): Array<Int> {
+  fun get(context: mutable SKStore.Context, fileName: FPath): Array<Int> {
     this.dir.get(context, fileName).newLines
   }
 }

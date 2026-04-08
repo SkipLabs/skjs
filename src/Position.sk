@@ -45,16 +45,11 @@ value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
 
 value class PosRange private (
   symbol: SymbolicPos,
-  fileName: FAbsolute,
+  fileName: FPath,
   relStart: Pos,
   relEnd: Pos,
 ) uses XXHashable, Orderable {
-  const none: this = PosRange(
-    SPTopLevel(),
-    FAbsolute::nil,
-    Pos::none,
-    Pos::none,
-  );
+  const none: this = PosRange(SPTopLevel(), FPath::nil, Pos::none, Pos::none);
 
   static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {
     symbolPos = lexer.currentSymbolPos;

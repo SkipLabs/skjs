@@ -6,13 +6,13 @@ module SKJS;
 
 base class CGNode_ uses XXHashable, Show {
   children =
-  | TopLevelFunction(name: SimpleFieldName, fileName: FAbsolute)
-  | Method(name: FunDefName, class_: Name, fileName: FAbsolute, static_: Bool)
-  | Constructor(class_: Name, fileName: FAbsolute)
-  | Toplevel(fileName: FAbsolute)
-  | ArrowTypeAnnot(fileName: FAbsolute)
+  | TopLevelFunction(name: SimpleFieldName, fileName: FPath)
+  | Method(name: FunDefName, class_: Name, fileName: FPath, static_: Bool)
+  | Constructor(class_: Name, fileName: FPath)
+  | Toplevel(fileName: FPath)
+  | ArrowTypeAnnot(fileName: FPath)
 
-  fun getFileName(): FAbsolute {
+  fun getFileName(): FPath {
     this match {
     | TopLevelFunction(_, fileName)
     | Method(_, _, fileName, _)
@@ -78,7 +78,7 @@ class CGNode private (
     static(id, id.xxhash())
   }
 
-  static fun toplevel(fileName: FAbsolute): this {
+  static fun toplevel(fileName: FPath): this {
     static::create(Toplevel(fileName))
   }
 
@@ -142,7 +142,7 @@ class CallGraph private (
 ) {
   static fun build(
     context: mutable SKStore.Context,
-    checked: SKStore.EHandle<FAbsolute, CheckResult>,
+    checked: SKStore.EHandle<FPath, CheckResult>,
   ): this {
     callgraph = checked.map(
       CGNode::keyType,
@@ -218,15 +218,15 @@ class CallGraph private (
     context: mutable SKStore.Context,
     changedDefs: Array<Def>,
     debug: Bool = false,
-  ): SortedSet<FAbsolute> {
+  ): SortedSet<FPath> {
     affectedCGNodes: mutable Set<CGNode> = mutable Set[];
     affectedClasses: mutable Vector<CHNode> = mutable Vector[];
     for (def in changedDefs) {
       checkDef(def, affectedCGNodes, affectedClasses)
     };
     // Expand affected classes to include subclasses
-    allAffected: mutable Set<(String, FAbsolute)> = mutable Set[];
-    affectedClassFiles: mutable Set<FAbsolute> = mutable Set[];
+    allAffected: mutable Set<(String, FPath)> = mutable Set[];
+    affectedClassFiles: mutable Set<FPath> = mutable Set[];
     while (affectedClasses.size() > 0) {
       chNode = affectedClasses.pop();
       if (allAffected.maybeInsert((chNode.name, chNode.fileName))) {
@@ -269,7 +269,7 @@ class CallGraph private (
       .iterator()
       .foldl(
         (acc, cgNode) -> acc.set(cgNode.id.getFileName()),
-        SortedSet<FAbsolute>[],
+        SortedSet<FPath>[],
       );
     // Include files of affected classes (even if no members are in the depgraph)
     affectedClassFiles.each(f -> !result = result.set(f));
