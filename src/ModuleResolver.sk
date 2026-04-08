@@ -14,7 +14,7 @@ fun splitPath(dirNameStr: String): Array<String> {
   dirNameStr.splitIterator("/").filter(x -> x != "" && x != ".").collect(Array)
 }
 
-trait DirName(path: Array<String>)
+trait DirName(path: Array<String>) extends Show
 
 value class DRelative uses DirName, Hashable, XXHashable, Orderable {
   static fun create(dirNameStr: String): DRelative {
@@ -23,6 +23,11 @@ value class DRelative uses DirName, Hashable, XXHashable, Orderable {
       "Trying to create a relative directory from an absolute path",
     );
     DRelative(splitPath(dirNameStr))
+  }
+
+  fun toString(): String {
+    if (this.path.isEmpty()) return "";
+    this.path.join("/") + "/"
   }
 }
 
@@ -75,7 +80,11 @@ class DAbsolute extends S.File uses DirName, Orderable, Hashable, XXHashable {
   }
 }
 
-trait FileNameBase<D: DirName>(dirName: D, baseName: String)
+trait FileNameBase<D: DirName>(dirName: D, baseName: String) {
+  fun toString(): String {
+    `${this.dirName}${this.baseName}`
+  }
+}
 
 class FAbsolute
   extends S.Key
@@ -93,9 +102,7 @@ class FAbsolute
     FAbsolute(dirName, baseName)
   }
 
-  fun toString(): String {
-    `${this.dirName}${this.baseName}`
-  }
+  fun toString from FileNameBase;
 
   fun exists(): Bool {
     FileSystem.exists(this.toString())
