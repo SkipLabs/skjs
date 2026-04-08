@@ -348,7 +348,6 @@ fun checkFilesWithRoot(
   files =
     SKJS.Files::create(context, root, srcFiles, importStubs) |>
     expectFilesSuccess;
-  builtinsFileName = files.builtinsFileName.toString();
 
   checker = SKJS.Checker::create{
     context,
@@ -361,7 +360,7 @@ fun checkFilesWithRoot(
     .checkFiles(context)
     .items(context)
     .map(res ->
-      if (res.i0.toString() == builtinsFileName) {
+      if (res.i0 == files.builtinsFileName) {
         validateExpectErrorComments(
           context,
           checker,
