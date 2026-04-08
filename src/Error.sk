@@ -29,6 +29,7 @@ class ErrorExn(error: Error) extends Exception
 base class Error {
   fun toString(
     context: mutable SKStore.Context,
+    rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
@@ -37,12 +38,13 @@ base class Error {
   static fun resolver(
     fileName: FPath,
     context: mutable SKStore.Context,
+    rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
   ): PositionResolver {
     newLines = newLinesMap.get(context, fileName);
     symbols = symbolsMap.get(context, fileName);
-    absFileName = fileName;
+    absFileName = fileName.toAbsolute(rootMap);
     PositionResolver{absFileName, newLines, symbols}
   }
 }
@@ -57,12 +59,19 @@ base class SinglePosError<K: ErrorKind>(
 ) extends Error {
   fun toString(
     context: mutable SKStore.Context,
+    rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     _errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
   ): String {
     fileName = this.pos.fileName();
-    resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
+    resolver = static::resolver(
+      fileName,
+      context,
+      rootMap,
+      newLinesMap,
+      symbolsMap,
+    );
     this.pos.toString(resolver) + "\n" + this.errorKind.toString()
   }
 }

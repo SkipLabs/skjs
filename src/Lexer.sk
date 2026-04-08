@@ -104,15 +104,8 @@ mutable class Lexer private {
     result
   }
 
-  static fun mcreate(
-    fileName: FPath,
-    contents: String,
-    root: DAbsolute,
-  ): mutable this {
-    // Compute relative path for consistent ID generation across machines
-    path = fileName.toString();
-    base = root.toString();
-    relativeFileNameHash = Path.relativeTo{path, base}.hash();
+  static fun mcreate(fileName: FPath, contents: String): mutable this {
+    relativeFileNameHash = fileName.hash();
     mutable static{
       fileName,
       relativeFileNameHash,

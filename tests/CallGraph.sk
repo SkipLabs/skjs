@@ -374,7 +374,7 @@ fun validateCallGraph(
       update match {
       | doUpdate @ UMDoUpdate _ ->
         updateCallgraphAnnotations(
-          fileName,
+          fileName.toAbsolute(checker.files.rootMap),
           fileContents,
           filteredAdj,
           parsed,

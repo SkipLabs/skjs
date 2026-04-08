@@ -8,7 +8,7 @@ fun getLinedErrors(
 ): Array<(Int, Sequence<SKJS.Error>)> {
   newLines = checker.newLinesMap.get(context, fileName);
   symbols = checker.symbolsMap.get(context, fileName);
-  absFileName = fileName;
+  absFileName = fileName.toAbsolute(checker.files.rootMap);
   resolver = SKJS.PositionResolver{absFileName, newLines, symbols};
 
   m = mutable Map[];
@@ -171,8 +171,9 @@ fun doUpdateExpectErrorComments(
     update,
     actualLineNAnnotationsByLine.chill(),
   ).each(updatedContents -> {
-    FileSystem.writeTextFile(fileName.toString(), updatedContents);
-    print_string(`Updated: ${fileName}\n`)
+    absFileName = fileName.toAbsolute(checker.files.rootMap);
+    FileSystem.writeTextFile(absFileName.toString(), updatedContents);
+    print_string(`Updated: ${absFileName}\n`)
   })
 }
 
@@ -242,7 +243,8 @@ fun validateTSConformance(
     ]
   };
 
-  dir = fileName.dirName;
+  absFileName = fileName.toAbsolute(checker.files.rootMap);
+  dir = absFileName.dirName;
   while (dir.basename() != "cases") {
     !dir = dir.parent();
     if (dir.isRoot()) {
@@ -252,7 +254,7 @@ fun validateTSConformance(
   errorsFile =
     dir / SKJS.DRelative::create("../reference") +
     SKJS.FRelative::create(
-      `${fileName.baseName.stripSuffix(".ts")}.errors.txt`,
+      `${fileName.relative.baseName.stripSuffix(".ts")}.errors.txt`,
     );
   referenceErrors = if (errorsFile.exists()) {
     parseTSConformanceReferenceErrors(errorsFile.toString());

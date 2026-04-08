@@ -62,7 +62,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
             Array[
               FileDefsState::createFileDefs(
                 context,
-                fileName.dirName,
+                fileName.dirPath(),
                 includes,
                 rootMap,
                 compilerOptions,
@@ -450,7 +450,7 @@ mutable class FileDefsState private {
           ),
         )
       };
-      resolveName(this.dirName, name)
+      resolveName(this.dirName, this.rootMap, name)
     } else {
       // Try path alias resolution first
       resolvePathAlias(

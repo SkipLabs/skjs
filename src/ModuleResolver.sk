@@ -115,6 +115,8 @@ value class FRelative uses
   XXHashable,
   Orderable,
 {
+  const nil: FRelative = FRelative(DRelative(Array[]), "");
+
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
@@ -130,10 +132,6 @@ value class FRelative uses
     FRelative(dirName, baseName)
   }
 }
-
-// Alias: will be replaced by a concrete class in a later commit.
-type FPath = FAbsolute;
-type DPath = DAbsolute;
 
 /***************************************************************************/
 // RootId identifies which root a relative path is measured from.
@@ -181,6 +179,76 @@ class RootMap(projectRoot: DAbsolute, importStubs: Array<DAbsolute>) {
 }
 
 /***************************************************************************/
+// FPath: a file path relative to a known root.
+// This is the primary internal file identifier, replacing FAbsolute
+// for all internal storage, SKStore keys, and AST positions.
+/***************************************************************************/
+
+class FPath(
+  rootId: RootId,
+  relative: FRelative,
+) extends S.Key uses Hashable, XXHashable {
+  const nil: FPath = FPath(RootId::project, FRelative::nil);
+
+  static fun create(rootId: RootId, relPath: String): this {
+    FPath(rootId, FRelative::create(relPath))
+  }
+
+  fun xxhash(): XXHash {
+    (this.rootId.value, this.relative).xxhash()
+  }
+
+  fun hash(): Int {
+    (this.rootId.value, this.relative).hash()
+  }
+
+  fun compare(other: S.Key): Order {
+    other match {
+    | o @ FPath _ ->
+      this.rootId.value.compare(o.rootId.value) match {
+      | EQ() -> this.relative.compare(o.relative)
+      | x -> x
+      }
+    | _ -> invariant_violation("FPath comparison to non-FPath Key")
+    }
+  }
+
+  fun toString(): String {
+    this.relative.toString()
+  }
+
+  fun toAbsolute(rootMap: RootMap): FAbsolute {
+    rootMap.get(this.rootId) + this.relative
+  }
+
+  fun dirPath(): DPath {
+    DPath(this.rootId, this.relative.dirName)
+  }
+}
+
+// A directory path relative to a known root.
+// Analogous to FPath for files — avoids storing absolute directory paths.
+value class DPath(rootId: RootId, relative: DRelative) {
+  fun toAbsolute(rootMap: RootMap): DAbsolute {
+    rootMap.get(this.rootId) / this.relative
+  }
+
+  // Resolve a relative module path (e.g. "./foo" or "../bar.ts") to an FPath.
+  fun resolveFile(relModName: String): FPath {
+    rel = FRelative::create(relModName);
+    segs = Vector::mcreateFromItems(this.relative.path);
+    for (seg in rel.dirName.path) {
+      if (seg == ".." && !segs.isEmpty() && segs[segs.size() - 1] != "..") {
+        _ = segs.pop()
+      } else {
+        segs.push(seg)
+      }
+    };
+    FPath(this.rootId, FRelative(DRelative(segs.toArray()), rel.baseName))
+  }
+}
+
+/***************************************************************************/
 // Resolve a relative import path ("./" or "../"):
 //   1. If the path has a JS-like extension (.js, .mjs, .cjs), replace it
 //      with the corresponding TS extension (.ts/.tsx/.d.ts, .mts/.d.mts,
@@ -202,32 +270,45 @@ fun hasTsExtension(name: String): Bool {
   name.endsWith(".ts") || name.endsWith(".tsx")
 }
 
-fun resolveName(cwd: DAbsolute, moduleName: String): ?FAbsolute {
+fun resolveName(cwd: DPath, rootMap: RootMap, moduleName: String): ?FPath {
   if (moduleName == "." || moduleName == "./") {
     print_error("Could not resolve module '.'");
     return None();
   };
-  fullName = cwd + FRelative::create(moduleName);
+  absCwd = cwd.toAbsolute(rootMap);
+  absName = absCwd + FRelative::create(moduleName);
   suffix = Path.extname(moduleName);
+  // Try a candidate: check absolute path for exists(), return relative FPath.
+  tryCandidate = (candidate: String) ~> {
+    fpath = cwd.resolveFile(candidate);
+    if (fpath.toAbsolute(rootMap).exists()) Some(fpath) else None()
+  };
   suffix match {
-  | ".ts" | ".tsx" if (fullName.exists()) -> return Some(fullName)
+  | ".ts" | ".tsx" if (absName.exists()) ->
+    return Some(cwd.resolveFile(moduleName))
   | ".js" ->
-    stripped = fullName.baseName.stripSuffix(suffix);
+    stripped = moduleName.stripSuffix(suffix);
     for (ext in Array[".ts", ".tsx", ".d.ts"]) {
-      tryPath = fullName with {baseName => stripped + ext};
-      if (tryPath.exists()) return Some(tryPath)
+      tryCandidate(stripped + ext) match {
+      | some @ Some(_) -> return some
+      | None() -> void
+      }
     }
   | ".mjs" ->
-    stripped = fullName.baseName.stripSuffix(suffix);
+    stripped = moduleName.stripSuffix(suffix);
     for (ext in Array[".mts", ".d.mts", ".ts", ".d.ts"]) {
-      tryPath = fullName with {baseName => stripped + ext};
-      if (tryPath.exists()) return Some(tryPath)
+      tryCandidate(stripped + ext) match {
+      | some @ Some(_) -> return some
+      | None() -> void
+      }
     }
   | ".cjs" ->
-    stripped = fullName.baseName.stripSuffix(suffix);
+    stripped = moduleName.stripSuffix(suffix);
     for (ext in Array[".cts", ".d.cts", ".ts", ".d.ts"]) {
-      tryPath = fullName with {baseName => stripped + ext};
-      if (tryPath.exists()) return Some(tryPath)
+      tryCandidate(stripped + ext) match {
+      | some @ Some(_) -> return some
+      | None() -> void
+      }
     }
   | _ ->
     for (ext in Array[
@@ -238,12 +319,14 @@ fun resolveName(cwd: DAbsolute, moduleName: String): ?FAbsolute {
       "/index.tsx",
       "/index.d.ts",
     ]) {
-      tryPath = cwd + FRelative::create(moduleName + ext);
-      if (tryPath.exists()) return Some(tryPath)
+      tryCandidate(moduleName + ext) match {
+      | some @ Some(_) -> return some
+      | None() -> void
+      }
     }
   };
   print_error(`Could not find module: ${moduleName}`);
-  print_error(`From: ${cwd}`);
+  print_error(`From: ${absCwd}`);
   None()
 }
 
@@ -282,7 +365,7 @@ fun resolvePathAlias(
   root: DAbsolute,
   compilerOptions: TsCompilerOptions,
   moduleName: String,
-): ?FAbsolute {
+): ?FPath {
   if (compilerOptions.paths.isEmpty()) return None();
   for (pattern => substitutions in compilerOptions.paths) {
     matchPathPattern(moduleName, pattern) match {
@@ -303,9 +386,10 @@ fun resolvePathAlias(
           "/index.tsx",
           "/index.d.ts",
         ]) {
-          fullPath = Path.resolve(Path.join(root.toString(), resolved + ext));
+          relPath = resolved + ext;
+          fullPath = Path.resolve(Path.join(root.toString(), relPath));
           if (FileSystem.exists(fullPath)) {
-            return Some(FAbsolute::create(fullPath))
+            return Some(FPath::create(RootId::project, relPath))
           }
         }
       }
@@ -314,20 +398,18 @@ fun resolvePathAlias(
   None()
 }
 
-fun resolveStubs(
-  importStubs: Array<DAbsolute>,
-  moduleName: String,
-): ?FAbsolute {
-  res: ?FAbsolute = None();
-  for (importStub in importStubs) {
+fun resolveStubs(importStubs: Array<DAbsolute>, moduleName: String): ?FPath {
+  res: ?FPath = None();
+  for (i => importStub in importStubs) {
     path = FAbsolute(importStub / DRelative::create(moduleName), "index.d.ts");
     if (path.exists()) {
+      fpath = FPath::create(RootId::stub(i), moduleName + "/index.d.ts");
       res match {
       | Some(existing) ->
         debug(
           `Found at least 2 stubs with name ${moduleName}: ${existing} and ${path}`,
         )
-      | None() -> !res = Some(path)
+      | None() -> !res = Some(fpath)
       }
     }
   };

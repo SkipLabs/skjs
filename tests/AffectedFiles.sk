@@ -60,9 +60,8 @@ fun testAffectedFiles(): void {
   checked = checker.checkFiles(context);
   callGraph = SKJS.CallGraph::build(context, checked);
 
-  // Helper to get FAbsolute for a source file
-  resolve = (name: String) ~>
-    SKJS.FAbsolute::create(Path.resolve(Path.join(projectDir, name)));
+  // Helper to get FPath for a source file under the project root
+  resolve = (name: String) ~> SKJS.FPath::create(SKJS.RootId::project, name);
   aFile = resolve("src/a.ts");
   bFile = resolve("src/b.ts");
   cFile = resolve("src/c.ts");

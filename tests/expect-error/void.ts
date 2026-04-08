@@ -142,12 +142,12 @@ function invalidLogicalOr<T>(value: void | T): T {
 }
 
 function invalidPropertyAccess<T>(value: void | T): string {
-  // @ts-expect-error Invalid access for type void | T:10:3523836110
+  // @ts-expect-error Invalid access for type void | T:10:828896147511048019
   return value.toString();
 }
 
 function invalidOptionalChaining<T>(value: void | T): string {
-  // @ts-expect-error Invalid access for type void | T:11:3523836110
+  // @ts-expect-error Invalid access for type void | T:11:828896147511048019
   return value?.toString();
 }
 
@@ -157,7 +157,7 @@ function invalidComparison<T>(value1: void | T, value2: void | T): boolean {
 }
 
 function invalidArrayAccess<T>(value: void | T): T {
-  // @skjs-expect-error Invalid access for type void | T:13:3523836110
+  // @ts-expect-error Invalid access for type void | T:13:828896147511048019
   return value[0];
 }
 
