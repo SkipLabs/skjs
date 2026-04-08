@@ -63,10 +63,9 @@ const resolvedDefsDirName: SKStore.DirName = SKStore.DirName::create(
 );
 class Files(
   isInit: Bool,
-  root: DAbsolute,
+  rootMap: RootMap,
   builtinsFileName: FPath,
   filesContent: SKStore.EHandle<FPath, SKStore.StringFile>,
-  importStubs: Array<DAbsolute>,
 ) {
   static fun create(
     context: mutable SKStore.Context,
@@ -83,6 +82,9 @@ class Files(
     if (srcFileSeq.isEmpty()) {
       !srcFileSeq = Array[root]
     };
+
+    absRoot = DAbsolute::create(root);
+
     srcFiles = mutable Set[];
     for (f in srcFileSeq) {
       !f = Path.resolve(f);
@@ -103,6 +105,7 @@ class Files(
     };
     srcFiles.insert(builtinsFileName.toString());
     !importStubs = importStubs.map(dir -> Path.resolve(dir));
+    absImportStubs = importStubs.map(DAbsolute::create);
     importStubs.each(dir ->
       srcFiles.extend(FileSystem.readFilesRecursive(dir, isTsFile))
     );
@@ -125,15 +128,8 @@ class Files(
         fileHdl.writeArray(context, fileName, Array[]);
       };
     };
-    Success(
-      Files(
-        isInit,
-        DAbsolute::create(root),
-        builtinsFileName,
-        fileHdl,
-        importStubs.map(DAbsolute::create),
-      ),
-    )
+    rootMap = RootMap(absRoot, absImportStubs);
+    Success(Files(isInit, rootMap, builtinsFileName, fileHdl))
   }
 
   fun parse(
@@ -157,7 +153,7 @@ class Files(
       parsesDirName,
       (_context, writer, fileName, contentIter) ~> {
         content = contentIter.first.value;
-        lexer = Lexer::mcreate(fileName, content, this.root);
+        lexer = Lexer::mcreate(fileName, content, this.rootMap.projectRoot);
         parser = mutable Parser(lexer);
         parsingResult = errorHandling match {
         | EHBacktrace() -> PROk(parser.toplevelDefs())

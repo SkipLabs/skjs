@@ -129,12 +129,9 @@ type FPath = FAbsolute;
 type DPath = DAbsolute;
 
 /***************************************************************************/
-// RootMap: maps RootId -> DAbsolute.
-// Created once during initialization, read everywhere paths need resolving.
-/***************************************************************************/
-
 // RootId identifies which root a relative path is measured from.
 // Encoded as: 0 = project root, N>0 = import-stubs[N-1].
+/***************************************************************************/
 class RootId private (value: Int) extends S.Key uses Hashable, XXHashable {
   const project: RootId = RootId(0);
 
@@ -162,6 +159,10 @@ class RootId private (value: Int) extends S.Key uses Hashable, XXHashable {
   }
 }
 
+/***************************************************************************/
+// RootMap: maps RootId -> DAbsolute.
+// Created once during initialization, read everywhere paths need resolving.
+/***************************************************************************/
 class RootMap(projectRoot: DAbsolute, importStubs: Array<DAbsolute>) {
   fun get(rootId: RootId): DAbsolute {
     if (rootId.isProject()) {

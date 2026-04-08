@@ -506,9 +506,8 @@ class Checker private {
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
       context,
-      files.root,
       builtinsFileName,
-      files.importStubs,
+      files.rootMap,
       parsedFiles,
       compilerOptions,
     );

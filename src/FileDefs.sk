@@ -32,9 +32,8 @@ base class IDefMap {
 class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
-    root: DAbsolute,
     builtinsFileName: FPath,
-    importStubs: Array<DAbsolute>,
+    rootMap: RootMap,
     parsedFiles: S.EHandle<FPath, ParsedResultFile>,
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
   ): this {
@@ -63,10 +62,9 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
             Array[
               FileDefsState::createFileDefs(
                 context,
-                root,
                 fileName.dirName,
                 includes,
-                importStubs,
+                rootMap,
                 compilerOptions,
                 defs,
               ),
@@ -392,9 +390,8 @@ fun mapPush<K: Hashable & Equality, V>(
 
 mutable class FileDefsState private {
   context: mutable S.Context,
-  root: DAbsolute,
   dirName: DPath,
-  importStubs: Array<DAbsolute>,
+  rootMap: RootMap,
   compilerOptions: TsCompilerOptions,
   defs: mutable Map<String, mutable Vector<FileDef>> = mutable Map[],
   imports: mutable Map<String, mutable Vector<Imported>> = mutable Map[],
@@ -409,20 +406,13 @@ mutable class FileDefsState private {
 } {
   static fun createFileDefs(
     context: mutable S.Context,
-    root: DAbsolute,
     dirName: DPath,
     includes: Array<FPath>,
-    importStubs: Array<DAbsolute>,
+    rootMap: RootMap,
     compilerOptions: TsCompilerOptions,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable static{
-      context,
-      root,
-      dirName,
-      importStubs,
-      compilerOptions,
-    };
+    state = mutable static{context, dirName, rootMap, compilerOptions};
     state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
@@ -463,9 +453,13 @@ mutable class FileDefsState private {
       resolveName(this.dirName, name)
     } else {
       // Try path alias resolution first
-      resolvePathAlias(this.root, this.compilerOptions, name) match {
+      resolvePathAlias(
+        this.rootMap.projectRoot,
+        this.compilerOptions,
+        name,
+      ) match {
       | some @ Some(_) -> some
-      | None() -> resolveStubs(this.importStubs, name)
+      | None() -> resolveStubs(this.rootMap.importStubs, name)
       }
     };
     resolved match {
@@ -549,9 +543,8 @@ mutable class FileDefsState private {
   private mutable fun createSubFileDefs(defs: Array<Def>): FileDefs {
     state = mutable static{
       context => this.context,
-      root => this.root,
       dirName => this.dirName,
-      importStubs => this.importStubs,
+      rootMap => this.rootMap,
       compilerOptions => this.compilerOptions,
     };
     state.processDefs(defs)
