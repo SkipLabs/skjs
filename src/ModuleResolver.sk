@@ -129,6 +129,50 @@ type FPath = FAbsolute;
 type DPath = DAbsolute;
 
 /***************************************************************************/
+// RootMap: maps RootId -> DAbsolute.
+// Created once during initialization, read everywhere paths need resolving.
+/***************************************************************************/
+
+// RootId identifies which root a relative path is measured from.
+// Encoded as: 0 = project root, N>0 = import-stubs[N-1].
+class RootId private (value: Int) extends S.Key uses Hashable, XXHashable {
+  const project: RootId = RootId(0);
+
+  static fun stub(index: Int): this {
+    static(index + 1)
+  }
+
+  fun isProject(): Bool {
+    this.value == 0
+  }
+
+  fun xxhash(): XXHash {
+    this.value.xxhash()
+  }
+
+  fun hash(): Int {
+    this.value.hash()
+  }
+
+  fun compare(other: S.Key): Order {
+    other match {
+    | o @ RootId _ -> this.value.compare(o.value)
+    | _ -> invariant_violation("RootId comparison to non-RootId Key")
+    }
+  }
+}
+
+class RootMap(projectRoot: DAbsolute, importStubs: Array<DAbsolute>) {
+  fun get(rootId: RootId): DAbsolute {
+    if (rootId.isProject()) {
+      this.projectRoot
+    } else {
+      this.importStubs[rootId.value - 1]
+    }
+  }
+}
+
+/***************************************************************************/
 // Resolve a relative import path ("./" or "../"):
 //   1. If the path has a JS-like extension (.js, .mjs, .cjs), replace it
 //      with the corresponding TS extension (.ts/.tsx/.d.ts, .mts/.d.mts,
