@@ -53,6 +53,7 @@ function testParamContravarianceMultiple(): void {
 function testParamCovarianceFails(): void {
   const acceptsDog: (d: Dog) => void = (_d: Dog) => {};
   // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line5 Function parameters are contravariant: the expected parameter type must be assignable to the provided one
   const needsAnimalAcceptor: (a: Animal) => void = acceptsDog;
 }
 
@@ -208,6 +209,8 @@ function testFunctionInObject(): void {
     fn: (_a: Animal) => ({ name: "Fido", breed: "Lab" }),
   };
   // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line5 Function parameters are contravariant: the expected parameter type must be assignable to the provided one
+  // @skjs-expect-error-line6 This error would go away if this field was readonly
   const obj2: { fn: (d: Dog) => Animal } = obj1;
 }
 
@@ -215,6 +218,8 @@ function testFunctionInObject(): void {
 function testHigherOrderFunction(): void {
   const hof: (f: (a: Animal) => Dog) => number = (_f: (a: Animal) => Dog) => 42;
   // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line5 Function parameters are contravariant: the expected parameter type must be assignable to the provided one
+  // @skjs-expect-error-line6 Function parameters are contravariant: the expected parameter type must be assignable to the provided one
   const target: (f: (d: Dog) => Animal) => number = hof;
 }
 
@@ -224,4 +229,31 @@ function testCallbackParameter(): void {
     _cb: (x: number) => void,
   ) => {};
   const target: (cb: (x: number) => void) => void = takesCallback;
+}
+
+// METHOD PARAMETER CONTRAVARIANCE TESTS
+// TypeScript uses bivariant checking for method-syntax parameters,
+// accepting both directions. SKJS correctly enforces contravariance.
+
+interface WideHandler {
+  handle(x: number | string): void;
+}
+interface NarrowHandler {
+  handle(x: number): void;
+}
+
+// Test 28: Method parameter contravariance — covariant direction rejected
+// NarrowHandler.handle accepts only number, but WideHandler.handle
+// could be called with a string.
+function testMethodContravariance(n: NarrowHandler): void {
+  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line2 Type string
+  // @skjs-expect-error-line3 is not compatible with type number
+  // @skjs-expect-error-line4 Function parameters are contravariant: the expected parameter type must be assignable to the provided one
+  const w: WideHandler = n;
+}
+
+// Test 29: Method parameter contravariance — contravariant direction accepted
+function testMethodContravarianceSafe(w: WideHandler): void {
+  const n: NarrowHandler = w;
 }

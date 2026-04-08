@@ -81,6 +81,19 @@ base class STError<+T> extends STResult<T> uses Equality {
       List[(pos, "This error would go away if this field was readonly")]
     }
   }
+
+  static fun contravarianceHint(pos: ?PosRange): List<(PosRange, String)> {
+    pos match {
+    | None() -> List[]
+    | Some(p) ->
+      List[
+        (
+          p,
+          "Function parameters are contravariant: the expected parameter type must be assignable to the provided one",
+        ),
+      ]
+    }
+  }
 }
 
 base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
@@ -93,6 +106,7 @@ base class STErrorOnSTypeBase<+T: SType> extends STError<T> {
   ): List<(PosRange, String)>;
 
   fun readonlyHintPos(): ?PosRange;
+  fun contravarianceHintPos(): ?PosRange;
 }
 
 base class STErrorOnSType(
@@ -120,6 +134,9 @@ base class STErrorOnSType(
 
   fun readonlyHintPos(): ?PosRange {
     this.suggestReadonly
+  }
+  fun contravarianceHintPos(): ?PosRange {
+    None()
   }
 }
 
@@ -156,6 +173,9 @@ base class STErrorOnTPrimValue(
 
   fun readonlyHintPos(): ?PosRange {
     this.suggestReadonly
+  }
+  fun contravarianceHintPos(): ?PosRange {
+    None()
   }
 }
 
@@ -213,6 +233,10 @@ base class STErrorOnTTuple(
   fun readonlyHintPos(): ?PosRange
   | STTooManyTTuple(_, _, suggestReadonly) -> suggestReadonly
   | STRecTuple(err, _, _, _, _) -> err.readonlyHintPos()
+
+  fun contravarianceHintPos(): ?PosRange
+  | STTooManyTTuple _ -> None()
+  | STRecTuple(err, _, _, _, _) -> err.contravarianceHintPos()
 }
 
 base class STErrorOnTPromise(
@@ -248,6 +272,9 @@ base class STErrorOnTPromise(
 
   fun readonlyHintPos(): ?PosRange
   | STRecPromise(err, _, _) -> err.readonlyHintPos()
+
+  fun contravarianceHintPos(): ?PosRange
+  | STRecPromise(err, _, _) -> err.contravarianceHintPos()
 }
 
 base class STErrorOnObject(
@@ -320,6 +347,10 @@ base class STErrorOnObject(
   fun readonlyHintPos(): ?PosRange
   | STRecObject(errs, _, _, _) ->
     errs.values().findMap(item ~> item.i1.readonlyHintPos())
+
+  fun contravarianceHintPos(): ?PosRange
+  | STRecObject(errs, _, _, _) ->
+    errs.values().findMap(item ~> item.i1.contravarianceHintPos())
 }
 
 base class STErrorOnSTypes(
@@ -367,6 +398,9 @@ base class STErrorOnSTypes(
 
   fun readonlyHintPos(): ?PosRange
   | STRecSTypes(err, _, _) -> err.readonlyHintPos()
+
+  fun contravarianceHintPos(): ?PosRange
+  | STRecSTypes(err, _, _) -> err.contravarianceHintPos()
 }
 
 base class STErrorOnClauses(
@@ -448,6 +482,10 @@ base class STErrorOnClauses(
   fun readonlyHintPos(): ?PosRange
   | STRecClauses(errs, _, _, _) ->
     errs.values().findMap(item ~> item.i1.readonlyHintPos())
+
+  fun contravarianceHintPos(): ?PosRange
+  | STRecClauses(errs, _, _, _) ->
+    errs.values().findMap(item ~> item.i1.contravarianceHintPos())
 }
 
 base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
@@ -495,6 +533,10 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
   fun readonlyHintPos(): ?PosRange
   | STRecType(err, _, _) -> err.readonlyHintPos()
   | STRecTypeWithHint(err, _, _, _) -> err.readonlyHintPos()
+
+  fun contravarianceHintPos(): ?PosRange
+  | STRecType(err, _, _) -> err.contravarianceHintPos()
+  | STRecTypeWithHint(err, _, _, _) -> err.contravarianceHintPos()
 }
 
 base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
@@ -509,6 +551,9 @@ base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
     detail: STErrorDetail,
   ): List<(PosRange, String)>
   | STRecTFuns(err, _f1, _f2) -> err.toError(subst, tenv, pos1, pos2, detail)
+
+  fun contravarianceHintPos(): ?PosRange
+  | STRecTFuns(err, _, _) -> err.contravarianceHintPos()
 }
 
 base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
@@ -606,6 +651,14 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
         msgs,
       ),
     )
+  }
+
+  fun contravarianceHintPos(): ?PosRange {
+    this match {
+    | STRecFunParam(Some(_), i, _, f2) ->
+      if (i < f2.params.size()) Some(f2.params[i].pos) else None()
+    | _ -> None()
+    }
   }
 }
 
@@ -775,6 +828,14 @@ base class STErrorOnTFields(
     | STRecFieldsFieldIndex(_, _, f2, kind, _, _)
     | STRecFieldsIndexField(_, _, f2, kind, _, _) ->
       kind.readonlyHintPos(f2.pos)
+    | _ -> None()
+    }
+  }
+
+  fun contravarianceHintPos(): ?PosRange {
+    this match {
+    | STRecFieldsCall(Some(err), _, _) -> err.contravarianceHintPos()
+    | STRecFieldsNew(Some(err), _, _) -> err.contravarianceHintPos()
     | _ -> None()
     }
   }
@@ -1293,6 +1354,7 @@ extension class TType {
     };
 
     constraintReadonlyPos: ?PosRange = None();
+    constraintContravariancePos: ?PosRange = None();
 
     savedSubst = subst.save();
     for (inst in u2.insts) {
@@ -1304,9 +1366,11 @@ extension class TType {
           TType::isSub(subst, tenv, u1, cstr) match {
           | STOk() -> void
           | err @ STErrorOnTType _ ->
-            constraintReadonlyPos match {
-            | None() -> !constraintReadonlyPos = err.readonlyHintPos()
-            | Some _ -> void
+            if (constraintReadonlyPos is None()) {
+              !constraintReadonlyPos = err.readonlyHintPos()
+            };
+            if (constraintContravariancePos is None()) {
+              !constraintContravariancePos = err.contravarianceHintPos()
             };
             !allOk = false;
             break void
@@ -1337,9 +1401,11 @@ extension class TType {
               TType::isSub(subst, tenv, u1, cstr) match {
               | STOk() -> void
               | err @ STErrorOnTType _ ->
-                constraintReadonlyPos match {
-                | None() -> !constraintReadonlyPos = err.readonlyHintPos()
-                | Some _ -> void
+                if (constraintReadonlyPos is None()) {
+                  !constraintReadonlyPos = err.readonlyHintPos()
+                };
+                if (constraintContravariancePos is None()) {
+                  !constraintContravariancePos = err.contravarianceHintPos()
                 };
                 !allOk = false;
                 break void
@@ -1393,6 +1459,11 @@ extension class TType {
     | err @ STErrorOnClauses _ ->
       hints = static::originSuggestions(subst, tenv, u1, u2);
       !hints = hints.concat(STError::readonlyHint(constraintReadonlyPos));
+      contravariancePos = constraintContravariancePos match {
+      | pos @ Some _ -> pos
+      | None() -> err.contravarianceHintPos()
+      };
+      !hints = hints.concat(STError::contravarianceHint(contravariancePos));
       subst.restore(savedSubst);
       STRecTypeWithHint(err, hints, u1, u2)
     }
