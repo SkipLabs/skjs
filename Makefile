@@ -12,9 +12,8 @@ build:
 JUNITXML_FLAGS=$(if $(JUNITXML),--junitxml $(JUNITXML))
 
 .PHONY: test
-test: build
-	cd skjs-tests && skargo build
-	./skjs-tests/target/host/dev/test $(JUNITXML_FLAGS)
+test:
+	skargo test $(JUNITXML_FLAGS)
 	./tests/test_incremental.sh
 	./tests/test_affected_files.sh
 
@@ -56,11 +55,7 @@ endif
 
 .PHONY: test-in-docker
 test-in-docker:
-ifdef DEVCONTAINER
-	cd skjs-tests && skargo build && cd $(CURDIR) && ./skjs-tests/target/host/dev/test
-else
-	docker run --rm $(DOCKER_ENV_FLAGS) -v "$(CURDIR):/work/skjs" -v "$(SKIP_DIR):/work/skip" -w /work/skjs $(DOCKER_IMAGE) sh -c 'cd skjs-tests && skargo build && cd /work/skjs && ./skjs-tests/target/host/dev/test'
-endif
+	$(DOCKER_RUN) make test
 
 %-in-docker:
 	$(DOCKER_RUN) skargo $*
@@ -73,7 +68,6 @@ check-file-in-docker:
 .PHONY: clean
 clean:
 	skargo clean
-	cd skjs-tests && skargo clean
 
 # install the repo pre-commit hook locally
 .git/hooks/pre-commit: bin/git_hooks/check_format.sh
