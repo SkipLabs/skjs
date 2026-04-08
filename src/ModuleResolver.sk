@@ -16,7 +16,7 @@ fun splitPath(dirNameStr: String): Array<String> {
 
 trait DirName(path: Array<String>)
 
-value class DRelative uses DirName {
+value class DRelative uses DirName, Hashable, XXHashable, Orderable {
   static fun create(dirNameStr: String): DRelative {
     invariant(
       Path.isRelative(dirNameStr),
@@ -26,7 +26,7 @@ value class DRelative uses DirName {
   }
 }
 
-class DAbsolute extends S.Key uses DirName, Hashable, XXHashable {
+class DAbsolute extends S.File uses DirName, Orderable, Hashable, XXHashable {
   static fun create(dirNameStr: String): DAbsolute {
     DAbsolute(splitPath(Path.resolve(dirNameStr)))
   }
@@ -102,7 +102,12 @@ class FAbsolute
   }
 }
 
-value class FRelative uses FileNameBase<DRelative> {
+value class FRelative uses
+  FileNameBase<DRelative>,
+  Hashable,
+  XXHashable,
+  Orderable,
+{
   static fun create(fileName: String): this {
     if (fileName.endsWith("/")) {
       internal_error(`File name '${fileName}' is not expected to end with /`)
