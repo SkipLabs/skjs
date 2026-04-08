@@ -319,16 +319,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     }
   };
 
-  if (importStubs.isEmpty()) {
-    print_error("--import-stubs is required");
-    throw Exit(2)
-  };
   if (importStubs.size() > 1) {
     print_error(
       "More than one --import-stubs specified; using first one for builtins file",
     );
   };
-  builtinsFileName = Path.join(importStubs[0], "@types/skjs/index.d.ts");
   logAffectedFiles = args.getBool("log-affected-files");
   if (logAffectedFiles) {
     if (args.maybeGetString("init").isSome()) {
@@ -364,13 +359,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
     (context) ~> {
-      files = Files::create(
-        context,
-        root,
-        builtinsFileName,
-        srcFiles,
-        importStubs,
-      ) match {
+      files = Files::create(context, root, srcFiles, importStubs) match {
       | Failure(err) ->
         print_error(err);
         return SKStore.CStop(None())

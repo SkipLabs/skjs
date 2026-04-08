@@ -291,8 +291,6 @@ fun validateNotSupported(
   Array[]
 }
 
-const builtinsArgFileName: String = "./import-stubs/@types/skjs/index.d.ts";
-
 fun expectFilesSuccess(
   checkerCreateResult: Result<SKJS.Files, String>,
 ): SKJS.Files {
@@ -345,17 +343,12 @@ fun checkFilesWithRoot(
   update: UpdateMode = UMValidateOnly(),
   compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{},
 ): Array<SKTest.ExpectationError> {
-  builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
 
   files =
-    SKJS.Files::create(
-      context,
-      root,
-      builtinsFileName,
-      srcFiles,
-      importStubs,
-    ) |> expectFilesSuccess;
+    SKJS.Files::create(context, root, srcFiles, importStubs) |>
+    expectFilesSuccess;
+  builtinsFileName = files.builtinsFileName.toString();
 
   checker = SKJS.Checker::create{
     context,
@@ -389,7 +382,7 @@ fun testFile(
   update: UpdateMode = UMValidateOnly(),
 ): void {
   srcFiles = Array[fileName];
-  importStubs = Array[];
+  importStubs = Array["./import-stubs"];
   testFiles(srcFiles, importStubs, validateResult, update)
 }
 

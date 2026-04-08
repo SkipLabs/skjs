@@ -610,10 +610,9 @@ fun testUpdateFileAnnotations(): void {
 @test
 fun testLineNValidation(): void {
   compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{};
-  builtinsFileName = Path.resolve(builtinsArgFileName);
   context = SKStore.Context::mcreate{};
   files =
-    SKJS.Files::create(context, ".", builtinsFileName, Array[], Array[]) |>
+    SKJS.Files::create(context, ".", Array[], Array["./import-stubs"]) |>
     expectFilesSuccess;
   checker = SKJS.Checker::create{
     context,

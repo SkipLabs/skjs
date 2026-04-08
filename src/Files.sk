@@ -71,12 +71,17 @@ class Files(
   static fun create(
     context: mutable SKStore.Context,
     root: String,
-    builtinsFileNameStr: String,
     srcFileSeq: Sequence<String>,
     importStubs: Array<String> = Array[],
   ): Result<Files, String> {
     rootDir = DAbsolute::createRoot(root);
-    builtinsFileName = FAbsolute::create(rootDir, builtinsFileNameStr);
+    if (importStubs.isEmpty()) {
+      return Failure("--import-stubs is required");
+    };
+    builtinsFileName = FAbsolute::create(
+      rootDir,
+      Path.join(importStubs[0], "@types/skjs/index.d.ts"),
+    );
     if (srcFileSeq.isEmpty()) {
       !srcFileSeq = Array[root]
     };

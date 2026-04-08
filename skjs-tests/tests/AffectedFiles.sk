@@ -39,15 +39,12 @@ fun testAffectedFiles(): void {
   );
 
   srcFiles = SKJS.resolveConfigFiles(config);
-  builtinsFileName = Path.resolve(builtinsArgFileName);
-
   context = SKStore.Context::mcreate{};
 
   files =
     SKJS.Files::create(
       context,
       projectDir,
-      builtinsFileName,
       srcFiles,
       Array["./import-stubs"],
     ) |> expectFilesSuccess;
