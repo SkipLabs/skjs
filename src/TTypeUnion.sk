@@ -15,6 +15,10 @@ extension class TType {
     TType::union(subst, tenv, typ, undef)
   }
 
+  // Caching is correct even when ty1 or ty2 contain TVars: union_ operates
+  // on insts and clauses without expanding TVars. Any TVar in the operands
+  // passes through to the result unchanged (as a TInst), so the cached
+  // result remains valid regardless of later TVar growth.
   static fun union(
     subst: mutable Subst,
     tenv: TEnv,
