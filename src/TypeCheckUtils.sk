@@ -1,6 +1,11 @@
 module SKJS;
 
 extension class TypeChecker {
+  // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages
+  fun ppType(tcenv: mutable TCEnv, ty: TType): String {
+    prettyPrintType(false, ty, tcenv.subst, this)
+  }
+
   fun isVoid(tcenv: mutable TCEnv, isAsync: Bool, ty: TType): Bool {
     clauses = ty.expandToClauses(tcenv.subst, this, Covariant());
     for (clause in clauses) {
