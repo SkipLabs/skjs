@@ -115,23 +115,21 @@ class ExpectError{
             `(${this.expectedErrors.size()} @skjs-expect-error annotations)`,
           ),
         )
-      }
-    };
-    for ((n, expectedForN) in this.expectedLineNAnnotations.items()) {
-      actualForN = if (errors.isEmpty()) {
-        ""
-      } else {
-        err = errors.first();
-        getErrorMessageN(subst, tenv, err, n).trimMessage(true)
       };
-      if (actualForN != expectedForN) {
-        return Some(
-          SKTest.ExpectationError(
-            `${fileName}:${this.line} Wrong error message on line ${n}`,
-            expectedForN,
-            actualForN,
-          ),
-        )
+      allMsgs = getErrorMessages(subst, tenv, errors.first());
+      for ((n, expectedForN) in this.expectedLineNAnnotations.items()) {
+        actualForN = if (n < 1 || n > allMsgs.size()) "" else {
+          allMsgs[n - 1].trimMessage(true)
+        };
+        if (actualForN != expectedForN) {
+          return Some(
+            SKTest.ExpectationError(
+              `${fileName}:${this.line} Wrong error message on line ${n}`,
+              expectedForN,
+              actualForN,
+            ),
+          )
+        }
       }
     };
     None()
@@ -202,17 +200,6 @@ fun getErrorMessages(
     messages.map(m -> m.i1).concat(stErrMsgs)
   | SKJS.NamingError(messages) -> messages.map(m -> m.i1)
   }
-}
-
-// Returns the trimmed text of the Nth message of an error (1-indexed).
-fun getErrorMessageN(
-  subst: mutable SKJS.Subst,
-  tenv: SKJS.TEnv,
-  error: SKJS.Error,
-  n: Int,
-): String {
-  allMsgs = getErrorMessages(subst, tenv, error);
-  if (n < 1 || n > allMsgs.size()) "" else allMsgs[n - 1]
 }
 
 fun getLineNAnnotationsFromError(
@@ -406,11 +393,6 @@ fun getIndent(line: String): String {
   line.getIter().substring(i)
 }
 
-/* Rewrites a file's expect-error annotations to match actual errors.
- * - Updates messages for existing annotations (preserving @ts vs @skjs prefix)
- * - Removes annotations where errors no longer occur
- * - Adds @skjs-expect-error annotations for new errors
- * - At most one @ts-expect-error per group, always last */
 fun emitLineNAnnotations(
   result: mutable Vector<String>,
   indent: String,
@@ -423,6 +405,11 @@ fun emitLineNAnnotations(
   }
 }
 
+/* Rewrites a file's expect-error annotations to match actual errors.
+ * - Updates messages for existing annotations (preserving @ts vs @skjs prefix)
+ * - Removes annotations where errors no longer occur
+ * - Adds @skjs-expect-error annotations for new errors
+ * - At most one @ts-expect-error per group, always last */
 fun updateFileAnnotations(
   contents: String,
   actualErrorsByLine: Map<Int, SortedSet<String>>,
