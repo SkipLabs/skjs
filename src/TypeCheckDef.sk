@@ -10,13 +10,13 @@ base class OptionalTypeParamsPermission {
 // Uses (fileName, defName, occurrenceNumber) so that results are stable
 // across position changes within a file.
 class DefKey private (
-  fileName: FAbsolute,
+  fileName: FPath,
   defName: String,
   occurrence: Int,
   def: Def,
 ) extends SKStore.Key {
   static fun create(
-    fileName: FAbsolute,
+    fileName: FPath,
     defName: String,
     occurrence: Int,
     def: Def,
@@ -46,7 +46,7 @@ extension class TypeChecker {
   fun check(
     context: mutable SKStore.Context,
     checkDir: SKStore.LHandle<DefKey, TCResultsAccFile>,
-    fileName: FAbsolute,
+    fileName: FPath,
     defs: Array<Def>,
   ): readonly TCResults {
     results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};

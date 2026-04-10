@@ -189,6 +189,7 @@ class TypingError(
 ) extends Error {
   fun toString(
     context: mutable SKStore.Context,
+    rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
@@ -202,6 +203,7 @@ class TypingError(
       resolver = static::resolver(
         firstPos.fileName,
         context,
+        rootMap,
         newLinesMap,
         symbolsMap,
       );
@@ -224,7 +226,13 @@ class TypingError(
     for (message in messages) {
       pos = message.i0;
       fileName = pos.fileName;
-      resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
+      resolver = static::resolver(
+        fileName,
+        context,
+        rootMap,
+        newLinesMap,
+        symbolsMap,
+      );
       result.push(resolver.relPosRange(message.i0).toString());
       result.push(message.i1);
     };
@@ -235,6 +243,7 @@ class TypingError(
 class NamingError(messages: Array<(PosRange, String)>) extends Error {
   fun toString(
     context: mutable SKStore.Context,
+    rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     _errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
@@ -244,7 +253,13 @@ class NamingError(messages: Array<(PosRange, String)>) extends Error {
     for (message in messages) {
       pos = message.i0;
       fileName = pos.fileName;
-      resolver = static::resolver(fileName, context, newLinesMap, symbolsMap);
+      resolver = static::resolver(
+        fileName,
+        context,
+        rootMap,
+        newLinesMap,
+        symbolsMap,
+      );
       result.push(resolver.relPosRange(message.i0).toString());
       result.push(message.i1);
     };

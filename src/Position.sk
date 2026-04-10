@@ -45,16 +45,11 @@ value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
 
 value class PosRange private (
   symbol: SymbolicPos,
-  fileName: FAbsolute,
+  fileName: FPath,
   relStart: Pos,
   relEnd: Pos,
 ) uses XXHashable, Orderable {
-  const none: this = PosRange(
-    SPTopLevel(),
-    FAbsolute::nil,
-    Pos::none,
-    Pos::none,
-  );
+  const none: this = PosRange(SPTopLevel(), FPath::nil, Pos::none, Pos::none);
 
   static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {
     symbolPos = lexer.currentSymbolPos;
@@ -107,7 +102,7 @@ value class PosRange private (
 /***************************************************************************/
 
 class PositionResolver{
-  fileName: FAbsolute,
+  absFileName: FAbsolute,
   newLines: Array<Int>,
   symbols: Map<SymbolicPos, Int>,
 } {
@@ -126,9 +121,9 @@ class PositionResolver{
       this.newLines.size() - 1,
     );
     if (idx <= 0 || idx >= this.newLines[idx]) {
-      return RelPos(this.fileName, 1, pos.value + 1)
+      return RelPos(this.absFileName, 1, pos.value + 1)
     };
-    RelPos(this.fileName, idx + 1, pos.value - this.newLines[idx - 1])
+    RelPos(this.absFileName, idx + 1, pos.value - this.newLines[idx - 1])
   }
 }
 

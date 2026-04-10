@@ -1845,7 +1845,7 @@ class TInsts private (
 
 value class Id private (id: String) uses XXHashable, Orderable, Show {
   static fun create(name: String, id: Int, lexer: readonly Lexer): Id {
-    Id(`${name}:${id}:${lexer.fileName.xxhash().value}`)
+    Id(`${name}:${id}:${lexer.relativeFileNameHash}`)
   }
 
   fun prefixWith(pre: String): Id {
@@ -1863,7 +1863,7 @@ value class Id private (id: String) uses XXHashable, Orderable, Show {
 
 class TParamWithConstraint(
   name: String,
-  fileName: FAbsolute,
+  fileName: FPath,
   id: Id,
   cstr: ?TType,
 ) uses XXHashable, Orderable {
@@ -1873,11 +1873,7 @@ class TParamWithConstraint(
   }
 }
 
-class TParam(
-  name: String,
-  fileName: FAbsolute,
-  id: Id,
-) uses XXHashable, Orderable
+class TParam(name: String, fileName: FPath, id: Id) uses XXHashable, Orderable
 
 /* Clause */
 //

@@ -4,7 +4,7 @@ base class ReferenceError{line: Int} {
   fun validate(
     subst: mutable SKJS.Subst,
     tenv: SKJS.TEnv,
-    fileName: SKJS.FAbsolute,
+    fileName: SKJS.FPath,
     errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError;
   fun getMessage(): String;
@@ -86,7 +86,7 @@ class ExpectError{
   fun validate(
     subst: mutable SKJS.Subst,
     tenv: SKJS.TEnv,
-    fileName: SKJS.FAbsolute,
+    fileName: SKJS.FPath,
     errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {
     if (this.expectedErrors.size() > 0) {
@@ -632,7 +632,7 @@ class TSConformanceReferenceError{
   fun validate(
     _subst: mutable SKJS.Subst,
     _tenv: SKJS.TEnv,
-    _fileName: SKJS.FAbsolute,
+    _fileName: SKJS.FPath,
     _errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {
     // Maybe TODO: check errors contains a single error?

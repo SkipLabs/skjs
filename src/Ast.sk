@@ -741,19 +741,19 @@ base class BOStrictComparison() extends BinaryOperator {
 /***************************************************************************/
 
 class FunDefRef(
-  fileName: FAbsolute,
+  fileName: FPath,
   defName: String,
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable
 
 class ClassBodyRef(
-  fileName: FAbsolute,
+  fileName: FPath,
   defName: String,
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable
 
 class TypeDefBodyRef(
-  fileName: FAbsolute,
+  fileName: FPath,
   defName: String,
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable
@@ -768,7 +768,7 @@ class ClassBodyData(fieldRefs: Array<ClassFieldRef>) uses XXHashable
 class TypeDefBodyData(tdefParams: Array<TypeParam>, body: Type) uses XXHashable
 
 class ClassFieldRef(
-  fileName: FAbsolute,
+  fileName: FPath,
   className: String,
   index: Int,
 ) uses XXHashable, Hashable, Orderable
@@ -776,7 +776,7 @@ class ClassFieldRef(
 class ClassFieldData(field: ClassField) uses XXHashable
 
 class MethodBodyRef(
-  fileName: FAbsolute,
+  fileName: FPath,
   className: String,
   methodName: String,
   occurrence: Int,

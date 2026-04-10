@@ -3,12 +3,13 @@ module SKJSTests;
 fun getLinedErrors(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
-  fileName: SKJS.FAbsolute,
+  fileName: SKJS.FPath,
   errors: Array<SKJS.Error>,
 ): Array<(Int, Sequence<SKJS.Error>)> {
   newLines = checker.newLinesMap.get(context, fileName);
   symbols = checker.symbolsMap.get(context, fileName);
-  resolver = SKJS.PositionResolver{fileName, newLines, symbols};
+  absFileName = fileName.toAbsolute(checker.files.rootMap);
+  resolver = SKJS.PositionResolver{absFileName, newLines, symbols};
 
   m = mutable Map[];
   for (err in errors) {
@@ -45,7 +46,7 @@ fun getLinedErrors(
 fun validateReferenceErrors<R: ReferenceError>(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
-  fileName: SKJS.FAbsolute,
+  fileName: SKJS.FPath,
   allActualErrors: Array<SKJS.Error>,
   referenceErrors: mutable Iterator<R>,
 ): Array<SKTest.ExpectationError> {
@@ -133,7 +134,7 @@ fun validateReferenceErrors<R: ReferenceError>(
 fun doUpdateExpectErrorComments(
   context: mutable SKStore.Context,
   checker: SKJS.Checker,
-  fileName: SKJS.FAbsolute,
+  fileName: SKJS.FPath,
   fileContents: String,
   actualErrors: Array<SKJS.Error>,
   update: UMDoUpdate,
@@ -170,8 +171,9 @@ fun doUpdateExpectErrorComments(
     update,
     actualLineNAnnotationsByLine.chill(),
   ).each(updatedContents -> {
-    FileSystem.writeTextFile(fileName.toString(), updatedContents);
-    print_string(`Updated: ${fileName}\n`)
+    absFileName = fileName.toAbsolute(checker.files.rootMap);
+    FileSystem.writeTextFile(absFileName.toString(), updatedContents);
+    print_string(`Updated: ${absFileName}\n`)
   })
 }
 
@@ -241,7 +243,8 @@ fun validateTSConformance(
     ]
   };
 
-  dir = fileName.dirName;
+  absFileName = fileName.toAbsolute(checker.files.rootMap);
+  dir = absFileName.dirName;
   while (dir.basename() != "cases") {
     !dir = dir.parent();
     if (dir.isRoot()) {
@@ -251,7 +254,7 @@ fun validateTSConformance(
   errorsFile =
     dir / SKJS.DRelative::create("../reference") +
     SKJS.FRelative::create(
-      `${fileName.baseName.stripSuffix(".ts")}.errors.txt`,
+      `${fileName.relative.baseName.stripSuffix(".ts")}.errors.txt`,
     );
   referenceErrors = if (errorsFile.exists()) {
     parseTSConformanceReferenceErrors(errorsFile.toString());
@@ -348,7 +351,6 @@ fun checkFilesWithRoot(
   files =
     SKJS.Files::create(context, root, srcFiles, importStubs) |>
     expectFilesSuccess;
-  builtinsFileName = files.builtinsFileName.toString();
 
   checker = SKJS.Checker::create{
     context,
@@ -361,7 +363,7 @@ fun checkFilesWithRoot(
     .checkFiles(context)
     .items(context)
     .map(res ->
-      if (res.i0.toString() == builtinsFileName) {
+      if (res.i0 == files.builtinsFileName) {
         validateExpectErrorComments(
           context,
           checker,

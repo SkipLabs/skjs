@@ -52,7 +52,7 @@ class ResolvedDefFile(
   value: TypedHash<ResolvedDef>,
 ) extends SKStore.File
 
-const parseErrorKey: FAbsolute = FAbsolute::nil;
+const parseErrorKey: FPath = FPath::nil;
 
 const filesDirName: SKStore.DirName = SKStore.DirName::create("/skjs/files/");
 const parsesDirName: SKStore.DirName = SKStore.DirName::create(
@@ -63,79 +63,83 @@ const resolvedDefsDirName: SKStore.DirName = SKStore.DirName::create(
 );
 class Files(
   isInit: Bool,
-  root: DAbsolute,
-  builtinsFileName: FAbsolute,
-  filesContent: SKStore.EHandle<FAbsolute, SKStore.StringFile>,
-  importStubs: Array<DAbsolute>,
+  rootMap: RootMap,
+  builtinsFileName: FPath,
+  filesContent: SKStore.EHandle<FPath, SKStore.StringFile>,
 ) {
   static fun create(
     context: mutable SKStore.Context,
     root: String,
     srcFileSeq: Sequence<String>,
-    importStubs: Array<String> = Array[],
+    importStubs: Array<String>,
   ): Result<Files, String> {
-    rootDir = DAbsolute::createRoot(root);
     if (importStubs.isEmpty()) {
       return Failure("--import-stubs is required");
     };
-    builtinsFileName = FAbsolute::create(
-      rootDir,
-      Path.join(importStubs[0], "@types/skjs/index.d.ts"),
-    );
     if (srcFileSeq.isEmpty()) {
       !srcFileSeq = Array[root]
     };
-    srcFiles = mutable Set[];
+
+    // Collect source files as FPath -> absPath.
+    srcFiles = mutable Map<FPath, String>[];
+    addFile = (absPath: String, rootId: RootId, rootDirStr: String) -> {
+      relPath = Path.relativeTo{path => absPath, base => rootDirStr};
+      srcFiles.set(FPath::create(rootId, relPath), absPath)
+    };
+
+    absRoot = DAbsolute::create(root);
+    rootStr = absRoot.toString();
     for (f in srcFileSeq) {
       !f = Path.resolve(f);
       if (!FileSystem.exists(f)) {
         return Failure(`Source file ${f} does not exist`)
       };
       if (FileSystem.isDirectory(f)) {
-        srcFiles.extend(FileSystem.readFilesRecursive(f, isTsFile))
+        FileSystem.readFilesRecursive(f, isTsFile).each(p ->
+          addFile(p, RootId::project, rootStr)
+        )
       } else {
-        srcFiles.insert(f)
+        addFile(f, RootId::project, rootStr)
       }
     };
     if (srcFiles.isEmpty()) {
       return Failure("No source files!");
     };
-    if (!builtinsFileName.exists()) {
-      return Failure(`Builtins not found: ${builtinsFileName}`);
+    builtinsRel = "@types/skjs/index.d.ts";
+    builtinsStr = Path.resolve(Path.join(importStubs[0], builtinsRel));
+    if (!FileSystem.exists(builtinsStr)) {
+      return Failure(`Builtins not found: ${builtinsStr}`);
     };
-    srcFiles.insert(builtinsFileName.toString());
+    builtinsFileName = FPath::create(RootId::stub(0), builtinsRel);
+    srcFiles.set(builtinsFileName, builtinsStr);
+
     !importStubs = importStubs.map(dir -> Path.resolve(dir));
-    importStubs.each(dir ->
-      srcFiles.extend(FileSystem.readFilesRecursive(dir, isTsFile))
-    );
+    absImportStubs = importStubs.map(DAbsolute::create);
+    for (i => dir in importStubs) {
+      FileSystem.readFilesRecursive(dir, isTsFile).each(p ->
+        addFile(p, RootId::stub(i), dir)
+      )
+    };
 
     isInit = context.unsafeMaybeGetEagerDir(filesDirName) is None();
     fileHdl = createOrReuseEagerDir(
       context,
-      FAbsolute::keyType,
+      FPath::keyType,
       SKStore.StringFile::type,
       filesDirName,
     );
 
-    for (fileName in srcFiles) {
-      key = FAbsolute::create(rootDir, fileName);
+    for (key => fileName in srcFiles) {
       content = FileSystem.readTextFile(fileName);
       fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
     for ((fileName, _) in fileHdl.items(context)) {
-      if (!srcFiles.contains(fileName.toString())) {
+      if (!srcFiles.containsKey(fileName)) {
         fileHdl.writeArray(context, fileName, Array[]);
       };
     };
-    Success(
-      Files(
-        isInit,
-        rootDir,
-        builtinsFileName,
-        fileHdl,
-        importStubs.map(s -> DAbsolute::create(rootDir, s)),
-      ),
-    )
+    rootMap = RootMap(absRoot, absImportStubs);
+    Success(Files(isInit, rootMap, builtinsFileName, fileHdl))
   }
 
   fun parse(
@@ -143,7 +147,7 @@ class Files(
     newLinesMap: NewLinesMap,
     errorHandling: ErrorHandling,
   ): (
-    SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
     SymbolsMap,
     FunDefSigMap,
     FunDefBodyMap,
@@ -153,7 +157,7 @@ class Files(
     MethodBodyMap,
   ) {
     parsedFiles = this.filesContent.map(
-      FAbsolute::keyType,
+      FPath::keyType,
       ParsedResultAndSymbolsFile::type,
       context,
       parsesDirName,
@@ -250,7 +254,9 @@ class Files(
       for (error in errors) {
         error.value match {
         | PRError(err) ->
-          print_error(err.toString(context, newLinesMap, symbolsMap))
+          print_error(
+            err.toString(context, this.rootMap, newLinesMap, symbolsMap),
+          )
         | PROk _ -> internal_error("Unexpected parsing result")
         }
       };
@@ -271,13 +277,10 @@ class Files(
 
 fun removeSymbols(
   context: mutable SKStore.Context,
-  parsedResultAndSymbols: SKStore.EHandle<
-    FAbsolute,
-    ParsedResultAndSymbolsFile,
-  >,
-): SKStore.EHandle<FAbsolute, ParsedResultFile> {
+  parsedResultAndSymbols: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
+): SKStore.EHandle<FPath, ParsedResultFile> {
   parsedResultAndSymbols.map(
-    FAbsolute::keyType,
+    FPath::keyType,
     ParsedResultFile::type,
     context,
     SKStore.DirName::create("/parsed/nosymbols/"),
@@ -358,7 +361,7 @@ fun resolveTypeDef(
 
 fun makeResolvedDefs(
   context: mutable SKStore.Context,
-  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+  parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
 ): SKStore.EHandle<ResolvedDefKey, ResolvedDefFile> {
   parsedFiles.map(
     ResolvedDefKey::keyType,

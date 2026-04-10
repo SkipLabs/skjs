@@ -462,7 +462,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 }
 
 class CheckResult(
-  fileName: FAbsolute,
+  fileName: FPath,
   parseError: ?LexingOrParsingError,
   errors: Array<Error>,
   callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
@@ -472,7 +472,7 @@ class CheckResult(
 
 class Checker private {
   files: Files,
-  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultFile>,
+  parsedFiles: SKStore.EHandle<FPath, ParsedResultFile>,
   checker: TypeChecker,
   newLinesMap: NewLinesMap,
   symbolsMap: SymbolsMap,
@@ -507,7 +507,7 @@ class Checker private {
     defMap = DefMap::create(
       context,
       builtinsFileName,
-      files.importStubs,
+      files.rootMap,
       parsedFiles,
       compilerOptions,
     );
@@ -539,7 +539,7 @@ class Checker private {
 
   fun checkFiles(
     context: mutable SKStore.Context,
-  ): SKStore.EHandle<FAbsolute, CheckResult> {
+  ): SKStore.EHandle<FPath, CheckResult> {
     checkDir = SKStore.LHandle::create(
       DefKey::keyType,
       TCResultsAccFile::type,
@@ -551,7 +551,7 @@ class Checker private {
       },
     );
     this.parsedFiles.map(
-      FAbsolute::keyType,
+      FPath::keyType,
       CheckResult::type,
       context,
       SKStore.DirName::create("/check-results/"),
@@ -586,6 +586,7 @@ class Checker private {
   fun errorToString(context: mutable SKStore.Context, err: Error): String {
     err.toString(
       context,
+      this.files.rootMap,
       this.newLinesMap,
       this.symbolsMap,
       this.errorDetailConfig,

@@ -28,7 +28,10 @@ mutable class Lexer private {
   symbolLocations: mutable Map<SymbolicPos, Int> = mutable Map[],
 
   // The name of the file that we are lexing
-  fileName: FAbsolute,
+  fileName: FPath,
+
+  // The hash of the relative path for consistent ID generation across machines
+  relativeFileNameHash: Int,
 
   // The contents of the file
   contents: Array<Char>,
@@ -101,8 +104,13 @@ mutable class Lexer private {
     result
   }
 
-  static fun mcreate(fileName: FAbsolute, contents: String): mutable this {
-    mutable static{fileName, contents => contents.chars().toArray()}
+  static fun mcreate(fileName: FPath, contents: String): mutable this {
+    relativeFileNameHash = fileName.hash();
+    mutable static{
+      fileName,
+      relativeFileNameHash,
+      contents => contents.chars().toArray(),
+    }
   }
 
   readonly fun peekKind(): ?TokenKind {

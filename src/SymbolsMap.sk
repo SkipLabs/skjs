@@ -12,10 +12,10 @@ class SymbolsFile(symbols: Map<SymbolicPos, Int>) extends SKStore.File
 
 fun makeSymbolsDir(
   context: mutable SKStore.Context,
-  parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
-): SKStore.EHandle<FAbsolute, SymbolsFile> {
+  parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
+): SKStore.EHandle<FPath, SymbolsFile> {
   parsedFiles.map(
-    FAbsolute::keyType,
+    FPath::keyType,
     SymbolsFile::type,
     context,
     SKStore.DirName::create("/skjs/symbols/"),
@@ -29,16 +29,16 @@ fun makeSymbolsDir(
 /* Symbols map (associates Symbols to a filename) */
 /***************************************************************************/
 
-class SymbolsMap{dir: SKStore.EHandle<FAbsolute, SymbolsFile>} {
+class SymbolsMap{dir: SKStore.EHandle<FPath, SymbolsFile>} {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
   ): this {
     static{dir => makeSymbolsDir(context, parsedFiles)}
   }
   fun get(
     context: mutable SKStore.Context,
-    fileName: FAbsolute,
+    fileName: FPath,
   ): Map<SymbolicPos, Int> {
     this.dir.get(context, fileName).symbols
   }
@@ -54,7 +54,7 @@ class FunDefSigMapFile(value: FunDefSigData) extends SKStore.File
 class FunDefSigMap{dir: SKStore.EHandle<FunDefSigMapKey, FunDefSigMapFile>} {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
   ): this {
     static{
       dir => parsedFiles.map(
@@ -81,7 +81,7 @@ class FunDefBodyMapFile(value: FunDefBodyData) extends SKStore.File
 class FunDefBodyMap{dir: SKStore.EHandle<FunDefBodyMapKey, FunDefBodyMapFile>} {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
   ): this {
     static{
       dir => parsedFiles.map(
@@ -108,7 +108,7 @@ class ClassBodyMapFile(value: ClassBodyData) extends SKStore.File
 class ClassBodyMap{dir: SKStore.EHandle<ClassBodyMapKey, ClassBodyMapFile>} {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
   ): this {
     static{
       dir => parsedFiles.map(
@@ -135,7 +135,7 @@ class ClassFieldMapFile(value: ClassFieldData) extends SKStore.File
 class ClassFieldMap{dir: SKStore.EHandle<ClassFieldMapKey, ClassFieldMapFile>} {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
   ): this {
     static{
       dir => parsedFiles.map(
@@ -167,7 +167,7 @@ class TypeDefBodyMap{
 } {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
   ): this {
     static{
       dir => parsedFiles.map(
@@ -197,7 +197,7 @@ class MethodBodyMapFile(value: MethodBodyData) extends SKStore.File
 class MethodBodyMap{dir: SKStore.EHandle<MethodBodyMapKey, MethodBodyMapFile>} {
   static fun create(
     context: mutable SKStore.Context,
-    parsedFiles: SKStore.EHandle<FAbsolute, ParsedResultAndSymbolsFile>,
+    parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
   ): this {
     static{
       dir => parsedFiles.map(
