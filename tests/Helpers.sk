@@ -393,11 +393,6 @@ fun getIndent(line: String): String {
   line.getIter().substring(i)
 }
 
-/* Rewrites a file's expect-error annotations to match actual errors.
- * - Updates messages for existing annotations (preserving @ts vs @skjs prefix)
- * - Removes annotations where errors no longer occur
- * - Adds @skjs-expect-error annotations for new errors
- * - At most one @ts-expect-error per group, always last */
 fun emitLineNAnnotations(
   result: mutable Vector<String>,
   indent: String,
@@ -410,6 +405,11 @@ fun emitLineNAnnotations(
   }
 }
 
+/* Rewrites a file's expect-error annotations to match actual errors.
+ * - Updates messages for existing annotations (preserving @ts vs @skjs prefix)
+ * - Removes annotations where errors no longer occur
+ * - Adds @skjs-expect-error annotations for new errors
+ * - At most one @ts-expect-error per group, always last */
 fun updateFileAnnotations(
   contents: String,
   actualErrorsByLine: Map<Int, SortedSet<String>>,
