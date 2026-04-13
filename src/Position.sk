@@ -104,6 +104,16 @@ class PositionResolver{
   newLines: Array<Int>,
   symbols: Map<SymbolicPos, Int>,
 } {
+  fun errMsgPosSingle(pos: Pos): ErrorMessagePos {
+    ErrorMessagePos{start => this.relPos(pos), endOpt => None()}
+  }
+  fun errMsgPosRange(pos: PosRange): ErrorMessagePos {
+    ErrorMessagePos{
+      start => this.relPos(pos.getStart(this.symbols)),
+      endOpt => Some(this.relPos(pos.getEnd(this.symbols))),
+    }
+  }
+
   fun relPosRange(pos: PosRange): RelPosRange {
     RelPosRange(
       this.relPos(pos.getStart(this.symbols)),
@@ -133,7 +143,7 @@ class PositionResolver{
 /* Structured error message type. */
 /***************************************************************************/
 
-type ErrorMessagePos = (RelPos, ?RelPos);
+value class ErrorMessagePos{start: RelPos, endOpt: ?RelPos}
 
 type ErrorMessage = Array<(ErrorMessagePos, String)>;
 
@@ -142,9 +152,9 @@ class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
 fun formatErrorMessage(msg: ErrorMessage): String {
   result = mutable Vector[];
   for ((pos, text) in msg) {
-    posStr = pos.i1 match {
-    | Some(end) -> RelPosRange(pos.i0, end).toString()
-    | None() -> pos.i0.toString()
+    posStr = pos.endOpt match {
+    | Some(end) -> RelPosRange(pos.start, end).toString()
+    | None() -> pos.start.toString()
     };
     result.push(posStr);
     result.push(text);
