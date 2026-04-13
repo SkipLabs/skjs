@@ -8,8 +8,6 @@ module SKJS;
 /* Position types. */
 /***************************************************************************/
 
-value class LineCol{line: Int, col: Int} uses Equality
-
 value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
   const none: this = Pos(-1);
 
@@ -126,6 +124,8 @@ class PositionResolver{
 /***************************************************************************/
 /* Structured error message type. */
 /***************************************************************************/
+
+value class LineCol{line: Int, col: Int}
 
 value class ErrorMessagePos{
   fileName: FAbsolute,
