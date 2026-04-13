@@ -35,24 +35,6 @@ base class Error {
     errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
   ): ErrorMessage;
 
-  fun toString(
-    context: mutable SKStore.Context,
-    rootMap: RootMap,
-    newLinesMap: NewLinesMap,
-    symbolsMap: SymbolsMap,
-    errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
-  ): String {
-    formatErrorMessage(
-      this.toErrorMessage(
-        context,
-        rootMap,
-        newLinesMap,
-        symbolsMap,
-        errorDetailConfig,
-      ),
-    )
-  }
-
   static fun resolver(
     fileName: FPath,
     context: mutable SKStore.Context,

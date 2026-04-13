@@ -620,12 +620,14 @@ class Checker private {
   }
 
   fun errorToString(context: mutable SKStore.Context, err: Error): String {
-    err.toString(
-      context,
-      this.files.rootMap,
-      this.newLinesMap,
-      this.symbolsMap,
-      this.errorDetailConfig,
+    formatErrorMessage(
+      err.toErrorMessage(
+        context,
+        this.files.rootMap,
+        this.newLinesMap,
+        this.symbolsMap,
+        this.errorDetailConfig,
+      ),
     )
   }
 }
