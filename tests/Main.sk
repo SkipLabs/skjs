@@ -32,7 +32,7 @@ fun getLinedErrors(
     | SKJS.EPRange(posRange) -> posRange.getStart(symbols)
     | SKJS.EPChar(_fileName, pos) -> pos
     };
-    line = resolver.relPos(pos).line;
+    line = resolver.relPos(pos).lc.line;
     errs_at_line = m.getOrAdd(line, () -> Vector::mcreate(0));
     errs_at_line.push(err)
   };

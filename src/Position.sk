@@ -8,14 +8,12 @@ module SKJS;
 /* Position types. */
 /***************************************************************************/
 
-value class RelPos(
-  fileName: FAbsolute,
-  line: Int,
-  col: Int,
-) uses Show, Equality {
+value class LineCol{line: Int, col: Int} uses Equality
+
+value class RelPos(fileName: FAbsolute, lc: LineCol) uses Show, Equality {
   fun toString(): String {
     fileName = this.fileName.toString().replace("\"", "\\\"");
-    `File "${fileName}", line ${this.line}, character ${this.col}:`
+    `File "${fileName}", line ${this.lc.line}, character ${this.lc.col}:`
   }
 }
 value class RelPosRange(start: RelPos, end: RelPos) {
@@ -23,13 +21,13 @@ value class RelPosRange(start: RelPos, end: RelPos) {
     if (this.start.fileName != this.end.fileName) {
       internal_error("start and end fileName must match")
     };
-    if (this.start.line != this.end.line) {
+    if (this.start.lc.line != this.end.lc.line) {
       return this.start.toString();
     };
     fileName = this.start.fileName.toString().replace("\"", "\\\"");
-    `File "${fileName}", line ${this.start.line}, character ${this.start.col}-${
-      this.end.col
-    }:`
+    `File "${fileName}", line ${this.start.lc.line}, character ${
+      this.start.lc.col
+    }-${this.end.lc.col}:`
   }
 }
 
@@ -121,9 +119,12 @@ class PositionResolver{
       this.newLines.size() - 1,
     );
     if (idx <= 0 || idx >= this.newLines[idx]) {
-      return RelPos(this.absFileName, 1, pos.value + 1)
+      return RelPos(this.absFileName, LineCol{line => 1, col => pos.value + 1})
     };
-    RelPos(this.absFileName, idx + 1, pos.value - this.newLines[idx - 1])
+    RelPos(
+      this.absFileName,
+      LineCol{line => idx + 1, col => pos.value - this.newLines[idx - 1]},
+    )
   }
 }
 

@@ -208,7 +208,7 @@ class TypingError(
         symbolsMap,
       );
       relPos = resolver.relPosRange(firstPos);
-      errorDetailConfig.getDetail(fileName, relPos.start.line)
+      errorDetailConfig.getDetail(fileName, relPos.start.lc.line)
     };
 
     messages = this.messages;
