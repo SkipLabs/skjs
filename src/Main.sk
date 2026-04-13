@@ -210,7 +210,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .long("error-format")
     .value_name("FORMAT")
     .about(
-      "Error output format. Available formats: default, indent. (default: default)",
+      "Error output format. Available formats: default, indent, json. (default: default)",
     ),
   Cli.Arg::string("project")
     .long("project")
@@ -363,9 +363,10 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   errorFormat = args.getString("error-format") match {
   | "default" -> EFDefault()
   | "indent" -> EFIndent()
+  | "json" -> EFJson()
   | fmt ->
     print_error(
-      `Unknown error format: ${fmt}. Available formats: default, indent`,
+      `Unknown error format: ${fmt}. Available formats: default, indent, json`,
     );
     throw Exit(2)
   };
@@ -488,12 +489,20 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 }
 
 fun printErrors(errors: Array<SKStore.File>, errorFormat: ErrorFormat): void {
-  for (error in errors) {
-    errMsg = ErrorMessageFile::type(error).value;
-    if (!errMsg.isEmpty()) {
-      print_error(formatErrorMessage(errMsg, errorFormat));
-      // Blank line separator between errors
-      print_error("")
+  errorFormat match {
+  | EFJson() ->
+    msgs = errors
+      .map(e -> ErrorMessageFile::type(e).value)
+      .filter(msg -> !msg.isEmpty());
+    print_error(formatAllErrorsJson(msgs))
+  | _ ->
+    for (error in errors) {
+      errMsg = ErrorMessageFile::type(error).value;
+      if (!errMsg.isEmpty()) {
+        print_error(formatErrorMessage(errMsg, errorFormat));
+        // Blank line separator between errors
+        print_error("")
+      }
     }
   }
 }

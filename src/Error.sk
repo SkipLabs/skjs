@@ -30,6 +30,7 @@ base class ErrorFormat uses Orderable {
   children =
   | EFDefault()
   | EFIndent()
+  | EFJson()
 }
 
 /***************************************************************************/

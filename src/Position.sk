@@ -153,6 +153,17 @@ value class ErrorMessagePos{
     | _ -> `${this.fileName}:${this.start.line}:${this.start.col}:`
     }
   }
+
+  fun toJsonObject(): JSON.Object {
+    obj = JSON.Object(Map[])
+      .set("file", JSON.String(this.fileName.toString()))
+      .set("line", JSON.IntNumber(this.start.line))
+      .set("col", JSON.IntNumber(this.start.col));
+    this.endOpt match {
+    | Some(end) -> obj.set("endCol", JSON.IntNumber(end.col))
+    | None() -> obj
+    }
+  }
 }
 
 type ErrorMessage = Array<(ErrorMessagePos, String)>;
@@ -176,7 +187,27 @@ fun formatErrorMessage(msg: ErrorMessage, errorFormat: ErrorFormat): String {
         `${prefix}${pos.toCompactString()} ${text}`
       })
       .join("\n")
+  | EFJson() -> invariant_violation("Use formatAllErrorsJson for JSON format")
   }
+}
+
+fun errorMessageToJson(msg: ErrorMessage): JSON.Value {
+  if (msg.isEmpty()) return JSON.Null();
+  (firstPos, firstText) = msg[0];
+  related = msg.slice(1, msg.size()).map(entry ~> {
+    (pos, text) = entry;
+    result: JSON.Value = pos.toJsonObject().set("message", JSON.String(text));
+    result
+  });
+  firstPos
+    .toJsonObject()
+    .set("message", JSON.String(firstText))
+    .set("related", JSON.Array(Vector::createFromItems(related)))
+}
+
+fun formatAllErrorsJson(msgs: Array<ErrorMessage>): String {
+  items = Vector::createFromItems(msgs.map(errorMessageToJson));
+  JSON.Array(items).encode()
 }
 
 module end;
