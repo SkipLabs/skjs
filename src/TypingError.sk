@@ -233,7 +233,7 @@ class TypingError(
         symbolsMap,
       );
       range = resolver.relPosRange(pos);
-      (range.start, Some(range.end), message.i1)
+      ((range.start, Some(range.end)), message.i1)
     })
   }
 }
@@ -257,7 +257,7 @@ class NamingError(messages: Array<(PosRange, String)>) extends Error {
         symbolsMap,
       );
       range = resolver.relPosRange(pos);
-      (range.start, Some(range.end), message.i1)
+      ((range.start, Some(range.end)), message.i1)
     })
   }
 }

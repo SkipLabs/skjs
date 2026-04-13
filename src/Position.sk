@@ -133,16 +133,18 @@ class PositionResolver{
 /* Structured error message type. */
 /***************************************************************************/
 
-type ErrorMessage = Array<(RelPos, ?RelPos, String)>;
+type ErrorMessagePos = (RelPos, ?RelPos);
+
+type ErrorMessage = Array<(ErrorMessagePos, String)>;
 
 class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
 
 fun formatErrorMessage(msg: ErrorMessage): String {
   result = mutable Vector[];
-  for ((start, endOpt, text) in msg) {
-    posStr = endOpt match {
-    | Some(end) -> RelPosRange(start, end).toString()
-    | None() -> start.toString()
+  for ((pos, text) in msg) {
+    posStr = pos.i1 match {
+    | Some(end) -> RelPosRange(pos.i0, end).toString()
+    | None() -> pos.i0.toString()
     };
     result.push(posStr);
     result.push(text);

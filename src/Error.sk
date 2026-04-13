@@ -75,10 +75,10 @@ base class SinglePosError<K: ErrorKind>(
     this.pos match {
     | EPRange(p) ->
       range = resolver.relPosRange(p);
-      Array[(range.start, Some(range.end), this.errorKind.toString())]
+      Array[((range.start, Some(range.end)), this.errorKind.toString())]
     | EPChar(_, p) ->
       relPos = resolver.relPos(p);
-      Array[(relPos, None(), this.errorKind.toString())]
+      Array[((relPos, None()), this.errorKind.toString())]
     }
   }
 }
