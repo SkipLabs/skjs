@@ -31,6 +31,18 @@ base class ErrorFormat uses Orderable {
   | EFDefault()
   | EFIndent()
   | EFJson()
+
+  const default: String = "default";
+  const all: String = "default, indent, json";
+
+  static fun ofString(str: String): Result<ErrorFormat, String> {
+    str match {
+    | "default" -> Success(EFDefault())
+    | "indent" -> Success(EFIndent())
+    | "json" -> Success(EFJson())
+    | _ -> Failure(str)
+    }
+  }
 }
 
 /***************************************************************************/

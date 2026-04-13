@@ -210,8 +210,11 @@ const checkArgs: Array<Cli.Arg> = Array[
     .long("error-format")
     .value_name("FORMAT")
     .about(
-      "Error output format. Available formats: default, indent, json. (default: default)",
-    ),
+      `Error output format. Available formats: ${ErrorFormat::all}. (default: ${
+        ErrorFormat::default
+      })`,
+    )
+    .default(ErrorFormat::default),
   Cli.Arg::string("project")
     .long("project")
     .short("p")
@@ -360,13 +363,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   );
   errorDetailConfig = ErrorDetailConfig(errorDetailSpecs);
 
-  errorFormat = args.getString("error-format") match {
-  | "default" -> EFDefault()
-  | "indent" -> EFIndent()
-  | "json" -> EFJson()
-  | fmt ->
+  errorFormat = ErrorFormat::ofString(args.getString("error-format")) match {
+  | Success(ef) -> ef
+  | Failure(fmt) ->
     print_error(
-      `Unknown error format: ${fmt}. Available formats: default, indent, json`,
+      `Unknown error format: ${fmt}. Available formats: ${ErrorFormat::all}`,
     );
     throw Exit(2)
   };
