@@ -618,18 +618,6 @@ class Checker private {
       this.errorDetailConfig,
     )
   }
-
-  fun errorToString(context: mutable SKStore.Context, err: Error): String {
-    formatErrorMessage(
-      err.toErrorMessage(
-        context,
-        this.files.rootMap,
-        this.newLinesMap,
-        this.symbolsMap,
-        this.errorDetailConfig,
-      ),
-    )
-  }
 }
 
 base class ErrorHandling uses Orderable {
