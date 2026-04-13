@@ -150,7 +150,7 @@ value class ErrorMessagePos{
       }
     | None() -> void
     };
-    RelPos(this.fileName, this.start).toString()
+    `File "${fileName}", line ${this.start.line}, character ${this.start.col}:`
   }
 }
 
