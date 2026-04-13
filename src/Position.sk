@@ -16,17 +16,6 @@ value class RelPos(fileName: FAbsolute, lc: LineCol) uses Show, Equality {
     `File "${fileName}", line ${this.lc.line}, character ${this.lc.col}:`
   }
 }
-value class RelPosRange(fileName: FAbsolute, start: LineCol, end: LineCol) {
-  fun toString(): String {
-    if (this.start.line != this.end.line) {
-      return RelPos(this.fileName, this.start).toString();
-    };
-    fileName = this.fileName.toString().replace("\"", "\\\"");
-    `File "${fileName}", line ${this.start.line}, character ${this.start.col}-${
-      this.end.col
-    }:`
-  }
-}
 
 value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
   const none: this = Pos(-1);
@@ -125,14 +114,6 @@ class PositionResolver{
 
   fun posRangeLine(pos: PosRange): Int {
     this.lineCol(pos.getStart(this.symbols)).line
-  }
-
-  fun relPosRange(pos: PosRange): RelPosRange {
-    RelPosRange(
-      this.absFileName,
-      this.lineCol(pos.getStart(this.symbols)),
-      this.lineCol(pos.getEnd(this.symbols)),
-    )
   }
 
   fun relPos(pos: Pos): RelPos {
