@@ -206,6 +206,12 @@ const checkArgs: Array<Cli.Arg> = Array[
       "Control subtyping error detail level. Formats: <level>, <line>, <file>, <line>:<level>, <file>:<level>, <file>:<line>:<level>. " +
         "Levels: hide, minimal/0, default/1, normal/2, verbose/3, full/max. Multiple specs can be separated by ';'. Can be specified multiple times.",
     ),
+  Cli.Arg::string("error-format")
+    .long("error-format")
+    .value_name("FORMAT")
+    .about(
+      "Error output format. Available formats: default. (default: default)",
+    ),
   Cli.Arg::string("project")
     .long("project")
     .short("p")
@@ -354,6 +360,13 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   );
   errorDetailConfig = ErrorDetailConfig(errorDetailSpecs);
 
+  errorFormat = args.getString("error-format") match {
+  | "default" -> EFDefault()
+  | fmt ->
+    print_error(`Unknown error format: ${fmt}. Available formats: default`);
+    throw Exit(2)
+  };
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
 
   context = SKStore.runWithGcReturnContext(
@@ -466,16 +479,16 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | None() -> 2
   | Some(dir) ->
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
-    printErrors(errors);
+    printErrors(errors, errorFormat);
     if (errors.size() != 0) 2 else 0
   }
 }
 
-fun printErrors(errors: Array<SKStore.File>): void {
+fun printErrors(errors: Array<SKStore.File>, errorFormat: ErrorFormat): void {
   for (error in errors) {
     errMsg = ErrorMessageFile::type(error).value;
     if (!errMsg.isEmpty()) {
-      print_error(formatErrorMessage(errMsg));
+      print_error(formatErrorMessage(errMsg, errorFormat));
       // Blank line separator between errors
       print_error("")
     }

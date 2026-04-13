@@ -797,6 +797,7 @@ extension class Checker {
         this.symbolsMap,
         this.errorDetailConfig,
       ),
+      EFDefault(),
     )
   }
 

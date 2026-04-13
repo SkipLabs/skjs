@@ -151,13 +151,16 @@ type ErrorMessage = Array<(ErrorMessagePos, String)>;
 
 class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
 
-fun formatErrorMessage(msg: ErrorMessage): String {
-  result = mutable Vector[];
-  for ((pos, text) in msg) {
-    result.push(pos.toString());
-    result.push(text);
-  };
-  result.join("\n")
+fun formatErrorMessage(msg: ErrorMessage, errorFormat: ErrorFormat): String {
+  errorFormat match {
+  | EFDefault() ->
+    result = mutable Vector[];
+    for ((pos, text) in msg) {
+      result.push(pos.toString());
+      result.push(text);
+    };
+    result.join("\n")
+  }
 }
 
 module end;
