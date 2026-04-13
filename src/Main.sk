@@ -466,15 +466,19 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | None() -> 2
   | Some(dir) ->
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
-    for (error in errors) {
-      errMsg = ErrorMessageFile::type(error).value;
-      if (!errMsg.isEmpty()) {
-        print_error(formatErrorMessage(errMsg));
-        // Blank line separator between errors
-        print_error("")
-      }
-    };
+    printErrors(errors);
     if (errors.size() != 0) 2 else 0
+  }
+}
+
+fun printErrors(errors: Array<SKStore.File>): void {
+  for (error in errors) {
+    errMsg = ErrorMessageFile::type(error).value;
+    if (!errMsg.isEmpty()) {
+      print_error(formatErrorMessage(errMsg));
+      // Blank line separator between errors
+      print_error("")
+    }
   }
 }
 
