@@ -20,10 +20,7 @@ fun getLinedErrors(
       SKJS.EPRange(messages[0].i0)
     | SKJS.SinglePosError(errPos, _errKind) -> errPos
     };
-    errFileName = errPos match {
-    | SKJS.EPRange(posRange) -> posRange.fileName
-    | SKJS.EPChar(fn, _pos) -> fn
-    };
+    errFileName = errPos.fileName();
     if (errFileName != fileName) {
       errStr = checker.errorToString(context, err);
       SKTest.fail(`Typing error in another file (${fileName}): ${errStr}`);
