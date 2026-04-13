@@ -170,7 +170,10 @@ type ErrorMessage = Array<(ErrorMessagePos, String)>;
 
 class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
 
-fun formatErrorMessage(msg: ErrorMessage, errorFormat: ErrorFormat): String {
+fun formatErrorMessage(
+  msg: ErrorMessage,
+  errorFormat: TextErrorFormat,
+): String {
   errorFormat match {
   | EFDefault() ->
     result = mutable Vector[];
@@ -187,7 +190,6 @@ fun formatErrorMessage(msg: ErrorMessage, errorFormat: ErrorFormat): String {
         `${prefix}${pos.toCompactString()} ${text}`
       })
       .join("\n")
-  | EFJson() -> invariant_violation("Use formatAllErrorsJson for JSON format")
   }
 }
 

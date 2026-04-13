@@ -26,10 +26,8 @@ class ErrorExn(error: Error) extends Exception
 /* Error output format. */
 /***************************************************************************/
 
-base class ErrorFormat uses Orderable {
+base class ErrorFormat {
   children =
-  | EFDefault()
-  | EFIndent()
   | EFJson()
 
   const default: String = "default";
@@ -43,6 +41,12 @@ base class ErrorFormat uses Orderable {
     | _ -> Failure(str)
     }
   }
+}
+
+base class TextErrorFormat extends ErrorFormat {
+  children =
+  | EFDefault()
+  | EFIndent()
 }
 
 /***************************************************************************/

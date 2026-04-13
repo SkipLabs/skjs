@@ -490,20 +490,16 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 }
 
 fun printErrors(errors: Array<SKStore.File>, errorFormat: ErrorFormat): void {
+  msgs = errors
+    .map(e -> ErrorMessageFile::type(e).value)
+    .filter(msg -> !msg.isEmpty());
   errorFormat match {
-  | EFJson() ->
-    msgs = errors
-      .map(e -> ErrorMessageFile::type(e).value)
-      .filter(msg -> !msg.isEmpty());
-    print_error(formatAllErrorsJson(msgs))
-  | _ ->
-    for (error in errors) {
-      errMsg = ErrorMessageFile::type(error).value;
-      if (!errMsg.isEmpty()) {
-        print_error(formatErrorMessage(errMsg, errorFormat));
-        // Blank line separator between errors
-        print_error("")
-      }
+  | EFJson() -> print_error(formatAllErrorsJson(msgs))
+  | textErrorFormat @ TextErrorFormat _ ->
+    for (errMsg in msgs) {
+      print_error(formatErrorMessage(errMsg, textErrorFormat));
+      // Blank line separator between errors
+      print_error("")
     }
   }
 }
