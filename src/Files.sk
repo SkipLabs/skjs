@@ -142,20 +142,24 @@ class Files(
     Success(Files(isInit, rootMap, builtinsFileName, fileHdl))
   }
 
+  /* Returns Failure for parse errors only if errorHandling is EHDefault */
   fun parse(
     context: mutable SKStore.Context,
     newLinesMap: NewLinesMap,
     errorHandling: ErrorHandling,
-  ): (
-    SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
-    SymbolsMap,
-    FunDefSigMap,
-    FunDefBodyMap,
-    ClassBodyMap,
-    ClassFieldMap,
-    TypeDefBodyMap,
-    MethodBodyMap,
-  ) {
+  ): Result<
+    (
+      SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
+      SymbolsMap,
+      FunDefSigMap,
+      FunDefBodyMap,
+      ClassBodyMap,
+      ClassFieldMap,
+      TypeDefBodyMap,
+      MethodBodyMap,
+    ),
+    Array<String>,
+  > {
     parsedFiles = this.filesContent.map(
       FPath::keyType,
       ParsedResultAndSymbolsFile::type,
@@ -181,7 +185,7 @@ class Files(
           | ErrorExn(err @ LexingOrParsingError _) ->
             symbols = lexer.getAllSymbolLocations();
             res = PRError(err);
-            // Store the error under parseErrorKey for immediate error reporting
+            // Store the error under parseErrorKey for early error reporting
             writer.setArray(
               parseErrorKey,
               Array[ParsedResultAndSymbolsFile(res, symbols)],
@@ -244,34 +248,37 @@ class Files(
         !(errorHandling is EHKeepGoing()),
         "No errors expected when using --keep-going",
       );
-      for (error in errors) {
-        error.value match {
-        | PRError(err) ->
-          print_error(
-            err.toString(context, this.rootMap, newLinesMap, symbolsMap),
-          )
-        | PROk _ -> internal_error("Unexpected parsing result")
-        }
-      };
-      throw Exit(2);
-    };
-    funDefSigMap = FunDefSigMap::create(context, parsedFiles);
-    funDefBodyMap = FunDefBodyMap::create(context, parsedFiles);
-    classBodyMap = ClassBodyMap::create(context, parsedFiles);
-    classFieldMap = ClassFieldMap::create(context, parsedFiles);
-    typeDefBodyMap = TypeDefBodyMap::create(context, parsedFiles);
-    methodBodyMap = MethodBodyMap::create(context, parsedFiles);
-    _ = makeResolvedDefs(context, parsedFiles);
-    (
-      parsedFiles,
-      symbolsMap,
-      funDefSigMap,
-      funDefBodyMap,
-      classBodyMap,
-      classFieldMap,
-      typeDefBodyMap,
-      methodBodyMap,
-    )
+      Failure(
+        errors.map(error ->
+          error.value match {
+          | PRError(err) ->
+            err.toString(context, this.rootMap, newLinesMap, symbolsMap)
+
+          | PROk _ -> internal_error("Unexpected parsing result")
+          }
+        ),
+      )
+    } else {
+      funDefSigMap = FunDefSigMap::create(context, parsedFiles);
+      funDefBodyMap = FunDefBodyMap::create(context, parsedFiles);
+      classBodyMap = ClassBodyMap::create(context, parsedFiles);
+      classFieldMap = ClassFieldMap::create(context, parsedFiles);
+      typeDefBodyMap = TypeDefBodyMap::create(context, parsedFiles);
+      methodBodyMap = MethodBodyMap::create(context, parsedFiles);
+      _ = makeResolvedDefs(context, parsedFiles);
+      Success(
+        (
+          parsedFiles,
+          symbolsMap,
+          funDefSigMap,
+          funDefBodyMap,
+          classBodyMap,
+          classFieldMap,
+          typeDefBodyMap,
+          methodBodyMap,
+        ),
+      )
+    }
   }
 }
 

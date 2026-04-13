@@ -358,7 +358,7 @@ fun checkFilesWithRoot(
     errorHandling => SKJS.EHKeepGoing(),
     errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
     compilerOptions,
-  };
+  }.fromSuccess();
   checker
     .checkFiles(context)
     .items(context)

@@ -374,43 +374,59 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{
+          Checker::create{
             context,
             files,
             errorHandling,
             errorDetailConfig,
             compilerOptions,
-          };
-          checked = checker.checkFiles(context);
-          _ = checked.map(
-            SKStore.UnitID::keyType,
-            SKStore.StringFile::type,
-            context,
-            errorsDirName,
-            (context, writer, _key, valueIter) ~> {
-              (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
-              | None() ->
-                internal_error("Unexpected missing value in print-errors")
-              | Some(CheckResult(_, x, y, _, _, _)) -> (x, y)
-              };
-              errors = mutable Vector[];
-              parseErrorOpt match {
-              | None() -> void
-              | Some(err) ->
-                errors.push(
-                  SKStore.StringFile(checker.errorToString(context, err)),
+          } match {
+          | Failure(errs) ->
+            _ = applyOrReuseMap(
+              initDir,
+              SKStore.UnitID::keyType,
+              SKStore.StringFile::type,
+              context,
+              errorsDirName,
+              (_context, writer, _key, _values) ~> {
+                writer.setArray(
+                  SKStore.UnitID::singleton,
+                  errs.map(err -> SKStore.StringFile(err)),
                 )
-              };
+              },
+            )
+          | Success(checker) ->
+            checked = checker.checkFiles(context);
+            _ = checked.map(
+              SKStore.UnitID::keyType,
+              SKStore.StringFile::type,
+              context,
+              errorsDirName,
+              (context, writer, _key, valueIter) ~> {
+                (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
+                | None() ->
+                  internal_error("Unexpected missing value in print-errors")
+                | Some(CheckResult(_, x, y, _, _, _)) -> (x, y)
+                };
+                errors = mutable Vector[];
+                parseErrorOpt match {
+                | None() -> void
+                | Some(err) ->
+                  errors.push(
+                    SKStore.StringFile(checker.errorToString(context, err)),
+                  )
+                };
 
-              for (error in typeErrors) {
-                errors.push(
-                  SKStore.StringFile(checker.errorToString(context, error)),
-                );
-              };
-              writer.setArray(SKStore.UnitID::singleton, errors.toArray());
-            },
-          );
-          _ = CallGraph::build(context, checked);
+                for (error in typeErrors) {
+                  errors.push(
+                    SKStore.StringFile(checker.errorToString(context, error)),
+                  );
+                };
+                writer.setArray(SKStore.UnitID::singleton, errors.toArray());
+              },
+            );
+            _ = CallGraph::build(context, checked)
+          }
         },
       );
       tick = context.getTick();
@@ -485,13 +501,14 @@ class Checker private {
   methodBodyMap: MethodBodyMap,
   errorDetailConfig: ErrorDetailConfig,
 } {
+  /* Returns Failure for parse errors only if errorHandling is EHDefault */
   static fun create{
     context: mutable SKStore.Context,
     files: Files,
     errorHandling: ErrorHandling,
     errorDetailConfig: ErrorDetailConfig,
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
-  }: this {
+  }: Result<this, Array<String>> {
     newLinesMap = NewLinesMap::create(context, files);
     (
       parsedAndSymbolsFiles,
@@ -502,7 +519,10 @@ class Checker private {
       classFieldMap,
       typeDefBodyMap,
       methodBodyMap,
-    ) = files.parse(context, newLinesMap, errorHandling);
+    ) = files.parse(context, newLinesMap, errorHandling) match {
+    | Success(r) -> r
+    | Failure(errs) -> return Failure(errs)
+    };
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
@@ -522,20 +542,22 @@ class Checker private {
       typeDefBodyMap,
       methodBodyMap,
     };
-    static{
-      files,
-      parsedFiles,
-      checker,
-      newLinesMap,
-      symbolsMap,
-      funDefSigMap,
-      funDefBodyMap,
-      classBodyMap,
-      classFieldMap,
-      typeDefBodyMap,
-      methodBodyMap,
-      errorDetailConfig,
-    }
+    Success(
+      static{
+        files,
+        parsedFiles,
+        checker,
+        newLinesMap,
+        symbolsMap,
+        funDefSigMap,
+        funDefBodyMap,
+        classBodyMap,
+        classFieldMap,
+        typeDefBodyMap,
+        methodBodyMap,
+        errorDetailConfig,
+      },
+    )
   }
 
   fun checkFiles(
