@@ -105,12 +105,17 @@ class PositionResolver{
   symbols: Map<SymbolicPos, Int>,
 } {
   fun errMsgPosSingle(pos: Pos): ErrorMessagePos {
-    ErrorMessagePos{start => this.relPos(pos), endOpt => None()}
+    ErrorMessagePos{
+      fileName => this.absFileName,
+      start => this.lineCol(pos),
+      endOpt => None(),
+    }
   }
   fun errMsgPosRange(pos: PosRange): ErrorMessagePos {
     ErrorMessagePos{
-      start => this.relPos(pos.getStart(this.symbols)),
-      endOpt => Some(this.relPos(pos.getEnd(this.symbols))),
+      fileName => this.absFileName,
+      start => this.lineCol(pos.getStart(this.symbols)),
+      endOpt => Some(this.lineCol(pos.getEnd(this.symbols))),
     }
   }
 
@@ -143,7 +148,11 @@ class PositionResolver{
 /* Structured error message type. */
 /***************************************************************************/
 
-value class ErrorMessagePos{start: RelPos, endOpt: ?RelPos}
+value class ErrorMessagePos{
+  fileName: FAbsolute,
+  start: LineCol,
+  endOpt: ?LineCol,
+}
 
 type ErrorMessage = Array<(ErrorMessagePos, String)>;
 
@@ -153,8 +162,12 @@ fun formatErrorMessage(msg: ErrorMessage): String {
   result = mutable Vector[];
   for ((pos, text) in msg) {
     posStr = pos.endOpt match {
-    | Some(end) -> RelPosRange(pos.start, end).toString()
-    | None() -> pos.start.toString()
+    | Some(end) ->
+      RelPosRange(
+        RelPos(pos.fileName, pos.start),
+        RelPos(pos.fileName, end),
+      ).toString()
+    | None() -> RelPos(pos.fileName, pos.start).toString()
     };
     result.push(posStr);
     result.push(text);
