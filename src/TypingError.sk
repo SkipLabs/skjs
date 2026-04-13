@@ -222,8 +222,7 @@ class TypingError(
       !messages = messages.concat(e.toError(subst, this.tenv, detail).toArray())
     };
 
-    result = mutable Vector[];
-    for (message in messages) {
+    messages.map(message -> {
       pos = message.i0;
       fileName = pos.fileName;
       resolver = static::resolver(
@@ -233,10 +232,9 @@ class TypingError(
         newLinesMap,
         symbolsMap,
       );
-      range = resolver.relPosRange(message.i0);
-      result.push((range.start, Some(range.end), message.i1));
-    };
-    result.toArray()
+      range = resolver.relPosRange(pos);
+      (range.start, Some(range.end), message.i1)
+    })
   }
 }
 
@@ -248,9 +246,7 @@ class NamingError(messages: Array<(PosRange, String)>) extends Error {
     symbolsMap: SymbolsMap,
     _errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
   ): ErrorMessage {
-    result = mutable Vector[];
-    messages = this.messages;
-    for (message in messages) {
+    this.messages.map(message -> {
       pos = message.i0;
       fileName = pos.fileName;
       resolver = static::resolver(
@@ -260,10 +256,9 @@ class NamingError(messages: Array<(PosRange, String)>) extends Error {
         newLinesMap,
         symbolsMap,
       );
-      range = resolver.relPosRange(message.i0);
-      result.push((range.start, Some(range.end), message.i1));
-    };
-    result.toArray()
+      range = resolver.relPosRange(pos);
+      (range.start, Some(range.end), message.i1)
+    })
   }
 }
 
