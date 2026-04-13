@@ -116,10 +116,6 @@ class PositionResolver{
     this.lineCol(pos.getStart(this.symbols)).line
   }
 
-  fun relPos(pos: Pos): RelPos {
-    RelPos(this.absFileName, this.lineCol(pos))
-  }
-
   fun lineCol(pos: Pos): LineCol {
     idx = SKStore.binSearch(
       i ~> this.newLines[i],
