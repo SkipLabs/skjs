@@ -29,6 +29,7 @@ class ErrorExn(error: Error) extends Exception
 base class ErrorFormat uses Orderable {
   children =
   | EFDefault()
+  | EFIndent()
 }
 
 /***************************************************************************/

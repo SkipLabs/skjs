@@ -210,7 +210,7 @@ const checkArgs: Array<Cli.Arg> = Array[
     .long("error-format")
     .value_name("FORMAT")
     .about(
-      "Error output format. Available formats: default. (default: default)",
+      "Error output format. Available formats: default, indent. (default: default)",
     ),
   Cli.Arg::string("project")
     .long("project")
@@ -362,8 +362,11 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
   errorFormat = args.getString("error-format") match {
   | "default" -> EFDefault()
+  | "indent" -> EFIndent()
   | fmt ->
-    print_error(`Unknown error format: ${fmt}. Available formats: default`);
+    print_error(
+      `Unknown error format: ${fmt}. Available formats: default, indent`,
+    );
     throw Exit(2)
   };
 

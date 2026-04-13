@@ -145,6 +145,14 @@ value class ErrorMessagePos{
       }:`
     }
   }
+
+  fun toCompactString(): String {
+    this.endOpt match {
+    | Some(end) if (this.start.line == end.line) ->
+      `${this.fileName}:${this.start.line}:${this.start.col}-${end.col}:`
+    | _ -> `${this.fileName}:${this.start.line}:${this.start.col}:`
+    }
+  }
 }
 
 type ErrorMessage = Array<(ErrorMessagePos, String)>;
@@ -160,6 +168,14 @@ fun formatErrorMessage(msg: ErrorMessage, errorFormat: ErrorFormat): String {
       result.push(text);
     };
     result.join("\n")
+  | EFIndent() ->
+    msg
+      .mapWithIndex((i, entry) -> {
+        (pos, text) = entry;
+        prefix = if (i == 0) "" else "  ";
+        `${prefix}${pos.toCompactString()} ${text}`
+      })
+      .join("\n")
   }
 }
 
