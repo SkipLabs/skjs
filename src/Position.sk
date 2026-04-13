@@ -140,17 +140,17 @@ value class ErrorMessagePos{
   endOpt: ?LineCol,
 } {
   fun toString(): String {
+    fileName = this.fileName.toString().replace("\"", "\\\"");
     this.endOpt match {
     | Some(end) ->
-      if (this.start.line != end.line) {
-        return RelPos(this.fileName, this.start).toString();
-      };
-      fileName = this.fileName.toString().replace("\"", "\\\"");
-      `File "${fileName}", line ${this.start.line}, character ${
-        this.start.col
-      }-${end.col}:`
-    | None() -> RelPos(this.fileName, this.start).toString()
-    }
+      if (this.start.line == end.line) {
+        return `File "${fileName}", line ${this.start.line}, character ${
+          this.start.col
+        }-${end.col}:`
+      }
+    | None() -> void
+    };
+    RelPos(this.fileName, this.start).toString()
   }
 }
 
