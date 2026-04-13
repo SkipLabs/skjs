@@ -238,13 +238,6 @@ class Files(
       },
     );
     symbolsMap = SymbolsMap::create(context, parsedFiles);
-    funDefSigMap = FunDefSigMap::create(context, parsedFiles);
-    funDefBodyMap = FunDefBodyMap::create(context, parsedFiles);
-    classBodyMap = ClassBodyMap::create(context, parsedFiles);
-    classFieldMap = ClassFieldMap::create(context, parsedFiles);
-    typeDefBodyMap = TypeDefBodyMap::create(context, parsedFiles);
-    methodBodyMap = MethodBodyMap::create(context, parsedFiles);
-    _ = makeResolvedDefs(context, parsedFiles);
     errors = parsedFiles.unsafeGetArray(context, parseErrorKey);
     if (errors.size() != 0) {
       invariant(
@@ -262,6 +255,13 @@ class Files(
       };
       throw Exit(2);
     };
+    funDefSigMap = FunDefSigMap::create(context, parsedFiles);
+    funDefBodyMap = FunDefBodyMap::create(context, parsedFiles);
+    classBodyMap = ClassBodyMap::create(context, parsedFiles);
+    classFieldMap = ClassFieldMap::create(context, parsedFiles);
+    typeDefBodyMap = TypeDefBodyMap::create(context, parsedFiles);
+    methodBodyMap = MethodBodyMap::create(context, parsedFiles);
+    _ = makeResolvedDefs(context, parsedFiles);
     (
       parsedFiles,
       symbolsMap,
