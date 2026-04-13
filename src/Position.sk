@@ -135,15 +135,15 @@ value class ErrorMessagePos{
   fun toString(): String {
     fileName = this.fileName.toString().replace("\"", "\\\"");
     this.endOpt match {
-    | Some(end) ->
-      if (this.start.line == end.line) {
-        return `File "${fileName}", line ${this.start.line}, character ${
-          this.start.col
-        }-${end.col}:`
-      }
-    | None() -> void
-    };
-    `File "${fileName}", line ${this.start.line}, character ${this.start.col}:`
+    | Some(end) if (this.start.line == end.line) ->
+      `File "${fileName}", line ${this.start.line}, character ${
+        this.start.col
+      }-${end.col}:`
+    | _ ->
+      `File "${fileName}", line ${this.start.line}, character ${
+        this.start.col
+      }:`
+    }
   }
 }
 
