@@ -494,7 +494,7 @@ fun printErrors(errors: Array<SKStore.File>, errorFormat: ErrorFormat): void {
     .map(e -> ErrorMessageFile::type(e).value)
     .filter(msg -> !msg.isEmpty());
   errorFormat match {
-  | EFJson() -> print_error(formatAllErrorsJson(msgs))
+  | EFJson() -> errorMessagesToJson(msgs).writeToStream(print_error_raw, 2)
   | textErrorFormat @ TextErrorFormat _ ->
     for (errMsg in msgs) {
       print_error(formatErrorMessage(errMsg, textErrorFormat));

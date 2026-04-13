@@ -125,7 +125,7 @@ class PositionResolver{
 /* Structured error message type. */
 /***************************************************************************/
 
-value class LineCol{line: Int, col: Int}
+value class LineCol{line: Int, col: Int} uses Equality
 
 value class ErrorMessagePos{
   fileName: FAbsolute,
@@ -155,14 +155,20 @@ value class ErrorMessagePos{
   }
 
   fun toJsonObject(): JSON.Object {
-    obj = JSON.Object(Map[])
-      .set("file", JSON.String(this.fileName.toString()))
-      .set("line", JSON.IntNumber(this.start.line))
-      .set("col", JSON.IntNumber(this.start.col));
+    obj = JSON.Object[
+      "file" => JSON.String(this.fileName.toString()),
+      "line" => JSON.IntNumber(this.start.line),
+      "col" => JSON.IntNumber(this.start.col),
+    ];
     this.endOpt match {
-    | Some(end) -> obj.set("endCol", JSON.IntNumber(end.col))
-    | None() -> obj
-    }
+    | Some(end) ->
+      if (end.line != this.start.line) {
+        !obj = obj.set("endLine", JSON.IntNumber(end.line))
+      };
+      if (end != this.start) !obj = obj.set("endCol", JSON.IntNumber(end.col))
+    | None() -> void
+    };
+    obj
   }
 }
 
@@ -194,22 +200,21 @@ fun formatErrorMessage(
 }
 
 fun errorMessageToJson(msg: ErrorMessage): JSON.Value {
-  if (msg.isEmpty()) return JSON.Null();
-  (firstPos, firstText) = msg[0];
-  related = msg.slice(1, msg.size()).map(entry ~> {
-    (pos, text) = entry;
-    result: JSON.Value = pos.toJsonObject().set("message", JSON.String(text));
-    result
-  });
-  firstPos
-    .toJsonObject()
-    .set("message", JSON.String(firstText))
-    .set("related", JSON.Array(Vector::createFromItems(related)))
+  JSON.Array(
+    msg
+      .values()
+      .map(errMsg ->
+        JSON.Object[
+          "pos" => errMsg.i0.toJsonObject(),
+          "message" => JSON.String(errMsg.i1),
+        ]
+      )
+      .collect(Vector),
+  )
 }
 
-fun formatAllErrorsJson(msgs: Array<ErrorMessage>): String {
-  items = Vector::createFromItems(msgs.map(errorMessageToJson));
-  JSON.Array(items).encode()
+fun errorMessagesToJson(msgs: Array<ErrorMessage>): JSON.Value {
+  JSON.Array(msgs.values().map(errorMessageToJson).collect(Vector))
 }
 
 module end;
