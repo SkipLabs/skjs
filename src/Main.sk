@@ -366,8 +366,9 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       | Success(checker) -> checker
       };
 
+      initDir = getInitDir(context);
       _ = applyOrReuseMap(
-        getInitDir(context),
+        initDir,
         SKStore.UnitID::keyType,
         SKStore.VoidFile::type,
         context,
