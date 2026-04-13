@@ -158,7 +158,7 @@ class Files(
       TypeDefBodyMap,
       MethodBodyMap,
     ),
-    Array<String>,
+    Array<ErrorMessage>,
   > {
     parsedFiles = this.filesContent.map(
       FPath::keyType,
@@ -252,7 +252,7 @@ class Files(
         errors.map(error ->
           error.value match {
           | PRError(err) ->
-            err.toString(context, this.rootMap, newLinesMap, symbolsMap)
+            err.toErrorMessage(context, this.rootMap, newLinesMap, symbolsMap)
 
           | PROk _ -> internal_error("Unexpected parsing result")
           }

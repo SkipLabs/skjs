@@ -27,13 +27,31 @@ class ErrorExn(error: Error) extends Exception
 /***************************************************************************/
 
 base class Error {
+  fun toErrorMessage(
+    context: mutable SKStore.Context,
+    rootMap: RootMap,
+    newLinesMap: NewLinesMap,
+    symbolsMap: SymbolsMap,
+    errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
+  ): ErrorMessage;
+
   fun toString(
     context: mutable SKStore.Context,
     rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
-  ): String;
+  ): String {
+    formatErrorMessage(
+      this.toErrorMessage(
+        context,
+        rootMap,
+        newLinesMap,
+        symbolsMap,
+        errorDetailConfig,
+      ),
+    )
+  }
 
   static fun resolver(
     fileName: FPath,
@@ -57,13 +75,13 @@ base class SinglePosError<K: ErrorKind>(
   pos: ErrorPos,
   errorKind: K,
 ) extends Error {
-  fun toString(
+  fun toErrorMessage(
     context: mutable SKStore.Context,
     rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     _errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
-  ): String {
+  ): ErrorMessage {
     fileName = this.pos.fileName();
     resolver = static::resolver(
       fileName,
@@ -72,7 +90,14 @@ base class SinglePosError<K: ErrorKind>(
       newLinesMap,
       symbolsMap,
     );
-    this.pos.toString(resolver) + "\n" + this.errorKind.toString()
+    this.pos match {
+    | EPRange(p) ->
+      range = resolver.relPosRange(p);
+      Array[(range.start, Some(range.end), this.errorKind.toString())]
+    | EPChar(_, p) ->
+      relPos = resolver.relPos(p);
+      Array[(relPos, None(), this.errorKind.toString())]
+    }
   }
 }
 

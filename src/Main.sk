@@ -385,13 +385,13 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             _ = applyOrReuseMap(
               initDir,
               SKStore.UnitID::keyType,
-              SKStore.StringFile::type,
+              ErrorMessageFile::type,
               context,
               errorsDirName,
               (_context, writer, _key, _values) ~> {
                 writer.setArray(
                   SKStore.UnitID::singleton,
-                  errs.map(err -> SKStore.StringFile(err)),
+                  errs.map(err -> ErrorMessageFile(err)),
                 )
               },
             )
@@ -399,7 +399,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             checked = checker.checkFiles(context);
             _ = checked.map(
               SKStore.UnitID::keyType,
-              SKStore.StringFile::type,
+              ErrorMessageFile::type,
               context,
               errorsDirName,
               (context, writer, _key, valueIter) ~> {
@@ -413,13 +413,13 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                 | None() -> void
                 | Some(err) ->
                   errors.push(
-                    SKStore.StringFile(checker.errorToString(context, err)),
+                    ErrorMessageFile(checker.errorToMessage(context, err)),
                   )
                 };
 
                 for (error in typeErrors) {
                   errors.push(
-                    SKStore.StringFile(checker.errorToString(context, error)),
+                    ErrorMessageFile(checker.errorToMessage(context, error)),
                   );
                 };
                 writer.setArray(SKStore.UnitID::singleton, errors.toArray());
@@ -467,9 +467,9 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | Some(dir) ->
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
     for (error in errors) {
-      msg = SKStore.StringFile::type(error).value;
-      if (msg != "") {
-        print_error(msg);
+      errMsg = ErrorMessageFile::type(error).value;
+      if (!errMsg.isEmpty()) {
+        print_error(formatErrorMessage(errMsg));
         // Blank line separator between errors
         print_error("")
       }
@@ -508,7 +508,7 @@ class Checker private {
     errorHandling: ErrorHandling,
     errorDetailConfig: ErrorDetailConfig,
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
-  }: Result<this, Array<String>> {
+  }: Result<this, Array<ErrorMessage>> {
     newLinesMap = NewLinesMap::create(context, files);
     (
       parsedAndSymbolsFiles,
@@ -604,6 +604,19 @@ class Checker private {
         }
       },
     );
+  }
+
+  fun errorToMessage(
+    context: mutable SKStore.Context,
+    err: Error,
+  ): ErrorMessage {
+    err.toErrorMessage(
+      context,
+      this.files.rootMap,
+      this.newLinesMap,
+      this.symbolsMap,
+      this.errorDetailConfig,
+    )
   }
 
   fun errorToString(context: mutable SKStore.Context, err: Error): String {

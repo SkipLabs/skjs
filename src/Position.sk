@@ -127,4 +127,25 @@ class PositionResolver{
   }
 }
 
+/***************************************************************************/
+/* Structured error message type. */
+/***************************************************************************/
+
+type ErrorMessage = Array<(RelPos, ?RelPos, String)>;
+
+class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
+
+fun formatErrorMessage(msg: ErrorMessage): String {
+  result = mutable Vector[];
+  for ((start, endOpt, text) in msg) {
+    posStr = endOpt match {
+    | Some(end) -> RelPosRange(start, end).toString()
+    | None() -> start.toString()
+    };
+    result.push(posStr);
+    result.push(text);
+  };
+  result.join("\n")
+}
+
 module end;

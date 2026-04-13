@@ -187,13 +187,13 @@ class TypingError(
   messages: Array<(PosRange, String)>,
   stErr: STErrorOnTType,
 ) extends Error {
-  fun toString(
+  fun toErrorMessage(
     context: mutable SKStore.Context,
     rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
-  ): String {
+  ): ErrorMessage {
     // Get the appropriate detail level based on error location
     detailSpec = if (this.messages.isEmpty()) {
       errorDetailConfig.getDefault()
@@ -214,7 +214,7 @@ class TypingError(
     messages = this.messages;
 
     detailSpec match {
-    | ErrorDetailHide() -> return ""
+    | ErrorDetailHide() -> return Array[]
     | ErrorDetailMinimal() -> void
     | detail @ STErrorDetail _ ->
       e = this.stErr;
@@ -233,21 +233,21 @@ class TypingError(
         newLinesMap,
         symbolsMap,
       );
-      result.push(resolver.relPosRange(message.i0).toString());
-      result.push(message.i1);
+      range = resolver.relPosRange(message.i0);
+      result.push((range.start, Some(range.end), message.i1));
     };
-    result.join("\n")
+    result.toArray()
   }
 }
 
 class NamingError(messages: Array<(PosRange, String)>) extends Error {
-  fun toString(
+  fun toErrorMessage(
     context: mutable SKStore.Context,
     rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     _errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
-  ): String {
+  ): ErrorMessage {
     result = mutable Vector[];
     messages = this.messages;
     for (message in messages) {
@@ -260,10 +260,10 @@ class NamingError(messages: Array<(PosRange, String)>) extends Error {
         newLinesMap,
         symbolsMap,
       );
-      result.push(resolver.relPosRange(message.i0).toString());
-      result.push(message.i1);
+      range = resolver.relPosRange(message.i0);
+      result.push((range.start, Some(range.end), message.i1));
     };
-    result.join("\n")
+    result.toArray()
   }
 }
 
