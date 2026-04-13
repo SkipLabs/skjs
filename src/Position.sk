@@ -101,6 +101,13 @@ class PositionResolver{
   newLines: Array<Int>,
   symbols: Map<SymbolicPos, Int>,
 } {
+  fun errMsgErrPos(pos: ErrorPos): ErrorMessagePos {
+    pos match {
+    | EPChar(_, p) -> this.errMsgPosSingle(p)
+    | EPRange(p) -> this.errMsgPosRange(p)
+    }
+  }
+
   fun errMsgPosSingle(pos: Pos): ErrorMessagePos {
     ErrorMessagePos{
       fileName => this.absFileName,
