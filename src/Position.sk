@@ -16,18 +16,15 @@ value class RelPos(fileName: FAbsolute, lc: LineCol) uses Show, Equality {
     `File "${fileName}", line ${this.lc.line}, character ${this.lc.col}:`
   }
 }
-value class RelPosRange(start: RelPos, end: RelPos) {
+value class RelPosRange(fileName: FAbsolute, start: LineCol, end: LineCol) {
   fun toString(): String {
-    if (this.start.fileName != this.end.fileName) {
-      internal_error("start and end fileName must match")
+    if (this.start.line != this.end.line) {
+      return RelPos(this.fileName, this.start).toString();
     };
-    if (this.start.lc.line != this.end.lc.line) {
-      return this.start.toString();
-    };
-    fileName = this.start.fileName.toString().replace("\"", "\\\"");
-    `File "${fileName}", line ${this.start.lc.line}, character ${
-      this.start.lc.col
-    }-${this.end.lc.col}:`
+    fileName = this.fileName.toString().replace("\"", "\\\"");
+    `File "${fileName}", line ${this.start.line}, character ${this.start.col}-${
+      this.end.col
+    }:`
   }
 }
 
@@ -121,8 +118,9 @@ class PositionResolver{
 
   fun relPosRange(pos: PosRange): RelPosRange {
     RelPosRange(
-      this.relPos(pos.getStart(this.symbols)),
-      this.relPos(pos.getEnd(this.symbols)),
+      this.absFileName,
+      this.lineCol(pos.getStart(this.symbols)),
+      this.lineCol(pos.getEnd(this.symbols)),
     )
   }
 
@@ -162,11 +160,7 @@ fun formatErrorMessage(msg: ErrorMessage): String {
   result = mutable Vector[];
   for ((pos, text) in msg) {
     posStr = pos.endOpt match {
-    | Some(end) ->
-      RelPosRange(
-        RelPos(pos.fileName, pos.start),
-        RelPos(pos.fileName, end),
-      ).toString()
+    | Some(end) -> RelPosRange(pos.fileName, pos.start, end).toString()
     | None() -> RelPos(pos.fileName, pos.start).toString()
     };
     result.push(posStr);
