@@ -123,6 +123,10 @@ class PositionResolver{
     }
   }
 
+  fun posRangeLine(pos: PosRange): Int {
+    this.lineCol(pos.getStart(this.symbols)).line
+  }
+
   fun relPosRange(pos: PosRange): RelPosRange {
     RelPosRange(
       this.absFileName,
