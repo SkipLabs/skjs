@@ -10,13 +10,6 @@ module SKJS;
 
 value class LineCol{line: Int, col: Int} uses Equality
 
-value class RelPos(fileName: FAbsolute, lc: LineCol) uses Show, Equality {
-  fun toString(): String {
-    fileName = this.fileName.toString().replace("\"", "\\\"");
-    `File "${fileName}", line ${this.lc.line}, character ${this.lc.col}:`
-  }
-}
-
 value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
   const none: this = Pos(-1);
 
