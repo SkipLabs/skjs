@@ -150,6 +150,13 @@ value class ErrorMessagePos{
   fileName: FAbsolute,
   start: LineCol,
   endOpt: ?LineCol,
+} {
+  fun toString(): String {
+    this.endOpt match {
+    | Some(end) -> RelPosRange(this.fileName, this.start, end).toString()
+    | None() -> RelPos(this.fileName, this.start).toString()
+    }
+  }
 }
 
 type ErrorMessage = Array<(ErrorMessagePos, String)>;
@@ -159,11 +166,7 @@ class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
 fun formatErrorMessage(msg: ErrorMessage): String {
   result = mutable Vector[];
   for ((pos, text) in msg) {
-    posStr = pos.endOpt match {
-    | Some(end) -> RelPosRange(pos.fileName, pos.start, end).toString()
-    | None() -> RelPos(pos.fileName, pos.start).toString()
-    };
-    result.push(posStr);
+    result.push(pos.toString());
     result.push(text);
   };
   result.join("\n")
