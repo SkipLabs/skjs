@@ -112,6 +112,10 @@ class PositionResolver{
   }
 
   fun relPos(pos: Pos): RelPos {
+    RelPos(this.absFileName, this.lineCol(pos))
+  }
+
+  fun lineCol(pos: Pos): LineCol {
     idx = SKStore.binSearch(
       i ~> this.newLines[i],
       pos.value,
@@ -119,12 +123,9 @@ class PositionResolver{
       this.newLines.size() - 1,
     );
     if (idx <= 0 || idx >= this.newLines[idx]) {
-      return RelPos(this.absFileName, LineCol{line => 1, col => pos.value + 1})
+      return LineCol{line => 1, col => pos.value + 1}
     };
-    RelPos(
-      this.absFileName,
-      LineCol{line => idx + 1, col => pos.value - this.newLines[idx - 1]},
-    )
+    LineCol{line => idx + 1, col => pos.value - this.newLines[idx - 1]}
   }
 }
 
