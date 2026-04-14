@@ -28,61 +28,54 @@ function testSkippedElementsTypeError(): void {
 
 // Test tuple destructuring with defaults
 
-function testTupleDefaults(): void {
-  // @skjs-expect-error TODO optional element tuple
-  const arr: [number?, string?] = [1, "hello"];
-
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
+function testTupleDefaultUseful(): void {
+  const arr: [number | undefined, string | undefined] = [1, "hello"];
   const [a = 0, b = "default"] = arr;
-  // @skjs-expect-error Unbound name
   const x: number = a;
   const y: string = b;
 }
 
-function testTupleDefaultsTypeInference(): void {
-  // @skjs-expect-error TODO optional element tuple
-  const arr: [number?, string?] = [1, "hello"];
-
-  // Default value types should combine with tuple element types
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
-  const [a = 99, b = "fallback"] = arr;
-  // @skjs-expect-error Unbound name
-  const x: number = a;
-  const y: string = b;
+function testTupleDefaultDifferentType(): void {
+  const arr: [number | undefined] = [1];
+  const [a = "fallback"] = arr;
+  const x: number | string = a;
 }
 
-function testTupleDefaultsTypeError(): void {
-  // @skjs-expect-error TODO optional element tuple
-  const arr: [number?, string?] = [1, "hello"];
-
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
+function testTupleDefaultUseless(): void {
+  const arr: [number, string] = [1, "hello"];
+  // @skjs-expect-error Default is useless because element cannot be undefined
   const [a = 0, b = "default"] = arr;
-  // TODO: Invalid assignment (not reported due to earlier error in function)
-  // @skjs-expect-error Unbound name
-  const x: string = a;
+}
+
+function testTupleDefaultAlwaysUndefined(): void {
+  const arr: [undefined] = [undefined];
+  // @skjs-expect-error Element is always undefined
+  const [a = 42] = arr;
+}
+
+// Test array (iterable) destructuring with defaults
+
+function testArrayDefaultUseful(): void {
+  const arr: (number | undefined)[] = [1, undefined, 3];
+  const [a = 0] = arr;
+  const x: number = a;
 }
 
 // Test combination of skipped elements and defaults
 
 function testSkippedWithDefaults(): void {
-  // @skjs-expect-error TODO optional element tuple
-  const arr: [number?, string?, boolean?] = [1, "hello", true];
-
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
-  const [, second = "default", third = false] = arr;
-  // @skjs-expect-error Unbound name
-  const x: string = second;
+  const arr: [number, string | undefined, boolean | undefined] = [
+    1,
+    "hello",
+    true,
+  ];
+  const [first, , third = false] = arr;
+  const x: number = first;
   const y: boolean = third;
 }
 
-function testComplexPattern(): void {
-  // @skjs-expect-error TODO optional element tuple
-  const arr: [number, string?, boolean?, number?] = [1, "a", true, 42];
-
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
-  const [first, , third = false, fourth = 0] = arr;
-  const a: number = first;
-  // @skjs-expect-error Unbound name
-  const b: boolean = third;
-  const c: number = fourth;
+function testSkippedWithDefaultsUseless(): void {
+  const arr: [number, string | undefined, boolean] = [1, "hello", true];
+  // @skjs-expect-error Default is useless because element cannot be undefined
+  const [first = 0, , third] = arr;
 }
