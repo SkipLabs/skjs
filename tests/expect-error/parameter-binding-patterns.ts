@@ -1,43 +1,51 @@
-// Test that parameter names are binding patterns
+// Test destructuring patterns in function parameters
 
 // Simple parameter names work
 function simpleParams(x: number, y: string): void {}
 
-// Array destructuring in parameters (parses but not fully supported yet)
-// @skjs-expect-error TODO: support for patterns in function parameters
-function arrayPattern([a, b]: [number, string]): void {
-  // TODO: Variable usage (not reported due to earlier error in function)
-  const sum: number = a;
+// Object destructuring in parameters
+function objectPattern({ x, y }: { x: number; y: string }): void {
+  const a: number = x;
+  const b: string = y;
 }
 
-// Object destructuring in parameters (parses but not fully supported yet)
-// @skjs-expect-error TODO: support for patterns in function parameters
-function objectPattern({ x, y }: { x: number; y: number }): void {
-  // TODO: Variable usage (not reported due to earlier error in function)
-  const sum: number = x;
+// Array destructuring in parameters
+function arrayPattern([a, b]: [number, string]): void {
+  const x: number = a;
+  const y: string = b;
 }
 
 // Nested destructuring patterns
-// @skjs-expect-error TODO: support for patterns in function parameters
 function nestedPattern({ point: [x, y] }: { point: [number, number] }): void {
-  // TODO: Variable usage (not reported due to earlier error in function)
-  const sum: number = x;
+  const a: number = x;
+  const b: number = y;
 }
 
-// Function type with array pattern parameters
-type FuncWithArrayParam = ([a, b]: [number, string]) => void;
+// Object destructuring with defaults
+function objectDefaultPattern({ a = 0 }: { a?: number }): void {
+  const x: number = a;
+}
 
-// Function type with object pattern parameters
+// Object destructuring with rest
+function objectRestPattern({
+  a,
+  ...rest
+}: {
+  a: number;
+  b: string;
+  c: boolean;
+}): void {
+  const x: number = a;
+  const y: string = rest.b;
+  const z: boolean = rest.c;
+}
+
+// Multiple destructured parameters
+function multiPattern({ a }: { a: number }, [b]: [string]): void {
+  const x: number = a;
+  const y: string = b;
+}
+
+// Function type with pattern parameters (parsing only)
 type FuncWithObjectParam = ({ x, y }: { x: number; y: number }) => void;
-
-// Function type with simple parameters
-type FuncWithSimpleParams = (x: number, y: string) => boolean;
-
-// Using function types with pattern parameters
-function takesArrayFunc(f: ([a, b]: [number, string]) => void): void {
-  f([1, "hello"]);
-}
-
-function takesObjectFunc(f: ({ x }: { x: number }) => void): void {
-  f({ x: 42 });
-}
+type FuncWithArrayParam = ([a, b]: [number, string]) => void;

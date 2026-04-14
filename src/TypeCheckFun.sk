@@ -101,19 +101,12 @@ extension class TypeChecker {
         );
         tcenv.!scope = savedScope
       };
-      paramName = param.name.value match {
-      | PVar(n) -> n
-      | _ ->
-        error(
-          Array[
-            (param.pos, "TODO: support for patterns in function parameters"),
-          ],
-        )
+      param.name.value match {
+      | PVar(n) if (n.value == "this") ->
+        error(Array[(n.pos, "TODO: support this parameter")])
+      | _ -> checkPatternDoesNotContainThis(param.name)
       };
-      if (paramName.value == "this") {
-        error(Array[(paramName.pos, "TODO: support this parameter")])
-      };
-      tcenv.scope.bind(tcenv, paramName, paramType, true)
+      this.bind(tcenv, BKLet(), param.name, paramType, true, false)
     };
     !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
     (this, tcenv)
