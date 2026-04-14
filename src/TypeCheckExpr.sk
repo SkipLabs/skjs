@@ -1823,12 +1823,12 @@ extension class TypeChecker {
   }
 
   /* Typechecks expression e as const */
-  fun asConstExpr(tcenvb: mutable TCEnv, e: Expr): ?SType {
+  fun asConstExpr(tcenv: mutable TCEnv, e: Expr): ?SType {
     pos = e.pos;
     e.value match {
     | AsConst(subExpr) ->
-      tcenvb.error(Array[(subExpr.pos, "Unnecessary 'as const'")]);
-      this.asConstExpr(tcenvb, subExpr)
+      tcenv.error(Array[(subExpr.pos, "Unnecessary 'as const'")]);
+      this.asConstExpr(tcenv, subExpr)
     | Var(Name(_, "null")) -> Some(TPrimUnit(TNull(), pos))
     | Var(Name(_, "undefined")) -> Some(TPrimUnit(TUndefined(), pos))
     | Number(n) -> Some(TPrimValue::single(TNum(), n, pos))
@@ -1837,12 +1837,12 @@ extension class TypeChecker {
     | Var(Name(_, "false")) -> Some(TPrimValue::single(TBool(), "false", pos))
     | EString(n) -> Some(TPrimValue::single(TString(), n, pos))
     | Unop(UOExclamationMark(), subE) ->
-      this.asConstExpr(tcenvb, subE).map(stype ->
+      this.asConstExpr(tcenv, subE).map(stype ->
         stype match {
         | TPrimValue(TBool(), lits, _) ->
           lits.flatMap(v -> v.singleElt()) match {
           | Some(lit) ->
-            tcenvb.error(
+            tcenv.error(
               Array[
                 (pos, "Constant expression could have been simplified"),
                 (subE.pos, `This has type ${lit.val}`),
@@ -1862,7 +1862,7 @@ extension class TypeChecker {
           | None() ->
             internal_error(
               `asConstExpr returned a non-literal boolean: ${this.ppType(
-                tcenvb,
+                tcenv,
                 TType::single(stype),
               )}`,
             )
@@ -1873,7 +1873,7 @@ extension class TypeChecker {
               (pos, "Invalid unary !"),
               (
                 subE.pos,
-                `This has type ${this.ppType(tcenvb, TType::single(stype))}`,
+                `This has type ${this.ppType(tcenv, TType::single(stype))}`,
               ),
             ],
           )
@@ -1881,7 +1881,7 @@ extension class TypeChecker {
       )
     | Unop(UOTild(), _) -> /* TODO */ None()
     | Unop(nuop @ ArithmeticUnaryOperator(), subE) ->
-      this.asConstExpr(tcenvb, subE).flatMap(stype ->
+      this.asConstExpr(tcenv, subE).flatMap(stype ->
         stype match {
         | TPrimValue(k @ TNum(), valuesOpt, _)
         | TPrimValue(k @ TBigInt(), valuesOpt, _) ->
