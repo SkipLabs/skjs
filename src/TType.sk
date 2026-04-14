@@ -512,35 +512,21 @@ class TObject private (
     TObject::createSingleBranch(TFields::empty(), None(), pos)
   }
 
-  static fun createCallWithPos(
-    subst: mutable Subst,
-    tenv: TEnv,
-    tFuns: TFuns,
-    pos: PosRange,
-  ): TObject {
+  static fun createCallWithPos(tFuns: TFuns, pos: PosRange): TObject {
     TObject::createSingleBranch(
-      TFields::create{subst, tenv, call => Some(tFuns)},
+      TFields::create{call => Some(tFuns)},
       None(),
       pos,
     )
   }
 
-  static fun createCall(
-    subst: mutable Subst,
-    tenv: TEnv,
-    tFuns: TFuns,
-  ): TObject {
-    TObject::createCallWithPos(subst, tenv, tFuns, tFuns.pos)
+  static fun createCall(tFuns: TFuns): TObject {
+    TObject::createCallWithPos(tFuns, tFuns.pos)
   }
 
-  static fun createNew(
-    subst: mutable Subst,
-    tenv: TEnv,
-    tFuns: TFuns,
-    pos: PosRange,
-  ): TObject {
+  static fun createNew(tFuns: TFuns, pos: PosRange): TObject {
     TObject::createSingleBranch(
-      TFields::create{subst, tenv, new => Some(tFuns)},
+      TFields::create{new => Some(tFuns)},
       None(),
       pos,
     )
@@ -1270,8 +1256,6 @@ class TFields protected {
   }
 
   static fun create{
-    subst: mutable Subst,
-    tenv: TEnv,
     fields: mutable Map<FieldNameString, TField> = mutable Map[],
     symbolFields: readonly Map<FieldNameString, TField> = Map[],
     tIndexes: TIndexesBase = TIndexes::empty,
@@ -1297,11 +1281,9 @@ class TFields protected {
           Array[
             (
               brandField.get.pos,
-              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${prettyPrintType(
+              `Brand field ${kArrayBrandFieldName} expected to be either true or false, instead got ${rawPrettyPrint(
                 false,
-                brandField.get,
-                subst,
-                tenv,
+                pp -> pp.type(0, Margin{}, brandField.get),
               )}`,
             ),
           ],
