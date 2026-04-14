@@ -201,6 +201,7 @@ value class StmtTermination private {
     | TemplateLiteral(_parts, expressions) ->
       static::seq(expressions, static::expr)
     | TypeOf(e)
+    | VoidOp(e)
     | Await(e)
     | As(e, _ty)
     | AsConst(e) ->
