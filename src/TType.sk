@@ -1066,6 +1066,10 @@ class TField private {
     this with {get => f(this.get), set => f(this.set)}
   }
 
+  fun withGet(get: TType, isOptional: Bool): TField {
+    this with {get, isOptional}
+  }
+
   fun project(): FieldNameString {
     this.name
   }
@@ -1345,6 +1349,15 @@ class TFields protected {
 
   fun filterMapFields(f: TField -> ?TField): TFields {
     this with {fields => this.fields.filterMap(f)}
+  }
+
+  // Updates the named field in place, leaving all other fields unchanged.
+  fun updateField(fieldName: String, f: TField -> TField): TFields {
+    this with {
+      fields => this.fields.mapKeyed(fd ->
+        if (fd.name.value == fieldName) f(fd) else fd
+      ),
+    }
   }
 
   private static fun nonSynthetic(index: ?TField): ?TField {

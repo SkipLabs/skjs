@@ -1,6 +1,9 @@
 module SKJS;
 
 extension class TypeChecker {
+  // Dispatches a strict equality/inequality check to the appropriate
+  // narrowing handler based on the operand shapes.
+  // Refines `(e1 === e2) === target`
   fun evalEquality(
     tcenv: mutable TCEnv,
     e1: Expr,
@@ -42,6 +45,11 @@ extension class TypeChecker {
     }
   }
 
+  // Narrows `local` based on `(local.fieldName === otherExpr) === target`.
+  // Two strategies depending on whether the RHS is a single constant:
+  //  - Non-constant RHS: filter out object branches whose field has no overlap.
+  //  - Constant RHS: filter branches by exact constant match, or narrow the
+  //    field type within a branch (e.g. number|undefined -> number for !== undefined).
   fun evalFieldEquality(
     tcenv: mutable TCEnv,
     local: Name,
@@ -49,61 +57,75 @@ extension class TypeChecker {
     otherExpr: Expr,
     target: Bool,
   ): void {
-    fieldType = this.expr(tcenv, otherExpr, true);
-    fieldType.getSingleConstant() match {
-    | None() ->
-      if (target) {
-        this.setLocalFilterMap(tcenv, local, None(), stype ->
-          stype match {
-          | tObj @ TObject _ ->
-            tObj.mapOpt(tFields -> {
-              tFields.maybeGetType(
-                tcenv.subst,
-                this,
-                fieldName,
-                local.pos,
-                false,
-              ) match {
-              | Some(branchFieldType) ->
-                overlap = TType::inter(
-                  tcenv.subst.clone(),
-                  this,
-                  branchFieldType,
-                  fieldType,
-                );
-                if (!overlap.isBottom()) Some(tFields) else None()
-              | None() -> Some(tFields)
-              }
-            })
-          | x -> Some(x)
-          }
-        )
-      }
-    | Some(constant) ->
-      this.setLocalFilterMap(tcenv, local, None(), stype ->
-        stype match {
-        | tObj @ TObject _ ->
-          tObj.mapOpt(tFields -> {
-            tFields
-              .maybeGetType(tcenv.subst, this, fieldName, local.pos, false)
-              .flatMap(branchFieldType ->
-                branchFieldType.getSingleConstant()
-              ) match {
-            | Some(branchConstant) ->
-              if (branchConstant.sameConstant(constant) == target) {
-                Some(tFields)
+    otherType = this.expr(tcenv, otherExpr, true);
+    constant = otherType.getSingleConstant();
+    this.setLocalFilterMap(tcenv, local, None(), stype ->
+      stype match {
+      | tObj @ TObject _ ->
+        tObj.mapOpt(tFields -> {
+          tFields.maybeGetType(
+            tcenv.subst,
+            this,
+            fieldName,
+            local.pos,
+            false,
+          ) match {
+          | None() -> Some(tFields)
+          | Some(branchFieldType) ->
+            overlap = TType::inter(
+              tcenv.subst.clone(),
+              this,
+              branchFieldType,
+              otherType,
+            );
+            if (overlap.isBottom()) {
+              // No overlap: === eliminates the branch, !== keeps it
+              if (target) None() else Some(tFields)
+            } else {
+              if (target) {
+                // ===: narrow field to intersection with RHS
+                Some(
+                  tFields.updateField(fieldName, fd ->
+                    fd.withGet(overlap, fd.isOptional)
+                  ),
+                )
               } else {
-                None()
+                constant match {
+                | Some(c) ->
+                  // !==: subtract the constant from the field type
+                  narrowed = TType::diff(
+                    tcenv.subst.clone(),
+                    this,
+                    branchFieldType,
+                    otherType,
+                  );
+                  if (narrowed.isBottom()) {
+                    None()
+                  } else {
+                    // Clear isOptional when narrowing out undefined so
+                    // that resolveFieldType doesn't re-add | undefined.
+                    keepOpt = !(c is TPrimUnit(TUndefined(), _));
+                    Some(
+                      tFields.updateField(fieldName, fd ->
+                        fd.withGet(narrowed, keepOpt && fd.isOptional)
+                      ),
+                    )
+                  }
+                | None() ->
+                  // !==, non-constant RHS: can't narrow, keep branch
+                  Some(tFields)
+                }
               }
-            | None() -> Some(tFields)
             }
-          })
-        | x -> Some(x)
-        }
-      )
-    }
+          }
+        })
+      | x -> Some(x)
+      }
+    )
   }
 
+  // Narrows `local` based on `(typeof local === typeStr) === target`.
+  // Keeps SType branches whose runtime typeof matches typeStr === target.
   fun evalTypeofEquality(
     tcenv: mutable TCEnv,
     local: Name,
@@ -189,12 +211,14 @@ extension class TypeChecker {
     }
   }
 
+  // Narrows `local` based on `(local === null) === target`.
   fun evalNullEquality(tcenv: mutable TCEnv, local: Name, target: Bool): void {
     filter = x ~> (x is TPrimUnit(TNull(), _)) == target;
     default = None();
     this.setLocal(tcenv, local, default, filter)
   }
 
+  // Narrows `local` based on `(local === undefined) === target`.
   fun evalUndefinedEquality(
     tcenv: mutable TCEnv,
     local: Name,
@@ -206,6 +230,9 @@ extension class TypeChecker {
     this.setLocal(tcenv, local, default, filter)
   }
 
+  // Narrows `local` based on `Array.isArray(local) === target`.
+  // target === true: intersects with Array/ReadonlyArray.
+  // target === false: excludes arrays and tuples.
   fun evalIsArray(tcenv: mutable TCEnv, local: Name, target: Bool): void {
     if (target) {
       filterMap = x ->
@@ -247,6 +274,10 @@ extension class TypeChecker {
     }
   }
 
+  // Entry point for type narrowing from a conditional expression.
+  // Dispatches on the condition shape (===, !==, typeof, instanceof,
+  // Array.isArray, `in`, &&, ||, !) and narrows `tcenv` accordingly.
+  // `target === true` when the condition holds, `target === false` when it doesn't.
   fun evalCond(tcenv: mutable TCEnv, e: Expr, target: Bool): void {
     e.value match {
     | Binop(BOStrictEquality(), e1, e2) ->
@@ -388,6 +419,9 @@ extension class TypeChecker {
     }
   }
 
+  // Narrows a local variable's type by applying `filterMap` to each SType branch.
+  // Branches where filterMap returns None are eliminated.
+  // `default` is used when a clause is bound by Top rather than concrete STypes
   fun setLocalFilterMap(
     tcenv: mutable TCEnv,
     local: Name,
@@ -404,6 +438,8 @@ extension class TypeChecker {
     tcenv.scope.set(local, ty, (_, _) -> void)
   }
 
+  // Convenience wrapper around setLocalFilterMap that keeps branches where
+  // `filter` returns true and eliminates the rest.
   fun setLocal(
     tcenv: mutable TCEnv,
     local: Name,
