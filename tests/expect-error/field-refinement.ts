@@ -320,3 +320,77 @@ function testAndChain(obj: Tagged10, x: 0 | 1, cond: boolean): void {
     const a: string = obj.a;
   }
 }
+
+// ============================================================
+// 11. Field narrowing for undefined/null on non-discriminated types (#566)
+// ============================================================
+
+// 11a: Optional field !== undefined in if/else
+function testOptionalFieldNotUndefined(obj: { val?: number }): number {
+  if (obj.val !== undefined) {
+    // FIXME: #566 — should narrow val from number | undefined to number
+    // @skjs-expect-error Invalid annotation
+    const n: number = obj.val;
+    return n;
+  }
+  return 0;
+}
+
+// 11b: Optional field !== undefined in ternary
+function testOptionalFieldTernary(obj: { val?: number }): number {
+  // FIXME: #566 — should narrow val in true branch
+  // @skjs-expect-error Invalid annotation
+  const r: number = obj.val !== undefined ? obj.val : 0;
+  return r;
+}
+
+// 11c: Optional field === undefined
+function testOptionalFieldEqualsUndefined(obj: { val?: number }): void {
+  if (obj.val === undefined) {
+    // FIXME: #566 — should narrow val to undefined
+    // @skjs-expect-error Invalid annotation
+    const u: undefined = obj.val;
+  }
+}
+
+// 11d: Non-optional string | null !== null
+function testFieldNotNull(obj: { val: string | null }): string {
+  if (obj.val !== null) {
+    // FIXME: #566 — should narrow val from string | null to string
+    // @skjs-expect-error Invalid return type
+    return obj.val;
+  }
+  return "";
+}
+
+// 11e: string | null | undefined !== undefined
+function testFieldNullUndefNotUndefined(obj: {
+  val: string | null | undefined;
+}): void {
+  if (obj.val !== undefined) {
+    // FIXME: #566 — should narrow to string | null
+    // @skjs-expect-error Invalid annotation
+    const sn: string | null = obj.val;
+  }
+}
+
+// 11f: Reproducer from issue #566
+type Counter566 = { readonly value: number };
+type UpdateCounterRequest566 = { readonly amount?: number };
+declare function getCounters566(counterId: string): Counter566[];
+
+function incrementCounter566(
+  counterId: string,
+  body: UpdateCounterRequest566,
+): Counter566 {
+  const values = getCounters566(counterId);
+  if (values.length === 0) throw new Error("Counter not found.");
+  const existing = values[0];
+  if (existing === undefined) throw new Error("Counter not found.");
+  const amount = body.amount !== undefined ? body.amount : 1;
+  // FIXME: #566 — body.amount should be narrowed to number in true branch
+  // @skjs-expect-error Invalid + operand
+  const newValue = existing.value + amount;
+  const updatedCounter: Counter566 = { value: newValue };
+  return updatedCounter;
+}
