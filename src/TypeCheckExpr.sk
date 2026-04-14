@@ -63,22 +63,26 @@ extension class TypeChecker {
             this.bind(tcenv, kind, eltPat, tyl[i], isInitialized, false)
           };
         };
+        sizeOk = rest match {
+        | Some(_) -> arrPat.size() <= tyl.size()
+        | None() -> arrPat.size() == tyl.size()
+        };
+        if (!sizeOk) {
+          error(
+            Array[
+              (
+                pos,
+                `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
+              ),
+              (
+                type.pos,
+                `It is incompatible with a tuple of size ${tyl.size()}`,
+              ),
+            ],
+          )
+        };
         rest match {
         | Some(restName) ->
-          if (arrPat.size() > tyl.size()) {
-            error(
-              Array[
-                (
-                  pos,
-                  `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
-                ),
-                (
-                  type.pos,
-                  `It is incompatible with a tuple of size ${tyl.size()}`,
-                ),
-              ],
-            )
-          };
           restType = TType::tuple(restName.pos, tyl.slice(arrPat.size()), true);
           this.bind(
             tcenv,
@@ -88,21 +92,7 @@ extension class TypeChecker {
             isInitialized,
             false,
           )
-        | None() ->
-          if (arrPat.size() != tyl.size()) {
-            error(
-              Array[
-                (
-                  pos,
-                  `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
-                ),
-                (
-                  type.pos,
-                  `It is incompatible with a tuple of size ${tyl.size()}`,
-                ),
-              ],
-            )
-          }
+        | None() -> void
         }
       | Some(obj @ TObject _) ->
         eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
