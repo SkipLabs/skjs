@@ -17,7 +17,7 @@ mutable base class TCEnvBase private {
   }
 
   mutable fun subtypingError(
-    subst: mutable Subst,
+    subst: readonly Subst,
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
@@ -242,7 +242,7 @@ mutable class TCResults private {
   }
 
   mutable fun subtypingError(
-    subst: mutable Subst,
+    subst: readonly Subst,
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
@@ -368,7 +368,7 @@ mutable class TCResultsAcc private {
   }
 
   mutable fun subtypingError(
-    subst: mutable Subst,
+    subst: readonly Subst,
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
