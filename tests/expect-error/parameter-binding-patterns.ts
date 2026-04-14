@@ -4,35 +4,29 @@
 function simpleParams(x: number, y: string): void {}
 
 // Object destructuring in parameters
-// @skjs-expect-error TODO: support for patterns in function parameters
 function objectPattern({ x, y }: { x: number; y: string }): void {
-  // TODO: variable usage (not reported due to earlier error)
   const a: number = x;
+  const b: string = y;
 }
 
 // Array destructuring in parameters
-// @skjs-expect-error TODO: support for patterns in function parameters
 function arrayPattern([a, b]: [number, string]): void {
-  // TODO: variable usage (not reported due to earlier error)
   const x: number = a;
+  const y: string = b;
 }
 
 // Nested destructuring patterns
-// @skjs-expect-error TODO: support for patterns in function parameters
 function nestedPattern({ point: [x, y] }: { point: [number, number] }): void {
-  // TODO: variable usage (not reported due to earlier error)
   const a: number = x;
+  const b: number = y;
 }
 
 // Object destructuring with defaults
-// @skjs-expect-error TODO: support for patterns in function parameters
 function objectDefaultPattern({ a = 0 }: { a?: number }): void {
-  // TODO: variable usage (not reported due to earlier error)
   const x: number = a;
 }
 
 // Object destructuring with rest
-// @skjs-expect-error TODO: support for patterns in function parameters
 function objectRestPattern({
   a,
   ...rest
@@ -41,15 +35,15 @@ function objectRestPattern({
   b: string;
   c: boolean;
 }): void {
-  // TODO: variable usage (not reported due to earlier error)
   const x: number = a;
+  const y: string = rest.b;
+  const z: boolean = rest.c;
 }
 
 // Multiple destructured parameters
-// @skjs-expect-error TODO: support for patterns in function parameters
 function multiPattern({ a }: { a: number }, [b]: [string]): void {
-  // TODO: variable usage (not reported due to earlier error)
   const x: number = a;
+  const y: string = b;
 }
 
 // Function type with pattern parameters (parsing only)
