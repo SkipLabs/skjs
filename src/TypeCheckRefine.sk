@@ -145,14 +145,8 @@ extension class TypeChecker {
                       target ||
                       !(constant is TPrimUnit(TUndefined(), _));
                     Some(
-                      tFields.filterMapFields(fd ->
-                        Some(
-                          if (fd.name.value == fieldName) {
-                            fd.withGet(narrowed, keepOpt && fd.isOptional)
-                          } else {
-                            fd
-                          },
-                        )
+                      tFields.updateField(fieldName, fd ->
+                        fd.withGet(narrowed, keepOpt && fd.isOptional)
                       ),
                     )
                   }

@@ -1351,6 +1351,15 @@ class TFields protected {
     this with {fields => this.fields.filterMap(f)}
   }
 
+  // Updates the named field in place, leaving all other fields unchanged.
+  fun updateField(fieldName: String, f: TField -> TField): TFields {
+    this with {
+      fields => this.fields.mapKeyed(fd ->
+        if (fd.name.value == fieldName) f(fd) else fd
+      ),
+    }
+  }
+
   private static fun nonSynthetic(index: ?TField): ?TField {
     index.flatMap(f ->
       if (f.name.value == kSyntheticIndexName) None() else Some(f)
