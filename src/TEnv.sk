@@ -325,14 +325,7 @@ base class TEnv{
     };
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     TObject::createSingleBranch(
-      TFields::create{
-        subst => Subst::mcreate(tcenvb),
-        tenv => this,
-        fields,
-        symbolFields,
-        tIndexes,
-        isArray,
-      },
+      TFields::create{fields, symbolFields, tIndexes, isArray},
       Some(TSInst(className, TArgs(targs))),
       className.pos,
     )
@@ -372,8 +365,6 @@ base class TEnv{
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     TObject::createSingleBranch(
       TFields::create{
-        subst => Subst::mcreate(tcenvb),
-        tenv => this,
         fields,
         symbolFields,
         tIndexes,
@@ -615,9 +606,7 @@ base class TEnv{
           Method(fd.name, className, fd.pos.fileName, metIsStatic),
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
-        metType = TType::single(
-          TObject::createCall(Subst::mcreate(tcenvb), this, metTFuns),
-        );
+        metType = TType::single(TObject::createCall(metTFuns));
         fd.name match {
         | FNNormal(name) -> FKName(name, TString())
         | FNComputed(keyExpr) ->
@@ -830,15 +819,11 @@ base class TEnv{
       this.keyOfType(subst, targetType, pos)
     | tafun @ TAFun _ ->
       tfuns = this.normalizeFun(tcenvb, pos, tafun);
-      TType::single(
-        TObject::createCallWithPos(Subst::mcreate(tcenvb), this, tfuns, pos),
-      )
+      TType::single(TObject::createCallWithPos(tfuns, pos))
     | TANew(Type(tyPos, TAFun(_, clauses, params, retType, cgNode))) ->
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
-      TType::single(
-        TObject::createNew(Subst::mcreate(tcenvb), this, tfuns, pos),
-      )
+      TType::single(TObject::createNew(tfuns, pos))
     | TANew _ -> error(Array[(pos, "Invalid new")])
     | TAEmptyArray _ -> error(Array[(pos, "TODO emptyArray")])
     | TAInfer _ -> error(Array[(pos, "TODO infer")])
@@ -1080,11 +1065,7 @@ base class TEnv{
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.fromSome();
           return TType::single(
-            TObject::createCall(
-              Subst::mcreate(tcenvb),
-              this,
-              this.funDecl(tcenvb, false, fd, cgNode),
-            ),
+            TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
           )
         | Class _ -> return this.newStatic(tcenvb, varName)
         | _ -> void
@@ -1462,9 +1443,7 @@ base class TEnv{
         | FNNormal(Name(_, "new")) -> !new = Some(tFuns)
         | FNEmpty(_) -> !call = Some(tFuns)
         | simpleFieldName @ SimpleFieldName _ ->
-          decl = TType::single(
-            TObject::createCall(Subst::mcreate(tcenvb), this, tFuns),
-          );
+          decl = TType::single(TObject::createCall(tFuns));
           simpleFieldName match {
           | FNNormal(name) -> FKName(name, TString())
           | FNComputed(keyExpr) ->
@@ -1494,8 +1473,6 @@ base class TEnv{
     };
     tIndexes = TIndexes::create(tcenvb, this, indexes);
     tFields = TFields::create{
-      subst => Subst::mcreate(tcenvb),
-      tenv => this,
       fields => fieldsMap,
       symbolFields,
       tIndexes,

@@ -813,7 +813,7 @@ extension class TypeChecker {
           def match {
           | fd @ TopLevelFunDef _ ->
             tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
-            break TType::single(TObject::createCall(tcenv.subst, this, tFuns))
+            break TType::single(TObject::createCall(tFuns))
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv, c.name);
             break staticClass
@@ -1147,7 +1147,7 @@ extension class TypeChecker {
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
           tFuns = this.funDecl(tcenv, false, fd, cgNode);
-          (name, TType::single(TObject::createCall(tcenv.subst, this, tFuns)))
+          (name, TType::single(TObject::createCall(tFuns)))
         };
         field = TField::create{
           pos => name.pos,
@@ -1991,8 +1991,6 @@ extension class TypeChecker {
 
     TType::single(
       TObject::createCall(
-        tcenv.subst,
-        this,
         TFuns::singleFun(
           TFun(
             Array[],
@@ -2230,8 +2228,6 @@ extension class TypeChecker {
           )
         };
         allNewFields = TFields::create{
-          subst => tcenv.subst,
-          tenv => this,
           fields => newFieldsMap,
           symbolFields => newSymbolFieldsMap,
           /* Local objects are not arrays but a type annotation may lose this information */
