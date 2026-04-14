@@ -116,12 +116,11 @@ extension class TypeChecker {
                 // Field type is a union (e.g. number | undefined),
                 // not a single constant. Narrow the field type itself
                 // rather than filtering entire object branches.
-                constantType = TType::single(constant);
                 overlap = TType::inter(
                   tcenv.subst.clone(),
                   this,
                   branchFieldType,
-                  constantType,
+                  otherType,
                 );
                 if (overlap.isBottom()) {
                   // No overlap: === eliminates the branch, !== keeps it
@@ -134,7 +133,7 @@ extension class TypeChecker {
                       tcenv.subst.clone(),
                       this,
                       branchFieldType,
-                      constantType,
+                      otherType,
                     )
                   };
                   if (narrowed.isBottom()) {
