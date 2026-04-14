@@ -13,6 +13,11 @@ function testVoidString(): undefined {
 const a: undefined = void 0;
 const b: undefined = void (1 + 2);
 
+// Valid: void used to ignore an unused parameter
+function callback(event: string): undefined {
+  return void event;
+}
+
 // Error: void result is undefined, not assignable to number
 // @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 const c: number = void 0;
