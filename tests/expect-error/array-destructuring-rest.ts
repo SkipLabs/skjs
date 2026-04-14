@@ -1,29 +1,46 @@
-// Test rest elements in array destructuring (not supported)
+// Test rest elements in array destructuring
 
-function testRestInArrayDestructuring(): void {
-  const arr: [number, string, boolean] = [1, "hello", true];
+// === Tuple source ===
 
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
+function restFromTuple(): void {
+  const tuple: [number, string, boolean] = [1, "hello", true];
+  const [first, ...rest] = tuple;
+  const a: number = first;
+  const b: [string, boolean] = rest;
+}
+
+function restFromTupleSkipped(): void {
+  const tuple: [number, string, boolean, number] = [1, "hello", true, 42];
+  const [, second, ...rest] = tuple;
+  const a: string = second;
+  const b: [boolean, number] = rest;
+}
+
+function restAllElements(): void {
+  const tuple: [number, string] = [1, "hello"];
+  const [...rest] = tuple;
+  const a: [number, string] = rest;
+}
+
+function restZeroRemaining(): void {
+  const tuple: [number, string] = [1, "hello"];
+  const [a, b, ...rest] = tuple;
+  void rest;
+}
+
+// === Array/iterable source ===
+
+function restFromArray(): void {
+  const arr: number[] = [1, 2, 3];
   const [first, ...rest] = arr;
+  const a: number | undefined = first;
+  const b: number[] = rest;
 }
 
-function testRestInArrayDestructuringMiddle(): void {
-  const arr: [number, string, boolean, number] = [1, "hello", true, 42];
+// === Type error cases ===
 
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
-  const [first, ...rest] = arr;
-}
-
-function testRestInArrayDestructuringOnly(): void {
-  const arr: [number, string] = [1, "hello"];
-
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
-  const [...rest] = arr;
-}
-
-function testRestInArrayDestructuringWithSkipped(): void {
-  const arr: [number, string, boolean, number] = [1, "hello", true, 42];
-
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
-  const [, second, ...rest] = arr;
+function restTooManyBeforeRest(): void {
+  const tuple: [number] = [1];
+  // @skjs-expect-error Invalid tuple pattern size, it is of size 2
+  const [a, b, ...rest] = tuple;
 }
