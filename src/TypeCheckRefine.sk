@@ -3,7 +3,7 @@ module SKJS;
 extension class TypeChecker {
   // Dispatches a strict equality/inequality check to the appropriate
   // narrowing handler based on the operand shapes.
-  // `target === true` for ===, `target === false` for !==.
+  // Refines `(e1 === e2) === target`
   fun evalEquality(
     tcenv: mutable TCEnv,
     e1: Expr,
@@ -466,8 +466,8 @@ extension class TypeChecker {
   }
 
   // Narrows a local variable's type by applying `filterMap` to each SType branch.
-  // Branches where filterMap returns None are eliminated. If the local is unknown,
-  // `default` is used instead.
+  // Branches where filterMap returns None are eliminated.
+  // `default` is used when a clause is bound by Top rather than concrete STypes
   fun setLocalFilterMap(
     tcenv: mutable TCEnv,
     local: Name,
