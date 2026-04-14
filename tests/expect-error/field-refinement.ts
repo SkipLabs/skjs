@@ -209,13 +209,12 @@ function testBasicNonSingletonFilter(obj: Tagged10, x: 0 | 1): void {
   }
 }
 
-// P2: Partial overlap — kept branch field stays wide
+// P2: Partial overlap — field narrowed to intersection with RHS
 type Wide10 = { field: 0 | 1 | 2 } | { field: 3 };
 
-function testFieldStaysWide(obj: Wide10, x: 0 | 1): void {
+function testFieldNarrowedToIntersection(obj: Wide10, x: 0 | 1): void {
   if (obj.field === x) {
-    // { field: 3 } filtered, but field NOT narrowed to 0|1
-    // @skjs-expect-error Invalid annotation
+    // { field: 3 } filtered, field narrowed to 0|1 via inter
     const f: 0 | 1 = obj.field;
   }
 }
@@ -246,10 +245,9 @@ function testStringNonSingletonFilter(obj: Str10, x: "a" | "b"): void {
 
 // --- Negative tests (should error) ---
 
-// N1: Cannot narrow field type to comparison type
-function testCannotNarrowField(obj: Wide10, x: 0 | 1): void {
+// N1: Field IS narrowed to comparison type via intersection
+function testFieldNarrowedToComparisonType(obj: Wide10, x: 0 | 1): void {
   if (obj.field === x) {
-    // @skjs-expect-error Invalid annotation
     const narrow: 0 | 1 = obj.field;
   }
 }

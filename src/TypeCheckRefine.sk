@@ -82,34 +82,39 @@ extension class TypeChecker {
               // No overlap: === eliminates the branch, !== keeps it
               if (target) None() else Some(tFields)
             } else {
-              constant match {
-              | Some(c) ->
-                // RHS is a constant: narrow the field type via diff/inter
-                narrowed = if (target) {
-                  overlap
-                } else {
-                  TType::diff(
+              if (target) {
+                // ===: narrow field to intersection with RHS
+                Some(
+                  tFields.updateField(fieldName, fd ->
+                    fd.withGet(overlap, fd.isOptional)
+                  ),
+                )
+              } else {
+                constant match {
+                | Some(c) ->
+                  // !==: subtract the constant from the field type
+                  narrowed = TType::diff(
                     tcenv.subst.clone(),
                     this,
                     branchFieldType,
                     otherType,
-                  )
-                };
-                if (narrowed.isBottom()) {
-                  None()
-                } else {
-                  // Clear isOptional when narrowing out undefined so
-                  // that resolveFieldType doesn't re-add | undefined.
-                  keepOpt = target || !(c is TPrimUnit(TUndefined(), _));
-                  Some(
-                    tFields.updateField(fieldName, fd ->
-                      fd.withGet(narrowed, keepOpt && fd.isOptional)
-                    ),
-                  )
+                  );
+                  if (narrowed.isBottom()) {
+                    None()
+                  } else {
+                    // Clear isOptional when narrowing out undefined so
+                    // that resolveFieldType doesn't re-add | undefined.
+                    keepOpt = !(c is TPrimUnit(TUndefined(), _));
+                    Some(
+                      tFields.updateField(fieldName, fd ->
+                        fd.withGet(narrowed, keepOpt && fd.isOptional)
+                      ),
+                    )
+                  }
+                | None() ->
+                  // !==, non-constant RHS: can't narrow, keep branch
+                  Some(tFields)
                 }
-              | None() ->
-                // Non-constant RHS: can't narrow the field type, keep branch
-                Some(tFields)
               }
             }
           }
