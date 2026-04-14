@@ -363,6 +363,7 @@ base class Expr_ uses XXHashable {
   | Spread(Expr)
   | EString(String)
   | TypeOf(Expr)
+  | VoidOp(Expr)
   | Await(Expr)
   | Dot(DotKind, Expr, Name)
   | Get(Expr, Expr)

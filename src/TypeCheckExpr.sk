@@ -1756,6 +1756,9 @@ extension class TypeChecker {
     | TypeOf(subExpr) ->
       _ = this.nonVoidExpr(pos, tcenv, subExpr, true);
       TType::single(TPrimValue::string(pos))
+    | VoidOp(subExpr) ->
+      _ = this.expr(tcenv, subExpr, true);
+      TType::single(TPrimUnit(TUndefined(), pos))
 
     | PostOp(pop, subExpr) ->
       pop match {

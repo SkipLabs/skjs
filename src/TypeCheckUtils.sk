@@ -97,7 +97,8 @@ extension class TypeChecker {
     | Binop(BOAssignment(), _, _)
     | Binop(BOOpAssignment(_), _, _)
     | PostOp(PODecr(), _)
-    | PostOp(POIncr(), _) ->
+    | PostOp(POIncr(), _)
+    | VoidOp(_) ->
       true
     | _ -> false
     }
