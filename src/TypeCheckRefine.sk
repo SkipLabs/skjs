@@ -139,21 +139,20 @@ extension class TypeChecker {
                   if (narrowed.isBottom()) {
                     None()
                   } else {
-                    // Clear isOptional for !== undefined so that
-                    // resolveFieldType doesn't re-add | undefined.
-                    isUndef = constant is TPrimUnit(TUndefined(), _);
+                    // Clear isOptional when narrowing out undefined so
+                    // that resolveFieldType doesn't re-add | undefined.
+                    keepOpt =
+                      target ||
+                      !(constant is TPrimUnit(TUndefined(), _));
                     Some(
                       tFields.filterMapFields(fd ->
-                        if (fd.name.value == fieldName) {
-                          newOpt = if (!target && isUndef) {
-                            false
+                        Some(
+                          if (fd.name.value == fieldName) {
+                            fd.withGet(narrowed, keepOpt && fd.isOptional)
                           } else {
-                            fd.isOptional
-                          };
-                          Some(fd.withGet(narrowed, newOpt))
-                        } else {
-                          Some(fd)
-                        }
+                            fd
+                          },
+                        )
                       ),
                     )
                   }
