@@ -141,9 +141,7 @@ extension class TypeChecker {
                   } else {
                     // Clear isOptional for !== undefined so that
                     // resolveFieldType doesn't re-add | undefined.
-                    isUndef =
-                      constant is TPrimUnit(TUndefined(), _) ||
-                      constant is TPrimUnit(TVoid(), _);
+                    isUndef = constant is TPrimUnit(TUndefined(), _);
                     Some(
                       tFields.filterMapFields(fd ->
                         if (fd.name.value == fieldName) {
