@@ -84,18 +84,66 @@ extension class TypeChecker {
         stype match {
         | tObj @ TObject _ ->
           tObj.mapOpt(tFields -> {
-            tFields
-              .maybeGetType(tcenv.subst, this, fieldName, local.pos, false)
-              .flatMap(branchFieldType ->
-                branchFieldType.getSingleConstant()
-              ) match {
-            | Some(branchConstant) ->
-              if (branchConstant.sameConstant(constant) == target) {
-                Some(tFields)
-              } else {
-                None()
-              }
+            tFields.maybeGetType(
+              tcenv.subst,
+              this,
+              fieldName,
+              local.pos,
+              false,
+            ) match {
             | None() -> Some(tFields)
+            | Some(branchFieldType) ->
+              branchFieldType.getSingleConstant() match {
+              | Some(branchConstant) ->
+                if (branchConstant.sameConstant(constant) == target) {
+                  Some(tFields)
+                } else {
+                  None()
+                }
+              | None() ->
+                constantType = TType::single(constant);
+                overlap = TType::inter(
+                  tcenv.subst.clone(),
+                  this,
+                  branchFieldType,
+                  constantType,
+                );
+                if (overlap.isBottom()) {
+                  if (target) None() else Some(tFields)
+                } else {
+                  narrowed = if (target) {
+                    overlap
+                  } else {
+                    TType::diff(
+                      tcenv.subst.clone(),
+                      this,
+                      branchFieldType,
+                      constantType,
+                    )
+                  };
+                  if (narrowed.isBottom()) {
+                    None()
+                  } else {
+                    isUndef =
+                      constant is TPrimUnit(TUndefined(), _) ||
+                      constant is TPrimUnit(TVoid(), _);
+                    Some(
+                      tFields.filterMapFields(fd ->
+                        if (fd.name.value == fieldName) {
+                          newOpt = if (!target && isUndef) {
+                            false
+                          } else {
+                            fd.isOptional
+                          };
+                          Some(fd.withGet(narrowed, newOpt))
+                        } else {
+                          Some(fd)
+                        }
+                      ),
+                    )
+                  }
+                }
+              }
             }
           })
         | x -> Some(x)

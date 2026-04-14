@@ -1066,6 +1066,10 @@ class TField private {
     this with {get => f(this.get), set => f(this.set)}
   }
 
+  fun withGet(get: TType, isOptional: Bool): TField {
+    this with {get, isOptional}
+  }
+
   fun project(): FieldNameString {
     this.name
   }
