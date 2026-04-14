@@ -329,12 +329,7 @@ extension class TypeChecker {
         (pos, "for-in loop requires an object or array type"),
         (
           iterableType.pos,
-          `Here it has type ${prettyPrintType(
-            false,
-            iterableType,
-            tcenv.subst,
-            this,
-          )}`,
+          `Here it has type ${this.ppType(tcenv, iterableType)}`,
         ),
       ],
     )

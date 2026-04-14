@@ -80,6 +80,11 @@ base class TEnv{
   // in getSTypes (TType.sk) where full expansion is safe and needed.
   expandInter: Bool = false,
 } {
+  // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages
+  fun ppType(tcenv: mutable TCEnv, ty: TType): String {
+    prettyPrintType(false, ty, tcenv.subst, this)
+  }
+
   // Given a type name and type arguments, first retrieves the type
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
