@@ -134,22 +134,12 @@ class VariadicTyping() {
               Array[
                 (
                   pos,
-                  `Invalid call. Inferred rest arguments ${prettyPrintType(
-                    false,
+                  `Invalid call. Inferred rest arguments ${tenv.ppType(
+                    tcenv,
                     inferred,
-                    tcenv.subst,
-                    tenv,
                   )} do not satisfy the constraint`,
                 ),
-                (
-                  cstr.pos,
-                  `Constraint ${prettyPrintType(
-                    false,
-                    cstr,
-                    tcenv.subst,
-                    tenv,
-                  )}`,
-                ),
+                (cstr.pos, `Constraint ${tenv.ppType(tcenv, cstr)}`),
               ],
               stErr,
             );
@@ -268,12 +258,7 @@ class VariadicTyping() {
               (pos, "Invalid call. Unexpected type for ..."),
               (
                 spreadType.getPos(),
-                `${prettyPrintType(
-                  false,
-                  spreadType.full(),
-                  tcenv.subst,
-                  tenv,
-                )} is not an array`,
+                `${tenv.ppType(tcenv, spreadType.full())} is not an array`,
               ),
             ],
           )
