@@ -49,8 +49,8 @@ extension class TypeChecker {
     otherExpr: Expr,
     target: Bool,
   ): void {
-    fieldType = this.expr(tcenv, otherExpr, true);
-    fieldType.getSingleConstant() match {
+    otherType = this.expr(tcenv, otherExpr, true);
+    otherType.getSingleConstant() match {
     | None() ->
       if (target) {
         this.setLocalFilterMap(tcenv, local, None(), stype ->
@@ -69,7 +69,7 @@ extension class TypeChecker {
                   tcenv.subst.clone(),
                   this,
                   branchFieldType,
-                  fieldType,
+                  otherType,
                 );
                 if (!overlap.isBottom()) Some(tFields) else None()
               | None() -> Some(tFields)
