@@ -58,106 +58,65 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     otherType = this.expr(tcenv, otherExpr, true);
-    otherType.getSingleConstant() match {
-    | None() ->
-      // RHS is not a single constant (e.g. a variable of type 0 | 1).
-      // For ===, filter out object branches whose field has no overlap
-      // with the RHS type. For !==, no safe narrowing is possible.
-      if (target) {
-        this.setLocalFilterMap(tcenv, local, None(), stype ->
-          stype match {
-          | tObj @ TObject _ ->
-            tObj.mapOpt(tFields -> {
-              tFields.maybeGetType(
-                tcenv.subst,
-                this,
-                fieldName,
-                local.pos,
-                false,
-              ) match {
-              | Some(branchFieldType) ->
-                // Keep branch only if its field type overlaps the RHS
-                overlap = TType::inter(
-                  tcenv.subst.clone(),
-                  this,
-                  branchFieldType,
-                  otherType,
-                );
-                if (!overlap.isBottom()) Some(tFields) else None()
-              | None() -> Some(tFields)
-              }
-            })
-          | x -> Some(x)
-          }
-        )
-      }
-    | Some(constant) ->
-      this.setLocalFilterMap(tcenv, local, None(), stype ->
-        stype match {
-        | tObj @ TObject _ ->
-          tObj.mapOpt(tFields -> {
-            tFields.maybeGetType(
-              tcenv.subst,
+    constant = otherType.getSingleConstant();
+    this.setLocalFilterMap(tcenv, local, None(), stype ->
+      stype match {
+      | tObj @ TObject _ ->
+        tObj.mapOpt(tFields -> {
+          tFields.maybeGetType(
+            tcenv.subst,
+            this,
+            fieldName,
+            local.pos,
+            false,
+          ) match {
+          | None() -> Some(tFields)
+          | Some(branchFieldType) ->
+            overlap = TType::inter(
+              tcenv.subst.clone(),
               this,
-              fieldName,
-              local.pos,
-              false,
-            ) match {
-            | None() -> Some(tFields)
-            | Some(branchFieldType) ->
-              branchFieldType.getSingleConstant() match {
-              | Some(branchConstant) ->
-                if (branchConstant.sameConstant(constant) == target) {
-                  Some(tFields)
+              branchFieldType,
+              otherType,
+            );
+            if (overlap.isBottom()) {
+              // No overlap: === eliminates the branch, !== keeps it
+              if (target) None() else Some(tFields)
+            } else {
+              constant match {
+              | Some(c) ->
+                // RHS is a constant: narrow the field type via diff/inter
+                narrowed = if (target) {
+                  overlap
                 } else {
+                  TType::diff(
+                    tcenv.subst.clone(),
+                    this,
+                    branchFieldType,
+                    otherType,
+                  )
+                };
+                if (narrowed.isBottom()) {
                   None()
+                } else {
+                  // Clear isOptional when narrowing out undefined so
+                  // that resolveFieldType doesn't re-add | undefined.
+                  keepOpt = target || !(c is TPrimUnit(TUndefined(), _));
+                  Some(
+                    tFields.updateField(fieldName, fd ->
+                      fd.withGet(narrowed, keepOpt && fd.isOptional)
+                    ),
+                  )
                 }
               | None() ->
-                // Field type is a union (e.g. number | undefined),
-                // not a single constant. Narrow the field type itself
-                // rather than filtering entire object branches.
-                overlap = TType::inter(
-                  tcenv.subst.clone(),
-                  this,
-                  branchFieldType,
-                  otherType,
-                );
-                if (overlap.isBottom()) {
-                  // No overlap: === eliminates the branch, !== keeps it
-                  if (target) None() else Some(tFields)
-                } else {
-                  narrowed = if (target) {
-                    overlap // ===: intersect with constant
-                  } else {
-                    TType::diff( // !==: subtract the constant
-                      tcenv.subst.clone(),
-                      this,
-                      branchFieldType,
-                      otherType,
-                    )
-                  };
-                  if (narrowed.isBottom()) {
-                    None()
-                  } else {
-                    // Clear isOptional when narrowing out undefined so
-                    // that resolveFieldType doesn't re-add | undefined.
-                    keepOpt =
-                      target ||
-                      !(constant is TPrimUnit(TUndefined(), _));
-                    Some(
-                      tFields.updateField(fieldName, fd ->
-                        fd.withGet(narrowed, keepOpt && fd.isOptional)
-                      ),
-                    )
-                  }
-                }
+                // Non-constant RHS: can't narrow the field type, keep branch
+                Some(tFields)
               }
             }
-          })
-        | x -> Some(x)
-        }
-      )
-    }
+          }
+        })
+      | x -> Some(x)
+      }
+    )
   }
 
   // Narrows `local` based on `(typeof local === typeStr) === target`.
