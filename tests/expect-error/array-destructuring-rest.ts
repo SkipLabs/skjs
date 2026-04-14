@@ -4,48 +4,43 @@
 
 function restFromTuple(): void {
   const tuple: [number, string, boolean] = [1, "hello", true];
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
   const [first, ...rest] = tuple;
+  const a: number = first;
+  const b: [string, boolean] = rest;
 }
 
 function restFromTupleSkipped(): void {
   const tuple: [number, string, boolean, number] = [1, "hello", true, 42];
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
   const [, second, ...rest] = tuple;
+  const a: string = second;
+  const b: [boolean, number] = rest;
 }
 
 function restAllElements(): void {
   const tuple: [number, string] = [1, "hello"];
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
   const [...rest] = tuple;
+  const a: [number, string] = rest;
 }
 
 function restZeroRemaining(): void {
   const tuple: [number, string] = [1, "hello"];
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
   const [a, b, ...rest] = tuple;
+  void rest;
 }
 
 // === Array/iterable source ===
 
 function restFromArray(): void {
   const arr: number[] = [1, 2, 3];
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
   const [first, ...rest] = arr;
+  const a: number | undefined = first;
+  const b: number[] = rest;
 }
 
-// === Type error cases (for after implementation) ===
-
-function restFromTupleTypeError(): void {
-  const tuple: [number, string, boolean] = [1, "hello", true];
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
-  const [first, ...rest] = tuple;
-  // TODO: rest should be [string, boolean], assigning to [number, boolean] should error
-}
+// === Type error cases ===
 
 function restTooManyBeforeRest(): void {
   const tuple: [number] = [1];
-  // @skjs-expect-error Construction not supported: Rest element in array destructuring
+  // @skjs-expect-error Invalid tuple pattern size, it is of size 2
   const [a, b, ...rest] = tuple;
-  // TODO: b should be undefined since tuple only has 1 element
 }

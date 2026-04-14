@@ -47,11 +47,6 @@ extension class TypeChecker {
       };
       tcenv.scope.bind(tcenv, local, type, isInitialized)
     | PArray(arrPat, rest) ->
-      rest match {
-      | Some(restName) ->
-        notSupported(restName.pos, "Rest element in array destructuring")
-      | None() -> void
-      };
       type.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
         stypes.singleElt()
       ) match {
@@ -68,19 +63,46 @@ extension class TypeChecker {
             this.bind(tcenv, kind, eltPat, tyl[i], isInitialized, false)
           };
         };
-        if (arrPat.size() != tyl.size()) {
-          error(
-            Array[
-              (
-                pos,
-                `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
-              ),
-              (
-                type.pos,
-                `It is incompatible with a tuple of size ${tyl.size()}`,
-              ),
-            ],
+        rest match {
+        | Some(restName) ->
+          if (arrPat.size() > tyl.size()) {
+            error(
+              Array[
+                (
+                  pos,
+                  `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
+                ),
+                (
+                  type.pos,
+                  `It is incompatible with a tuple of size ${tyl.size()}`,
+                ),
+              ],
+            )
+          };
+          restType = TType::tuple(restName.pos, tyl.slice(arrPat.size()), true);
+          this.bind(
+            tcenv,
+            kind,
+            Pattern(restName.pos, PVar(restName)),
+            restType,
+            isInitialized,
+            false,
           )
+        | None() ->
+          if (arrPat.size() != tyl.size()) {
+            error(
+              Array[
+                (
+                  pos,
+                  `Invalid tuple pattern size, it is of size ${arrPat.size()}`,
+                ),
+                (
+                  type.pos,
+                  `It is incompatible with a tuple of size ${tyl.size()}`,
+                ),
+              ],
+            )
+          }
         }
       | Some(obj @ TObject _) ->
         eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
@@ -125,6 +147,22 @@ extension class TypeChecker {
               false,
             )
           }
+        };
+        rest match {
+        | Some(restName) ->
+          restType = TType::inst(
+            Name(restName.pos, "Array"),
+            TArgs(Array[eltType]),
+          );
+          this.bind(
+            tcenv,
+            kind,
+            Pattern(restName.pos, PVar(restName)),
+            restType,
+            isInitialized,
+            false,
+          )
+        | None() -> void
         }
       | _ ->
         error(
