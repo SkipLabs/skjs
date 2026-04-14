@@ -30,25 +30,26 @@ function testSkippedElementsTypeError(): void {
 
 function testTupleDefaultUseful(): void {
   const arr: [number | undefined, string | undefined] = [1, "hello"];
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
   const [a = 0, b = "default"] = arr;
-}
-
-function testTupleDefaultUseless(): void {
-  const arr: [number, string] = [1, "hello"];
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
-  const [a = 0, b = "default"] = arr;
+  const x: number = a;
+  const y: string = b;
 }
 
 function testTupleDefaultDifferentType(): void {
   const arr: [number | undefined] = [1];
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
   const [a = "fallback"] = arr;
+  const x: number | string = a;
+}
+
+function testTupleDefaultUseless(): void {
+  const arr: [number, string] = [1, "hello"];
+  // @skjs-expect-error Default is useless because element cannot be undefined
+  const [a = 0, b = "default"] = arr;
 }
 
 function testTupleDefaultAlwaysUndefined(): void {
   const arr: [undefined] = [undefined];
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
+  // @skjs-expect-error Element is always undefined
   const [a = 42] = arr;
 }
 
@@ -56,14 +57,25 @@ function testTupleDefaultAlwaysUndefined(): void {
 
 function testArrayDefaultUseful(): void {
   const arr: (number | undefined)[] = [1, undefined, 3];
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
   const [a = 0] = arr;
+  const x: number = a;
 }
 
 // Test combination of skipped elements and defaults
 
 function testSkippedWithDefaults(): void {
-  const arr: [number, string | undefined, boolean] = [1, "hello", true];
-  // @skjs-expect-error Construction not supported: Default value in array destructuring (ignored)
+  const arr: [number, string | undefined, boolean | undefined] = [
+    1,
+    "hello",
+    true,
+  ];
   const [first, , third = false] = arr;
+  const x: number = first;
+  const y: boolean = third;
+}
+
+function testSkippedWithDefaultsUseless(): void {
+  const arr: [number, string | undefined, boolean] = [1, "hello", true];
+  // @skjs-expect-error Default is useless because element cannot be undefined
+  const [first = 0, , third] = arr;
 }
