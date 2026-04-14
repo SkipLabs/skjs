@@ -14,8 +14,8 @@ const a: undefined = void 0;
 const b: undefined = void (1 + 2);
 
 // Valid: void used to ignore an unused parameter
-function callback(event: string): undefined {
-  return void event;
+function callback(event: string): void {
+  void event;
 }
 
 // Error: void result is undefined, not assignable to number
