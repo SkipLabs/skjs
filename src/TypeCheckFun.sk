@@ -104,7 +104,7 @@ extension class TypeChecker {
       param.name.value match {
       | PVar(n) if (n.value == "this") ->
         error(Array[(n.pos, "TODO: support this parameter")])
-      | _ -> void
+      | _ -> checkPatternDoesNotContainThis(param.name)
       };
       this.bind(tcenv, BKLet(), param.name, paramType, true, false)
     };
