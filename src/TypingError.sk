@@ -264,7 +264,7 @@ fun error<T>(messages: Array<(PosRange, String)>): T {
   throw ErrorExn(NamingError(messages))
 }
 
-fun complexError<T>(
+fun subtypingError<T>(
   subst: mutable Subst,
   tenv: TEnv,
   messages: Array<(PosRange, String)>,

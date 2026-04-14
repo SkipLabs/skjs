@@ -149,7 +149,7 @@ base class TEnv{
         TType::isSub(subst.clone(), this, targ, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
-          tcenvb.complexError(
+          tcenvb.subtypingError(
             subst,
             this,
             Array[

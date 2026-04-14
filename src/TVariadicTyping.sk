@@ -128,7 +128,7 @@ class VariadicTyping() {
           | STOk() -> void
           | stErr @ STErrorOnTType _ ->
             subst.restore(saved);
-            tcenv.complexError(
+            tcenv.subtypingError(
               subst,
               tenv,
               Array[
@@ -214,7 +214,7 @@ class VariadicTyping() {
             TType::isSub(tcenv.subst, tenv, knownRest[i], tupleElts[i]) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.complexError(
+              tcenv.subtypingError(
                 tcenv.subst,
                 tenv,
                 Array[(pos, "Invalid argument")],
@@ -232,7 +232,7 @@ class VariadicTyping() {
             TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.complexError(
+              tcenv.subtypingError(
                 tcenv.subst,
                 tenv,
                 Array[(pos, "Invalid argument")],
@@ -244,7 +244,7 @@ class VariadicTyping() {
             TType::isSub(tcenv.subst, tenv, ma, eltType) match {
             | STOk() -> void
             | err @ STErrorOnTType _ ->
-              tcenv.complexError(
+              tcenv.subtypingError(
                 tcenv.subst,
                 tenv,
                 Array[(pos, "Invalid argument")],
