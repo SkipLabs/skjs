@@ -150,17 +150,11 @@ extension class TypeChecker {
           | None() -> void
           | Some((eltPat, Some(defaultExpr))) ->
             defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
-            optEltType = TType::unionUndefined(
-              tcenv.subst,
-              this,
-              eltType,
-              eltPat.pos,
-            );
             undefined = TType::single(TPrimUnit(TUndefined(), defaultExpr.pos));
             boundType = TType::union(
               tcenv.subst,
               this,
-              TType::diff(tcenv.subst, this, optEltType, undefined),
+              TType::diff(tcenv.subst, this, eltType, undefined),
               defaultType,
             );
             this.bind(tcenv, kind, eltPat, boundType, isInitialized, false)
