@@ -620,7 +620,7 @@ fun testLineNValidation(): void {
     errorHandling => SKJS.EHKeepGoing(),
     errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
     compilerOptions,
-  };
+  }.fromSuccess();
   tenv = checker.checker;
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   tcenvb = mutable SKJS.TCEnvLight{context, results};

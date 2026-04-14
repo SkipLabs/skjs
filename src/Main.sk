@@ -206,6 +206,15 @@ const checkArgs: Array<Cli.Arg> = Array[
       "Control subtyping error detail level. Formats: <level>, <line>, <file>, <line>:<level>, <file>:<level>, <file>:<line>:<level>. " +
         "Levels: hide, minimal/0, default/1, normal/2, verbose/3, full/max. Multiple specs can be separated by ';'. Can be specified multiple times.",
     ),
+  Cli.Arg::string("error-format")
+    .long("error-format")
+    .value_name("FORMAT")
+    .about(
+      `Error output format. Available formats: ${ErrorFormat::all}. (default: ${
+        ErrorFormat::default
+      })`,
+    )
+    .default(ErrorFormat::default),
   Cli.Arg::string("project")
     .long("project")
     .short("p")
@@ -354,6 +363,15 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   );
   errorDetailConfig = ErrorDetailConfig(errorDetailSpecs);
 
+  errorFormat = ErrorFormat::ofString(args.getString("error-format")) match {
+  | Success(ef) -> ef
+  | Failure(fmt) ->
+    print_error(
+      `Unknown error format: ${fmt}. Available formats: ${ErrorFormat::all}`,
+    );
+    throw Exit(2)
+  };
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
 
   context = SKStore.runWithGcReturnContext(
@@ -366,50 +384,67 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       | Success(checker) -> checker
       };
 
+      initDir = getInitDir(context);
       _ = applyOrReuseMap(
-        getInitDir(context),
+        initDir,
         SKStore.UnitID::keyType,
         SKStore.VoidFile::type,
         context,
         sinkDirName,
         (context, _writer, _key, _values) ~> {
-          checker = Checker::create{
+          Checker::create{
             context,
             files,
             errorHandling,
             errorDetailConfig,
             compilerOptions,
-          };
-          checked = checker.checkFiles(context);
-          _ = checked.map(
-            SKStore.UnitID::keyType,
-            SKStore.StringFile::type,
-            context,
-            errorsDirName,
-            (context, writer, _key, valueIter) ~> {
-              (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
-              | None() ->
-                internal_error("Unexpected missing value in print-errors")
-              | Some(CheckResult(_, x, y, _, _, _)) -> (x, y)
-              };
-              errors = mutable Vector[];
-              parseErrorOpt match {
-              | None() -> void
-              | Some(err) ->
-                errors.push(
-                  SKStore.StringFile(checker.errorToString(context, err)),
+          } match {
+          | Failure(errs) ->
+            _ = applyOrReuseMap(
+              initDir,
+              SKStore.UnitID::keyType,
+              ErrorMessageFile::type,
+              context,
+              errorsDirName,
+              (_context, writer, _key, _values) ~> {
+                writer.setArray(
+                  SKStore.UnitID::singleton,
+                  errs.map(err -> ErrorMessageFile(err)),
                 )
-              };
+              },
+            )
+          | Success(checker) ->
+            checked = checker.checkFiles(context);
+            _ = checked.map(
+              SKStore.UnitID::keyType,
+              ErrorMessageFile::type,
+              context,
+              errorsDirName,
+              (context, writer, _key, valueIter) ~> {
+                (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
+                | None() ->
+                  internal_error("Unexpected missing value in print-errors")
+                | Some(CheckResult(_, x, y, _, _, _)) -> (x, y)
+                };
+                errors = mutable Vector[];
+                parseErrorOpt match {
+                | None() -> void
+                | Some(err) ->
+                  errors.push(
+                    ErrorMessageFile(checker.errorToMessage(context, err)),
+                  )
+                };
 
-              for (error in typeErrors) {
-                errors.push(
-                  SKStore.StringFile(checker.errorToString(context, error)),
-                );
-              };
-              writer.setArray(SKStore.UnitID::singleton, errors.toArray());
-            },
-          );
-          _ = CallGraph::build(context, checked);
+                for (error in typeErrors) {
+                  errors.push(
+                    ErrorMessageFile(checker.errorToMessage(context, error)),
+                  );
+                };
+                writer.setArray(SKStore.UnitID::singleton, errors.toArray());
+              },
+            );
+            _ = CallGraph::build(context, checked)
+          }
         },
       );
       tick = context.getTick();
@@ -449,15 +484,23 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | None() -> 2
   | Some(dir) ->
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
-    for (error in errors) {
-      msg = SKStore.StringFile::type(error).value;
-      if (msg != "") {
-        print_error(msg);
-        // Blank line separator between errors
-        print_error("")
-      }
-    };
+    printErrors(errors, errorFormat);
     if (errors.size() != 0) 2 else 0
+  }
+}
+
+fun printErrors(errors: Array<SKStore.File>, errorFormat: ErrorFormat): void {
+  msgs = errors
+    .map(e -> ErrorMessageFile::type(e).value)
+    .filter(msg -> !msg.isEmpty());
+  errorFormat match {
+  | EFJson() -> errorMessagesToJson(msgs).writeToStream(print_error_raw, 2)
+  | textErrorFormat @ TextErrorFormat _ ->
+    for (errMsg in msgs) {
+      print_error(formatErrorMessage(errMsg, textErrorFormat));
+      // Blank line separator between errors
+      print_error("")
+    }
   }
 }
 
@@ -484,13 +527,14 @@ class Checker private {
   methodBodyMap: MethodBodyMap,
   errorDetailConfig: ErrorDetailConfig,
 } {
+  /* Returns Failure for parse errors only if errorHandling is EHDefault */
   static fun create{
     context: mutable SKStore.Context,
     files: Files,
     errorHandling: ErrorHandling,
     errorDetailConfig: ErrorDetailConfig,
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
-  }: this {
+  }: Result<this, Array<ErrorMessage>> {
     newLinesMap = NewLinesMap::create(context, files);
     (
       parsedAndSymbolsFiles,
@@ -501,7 +545,10 @@ class Checker private {
       classFieldMap,
       typeDefBodyMap,
       methodBodyMap,
-    ) = files.parse(context, newLinesMap, errorHandling);
+    ) = files.parse(context, newLinesMap, errorHandling) match {
+    | Success(r) -> r
+    | Failure(errs) -> return Failure(errs)
+    };
     parsedFiles = removeSymbols(context, parsedAndSymbolsFiles);
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
@@ -521,20 +568,22 @@ class Checker private {
       typeDefBodyMap,
       methodBodyMap,
     };
-    static{
-      files,
-      parsedFiles,
-      checker,
-      newLinesMap,
-      symbolsMap,
-      funDefSigMap,
-      funDefBodyMap,
-      classBodyMap,
-      classFieldMap,
-      typeDefBodyMap,
-      methodBodyMap,
-      errorDetailConfig,
-    }
+    Success(
+      static{
+        files,
+        parsedFiles,
+        checker,
+        newLinesMap,
+        symbolsMap,
+        funDefSigMap,
+        funDefBodyMap,
+        classBodyMap,
+        classFieldMap,
+        typeDefBodyMap,
+        methodBodyMap,
+        errorDetailConfig,
+      },
+    )
   }
 
   fun checkFiles(
@@ -583,8 +632,11 @@ class Checker private {
     );
   }
 
-  fun errorToString(context: mutable SKStore.Context, err: Error): String {
-    err.toString(
+  fun errorToMessage(
+    context: mutable SKStore.Context,
+    err: Error,
+  ): ErrorMessage {
+    err.toErrorMessage(
       context,
       this.files.rootMap,
       this.newLinesMap,

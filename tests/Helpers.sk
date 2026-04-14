@@ -788,6 +788,19 @@ module end;
 module SKJS;
 
 extension class Checker {
+  fun errorToString(context: mutable SKStore.Context, err: Error): String {
+    formatErrorMessage(
+      err.toErrorMessage(
+        context,
+        this.files.rootMap,
+        this.newLinesMap,
+        this.symbolsMap,
+        this.errorDetailConfig,
+      ),
+      EFDefault(),
+    )
+  }
+
   fun errorsToString(
     context: mutable SKStore.Context,
     errs: Sequence<Error>,

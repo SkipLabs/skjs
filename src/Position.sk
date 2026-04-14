@@ -8,31 +8,6 @@ module SKJS;
 /* Position types. */
 /***************************************************************************/
 
-value class RelPos(
-  fileName: FAbsolute,
-  line: Int,
-  col: Int,
-) uses Show, Equality {
-  fun toString(): String {
-    fileName = this.fileName.toString().replace("\"", "\\\"");
-    `File "${fileName}", line ${this.line}, character ${this.col}:`
-  }
-}
-value class RelPosRange(start: RelPos, end: RelPos) {
-  fun toString(): String {
-    if (this.start.fileName != this.end.fileName) {
-      internal_error("start and end fileName must match")
-    };
-    if (this.start.line != this.end.line) {
-      return this.start.toString();
-    };
-    fileName = this.start.fileName.toString().replace("\"", "\\\"");
-    `File "${fileName}", line ${this.start.line}, character ${this.start.col}-${
-      this.end.col
-    }:`
-  }
-}
-
 value class Pos(value: Int) uses Hashable, XXHashable, Orderable {
   const none: this = Pos(-1);
 
@@ -106,14 +81,33 @@ class PositionResolver{
   newLines: Array<Int>,
   symbols: Map<SymbolicPos, Int>,
 } {
-  fun relPosRange(pos: PosRange): RelPosRange {
-    RelPosRange(
-      this.relPos(pos.getStart(this.symbols)),
-      this.relPos(pos.getEnd(this.symbols)),
-    )
+  fun errMsgErrPos(pos: ErrorPos): ErrorMessagePos {
+    pos match {
+    | EPChar(_, p) -> this.errMsgPosSingle(p)
+    | EPRange(p) -> this.errMsgPosRange(p)
+    }
   }
 
-  fun relPos(pos: Pos): RelPos {
+  fun errMsgPosSingle(pos: Pos): ErrorMessagePos {
+    ErrorMessagePos{
+      fileName => this.absFileName,
+      start => this.lineCol(pos),
+      endOpt => None(),
+    }
+  }
+  fun errMsgPosRange(pos: PosRange): ErrorMessagePos {
+    ErrorMessagePos{
+      fileName => this.absFileName,
+      start => this.lineCol(pos.getStart(this.symbols)),
+      endOpt => Some(this.lineCol(pos.getEnd(this.symbols))),
+    }
+  }
+
+  fun posRangeLine(pos: PosRange): Int {
+    this.lineCol(pos.getStart(this.symbols)).line
+  }
+
+  fun lineCol(pos: Pos): LineCol {
     idx = SKStore.binSearch(
       i ~> this.newLines[i],
       pos.value,
@@ -121,10 +115,106 @@ class PositionResolver{
       this.newLines.size() - 1,
     );
     if (idx <= 0 || idx >= this.newLines[idx]) {
-      return RelPos(this.absFileName, 1, pos.value + 1)
+      return LineCol{line => 1, col => pos.value + 1}
     };
-    RelPos(this.absFileName, idx + 1, pos.value - this.newLines[idx - 1])
+    LineCol{line => idx + 1, col => pos.value - this.newLines[idx - 1]}
   }
+}
+
+/***************************************************************************/
+/* Structured error message type. */
+/***************************************************************************/
+
+value class LineCol{line: Int, col: Int} uses Equality
+
+value class ErrorMessagePos{
+  fileName: FAbsolute,
+  start: LineCol,
+  endOpt: ?LineCol,
+} {
+  fun toString(): String {
+    fileName = this.fileName.toString().replace("\"", "\\\"");
+    this.endOpt match {
+    | Some(end) if (this.start.line == end.line) ->
+      `File "${fileName}", line ${this.start.line}, character ${
+        this.start.col
+      }-${end.col}:`
+    | _ ->
+      `File "${fileName}", line ${this.start.line}, character ${
+        this.start.col
+      }:`
+    }
+  }
+
+  fun toCompactString(): String {
+    this.endOpt match {
+    | Some(end) if (this.start.line == end.line) ->
+      `${this.fileName}:${this.start.line}:${this.start.col}-${end.col}:`
+    | _ -> `${this.fileName}:${this.start.line}:${this.start.col}:`
+    }
+  }
+
+  fun toJsonObject(): JSON.Object {
+    obj = JSON.Object[
+      "file" => JSON.String(this.fileName.toString()),
+      "line" => JSON.IntNumber(this.start.line),
+      "col" => JSON.IntNumber(this.start.col),
+    ];
+    this.endOpt match {
+    | Some(end) ->
+      if (end.line != this.start.line) {
+        !obj = obj.set("endLine", JSON.IntNumber(end.line))
+      };
+      if (end != this.start) !obj = obj.set("endCol", JSON.IntNumber(end.col))
+    | None() -> void
+    };
+    obj
+  }
+}
+
+type ErrorMessage = Array<(ErrorMessagePos, String)>;
+
+class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
+
+fun formatErrorMessage(
+  msg: ErrorMessage,
+  errorFormat: TextErrorFormat,
+): String {
+  errorFormat match {
+  | EFDefault() ->
+    result = mutable Vector[];
+    for ((pos, text) in msg) {
+      result.push(pos.toString());
+      result.push(text);
+    };
+    result.join("\n")
+  | EFIndent() ->
+    msg
+      .mapWithIndex((i, entry) -> {
+        (pos, text) = entry;
+        prefix = if (i == 0) "" else "  ";
+        `${prefix}${pos.toCompactString()} ${text}`
+      })
+      .join("\n")
+  }
+}
+
+fun errorMessageToJson(msg: ErrorMessage): JSON.Value {
+  JSON.Array(
+    msg
+      .values()
+      .map(errMsg ->
+        JSON.Object[
+          "pos" => errMsg.i0.toJsonObject(),
+          "message" => JSON.String(errMsg.i1),
+        ]
+      )
+      .collect(Vector),
+  )
+}
+
+fun errorMessagesToJson(msgs: Array<ErrorMessage>): JSON.Value {
+  JSON.Array(msgs.values().map(errorMessageToJson).collect(Vector))
 }
 
 module end;

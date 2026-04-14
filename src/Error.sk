@@ -23,17 +23,44 @@ module SKJS;
 class ErrorExn(error: Error) extends Exception
 
 /***************************************************************************/
+/* Error output format. */
+/***************************************************************************/
+
+base class ErrorFormat {
+  children =
+  | EFJson()
+
+  const default: String = "default";
+  const all: String = "default, indent, json";
+
+  static fun ofString(str: String): Result<ErrorFormat, String> {
+    str match {
+    | "default" -> Success(EFDefault())
+    | "indent" -> Success(EFIndent())
+    | "json" -> Success(EFJson())
+    | _ -> Failure(str)
+    }
+  }
+}
+
+base class TextErrorFormat extends ErrorFormat {
+  children =
+  | EFDefault()
+  | EFIndent()
+}
+
+/***************************************************************************/
 /* The class for all the errors. */
 /***************************************************************************/
 
 base class Error {
-  fun toString(
+  fun toErrorMessage(
     context: mutable SKStore.Context,
     rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
-  ): String;
+  ): ErrorMessage;
 
   static fun resolver(
     fileName: FPath,
@@ -57,13 +84,13 @@ base class SinglePosError<K: ErrorKind>(
   pos: ErrorPos,
   errorKind: K,
 ) extends Error {
-  fun toString(
+  fun toErrorMessage(
     context: mutable SKStore.Context,
     rootMap: RootMap,
     newLinesMap: NewLinesMap,
     symbolsMap: SymbolsMap,
     _errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
-  ): String {
+  ): ErrorMessage {
     fileName = this.pos.fileName();
     resolver = static::resolver(
       fileName,
@@ -72,7 +99,7 @@ base class SinglePosError<K: ErrorKind>(
       newLinesMap,
       symbolsMap,
     );
-    this.pos.toString(resolver) + "\n" + this.errorKind.toString()
+    Array[(resolver.errMsgErrPos(this.pos), this.errorKind.toString())]
   }
 }
 
@@ -98,9 +125,9 @@ base class ErrorPos uses Equality {
   | EPRange(p) -> p.fileName
   | EPChar(fileName, _) -> fileName
 
-  fun toString(resolver: PositionResolver): String
-  | EPRange(p) -> resolver.relPosRange(p).toString()
-  | EPChar(_, p) -> resolver.relPos(p).toString()
+  fun toString(resolver: PositionResolver): String {
+    resolver.errMsgErrPos(this).toString()
+  }
 }
 
 /***************************************************************************/
