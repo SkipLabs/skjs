@@ -346,37 +346,6 @@ class TType private {
     }
   }
 
-  fun expandTVars(subst: mutable Subst, tenv: TEnv): TType {
-    seenTVars = mutable Set[];
-    loop {
-      expanded = mutable Vector[];
-      otherInsts = mutable Vector[];
-      for (inst in this.insts) {
-        inst match {
-        | tv @ TVar _ ->
-          if (!seenTVars.contains(tv.id)) {
-            seenTVars.insert(tv.id);
-            expanded.push(subst.get(tenv, tv, Covariant()))
-          }
-        | arrLit @ TArrayLit _ ->
-          expanded.push(ArrayLitTyping::expand(subst, tenv, arrLit))
-        | o -> otherInsts.push(o)
-        };
-      };
-      !this = static::create(
-        this.pos,
-        TInsts::createFromMVector(otherInsts),
-        this.clauses,
-      );
-      if (expanded.isEmpty()) {
-        return this;
-      };
-      for (ty in expanded) {
-        !this = TType::union(subst, tenv, this, ty);
-      }
-    }
-  }
-
   // OTHER PROPERTIES
 
   // Returns the actual STypes after head expansion, forgetting type parameters,
@@ -450,6 +419,37 @@ class TType private {
     this.expandToVectors(subst, tenv, Some(variance)) match {
     | None() -> Clauses::top()
     | Some((_, clauses)) -> Clauses::unionN(subst, tenv, clauses)
+    }
+  }
+
+  fun expandTVars(subst: mutable Subst, tenv: TEnv): TType {
+    seenTVars = mutable Set[];
+    loop {
+      expanded = mutable Vector[];
+      otherInsts = mutable Vector[];
+      for (inst in this.insts) {
+        inst match {
+        | tv @ TVar _ ->
+          if (!seenTVars.contains(tv.id)) {
+            seenTVars.insert(tv.id);
+            expanded.push(subst.get(tenv, tv, Covariant()))
+          }
+        | arrLit @ TArrayLit _ ->
+          expanded.push(ArrayLitTyping::expand(subst, tenv, arrLit))
+        | o -> otherInsts.push(o)
+        };
+      };
+      !this = static::create(
+        this.pos,
+        TInsts::createFromMVector(otherInsts),
+        this.clauses,
+      );
+      if (expanded.isEmpty()) {
+        return this;
+      };
+      for (ty in expanded) {
+        !this = TType::union(subst, tenv, this, ty);
+      }
     }
   }
 
