@@ -87,6 +87,13 @@ extension class TType {
     }
   }
 
+  // Caching is correct for compound types that contain TVars (but not bare
+  // TVars, which are excluded below). inter_ expands TVars via
+  // expandToClauses with Covariant(), which seals them (SVOpen -> SVClosed
+  // via Subst::get). Once sealed, a TVar cannot grow, so the cached result
+  // remains valid for the rest of the computation. Bare TVars are excluded
+  // because inter_ handles them specially (adding constraints or creating
+  // unexpanded intersections) without sealing.
   static fun inter(
     subst: mutable Subst,
     tenv: TEnv,
@@ -103,8 +110,6 @@ extension class TType {
       }
     };
     result = TType::inter_(subst, tenv, ty1, ty2);
-    // Don't cache when either operand is a TVar: TVar binding state
-    // changes over time, which would make the cached result stale.
     if (hasTVar) {
       result
     } else {
