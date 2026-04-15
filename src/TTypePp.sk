@@ -14,39 +14,38 @@ value class Margin{
   str: String = "",
 }
 
-class TTypePpSaved{
-  compact: Bool,
-  cols: Int,
-  buffer: List<String>,
-  substValues: SortedMap<TVarID, SubstValue>,
-  expandingTVars: SortedSet<TVarID>,
-}
-
-mutable class TypePp{
-  compact: Bool,
+mutable base class TypePpState private {
   mutable cols: Int = 0,
   mutable buffer: List<String> = List[],
-  substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   mutable expandingTVars: SortedSet<TVarID> = SortedSet[],
-  applyType: (TType -> TType) = x -> x,
 } {
-  const MAX_COLS: Int = 80;
-
-  readonly fun chill(): TTypePpSaved {
-    TTypePpSaved{
-      compact => this.compact,
-      cols => this.cols,
-      buffer => this.buffer,
-      substValues => this.substValues,
-      expandingTVars => this.expandingTVars,
-    }
+  readonly fun chill(): SavedTypePp {
+    SavedTypePp::create(this)
   }
 
-  mutable fun replace(saved: TTypePpSaved): void {
+  mutable fun replace(saved: SavedTypePp): void {
     this.!cols = saved.cols;
     this.!buffer = saved.buffer;
     this.!expandingTVars = saved.expandingTVars;
   }
+}
+
+mutable class SavedTypePp private {} extends TypePpState {
+  static fun create(state: readonly TypePpState): SavedTypePp {
+    SavedTypePp{
+      cols => state.cols,
+      buffer => state.buffer,
+      expandingTVars => state.expandingTVars,
+    }
+  }
+}
+
+mutable class TypePp{
+  compact: Bool,
+  substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+  applyType: (TType -> TType) = x -> x,
+} extends TypePpState {
+  const MAX_COLS: Int = 80;
 
   mutable fun out(level: Int, margin: Margin, str: String): void {
     // The string does not contain special characters
