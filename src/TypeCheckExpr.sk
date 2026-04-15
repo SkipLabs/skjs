@@ -1916,21 +1916,25 @@ extension class TypeChecker {
     isAsync: ?PosRange,
     pos: PosRange,
     c: Closure,
-    params: Array<(Name, ?Type)>,
+    params: Array<Param>,
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
     paramTypes = params.map(param -> {
-      if (param.i0.value == "this") {
+      paramName = param.name.value match {
+      | PVar(n) -> n
+      | _ -> error(Array[(param.pos, "TODO: support for patterns in closures")])
+      };
+      if (paramName.value == "this") {
         error(
           Array[
-            (param.i0.pos, "Parameter this forbidden in anonymous functions"),
+            (paramName.pos, "Parameter this forbidden in anonymous functions"),
           ],
         )
       };
-      param.i1 match {
-      | None() -> error(Array[(param.i0.pos, "Missing type annotation")])
-      | Some(ty) -> (param.i0, this.normalize(tcenv, ty))
+      param.type match {
+      | None() -> error(Array[(param.pos, "Missing type annotation")])
+      | Some(ty) -> (paramName, this.normalize(tcenv, ty))
       }
     });
     callingContext = CGNode::create(AnonymousLambda(pos, c));
