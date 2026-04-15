@@ -47,6 +47,22 @@ mutable class TypePp{
 } extends TypePpState {
   const MAX_COLS: Int = 80;
 
+  mutable fun render(f: mutable TypePp -> void): String {
+    f(this);
+    strings = this.buffer.reversed();
+    if (this.compact) {
+      !strings = strings.map(str ~> {
+        String::fromChars(
+          str
+            .getIter()
+            .filter(c ~> c != '\t' && c != '\n' && c != ' ')
+            .collect(Array),
+        )
+      })
+    };
+    "".join(strings)
+  }
+
   mutable fun out(level: Int, margin: Margin, str: String): void {
     // The string does not contain special characters
     for (c in str) {
@@ -645,20 +661,7 @@ fun rawPrettyPrint(
   applyType: TType -> TType = x ~> x,
 ): String {
   pp = mutable TypePp{compact, substValues, applyType};
-  f(pp);
-  strings = pp.buffer.reversed();
-  if (compact) {
-    !strings = strings.map(str ~> {
-      String::fromChars(
-        str
-          .getIter()
-          .filter(c ~> c != '\t' && c != '\n' && c != ' ')
-          .collect(Array),
-      )
-    })
-  };
-  result = "".join(strings);
-  result
+  pp.render(f)
 }
 
 fun prettyPrint(
@@ -668,20 +671,7 @@ fun prettyPrint(
   f: mutable TypePp -> void,
 ): String {
   pp = mutable TypePp{compact, applyType => ty -> ty.expandTVars(subst, tenv)};
-  f(pp);
-  strings = pp.buffer.reversed();
-  if (compact) {
-    !strings = strings.map(str ~> {
-      String::fromChars(
-        str
-          .getIter()
-          .filter(c ~> c != '\t' && c != '\n' && c != ' ')
-          .collect(Array),
-      )
-    })
-  };
-  result = "".join(strings);
-  result
+  pp.render(f)
 }
 
 fun prettyPrintType(
