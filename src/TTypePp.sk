@@ -28,7 +28,7 @@ mutable class TypePp{
   mutable buffer: List<String> = List[],
   substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   mutable expandingTVars: SortedSet<TVarID> = SortedSet[],
-  mutable applyType: (TType -> TType) = x -> x,
+  applyType: (TType -> TType) = x -> x,
 } {
   const MAX_COLS: Int = 80;
 
