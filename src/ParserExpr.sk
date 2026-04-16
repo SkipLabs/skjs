@@ -307,6 +307,10 @@ extension class Parser {
 
   // Handle closure syntax (: type => expr and => expr)
   mutable fun tryParseClosure(left: Expr, binopTok: Token, prec: Int): ?Expr_ {
+    if (prec > closurePrec) {
+      return None()
+    };
+
     params = left.value match {
     | Params(params) -> params
     | Var(varName) ->
@@ -337,7 +341,7 @@ extension class Parser {
       });
       if (rty is None()) return None();
       rty
-    } else if (prec <= closurePrec && binopTok.kind is TKClosure()) {
+    } else if (binopTok.kind is TKClosure()) {
       _ = this.lex.next();
       None()
     } else {
