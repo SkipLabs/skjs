@@ -1134,22 +1134,7 @@ extension class Clauses {
 }
 
 extension class TType {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    u1: TType,
-    u2: TType,
-  ): STResult<TType> {
-    if (u1 == u2) return STOk();
-    pair = (u1, u2);
-    if (subst.seenSub.contains(pair)) return STOk();
-    res = TType::isSub_(subst, tenv, u1, u2);
-    if (res is STOk()) {
-      subst.!seenSub = subst.seenSub.set(pair)
-    };
-    res
-  }
-
+  //
   private static fun originSuggestions(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1228,6 +1213,22 @@ extension class TType {
       }
     };
     hints
+  }
+
+  static fun isSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    u1: TType,
+    u2: TType,
+  ): STResult<TType> {
+    if (u1 == u2) return STOk();
+    pair = (u1, u2);
+    if (subst.seenSub.contains(pair)) return STOk();
+    res = TType::isSub_(subst, tenv, u1, u2);
+    if (res is STOk()) {
+      subst.!seenSub = subst.seenSub.set(pair)
+    };
+    res
   }
 
   private static fun isSub_(
