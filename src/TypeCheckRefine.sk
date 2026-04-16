@@ -430,11 +430,7 @@ extension class TypeChecker {
     ) if (n != "true" && n != "false" && n != "null" && n != "undefined") ->
       this.evalTruthiness(tcenv, local, e.pos, target)
 
-    | Dot(
-      NormalDot(),
-      Expr(_, Var(local)),
-      Name(_, fieldName),
-    ) if (tcenv.scope.maybeGet(local).isSome()) ->
+    | Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName)) ->
       trueType = TType::single(TPrimValue::single(TBool(), "true", e.pos));
       this.evalFieldEqualityType(tcenv, local, fieldName, trueType, target)
 
@@ -451,7 +447,6 @@ extension class TypeChecker {
     pos: PosRange,
     target: Bool,
   ): void {
-    if (tcenv.scope.maybeGet(local).isNone()) return void;
     val = if (target) "true" else "false";
     filterMap = stype ->
       stype match {
