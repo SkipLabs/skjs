@@ -152,61 +152,22 @@ extension class Parser {
   // Parse parenthesized expressions and parameter lists
   // Handles: (expr), (param), (param: type), (param1, param2, ...)
   mutable fun parseParenExpr(): Expr_ {
-    if (this.lex.peekKind() is Some(TKCloseParen())) {
-      _ = this.lex.next();
-      return Params(Array[])
-    };
-    firstTok = this.lex.peek();
-    e = this.expr(0);
-    if (this.lex.peekKind() is Some(TKCloseParen())) {
-      _ = this.lex.next();
-      return e.value
-    };
-    params = mutable Vector[];
-    loop {
-      name = e match {
-      | Expr(_, Var(x)) -> x
-      | Expr _ ->
-        this.error(this.lex.posStart(firstTok.fromSome()), ExpectedVarName())
-      };
-      tyOpt = if (this.lex.peekKind() is Some(TKColon())) {
-        _ = this.lex.next();
-        Some(this.type(0))
-      } else {
-        None()
-      };
-      params.push(
-        Param(
-          name.pos,
-          Modifiers::empty(),
-          None(),
-          Pattern(name.pos, PVar(name)),
-          None(),
-          tyOpt,
-          None(),
-        ),
-      );
-      closeTok = this.lex.next() match {
-      | None() -> this.error(this.lex.posEnd(), UnterminatedExpr())
-      | Some(x) -> x
-      };
-      closeTok.kind match {
-      | TKCloseParen() -> break void
-      | TKComma() ->
+    this.lex.tryAhead(() -> {
+      try {
+        e = this.expr(0);
         if (this.lex.peekKind() is Some(TKCloseParen())) {
           _ = this.lex.next();
-          break void;
+          Some(e.value)
+        } else {
+          None()
         }
-      | _ ->
-        this.error(
-          this.lex.posStart(closeTok),
-          ExpectedTokens(Array[TKCloseParen(), TKComma()]),
-        )
-      };
-      !firstTok = this.lex.peek();
-      !e = this.expr(0);
-    };
-    Params(params.toArray())
+      } catch {
+      | _ -> None()
+      }
+    }) match {
+    | Some(e) -> e
+    | None() -> Params(this.params())
+    }
   }
 
   // Parse beginning of expressions
