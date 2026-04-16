@@ -11,13 +11,13 @@ base class SubstValue uses Equality {
 }
 
 mutable base class SubstState private {
-  mutable seenSub: SortedSet<(TType, TType)> = SortedSet[],
-  mutable seenInter: SortedMap<(TType, TType), TType> = SortedMap[],
-  mutable seenUnion: SortedMap<(TType, TType), TType> = SortedMap[],
-  mutable seenExpansion: SortedMap<TSInst, TType> = SortedMap[],
-  mutable version: Int = 0,
-  mutable values: SortedMap<TVarID, SubstValue> = SortedMap[],
-  mutable origins: SortedMap<TVarID, TVarOrigin> = SortedMap[],
+  mutable seenSub: SortedSet<(TType, TType)>,
+  mutable seenInter: SortedMap<(TType, TType), TType>,
+  mutable seenUnion: SortedMap<(TType, TType), TType>,
+  mutable seenExpansion: SortedMap<TSInst, TType>,
+  mutable version: Int,
+  mutable values: SortedMap<TVarID, SubstValue>,
+  mutable origins: SortedMap<TVarID, TVarOrigin>,
 } {
   readonly fun save(): SavedSubst {
     SavedSubst::create(this)
@@ -54,7 +54,17 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
   static fun mcreate(tcenvb: mutable TCEnvBase): mutable Subst {
-    mutable Subst{context => tcenvb.context, results => tcenvb.results}
+    mutable Subst{
+      context => tcenvb.context,
+      results => tcenvb.results,
+      seenSub => SortedSet[],
+      seenInter => SortedMap[],
+      seenUnion => SortedMap[],
+      seenExpansion => SortedMap[],
+      version => 0,
+      values => SortedMap[],
+      origins => SortedMap[],
+    }
   }
 
   readonly fun saveAll(): (SubstState, TCResultsAcc) {
@@ -66,7 +76,7 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
     stateAndResults: (SubstState, TCResultsAcc),
   ): mutable this {
     (state, results) = stateAndResults;
-    mutable static{
+    mutable Subst{
       context,
       seenSub => state.seenSub,
       seenInter => state.seenInter,
