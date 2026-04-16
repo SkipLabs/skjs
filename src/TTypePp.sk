@@ -670,7 +670,10 @@ fun prettyPrint(
   compact: Bool,
   f: mutable TypePp -> void,
 ): String {
-  pp = mutable TypePp{compact, applyType => ty -> ty.expandTVars(subst, tenv)};
+  pp = mutable TypePp{
+    compact,
+    applyType => ty -> ty.expandTVarsForPp(subst, tenv),
+  };
   pp.render(f)
 }
 
