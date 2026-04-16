@@ -388,8 +388,6 @@ function incrementCounter566(
 // 12a: Bare boolean variable narrows to true in truthy branch
 function testBoolVarTruthy(x: boolean): void {
   if (x) {
-    // FIXME: should narrow boolean to true
-    // @skjs-expect-error Invalid annotation
     const t: true = x;
   }
 }
@@ -398,8 +396,6 @@ function testBoolVarTruthy(x: boolean): void {
 function testBoolVarFalsy(x: boolean): void {
   if (x) {
   } else {
-    // FIXME: should narrow boolean to false
-    // @skjs-expect-error Invalid annotation
     const f: false = x;
   }
 }
@@ -407,8 +403,6 @@ function testBoolVarFalsy(x: boolean): void {
 // 12c: Boolean field narrows to true
 function testBoolFieldTruthy(obj: { flag: boolean }): void {
   if (obj.flag) {
-    // FIXME: should narrow flag to true
-    // @skjs-expect-error Invalid annotation
     const t: true = obj.flag;
   }
 }
@@ -416,16 +410,12 @@ function testBoolFieldTruthy(obj: { flag: boolean }): void {
 // 12d: Negation narrows to false
 function testBoolVarNegated(x: boolean): void {
   if (!x) {
-    // FIXME: should narrow boolean to false
-    // @skjs-expect-error Invalid annotation
     const f: false = x;
   }
 }
 
 // 12e: Boolean ternary narrows in true branch
 function testBoolTernary(x: boolean): true {
-  // FIXME: should narrow x to true in true branch
-  // @skjs-expect-error Invalid return type
   return x ? x : true;
 }
 
