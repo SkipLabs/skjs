@@ -61,7 +61,7 @@ extension class TypeChecker {
     TType::isSub(tcenv.subst, this, ty1, ty2) match {
     | STOk() -> void
     | err @ STErrorOnTType _ ->
-      tcenv.complexError(tcenv.subst, this, Array[(pos, msg)], err)
+      tcenv.subtypingError(tcenv.subst, this, Array[(pos, msg)], err)
     }
   }
 

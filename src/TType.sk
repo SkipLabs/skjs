@@ -63,6 +63,8 @@ class TType private {
   // that will be turned into T1 & T2 | T1 & T3.
   clauses: Clauses,
 } uses XXHashable, Orderable {
+  private const empty: TType = TType::bottom(PosRange::none);
+
   //
   // identity
   //
@@ -346,37 +348,6 @@ class TType private {
     }
   }
 
-  fun expandTVars(subst: mutable Subst, tenv: TEnv): TType {
-    seenTVars = mutable Set[];
-    loop {
-      expanded = mutable Vector[];
-      otherInsts = mutable Vector[];
-      for (inst in this.insts) {
-        inst match {
-        | tv @ TVar _ ->
-          if (!seenTVars.contains(tv.id)) {
-            seenTVars.insert(tv.id);
-            expanded.push(subst.get(tenv, tv, Covariant()))
-          }
-        | arrLit @ TArrayLit _ ->
-          expanded.push(ArrayLitTyping::expand(subst, tenv, arrLit))
-        | o -> otherInsts.push(o)
-        };
-      };
-      !this = static::create(
-        this.pos,
-        TInsts::createFromMVector(otherInsts),
-        this.clauses,
-      );
-      if (expanded.isEmpty()) {
-        return this;
-      };
-      for (ty in expanded) {
-        !this = TType::union(subst, tenv, this, ty);
-      }
-    }
-  }
-
   // OTHER PROPERTIES
 
   // Returns the actual STypes after head expansion, forgetting type parameters,
@@ -450,6 +421,45 @@ class TType private {
     this.expandToVectors(subst, tenv, Some(variance)) match {
     | None() -> Clauses::top()
     | Some((_, clauses)) -> Clauses::unionN(subst, tenv, clauses)
+    }
+  }
+
+  fun expandTVars(subst: mutable Subst, tenv: TEnv): TType {
+    clauses = mutable Vector[];
+    insts = Vector::mcreateFromItems(this.insts);
+    seenTVars = mutable Set[];
+    i = 0;
+    while (i < insts.size()) {
+      ty = insts[i] match {
+      | tv @ TVar _ ->
+        if (seenTVars.contains(tv.id)) TType::empty else {
+          seenTVars.insert(tv.id);
+          subst.get(tenv, tv, Covariant())
+        }
+      | arrLit @ TArrayLit _ -> ArrayLitTyping::expand(subst, tenv, arrLit)
+      | TSInst _
+      | TInter _ ->
+        !i = i + 1;
+        continue
+      };
+      clauses.extend(ty.clauses);
+      lastInst = insts.pop();
+      if (i < insts.size()) insts![i] = lastInst;
+      insts.extend(ty.insts)
+    };
+    if (
+      seenTVars.isEmpty() &&
+      clauses.isEmpty() &&
+      insts.size() == this.insts.size()
+    ) {
+      this
+    } else {
+      clauses.extend(this.clauses);
+      TType::create(
+        this.pos,
+        TInsts::createFromMVector(insts),
+        Clauses::unionN(subst, tenv, clauses),
+      )
     }
   }
 

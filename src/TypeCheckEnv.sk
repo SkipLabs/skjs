@@ -16,13 +16,13 @@ mutable base class TCEnvBase private {
     this.results.error(messages)
   }
 
-  mutable fun complexError(
-    subst: mutable Subst,
+  mutable fun subtypingError(
+    subst: readonly Subst,
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
   ): void {
-    this.results.complexError(subst, tenv, messages, stErr)
+    this.results.subtypingError(subst, tenv, messages, stErr)
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
@@ -241,8 +241,8 @@ mutable class TCResults private {
     }
   }
 
-  mutable fun complexError(
-    subst: mutable Subst,
+  mutable fun subtypingError(
+    subst: readonly Subst,
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
@@ -252,7 +252,7 @@ mutable class TCResults private {
       this.errors.push(TypingError(subst.saveAll(), tenv, messages, stErr))
     | EHBacktrace()
     | EHDefault() ->
-      complexError(subst, tenv, messages, stErr)
+      subtypingError(subst, tenv, messages, stErr)
     }
   }
 
@@ -367,8 +367,8 @@ mutable class TCResultsAcc private {
     }
   }
 
-  mutable fun complexError(
-    subst: mutable Subst,
+  mutable fun subtypingError(
+    subst: readonly Subst,
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
@@ -378,7 +378,7 @@ mutable class TCResultsAcc private {
       this.errors.push(TypingError(subst.saveAll(), tenv, messages, stErr))
     | EHBacktrace()
     | EHDefault() ->
-      complexError(subst, tenv, messages, stErr)
+      subtypingError(subst, tenv, messages, stErr)
     }
   }
 
