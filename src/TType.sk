@@ -424,7 +424,7 @@ class TType private {
     }
   }
 
-  fun expandTVars(subst: mutable Subst, tenv: TEnv): TType {
+  fun expandTVarsForPp(subst: mutable Subst, tenv: TEnv): TType {
     clauses = mutable Vector[];
     insts = Vector::mcreateFromItems(this.insts);
     seenTVars = mutable Set[];

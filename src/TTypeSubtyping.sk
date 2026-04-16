@@ -1166,8 +1166,8 @@ extension class TType {
         | Some(ty) -> ty
         | None() -> continue
         };
-        sealedType = rawSealed.expandTVars(clonedSubst, tenv);
-        expandedU1 = u1.expandTVars(clonedSubst, tenv);
+        sealedType = rawSealed.expandTVarsForPp(clonedSubst, tenv);
+        expandedU1 = u1.expandTVarsForPp(clonedSubst, tenv);
         widerType = TType::union(clonedSubst, tenv, sealedType, expandedU1);
         widerStr = widerType.toString(clonedSubst, tenv);
         clonedSubst.getOrigin(tvar) match {
@@ -1179,7 +1179,9 @@ extension class TType {
             } else {
               clonedSubst.peekRaw(tv) match {
               | Some(ty) ->
-                ty.expandTVars(clonedSubst, tenv).toString(clonedSubst, tenv)
+                ty
+                  .expandTVarsForPp(clonedSubst, tenv)
+                  .toString(clonedSubst, tenv)
               | None() -> "unknown"
               }
             }
