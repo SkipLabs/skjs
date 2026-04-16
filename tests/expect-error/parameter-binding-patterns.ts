@@ -46,6 +46,27 @@ function multiPattern({ a }: { a: number }, [b]: [string]): void {
   const y: string = b;
 }
 
+// Arrow function with array destructuring
+function testArrowArrayPattern(): void {
+  const f = ([a, b]: [number, string]): string => {
+    return b;
+  };
+}
+
+// Arrow function with object destructuring
+function testArrowObjectPattern(): void {
+  const f = ({ x, y }: { x: number; y: string }): number => {
+    return x;
+  };
+}
+
+// Arrow function without type annotation (single param, no parens needed)
+function testArrowNoAnnotation(): void {
+  const arr: [number, string][] = [];
+  // @skjs-expect-error Missing type annotation
+  arr.map(([a, b]) => a);
+}
+
 // Function type with pattern parameters (parsing only)
 type FuncWithObjectParam = ({ x, y }: { x: number; y: number }) => void;
 type FuncWithArrayParam = ([a, b]: [number, string]) => void;
