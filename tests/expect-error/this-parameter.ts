@@ -18,7 +18,7 @@ class TestThisFirst {
 // this parameter forbidden in arrow functions
 class TestArrowFunctions {
   method(): void {
-    // @ts-expect-error Parameter this forbidden in anonymous functions
+    // @ts-expect-error this forbidden here
     const f = (this: MyContext): void => {};
   }
 }
