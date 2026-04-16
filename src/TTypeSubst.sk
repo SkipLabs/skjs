@@ -74,6 +74,7 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
       seenExpansion => state.seenExpansion,
       version => state.version,
       values => state.values,
+      origins => state.origins,
       results => results.mclone(),
     }
   }
