@@ -310,23 +310,6 @@ extension class Parser {
     if (prec > closurePrec) {
       return None()
     };
-
-    params = left.value match {
-    | Params(params) -> params
-    | Var(varName) ->
-      Array[
-        Param(
-          varName.pos,
-          Modifiers::empty(),
-          None(),
-          Pattern(varName.pos, PVar(varName)),
-          None(),
-          None(),
-          None(),
-        ),
-      ]
-    | _ -> return None()
-    };
     rty = if (binopTok.kind is TKColon()) {
       rty = this.lex.tryAhead(() -> {
         _ = this.lex.next();
@@ -346,6 +329,22 @@ extension class Parser {
       None()
     } else {
       return None()
+    };
+    params = left.value match {
+    | Params(params) -> params
+    | Var(varName) ->
+      Array[
+        Param(
+          varName.pos,
+          Modifiers::empty(),
+          None(),
+          Pattern(varName.pos, PVar(varName)),
+          None(),
+          None(),
+          None(),
+        ),
+      ]
+    | _ -> return None()
     };
     closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
       CBBlock(this.blockOrStmt())
