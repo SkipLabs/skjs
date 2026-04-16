@@ -1920,23 +1920,12 @@ extension class TypeChecker {
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
-    paramTypes = params.map(param -> {
-      paramName = param.name.value match {
-      | PVar(n) -> n
-      | _ -> error(Array[(param.pos, "TODO: support for patterns in closures")])
-      };
-      if (paramName.value == "this") {
-        error(
-          Array[
-            (paramName.pos, "Parameter this forbidden in anonymous functions"),
-          ],
-        )
-      };
+    paramTypes = params.map(param ->
       param.type match {
       | None() -> error(Array[(param.pos, "Missing type annotation")])
-      | Some(ty) -> (paramName, this.normalize(tcenv, ty))
+      | Some(ty) -> this.normalize(tcenv, ty)
       }
-    });
+    );
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
     tcenv.recordCalls(CGNodes::singleton(callingContext));
@@ -1945,8 +1934,9 @@ extension class TypeChecker {
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
     tcenv.!callingContext = callingContext;
 
-    for (param in paramTypes) {
-      tcenv.scope.bind(tcenv, param.i0, param.i1, true)
+    for (i => param in params) {
+      checkPatternDoesNotContainThis(param.name);
+      this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, false)
     };
 
     retType = (retTypeAstOpt, body) match {
@@ -1999,7 +1989,7 @@ extension class TypeChecker {
           TFun(
             Array[],
             None(),
-            paramTypes.map(x -> x.i1),
+            paramTypes,
             Array[],
             None(),
             retType,
