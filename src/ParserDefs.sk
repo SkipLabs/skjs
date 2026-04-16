@@ -1158,43 +1158,9 @@ extension class Parser {
     result
   }
 
-  // Parse method definitions
-  mutable fun methodDef<T>(
-    mk: {
-      pos: PosRange,
-      tparams: Array<TypeParam>,
-      params: Array<Param>,
-      retType: (PosRange, ?Type),
-      body: FunDefBody,
-    } -> T,
-    funName: FunDefName,
-    parseBlock: Bool,
-  ): T {
-    // Record method/function definition and set context.
-    // Only record for class methods; top-level functions are handled by
-    // the dedicated top-level function parser. Avoid recording SPFunction
-    // here because this method is also called for type annotation methods
-    // (e.g. { constructor(): void }) which would clash with real functions.
-    prevSymbolContext = this.getCurrentSymbolContext();
-    (funName, this.getCurrentSymbol()) match {
-    | (FNNormal(name), SPClass(className)) ->
-      methodSymbol = SPMethod(className, name.value);
-      symbolContextPos = this.lex.pos;
-      this.recordSymbolDefinitionAndSetSymbolContext(
-        methodSymbol,
-        symbolContextPos,
-      )
-    | _ -> void
-    };
-
-    tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
-      _ = this.lex.next();
-      this.typeParams();
-    } else {
-      Array[]
-    };
+  // Parse parameters after opening parenthesis
+  mutable fun params(): Array<Param> {
     params = mutable Vector[];
-    this.expect(TKOpenParen());
     this.lex.peekKind() match {
     | Some(TKCloseParen()) ->
       _ = this.lex.next();
@@ -1255,6 +1221,46 @@ extension class Parser {
         }
       }
     };
+    params.toArray()
+  }
+
+  // Parse method definitions
+  mutable fun methodDef<T>(
+    mk: {
+      pos: PosRange,
+      tparams: Array<TypeParam>,
+      params: Array<Param>,
+      retType: (PosRange, ?Type),
+      body: FunDefBody,
+    } -> T,
+    funName: FunDefName,
+    parseBlock: Bool,
+  ): T {
+    // Record method/function definition and set context.
+    // Only record for class methods; top-level functions are handled by
+    // the dedicated top-level function parser. Avoid recording SPFunction
+    // here because this method is also called for type annotation methods
+    // (e.g. { constructor(): void }) which would clash with real functions.
+    prevSymbolContext = this.getCurrentSymbolContext();
+    (funName, this.getCurrentSymbol()) match {
+    | (FNNormal(name), SPClass(className)) ->
+      methodSymbol = SPMethod(className, name.value);
+      symbolContextPos = this.lex.pos;
+      this.recordSymbolDefinitionAndSetSymbolContext(
+        methodSymbol,
+        symbolContextPos,
+      )
+    | _ -> void
+    };
+
+    tparams = if (this.lex.peekKind() is Some(TKLessThan())) {
+      _ = this.lex.next();
+      this.typeParams();
+    } else {
+      Array[]
+    };
+    this.expect(TKOpenParen());
+    params = this.params();
     retType = if (this.lex.peekKind() is Some(TKColon())) {
       this.expect(TKColon());
       (retPos, retType) = this.withPos(() -> this.type(0), UnterminatedType());
@@ -1282,13 +1288,7 @@ extension class Parser {
 
     // Restore previous context
     this.setSymbolContext(prevSymbolContext);
-    mk{
-      pos => funName.getPos(),
-      tparams => tparams,
-      params => params.toArray(),
-      retType,
-      body,
-    }
+    mk{pos => funName.getPos(), tparams, params, retType, body}
   }
 }
 
