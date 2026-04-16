@@ -74,6 +74,25 @@ base class Error {
     absFileName = fileName.toAbsolute(rootMap);
     PositionResolver{absFileName, newLines, symbols}
   }
+
+  static fun resolveMessages(
+    messages: Array<(PosRange, String)>,
+    context: mutable SKStore.Context,
+    rootMap: RootMap,
+    newLinesMap: NewLinesMap,
+    symbolsMap: SymbolsMap,
+  ): ErrorMessage {
+    messages.map(message -> {
+      resolver = static::resolver(
+        message.i0.fileName,
+        context,
+        rootMap,
+        newLinesMap,
+        symbolsMap,
+      );
+      (resolver.errMsgPosRange(message.i0), message.i1)
+    })
+  }
 }
 
 /***************************************************************************/

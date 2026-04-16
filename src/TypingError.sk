@@ -222,18 +222,7 @@ class TypingError(
       !messages = messages.concat(e.toError(subst, this.tenv, detail).toArray())
     };
 
-    messages.map(message -> {
-      pos = message.i0;
-      fileName = pos.fileName;
-      resolver = static::resolver(
-        fileName,
-        context,
-        rootMap,
-        newLinesMap,
-        symbolsMap,
-      );
-      (resolver.errMsgPosRange(pos), message.i1)
-    })
+    static::resolveMessages(messages, context, rootMap, newLinesMap, symbolsMap)
   }
 }
 
@@ -245,18 +234,13 @@ class NamingError(messages: Array<(PosRange, String)>) extends Error {
     symbolsMap: SymbolsMap,
     _errorDetailConfig: ErrorDetailConfig = ErrorDetailConfig::default(),
   ): ErrorMessage {
-    this.messages.map(message -> {
-      pos = message.i0;
-      fileName = pos.fileName;
-      resolver = static::resolver(
-        fileName,
-        context,
-        rootMap,
-        newLinesMap,
-        symbolsMap,
-      );
-      (resolver.errMsgPosRange(pos), message.i1)
-    })
+    static::resolveMessages(
+      this.messages,
+      context,
+      rootMap,
+      newLinesMap,
+      symbolsMap,
+    )
   }
 }
 
