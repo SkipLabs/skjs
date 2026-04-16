@@ -330,21 +330,9 @@ extension class Parser {
     } else {
       return None()
     };
-    params = left.value match {
-    | Params(params) -> params
-    | Var(varName) ->
-      Array[
-        Param(
-          varName.pos,
-          Modifiers::empty(),
-          None(),
-          Pattern(varName.pos, PVar(varName)),
-          None(),
-          None(),
-          None(),
-        ),
-      ]
-    | _ -> return None()
+    params = exprToParams(left) match {
+    | None() -> return None()
+    | Some(p) -> p
     };
     closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
       CBBlock(this.blockOrStmt())
@@ -722,6 +710,85 @@ extension class Parser {
     this.lex.!lastTok = originalLastTok;
 
     TemplateLiteral(parts.toArray(), expressions.toArray())
+  }
+}
+
+// Convert an expression parsed in parentheses to a pattern for arrow
+// function destructuring parameters: ([a, b]) => ... or ({x, y}) => ...
+fun exprToPattern(e: Expr): ?Pattern {
+  pat = e.value match {
+  | Var(name) -> PVar(name)
+  | EArray(elements) ->
+    patElements = mutable Vector[];
+    rest = for (i => ae in elements) {
+      (lhs, default) = ae.value match {
+      | Spread(Expr(_, Var(spreadName))) if (i == elements.size() - 1) ->
+        break Some(spreadName)
+      | Binop(BOAssignment(), lhs, rhs) -> (lhs, Some(rhs))
+      | _ -> (ae, None())
+      };
+      exprToPattern(lhs) match {
+      | None() -> return None()
+      | Some(p) -> patElements.push(Some((p, default)))
+      }
+    } else {
+      None()
+    };
+    PArray(patElements.toArray(), rest)
+  | Object(fields) ->
+    patFields = mutable Vector[];
+    rest = for (i => field in fields) {
+      field match {
+      | FDSpread(Expr(_, Var(spreadName))) if (i == fields.size() - 1) ->
+        break Some(spreadName)
+      | FDNormal(name, value) ->
+        (v, default) = value.value match {
+        | Binop(BOAssignment(), lhs, rhs) -> (lhs, Some(rhs))
+        | _ -> (value, None())
+        };
+        exprToPattern(v) match {
+        | None() -> return None()
+        | Some(f) -> patFields.push((name, f, default))
+        }
+      | FDSpread _
+      | FDComputed _
+      | FDMethod _ ->
+        return None()
+      }
+    } else {
+      None()
+    };
+    PObject{fields => patFields.toArray(), rest}
+  | _ -> return None()
+  };
+  Some(Pattern(e.pos, pat))
+}
+
+fun exprToParam(e: Expr): ?Param {
+  e.value match {
+  | Spread(spread) ->
+    exprToParam(spread).flatMap(param ->
+      if (param.isRest is Some _) None() else {
+        Some(param with {isRest => Some(spread.pos)})
+      }
+    )
+  | Binop(BOAssignment(), lhs, rhs) ->
+    exprToParam(lhs).flatMap(param ->
+      if (param.default is Some _) None() else {
+        Some(param with {default => Some(rhs)})
+      }
+    )
+  | _ ->
+    exprToPattern(e).map(p ->
+      Param(e.pos, Modifiers::empty(), None(), p, None(), None(), None())
+    )
+  }
+}
+
+fun exprToParams(e: Expr): ?Array<Param> {
+  e.value match {
+  | Params(params) -> Some(params)
+  | _ -> exprToParam(e).map(p -> Array[p])
   }
 }
 
