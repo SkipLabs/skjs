@@ -62,7 +62,7 @@ class TType private {
   // sorted disjunctive normal form. So if you write: T1 & (T3 | T2)
   // that will be turned into T1 & T2 | T1 & T3.
   clauses: Clauses,
-} uses XXHashable, Orderable {
+} uses XXHashable, Hashable, Orderable {
   private const empty: TType = TType::bottom(PosRange::none);
 
   //
@@ -71,6 +71,10 @@ class TType private {
 
   fun compare(other: TType): Order {
     this.h.compare(other.h)
+  }
+
+  fun hash(): Int {
+    this.h.value
   }
 
   fun xxhash(): XXHash {
@@ -1729,9 +1733,9 @@ class TArrayLit(tvar: TVar, tupleElts: Array<TType>) extends TInst {}
 // possibly with type arguments
 class TSInst(name: Name, targs: TArgs) extends TInst {}
 
-class TArgs(targs: Array<TType>) uses XXHashable, Orderable
+class TArgs(targs: Array<TType>) uses XXHashable, Hashable, Orderable
 
-base class TInst uses XXHashable, Orderable
+base class TInst uses XXHashable, Hashable, Orderable
 
 /* "Instance"/Unexpanded types */
 //
