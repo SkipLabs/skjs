@@ -212,21 +212,4 @@ mutable class Instantiate() extends ApplyType {
   }
 }
 
-mutable class ExpandTVars() extends ApplyType {
-  type Env = (mutable Subst, TEnv);
-
-  mutable fun type_(env: this::Env, ty: TType): TType {
-    !ty = ty.rawMap(
-      (insts) -> this.insts(env, insts),
-      (clauses) -> this.clauses(env, clauses),
-    );
-    (subst, tenv) = env;
-    ty.expand(subst, tenv, Some(Covariant()));
-  }
-}
-
-fun expandTVars(subst: mutable Subst, tenv: TEnv, ty: TType): TType {
-  (mutable ExpandTVars()).type((subst, tenv), ty)
-}
-
 module end;
