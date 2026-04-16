@@ -380,3 +380,58 @@ function incrementCounter566(
   const updatedCounter: Counter566 = { value: newValue };
   return updatedCounter;
 }
+
+// ============================================================
+// 12. Truthiness narrowing: if (x) treated as if (x === true)
+// ============================================================
+
+// 12a: Bare boolean variable narrows to true in truthy branch
+function testBoolVarTruthy(x: boolean): void {
+  if (x) {
+    // FIXME: should narrow boolean to true
+    // @skjs-expect-error Invalid annotation
+    const t: true = x;
+  }
+}
+
+// 12b: Bare boolean variable narrows to false in falsy branch
+function testBoolVarFalsy(x: boolean): void {
+  if (x) {
+  } else {
+    // FIXME: should narrow boolean to false
+    // @skjs-expect-error Invalid annotation
+    const f: false = x;
+  }
+}
+
+// 12c: Boolean field narrows to true
+function testBoolFieldTruthy(obj: { flag: boolean }): void {
+  if (obj.flag) {
+    // FIXME: should narrow flag to true
+    // @skjs-expect-error Invalid annotation
+    const t: true = obj.flag;
+  }
+}
+
+// 12d: Negation narrows to false
+function testBoolVarNegated(x: boolean): void {
+  if (!x) {
+    // FIXME: should narrow boolean to false
+    // @skjs-expect-error Invalid annotation
+    const f: false = x;
+  }
+}
+
+// 12e: Boolean ternary narrows in true branch
+function testBoolTernary(x: boolean): true {
+  // FIXME: should narrow x to true in true branch
+  // @skjs-expect-error Invalid return type
+  return x ? x : true;
+}
+
+// 12f: Literal true stays true (already works, no narrowing needed)
+function testTrueLiteral(x: true): void {
+  if (x) {
+    const t: true = x;
+  }
+}
