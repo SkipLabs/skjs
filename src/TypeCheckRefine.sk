@@ -276,26 +276,17 @@ extension class TypeChecker {
 
   // Narrows `local` based on `local instanceof className`
   fun evalInstanceof(tcenv: mutable TCEnv, local: Name, className: Name): void {
-    if (className.value == "Array") {
-      tcenv.scope.set(
-        local,
-        TType::inst(
-          Name(className.pos, "Array"),
-          TArgs(Array[TType::top(className.pos)]),
-        ),
-        (x, y) ->
-          this.checkSubType(tcenv, local.pos, "Invalid instanceof", x, y)
-        ,
+    ty = if (className.value == "Array") {
+      TType::inst(
+        Name(className.pos, "Array"),
+        TArgs(Array[TType::top(className.pos)]),
       )
     } else {
-      tcenv.scope.set(
-        local,
-        this.new(tcenv, className, this.makeTArgs(tcenv, className)),
-        (x, y) ->
-          this.checkSubType(tcenv, local.pos, "Invalid instanceof", x, y)
-        ,
-      )
-    }
+      this.new(tcenv, className, this.makeTArgs(tcenv, className))
+    };
+    tcenv.scope.set(local, ty, (x, y) ->
+      this.checkSubType(tcenv, local.pos, "Invalid instanceof", x, y)
+    )
   }
 
   // Entry point for type narrowing from a conditional expression.
