@@ -238,9 +238,8 @@ extension class Parser {
         this.lex.peekKind() is Some(TKLessThan())
       ) ->
         this.methodDef(
-          {pos, tparams, params, retType, body} ->
+          {tparams, params, retType, body} ->
             ClassFieldMethod{
-              pos,
               isAsync => None(),
               modifiers,
               isGetSet => fieldGetSet,
@@ -1135,9 +1134,8 @@ extension class Parser {
     funName = this.getName();
 
     result = this.methodDef(
-      {pos, tparams, params, retType, body} ->
+      {tparams, params, retType, body} ->
         TopLevelFunDef{
-          pos => funName.pos,
           isAsync,
           modifiers => Modifiers::empty(),
           isGetSet => None(),
@@ -1146,7 +1144,9 @@ extension class Parser {
           sig => FSInline(tparams, params, retType),
           body => FBInline(body),
           cgNode => Some(
-            CGNode::create(TopLevelFunction(FNNormal(funName), pos.fileName)),
+            CGNode::create(
+              TopLevelFunction(FNNormal(funName), funName.pos.fileName),
+            ),
           ),
         },
       FNNormal(funName),
@@ -1227,7 +1227,6 @@ extension class Parser {
   // Parse method definitions
   mutable fun methodDef<T>(
     mk: {
-      pos: PosRange,
       tparams: Array<TypeParam>,
       params: Array<Param>,
       retType: (PosRange, ?Type),
@@ -1288,7 +1287,7 @@ extension class Parser {
 
     // Restore previous context
     this.setSymbolContext(prevSymbolContext);
-    mk{pos => funName.getPos(), tparams, params, retType, body}
+    mk{tparams, params, retType, body}
   }
 }
 

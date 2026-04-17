@@ -482,9 +482,8 @@ extension class Parser {
       ) {
         emptyPos = this.lex.posRange(this.lex.peek().fromSome());
         method = this.methodDef(
-          {pos, tparams, params, retType, body} ->
+          {tparams, params, retType, body} ->
             ObjectFieldMethod{
-              pos,
               isGetSet => None(),
               name => FNEmpty(emptyPos),
               optional => None(),
@@ -523,9 +522,8 @@ extension class Parser {
           | None() -> void
           };
           this.methodDef(
-            {pos, tparams, params, retType, body} ->
+            {tparams, params, retType, body} ->
               ObjectFieldMethod{
-                pos,
                 isGetSet => fieldGetSet,
                 name => methodName,
                 optional => isOptional,

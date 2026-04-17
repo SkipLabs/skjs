@@ -144,7 +144,6 @@ base class Pattern_ uses XXHashable {
 /***************************************************************************/
 
 base class FunDef<+N: FunDefName>{
-  pos: PosRange,
   isGetSet: ?FieldGetSet,
   name: N,
   optional: ?PosRange,

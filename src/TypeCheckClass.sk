@@ -6,15 +6,13 @@ extension class TypeChecker {
     constructor: ?ClassFieldMethod = None();
     for (fieldType in classFields) {
       fieldType match {
-      | fd @ ClassFieldMethod _ if (
-        fd.name is FNNormal(Name(_, "constructor"))
-      ) ->
+      | fd @ ClassFieldMethod{name => FNNormal(Name(fdPos, "constructor"))} ->
         constructor match {
         | Some(existingConstructor) ->
           tcenvl.error(
             Array[
-              (fd.pos, "Multiple constructor implementations are not allowed."),
-              (existingConstructor.pos, "Previous implementation"),
+              (fdPos, "Multiple constructor implementations are not allowed."),
+              (existingConstructor.name.getPos(), "Previous implementation"),
             ],
           )
         | None() -> !constructor = Some(fd)
@@ -192,11 +190,11 @@ extension class TypeChecker {
             .iterator()
             .filterMap(fieldType ->
               fieldType match {
-              | ClassFieldMethod{pos, name} ->
+              | ClassFieldMethod{name} ->
                 name match {
                 | FNNormal(Name(_, methodName)) -> Some(methodName)
                 | _ ->
-                  tcenvl.error(Array[(pos, "Invalid method name")]);
+                  tcenvl.error(Array[(name.getPos(), "Invalid method name")]);
                   None()
                 }
               | ClassFieldValue _ -> None()
@@ -212,9 +210,7 @@ extension class TypeChecker {
             methods,
           )
         } else {
-          cgNode = CGNode::create(
-            Method(fd.name, c.name, fd.pos.fileName, fd.isStatic()),
-          );
+          cgNode = CGNode::create(Method(fd.name, c.name, fd.isStatic()));
           tcenvl.collectErrors(() -> {
             this.funDef(subst, Some((c.kind, thisType)), fd, cgNode)
           })
@@ -258,9 +254,10 @@ extension class TypeChecker {
     for (modifier in fd.modifiers.modifiers) {
       subst.error(Array[(modifier.pos, "Constructors cannot have modifiers")]);
     };
+    fdPos = fd.name.getPos();
     cgNode = CGNode::create(
       className match {
-      | Some(cname) -> Constructor(cname, fd.pos.fileName)
+      | Some(cname) -> Constructor(cname, fdPos.fileName)
       | None() -> AnonymousFunDef(fd)
       },
     );
@@ -272,10 +269,10 @@ extension class TypeChecker {
       subst.error(Array[(asyncPos, "Constructors cannot be async")])
     };
     this.getFunBody(subst.context, fd) match {
-    | FDBNone() -> subst.error(Array[(fd.pos, "Missing definition")])
+    | FDBNone() -> subst.error(Array[(fdPos, "Missing definition")])
     | FDBSome(body) ->
       blockScope = this.block(tcenv, body);
-      blockThisType = blockScope.get(Name(fd.pos, "this"));
+      blockThisType = blockScope.get(Name(fdPos, "this"));
       objType = static::filterMethods(
         blockThisType,
         tcenv.subst,
@@ -285,7 +282,7 @@ extension class TypeChecker {
       fullType = static::filterMethods(thisType, tcenv.subst, this, methods);
       this.checkSubType(
         tcenv,
-        fd.pos,
+        fdPos,
         "Invalid initialization",
         objType,
         fullType,

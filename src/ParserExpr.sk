@@ -519,9 +519,8 @@ extension class Parser {
       fieldNameOrComputed match {
       | FNNormal(fieldName) ->
         return this.methodDef(
-          {pos, tparams, params, retType, body} ->
+          {tparams, params, retType, body} ->
             FDMethod{
-              pos,
               isAsync => None(),
               modifiers,
               isGetSet => fieldGetSet,

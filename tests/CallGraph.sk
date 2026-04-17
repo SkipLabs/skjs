@@ -7,7 +7,7 @@ extension base class CGNode_ {
   fun descriptor(): String {
     this match {
     | TopLevelFunction(name, _) -> `fn:${name.getName()}`
-    | Method(name, class_, _, static_) ->
+    | Method(name, class_, static_) ->
       prefix = if (static_) "static" else "method";
       `${prefix}:${class_.value}.${name.getName()}`
     | Constructor(class_, _) -> `ctor:${class_.value}`
