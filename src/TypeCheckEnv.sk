@@ -203,7 +203,7 @@ mutable class TCResults private {
   mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
 } {
-  static fun mcreate{errorHandling: ErrorHandling}: mutable TCResults {
+  static fun mcreate(): mutable TCResults {
     mutable TCResults{}
   }
 
@@ -293,7 +293,7 @@ mutable class TCResultsAcc private {
   }
 
   readonly fun toTCResults(): mutable TCResults {
-    results = TCResults::mcreate{errorHandling => this.errorHandling};
+    results = TCResults::mcreate();
     results.appendErrors(this.errors);
     for (kv in this.callgraph) {
       (k, v) = kv;
