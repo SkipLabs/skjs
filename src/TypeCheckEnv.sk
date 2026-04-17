@@ -310,9 +310,7 @@ mutable class TCResultsAcc private {
       try {
         f()
       } catch {
-      | ErrorExn(err @ SubtypingError _)
-      | ErrorExn(err @ NamingError _) ->
-        this.errors.push(err)
+      | ErrorExn(err @ TypingError _) -> this.errors.push(err)
       | exn -> throw exn
       }
     | EHBacktrace()
