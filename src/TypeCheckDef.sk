@@ -49,7 +49,7 @@ extension class TypeChecker {
       def.value.defStableName() match {
       | Some(Name(_, name)) ->
         occ = nameCounts.maybeGet(name).default(0);
-        nameCounts.set(name, occ + 1);
+        nameCounts![name] = occ + 1;
         key = DefKey(fileName, name, occ, def);
         arr = checkDir.getArray(context, key);
         arr[0].value
