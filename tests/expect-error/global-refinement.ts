@@ -1,13 +1,15 @@
 // Tests for type refinement applied to global (module-level) variables.
-// Currently, SKJS narrowing calls scope.get(local) which only looks up
-// locals — globals trigger an "Unbound name" error. This file documents
-// the current behavior; a fix would remove these errors.
+// SKJS skips narrowing for non-local names because it would only be sound
+// for truly immutable globals (readonly/declare const is not enough, since
+// mutation through closures or aliases is still possible).
+// Each test demonstrates that the narrowing does NOT apply: the original
+// union type is retained in the branch that would otherwise be narrowed.
 
 declare const gStr: string | null;
 declare const gNum: number | undefined;
 declare const gUnion: string | number;
-declare const gBool: boolean;
-declare const gArr: number[];
+declare const gBoolOrNull: boolean | null;
+declare const gArrOrStr: number[] | string;
 declare const gObj: { a?: number; kind?: "x" | "y" };
 declare const gUnionObj: { a: number } | { b: string };
 declare class MyCls {}
@@ -18,20 +20,26 @@ declare const gCls: MyCls | null;
 // ============================================================
 
 function testTypeofString(): string {
-  // @skjs-expect-error Unbound name
-  if (typeof gStr === "string") return gStr;
+  if (typeof gStr === "string") {
+    // @skjs-expect-error Invalid return type
+    return gStr;
+  }
   return "";
 }
 
 function testTypeofNumber(): number {
-  // @skjs-expect-error Unbound name
-  if (typeof gUnion === "number") return gUnion;
+  if (typeof gUnion === "number") {
+    // @skjs-expect-error Invalid return type
+    return gUnion;
+  }
   return 0;
 }
 
 function testTypeofBoolean(): boolean {
-  // @skjs-expect-error Unbound name
-  if (typeof gBool === "boolean") return gBool;
+  if (typeof gBoolOrNull === "boolean") {
+    // @skjs-expect-error Invalid return type
+    return gBoolOrNull;
+  }
   return false;
 }
 
@@ -40,26 +48,30 @@ function testTypeofBoolean(): boolean {
 // ============================================================
 
 function testEqNull(): string {
-  // @skjs-expect-error Unbound name
   if (gStr === null) return "";
+  // @skjs-expect-error Invalid return type
   return gStr;
 }
 
 function testNeqNull(): string {
-  // @skjs-expect-error Unbound name
-  if (gStr !== null) return gStr;
+  if (gStr !== null) {
+    // @skjs-expect-error Invalid return type
+    return gStr;
+  }
   return "";
 }
 
 function testEqUndefined(): number {
-  // @skjs-expect-error Unbound name
   if (gNum === undefined) return 0;
+  // @skjs-expect-error Invalid return type
   return gNum;
 }
 
 function testNeqUndefined(): number {
-  // @skjs-expect-error Unbound name
-  if (gNum !== undefined) return gNum;
+  if (gNum !== undefined) {
+    // @skjs-expect-error Invalid return type
+    return gNum;
+  }
   return 0;
 }
 
@@ -68,14 +80,18 @@ function testNeqUndefined(): number {
 // ============================================================
 
 function testFieldEqConstant(): "x" {
-  // @skjs-expect-error Unbound name
-  if (gObj.kind === "x") return gObj.kind;
+  if (gObj.kind === "x") {
+    // @skjs-expect-error Invalid return type
+    return gObj.kind;
+  }
   return "x";
 }
 
 function testFieldNeqUndefined(): number {
-  // @skjs-expect-error Unbound name
-  if (gObj.a !== undefined) return gObj.a;
+  if (gObj.a !== undefined) {
+    // @skjs-expect-error Invalid return type
+    return gObj.a;
+  }
   return 0;
 }
 
@@ -83,20 +99,24 @@ function testFieldNeqUndefined(): number {
 // 4. Array.isArray
 // ============================================================
 
-function testIsArray(): number {
-  // @skjs-expect-error Unbound name
-  if (Array.isArray(gArr)) return gArr.length;
-  return 0;
+function testIsArray(): number[] {
+  if (Array.isArray(gArrOrStr)) {
+    // @skjs-expect-error Invalid return type
+    return gArrOrStr;
+  }
+  return [];
 }
 
 // ============================================================
 // 5. instanceof
 // ============================================================
 
-function testInstanceOf(): string {
-  // @skjs-expect-error Unbound name
-  if (gCls instanceof MyCls) return "yes";
-  return "no";
+function testInstanceOf(): MyCls {
+  if (gCls instanceof MyCls) {
+    // @skjs-expect-error Invalid return type
+    return gCls;
+  }
+  return new MyCls();
 }
 
 // ============================================================
@@ -104,8 +124,10 @@ function testInstanceOf(): string {
 // ============================================================
 
 function testInOperator(): number {
-  // @skjs-expect-error Unbound name
-  if ("a" in gUnionObj) return gUnionObj.a;
+  if ("a" in gUnionObj) {
+    // @skjs-expect-error Unbound field: a
+    return gUnionObj.a;
+  }
   return 0;
 }
 
@@ -114,19 +136,23 @@ function testInOperator(): number {
 // ============================================================
 
 function testNegation(): string {
-  // @skjs-expect-error Unbound name
-  if (!(gStr === null)) return gStr;
+  if (!(gStr === null)) {
+    // @skjs-expect-error Invalid return type
+    return gStr;
+  }
   return "";
 }
 
 function testAndChain(a: boolean): string {
-  // @skjs-expect-error Unbound name
-  if (a && gStr !== null) return gStr;
+  if (a && gStr !== null) {
+    // @skjs-expect-error Invalid return type
+    return gStr;
+  }
   return "";
 }
 
 function testOrChain(a: boolean): string {
-  // @skjs-expect-error Unbound name
   if (gStr === null || !a) return "";
+  // @skjs-expect-error Invalid return type
   return gStr;
 }

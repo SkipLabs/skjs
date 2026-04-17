@@ -420,13 +420,18 @@ extension class TypeChecker {
 
   // Narrows a local variable's type by applying `filterMap` to each SType branch.
   // Branches where filterMap returns None are eliminated.
-  // `default` is used when a clause is bound by Top rather than concrete STypes
+  // `default` is used when a clause is bound by Top rather than concrete STypes.
+  // No-op if `local` is not in the local scope (e.g. module-level declaration):
+  // narrowing a global would only be sound for truly immutable values, and
+  // readonly/declare const doesn't guarantee that (mutation through closures
+  // or aliases is still possible).
   fun setLocalFilterMap(
     tcenv: mutable TCEnv,
     local: Name,
     default: ?STypes,
     filterMap: SType -> ?SType,
   ): void {
+    if (tcenv.scope.maybeGet(local).isNone()) return void;
     f = (sTypesOpt) ->
       sTypesOpt match {
       | None() -> default
