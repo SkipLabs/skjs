@@ -602,9 +602,7 @@ base class TEnv{
       | fd @ ClassFieldMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
-        cgNode = CGNode::create(
-          Method(fd.name, className, fd.name.getPos().fileName, metIsStatic),
-        );
+        cgNode = CGNode::create(Method(fd.name, className, metIsStatic));
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
         fd.name match {
@@ -708,8 +706,7 @@ base class TEnv{
     tparams: Array<TypeParam>,
     fd: ClassFieldMethod,
   ): TFuns {
-    fdPos = fd.name.getPos();
-    cgNode = CGNode::create(Method(fd.name, className, fdPos.fileName, true));
+    cgNode = CGNode::create(Method(fd.name, className, true));
     !tparams = tparams.map(x -> {
       // We give the tparams a different name to make sure they are
       // not confused with the type parameters of the class
@@ -733,7 +730,7 @@ base class TEnv{
       ),
     );
     tafun = TAFun(false, tparams, params, retType, cgNode);
-    this.normalizeFun(tcenvb, fdPos, tafun)
+    this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
   }
 
   private fun convertParam(param: Param): TAFunParam {

@@ -7,7 +7,7 @@ module SKJS;
 base class CGNode_ uses XXHashable, Show {
   children =
   | TopLevelFunction(name: SimpleFieldName, fileName: FPath)
-  | Method(name: FunDefName, class_: Name, fileName: FPath, static_: Bool)
+  | Method(name: FunDefName, class_: Name, static_: Bool)
   | Constructor(class_: Name, fileName: FPath)
   | Toplevel(fileName: FPath)
   | ArrowTypeAnnot(fileName: FPath)
@@ -15,22 +15,23 @@ base class CGNode_ uses XXHashable, Show {
   fun getFileName(): FPath {
     this match {
     | TopLevelFunction(_, fileName)
-    | Method(_, _, fileName, _)
     | Constructor(_, fileName)
     | Toplevel(fileName)
     | ArrowTypeAnnot(fileName) ->
       fileName
     | AnonymousLambda(pos, _) -> pos.fileName
-    | AnonymousFunDef(FunDef{name}) -> name.getPos().fileName
+    | Method(name, _, _)
+    | AnonymousFunDef(FunDef{name}) ->
+      name.getPos().fileName
     }
   }
 
   fun toString(): String {
     this match {
     | TopLevelFunction(name, file) -> `toplevel: ${name.getName()} (${file})`
-    | Method(name, class_, file, static_) ->
+    | Method(name, class_, static_) ->
       strStatic = if (static_) "static " else "";
-      `${strStatic}${class_}.${name.getName()} (${file})`
+      `${strStatic}${class_}.${name.getName()} (${name.getPos().fileName})`
     | Constructor(class_, file) -> `${class_}.constructor (${file})`
     | Toplevel(file) -> `top-level expr (${file})`
     | ArrowTypeAnnot(file) -> `arrow-type annotation (${file})`
@@ -232,9 +233,9 @@ class CallGraph private (
       for (item in this.depgraph.items(context)) {
         node = item.i0;
         node.id match {
-        | Method(_, class_, fileName, _)
-        | Constructor(class_, fileName) ->
-          if (allAffected.contains((class_.value, fileName))) {
+        | Method(_, class_, _)
+        | Constructor(class_, _) ->
+          if (allAffected.contains((class_.value, node.id.getFileName()))) {
             affectedCGNodes.insert(node)
           }
         | TopLevelFunction _
