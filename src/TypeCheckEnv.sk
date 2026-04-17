@@ -232,51 +232,6 @@ mutable class TCResults private {
     this.errors.extend(errors)
   }
 
-  mutable fun error(messages: Array<(PosRange, String)>): void {
-    this.errorHandling match {
-    | EHKeepGoing() -> this.errors.push(NamingError(messages))
-    | EHBacktrace()
-    | EHDefault() ->
-      error(messages)
-    }
-  }
-
-  mutable fun subtypingError(
-    subst: readonly Subst,
-    tenv: TEnv,
-    messages: Array<(PosRange, String)>,
-    stErr: STErrorOnTType,
-  ): void {
-    this.errorHandling match {
-    | EHKeepGoing() ->
-      this.errors.push(TypingError(subst.saveAll(), tenv, messages, stErr))
-    | EHBacktrace()
-    | EHDefault() ->
-      subtypingError(subst, tenv, messages, stErr)
-    }
-  }
-
-  mutable fun notSupported(pos: PosRange, what: String): void {
-    this.error(Array[(pos, `Construction not supported: ${what} (ignored)`)])
-  }
-
-  mutable fun collectErrors(f: () -> void): void {
-    this.errorHandling match {
-    | EHKeepGoing() ->
-      try {
-        f()
-      } catch {
-      | ErrorExn(err @ TypingError _)
-      | ErrorExn(err @ NamingError _) ->
-        this.errors.push(err)
-      | exn -> throw exn
-      }
-    | EHBacktrace()
-    | EHDefault() ->
-      f()
-    }
-  }
-
   mutable fun recordCalls(caller: CGNode, newCallees: CGNodes): void {
     oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
     callees = oldCallees.foldl(
