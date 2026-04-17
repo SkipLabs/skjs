@@ -274,6 +274,28 @@ extension class TypeChecker {
     }
   }
 
+  // Narrows `local` based on `local instanceof className`
+  fun evalInstanceof(tcenv: mutable TCEnv, local: Name, className: Name): void {
+    if (className.value == "Array") {
+      tcenv.scope.set(
+        local,
+        TType::inst(
+          Name(className.pos, "Array"),
+          TArgs(Array[TType::top(className.pos)]),
+        ),
+        (_, _) -> void,
+      )
+    } else {
+      tcenv.scope.set(
+        local,
+        this.new(tcenv, className, this.makeTArgs(tcenv, className)),
+        (x, y) ->
+          this.checkSubType(tcenv, local.pos, "Invalid instanceof", x, y)
+        ,
+      )
+    }
+  }
+
   // Entry point for type narrowing from a conditional expression.
   // Dispatches on the condition shape (===, !==, typeof, instanceof,
   // Array.isArray, `in`, &&, ||, !) and narrows `tcenv` accordingly.
@@ -299,25 +321,8 @@ extension class TypeChecker {
       | _ -> void
       }
 
-    | InstanceOf(
-      Expr(_, Var(local)),
-      Expr(_, Var(Name(posArray, "Array"))),
-    ) if (target) ->
-      tcenv.scope.set(
-        local,
-        TType::inst(
-          Name(posArray, "Array"),
-          TArgs(Array[TType::top(posArray)]),
-        ),
-        (_, _) -> void,
-      )
-
     | InstanceOf(Expr(_, Var(local)), Expr(_, Var(className))) if (target) ->
-      tcenv.scope.set(
-        local,
-        this.new(tcenv, className, this.makeTArgs(tcenv, className)),
-        (x, y) -> this.checkSubType(tcenv, e.pos, "Invalid instanceof", x, y),
-      )
+      this.evalInstanceof(tcenv, local, className)
 
     | In(e1, Expr(_, Var(local))) ->
       (_t1, litsOpt, symLitsOpt) = this.getInLhsTypeAndFields(tcenv, e.pos, e1);
