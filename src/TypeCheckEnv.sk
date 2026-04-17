@@ -199,9 +199,9 @@ mutable class TCEnv private {
 
 mutable class TCResults private {
   errors: mutable Vector<Error> = mutable Vector[],
-  mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
-  mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
-  mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
+  callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
+  classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
+  subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
 } {
   static fun ofAcc(acc: readonly TCResultsAcc): mutable TCResults {
     callgraph = mutable Map[];
