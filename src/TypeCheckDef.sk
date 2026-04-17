@@ -48,7 +48,7 @@ extension class TypeChecker {
     checkDir: SKStore.LHandle<DefKey, TCResultsAccFile>,
     fileName: FPath,
     defs: Array<Def>,
-  ): readonly TCResults {
+  ): TCResults {
     results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
     // Count occurrences of each name to assign stable occurrence numbers
     nameCounts: mutable Map<String, Int> = mutable Map[];
