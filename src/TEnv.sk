@@ -242,7 +242,7 @@ base class TEnv{
       .map(tparam -> {
         tvar = tcenv.subst.gen(className.pos);
         tparam.constraint.each(cstr ->
-          !tvar = tvar.addConstraint(this.normalize(tcenv, cstr))
+          !tvar = tvar.setConstraint(this.normalize(tcenv, cstr))
         );
         tvar
       })
