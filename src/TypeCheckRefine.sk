@@ -431,13 +431,15 @@ extension class TypeChecker {
     default: ?STypes,
     filterMap: SType -> ?SType,
   ): void {
-    if (tcenv.scope.maybeGet(local).isNone()) return void;
+    ty = tcenv.scope.maybeGet(local) match {
+    | None() -> /* Non-local */ return void
+    | Some(ty) -> ty
+    };
     f = (sTypesOpt) ->
       sTypesOpt match {
       | None() -> default
       | Some(sTypes) -> Some(sTypes.filterMap(filterMap))
       };
-    ty = tcenv.scope.get(local);
     !ty = ty.mapSTypes(tcenv.subst, this, Some(Covariant()), f);
     tcenv.scope.set(local, ty, (_, _) -> void)
   }
