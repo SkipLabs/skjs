@@ -94,7 +94,7 @@ function testIsArray(): number {
 // ============================================================
 
 function testInstanceOf(): string {
-  // @skjs-expect-error Unbound name: gCls
+  // @skjs-expect-error Unbound name
   if (gCls instanceof MyCls) return "yes";
   return "no";
 }
