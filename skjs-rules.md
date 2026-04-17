@@ -286,6 +286,24 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Class inheritance**: A subclass cannot make a mutable parent field readonly; a subclass can make a readonly parent field mutable
 - **Verified by**: `tests/expect-error/pr437-set-check-unsound.ts`, `tests/expect-error/readonly-inter-union.ts`, `tests/expect-error/readonly-inheritance.ts`
 
+### 27b. Mutable Function Fields Require Explicit Return Type Annotations
+- **Rule**: When an object literal has a mutable function field whose declared return type is non-literal (e.g. `string`, `number`), the right-hand-side arrow function must annotate its return type. Otherwise SKJS infers a literal return type for the arrow (per section 9), and invariant subtyping for the mutable field rejects the assignment.
+- **TypeScript difference**: TypeScript widens the literal in this context; SKJS does not.
+- **Error shape**: Field-level subtyping failure on the function type, because the inferred `() => 'hello'` is not equal (required for invariance) to the declared `() => string`.
+- **Examples**:
+  ```typescript
+  // Error: RHS inferred as () => 'hello', invariant check fails
+  const bad: { fn: () => string } = { fn: () => "hello" };
+
+  // OK: explicit return type prevents literal inference
+  const good: { fn: () => string } = { fn: (): string => "hello" };
+
+  // OK: readonly avoids invariance entirely
+  const ro: { readonly fn: () => string } = { fn: () => "hello" };
+  ```
+- **Workarounds**: (1) annotate the arrow's return type, (2) mark the field `readonly` if mutation is not needed. `as` casts are unavailable in SKJS (see section 19 for the boolean case; `as` is generally unsupported).
+- **Related**: sections 9 (literal typing), 27 (readonly soundness).
+
 ### 28. Object Spread Soundness (Stricter than TypeScript)
 - **Rule**: In an object literal with spreads, fields defined before a spread are dropped from the result type
 - **TypeScript difference**: TypeScript keeps pre-spread fields in the result type, which is unsound — the spread value could overwrite them at runtime (structural subtyping allows extra properties)
