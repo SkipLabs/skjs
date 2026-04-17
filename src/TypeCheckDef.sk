@@ -52,15 +52,11 @@ extension class TypeChecker {
         nameCounts.set(name, occ + 1);
         key = DefKey(fileName, name, occ, def);
         arr = checkDir.getArray(context, key);
-        arr[0].value match {
-        | Success(x) -> results.append(x)
-        | Failure(exn) -> throw exn
-        }
-      | None() ->
-        this.checkDef(context, def) match {
-        | Success(x) -> results.append(x)
-        | Failure(exn) -> throw exn
-        }
+        arr[0].value
+      | None() -> this.checkDef(context, def)
+      } match {
+      | Success(x) -> results.append(x)
+      | Failure(exn) -> throw exn
       }
     };
     for (def in defs) {
