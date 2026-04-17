@@ -45,45 +45,30 @@ extension class TypeChecker {
     results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
     // Count occurrences of each name to assign stable occurrence numbers
     nameCounts: mutable Map<String, Int> = mutable Map[];
+    checkOne = (def) -> {
+      def.value.defStableName() match {
+      | Some(Name(_, name)) ->
+        occ = nameCounts.maybeGet(name).default(0);
+        nameCounts.set(name, occ + 1);
+        key = DefKey(fileName, name, occ, def);
+        arr = checkDir.getArray(context, key);
+        arr[0].value match {
+        | Success(x) -> results.append(x)
+        | Failure(exn) -> throw exn
+        }
+      | None() ->
+        this.checkDef(context, def) match {
+        | Success(x) -> results.append(x)
+        | Failure(exn) -> throw exn
+        }
+      }
+    };
     for (def in defs) {
       this.errorHandling match {
-      | EHBacktrace() ->
-        def.value.defStableName() match {
-        | Some(Name(_, name)) ->
-          occ = nameCounts.maybeGet(name).default(0);
-          nameCounts.set(name, occ + 1);
-          key = DefKey(fileName, name, occ, def);
-          arr = checkDir.getArray(context, key);
-          arr[0].value match {
-          | Success(x) -> results.append(x)
-          | Failure(exn) -> throw exn
-          }
-        | None() ->
-          this.checkDef(context, def) match {
-          | Success(x) -> results.append(x)
-          | Failure(exn) -> throw exn
-          }
-        }
+      | EHBacktrace() -> checkOne(def)
       | EHDefault()
       | EHKeepGoing() ->
-        catchError(() -> {
-          def.value.defStableName() match {
-          | Some(Name(_, name)) ->
-            occ = nameCounts.maybeGet(name).default(0);
-            nameCounts.set(name, occ + 1);
-            key = DefKey(fileName, name, occ, def);
-            arr = checkDir.getArray(context, key);
-            arr[0].value match {
-            | Success(x) -> results.append(x)
-            | Failure(exn) -> throw exn
-            }
-          | None() ->
-            this.checkDef(context, def) match {
-            | Success(x) -> results.append(x)
-            | Failure(exn) -> throw exn
-            }
-          }
-        }).each(results.errors.push)
+        catchError(() -> checkOne(def)).each(results.errors.push)
       }
     };
     TCResults::ofAcc(results)
