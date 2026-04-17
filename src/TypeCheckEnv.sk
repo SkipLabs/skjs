@@ -198,19 +198,17 @@ mutable class TCEnv private {
 }
 
 mutable class TCResults private {
-  errorHandling: ErrorHandling,
   errors: mutable Vector<Error> = mutable Vector[],
   mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
 } {
   static fun mcreate{errorHandling: ErrorHandling}: mutable TCResults {
-    mutable TCResults{errorHandling}
+    mutable TCResults{}
   }
 
   readonly fun chill(): TCResults {
     static{
-      errorHandling => this.errorHandling,
       errors => this.errors.chill(),
       callgraph => this.callgraph,
       classHierarchy => this.classHierarchy,
@@ -220,7 +218,6 @@ mutable class TCResults private {
 
   fun mclone(): mutable this {
     mutable static{
-      errorHandling => this.errorHandling,
       errors => Vector::mcreateFromItems(this.errors),
       callgraph => this.callgraph,
       classHierarchy => this.classHierarchy,
