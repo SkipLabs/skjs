@@ -411,7 +411,6 @@ function testBoolFieldTruthy(obj: { flag: boolean }): void {
 function testBoolFieldFalsy(obj: { flag: boolean }): void {
   if (obj.flag) {
   } else {
-    // @skjs-expect-error Invalid annotation
     const f: false = obj.flag;
   }
 }
