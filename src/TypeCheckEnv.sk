@@ -203,29 +203,36 @@ class TCResults private {
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
 } {
-  static fun ofAcc(acc: readonly TCResultsAcc): TCResults {
+  static fun ofAccs(
+    accs: readonly Vector<readonly TCResultsAcc>,
+    extraErrors: readonly Vector<Error>,
+  ): TCResults {
     callgraph = mutable Map[];
-    for (kv in acc.callgraph) {
-      (caller, calleesToAdd) = kv;
-      callees = callgraph.getOrAdd(caller, () -> mutable Set[]);
-      calleesToAdd.nodes.each(callees.insert)
-    };
     classHierarchy = SortedMap<CHNode, SortedSet<CHNode>>[];
-    for (kv in acc.classHierarchy) {
-      (child, parent) = kv;
-      childNode = CHNode::ofClass(child);
-      parentNode = CHNode::ofClass(parent);
-      !classHierarchy[childNode] = classHierarchy
-        .maybeGet(childNode)
-        .default(SortedSet[])
-        .set(parentNode)
-    };
     subtypingEdges = SortedSet[];
-    for (edge in acc.subtypingEdges) {
-      !subtypingEdges = subtypingEdges.set(edge)
+    errors = Vector::mcreateFromItems(extraErrors);
+    for (acc in accs) {
+      errors.extend(acc.errors);
+      for (kv in acc.callgraph) {
+        (caller, calleesToAdd) = kv;
+        callees = callgraph.getOrAdd(caller, () -> mutable Set[]);
+        calleesToAdd.nodes.each(callees.insert)
+      };
+      for (kv in acc.classHierarchy) {
+        (child, parent) = kv;
+        childNode = CHNode::ofClass(child);
+        parentNode = CHNode::ofClass(parent);
+        !classHierarchy[childNode] = classHierarchy
+          .maybeGet(childNode)
+          .default(SortedSet[])
+          .set(parentNode)
+      };
+      for (edge in acc.subtypingEdges) {
+        !subtypingEdges = subtypingEdges.set(edge)
+      }
     };
     TCResults{
-      errors => acc.errors.toArray(),
+      errors => errors.toArray(),
       callgraph => SortedMap::createFromIterator(
         callgraph.items().map(kv -> (kv.i0, Array::createFromItems(kv.i1))),
       ),
@@ -244,16 +251,6 @@ mutable class TCResultsAcc private {
 } {
   static fun mcreate{errorHandling: ErrorHandling}: mutable this {
     mutable static{errorHandling}
-  }
-
-  mutable fun append(other: readonly TCResultsAcc): void {
-    if (this.errorHandling != other.errorHandling) {
-      internal_error("Cannot append incompatible TCResultsAcc")
-    };
-    this.errors.extend(other.errors);
-    this.callgraph.extend(other.callgraph);
-    this.classHierarchy.extend(other.classHierarchy);
-    this.!subtypingEdges = this.subtypingEdges.union(other.subtypingEdges);
   }
 
   readonly fun chill(): this {
