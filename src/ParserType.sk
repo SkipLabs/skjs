@@ -484,7 +484,6 @@ extension class Parser {
         method = this.methodDef(
           {tparams, params, retType, body} ->
             ObjectFieldMethod{
-              pos => emptyPos,
               isGetSet => None(),
               name => FNEmpty(emptyPos),
               optional => None(),
@@ -525,7 +524,6 @@ extension class Parser {
           this.methodDef(
             {tparams, params, retType, body} ->
               ObjectFieldMethod{
-                pos => methodName.getPos(),
                 isGetSet => fieldGetSet,
                 name => methodName,
                 optional => isOptional,

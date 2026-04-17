@@ -473,7 +473,7 @@ class ObjectFieldValue{
   type: ?Type,
 } extends ObjectField
 
-class ObjectFieldMethod{pos: PosRange} extends FunDef<FunDefName>, ObjectField
+class ObjectFieldMethod extends FunDef<FunDefName>, ObjectField
 
 /***************************************************************************/
 // Class field types (used in class/interface bodies)
