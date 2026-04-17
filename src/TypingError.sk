@@ -181,7 +181,7 @@ class ErrorDetailConfig(specs: Array<ErrorDetailSpec>) {
   }
 }
 
-class TypingError(
+class SubtypingError(
   savedSubst: (SubstState, TCResultsAcc),
   tenv: TEnv,
   messages: Array<(PosRange, String)>,
@@ -254,7 +254,7 @@ fun subtypingError<T>(
   messages: Array<(PosRange, String)>,
   stErr: STErrorOnTType,
 ): T {
-  throw ErrorExn(TypingError(subst.saveAll(), tenv, messages, stErr))
+  throw ErrorExn(SubtypingError(subst.saveAll(), tenv, messages, stErr))
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {

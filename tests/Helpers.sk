@@ -178,12 +178,12 @@ class AnnotationGroup{errorLine: Int, annotations: Array<AnnotationLine>}
 fun errorToFullMessage(error: SKJS.Error): String {
   error match {
   | SKJS.SinglePosError(_pos, errorKind) -> errorKind.toString()
-  | SKJS.TypingError(_, _, messages, _stErr) -> messages[0].i1
+  | SKJS.SubtypingError(_, _, messages, _stErr) -> messages[0].i1
   | SKJS.NamingError(messages) -> messages[0].i1
   }
 }
 
-// Returns all message lines for one error. For TypingError this includes the
+// Returns all message lines for one error. For SubtypingError this includes the
 // primary messages followed by the expanded stErr detail lines.
 fun getErrorMessages(
   subst: mutable SKJS.Subst,
@@ -192,7 +192,7 @@ fun getErrorMessages(
 ): Array<String> {
   error match {
   | SKJS.SinglePosError(_, _) -> Array[errorToFullMessage(error)]
-  | SKJS.TypingError(_, _, messages, e) ->
+  | SKJS.SubtypingError(_, _, messages, e) ->
     stErrMsgs = e
       .toError(subst, tenv, SKJS.STErrorDetail::default)
       .toArray()

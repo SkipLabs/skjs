@@ -84,7 +84,7 @@ extension class TypeChecker {
             }
           }
         } catch {
-        | ErrorExn(err @ TypingError _)
+        | ErrorExn(err @ SubtypingError _)
         | ErrorExn(err @ NamingError _) ->
           results.errors.push(err)
         | exn -> throw exn

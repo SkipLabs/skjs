@@ -293,7 +293,7 @@ mutable class TCResultsAcc private {
   ): void {
     this.errorHandling match {
     | EHKeepGoing() ->
-      this.errors.push(TypingError(subst.saveAll(), tenv, messages, stErr))
+      this.errors.push(SubtypingError(subst.saveAll(), tenv, messages, stErr))
     | EHBacktrace()
     | EHDefault() ->
       subtypingError(subst, tenv, messages, stErr)
@@ -310,7 +310,7 @@ mutable class TCResultsAcc private {
       try {
         f()
       } catch {
-      | ErrorExn(err @ TypingError _)
+      | ErrorExn(err @ SubtypingError _)
       | ErrorExn(err @ NamingError _) ->
         this.errors.push(err)
       | exn -> throw exn
