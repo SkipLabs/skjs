@@ -98,7 +98,7 @@ extension class TypeChecker {
         }
       }
     };
-    results.toTCResults()
+    TCResults::ofAcc(results)
   }
 
   fun checkDef(

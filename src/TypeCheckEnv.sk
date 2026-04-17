@@ -276,10 +276,6 @@ mutable class TCResultsAcc private {
     }
   }
 
-  readonly fun toTCResults(): readonly TCResults {
-    TCResults::ofAcc(this)
-  }
-
   mutable fun error(messages: Array<(PosRange, String)>): void {
     this.errorHandling match {
     | EHKeepGoing() -> this.errors.push(NamingError(messages))
