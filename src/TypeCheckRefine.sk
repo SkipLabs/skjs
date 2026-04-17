@@ -283,7 +283,9 @@ extension class TypeChecker {
           Name(className.pos, "Array"),
           TArgs(Array[TType::top(className.pos)]),
         ),
-        (_, _) -> void,
+        (x, y) ->
+          this.checkSubType(tcenv, local.pos, "Invalid instanceof", x, y)
+        ,
       )
     } else {
       tcenv.scope.set(
