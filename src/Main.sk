@@ -613,7 +613,7 @@ class Checker private {
             context,
             fileName,
           );
-          errors = fileDefErrors.concat(results.errors.toArray());
+          errors = fileDefErrors.concat(results.errors);
           writer.set(
             fileName,
             CheckResult(

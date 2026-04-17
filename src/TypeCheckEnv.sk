@@ -198,7 +198,7 @@ mutable class TCEnv private {
 }
 
 mutable class TCResults private {
-  errors: mutable Vector<Error>,
+  errors: Array<Error>,
   callgraph: SortedMap<CGNode, Array<CGNode>>,
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
@@ -225,7 +225,7 @@ mutable class TCResults private {
       !subtypingEdges = subtypingEdges.set(edge)
     };
     mutable TCResults{
-      errors => acc.errors.clone(),
+      errors => acc.errors.toArray(),
       callgraph => SortedMap::createFromIterator(
         callgraph.items().map(kv -> (kv.i0, Array::createFromItems(kv.i1))),
       ),
