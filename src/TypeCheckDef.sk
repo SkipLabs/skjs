@@ -9,20 +9,12 @@ base class OptionalTypeParamsPermission {
 // Key for caching checkDef results in an LHandle.
 // Uses (fileName, defName, occurrenceNumber) so that results are stable
 // across position changes within a file.
-class DefKey private (
+class DefKey(
   fileName: FPath,
   defName: String,
   occurrence: Int,
   def: Def,
 ) extends SKStore.Key {
-  static fun create(
-    fileName: FPath,
-    defName: String,
-    occurrence: Int,
-    def: Def,
-  ): this {
-    static(fileName, defName, occurrence, def)
-  }
   fun compare(other: SKStore.Key): Order {
     other match {
     | o @ DefKey _ ->
@@ -38,6 +30,7 @@ class DefKey private (
     }
   }
 }
+
 class TCResultsAccFile(
   value: Result<TCResultsAcc, Exception>,
 ) extends SKStore.File
@@ -59,7 +52,7 @@ extension class TypeChecker {
         | Some(Name(_, name)) ->
           occ = nameCounts.maybeGet(name).default(0);
           nameCounts.set(name, occ + 1);
-          key = DefKey::create(fileName, name, occ, def);
+          key = DefKey(fileName, name, occ, def);
           arr = checkDir.getArray(context, key);
           arr[0].value match {
           | Success(x) -> results.append(x)
@@ -78,7 +71,7 @@ extension class TypeChecker {
           | Some(Name(_, name)) ->
             occ = nameCounts.maybeGet(name).default(0);
             nameCounts.set(name, occ + 1);
-            key = DefKey::create(fileName, name, occ, def);
+            key = DefKey(fileName, name, occ, def);
             arr = checkDir.getArray(context, key);
             arr[0].value match {
             | Success(x) -> results.append(x)
