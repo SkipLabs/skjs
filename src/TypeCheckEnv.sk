@@ -233,24 +233,6 @@ mutable class TCResults private {
       subtypingEdges,
     }
   }
-
-  readonly fun chill(): TCResults {
-    static{
-      errors => this.errors.chill(),
-      callgraph => this.callgraph,
-      classHierarchy => this.classHierarchy,
-      subtypingEdges => this.subtypingEdges,
-    }
-  }
-
-  fun mclone(): mutable this {
-    mutable static{
-      errors => Vector::mcreateFromItems(this.errors),
-      callgraph => this.callgraph,
-      classHierarchy => this.classHierarchy,
-      subtypingEdges => this.subtypingEdges,
-    }
-  }
 }
 
 mutable class TCResultsAcc private {
