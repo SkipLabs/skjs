@@ -203,8 +203,35 @@ mutable class TCResults private {
   mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
 } {
-  static fun mcreate(): mutable TCResults {
-    mutable TCResults{}
+  static fun ofAcc(acc: readonly TCResultsAcc): mutable TCResults {
+    callgraph = mutable Map[];
+    for (kv in acc.callgraph) {
+      (caller, calleesToAdd) = kv;
+      callees = callgraph.getOrAdd(caller, () -> mutable Set[]);
+      calleesToAdd.nodes.each(callees.insert)
+    };
+    classHierarchy = SortedMap<CHNode, SortedSet<CHNode>>[];
+    for (kv in acc.classHierarchy) {
+      (child, parent) = kv;
+      childNode = CHNode::ofClass(child);
+      parentNode = CHNode::ofClass(parent);
+      !classHierarchy[childNode] = classHierarchy
+        .maybeGet(childNode)
+        .default(SortedSet[])
+        .set(parentNode)
+    };
+    subtypingEdges = SortedSet[];
+    for (edge in acc.subtypingEdges) {
+      !subtypingEdges = subtypingEdges.set(edge)
+    };
+    mutable TCResults{
+      errors => acc.errors.clone(),
+      callgraph => SortedMap::createFromIterator(
+        callgraph.items().map(kv -> (kv.i0, Array::createFromItems(kv.i1))),
+      ),
+      classHierarchy,
+      subtypingEdges,
+    }
   }
 
   readonly fun chill(): TCResults {
@@ -293,21 +320,7 @@ mutable class TCResultsAcc private {
   }
 
   readonly fun toTCResults(): mutable TCResults {
-    results = TCResults::mcreate();
-    results.appendErrors(this.errors);
-    for (kv in this.callgraph) {
-      (k, v) = kv;
-      results.recordCalls(k, v);
-    };
-    for (kv in this.classHierarchy) {
-      (child, parent) = kv;
-      results.recordClassHierarchy{child, parent};
-    };
-    for (edge in this.subtypingEdges) {
-      (sub, sup) = edge;
-      results.recordSubtypingEdge(sub, sup);
-    };
-    results
+    TCResults::ofAcc(this)
   }
 
   mutable fun error(messages: Array<(PosRange, String)>): void {
