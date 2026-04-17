@@ -276,7 +276,7 @@ mutable class TCResultsAcc private {
     }
   }
 
-  readonly fun toTCResults(): mutable TCResults {
+  readonly fun toTCResults(): readonly TCResults {
     TCResults::ofAcc(this)
   }
 
