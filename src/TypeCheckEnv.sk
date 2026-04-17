@@ -197,13 +197,13 @@ mutable class TCEnv private {
   }
 }
 
-mutable class TCResults private {
+class TCResults private {
   errors: Array<Error>,
   callgraph: SortedMap<CGNode, Array<CGNode>>,
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
 } {
-  static fun ofAcc(acc: readonly TCResultsAcc): mutable TCResults {
+  static fun ofAcc(acc: readonly TCResultsAcc): TCResults {
     callgraph = mutable Map[];
     for (kv in acc.callgraph) {
       (caller, calleesToAdd) = kv;
@@ -224,7 +224,7 @@ mutable class TCResults private {
     for (edge in acc.subtypingEdges) {
       !subtypingEdges = subtypingEdges.set(edge)
     };
-    mutable TCResults{
+    TCResults{
       errors => acc.errors.toArray(),
       callgraph => SortedMap::createFromIterator(
         callgraph.items().map(kv -> (kv.i0, Array::createFromItems(kv.i1))),
