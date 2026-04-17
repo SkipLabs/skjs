@@ -306,13 +306,7 @@ mutable class TCResultsAcc private {
 
   mutable fun collectErrors(f: () -> void): void {
     this.errorHandling match {
-    | EHKeepGoing() ->
-      try {
-        f()
-      } catch {
-      | ErrorExn(err) -> this.errors.push(err)
-      | exn -> throw exn
-      }
+    | EHKeepGoing() -> catchError(f).each(this.errors.push)
     | EHBacktrace()
     | EHDefault() ->
       f()

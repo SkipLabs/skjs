@@ -22,6 +22,16 @@ module SKJS;
 
 class ErrorExn(error: Error) extends Exception
 
+fun catchError(f: () -> void): ?Error {
+  try {
+    f();
+    None()
+  } catch {
+  | ErrorExn(err) -> Some(err)
+  | exn -> throw exn
+  }
+}
+
 /***************************************************************************/
 /* Error output format. */
 /***************************************************************************/

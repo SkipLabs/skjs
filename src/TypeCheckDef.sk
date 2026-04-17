@@ -66,7 +66,7 @@ extension class TypeChecker {
         }
       | EHDefault()
       | EHKeepGoing() ->
-        try {
+        catchError(() -> {
           def.value.defStableName() match {
           | Some(Name(_, name)) ->
             occ = nameCounts.maybeGet(name).default(0);
@@ -83,10 +83,7 @@ extension class TypeChecker {
             | Failure(exn) -> throw exn
             }
           }
-        } catch {
-        | ErrorExn(err) -> results.errors.push(err)
-        | exn -> throw exn
-        }
+        }).each(results.errors.push)
       }
     };
     TCResults::ofAcc(results)
