@@ -1635,8 +1635,28 @@ class STypes private (
             l1.diff(l2).map(l -> TPrimValue(k, Some(l), pos))
           // literal - full = bottom
           | (Some _, None()) -> None()
-          // full - literal <= full
-          | (None(), Some _) -> Some(leftSType)
+          // For TBool, full = {true, false} — compute exact diff.
+          // For other kinds (string, number, ...), full is infinite,
+          // so over-approximate as full.
+          | (None(), Some(l2)) ->
+            if (k is TBool _) {
+              // l2 is a non-empty subset of {true, false}; a size-2 l2
+              // should have been normalized to None() (full).
+              invariant(l2.size() == 1);
+              other = if (l2.contains("true")) "false" else {
+                invariant(l2.contains("false"));
+                "true"
+              };
+              Some(
+                TPrimValue(
+                  k,
+                  Some(PrimLiterals::single(PrimLiteral(pos, other))),
+                  pos,
+                ),
+              )
+            } else {
+              Some(leftSType)
+            }
           // full - full = bottom
           | (None(), None()) -> None()
           }

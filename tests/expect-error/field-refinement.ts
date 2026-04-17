@@ -380,3 +380,80 @@ function incrementCounter566(
   const updatedCounter: Counter566 = { value: newValue };
   return updatedCounter;
 }
+
+// ============================================================
+// 12. Truthiness narrowing: if (x) treated as if (x === true)
+// ============================================================
+
+// 12a: Bare boolean variable narrows to true in truthy branch
+function testBoolVarTruthy(x: boolean): void {
+  if (x) {
+    const t: true = x;
+  }
+}
+
+// 12b: Bare boolean variable narrows to false in falsy branch
+function testBoolVarFalsy(x: boolean): void {
+  if (x) {
+  } else {
+    const f: false = x;
+  }
+}
+
+// 12c: Boolean field narrows to true
+function testBoolFieldTruthy(obj: { flag: boolean }): void {
+  if (obj.flag) {
+    const t: true = obj.flag;
+  }
+}
+
+// 12c': Boolean field narrows to false
+function testBoolFieldFalsy(obj: { flag: boolean }): void {
+  if (obj.flag) {
+  } else {
+    const f: false = obj.flag;
+  }
+}
+
+// 12d: Negation narrows to false
+function testBoolVarNegated(x: boolean): void {
+  if (!x) {
+    const f: false = x;
+  }
+}
+
+// 12d': Negation narrows to false
+function testBoolVarNegatedElse(x: boolean): void {
+  if (!x) {
+  } else {
+    const t: true = x;
+  }
+}
+
+// 12e: Boolean ternary narrows in true branch
+function testBoolTernary(x: boolean): true {
+  return x ? x : true;
+}
+
+// 12e': Boolean ternary narrows in false branch
+function testBoolTernary2(x: boolean): false {
+  return x ? false : x;
+}
+
+// 12f: Literal true stays true (already works, no narrowing needed)
+function testTrueLiteral(x: true): void {
+  if (x) {
+    const t: true = x;
+  } else {
+    const n: never = x;
+  }
+}
+
+// 12f': Literal false stays false
+function testFalseLiteral(x: false): void {
+  if (x) {
+    const n: never = x;
+  } else {
+    const f: false = x;
+  }
+}

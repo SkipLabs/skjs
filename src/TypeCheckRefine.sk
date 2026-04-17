@@ -46,10 +46,6 @@ extension class TypeChecker {
   }
 
   // Narrows `local` based on `(local.fieldName === otherExpr) === target`.
-  // Two strategies depending on whether the RHS is a single constant:
-  //  - Non-constant RHS: filter out object branches whose field has no overlap.
-  //  - Constant RHS: filter branches by exact constant match, or narrow the
-  //    field type within a branch (e.g. number|undefined -> number for !== undefined).
   fun evalFieldEquality(
     tcenv: mutable TCEnv,
     local: Name,
@@ -58,6 +54,20 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     otherType = this.expr(tcenv, otherExpr, true);
+    this.evalFieldEqualityType(tcenv, local, fieldName, otherType, target)
+  }
+
+  // Narrows `local` based on `(local.fieldName === <type>) === target`.
+  // Two strategies depending on whether the RHS is a single constant:
+  //  - Non-constant RHS: narrow field via inter for ===, keep for !==.
+  //  - Constant RHS: also narrow via diff for !==.
+  fun evalFieldEqualityType(
+    tcenv: mutable TCEnv,
+    local: Name,
+    fieldName: String,
+    otherType: TType,
+    target: Bool,
+  ): void {
     constant = otherType.getSingleConstant();
     this.setLocalFilterMap(tcenv, local, None(), stype ->
       stype match {
@@ -414,8 +424,40 @@ extension class TypeChecker {
       this.evalCond(tcenv, e1, false);
       this.evalCond(tcenv, e2, false)
 
+    // Truthiness: if (x) treated as if (x === true)
+    | Var(
+      local @ Name(_, n),
+    ) if (n != "true" && n != "false" && n != "null" && n != "undefined") ->
+      this.evalTruthiness(tcenv, local, e.pos, target)
+
+    | Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName)) ->
+      trueType = TType::single(TPrimValue::single(TBool(), "true", e.pos));
+      this.evalFieldEqualityType(tcenv, local, fieldName, trueType, target)
+
     | _ -> void
     }
+  }
+
+  // Narrows `local` based on truthiness (`if (local)` === `if (local === true)`).
+  // Since checkBool enforces boolean conditions, narrows boolean to true/false.
+  // No-op if `local` is not in the local scope (e.g. module-level const).
+  fun evalTruthiness(
+    tcenv: mutable TCEnv,
+    local: Name,
+    pos: PosRange,
+    target: Bool,
+  ): void {
+    val = if (target) "true" else "false";
+    filterMap = stype ->
+      stype match {
+      | TPrimValue(TBool(), None(), pos2) ->
+        Some(TPrimValue::single(TBool(), val, pos2))
+      | TPrimValue(TBool(), Some(lits), _) ->
+        if (lits.contains(val)) Some(stype) else None()
+      | _ -> Some(stype)
+      };
+    default = Some(STypes::single(TPrimValue::single(TBool(), val, pos)));
+    this.setLocalFilterMap(tcenv, local, default, filterMap)
   }
 
   // Narrows a local variable's type by applying `filterMap` to each SType branch.
