@@ -521,7 +521,6 @@ extension class Parser {
         return this.methodDef(
           {tparams, params, retType, body} ->
             FDMethod{
-              pos => fieldName.pos,
               isAsync => None(),
               modifiers,
               isGetSet => fieldGetSet,

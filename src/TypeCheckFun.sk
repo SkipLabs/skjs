@@ -10,15 +10,16 @@ extension class TypeChecker {
     sig = this.getFunSig(subst.context, fd);
     static::checkTypeParams(subst, sig.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst, callingContext);
+    fdPos = fd.name.getPos();
     thisType = thisTypeOpt match {
     | None() ->
       /* Disallow this in non-methods */ TType::single(
-        TPrimUnit(TVoid(), fd.pos),
+        TPrimUnit(TVoid(), fdPos),
       )
     | Some(thisType) -> thisType
     };
     !this.subst["this"] = (false, thisType);
-    tcenv.scope.bind(tcenv, Name(fd.pos, "this"), thisType, true);
+    tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true);
     !this = this.addTParams(subst, sig.tparams);
     for (i => param in sig.params) {
       param.isRest match {
@@ -163,14 +164,15 @@ extension class TypeChecker {
         )
       }
     };
+    fdPos = fd.name.getPos();
     this.getFunBody(subst.context, fd) match {
     | FDBNone() ->
       if (thisTypeOpt is Some((CKClass(), _))) {
-        subst.error(Array[(fd.pos, "Missing definition")])
+        subst.error(Array[(fdPos, "Missing definition")])
       }
     | FDBSome(body) ->
       if (thisTypeOpt is Some((CKInterface(), _))) {
-        subst.error(Array[(fd.pos, "An interface cannot implement a method")])
+        subst.error(Array[(fdPos, "An interface cannot implement a method")])
       };
       this.retType match {
       | None() -> void
@@ -179,7 +181,7 @@ extension class TypeChecker {
         term = StmtTermination::block(tcenv, body);
         if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
           subst.error(
-            Array[(fd.pos, "This function may not always return a value")],
+            Array[(fdPos, "This function may not always return a value")],
           )
         }
       }

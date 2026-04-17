@@ -20,9 +20,8 @@ base class CGNode_ uses XXHashable, Show {
     | Toplevel(fileName)
     | ArrowTypeAnnot(fileName) ->
       fileName
-    | AnonymousLambda(pos, _)
-    | AnonymousFunDef(FunDef{pos}) ->
-      pos.fileName
+    | AnonymousLambda(pos, _) -> pos.fileName
+    | AnonymousFunDef(FunDef{name}) -> name.getPos().fileName
     }
   }
 
@@ -38,9 +37,8 @@ base class CGNode_ uses XXHashable, Show {
     | AnonymousLambda(pos, _closure) ->
       `lambda (${pos.fileName}:${pos.relStart.value})`
     | AnonymousFunDef(fd) ->
-      `function ${fd.name.getName()} (${fd.pos.fileName}:${
-        fd.pos.relStart.value
-      })`
+      pos = fd.name.getPos();
+      `function ${fd.name.getName()} (${pos.fileName}:${pos.relStart.value})`
     }
   }
 }
@@ -61,12 +59,8 @@ class AnonymousLambda(
 class AnonymousFunDef(funDef: FunDef<FunDefName>) extends CGNode_ {
   // Hash pos fields individually (PosRange.xxhash() collapses all positions)
   fun xxhash(): XXHash {
-    (
-      this.funDef.pos.fileName,
-      this.funDef.pos.relStart.value,
-      this.funDef.pos.relEnd.value,
-      this.funDef,
-    ).xxhash()
+    pos = this.funDef.name.getPos();
+    (pos.fileName, pos.relStart.value, pos.relEnd.value, this.funDef).xxhash()
   }
 }
 

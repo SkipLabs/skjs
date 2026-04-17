@@ -584,13 +584,13 @@ base class TEnv{
           )
         | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
         }
-      | fd @ ClassFieldMethod{name => FNNormal(Name(_, "constructor"))} ->
+      | fd @ ClassFieldMethod{name => FNNormal(Name(fdPos, "constructor"))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
           tcenvb.error(
             Array[
-              (fd.pos, "Unexpected multiple constructors"),
+              (fdPos, "Unexpected multiple constructors"),
               (constructorTy.pos, "Previous constructor was here"),
             ],
           )
@@ -603,7 +603,7 @@ base class TEnv{
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(
-          Method(fd.name, className, fd.pos.fileName, metIsStatic),
+          Method(fd.name, className, fd.name.getPos().fileName, metIsStatic),
         );
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
@@ -617,7 +617,7 @@ base class TEnv{
             pos => exprPos,
             name => uniqueId,
             isOptional => false,
-            isReadonly => Some(fd.pos),
+            isReadonly => Some(exprPos),
             type => metType,
           };
           symbolFields![field.name] = field
@@ -626,7 +626,7 @@ base class TEnv{
             pos => name.pos,
             name => name.value,
             isOptional => false,
-            isReadonly => Some(fd.pos),
+            isReadonly => Some(name.pos),
             type => metType,
           };
           acc![field.name] = field
@@ -708,7 +708,8 @@ base class TEnv{
     tparams: Array<TypeParam>,
     fd: ClassFieldMethod,
   ): TFuns {
-    cgNode = CGNode::create(Method(fd.name, className, fd.pos.fileName, true));
+    fdPos = fd.name.getPos();
+    cgNode = CGNode::create(Method(fd.name, className, fdPos.fileName, true));
     !tparams = tparams.map(x -> {
       // We give the tparams a different name to make sure they are
       // not confused with the type parameters of the class
@@ -732,7 +733,7 @@ base class TEnv{
       ),
     );
     tafun = TAFun(false, tparams, params, retType, cgNode);
-    this.normalizeFun(tcenvb, fd.pos, tafun)
+    this.normalizeFun(tcenvb, fdPos, tafun)
   }
 
   private fun convertParam(param: Param): TAFunParam {
@@ -767,7 +768,7 @@ base class TEnv{
       retType,
       cgNode,
     );
-    this.normalizeFun(tcenvb, fd.pos, tafun)
+    this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
   }
 
   private fun checkNoTypeArgsOnBoundTParam(

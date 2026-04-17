@@ -148,7 +148,10 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     result = mutable Vector[];
     for (d in defs) {
       d match {
-      | TopLevelFunDef{pos}
+      | TopLevelFunDef{name => fdName} ->
+        tcenvb.error(
+          Array[(fdName.getPos(), `TODO: DefMap#dot while getting ${name}`)],
+        )
       | TypeDef{name => Name(pos, _)}
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields)

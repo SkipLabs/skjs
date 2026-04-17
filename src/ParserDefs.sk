@@ -240,7 +240,6 @@ extension class Parser {
         this.methodDef(
           {tparams, params, retType, body} ->
             ClassFieldMethod{
-              pos => methodName.getPos(),
               isAsync => None(),
               modifiers,
               isGetSet => fieldGetSet,
@@ -1137,7 +1136,6 @@ extension class Parser {
     result = this.methodDef(
       {tparams, params, retType, body} ->
         TopLevelFunDef{
-          pos => funName.pos,
           isAsync,
           modifiers => Modifiers::empty(),
           isGetSet => None(),
