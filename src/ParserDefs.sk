@@ -995,14 +995,14 @@ extension class Parser {
     );
 
     // Create ClassFieldRef/ClassFieldData entries and ClassBodyData
-    occ = this.nameCounts.maybeGet(nameStr).default(0);
-    this.nameCounts.set(nameStr, occ + 1);
+    nameOcc = this.nameCounts.maybeGet(nameStr).default(0);
+    this.nameCounts.set(nameStr, nameOcc + 1);
     fieldRefs = fields.mapWithIndex((index, field) -> {
       ref = ClassFieldRef(fileName, nameStr, index);
       this.classFieldEntries.push((ref, ClassFieldData(field)));
       ref
     });
-    bodyRef = ClassBodyRef(fileName, nameStr, occ);
+    bodyRef = ClassBodyRef(fileName, nameStr, nameOcc);
     this.classBodies.push((bodyRef, ClassBodyData(fieldRefs)));
 
     Class{kind, name, extends_, implements, tparams, bodyRef => Some(bodyRef)}
