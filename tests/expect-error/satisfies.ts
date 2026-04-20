@@ -4,26 +4,23 @@
 
 // Basic: expression conforms to the target type
 function testBasic(): void {
-  // @skjs-expect-error Construction not supported: operator satisfies
   const x = 42 satisfies number;
 }
 
 // Subtype failure: expression is NOT assignable to the target type
 function testSubtypeFailure(): void {
-  // @skjs-expect-error Construction not supported: operator satisfies
+  // @skjs-expect-error Invalid 'satisfies'
   const x = "hello" satisfies number;
 }
 
-// Literal preservation: the inferred literal type survives through `satisfies`
+// Literal preservation: with a `const` binding, the literal type survives
 function testLiteralPreservation(): void {
-  // @skjs-expect-error Construction not supported: operator satisfies
   const s = "foo" satisfies string;
   const narrow: "foo" = s;
 }
 
-// Object: target type has wider fields, but inferred field types stay narrow
+// Object field preservation: widened target type doesn't widen inferred fields
 function testObjectPreservation(): void {
-  // @skjs-expect-error Construction not supported: operator satisfies
   const config = { port: 8080, host: "localhost" } satisfies {
     port: number;
     host: string;
@@ -34,6 +31,5 @@ function testObjectPreservation(): void {
 
 // Nested `satisfies`
 function testNested(): void {
-  // @skjs-expect-error Construction not supported: operator satisfies
   const obj = { x: 1 satisfies number };
 }
