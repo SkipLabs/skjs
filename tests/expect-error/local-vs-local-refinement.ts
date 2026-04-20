@@ -8,16 +8,12 @@
 
 function testSingletonRhsNarrowsLhs(x: string | null, y: null): void {
   if (x === y) {
-    // FIXME: #584 — x should narrow to null
-    // @skjs-expect-error Invalid annotation
     const z: null = x;
   }
 }
 
 function testSingletonLhsNarrowsRhs(x: null, y: string | null): void {
   if (x === y) {
-    // FIXME: #584 — y should narrow to null
-    // @skjs-expect-error Invalid annotation
     const z: null = y;
   }
 }
@@ -28,16 +24,12 @@ function testSingletonLhsNarrowsRhs(x: null, y: string | null): void {
 
 function testBothOverlapNarrowsLhs(x: "a" | "b", y: "b" | "c"): void {
   if (x === y) {
-    // FIXME: #584 — x should narrow to "b"
-    // @skjs-expect-error Invalid annotation
     const a: "b" = x;
   }
 }
 
 function testBothOverlapNarrowsRhs(x: "a" | "b", y: "b" | "c"): void {
   if (x === y) {
-    // FIXME: #584 — y should narrow to "b"
-    // @skjs-expect-error Invalid annotation
     const b: "b" = y;
   }
 }
@@ -48,8 +40,6 @@ function testBothOverlapNarrowsRhs(x: "a" | "b", y: "b" | "c"): void {
 
 function testNeqSingleton(x: string | null, y: null): void {
   if (x !== y) {
-    // FIXME: #584 — x should narrow to string (null diffed out)
-    // @skjs-expect-error Invalid annotation
     const s: string = x;
   }
 }
@@ -72,8 +62,6 @@ function testNeqNoSingleton(x: "a" | "b", y: "b" | "c"): void {
 
 function testAndChain(x: string | null, y: null, cond: boolean): void {
   if (cond && x === y) {
-    // FIXME: #584 — x should narrow to null
-    // @skjs-expect-error Invalid annotation
     const z: null = x;
   }
 }
@@ -84,8 +72,6 @@ function testAndChain(x: string | null, y: null, cond: boolean): void {
 
 function testReversedOrder(x: null, y: string | null): void {
   if (y === x) {
-    // FIXME: #584 — y should narrow to null
-    // @skjs-expect-error Invalid annotation
     const z: null = y;
   }
 }
