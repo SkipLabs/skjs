@@ -100,7 +100,6 @@ declare const globalObj: { v: 1 | 2 };
 
 function testVarVsGlobalField(x: 0 | 1 | 2): void {
   if (x === globalObj.v) {
-    // @skjs-expect-error Invalid annotation
     const n: 1 | 2 = x;
   }
 }
@@ -111,7 +110,6 @@ function testVarVsGlobalField(x: 0 | 1 | 2): void {
 
 function testVarVsLocalFieldNarrowsVar(x: 0 | 1 | 2, o: { v: 1 | 2 }): void {
   if (x === o.v) {
-    // @skjs-expect-error Invalid annotation
     const n: 1 | 2 = x;
   }
 }
