@@ -11,17 +11,37 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     (e1, e2) match {
-    | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
-    | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
-      this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
+    | (Expr(_, Var(local1)), Expr(_, Var(local2))) ->
+      this.evalVarEquality(tcenv, local1, e2, target);
+      this.evalVarEquality(tcenv, local2, e1, target)
 
-    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
-    | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
-      this.evalNullEquality(tcenv, local, target)
+    | (
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local1)), Name(_, fieldName1))),
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local2)), Name(_, fieldName2))),
+    ) ->
+      this.evalFieldEquality(tcenv, local1, fieldName1, e2, target);
+      this.evalFieldEquality(tcenv, local2, fieldName2, e1, target)
 
-    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
-    | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
-      this.evalUndefinedEquality(tcenv, local, target)
+    | (
+      other1 @ Expr(_, Var(local1)),
+      other2 @ Expr(
+        _,
+        Dot(NormalDot(), Expr(_, Var(local2)), Name(_, fieldName2)),
+      ),
+    )
+    | (
+      other2 @ Expr(
+        _,
+        Dot(NormalDot(), Expr(_, Var(local2)), Name(_, fieldName2)),
+      ),
+      other1 @ Expr(_, Var(local1)),
+    ) ->
+      this.evalVarEquality(tcenv, local1, other2, target);
+      this.evalFieldEquality(tcenv, local2, fieldName2, other1, target)
+
+    | (Expr(_, Var(local)), otherExpr)
+    | (otherExpr, Expr(_, Var(local))) ->
+      this.evalVarEquality(tcenv, local, otherExpr, target)
 
     | (
       Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
@@ -33,51 +53,58 @@ extension class TypeChecker {
     ) ->
       this.evalFieldEquality(tcenv, local, fieldName, otherExpr, target)
 
-    | (Expr(pos, _), Expr(_, Var(Name(_, v @ "null"))))
-    | (Expr(_, Var(Name(_, v @ "null"))), Expr(pos, _))
-    | (Expr(pos, _), Expr(_, Var(Name(_, v @ "undefined"))))
-    | (Expr(_, Var(Name(_, v @ "undefined"))), Expr(pos, _)) ->
-      tcenv.error(
-        Array[(pos, `Only locals and their fields can be compared to ${v}`)],
-      )
-
-    | (Expr(_, Var(local1)), Expr(_, Var(local2))) ->
-      this.evalVarEquality(tcenv, local1, local2, target)
+    | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
+    | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
+      this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
 
     | _ -> void
     }
   }
 
-  // Narrows `(local1 === local2) === target`.
-  // target=true: narrow both sides to inter(x.type, y.type).
-  // target=false: if one side is a singleton constant, diff it from the other.
+  // Narrows `local` based on `(local === otherExpr) === target`.
+  // target=true: narrow local to inter(localType, otherType).
+  // target=false: if otherExpr is a singleton constant, diff it out of local.
   fun evalVarEquality(
     tcenv: mutable TCEnv,
-    local1: Name,
-    local2: Name,
+    local: Name,
+    otherExpr: Expr,
     target: Bool,
   ): void {
-    type1 = this.expr(tcenv, Expr(local1.pos, Var(local1)), true);
-    type2 = this.expr(tcenv, Expr(local2.pos, Var(local2)), true);
-    // Clone subst because inter/diff may unify type variables as a side
-    // effect; we want the exploratory narrowing not to mutate the main subst.
-    if (target) {
-      common = TType::inter(tcenv.subst.clone(), this, type1, type2);
-      tcenv.scope.maybeSet(local1, common);
-      tcenv.scope.maybeSet(local2, common)
-    } else {
-      // !==: only useful when one side is a singleton constant
-      type1.getSingleConstant() match {
-      | Some(_) ->
-        diffed = TType::diff(tcenv.subst.clone(), this, type2, type1);
-        tcenv.scope.maybeSet(local2, diffed)
-      | None() -> void
-      };
-      type2.getSingleConstant() match {
-      | Some(_) ->
-        diffed = TType::diff(tcenv.subst.clone(), this, type1, type2);
-        tcenv.scope.maybeSet(local1, diffed)
-      | None() -> void
+    tcenv.scope.maybeGet(local) match {
+    | None() -> void
+    | Some(localType) ->
+      otherExpr match {
+      | Expr(_, Var(Name(_, "undefined"))) ->
+        filter = x ~>
+          (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) ==
+            target;
+        default = None();
+        this.setLocal(tcenv, local, default, filter)
+      | _ ->
+        otherType = this.expr(tcenv, otherExpr, true);
+        // Clone subst because inter/diff may unify type variables as a side
+        // effect; we want the exploratory narrowing not to mutate the main subst.
+        if (target) {
+          common = TType::inter(
+            tcenv.subst.clone(),
+            this,
+            localType,
+            otherType,
+          );
+          tcenv.scope.set(local, common, (_, _) -> void)
+        } else {
+          otherType.getSingleConstant() match {
+          | Some(_) ->
+            diffed = TType::diff(
+              tcenv.subst.clone(),
+              this,
+              localType,
+              otherType,
+            );
+            tcenv.scope.set(local, diffed, (_, _) -> void)
+          | None() -> void
+          }
+        }
       }
     }
   }
@@ -256,25 +283,6 @@ extension class TypeChecker {
         Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
       )
     }
-  }
-
-  // Narrows `local` based on `(local === null) === target`.
-  fun evalNullEquality(tcenv: mutable TCEnv, local: Name, target: Bool): void {
-    filter = x ~> (x is TPrimUnit(TNull(), _)) == target;
-    default = None();
-    this.setLocal(tcenv, local, default, filter)
-  }
-
-  // Narrows `local` based on `(local === undefined) === target`.
-  fun evalUndefinedEquality(
-    tcenv: mutable TCEnv,
-    local: Name,
-    target: Bool,
-  ): void {
-    filter = x ~>
-      (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) == target;
-    default = None();
-    this.setLocal(tcenv, local, default, filter)
   }
 
   // Narrows `local` based on `Array.isArray(local) === target`.
