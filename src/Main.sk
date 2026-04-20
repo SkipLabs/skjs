@@ -595,7 +595,9 @@ class Checker private {
       context,
       SKStore.DirName::create("/defs/"),
       (context, _self, key) ~> {
-        results = this.checker.checkDef(context, key.def);
+        results = this.checker.checkDef(context, key.def).map(acc ->
+          acc.chill()
+        );
         Array[TCResultsAccFile(results)]
       },
     );

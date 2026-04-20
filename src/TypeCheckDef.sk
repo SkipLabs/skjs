@@ -73,12 +73,12 @@ extension class TypeChecker {
   fun checkDef(
     context: mutable SKStore.Context,
     def: Def,
-  ): Result<TCResultsAcc, Exception> {
+  ): Result<readonly TCResultsAcc, Exception> {
     try {
       results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
       tcenvl = mutable TCEnvLight{context, results};
       results.collectErrors(() -> this.checkDef_(tcenvl, def));
-      Success(results.chill())
+      Success(results)
     } catch {
     | e -> Failure(e)
     }
