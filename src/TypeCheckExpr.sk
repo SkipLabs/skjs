@@ -1769,10 +1769,7 @@ extension class TypeChecker {
     | As _ -> notSupported(pos, "operator as")
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
-      inferredTy = this.asConstExpr(tcenv, subExpr) match {
-      | Some(ty) -> TType::single(ty)
-      | None() -> this.expr(tcenv, subExpr, true)
-      };
+      inferredTy = this.expr(tcenv, subExpr, true);
       savedSubst = tcenv.subst.save();
       this.checkSubType(tcenv, pos, "Invalid 'satisfies'", inferredTy, annot);
       tcenv.subst.restore(savedSubst);
