@@ -58,19 +58,22 @@ extension class TypeChecker {
     otherExpr: Expr,
     target: Bool,
   ): void {
-    localType = this.expr(tcenv, Expr(local.pos, Var(local)), true);
-    otherType = this.expr(tcenv, otherExpr, true);
-    // Clone subst because inter/diff may unify type variables as a side
-    // effect; we want the exploratory narrowing not to mutate the main subst.
-    if (target) {
-      common = TType::inter(tcenv.subst.clone(), this, localType, otherType);
-      tcenv.scope.maybeSet(local, common)
-    } else {
-      otherType.getSingleConstant() match {
-      | Some(_) ->
-        diffed = TType::diff(tcenv.subst.clone(), this, localType, otherType);
-        tcenv.scope.maybeSet(local, diffed)
-      | None() -> void
+    tcenv.scope.maybeGet(local) match {
+    | None() -> void
+    | Some(localType) ->
+      otherType = this.expr(tcenv, otherExpr, true);
+      // Clone subst because inter/diff may unify type variables as a side
+      // effect; we want the exploratory narrowing not to mutate the main subst.
+      if (target) {
+        common = TType::inter(tcenv.subst.clone(), this, localType, otherType);
+        tcenv.scope.maybeSet(local, common)
+      } else {
+        otherType.getSingleConstant() match {
+        | Some(_) ->
+          diffed = TType::diff(tcenv.subst.clone(), this, localType, otherType);
+          tcenv.scope.maybeSet(local, diffed)
+        | None() -> void
+        }
       }
     }
   }
