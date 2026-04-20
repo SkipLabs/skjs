@@ -1767,6 +1767,13 @@ extension class TypeChecker {
         body,
       )
     | As _ -> notSupported(pos, "operator as")
+    | Satisfies(subExpr, tyAst) ->
+      annot = this.normalize(tcenv, tyAst);
+      inferredTy = this.expr(tcenv, subExpr, true);
+      savedSubst = tcenv.subst.save();
+      this.checkSubType(tcenv, pos, "Invalid 'satisfies'", inferredTy, annot);
+      tcenv.subst.restore(savedSubst);
+      inferredTy
     | Async _ -> error(Array[(pos, "Invalid async")])
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);
