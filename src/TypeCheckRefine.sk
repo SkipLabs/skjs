@@ -11,17 +11,13 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     (e1, e2) match {
+    | (Expr(_, Var(local1)), Expr(_, Var(local2))) ->
+      this.evalVarEquality(tcenv, local1, e2, target);
+      this.evalVarEquality(tcenv, local2, e1, target)
+
     | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
     | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
       this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
-
-    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "null"))))
-    | (Expr(_, Var(Name(_, "null"))), Expr(_, Var(local))) ->
-      this.evalNullEquality(tcenv, local, target)
-
-    | (Expr(_, Var(local)), Expr(_, Var(Name(_, "undefined"))))
-    | (Expr(_, Var(Name(_, "undefined"))), Expr(_, Var(local))) ->
-      this.evalUndefinedEquality(tcenv, local, target)
 
     | (
       Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
@@ -40,10 +36,6 @@ extension class TypeChecker {
       tcenv.error(
         Array[(pos, `Only locals and their fields can be compared to ${v}`)],
       )
-
-    | (Expr(_, Var(local1)), Expr(_, Var(local2))) ->
-      this.evalVarEquality(tcenv, local1, e2, target);
-      this.evalVarEquality(tcenv, local2, e1, target)
 
     | _ -> void
     }
