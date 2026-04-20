@@ -973,9 +973,12 @@ extension class Parser {
     );
     !fields = fields.concat(parameterProperties.toArray());
 
+    nameStr = name.value;
+    nameOcc = this.nameCounts.maybeGet(nameStr).default(0);
+    this.nameCounts.set(nameStr, nameOcc + 1);
+
     // Extract method bodies into methodBodyEntries
     fileName = this.lex.fileName;
-    nameStr = name.value;
     methodNameCounts: mutable Map<String, Int> = mutable Map[];
     !fields = fields.map(field ->
       field match {
@@ -995,8 +998,6 @@ extension class Parser {
     );
 
     // Create ClassFieldRef/ClassFieldData entries and ClassBodyData
-    nameOcc = this.nameCounts.maybeGet(nameStr).default(0);
-    this.nameCounts.set(nameStr, nameOcc + 1);
     fieldRefs = fields.mapWithIndex((index, field) -> {
       ref = ClassFieldRef(fileName, nameStr, index);
       this.classFieldEntries.push((ref, ClassFieldData(field)));
