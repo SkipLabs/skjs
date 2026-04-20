@@ -41,7 +41,44 @@ extension class TypeChecker {
         Array[(pos, `Only locals and their fields can be compared to ${v}`)],
       )
 
+    | (Expr(_, Var(local1)), Expr(_, Var(local2))) ->
+      this.evalVarEquality(tcenv, local1, local2, target)
+
     | _ -> void
+    }
+  }
+
+  // Narrows `(local1 === local2) === target`.
+  // target=true: narrow both sides to inter(x.type, y.type).
+  // target=false: if one side is a singleton constant, diff it from the other.
+  fun evalVarEquality(
+    tcenv: mutable TCEnv,
+    local1: Name,
+    local2: Name,
+    target: Bool,
+  ): void {
+    type1 = this.expr(tcenv, Expr(local1.pos, Var(local1)), true);
+    type2 = this.expr(tcenv, Expr(local2.pos, Var(local2)), true);
+    // Clone subst because inter/diff may unify type variables as a side
+    // effect; we want the exploratory narrowing not to mutate the main subst.
+    if (target) {
+      common = TType::inter(tcenv.subst.clone(), this, type1, type2);
+      tcenv.scope.maybeSet(local1, common);
+      tcenv.scope.maybeSet(local2, common)
+    } else {
+      // !==: only useful when one side is a singleton constant
+      type1.getSingleConstant() match {
+      | Some(_) ->
+        diffed = TType::diff(tcenv.subst.clone(), this, type2, type1);
+        tcenv.scope.maybeSet(local2, diffed)
+      | None() -> void
+      };
+      type2.getSingleConstant() match {
+      | Some(_) ->
+        diffed = TType::diff(tcenv.subst.clone(), this, type1, type2);
+        tcenv.scope.maybeSet(local1, diffed)
+      | None() -> void
+      }
     }
   }
 

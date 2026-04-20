@@ -114,6 +114,14 @@ mutable class Scope{
     this.!refs[name.value] = LocalRef(ty, true);
   }
 
+  // Sets `name` to `ty` if already bound; no-op otherwise.
+  // Used by narrowing to silently skip non-locals (e.g. module-level consts).
+  mutable fun maybeSet(name: Name, ty: TType): void {
+    if (this.maybeGet(name).isSome()) {
+      this.set(name, ty, (_, _) -> void)
+    }
+  }
+
   readonly fun escapingRefs(): mutable Iterator<NameRef> {
     this.refs.items()
       .filter(x -> !this.locals.containsKey(x.i0))
