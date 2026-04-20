@@ -43,10 +43,6 @@ extension class TypeChecker {
     | (otherExpr, Expr(_, Var(local))) ->
       this.evalVarEquality(tcenv, local, otherExpr, target)
 
-    | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
-    | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
-      this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
-
     | (
       Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
       otherExpr,
@@ -56,6 +52,10 @@ extension class TypeChecker {
       Expr(_, Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName))),
     ) ->
       this.evalFieldEquality(tcenv, local, fieldName, otherExpr, target)
+
+    | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
+    | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
+      this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
 
     | _ -> void
     }
