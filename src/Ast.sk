@@ -779,6 +779,7 @@ class ClassFieldData(field: ClassField) uses XXHashable
 class MethodBodyRef(
   fileName: FPath,
   className: String,
+  classOccurrence: Int,
   methodName: String,
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable

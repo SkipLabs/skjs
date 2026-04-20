@@ -986,7 +986,7 @@ extension class Parser {
         methodName = fd.name.getName();
         occ = methodNameCounts.maybeGet(methodName).default(0);
         methodNameCounts.set(methodName, occ + 1);
-        ref = MethodBodyRef(fileName, nameStr, methodName, occ);
+        ref = MethodBodyRef(fileName, nameStr, nameOcc, methodName, occ);
         funDefBody = fd.body match {
         | FBInline(b) -> b
         | FBRef _ -> internal_error("expected inline body")
