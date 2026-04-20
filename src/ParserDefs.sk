@@ -977,12 +977,13 @@ extension class Parser {
     nameOcc = this.nameCounts.maybeGet(nameStr).default(0);
     this.nameCounts.set(nameStr, nameOcc + 1);
 
-    // Extract method bodies into methodBodyEntries
     fileName = this.lex.fileName;
     methodNameCounts: mutable Map<String, Int> = mutable Map[];
-    !fields = fields.map(field ->
+    // Create ClassFieldRef/ClassFieldData entries and ClassBodyData
+    fieldRefs = fields.mapWithIndex((index, field) -> {
       field match {
       | fd @ ClassFieldMethod _ ->
+        // Extract method bodies into methodBodyEntries
         methodName = fd.name.getName();
         occ = methodNameCounts.maybeGet(methodName).default(0);
         methodNameCounts.set(methodName, occ + 1);
@@ -992,17 +993,14 @@ extension class Parser {
         | FBRef _ -> internal_error("expected inline body")
         };
         this.methodBodyEntries.push((ref, MethodBodyData(funDefBody)));
-        fd with {body => FBRef(BRMethod(ref))}
-      | ClassFieldValue _ -> field
-      }
-    );
-
-    // Create ClassFieldRef/ClassFieldData entries and ClassBodyData
-    fieldRefs = fields.mapWithIndex((index, field) -> {
+        !field = fd with {body => FBRef(BRMethod(ref))}
+      | ClassFieldValue _ -> void
+      };
       ref = ClassFieldRef(fileName, nameStr, index);
       this.classFieldEntries.push((ref, ClassFieldData(field)));
       ref
     });
+
     bodyRef = ClassBodyRef(fileName, nameStr, nameOcc);
     this.classBodies.push((bodyRef, ClassBodyData(fieldRefs)));
 
