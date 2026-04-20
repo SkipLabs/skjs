@@ -66,12 +66,12 @@ extension class TypeChecker {
       // effect; we want the exploratory narrowing not to mutate the main subst.
       if (target) {
         common = TType::inter(tcenv.subst.clone(), this, localType, otherType);
-        tcenv.scope.maybeSet(local, common)
+        tcenv.scope.set(local, common, (_, _) -> void)
       } else {
         otherType.getSingleConstant() match {
         | Some(_) ->
           diffed = TType::diff(tcenv.subst.clone(), this, localType, otherType);
-          tcenv.scope.maybeSet(local, diffed)
+          tcenv.scope.set(local, diffed, (_, _) -> void)
         | None() -> void
         }
       }
