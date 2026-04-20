@@ -977,8 +977,7 @@ extension class Parser {
     fileName = this.lex.fileName;
     nameStr = name.value;
     methodNameCounts: mutable Map<String, Int> = mutable Map[];
-    extractedFields = mutable Vector[];
-    for (field in fields) {
+    !fields = fields.map(field ->
       field match {
       | fd @ ClassFieldMethod _ ->
         methodName = fd.name.getName();
@@ -990,11 +989,10 @@ extension class Parser {
         | FBRef _ -> internal_error("expected inline body")
         };
         this.methodBodyEntries.push((ref, MethodBodyData(funDefBody)));
-        extractedFields.push(fd with {body => FBRef(BRMethod(ref))})
-      | ClassFieldValue _ -> extractedFields.push(field)
+        fd with {body => FBRef(BRMethod(ref))}
+      | ClassFieldValue _ -> field
       }
-    };
-    !fields = extractedFields.toArray();
+    );
 
     // Create ClassFieldRef/ClassFieldData entries and ClassBodyData
     occ = this.nameCounts.maybeGet(nameStr).default(0);
