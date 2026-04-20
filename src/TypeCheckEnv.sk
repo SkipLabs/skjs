@@ -197,105 +197,48 @@ mutable class TCEnv private {
   }
 }
 
-mutable class TCResults private {
-  errorHandling: ErrorHandling,
-  errors: mutable Vector<Error> = mutable Vector[],
-  mutable callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
-  mutable classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
-  mutable subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
+class TCResults private {
+  errors: Array<Error>,
+  callgraph: SortedMap<CGNode, Array<CGNode>>,
+  classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
+  subtypingEdges: SortedSet<(CGNode, CGNode)>,
 } {
-  static fun mcreate{errorHandling: ErrorHandling}: mutable TCResults {
-    mutable TCResults{errorHandling}
-  }
-
-  readonly fun chill(): TCResults {
-    static{
-      errorHandling => this.errorHandling,
-      errors => this.errors.chill(),
-      callgraph => this.callgraph,
-      classHierarchy => this.classHierarchy,
-      subtypingEdges => this.subtypingEdges,
-    }
-  }
-
-  fun mclone(): mutable this {
-    mutable static{
-      errorHandling => this.errorHandling,
-      errors => Vector::mcreateFromItems(this.errors),
-      callgraph => this.callgraph,
-      classHierarchy => this.classHierarchy,
-      subtypingEdges => this.subtypingEdges,
-    }
-  }
-
-  mutable fun appendErrors(errors: readonly Vector<Error>): void {
-    this.errors.extend(errors)
-  }
-
-  mutable fun error(messages: Array<(PosRange, String)>): void {
-    this.errorHandling match {
-    | EHKeepGoing() -> this.errors.push(NamingError(messages))
-    | EHBacktrace()
-    | EHDefault() ->
-      error(messages)
-    }
-  }
-
-  mutable fun subtypingError(
-    subst: readonly Subst,
-    tenv: TEnv,
-    messages: Array<(PosRange, String)>,
-    stErr: STErrorOnTType,
-  ): void {
-    this.errorHandling match {
-    | EHKeepGoing() ->
-      this.errors.push(TypingError(subst.saveAll(), tenv, messages, stErr))
-    | EHBacktrace()
-    | EHDefault() ->
-      subtypingError(subst, tenv, messages, stErr)
-    }
-  }
-
-  mutable fun notSupported(pos: PosRange, what: String): void {
-    this.error(Array[(pos, `Construction not supported: ${what} (ignored)`)])
-  }
-
-  mutable fun collectErrors(f: () -> void): void {
-    this.errorHandling match {
-    | EHKeepGoing() ->
-      try {
-        f()
-      } catch {
-      | ErrorExn(err @ TypingError _)
-      | ErrorExn(err @ NamingError _) ->
-        this.errors.push(err)
-      | exn -> throw exn
+  static fun ofAccs(
+    accs: readonly Vector<readonly TCResultsAcc>,
+    extraErrors: readonly Vector<Error>,
+  ): TCResults {
+    callgraph = mutable Map[];
+    classHierarchy = SortedMap<CHNode, SortedSet<CHNode>>[];
+    subtypingEdges = SortedSet[];
+    errors = Vector::mcreateFromItems(extraErrors);
+    for (acc in accs) {
+      errors.extend(acc.errors);
+      for (kv in acc.callgraph) {
+        (caller, calleesToAdd) = kv;
+        callees = callgraph.getOrAdd(caller, () -> mutable Set[]);
+        calleesToAdd.nodes.each(callees.insert)
+      };
+      for (kv in acc.classHierarchy) {
+        (child, parent) = kv;
+        childNode = CHNode::ofClass(child);
+        parentNode = CHNode::ofClass(parent);
+        !classHierarchy[childNode] = classHierarchy
+          .maybeGet(childNode)
+          .default(SortedSet[])
+          .set(parentNode)
+      };
+      for (edge in acc.subtypingEdges) {
+        !subtypingEdges = subtypingEdges.set(edge)
       }
-    | EHBacktrace()
-    | EHDefault() ->
-      f()
+    };
+    TCResults{
+      errors => errors.toArray(),
+      callgraph => SortedMap::createFromIterator(
+        callgraph.items().map(kv -> (kv.i0, Array::createFromItems(kv.i1))),
+      ),
+      classHierarchy,
+      subtypingEdges,
     }
-  }
-
-  mutable fun recordCalls(caller: CGNode, newCallees: CGNodes): void {
-    oldCallees = this.callgraph.maybeGet(caller).default(Array[]);
-    callees = oldCallees.foldl(
-      (nodes, node) -> nodes.set(node),
-      newCallees.nodes,
-    );
-    this.!callgraph[caller] = callees.toArray();
-  }
-
-  mutable fun recordSubtypingEdge(sub: CGNode, sup: CGNode): void {
-    this.!subtypingEdges = this.subtypingEdges.set((sub, sup))
-  }
-
-  mutable fun recordClassHierarchy{child: Class, parent: Class}: void {
-    childNode = CHNode::ofClass(child);
-    parentNode = CHNode::ofClass(parent);
-    current = this.classHierarchy.maybeGet(childNode).default(SortedSet[]);
-    new = current.set(parentNode);
-    this.!classHierarchy[childNode] = new;
   }
 }
 
@@ -308,16 +251,6 @@ mutable class TCResultsAcc private {
 } {
   static fun mcreate{errorHandling: ErrorHandling}: mutable this {
     mutable static{errorHandling}
-  }
-
-  mutable fun append(other: readonly TCResultsAcc): void {
-    if (this.errorHandling != other.errorHandling) {
-      internal_error("Cannot append incompatible TCResultsAcc")
-    };
-    this.errors.extend(other.errors);
-    this.callgraph.extend(other.callgraph);
-    this.classHierarchy.extend(other.classHierarchy);
-    this.!subtypingEdges = this.subtypingEdges.union(other.subtypingEdges);
   }
 
   readonly fun chill(): this {
@@ -340,24 +273,6 @@ mutable class TCResultsAcc private {
     }
   }
 
-  readonly fun toTCResults(): mutable TCResults {
-    results = TCResults::mcreate{errorHandling => this.errorHandling};
-    results.appendErrors(this.errors);
-    for (kv in this.callgraph) {
-      (k, v) = kv;
-      results.recordCalls(k, v);
-    };
-    for (kv in this.classHierarchy) {
-      (child, parent) = kv;
-      results.recordClassHierarchy{child, parent};
-    };
-    for (edge in this.subtypingEdges) {
-      (sub, sup) = edge;
-      results.recordSubtypingEdge(sub, sup);
-    };
-    results
-  }
-
   mutable fun error(messages: Array<(PosRange, String)>): void {
     this.errorHandling match {
     | EHKeepGoing() -> this.errors.push(NamingError(messages))
@@ -375,7 +290,7 @@ mutable class TCResultsAcc private {
   ): void {
     this.errorHandling match {
     | EHKeepGoing() ->
-      this.errors.push(TypingError(subst.saveAll(), tenv, messages, stErr))
+      this.errors.push(SubtypingError(subst.saveAll(), tenv, messages, stErr))
     | EHBacktrace()
     | EHDefault() ->
       subtypingError(subst, tenv, messages, stErr)
@@ -388,15 +303,7 @@ mutable class TCResultsAcc private {
 
   mutable fun collectErrors(f: () -> void): void {
     this.errorHandling match {
-    | EHKeepGoing() ->
-      try {
-        f()
-      } catch {
-      | ErrorExn(err @ TypingError _)
-      | ErrorExn(err @ NamingError _) ->
-        this.errors.push(err)
-      | exn -> throw exn
-      }
+    | EHKeepGoing() -> catchError(f).each(this.errors.push)
     | EHBacktrace()
     | EHDefault() ->
       f()

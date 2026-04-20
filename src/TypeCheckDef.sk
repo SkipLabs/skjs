@@ -9,20 +9,12 @@ base class OptionalTypeParamsPermission {
 // Key for caching checkDef results in an LHandle.
 // Uses (fileName, defName, occurrenceNumber) so that results are stable
 // across position changes within a file.
-class DefKey private (
+class DefKey(
   fileName: FPath,
   defName: String,
   occurrence: Int,
   def: Def,
 ) extends SKStore.Key {
-  static fun create(
-    fileName: FPath,
-    defName: String,
-    occurrence: Int,
-    def: Def,
-  ): this {
-    static(fileName, defName, occurrence, def)
-  }
   fun compare(other: SKStore.Key): Order {
     other match {
     | o @ DefKey _ ->
@@ -38,6 +30,7 @@ class DefKey private (
     }
   }
 }
+
 class TCResultsAccFile(
   value: Result<TCResultsAcc, Exception>,
 ) extends SKStore.File
@@ -48,57 +41,33 @@ extension class TypeChecker {
     checkDir: SKStore.LHandle<DefKey, TCResultsAccFile>,
     fileName: FPath,
     defs: Array<Def>,
-  ): readonly TCResults {
-    results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
+  ): TCResults {
+    results = mutable Vector[];
+    extraErrors = mutable Vector[];
     // Count occurrences of each name to assign stable occurrence numbers
     nameCounts: mutable Map<String, Int> = mutable Map[];
-    for (def in defs) {
-      this.errorHandling match {
-      | EHBacktrace() ->
-        def.value.defStableName() match {
-        | Some(Name(_, name)) ->
-          occ = nameCounts.maybeGet(name).default(0);
-          nameCounts.set(name, occ + 1);
-          key = DefKey::create(fileName, name, occ, def);
-          arr = checkDir.getArray(context, key);
-          arr[0].value match {
-          | Success(x) -> results.append(x)
-          | Failure(exn) -> throw exn
-          }
-        | None() ->
-          this.checkDef(context, def) match {
-          | Success(x) -> results.append(x)
-          | Failure(exn) -> throw exn
-          }
-        }
-      | EHDefault()
-      | EHKeepGoing() ->
-        try {
-          def.value.defStableName() match {
-          | Some(Name(_, name)) ->
-            occ = nameCounts.maybeGet(name).default(0);
-            nameCounts.set(name, occ + 1);
-            key = DefKey::create(fileName, name, occ, def);
-            arr = checkDir.getArray(context, key);
-            arr[0].value match {
-            | Success(x) -> results.append(x)
-            | Failure(exn) -> throw exn
-            }
-          | None() ->
-            this.checkDef(context, def) match {
-            | Success(x) -> results.append(x)
-            | Failure(exn) -> throw exn
-            }
-          }
-        } catch {
-        | ErrorExn(err @ TypingError _)
-        | ErrorExn(err @ NamingError _) ->
-          results.errors.push(err)
-        | exn -> throw exn
-        }
+    checkOne = (def) -> {
+      def.value.defStableName() match {
+      | Some(Name(_, name)) ->
+        occ = nameCounts.maybeGet(name).default(0);
+        nameCounts![name] = occ + 1;
+        key = DefKey(fileName, name, occ, def);
+        checkDir.get(context, key).value
+      | None() -> this.checkDef(context, def)
+      } match {
+      | Success(res) -> results.push(res)
+      | Failure(exn) -> throw exn
       }
     };
-    results.toTCResults()
+    for (def in defs) {
+      this.errorHandling match {
+      | EHBacktrace() -> checkOne(def)
+      | EHDefault()
+      | EHKeepGoing() ->
+        catchError(() -> checkOne(def)).each(extraErrors.push)
+      }
+    };
+    TCResults::ofAccs(results, extraErrors)
   }
 
   fun checkDef(

@@ -15,7 +15,7 @@ fun getLinedErrors(
   for (err in errors) {
     errPos = err match {
     | SKJS.NamingError(messages)
-    | SKJS.TypingError(_, _, messages, _stErr) ->
+    | SKJS.SubtypingError(_, _, messages, _stErr) ->
       invariant(!messages.isEmpty(), "Empty typing error");
       SKJS.EPRange(messages[0].i0)
     | SKJS.SinglePosError(errPos, _errKind) -> errPos
