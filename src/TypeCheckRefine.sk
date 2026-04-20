@@ -61,18 +61,37 @@ extension class TypeChecker {
     tcenv.scope.maybeGet(local) match {
     | None() -> void
     | Some(localType) ->
-      otherType = this.expr(tcenv, otherExpr, true);
-      // Clone subst because inter/diff may unify type variables as a side
-      // effect; we want the exploratory narrowing not to mutate the main subst.
-      if (target) {
-        common = TType::inter(tcenv.subst.clone(), this, localType, otherType);
-        tcenv.scope.set(local, common, (_, _) -> void)
-      } else {
-        otherType.getSingleConstant() match {
-        | Some(_) ->
-          diffed = TType::diff(tcenv.subst.clone(), this, localType, otherType);
-          tcenv.scope.set(local, diffed, (_, _) -> void)
-        | None() -> void
+      otherExpr match {
+      | Expr(_, Var(Name(_, "undefined"))) ->
+        filter = x ~>
+          (x is TPrimUnit(TUndefined(), _) || x is TPrimUnit(TVoid(), _)) ==
+            target;
+        default = None();
+        this.setLocal(tcenv, local, default, filter)
+      | _ ->
+        otherType = this.expr(tcenv, otherExpr, true);
+        // Clone subst because inter/diff may unify type variables as a side
+        // effect; we want the exploratory narrowing not to mutate the main subst.
+        if (target) {
+          common = TType::inter(
+            tcenv.subst.clone(),
+            this,
+            localType,
+            otherType,
+          );
+          tcenv.scope.set(local, common, (_, _) -> void)
+        } else {
+          otherType.getSingleConstant() match {
+          | Some(_) ->
+            diffed = TType::diff(
+              tcenv.subst.clone(),
+              this,
+              localType,
+              otherType,
+            );
+            tcenv.scope.set(local, diffed, (_, _) -> void)
+          | None() -> void
+          }
         }
       }
     }
