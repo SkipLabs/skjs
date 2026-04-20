@@ -308,7 +308,7 @@ fun resolveDef(file: ParsedResultAndSymbolsFile, def: Def): ResolvedDef {
   };
   exportable match {
   | Some(fd @ TopLevelFunDef _) -> resolveFunDef(file, fd)
-  | Some(cls @ Class{bodyRef => Some(ref)}) -> resolveClass(file, cls, ref)
+  | Some(cls @ Class{bodyRef => ref}) -> resolveClass(file, cls, ref)
   | Some(td @ TypeDef{bodyRef => ref}) -> resolveTypeDef(file, td, ref)
   | _ -> RDOther(def)
   }

@@ -1004,7 +1004,7 @@ extension class Parser {
     bodyRef = ClassBodyRef(fileName, nameStr, nameOcc);
     this.classBodies.push((bodyRef, ClassBodyData(fieldRefs)));
 
-    Class{kind, name, extends_, implements, tparams, bodyRef => Some(bodyRef)}
+    Class{kind, name, extends_, implements, tparams, bodyRef}
   }
 
   /***************************************************************************/
