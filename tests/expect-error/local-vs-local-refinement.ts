@@ -82,7 +82,6 @@ function testReversedOrder(x: null, y: string | null): void {
 
 function testVarVsLiteral(x: 0 | 1 | 2): void {
   if (x === 1) {
-    // @skjs-expect-error Invalid annotation
     const n: 1 = x;
   }
 }
@@ -91,7 +90,6 @@ declare function getOneOrTwo(): 1 | 2;
 
 function testVarVsCall(x: 0 | 1 | 2): void {
   if (x === getOneOrTwo()) {
-    // @skjs-expect-error Invalid annotation
     const n: 1 | 2 = x;
   }
 }
