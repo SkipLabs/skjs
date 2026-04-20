@@ -52,11 +52,11 @@ extension class TypeChecker {
         occ = nameCounts.maybeGet(name).default(0);
         nameCounts![name] = occ + 1;
         key = DefKey(fileName, name, occ, def);
-        checkDir.get(context, key).value
-      | None() -> this.checkDef(context, def)
-      } match {
-      | Success(res) -> results.push(res)
-      | Failure(exn) -> throw exn
+        checkDir.get(context, key).value match {
+        | Success(res) -> results.push(res)
+        | Failure(exn) -> throw exn
+        }
+      | None() -> results.push(this.checkDef(context, def))
       }
     };
     for (def in defs) {
@@ -73,15 +73,11 @@ extension class TypeChecker {
   fun checkDef(
     context: mutable SKStore.Context,
     def: Def,
-  ): Result<readonly TCResultsAcc, Exception> {
-    try {
-      results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
-      tcenvl = mutable TCEnvLight{context, results};
-      results.collectErrors(() -> this.checkDef_(tcenvl, def));
-      Success(results)
-    } catch {
-    | e -> Failure(e)
-    }
+  ): readonly TCResultsAcc {
+    results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
+    tcenvl = mutable TCEnvLight{context, results};
+    results.collectErrors(() -> this.checkDef_(tcenvl, def));
+    results
   }
 
   fun checkDef_(tcenvl: mutable TCEnvLight, def: Def): void {
