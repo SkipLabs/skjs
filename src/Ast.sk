@@ -85,11 +85,7 @@ base class Declarable extends Def_ {
 base class Exportable extends Declarable {
   children =
   | TopLevelFunDef
-  | TypeDef{
-    name: Name,
-    tdefParams: Array<TypeParam>,
-    bodyRef: ?TypeDefBodyRef = None(),
-  }
+  | TypeDef{name: Name, tdefParams: Array<TypeParam>, bodyRef: TypeDefBodyRef}
   | Class{
     kind: ClassKind,
     name: Name,

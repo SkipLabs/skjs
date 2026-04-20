@@ -208,10 +208,7 @@ base class TEnv{
   }
 
   fun getTypeDefBody(context: mutable SKStore.Context, td: TypeDef): Type {
-    td.bodyRef match {
-    | Some(ref) -> this.typeDefBodyMap.get(context, ref).body
-    | None() -> internal_error("TypeDef has no bodyRef")
-    }
+    this.typeDefBodyMap.get(context, td.bodyRef).body
   }
 
   fun getFunSig(

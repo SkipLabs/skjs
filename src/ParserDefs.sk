@@ -813,7 +813,7 @@ extension class Parser {
     this.nameCounts.set(nameStr, occ + 1);
     ref = TypeDefBodyRef(this.lex.fileName, nameStr, occ);
     this.typeDefBodies.push((ref, TypeDefBodyData(tdefParams, body)));
-    TypeDef{name, tdefParams, bodyRef => Some(ref)}
+    TypeDef{name, tdefParams, bodyRef => ref}
   }
 
   // Parse enum definitions
