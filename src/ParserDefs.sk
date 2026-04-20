@@ -991,7 +991,7 @@ extension class Parser {
         };
         this.methodBodyEntries.push((ref, MethodBodyData(funDefBody)));
         extractedFields.push(fd with {body => FBRef(BRMethod(ref))})
-      | _ -> extractedFields.push(field)
+      | ClassFieldValue _ -> extractedFields.push(field)
       }
     };
     !fields = extractedFields.toArray();
