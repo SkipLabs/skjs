@@ -132,7 +132,6 @@ function testFieldVsFieldNarrowsBoth(
 ): void {
   if (o1.a === o2.b) {
     const a: 1 | 2 = o1.a;
-    // @skjs-expect-error Invalid annotation
     const b: 1 | 2 = o2.b;
   }
 }

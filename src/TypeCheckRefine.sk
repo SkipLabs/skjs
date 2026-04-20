@@ -15,6 +15,13 @@ extension class TypeChecker {
       this.evalVarEquality(tcenv, local1, e2, target);
       this.evalVarEquality(tcenv, local2, e1, target)
 
+    | (
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local1)), Name(_, fieldName1))),
+      Expr(_, Dot(NormalDot(), Expr(_, Var(local2)), Name(_, fieldName2))),
+    ) ->
+      this.evalFieldEquality(tcenv, local1, fieldName1, e2, target);
+      this.evalFieldEquality(tcenv, local2, fieldName2, e1, target)
+
     | (Expr(_, TypeOf(Expr(_, Var(local)))), Expr(typePos, EString(typeStr)))
     | (Expr(typePos, EString(typeStr)), Expr(_, TypeOf(Expr(_, Var(local))))) ->
       this.evalTypeofEquality(tcenv, local, typeStr, typePos, target)
