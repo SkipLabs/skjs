@@ -1767,6 +1767,7 @@ extension class TypeChecker {
         body,
       )
     | As _ -> notSupported(pos, "operator as")
+    | Satisfies _ -> notSupported(pos, "operator satisfies")
     | Async _ -> error(Array[(pos, "Invalid async")])
     | Await(ae) ->
       aeType = this.expr(tcenv, ae, mostPrecise);

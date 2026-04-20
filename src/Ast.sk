@@ -380,6 +380,7 @@ base class Expr_ uses XXHashable {
   | InstanceOf(Expr, Expr)
   | As(Expr, Type)
   | AsConst(Expr)
+  | Satisfies(Expr, Type)
   | Regexp(String)
   | Async(Expr)
   | TemplateLiteral(Array<String>, Array<Expr>)

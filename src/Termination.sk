@@ -204,6 +204,7 @@ value class StmtTermination private {
     | VoidOp(e)
     | Await(e)
     | As(e, _ty)
+    | Satisfies(e, _ty)
     | AsConst(e) ->
       static::expr(e)
     | Spread(e) ->
