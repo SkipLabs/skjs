@@ -42,41 +42,34 @@ extension class TypeChecker {
       )
 
     | (Expr(_, Var(local1)), Expr(_, Var(local2))) ->
-      this.evalVarEquality(tcenv, local1, local2, target)
+      this.evalVarEquality(tcenv, local1, e2, target);
+      this.evalVarEquality(tcenv, local2, e1, target)
 
     | _ -> void
     }
   }
 
-  // Narrows `(local1 === local2) === target`.
-  // target=true: narrow both sides to inter(x.type, y.type).
-  // target=false: if one side is a singleton constant, diff it from the other.
+  // Narrows `local` based on `(local === otherExpr) === target`.
+  // target=true: narrow local to inter(localType, otherType).
+  // target=false: if otherExpr is a singleton constant, diff it out of local.
   fun evalVarEquality(
     tcenv: mutable TCEnv,
-    local1: Name,
-    local2: Name,
+    local: Name,
+    otherExpr: Expr,
     target: Bool,
   ): void {
-    type1 = this.expr(tcenv, Expr(local1.pos, Var(local1)), true);
-    type2 = this.expr(tcenv, Expr(local2.pos, Var(local2)), true);
+    localType = this.expr(tcenv, Expr(local.pos, Var(local)), true);
+    otherType = this.expr(tcenv, otherExpr, true);
     // Clone subst because inter/diff may unify type variables as a side
     // effect; we want the exploratory narrowing not to mutate the main subst.
     if (target) {
-      common = TType::inter(tcenv.subst.clone(), this, type1, type2);
-      tcenv.scope.maybeSet(local1, common);
-      tcenv.scope.maybeSet(local2, common)
+      common = TType::inter(tcenv.subst.clone(), this, localType, otherType);
+      tcenv.scope.maybeSet(local, common)
     } else {
-      // !==: only useful when one side is a singleton constant
-      type1.getSingleConstant() match {
+      otherType.getSingleConstant() match {
       | Some(_) ->
-        diffed = TType::diff(tcenv.subst.clone(), this, type2, type1);
-        tcenv.scope.maybeSet(local2, diffed)
-      | None() -> void
-      };
-      type2.getSingleConstant() match {
-      | Some(_) ->
-        diffed = TType::diff(tcenv.subst.clone(), this, type1, type2);
-        tcenv.scope.maybeSet(local1, diffed)
+        diffed = TType::diff(tcenv.subst.clone(), this, localType, otherType);
+        tcenv.scope.maybeSet(local, diffed)
       | None() -> void
       }
     }
