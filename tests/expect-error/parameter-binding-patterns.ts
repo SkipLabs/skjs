@@ -112,6 +112,42 @@ function testArrowNoAnnotation(): void {
   arr.map(([a, b]) => a);
 }
 
+// === Optional, rest, and default parameters in arrows ===
+
+// Arrow with optional parameter
+function testArrowOptional(): void {
+  // FIXME: optional lambda param typed as non-undefined, so ?? is "useless"
+  // @skjs-expect-error This operator is useless
+  const f = (x?: number): number => x ?? 0;
+  void f;
+}
+
+// Arrow with default value
+function testArrowDefaultValue(): void {
+  const f = (x: number = 0): number => x;
+  void f;
+}
+
+// Arrow with rest parameter
+function testArrowRest(): void {
+  const f = (...rest: number[]): number => rest.length;
+  void f;
+}
+
+// Arrow with default value, wrong type
+function testArrowDefaultWrongType(): void {
+  // TODO: FIXME default type not validated in lambdas
+  const f = (x: number = "hello"): number => x;
+  void f;
+}
+
+// Arrow with both optional and default
+function testArrowOptionalAndDefault(): void {
+  // TODO: FIXME optional + default not rejected in lambdas
+  const f = (x?: number = 0): number => x;
+  void f;
+}
+
 // Function type with pattern parameters (parsing only)
 type FuncWithObjectParam = ({ x, y }: { x: number; y: number }) => void;
 type FuncWithArrayParam = ([a, b]: [number, string]) => void;
