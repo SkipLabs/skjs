@@ -109,7 +109,7 @@ class ArrayLitTyping() {
   }
 
   // Converts ArrayLit<α, elts> to Array<U> by unioning all elements.
-  static private fun arrayLitToArrayType(
+  static private fun arrayLitToArrayTType(
     subst: mutable Subst,
     tenv: TEnv,
     arrLit: TArrayLit,
@@ -201,7 +201,7 @@ class ArrayLitTyping() {
     | None() -> ty
     | Some(arrLit) ->
       // Commit to Array<union(elts)>
-      arrayTy = ArrayLitTyping::arrayLitToArrayType(tcenv.subst, tenv, arrLit);
+      arrayTy = ArrayLitTyping::arrayLitToArrayTType(tcenv.subst, tenv, arrLit);
       ArrayLitTyping::arrayLitCommitType(tcenv.subst, tenv, arrLit, arrayTy);
       arrayTy
     }
@@ -220,7 +220,7 @@ class ArrayLitTyping() {
     ArrayLitTyping::getSingleArrayLitUncommitted(subst, tenv, u2) match {
     | Some(arrLit) ->
       // Commit RHS to Array<union(elts)> as permissive supertype.
-      arrayTy = ArrayLitTyping::arrayLitToArrayType(subst, tenv, arrLit);
+      arrayTy = ArrayLitTyping::arrayLitToArrayTType(subst, tenv, arrLit);
       ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, arrayTy);
       return Some(TType::isSub(subst, tenv, u1, arrayTy))
     | None() -> void
@@ -245,7 +245,7 @@ class ArrayLitTyping() {
         ) {
           ArrayLitTyping::arrayLitToTupleType(arrLit)
         } else {
-          ArrayLitTyping::arrayLitToArrayType(subst, tenv, arrLit)
+          ArrayLitTyping::arrayLitToArrayTType(subst, tenv, arrLit)
         };
         ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, committedTy);
         return Some(TType::isSub(subst, tenv, committedTy, u2))
