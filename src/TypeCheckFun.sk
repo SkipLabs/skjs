@@ -63,45 +63,7 @@ extension class TypeChecker {
           Array[(modifier.pos, `Forbidden modifier for a function parameter`)],
         )
       };
-      paramType = param.type match {
-      | None() -> error(Array[(param.pos, "Missing type annotation")])
-      | Some(ty) -> this.normalize(subst, ty)
-      };
-      param.isRest.each(_ ->
-        !paramType = TType::arrayToReadonlyArray(paramType)
-      );
-      param.optional match {
-      | None() -> void
-      | Some(optionalPos) ->
-        !paramType = TType::unionUndefined(subst, this, paramType, optionalPos)
-      };
-      param.default match {
-      | None() -> void
-      | Some(defaultExpr) ->
-        param.optional match {
-        | None() -> void
-        | Some(optionalPos) ->
-          subst.error(
-            Array[
-              (
-                optionalPos,
-                "A parameter cannot both be optional and have a default value",
-              ),
-            ],
-          )
-        };
-        savedScope = tcenv.scope;
-        paramScope = tcenv.mcreateSubScope{isLoop => false};
-        tcenv.!scope = paramScope;
-        this.checkSubType(
-          tcenv,
-          defaultExpr.pos,
-          "Default value doesn't have the expected type",
-          this.expr(tcenv, defaultExpr, true),
-          paramType,
-        );
-        tcenv.!scope = savedScope
-      };
+      paramType = this.processParamType(subst, tcenv, param);
       param.name.value match {
       | PVar(n) if (n.value == "this") ->
         error(Array[(n.pos, "TODO: support this parameter")])
@@ -111,6 +73,55 @@ extension class TypeChecker {
     };
     !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
     (this, tcenv)
+  }
+
+  // Compute the effective type of a function parameter by applying the
+  // isRest (arrayToReadonlyArray), optional (unionUndefined), and default
+  // (checkSubType) modifiers in order. Reports an error if the parameter
+  // is both optional and has a default.
+  fun processParamType(
+    subst: mutable Subst,
+    tcenv: mutable TCEnv,
+    param: Param,
+  ): TType {
+    paramType = param.type match {
+    | None() -> error(Array[(param.pos, "Missing type annotation")])
+    | Some(ty) -> this.normalize(subst, ty)
+    };
+    param.isRest.each(_ -> !paramType = TType::arrayToReadonlyArray(paramType));
+    param.optional match {
+    | None() -> void
+    | Some(optionalPos) ->
+      !paramType = TType::unionUndefined(subst, this, paramType, optionalPos)
+    };
+    param.default match {
+    | None() -> void
+    | Some(defaultExpr) ->
+      param.optional match {
+      | None() -> void
+      | Some(optionalPos) ->
+        subst.error(
+          Array[
+            (
+              optionalPos,
+              "A parameter cannot both be optional and have a default value",
+            ),
+          ],
+        )
+      };
+      savedScope = tcenv.scope;
+      paramScope = tcenv.mcreateSubScope{isLoop => false};
+      tcenv.!scope = paramScope;
+      this.checkSubType(
+        tcenv,
+        defaultExpr.pos,
+        "Default value doesn't have the expected type",
+        this.expr(tcenv, defaultExpr, true),
+        paramType,
+      );
+      tcenv.!scope = savedScope
+    };
+    paramType
   }
 
   fun funDef(
