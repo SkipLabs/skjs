@@ -383,7 +383,7 @@ base class TEnv{
   }
 
   // TParamWithConstraint corresponding to syntactic TypeParam
-  private fun makeTParam(
+  fun makeTParam(
     tcenvb: mutable TCEnvBase,
     tparam: TypeParam,
   ): TParamWithConstraint {

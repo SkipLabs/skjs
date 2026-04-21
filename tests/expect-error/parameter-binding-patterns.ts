@@ -168,11 +168,31 @@ function testArrowRequiredAfterOptional(): void {
 // === Generic type parameters on arrow functions (issue #168) ===
 
 // Arrow with a single type parameter
-// TODO: FIXME should typecheck; currently parsed as <T>expr cast
 function testArrowGeneric(): void {
-  // @skjs-expect-error Type T not found
-  const f = <T>(x: T[]): T => x[0];
+  const f = <T>(x: T): T[] => [x];
   void f;
+}
+
+// Arrow with a constrained type parameter
+function testArrowGenericConstraint(): void {
+  const f = <T extends string>(x: T): T => x;
+  void f;
+}
+
+// Arrow with multiple type parameters
+function testArrowGenericMulti(): void {
+  const f = <T, U>(x: T, y: U): void => {
+    void x;
+    void y;
+  };
+  void f;
+}
+
+// Old-style angle-bracket type assertion still works (sound upcast)
+function testOldStyleCast(): void {
+  const x: number = 42;
+  const y: unknown = <unknown>x;
+  void y;
 }
 
 // Function type with pattern parameters (parsing only)
