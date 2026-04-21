@@ -813,7 +813,7 @@ extension class Parser {
     this.nameCounts.set(nameStr, occ + 1);
     ref = TypeDefBodyRef(this.lex.fileName, nameStr, occ);
     this.typeDefBodies.push((ref, TypeDefBodyData(tdefParams, body)));
-    TypeDef{name, tdefParams, bodyRef => Some(ref)}
+    TypeDef{name, tdefParams, bodyRef => ref}
   }
 
   // Parse enum definitions
@@ -973,41 +973,38 @@ extension class Parser {
     );
     !fields = fields.concat(parameterProperties.toArray());
 
-    // Extract method bodies into methodBodyEntries
-    fileName = this.lex.fileName;
     nameStr = name.value;
+    nameOcc = this.nameCounts.maybeGet(nameStr).default(0);
+    this.nameCounts.set(nameStr, nameOcc + 1);
+
+    fileName = this.lex.fileName;
     methodNameCounts: mutable Map<String, Int> = mutable Map[];
-    extractedFields = mutable Vector[];
-    for (field in fields) {
+    // Create ClassFieldRef/ClassFieldData entries and ClassBodyData
+    fieldRefs = fields.mapWithIndex((index, field) -> {
       field match {
       | fd @ ClassFieldMethod _ ->
+        // Extract method bodies into methodBodyEntries
         methodName = fd.name.getName();
         occ = methodNameCounts.maybeGet(methodName).default(0);
         methodNameCounts.set(methodName, occ + 1);
-        ref = MethodBodyRef(fileName, nameStr, methodName, occ);
+        ref = MethodBodyRef(fileName, nameStr, nameOcc, methodName, occ);
         funDefBody = fd.body match {
         | FBInline(b) -> b
         | FBRef _ -> internal_error("expected inline body")
         };
         this.methodBodyEntries.push((ref, MethodBodyData(funDefBody)));
-        extractedFields.push(fd with {body => FBRef(BRMethod(ref))})
-      | _ -> extractedFields.push(field)
-      }
-    };
-    !fields = extractedFields.toArray();
-
-    // Create ClassFieldRef/ClassFieldData entries and ClassBodyData
-    occ = this.nameCounts.maybeGet(nameStr).default(0);
-    this.nameCounts.set(nameStr, occ + 1);
-    fieldRefs = fields.mapWithIndex((index, field) -> {
+        !field = fd with {body => FBRef(BRMethod(ref))}
+      | ClassFieldValue _ -> void
+      };
       ref = ClassFieldRef(fileName, nameStr, index);
       this.classFieldEntries.push((ref, ClassFieldData(field)));
       ref
     });
-    bodyRef = ClassBodyRef(fileName, nameStr, occ);
+
+    bodyRef = ClassBodyRef(fileName, nameStr, nameOcc);
     this.classBodies.push((bodyRef, ClassBodyData(fieldRefs)));
 
-    Class{kind, name, extends_, implements, tparams, bodyRef => Some(bodyRef)}
+    Class{kind, name, extends_, implements, tparams, bodyRef}
   }
 
   /***************************************************************************/

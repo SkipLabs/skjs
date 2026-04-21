@@ -85,18 +85,14 @@ base class Declarable extends Def_ {
 base class Exportable extends Declarable {
   children =
   | TopLevelFunDef
-  | TypeDef{
-    name: Name,
-    tdefParams: Array<TypeParam>,
-    bodyRef: ?TypeDefBodyRef = None(),
-  }
+  | TypeDef{name: Name, tdefParams: Array<TypeParam>, bodyRef: TypeDefBodyRef}
   | Class{
     kind: ClassKind,
     name: Name,
     extends_: Array<Type>,
     implements: Array<Type>,
     tparams: Array<TypeParam>,
-    bodyRef: ?ClassBodyRef = None(),
+    bodyRef: ClassBodyRef,
   }
   | Enum(isConst: ?PosRange, name: Name, fields: Array<(Name, ?Expr)>)
   | Namespace(name: Name, Array<Def>)
@@ -779,6 +775,7 @@ class ClassFieldData(field: ClassField) uses XXHashable
 class MethodBodyRef(
   fileName: FPath,
   className: String,
+  classOccurrence: Int,
   methodName: String,
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable
