@@ -12,7 +12,6 @@
 
 // Literal widened to its base primitive
 function testLiteralToPrimitive(): void {
-  // @skjs-expect-error Construction not supported: operator as
   const s: string = "foo" as string;
 }
 
@@ -20,7 +19,6 @@ function testLiteralToPrimitive(): void {
 type Animal = { name: string };
 type Dog = { name: string; breed: string };
 function testObjectUpcast(d: Dog): Animal {
-  // @skjs-expect-error Construction not supported: operator as
   return d as Animal;
 }
 
@@ -29,7 +27,6 @@ function testIdentityAfterNarrowing(x: number | string): number {
   if (typeof x === "number") {
     return x;
   } else {
-    // @skjs-expect-error Construction not supported: operator as
     return (x as string).length;
   }
 }
@@ -40,7 +37,7 @@ function testIdentityAfterNarrowing(x: number | string): number {
 
 // Downcast from `unknown`: unknown is NOT a subtype of number
 function testDowncastFromUnknown(u: unknown): void {
-  // @skjs-expect-error Construction not supported: operator as
+  // @skjs-expect-error Unsound 'as' cast
   const n: number = u as number;
   // Typing continues: `n` is `number`, so arithmetic works
   const doubled: number = n * 2;
@@ -48,7 +45,7 @@ function testDowncastFromUnknown(u: unknown): void {
 
 // Sideways primitive cast: number and string are unrelated
 function testSidewaysPrimitive(): void {
-  // @skjs-expect-error Construction not supported: operator as
+  // @skjs-expect-error Unsound 'as' cast
   const s: string = 42 as string;
   // Typing continues: `s` is `string`, so `.length` works
   const len: number = s.length;
@@ -56,14 +53,14 @@ function testSidewaysPrimitive(): void {
 
 // Union not fully covered by the target type
 function testUnionNotSubtype(x: number[] | { a: number }): number[] {
-  // @skjs-expect-error Construction not supported: operator as
+  // @skjs-expect-error Unsound 'as' cast
   return x as number[];
 }
 
 // Double-cast escape hatch: first half is sound (number <: unknown), second
 // half is unsound (unknown </: string). Only the second `as` is flagged.
 function testDoubleCastEscape(): void {
-  // @skjs-expect-error Construction not supported: operator as
+  // @skjs-expect-error Unsound 'as' cast
   const s: string = 1 as unknown as string;
   const len: number = s.length;
 }
