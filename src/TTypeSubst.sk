@@ -30,7 +30,10 @@ mutable base class SubstState private {
     this.!seenSub = saved.seenSub;
     this.!seenInter = saved.seenInter;
     this.!seenUnion = saved.seenUnion;
-    this.!seenExpansion = saved.seenExpansion;
+    // seenExpansion is monotonic -- entries are (TSInst, expandedType) pairs
+    // whose meaning is independent of `values`, so rolling them back would
+    // discard legitimate work done during a speculative probe. The save path
+    // still captures the cache for full-state snapshots via mcreateFromSaved.
   }
 }
 
