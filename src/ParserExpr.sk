@@ -223,27 +223,23 @@ extension class Parser {
         try {
           tparams = this.typeParams();
           this.expect(TKOpenParen());
-          paramsExpr = this.parseParenExpr();
-          paramsExpr match {
-          | Params(params) ->
-            rty = if (this.lex.peekKind() is Some(TKColon())) {
-              _ = this.lex.next();
-              Some(this.type(0))
+          params = this.params();
+          rty = if (this.lex.peekKind() is Some(TKColon())) {
+            _ = this.lex.next();
+            Some(this.type(0))
+          } else {
+            None()
+          };
+          if (this.lex.peekKind() is Some(TKClosure())) {
+            _ = this.lex.next();
+            closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
+              CBBlock(this.blockOrStmt())
             } else {
-              None()
+              CBExpr(this.expr(closurePrec))
             };
-            if (this.lex.peekKind() is Some(TKClosure())) {
-              _ = this.lex.next();
-              closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
-                CBBlock(this.blockOrStmt())
-              } else {
-                CBExpr(this.expr(closurePrec))
-              };
-              Some(Closure(tparams, params, rty, closureBody))
-            } else {
-              None()
-            }
-          | _ -> None()
+            Some(Closure(tparams, params, rty, closureBody))
+          } else {
+            None()
           }
         } catch {
         | ErrorExn _ -> None()
