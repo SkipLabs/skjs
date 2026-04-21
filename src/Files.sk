@@ -194,48 +194,18 @@ class Files(
           | exn -> throw exn
           }
         };
-        funDefSigs = {
-          m = mutable Map[];
-          for ((ref, data) in parser.funDefSigs) m.set(ref, data);
-          m.chill()
-        };
-        funDefBodies = {
-          m = mutable Map[];
-          for ((ref, data) in parser.funDefBodies) m.set(ref, data);
-          m.chill()
-        };
-        classBodies = {
-          m = mutable Map[];
-          for ((ref, data) in parser.classBodies) m.set(ref, data);
-          m.chill()
-        };
-        classFieldEntries = {
-          m = mutable Map[];
-          for ((ref, data) in parser.classFieldEntries) m.set(ref, data);
-          m.chill()
-        };
-        typeDefBodies = {
-          m = mutable Map[];
-          for ((ref, data) in parser.typeDefBodies) m.set(ref, data);
-          m.chill()
-        };
-        methodBodyEntries = {
-          m = mutable Map[];
-          for ((ref, data) in parser.methodBodyEntries) m.set(ref, data);
-          m.chill()
-        };
         writer.setArray(
           fileName,
           Array[
             ParsedResultAndSymbolsFile(
               parsingResult,
               lexer.getAllSymbolLocations(),
-              funDefSigs,
-              funDefBodies,
-              classBodies,
-              classFieldEntries,
-              typeDefBodies,
-              methodBodyEntries,
+              Map::createFromItems(parser.funDefSigs),
+              Map::createFromItems(parser.funDefBodies),
+              Map::createFromItems(parser.classBodies),
+              Map::createFromItems(parser.classFieldEntries),
+              Map::createFromItems(parser.typeDefBodies),
+              Map::createFromItems(parser.methodBodyEntries),
             ),
           ],
         )
