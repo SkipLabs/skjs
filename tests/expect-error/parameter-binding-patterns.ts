@@ -165,6 +165,16 @@ function testArrowRequiredAfterOptional(): void {
   void f;
 }
 
+// === Generic type parameters on arrow functions (issue #168) ===
+
+// Arrow with a single type parameter
+// TODO: FIXME should typecheck; currently parsed as <T>expr cast
+function testArrowGeneric(): void {
+  // @skjs-expect-error Type T not found
+  const f = <T>(x: T[]): T => x[0];
+  void f;
+}
+
 // Function type with pattern parameters (parsing only)
 type FuncWithObjectParam = ({ x, y }: { x: number; y: number }) => void;
 type FuncWithArrayParam = ([a, b]: [number, string]) => void;
