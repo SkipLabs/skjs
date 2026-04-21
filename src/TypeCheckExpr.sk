@@ -1931,22 +1931,7 @@ extension class TypeChecker {
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
-    normalParams = mutable Vector[];
-    optionalParams = mutable Vector[];
-    spreadParam: ?ArrayType = None();
-    paramTypes = params.map(param -> {
-      paramType = this.processParamType(tcenv, param, false);
-      param.isRest match {
-      | Some(_) -> !spreadParam = Some(ArrayType::createFromFull(paramType))
-      | None() ->
-        if (param.optional is Some _ || param.default is Some _) {
-          optionalParams.push(paramType)
-        } else {
-          normalParams.push(paramType)
-        }
-      };
-      paramType
-    });
+    paramTypes = this.processParams(tcenv, params, Array[], false);
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
     tcenv.recordCalls(CGNodes::singleton(callingContext));
@@ -1955,9 +1940,7 @@ extension class TypeChecker {
     tcenv.!scope = tcenv.mcreateSubScope{isLoop => false};
     tcenv.!callingContext = callingContext;
 
-    for (i => param in params) {
-      this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, false)
-    };
+    this.bindParams(tcenv, params, paramTypes);
 
     retType = (retTypeAstOpt, body) match {
     | (None(), CBExpr(e)) ->
@@ -2002,6 +1985,20 @@ extension class TypeChecker {
 
     tcenv.!scope = savedScope;
     tcenv.!callingContext = savedCallingContext;
+
+    normalParams = mutable Vector[];
+    optionalParams = mutable Vector[];
+    spreadParam: ?ArrayType = None();
+    for (i => param in params) {
+      paramType = paramTypes[i];
+      if (param.isRest is Some _) {
+        !spreadParam = Some(ArrayType::createFromFull(paramType))
+      } else if (param.optional is Some _ || param.default is Some _) {
+        optionalParams.push(paramType)
+      } else {
+        normalParams.push(paramType)
+      }
+    };
 
     TType::single(
       TObject::createCall(
