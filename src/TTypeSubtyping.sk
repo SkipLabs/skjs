@@ -482,7 +482,7 @@ base class STErrorOnTFuns(f1: TFuns, f2: TFuns) extends STError<TFuns> {
 base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
   children =
   | STTypeParameterMismatch()
-  | STInvalidSpread(ArrayType)
+  | STInvalidSpread(TType)
   | STRecFunTParam(?STErrorOnTType, Int)
   | STRecFunThisParam(?STErrorOnTType)
   | STRecFunParam(?STErrorOnTType, Int)
@@ -513,7 +513,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
     | STTypeParameterMismatch(_f1, _f2) ->
       (None(), List[(pos1, "Their number of type parameters differ")])
     | STInvalidSpread(rest, _f1, _f2) ->
-      restStr = prettyPrintType(false, rest.full(), subst, tenv);
+      restStr = prettyPrintType(false, rest, subst, tenv);
       (None(), List[(pos1, `Invalid type for a rest parameter: ${restStr}`)])
     | STRecFunTParam(Some(err), i, f1, _f2) ->
       iStr = if (f1.tparams.size() > 1) ` ${i + 1}` else "";
@@ -1498,7 +1498,7 @@ extension class TFun {
     spread1elt = f1spreadParam match {
     | None() -> None()
     | Some(spread1) ->
-      spread1.maybeGetEltType(subst, tenv, Contravariant()) match {
+      maybeGetRestElementType(subst, tenv, spread1, Contravariant()) match {
       | None() -> return STInvalidSpread(spread1, f1, f2)
       | some @ Some _ -> some
       }
@@ -1558,7 +1558,12 @@ extension class TFun {
         return STRecFunSpread(None(), f1, f2)
       }
     | Some(spread2) ->
-      spread2elt = spread2.maybeGetEltType(subst, tenv, Covariant()) match {
+      spread2elt = maybeGetRestElementType(
+        subst,
+        tenv,
+        spread2,
+        Covariant(),
+      ) match {
       | None() -> return STInvalidSpread(spread2, f1, f2)
       | Some(spread2elt) -> spread2elt
       };
@@ -1584,23 +1589,6 @@ extension class TFun {
     TType::isSub(subst, tenv, f1.retType, f2.retType) match {
     | STOk() -> STOk()
     | err @ STErrorOnTType _ -> STRecFunReturn(err, f1, f2)
-    }
-  }
-}
-
-extension base class ArrayType {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    arr1: ArrayType,
-    arr2: ArrayType,
-  ): STResult<TType> {
-    (
-      arr1.maybeGetEltType(subst, tenv, Covariant()),
-      arr2.maybeGetEltType(subst, tenv, Contravariant()),
-    ) match {
-    | (Some(elt1), Some(elt2)) -> TType::isSub(subst, tenv, elt1, elt2)
-    | _ -> TType::isSub(subst, tenv, arr1.full(), arr2.full())
     }
   }
 }

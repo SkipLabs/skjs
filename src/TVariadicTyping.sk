@@ -42,11 +42,11 @@ class VariadicTyping() {
   static fun resolveSpreadToTuple(
     subst: mutable Subst,
     tenv: TEnv,
-    spreadParam: ?ArrayType,
+    spreadParam: ?TType,
   ): ?Array<TType> {
     fullType = spreadParam match {
-    | Some(ATFullType(ft)) -> ft
-    | _ -> return None()
+    | Some(ft) -> ft
+    | None() -> return None()
     };
     saved = subst.save();
     // Expand (resolves type aliases, applies tvar bindings + constraints)
@@ -98,14 +98,14 @@ class VariadicTyping() {
     tcenv: mutable TCEnv,
     tenv: TEnv,
     pos: PosRange,
-    spreadParam: ?ArrayType,
+    spreadParam: ?TType,
     totalSize: Int,
     args: readonly Vector<TType>,
     moreArgs: ?TType,
   ): Bool {
     subst = tcenv.subst;
     spreadParam match {
-    | Some(ATFullType(fullType)) ->
+    | Some(fullType) ->
       fullType.getSingleVar() match {
       | Some(tvar) if (subst.isUnbound(tvar)) ->
         inferred = moreArgs match {
@@ -149,7 +149,7 @@ class VariadicTyping() {
         false
       | _ -> false
       }
-    | _ -> false
+    | None() -> false
     }
   }
 
@@ -170,7 +170,7 @@ class VariadicTyping() {
     tcenv: mutable TCEnv,
     tenv: TEnv,
     pos: PosRange,
-    spreadParam: ?ArrayType,
+    spreadParam: ?TType,
     totalSize: Int,
     args: readonly Vector<TType>,
     moreArgs: ?TType,
@@ -194,7 +194,7 @@ class VariadicTyping() {
                 "Invalid call. Tuple rest parameters require exact arguments",
               ),
               (
-                spreadType.getPos(),
+                spreadType.pos,
                 "This call includes an unknown-length spread argument",
               ),
             ],
@@ -204,7 +204,7 @@ class VariadicTyping() {
             Array[
               (pos, "Invalid call"),
               (
-                spreadType.getPos(),
+                spreadType.pos,
                 `This function has ${totalSize + tupleElts.size()} parameters`,
               ),
             ],
@@ -226,7 +226,12 @@ class VariadicTyping() {
       | None() ->
         // Array-rest (or array-like) validation: check each rest arg against the
         // element type.
-        spreadType.maybeGetEltType(tcenv.subst, tenv, Contravariant()) match {
+        maybeGetRestElementType(
+          tcenv.subst,
+          tenv,
+          spreadType,
+          Contravariant(),
+        ) match {
         | Some(eltType) ->
           for (restArg in knownRest) {
             TType::isSub(tcenv.subst, tenv, restArg, eltType) match {
@@ -257,8 +262,8 @@ class VariadicTyping() {
             Array[
               (pos, "Invalid call. Unexpected type for ..."),
               (
-                spreadType.getPos(),
-                `${tenv.ppType(tcenv, spreadType.full())} is not an array`,
+                spreadType.pos,
+                `${tenv.ppType(tcenv, spreadType)} is not an array`,
               ),
             ],
           )

@@ -550,30 +550,6 @@ extension class TFun {
   }
 }
 
-extension base class ArrayType {
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
-    arr1: ArrayType,
-    arr2: ArrayType,
-  ): ArrayType {
-    (
-      arr1.maybeGetEltType(subst, tenv, Contravariant()),
-      arr2.maybeGetEltType(subst, tenv, Contravariant()),
-    ) match {
-    | (Some(elt1), Some(elt2)) ->
-      ArrayType::createFromElt(
-        TType::inter(subst, tenv, elt1, elt2),
-        arr1.getPos(),
-      )
-    | _ ->
-      ArrayType::createFromFull(
-        TType::inter(subst, tenv, arr1.full(), arr2.full()),
-      )
-    }
-  }
-}
-
 extension class TTuple {
   static fun inter(
     subst: mutable Subst,

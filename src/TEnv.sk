@@ -1243,7 +1243,7 @@ base class TEnv{
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
       optionalWitness: ?PosRange = None();
-      spreadParam: ?ArrayType = None();
+      spreadParam: ?TType = None();
       thisParam: ?TType = None();
       for (i => param in params) {
         paramType = this.normalize(tcenvb, param.type);
@@ -1273,9 +1273,7 @@ base class TEnv{
             tcenvb.error(Array[(optPos, "A rest parameter cannot be optional")])
           | None() -> void
           };
-          !spreadParam = Some(
-            ArrayType::createFromFull(TType::arrayToReadonlyArray(paramType)),
-          );
+          !spreadParam = Some(TType::arrayToReadonlyArray(paramType));
           VariadicTyping::checkRestParamReadonly(
             tcenvb,
             this,

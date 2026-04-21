@@ -1988,11 +1988,11 @@ extension class TypeChecker {
 
     normalParams = mutable Vector[];
     optionalParams = mutable Vector[];
-    spreadParam: ?ArrayType = None();
+    spreadParam: ?TType = None();
     for (i => param in params) {
       paramType = paramTypes[i];
       if (param.isRest is Some _) {
-        !spreadParam = Some(ArrayType::createFromFull(paramType))
+        !spreadParam = Some(paramType)
       } else if (param.optional is Some _ || param.default is Some _) {
         optionalParams.push(paramType)
       } else {
