@@ -1935,8 +1935,7 @@ extension class TypeChecker {
     optionalParams = mutable Vector[];
     spreadParam: ?ArrayType = None();
     paramTypes = params.map(param -> {
-      checkPatternDoesNotContainThis(param.name);
-      paramType = this.processParamType(tcenv, param);
+      paramType = this.processParamType(tcenv, param, false);
       param.isRest match {
       | Some(_) -> !spreadParam = Some(ArrayType::createFromFull(paramType))
       | None() ->

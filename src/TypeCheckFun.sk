@@ -58,12 +58,7 @@ extension class TypeChecker {
         )
       | None() -> void
       };
-      paramType = this.processParamType(tcenv, param);
-      param.name.value match {
-      | PVar(n) if (n.value == "this") ->
-        error(Array[(n.pos, "TODO: support this parameter")])
-      | _ -> checkPatternDoesNotContainThis(param.name)
-      };
+      paramType = this.processParamType(tcenv, param, true);
       this.bind(tcenv, BKLet(), param.name, paramType, true, false)
     };
     !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
@@ -74,7 +69,16 @@ extension class TypeChecker {
   // isRest (arrayToReadonlyArray), optional (unionUndefined), and default
   // (checkSubType) modifiers in order. Reports an error if the parameter
   // is both optional and has a default.
-  fun processParamType(tcenv: mutable TCEnv, param: Param): TType {
+  fun processParamType(
+    tcenv: mutable TCEnv,
+    param: Param,
+    allowThis: Bool,
+  ): TType {
+    param.name.value match {
+    | PVar(n) if (allowThis && n.value == "this") ->
+      error(Array[(n.pos, "TODO: support this parameter")])
+    | _ -> checkPatternDoesNotContainThis(param.name)
+    };
     paramType = param.type match {
     | None() -> error(Array[(param.pos, "Missing type annotation")])
     | Some(ty) -> this.normalize(tcenv.subst, ty)
