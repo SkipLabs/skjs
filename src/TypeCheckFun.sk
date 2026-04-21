@@ -96,6 +96,21 @@ extension class TypeChecker {
       param.isRest.each(_ ->
         !paramType = TType::arrayToReadonlyArray(paramType)
       );
+      if (
+        i > 0 &&
+        !(param.optional.isSome() || param.default.isSome()) &&
+        (params[i - 1].optional.isSome() || params[i - 1].default.isSome())
+      ) {
+        tcenv.error(
+          Array[
+            (param.pos, "This parameter is not optional"),
+            (
+              params[i - 1].pos,
+              "It appears after this parameter that is optional",
+            ),
+          ],
+        )
+      };
       param.optional match {
       | None() -> void
       | Some(optionalPos) ->

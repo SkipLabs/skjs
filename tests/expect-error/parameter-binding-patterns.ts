@@ -149,7 +149,7 @@ function testArrowOptionalAndDefault(): void {
 }
 
 // Required parameter cannot follow optional
-// TODO: FIXME should error "This parameter is not optional"
+// @skjs-expect-error This parameter is not optional
 function requiredAfterOptional(x?: number, y: string): void {
   void x;
   void y;
@@ -157,7 +157,7 @@ function requiredAfterOptional(x?: number, y: string): void {
 
 // Required parameter cannot follow optional (in arrow)
 function testArrowRequiredAfterOptional(): void {
-  // TODO: FIXME should error "This parameter is not optional"
+  // @skjs-expect-error This parameter is not optional
   const f = (x?: number, y: string): void => {
     void x;
     void y;
