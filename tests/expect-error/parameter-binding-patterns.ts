@@ -148,6 +148,23 @@ function testArrowOptionalAndDefault(): void {
   void f;
 }
 
+// Required parameter cannot follow optional
+// TODO: FIXME should error "This parameter is not optional"
+function requiredAfterOptional(x?: number, y: string): void {
+  void x;
+  void y;
+}
+
+// Required parameter cannot follow optional (in arrow)
+function testArrowRequiredAfterOptional(): void {
+  // TODO: FIXME should error "This parameter is not optional"
+  const f = (x?: number, y: string): void => {
+    void x;
+    void y;
+  };
+  void f;
+}
+
 // Function type with pattern parameters (parsing only)
 type FuncWithObjectParam = ({ x, y }: { x: number; y: number }) => void;
 type FuncWithArrayParam = ([a, b]: [number, string]) => void;
