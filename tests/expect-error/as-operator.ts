@@ -31,6 +31,11 @@ function testIdentityAfterNarrowing(x: number | string): number {
   }
 }
 
+// Widening an array literal from ("a"|"b")[] to string[]
+function testArrayLiteralWidening(): string[] {
+  return ["a", "b"] as string[];
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Unsound casts (error reported, but typing continues with the target type)
 ///////////////////////////////////////////////////////////////////////////////
