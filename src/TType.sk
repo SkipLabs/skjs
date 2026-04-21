@@ -183,20 +183,69 @@ class TType private {
     }
   }
 
-  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
-     i.e. such that t3 <= t1 and t3 | t2 >= t1
-   */
-  static fun diff(
+  // Remove a single primitive constant from a type's clauses. Used for:
+  //   - Object field defaults: (fieldType \ undefined) | default
+  //   - Array destructuring defaults: same pattern
+  //   - Constant-based refinement: `x.kind !== "foo"` narrows x.kind
+  // For TPrimUnit (undefined/null/void): drops the matching unit entirely.
+  // For TPrimValue with literals: subtracts literals; drops if empty.
+  // For TPrimValue full TBool (no literals): computes exact complement
+  // (boolean - true = false) since the full set is {true, false}.
+  // For TPrimValue full of other kinds: keeps unchanged (over-approximation).
+  static fun removeConstant(
     subst: mutable Subst,
     tenv: TEnv,
-    left: TType,
-    right: TType,
+    ty: TType,
+    prim: TPrim,
   ): TType {
-    leftExpanded = left.expand(subst, tenv, None());
-    rightExpanded = right.expand(subst, tenv, None());
-    diffInsts = TInsts::diff(leftExpanded.insts, rightExpanded.insts);
-    diffClauses = Clauses::diff(leftExpanded.clauses, rightExpanded.clauses);
-    TType::create(left.pos, diffInsts, diffClauses)
+    expanded = ty.expand(subst, tenv, None());
+    newClauses = expanded.clauses.mapSTypes(stypesOpt ->
+      stypesOpt.map(stypes ->
+        stypes.filterMap(stype ->
+          (stype, prim) match {
+          | (TPrimUnit(k1, _), TPrimUnit(k2, _)) if (k1 == k2) -> None()
+          | (
+            TPrimValue(k1, Some(lits1), pos),
+            TPrimValue(k2, Some(lits2), _),
+          ) if (k1 == k2) ->
+            lits1.diff(lits2).map(l -> TPrimValue(k1, Some(l), pos))
+          | (
+            TPrimValue(k1 @ TBool _, None(), pos),
+            TPrimValue(k2, Some(lits2), _),
+          ) if (k1 == k2) ->
+            // lits2 is a non-empty subset of {true, false}; a size-2 lits2
+            // should have been normalized to None() (full).
+            invariant(lits2.size() == 1);
+            other = if (lits2.contains("true")) "false" else {
+              invariant(lits2.contains("false"));
+              "true"
+            };
+            Some(
+              TPrimValue(
+                k1,
+                Some(PrimLiterals::single(PrimLiteral(pos, other))),
+                pos,
+              ),
+            )
+          | _ -> Some(stype)
+          }
+        )
+      )
+    );
+    TType::create(ty.pos, expanded.insts, newClauses)
+  }
+
+  static fun removeUndefined(
+    subst: mutable Subst,
+    tenv: TEnv,
+    ty: TType,
+  ): TType {
+    TType::removeConstant(
+      subst,
+      tenv,
+      ty,
+      TPrimUnit(TUndefined(), PosRange::none),
+    )
   }
 
   // TRANSFORMERS
@@ -1581,56 +1630,6 @@ class STypes private (
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     prettyPrintSTypes(subst, tenv, this)
   }
-
-  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
-     i.e. such that t3 <= t1 and t3 | t2 >= t1
-   */
-  static fun diff(left: STypes, right: STypes): STypes {
-    STypes(
-      left.stypes.mapDiff(right.stypes, (leftSType, rightSType) ->
-        (leftSType, rightSType) match {
-        | (TPrimValue(k, lits1, pos), TPrimValue(_, lits2, _)) ->
-          (lits1, lits2) match {
-          // lits1 - lits2 = lits1 \ lits2
-          | (Some(l1), Some(l2)) ->
-            l1.diff(l2).map(l -> TPrimValue(k, Some(l), pos))
-          // literal - full = bottom
-          | (Some _, None()) -> None()
-          // For TBool, full = {true, false} — compute exact diff.
-          // For other kinds (string, number, ...), full is infinite,
-          // so over-approximate as full.
-          | (None(), Some(l2)) ->
-            if (k is TBool _) {
-              // l2 is a non-empty subset of {true, false}; a size-2 l2
-              // should have been normalized to None() (full).
-              invariant(l2.size() == 1);
-              other = if (l2.contains("true")) "false" else {
-                invariant(l2.contains("false"));
-                "true"
-              };
-              Some(
-                TPrimValue(
-                  k,
-                  Some(PrimLiterals::single(PrimLiteral(pos, other))),
-                  pos,
-                ),
-              )
-            } else {
-              Some(leftSType)
-            }
-          // full - full = bottom
-          | (None(), None()) -> None()
-          }
-        // TPrimUnit tags uniquely determine value: left - right = bottom
-        | (TPrimUnit _, TPrimUnit _) -> None()
-        // left = right: left - right = bottom
-        | _ if (leftSType == rightSType) -> None()
-        // Over-approximate: left - right <= left
-        | _ -> Some(leftSType)
-        }
-      ),
-    )
-  }
 }
 
 /* Type variable */
@@ -1817,13 +1816,6 @@ class TInsts private (
     }
   }
 
-  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
-     i.e. such that t3 <= t1 and t3 | t2 >= t1
-   */
-  static fun diff(left: TInsts, right: TInsts): TInsts {
-    TInsts(left.insts.diff(right.insts))
-  }
-
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     prettyPrintTInsts(subst, tenv, this)
   }
@@ -1945,23 +1937,6 @@ class Clause private (
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     prettyPrintClause(subst, tenv, this)
-  }
-
-  /*
-    t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
-    i.e. such that t3 <= 1 and t3 | t2 >= t1
-    Returns None if the result is bottom */
-  static fun diff(left: Clause, right: Clause): ?Clause {
-    (left.stypes, right.stypes) match {
-    | (_, None()) ->
-      None() // anything - Top = bottom
-    | (None(), Some(_)) ->
-      Some(left) // Top - Something <= Top (keep clause)
-    | (Some(stypesLeft), Some(stypesRight)) ->
-      // Compute the difference of the stypes
-      diffResult = STypes::diff(stypesLeft, stypesRight);
-      Clause::create(left.vars, Some(diffResult))
-    }
   }
 }
 
@@ -2095,32 +2070,6 @@ class Clauses private (
         | _ -> None()
         }
       })
-    )
-  }
-
-  /* t1.diff(t2)  computes t3, an over-approximation of t1 \ t2
-     i.e. such that t3 <= t1 and t3 | t2 >= t1
-   */
-  static fun diff(left: Clauses, right: Clauses): Clauses {
-    // For each left clause, subtract all right clauses whose vars are
-    // subsets (that is, supertypes).
-    Clauses::create(
-      left.clauses.filterMap(clauseLeft -> {
-        leftVars = clauseLeft.vars;
-        init: ?Clause = Some(clauseLeft);
-        right.clauses
-          .values()
-          .foldl(
-            (acc, clauseRight) -> {
-              if (leftVars.contains(clauseRight.vars)) {
-                acc.flatMap(c -> Clause::diff(c, clauseRight))
-              } else {
-                acc
-              }
-            },
-            init,
-          )
-      }),
     )
   }
 
