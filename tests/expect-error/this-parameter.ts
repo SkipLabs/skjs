@@ -5,7 +5,7 @@ type MyContext = { value: number };
 // this parameter must be first parameter
 class TestFirstParameter {
   // @skjs-expect-error Parameter named this must be the first one
-  // @skjs-expect-error TODO: support this parameter
+  // @skjs-expect-error this forbidden here
   method(x: number, this: MyContext): void {}
 }
 

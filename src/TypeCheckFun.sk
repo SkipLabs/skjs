@@ -49,7 +49,7 @@ extension class TypeChecker {
   ): Array<TType> {
     params.mapWithIndex((i, param) -> {
       param.name.value match {
-      | PVar(n) if (allowThis && n.value == "this") ->
+      | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
         error(Array[(n.pos, "TODO: support this parameter")])
       | _ -> checkPatternDoesNotContainThis(param.name)
       };
