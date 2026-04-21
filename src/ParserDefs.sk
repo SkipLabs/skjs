@@ -17,11 +17,11 @@ extension class Parser {
     }
   }
 
-  // <name> ::= <string>
-  mutable fun peekName(): Name {
+  // Peek at the next token expecting a name and return its raw string.
+  mutable fun peekNameStr(): String {
     this.lex.peek() match {
     | None() -> this.error(this.lex.posEnd(), ExpectedToken(TKVar()))
-    | Some(tok) -> Name(this.lex.posRange(tok), this.getVar(tok))
+    | Some(tok) -> this.getVar(tok)
     }
   }
 
@@ -859,7 +859,7 @@ extension class Parser {
   mutable fun class_(kind: ClassKind): Class {
     // Record the class definition and set context
     prevSymbolContext = this.getCurrentSymbolContext();
-    classSymbol = SPClass(this.peekName().value);
+    classSymbol = SPClass(this.peekNameStr());
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
       classSymbol,
@@ -1122,7 +1122,7 @@ extension class Parser {
   ): TopLevelFunDef {
     // Record the function definition and set context
     prevSymbolContext = this.getCurrentSymbolContext();
-    funcSymbol = SPFunction(this.peekName().value);
+    funcSymbol = SPFunction(this.peekNameStr());
     symbolContextPos = this.lex.pos;
     this.recordSymbolDefinitionAndSetSymbolContext(
       funcSymbol,
