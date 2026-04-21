@@ -16,9 +16,9 @@ class TestUnsupportedFeatures {
   }
 }
 
-// Test as operator (not supported)
+// Test as operator: only sound upcasts are accepted; downcasts error
 function testAsOperator(): void {
   const x: unknown = 5;
-  // @skjs-expect-error Construction not supported: operator as
+  // @skjs-expect-error Unsound 'as' cast
   const y: number = x as number;
 }

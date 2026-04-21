@@ -783,13 +783,11 @@ function testMixedChecks(
   }
 }
 
-// FIXME: 'as' operator not supported in SKJS
+// After narrowing, `x as string` is a sound identity upcast
 function testWithAssertion(x: number | string): number {
   if (typeof x === "number") {
     return x;
   } else {
-    // SKJS doesn't support 'as' operator
-    // @skjs-expect-error Construction not supported: operator as
     return (x as string).length;
   }
 }
@@ -808,7 +806,9 @@ function testRecursiveTypeof(x: number | string | boolean | null): string {
 }
 
 // Array.isArray with typeof (different from typeof)
-// FIXME: 'as' operator not supported in SKJS
+// The `as number[]` below is unsound: the union {a:number} is not a subtype
+// of number[]. Under partial 'as' support this is flagged but typechecking
+// continues with number[].
 function testArrayIsArray(
   x: number[] | { a: number },
   arr: number[],
@@ -816,7 +816,7 @@ function testArrayIsArray(
   if (typeof x === "object") {
     // Both are objects, typeof can't distinguish
     // Would need Array.isArray for real discrimination
-    // @skjs-expect-error Construction not supported: operator as
+    // @skjs-expect-error Unsound 'as' cast
     return x as number[];
   } else {
     return arr;

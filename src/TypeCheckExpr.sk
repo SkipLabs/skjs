@@ -1766,7 +1766,11 @@ extension class TypeChecker {
         retTypeAstOpt,
         body,
       )
-    | As _ -> notSupported(pos, "operator as")
+    | As(subExpr, tyAst) ->
+      annot = this.normalize(tcenv, tyAst);
+      inferredTy = this.expr(tcenv, subExpr, true);
+      this.checkSubType(tcenv, pos, "Unsound 'as' cast", inferredTy, annot);
+      annot
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
       inferredTy = this.expr(tcenv, subExpr, true);
