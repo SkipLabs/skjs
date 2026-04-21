@@ -24,7 +24,6 @@ declare function unwrapT3<A>(x: T3<A>): A;
 declare const boolStrNum: boolean | string | number;
 
 function testThreeWayAlias(): boolean {
-  // @skjs-expect-error Invalid call
   return unwrapT3(boolStrNum);
 }
 
@@ -35,7 +34,6 @@ declare const msStr: Maybe<string>;
 declare const msNum: Maybe<number>;
 
 function testMultiTVar(): [string, number] {
-  // @skjs-expect-error Invalid call
   return pairUp(msStr, msNum);
 }
 

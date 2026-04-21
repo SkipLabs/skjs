@@ -11,7 +11,6 @@ declare const sn: string | null;
 // Simple case: alias in direct parameter position.
 function testDirectParam(): string {
   const ok = unwrapInline(sn);
-  // @skjs-expect-error Invalid call
   const viaAlias = unwrapAlias(sn);
   return ok + viaAlias;
 }
@@ -26,7 +25,6 @@ function f(input: string | null): string {
 // Nested case: alias in contravariant position inside object type.
 function testNestedParam(): string {
   const ok = inferFromValueInline({ f });
-  // @skjs-expect-error Invalid call
   const viaAlias = inferFromValueAlias({ f });
   return ok + viaAlias;
 }
@@ -57,7 +55,6 @@ declare const CtorM: { new (): Maybe<string> };
 
 function testConstructor(): string {
   const ok = unboxCtorInline(CtorSN);
-  // @skjs-expect-error Invalid call
   const viaAliasParam = unboxCtorAlias(CtorSN);
   const viaAliasArg = unboxCtorInline(CtorM);
   return ok + viaAliasParam + viaAliasArg;
