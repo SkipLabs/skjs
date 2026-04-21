@@ -4,9 +4,9 @@
 
 declare function sideEffect(): void;
 
-// 1. Field refined, then a side-effecting call happens between the test
-// and the use. In a multithreaded context (or via a synchronous setter
-// called inside `sideEffect`), `x.f` could have been reassigned.
+// 1. #597 — Field refined, then a side-effecting call happens between
+// the test and the use. In a multithreaded context (or via a synchronous
+// setter called inside `sideEffect`), `x.f` could have been reassigned.
 function testFieldRefineThenSideEffect(x: { f: number | null }): void {
   if (x.f !== null) {
     sideEffect();
@@ -14,10 +14,10 @@ function testFieldRefineThenSideEffect(x: { f: number | null }): void {
   }
 }
 
-// 2. Field is reassigned to a wider value inside the refined branch. The
-// setter typechecks (the field still accepts `number | null`), but the
-// getter's narrowed type is not re-widened by SKJS. TypeScript catches
-// this; SKJS currently doesn't.
+// 2. #598 — Field is reassigned to a wider value inside the refined
+// branch. The setter typechecks (the field still accepts
+// `number | null`), but the getter's narrowed type is not re-widened by
+// SKJS. TypeScript catches this; SKJS currently doesn't.
 function testFieldReassignInBranch(x: { f: number | null }): void {
   if (x.f !== null) {
     x.f = null;
@@ -25,9 +25,9 @@ function testFieldReassignInBranch(x: { f: number | null }): void {
   }
 }
 
-// 3. Local is captured by a lambda that reassigns it. The lambda is
-// invoked inside the refined branch, so the narrowed type is stale when
-// we use `x` afterwards.
+// 3. #599 — Local is captured by a lambda that reassigns it. The lambda
+// is invoked inside the refined branch, so the narrowed type is stale
+// when we use `x` afterwards.
 function testLocalCapturedAndMutated(): void {
   let x: string | null = "hello";
   if (x !== null) {
