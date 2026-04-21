@@ -369,7 +369,7 @@ base class Expr_ uses XXHashable {
   | Call(Expr, Array<Type>, Array<Expr>)
   | Params(Array<Param>)
   | Object(Array<Field>)
-  | Closure(Array<Param>, ?Type, ClosureBody)
+  | Closure(Array<TypeParam>, Array<Param>, ?Type, ClosureBody)
   | EArray(Array<Expr>)
   | EIf(Expr, Expr, Expr)
   | In(Expr, Expr)

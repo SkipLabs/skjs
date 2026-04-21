@@ -300,7 +300,7 @@ extension class Parser {
     } else {
       CBExpr(this.expr(closurePrec))
     };
-    Some(Closure(params, rty, closureBody))
+    Some(Closure(Array[], params, rty, closureBody))
   }
 
   // Handle type casting with 'as' keyword, 'as const' syntax, and 'satisfies'

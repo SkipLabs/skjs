@@ -1754,14 +1754,26 @@ extension class TypeChecker {
         tyWithoutNullish
       }
 
-    | c @ Closure(params, retTypeAstOpt, body) ->
-      this.anonFunction(tcenv, None(), pos, c, params, retTypeAstOpt, body)
-    | Async(Expr(closurePos, c @ Closure(params, retTypeAstOpt, body))) ->
+    | c @ Closure(tparams, params, retTypeAstOpt, body) ->
+      this.anonFunction(
+        tcenv,
+        None(),
+        pos,
+        c,
+        tparams,
+        params,
+        retTypeAstOpt,
+        body,
+      )
+    | Async(
+      Expr(closurePos, c @ Closure(tparams, params, retTypeAstOpt, body)),
+    ) ->
       this.anonFunction(
         tcenv,
         Some(pos),
         closurePos,
         c,
+        tparams,
         params,
         retTypeAstOpt,
         body,
@@ -1927,6 +1939,7 @@ extension class TypeChecker {
     isAsync: ?PosRange,
     pos: PosRange,
     c: Closure,
+    _tparams: Array<TypeParam>,
     params: Array<Param>,
     retTypeAstOpt: ?Type,
     body: ClosureBody,
