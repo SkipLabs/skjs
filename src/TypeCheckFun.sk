@@ -58,11 +58,6 @@ extension class TypeChecker {
         )
       | None() -> void
       };
-      for (modifier in param.modifiers.modifiers) {
-        subst.error(
-          Array[(modifier.pos, `Forbidden modifier for a function parameter`)],
-        )
-      };
       paramType = this.processParamType(tcenv, param);
       param.name.value match {
       | PVar(n) if (n.value == "this") ->
@@ -121,6 +116,11 @@ extension class TypeChecker {
         paramType,
       );
       tcenv.!scope = savedScope
+    };
+    for (modifier in param.modifiers.modifiers) {
+      tcenv.error(
+        Array[(modifier.pos, `Forbidden modifier for a function parameter`)],
+      )
     };
     paramType
   }
