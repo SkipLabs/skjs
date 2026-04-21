@@ -781,17 +781,29 @@ class ATFullType(fullType: TType) extends ArrayType {
     tenv: TEnv,
     variance: Variance,
   ): ?TType {
-    this.fullType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
-      stypes.singleElt()
-    ) match {
-    | Some(obj @ TObject(_, _, objectPos)) ->
-      tenv.getIteratorElementType(subst, obj, objectPos)
-    | _ -> None()
-    }
+    maybeGetRestElementType(subst, tenv, this.fullType, variance)
   }
 
   fun full(): TType {
     this.fullType
+  }
+}
+
+// Element extraction for a rest-parameter type: expand to a single TObject and
+// walk its Symbol.iterator protocol. Returns None for tuples, intersections, or
+// anything that doesn't reduce to a single iterable object.
+fun maybeGetRestElementType(
+  subst: mutable Subst,
+  tenv: TEnv,
+  spreadType: TType,
+  variance: Variance,
+): ?TType {
+  spreadType.getSTypes(subst, tenv, variance).flatMap(stypes ~>
+    stypes.singleElt()
+  ) match {
+  | Some(obj @ TObject(_, _, objectPos)) ->
+    tenv.getIteratorElementType(subst, obj, objectPos)
+  | _ -> None()
   }
 }
 
