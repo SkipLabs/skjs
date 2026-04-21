@@ -197,7 +197,7 @@ mutable class TypePp{
             pp.out(level, margin, ", ")
           };
           pp.out(level, margin, "..._: ");
-          pp.arrayType(level, margin, at)
+          pp.type(level, margin, at)
         });
         if (isMethod) {
           pp.out(level, margin, "): ");
@@ -242,7 +242,7 @@ mutable class TypePp{
         };
         tfun.spreadParam.each(at -> {
           pp.out(level, margin, "..._: ");
-          pp.arrayType(level, margin, at);
+          pp.type(level, margin, at);
           pp.newLine();
         });
         if (isMethod) {
@@ -647,10 +647,6 @@ mutable class TypePp{
     } else {
       this.out(level, margin, nameColon + id)
     }
-  }
-
-  mutable fun arrayType(level: Int, margin: Margin, arrayTy: ArrayType): void {
-    this.type(level, margin, arrayTy.full())
   }
 }
 

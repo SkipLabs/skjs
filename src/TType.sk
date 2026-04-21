@@ -703,7 +703,7 @@ class TFun(
   thisParam: ?TType,
   params: Array<TType>,
   optionalParams: Array<TType>,
-  spreadParam: ?ArrayType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
+  spreadParam: ?TType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   retType: TType,
   cgNodes: CGNodes,
 ) uses XXHashable, Orderable {
@@ -713,81 +713,8 @@ class TFun(
 }
 
 /***************************************************************************/
-/* ArrayType for the spread parameter of functions */
+/* Rest-parameter element extraction */
 /***************************************************************************/
-
-base class ArrayType uses XXHashable, Orderable {
-  fun getPos(): PosRange;
-  fun maybeGetEltType(
-    subst: mutable Subst,
-    tenv: TEnv,
-    variance: Variance,
-  ): ?TType;
-  fun full(): TType;
-
-  fun getEltType(subst: mutable Subst, tenv: TEnv, variance: Variance): TType {
-    this.maybeGetEltType(subst, tenv, variance) match {
-    | Some(res) -> res
-    | None() ->
-      variance match {
-      | Covariant() -> TType::top(this.getPos())
-      | Contravariant() -> TType::bottom(this.getPos())
-      }
-    }
-  }
-
-  static fun createFromElt(eltType: TType, pos: PosRange): ArrayType {
-    ATArrayOf(eltType, pos)
-  }
-
-  static fun createFromFull(fullType: TType): ArrayType {
-    ATFullType(fullType)
-  }
-}
-
-class ATArrayOf(eltType: TType, pos: PosRange) extends ArrayType {
-  fun getPos(): PosRange {
-    this.pos
-  }
-
-  fun toString(subst: mutable Subst, tenv: TEnv): String {
-    `ReadonlyArray<${this.eltType.toString(subst, tenv)}>`
-  }
-
-  fun maybeGetEltType(
-    _subst: mutable Subst,
-    _tenv: TEnv,
-    _variance: Variance,
-  ): ?TType {
-    Some(this.eltType)
-  }
-
-  fun full(): TType {
-    TType::inst(Name(this.pos, "ReadonlyArray"), TArgs(Array[this.eltType]))
-  }
-}
-
-class ATFullType(fullType: TType) extends ArrayType {
-  fun getPos(): PosRange {
-    this.fullType.pos
-  }
-
-  fun toString(subst: mutable Subst, tenv: TEnv): String {
-    this.fullType.toString(subst, tenv)
-  }
-
-  fun maybeGetEltType(
-    subst: mutable Subst,
-    tenv: TEnv,
-    variance: Variance,
-  ): ?TType {
-    maybeGetRestElementType(subst, tenv, this.fullType, variance)
-  }
-
-  fun full(): TType {
-    this.fullType
-  }
-}
 
 // Element extraction for a rest-parameter type: expand to a single TObject and
 // walk its Symbol.iterator protocol. Returns None for tuples, intersections, or
@@ -804,6 +731,24 @@ fun maybeGetRestElementType(
   | Some(obj @ TObject(_, _, objectPos)) ->
     tenv.getIteratorElementType(subst, obj, objectPos)
   | _ -> None()
+  }
+}
+
+// Like maybeGetRestElementType but supplies a variance-appropriate fallback
+// (Top for covariant, Bottom for contravariant) instead of None.
+fun getRestElementType(
+  subst: mutable Subst,
+  tenv: TEnv,
+  spreadType: TType,
+  variance: Variance,
+): TType {
+  maybeGetRestElementType(subst, tenv, spreadType, variance) match {
+  | Some(res) -> res
+  | None() ->
+    variance match {
+    | Covariant() -> TType::top(spreadType.pos)
+    | Contravariant() -> TType::bottom(spreadType.pos)
+    }
   }
 }
 

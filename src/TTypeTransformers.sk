@@ -109,20 +109,10 @@ mutable base class ApplyType(
       f.thisParam.map(x -> this.type(env, x)),
       f.params.map(x -> this.type(env, x)),
       f.optionalParams.map(x -> this.type(env, x)),
-      f.spreadParam.map(x -> this.arrayType(env, x)),
+      f.spreadParam.map(x -> this.type(env, x)),
       this.type(env, f.retType),
       f.cgNodes,
     )
-  }
-
-  overridable deferred mutable fun arrayType(
-    env: this::Env,
-    arr: ArrayType,
-  ): ArrayType {
-    arr match {
-    | ATArrayOf(eltType, pos) -> ATArrayOf(this.type(env, eltType), pos)
-    | ATFullType(fullType) -> ATFullType(this.type(env, fullType))
-    }
   }
 
   overridable deferred mutable fun fields(

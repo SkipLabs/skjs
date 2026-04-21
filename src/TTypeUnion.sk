@@ -395,11 +395,13 @@ extension class TFun {
 
     spread1elt = f1.spreadParam match {
     | None() -> None()
-    | Some(spread1) -> Some(spread1.getEltType(subst, tenv, Contravariant()))
+    | Some(spread1) ->
+      Some(getRestElementType(subst, tenv, spread1, Contravariant()))
     };
     spread2elt = f2.spreadParam match {
     | None() -> None()
-    | Some(spread2) -> Some(spread2.getEltType(subst, tenv, Contravariant()))
+    | Some(spread2) ->
+      Some(getRestElementType(subst, tenv, spread2, Contravariant()))
     };
     params = mutable Vector[];
     for (i in Range(0, max(f1.params.size(), f2.params.size()))) {
@@ -458,7 +460,7 @@ extension class TFun {
       optionalParams.push(p)
     };
     spreadParam = (f1.spreadParam, f2.spreadParam) match {
-    | (Some(ty1), Some(ty2)) -> Some(ArrayType::inter(subst, tenv, ty1, ty2))
+    | (Some(ty1), Some(ty2)) -> Some(TType::inter(subst, tenv, ty1, ty2))
     | (spread @ Some _, None())
     | (None(), spread) ->
       spread
@@ -474,30 +476,6 @@ extension class TFun {
       retType,
       cgNodes,
     )
-  }
-}
-
-extension base class ArrayType {
-  static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
-    arr1: ArrayType,
-    arr2: ArrayType,
-  ): ArrayType {
-    (
-      arr1.maybeGetEltType(subst, tenv, Contravariant()),
-      arr2.maybeGetEltType(subst, tenv, Contravariant()),
-    ) match {
-    | (Some(elt1), Some(elt2)) ->
-      ArrayType::createFromElt(
-        TType::union(subst, tenv, elt1, elt2),
-        arr1.getPos(),
-      )
-    | _ ->
-      ArrayType::createFromFull(
-        TType::union(subst, tenv, arr1.full(), arr2.full()),
-      )
-    }
   }
 }
 
