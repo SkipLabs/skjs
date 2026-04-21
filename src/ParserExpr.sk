@@ -216,12 +216,43 @@ extension class Parser {
     | TKExclamationMark() -> Unop(UOExclamationMark(), this.expr(prefixPrec))
     | TKTild() -> Unop(UOTild(), this.expr(prefixPrec))
     | TKDotDotDot() -> Spread(this.expr(spreadPrec))
-    /* old-style as */
+    /* generic arrow function <T>(params) => body,
+       or old-style as cast <T>expr */
     | TKLessThan() ->
-      ty = this.type(0);
-      this.expect(TKGreaterThan());
-      e = this.expr(asPrec);
-      As(e, ty)
+      this.lex.tryAhead(() -> {
+        try {
+          tparams = this.typeParams();
+          this.expect(TKOpenParen());
+          params = this.params();
+          rty = if (this.lex.peekKind() is Some(TKColon())) {
+            _ = this.lex.next();
+            Some(this.type(0))
+          } else {
+            None()
+          };
+          if (this.lex.peekKind() is Some(TKClosure())) {
+            _ = this.lex.next();
+            closureBody = if (this.lex.peekKind() is Some(TKOpenCurly())) {
+              CBBlock(this.blockOrStmt())
+            } else {
+              CBExpr(this.expr(closurePrec))
+            };
+            Some(Closure(tparams, params, rty, closureBody))
+          } else {
+            None()
+          }
+        } catch {
+        | ErrorExn _ -> None()
+        | exn -> throw exn
+        }
+      }) match {
+      | Some(c) -> c
+      | None() ->
+        ty = this.type(0);
+        this.expect(TKGreaterThan());
+        e = this.expr(asPrec);
+        As(e, ty)
+      }
     | _ ->
       this.error(
         this.lex.posStart(tok),
@@ -300,7 +331,7 @@ extension class Parser {
     } else {
       CBExpr(this.expr(closurePrec))
     };
-    Some(Closure(params, rty, closureBody))
+    Some(Closure(Array[], params, rty, closureBody))
   }
 
   // Handle type casting with 'as' keyword, 'as const' syntax, and 'satisfies'

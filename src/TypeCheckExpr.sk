@@ -1754,14 +1754,26 @@ extension class TypeChecker {
         tyWithoutNullish
       }
 
-    | c @ Closure(params, retTypeAstOpt, body) ->
-      this.anonFunction(tcenv, None(), pos, c, params, retTypeAstOpt, body)
-    | Async(Expr(closurePos, c @ Closure(params, retTypeAstOpt, body))) ->
+    | c @ Closure(tparams, params, retTypeAstOpt, body) ->
+      this.anonFunction(
+        tcenv,
+        None(),
+        pos,
+        c,
+        tparams,
+        params,
+        retTypeAstOpt,
+        body,
+      )
+    | Async(
+      Expr(closurePos, c @ Closure(tparams, params, retTypeAstOpt, body)),
+    ) ->
       this.anonFunction(
         tcenv,
         Some(pos),
         closurePos,
         c,
+        tparams,
         params,
         retTypeAstOpt,
         body,
@@ -1927,11 +1939,18 @@ extension class TypeChecker {
     isAsync: ?PosRange,
     pos: PosRange,
     c: Closure,
+    tparams: Array<TypeParam>,
     params: Array<Param>,
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
-    paramTypes = this.processParams(tcenv, params, Array[], false);
+    static::checkTypeParams(
+      tcenv.subst,
+      tparams,
+      OptionalTypeParamsForbidden(),
+    );
+    !this = this.addTParams(tcenv.subst, tparams);
+    paramTypes = this.processParams(tcenv, params, tparams, false);
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
     tcenv.recordCalls(CGNodes::singleton(callingContext));
@@ -2000,11 +2019,12 @@ extension class TypeChecker {
       }
     };
 
+    funClauses = tparams.map(tparam -> this.makeTParam(tcenv.subst, tparam));
     TType::single(
       TObject::createCall(
         TFuns::singleFun(
           TFun(
-            Array[],
+            funClauses,
             None(),
             normalParams.toArray(),
             optionalParams.toArray(),

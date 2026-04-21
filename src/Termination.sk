@@ -195,7 +195,7 @@ value class StmtTermination private {
     | BigInt(_)
     | Var(_name)
     | EString(_)
-    | Closure(_args, _retTy, _body)
+    | Closure(_tparams, _args, _retTy, _body)
     | Regexp(_) ->
       static::skip
     | TemplateLiteral(_parts, expressions) ->
