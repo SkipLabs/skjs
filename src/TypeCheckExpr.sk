@@ -1936,7 +1936,7 @@ extension class TypeChecker {
     spreadParam: ?ArrayType = None();
     paramTypes = params.map(param -> {
       checkPatternDoesNotContainThis(param.name);
-      paramType = this.processParamType(tcenv.subst, tcenv, param);
+      paramType = this.processParamType(tcenv, param);
       param.isRest match {
       | Some(_) -> !spreadParam = Some(ArrayType::createFromFull(paramType))
       | None() ->
