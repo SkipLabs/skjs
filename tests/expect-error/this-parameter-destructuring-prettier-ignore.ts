@@ -27,6 +27,6 @@ class TestSpreadParameter1 {
 
 class TestSpreadParameter2 {
   // @skjs-expect-error Parameter named this must be the first one
-  // @skjs-expect-error TODO: support this parameter
+  // @skjs-expect-error this forbidden here
   method(x: number, ...this: string[]): void {}
 }

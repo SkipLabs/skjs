@@ -112,6 +112,59 @@ function testArrowNoAnnotation(): void {
   arr.map(([a, b]) => a);
 }
 
+// === Optional, rest, and default parameters in arrows ===
+
+// Arrow with optional parameter
+function testArrowOptional(): void {
+  const f = (x?: number): number => x ?? 0;
+  void f;
+}
+
+// Arrow with default value
+function testArrowDefaultValue(): void {
+  const f = (x: number = 0): number => x;
+  void f;
+}
+
+// Arrow with rest parameter
+function testArrowRest(): void {
+  const f = (...rest: number[]): number => rest.length;
+  void f;
+}
+
+// Arrow with default value, wrong type
+function testArrowDefaultWrongType(): void {
+  // @skjs-expect-error Default value doesn't have the expected type
+  const f = (x: number = "hello"): number => x;
+  void f;
+}
+
+// Arrow with both optional and default
+function testArrowOptionalAndDefault(): void {
+  // @skjs-expect-error A parameter cannot both be optional and have a default value
+  const f = (x?: number = 0): void => {
+    void x;
+  };
+  void f;
+}
+
+// Required parameter cannot follow optional
+// @skjs-expect-error This parameter is not optional
+function requiredAfterOptional(x?: number, y: string): void {
+  void x;
+  void y;
+}
+
+// Required parameter cannot follow optional (in arrow)
+function testArrowRequiredAfterOptional(): void {
+  // @skjs-expect-error This parameter is not optional
+  const f = (x?: number, y: string): void => {
+    void x;
+    void y;
+  };
+  void f;
+}
+
 // Function type with pattern parameters (parsing only)
 type FuncWithObjectParam = ({ x, y }: { x: number; y: number }) => void;
 type FuncWithArrayParam = ([a, b]: [number, string]) => void;

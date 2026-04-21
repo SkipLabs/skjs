@@ -21,27 +21,58 @@ extension class TypeChecker {
     !this.subst["this"] = (false, thisType);
     tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true);
     !this = this.addTParams(subst, sig.tparams);
-    for (i => param in sig.params) {
+    paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
+    this.bindParams(tcenv, sig.params, paramTypes);
+    !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
+    (this, tcenv)
+  }
+
+  fun bindParams(
+    tcenv: mutable TCEnv,
+    params: Array<Param>,
+    paramTypes: Array<TType>,
+  ): void {
+    for (i => param in params) {
+      this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, false)
+    }
+  }
+
+  // Compute the effective types of a function parameters by applying the
+  // isRest (arrayToReadonlyArray), optional (unionUndefined), and default
+  // (checkSubType) modifiers in order. Reports an error if the parameter
+  // is both optional and has a default.
+  fun processParams(
+    tcenv: mutable TCEnv,
+    params: Array<Param>,
+    tParams: Array<TypeParam>,
+    allowThis: Bool,
+  ): Array<TType> {
+    params.mapWithIndex((i, param) -> {
+      param.name.value match {
+      | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
+        error(Array[(n.pos, "TODO: support this parameter")])
+      | _ -> checkPatternDoesNotContainThis(param.name)
+      };
       param.isRest match {
       | Some(restPos) ->
         param.optional match {
         | None() -> void
         | Some(optionalPos) ->
-          subst.error(
+          tcenv.error(
             Array[(optionalPos, "A rest parameter cannot be optional")],
           )
         };
         param.default match {
         | None() -> void
         | Some(defaultExpr) ->
-          subst.error(
+          tcenv.error(
             Array[
               (defaultExpr.pos, "A rest parameter cannot have an initializer"),
             ],
           )
         };
-        if (i != sig.params.size() - 1) {
-          subst.error(
+        if (i != params.size() - 1) {
+          tcenv.error(
             Array[
               (restPos, "A rest parameter must be last in a parameter list"),
             ],
@@ -49,31 +80,46 @@ extension class TypeChecker {
         };
         param.type.each(paramType ->
           VariadicTyping::checkRestParamReadonly(
-            subst,
+            tcenv,
             this,
             restPos,
             paramType,
-            sig.tparams,
+            tParams,
           )
         )
       | None() -> void
       };
-      for (modifier in param.modifiers.modifiers) {
-        subst.error(
-          Array[(modifier.pos, `Forbidden modifier for a function parameter`)],
-        )
-      };
       paramType = param.type match {
       | None() -> error(Array[(param.pos, "Missing type annotation")])
-      | Some(ty) -> this.normalize(subst, ty)
+      | Some(ty) -> this.normalize(tcenv.subst, ty)
       };
       param.isRest.each(_ ->
         !paramType = TType::arrayToReadonlyArray(paramType)
       );
+      if (
+        i > 0 &&
+        !(param.optional.isSome() || param.default.isSome()) &&
+        (params[i - 1].optional.isSome() || params[i - 1].default.isSome())
+      ) {
+        tcenv.error(
+          Array[
+            (param.pos, "This parameter is not optional"),
+            (
+              params[i - 1].pos,
+              "It appears after this parameter that is optional",
+            ),
+          ],
+        )
+      };
       param.optional match {
       | None() -> void
       | Some(optionalPos) ->
-        !paramType = TType::unionUndefined(subst, this, paramType, optionalPos)
+        !paramType = TType::unionUndefined(
+          tcenv.subst,
+          this,
+          paramType,
+          optionalPos,
+        )
       };
       param.default match {
       | None() -> void
@@ -81,7 +127,7 @@ extension class TypeChecker {
         param.optional match {
         | None() -> void
         | Some(optionalPos) ->
-          subst.error(
+          tcenv.error(
             Array[
               (
                 optionalPos,
@@ -102,15 +148,13 @@ extension class TypeChecker {
         );
         tcenv.!scope = savedScope
       };
-      param.name.value match {
-      | PVar(n) if (n.value == "this") ->
-        error(Array[(n.pos, "TODO: support this parameter")])
-      | _ -> checkPatternDoesNotContainThis(param.name)
+      for (modifier in param.modifiers.modifiers) {
+        tcenv.error(
+          Array[(modifier.pos, `Forbidden modifier for a function parameter`)],
+        )
       };
-      this.bind(tcenv, BKLet(), param.name, paramType, true, false)
-    };
-    !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
-    (this, tcenv)
+      paramType
+    })
   }
 
   fun funDef(
