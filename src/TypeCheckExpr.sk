@@ -1931,12 +1931,23 @@ extension class TypeChecker {
     retTypeAstOpt: ?Type,
     body: ClosureBody,
   ): TType {
-    paramTypes = params.map(param ->
-      param.type match {
-      | None() -> error(Array[(param.pos, "Missing type annotation")])
-      | Some(ty) -> this.normalize(tcenv, ty)
-      }
-    );
+    normalParams = mutable Vector[];
+    optionalParams = mutable Vector[];
+    spreadParam: ?ArrayType = None();
+    paramTypes = params.map(param -> {
+      checkPatternDoesNotContainThis(param.name);
+      paramType = this.processParamType(tcenv.subst, tcenv, param);
+      param.isRest match {
+      | Some(_) -> !spreadParam = Some(ArrayType::createFromFull(paramType))
+      | None() ->
+        if (param.optional is Some _ || param.default is Some _) {
+          optionalParams.push(paramType)
+        } else {
+          normalParams.push(paramType)
+        }
+      };
+      paramType
+    });
     callingContext = CGNode::create(AnonymousLambda(pos, c));
     // Register a dependency from parent context on this lambda
     tcenv.recordCalls(CGNodes::singleton(callingContext));
@@ -1946,7 +1957,6 @@ extension class TypeChecker {
     tcenv.!callingContext = callingContext;
 
     for (i => param in params) {
-      checkPatternDoesNotContainThis(param.name);
       this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, false)
     };
 
@@ -2000,9 +2010,9 @@ extension class TypeChecker {
           TFun(
             Array[],
             None(),
-            paramTypes,
-            Array[],
-            None(),
+            normalParams.toArray(),
+            optionalParams.toArray(),
+            spreadParam,
             retType,
             CGNodes::singleton(callingContext),
           ),

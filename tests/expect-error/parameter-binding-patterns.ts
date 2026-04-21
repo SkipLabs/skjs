@@ -116,8 +116,6 @@ function testArrowNoAnnotation(): void {
 
 // Arrow with optional parameter
 function testArrowOptional(): void {
-  // FIXME: optional lambda param typed as non-undefined, so ?? is "useless"
-  // @skjs-expect-error This operator is useless
   const f = (x?: number): number => x ?? 0;
   void f;
 }
@@ -136,15 +134,17 @@ function testArrowRest(): void {
 
 // Arrow with default value, wrong type
 function testArrowDefaultWrongType(): void {
-  // TODO: FIXME default type not validated in lambdas
+  // @skjs-expect-error Default value doesn't have the expected type
   const f = (x: number = "hello"): number => x;
   void f;
 }
 
 // Arrow with both optional and default
 function testArrowOptionalAndDefault(): void {
-  // TODO: FIXME optional + default not rejected in lambdas
-  const f = (x?: number = 0): number => x;
+  // @skjs-expect-error A parameter cannot both be optional and have a default value
+  const f = (x?: number = 0): void => {
+    void x;
+  };
   void f;
 }
 
