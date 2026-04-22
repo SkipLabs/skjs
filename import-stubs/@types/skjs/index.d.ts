@@ -18,6 +18,7 @@ declare interface ArrayLike<T> {
 }
 
 declare interface ReadonlyArray<T> extends Iterable<T> {
+  readonly __SKJS_isArray: true;
   readonly length: number;
   readonly [n: number]: T;
 
