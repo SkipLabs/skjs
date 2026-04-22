@@ -10,7 +10,6 @@ class Ctx {
 }
 
 class H {
-  // @skjs-expect-error TODO: support this parameter
   method(this: Ctx, x: number): void {}
 }
 
