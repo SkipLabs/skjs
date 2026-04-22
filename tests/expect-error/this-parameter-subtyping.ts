@@ -3,9 +3,6 @@
 //   - `thisParam` is contravariant.
 //   - A signature without a `thisParam` is treated as `this: unknown` and is
 //     compatible with any declared this type on either side.
-//
-// Staged: the contravariance rejection already holds; the asymmetric no-this
-// case is rejected until the none/some relaxation lands (then it type-checks).
 
 class Base {
   tag: string = "base";
@@ -35,14 +32,14 @@ function contravariance(): void {
   // @skjs-expect-error Invalid annotation
   const y: FnBase = fnDerived;
 
-  // Unrelated this types are also not assignable.
+  // Unrelated this types are not assignable.
   // @skjs-expect-error Invalid annotation
   const z: FnBase = fnUnrelated;
 }
 
 function asymmetricNoThis(): void {
-  // TODO: once missing-this is treated as `this: unknown`, this type-checks.
-  // @skjs-expect-error Invalid annotation
+  // Missing this on subtype is compatible with any declared this.
   const a: FnBase = fnNoThis;
+  // Missing this on supertype is also compatible.
   const b: FnNoThis = fnBase;
 }
