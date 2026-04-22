@@ -643,6 +643,13 @@ class TObject private (
     this.branches.toArray()
   }
 
+  // Returns Some(elts) when this TObject is a single-branch tuple-shaped
+  // object (via TFields::asTuple). Multi-branch unions of tuples currently
+  // return None() — the caller sees the raw TObject.
+  fun asTuple(): ?Array<TType> {
+    this.branches.getUnique().flatMap(branch -> branch.asTuple())
+  }
+
   fun maybeGetType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1777,6 +1784,7 @@ class STypes private (
   fun getSingleTuple(): ?TTuple {
     this.singleElt() match {
     | Some(tuple @ TTuple _) -> Some(tuple)
+    | Some(obj @ TObject _) -> obj.asTuple().map(elts -> TTuple(elts, obj.pos))
     | _ -> None()
     }
   }
