@@ -7,10 +7,6 @@
 //     this-declaring function is NOT assignable there (SkipLabs/skjs#960):
 //     accepting it would let `const b: () => void = fnBase; b()` run the body
 //     with no receiver. TS accepts this (unsoundly); SKJS rejects.
-//
-// Staged: the declared/declared contravariance rejection already holds
-// upstream; the subtype-side relaxation and the supertype-side rejection land
-// in the subtyping commit (annotations flip there).
 
 class Base {
   tag: string = "base";
@@ -40,14 +36,18 @@ function contravariance(): void {
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const y: FnBase = fnDerived;
 
-  // Unrelated this types are also not assignable.
+  // Unrelated this types are not assignable.
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const z: FnBase = fnUnrelated;
 }
 
 function asymmetricNoThis(): void {
-  // TODO: once missing-this is treated as `this: unknown`, this type-checks.
-  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
+  // Missing this on the subtype: the function ignores its receiver, so it is
+  // compatible with any declared this (contravariantly, Base <= unknown).
   const a: FnBase = fnNoThis;
+  // Missing this on the supertype is a free-call permit: assigning a
+  // this-declaring function there would let `b()` run the body with no
+  // receiver, so it is rejected (sound; TS accepts, SkipLabs/skjs#960).
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const b: FnNoThis = fnBase;
 }
