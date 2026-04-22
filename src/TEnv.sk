@@ -752,23 +752,6 @@ base class TEnv{
     this.normalizeFun(tcenvb, fd.name.getPos(), tafun)
   }
 
-  private fun checkNoTypeArgsOnBoundTParam(
-    tcenvb: mutable TCEnvBase,
-    n: Name,
-    targs: Array<Type>,
-  ): void {
-    if (targs.size() != 0) {
-      tcenvb.error(
-        Array[
-          (
-            n.pos,
-            "A bound occurrence of a type parameter cannot have type arguments",
-          ),
-        ],
-      )
-    }
-  }
-
   // Normalizes a type annotation.
   // When isTopLevelConst is true, allows unique symbol type (only permitted
   // in top-level const declarations, class static readonly members, and
@@ -911,11 +894,20 @@ base class TEnv{
       TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
       // Resolve via lexical bindings (see `bindings` field doc).
-      // If n resolves to a bound type parameter, n<targs> is invalid
-      // (example: class C<T> { value: T<number> }).
       this.bindings.maybeGet(n.value) match {
       | Some(boundTy) ->
-        this.checkNoTypeArgsOnBoundTParam(tcenvb, n, targs);
+        // If n resolves to a bound type parameter, n<targs> is invalid
+        // (example: class C<T> { value: T<number> }).
+        if (targs.size() != 0) {
+          tcenvb.error(
+            Array[
+              (
+                n.pos,
+                "A bound occurrence of a type parameter cannot have type arguments",
+              ),
+            ],
+          )
+        };
         boundTy.withPos(pos)
 
       | None() ->
