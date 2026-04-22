@@ -1,9 +1,5 @@
 // Test that detaching a method with a this parameter and calling it without
 // binding is rejected (per TS: the call uses `this: void`).
-//
-// Today SKJS errors on the method declaration itself ("TODO: support this
-// parameter"), so the detached-call case is only documented here with
-// // TODO: markers until this-parameter support lands.
 
 class Ctx {
   value: number = 1;
@@ -22,6 +18,7 @@ function callOnReceiver(): void {
 
 function callDetached(): void {
   const g = h.method;
-  // TODO: SKJS should reject — `g()` uses this: void, not this: Ctx.
+  // Detached call uses this: void, not this: Ctx.
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   g(1);
 }
