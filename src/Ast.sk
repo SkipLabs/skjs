@@ -12,7 +12,10 @@ module SKJS;
 // <name> ::= <string>
 /***************************************************************************/
 
-value class Name(pos: PosRange, value: String) uses XXHashable, Orderable {
+value class Name(
+  pos: PosRange,
+  value: String,
+) uses XXHashable, Hashable, Orderable {
   fun toString(): String {
     this.value
   }

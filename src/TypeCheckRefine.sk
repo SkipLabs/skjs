@@ -82,7 +82,7 @@ extension class TypeChecker {
         this.setLocal(tcenv, local, default, filter)
       | _ ->
         otherType = this.expr(tcenv, otherExpr, true);
-        // Clone subst because inter/diff may unify type variables as a side
+        // Clone subst because inter may unify type variables as a side
         // effect; we want the exploratory narrowing not to mutate the main subst.
         if (target) {
           common = TType::inter(
@@ -94,12 +94,12 @@ extension class TypeChecker {
           tcenv.scope.set(local, common, (_, _) -> void)
         } else {
           otherType.getSingleConstant() match {
-          | Some(_) ->
-            diffed = TType::diff(
+          | Some(c) ->
+            diffed = TType::removeConstant(
               tcenv.subst.clone(),
               this,
               localType,
-              otherType,
+              c,
             );
             tcenv.scope.set(local, diffed, (_, _) -> void)
           | None() -> void
@@ -167,11 +167,11 @@ extension class TypeChecker {
                 constant match {
                 | Some(c) ->
                   // !==: subtract the constant from the field type
-                  narrowed = TType::diff(
+                  narrowed = TType::removeConstant(
                     tcenv.subst.clone(),
                     this,
                     branchFieldType,
-                    otherType,
+                    c,
                   );
                   if (narrowed.isBottom()) {
                     None()

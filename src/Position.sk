@@ -23,7 +23,7 @@ value class PosRange private (
   fileName: FPath,
   relStart: Pos,
   relEnd: Pos,
-) uses XXHashable, Orderable {
+) uses XXHashable, Hashable, Orderable {
   const none: this = PosRange(SPTopLevel(), FPath::nil, Pos::none, Pos::none);
 
   static fun create(lexer: readonly Lexer, start: Pos, end: Pos): this {

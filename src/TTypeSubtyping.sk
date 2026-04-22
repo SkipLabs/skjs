@@ -1134,22 +1134,7 @@ extension class Clauses {
 }
 
 extension class TType {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    u1: TType,
-    u2: TType,
-  ): STResult<TType> {
-    if (u1 == u2) return STOk();
-    pair = (u1, u2);
-    if (subst.seenSub.contains(pair)) return STOk();
-    res = TType::isSub_(subst, tenv, u1, u2);
-    if (res is STOk()) {
-      subst.!seenSub = subst.seenSub.set(pair)
-    };
-    res
-  }
-
+  //
   private static fun originSuggestions(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1230,6 +1215,246 @@ extension class TType {
     hints
   }
 
+  // Collect TVars from `insts` that should be grown by growTVars.
+  //
+  // Bare TVars are collected unconditionally (grow handles SVOpen by
+  // unioning, SVClosed by ignoring).
+  //
+  // TInter members that are bare TVars are extracted if unbound.
+  //
+  // TSInst entries are expanded one level via the seenExpansion cache and
+  // recursed into, exposing TVars hidden inside head-transparent type
+  // aliases like `Maybe<T> = T | null`.
+  //
+  // TArrayLit is ignored: its commitment TVar is not an inference TVar in
+  // the lattice-growth sense but a form-selector (Tuple vs Array),
+  // committed by ArrayLitTyping based on the shape of the other side rather
+  // than by bound-growth.
+  private static fun collectTVars(
+    subst: mutable Subst,
+    tenv: TEnv,
+    insts: TInsts,
+    tvarsToGrow: mutable Vector<TVar>,
+    seen: mutable Set<TInst>,
+  ): void {
+    for (inst in insts) {
+      if (!seen.maybeInsert(inst)) {
+        continue
+      } else {
+        inst match {
+        | tvar @ TVar _ -> tvarsToGrow.push(tvar)
+        | TInter(tys) ->
+          for (ty in tys) {
+            ty.getSingleVar() match {
+            | Some(tvar @ TVar _) if (subst.isUnbound(tvar)) ->
+              tvarsToGrow.push(tvar)
+            | _ -> void
+            }
+          }
+        | tsinst @ TSInst(name, targs) ->
+          expandedType = subst.seenExpansion.maybeGet(tsinst) match {
+          | None() ->
+            e = tenv.instantiate(subst, name, targs);
+            subst.!seenExpansion[tsinst] = e;
+            e
+          | Some(e) -> e
+          };
+          static::collectTVars(
+            subst,
+            tenv,
+            expandedType.insts,
+            tvarsToGrow,
+            seen,
+          )
+        | TArrayLit _ -> void
+        }
+      }
+    }
+  }
+
+  // TVar growth: iterate openTy.insts looking for unbound TVars to grow
+  // from boundTy via per-disjunct matching. Then walk into objects/
+  // functions structurally to grow TVars hidden inside type aliases.
+  //
+  // `openTy` is the type whose TVars we grow in this call (an "open type",
+  // containing free TVars awaiting inference). `boundTy` provides the
+  // bound; its own TVars (if any) are treated as opaque here. The
+  // complementary call (with variance flipped) handles the other side's
+  // TVars.
+  private static fun growTVars(
+    subst: mutable Subst,
+    tenv: TEnv,
+    boundTy: TType,
+    openTy: TType,
+    variance: Variance,
+  ): void {
+    tvarsToGrow: mutable Vector<TVar> = mutable Vector[];
+    static::collectTVars(subst, tenv, openTy.insts, tvarsToGrow, mutable Set[]);
+
+    expandedOpen = openTy.expand(subst, tenv, None());
+
+    // Check if disjunct is covered by any non-TVar branch of expandedOpen.
+    // expand(None()) unfolds TSInst and TInter into clauses, so iterating
+    // expandedOpen.clauses visits every non-TVar branch. TVars remain in
+    // expandedOpen.insts and are ignored here -- they are what the grow
+    // loop is about to populate. `any` short-circuits on the first hit;
+    // `subst.restore(saved)` rolls back unification side effects from each
+    // probe before the next one.
+    isCovered = (disjunct: TType) -> {
+      saved = subst.save();
+      expandedOpen.clauses.any(clause ->
+        clause.stypes match {
+        | Some(stypes) ->
+          stypes.any(stype -> {
+            hit = TType::isSub(
+              subst,
+              tenv,
+              disjunct,
+              TType::single(stype),
+            ) is STOk();
+            subst.restore(saved);
+            hit
+          })
+        | None() -> false
+        }
+      )
+    };
+
+    // Grow tvar with boundTy minus the non-TVar branches of expandedOpen.
+    // When expandedOpen has no non-TVar branches (bare TVar), grows with
+    // the full boundTy; otherwise expands boundTy and checks each disjunct
+    // individually, growing only the uncovered ones. expand(None()) unfolds
+    // TSInst/TInter/TArrayLit into clauses so aliases on boundTy are
+    // decomposed the same way openTy's are, giving symmetric precision.
+    expandedBound = boundTy.expand(subst, tenv, None());
+    growUncovered = (tvar: TVar) -> {
+      if (expandedOpen.clauses.isEmpty()) {
+        subst.grow(tenv, tvar, boundTy, variance)
+      } else {
+        for (boundInst in expandedBound.insts) {
+          boundInst match {
+          | tv @ TVar _ ->
+            disjunct = TType::var(tv);
+            if (!isCovered(disjunct)) {
+              subst.grow(tenv, tvar, disjunct, variance)
+            }
+          // After expand(None()), insts contains only TVars; TSInst,
+          // TInter, and TArrayLit have been expanded into clauses.
+          | _ -> void
+          }
+        };
+        for (clause in expandedBound.clauses) {
+          clause.stypes match {
+          | Some(stypes) ->
+            for (stype in stypes) {
+              disjunct = TType::single(stype);
+              if (!isCovered(disjunct)) {
+                subst.grow(tenv, tvar, disjunct, variance)
+              }
+            }
+          | _ -> void
+          }
+        }
+      }
+    };
+
+    // Each growUncovered call commits to subst, so subsequent isCovered
+    // probes for later TVars observe the grown state. Iteration order is
+    // the collectTVars traversal order (stable, structural); changing it
+    // can change which disjuncts are grown into which TVars.
+    for (tvar in tvarsToGrow) {
+      substCopy = subst.save();
+      if (
+        tvar.constraints.all(cstr ->
+          TType::isSub(subst, tenv, boundTy, cstr) is STOk()
+        )
+      ) {
+        growUncovered(tvar)
+      } else {
+        subst.restore(substCopy)
+      }
+    };
+
+    // Structural decomposition: walk into objects/functions to grow TVars
+    // nested inside type structure. This handles cases the top-level loop
+    // cannot reach, e.g. TVars inside function return types behind type
+    // aliases.
+    //
+    // Limitations:
+    //  - Clauses::getObject returns Some only for a single-object clause.
+    //    When either side is a union of object types (discriminated or
+    //    otherwise), descent is skipped and the top-level isSub call is
+    //    left to handle the TVars without pre-seeding. Precise per-branch
+    //    pairing would require matching clauses across the two sides.
+    //  - Only object fields and call/new return types are descended into.
+    //  - Tuple element types (TTuple) and promise payloads (TPromise) are
+    //    not descended, so TVars hidden inside `[A, B]` or `Promise<A>`
+    //    behind an alias are not pre-seeded and are left to the top-level
+    //    isSub call.
+    (expandedOpen.clauses.getObject(), boundTy.clauses.getObject()) match {
+    | (Some(openObj), Some(boundObj)) ->
+      openFields = openObj.getFields(subst, tenv);
+      boundFields = boundObj.getFields(subst, tenv);
+      for (of in openFields.fields.toArray()) {
+        boundFields.maybeGet(of.name.value) match {
+        | Some(bf) -> static::growTVars(subst, tenv, bf.get, of.get, variance)
+        | None() -> void
+        }
+      };
+      (openFields.call, boundFields.call) match {
+      | (Some((_, openFuns)), Some((_, boundFuns))) ->
+        // Function return type only. TFun::isSub_ checks params before
+        // return, so any TVar that appears in both would otherwise see only
+        // its param-side bound when the param checks run -- the return-side
+        // contribution would arrive too late to inform them. Pre-growing the
+        // return seeds that bound first, tightening the subsequent per-param
+        // isSub calls. Params themselves are skipped here: TFun::isSub_ pairs
+        // them positionally, which is strictly more precise than the bulk
+        // grow this pre-pass would do.
+        static::growTVars(
+          subst,
+          tenv,
+          boundFuns.fun_.retType,
+          openFuns.fun_.retType,
+          variance,
+        )
+      | _ -> void
+      };
+      (openFields.new, boundFields.new) match {
+      | (Some((_, openFuns)), Some((_, boundFuns))) ->
+        // Constructor signatures: same return-first rationale as call
+        // signatures above. The constructed instance type is the return,
+        // and TVars nested there (e.g. `new <A>(x: T): Container<A>`) need
+        // seeding before per-param isSub runs.
+        static::growTVars(
+          subst,
+          tenv,
+          boundFuns.fun_.retType,
+          openFuns.fun_.retType,
+          variance,
+        )
+      | _ -> void
+      }
+    | _ -> void
+    }
+  }
+
+  static fun isSub(
+    subst: mutable Subst,
+    tenv: TEnv,
+    u1: TType,
+    u2: TType,
+  ): STResult<TType> {
+    if (u1 == u2) return STOk();
+    pair = (u1, u2);
+    if (subst.seenSub.contains(pair)) return STOk();
+    res = TType::isSub_(subst, tenv, u1, u2);
+    if (res is STOk()) {
+      subst.!seenSub = subst.seenSub.set(pair)
+    };
+    res
+  }
+
   private static fun isSub_(
     subst: mutable Subst,
     tenv: TEnv,
@@ -1252,66 +1477,10 @@ extension class TType {
     };
 
     savedSubst = subst.save();
-    for (inst in u2.insts) {
-      inst match {
-      | tvar @ TVar(_, _, constraints) ->
-        substCopy = subst.save();
-        if (
-          constraints.all(cstr -> TType::isSub(subst, tenv, u1, cstr) is STOk())
-        ) {
-          subst.grow(
-            tenv,
-            tvar,
-            TType::diff(subst, tenv, u1, u2),
-            Contravariant(),
-          )
-        } else {
-          subst.restore(substCopy)
-        }
-      | TInter(tys) ->
-        // When inter(T, U) produced TInter(T, U) because both TVars
-        // were unbound, those TVars are invisible to the bare-TVar
-        // case above. Extract them and grow any that are still unbound.
-        // Already-bound TVars are skipped: their values participate
-        // through TInter.expand during clause expansion instead.
-        for (ty in tys) {
-          ty.getSingleVar() match {
-          | Some(tvar @ TVar(_, _, constraints)) if (subst.isUnbound(tvar)) ->
-            substCopy = subst.save();
-            if (
-              constraints.all(cstr ->
-                TType::isSub(subst, tenv, u1, cstr) is STOk()
-              )
-            ) {
-              subst.grow(
-                tenv,
-                tvar,
-                TType::diff(subst, tenv, u1, u2),
-                Contravariant(),
-              )
-            } else {
-              subst.restore(substCopy)
-            }
-          | _ -> void
-          }
-        }
-      | _ -> void
-      }
-    };
-    for (inst in u1.insts) {
-      inst match {
-      | tvar @ TVar(_, _, constraints) ->
-        substCopy = subst.save();
-        if (
-          constraints.all(cstr -> TType::isSub(subst, tenv, u2, cstr) is STOk())
-        ) {
-          subst.grow(tenv, tvar, TType::diff(subst, tenv, u2, u1), Covariant())
-        } else {
-          subst.restore(substCopy)
-        }
-      | _ -> void
-      }
-    };
+    // grow TVars in u2 from u1
+    static::growTVars(subst, tenv, u1, u2, Contravariant());
+    // seal TVars in u1 from u2
+    static::growTVars(subst, tenv, u2, u1, Covariant());
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
 
