@@ -1545,9 +1545,12 @@ extension class TFun {
       !tsubst[tparam2.id] = tparam1;
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
+    // `thisParam` is contravariant. A signature that does not declare a
+    // this parameter is treated as `this: unknown`, so it is compatible
+    // with any declared this type on either side.
     (f1.thisParam, f2.thisParam) match {
     | (_, None()) -> void
-    | (None(), Some(_)) -> return STRecFunThisParam(None(), f1, f2)
+    | (None(), Some(_)) -> void
     | (Some(this1), Some(this2)) ->
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
