@@ -47,9 +47,8 @@ extension class TypeChecker {
       };
       tcenv.scope.bind(tcenv, local, type, isInitialized)
     | PArray(arrPat, rest) ->
-      type.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
+      stypes = type.getSTypes(tcenv.subst, this, Covariant());
+      stypes.flatMap(s ~> s.getSingleTuple()) match {
       | Some(TTuple(tyl, _)) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
           arrPat[i] match {
@@ -131,75 +130,78 @@ extension class TypeChecker {
           )
         | None() -> void
         }
-      | Some(obj @ TObject _) ->
-        eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
-        | Some(t) -> t
-        | None() ->
+      | None() ->
+        stypes.flatMap(s ~> s.singleElt()) match {
+        | Some(obj @ TObject _) ->
+          eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
+          | Some(t) -> t
+          | None() ->
+            error(
+              Array[
+                (pos, "Invalid tuple pattern"),
+                (
+                  type.pos,
+                  `This is not iterable, it is ${this.ppType(tcenv, type)}`,
+                ),
+              ],
+            )
+          };
+          for (i in Range(0, arrPat.size())) {
+            arrPat[i] match {
+            | None() -> void
+            | Some((eltPat, Some(defaultExpr))) ->
+              defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
+              boundType = TType::union(
+                tcenv.subst,
+                this,
+                TType::removeUndefined(tcenv.subst, this, eltType),
+                defaultType,
+              );
+              this.bind(tcenv, kind, eltPat, boundType, isInitialized, false)
+            | Some((eltPat, None())) ->
+              optionalEltType = TType::unionUndefined(
+                tcenv.subst,
+                this,
+                eltType,
+                eltPat.pos,
+              );
+              this.bind(
+                tcenv,
+                kind,
+                eltPat,
+                optionalEltType,
+                isInitialized,
+                false,
+              )
+            }
+          };
+          rest match {
+          | Some(restName) ->
+            restType = TType::inst(
+              Name(restName.pos, "Array"),
+              TArgs(Array[eltType]),
+            );
+            this.bind(
+              tcenv,
+              kind,
+              Pattern(restName.pos, PVar(restName)),
+              restType,
+              isInitialized,
+              false,
+            )
+          | None() -> void
+          }
+        | _ ->
           error(
             Array[
               (pos, "Invalid tuple pattern"),
               (
                 type.pos,
-                `This is not iterable, it is ${this.ppType(tcenv, type)}`,
+                `This is not a tuple, it is ${this.ppType(tcenv, type)}`,
               ),
             ],
           )
-        };
-        for (i in Range(0, arrPat.size())) {
-          arrPat[i] match {
-          | None() -> void
-          | Some((eltPat, Some(defaultExpr))) ->
-            defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
-            boundType = TType::union(
-              tcenv.subst,
-              this,
-              TType::removeUndefined(tcenv.subst, this, eltType),
-              defaultType,
-            );
-            this.bind(tcenv, kind, eltPat, boundType, isInitialized, false)
-          | Some((eltPat, None())) ->
-            optionalEltType = TType::unionUndefined(
-              tcenv.subst,
-              this,
-              eltType,
-              eltPat.pos,
-            );
-            this.bind(
-              tcenv,
-              kind,
-              eltPat,
-              optionalEltType,
-              isInitialized,
-              false,
-            )
-          }
-        };
-        rest match {
-        | Some(restName) ->
-          restType = TType::inst(
-            Name(restName.pos, "Array"),
-            TArgs(Array[eltType]),
-          );
-          this.bind(
-            tcenv,
-            kind,
-            Pattern(restName.pos, PVar(restName)),
-            restType,
-            isInitialized,
-            false,
-          )
-        | None() -> void
         }
-      | _ ->
-        error(
-          Array[
-            (pos, "Invalid tuple pattern"),
-            (
-              type.pos,
-              `This is not a tuple, it is ${this.ppType(tcenv, type)}`,
-            ),
-          ],
-        )
       }
 
     | PObject{fields => objectFields, rest} ->
