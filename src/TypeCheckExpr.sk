@@ -2157,7 +2157,18 @@ extension class TypeChecker {
       this.showTypes(tcenv, args, true, pos)
     | Call(f, targs, args) ->
       tcenv.markForInImpure(pos);
-      fty = this.expr(tcenv, f, mostPrecise);
+      // When the callee is `e1.field`, capture the receiver type so the
+      // declared `this` parameter (if any) can be checked against it.
+      (fty, thisArgOpt) = f.value match {
+      | Dot(dotKind, e1, fieldName) ->
+        accessKind = dotKind match {
+        | OptionalDot() -> AKOptionalChain()
+        | NormalDot() -> AKNormal()
+        };
+        e1Ty = this.expr(tcenv, e1, mostPrecise);
+        (this.dot(tcenv, e1.pos, e1Ty, fieldName, accessKind), Some(e1Ty))
+      | _ -> (this.expr(tcenv, f, mostPrecise), None())
+      };
       calleeObj = fty
         .getSTypes(tcenv.subst, this, Covariant())
         .flatMap(stypes ->
@@ -2233,6 +2244,7 @@ extension class TypeChecker {
         targs.map(ty -> this.normalize(tcenv, ty)),
         args,
         mostPrecise,
+        thisArgOpt,
       );
       f.value match {
       | Dot(
@@ -2297,7 +2309,8 @@ extension class TypeChecker {
         ) match {
         | Some(obj @ TObject _) ->
           obj.maybeGetNew(tcenv.subst, this) match {
-          | Some(f) -> this.call(tcenv, pos, f, tArgs, args, mostPrecise)
+          | Some(f) ->
+            this.call(tcenv, pos, f, tArgs, args, mostPrecise, None())
           | None() ->
             fatalError(
               Array[
@@ -3476,7 +3489,8 @@ extension class TypeChecker {
         Array[(pos, "This constructor expects no arguments")],
         TSCode(2554),
       )
-    | Some(cstr) -> _ = this.call(tcenv, pos, cstr, cstrType.tArgs, args, true)
+    | Some(cstr) ->
+      _ = this.call(tcenv, pos, cstr, cstrType.tArgs, args, true, None())
     }
   }
 
@@ -4123,6 +4137,7 @@ extension class TypeChecker {
     targs: Array<TType>,
     argExprs: Array<Expr>,
     mostPrecise: Bool,
+    thisArgOpt: ?TType,
   ): TType {
     args = mutable Vector<TType>[];
     moreArgs: ?TType = None();
@@ -4299,6 +4314,23 @@ extension class TypeChecker {
         // to avoid cascading diagnostics from void/return-type mismatches.
         return tfun.retType
       };
+
+      // Check the receiver against the declared `this` parameter, if any.
+      // A call with no receiver (free call) uses `this: void`, matching TS.
+      tfun.thisParam.each(expectedThis -> {
+        actualThis = thisArgOpt match {
+        | Some(t) -> t
+        | None() -> TType::single(TPrimUnit(TVoid(), pos))
+        };
+        this.checkSubType(
+          tcenv,
+          pos,
+          "The 'this' context is not assignable to method's 'this' type",
+          actualThis,
+          expectedThis,
+          TSCode(2684),
+        )
+      });
 
       version = tcenv.subst.version;
       loop {

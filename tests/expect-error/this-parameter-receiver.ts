@@ -1,10 +1,5 @@
 // Test that a method call checks the receiver against the declared this
 // parameter type.
-//
-// Today SKJS errors on the declaration itself ("TODO: support this
-// parameter"), so the downstream call sites are not yet checked. The // TODO:
-// comments mark errors that SKJS should report once this-parameter support
-// lands.
 
 class Obj {
   value: number = 1;
@@ -19,7 +14,8 @@ class MethodHolder {
 
 declare const holder: MethodHolder;
 
-// TODO: SKJS should reject — MethodHolder is not assignable to this: Obj.
+// MethodHolder is not assignable to this: Obj.
+// @skjs-expect-error The 'this' context is not assignable to method's 'this' type
 holder.m(1);
 
 // Happy path: the receiver structurally satisfies this: Obj.
