@@ -1553,6 +1553,37 @@ class TFields protected {
     this.fields.maybeGet(FieldNameString(fieldName))
   }
 
+  // Returns Some(elts) when this TFields is an array-branded object whose
+  // length field has a non-negative literal-number type N and whose first N
+  // positional fields are present. Returns None() otherwise, including for
+  // plain arrays whose length is a general `number` (not a literal).
+  fun asTuple(): ?Array<TType> {
+    if (this.isArray != Some(true)) return None();
+    lengthField = this.maybeGet("length") match {
+    | Some(f) -> f
+    | None() -> return None()
+    };
+    length = lengthField.get.getSingleConstant() match {
+    | Some(TPrimValue(TNum(), Some(lits), _)) ->
+      lits.singleElt() match {
+      | Some(PrimLiteral(_, v)) -> v.toIntOption()
+      | None() -> None()
+      }
+    | _ -> None()
+    } match {
+    | Some(n) if (n >= 0) -> n
+    | _ -> return None()
+    };
+    elts = mutable Vector[];
+    for (i in Range(0, length)) {
+      this.maybeGet(i.toString()) match {
+      | Some(f) -> elts.push(f.get)
+      | None() -> return None()
+      }
+    };
+    Some(elts.toArray())
+  }
+
   fun maybeGetSymbol(uniqueId: String): ?TField {
     this.symbolFields.maybeGet(FieldNameString(uniqueId))
   }
