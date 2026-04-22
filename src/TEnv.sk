@@ -1196,21 +1196,21 @@ base class TEnv{
     tafun: TAFun,
   ): TFuns {
     tafun match {
-    | TAFun(isMethod, clauses, params, retType, cgNode) ->
+    | TAFun(isMethod, tParams, params, retType, cgNode) ->
       subst = Subst::mcreate(tcenvb);
       TypeChecker::checkTypeParams(
         tcenvb,
-        clauses,
+        tParams,
         OptionalTypeParamsForbidden(),
       );
-      funClauses = mutable Vector[];
-      for (tparam in clauses) {
+      funTParams = mutable Vector[];
+      for (tparam in tParams) {
         // invariant(
         //   tparam.default is None(),
         //   "no-default type parameter (already checked in checkTypeParams)",
         // );
         funTParam = this.makeTParam(tcenvb, tparam);
-        funClauses.push(funTParam);
+        funTParams.push(funTParam);
         // Bind the method-local tparam, overwriting any same-named
         // outer class/type-def instantiation binding. This gives the
         // method its own scope for `tparam.name.value` within its
@@ -1261,7 +1261,7 @@ base class TEnv{
             this,
             restPos,
             param.type,
-            clauses,
+            tParams,
           );
           if (i != params.size() - 1) {
             tcenvb.error(
@@ -1295,7 +1295,7 @@ base class TEnv{
         }
       };
       tfun = TFun(
-        funClauses.toArray(),
+        funTParams.toArray(),
         thisParam,
         normalParams.toArray(),
         optionalParams.toArray(),
