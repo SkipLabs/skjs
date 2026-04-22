@@ -32,13 +32,11 @@ base class TEnv{
   //   body (`addTParams`, `normalizeFun`);
   // - the synthetic `"this"` binding (`newObject`, `TypeCheckFun`).
   //
-  // Shadowing is purely last-write-wins: when an inner scope introduces
-  // a binding with the same name, it overwrites any outer one. Writers
-  // that enter a temporary scope (notably `instantiate`) save and
-  // restore the map so the shadowing is undone on exit. Writers whose
-  // mutation is naturally scoped to the caller's lexical frame (e.g.
-  // `normalizeFun`, `addTParams`) rely on Skip's `!this = ...` local
-  // shadow semantics instead of an explicit save/restore.
+  // Shadowing is last-write-wins: when an inner scope introduces a
+  // binding with the same name, it overwrites any outer one. Scope
+  // exit requires no explicit restore because `!this = ...` mutations
+  // are local to the current frame — the caller keeps its own `this`
+  // with the bindings it had on entry.
   //
   // At a TAInst lookup the stored TType is returned with
   // `.withPos(refPos)` so errors point at the reference site.
@@ -118,11 +116,6 @@ base class TEnv{
       )
     };
 
-    // Instantiation bindings are local to this expansion.
-    // Example: in `function f<T>(): Box<number>`, expanding Box<number>
-    // temporarily binds T -> number. Without save/restore, later
-    // references to T could resolve to number instead of f's T.
-    savedBindings = this.bindings;
     for (i => tparam in clauses) {
       targ = if (i < targs.targs.size()) targs.targs[i] else {
         tparam.default match {
@@ -176,14 +169,12 @@ base class TEnv{
       !this.bindings[tparam.name.value] = targ;
     };
 
-    result = tdef match {
+    tdef match {
     | ta @ TypeDef _ ->
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(tcenvb, name, targs.targs)
     | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
-    };
-    !this.bindings = savedBindings;
-    result
+    }
   }
 
   fun getClass(tcenvb: mutable TCEnvBase, className: Name): Class {
