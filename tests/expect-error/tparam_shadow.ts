@@ -17,7 +17,6 @@ declare interface Child<A, B, U> extends Base<A | B | U> {
 function acrossInheritance(
   t: Child<1, "x", true>,
 ): Child<number, string, boolean> {
-  // @skjs-expect-error Invalid return type
   return t;
 }
 
@@ -46,6 +45,5 @@ declare interface Direct<U> {
 }
 
 function directShadow(c: Direct<string>): Direct<number> {
-  // @skjs-expect-error Invalid return type
   return c;
 }

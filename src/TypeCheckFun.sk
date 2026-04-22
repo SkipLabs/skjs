@@ -18,7 +18,7 @@ extension class TypeChecker {
       )
     | Some(thisType) -> thisType
     };
-    !this.subst["this"] = (false, thisType);
+    !this.bindings["this"] = thisType;
     tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true);
     !this = this.addTParams(subst, sig.tparams);
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);

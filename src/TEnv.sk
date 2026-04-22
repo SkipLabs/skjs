@@ -21,27 +21,28 @@ base class TEnv{
   typeDefBodyMap: TypeDefBodyMap,
   methodBodyMap: MethodBodyMap,
 
-  // The type-parameters that are currently in scope. So if we see a
-  // type definition with a matching name, we know we are dealing with
-  // a universally quantified type variable.
-  tparams: SortedMap<String, TParamWithConstraint> = SortedMap[],
-
-  // The type substitution, which is different than the one used for
-  // existentials during inference. This one is used to instantiate a type
-  // with parameters with type arguments. So when you write new
-  // mytype<number>, it's this substitution that will take care of replacing
-  // the instances of type-parameter in the definition of mytype. However,
-  // if you introduce an existential (like you would with a parametric new
-  // construct without explicit type arguments), a different substitution is
-  // used (cf TVar).
+  // Lexical bindings for TAInst name resolution, keyed by syntactic
+  // name. Distinct from the existential Subst used for TVar unification
+  // (cf TVar); this map resolves named references in source types.
   //
-  // Tuple semantics:
-  // - (true, ty): high-priority binding in this.subst.
-  //   In TAInst lookup, this shadows same-named entries from tparams.
-  //   Example: class Box<T> {...}; function f<T extends Box<number>>(...) ...
-  //   The T in Box<T> must resolve to Box's T (bound to number), not f's T.
-  // - (false, ty): normal this.subst binding.
-  subst: SortedMap<String, (Bool, TType)> = SortedMap[],
+  // Each entry maps a name to the TType it currently denotes:
+  // - a concretized type argument, while expanding a class/type-def
+  //   instantiation (`instantiate`, `processClassSetup`);
+  // - an abstract tparam TType, while type-checking a class or function
+  //   body (`addTParams`, `normalizeFun`);
+  // - the synthetic `"this"` binding (`newObject`, `TypeCheckFun`).
+  //
+  // Shadowing is purely last-write-wins: when an inner scope introduces
+  // a binding with the same name, it overwrites any outer one. Writers
+  // that enter a temporary scope (notably `instantiate`) save and
+  // restore the map so the shadowing is undone on exit. Writers whose
+  // mutation is naturally scoped to the caller's lexical frame (e.g.
+  // `normalizeFun`, `addTParams`) rely on Skip's `!this = ...` local
+  // shadow semantics instead of an explicit save/restore.
+  //
+  // At a TAInst lookup the stored TType is returned with
+  // `.withPos(refPos)` so errors point at the reference site.
+  bindings: SortedMap<String, TType> = SortedMap[],
 
   // When expanding a type definition, we don't want to recursively
   // get all the type instances of a type, we only want to go one
@@ -117,11 +118,11 @@ base class TEnv{
       )
     };
 
-    // Instantiation bindings in this.subst are local to this expansion.
+    // Instantiation bindings are local to this expansion.
     // Example: in `function f<T>(): Box<number>`, expanding Box<number>
-    // temporarily binds T -> number in this.subst. Without save/restore,
-    // later references to T could resolve to number instead of f's T.
-    savedTypeSubst = this.subst;
+    // temporarily binds T -> number. Without save/restore, later
+    // references to T could resolve to number instead of f's T.
+    savedBindings = this.bindings;
     for (i => tparam in clauses) {
       targ = if (i < targs.targs.size()) targs.targs[i] else {
         tparam.default match {
@@ -172,7 +173,7 @@ base class TEnv{
           )
         }
       };
-      !this.subst[tparam.name.value] = (true, targ);
+      !this.bindings[tparam.name.value] = targ;
     };
 
     result = tdef match {
@@ -181,7 +182,7 @@ base class TEnv{
     | Class _ -> this.new(tcenvb, name, targs.targs)
     | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
     };
-    !this.subst = savedTypeSubst;
+    !this.bindings = savedBindings;
     result
   }
 
@@ -291,7 +292,7 @@ base class TEnv{
     symbolFields = mutable Map[];
     indexes = mutable Vector[];
     thisType = TType::inst(className, TArgs(targs));
-    !this.subst["this"] = (false, thisType);
+    !this.bindings["this"] = thisType;
     constructor = this.addFields(
       tcenvb,
       fields,
@@ -404,7 +405,7 @@ base class TEnv{
         tparam.name.pos,
         this.makeTParam(subst, tparam),
       );
-      !this.subst[tparam.name.value] = (false, ty)
+      !this.bindings[tparam.name.value] = ty
     };
     this
   }
@@ -462,8 +463,7 @@ base class TEnv{
           }
         };
         // Class type arguments are lexical binders for this class expansion.
-        // Mark them priority so same-named outer tparams are shadowed.
-        !this.subst[tparam.name.value] = (true, targ)
+        !this.bindings[tparam.name.value] = targ
       }
     };
     (this, cls)
@@ -919,30 +919,12 @@ base class TEnv{
       };
       TType::single(TPrimValue::single(TBool(), x, pos))
     | TAInst(n, targs) ->
-      // Resolution order for bound names:
-      //   1) priority this.subst binding (lexical class/instantiate binder)
-      //   2) ambient tparams
-      //   3) regular this.subst binding
-      // If none applies, resolve n as a named type definition.
+      // Resolve via lexical bindings (see `bindings` field doc).
       // If n resolves to a bound type parameter, n<targs> is invalid
       // (example: class C<T> { value: T<number> }).
-      substEntry = this.subst.maybeGet(n.value);
-      if (substEntry is Some((true, _))) {
-        // Case 1: priority this.subst binding.
+      if (this.bindings.containsKey(n.value)) {
         this.checkNoTypeArgsOnBoundTParam(tcenvb, n, targs);
-        (_keepPos, ty) = substEntry.fromSome();
-        ty
-      } else if (this.tparams.containsKey(n.value)) {
-        // Case 2: ambient tparams.
-        this.checkNoTypeArgsOnBoundTParam(tcenvb, n, targs);
-        subst = Subst::mcreate(tcenvb);
-        tparam = this.tparams[n.value];
-        TType::fromTParamWithConstraint(subst, this, pos, tparam)
-      } else if (substEntry is Some((_, _))) {
-        // Case 3: regular this.subst binding.
-        this.checkNoTypeArgsOnBoundTParam(tcenvb, n, targs);
-        (keepPos, ty) = substEntry.fromSome();
-        if (keepPos) ty else ty.withPos(pos)
+        this.bindings[n.value].withPos(pos)
       } else if (this.forbiddenInsts.contains(n.value)) {
         error(Array[(n.pos, "Cyclic definition")])
       } else {
@@ -1238,7 +1220,16 @@ base class TEnv{
         // );
         funTParam = this.makeTParam(tcenvb, tparam);
         funClauses.push(funTParam);
-        !this.tparams[tparam.name.value] = funTParam;
+        // Bind the method-local tparam, overwriting any same-named
+        // outer class/type-def instantiation binding. This gives the
+        // method its own scope for `tparam.name.value` within its
+        // signature. (#606)
+        !this.bindings[tparam.name.value] = TType::fromTParamWithConstraint(
+          subst,
+          this,
+          tparam.name.pos,
+          funTParam,
+        );
       };
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
