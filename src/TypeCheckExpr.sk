@@ -2550,26 +2550,8 @@ extension class TypeChecker {
       argExpr.value match {
       | Spread(spreadExpr) ->
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-        spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-          stypes.singleElt()
-        ) match {
-        | Some(obj @ TObject _) ->
-          this.getIteratorElementType(tcenv.subst, obj, argExpr.pos) match {
-          | None() ->
-            tcenv.error(
-              Array[
-                (argExpr.pos, "Invalid spread argument"),
-                (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
-              ],
-            )
-          | Some(eltType) ->
-            !moreArgs = Some(
-              moreArgs match {
-              | None() -> eltType
-              | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
-              },
-            )
-          }
+        stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
+        stypes.flatMap(s ~> s.getSingleTuple()) match {
         | Some(TTuple(tupElts, _)) ->
           moreArgs match {
           | None() -> args.extend(tupElts)
@@ -2579,13 +2561,33 @@ extension class TypeChecker {
             };
             !moreArgs = Some(ma)
           }
-        | _ ->
-          tcenv.error(
-            Array[
-              (argExpr.pos, "Invalid spread argument"),
-              (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
-            ],
-          )
+        | None() ->
+          stypes.flatMap(s ~> s.singleElt()) match {
+          | Some(obj @ TObject _) ->
+            this.getIteratorElementType(tcenv.subst, obj, argExpr.pos) match {
+            | None() ->
+              tcenv.error(
+                Array[
+                  (argExpr.pos, "Invalid spread argument"),
+                  (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
+                ],
+              )
+            | Some(eltType) ->
+              !moreArgs = Some(
+                moreArgs match {
+                | None() -> eltType
+                | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
+                },
+              )
+            }
+          | _ ->
+            tcenv.error(
+              Array[
+                (argExpr.pos, "Invalid spread argument"),
+                (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
+              ],
+            )
+          }
         }
       | _ ->
         argTy = this.expr(tcenv, argExpr, mostPrecise);
