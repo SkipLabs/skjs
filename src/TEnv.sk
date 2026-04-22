@@ -1203,14 +1203,12 @@ base class TEnv{
         tParams,
         OptionalTypeParamsForbidden(),
       );
-      funTParams = mutable Vector[];
-      for (tparam in tParams) {
+      funTParams = tParams.map(tparam -> {
         // invariant(
         //   tparam.default is None(),
         //   "no-default type parameter (already checked in checkTypeParams)",
         // );
         funTParam = this.makeTParam(tcenvb, tparam);
-        funTParams.push(funTParam);
         // Bind the method-local tparam, overwriting any same-named
         // outer class/type-def instantiation binding. This gives the
         // method its own scope for `tparam.name.value` within its
@@ -1221,7 +1219,8 @@ base class TEnv{
           tparam.name.pos,
           funTParam,
         );
-      };
+        funTParam
+      });
       normalParams = mutable Vector[];
       optionalParams = mutable Vector[];
       optionalWitness: ?PosRange = None();
@@ -1295,7 +1294,7 @@ base class TEnv{
         }
       };
       tfun = TFun(
-        funTParams.toArray(),
+        funTParams,
         thisParam,
         normalParams.toArray(),
         optionalParams.toArray(),
