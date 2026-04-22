@@ -11,16 +11,30 @@ extension class TypeChecker {
     static::checkTypeParams(subst, sig.tparams, OptionalTypeParamsForbidden());
     tcenv = TCEnv::mcreate(subst, callingContext);
     fdPos = fd.name.getPos();
-    thisType = thisTypeOpt match {
+    !this = this.addTParams(subst, sig.tparams);
+    // An explicit `this: T` as the first parameter overrides the enclosing
+    // class's implicit this type for the body.
+    explicitThisOpt = if (
+      sig.params.size() > 0 &&
+      sig.params[0].isThisParam()
+    ) {
+      sig.params[0].type.map(ty -> this.normalize(tcenv.subst, ty))
+    } else {
+      None()
+    };
+    thisType = explicitThisOpt match {
+    | Some(t) -> t
     | None() ->
-      /* Disallow this in non-methods */ TType::single(
-        TPrimUnit(TVoid(), fdPos),
-      )
-    | Some(thisType) -> thisType
+      thisTypeOpt match {
+      | None() ->
+        /* Disallow this in non-methods */ TType::single(
+          TPrimUnit(TVoid(), fdPos),
+        )
+      | Some(t) -> t
+      }
     };
     !this.bindings["this"] = thisType;
     tcenv.scope.bind(tcenv, Name(fdPos, "this"), thisType, true);
-    !this = this.addTParams(subst, sig.tparams);
     paramTypes = this.processParams(tcenv, sig.params, sig.tparams, true);
     this.bindParams(tcenv, sig.params, paramTypes);
     !this.retType = sig.retType.i1.map(rty -> this.normalize(subst, rty));
@@ -33,7 +47,9 @@ extension class TypeChecker {
     paramTypes: Array<TType>,
   ): void {
     for (i => param in params) {
-      this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, false)
+      if (!param.isThisParam()) {
+        this.bind(tcenv, BKLet(), param.name, paramTypes[i], true, false)
+      }
     }
   }
 
@@ -50,7 +66,17 @@ extension class TypeChecker {
     params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
-        error(Array[(n.pos, "TODO: support this parameter")])
+        param.isRest.each(restPos ->
+          tcenv.error(Array[(restPos, "this cannot be a rest parameter")])
+        );
+        param.optional.each(optPos ->
+          tcenv.error(Array[(optPos, "this cannot be optional")])
+        );
+        param.default.each(defaultExpr ->
+          tcenv.error(
+            Array[(defaultExpr.pos, "this cannot have a default value")],
+          )
+        )
       | _ -> checkPatternDoesNotContainThis(param.name)
       };
       param.isRest match {

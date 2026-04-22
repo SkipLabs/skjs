@@ -236,7 +236,14 @@ class Param(
   optional: ?PosRange,
   type: ?Type,
   default: ?Expr,
-) uses XXHashable
+) uses XXHashable {
+  fun isThisParam(): Bool {
+    this.name.value match {
+    | PVar(Name(_, "this")) -> true
+    | _ -> false
+    }
+  }
+}
 
 /***************************************************************************/
 // <stmt_> ::=
