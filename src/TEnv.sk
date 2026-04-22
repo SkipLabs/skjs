@@ -913,38 +913,42 @@ base class TEnv{
       // Resolve via lexical bindings (see `bindings` field doc).
       // If n resolves to a bound type parameter, n<targs> is invalid
       // (example: class C<T> { value: T<number> }).
-      if (this.bindings.containsKey(n.value)) {
+      this.bindings.maybeGet(n.value) match {
+      | Some(boundTy) ->
         this.checkNoTypeArgsOnBoundTParam(tcenvb, n, targs);
-        this.bindings[n.value].withPos(pos)
-      } else if (this.forbiddenInsts.contains(n.value)) {
-        error(Array[(n.pos, "Cyclic definition")])
-      } else {
-        // No bound-name match: treat n as a named type definition.
-        tdef = this.defMap.getType(tcenvb, n);
-        tparams = tdef match {
-        | TypeDef{tdefParams} -> tdefParams
-        | Class{tparams} -> tparams
-        | Enum _ -> Array[]
-        };
-        if (
-          targs.size() > tparams.size() ||
-          (targs.size() < tparams.size() &&
-            tparams[targs.size()].default is None())
-        ) {
-          tcenvb.error(
-            Array[
-              (
-                n.pos,
-                `Invalid number of type arguments: given ${targs.size()}, expected ${tparams.size()}`,
-              ),
-            ],
-          )
-        };
+        boundTy.withPos(pos)
 
-        if (this.seenInstantiate.contains(n.value)) {
-          !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
-        };
-        TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
+      | None() ->
+        if (this.forbiddenInsts.contains(n.value)) {
+          error(Array[(n.pos, "Cyclic definition")])
+        } else {
+          // No bound-name match: treat n as a named type definition.
+          tdef = this.defMap.getType(tcenvb, n);
+          tparams = tdef match {
+          | TypeDef{tdefParams} -> tdefParams
+          | Class{tparams} -> tparams
+          | Enum _ -> Array[]
+          };
+          if (
+            targs.size() > tparams.size() ||
+            (targs.size() < tparams.size() &&
+              tparams[targs.size()].default is None())
+          ) {
+            tcenvb.error(
+              Array[
+                (
+                  n.pos,
+                  `Invalid number of type arguments: given ${targs.size()}, expected ${tparams.size()}`,
+                ),
+              ],
+            )
+          };
+
+          if (this.seenInstantiate.contains(n.value)) {
+            !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
+          };
+          TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
+        }
       }
     | TAUnion(ty1, ty2) ->
       subst = Subst::mcreate(tcenvb);
