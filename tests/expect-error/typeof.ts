@@ -1091,7 +1091,8 @@ function testTupleSpread(
 // Wrong index access
 function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
-    // Accessing out of bounds
+    // `x[2]` has type `number | string` via the inherited number index, not
+    // `boolean` — so the return type fails as well.
     // @skjs-expect-error Invalid return type
     // @skjs-expect-error Out of bound index
     return x[2];
@@ -1111,13 +1112,10 @@ function testTupleWrongDestructure(x: [number, string] | number): boolean {
   }
 }
 
-// Treating tuple as array with methods
-// FIXME: map method for tuples
+// Tuples inherit ReadonlyArray methods (map, filter, ...) via their stubs.
 function testTupleArrayMethod(x: [number, string] | number): number {
   if (typeof x === "object") {
-    // Tuples don't have array methods in SKJS
-    // @skjs-expect-error Missing type annotation
-    return x.map((v) => v).length;
+    return x.map((v: number | string) => v).length;
   } else {
     return x;
   }
