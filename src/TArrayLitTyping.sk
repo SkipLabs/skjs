@@ -274,7 +274,7 @@ class ArrayLitTyping() {
       };
       // Case 2c: ArrayLit<α, elts> <: Tuple[U1, ...]
       u2.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
-        sTypes.getSingleTuple()
+        sTypes.getSingleTuple(subst, tenv)
       ) match {
       | Some(
         TTuple(targetElts, _),

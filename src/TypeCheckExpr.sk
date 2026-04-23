@@ -48,7 +48,7 @@ extension class TypeChecker {
       tcenv.scope.bind(tcenv, local, type, isInitialized)
     | PArray(arrPat, rest) ->
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
-      stypes.flatMap(s ~> s.getSingleTuple()) match {
+      stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
       | Some(TTuple(tyl, _)) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
           arrPat[i] match {
@@ -2571,7 +2571,7 @@ extension class TypeChecker {
       | Spread(spreadExpr) ->
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
         stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
-        stypes.flatMap(s ~> s.getSingleTuple()) match {
+        stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
         | Some(TTuple(tupElts, _)) ->
           moreArgs match {
           | None() -> args.extend(tupElts)

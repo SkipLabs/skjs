@@ -147,7 +147,6 @@ function testGenericSpread(): void {
 function testSpreadUndefined(): void {
   const maybeArgs: [number, number, number] | undefined = undefined;
   let args = maybeArgs ?? [1, 2, 3];
-  // @skjs-expect-error Invalid call
   takesThreeNumbers(...args);
 }
 

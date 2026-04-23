@@ -83,7 +83,6 @@ function check4(t1: [number] | [boolean]): [number | boolean] {
 
 function check5(t1: [number] | [boolean]): number | boolean {
   let [x] = t1;
-  // @skjs-expect-error Invalid return type
   return x;
 }
 

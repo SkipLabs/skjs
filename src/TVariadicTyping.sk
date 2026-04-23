@@ -51,7 +51,7 @@ class VariadicTyping() {
     saved = subst.save();
     // Expand (resolves type aliases, applies tvar bindings + constraints)
     clauses = fullType.expandToClauses(subst, tenv, Contravariant());
-    clauses.getSingleTuple() match {
+    clauses.getSingleTuple(subst, tenv) match {
     | Some(TTuple(tupleElts, _)) -> return Some(tupleElts)
     | None() -> void
     };
@@ -72,7 +72,7 @@ class VariadicTyping() {
     };
     boundType
       .expandToClauses(subst, tenv, Contravariant())
-      .getSingleTuple() match {
+      .getSingleTuple(subst, tenv) match {
     | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
     | None() ->
       subst.restore(saved);
@@ -292,7 +292,7 @@ class VariadicTyping() {
     rhs: TType,
   ): ?STResult<TType> {
     // Check if lhs is a single tuple
-    tuple = clauses1.getSingleTuple() match {
+    tuple = clauses1.getSingleTuple(subst, tenv) match {
     | None() -> return None()
     | Some(tuple) -> tuple
     };

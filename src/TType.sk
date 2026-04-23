@@ -644,18 +644,55 @@ class TObject private (
     this.branches.toArray()
   }
 
-  // Returns Some(length) when this TObject is a single-branch tuple-shaped
-  // object (via TFields::isTuple). Multi-branch unions of tuples currently
-  // return None() — the caller sees the raw TObject.
+  // Returns Some(arity) when every branch of this TObject is a tuple of the
+  // same arity (via TFields::isTuple). Avoids the Subst that `asTuple` needs
+  // for element unioning — useful for callers that only care about length
+  // (e.g. out-of-bound index checks).
   fun isTuple(): ?Int {
-    this.branches.getUnique().flatMap(branch -> branch.isTuple())
+    this.branches.values().next().flatMap(first -> first.isTuple()) match {
+    | res @ Some(arity) if (
+      this.branches.all(fields ->
+        fields.isTuple() match {
+        | Some(otherArity) -> otherArity == arity
+        | None() -> false
+        }
+      )
+    ) ->
+      res
+    | _ -> None()
+    }
   }
 
-  // Returns Some(elts) when this TObject is a single-branch tuple-shaped
-  // object (via TFields::asTuple). Multi-branch unions of tuples currently
-  // return None() — the caller sees the raw TObject.
-  fun asTuple(): ?Array<TType> {
-    this.branches.getUnique().flatMap(branch -> branch.asTuple())
+  // Returns Some(elts) when every branch of this TObject is a tuple of the
+  // same arity (via TFields::asTuple). Elements of branches are unioned
+  // positionally. Returns None() if any branch is not a tuple or arities
+  // differ (the caller sees the raw TObject in that case).
+  fun asTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
+    branches = this.branches.toArray();
+    if (branches.isEmpty()) return None();
+    first = branches[0].asTuple() match {
+    | Some(elts) -> elts
+    | None() -> return None()
+    };
+    if (branches.size() == 1) return Some(first);
+    arity = first.size();
+    branchesElts = mutable Vector[first];
+    for (i in Range(1, branches.size())) {
+      branches[i].asTuple() match {
+      | Some(elts) if (elts.size() == arity) -> branchesElts.push(elts)
+      | _ -> return None()
+      }
+    };
+    Some(
+      Array::fillBy(arity, i ->
+        TType::unionN_it(
+          subst,
+          tenv,
+          this.pos,
+          branchesElts.values().map(be -> be[i]),
+        )
+      ),
+    )
   }
 
   fun maybeGetType(
@@ -1793,10 +1830,11 @@ class STypes private (
     )
   }
 
-  fun getSingleTuple(): ?TTuple {
+  fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?TTuple {
     this.singleElt() match {
     | Some(tuple @ TTuple _) -> Some(tuple)
-    | Some(obj @ TObject _) -> obj.asTuple().map(elts -> TTuple(elts, obj.pos))
+    | Some(obj @ TObject _) ->
+      obj.asTuple(subst, tenv).map(elts -> TTuple(elts, obj.pos))
     | _ -> None()
     }
   }
@@ -2199,9 +2237,9 @@ class Clauses private (
   }
 
   // Returns the tuple if clauses is a single clause whose only stype is a Tuple.
-  fun getSingleTuple(): ?TTuple {
+  fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?TTuple {
     this.clauses.singleElt().flatMap(clause ->
-      clause.stypes.flatMap(sTypes -> sTypes.getSingleTuple())
+      clause.stypes.flatMap(sTypes -> sTypes.getSingleTuple(subst, tenv))
     )
   }
 
