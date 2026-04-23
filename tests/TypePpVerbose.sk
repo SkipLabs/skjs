@@ -31,7 +31,7 @@ fun nullaryFn(retName: String): SKJS.TFuns {
   SKJS.TFuns::singleFun(
     SKJS.TFun(
       Array[],
-      None(),
+      SKJS.NoThis(),
       Array[],
       Array[],
       None(),

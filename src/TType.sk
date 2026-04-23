@@ -1349,9 +1349,32 @@ class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
   }
 }
 
+// The `this` parameter of a function type, with three distinct states:
+//   - NoThis()        no declared `this` (a genuinely free function)
+//   - Explicit(ty)    an explicit `this: T` written in the signature
+//   - ImplicitShape() a METHOD-syntax member of an object-literal type
+//                     (`{ m(): R }`): attach-only — its receiver is the very
+//                     object it is accessed on, and its carrier type is
+//                     erased, so it cannot be detached or laundered into a
+//                     free function type.
+base class ThisParam uses XXHashable, Orderable {
+  children =
+  | NoThis()
+  | Explicit(ty: TType)
+  | ImplicitShape()
+
+  // The declared/instance type, if any (None for NoThis and for ImplicitShape,
+  // whose carrier type is erased).
+  fun tyOpt(): ?TType
+  | NoThis()
+  | ImplicitShape() ->
+    None()
+  | Explicit(ty) -> Some(ty)
+}
+
 class TFun(
   tparams: Array<TParamWithConstraint>,
-  thisParam: ?TType,
+  thisParam: ThisParam,
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?TType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */

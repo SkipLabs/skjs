@@ -3475,7 +3475,7 @@ extension class TypeChecker {
         TFuns::singleFun(
           TFun(
             funClauses,
-            None(),
+            NoThis(),
             normalParams.toArray(),
             optionalParams.toArray(),
             spreadParam,
@@ -4329,7 +4329,7 @@ extension class TypeChecker {
 
       // Check the receiver against the declared `this` parameter, if any.
       // A call with no receiver (free call) uses `this: void`, matching TS.
-      tfun.thisParam.each(expectedThis -> {
+      tfun.thisParam.tyOpt().each(expectedThis -> {
         actualThis = thisArgOpt match {
         | Some(t) -> t
         | None() -> TType::single(TPrimUnit(TVoid(), pos))

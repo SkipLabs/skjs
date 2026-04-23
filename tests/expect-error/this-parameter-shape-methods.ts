@@ -44,8 +44,9 @@ function detachShapeMethod(): number {
   return f();
 }
 
-// FIXME: accepted for now — laundering a shape method through a no-this
-// function type; rejected once shape members are attach-only.
+// Laundering a shape method through a no-this function type is rejected: the
+// resulting value would permit free calls that lose the receiver.
 function launderShapeMethod(): Getter {
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return shape.m;
 }

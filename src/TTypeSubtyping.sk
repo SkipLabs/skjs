@@ -536,7 +536,16 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
         None(),
       )
     | STRecFunThisParam(None(), _f1, _f2) ->
-      (None(), List[(pos1, "The this parameter is missing")], None())
+      (
+        None(),
+        List[
+          (
+            pos1,
+            "A shape method can only be called on the object it was accessed on",
+          ),
+        ],
+        None(),
+      )
     | STRecFunParam(None(), i, _f1, _f2) ->
       (None(), List[(pos2, `The parameter ${i + 1} is missing`)], None())
     | STRecFunSpread(None(), _f1, _f2) ->
@@ -1922,9 +1931,20 @@ extension class TFun {
     // (this: T) => R to () => R and free-calling it would run the body with no
     // receiver (SkipLabs/skjs#960). TS accepts that; SKJS rejects it.
     (f1.thisParam, f2.thisParam) match {
-    | (None(), _) -> void
-    | (Some(this1), this2opt) ->
-      this2 = this2opt.default(TType::top(this1.pos));
+    | (NoThis(), _) -> void
+    // A method-syntax member of an object-literal shape is attach-only: at an
+    // attached call its receiver is the very object it was accessed on (shape
+    // methods are readonly, so the member IS the carrier's own), so every
+    // inhabitant of the shape satisfies it even though its carrier type is
+    // erased. That acceptance is what lets primitives and class instances
+    // inhabit `{ m(): R }` shapes.
+    | (_, ImplicitShape()) -> void
+    // A shape method used where a declared- or no-this function is expected:
+    // its receiver requirement is erased, so nothing can be proven — reject.
+    | (ImplicitShape(), _) -> return STRecFunThisParam(None(), f1, f2)
+    | (tp1, tp2) ->
+      this1 = tp1.tyOpt().fromSome();
+      this2 = tp2.tyOpt().default(TType::top(this1.pos));
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
       | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)
