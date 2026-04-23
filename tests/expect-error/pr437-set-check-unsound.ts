@@ -112,7 +112,6 @@ function testReadonlyTupleField(): void {
   // Rejected — readonly pair assigned to mutable pair (via per-field TVar inference)
   // @skjs-expect-error Invalid annotation
   const mutable_alias: { pair: [string, number] } = obj;
-  // @skjs-expect-error Invalid assignment
   mutable_alias.pair = ["b", 2];
 }
 

@@ -1167,7 +1167,6 @@ function checkGenericClosureWithMultipleParams<T1, T2>(
   input1: T1,
   input2: T2,
 ): (arg1: T1, arg2: T2) => [T1, T2] {
-  // @skjs-expect-error Invalid return type
   return (arg1: T1, arg2: T2) => [arg1, arg2];
 }
 
@@ -1260,7 +1259,6 @@ function checkMultipleConstrainedGenericClosureWithParam<
   T1 extends { length: number },
   T2 extends { size: number },
 >(input1: T1, input2: T2): (arg1: T1, arg2: T2) => [number, number] {
-  // @skjs-expect-error Invalid return type
   return (arg1: T1, arg2: T2) => [arg1.length, arg2.size];
 }
 
@@ -1323,7 +1321,6 @@ function checkGenericFunctionWithMultipleOptionalParams<T1, T2>(
   arg1?: T1,
   arg2?: T2,
 ): [T1 | undefined, T2 | undefined] {
-  // @skjs-expect-error Invalid return type
   return [arg1, arg2];
 }
 
@@ -1449,7 +1446,6 @@ function checkMultipleConstrainedGenericFunctionWithOptionalParam<
   arg1?: T1,
   arg2?: T2,
 ): [number | undefined, number | undefined] {
-  // @skjs-expect-error Invalid return type
   return [0, 0];
 }
 

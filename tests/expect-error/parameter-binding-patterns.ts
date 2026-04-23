@@ -80,7 +80,6 @@ function testArrowObjectDefault(): void {
 function testArrowArrayRest(): void {
   const f = ([a, ...rest]: [number, string, boolean]): void => {
     const x: number = a;
-    // @skjs-expect-error Invalid annotation
     const y: [string, boolean] = rest;
   };
 }

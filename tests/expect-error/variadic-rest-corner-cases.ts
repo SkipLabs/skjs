@@ -128,7 +128,6 @@ function testGenericTupleRestInference(): void {
 
 // 4) Inference from tuple spread: keeps tuple shape
 function testTupleSpreadInference(): void {
-  // @skjs-expect-error Invalid annotation
   const tup: [string, number] = ["x", 42];
   const t2 = inferTuple(...tup);
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
@@ -137,7 +136,6 @@ function testTupleSpreadInference(): void {
 
   // Also works with readonly tuple
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
-  // @skjs-expect-error Invalid annotation
   const rtup: [string, number] = ["y", 99];
   const t3 = inferTuple(...rtup);
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
@@ -165,7 +163,6 @@ function testSpreadArrayFollowedByPositional(): void {
 
 // 6b) Tuple spread followed by positional arg: keeps positional shape
 function testTupleSpreadFollowedByPositional(): void {
-  // @skjs-expect-error Invalid annotation
   const depTuple: [string, number] = ["a", 1];
   threeArgs(...depTuple, 2);
 }
@@ -181,7 +178,6 @@ function testMotivatingAPI(): void {
   variadicColl.map(One, true);
 
   // Tuple spread into the rest args should preserve shape
-  // @skjs-expect-error Invalid annotation
   const args2: [string, number] = ["z", 7];
   variadicColl.map(Two, ...args2);
 

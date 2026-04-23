@@ -249,7 +249,6 @@ function testTuplePositive(x: [number, string] | number): [number, string] {
   if (Array.isArray(x)) {
     return x;
   } else {
-    // @skjs-expect-error Invalid return type
     return [0, ""];
   }
 }

@@ -119,7 +119,11 @@ extension class TypeChecker {
         };
         rest match {
         | Some(restName) ->
-          restType = TType::tuple(restName.pos, tyl.slice(arrPat.size()), true);
+          restType = TType::tuple(
+            restName.pos,
+            tyl.slice(arrPat.size()),
+            false,
+          );
           this.bind(
             tcenv,
             kind,
