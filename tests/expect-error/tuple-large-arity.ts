@@ -58,7 +58,6 @@ function arity11Destructure(
 
 // Arity-15 with mixed types and readonly variant.
 function readonlyArity15(
-  // @skjs-expect-error TODO readonly
   t: readonly [
     number,
     string,
@@ -76,7 +75,6 @@ function readonlyArity15(
     string,
     boolean,
   ],
-  // @skjs-expect-error TODO readonly
 ): readonly [
   number,
   string,

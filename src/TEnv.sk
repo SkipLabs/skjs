@@ -1046,9 +1046,6 @@ base class TEnv{
     taTuple: TATuple,
     isReadonly: Bool,
   ): TType {
-    if (isReadonly) {
-      tcenvb.error(Array[(pos, "TODO readonly")])
-    };
     tupleElts = taTuple match {
     | TATuple(elts) -> elts
     };
