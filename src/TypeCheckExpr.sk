@@ -985,7 +985,7 @@ extension class TypeChecker {
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
-            tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
+            tFuns = this.funDecl(tcenv, None(), fd, fd.cgNode.fromSome());
             break TType::single(TObject::createCall(tFuns))
           | c @ Class _ ->
             staticClass = this.newStatic(tcenv.subst, c.name);
@@ -1368,7 +1368,7 @@ extension class TypeChecker {
           }
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          tFuns = this.funDecl(tcenv, false, fd, cgNode);
+          tFuns = this.funDecl(tcenv, None(), fd, cgNode);
           (name, TType::single(TObject::createCall(tFuns)))
         };
         field = TField::create{
