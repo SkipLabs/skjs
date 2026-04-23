@@ -1352,6 +1352,8 @@ class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
 // The `this` parameter of a function type, with three distinct states:
 //   - NoThis()        no declared `this` (a genuinely free function)
 //   - Explicit(ty)    an explicit `this: T` written in the signature
+//   - ImplicitClass(ty) the implicit `this` of a class method (the enclosing
+//                     class instance)
 //   - ImplicitShape() a METHOD-syntax member of an object-literal type
 //                     (`{ m(): R }`): attach-only — its receiver is the very
 //                     object it is accessed on, and its carrier type is
@@ -1361,6 +1363,7 @@ base class ThisParam uses XXHashable, Orderable {
   children =
   | NoThis()
   | Explicit(ty: TType)
+  | ImplicitClass(ty: TType)
   | ImplicitShape()
 
   // The declared/instance type, if any (None for NoThis and for ImplicitShape,
@@ -1369,7 +1372,9 @@ base class ThisParam uses XXHashable, Orderable {
   | NoThis()
   | ImplicitShape() ->
     None()
-  | Explicit(ty) -> Some(ty)
+  | Explicit(ty)
+  | ImplicitClass(ty) ->
+    Some(ty)
 }
 
 class TFun(

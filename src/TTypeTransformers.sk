@@ -108,6 +108,7 @@ mutable base class ApplyType(
       | NoThis() -> NoThis()
       | ImplicitShape() -> ImplicitShape()
       | Explicit(ty) -> Explicit(this.type(env, ty))
+      | ImplicitClass(ty) -> ImplicitClass(this.type(env, ty))
       },
       f.params.map(x -> this.type(env, x)),
       f.optionalParams.map(x -> this.type(env, x)),
