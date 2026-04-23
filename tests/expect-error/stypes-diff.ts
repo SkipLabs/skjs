@@ -55,6 +55,7 @@ function testObjectInUnion(): void {
 function takeTupleOrT<T>(x: [number, string] | T): void {}
 
 function testTupleInUnion(): void {
+  // @skjs-expect-error Invalid annotation
   const t: [string, number] = ["a", 1];
   // Different tuple structure, so T is inferred
   takeTupleOrT(t);

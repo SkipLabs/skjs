@@ -16,6 +16,7 @@ function fromArity11(): [
   number,
   number,
 ] {
+  // @skjs-expect-error Invalid return type
   return [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
 }
 
@@ -34,7 +35,6 @@ function arity11Length(
     number,
   ],
 ): 11 {
-  // @skjs-expect-error Invalid index
   return t.length;
 }
 

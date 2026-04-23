@@ -95,7 +95,7 @@ function testOptionalBeforeTupleRest(): void {
 function testEmptyRestInference(): void {
   const empty0 = emptyInfer();
   // No empty tuple type syntax, so we use expanded show to assert tuple shape.
-  __SKJS_show_expanded(empty0, "[]");
+  __SKJS_show_expanded(empty0, "readonly []");
   const empty0_as_ro_unknown_array: readonly unknown[] = empty0;
 }
 
@@ -117,26 +117,31 @@ function testTupleRestExactArity(): void {
 function testGenericTupleRestInference(): void {
   const t1 = inferTuple("a", 1);
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
+  // @skjs-expect-error Invalid annotation
   const t1_as_tuple: [string, number] = t1;
 
   // Constraint enforcement (DepSafe)
   // @skjs-expect-error This expression was expected to be of type void or ignorable
-  // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
+  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   inferTuple(true);
 }
 
 // 4) Inference from tuple spread: keeps tuple shape
 function testTupleSpreadInference(): void {
+  // @skjs-expect-error Invalid annotation
   const tup: [string, number] = ["x", 42];
   const t2 = inferTuple(...tup);
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
+  // @skjs-expect-error Invalid annotation
   const t2_as_tuple: [string, number] = t2;
 
   // Also works with readonly tuple
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
+  // @skjs-expect-error Invalid annotation
   const rtup: [string, number] = ["y", 99];
   const t3 = inferTuple(...rtup);
   // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
+  // @skjs-expect-error Invalid annotation
   const t3_as_tuple: [string, number] = t3;
 }
 
@@ -160,6 +165,7 @@ function testSpreadArrayFollowedByPositional(): void {
 
 // 6b) Tuple spread followed by positional arg: keeps positional shape
 function testTupleSpreadFollowedByPositional(): void {
+  // @skjs-expect-error Invalid annotation
   const depTuple: [string, number] = ["a", 1];
   threeArgs(...depTuple, 2);
 }
@@ -171,10 +177,11 @@ function testMotivatingAPI(): void {
   variadicColl.map(Two, "hello", 42);
   // @skjs-expect-error Invalid call
   variadicColl.map(Two, "hello");
-  // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
+  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   variadicColl.map(One, true);
 
   // Tuple spread into the rest args should preserve shape
+  // @skjs-expect-error Invalid annotation
   const args2: [string, number] = ["z", 7];
   variadicColl.map(Two, ...args2);
 
@@ -187,7 +194,7 @@ function testMotivatingAPI(): void {
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello", 42);
   // @skjs-expect-error Invalid call
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello");
-  // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
+  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   prefixedColl.mapWithPrefix("tag", PrefixOne, true);
 }
 

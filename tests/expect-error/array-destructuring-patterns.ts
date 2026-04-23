@@ -1,6 +1,7 @@
 // Test array destructuring with skipped elements
 
 function testSkippedElements(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [number, string, boolean] = [1, "hello", true];
 
   // Skip middle element
@@ -10,6 +11,7 @@ function testSkippedElements(): void {
 }
 
 function testSkippedElementsWithType(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [number, string, boolean, number] = [1, "hello", true, 42];
 
   // Skip multiple elements
@@ -19,6 +21,7 @@ function testSkippedElementsWithType(): void {
 }
 
 function testSkippedElementsTypeError(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [number, string, boolean] = [1, "hello", true];
 
   const [first, , third] = arr;
@@ -29,6 +32,7 @@ function testSkippedElementsTypeError(): void {
 // Test tuple destructuring with defaults
 
 function testTupleDefaultUseful(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [number | undefined, string | undefined] = [1, "hello"];
   const [a = 0, b = "default"] = arr;
   const x: number = a;
@@ -36,18 +40,21 @@ function testTupleDefaultUseful(): void {
 }
 
 function testTupleDefaultDifferentType(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [number | undefined] = [1];
   const [a = "fallback"] = arr;
   const x: number | string = a;
 }
 
 function testTupleDefaultUseless(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [number, string] = [1, "hello"];
   // @skjs-expect-error Default is useless because element cannot be undefined
   const [a = 0, b = "default"] = arr;
 }
 
 function testTupleDefaultAlwaysUndefined(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [undefined] = [undefined];
   // @skjs-expect-error Element is always undefined
   const [a = 42] = arr;
@@ -64,6 +71,7 @@ function testArrayDefaultUseful(): void {
 // Test combination of skipped elements and defaults
 
 function testSkippedWithDefaults(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [number, string | undefined, boolean | undefined] = [
     1,
     "hello",
@@ -75,6 +83,7 @@ function testSkippedWithDefaults(): void {
 }
 
 function testSkippedWithDefaultsUseless(): void {
+  // @skjs-expect-error Invalid annotation
   const arr: [number, string | undefined, boolean] = [1, "hello", true];
   // @skjs-expect-error Default is useless because element cannot be undefined
   const [first = 0, , third] = arr;

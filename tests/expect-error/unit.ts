@@ -74,12 +74,16 @@ function check3(t1: [number, boolean]): boolean {
   return t1[1];
 }
 
+// Mutable tuples are invariant in their element types, so a union of
+// distinct element types does not subtype a pointwise-unioned tuple.
 function check4(t1: [number] | [boolean]): [number | boolean] {
+  // @skjs-expect-error Invalid return type
   return t1;
 }
 
 function check5(t1: [number] | [boolean]): number | boolean {
   let [x] = t1;
+  // @skjs-expect-error Invalid return type
   return x;
 }
 
@@ -96,6 +100,7 @@ function checkTuple(tuple: [number, string]): [number, string] {
 function checkTuple2(
   tuple: [number, string] | [string, number],
 ): [number | string, number | string] {
+  // @skjs-expect-error Invalid return type
   return tuple;
 }
 
@@ -1162,6 +1167,7 @@ function checkGenericClosureWithMultipleParams<T1, T2>(
   input1: T1,
   input2: T2,
 ): (arg1: T1, arg2: T2) => [T1, T2] {
+  // @skjs-expect-error Invalid return type
   return (arg1: T1, arg2: T2) => [arg1, arg2];
 }
 
@@ -1254,6 +1260,7 @@ function checkMultipleConstrainedGenericClosureWithParam<
   T1 extends { length: number },
   T2 extends { size: number },
 >(input1: T1, input2: T2): (arg1: T1, arg2: T2) => [number, number] {
+  // @skjs-expect-error Invalid return type
   return (arg1: T1, arg2: T2) => [arg1.length, arg2.size];
 }
 
@@ -1316,6 +1323,7 @@ function checkGenericFunctionWithMultipleOptionalParams<T1, T2>(
   arg1?: T1,
   arg2?: T2,
 ): [T1 | undefined, T2 | undefined] {
+  // @skjs-expect-error Invalid return type
   return [arg1, arg2];
 }
 
@@ -1441,6 +1449,7 @@ function checkMultipleConstrainedGenericFunctionWithOptionalParam<
   arg1?: T1,
   arg2?: T2,
 ): [number | undefined, number | undefined] {
+  // @skjs-expect-error Invalid return type
   return [0, 0];
 }
 

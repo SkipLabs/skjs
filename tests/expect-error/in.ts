@@ -323,12 +323,10 @@ function literalInTupleAlwaysFalse(): boolean {
 }
 
 function literalInTupleAlwaysTrue(): boolean {
-  // @skjs-expect-error TODO: in
   return 0 in [1];
 }
 
 function literalInTupleUnion(x: [number] | [number, number]): boolean {
-  // @skjs-expect-error TODO: in
   return 1 in x;
 }
 

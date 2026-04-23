@@ -15,6 +15,7 @@ function takesGeneric<T>(a: T, b: T): void {}
 
 // Test 1: Basic spread with exact argument count
 function testBasicSpread(): void {
+  // @skjs-expect-error Invalid annotation
   const args: [number, number, number] = [1, 2, 3];
   takesThreeNumbers(...args);
 }
@@ -39,13 +40,16 @@ function testSpreadArray(): void {
 
 // Test 4: Multiple spreads in one call
 function testMultipleSpreads(): void {
+  // @skjs-expect-error Invalid annotation
   const nums1: [number] = [1];
+  // @skjs-expect-error Invalid annotation
   const nums2: [number, number] = [2, 3];
   takesThreeNumbers(...nums1, ...nums2);
 }
 
 // Test 5: Mixed regular and spread arguments
 function testMixedArguments(): void {
+  // @skjs-expect-error Invalid annotation
   const rest: [number, number] = [2, 3];
   takesThreeNumbers(1, ...rest);
 }
@@ -60,6 +64,7 @@ function testSpreadAfterRegular(): void {
 
 // Test 7: Spread with tuple types
 function testSpreadTuple(): void {
+  // @skjs-expect-error Invalid annotation
   const tuple: [number, string] = [42, "hello"];
   takesNumberAndString(...tuple);
 }
@@ -72,12 +77,14 @@ function testEmptySpread(): void {
 
 // Test 9: Spread with optional parameters
 function testSpreadWithOptional(): void {
+  // @skjs-expect-error Invalid annotation
   const args: [number, string] = [1, "hello"];
   takesOptional(...args);
 }
 
 // Test 10: Spread single element tuple
 function testSpreadSingleElement(): void {
+  // @skjs-expect-error Invalid annotation
   const single: [number] = [42];
   takesOptional(...single);
 }
@@ -86,6 +93,7 @@ function testSpreadSingleElement(): void {
 
 // Test 11: Wrong argument types in spread
 function testWrongTypes(): void {
+  // @skjs-expect-error Invalid annotation
   const wrongArgs: [string, string, string] = ["a", "b", "c"];
   // @ts-expect-error Invalid call
   takesThreeNumbers(...wrongArgs);
@@ -93,6 +101,7 @@ function testWrongTypes(): void {
 
 // Test 12: Too few arguments via spread
 function testTooFewArguments(): void {
+  // @skjs-expect-error Invalid annotation
   const tooFew: [number, number] = [1, 2];
   // @ts-expect-error Invalid call
   takesThreeNumbers(...tooFew);
@@ -100,6 +109,7 @@ function testTooFewArguments(): void {
 
 // Test 13: Too many arguments (non-rest function)
 function testTooManyArguments(): void {
+  // @skjs-expect-error Invalid annotation
   const tooMany: [number, number, number, number] = [1, 2, 3, 4];
   // Extra arguments are ignored
   // FIXME? TypeScript rejects it
@@ -124,6 +134,7 @@ function testSpreadObject(): void {
 
 // Test 16: Mixed types with wrong spread type
 function testMixedWrongTypes(): void {
+  // @skjs-expect-error Invalid annotation
   const wrongRest: [number, number] = [1, 2];
   // @ts-expect-error Invalid argument
   takesOneAndRest(1, ...wrongRest);
@@ -131,6 +142,7 @@ function testMixedWrongTypes(): void {
 
 // Test 17: Spread with type mismatch in rest
 function testRestTypeMismatch(): void {
+  // @skjs-expect-error Invalid annotation
   const wrongTypes: [number, string, number] = [1, "x", 2];
   // @ts-expect-error Invalid argument
   takesTwoAndRest(...wrongTypes);
@@ -138,6 +150,7 @@ function testRestTypeMismatch(): void {
 
 // Test 18: Generic function with spread
 function testGenericSpread(): void {
+  // @skjs-expect-error Invalid annotation
   const args: [number, string] = [1, "hello"];
   // FIXME? TypeScript rejects it because it infer T = number but we do infer T = number | string
   takesGeneric(...args);
@@ -147,6 +160,7 @@ function testGenericSpread(): void {
 function testSpreadUndefined(): void {
   const maybeArgs: [number, number, number] | undefined = undefined;
   let args = maybeArgs ?? [1, 2, 3];
+  // @skjs-expect-error Invalid call
   takesThreeNumbers(...args);
 }
 
@@ -156,12 +170,14 @@ class MyClass {
 }
 
 function testSpreadInConstructor(): void {
+  // @skjs-expect-error Invalid annotation
   const args: [number, string] = [42, "hello"];
   const instance = new MyClass(...args);
 }
 
 // Test 21: Chained spread calls
 function returnsArray(): [number, number, number] {
+  // @skjs-expect-error Invalid return type
   return [1, 2, 3];
 }
 

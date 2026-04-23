@@ -1506,16 +1506,6 @@ extension class TType {
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
 
-    // Special case: tuple-like lhs against array-like rhs.
-    // We accept only when ReadonlyArray<U(tuple elems)> <: rhs.
-    substCopy = subst.save();
-    VariadicTyping::tupleToArraySubtyping(subst, tenv, clauses1, u2) match {
-    | Some(res) ->
-      if (!(res is STOk())) subst.restore(substCopy);
-      return res
-    | None() -> subst.restore(substCopy)
-    };
-
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->

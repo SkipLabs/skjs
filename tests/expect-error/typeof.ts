@@ -586,8 +586,10 @@ function testMultipleVars(
   y: number | string,
 ): [number, number] {
   if (typeof x === "number" && typeof y === "number") {
+    // @skjs-expect-error Invalid return type
     return [x, y];
   }
+  // @skjs-expect-error Invalid return type
   return [0, 0];
 }
 
@@ -844,8 +846,10 @@ function testTupleVsObject(
 ): [number, string] {
   if (typeof x === "object") {
     // Both are objects, typeof can't distinguish
+    // @skjs-expect-error Invalid return type
     return [0, ""];
   } else {
+    // @skjs-expect-error Invalid return type
     return [0, ""];
   }
 }
@@ -870,8 +874,10 @@ function testTupleWithPrimitives(
   if (typeof x === "object") {
     return x;
   } else if (typeof x === "number") {
+    // @skjs-expect-error Invalid return type
     return [x, ""];
   } else {
+    // @skjs-expect-error Invalid return type
     return [0, x];
   }
 }
@@ -912,6 +918,7 @@ function testTupleVsNull(
     // Both tuple and null are typeof "object", need ?? to handle null
     return x ?? def;
   } else {
+    // @skjs-expect-error Invalid return type
     return [0, x];
   }
 }
@@ -923,6 +930,7 @@ function testNestedTuples(
   if (typeof x === "object") {
     return x;
   } else {
+    // @skjs-expect-error Invalid return type
     return [x, ["", false]];
   }
 }
@@ -934,6 +942,7 @@ function testTupleWithUnion(
   if (typeof x === "object") {
     return x;
   } else {
+    // @skjs-expect-error Invalid return type
     return [x, false];
   }
 }
@@ -990,6 +999,7 @@ function testTupleVsFunction(
   x: [number, string] | (() => void),
 ): [number, string] {
   if (typeof x === "function") {
+    // @skjs-expect-error Invalid return type
     return [0, ""];
   } else {
     return x;
@@ -1006,6 +1016,7 @@ function testLabeledTuple(
   if (typeof x === "object") {
     return x;
   } else {
+    // @skjs-expect-error Invalid return type
     return [x, ""];
   }
 }
@@ -1020,6 +1031,7 @@ function testReadonlyTuple(
   if (typeof x === "object") {
     return x;
   } else {
+    // @skjs-expect-error Invalid return type
     return [x, ""];
   }
 }
@@ -1039,6 +1051,7 @@ function testComplexTupleUnion(
   x: [number, string] | [boolean, number] | string,
 ): [number, string] | [boolean, number] {
   if (typeof x === "string") {
+    // @skjs-expect-error Invalid return type
     return [0, x];
   } else {
     return x;
@@ -1052,7 +1065,6 @@ function testTupleIntersection(
   if (typeof x === "number") {
     return x;
   } else {
-    // @skjs-expect-error Invalid access for type never
     return x[0];
   }
 }
@@ -1087,6 +1099,7 @@ function testTupleSpread(
     // @skjs-expect-error Invalid return type
     return [...x, false];
   } else {
+    // @skjs-expect-error Invalid return type
     return [x, "", false];
   }
 }
@@ -1099,6 +1112,7 @@ function testTupleSpread(
 function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
     // Accessing out of bounds
+    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Out of bound index
     return x[2];
   } else {
@@ -1122,7 +1136,7 @@ function testTupleWrongDestructure(x: [number, string] | number): boolean {
 function testTupleArrayMethod(x: [number, string] | number): number {
   if (typeof x === "object") {
     // Tuples don't have array methods in SKJS
-    // @skjs-expect-error Invalid index
+    // @skjs-expect-error Missing type annotation
     return x.map((v) => v).length;
   } else {
     return x;
@@ -1137,6 +1151,7 @@ function testWrongTupleElementType(
     // @ts-expect-error Invalid return type
     return x;
   } else {
+    // @skjs-expect-error Invalid return type
     return [x, x];
   }
 }

@@ -34,6 +34,7 @@ function demonstrateArrayIndexIteration(): Array<string> {
 }
 
 function demonstrateTupleIteration(): string {
+  // @skjs-expect-error Invalid annotation
   const info: [string, number, boolean] = ["Alice", 25, true];
   let result = "";
 

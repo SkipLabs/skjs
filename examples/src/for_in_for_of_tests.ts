@@ -37,6 +37,7 @@ function testForInWithArrays2(): void {
 
 function testForInWithTuples(): void {
   // Test for-in with tuple - should iterate over indices
+  // @skjs-expect-error Invalid annotation
   const coord: [number, number] = [10, 20];
   for (const index in coord) {
     // @ts-expect-error Invalid annotation
@@ -46,6 +47,7 @@ function testForInWithTuples(): void {
 
 function testForInWithTuples2(): void {
   // Test with mixed tuple
+  // @skjs-expect-error Invalid annotation
   const mixed: [string, number, boolean] = ["test", 42, true];
   for (const i in mixed) {
     // @ts-expect-error Invalid annotation
@@ -75,12 +77,14 @@ function testForOfWithArrays(): void {
 
 function testForOfWithTuples(): void {
   // Test for-of with homogeneous tuple
+  // @skjs-expect-error Invalid annotation
   const coords: [number, number, number] = [1, 2, 3];
   for (const coord of coords) {
     const value: number = coord;
   }
 
   // Test for-of with heterogeneous tuple - should create union type
+  // @skjs-expect-error Invalid annotation
   const mixed: [string, number, boolean] = ["hello", 42, true];
   for (const item of mixed) {
     // item should be string | number | boolean

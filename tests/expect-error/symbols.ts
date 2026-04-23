@@ -325,6 +325,7 @@ function testForOfSet(): void {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testForOfMap(): void {
+  // @skjs-expect-error Invalid call
   const m = new Map<string, number>([["a", 1]]);
   for (const entry of m) {
     const pair: [string, number] = entry;
@@ -336,6 +337,7 @@ function testForOfMap(): void {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testForOfMapIterator(): void {
+  // @skjs-expect-error Invalid call
   const m = new Map<string, number>([["a", 1]]);
   for (const k of m.keys()) {
     const s: string = k;

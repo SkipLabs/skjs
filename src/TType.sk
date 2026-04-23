@@ -165,9 +165,10 @@ class TType private {
   static fun tuple(
     pos: PosRange,
     tArgs: Array<TType>,
-    _isReadonly: Bool,
+    isReadonly: Bool,
   ): TType {
-    TType::single(TTuple(tArgs, pos))
+    base = if (isReadonly) readonlyTupleName else tupleName;
+    TType::inst(Name(pos, `${base}${tArgs.size()}`), TArgs(tArgs))
   }
 
   static fun fromTParamWithConstraint(

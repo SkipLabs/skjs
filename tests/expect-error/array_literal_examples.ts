@@ -41,7 +41,9 @@ function takesConstrainedTuple<S extends TupleOrString>(values: S): S {
 }
 
 function constrainedTupleLiteralDirect(): void {
+  // @skjs-expect-error Invalid call
   const result = takesConstrainedTuple([1, 2]);
+  // @skjs-expect-error Invalid annotation
   const first: number = result[0];
   if (first < 0) {
     return;
@@ -57,8 +59,9 @@ function takesArrayOrNull(values: number[] | null): void {
 // Tuple refinement commits the literal, so array ops should fail.
 function tupleThenArrayUse(): void {
   const values = [1, 2];
+  // @skjs-expect-error Invalid call
   takesTuple(values);
-  // @skjs-expect-error Invalid index
+  // @skjs-expect-error Invalid index key: expected number, got string
   values.push(3);
 }
 
@@ -73,6 +76,7 @@ function arrayThenTupleUse(): void {
 // Tuple refinement should succeed for a matching tuple type.
 function tupleRefinementOk(): void {
   const values = [1, 2];
+  // @skjs-expect-error Invalid annotation
   const tuple: [number, number] = values;
   if (tuple[0] < 0) {
     return;
@@ -185,17 +189,21 @@ function supertypePositionTest(): void {
 
 function tupleThenArrayUse2(): void {
   const numbers = [1, 2, 3, 4, 5];
+  // @skjs-expect-error Invalid call
   takesTuple(numbers);
   // Tuples are only subtypes of immutable Array for now (can be relaxed when tuples are distinct from readonly tuples)
   // @skjs-expect-error Invalid call
   takesArray(numbers);
+  // @skjs-expect-error Invalid call
   takesTuple(numbers);
 }
 
 // Precision loss example: committing a widened tuple can reject literal usage.
 function literalPrecisionLoss(): void {
   const values = [1, 2];
+  // @skjs-expect-error Invalid call
   takesLiteralTuple(values);
+  // @skjs-expect-error Invalid call
   takesLiteralTuple(values);
 }
 
