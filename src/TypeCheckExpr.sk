@@ -1181,7 +1181,7 @@ extension class TypeChecker {
         for (def in defs) {
           def match {
           | fd @ TopLevelFunDef _ ->
-            tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
+            tFuns = this.funDecl(tcenv, None(), fd, fd.cgNode.fromSome());
             break TType::single(TObject::createCall(tFuns))
           | Class{kind => CKInterface()} -> !sawInterface = true
           | c @ Class _ ->
@@ -1581,7 +1581,7 @@ extension class TypeChecker {
           }
         | fd @ FDMethod{name => FNNormal(name)} ->
           cgNode = CGNode::create(AnonymousFunDef(fd));
-          tFuns = this.funDecl(tcenv, false, fd, cgNode);
+          tFuns = this.funDecl(tcenv, None(), fd, cgNode);
           (name, TType::single(TObject::createCall(tFuns)))
         };
         field = TField::create{
@@ -2819,7 +2819,7 @@ extension class TypeChecker {
         TFuns::singleFun(
           TFun(
             funClauses,
-            None(),
+            NoThis(),
             normalParams.toArray(),
             optionalParams.toArray(),
             spreadParam,
@@ -3403,7 +3403,7 @@ extension class TypeChecker {
 
       // Check the receiver against the declared `this` parameter, if any.
       // A call with no receiver (free call) uses `this: void`, matching TS.
-      tfun.thisParam.each(expectedThis -> {
+      tfun.thisParam.tyOpt().each(expectedThis -> {
         actualThis = thisArgOpt match {
         | Some(t) -> t
         | None() -> TType::single(TPrimUnit(TVoid(), pos))

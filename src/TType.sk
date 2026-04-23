@@ -1062,9 +1062,35 @@ class TFuns private (fun_: TFun, pos: PosRange) uses XXHashable, Orderable {
   }
 }
 
+// The `this` parameter of a function type, with three distinct states:
+//   - NoThis()          no declared `this` (treated as `this: unknown`)
+//   - Explicit(ty)      an explicit `this: T` written in the signature
+//   - ImplicitClass(ty) the implicit `this` of a method (the enclosing class
+//                       instance); the receiver at a call is the object itself
+// `ty` (Explicit/ImplicitClass) is the declared/class-instance type, used for
+// call-site receiver checks and pretty-printing. Keeping the implicit case
+// distinct lets function-type subtyping treat two implicit thises as mutually
+// compatible (the object carries its own method) rather than with the
+// contravariance of an explicit `this`, so every instance method can carry a
+// thisParam without regressing generic-container variance (ReadonlyArray<Dog>
+// vs ReadonlyArray<Animal>) or subclass override compatibility.
+base class ThisParam uses XXHashable, Orderable {
+  children =
+  | NoThis()
+  | Explicit(ty: TType)
+  | ImplicitClass(ty: TType)
+
+  // The declared/instance type, if any (None for NoThis).
+  fun tyOpt(): ?TType
+  | NoThis() -> None()
+  | Explicit(ty)
+  | ImplicitClass(ty) ->
+    Some(ty)
+}
+
 class TFun(
   tparams: Array<TParamWithConstraint>,
-  thisParam: ?TType,
+  thisParam: ThisParam,
   params: Array<TType>,
   optionalParams: Array<TType>,
   spreadParam: ?TType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */

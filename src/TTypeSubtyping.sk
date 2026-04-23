@@ -1507,9 +1507,11 @@ extension class TFun {
     // this parameter is treated as `this: unknown`, so it is compatible
     // with any declared this type on either side.
     (f1.thisParam, f2.thisParam) match {
-    | (_, None()) -> void
-    | (None(), Some(_)) -> void
-    | (Some(this1), Some(this2)) ->
+    | (_, NoThis()) -> void
+    | (NoThis(), _) -> void
+    | (tp1, tp2) ->
+      this1 = tp1.tyOpt().fromSome();
+      this2 = tp2.tyOpt().fromSome();
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
       | err @ STErrorOnTType _ -> return STRecFunThisParam(Some(err), f1, f2)
