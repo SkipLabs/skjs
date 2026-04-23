@@ -1681,6 +1681,9 @@ extension class TypeChecker {
         };
         e1Ty = this.expr(tcenv, e1, mostPrecise);
         (this.dot(tcenv, e1.pos, e1Ty, fieldName, accessKind), Some(e1Ty))
+      | Get(e1, idx) ->
+        e1Ty = this.expr(tcenv, e1, mostPrecise);
+        (this.get(tcenv, f.pos, e1Ty, idx, AKNormal()), Some(e1Ty))
       | _ -> (this.expr(tcenv, f, mostPrecise), None())
       };
       tfuns = fty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
