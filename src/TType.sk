@@ -184,6 +184,13 @@ class TType private {
     }
   }
 
+  // True if this type contains the polymorphic-`this` tparam marker
+  // (produced by `classThisType`). Used by the subtyping engine to treat
+  // such thisParams as mutually compatible across signatures.
+  fun isClassThisType(): Bool {
+    this.clauses.any(c -> c.vars.values().any(tp -> tp.id == Id::createThis()))
+  }
+
   // Build the polymorphic `this` type for a class: a tparam named "this"
   // with `Id::createThis()` constrained to the class instantiation. This
   // is the F-bounded marker used to type `this` inside method bodies and
