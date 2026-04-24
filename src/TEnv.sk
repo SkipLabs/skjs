@@ -88,7 +88,12 @@ base class TEnv{
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
-  fun instantiate(baseSubst: mutable Subst, name: Name, targs: TArgs): TType {
+  fun instantiate(
+    _tcenvb: mutable TCEnvBase,
+    baseSubst: mutable Subst,
+    name: Name,
+    targs: TArgs,
+  ): TType {
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
