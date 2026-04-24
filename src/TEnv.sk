@@ -106,7 +106,7 @@ base class TEnv{
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
-  fun instantiate(subst: mutable Subst, name: Name, targs: TArgs): TType {
+  fun instantiate(baseSubst: mutable Subst, name: Name, targs: TArgs): TType {
     // Synthetic placeholder for a class field with no type annotation
     // (see addFields). It has no defMap entry — keep it unexpanded so
     // it stays opaque under subtype comparison and pretty-prints as the
@@ -124,16 +124,21 @@ base class TEnv{
     };
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
 
-    tcenvb: mutable TCEnvBase = subst;
+    tcenvb: mutable TCEnvBase = baseSubst;
 
     tdef = this.defMap.getType(tcenvb, name);
 
     tdef match {
     | ta @ TypeDef{tdefParams} ->
-      !this = this.instantiateTParams(subst, name.pos, targs.targs, tdefParams);
+      !this = this.instantiateTParams(
+        baseSubst,
+        name.pos,
+        targs.targs,
+        tdefParams,
+      );
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
-    | Class _ -> this.new(subst, name, targs.targs)
+    | Class _ -> this.new(baseSubst, name, targs.targs)
     | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
     }
   }
