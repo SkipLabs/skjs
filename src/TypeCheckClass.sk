@@ -43,18 +43,7 @@ extension class TypeChecker {
     );
     !this = this.addTParams(subst, c.tparams);
     fileName = c.name.pos.fileName;
-    cstr = TType::inst(c.name, targs);
-    thisType = TType::fromTParamWithConstraint(
-      subst,
-      this,
-      c.name.pos,
-      TParamWithConstraint(
-        "this",
-        fileName,
-        Id::createThis(),
-        Some(cstr.expand(subst, this, Some(Covariant()))),
-      ),
-    );
+    thisType = TType::classThisType(subst, this, c.name, targs.targs);
     if (c.extends_.size() != 0) {
       isInterface = c.kind is CKInterface();
       if (c.extends_.size() > 1 && !isInterface) {
