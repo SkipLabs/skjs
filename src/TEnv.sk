@@ -106,7 +106,12 @@ base class TEnv{
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
-  fun instantiate(baseSubst: mutable Subst, name: Name, targs: TArgs): TType {
+  fun instantiate(
+    _tcenvb: mutable TCEnvBase,
+    baseSubst: mutable Subst,
+    name: Name,
+    targs: TArgs,
+  ): TType {
     // Synthetic placeholder for a class field with no type annotation
     // (see addFields). It has no defMap entry — keep it unexpanded so
     // it stays opaque under subtype comparison and pretty-prints as the
