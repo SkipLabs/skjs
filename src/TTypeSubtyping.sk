@@ -1509,6 +1509,13 @@ extension class TFun {
     (f1.thisParam, f2.thisParam) match {
     | (_, NoThis()) -> void
     | (NoThis(), _) -> void
+    // Two implicit class thises are mutually compatible: the receiver at a call
+    // is the object the method came from, so a method of S used where a method
+    // of T is expected still runs on an S. Treating an implicit `this`
+    // contravariantly (like an explicit `this: T`) would regress generic-
+    // container variance (ReadonlyArray<Dog> vs ReadonlyArray<Animal>) and
+    // subclass override compatibility.
+    | (ImplicitClass _, ImplicitClass _) -> void
     | (tp1, tp2) ->
       this1 = tp1.tyOpt().fromSome();
       this2 = tp2.tyOpt().fromSome();
