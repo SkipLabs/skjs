@@ -3,7 +3,7 @@ target/
 dist/
 .vscode/
 !.vscode/extensions.json
-.devcontainer/
+.devcontainer
 node_modules/
 .generated-examples-check/
 docs/*.bbl

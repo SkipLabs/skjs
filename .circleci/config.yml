@@ -31,6 +31,10 @@ jobs:
           name: Test
           command: |
             mkdir -p ~/test-results
+            if [[ -n "${CIRCLE_TAG:-}" ]]; then
+              export SKARGO_PROFILE=release
+              echo "Tag build: using SKARGO_PROFILE=release"
+            fi
             make test JUNITXML=~/test-results/skjs.xml
       - store_test_results:
           path: ~/test-results/skjs.xml
