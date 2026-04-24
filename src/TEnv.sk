@@ -108,7 +108,7 @@ base class TEnv{
   // arguments (as expected).
   fun instantiate(
     tcenvb: mutable TCEnvBase,
-    baseSubst: mutable Subst,
+    baseSubst: readonly Subst,
     name: Name,
     targs: TArgs,
   ): TType {
@@ -131,17 +131,13 @@ base class TEnv{
 
     tdef = this.defMap.getType(tcenvb, name);
 
+    subst = Subst::mcreate(tcenvb, baseSubst);
     tdef match {
     | ta @ TypeDef{tdefParams} ->
-      !this = this.instantiateTParams(
-        baseSubst,
-        name.pos,
-        targs.targs,
-        tdefParams,
-      );
+      !this = this.instantiateTParams(subst, name.pos, targs.targs, tdefParams);
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
-    | Class _ -> this.new(baseSubst, name, targs.targs)
+    | Class _ -> this.new(subst, name, targs.targs)
     | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
     }
   }
