@@ -2631,6 +2631,19 @@ extension class TypeChecker {
     }
   }
 
+  // If `ty` reduces to a primitive value, return the wrapper class's
+  // instance type (mirroring the field-access path's handling of
+  // TPrimValue receivers). Otherwise return `ty` unchanged.
+  fun autoBoxPrimitiveReceiver(tcenv: mutable TCEnv, ty: TType): TType {
+    ty.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
+      stypes.singleElt()
+    ) match {
+    | Some(prim @ TPrimValue _) ->
+      this.new(tcenv.subst, prim.asClassName(), Array[])
+    | _ -> ty
+    }
+  }
+
   fun call(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -2748,9 +2761,14 @@ extension class TypeChecker {
 
       // Check the receiver against the declared `this` parameter, if any.
       // A call with no receiver (free call) uses `this: void`, matching TS.
+      // Primitive receivers (e.g. `"abc".toString()`, `42..toString()`) are
+      // auto-boxed to their wrapper class instance so the subtype check
+      // composes with signatures whose thisParam is a class instance — the
+      // same convention the field-access path uses at src/TypeCheckExpr.sk
+      // when resolving `.field` on a TPrimValue.
       tfun.thisParam.each(expectedThis -> {
         actualThis = thisArgOpt match {
-        | Some(t) -> t
+        | Some(t) -> this.autoBoxPrimitiveReceiver(tcenv, t)
         | None() -> TType::single(TPrimUnit(TVoid(), pos))
         };
         this.checkSubType(
