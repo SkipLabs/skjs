@@ -216,6 +216,30 @@ class TType private {
     )
   }
 
+  // Build the polymorphic `this` type for a class: a tparam named "this"
+  // with `Id::createThis()` constrained to the class instantiation. This
+  // is the F-bounded marker used to type `this` inside method bodies and
+  // (prospectively) as the implicit `thisParam` on method signatures.
+  static fun classThisType(
+    subst: mutable Subst,
+    tenv: TEnv,
+    className: Name,
+    targs: Array<TType>,
+  ): TType {
+    cstr = TType::inst(className, TArgs(targs));
+    TType::fromTParamWithConstraint(
+      subst,
+      tenv,
+      className.pos,
+      TParamWithConstraint(
+        "this",
+        className.pos.fileName,
+        Id::createThis(),
+        Some(cstr.expand(subst, tenv, Some(Covariant()))),
+      ),
+    )
+  }
+
   // Remove a single primitive constant from a type's clauses. Used for:
   //   - Object field defaults: (fieldType \ undefined) | default
   //   - Array destructuring defaults: same pattern
