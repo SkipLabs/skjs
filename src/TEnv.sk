@@ -90,7 +90,7 @@ base class TEnv{
   // arguments (as expected).
   fun instantiate(
     tcenvb: mutable TCEnvBase,
-    baseSubst: mutable Subst,
+    baseSubst: readonly Subst,
     name: Name,
     targs: TArgs,
   ): TType {
@@ -143,7 +143,7 @@ base class TEnv{
         // but NOT permanently grow type variables. Growing here would close the
         // variable to its constraint, preventing later unification with more
         // specific types (e.g., TVar<:Json should remain open to unify with string).
-        subst = baseSubst.clone();
+        subst = Subst::mcreate(tcenvb, baseSubst);
         TType::isSub(subst, this, targ, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
