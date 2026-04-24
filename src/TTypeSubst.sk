@@ -35,6 +35,16 @@ mutable base class SubstState private {
 }
 
 mutable class SavedSubst private {} extends SubstState {
+  const empty: SavedSubst = SavedSubst{
+    seenSub => SortedSet[],
+    seenInter => SortedMap[],
+    seenUnion => SortedMap[],
+    seenExpansion => SortedMap[],
+    version => 0,
+    values => SortedMap[],
+    origins => SortedMap[],
+  };
+
   /* Forces frozen SavedSubst */
   static fun create(state: readonly SubstState): SavedSubst {
     SavedSubst{
