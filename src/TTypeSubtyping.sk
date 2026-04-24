@@ -1613,10 +1613,22 @@ extension class TFun {
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
     // `thisParam` is contravariant. A signature that does not declare a
     // this parameter is treated as `this: unknown`, so it is compatible
-    // with any declared this type on either side.
+    // with any declared this type on either side. When both sides carry
+    // the polymorphic-`this` marker (produced by `TType::classThisType`),
+    // they are F-bounded on their respective classes and must be treated
+    // as mutually compatible here — the per-receiver substitution happens
+    // at call sites, not during signature subtyping. Without this
+    // exemption, generic container variance (e.g. `ReadonlyArray<Dog>`
+    // vs `ReadonlyArray<Animal>`) and subclass override compatibility
+    // would regress.
     (f1.thisParam, f2.thisParam) match {
     | (_, None()) -> void
     | (None(), Some(_)) -> void
+    | (
+      Some(this1),
+      Some(this2),
+    ) if (this1.isClassThisType() && this2.isClassThisType()) ->
+      void
     | (Some(this1), Some(this2)) ->
       TType::isSub(subst, tenv, this2, this1) match {
       | STOk() -> void
