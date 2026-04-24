@@ -107,7 +107,7 @@ base class TEnv{
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
   fun instantiate(
-    _tcenvb: mutable TCEnvBase,
+    tcenvb: mutable TCEnvBase,
     baseSubst: mutable Subst,
     name: Name,
     targs: TArgs,
@@ -128,8 +128,6 @@ base class TEnv{
       return TType::inst(name, targs);
     };
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
-
-    tcenvb: mutable TCEnvBase = baseSubst;
 
     tdef = this.defMap.getType(tcenvb, name);
 
