@@ -1,12 +1,6 @@
 module SKJS;
 
 /***************************************************************************/
-// Version
-/***************************************************************************/
-
-const kVersion: String = "0.9";
-
-/***************************************************************************/
 // Help
 /***************************************************************************/
 
@@ -70,7 +64,10 @@ fun main_no_exit(): void {
   !cmd = cmd.help();
   args = cmd.parseArgs();
   if (args.getBool("version")) {
-    print_string(Environ.args().next().default("skjs") + " " + kVersion);
+    pkg_name = #env ("SKARGO_PKG_NAME");
+    pkg_version = #env ("SKARGO_PKG_VERSION");
+    git_commit = #env ("GIT_COMMIT_HASH");
+    print_string(`${pkg_name} ${pkg_version} (${git_commit})`);
     SKStore.destroyObstack(saved);
     throw Exit(0);
   } else {
