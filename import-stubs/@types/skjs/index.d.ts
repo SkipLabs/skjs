@@ -4,6 +4,10 @@ declare const console: {
   error(message?: unknown, ...optionalParams: unknown[]): void;
 };
 
+declare const crypto: {
+  randomUUID(): string;
+};
+
 declare interface Iterable<T> {
   [Symbol.iterator](): { next(): { readonly value: T; done: boolean } };
 }
