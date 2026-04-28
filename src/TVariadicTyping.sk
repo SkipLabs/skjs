@@ -342,7 +342,7 @@ class VariadicTyping() {
             normalizedCstr = tenv.normalize(tcenvb, cstr);
             resolvedCstr = normalizedCstr.insts.getUnique() match {
             | Some(TSInst(name, cstrTArgs)) ->
-              tenv.instantiate(subst, name, cstrTArgs)
+              tenv.instantiate(subst, subst, name, cstrTArgs)
             | _ -> normalizedCstr
             };
             isExpandedMutableArray = resolvedCstr.insts.getUnique() match {

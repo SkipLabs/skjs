@@ -88,7 +88,12 @@ base class TEnv{
   // definition (using the defMap) and then produces a type where the
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
-  fun instantiate(subst: mutable Subst, name: Name, targs: TArgs): TType {
+  fun instantiate(
+    tcenvb: mutable TCEnvBase,
+    baseSubst: readonly Subst,
+    name: Name,
+    targs: TArgs,
+  ): TType {
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
@@ -96,8 +101,6 @@ base class TEnv{
       return TType::inst(name, targs);
     };
     !this.seenInstantiate = this.seenInstantiate.set(name.value);
-
-    tcenvb: mutable TCEnvBase = subst;
 
     tdef = this.defMap.getType(tcenvb, name);
     clauses = tdef match {
@@ -140,7 +143,8 @@ base class TEnv{
         // but NOT permanently grow type variables. Growing here would close the
         // variable to its constraint, preventing later unification with more
         // specific types (e.g., TVar<:Json should remain open to unify with string).
-        TType::isSub(subst.clone(), this, targ, cstrTy) match {
+        subst = Subst::mcreate(tcenvb, baseSubst);
+        TType::isSub(subst, this, targ, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
           tcenvb.subtypingError(
