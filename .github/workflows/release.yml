@@ -15,6 +15,9 @@ jobs:
       image: skiplabs/skip:latest
     env:
       SKIP_CAPACITY: 8G
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -76,13 +79,12 @@ jobs:
           "$BINARY" --version
 
       - name: Publish GitHub Release
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          gh release create "$GITHUB_REF_NAME" \
-            --title "skjs $GITHUB_REF_NAME" \
-            --generate-notes \
-            "artifacts/skjs_${GITHUB_REF_NAME}_linux_amd64" \
-            "artifacts/skjs_${GITHUB_REF_NAME}_linux_amd64.json" \
-            artifacts/import-stubs.tgz \
+        uses: softprops/action-gh-release@v2
+        with:
+          name: skjs ${{ github.ref_name }}
+          generate_release_notes: true
+          files: |
+            artifacts/skjs_${{ github.ref_name }}_linux_amd64
+            artifacts/skjs_${{ github.ref_name }}_linux_amd64.json
+            artifacts/import-stubs.tgz
             artifacts/SHA256SUMS
