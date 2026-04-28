@@ -51,12 +51,12 @@ jobs:
               exit 0
             fi
             TAG_VERSION="${CIRCLE_TAG#v}"
-            CARGO_VERSION=$(awk -F '"' '/^version *= *"/ {print $2; exit}' Skargo.toml)
-            if [[ "$TAG_VERSION" != "$CARGO_VERSION" ]]; then
-              echo "Tag $CIRCLE_TAG (=> $TAG_VERSION) does not match Skargo.toml version $CARGO_VERSION"
+            SKJS_VERSION=$(awk -F '"' '/^version *= *"/ {print $2; exit}' Skargo.toml)
+            if [[ "$TAG_VERSION" != "$SKJS_VERSION" ]]; then
+              echo "Tag $CIRCLE_TAG (=> $TAG_VERSION) does not match Skargo.toml version $SKJS_VERSION"
               exit 1
             fi
-            echo "Tag $CIRCLE_TAG matches Skargo.toml version $CARGO_VERSION"
+            echo "Tag $CIRCLE_TAG matches Skargo.toml version $SKJS_VERSION"
       - run:
           name: Clone Skip repository
           command: |
