@@ -15,6 +15,9 @@ jobs:
       image: skiplabs/skip:latest
     env:
       SKIP_CAPACITY: 8G
+    defaults:
+      run:
+        shell: bash
     steps:
       - name: Checkout
         uses: actions/checkout@v4
