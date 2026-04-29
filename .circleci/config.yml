@@ -45,7 +45,5 @@ workflows:
       - build_and_test:
           name: build
           filters:
-            tags:
-              only: /.*/
             branches:
               only: /.*/
