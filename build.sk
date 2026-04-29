@@ -1,15 +1,27 @@
 // Build script for skjs native runtime components
 
-fun main(): void {
-  git_hash = System.subprocess(
-    Array["git", "rev-parse", "--short", "HEAD"],
-  ) match {
-  | Success(p) -> p.stdout.trim()
-  | Failure(err) ->
-    print_string(`Error getting git commit hash: ${err}`);
-    skipExit(1)
+fun gitCommitHash(): String {
+  System.subprocess(Array["git", "rev-parse", "--short", "HEAD"]) match {
+  | Success(p) if (p.success()) ->
+    hash = p.stdout.trim();
+    if (!hash.isEmpty()) return hash
+  | _ -> void
   };
-  print_string(`skargo:skc-env=GIT_COMMIT_HASH=${git_hash}`);
+
+  // Fall back to GITHUB_SHA in GitHub Actions runners where git refuses to
+  // operate on the bind-mounted workspace ("dubious ownership").
+  Environ.varOpt("GITHUB_SHA") match {
+  | Some(sha) if (!sha.isEmpty()) -> sha.take(7)
+  | _ ->
+    print_string(
+      "Error: could not determine git commit hash via `git rev-parse` or GITHUB_SHA",
+    );
+    skipExit(1)
+  }
+}
+
+fun main(): void {
+  print_string(`skargo:skc-env=GIT_COMMIT_HASH=${gitCommitHash()}`);
 
   pic = (Environ.var("RELOCATION_MODEL") == "pic");
   profile = Environ.var("PROFILE");
