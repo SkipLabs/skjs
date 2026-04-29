@@ -103,10 +103,6 @@ class FAbsolute
   }
 
   fun toString from FileNameBase;
-
-  fun exists(): Bool {
-    FileSystem.exists(this.toString())
-  }
 }
 
 value class FRelative uses
@@ -270,7 +266,12 @@ fun hasTsExtension(name: String): Bool {
   name.endsWith(".ts") || name.endsWith(".tsx")
 }
 
-fun resolveName(cwd: DPath, rootMap: RootMap, moduleName: String): ?FPath {
+fun resolveName(
+  fs: Fs,
+  cwd: DPath,
+  rootMap: RootMap,
+  moduleName: String,
+): ?FPath {
   if (moduleName == "." || moduleName == "./") {
     print_error("Could not resolve module '.'");
     return None();
@@ -281,10 +282,10 @@ fun resolveName(cwd: DPath, rootMap: RootMap, moduleName: String): ?FPath {
   // Try a candidate: check absolute path for exists(), return relative FPath.
   tryCandidate = (candidate: String) ~> {
     fpath = cwd.resolveFile(candidate);
-    if (fpath.toAbsolute(rootMap).exists()) Some(fpath) else None()
+    if (fs.exists(fpath.toAbsolute(rootMap).toString())) Some(fpath) else None()
   };
   suffix match {
-  | ".ts" | ".tsx" if (absName.exists()) ->
+  | ".ts" | ".tsx" if (fs.exists(absName.toString())) ->
     return Some(cwd.resolveFile(moduleName))
   | ".js" ->
     stripped = moduleName.stripSuffix(suffix);
@@ -362,6 +363,7 @@ fun matchPathPattern(moduleName: String, pattern: String): ?String {
 // root is the resolved baseUrl directory.
 // Returns the first matching file path, or None().
 fun resolvePathAlias(
+  fs: Fs,
   root: DAbsolute,
   compilerOptions: TsCompilerOptions,
   moduleName: String,
@@ -388,7 +390,7 @@ fun resolvePathAlias(
         ]) {
           relPath = resolved + ext;
           fullPath = Path.resolve(Path.join(root.toString(), relPath));
-          if (FileSystem.exists(fullPath)) {
+          if (fs.exists(fullPath)) {
             return Some(FPath::create(RootId::project, relPath))
           }
         }
@@ -398,11 +400,15 @@ fun resolvePathAlias(
   None()
 }
 
-fun resolveStubs(importStubs: Array<DAbsolute>, moduleName: String): ?FPath {
+fun resolveStubs(
+  fs: Fs,
+  importStubs: Array<DAbsolute>,
+  moduleName: String,
+): ?FPath {
   res: ?FPath = None();
   for (i => importStub in importStubs) {
     path = FAbsolute(importStub / DRelative::create(moduleName), "index.d.ts");
-    if (path.exists()) {
+    if (fs.exists(path.toString())) {
       fpath = FPath::create(RootId::stub(i), moduleName + "/index.d.ts");
       res match {
       | Some(existing) ->

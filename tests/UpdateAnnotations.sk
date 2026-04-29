@@ -609,13 +609,15 @@ fun testUpdateFileAnnotations(): void {
 
 @test
 fun testLineNValidation(): void {
+  fs = SKJS.Fs::disk();
   compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{};
   context = SKStore.Context::mcreate{};
   files =
-    SKJS.Files::create(context, ".", Array[], Array["./import-stubs"]) |>
+    SKJS.Files::create(context, fs, ".", Array[], Array["./import-stubs"]) |>
     expectFilesSuccess;
   checker = SKJS.Checker::create{
     context,
+    fs,
     files,
     errorHandling => SKJS.EHKeepGoing(),
     errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),

@@ -1,0 +1,35 @@
+/***************************************************************************/
+/* Filesystem-access seam.                                                   */
+/* Single point through which skjs talks to the OS filesystem, so we can     */
+/* swap in an overlay (e.g. stdin-fed virtual files) without touching every  */
+/* call site.                                                                */
+/***************************************************************************/
+
+module SKJS;
+
+class Fs() {
+  static fun disk(): this {
+    Fs()
+  }
+
+  fun exists(path: String): Bool {
+    FileSystem.exists(path)
+  }
+
+  fun isDirectory(path: String): Bool {
+    FileSystem.isDirectory(path)
+  }
+
+  fun readTextFile(path: String): String {
+    FileSystem.readTextFile(path)
+  }
+
+  fun readFilesRecursive(
+    path: String,
+    predicate: String -> Bool,
+  ): Vector<String> {
+    FileSystem.readFilesRecursive(path, predicate)
+  }
+}
+
+module end;

@@ -240,6 +240,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | Some(newDirectory) -> Environ.set_current_dir(newDirectory)
   | None() -> void
   };
+  fs = Fs::disk();
   errorHandling = (
     args.getBool("backtrace"),
     args.getBool("keep-going"),
@@ -275,7 +276,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   } else {
     tsconfigPath: ?String = args.maybeGetString("project") match {
     | Some(projectPath) ->
-      resolveTsConfigPath(projectPath) match {
+      resolveTsConfigPath(fs, projectPath) match {
       | Success(p) -> Some(p)
       | Failure(err) ->
         print_error(err);
@@ -283,7 +284,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       }
     | None() ->
       // Auto-discover: walk up from cwd looking for tsconfig.json
-      findTsConfig(getcwd())
+      findTsConfig(fs, getcwd())
     };
     tsconfigPath match {
     | None() ->
@@ -291,7 +292,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       (cliBaseUrl.default("."), Array[], TsCompilerOptions{})
     | Some(configPath) ->
       (config, diagnostics) = try {
-        loadTsConfig(configPath)
+        loadTsConfig(fs, configPath)
       } catch {
       | exn ->
         print_error(`Failed to parse ${configPath}: ${exn.getMessage()}`);
@@ -302,7 +303,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         prefix = if (diag.isWarning) "warning" else "error";
         print_error(`${configPath}:${diag.line}: ${prefix}: ${diag.message}`);
       };
-      resolvedFiles: Array<String> = resolveConfigFiles(config);
+      resolvedFiles: Array<String> = resolveConfigFiles(fs, config);
       if (resolvedFiles.isEmpty()) {
         print_error(`No input files found from ${configPath}`);
         throw Exit(2)
@@ -374,7 +375,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
     (context) ~> {
-      files = Files::create(context, root, srcFiles, importStubs) match {
+      files = Files::create(context, fs, root, srcFiles, importStubs) match {
       | Failure(err) ->
         print_error(err);
         return SKStore.CStop(None())
@@ -391,6 +392,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         (context, _writer, _key, _values) ~> {
           Checker::create{
             context,
+            fs,
             files,
             errorHandling,
             errorDetailConfig,
@@ -527,6 +529,7 @@ class Checker private {
   /* Returns Failure for parse errors only if errorHandling is EHDefault */
   static fun create{
     context: mutable SKStore.Context,
+    fs: Fs,
     files: Files,
     errorHandling: ErrorHandling,
     errorDetailConfig: ErrorDetailConfig,
@@ -550,6 +553,7 @@ class Checker private {
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
       context,
+      fs,
       builtinsFileName,
       files.rootMap,
       parsedFiles,

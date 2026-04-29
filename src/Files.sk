@@ -69,6 +69,7 @@ class Files(
 ) {
   static fun create(
     context: mutable SKStore.Context,
+    fs: Fs,
     root: String,
     srcFileSeq: Sequence<String>,
     importStubs: Array<String>,
@@ -91,11 +92,11 @@ class Files(
     rootStr = absRoot.toString();
     for (f in srcFileSeq) {
       !f = Path.resolve(f);
-      if (!FileSystem.exists(f)) {
+      if (!fs.exists(f)) {
         return Failure(`Source file ${f} does not exist`)
       };
-      if (FileSystem.isDirectory(f)) {
-        FileSystem.readFilesRecursive(f, isTsFile).each(p ->
+      if (fs.isDirectory(f)) {
+        fs.readFilesRecursive(f, isTsFile).each(p ->
           addFile(p, RootId::project, rootStr)
         )
       } else {
@@ -107,7 +108,7 @@ class Files(
     };
     builtinsRel = "@types/skjs/index.d.ts";
     builtinsStr = Path.resolve(Path.join(importStubs[0], builtinsRel));
-    if (!FileSystem.exists(builtinsStr)) {
+    if (!fs.exists(builtinsStr)) {
       return Failure(`Builtins not found: ${builtinsStr}`);
     };
     builtinsFileName = FPath::create(RootId::stub(0), builtinsRel);
@@ -116,7 +117,7 @@ class Files(
     !importStubs = importStubs.map(dir -> Path.resolve(dir));
     absImportStubs = importStubs.map(DAbsolute::create);
     for (i => dir in importStubs) {
-      FileSystem.readFilesRecursive(dir, isTsFile).each(p ->
+      fs.readFilesRecursive(dir, isTsFile).each(p ->
         addFile(p, RootId::stub(i), dir)
       )
     };
@@ -130,7 +131,7 @@ class Files(
     );
 
     for (key => fileName in srcFiles) {
-      content = FileSystem.readTextFile(fileName);
+      content = fs.readTextFile(fileName);
       fileHdl.writeArray(context, key, Array[SKStore.StringFile(content)]);
     };
     for ((fileName, _) in fileHdl.items(context)) {

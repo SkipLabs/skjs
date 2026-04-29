@@ -30,20 +30,22 @@ fun findDefsByName(defs: Array<SKJS.Def>, targetName: String): Array<SKJS.Def> {
 
 @test
 fun testAffectedFiles(): void {
+  fs = SKJS.Fs::disk();
   projectDir = Path.resolve("./tests/projects/callgraph-affected");
   configPath = Path.join(projectDir, "tsconfig.json");
-  (config, diagnostics) = SKJS.loadTsConfig(configPath);
+  (config, diagnostics) = SKJS.loadTsConfig(fs, configPath);
   SKTest.expectTrue(
     diagnostics.isEmpty(),
     `expected no tsconfig diagnostics, got ${diagnostics.size()}`,
   );
 
-  srcFiles = SKJS.resolveConfigFiles(config);
+  srcFiles = SKJS.resolveConfigFiles(fs, config);
   context = SKStore.Context::mcreate{};
 
   files =
     SKJS.Files::create(
       context,
+      fs,
       projectDir,
       srcFiles,
       Array["./import-stubs"],
@@ -51,6 +53,7 @@ fun testAffectedFiles(): void {
 
   checker = SKJS.Checker::create{
     context,
+    fs,
     files,
     errorHandling => SKJS.EHKeepGoing(),
     errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),

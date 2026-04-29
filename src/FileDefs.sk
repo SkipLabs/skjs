@@ -32,6 +32,7 @@ base class IDefMap {
 class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
   static fun create(
     context: mutable S.Context,
+    fs: Fs,
     builtinsFileName: FPath,
     rootMap: RootMap,
     parsedFiles: S.EHandle<FPath, ParsedResultFile>,
@@ -62,6 +63,7 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
             Array[
               FileDefsState::createFileDefs(
                 context,
+                fs,
                 fileName.dirPath(),
                 includes,
                 rootMap,
@@ -393,6 +395,7 @@ fun mapPush<K: Hashable & Equality, V>(
 
 mutable class FileDefsState private {
   context: mutable S.Context,
+  fs: Fs,
   dirName: DPath,
   rootMap: RootMap,
   compilerOptions: TsCompilerOptions,
@@ -409,13 +412,14 @@ mutable class FileDefsState private {
 } {
   static fun createFileDefs(
     context: mutable S.Context,
+    fs: Fs,
     dirName: DPath,
     includes: Array<FPath>,
     rootMap: RootMap,
     compilerOptions: TsCompilerOptions,
     parsedDefs: Array<Def>,
   ): FileDefs {
-    state = mutable static{context, dirName, rootMap, compilerOptions};
+    state = mutable static{context, fs, dirName, rootMap, compilerOptions};
     state.includes.extend(includes);
     state.processDefs(parsedDefs)
   }
@@ -453,16 +457,17 @@ mutable class FileDefsState private {
           ),
         )
       };
-      resolveName(this.dirName, this.rootMap, name)
+      resolveName(this.fs, this.dirName, this.rootMap, name)
     } else {
       // Try path alias resolution first
       resolvePathAlias(
+        this.fs,
         this.rootMap.projectRoot,
         this.compilerOptions,
         name,
       ) match {
       | some @ Some(_) -> some
-      | None() -> resolveStubs(this.rootMap.importStubs, name)
+      | None() -> resolveStubs(this.fs, this.rootMap.importStubs, name)
       }
     };
     resolved match {
@@ -546,6 +551,7 @@ mutable class FileDefsState private {
   private mutable fun createSubFileDefs(defs: Array<Def>): FileDefs {
     state = mutable static{
       context => this.context,
+      fs => this.fs,
       dirName => this.dirName,
       rootMap => this.rootMap,
       compilerOptions => this.compilerOptions,

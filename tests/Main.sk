@@ -253,7 +253,7 @@ fun validateTSConformance(
     SKJS.FRelative::create(
       `${fileName.relative.baseName.stripSuffix(".ts")}.errors.txt`,
     );
-  referenceErrors = if (errorsFile.exists()) {
+  referenceErrors = if (FileSystem.exists(errorsFile.toString())) {
     parseTSConformanceReferenceErrors(errorsFile.toString());
   } else {
     Array[].iterator()
@@ -343,14 +343,16 @@ fun checkFilesWithRoot(
   update: UpdateMode = UMValidateOnly(),
   compilerOptions: SKJS.TsCompilerOptions = SKJS.TsCompilerOptions{},
 ): Array<SKTest.ExpectationError> {
+  fs = SKJS.Fs::disk();
   context = SKStore.Context::mcreate{};
 
   files =
-    SKJS.Files::create(context, root, srcFiles, importStubs) |>
+    SKJS.Files::create(context, fs, root, srcFiles, importStubs) |>
     expectFilesSuccess;
 
   checker = SKJS.Checker::create{
     context,
+    fs,
     files,
     errorHandling => SKJS.EHKeepGoing(),
     errorDetailConfig => SKJS.ErrorDetailConfig::minimal(),
@@ -445,9 +447,10 @@ fun testNotSupportedTypeScriptConformance(): void {
 }
 
 fun testProject(projectDir: String, update: UpdateMode): void {
+  fs = SKJS.Fs::disk();
   dir = Path.resolve(projectDir);
   configPath = Path.join(dir, "tsconfig.json");
-  (config, diagnostics) = SKJS.loadTsConfig(configPath);
+  (config, diagnostics) = SKJS.loadTsConfig(fs, configPath);
 
   // Validate tsconfig lint diagnostics against @skjs-expect-error annotations
   rawContents = FileSystem.readTextFile(configPath);
@@ -458,7 +461,7 @@ fun testProject(projectDir: String, update: UpdateMode): void {
     update,
   );
 
-  srcFiles = SKJS.resolveConfigFiles(config);
+  srcFiles = SKJS.resolveConfigFiles(fs, config);
   configDirStr = config.configDir.toString();
   root = config.compilerOptions.baseUrl match {
   | Some(bu) -> Path.join(configDirStr, bu)
