@@ -1,0 +1,130 @@
+// Unit tests for the MemFs / OverlayFs filesystem seam.
+module SKJSTests;
+
+fun mkMem(files: Array<(String, String)>): SKJS.MemFs {
+  m = mutable Map[];
+  for (kv in files) {
+    m.set(kv.i0, kv.i1)
+  };
+  SKJS.MemFs::fromMap(m.chill())
+}
+
+@test
+fun testOverlayFindFile(): void {
+  o = mkMem(Array[("/v/a.ts", "A"), ("/v/sub/b.ts", "B")]);
+  SKTest.expectEq(o.findFile("/v/a.ts"), Some("A"), "find /v/a.ts");
+  SKTest.expectEq(o.findFile("/v/sub/b.ts"), Some("B"), "find /v/sub/b.ts");
+  SKTest.expectEq(o.findFile("/v/missing.ts"), None(), "missing file");
+  SKTest.expectEq(o.findFile("/nope/a.ts"), None(), "missing dir");
+}
+
+@test
+fun testOverlayIsDir(): void {
+  o = mkMem(Array[("/v/sub/b.ts", "B")]);
+  SKTest.expectTrue(o.isDir("/v"), "/v is a virtual dir");
+  SKTest.expectTrue(o.isDir("/v/sub"), "/v/sub is a virtual dir");
+  SKTest.expectFalse(o.isDir("/v/sub/b.ts"), "file is not a dir");
+  SKTest.expectFalse(o.isDir("/missing"), "missing is not a dir");
+}
+
+@test
+fun testOverlayPathNormalization(): void {
+  o = mkMem(Array[("/v/a.ts", "A")]);
+  SKTest.expectEq(o.findFile("/v/./a.ts"), Some("A"), "dot segment");
+  SKTest.expectEq(o.findFile("/v/sub/../a.ts"), Some("A"), "parent segment");
+  SKTest.expectTrue(o.isDir("/v/."), "dot dir");
+}
+
+@test
+fun testOverlayFilesUnder(): void {
+  o = mkMem(
+    Array[
+      ("/v/a.ts", "A"),
+      ("/v/sub/b.ts", "B"),
+      ("/v/sub/c.txt", "C"),
+      ("/other/d.ts", "D"),
+    ],
+  );
+  isTs = (s: String) ~> s.endsWith(".ts");
+  underV = o.readFilesRecursive("/v", isTs).collect(SortedSet);
+  SKTest.expectEq(
+    underV,
+    SortedSet["/v/a.ts", "/v/sub/b.ts"],
+    "filesUnder /v with .ts predicate",
+  );
+  underSub = o.readFilesRecursive("/v/sub", isTs).collect(SortedSet);
+  SKTest.expectEq(
+    underSub,
+    SortedSet["/v/sub/b.ts"],
+    "filesUnder /v/sub with .ts predicate",
+  );
+  underMissing = o.readFilesRecursive("/missing", isTs).collect(Array);
+  SKTest.expectTrue(underMissing.isEmpty(), "filesUnder missing dir empty");
+  underAll = o.readFilesRecursive("/v", _ ~> true).collect(SortedSet);
+  SKTest.expectEq(
+    underAll,
+    SortedSet["/v/a.ts", "/v/sub/b.ts", "/v/sub/c.txt"],
+    "filesUnder /v with no predicate",
+  );
+}
+
+@test
+fun testOverlayFsExistsIsDir(): void {
+  o = mkMem(Array[("/v/a.ts", "A"), ("/v/sub/b.ts", "B")]);
+  fs = SKJS.OverlayFs(SKJS.DiskFs(), o);
+  SKTest.expectTrue(fs.exists("/v/a.ts"), "exists virtual file");
+  SKTest.expectTrue(fs.exists("/v/sub"), "exists virtual dir");
+  SKTest.expectFalse(fs.exists("/missing-vfs/x"), "missing path");
+  SKTest.expectFalse(fs.isDirectory("/v/a.ts"), "file is not a dir");
+  SKTest.expectTrue(fs.isDirectory("/v/sub"), "virtual dir is a dir");
+}
+
+@test
+fun testOverlayFsReadTextFile(): void {
+  o = mkMem(Array[("/v/a.ts", "OVERLAY")]);
+  fs = SKJS.OverlayFs(SKJS.DiskFs(), o);
+  SKTest.expectEq(
+    fs.readTextFile("/v/a.ts"),
+    "OVERLAY",
+    "overlay file content",
+  );
+}
+
+@test
+fun testOverlayFsReadFilesRecursive(): void {
+  o = mkMem(
+    Array[("/v/a.ts", "A"), ("/v/sub/b.ts", "B"), ("/v/sub/c.txt", "C")],
+  );
+  fs = SKJS.OverlayFs(SKJS.DiskFs(), o);
+  isTs = (s: String) ~> s.endsWith(".ts");
+  result = fs.readFilesRecursive("/v", isTs).collect(SortedSet);
+  SKTest.expectEq(
+    result,
+    SortedSet["/v/a.ts", "/v/sub/b.ts"],
+    "readFilesRecursive merges and filters",
+  );
+}
+
+@test
+fun testOverlayFsChained(): void {
+  o1 = mkMem(Array[("/v/a.ts", "FROM_O1"), ("/v/b.ts", "FROM_O1_B")]);
+  o2 = mkMem(Array[("/v/a.ts", "FROM_O2")]);
+  inner = SKJS.OverlayFs(SKJS.DiskFs(), o1);
+  outer = SKJS.OverlayFs(inner, o2);
+  SKTest.expectEq(outer.readTextFile("/v/a.ts"), "FROM_O2", "outer wins");
+  SKTest.expectEq(outer.readTextFile("/v/b.ts"), "FROM_O1_B", "inner used");
+}
+
+@test
+fun testOverlayFsFallthroughExists(): void {
+  o = mkMem(Array[("/v/a.ts", "A")]);
+  fs = SKJS.OverlayFs(SKJS.DiskFs(), o);
+  // The project has CLAUDE.md at cwd; falling through to DiskFs should find it.
+  cwd = getcwd();
+  claudemd = Path.join(cwd, "CLAUDE.md");
+  if (FileSystem.exists(claudemd)) {
+    SKTest.expectTrue(fs.exists(claudemd), "fall-through to disk for real file")
+  };
+}
+
+module end;
