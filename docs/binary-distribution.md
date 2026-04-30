@@ -71,14 +71,14 @@ sha256sum -c SHA256SUMS
 For day-to-day development you don't need a release — just build from source:
 
 ```bash
-# Build the dev binary (default)
+# Dev binary
 skargo build --bin skjs
 
-# Or use the helper script for a release-mode build with metadata
-./scripts/build-release.sh
+# Release binary (matches what the workflow produces)
+skargo build --release --bin skjs
 ```
 
-Both produce a binary at `target/host/{dev,release}/skjs`. The runtime stamps `--version` with the version from `Skargo.toml` plus the short git hash (or `GITHUB_SHA[:7]` when running in GitHub Actions).
+The binary lands at `target/host/{dev,release}/skjs`. The runtime stamps `--version` with the version from `Skargo.toml` plus the short git hash (or `GITHUB_SHA[:7]` when running in GitHub Actions).
 
 ## CI overview
 
