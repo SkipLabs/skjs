@@ -234,11 +234,11 @@ class TsConfig{
 
 // Walk up from startDir looking for tsconfig.json.
 // Returns the full path to the config file, or None() if not found.
-fun findTsConfig(startDir: String): ?String {
+fun findTsConfig(fs: Fs, startDir: String): ?String {
   dir = Path.resolve(startDir);
   loop {
     candidate = Path.join(dir, "tsconfig.json");
-    if (FileSystem.exists(candidate)) {
+    if (fs.exists(candidate)) {
       return Some(candidate)
     };
     parent = Path.dirname(dir);
@@ -257,14 +257,14 @@ fun findTsConfig(startDir: String): ?String {
 // Resolve the tsconfig.json path from a --project argument.
 // If the path is a directory, look for tsconfig.json inside it.
 // If the path is a file, use it directly.
-fun resolveTsConfigPath(projectPath: String): Result<String, String> {
+fun resolveTsConfigPath(fs: Fs, projectPath: String): Result<String, String> {
   resolved = Path.resolve(projectPath);
-  if (!FileSystem.exists(resolved)) {
+  if (!fs.exists(resolved)) {
     return Failure(`File not found: ${projectPath}`)
   };
-  if (FileSystem.isDirectory(resolved)) {
+  if (fs.isDirectory(resolved)) {
     configFile = Path.join(resolved, "tsconfig.json");
-    if (!FileSystem.exists(configFile)) {
+    if (!fs.exists(configFile)) {
       return Failure(`tsconfig.json not found in ${projectPath}`)
     };
     Success(configFile)
@@ -275,8 +275,8 @@ fun resolveTsConfigPath(projectPath: String): Result<String, String> {
 
 // Parse a tsconfig.json file into its raw JSON object.
 // Returns (obj, rawContents, configDir).
-fun parseTsConfigFile(path: String): (JSON.Object, String, DAbsolute) {
-  contents = FileSystem.readTextFile(path);
+fun parseTsConfigFile(fs: Fs, path: String): (JSON.Object, String, DAbsolute) {
+  contents = fs.readTextFile(path);
   stripped = stripJsonComments(contents);
   json = JSON.decode(stripped);
   obj = json.expectObject();
@@ -337,6 +337,7 @@ fun mergeConfigObjects(base: JSON.Object, child: JSON.Object): JSON.Object {
 // Resolve the extends chain for a tsconfig JSON object.
 // Returns the fully merged JSON object.
 fun resolveExtends(
+  fs: Fs,
   obj: JSON.Object,
   configDir: DAbsolute,
   visited: SortedSet<String>,
@@ -375,8 +376,12 @@ fun resolveExtends(
       );
       continue
     };
-    (parentObj, parentRawContents, parentDir) = parseTsConfigFile(finalPath);
+    (parentObj, parentRawContents, parentDir) = parseTsConfigFile(
+      fs,
+      finalPath,
+    );
     resolvedParent = resolveExtends(
+      fs,
       parentObj,
       parentDir,
       visited.set(finalPath),
@@ -392,13 +397,14 @@ fun resolveExtends(
 
 // Load and parse a tsconfig.json file, resolving extends.
 // Returns the config and any lint diagnostics.
-fun loadTsConfig(path: String): (TsConfig, Array<TsConfigDiag>) {
+fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
   resolvedPath = Path.resolve(path);
-  (obj, rawContents, configDir) = parseTsConfigFile(resolvedPath);
+  (obj, rawContents, configDir) = parseTsConfigFile(fs, resolvedPath);
 
   // Extract and lint compilerOptions in a single pass
   diags = mutable Vector[];
   mergedObj = resolveExtends(
+    fs,
     obj,
     configDir,
     SortedSet[resolvedPath],
@@ -904,21 +910,21 @@ fun findKeyLine(contents: String, key: String): Int {
 
 // Resolve all source files from a tsconfig configuration.
 // Returns absolute file paths.
-fun resolveConfigFiles(config: TsConfig): Array<String> {
+fun resolveConfigFiles(fs: Fs, config: TsConfig): Array<String> {
   configDirStr = config.configDir.toString();
   result = mutable Set[];
 
   // 1. Add explicit files (resolved relative to configDir)
   for (file in config.files) {
     resolved = Path.resolve(Path.join(configDirStr, file));
-    if (FileSystem.exists(resolved)) {
+    if (fs.exists(resolved)) {
       result.insert(resolved)
     }
   };
 
   // 2. Collect all files under configDir for glob matching
-  allFiles = if (FileSystem.exists(configDirStr)) {
-    FileSystem.readFilesRecursive(configDirStr, isTsFile)
+  allFiles = if (fs.exists(configDirStr)) {
+    fs.readFilesRecursive(configDirStr, isTsFile)
   } else {
     Array[]
   };

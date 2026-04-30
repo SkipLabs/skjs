@@ -219,6 +219,11 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Path to tsconfig.json or directory containing one (auto-discovered when no source files are provided)",
     ),
+  Cli.Arg::bool("stdin")
+    .long("stdin")
+    .about(
+      "Read additional source files from stdin as a `//// <path>` marker stream, overlaid on the disk filesystem.",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -257,6 +262,32 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   importStubs = args.getArray("import-stubs");
   cliBaseUrl = args.maybeGetString("base-url");
 
+  // --stdin reads a `//// <path>` marker stream from stdin and overlays
+  // the parsed files on top of the disk filesystem.
+  stdinMode = args.getBool("stdin");
+  (fs, stdinFiles): (Fs, Array<String>) = if (stdinMode) {
+    buf = mutable Vector[];
+    stdinContent = IO.stdin().read_to_end(buf) match {
+    | Success _ -> String::fromUtf8(buf.collect(Array))
+    | Failure(err) ->
+      print_error(err.getMessage());
+      throw Exit(2)
+    };
+    parsed = parseStdinStream{content => stdinContent, cwd => getcwd()} match {
+    | Success(m) -> m
+    | Failure(err) ->
+      print_error(err);
+      throw Exit(2)
+    };
+    memFs = MemFs::fromMap(parsed);
+    (
+      OverlayFs{underlying => DiskFs(), overlay => memFs},
+      parsed.keys().collect(Array),
+    )
+  } else {
+    (Fs::disk(), Array[])
+  };
+
   // Resolve source files and root via tsconfig.json if applicable.
   // Decision tree (matches tsc behavior):
   // 1. Explicit src-file args -> use directly, no tsconfig
@@ -275,7 +306,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   } else {
     tsconfigPath: ?String = args.maybeGetString("project") match {
     | Some(projectPath) ->
-      resolveTsConfigPath(projectPath) match {
+      resolveTsConfigPath(fs, projectPath) match {
       | Success(p) -> Some(p)
       | Failure(err) ->
         print_error(err);
@@ -283,7 +314,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       }
     | None() ->
       // Auto-discover: walk up from cwd looking for tsconfig.json
-      findTsConfig(getcwd())
+      findTsConfig(fs, getcwd())
     };
     tsconfigPath match {
     | None() ->
@@ -291,7 +322,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       (cliBaseUrl.default("."), Array[], TsCompilerOptions{})
     | Some(configPath) ->
       (config, diagnostics) = try {
-        loadTsConfig(configPath)
+        loadTsConfig(fs, configPath)
       } catch {
       | exn ->
         print_error(`Failed to parse ${configPath}: ${exn.getMessage()}`);
@@ -302,7 +333,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         prefix = if (diag.isWarning) "warning" else "error";
         print_error(`${configPath}:${diag.line}: ${prefix}: ${diag.message}`);
       };
-      resolvedFiles: Array<String> = resolveConfigFiles(config);
+      resolvedFiles: Array<String> = resolveConfigFiles(fs, config);
       if (resolvedFiles.isEmpty()) {
         print_error(`No input files found from ${configPath}`);
         throw Exit(2)
@@ -323,6 +354,18 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       };
       (effectiveRoot, resolvedFiles, config.compilerOptions)
     }
+  };
+
+  // Stdin files are always included alongside whatever the decision tree
+  // produced. If the tree produced an empty list (e.g. only "-" given,
+  // no tsconfig), the stdin files become the sole inputs. Only ts files
+  // are forwarded as sources — non-ts overlays (e.g. tsconfig.json) are
+  // still picked up by the existing discovery flow through the Fs seam.
+  stdinTsFiles = stdinFiles.filter(isTsFile);
+  allSrcFiles: Sequence<String> = if (stdinTsFiles.isEmpty()) {
+    srcFiles
+  } else {
+    srcFiles.collect(Array).concat(stdinTsFiles)
   };
 
   if (importStubs.size() > 1) {
@@ -374,7 +417,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
     (context) ~> {
-      files = Files::create(context, root, srcFiles, importStubs) match {
+      files = Files::create(context, fs, root, allSrcFiles, importStubs) match {
       | Failure(err) ->
         print_error(err);
         return SKStore.CStop(None())
@@ -391,6 +434,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
         (context, _writer, _key, _values) ~> {
           Checker::create{
             context,
+            fs,
             files,
             errorHandling,
             errorDetailConfig,
@@ -527,6 +571,7 @@ class Checker private {
   /* Returns Failure for parse errors only if errorHandling is EHDefault */
   static fun create{
     context: mutable SKStore.Context,
+    fs: Fs,
     files: Files,
     errorHandling: ErrorHandling,
     errorDetailConfig: ErrorDetailConfig,
@@ -550,6 +595,7 @@ class Checker private {
     builtinsFileName = files.builtinsFileName;
     defMap = DefMap::create(
       context,
+      fs,
       builtinsFileName,
       files.rootMap,
       parsedFiles,

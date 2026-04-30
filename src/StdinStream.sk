@@ -1,0 +1,67 @@
+/***************************************************************************/
+/* Parser for the stdin "////"-marker stream used by the overlay mode.       */
+/***************************************************************************/
+
+module SKJS;
+
+const stdinMarkerPrefix: String = "////";
+
+// Parse a multi-file stream where each file is introduced by a line of the
+// form `//// <path>`.
+//
+// The body of a file is every line between its marker and the next marker
+// (or EOF), joined with "\n", with at most one trailing "\n" trimmed.
+//
+// Lines before the first marker may be blank or `//` line-comments only.
+//
+// Paths in markers are resolved against `cwd` (or kept as-is if absolute)
+// and used as keys in the returned map. Duplicate absolute paths are an
+// error.
+fun parseStdinStream{
+  content: String,
+  cwd: String,
+}: Result<Map<String, String>, String> {
+  files = mutable Map<String, String>[];
+  curPath: ?String = None();
+  curBody = mutable Vector<String>[];
+  flush = () -> {
+    curPath match {
+    | None() -> void
+    | Some(p) -> files.set(p, "\n".join(curBody))
+    };
+    curBody.clear();
+  };
+  lines = content.split("\n");
+  for (i => line in lines) {
+    trimmed = line.trim();
+    if (trimmed.startsWith(stdinMarkerPrefix)) {
+      rest = trimmed.stripPrefix(stdinMarkerPrefix).trim();
+      if (rest.isEmpty()) {
+        return Failure(
+          `stdin: '${stdinMarkerPrefix}' marker missing path at line ${i + 1}`,
+        )
+      };
+      flush();
+      absPath = Path.resolve(Path.join(cwd, rest));
+      if (files.containsKey(absPath)) {
+        return Failure(`stdin: duplicate path '${rest}' at line ${i + 1}`)
+      };
+      !curPath = Some(absPath)
+    } else {
+      curPath match {
+      | Some _ -> curBody.push(line)
+      | None() ->
+        if (!trimmed.isEmpty() && !trimmed.startsWith("//")) {
+          return Failure(
+            `stdin: unexpected content before first '${stdinMarkerPrefix}' marker at line ${i +
+              1}`,
+          )
+        }
+      }
+    }
+  };
+  flush();
+  Success(files.chill())
+}
+
+module end;

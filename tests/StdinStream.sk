@@ -1,0 +1,167 @@
+module SKJSTests;
+
+fun expectStdinSuccess(
+  res: Result<Map<String, String>, String>,
+): Map<String, String> {
+  res match {
+  | Success(m) -> m
+  | Failure(err) ->
+    SKTest.expectTrue(false, `Expected Success, got Failure: ${err}`);
+    Map[]
+  }
+}
+
+fun expectStdinFailure(res: Result<Map<String, String>, String>): String {
+  res match {
+  | Success(_) ->
+    SKTest.expectTrue(false, "Expected Failure, got Success");
+    ""
+  | Failure(err) -> err
+  }
+}
+
+const stdinCwd: String = "/tmp/skjs-stdin-test";
+
+@test
+fun testStdinSingleFile(): void {
+  files = expectStdinSuccess(
+    SKJS.parseStdinStream{
+      content => lines(Array["//// a.ts", "const x: number = 1;", ""]),
+      cwd => stdinCwd,
+    },
+  );
+  SKTest.expectEq(files.size(), 1, "one file");
+  SKTest.expectEq(
+    files.maybeGet(`${stdinCwd}/a.ts`),
+    Some("const x: number = 1;\n"),
+    "a.ts content",
+  );
+}
+
+@test
+fun testStdinMultiFile(): void {
+  files = expectStdinSuccess(
+    SKJS.parseStdinStream{
+      content => lines(
+        Array[
+          "//// a.ts",
+          "export const x = 1;",
+          "//// src/b.ts",
+          "import { x } from \"../a\";",
+          "console.log(x);",
+        ],
+      ),
+      cwd => stdinCwd,
+    },
+  );
+  SKTest.expectEq(files.size(), 2, "two files");
+  SKTest.expectEq(
+    files.maybeGet(`${stdinCwd}/a.ts`),
+    Some("export const x = 1;"),
+    "a.ts content",
+  );
+  SKTest.expectEq(
+    files.maybeGet(`${stdinCwd}/src/b.ts`),
+    Some("import { x } from \"../a\";\nconsole.log(x);"),
+    "src/b.ts content",
+  );
+}
+
+@test
+fun testStdinPreambleAllowed(): void {
+  files = expectStdinSuccess(
+    SKJS.parseStdinStream{
+      content => lines(
+        Array[
+          "",
+          "// banner comment",
+          "  // indented comment",
+          "//// a.ts",
+          "x",
+        ],
+      ),
+      cwd => stdinCwd,
+    },
+  );
+  SKTest.expectEq(files.size(), 1, "one file");
+  SKTest.expectEq(
+    files.maybeGet(`${stdinCwd}/a.ts`),
+    Some("x"),
+    "a.ts content",
+  );
+}
+
+@test
+fun testStdinPreambleRejected(): void {
+  err = expectStdinFailure(
+    SKJS.parseStdinStream{
+      content => lines(Array["const x = 1;", "//// a.ts", "y"]),
+      cwd => stdinCwd,
+    },
+  );
+  SKTest.expectTrue(
+    err.contains("before first '////' marker"),
+    `error mentions preamble; got: ${err}`,
+  );
+  SKTest.expectTrue(
+    err.contains("line 1"),
+    `error reports line 1; got: ${err}`,
+  );
+}
+
+@test
+fun testStdinDuplicatePath(): void {
+  err = expectStdinFailure(
+    SKJS.parseStdinStream{
+      content => lines(Array["//// a.ts", "x", "//// a.ts", "y"]),
+      cwd => stdinCwd,
+    },
+  );
+  SKTest.expectTrue(
+    err.contains("duplicate path"),
+    `error mentions duplicate; got: ${err}`,
+  );
+  SKTest.expectTrue(
+    err.contains("line 3"),
+    `error reports line 3; got: ${err}`,
+  );
+}
+
+@test
+fun testStdinEmptyStream(): void {
+  files = expectStdinSuccess(
+    SKJS.parseStdinStream{content => "", cwd => stdinCwd},
+  );
+  SKTest.expectEq(files.size(), 0, "empty stream → empty map");
+}
+
+@test
+fun testStdinAbsolutePathPassthrough(): void {
+  files = expectStdinSuccess(
+    SKJS.parseStdinStream{
+      content => lines(Array["//// /abs/foo.ts", "x"]),
+      cwd => stdinCwd,
+    },
+  );
+  SKTest.expectEq(files.size(), 1, "one file");
+  SKTest.expectTrue(
+    files.containsKey("/abs/foo.ts"),
+    "absolute marker path used verbatim",
+  );
+}
+
+@test
+fun testStdinMissingPath(): void {
+  err = expectStdinFailure(
+    SKJS.parseStdinStream{
+      content => lines(Array["////", "x"]),
+      cwd => stdinCwd,
+    },
+  );
+  SKTest.expectTrue(
+    err.contains("missing path"),
+    `error mentions missing path; got: ${err}`,
+  );
+}
+
+module end;

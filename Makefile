@@ -16,6 +16,7 @@ test:
 	skargo test $(JUNITXML_FLAGS)
 	./tests/test_incremental.sh
 	./tests/test_affected_files.sh
+	./tests/test_stdin.sh
 
 .PHONY: fmt-sk
 fmt-sk: # Keep in sync with bin/git_hooks/check_format.sh

@@ -1,0 +1,241 @@
+/***************************************************************************/
+/* Filesystem-access seam.                                                   */
+/* Single point through which skjs talks to the OS filesystem. DiskFs        */
+/* delegates to FileSystem.*; MemFs is a pure in-memory Fs; OverlayFs is     */
+/* a generic two-Fs combinator that consults its overlay before falling      */
+/* through to the underlying Fs.                                             */
+/***************************************************************************/
+
+module SKJS;
+
+base class Fs {
+  fun exists(path: String): Bool;
+  fun isDirectory(path: String): Bool;
+  fun readTextFile(path: String): String;
+
+  // Push every file under `path` matching `predicate` into `out`, skipping
+  // paths already in `seen` and inserting newly emitted paths into `seen`.
+  // No-op if `path` is not a directory.
+  protected fun collectFilesRecursive(
+    path: String,
+    predicate: String -> Bool,
+    seen: mutable Set<String>,
+    out: mutable Vector<String>,
+  ): void;
+
+  overridable fun readFilesRecursive(
+    path: String,
+    predicate: String -> Bool,
+  ): Vector<String> {
+    out = mutable Vector[];
+    seen = mutable Set[];
+    this.collectFilesRecursive(path, predicate, seen, out);
+    unsafe_chill_trust_me(out)
+  }
+
+  static fun disk(): Fs {
+    DiskFs()
+  }
+}
+
+class DiskFs() extends Fs {
+  fun exists(path: String): Bool {
+    FileSystem.exists(path)
+  }
+
+  fun isDirectory(path: String): Bool {
+    FileSystem.isDirectory(path)
+  }
+
+  fun readTextFile(path: String): String {
+    FileSystem.readTextFile(path)
+  }
+
+  protected fun collectFilesRecursive(
+    path: String,
+    predicate: String -> Bool,
+    seen: mutable Set<String>,
+    out: mutable Vector<String>,
+  ): void {
+    if (!FileSystem.isDirectory(path)) return void;
+    for (f in FileSystem.readFilesRecursive(path, predicate)) {
+      if (!seen.contains(f)) {
+        seen.insert(f);
+        out.push(f)
+      }
+    }
+  }
+
+  fun readFilesRecursive(
+    path: String,
+    predicate: String -> Bool,
+  ): Vector<String> {
+    FileSystem.readFilesRecursive(path, predicate)
+  }
+}
+
+class OverlayFs{underlying: Fs, overlay: Fs} extends Fs {
+  fun exists(path: String): Bool {
+    this.overlay.exists(path) || this.underlying.exists(path)
+  }
+
+  fun isDirectory(path: String): Bool {
+    if (this.overlay.exists(path)) {
+      this.overlay.isDirectory(path)
+    } else {
+      this.underlying.isDirectory(path)
+    }
+  }
+
+  fun readTextFile(path: String): String {
+    if (this.overlay.exists(path)) {
+      this.overlay.readTextFile(path)
+    } else {
+      this.underlying.readTextFile(path)
+    }
+  }
+
+  protected fun collectFilesRecursive(
+    path: String,
+    predicate: String -> Bool,
+    seen: mutable Set<String>,
+    out: mutable Vector<String>,
+  ): void {
+    this.underlying.collectFilesRecursive(path, predicate, seen, out);
+    this.overlay.collectFilesRecursive(path, predicate, seen, out)
+  }
+}
+
+/***************************************************************************/
+/* MemFs: in-memory Fs backed by a tree of files keyed by abs-path segments. */
+/***************************************************************************/
+
+value class MemDir(files: Map<String, String>, subdirs: Map<String, MemDir>)
+
+class MemFs private (root: MemDir) extends Fs {
+  static fun fromMap(files: Map<String, String>): this {
+    builder = mutable MemDirBuilder();
+    for (path => content in files) {
+      segs = splitPath(Path.resolve(path));
+      if (segs.isEmpty()) {
+        invariant_violation(`MemFs path resolves to filesystem root: ${path}`)
+      };
+      builder.insert(segs, 0, content);
+    };
+    MemFs(builder.build())
+  }
+
+  fun exists(path: String): Bool {
+    this.findFile(path).isSome() || this.findDir(path).isSome()
+  }
+
+  fun isDirectory(path: String): Bool {
+    this.findDir(path).isSome()
+  }
+
+  fun readTextFile(path: String): String {
+    this.findFile(path) match {
+    | Some(content) -> content
+    | None() -> invariant_violation(`MemFs does not contain file: ${path}`)
+    }
+  }
+
+  protected fun collectFilesRecursive(
+    path: String,
+    predicate: String -> Bool,
+    seen: mutable Set<String>,
+    out: mutable Vector<String>,
+  ): void {
+    p = Path.resolve(path);
+    segs = splitPath(p);
+    this.findDirSegs(segs, 0, this.root) match {
+    | None() -> void
+    | Some(dir) ->
+      prefix = if (p == "/") "" else p;
+      static::collect(dir, prefix, predicate, seen, out)
+    }
+  }
+
+  fun findFile(absPath: String): ?String {
+    segs = splitPath(Path.resolve(absPath));
+    if (segs.isEmpty()) return None();
+    parentSegs = segs.slice(0, segs.size() - 1);
+    base = segs[segs.size() - 1];
+    this.findDirSegs(parentSegs, 0, this.root).flatMap(d ->
+      d.files.maybeGet(base)
+    )
+  }
+
+  fun findDir(absPath: String): ?MemDir {
+    segs = splitPath(Path.resolve(absPath));
+    this.findDirSegs(segs, 0, this.root)
+  }
+
+  private fun findDirSegs(segs: Array<String>, i: Int, dir: MemDir): ?MemDir {
+    if (i >= segs.size()) return Some(dir);
+    dir.subdirs.maybeGet(segs[i]) match {
+    | None() -> None()
+    | Some(child) -> this.findDirSegs(segs, i + 1, child)
+    }
+  }
+
+  private static fun collect(
+    dir: MemDir,
+    prefix: String,
+    predicate: String -> Bool,
+    seen: mutable Set<String>,
+    out: mutable Vector<String>,
+  ): void {
+    for (basename => _content in dir.files) {
+      full = `${prefix}/${basename}`;
+      if (predicate(full) && !seen.contains(full)) {
+        seen.insert(full);
+        out.push(full)
+      }
+    };
+    for (basename => sub in dir.subdirs) {
+      static::collect(sub, `${prefix}/${basename}`, predicate, seen, out)
+    }
+  }
+}
+
+private mutable class MemDirBuilder(
+  files: mutable Map<String, String> = mutable Map[],
+  subdirs: mutable Map<String, mutable MemDirBuilder> = mutable Map[],
+) {
+  mutable fun insert(segs: Array<String>, i: Int, content: String): void {
+    base = segs[segs.size() - 1];
+    if (i == segs.size() - 1) {
+      if (this.files.containsKey(base) || this.subdirs.containsKey(base)) {
+        invariant_violation(`MemFs path collides on segment: ${base}`)
+      };
+      this.files.set(base, content);
+      return void;
+    };
+    seg = segs[i];
+    if (this.files.containsKey(seg)) {
+      invariant_violation(
+        `MemFs path collides on segment: ${seg} (already a file)`,
+      )
+    };
+    child = this.subdirs.maybeGet(seg) match {
+    | Some(c) -> c
+    | None() ->
+      c = mutable MemDirBuilder();
+      this.subdirs.set(seg, c);
+      c
+    };
+    child.insert(segs, i + 1, content)
+  }
+
+  readonly fun build(): MemDir {
+    files = this.files.chill();
+    subs = mutable Map[];
+    for (k => v in this.subdirs) {
+      subs.set(k, v.build())
+    };
+    MemDir(files, subs.chill())
+  }
+}
+
+module end;
