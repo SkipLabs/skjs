@@ -32,13 +32,14 @@ fun parseStdinStream(
     curBody.clear();
   };
   lines = content.split("\n");
-  for (i in Range(0, lines.size())) {
-    line = lines[i];
+  for (i => line in lines) {
     trimmed = line.trim();
     if (trimmed.startsWith(stdinMarkerPrefix)) {
       rest = trimmed.stripPrefix(stdinMarkerPrefix).trim();
       if (rest.isEmpty()) {
-        return Failure(`stdin: '////' marker missing path at line ${i + 1}`)
+        return Failure(
+          `stdin: '${stdinMarkerPrefix}' marker missing path at line ${i + 1}`,
+        )
       };
       flush();
       absPath = Path.resolve(Path.join(cwd, rest));
@@ -52,7 +53,7 @@ fun parseStdinStream(
       | None() ->
         if (!trimmed.isEmpty() && !trimmed.startsWith("//")) {
           return Failure(
-            `stdin: unexpected content before first '////' marker at line ${i +
+            `stdin: unexpected content before first '${stdinMarkerPrefix}' marker at line ${i +
               1}`,
           )
         }
