@@ -358,11 +358,14 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
 
   // Stdin files are always included alongside whatever the decision tree
   // produced. If the tree produced an empty list (e.g. only "-" given,
-  // no tsconfig), the stdin files become the sole inputs.
-  allSrcFiles: Sequence<String> = if (stdinFiles.isEmpty()) {
+  // no tsconfig), the stdin files become the sole inputs. Only ts files
+  // are forwarded as sources — non-ts overlays (e.g. tsconfig.json) are
+  // still picked up by the existing discovery flow through the Fs seam.
+  stdinTsFiles = stdinFiles.filter(isTsFile);
+  allSrcFiles: Sequence<String> = if (stdinTsFiles.isEmpty()) {
     srcFiles
   } else {
-    srcFiles.collect(Array).concat(stdinFiles)
+    srcFiles.collect(Array).concat(stdinTsFiles)
   };
 
   if (importStubs.size() > 1) {

@@ -103,6 +103,20 @@ expect_contains "duplicatePathRejected" \
   "duplicate path" "$out"
 
 ########################################################################
+# tsconfig.json from stdin: only .ts files become sources, the
+# tsconfig is picked up via the Fs seam during discovery.
+########################################################################
+TSPROJ="$TMPDIR/tsproj"
+mkdir -p "$TSPROJ"
+out=$(
+  printf '//// %s/tsconfig.json\n{ "compilerOptions": { "strict": true } }\n//// %s/a.ts\nconst x: number = "tsproj-bad";\n' \
+    "$TSPROJ" "$TSPROJ" \
+    | (cd "$TSPROJ" && "$SKJS_ABS" check --stdin --import-stubs "$STUBS_ABS" 2>&1 || true)
+)
+expect_contains "tsconfigOverlay" \
+  "Type 'tsproj-bad'" "$out"
+
+########################################################################
 # Preamble with only comments and blank lines is accepted
 ########################################################################
 out=$(
