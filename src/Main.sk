@@ -219,6 +219,11 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Path to tsconfig.json or directory containing one (auto-discovered when no source files are provided)",
     ),
+  Cli.Arg::bool("stdin")
+    .long("stdin")
+    .about(
+      "Read additional source files from stdin as a `//// <path>` marker stream, overlaid on the disk filesystem.",
+    ),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -240,7 +245,6 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | Some(newDirectory) -> Environ.set_current_dir(newDirectory)
   | None() -> void
   };
-  fs = Fs::disk();
   errorHandling = (
     args.getBool("backtrace"),
     args.getBool("keep-going"),
@@ -257,6 +261,32 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   cliSrcFiles = args.getArray("src-file");
   importStubs = args.getArray("import-stubs");
   cliBaseUrl = args.maybeGetString("base-url");
+
+  // --stdin reads a `//// <path>` marker stream from stdin and overlays
+  // the parsed files on top of the disk filesystem.
+  stdinMode = args.getBool("stdin");
+  (fs, stdinFiles): (Fs, Array<String>) = if (stdinMode) {
+    buf = mutable Vector[];
+    stdinContent = IO.stdin().read_to_end(buf) match {
+    | Success _ -> String::fromUtf8(buf.collect(Array))
+    | Failure(err) ->
+      print_error(err.getMessage());
+      throw Exit(2)
+    };
+    parsed = parseStdinStream(stdinContent, getcwd()) match {
+    | Success(m) -> m
+    | Failure(err) ->
+      print_error(err);
+      throw Exit(2)
+    };
+    memFs = MemFs::fromMap(parsed);
+    (
+      OverlayFs{underlying => DiskFs(), overlay => memFs},
+      parsed.keys().collect(Array),
+    )
+  } else {
+    (Fs::disk(), Array[])
+  };
 
   // Resolve source files and root via tsconfig.json if applicable.
   // Decision tree (matches tsc behavior):
@@ -326,6 +356,15 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     }
   };
 
+  // Stdin files are always included alongside whatever the decision tree
+  // produced. If the tree produced an empty list (e.g. only "-" given,
+  // no tsconfig), the stdin files become the sole inputs.
+  allSrcFiles: Sequence<String> = if (stdinFiles.isEmpty()) {
+    srcFiles
+  } else {
+    srcFiles.collect(Array).concat(stdinFiles)
+  };
+
   if (importStubs.size() > 1) {
     print_error(
       "More than one --import-stubs specified; using first one for builtins file",
@@ -375,7 +414,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
     (context) ~> {
-      files = Files::create(context, fs, root, srcFiles, importStubs) match {
+      files = Files::create(context, fs, root, allSrcFiles, importStubs) match {
       | Failure(err) ->
         print_error(err);
         return SKStore.CStop(None())
