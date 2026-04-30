@@ -72,7 +72,7 @@ For day-to-day development you don't need a release — just build from source:
 
 ```bash
 # Dev binary
-skargo build --bin skjs
+skargo build
 
 # Release binary (matches what the workflow produces)
 skargo build --release --bin skjs
