@@ -74,7 +74,7 @@ class DiskFs() extends Fs {
   }
 }
 
-class OverlayFs(underlying: Fs, overlay: Fs) extends Fs {
+class OverlayFs{underlying: Fs, overlay: Fs} extends Fs {
   fun exists(path: String): Bool {
     this.overlay.exists(path) || this.underlying.exists(path)
   }

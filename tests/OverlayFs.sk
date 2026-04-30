@@ -71,7 +71,7 @@ fun testOverlayFilesUnder(): void {
 @test
 fun testOverlayFsExistsIsDir(): void {
   o = mkMem(Array[("/v/a.ts", "A"), ("/v/sub/b.ts", "B")]);
-  fs = SKJS.OverlayFs(SKJS.DiskFs(), o);
+  fs = SKJS.OverlayFs{underlying => SKJS.DiskFs(), overlay => o};
   SKTest.expectTrue(fs.exists("/v/a.ts"), "exists virtual file");
   SKTest.expectTrue(fs.exists("/v/sub"), "exists virtual dir");
   SKTest.expectFalse(fs.exists("/missing-vfs/x"), "missing path");
@@ -82,7 +82,7 @@ fun testOverlayFsExistsIsDir(): void {
 @test
 fun testOverlayFsReadTextFile(): void {
   o = mkMem(Array[("/v/a.ts", "OVERLAY")]);
-  fs = SKJS.OverlayFs(SKJS.DiskFs(), o);
+  fs = SKJS.OverlayFs{underlying => SKJS.DiskFs(), overlay => o};
   SKTest.expectEq(
     fs.readTextFile("/v/a.ts"),
     "OVERLAY",
@@ -95,7 +95,7 @@ fun testOverlayFsReadFilesRecursive(): void {
   o = mkMem(
     Array[("/v/a.ts", "A"), ("/v/sub/b.ts", "B"), ("/v/sub/c.txt", "C")],
   );
-  fs = SKJS.OverlayFs(SKJS.DiskFs(), o);
+  fs = SKJS.OverlayFs{underlying => SKJS.DiskFs(), overlay => o};
   isTs = (s: String) ~> s.endsWith(".ts");
   result = fs.readFilesRecursive("/v", isTs).collect(SortedSet);
   SKTest.expectEq(
@@ -109,8 +109,8 @@ fun testOverlayFsReadFilesRecursive(): void {
 fun testOverlayFsChained(): void {
   o1 = mkMem(Array[("/v/a.ts", "FROM_O1"), ("/v/b.ts", "FROM_O1_B")]);
   o2 = mkMem(Array[("/v/a.ts", "FROM_O2")]);
-  inner = SKJS.OverlayFs(SKJS.DiskFs(), o1);
-  outer = SKJS.OverlayFs(inner, o2);
+  inner = SKJS.OverlayFs{underlying => SKJS.DiskFs(), overlay => o1};
+  outer = SKJS.OverlayFs{underlying => inner, overlay => o2};
   SKTest.expectEq(outer.readTextFile("/v/a.ts"), "FROM_O2", "outer wins");
   SKTest.expectEq(outer.readTextFile("/v/b.ts"), "FROM_O1_B", "inner used");
 }
@@ -118,7 +118,7 @@ fun testOverlayFsChained(): void {
 @test
 fun testOverlayFsFallthroughExists(): void {
   o = mkMem(Array[("/v/a.ts", "A")]);
-  fs = SKJS.OverlayFs(SKJS.DiskFs(), o);
+  fs = SKJS.OverlayFs{underlying => SKJS.DiskFs(), overlay => o};
   // The project has CLAUDE.md at cwd; falling through to DiskFs should find it.
   cwd = getcwd();
   claudemd = Path.join(cwd, "CLAUDE.md");
