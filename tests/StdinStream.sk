@@ -25,10 +25,10 @@ const stdinCwd: String = "/tmp/skjs-stdin-test";
 @test
 fun testStdinSingleFile(): void {
   files = expectStdinSuccess(
-    SKJS.parseStdinStream(
-      lines(Array["//// a.ts", "const x: number = 1;", ""]),
-      stdinCwd,
-    ),
+    SKJS.parseStdinStream{
+      content => lines(Array["//// a.ts", "const x: number = 1;", ""]),
+      cwd => stdinCwd,
+    },
   );
   SKTest.expectEq(files.size(), 1, "one file");
   SKTest.expectEq(
@@ -41,8 +41,8 @@ fun testStdinSingleFile(): void {
 @test
 fun testStdinMultiFile(): void {
   files = expectStdinSuccess(
-    SKJS.parseStdinStream(
-      lines(
+    SKJS.parseStdinStream{
+      content => lines(
         Array[
           "//// a.ts",
           "export const x = 1;",
@@ -51,8 +51,8 @@ fun testStdinMultiFile(): void {
           "console.log(x);",
         ],
       ),
-      stdinCwd,
-    ),
+      cwd => stdinCwd,
+    },
   );
   SKTest.expectEq(files.size(), 2, "two files");
   SKTest.expectEq(
@@ -70,8 +70,8 @@ fun testStdinMultiFile(): void {
 @test
 fun testStdinPreambleAllowed(): void {
   files = expectStdinSuccess(
-    SKJS.parseStdinStream(
-      lines(
+    SKJS.parseStdinStream{
+      content => lines(
         Array[
           "",
           "// banner comment",
@@ -80,8 +80,8 @@ fun testStdinPreambleAllowed(): void {
           "x",
         ],
       ),
-      stdinCwd,
-    ),
+      cwd => stdinCwd,
+    },
   );
   SKTest.expectEq(files.size(), 1, "one file");
   SKTest.expectEq(
@@ -94,10 +94,10 @@ fun testStdinPreambleAllowed(): void {
 @test
 fun testStdinPreambleRejected(): void {
   err = expectStdinFailure(
-    SKJS.parseStdinStream(
-      lines(Array["const x = 1;", "//// a.ts", "y"]),
-      stdinCwd,
-    ),
+    SKJS.parseStdinStream{
+      content => lines(Array["const x = 1;", "//// a.ts", "y"]),
+      cwd => stdinCwd,
+    },
   );
   SKTest.expectTrue(
     err.contains("before first '////' marker"),
@@ -112,10 +112,10 @@ fun testStdinPreambleRejected(): void {
 @test
 fun testStdinDuplicatePath(): void {
   err = expectStdinFailure(
-    SKJS.parseStdinStream(
-      lines(Array["//// a.ts", "x", "//// a.ts", "y"]),
-      stdinCwd,
-    ),
+    SKJS.parseStdinStream{
+      content => lines(Array["//// a.ts", "x", "//// a.ts", "y"]),
+      cwd => stdinCwd,
+    },
   );
   SKTest.expectTrue(
     err.contains("duplicate path"),
@@ -129,14 +129,19 @@ fun testStdinDuplicatePath(): void {
 
 @test
 fun testStdinEmptyStream(): void {
-  files = expectStdinSuccess(SKJS.parseStdinStream("", stdinCwd));
+  files = expectStdinSuccess(
+    SKJS.parseStdinStream{content => "", cwd => stdinCwd},
+  );
   SKTest.expectEq(files.size(), 0, "empty stream → empty map");
 }
 
 @test
 fun testStdinAbsolutePathPassthrough(): void {
   files = expectStdinSuccess(
-    SKJS.parseStdinStream(lines(Array["//// /abs/foo.ts", "x"]), stdinCwd),
+    SKJS.parseStdinStream{
+      content => lines(Array["//// /abs/foo.ts", "x"]),
+      cwd => stdinCwd,
+    },
   );
   SKTest.expectEq(files.size(), 1, "one file");
   SKTest.expectTrue(
@@ -148,7 +153,10 @@ fun testStdinAbsolutePathPassthrough(): void {
 @test
 fun testStdinMissingPath(): void {
   err = expectStdinFailure(
-    SKJS.parseStdinStream(lines(Array["////", "x"]), stdinCwd),
+    SKJS.parseStdinStream{
+      content => lines(Array["////", "x"]),
+      cwd => stdinCwd,
+    },
   );
   SKTest.expectTrue(
     err.contains("missing path"),

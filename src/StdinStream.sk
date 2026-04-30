@@ -17,10 +17,10 @@ const stdinMarkerPrefix: String = "////";
 // Paths in markers are resolved against `cwd` (or kept as-is if absolute)
 // and used as keys in the returned map. Duplicate absolute paths are an
 // error.
-fun parseStdinStream(
+fun parseStdinStream{
   content: String,
   cwd: String,
-): Result<Map<String, String>, String> {
+}: Result<Map<String, String>, String> {
   files = mutable Map<String, String>[];
   curPath: ?String = None();
   curBody = mutable Vector<String>[];

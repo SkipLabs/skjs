@@ -273,7 +273,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       print_error(err.getMessage());
       throw Exit(2)
     };
-    parsed = parseStdinStream(stdinContent, getcwd()) match {
+    parsed = parseStdinStream{content => stdinContent, cwd => getcwd()} match {
     | Success(m) -> m
     | Failure(err) ->
       print_error(err);
