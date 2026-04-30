@@ -23,7 +23,7 @@ base class Fs {
     out: mutable Vector<String>,
   ): void;
 
-  fun readFilesRecursive(
+  overridable fun readFilesRecursive(
     path: String,
     predicate: String -> Bool,
   ): Vector<String> {
@@ -64,6 +64,13 @@ class DiskFs() extends Fs {
         out.push(f)
       }
     }
+  }
+
+  fun readFilesRecursive(
+    path: String,
+    predicate: String -> Bool,
+  ): Vector<String> {
+    FileSystem.readFilesRecursive(path, predicate)
   }
 }
 
