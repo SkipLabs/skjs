@@ -18,8 +18,16 @@ FAIL=$'\033[31m[FAIL]\033[0m'
 
 # Run skjs from $TMPDIR so relative marker paths resolve there.
 run_stdin() {
-  (cd "$TMPDIR" && "$SKJS_ABS" check --stdin --import-stubs "$STUBS_ABS" "$@") \
-    2>&1 || true
+  set +e
+  (cd "$TMPDIR" && "$SKJS_ABS" check --stdin --import-stubs "$STUBS_ABS" 2>&1)
+  set -e
+}
+
+# Run skjs from a specific directory.
+run_stdin_in() {
+  set +e
+  (cd "$1" && "$SKJS_ABS" check --stdin --import-stubs "$STUBS_ABS" 2>&1)
+  set -e
 }
 
 expect_contains() {
@@ -111,7 +119,7 @@ mkdir -p "$TSPROJ"
 out=$(
   printf '//// %s/tsconfig.json\n{ "compilerOptions": { "strict": true } }\n//// %s/a.ts\nconst x: number = "tsproj-bad";\n' \
     "$TSPROJ" "$TSPROJ" \
-    | (cd "$TSPROJ" && "$SKJS_ABS" check --stdin --import-stubs "$STUBS_ABS" 2>&1 || true)
+    | run_stdin_in "$TSPROJ"
 )
 expect_contains "tsconfigOverlay" \
   "Type 'tsproj-bad'" "$out"
