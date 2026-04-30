@@ -21,10 +21,10 @@ fun testOverlayFindFile(): void {
 @test
 fun testOverlayIsDir(): void {
   o = mkMem(Array[("/v/sub/b.ts", "B")]);
-  SKTest.expectTrue(o.isDir("/v"), "/v is a virtual dir");
-  SKTest.expectTrue(o.isDir("/v/sub"), "/v/sub is a virtual dir");
-  SKTest.expectFalse(o.isDir("/v/sub/b.ts"), "file is not a dir");
-  SKTest.expectFalse(o.isDir("/missing"), "missing is not a dir");
+  SKTest.expectTrue(o.isDirectory("/v"), "/v is a virtual dir");
+  SKTest.expectTrue(o.isDirectory("/v/sub"), "/v/sub is a virtual dir");
+  SKTest.expectFalse(o.isDirectory("/v/sub/b.ts"), "file is not a dir");
+  SKTest.expectFalse(o.isDirectory("/missing"), "missing is not a dir");
 }
 
 @test
@@ -32,7 +32,7 @@ fun testOverlayPathNormalization(): void {
   o = mkMem(Array[("/v/a.ts", "A")]);
   SKTest.expectEq(o.findFile("/v/./a.ts"), Some("A"), "dot segment");
   SKTest.expectEq(o.findFile("/v/sub/../a.ts"), Some("A"), "parent segment");
-  SKTest.expectTrue(o.isDir("/v/."), "dot dir");
+  SKTest.expectTrue(o.isDirectory("/v/."), "dot dir");
 }
 
 @test

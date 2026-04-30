@@ -126,11 +126,11 @@ class MemFs private (root: MemDir) extends Fs {
   }
 
   fun exists(path: String): Bool {
-    this.hasFile(path) || this.isDir(path)
+    this.findFile(path).isSome() || this.findDir(path).isSome()
   }
 
   fun isDirectory(path: String): Bool {
-    this.isDir(path)
+    this.findDir(path).isSome()
   }
 
   fun readTextFile(path: String): String {
@@ -169,14 +169,6 @@ class MemFs private (root: MemDir) extends Fs {
   fun findDir(absPath: String): ?MemDir {
     segs = splitPath(Path.resolve(absPath));
     this.findDirSegs(segs, 0, this.root)
-  }
-
-  fun hasFile(absPath: String): Bool {
-    this.findFile(absPath).isSome()
-  }
-
-  fun isDir(absPath: String): Bool {
-    this.findDir(absPath).isSome()
   }
 
   private fun findDirSegs(segs: Array<String>, i: Int, dir: MemDir): ?MemDir {
