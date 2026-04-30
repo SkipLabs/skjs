@@ -110,7 +110,7 @@ class OverlayFs(underlying: Fs, overlay: Fs) extends Fs {
 /* MemFs: in-memory Fs backed by a tree of files keyed by abs-path segments. */
 /***************************************************************************/
 
-class MemDir(files: Map<String, String>, subdirs: Map<String, MemDir>)
+value class MemDir(files: Map<String, String>, subdirs: Map<String, MemDir>)
 
 class MemFs private (root: MemDir) extends Fs {
   static fun fromMap(files: Map<String, String>): this {
