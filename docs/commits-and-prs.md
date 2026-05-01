@@ -4,7 +4,6 @@
 
 - Each commit must pass formatting (`make fmt`) and tests (`make test-in-docker`)
 - Make one commit per logical change
-- Commit messages and PR titles must start with `AIGEN` if code was produced with AI assistance
 - Bump the semantic version in `Skargo.toml` in every PR (patch for bug fixes, minor for new features or behavior changes, major for breaking changes). Do this as part of the PR, not a separate release commit.
 
 ## When to Update Documentation
