@@ -54,7 +54,6 @@ cp target/host/dev/skjs target/host/dev/skjs.<label>
 
 ## Key Conventions
 
-- **Commit prefix**: All AI-generated commits and PR titles must start with `AIGEN`
 - **Green commits**: Every intermediate commit must pass `make test-in-docker`
 - **SKJS is a typechecker, not a runtime**: Tests exercise type-checking only — no `console.log()` calls or function invocations
 - **One error per definition**: SKJS reports only the first type error per function/definition unless passing `--keep-going` (best-effort — fatal errors may still hide subsequent ones)
