@@ -1,8 +1,17 @@
-// TS accepts optional parameter properties and creates an optional field
-// (`public x?: string`). SKJS does not desugar them — the desugaring in
-// ParserDefs.sk requires `optional => None()` — so the modifier survives
-// to the parameter modifier check.
+// SKJS desugars optional parameter properties to an optional class field
+// plus a `this.x = x` initializer, matching TypeScript.
 class OptionalParameterProperty {
-  // @skjs-expect-error Forbidden modifier 'public' for a function parameter
   constructor(public x?: string) {}
+
+  read(): string | undefined {
+    return this.x;
+  }
+}
+
+function buildWithArg(): OptionalParameterProperty {
+  return new OptionalParameterProperty("hello");
+}
+
+function buildWithoutArg(): OptionalParameterProperty {
+  return new OptionalParameterProperty();
 }
