@@ -1393,10 +1393,12 @@ base class TEnv{
               Array[(fd.pos, "Mapped type 'as' clause is not supported yet")],
             )
           };
-          if (op.isSome()) {
-            tcenvb.error(
-              Array[(fd.pos, "Mapped type modifiers are not supported yet")],
-            )
+          isFieldOptional = op match {
+          | None() -> false
+          | Some(FNQuestion _)
+          | Some(FNAdd _) ->
+            true
+          | Some(FNRemove _) -> false
           };
           keyTType = this.normalize(tcenvb, kType);
           subst = Subst::mcreate(tcenvb);
@@ -1492,7 +1494,7 @@ base class TEnv{
                 field = TField::create{
                   pos => boundName.pos,
                   name => litVal,
-                  isOptional => false,
+                  isOptional => isFieldOptional,
                   isReadonly => None(),
                   type => valueType,
                 };
@@ -1502,7 +1504,7 @@ base class TEnv{
                 field = TField::create{
                   pos => boundName.pos,
                   name => uniqueId,
-                  isOptional => false,
+                  isOptional => isFieldOptional,
                   isReadonly => None(),
                   type => valueType,
                 };

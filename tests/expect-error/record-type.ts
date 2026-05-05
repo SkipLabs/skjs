@@ -68,6 +68,41 @@ function emptyMapAccept(): EmptyMap<number> {
   return {};
 }
 
+// Optional modifier '?'
+type LitOpt<V> = { [P in "a" | "b"]?: V };
+
+function litOptAcceptEmpty(): LitOpt<number> {
+  return {};
+}
+
+function litOptAcceptPartial(): LitOpt<number> {
+  return { a: 1 };
+}
+
+function litOptAcceptAll(): LitOpt<number> {
+  return { a: 1, b: 2 };
+}
+
+function litOptRejectWrongV(): LitOpt<number> {
+  // @skjs-expect-error Invalid return type
+  return { a: "no" };
+}
+
+// '+?' modifier — same effect as '?'
+type LitPlusOpt<V> = { [P in "a" | "b"]+?: V };
+
+function litPlusOptAccept(): LitPlusOpt<number> {
+  return {};
+}
+
+// '-?' modifier — required (default behavior, but explicitly stated)
+type LitMinusOpt<V> = { [P in "a" | "b"]-?: V };
+
+function litMinusOptMissing(): LitMinusOpt<number> {
+  // @skjs-expect-error Invalid return type
+  return { a: 1 };
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Record<K, V> from the standard library
 ///////////////////////////////////////////////////////////////////////////////
