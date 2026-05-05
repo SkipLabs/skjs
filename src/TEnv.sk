@@ -747,7 +747,11 @@ base class TEnv{
     retType = sig.retType match {
     | (pos, None()) ->
       // constructors must use makeConstructor
-      error(Array[(pos, "Missing return type annotation")])
+      error(
+        Array[
+          (pos, `Missing return type annotation for '${fd.name.getName()}'`),
+        ],
+      )
     | (_, Some(x)) -> x
     };
     tafun = TAFun(
