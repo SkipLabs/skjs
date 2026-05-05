@@ -192,7 +192,11 @@ extension class TypeChecker {
     );
     if (this.retType is None()) {
       funSig = this.getFunSig(subst.context, fd);
-      subst.error(Array[(funSig.retType.i0, "Missing return type")])
+      subst.error(
+        Array[
+          (funSig.retType.i0, `Missing return type for '${fd.name.getName()}'`),
+        ],
+      )
     };
     fd.isAsync match {
     | None() -> !this.isAsync = false
