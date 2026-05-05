@@ -7,7 +7,6 @@
 // Anonymous mapped types
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error TODO fnIn
 type StringMap<V> = { [P in string]: V };
 
 function stringMapAccept(): StringMap<number> {
@@ -15,17 +14,16 @@ function stringMapAccept(): StringMap<number> {
 }
 
 function stringMapReject(): StringMap<number> {
+  // @skjs-expect-error Invalid return type
   return { x: "no" };
 }
 
-// @skjs-expect-error TODO fnIn
 type NumberMap<V> = { [P in number]: V };
 
 function numberMapAccept(): NumberMap<string> {
   return { 0: "a", 1: "b" };
 }
 
-// @skjs-expect-error TODO fnIn
 type SymbolMap<V> = { [P in symbol]: V };
 
 function symbolMapAccept(): SymbolMap<boolean> {
@@ -33,7 +31,6 @@ function symbolMapAccept(): SymbolMap<boolean> {
 }
 
 // Literal-union K becomes named fields
-// @skjs-expect-error TODO fnIn
 type LitAB<V> = { [P in "a" | "b"]: V };
 
 function litABAccept(): LitAB<number> {
@@ -41,15 +38,16 @@ function litABAccept(): LitAB<number> {
 }
 
 function litABMissingB(): LitAB<number> {
+  // @skjs-expect-error Invalid return type
   return { a: 1 };
 }
 
 function litABWrongV(): LitAB<number> {
+  // @skjs-expect-error Invalid return type
   return { a: 1, b: "no" };
 }
 
 // Numeric literal union
-// @skjs-expect-error TODO fnIn
 type Lit01<V> = { [P in 0 | 1]: V };
 
 function lit01Accept(): Lit01<string> {
@@ -57,7 +55,6 @@ function lit01Accept(): Lit01<string> {
 }
 
 // Mixed kinds: string | number | symbol → all three indexes
-// @skjs-expect-error TODO fnIn
 type AllKinds<V> = { [P in string | number | symbol]: V };
 
 function allKindsAccept(): AllKinds<number> {
@@ -65,7 +62,6 @@ function allKindsAccept(): AllKinds<number> {
 }
 
 // Empty union → no fields
-// @skjs-expect-error TODO fnIn
 type EmptyMap<V> = { [P in never]: V };
 
 function emptyMapAccept(): EmptyMap<number> {
@@ -153,7 +149,7 @@ function recordAbstractK<K extends string>(): Record<K, number> {
 }
 
 // Disallowed K kind
-// @skjs-expect-error TODO fnIn
+// @skjs-expect-error Mapped type key shape is not supported yet
 type BadKey<V> = { [P in boolean]: V };
 
 function badKeyUse(): BadKey<number> {
@@ -161,7 +157,7 @@ function badKeyUse(): BadKey<number> {
 }
 
 // V references P → poison alias surfaces a clear unbound-type error
-// @skjs-expect-error TODO fnIn
+// @skjs-expect-error Type SKJS_unsupported_key_type_reference_in_mapped_type_value not found
 type Boxed<K extends string> = { [P in K]: { key: P } };
 
 function boxedUse(): Boxed<"a"> {
