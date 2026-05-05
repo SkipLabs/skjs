@@ -233,7 +233,14 @@ extension class TypeChecker {
             field.value match {
             | None() ->
               if (field.optional is None()) {
-                tcenvl.error(Array[(field.pos, "Uninitialized field")])
+                tcenvl.error(
+                  Array[
+                    (
+                      field.pos,
+                      `Uninitialized field '${field.name.getName()}'`,
+                    ),
+                  ],
+                )
               }
             | Some(_) -> void
             }
