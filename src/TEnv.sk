@@ -1443,81 +1443,83 @@ base class TEnv{
             };
             ok
           };
-          if (isAbstract && !this.inTypeDefValidation) {
-            errPos = this.instantiateAt.default(fd.pos);
-            tcenvb.error(
-              Array[
-                (
-                  errPos,
-                  "Mapped type with abstract key type is not supported yet",
-                ),
-              ],
-            )
-          };
-          if (!isAbstract && !shapeOk) {
-            tcenvb.error(
-              Array[(fd.pos, "Mapped type key shape is not supported yet")],
-            )
-          };
-          if (!isAbstract && shapeOk) {
-            // Bind P to a deliberately-unresolvable inst type. If V references
-            // P, expansion later surfaces a clear "Type … not found" error
-            // naming the poison alias. For Record (V doesn't reference P),
-            // this is a no-op.
-            poisonName = Name(
-              boundName.pos,
-              "SKJS_unsupported_key_type_reference_in_mapped_type_value",
-            );
-            !this.bindings[boundName.value] = TType::inst(
-              poisonName,
-              TArgs(Array[]),
-            );
-            valueType = this.normalize(tcenvb, fieldTy);
-            IndexKeyKinds::create{hasString, hasNumber, hasSymbol} match {
-            | None() -> void
-            | Some(keyKinds) ->
-              indexes.push(
-                (
-                  keyKinds,
-                  TField::create{
-                    pos => boundName.pos,
-                    name => boundName.value,
-                    isOptional => true,
-                    isReadonly => None(),
-                    type => valueType,
-                  },
-                ),
+          if (isAbstract) {
+            if (!this.inTypeDefValidation) {
+              errPos = this.instantiateAt.default(fd.pos);
+              tcenvb.error(
+                Array[
+                  (
+                    errPos,
+                    "Mapped type with abstract key type is not supported yet",
+                  ),
+                ],
               )
-            };
-            for (litVal in stringLiterals) {
-              field = TField::create{
-                pos => boundName.pos,
-                name => litVal,
-                isOptional => false,
-                isReadonly => None(),
-                type => valueType,
+            }
+          } else {
+            if (!shapeOk) {
+              tcenvb.error(
+                Array[(fd.pos, "Mapped type key shape is not supported yet")],
+              )
+            } else {
+              // Bind P to a deliberately-unresolvable inst type. If V references
+              // P, expansion later surfaces a clear "Type … not found" error
+              // naming the poison alias. For Record (V doesn't reference P),
+              // this is a no-op.
+              poisonName = Name(
+                boundName.pos,
+                "SKJS_unsupported_key_type_reference_in_mapped_type_value",
+              );
+              !this.bindings[boundName.value] = TType::inst(
+                poisonName,
+                TArgs(Array[]),
+              );
+              valueType = this.normalize(tcenvb, fieldTy);
+              IndexKeyKinds::create{hasString, hasNumber, hasSymbol} match {
+              | None() -> void
+              | Some(keyKinds) ->
+                indexes.push(
+                  (
+                    keyKinds,
+                    TField::create{
+                      pos => boundName.pos,
+                      name => boundName.value,
+                      isOptional => true,
+                      isReadonly => None(),
+                      type => valueType,
+                    },
+                  ),
+                )
               };
-              fieldsMap![field.name] = field
-            };
-            for (litVal in numberLiterals) {
-              field = TField::create{
-                pos => boundName.pos,
-                name => litVal,
-                isOptional => false,
-                isReadonly => None(),
-                type => valueType,
+              for (litVal in stringLiterals) {
+                field = TField::create{
+                  pos => boundName.pos,
+                  name => litVal,
+                  isOptional => false,
+                  isReadonly => None(),
+                  type => valueType,
+                };
+                fieldsMap![field.name] = field
               };
-              fieldsMap![field.name] = field
-            };
-            for (uniqueId in symbolLiterals) {
-              field = TField::create{
-                pos => boundName.pos,
-                name => uniqueId,
-                isOptional => false,
-                isReadonly => None(),
-                type => valueType,
+              for (litVal in numberLiterals) {
+                field = TField::create{
+                  pos => boundName.pos,
+                  name => litVal,
+                  isOptional => false,
+                  isReadonly => None(),
+                  type => valueType,
+                };
+                fieldsMap![field.name] = field
               };
-              symbolFields![field.name] = field
+              for (uniqueId in symbolLiterals) {
+                field = TField::create{
+                  pos => boundName.pos,
+                  name => uniqueId,
+                  isOptional => false,
+                  isReadonly => None(),
+                  type => valueType,
+                };
+                symbolFields![field.name] = field
+              }
             }
           }
         | simpleFieldName @ SimpleFieldName _ ->
