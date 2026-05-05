@@ -20,11 +20,45 @@ fun gitCommitHash(): String {
   }
 }
 
+// Capture the trimmed stdout of a tool, or "unknown" if the call fails.
+// Used for build-provenance fields that should never block a build.
+fun toolVersion(argv: Array<String>): String {
+  System.subprocess(argv) match {
+  | Success(p) if (p.success()) ->
+    out = p.stdout.trim();
+    if (!out.isEmpty()) out else "unknown"
+  | _ -> "unknown"
+  }
+}
+
+fun skipRuntimeGitHash(): String {
+  manifest_dir = Environ.var("SKARGO_MANIFEST_DIR");
+  skip_dir = `${manifest_dir}/../skip`;
+  toolVersion(Array["git", "-C", skip_dir, "rev-parse", "HEAD"])
+}
+
 fun main(): void {
   print_string(`skargo:skc-env=GIT_COMMIT_HASH=${gitCommitHash()}`);
 
   pic = (Environ.var("RELOCATION_MODEL") == "pic");
   profile = Environ.var("PROFILE");
+
+  // Build-provenance metadata surfaced by `skjs --version --verbose`.
+  print_string(`skargo:skc-env=SKJS_BUILD_PROFILE=${profile}`);
+  print_string(
+    `skargo:skc-env=SKJS_BUILD_HOST=${Environ.varOpt("HOST").default(
+      "unknown",
+    )}`,
+  );
+  print_string(
+    `skargo:skc-env=SKC_VERSION=${toolVersion(Array["skc", "--version"])}`,
+  );
+  print_string(
+    `skargo:skc-env=SKARGO_VERSION=${toolVersion(
+      Array["skargo", "--version"],
+    )}`,
+  );
+  print_string(`skargo:skc-env=SKIP_RUNTIME_GIT_HASH=${skipRuntimeGitHash()}`);
 
   // Native C++ source files
   native_cpp_srcs = Array["runtime.cpp"];
