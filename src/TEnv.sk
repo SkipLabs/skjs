@@ -1419,12 +1419,11 @@ base class TEnv{
           | None() ->
             false // K expanded to Top (e.g. any/unknown) — unsupported
           | Some((insts, clauses)) ->
-            if (!insts.isEmpty()) !isAbstract = true;
-            ok = true;
+            ok = insts.isEmpty();
             for (clause in clauses) {
               if (!clause.vars.isEmpty()) !isAbstract = true;
               clause.stypes match {
-              | None() -> !isAbstract = true
+              | None() -> !ok = false
               | Some(stypes) ->
                 for (stype in stypes) {
                   stype match {
