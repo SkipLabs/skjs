@@ -1402,8 +1402,7 @@ base class TEnv{
           isAbstract = false;
           shapeOk = keyTType.expandToVectors(subst, this, None()) match {
           | None() ->
-            !isAbstract = true; // K expanded to Top
-            true
+            false // K expanded to Top (e.g. any/unknown) — unsupported
           | Some((insts, clauses)) ->
             if (!insts.isEmpty()) !isAbstract = true;
             ok = true;
