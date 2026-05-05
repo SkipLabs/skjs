@@ -78,6 +78,19 @@ base class TEnv{
   // during normal type operations. Set to true only during TInter expansion
   // in getSTypes (TType.sk) where full expansion is safe and needed.
   expandInter: Bool = false,
+
+  // True while normalizing a generic type-alias body for definition-time
+  // validation (TypeCheckDef.typeDef). Mapped-type expansion treats abstract
+  // K silently in this mode so that aliases like
+  //   type Record<K extends ..., V> = { [P in K]: V }
+  // pass validation; outside this mode an abstract K is reported as
+  // "not supported yet".
+  inTypeDefValidation: Bool = false,
+
+  // The use-site position when normalizing an instantiated type-alias body.
+  // FNIn uses this so that errors in stub-defined mapped types (like Record)
+  // surface at the user's call site rather than in the stub.
+  instantiateAt: ?PosRange = None(),
 } {
   // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages
   fun ppType(tcenv: mutable TCEnv, ty: TType): String {
@@ -171,6 +184,7 @@ base class TEnv{
 
     tdef match {
     | ta @ TypeDef _ ->
+      !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(tcenvb, name, targs.targs)
     | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
@@ -1373,7 +1387,131 @@ base class TEnv{
         | Some(ty) -> ty
         };
         fd.name match {
-        | FNIn _ -> error(Array[(fd.pos, "TODO fnIn")])
+        | FNIn(boundName, kType, asOpt, op) ->
+          if (asOpt.isSome()) {
+            tcenvb.error(
+              Array[(fd.pos, "Mapped type 'as' clause is not supported yet")],
+            )
+          };
+          isFieldOptional = op match {
+          | None() -> false
+          | Some(FNQuestion _)
+          | Some(FNAdd _) ->
+            true
+          | Some(FNRemove _) -> false
+          };
+          keyTType = this.normalize(tcenvb, kType);
+          subst = Subst::mcreate(tcenvb);
+          hasString = false;
+          hasNumber = false;
+          hasSymbol = false;
+          namedLiterals = mutable Vector[];
+          symbolLiterals = mutable Vector[];
+          // K resolves either to a concrete supported shape, an abstract type
+          // parameter (TParam in clause.vars / TVar in insts), or an unsupported
+          // shape (e.g. boolean). Abstract K is silently skipped only during
+          // type-def validation so that generic mapped-type aliases like
+          //   type Record<K extends string | number | symbol, V> = { [P in K]: V }
+          // pass validation; in any other context (e.g. instantiation with an
+          // outer type parameter) an abstract K is reported. Unsupported
+          // shapes always error.
+          isAbstract = false;
+          shapeOk = keyTType.expandToVectors(subst, this, None()) match {
+          | None() ->
+            false // K expanded to Top (e.g. any/unknown) — unsupported
+          | Some((insts, clauses)) ->
+            ok = insts.isEmpty();
+            for (clause in clauses) {
+              if (!clause.vars.isEmpty()) !isAbstract = true;
+              clause.stypes match {
+              | None() -> !ok = false
+              | Some(stypes) ->
+                for (stype in stypes) {
+                  stype match {
+                  | TPrimValue(TString(), None(), _) -> !hasString = true
+                  | TPrimValue(TNum(), None(), _) -> !hasNumber = true
+                  | TPrimValue(TSymbol(), None(), _) -> !hasSymbol = true
+                  | TPrimValue(TString(), Some(lits), _)
+                  | TPrimValue(TNum(), Some(lits), _) ->
+                    for (lit in lits.values()) namedLiterals.push(lit.val)
+                  | TPrimValue(TSymbol(), Some(lits), _) ->
+                    for (lit in lits.values()) symbolLiterals.push(lit.val)
+                  | _ -> !ok = false
+                  }
+                }
+              }
+            };
+            ok
+          };
+          if (isAbstract) {
+            if (!this.inTypeDefValidation) {
+              errPos = this.instantiateAt.default(fd.pos);
+              tcenvb.error(
+                Array[
+                  (
+                    errPos,
+                    "Mapped type with abstract key type is not supported yet",
+                  ),
+                ],
+              )
+            }
+          } else {
+            if (!shapeOk) {
+              tcenvb.error(
+                Array[(fd.pos, "Mapped type key shape is not supported yet")],
+              )
+            } else {
+              // Bind P to a deliberately-unresolvable inst type. If V references
+              // P, expansion later surfaces a clear "Type … not found" error
+              // naming the poison alias. For Record (V doesn't reference P),
+              // this is a no-op.
+              poisonName = Name(
+                boundName.pos,
+                "SKJS_unsupported_key_type_reference_in_mapped_type_value",
+              );
+              !this.bindings[boundName.value] = TType::inst(
+                poisonName,
+                TArgs(Array[]),
+              );
+              valueType = this.normalize(tcenvb, fieldTy);
+              IndexKeyKinds::create{hasString, hasNumber, hasSymbol} match {
+              | None() -> void
+              | Some(keyKinds) ->
+                indexes.push(
+                  (
+                    keyKinds,
+                    TField::create{
+                      pos => boundName.pos,
+                      name => boundName.value,
+                      isOptional => true,
+                      isReadonly => None(),
+                      type => valueType,
+                    },
+                  ),
+                )
+              };
+              for (litVal in namedLiterals) {
+                field = TField::create{
+                  pos => boundName.pos,
+                  name => litVal,
+                  isOptional => isFieldOptional,
+                  isReadonly => None(),
+                  type => valueType,
+                };
+                fieldsMap![field.name] = field
+              };
+              for (uniqueId in symbolLiterals) {
+                field = TField::create{
+                  pos => boundName.pos,
+                  name => uniqueId,
+                  isOptional => isFieldOptional,
+                  isReadonly => None(),
+                  type => valueType,
+                };
+                symbolFields![field.name] = field
+              }
+            }
+          }
         | simpleFieldName @ SimpleFieldName _ ->
           normalizedType = this.normalize(tcenvb, fieldTy, isTopLevelConst);
           simpleFieldName match {
