@@ -495,6 +495,8 @@ declare type StringRecord<V> = {
   [index: string]: V;
 };
 
+declare type Record<K extends string | number | symbol, V> = { [P in K]: V };
+
 type NonNullable<T> = T & {};
 
 /* SKJS hacks */
