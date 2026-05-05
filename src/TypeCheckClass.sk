@@ -252,7 +252,11 @@ extension class TypeChecker {
       );
     };
     for (modifier in fd.modifiers.modifiers) {
-      subst.error(Array[(modifier.pos, "Constructors cannot have modifiers")]);
+      subst.error(
+        Array[
+          (modifier.pos, `Constructors cannot have modifier '${modifier}'`),
+        ],
+      );
     };
     fdPos = fd.name.getPos();
     cgNode = CGNode::create(
