@@ -1403,8 +1403,7 @@ base class TEnv{
           hasString = false;
           hasNumber = false;
           hasSymbol = false;
-          stringLiterals = mutable Vector[];
-          numberLiterals = mutable Vector[];
+          namedLiterals = mutable Vector[];
           symbolLiterals = mutable Vector[];
           // K resolves either to a concrete supported shape, an abstract type
           // parameter (TParam in clause.vars / TVar in insts), or an unsupported
@@ -1430,10 +1429,9 @@ base class TEnv{
                   | TPrimValue(TString(), None(), _) -> !hasString = true
                   | TPrimValue(TNum(), None(), _) -> !hasNumber = true
                   | TPrimValue(TSymbol(), None(), _) -> !hasSymbol = true
-                  | TPrimValue(TString(), Some(lits), _) ->
-                    for (lit in lits.values()) stringLiterals.push(lit.val)
+                  | TPrimValue(TString(), Some(lits), _)
                   | TPrimValue(TNum(), Some(lits), _) ->
-                    for (lit in lits.values()) numberLiterals.push(lit.val)
+                    for (lit in lits.values()) namedLiterals.push(lit.val)
                   | TPrimValue(TSymbol(), Some(lits), _) ->
                     for (lit in lits.values()) symbolLiterals.push(lit.val)
                   | _ -> !ok = false
@@ -1490,17 +1488,7 @@ base class TEnv{
                   ),
                 )
               };
-              for (litVal in stringLiterals) {
-                field = TField::create{
-                  pos => boundName.pos,
-                  name => litVal,
-                  isOptional => false,
-                  isReadonly => None(),
-                  type => valueType,
-                };
-                fieldsMap![field.name] = field
-              };
-              for (litVal in numberLiterals) {
+              for (litVal in namedLiterals) {
                 field = TField::create{
                   pos => boundName.pos,
                   name => litVal,
