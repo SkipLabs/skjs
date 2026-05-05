@@ -150,7 +150,12 @@ extension class TypeChecker {
       };
       for (modifier in param.modifiers.modifiers) {
         tcenv.error(
-          Array[(modifier.pos, `Forbidden modifier for a function parameter`)],
+          Array[
+            (
+              modifier.pos,
+              `Forbidden modifier '${modifier}' for a function parameter`,
+            ),
+          ],
         )
       };
       paramType
