@@ -922,7 +922,7 @@ extension class Parser {
             modifiers,
             /* isRest */ None(),
             Pattern(pos, PVar(pName)),
-            /* optional */ None(),
+            optional,
             type,
             default,
           ) ->
@@ -943,7 +943,7 @@ extension class Parser {
                 ClassFieldValue{
                   pos,
                   name => FNNormal(pName),
-                  optional => None(),
+                  optional,
                   type,
                   value => default,
                   modifiers,
