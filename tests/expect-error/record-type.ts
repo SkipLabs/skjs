@@ -135,10 +135,7 @@ function stringRecordToRecord(x: StringRecord<number>): Record<string, number> {
 ///////////////////////////////////////////////////////////////////////////////
 
 // K is itself a type parameter (abstract after substitution).
-// FIXME: TypeScript rejects this since Record<K, number> for K = "a" requires
-// field a; SKJS silently produces an empty TFields when K is abstract so the
-// `return {}` passes. Acceptable for now — proper handling needs a deferred
-// mapped-type representation.
+// @skjs-expect-error Mapped type with abstract key type is not supported yet
 function recordAbstractK<K extends string>(): Record<K, number> {
   return {};
 }

@@ -78,6 +78,19 @@ base class TEnv{
   // during normal type operations. Set to true only during TInter expansion
   // in getSTypes (TType.sk) where full expansion is safe and needed.
   expandInter: Bool = false,
+
+  // True while normalizing a generic type-alias body for definition-time
+  // validation (TypeCheckDef.typeDef). Mapped-type expansion treats abstract
+  // K silently in this mode so that aliases like
+  //   type Record<K extends ..., V> = { [P in K]: V }
+  // pass validation; outside this mode an abstract K is reported as
+  // "not supported yet".
+  inTypeDefValidation: Bool = false,
+
+  // The use-site position when normalizing an instantiated type-alias body.
+  // FNIn uses this so that errors in stub-defined mapped types (like Record)
+  // surface at the user's call site rather than in the stub.
+  instantiateAt: ?PosRange = None(),
 } {
   // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages
   fun ppType(tcenv: mutable TCEnv, ty: TType): String {
@@ -171,6 +184,7 @@ base class TEnv{
 
     tdef match {
     | ta @ TypeDef _ ->
+      !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(tcenvb, name, targs.targs)
     | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
@@ -1394,11 +1408,12 @@ base class TEnv{
           symbolLiterals = mutable Vector[];
           // K resolves either to a concrete supported shape, an abstract type
           // parameter (TParam in clause.vars / TVar in insts), or an unsupported
-          // shape (e.g. boolean). Abstract K is silently skipped (no fields
-          // emitted) so that generic mapped-type aliases like
+          // shape (e.g. boolean). Abstract K is silently skipped only during
+          // type-def validation so that generic mapped-type aliases like
           //   type Record<K extends string | number | symbol, V> = { [P in K]: V }
-          // can pass type-def validation while still being correctly expanded
-          // when instantiated with a concrete K. Unsupported shapes are reported.
+          // pass validation; in any other context (e.g. instantiation with an
+          // outer type parameter) an abstract K is reported. Unsupported
+          // shapes always error.
           isAbstract = false;
           shapeOk = keyTType.expandToVectors(subst, this, None()) match {
           | None() ->
@@ -1428,6 +1443,17 @@ base class TEnv{
               }
             };
             ok
+          };
+          if (isAbstract && !this.inTypeDefValidation) {
+            errPos = this.instantiateAt.default(fd.pos);
+            tcenvb.error(
+              Array[
+                (
+                  errPos,
+                  "Mapped type with abstract key type is not supported yet",
+                ),
+              ],
+            )
           };
           if (!isAbstract && !shapeOk) {
             tcenvb.error(
