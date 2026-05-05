@@ -410,7 +410,7 @@ class TType private {
     this.expandToClauses(subst, tenv, variance).getSTypes(subst, tenv)
   }
 
-  private fun expandToVectors(
+  fun expandToVectors(
     subst: mutable Subst,
     tenv: TEnv,
     expandTVars: ?Variance,
