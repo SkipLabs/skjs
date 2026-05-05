@@ -161,7 +161,14 @@ extension class TypeChecker {
         } else {
           typeOpt = field.type match {
           | None() ->
-            tcenvl.error(Array[(field.pos, "Type annotation expected")]);
+            tcenvl.error(
+              Array[
+                (
+                  field.pos,
+                  `Type annotation expected for '${field.name.getName()}'`,
+                ),
+              ],
+            );
             None()
           | Some(ty) -> Some(this.normalize(subst, ty))
           };

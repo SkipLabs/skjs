@@ -535,7 +535,15 @@ base class TEnv{
           )
         };
         fieldTy = field.type match {
-        | None() -> error(Array[(field.pos, "Type annotation expected")])
+        | None() ->
+          error(
+            Array[
+              (
+                field.pos,
+                `Type annotation expected for '${field.name.getName()}'`,
+              ),
+            ],
+          )
         | Some(ty) -> ty
         };
         field.name match {
@@ -1352,7 +1360,12 @@ base class TEnv{
           }
         );
         fieldTy = fd.type match {
-        | None() -> error(Array[(fd.pos, "Type annotation expected")])
+        | None() ->
+          error(
+            Array[
+              (fd.pos, `Type annotation expected for '${fd.name.getName()}'`),
+            ],
+          )
         | Some(ty) -> ty
         };
         fd.name match {
