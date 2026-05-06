@@ -145,6 +145,13 @@ mutable class TypePp{
       )
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
     | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
+    | TPrimValue(TSymbol(), Some(arr), _) ->
+      rendered = arr
+        .values()
+        .map(lit -> TypePp::displayUniqueSymbolId(lit.val))
+        .collect(Array)
+        .join(" | ");
+      this.out(level, margin, rendered)
     | TPrimValue(_, Some(arr), _) ->
       this.out(level, margin, arr.toStringList(true))
 
@@ -367,7 +374,11 @@ mutable class TypePp{
       }
     };
     for (i => field in symbolFieldArray) {
-      this.out(level, margin, `[${field.name.value}]`);
+      this.out(
+        level,
+        margin,
+        `[${TypePp::displayUniqueSymbolId(field.name.value)}]`,
+      );
       if (field.isOptional) {
         this.out(level, margin, "?")
       };
@@ -467,6 +478,24 @@ mutable class TypePp{
       chars.push(c)
     };
     String::fromChars(chars.toArray())
+  }
+
+  // Decodes a unique-symbol identifier into a user-facing display string.
+  // Encoded form: unique_symbol:<fileNameHash>:<symbolHash>:<displayName>
+  // When the displayName segment is non-empty, renders as `typeof <name>`;
+  // otherwise (or when the prefix doesn't match) falls back to the raw id.
+  static fun displayUniqueSymbolId(val: String): String {
+    prefix = "unique_symbol:";
+    if (val.startsWith(prefix)) {
+      parts = val.stripPrefix(prefix).split(":");
+      if (parts.size() == 3 && !parts[2].isEmpty()) {
+        `typeof ${parts[2]}`
+      } else {
+        val
+      }
+    } else {
+      val
+    }
   }
 
   mutable fun clause(level: Int, margin: Margin, clause: Clause): void {

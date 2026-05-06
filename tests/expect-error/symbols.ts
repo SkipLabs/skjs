@@ -114,9 +114,9 @@ const uniqueB: unique symbol = Symbol("b");
 // unique symbol A is not assignable to unique symbol B
 function testDistinctTypes(): void {
   // @skjs-expect-error Invalid annotation
-  // @skjs-expect-error-line2 Type 'unique_symbol_828896147671687930_-7046028996487493755_8'
-  // @skjs-expect-error-line3 is not compatible with type 'unique_symbol_828896147671687930_-7046028996487493756_8'
-  // @skjs-expect-error-line4 Value 'unique_symbol_828896147671687930_-7046028996487493755_8' is missing
+  // @skjs-expect-error-line2 Type typeof uniqueB
+  // @skjs-expect-error-line3 is not compatible with type typeof uniqueA
+  // @skjs-expect-error-line4 Value typeof uniqueB is missing
   const b: typeof uniqueA = uniqueB; // Different unique symbols are incompatible
 }
 
@@ -137,7 +137,7 @@ function testCovariance(us: unique symbol): symbol {
 function testContravariance(s: symbol): void {
   // @skjs-expect-error Invalid annotation
   // @skjs-expect-error-line2 Full type symbol
-  // @skjs-expect-error-line3 is not compatible with specific type 'unique_symbol_828896147671687930_-7046028996487493756_8'
+  // @skjs-expect-error-line3 is not compatible with specific type typeof uniqueA
   const us: typeof uniqueA = s; // symbol → unique symbol should fail
 }
 
@@ -383,6 +383,6 @@ function testSpreadInArrayLiteral(): void {
 function testClassSymContravariance(s: symbol): void {
   // @skjs-expect-error Invalid annotation
   // @skjs-expect-error-line2 Full type symbol
-  // @skjs-expect-error-line3 is not compatible with specific type 'unique_symbol_828896147671687930_-7046029205848101928_90'
+  // @skjs-expect-error-line3 is not compatible with specific type typeof MyClass.classSym
   const c: typeof MyClass.classSym = s;
 }

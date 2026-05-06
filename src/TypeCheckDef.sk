@@ -118,16 +118,22 @@ extension class TypeChecker {
     }
   }
 
-  // Validate a top-level const declaration (also reusable for class static readonly)
+  // Validate a top-level const declaration (also reusable for class static readonly).
+  // bindingName is the const/field name; when present it is encoded into any
+  // unique-symbol identifier produced from the annotation, so the type can be
+  // pretty-printed as `typeof <name>` rather than as a hash-based internal id.
   private fun validateToplevelConst(
     tcenvl: mutable TCEnvLight,
     pos: PosRange,
     typeAnnotation: ?Type,
     value: ?Expr,
+    bindingName: ?String = None(),
   ): void {
     subst = Subst::mcreate(tcenvl);
 
-    typeOpt = typeAnnotation.map(x -> this.normalize(subst, x, true));
+    typeOpt = typeAnnotation.map(x ->
+      this.normalize(subst, x, true, bindingName)
+    );
 
     value match {
     | None() -> tcenvl.error(Array[(pos, "Missing definition")])
@@ -191,8 +197,8 @@ extension class TypeChecker {
       | VDKVar() -> tcenvl.notSupported(varDef.pat.pos, "toplevel var")
       };
       // Check pattern is not destructuring first
-      varDef.pat.value match {
-      | PVar _ -> void
+      bindingName = varDef.pat.value match {
+      | PVar(name) -> Some(name.value)
       | PArray _
       | PObject _ ->
         error(
@@ -211,6 +217,7 @@ extension class TypeChecker {
         varDef.pat.pos,
         varDef.type,
         varDef.value,
+        bindingName,
       )
     }
   }
