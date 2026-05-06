@@ -138,3 +138,25 @@ function callGeneric(c: StructLeak): number {
   // @skjs-expect-error Invalid call
   return genericLaunder(c);
 }
+
+class HasPrivateForSpread {
+  private spx: number = 1;
+  pub: number = 2;
+}
+
+function spreadFromOutside(c: HasPrivateForSpread): {
+  spx: number;
+  pub: number;
+} {
+  // @skjs-expect-error Cannot spread an object with non-public field 'spx'
+  return { ...c };
+}
+
+class SpreadFromInsideTest {
+  private spx: number = 1;
+
+  copy(): { spx: number } {
+    // @skjs-expect-error Cannot spread an object with non-public field 'spx'
+    return { ...this };
+  }
+}
