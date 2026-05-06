@@ -520,14 +520,14 @@ base class TEnv{
         if (!filter(field)) continue;
         fieldIsStatic = false;
         fieldIsReadonly: ?PosRange = None();
+        fieldAccess: FieldAccess = FAPublic();
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic _ -> !fieldIsStatic = true
           | ModReadonly(roPos) -> !fieldIsReadonly = Some(roPos)
           | ModPublic _ -> void /* public is the default */
-          | ModPrivate _
-          | ModProtected _ ->
-            /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
+          | ModPrivate _ -> !fieldAccess = FAPrivate(cls.name)
+          | ModProtected _ -> void /* protected is silently treated as public */
           | mod ->
             tcenvb.error(
               Array[
@@ -570,7 +570,9 @@ base class TEnv{
             isOptional => field.optional is Some _,
             isReadonly => fieldIsReadonly,
             type,
+            access => fieldAccess,
           };
+
           acc![f.name] = f
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
@@ -585,6 +587,7 @@ base class TEnv{
                 isOptional => true,
                 isReadonly => fieldIsReadonly,
                 type => valueType,
+                access => FAPublic(),
               },
             ),
           )
@@ -611,6 +614,13 @@ base class TEnv{
         cgNode = CGNode::create(Method(fd.name, className, metIsStatic));
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
+        metAccess: FieldAccess = FAPublic();
+        for (modifier in fd.modifiers.modifiers) {
+          modifier match {
+          | ModPrivate _ -> !metAccess = FAPrivate(cls.name)
+          | _ -> void
+          }
+        };
         fd.name match {
         | FNNormal(name) -> FKName(name, TString())
         | FNComputed(keyExpr) ->
@@ -623,7 +633,9 @@ base class TEnv{
             isOptional => false,
             isReadonly => Some(exprPos),
             type => metType,
+            access => metAccess,
           };
+
           symbolFields![field.name] = field
         | FKName(name, _) ->
           field = TField::create{
@@ -632,7 +644,9 @@ base class TEnv{
             isOptional => false,
             isReadonly => Some(name.pos),
             type => metType,
+            access => metAccess,
           };
+
           acc![field.name] = field
         }
       }
@@ -1486,6 +1500,7 @@ base class TEnv{
                       isOptional => true,
                       isReadonly => None(),
                       type => valueType,
+                      access => FAPublic(),
                     },
                   ),
                 )
@@ -1497,6 +1512,7 @@ base class TEnv{
                   isOptional => isFieldOptional,
                   isReadonly => None(),
                   type => valueType,
+                  access => FAPublic(),
                 };
                 fieldsMap![field.name] = field
               };
@@ -1507,6 +1523,7 @@ base class TEnv{
                   isOptional => isFieldOptional,
                   isReadonly => None(),
                   type => valueType,
+                  access => FAPublic(),
                 };
                 symbolFields![field.name] = field
               }
@@ -1526,6 +1543,7 @@ base class TEnv{
               isOptional => fd.optional is Some _,
               isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
+              access => FAPublic(),
             };
             symbolFields![field.name] = field
           | FKName(name, _) ->
@@ -1535,6 +1553,7 @@ base class TEnv{
               isOptional => fd.optional is Some _,
               isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
+              access => FAPublic(),
             };
             fieldsMap![field.name] = field
           }
@@ -1551,6 +1570,7 @@ base class TEnv{
                 isOptional => true,
                 isReadonly => readonly_.map(r -> r.pos),
                 type => valueType,
+                access => FAPublic(),
               },
             ),
           )
@@ -1575,6 +1595,7 @@ base class TEnv{
               isOptional => false,
               isReadonly => Some(exprPos),
               type => decl,
+              access => FAPublic(),
             };
             symbolFields![field.name] = field
           | FKName(name, _) ->
@@ -1584,6 +1605,7 @@ base class TEnv{
               isOptional => false,
               isReadonly => Some(name.pos),
               type => decl,
+              access => FAPublic(),
             };
             fieldsMap![field.name] = field
           }

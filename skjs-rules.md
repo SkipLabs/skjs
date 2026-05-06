@@ -28,11 +28,6 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Requirement**: `constructor(a: T, b: U)` in parent requires same in child
 - **Workaround**: Design inheritance hierarchies with consistent constructor patterns
 
-### 4. Private Field Modifiers
-- **Rule**: Private field modifiers are not fully implemented
-- **Error**: "TODO: field modifier"
-- **Workaround**: Avoid using private fields for now
-
 #### 4b. Abstract Classes Not Supported
 - **Rule**: Abstract classes and abstract method modifiers are not implemented
 - **Error**: "TODO: support for method modifiers (encountered abstract)"

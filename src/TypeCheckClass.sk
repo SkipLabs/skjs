@@ -2,6 +2,7 @@ module SKJS;
 
 extension class TypeChecker {
   fun class_(tcenvl: mutable TCEnvLight, c: Class): void {
+    !this.enclosingClass = Some(c.name);
     classFields = this.getClassFields(tcenvl.context, c);
     constructor: ?ClassFieldMethod = None();
     for (fieldType in classFields) {
@@ -123,10 +124,10 @@ extension class TypeChecker {
           modifier match {
           | ModStatic _ -> !isStatic = true
           | ModReadonly _ -> !isReadonly = true
-          | ModPublic _ -> void /* public is the default */
+          | ModPublic _
           | ModPrivate _
           | ModProtected _ ->
-            /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
+            void /* private is recorded in TField in addFields; protected is treated as public */
           | mod ->
             tcenvl.error(
               Array[

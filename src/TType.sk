@@ -690,6 +690,33 @@ class TObject private (
     )
   }
 
+  // Looks up a symbol-keyed field across all branches, merging each
+  // branch's TField via TField::union (so get/set/isOptional/access all
+  // combine consistently). Returns None if any branch lacks the field,
+  // matching maybeGetSymbolType's all-branches semantics. Used when the
+  // caller needs the TField (e.g. to consult access) rather than just
+  // the resolved type.
+  fun maybeGetSymbol(
+    subst: mutable Subst,
+    tenv: TEnv,
+    uniqueId: String,
+  ): ?TField {
+    result: ?TField = None();
+    for (fields in this.branches) {
+      fields.maybeGetSymbol(uniqueId) match {
+      | None() -> return None()
+      | Some(fd) ->
+        !result = Some(
+          result match {
+          | None() -> fd
+          | Some(prev) -> TField::union(subst, tenv, prev, fd)
+          },
+        )
+      }
+    };
+    result
+  }
+
   fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
     result: ?(Bool, TFuns) = None();
     for (fields in this.branches) {
@@ -1030,12 +1057,67 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
   }
 }
 
+// Accessibility of a class field or method.
+// Non-class object types (and synthetic indexes) keep FAPublic.
+// FAPrivate carries the declaring class's declaration `Name` (whose pos
+// also identifies the declaring file), used at access sites to enforce
+// visibility. `protected` is silently accepted at parse time but lowered
+// to FAPublic — SKJS does not enforce it.
+// FANever is the result of unioning/intersecting two FAPrivate fields with
+// different owners — no enclosing class can satisfy both, so all access is
+// rejected.
+base class FieldAccess uses XXHashable, Orderable {
+  children =
+  | FAPublic()
+  | FAPrivate(owner: Name)
+  | FANever()
+
+  // Most-restrictive combination: access succeeds on the result iff
+  // access succeeds on both inputs. Used when fields are unioned or
+  // intersected across object branches.
+  fun combine(other: FieldAccess): FieldAccess {
+    (this, other) match {
+    | (FAPublic(), x)
+    | (x, FAPublic()) ->
+      x
+    | (
+      FAPrivate(o1),
+      FAPrivate(o2),
+    ) if (o1.value == o2.value && o1.pos.fileName == o2.pos.fileName) ->
+      FAPrivate(o1)
+    | (FAPrivate _, FAPrivate _)
+    | (FANever(), _)
+    | (_, FANever()) ->
+      FANever()
+    }
+  }
+
+  // Returns true when a field whose declared access is `this` can be
+  // viewed through a target field whose declared access is `target`.
+  // Access kinds must match exactly — a private field is structurally
+  // distinct from a public one with the same name (TypeScript's nominal
+  // treatment of private). FANever is trivially compatible — nothing
+  // can access the target anyway.
+  fun isCompatibleWith(target: FieldAccess): Bool {
+    target match {
+    | FANever() -> true
+    | FAPrivate(t) ->
+      this match {
+      | FAPrivate(s) -> s.value == t.value && s.pos.fileName == t.pos.fileName
+      | _ -> false
+      }
+    | FAPublic() -> this is FAPublic _
+    }
+  }
+}
+
 class TField private {
   pos: PosRange,
   name: FieldNameString,
   isOptional: Bool,
   get: TType,
   set: TType,
+  access: FieldAccess,
 } uses XXHashable, Orderable, Projectable<FieldNameString> {
   static fun create{
     pos: PosRange,
@@ -1043,6 +1125,7 @@ class TField private {
     isOptional: Bool,
     isReadonly: ?PosRange,
     type: TType,
+    access: FieldAccess,
   }: TField {
     setType = isReadonly match {
     | Some(roPos) -> TType::bottom(roPos)
@@ -1054,6 +1137,7 @@ class TField private {
       isOptional,
       get => type,
       set => setType,
+      access,
     }
   }
 
@@ -1073,6 +1157,7 @@ class TField private {
       isOptional => true,
       get,
       set,
+      access => FAPublic(),
     }
   }
 
@@ -1427,7 +1512,7 @@ class TFields protected {
     this.symbolFields.maybeGet(FieldNameString(uniqueId))
   }
 
-  private static fun resolveFieldType(
+  static fun resolveFieldType(
     subst: mutable Subst,
     tenv: TEnv,
     fd: TField,

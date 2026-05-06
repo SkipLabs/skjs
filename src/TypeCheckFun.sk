@@ -172,13 +172,17 @@ extension class TypeChecker {
       modifier match {
       | ModAsync(pos) -> !fd.isAsync = Some(pos)
       | ModStatic(_) -> !thisTypeOpt = None()
-      | unsupported ->
-        // TODO: protected, private, public, abstract, readonly
+      | ModPublic _
+      | ModPrivate _
+      | ModProtected _ ->
+        void /* private is recorded on the method's TField; protected is treated as public */
+      | ModAbstract _
+      | ModReadonly _ ->
         subst.error(
           Array[
             (
               modifier.pos,
-              `TODO: support for method modifiers (encountered ${unsupported})`,
+              `TODO: support for method modifiers (encountered ${modifier})`,
             ),
           ],
         )

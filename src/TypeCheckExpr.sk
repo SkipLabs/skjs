@@ -246,6 +246,7 @@ extension class TypeChecker {
                   ],
                 )
               | Some(tfield) ->
+                this.checkFieldAccess(tcenv, tfield, fieldName.pos);
                 undefined = (pos) ->
                   TType::single(TPrimUnit(TUndefined(), pos));
                 union = (t1, t2) -> TType::union(tcenv.subst, this, t1, t2);
@@ -364,6 +365,86 @@ extension class TypeChecker {
     this.get(tcenv, pos, objType, idx, accessKind)
   }
 
+  // Returns the access modifier declared on the enclosing class for the
+  // named field, or FAPublic if there is no enclosing class or the class
+  // does not declare a field by that name. Used when growing `this`
+  // inside a class so synthesized fields inherit the class's access.
+  fun lookupEnclosingFieldAccess(
+    tcenv: mutable TCEnv,
+    fieldName: String,
+  ): FieldAccess {
+    this.enclosingClass match {
+    | None() -> FAPublic()
+    | Some(className) ->
+      cls = this.getClass(tcenv, className);
+      classFields = this.getClassFields(tcenv.context, cls);
+      result: FieldAccess = FAPublic();
+      for (classField in classFields) {
+        classField match {
+        | ClassFieldValue{
+          name => FNNormal(Name(_, n)),
+          modifiers,
+        } if (n == fieldName) ->
+          for (modifier in modifiers.modifiers) {
+            modifier match {
+            | ModPrivate _ -> !result = FAPrivate(className)
+            | _ -> void
+            }
+          };
+          break void
+        | _ -> void
+        }
+      };
+      result
+    }
+  }
+
+  // Reports an error if `field` is private and the current enclosing
+  // class is not the field's owner. Public fields are always allowed.
+  fun checkFieldAccess(
+    tcenv: mutable TCEnv,
+    field: TField,
+    accessPos: PosRange,
+  ): void {
+    field.access match {
+    | FAPublic() -> void
+    | FAPrivate(owner) ->
+      this.enclosingClass match {
+      | Some(
+        enc,
+      ) if (
+        enc.value == owner.value &&
+        enc.pos.fileName == owner.pos.fileName
+      ) ->
+        void
+      | _ ->
+        tcenv.error(
+          Array[
+            (
+              accessPos,
+              `Property '${
+                field.name
+              }' is private and only accessible within class '${owner}'`,
+            ),
+            (field.pos, "Declared here"),
+          ],
+        )
+      }
+    | FANever() ->
+      tcenv.error(
+        Array[
+          (
+            accessPos,
+            `Property '${
+              field.name
+            }' has incompatible private declarations across the union and is not accessible`,
+          ),
+          (field.pos, "Declared here"),
+        ],
+      )
+    }
+  }
+
   /* Typechecks expression  obj[idx]
              or expression  obj.idx
              or expression  obj?.idx
@@ -449,14 +530,18 @@ extension class TypeChecker {
           | Some(id) -> id
           | None() -> error(Array[(idx.pos, "Expected a unique symbol")])
           };
-          obj.maybeGetSymbolType(
-            tcenv.subst,
-            this,
-            uniqueId,
-            pos,
-            isLValue,
-          ) match {
-          | Some(ty) -> addResultCase(ty)
+          obj.maybeGetSymbol(tcenv.subst, this, uniqueId) match {
+          | Some(fd) ->
+            this.checkFieldAccess(tcenv, fd, idx.pos);
+            addResultCase(
+              TFields::resolveFieldType(
+                tcenv.subst,
+                this,
+                fd,
+                idx.pos,
+                isLValue,
+              ),
+            )
           | None() -> error(Array[(pos, "Symbol property not found on object")])
           }
         } else {
@@ -466,15 +551,18 @@ extension class TypeChecker {
           | Some(lits) ->
             lits
               .filterLiterals(fieldLit ->
-                fields.maybeGetType(
-                  tcenv.subst,
-                  this,
-                  fieldLit.val,
-                  fieldLit.pos,
-                  isLValue,
-                ) match {
-                | Some(ty) ->
-                  addResultCase(ty);
+                fields.maybeGet(fieldLit.val) match {
+                | Some(fd) ->
+                  this.checkFieldAccess(tcenv, fd, fieldLit.pos);
+                  addResultCase(
+                    TFields::resolveFieldType(
+                      tcenv.subst,
+                      this,
+                      fd,
+                      fieldLit.pos,
+                      isLValue,
+                    ),
+                  );
                   false
                 | None() -> true
                 }
@@ -870,6 +958,41 @@ extension class TypeChecker {
           //   spread's contribution (optional field / index / Top).
           // - Always use only get type (spread reads via getter).
           spreadTFields = obj.getFields(tcenv.subst, this);
+          // Spread reads each property via its getter, so a private
+          // source field would be exposed as a public one on the
+          // resulting object — laundering privacy. Reject the spread
+          // (but keep going so the rest of the expression still
+          // type-checks).
+          for (spreadField in spreadTFields.fields) {
+            if (!(spreadField.access is FAPublic _)) {
+              tcenv.error(
+                Array[
+                  (
+                    spreadExpr.pos,
+                    `Cannot spread an object with non-public field '${
+                      spreadField.name.value
+                    }'`,
+                  ),
+                  (spreadField.pos, "Declared here"),
+                ],
+              )
+            }
+          };
+          for (spreadField in spreadTFields.symbolFields) {
+            if (!(spreadField.access is FAPublic _)) {
+              tcenv.error(
+                Array[
+                  (
+                    spreadExpr.pos,
+                    `Cannot spread an object with non-public symbol field '${
+                      spreadField.name.value
+                    }'`,
+                  ),
+                  (spreadField.pos, "Declared here"),
+                ],
+              )
+            }
+          };
           newFields = SortedMap<FieldNameString, TField>[];
           for (existingField in fields) {
             spreadTFields.fields.maybeGet(existingField.name) match {
@@ -880,6 +1003,7 @@ extension class TypeChecker {
                 isOptional => false,
                 isReadonly => None(),
                 type => spreadField.get,
+                access => FAPublic(),
               }
             | optSpreadField ->
               spreadGet = optSpreadField match {
@@ -904,6 +1028,7 @@ extension class TypeChecker {
                 isOptional => existingField.isOptional,
                 isReadonly => None(),
                 type => mergedGet,
+                access => FAPublic(),
               }
             }
           };
@@ -925,6 +1050,7 @@ extension class TypeChecker {
                 isOptional => spreadField.isOptional,
                 isReadonly => None(),
                 type => fieldGet,
+                access => FAPublic(),
               }
             }
           };
@@ -940,6 +1066,7 @@ extension class TypeChecker {
                 isOptional => false,
                 isReadonly => None(),
                 type => spreadField.get,
+                access => FAPublic(),
               }
             | optSpreadField ->
               spreadGet = optSpreadField match {
@@ -962,6 +1089,7 @@ extension class TypeChecker {
                 isOptional => existingField.isOptional,
                 isReadonly => None(),
                 type => mergedGet,
+                access => FAPublic(),
               }
             }
           };
@@ -982,6 +1110,7 @@ extension class TypeChecker {
                 isOptional => spreadField.isOptional,
                 isReadonly => None(),
                 type => fieldGet,
+                access => FAPublic(),
               }
             }
           };
@@ -1008,6 +1137,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type => spreadNumIdx.get,
+                access => FAPublic(),
               },
             )
           | (None(), Some(existingIdx), spreadNumIdx @ Some _)
@@ -1025,6 +1155,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type,
+                access => FAPublic(),
               },
             )
           };
@@ -1041,6 +1172,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type => spreadStrIdx,
+                access => FAPublic(),
               }
             | Some(existingIdx) ->
               type = TType::union(
@@ -1055,6 +1187,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type,
+                access => FAPublic(),
               }
             },
           );
@@ -1074,6 +1207,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type => spreadSymIdx,
+                access => FAPublic(),
               }
             | Some(existingIdx) ->
               type = TType::union(
@@ -1088,6 +1222,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type,
+                access => FAPublic(),
               }
             },
           );
@@ -1124,6 +1259,7 @@ extension class TypeChecker {
               isOptional => false,
               isReadonly => None(),
               type => valueTy,
+              access => FAPublic(),
             };
             !symbolFields[field.name] = field;
             continue
@@ -1149,6 +1285,7 @@ extension class TypeChecker {
           isOptional => false,
           isReadonly => None(),
           type => ty,
+          access => FAPublic(),
         };
         !fields[field.name] = field
       };
@@ -2220,12 +2357,22 @@ extension class TypeChecker {
           // Indexes may come from a spread, but since local objects are
           // unused fresh objects, we can just add fields directly.
           !needsGrowth = true;
+          // When growing `this` inside a class body (e.g. constructor
+          // initialization of a parameter property), inherit the access
+          // declared on the class so the constructor-exit subtype check
+          // sees matching access kinds.
+          access = if (local.value == "this") {
+            this.lookupEnclosingFieldAccess(tcenv, key.value())
+          } else {
+            FAPublic()
+          };
           field = TField::create{
             pos => key.pos(),
             name => key.value(),
             isOptional,
             isReadonly => None(),
             type => fieldType,
+            access,
           };
           key match {
           | FKName _ -> newFieldsMap![field.name] = field
