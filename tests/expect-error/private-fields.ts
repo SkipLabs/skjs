@@ -160,3 +160,18 @@ class SpreadFromInsideTest {
     return { ...this };
   }
 }
+
+// Positive test: symbol-keyed private method usable within the class.
+// External-access negative case isn't asserted here because SKJS reports
+// the symbol's internal xxhash id in the error, which isn't stable enough
+// for an expect-error annotation.
+const symKey: unique symbol = Symbol("symKey");
+class WithPrivateSymbolMethod {
+  private [symKey](): number {
+    return 1;
+  }
+
+  inSame(): number {
+    return this[symKey]();
+  }
+}

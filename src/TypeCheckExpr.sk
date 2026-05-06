@@ -529,14 +529,19 @@ extension class TypeChecker {
           | Some(id) -> id
           | None() -> error(Array[(idx.pos, "Expected a unique symbol")])
           };
-          obj.maybeGetSymbolType(
-            tcenv.subst,
-            this,
-            uniqueId,
-            pos,
-            isLValue,
-          ) match {
-          | Some(ty) -> addResultCase(ty)
+          fields = obj.getFields(tcenv.subst, this);
+          fields.maybeGetSymbol(uniqueId) match {
+          | Some(fd) ->
+            this.checkFieldAccess(tcenv, fd, idx.pos);
+            addResultCase(
+              TFields::resolveFieldType(
+                tcenv.subst,
+                this,
+                fd,
+                idx.pos,
+                isLValue,
+              ),
+            )
           | None() -> error(Array[(pos, "Symbol property not found on object")])
           }
         } else {
