@@ -84,6 +84,21 @@ class WidensToPublic extends PrivateParent {
   y: number = 2;
 }
 
+// SKJS rejects redeclaring a parent's private field in a subclass even
+// when both keep the same access modifier. TypeScript permits this
+// (treats them as separate nominal slots) but at runtime the field is
+// a single JS property and the later definition silently overwrites
+// the earlier one — unsound when types differ, fragile-base-class even
+// when they don't. We stay strict.
+class PrivateParentZ {
+  private z: number = 1;
+}
+
+// @skjs-expect-error Invalid extension
+class PrivateChildZ extends PrivateParentZ {
+  private z: number = 2;
+}
+
 class HasPrivateForInTest {
   private px?: number;
 }
