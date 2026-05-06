@@ -83,3 +83,14 @@ class WidensToPublic extends PrivateParent {
   // @skjs-expect-error Property 'y' must have the same access modifier as in the parent class
   y: number = 2;
 }
+
+class HasPrivateForInTest {
+  private px?: number;
+}
+
+function inDoesNotLaunderPrivate(c: HasPrivateForInTest): void {
+  if ("px" in c) {
+    // @skjs-expect-error Property 'px' is private and only accessible within class 'HasPrivateForInTest'
+    const _ = c.px;
+  }
+}

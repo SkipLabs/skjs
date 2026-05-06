@@ -421,7 +421,14 @@ extension class TypeChecker {
             if (target) {
               Some(
                 tObj.map(tf ->
-                  if (tf.hasNonSyntheticIndex()) /* TODO: refine */ tf else {
+                  if (tf.hasNonSyntheticIndex()) /* TODO: refine */ tf else if (
+                    tf.maybeGetField(key).isSome()
+                  ) {
+                    // The branch already declares this field; keep its
+                    // original TField (and access modifier) so private
+                    // fields stay private after `"x" in obj` narrowing.
+                    tf
+                  } else {
                     fieldToAdd = TField::create{
                       pos => e1.pos,
                       name => key.value(),
