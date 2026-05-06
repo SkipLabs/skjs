@@ -373,11 +373,14 @@ extension class TypeChecker {
   ): void {
     field.access match {
     | FAPublic() -> void
-    | FAPrivate(owner, ownerFile) ->
+    | FAPrivate(owner) ->
       this.enclosingClass match {
       | Some(
-        (encName, encFile),
-      ) if (encName.value == owner.value && encFile == ownerFile) ->
+        enc,
+      ) if (
+        enc.value == owner.value &&
+        enc.pos.fileName == owner.pos.fileName
+      ) ->
         void
       | _ ->
         tcenv.error(

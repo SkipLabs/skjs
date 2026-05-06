@@ -2,7 +2,7 @@ module SKJS;
 
 extension class TypeChecker {
   fun class_(tcenvl: mutable TCEnvLight, c: Class): void {
-    !this.enclosingClass = Some((c.name, c.name.pos.fileName));
+    !this.enclosingClass = Some(c.name);
     classFields = this.getClassFields(tcenvl.context, c);
     constructor: ?ClassFieldMethod = None();
     for (fieldType in classFields) {

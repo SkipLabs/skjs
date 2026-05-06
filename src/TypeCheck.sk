@@ -13,11 +13,12 @@ class TypeChecker{
   super: ?(CstrType, TType) = None(),
   isAsync: Bool = false,
   retType: ?TType = None(),
-  // The class whose body is currently being type-checked. Set once at the
-  // top of class_ and inherited through funDefSetup into method bodies and
-  // constructors. Used at field-access sites to enforce private visibility.
-  // None() outside of any class body.
-  enclosingClass: ?(Name, FPath) = None(),
+  // The class whose body is currently being type-checked, identified by
+  // its declaration Name (whose pos also identifies the declaring file).
+  // Set once at the top of class_ and inherited through funDefSetup into
+  // method bodies and constructors. Used at field-access sites to enforce
+  // private visibility. None() outside of any class body.
+  enclosingClass: ?Name = None(),
 } extends TEnv {}
 
 /***************************************************************************/

@@ -1032,13 +1032,14 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 
 // Accessibility of a class field or method.
 // Non-class object types (and synthetic indexes) keep FAPublic.
-// FAPrivate carries the (declarationName, fileName) of the declaring class,
-// used at access sites to enforce visibility. `protected` is silently
-// accepted at parse time but lowered to FAPublic — SKJS does not enforce it.
+// FAPrivate carries the declaring class's declaration `Name` (whose pos
+// also identifies the declaring file), used at access sites to enforce
+// visibility. `protected` is silently accepted at parse time but lowered
+// to FAPublic — SKJS does not enforce it.
 base class FieldAccess uses XXHashable, Orderable {
   children =
   | FAPublic()
-  | FAPrivate(owner: Name, fileName: FPath)
+  | FAPrivate(owner: Name)
 }
 
 class TField private {

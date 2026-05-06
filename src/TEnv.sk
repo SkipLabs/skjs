@@ -561,8 +561,7 @@ base class TEnv{
           | ModStatic _ -> !fieldIsStatic = true
           | ModReadonly(roPos) -> !fieldIsReadonly = Some(roPos)
           | ModPublic _ -> void /* public is the default */
-          | ModPrivate _ ->
-            !fieldAccess = FAPrivate(className, className.pos.fileName)
+          | ModPrivate _ -> !fieldAccess = FAPrivate(cls.name)
           | ModProtected _ -> void /* protected is silently treated as public */
           | mod ->
             tcenvb.error(
@@ -652,8 +651,7 @@ base class TEnv{
         metAccess: FieldAccess = FAPublic();
         for (modifier in fd.modifiers.modifiers) {
           modifier match {
-          | ModPrivate _ ->
-            !metAccess = FAPrivate(className, className.pos.fileName)
+          | ModPrivate _ -> !metAccess = FAPrivate(cls.name)
           | _ -> void
           }
         };
