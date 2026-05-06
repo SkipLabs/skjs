@@ -404,13 +404,13 @@ extension class TypeChecker {
                   tf.nonSyntheticIndexForKeyKind(key.toPrimValueKind()) match {
                   | None() -> tf
                   | Some(indexField) ->
-                    fieldToAdd = TField::create{
+                    fieldToAdd = TField{
                       pos => e1.pos,
-                      name => key.value(),
+                      name => FieldNameString(key.value()),
                       isOptional => false,
-                      isReadonly => Some(e1.pos),
-                      type => indexField.get,
-                      access => FAPublic(),
+                      get => indexField.get,
+                      set => indexField.set,
+                      access => indexField.access,
                     };
                     (if (key is FKSymbol _) {
                       tf.addSymbolField(fieldToAdd)

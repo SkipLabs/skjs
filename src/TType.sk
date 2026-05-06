@@ -1111,7 +1111,7 @@ base class FieldAccess uses XXHashable, Orderable {
   }
 }
 
-class TField private {
+class TField{
   pos: PosRange,
   name: FieldNameString,
   isOptional: Bool,
