@@ -1443,7 +1443,7 @@ class TFields protected {
     this.symbolFields.maybeGet(FieldNameString(uniqueId))
   }
 
-  private static fun resolveFieldType(
+  static fun resolveFieldType(
     subst: mutable Subst,
     tenv: TEnv,
     fd: TField,

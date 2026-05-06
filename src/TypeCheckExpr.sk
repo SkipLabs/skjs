@@ -503,15 +503,15 @@ extension class TypeChecker {
                 fields.maybeGet(fieldLit.val) match {
                 | Some(fd) ->
                   this.checkFieldAccess(tcenv, fd, fieldLit.pos);
-                  fields
-                    .maybeGetType(
+                  addResultCase(
+                    TFields::resolveFieldType(
                       tcenv.subst,
                       this,
-                      fieldLit.val,
+                      fd,
                       fieldLit.pos,
                       isLValue,
-                    )
-                    .each(addResultCase);
+                    ),
+                  );
                   false
                 | None() -> true
                 }
