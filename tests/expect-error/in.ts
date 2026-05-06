@@ -18,7 +18,6 @@ function literalInRecordOpt(x: { f?: number }): boolean {
 
 function refineLiteralInRecordOpt(x: { f?: number }): number {
   if ("f" in x) {
-    // @ts-expect-error Invalid return type
     return x.f;
   } else {
     return 0;

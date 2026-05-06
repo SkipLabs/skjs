@@ -1175,6 +1175,10 @@ class TField{
     this with {get, isOptional}
   }
 
+  fun withIsOptional(isOptional: Bool): TField {
+    this with {isOptional}
+  }
+
   fun project(): FieldNameString {
     this.name
   }
@@ -1468,6 +1472,24 @@ class TFields protected {
       fields => this.fields.mapKeyed(fd ->
         if (fd.name.value == fieldName) f(fd) else fd
       ),
+    }
+  }
+
+  // Updates the named symbol field in place, leaving all other fields
+  // unchanged.
+  fun updateSymbolField(uniqueId: String, f: TField -> TField): TFields {
+    this with {
+      symbolFields => this.symbolFields.mapKeyed(fd ->
+        if (fd.name.value == uniqueId) f(fd) else fd
+      ),
+    }
+  }
+
+  // Like updateField/updateSymbolField but dispatches on a FieldKey.
+  fun updateFieldByKey(key: FieldKey, f: TField -> TField): TFields {
+    key match {
+    | FKName(name, _) -> this.updateField(name.value, f)
+    | FKSymbol(_, uniqueId) -> this.updateSymbolField(uniqueId, f)
     }
   }
 

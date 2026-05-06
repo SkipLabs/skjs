@@ -401,22 +401,33 @@ extension class TypeChecker {
             if (target) {
               Some(
                 tObj.map(tf ->
-                  tf.nonSyntheticIndexForKeyKind(key.toPrimValueKind()) match {
-                  | None() -> tf
-                  | Some(indexField) ->
-                    fieldToAdd = TField{
-                      pos => e1.pos,
-                      name => FieldNameString(key.value()),
-                      isOptional => false,
-                      get => indexField.get,
-                      set => indexField.set,
-                      access => indexField.access,
-                    };
-                    (if (key is FKSymbol _) {
-                      tf.addSymbolField(fieldToAdd)
+                  tf.maybeGetField(key) match {
+                  | Some(existing) ->
+                    if (existing.isOptional) {
+                      tf.updateFieldByKey(key, fd ~> fd.withIsOptional(false))
                     } else {
-                      tf.addField(fieldToAdd)
-                    }).default(tf)
+                      tf
+                    }
+                  | None() ->
+                    tf.nonSyntheticIndexForKeyKind(
+                      key.toPrimValueKind(),
+                    ) match {
+                    | None() -> tf
+                    | Some(indexField) ->
+                      fieldToAdd = TField{
+                        pos => e1.pos,
+                        name => FieldNameString(key.value()),
+                        isOptional => false,
+                        get => indexField.get,
+                        set => indexField.set,
+                        access => indexField.access,
+                      };
+                      (if (key is FKSymbol _) {
+                        tf.addSymbolField(fieldToAdd)
+                      } else {
+                        tf.addField(fieldToAdd)
+                      }).default(tf)
+                    }
                   }
                 ),
               )
