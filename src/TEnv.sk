@@ -474,6 +474,41 @@ base class TEnv{
     (this, cls)
   }
 
+  // When a child class re-declares a field already inherited from a parent,
+  // require the access kind (public vs private) to match. Both narrowing
+  // (parent public → child private) and widening (parent private → child
+  // public) are rejected — otherwise the child's overwrite would leave the
+  // inherited member's accessibility structurally incoherent.
+  private fun checkAccessOverride(
+    tcenvb: mutable TCEnvBase,
+    acc: readonly Map<FieldNameString, TField>,
+    f: TField,
+  ): void {
+    acc.maybeGet(f.name) match {
+    | None() -> void
+    | Some(parent) ->
+      sameKind = (parent.access, f.access) match {
+      | (FAPublic(), FAPublic())
+      | (FAPrivate _, FAPrivate _) ->
+        true
+      | _ -> false
+      };
+      if (!sameKind) {
+        tcenvb.error(
+          Array[
+            (
+              f.pos,
+              `Property '${
+                f.name
+              }' must have the same access modifier as in the parent class`,
+            ),
+            (parent.pos, "Inherited declaration is here"),
+          ],
+        )
+      }
+    }
+  }
+
   // Returns the type of the constructor, if any.
   private fun addFields(
     tcenvb: mutable TCEnvBase,
@@ -573,6 +608,7 @@ base class TEnv{
             type,
             access => fieldAccess,
           };
+          this.checkAccessOverride(tcenvb, acc, f);
           acc![f.name] = f
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
@@ -635,6 +671,7 @@ base class TEnv{
             type => metType,
             access => metAccess,
           };
+          this.checkAccessOverride(tcenvb, symbolFields, field);
           symbolFields![field.name] = field
         | FKName(name, _) ->
           field = TField::create{
@@ -645,6 +682,7 @@ base class TEnv{
             type => metType,
             access => metAccess,
           };
+          this.checkAccessOverride(tcenvb, acc, field);
           acc![field.name] = field
         }
       }

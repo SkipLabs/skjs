@@ -65,3 +65,21 @@ function callPrivateMethodFromOutside(w: WithPrivateMethod): number {
   // @skjs-expect-error Property 'helper' is private and only accessible within class 'WithPrivateMethod'
   return w.helper();
 }
+
+class PublicParent {
+  x: number = 1;
+}
+
+class NarrowsToPrivate extends PublicParent {
+  // @skjs-expect-error Property 'x' must have the same access modifier as in the parent class
+  private x: number = 2;
+}
+
+class PrivateParent {
+  private y: number = 1;
+}
+
+class WidensToPublic extends PrivateParent {
+  // @skjs-expect-error Property 'y' must have the same access modifier as in the parent class
+  y: number = 2;
+}
