@@ -102,6 +102,15 @@ base class TEnv{
   // type parameters have been replaced with the corresponding type
   // arguments (as expected).
   fun instantiate(subst: mutable Subst, name: Name, targs: TArgs): TType {
+    // Synthetic placeholder for a class field with no type annotation
+    // (see addFields). It has no defMap entry — keep it unexpanded so
+    // it stays opaque under subtype comparison and pretty-prints as the
+    // synthetic name. Two instantiations of the same generic class with
+    // different type arguments produce TInsts with different targs,
+    // which compare as incompatible.
+    if (name.value.startsWith(kMissingTypeAnnotationPrefix)) {
+      return TType::inst(name, targs);
+    };
     // We are dealing with a recursive instance, if we keep on
     // unfolding, we will end up in an infinite loop. Instead, we
     // produce a type that can be later lazily unfolded if need be.
@@ -548,22 +557,33 @@ base class TEnv{
             tcenvb.error(Array[(pos, "Static fields cannot be optional")])
           )
         };
-        fieldTy = field.type match {
+        type: TType = field.type match {
+        | Some(ty) -> this.normalize(tcenvb, ty)
         | None() ->
-          error(
-            Array[
-              (
-                field.pos,
-                `Type annotation expected for '${field.name.getName()}'`,
-              ),
-            ],
+          // No annotation: synthesize a placeholder TInst whose name
+          // isn't resolvable, so any later attempt to use the field's
+          // type surfaces a clear error mentioning the missing
+          // annotation. The placeholder carries the class's current
+          // type arguments so two instances of the same generic class
+          // with different type arguments produce non-equal placeholders
+          // (e.g. C<number>.x and C<string>.x are incompatible). The
+          // declaration-time "Type annotation expected" error is
+          // reported by TypeChecker#class_, which doesn't run for
+          // ambient (declare-wrapped) classes — that's how ambient
+          // classes get to omit the type on a private field.
+          TType::inst(
+            Name(
+              field.pos,
+              `${kMissingTypeAnnotationPrefix}${
+                className.value
+              }_${field.name.getName()}`,
+            ),
+            TArgs(targs),
           )
-        | Some(ty) -> ty
         };
         field.name match {
         | FNNormal(fdName) ->
           fieldName = fdName.value;
-          type = this.normalize(tcenvb, fieldTy);
           f = TField::create{
             pos => field.pos,
             name => fieldName,
@@ -577,7 +597,6 @@ base class TEnv{
         | FNColon(indexName, indexType) ->
           keyType = this.normalize(tcenvb, indexType);
           keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
-          valueType = this.normalize(tcenvb, fieldTy);
           indexes.push(
             (
               keyKinds,
@@ -586,7 +605,7 @@ base class TEnv{
                 name => indexName.value,
                 isOptional => true,
                 isReadonly => fieldIsReadonly,
-                type => valueType,
+                type,
                 access => FAPublic(),
               },
             ),

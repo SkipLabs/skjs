@@ -1222,6 +1222,12 @@ value class FieldNameString(
 }
 
 const kArrayBrandFieldName: String = "__SKJS_isArray";
+// Prefix on the synthetic TInst name used as a placeholder for a class
+// field declared without a type annotation. The class_ check still
+// reports "Type annotation expected" at declaration time for non-ambient
+// classes; the placeholder lets ambient declarations (where class_
+// doesn't run) round-trip. See TEnv::addFields and TEnv::instantiate.
+const kMissingTypeAnnotationPrefix: String = "Missing_type_annotation_for_";
 // Synthetic index signatures on object literals.
 //
 // Object literals like `{ x: 1, y: 2 }` get fresh type variables as string

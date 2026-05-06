@@ -3,6 +3,7 @@
 // Class field without type annotation or initializer
 class FieldWithoutAnnotation {
   // @skjs-expect-error Type annotation expected for 'field'
+  // @skjs-expect-error Uninitialized field 'field'
   field;
 }
 
