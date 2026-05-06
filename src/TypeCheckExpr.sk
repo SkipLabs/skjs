@@ -364,6 +364,37 @@ extension class TypeChecker {
     this.get(tcenv, pos, objType, idx, accessKind)
   }
 
+  // Reports an error if `field` is private and the current enclosing
+  // class is not the field's owner. Public fields are always allowed.
+  fun checkFieldAccess(
+    tcenv: mutable TCEnv,
+    field: TField,
+    accessPos: PosRange,
+  ): void {
+    field.access match {
+    | FAPublic() -> void
+    | FAPrivate(owner, ownerFile) ->
+      this.enclosingClass match {
+      | Some(
+        (encName, encFile),
+      ) if (encName.value == owner.value && encFile == ownerFile) ->
+        void
+      | _ ->
+        tcenv.error(
+          Array[
+            (
+              accessPos,
+              `Property '${
+                field.name
+              }' is private and only accessible within class '${owner}'`,
+            ),
+            (field.pos, "Declared here"),
+          ],
+        )
+      }
+    }
+  }
+
   /* Typechecks expression  obj[idx]
              or expression  obj.idx
              or expression  obj?.idx
@@ -466,15 +497,18 @@ extension class TypeChecker {
           | Some(lits) ->
             lits
               .filterLiterals(fieldLit ->
-                fields.maybeGetType(
-                  tcenv.subst,
-                  this,
-                  fieldLit.val,
-                  fieldLit.pos,
-                  isLValue,
-                ) match {
-                | Some(ty) ->
-                  addResultCase(ty);
+                fields.maybeGet(fieldLit.val) match {
+                | Some(fd) ->
+                  this.checkFieldAccess(tcenv, fd, fieldLit.pos);
+                  fields
+                    .maybeGetType(
+                      tcenv.subst,
+                      this,
+                      fieldLit.val,
+                      fieldLit.pos,
+                      isLValue,
+                    )
+                    .each(addResultCase);
                   false
                 | None() -> true
                 }

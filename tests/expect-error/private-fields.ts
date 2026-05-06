@@ -1,7 +1,6 @@
-// Positive tests for private class members.
-// `protected` is silently accepted but treated as `public`, so positive
-// access tests focus on `private`. Negative tests are added alongside
-// enforcement.
+// Tests for private class field access enforcement.
+// `protected` is silently accepted but treated as `public` — SKJS does
+// not enforce subclass-only visibility.
 
 class WithPrivate {
   private px: number = 1;
@@ -17,4 +16,37 @@ class TwoInstancesOfSameClass {
   copyFrom(other: TwoInstancesOfSameClass): number {
     return other.px;
   }
+}
+
+// `protected` accepted but not enforced; reachable like `public`.
+class WithProtectedTreatedAsPublic {
+  protected pp: number = 2;
+}
+
+function readProtectedFromOutside(c: WithProtectedTreatedAsPublic): number {
+  return c.pp;
+}
+
+function readPrivateFromOutside(c: WithPrivate): number {
+  // @skjs-expect-error Property 'px' is private and only accessible within class 'WithPrivate'
+  return c.px;
+}
+
+class WithParentPrivate extends WithPrivate {
+  readParentPrivate(): number {
+    // @skjs-expect-error Property 'px' is private and only accessible within class 'WithPrivate'
+    return this.px;
+  }
+}
+
+class WriteToPrivate {
+  private px: number = 0;
+  bumpSelf(): void {
+    this.px = this.px + 1;
+  }
+}
+
+function writeToPrivateFromOutside(c: WriteToPrivate): void {
+  // @skjs-expect-error Property 'px' is private and only accessible within class 'WriteToPrivate'
+  c.px = 5;
 }
