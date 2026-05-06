@@ -50,3 +50,18 @@ function writeToPrivateFromOutside(c: WriteToPrivate): void {
   // @skjs-expect-error Property 'px' is private and only accessible within class 'WriteToPrivate'
   c.px = 5;
 }
+
+class WithPrivateMethod {
+  private helper(): number {
+    return 42;
+  }
+
+  exposed(): number {
+    return this.helper();
+  }
+}
+
+function callPrivateMethodFromOutside(w: WithPrivateMethod): number {
+  // @skjs-expect-error Property 'helper' is private and only accessible within class 'WithPrivateMethod'
+  return w.helper();
+}

@@ -172,8 +172,12 @@ extension class TypeChecker {
       modifier match {
       | ModAsync(pos) -> !fd.isAsync = Some(pos)
       | ModStatic(_) -> !thisTypeOpt = None()
+      | ModPublic _
+      | ModPrivate _
+      | ModProtected _ ->
+        void /* private is recorded on the method's TField; protected is treated as public */
       | unsupported ->
-        // TODO: protected, private, public, abstract, readonly
+        // TODO: abstract, readonly
         subst.error(
           Array[
             (

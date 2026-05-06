@@ -613,6 +613,14 @@ base class TEnv{
         cgNode = CGNode::create(Method(fd.name, className, metIsStatic));
         metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
+        metAccess: FieldAccess = FAPublic();
+        for (modifier in fd.modifiers.modifiers) {
+          modifier match {
+          | ModPrivate _ ->
+            !metAccess = FAPrivate(className, className.pos.fileName)
+          | _ -> void
+          }
+        };
         fd.name match {
         | FNNormal(name) -> FKName(name, TString())
         | FNComputed(keyExpr) ->
@@ -625,6 +633,7 @@ base class TEnv{
             isOptional => false,
             isReadonly => Some(exprPos),
             type => metType,
+            access => metAccess,
           };
           symbolFields![field.name] = field
         | FKName(name, _) ->
@@ -634,6 +643,7 @@ base class TEnv{
             isOptional => false,
             isReadonly => Some(name.pos),
             type => metType,
+            access => metAccess,
           };
           acc![field.name] = field
         }
