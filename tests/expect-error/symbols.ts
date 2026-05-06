@@ -369,3 +369,15 @@ function testSpreadInArrayLiteral(): void {
   const s = new Set<number>([1, 2, 3]);
   const arr: Array<number> = [...s];
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 28: typeof access to a class static unique symbol
+///////////////////////////////////////////////////////////////////////////////
+
+// symbol is not assignable to a class static unique symbol
+function testClassSymContravariance(s: symbol): void {
+  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line2 Full type symbol
+  // @skjs-expect-error-line3 is not compatible with specific type 'unique_symbol_828896147671687930_-7046029205848101928_90'
+  const c: typeof MyClass.classSym = s;
+}

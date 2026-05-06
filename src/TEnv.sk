@@ -557,8 +557,11 @@ base class TEnv{
             tcenvb.error(Array[(pos, "Static fields cannot be optional")])
           )
         };
+        // Static readonly fields are the class-level analog of a top-level
+        // const — `unique symbol` is permitted there, so propagate the flag.
+        isTopLevelConst = fieldIsStatic && fieldIsReadonly is Some _;
         type: TType = field.type match {
-        | Some(ty) -> this.normalize(tcenvb, ty)
+        | Some(ty) -> this.normalize(tcenvb, ty, isTopLevelConst)
         | None() ->
           // No annotation: synthesize a placeholder TInst whose name
           // isn't resolvable, so any later attempt to use the field's
