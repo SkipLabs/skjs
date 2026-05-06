@@ -94,3 +94,29 @@ function inDoesNotLaunderPrivate(c: HasPrivateForInTest): void {
     const _ = c.px;
   }
 }
+
+class UnionPrivateA {
+  private z: number = 1;
+}
+
+class UnionPublicB {
+  z: number = 2;
+}
+
+function readUnionPrivatePublic(o: UnionPrivateA | UnionPublicB): number {
+  // @skjs-expect-error Property 'z' is private and only accessible within class 'UnionPrivateA'
+  return o.z;
+}
+
+class UnionPrivateC {
+  private w: number = 1;
+}
+
+class UnionPrivateD {
+  private w: number = 2;
+}
+
+function readUnionTwoPrivates(o: UnionPrivateC | UnionPrivateD): number {
+  // @skjs-expect-error Property 'w' has incompatible private declarations across the union and is not accessible
+  return o.w;
+}

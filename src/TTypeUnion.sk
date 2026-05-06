@@ -102,7 +102,7 @@ extension class TField {
       isOptional,
       get,
       set,
-      access => FAPublic(),
+      access => x.access.combine(y.access),
     }
   }
 
@@ -122,7 +122,7 @@ extension class TField {
         isOptional,
         get,
         set,
-        access => FAPublic(),
+        access => x.access.combine(y.access),
       },
     )
   }

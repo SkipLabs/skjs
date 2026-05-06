@@ -395,6 +395,18 @@ extension class TypeChecker {
           ],
         )
       }
+    | FANever() ->
+      tcenv.error(
+        Array[
+          (
+            accessPos,
+            `Property '${
+              field.name
+            }' has incompatible private declarations across the union and is not accessible`,
+          ),
+          (field.pos, "Declared here"),
+        ],
+      )
     }
   }
 

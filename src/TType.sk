@@ -1036,10 +1036,34 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 // also identifies the declaring file), used at access sites to enforce
 // visibility. `protected` is silently accepted at parse time but lowered
 // to FAPublic — SKJS does not enforce it.
+// FANever is the result of unioning/intersecting two FAPrivate fields with
+// different owners — no enclosing class can satisfy both, so all access is
+// rejected.
 base class FieldAccess uses XXHashable, Orderable {
   children =
   | FAPublic()
   | FAPrivate(owner: Name)
+  | FANever()
+
+  // Most-restrictive combination: access succeeds on the result iff
+  // access succeeds on both inputs. Used when fields are unioned or
+  // intersected across object branches.
+  fun combine(other: FieldAccess): FieldAccess {
+    (this, other) match {
+    | (FAPublic(), x)
+    | (x, FAPublic()) ->
+      x
+    | (
+      FAPrivate(o1),
+      FAPrivate(o2),
+    ) if (o1.value == o2.value && o1.pos.fileName == o2.pos.fileName) ->
+      FAPrivate(o1)
+    | (FAPrivate _, FAPrivate _)
+    | (FANever(), _)
+    | (_, FANever()) ->
+      FANever()
+    }
+  }
 }
 
 class TField private {
