@@ -520,14 +520,15 @@ base class TEnv{
         if (!filter(field)) continue;
         fieldIsStatic = false;
         fieldIsReadonly: ?PosRange = None();
+        fieldAccess: FieldAccess = FAPublic();
         for (modifier in field.modifiers.modifiers) {
           modifier match {
           | ModStatic _ -> !fieldIsStatic = true
           | ModReadonly(roPos) -> !fieldIsReadonly = Some(roPos)
           | ModPublic _ -> void /* public is the default */
-          | ModPrivate _
-          | ModProtected _ ->
-            /* TODO: intentionally ignore accessibility modifiers since TypeScript do check them */ void
+          | ModPrivate _ ->
+            !fieldAccess = FAPrivate(className, className.pos.fileName)
+          | ModProtected _ -> void /* protected is silently treated as public */
           | mod ->
             tcenvb.error(
               Array[
@@ -570,6 +571,7 @@ base class TEnv{
             isOptional => field.optional is Some _,
             isReadonly => fieldIsReadonly,
             type,
+            access => fieldAccess,
           };
           acc![f.name] = f
         | FNColon(indexName, indexType) ->
