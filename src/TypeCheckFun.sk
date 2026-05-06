@@ -176,13 +176,13 @@ extension class TypeChecker {
       | ModPrivate _
       | ModProtected _ ->
         void /* private is recorded on the method's TField; protected is treated as public */
-      | unsupported ->
-        // TODO: abstract, readonly
+      | ModAbstract _
+      | ModReadonly _ ->
         subst.error(
           Array[
             (
               modifier.pos,
-              `TODO: support for method modifiers (encountered ${unsupported})`,
+              `TODO: support for method modifiers (encountered ${modifier})`,
             ),
           ],
         )
