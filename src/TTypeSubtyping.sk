@@ -603,6 +603,7 @@ base class STErrorOnTFields(
   | STRecFieldsIndexField(STErrorOnTType, TField, TField, FieldMismatchKind)
   | STRecFieldsMissingField(TField)
   | STRecFieldsField(?STErrorOnTType, TField, TField, FieldMismatchKind)
+  | STRecFieldsFieldAccess(TField, TField)
 
   fun toError(
     subst: mutable Subst,
@@ -711,6 +712,20 @@ base class STErrorOnTFields(
         List[(field1.pos, msg)],
         err.map(e -> e.toError(subst, tenv, detailForRec)).default(List.Nil()),
         kind.readonlyHintPos(field2.pos),
+      )
+    | STRecFieldsFieldAccess(field1, field2, _fields1, _fields2) ->
+      (
+        List.Nil(),
+        List[
+          (
+            field1.pos,
+            `Field '${
+              field1.name.value
+            }' has incompatible accessibility with the target type`,
+          ),
+          (field2.pos, "Target declaration is here"),
+        ],
+        None(),
       )
     };
     !msgs = msgs.concat(STError::readonlyHint(suggestReadonly));
@@ -897,6 +912,9 @@ extension class TFields {
       | Both(f1, f2) ->
         if (f1.isOptional && !f2.isOptional) {
           return STRecFieldsMissingField(f1, fields1, fields2)
+        };
+        if (!f1.access.isCompatibleWith(f2.access)) {
+          return STRecFieldsFieldAccess(f1, f2, fields1, fields2)
         };
         // Readonly field cannot satisfy a mutable field: skip the setter isSub
         // to avoid spurious success from TVar inference.

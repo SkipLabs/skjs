@@ -1064,6 +1064,24 @@ base class FieldAccess uses XXHashable, Orderable {
       FANever()
     }
   }
+
+  // Returns true when a field whose declared access is `this` can be
+  // viewed through a target field whose declared access is `target`.
+  // Access kinds must match exactly — a private field is structurally
+  // distinct from a public one with the same name (TypeScript's nominal
+  // treatment of private). FANever is trivially compatible — nothing
+  // can access the target anyway.
+  fun isCompatibleWith(target: FieldAccess): Bool {
+    target match {
+    | FANever() -> true
+    | FAPrivate(t) ->
+      this match {
+      | FAPrivate(s) -> s.value == t.value && s.pos.fileName == t.pos.fileName
+      | _ -> false
+      }
+    | FAPublic() -> this is FAPublic _
+    }
+  }
 }
 
 class TField private {

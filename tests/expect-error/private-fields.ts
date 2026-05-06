@@ -70,8 +70,8 @@ class PublicParent {
   x: number = 1;
 }
 
+// @skjs-expect-error Invalid extension
 class NarrowsToPrivate extends PublicParent {
-  // @skjs-expect-error Property 'x' must have the same access modifier as in the parent class
   private x: number = 2;
 }
 
@@ -79,8 +79,8 @@ class PrivateParent {
   private y: number = 1;
 }
 
+// @skjs-expect-error Invalid extension
 class WidensToPublic extends PrivateParent {
-  // @skjs-expect-error Property 'y' must have the same access modifier as in the parent class
   y: number = 2;
 }
 
@@ -119,4 +119,22 @@ class UnionPrivateD {
 function readUnionTwoPrivates(o: UnionPrivateC | UnionPrivateD): number {
   // @skjs-expect-error Property 'w' has incompatible private declarations across the union and is not accessible
   return o.w;
+}
+
+class StructLeak {
+  private q: number = 1;
+}
+
+function structuralLaunder(c: StructLeak): { q: number } {
+  // @skjs-expect-error Invalid return type
+  return c;
+}
+
+function genericLaunder<T extends { q: number }>(t: T): number {
+  return t.q;
+}
+
+function callGeneric(c: StructLeak): number {
+  // @skjs-expect-error Invalid call
+  return genericLaunder(c);
 }

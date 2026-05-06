@@ -364,6 +364,40 @@ extension class TypeChecker {
     this.get(tcenv, pos, objType, idx, accessKind)
   }
 
+  // Returns the access modifier declared on the enclosing class for the
+  // named field, or FAPublic if there is no enclosing class or the class
+  // does not declare a field by that name. Used when growing `this`
+  // inside a class so synthesized fields inherit the class's access.
+  fun lookupEnclosingFieldAccess(
+    tcenv: mutable TCEnv,
+    fieldName: String,
+  ): FieldAccess {
+    this.enclosingClass match {
+    | None() -> FAPublic()
+    | Some(className) ->
+      cls = this.getClass(tcenv, className);
+      classFields = this.getClassFields(tcenv.context, cls);
+      result: FieldAccess = FAPublic();
+      for (classField in classFields) {
+        classField match {
+        | ClassFieldValue{
+          name => FNNormal(Name(_, n)),
+          modifiers,
+        } if (n == fieldName) ->
+          for (modifier in modifiers.modifiers) {
+            modifier match {
+            | ModPrivate _ -> !result = FAPrivate(className)
+            | _ -> void
+            }
+          };
+          break void
+        | _ -> void
+        }
+      };
+      result
+    }
+  }
+
   // Reports an error if `field` is private and the current enclosing
   // class is not the field's owner. Public fields are always allowed.
   fun checkFieldAccess(
@@ -2283,13 +2317,22 @@ extension class TypeChecker {
           // Indexes may come from a spread, but since local objects are
           // unused fresh objects, we can just add fields directly.
           !needsGrowth = true;
+          // When growing `this` inside a class body (e.g. constructor
+          // initialization of a parameter property), inherit the access
+          // declared on the class so the constructor-exit subtype check
+          // sees matching access kinds.
+          access = if (local.value == "this") {
+            this.lookupEnclosingFieldAccess(tcenv, key.value())
+          } else {
+            FAPublic()
+          };
           field = TField::create{
             pos => key.pos(),
             name => key.value(),
             isOptional,
             isReadonly => None(),
             type => fieldType,
-            access => FAPublic(),
+            access,
           };
           key match {
           | FKName _ -> newFieldsMap![field.name] = field
