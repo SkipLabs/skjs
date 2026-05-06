@@ -39,7 +39,7 @@ function literalInRecordNotAlwaysFalse(x: { f: number }): boolean {
 
 function refineLiteralInRecordNotAlwaysFalse(x: { f: number }): number {
   if ("g" in x) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Unbound field: g
     return x.g;
   } else {
     return 0;
@@ -48,6 +48,7 @@ function refineLiteralInRecordNotAlwaysFalse(x: { f: number }): number {
 
 function refineLiteralInRecordNotAlwaysFalse2(x: { f: number }): unknown {
   if ("g" in x) {
+    // @skjs-expect-error Unbound field: g
     return x.g;
   } else {
     return 0;
@@ -60,8 +61,6 @@ function literalInRecordIndex(x: { [f: string]: number }): boolean {
 
 function refineLiteralInRecordIndex(x: { [f: string]: number }): number {
   if ("a" in x) {
-    // FIXME
-    // @skjs-expect-error Invalid return type
     return x.a;
   } else {
     return 0;
@@ -74,7 +73,8 @@ function literalInRecordUnion(x: { f: number } | { g: number }): boolean {
 
 function refineLiteralInRecordUnion(x: { f: number } | { g: number }): number {
   if ("f" in x) {
-    // @skjs-expect-error Invalid return type
+    // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
+    // @skjs-expect-error Unbound field: f
     return x.f;
   } else {
     return 0;
@@ -85,6 +85,8 @@ function refineLiteralInRecordUnion2(
   x: { f: number } | { g: number },
 ): unknown {
   if ("f" in x) {
+    // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
+    // @skjs-expect-error Unbound field: f
     return x.f;
   } else {
     return 0;
@@ -99,7 +101,8 @@ function refineLiteralInRecordOptUnion(
   x: { f?: number } | { g: number },
 ): number {
   if ("f" in x) {
-    // @ts-expect-error Invalid return type
+    // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
+    // @skjs-expect-error Unbound field: f
     return x.f;
   } else {
     return 0;
@@ -110,7 +113,8 @@ function refineLiteralInRecordOptUnion2(
   x: { f?: number } | { g: number },
 ): number | undefined {
   if ("f" in x) {
-    // @skjs-expect-error Invalid return type
+    // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
+    // @skjs-expect-error Unbound field: f
     return x.f;
   } else {
     return 0;

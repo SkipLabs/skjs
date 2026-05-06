@@ -38,6 +38,7 @@ function testArgs(): void {
 function testObjectUnion(): void {
   const wide = (x: { a: string } | { b: number }): void => {
     if ("a" in x) {
+      // @skjs-expect-error Unbound field: a
       console.log(x.a);
     } else {
       console.log(x.b);
