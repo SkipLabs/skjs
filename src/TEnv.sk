@@ -622,6 +622,7 @@ base class TEnv{
                 isOptional => true,
                 isReadonly => fieldIsReadonly,
                 type => valueType,
+                access => FAPublic(),
               },
             ),
           )
@@ -1534,6 +1535,7 @@ base class TEnv{
                       isOptional => true,
                       isReadonly => None(),
                       type => valueType,
+                      access => FAPublic(),
                     },
                   ),
                 )
@@ -1545,6 +1547,7 @@ base class TEnv{
                   isOptional => isFieldOptional,
                   isReadonly => None(),
                   type => valueType,
+                  access => FAPublic(),
                 };
                 fieldsMap![field.name] = field
               };
@@ -1555,6 +1558,7 @@ base class TEnv{
                   isOptional => isFieldOptional,
                   isReadonly => None(),
                   type => valueType,
+                  access => FAPublic(),
                 };
                 symbolFields![field.name] = field
               }
@@ -1574,6 +1578,7 @@ base class TEnv{
               isOptional => fd.optional is Some _,
               isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
+              access => FAPublic(),
             };
             symbolFields![field.name] = field
           | FKName(name, _) ->
@@ -1583,6 +1588,7 @@ base class TEnv{
               isOptional => fd.optional is Some _,
               isReadonly => readonly_.map(r -> r.pos),
               type => normalizedType,
+              access => FAPublic(),
             };
             fieldsMap![field.name] = field
           }
@@ -1599,6 +1605,7 @@ base class TEnv{
                 isOptional => true,
                 isReadonly => readonly_.map(r -> r.pos),
                 type => valueType,
+                access => FAPublic(),
               },
             ),
           )
@@ -1623,6 +1630,7 @@ base class TEnv{
               isOptional => false,
               isReadonly => Some(exprPos),
               type => decl,
+              access => FAPublic(),
             };
             symbolFields![field.name] = field
           | FKName(name, _) ->
@@ -1632,6 +1640,7 @@ base class TEnv{
               isOptional => false,
               isReadonly => Some(name.pos),
               type => decl,
+              access => FAPublic(),
             };
             fieldsMap![field.name] = field
           }

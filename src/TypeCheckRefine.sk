@@ -394,6 +394,7 @@ extension class TypeChecker {
             isOptional => false,
             isReadonly => Some(e1.pos),
             type => TType::top(e.pos),
+            access => FAPublic(),
           };
           tFields = if (key is FKSymbol _) {
             TFields::singleSymbolField(field)
@@ -427,6 +428,7 @@ extension class TypeChecker {
                       isOptional => false,
                       isReadonly => Some(e1.pos),
                       type => TType::top(e.pos),
+                      access => FAPublic(),
                     };
                     (if (key is FKSymbol _) {
                       tf.addSymbolField(fieldToAdd)

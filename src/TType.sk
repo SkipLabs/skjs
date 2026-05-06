@@ -1048,7 +1048,7 @@ class TField private {
   isOptional: Bool,
   get: TType,
   set: TType,
-  access: FieldAccess = FAPublic(),
+  access: FieldAccess,
 } uses XXHashable, Orderable, Projectable<FieldNameString> {
   static fun create{
     pos: PosRange,
@@ -1056,7 +1056,7 @@ class TField private {
     isOptional: Bool,
     isReadonly: ?PosRange,
     type: TType,
-    access: FieldAccess = FAPublic(),
+    access: FieldAccess,
   }: TField {
     setType = isReadonly match {
     | Some(roPos) -> TType::bottom(roPos)
@@ -1088,6 +1088,7 @@ class TField private {
       isOptional => true,
       get,
       set,
+      access => FAPublic(),
     }
   }
 

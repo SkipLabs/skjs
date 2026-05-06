@@ -917,6 +917,7 @@ extension class TypeChecker {
                 isOptional => false,
                 isReadonly => None(),
                 type => spreadField.get,
+                access => FAPublic(),
               }
             | optSpreadField ->
               spreadGet = optSpreadField match {
@@ -941,6 +942,7 @@ extension class TypeChecker {
                 isOptional => existingField.isOptional,
                 isReadonly => None(),
                 type => mergedGet,
+                access => FAPublic(),
               }
             }
           };
@@ -962,6 +964,7 @@ extension class TypeChecker {
                 isOptional => spreadField.isOptional,
                 isReadonly => None(),
                 type => fieldGet,
+                access => FAPublic(),
               }
             }
           };
@@ -977,6 +980,7 @@ extension class TypeChecker {
                 isOptional => false,
                 isReadonly => None(),
                 type => spreadField.get,
+                access => FAPublic(),
               }
             | optSpreadField ->
               spreadGet = optSpreadField match {
@@ -999,6 +1003,7 @@ extension class TypeChecker {
                 isOptional => existingField.isOptional,
                 isReadonly => None(),
                 type => mergedGet,
+                access => FAPublic(),
               }
             }
           };
@@ -1019,6 +1024,7 @@ extension class TypeChecker {
                 isOptional => spreadField.isOptional,
                 isReadonly => None(),
                 type => fieldGet,
+                access => FAPublic(),
               }
             }
           };
@@ -1045,6 +1051,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type => spreadNumIdx.get,
+                access => FAPublic(),
               },
             )
           | (None(), Some(existingIdx), spreadNumIdx @ Some _)
@@ -1062,6 +1069,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type,
+                access => FAPublic(),
               },
             )
           };
@@ -1078,6 +1086,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type => spreadStrIdx,
+                access => FAPublic(),
               }
             | Some(existingIdx) ->
               type = TType::union(
@@ -1092,6 +1101,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type,
+                access => FAPublic(),
               }
             },
           );
@@ -1111,6 +1121,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type => spreadSymIdx,
+                access => FAPublic(),
               }
             | Some(existingIdx) ->
               type = TType::union(
@@ -1125,6 +1136,7 @@ extension class TypeChecker {
                 isOptional => true,
                 isReadonly => None(),
                 type,
+                access => FAPublic(),
               }
             },
           );
@@ -1161,6 +1173,7 @@ extension class TypeChecker {
               isOptional => false,
               isReadonly => None(),
               type => valueTy,
+              access => FAPublic(),
             };
             !symbolFields[field.name] = field;
             continue
@@ -1186,6 +1199,7 @@ extension class TypeChecker {
           isOptional => false,
           isReadonly => None(),
           type => ty,
+          access => FAPublic(),
         };
         !fields[field.name] = field
       };
@@ -2263,6 +2277,7 @@ extension class TypeChecker {
             isOptional,
             isReadonly => None(),
             type => fieldType,
+            access => FAPublic(),
           };
           key match {
           | FKName _ -> newFieldsMap![field.name] = field
