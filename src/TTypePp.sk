@@ -481,15 +481,21 @@ mutable class TypePp{
   }
 
   // Decodes a unique-symbol identifier into a user-facing display string.
-  // Encoded form: unique_symbol:<fileNameHash>:<symbolHash>:<displayName>
-  // When the displayName segment is non-empty, renders as `typeof <name>`;
-  // otherwise (or when the prefix doesn't match) falls back to the raw id.
+  // Encoded form: unique_symbol:<filePath>:<symbolHash>:<relStart>:<displayName>
+  // - When the displayName segment is non-empty: `typeof <name>`.
+  // - When it is empty (anonymous unique symbol): `unique symbol defined in <file>`.
+  // - When the prefix doesn't match: fall back to the raw id.
   static fun displayUniqueSymbolId(val: String): String {
     prefix = "unique_symbol:";
     if (val.startsWith(prefix)) {
       parts = val.stripPrefix(prefix).split(":");
-      if (parts.size() == 3 && !parts[2].isEmpty()) {
-        `typeof ${parts[2]}`
+      if (parts.size() == 4) {
+        displayName = parts[3];
+        if (!displayName.isEmpty()) {
+          `typeof ${displayName}`
+        } else {
+          `unique symbol defined in ${parts[0]}`
+        }
       } else {
         val
       }
