@@ -846,14 +846,15 @@ base class TEnv{
     | TAUniqueSymbol() ->
       if (isTopLevelConst) {
         // Each unique symbol gets a distinct type based on its position.
-        // Format: unique_symbol:<filePath>:<symbolHash>:<relStart>:<displayName>
-        // - filePath + symbolHash + relStart together provide identity
+        // Format: unique_symbol:<filePath>:<symbol>:<relStart>:<displayName>
+        // - filePath + symbol + relStart together provide identity
         //   (uniqueness across declarations).
-        // - filePath is included verbatim so an anonymous unique symbol can
-        //   render as `unique symbol defined in <file>`.
+        // - <symbol> is `SymbolicPos::toString` — e.g. `constant(uniqueA)`,
+        //   `class(MyClass)` — so the encoded id is human-meaningful in
+        //   debug contexts and can be surfaced for anonymous cases.
         // - displayName, when non-empty, lets the renderer show the type
         //   as `typeof <displayName>`.
-        uniqueId = `unique_symbol:${pos.fileName}:${pos.symbol.hash()}:${
+        uniqueId = `unique_symbol:${pos.fileName}:${pos.symbol}:${
           pos.relStart.value
         }:${displayName.default("")}`;
         TType::single(TPrimValue::single(TSymbol(), uniqueId, pos))
