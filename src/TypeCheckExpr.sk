@@ -246,6 +246,7 @@ extension class TypeChecker {
                   ],
                 )
               | Some(tfield) ->
+                this.checkFieldAccess(tcenv, tfield, fieldName.pos);
                 undefined = (pos) ->
                   TType::single(TPrimUnit(TUndefined(), pos));
                 union = (t1, t2) -> TType::union(tcenv.subst, this, t1, t2);

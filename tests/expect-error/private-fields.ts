@@ -161,6 +161,21 @@ class SpreadFromInsideTest {
   }
 }
 
+class HasPrivateForDestruct {
+  private dx: number = 1;
+
+  inSame(): number {
+    const { dx } = this;
+    return dx;
+  }
+}
+
+function destructureFromOutside(c: HasPrivateForDestruct): number {
+  // @skjs-expect-error Property 'dx' is private and only accessible within class 'HasPrivateForDestruct'
+  const { dx } = c;
+  return dx;
+}
+
 // Positive test: symbol-keyed private method usable within the class.
 // External-access negative case isn't asserted here because SKJS reports
 // the symbol's internal xxhash id in the error, which isn't stable enough
