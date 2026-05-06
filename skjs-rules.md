@@ -28,15 +28,6 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 - **Requirement**: `constructor(a: T, b: U)` in parent requires same in child
 - **Workaround**: Design inheritance hierarchies with consistent constructor patterns
 
-### 4. Private Field Modifiers
-- **Rule**: `private` field and method modifiers are enforced. `public` is the default and is a no-op.
-- **`private` access**: Only inside the body of the declaring class (any instance, not just `this`).
-- **`protected`**: Silently accepted but not enforced — treated as `public`. SKJS does not check subclass-only visibility.
-- **Error**: `Property 'foo' is private and only accessible within class 'C'`
-- **Identity**: Classes are identified by their declaration name plus the file in which they are declared, so two unrelated classes with the same name in different modules do not share private members.
-- **Constructors**: Modifiers on constructors remain rejected (no `private constructor()` singleton pattern).
-- **JavaScript `#name` private fields**: Not supported.
-
 #### 4b. Abstract Classes Not Supported
 - **Rule**: Abstract classes and abstract method modifiers are not implemented
 - **Error**: "TODO: support for method modifiers (encountered abstract)"
