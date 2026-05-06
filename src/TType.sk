@@ -690,6 +690,33 @@ class TObject private (
     )
   }
 
+  // Looks up a symbol-keyed field across all branches, merging each
+  // branch's TField via TField::union (so get/set/isOptional/access all
+  // combine consistently). Returns None if any branch lacks the field,
+  // matching maybeGetSymbolType's all-branches semantics. Used when the
+  // caller needs the TField (e.g. to consult access) rather than just
+  // the resolved type.
+  fun maybeGetSymbol(
+    subst: mutable Subst,
+    tenv: TEnv,
+    uniqueId: String,
+  ): ?TField {
+    result: ?TField = None();
+    for (fields in this.branches) {
+      fields.maybeGetSymbol(uniqueId) match {
+      | None() -> return None()
+      | Some(fd) ->
+        !result = Some(
+          result match {
+          | None() -> fd
+          | Some(prev) -> TField::union(subst, tenv, prev, fd)
+          },
+        )
+      }
+    };
+    result
+  }
+
   fun maybeGetCall(subst: mutable Subst, tenv: TEnv): ?(Bool, TFuns) {
     result: ?(Bool, TFuns) = None();
     for (fields in this.branches) {

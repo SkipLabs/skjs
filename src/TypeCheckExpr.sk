@@ -529,8 +529,7 @@ extension class TypeChecker {
           | Some(id) -> id
           | None() -> error(Array[(idx.pos, "Expected a unique symbol")])
           };
-          fields = obj.getFields(tcenv.subst, this);
-          fields.maybeGetSymbol(uniqueId) match {
+          obj.maybeGetSymbol(tcenv.subst, this, uniqueId) match {
           | Some(fd) ->
             this.checkFieldAccess(tcenv, fd, idx.pos);
             addResultCase(
