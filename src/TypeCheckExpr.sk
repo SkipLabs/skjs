@@ -49,7 +49,7 @@ extension class TypeChecker {
     | PArray(arrPat, rest) ->
       stypes = type.getSTypes(tcenv.subst, this, Covariant());
       stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
-      | Some(TTuple(tyl, _)) ->
+      | Some(tyl) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
           arrPat[i] match {
           | None() -> /* skipped element */ void
@@ -2550,7 +2550,7 @@ extension class TypeChecker {
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
         stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
         stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
-        | Some(TTuple(tupElts, _)) ->
+        | Some(tupElts) ->
           moreArgs match {
           | None() -> args.extend(tupElts)
           | Some(ma) ->

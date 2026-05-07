@@ -884,16 +884,6 @@ fun getRestElementType(
 }
 
 /***************************************************************************/
-/* Tuples */
-/***************************************************************************/
-
-// TTuple is a transient view returned by getSingleTuple to give callers a
-// compact (elements, position) shape. It is not an SType — no production code
-// path puts a TTuple into a TInsts/STypes/Clauses pipeline. Tuple types are
-// represented at SType level as TupleN/ReadonlyTupleN-shaped TObjects.
-class TTuple(tuple: Array<TType>, pos: PosRange)
-
-/***************************************************************************/
 /* Single types */
 /***************************************************************************/
 
@@ -1828,10 +1818,9 @@ class STypes private (
     )
   }
 
-  fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?TTuple {
+  fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
     this.singleElt() match {
-    | Some(obj @ TObject _) ->
-      obj.asTuple(subst, tenv).map(elts -> TTuple(elts, obj.pos))
+    | Some(obj @ TObject _) -> obj.asTuple(subst, tenv)
     | _ -> None()
     }
   }
@@ -2234,7 +2223,7 @@ class Clauses private (
   }
 
   // Returns the tuple if clauses is a single clause whose only stype is a Tuple.
-  fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?TTuple {
+  fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
     this.clauses.singleElt().flatMap(clause ->
       clause.stypes.flatMap(sTypes -> sTypes.getSingleTuple(subst, tenv))
     )

@@ -276,9 +276,7 @@ class ArrayLitTyping() {
       u2.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
         sTypes.getSingleTuple(subst, tenv)
       ) match {
-      | Some(
-        TTuple(targetElts, _),
-      ) if (targetElts.size() == arrLit.tupleElts.size()) ->
+      | Some(targetElts) if (targetElts.size() == arrLit.tupleElts.size()) ->
         // Commit to the target tuple's element types (contextual widening).
         // TS widens `[1, "x"]` to `[number, string]` when the target is a
         // mutable tuple; we do the same by committing to the target elements
