@@ -42,6 +42,10 @@ mutable class SavedTypePp private {} extends TypePpState {
 
 mutable class TypePp{
   compact: Bool,
+  // Mirrors --verbose: when true, internal-only details (synthetic index
+  // name; see kSyntheticIndexName) are kept in the printed output for
+  // debugging instead of being filtered out.
+  verbose: Bool = false,
   substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   applyType: (TType -> TType) = x -> x,
 } extends TypePpState {
@@ -333,16 +337,15 @@ mutable class TypePp{
     symbolFieldArray = fields.symbolFields;
     // Hide synthetic indexes (kSyntheticIndexName): they exist to make
     // object literals satisfy indexed-type constraints during subtyping
-    // and must not appear in user-visible printed types.
-    stringIdx = fields.stringIndex.flatMap(f ->
-      if (f.isSynthetic()) None() else Some(f)
-    );
-    numberIdx = fields.numberIndex.flatMap(f ->
-      if (f.isSynthetic()) None() else Some(f)
-    );
-    symbolIdx = fields.symbolIndex.flatMap(f ->
-      if (f.isSynthetic()) None() else Some(f)
-    );
+    // and must not appear in user-visible printed types. Kept under
+    // --verbose for debugging.
+    hideSynthetic: ((?TField) -> ?TField) = idx ->
+      if (this.verbose) idx else {
+        idx.flatMap(f -> if (f.isSynthetic()) None() else Some(f))
+      };
+    stringIdx = hideSynthetic(fields.stringIndex);
+    numberIdx = hideSynthetic(fields.numberIndex);
+    symbolIdx = hideSynthetic(fields.symbolIndex);
     hasIndexes = stringIdx.isSome() || numberIdx.isSome() || symbolIdx.isSome();
     for (i => field in fieldArray) {
       fieldName = field.name.value;
@@ -696,9 +699,10 @@ fun rawPrettyPrint(
   compact: Bool,
   f: mutable TypePp -> void,
   substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+  verbose: Bool = false,
   applyType: TType -> TType = x ~> x,
 ): String {
-  pp = mutable TypePp{compact, substValues, applyType};
+  pp = mutable TypePp{compact, verbose, substValues, applyType};
   pp.render(f)
 }
 
@@ -710,6 +714,7 @@ fun prettyPrint(
 ): String {
   pp = mutable TypePp{
     compact,
+    verbose => tenv.verbose,
     applyType => ty -> ty.expandTVarsForPp(subst, tenv),
   };
   pp.render(f)
