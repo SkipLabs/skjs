@@ -557,8 +557,21 @@ base class TEnv{
             tcenvb.error(Array[(pos, "Static fields cannot be optional")])
           )
         };
+        // Static readonly fields are the class-level analog of a top-level
+        // const — `unique symbol` is permitted there, so propagate the flag.
+        // Also propagate the qualified display name so the encoded id here
+        // matches the one minted at validateToplevelConst (declaration site).
+        isTopLevelConst = fieldIsStatic && fieldIsReadonly is Some _;
+        displayName = if (isTopLevelConst) {
+          field.name match {
+          | FNNormal(fdName) -> Some(`${className.value}.${fdName.value}`)
+          | _ -> None()
+          }
+        } else {
+          None()
+        };
         type: TType = field.type match {
-        | Some(ty) -> this.normalize(tcenvb, ty)
+        | Some(ty) -> this.normalize(tcenvb, ty, isTopLevelConst, displayName)
         | None() ->
           // No annotation: synthesize a placeholder TInst whose name
           // isn't resolvable, so any later attempt to use the field's
@@ -815,10 +828,15 @@ base class TEnv{
   // When isTopLevelConst is true, allows unique symbol type (only permitted
   // in top-level const declarations, class static readonly members, and
   // imported const bindings).
+  // displayName, when present, is the binding name attached to a top-level
+  // unique symbol. It is encoded into the unique-symbol identifier so the
+  // pretty printer can render the type as `typeof <name>` instead of the
+  // hash-based internal id.
   fun normalize(
     tcenvb: mutable TCEnvBase,
     typeAst: Type,
     isTopLevelConst: Bool = false,
+    displayName: ?String = None(),
   ): TType {
     pos = typeAst.pos;
     typeAst.value match {
@@ -827,10 +845,18 @@ base class TEnv{
     | TAAbstract _ -> error(Array[(pos, "TODO abstract")])
     | TAUniqueSymbol() ->
       if (isTopLevelConst) {
-        // Each unique symbol gets a distinct type based on its position
-        uniqueId = `unique_symbol_${pos.fileName.hash()}_${pos.symbol.hash()}_${
+        // Each unique symbol gets a distinct type based on its position.
+        // Format: unique_symbol:<filePath>:<symbol>:<relStart>:<displayName>
+        // - filePath + symbol + relStart together provide identity
+        //   (uniqueness across declarations).
+        // - <symbol> is `SymbolicPos::toString` — e.g. `constant(uniqueA)`,
+        //   `class(MyClass)` — so the encoded id is human-meaningful in
+        //   debug contexts and can be surfaced for anonymous cases.
+        // - displayName, when non-empty, lets the renderer show the type
+        //   as `typeof <displayName>`.
+        uniqueId = `unique_symbol:${pos.fileName}:${pos.symbol}:${
           pos.relStart.value
-        }`;
+        }:${displayName.default("")}`;
         TType::single(TPrimValue::single(TSymbol(), uniqueId, pos))
       } else {
         error(Array[(pos, "unique symbol type cannot be used here")])
@@ -1078,7 +1104,12 @@ base class TEnv{
       for (def in this.defMap.getAll(tcenvb, varName)) {
         def match {
         | FDVar(kind, _, Some(t), _) ->
-          return this.normalize(tcenvb, t, kind is VDKConst _)
+          return this.normalize(
+            tcenvb,
+            t,
+            kind is VDKConst _,
+            Some(varName.value),
+          )
         | fd @ TopLevelFunDef _ ->
           cgNode = fd.cgNode.fromSome();
           return TType::single(

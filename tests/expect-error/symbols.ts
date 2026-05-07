@@ -114,6 +114,9 @@ const uniqueB: unique symbol = Symbol("b");
 // unique symbol A is not assignable to unique symbol B
 function testDistinctTypes(): void {
   // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line2 Type typeof uniqueB
+  // @skjs-expect-error-line3 is not compatible with type typeof uniqueA
+  // @skjs-expect-error-line4 Value typeof uniqueB is missing
   const b: typeof uniqueA = uniqueB; // Different unique symbols are incompatible
 }
 
@@ -133,6 +136,8 @@ function testCovariance(us: unique symbol): symbol {
 // symbol is not assignable to unique symbol
 function testContravariance(s: symbol): void {
   // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line2 Full type symbol
+  // @skjs-expect-error-line3 is not compatible with specific type typeof uniqueA
   const us: typeof uniqueA = s; // symbol → unique symbol should fail
 }
 
@@ -368,4 +373,29 @@ function testDestructureArray(): void {
 function testSpreadInArrayLiteral(): void {
   const s = new Set<number>([1, 2, 3]);
   const arr: Array<number> = [...s];
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 28: typeof access to a class static unique symbol
+///////////////////////////////////////////////////////////////////////////////
+
+// symbol is not assignable to a class static unique symbol
+function testClassSymContravariance(s: symbol): void {
+  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line2 Full type symbol
+  // @skjs-expect-error-line3 is not compatible with specific type typeof MyClass.classSym
+  const c: typeof MyClass.classSym = s;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 29: Anonymous unique symbol (no binding name) shows file + symbol
+///////////////////////////////////////////////////////////////////////////////
+
+declare const anonObj: { readonly prop: unique symbol };
+
+function testAnonUniqueSymbol(s: symbol): void {
+  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error-line2 Full type symbol
+  // @skjs-expect-error-line3 is not compatible with specific type unique symbol defined in tests/expect-error/symbols.ts at constant(anonObj)
+  const c: typeof anonObj.prop = s;
 }

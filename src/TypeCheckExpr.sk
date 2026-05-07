@@ -911,7 +911,8 @@ extension class TypeChecker {
               | None() -> this.newTVar(tcenv, pos, FromUntypedVar(pos))
               | Some(ty) -> TType::single(ty)
               }
-            | Some(ty) -> this.normalize(tcenv, ty, kind is VDKConst _)
+            | Some(ty) ->
+              this.normalize(tcenv, ty, kind is VDKConst _, Some(name.value))
             }
           | _ -> void
           }

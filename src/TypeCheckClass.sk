@@ -158,7 +158,17 @@ extension class TypeChecker {
           field.optional.each(pos ->
             tcenvl.error(Array[(pos, "Static fields cannot be optional")])
           );
-          this.validateToplevelConst(tcenvl, field.pos, field.type, field.value)
+          bindingName = field.name match {
+          | FNNormal(n) -> Some(`${c.name.value}.${n.value}`)
+          | _ -> None()
+          };
+          this.validateToplevelConst(
+            tcenvl,
+            field.pos,
+            field.type,
+            field.value,
+            bindingName,
+          )
         } else {
           typeOpt = field.type match {
           | None() ->

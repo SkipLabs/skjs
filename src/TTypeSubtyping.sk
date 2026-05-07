@@ -142,10 +142,14 @@ base class STErrorOnTPrimValue(
       ),
     ].concat(STError::readonlyHint(suggestReadonly))
   | STPrimMissingValue(elt, prim1, prim2, suggestReadonly) ->
+    displayVal = prim1.kind match {
+    | TSymbol() -> TypePp::displayUniqueSymbolId(elt.val)
+    | _ -> `'${elt.val}'`
+    };
     List[
       (prim1.pos, `Type ${prim1.toString(subst, tenv)}`),
       (prim2.pos, `is not compatible with type ${prim2.toString(subst, tenv)}`),
-      (elt.pos, `Value '${elt.val}' is missing`),
+      (elt.pos, `Value ${displayVal} is missing`),
     ].concat(STError::readonlyHint(suggestReadonly))
 }
 

@@ -145,6 +145,13 @@ mutable class TypePp{
       )
     | TPrimUnit(k, _) -> this.out(level, margin, k.toString())
     | TPrimValue(k, None(), _) -> this.out(level, margin, k.toString())
+    | TPrimValue(TSymbol(), Some(arr), _) ->
+      rendered = arr
+        .values()
+        .map(lit -> TypePp::displayUniqueSymbolId(lit.val))
+        .collect(Array)
+        .join(" | ");
+      this.out(level, margin, rendered)
     | TPrimValue(_, Some(arr), _) ->
       this.out(level, margin, arr.toStringList(true))
 
@@ -367,7 +374,11 @@ mutable class TypePp{
       }
     };
     for (i => field in symbolFieldArray) {
-      this.out(level, margin, `[${field.name.value}]`);
+      this.out(
+        level,
+        margin,
+        `[${TypePp::displayUniqueSymbolId(field.name.value)}]`,
+      );
       if (field.isOptional) {
         this.out(level, margin, "?")
       };
@@ -467,6 +478,32 @@ mutable class TypePp{
       chars.push(c)
     };
     String::fromChars(chars.toArray())
+  }
+
+  // Decodes a unique-symbol identifier into a user-facing display string.
+  // Encoded form: unique_symbol:<filePath>:<symbol>:<relStart>:<displayName>
+  // - When the displayName segment is non-empty: `typeof <name>`.
+  // - When it is empty (anonymous unique symbol): `unique symbol defined in
+  //   <file> at <symbol>` — the symbol is the `SymbolicPos::toString`
+  //   form, e.g. `constant(objWithUniqueSymbol)` or `class(MyClass)`.
+  // - When the prefix doesn't match: fall back to the raw id.
+  static fun displayUniqueSymbolId(val: String): String {
+    prefix = "unique_symbol:";
+    if (val.startsWith(prefix)) {
+      parts = val.stripPrefix(prefix).split(":");
+      if (parts.size() == 4) {
+        displayName = parts[3];
+        if (!displayName.isEmpty()) {
+          `typeof ${displayName}`
+        } else {
+          `unique symbol defined in ${parts[0]} at ${parts[1]}`
+        }
+      } else {
+        val
+      }
+    } else {
+      val
+    }
   }
 
   mutable fun clause(level: Int, margin: Margin, clause: Clause): void {
