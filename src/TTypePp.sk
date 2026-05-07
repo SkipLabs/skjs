@@ -158,8 +158,6 @@ mutable class TypePp{
       this.out(level, margin, rendered)
     | TPrimValue(_, Some(arr), _) ->
       this.out(level, margin, arr.toStringList(true))
-
-    | TTuple(arr, _) -> this.tuple(level, margin, arr)
     }
   }
 

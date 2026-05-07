@@ -156,8 +156,6 @@ extension class STypes {
 
         | (TPromise(ty1, pos), TPromise(ty2, _)) ->
           TPromise(TType::union(subst, tenv, ty1, ty2), pos)
-        | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
-          TTuple::union(subst, tenv, tuple1, tuple2)
         | (obj1 @ TObject _, obj2 @ TObject _) ->
           TObject::union(subst, tenv, obj1, obj2)
         | _ -> internal_error("Internal error")
@@ -500,46 +498,6 @@ extension class TFun {
       retType,
       cgNodes,
     )
-  }
-}
-
-extension class TTuple {
-  static fun union(
-    subst: mutable Subst,
-    tenv: TEnv,
-    tuple1: TTuple,
-    tuple2: TTuple,
-  ): TTuple {
-    result = mutable Vector[];
-    for (i in Range(0, min(tuple1.tuple.size(), tuple2.tuple.size()))) {
-      result.push(TType::union(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]));
-    };
-    if (tuple1.tuple.size() < tuple2.tuple.size()) {
-      for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
-        posEnd = tuple1.pos.atEnd();
-        result.push(
-          TType::union(
-            subst,
-            tenv,
-            TType::single(TPrimUnit(TUndefined(), posEnd)),
-            tuple2.tuple[i],
-          ),
-        );
-      }
-    } else if (tuple2.tuple.size() < tuple1.tuple.size()) {
-      for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
-        posEnd = tuple2.pos.atEnd();
-        result.push(
-          TType::union(
-            subst,
-            tenv,
-            tuple1.tuple[i],
-            TType::single(TPrimUnit(TUndefined(), posEnd)),
-          ),
-        );
-      }
-    };
-    TTuple(result.toArray(), tuple1.pos)
   }
 }
 

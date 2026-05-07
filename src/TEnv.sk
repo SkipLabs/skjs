@@ -1697,7 +1697,6 @@ base class TEnv{
       while (!stypes.isEmpty()) {
         stype = stypes.pop();
         stype match {
-        | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | obj @ TObject(_, _, _) ->
           for (fields in obj.getAllFields()) {
             if (!allStrings || !allNumbers) {

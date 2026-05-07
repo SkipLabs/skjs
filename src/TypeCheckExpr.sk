@@ -518,27 +518,6 @@ extension class TypeChecker {
 
       optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
-      | TTuple(tyArr, tuplePos) ->
-        n = idxSType match {
-        | TPrimValue(TNum(), Some(numbers), _) ->
-          numbers.singleElt().flatMap(lit -> lit.val.toIntOption())
-        | _ -> None()
-        } match {
-        | None() ->
-          error(
-            Array[
-              (idx.pos, "Invalid index"),
-              (tuplePos, "A tuple expects a static index"),
-            ],
-          )
-        | Some(x) -> x
-        };
-        tyAtN = tyArr.maybeGet(n) match {
-        | Some(tyAtN) -> tyAtN
-        | None() -> error(Array[(pos, "Out of bound index")])
-        };
-        addResultCase(tyAtN)
-
       | obj @ TObject(_, _, objectPos) ->
         // Tuple-shaped TObjects inherit a read-only number-index signature
         // from ReadonlyArray, so `tup[5]` on a 3-tuple silently returns the
@@ -1818,7 +1797,6 @@ extension class TypeChecker {
                   }
                 )
               }
-          | TTuple _
           | TPromise _ ->
             tcenv.error(
               Array[

@@ -280,9 +280,6 @@ extension class STypes {
 
       | (p1 @ TPrimValue _, p2 @ TPrimValue _) -> TPrimValue::inter(p1, p2)
 
-      | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
-        Some(TTuple::inter(subst, tenv, tuple1, tuple2))
-
       | (TPromise(ty1, pos1), TPromise(ty2, _)) ->
         Some(TPromise(TType::inter(subst, tenv, ty1, ty2), pos1))
 
@@ -561,30 +558,6 @@ extension class TFun {
     | STError _ -> void
     };
     None()
-  }
-}
-
-extension class TTuple {
-  static fun inter(
-    subst: mutable Subst,
-    tenv: TEnv,
-    tuple1: TTuple,
-    tuple2: TTuple,
-  ): TTuple {
-    result = mutable Vector[];
-    for (i in Range(0, min(tuple1.tuple.size(), tuple2.tuple.size()))) {
-      result.push(TType::inter(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]));
-    };
-    if (tuple1.tuple.size() < tuple2.tuple.size()) {
-      for (i in Range(tuple1.tuple.size(), tuple2.tuple.size())) {
-        result.push(tuple2.tuple[i]);
-      }
-    } else if (tuple2.tuple.size() < tuple1.tuple.size()) {
-      for (i in Range(tuple2.tuple.size(), tuple1.tuple.size())) {
-        result.push(tuple1.tuple[i]);
-      }
-    };
-    TTuple(result.toArray(), tuple1.pos)
   }
 }
 

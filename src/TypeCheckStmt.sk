@@ -316,9 +316,7 @@ extension class TypeChecker {
         !stypes.isEmpty() &&
         stypes.all(stype ->
           stype match {
-          | TObject _
-          | TTuple _ ->
-            true
+          | TObject _ -> true
           | _ -> false
           }
         )
@@ -360,10 +358,6 @@ extension class TypeChecker {
           tcenv.error(
             Array[(pos, `Invalid iterable type for ${iterationKind}`)],
           )
-        }
-      | TTuple(tuple, _) ->
-        for (elementType in tuple) {
-          !result = TType::union(tcenv.subst, this, result, elementType)
         }
       | TPrimValue(TString(), _, _) ->
         !result = TType::union(

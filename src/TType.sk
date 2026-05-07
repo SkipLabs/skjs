@@ -393,8 +393,7 @@ class TType private {
         | TPrimValue _ ->
           continue
         | TObject _
-        | TPromise _
-        | TTuple _ ->
+        | TPromise _ ->
           return false
         }
       };
@@ -888,7 +887,11 @@ fun getRestElementType(
 /* Tuples */
 /***************************************************************************/
 
-class TTuple(tuple: Array<TType>) extends SType
+// TTuple is a transient view returned by getSingleTuple to give callers a
+// compact (elements, position) shape. It is not an SType — no production code
+// path puts a TTuple into a TInsts/STypes/Clauses pipeline. Tuple types are
+// represented at SType level as TupleN/ReadonlyTupleN-shaped TObjects.
+class TTuple(tuple: Array<TType>, pos: PosRange)
 
 /***************************************************************************/
 /* Single types */
@@ -1013,7 +1016,6 @@ base class STypeTag final () uses Orderable {
   | TagString
   | TagBigInt
   | TagSymbol
-  | TagTuple
   | TagPromise
   | TagObject
 }
@@ -1034,17 +1036,13 @@ base class SType private (
     | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
     | TPrimValue(TSymbol(), _, _) -> TagSymbol()
-    | TTuple _ -> TagTuple()
     | TPromise _ -> TagPromise()
     | TObject _ -> TagObject()
     }
   }
 
   overridable fun isTuple(): ?Int {
-    this match {
-    | TTuple(elts, _) -> Some(elts.size())
-    | _ -> None()
-    }
+    None()
   }
 
   fun project(): STypeTag {
@@ -1832,7 +1830,6 @@ class STypes private (
 
   fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?TTuple {
     this.singleElt() match {
-    | Some(tuple @ TTuple _) -> Some(tuple)
     | Some(obj @ TObject _) ->
       obj.asTuple(subst, tenv).map(elts -> TTuple(elts, obj.pos))
     | _ -> None()
