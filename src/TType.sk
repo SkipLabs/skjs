@@ -1173,6 +1173,13 @@ class TField{
     }
   }
 
+  // True if this field is the synthetic index created for object literals
+  // (see kSyntheticIndexName). Used to keep the internal name out of
+  // user-visible output while still letting it participate in subtyping.
+  fun isSynthetic(): Bool {
+    this.name.value == kSyntheticIndexName
+  }
+
   // Create a virtual field from an index, renamed for use in union.
   // Indexes are already optional (isOptional = true).
   fun asNamed(name: FieldNameString): TField {
@@ -1506,9 +1513,7 @@ class TFields protected {
   }
 
   private static fun nonSynthetic(index: ?TField): ?TField {
-    index.flatMap(f ->
-      if (f.name.value == kSyntheticIndexName) None() else Some(f)
-    )
+    index.flatMap(f -> if (f.isSynthetic()) None() else Some(f))
   }
 
   fun hasNonSyntheticIndex(): Bool {
