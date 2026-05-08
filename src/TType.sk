@@ -1066,11 +1066,17 @@ class TPrimValue(kind: TPrimValueKind, literals: ?PrimLiterals) extends SType {
 // FANever is the result of unioning/intersecting two FAPrivate fields with
 // different owners — no enclosing class can satisfy both, so all access is
 // rejected.
+// FAPhantom marks a field synthesized by the `in` operator narrowing when
+// the type carries no matching index: presence is runtime-confirmed, but
+// the underlying declaration (and visibility) is unknown. Carries the
+// position of the `in` check so diagnostics can cite it. Access through a
+// phantom always errors — it might be a private field of some class.
 base class FieldAccess uses XXHashable, Orderable {
   children =
   | FAPublic()
   | FAPrivate(owner: Name)
   | FANever()
+  | FAPhantom(inPos: PosRange)
 
   // Most-restrictive combination: access succeeds on the result iff
   // access succeeds on both inputs. Used when fields are unioned or
@@ -1089,6 +1095,9 @@ base class FieldAccess uses XXHashable, Orderable {
     | (FANever(), _)
     | (_, FANever()) ->
       FANever()
+    | (p @ FAPhantom _, _)
+    | (_, p @ FAPhantom _) ->
+      p
     }
   }
 
@@ -1097,7 +1106,9 @@ base class FieldAccess uses XXHashable, Orderable {
   // Access kinds must match exactly — a private field is structurally
   // distinct from a public one with the same name (TypeScript's nominal
   // treatment of private). FANever is trivially compatible — nothing
-  // can access the target anyway.
+  // can access the target anyway. A phantom can only stand in for
+  // another phantom (or FANever) — it cannot masquerade as a real
+  // public/private declaration.
   fun isCompatibleWith(target: FieldAccess): Bool {
     target match {
     | FANever() -> true
@@ -1107,6 +1118,7 @@ base class FieldAccess uses XXHashable, Orderable {
       | _ -> false
       }
     | FAPublic() -> this is FAPublic _
+    | FAPhantom _ -> this is FAPhantom _
     }
   }
 }

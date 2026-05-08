@@ -409,25 +409,38 @@ extension class TypeChecker {
                       tf
                     }
                   | None() ->
-                    tf.nonSyntheticIndexForKeyKind(
+                    fieldToAdd = tf.nonSyntheticIndexForKeyKind(
                       key.toPrimValueKind(),
                     ) match {
-                    | None() -> tf
                     | Some(indexField) ->
-                      fieldToAdd = TField{
+                      TField{
                         pos => e1.pos,
                         name => FieldNameString(key.value()),
                         isOptional => false,
                         get => indexField.get,
                         set => indexField.set,
                         access => indexField.access,
-                      };
-                      (if (key is FKSymbol _) {
-                        tf.addSymbolField(fieldToAdd)
-                      } else {
-                        tf.addField(fieldToAdd)
-                      }).default(tf)
-                    }
+                      }
+                    | None() ->
+                      // Presence is runtime-confirmed by `in` but the
+                      // declaration is unknown. Synthesize a phantom that
+                      // errors at access (since the field could be private)
+                      // and is invisible to subtyping toward the original
+                      // type.
+                      TField{
+                        pos => e1.pos,
+                        name => FieldNameString(key.value()),
+                        isOptional => false,
+                        get => TType::top(e.pos),
+                        set => TType::bottom(e.pos),
+                        access => FAPhantom(e.pos),
+                      }
+                    };
+                    (if (key is FKSymbol _) {
+                      tf.addSymbolField(fieldToAdd)
+                    } else {
+                      tf.addField(fieldToAdd)
+                    }).default(tf)
                   }
                 ),
               )

@@ -442,6 +442,18 @@ extension class TypeChecker {
           (field.pos, "Declared here"),
         ],
       )
+    | FAPhantom(inPos) ->
+      tcenv.error(
+        Array[
+          (
+            accessPos,
+            `Property '${
+              field.name
+            }' was confirmed present by \`in\` but its declaration is unknown — accessing it is unsafe (it could be private)`,
+          ),
+          (inPos, "Presence checked here"),
+        ],
+      )
     }
   }
 

@@ -38,7 +38,8 @@ function literalInRecordNotAlwaysFalse(x: { f: number }): boolean {
 
 function refineLiteralInRecordNotAlwaysFalse(x: { f: number }): number {
   if ("g" in x) {
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Property 'g' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
     return x.g;
   } else {
     return 0;
@@ -47,7 +48,7 @@ function refineLiteralInRecordNotAlwaysFalse(x: { f: number }): number {
 
 function refineLiteralInRecordNotAlwaysFalse2(x: { f: number }): unknown {
   if ("g" in x) {
-    // @skjs-expect-error Unbound field: g
+    // @skjs-expect-error Property 'g' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
     return x.g;
   } else {
     return 0;
@@ -73,7 +74,8 @@ function literalInRecordUnion(x: { f: number } | { g: number }): boolean {
 function refineLiteralInRecordUnion(x: { f: number } | { g: number }): number {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Unbound field: f
+    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
     return x.f;
   } else {
     return 0;
@@ -85,7 +87,7 @@ function refineLiteralInRecordUnion2(
 ): unknown {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Unbound field: f
+    // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
     return x.f;
   } else {
     return 0;
@@ -101,7 +103,8 @@ function refineLiteralInRecordOptUnion(
 ): number {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Unbound field: f
+    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
     return x.f;
   } else {
     return 0;
@@ -113,7 +116,8 @@ function refineLiteralInRecordOptUnion2(
 ): number | undefined {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Unbound field: f
+    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
     return x.f;
   } else {
     return 0;
@@ -339,5 +343,29 @@ function refineInMandatoryField(x: { f: string } | string): string {
     return x.f;
   } else {
     return x;
+  }
+}
+
+// A phantom field synthesized by `in` is invisible to subtyping toward
+// the original type — a refined Foo is still assignable to Foo.
+class FooWithPrivate {
+  private p: number = 1;
+}
+
+function takesFoo(_: FooWithPrivate): void {}
+
+function refinedClassStillAssignableToOriginal(obj: FooWithPrivate): void {
+  if ("y" in obj) {
+    takesFoo(obj);
+  }
+}
+
+// A phantom field cannot satisfy a real declared field on the super.
+function takesXY(_: { x: number; y: number }): void {}
+
+function phantomDoesNotSatisfyRealField(obj: { x: number }): void {
+  if ("y" in obj) {
+    // @skjs-expect-error Invalid call
+    takesXY(obj);
   }
 }
