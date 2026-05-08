@@ -2116,10 +2116,10 @@ extension class TypeChecker {
         tvar
       }
     | Some(annotatedTypeAst) ->
+      annotatedType = this.normalize(tcenv, annotatedTypeAst);
       body match {
       | CBExpr(e) ->
         inferredType = this.expr(tcenv, e, true);
-        annotatedType = this.normalize(tcenv, annotatedTypeAst);
         this.checkSubType(
           tcenv,
           e.pos,
@@ -2129,15 +2129,13 @@ extension class TypeChecker {
           | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
           },
           annotatedType,
-        );
-        annotatedType
+        )
       | CBBlock(bl) ->
         if (isAsync is Some _) !this.isAsync = true;
-        annotatedType = this.normalize(tcenv, annotatedTypeAst);
         !this.retType = Some(annotatedType);
-        _ = this.block(tcenv, bl);
-        annotatedType
-      }
+        _ = this.block(tcenv, bl)
+      };
+      annotatedType
     };
 
     tcenv.!scope = savedScope;
