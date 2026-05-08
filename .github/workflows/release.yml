@@ -25,6 +25,20 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME matches Skargo.toml version $SKJS_VERSION"
 
+      - name: Package import-stubs
+        run: |
+          mkdir -p artifacts
+          tar -czf artifacts/import-stubs.tgz -C import-stubs .
+          ls -la artifacts/
+
+      - name: Upload import-stubs artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skjs-import-stubs
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 1
+
   build:
     needs: verify
     strategy:
@@ -106,14 +120,11 @@ jobs:
       run:
         shell: bash
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-
-      - name: Download all build artifacts
+      - name: Download all release artifacts
         uses: actions/download-artifact@v4
         with:
           path: downloaded
-          pattern: skjs-linux-*
+          pattern: skjs-*
           merge-multiple: true
 
       - name: Assemble release files
@@ -123,8 +134,7 @@ jobs:
           cp "downloaded/skjs_${GITHUB_REF_NAME}_linux_amd64.json" artifacts/
           cp "downloaded/skjs_${GITHUB_REF_NAME}_linux_arm64"      artifacts/
           cp "downloaded/skjs_${GITHUB_REF_NAME}_linux_arm64.json" artifacts/
-
-          tar -czf artifacts/import-stubs.tgz -C import-stubs .
+          cp "downloaded/import-stubs.tgz"                         artifacts/
 
           ( cd artifacts && sha256sum \
               "skjs_${GITHUB_REF_NAME}_linux_amd64" \
