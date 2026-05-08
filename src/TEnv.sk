@@ -1688,7 +1688,6 @@ base class TEnv{
     allStrings = false;
     allNumbers = false;
     allSymbols = false;
-    maxRange = -1;
     strings = SortedSet[];
     symbols = SortedSet[];
     for (clause in clauses) {
@@ -1735,11 +1734,7 @@ base class TEnv{
       }
     };
     resultTys = mutable Vector[];
-    numbers = if (!allStrings || !allNumbers) {
-      SortedSet::createFromItems(Range(0, maxRange).map(i -> i.toString()))
-    } else {
-      SortedSet[]
-    };
+    numbers = SortedSet[];
     if (allStrings) {
       resultTys.push(TType::single(TPrimValue::string(pos)))
     } else {
