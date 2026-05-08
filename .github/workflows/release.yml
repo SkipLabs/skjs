@@ -5,16 +5,9 @@ on:
     tags:
       - 'v*'
 
-permissions:
-  contents: write
-
 jobs:
-  release:
-    runs-on: ubuntu-latest
-    container:
-      image: skiplabs/skip:latest
-    env:
-      SKIP_CAPACITY: 8G
+  verify:
+    runs-on: ubuntu-24.04
     defaults:
       run:
         shell: bash
@@ -32,6 +25,28 @@ jobs:
           fi
           echo "Tag $GITHUB_REF_NAME matches Skargo.toml version $SKJS_VERSION"
 
+  build:
+    needs: verify
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
+    runs-on: ${{ matrix.runner }}
+    container:
+      image: skiplabs/skip:latest
+    env:
+      SKIP_CAPACITY: 8G
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
       - name: Clone Skip repository
         run: |
           git clone --depth=1 --shallow-submodules --recurse-submodules \
@@ -42,11 +57,11 @@ jobs:
           skargo build --release --bin skjs
           ls -la target/host/release/
 
-      - name: Prepare artifacts
+      - name: Prepare per-arch artifacts
         run: |
           mkdir -p artifacts
           PLATFORM="linux"
-          ARCH="amd64"
+          ARCH="${{ matrix.arch }}"
           BINARY_NAME="skjs_${GITHUB_REF_NAME}_${PLATFORM}_${ARCH}"
 
           cp target/host/release/skjs "artifacts/${BINARY_NAME}"
@@ -66,17 +81,60 @@ jobs:
           }
           EOF
 
-          tar -czf artifacts/import-stubs.tgz -C import-stubs .
-
-          ( cd artifacts && sha256sum "${BINARY_NAME}" "${BINARY_NAME}.json" import-stubs.tgz > SHA256SUMS )
-
           ls -la artifacts/
 
       - name: Smoke test binary
         run: |
-          BINARY="artifacts/skjs_${GITHUB_REF_NAME}_linux_amd64"
+          BINARY="artifacts/skjs_${GITHUB_REF_NAME}_linux_${{ matrix.arch }}"
           chmod +x "$BINARY"
           "$BINARY" --version
+
+      - name: Upload arch artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: skjs-linux-${{ matrix.arch }}
+          path: artifacts/
+          if-no-files-found: error
+          retention-days: 1
+
+  publish:
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: downloaded
+          pattern: skjs-linux-*
+          merge-multiple: true
+
+      - name: Assemble release files
+        run: |
+          mkdir -p artifacts
+          cp "downloaded/skjs_${GITHUB_REF_NAME}_linux_amd64"      artifacts/
+          cp "downloaded/skjs_${GITHUB_REF_NAME}_linux_amd64.json" artifacts/
+          cp "downloaded/skjs_${GITHUB_REF_NAME}_linux_arm64"      artifacts/
+          cp "downloaded/skjs_${GITHUB_REF_NAME}_linux_arm64.json" artifacts/
+
+          tar -czf artifacts/import-stubs.tgz -C import-stubs .
+
+          ( cd artifacts && sha256sum \
+              "skjs_${GITHUB_REF_NAME}_linux_amd64" \
+              "skjs_${GITHUB_REF_NAME}_linux_amd64.json" \
+              "skjs_${GITHUB_REF_NAME}_linux_arm64" \
+              "skjs_${GITHUB_REF_NAME}_linux_arm64.json" \
+              import-stubs.tgz \
+              > SHA256SUMS )
+
+          ls -la artifacts/
 
       - name: Publish GitHub Release
         uses: softprops/action-gh-release@v2
@@ -86,5 +144,7 @@ jobs:
           files: |
             artifacts/skjs_${{ github.ref_name }}_linux_amd64
             artifacts/skjs_${{ github.ref_name }}_linux_amd64.json
+            artifacts/skjs_${{ github.ref_name }}_linux_arm64
+            artifacts/skjs_${{ github.ref_name }}_linux_arm64.json
             artifacts/import-stubs.tgz
             artifacts/SHA256SUMS
