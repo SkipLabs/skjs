@@ -2093,45 +2093,51 @@ extension class TypeChecker {
 
     this.bindParams(tcenv, params, paramTypes);
 
-    retType = (retTypeAstOpt, body) match {
-    | (None(), CBExpr(e)) ->
-      inferredType = this.expr(tcenv, e, true);
-      isAsync match {
-      | None() -> inferredType
-      | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
-      }
-    | (Some(annotatedTypeAst), CBExpr(e)) ->
-      inferredType = this.expr(tcenv, e, true);
-      annotatedType = this.normalize(tcenv, annotatedTypeAst);
-      this.checkSubType(
-        tcenv,
-        e.pos,
-        "Invalid callback return",
+    retType = retTypeAstOpt match {
+    | None() ->
+      body match {
+      | CBExpr(e) ->
+        inferredType = this.expr(tcenv, e, true);
         isAsync match {
         | None() -> inferredType
         | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
-        },
-        annotatedType,
-      );
-      annotatedType
-    | (None(), CBBlock(bl)) ->
-      if (isAsync is Some _) !this.isAsync = true;
-      tvar = isAsync match {
-      | None() -> this.newTVar(tcenv, pos, FromLambdaReturn(pos))
-      | Some(asyncPos) ->
-        TType::single(
-          TPromise(this.newTVar(tcenv, pos, FromLambdaReturn(pos)), asyncPos),
-        )
-      };
-      !this.retType = Some(tvar);
-      _ = this.block(tcenv, bl);
-      tvar
-    | (Some(annotatedTypeAst), CBBlock(bl)) ->
-      if (isAsync is Some _) !this.isAsync = true;
-      annotatedType = this.normalize(tcenv, annotatedTypeAst);
-      !this.retType = Some(annotatedType);
-      _ = this.block(tcenv, bl);
-      annotatedType
+        }
+      | CBBlock(bl) ->
+        if (isAsync is Some _) !this.isAsync = true;
+        tvar = isAsync match {
+        | None() -> this.newTVar(tcenv, pos, FromLambdaReturn(pos))
+        | Some(asyncPos) ->
+          TType::single(
+            TPromise(this.newTVar(tcenv, pos, FromLambdaReturn(pos)), asyncPos),
+          )
+        };
+        !this.retType = Some(tvar);
+        _ = this.block(tcenv, bl);
+        tvar
+      }
+    | Some(annotatedTypeAst) ->
+      body match {
+      | CBExpr(e) ->
+        inferredType = this.expr(tcenv, e, true);
+        annotatedType = this.normalize(tcenv, annotatedTypeAst);
+        this.checkSubType(
+          tcenv,
+          e.pos,
+          "Invalid callback return",
+          isAsync match {
+          | None() -> inferredType
+          | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
+          },
+          annotatedType,
+        );
+        annotatedType
+      | CBBlock(bl) ->
+        if (isAsync is Some _) !this.isAsync = true;
+        annotatedType = this.normalize(tcenv, annotatedTypeAst);
+        !this.retType = Some(annotatedType);
+        _ = this.block(tcenv, bl);
+        annotatedType
+      }
     };
 
     tcenv.!scope = savedScope;
