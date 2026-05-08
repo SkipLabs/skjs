@@ -59,7 +59,15 @@ extension class TType {
     pos: PosRange,
     tys: readonly Sequence<TType>,
   ): TType {
-    tysIt = tys.iterator();
+    TType::unionN_it(subst, tenv, pos, tys.iterator())
+  }
+
+  static fun unionN_it(
+    subst: mutable Subst,
+    tenv: TEnv,
+    pos: PosRange,
+    tysIt: mutable Iterator<TType>,
+  ): TType {
     tysIt.next() match {
     | None() -> TType::bottom(pos)
     | Some(first) ->
