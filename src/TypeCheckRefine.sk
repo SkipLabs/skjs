@@ -435,7 +435,7 @@ extension class TypeChecker {
               tObj.mapOpt(tFields ->
                 tFields.maybeGetField(key) match {
                 | Some(TField{isOptional => false}) -> None()
-                | Some(_) ->
+                | Some(TField{isOptional => true}) ->
                   key match {
                   | FKSymbol(_, keyName) ->
                     Some(
