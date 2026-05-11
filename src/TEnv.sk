@@ -344,8 +344,8 @@ base class TEnv{
     )
   }
 
-  fun newStatic(tcenvb: mutable TCEnvBase, className: Name): TType {
-    obj = this.newStaticObject(tcenvb, className);
+  fun newStatic(subst: mutable Subst, className: Name): TType {
+    obj = this.newStaticObject(subst, className);
     TType::single(obj)
   }
 
@@ -1120,7 +1120,9 @@ base class TEnv{
           return TType::single(
             TObject::createCall(this.funDecl(tcenvb, false, fd, cgNode)),
           )
-        | Class _ -> return this.newStatic(tcenvb, varName)
+        | Class _ ->
+          subst = Subst::mcreate(tcenvb);
+          return this.newStatic(subst, varName)
         | _ -> void
         }
       };

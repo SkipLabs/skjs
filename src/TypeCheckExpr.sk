@@ -910,7 +910,7 @@ extension class TypeChecker {
             tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
             break TType::single(TObject::createCall(tFuns))
           | c @ Class _ ->
-            staticClass = this.newStatic(tcenv, c.name);
+            staticClass = this.newStatic(tcenv.subst, c.name);
             break staticClass
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
