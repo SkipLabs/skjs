@@ -62,6 +62,9 @@ declare interface SKJS_ArrayAndTupleBase<T> extends ReadonlyArray<T> {
   flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
 }
 
+declare interface SKJS_ReadonlyTuple<U> extends ReadonlyArray<U> {}
+declare interface SKJS_Tuple<U> extends SKJS_ArrayAndTupleBase<U> {}
+
 declare class Array<T> implements SKJS_ArrayAndTupleBase<T> {
   readonly __SKJS_isArray: true;
   constructor(...items: T[]);
