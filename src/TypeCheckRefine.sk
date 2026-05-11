@@ -307,7 +307,7 @@ extension class TypeChecker {
           );
           arrName = if (hasReadonlyIndex) "ReadonlyArray" else "Array";
           arrObj = this.newObject(
-            tcenv,
+            tcenv.subst,
             Name(local.pos, arrName),
             Array[tparam],
           );
@@ -336,7 +336,7 @@ extension class TypeChecker {
     } else {
       this.makeTArgs(tcenv, className)
     };
-    obj = this.newObject(tcenv, className, tArgs);
+    obj = this.newObject(tcenv.subst, className, tArgs);
     filterMap = stype ->
       stype match {
       | tObj @ TObject _ -> TObject::inter(tcenv.subst, this, tObj, obj)

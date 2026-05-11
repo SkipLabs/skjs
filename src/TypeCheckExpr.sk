@@ -651,7 +651,7 @@ extension class TypeChecker {
           }
         }
       | prim @ TPrimValue _ ->
-        obj = this.newObject(tcenv, prim.asClassName(), Array[]);
+        obj = this.newObject(tcenv.subst, prim.asClassName(), Array[]);
         stypes.push(obj)
 
       | TPrimUnit(TUndefined(), undefPos)
