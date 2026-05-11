@@ -427,7 +427,7 @@ base class TEnv{
   }
 
   private fun processClassSetup(
-    tcenvb: mutable TCEnvBase,
+    subst: mutable Subst,
     visitedClasses: SortedSet<String>,
     withTParams: Bool,
     className: Name,
@@ -437,7 +437,7 @@ base class TEnv{
       error(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
-    defs = this.defMap.getAll(tcenvb, className);
+    defs = this.defMap.getAll(subst, className);
     defsCls = defs.filterMap(def ->
       def match {
       | cls @ Class _ -> Some(cls)
@@ -448,7 +448,7 @@ base class TEnv{
     | 0 -> error(Array[(className.pos, "Unbound class")])
     | 1 -> void
     | _ ->
-      tcenvb.error(
+      subst.error(
         Array[
           (className.pos, `Found multiple definitions for class ${className}`),
         ],
@@ -459,7 +459,7 @@ base class TEnv{
       (withTParams || targs.size() != 0) &&
       targs.size() != cls.tparams.size()
     ) {
-      tcenvb.error(
+      subst.error(
         Array[
           (className.pos, "Invalid number of type arguments"),
           (cls.name.pos, "Class declaration is here"),
@@ -475,7 +475,7 @@ base class TEnv{
           // still reach this code when other defs (e.g. subclasses) keep type-checking
           tparam.default match {
           | None() -> break void
-          | Some(d) -> this.normalize(tcenvb, d)
+          | Some(d) -> this.normalize(subst, d)
           }
         };
         // Class type arguments are lexical binders for this class expansion.
