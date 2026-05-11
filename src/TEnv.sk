@@ -295,14 +295,14 @@ base class TEnv{
   }
 
   fun newObject(
-    tcenvb: mutable TCEnvBase,
+    subst: mutable Subst,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TObject {
-    c = this.getClass(tcenvb, className);
+    c = this.getClass(subst, className);
     if (c.tparams.size() != targs.size()) {
-      tcenvb.error(
+      subst.error(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
       )
     };
@@ -313,7 +313,7 @@ base class TEnv{
     thisType = TType::inst(className, TArgs(targs));
     !this.bindings["this"] = thisType;
     constructor = this.addFields(
-      tcenvb,
+      subst,
       fields,
       symbolFields,
       indexes,
@@ -327,7 +327,7 @@ base class TEnv{
     );
     constructor match {
     | Some(constructorTy) ->
-      tcenvb.notSupported(constructorTy.pos, "new returning a constructor")
+      subst.notSupported(constructorTy.pos, "new returning a constructor")
     | None() -> void
     };
     isArray = c.kind match {
@@ -336,7 +336,7 @@ base class TEnv{
     | CKClass() ->
       Some(false) /* Unless overridden by brand field */
     };
-    tIndexes = TIndexes::create(tcenvb, this, indexes);
+    tIndexes = TIndexes::create(subst, this, indexes);
     TObject::createSingleBranch(
       TFields::create{fields, symbolFields, tIndexes, isArray},
       Some(TSInst(className, TArgs(targs))),
