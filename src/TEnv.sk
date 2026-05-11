@@ -127,16 +127,10 @@ base class TEnv{
     tcenvb: mutable TCEnvBase = subst;
 
     tdef = this.defMap.getType(tcenvb, name);
-    tParams = tdef match {
-    | TypeDef{tdefParams} -> tdefParams
-    | Class{tparams} -> tparams
-    | Enum _ -> Array[]
-    };
-
-    !this = this.instantiateTParams(subst, name.pos, targs.targs, tParams);
 
     tdef match {
-    | ta @ TypeDef _ ->
+    | ta @ TypeDef{tdefParams} ->
+      !this = this.instantiateTParams(subst, name.pos, targs.targs, tdefParams);
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(subst, name, targs.targs)
