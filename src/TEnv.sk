@@ -692,14 +692,14 @@ base class TEnv{
   }
 
   private fun findConstructor(
-    tcenvb: mutable TCEnvBase,
+    subst: mutable Subst,
     visitedClasses: SortedSet<String>,
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?TFuns {
     this.findConstructorMethod(
-      tcenvb,
+      subst,
       visitedClasses,
       className,
       tparams,
@@ -707,7 +707,7 @@ base class TEnv{
     ) match {
     | None() -> None()
     | Some((tenv, fd)) ->
-      Some(tenv.makeConstructor(tcenvb, className, tparams, fd))
+      Some(tenv.makeConstructor(subst, className, tparams, fd))
     }
   }
 
