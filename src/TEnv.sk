@@ -480,20 +480,7 @@ base class TEnv{
       )
     };
     if (withTParams) {
-      for (i => tparam in cls.tparams) {
-        targ = if (i < targs.size()) {
-          targs[i]
-        } else {
-          // TypeChecker::class_ rejects classes with defaulted type parameters, but we
-          // still reach this code when other defs (e.g. subclasses) keep type-checking
-          tparam.default match {
-          | None() -> break void
-          | Some(d) -> this.normalize(subst, d)
-          }
-        };
-        // Class type arguments are lexical binders for this class expansion.
-        !this.bindings[tparam.name.value] = targ
-      }
+      !this = this.instantiateTParams(subst, className.pos, targs, cls.tparams);
     };
     (this, cls)
   }
