@@ -487,7 +487,7 @@ base class TEnv{
 
   // Returns the type of the constructor, if any.
   private fun addFields(
-    tcenvb: mutable TCEnvBase,
+    subst: mutable Subst,
     acc: mutable Map<FieldNameString, TField>,
     symbolFields: mutable Map<FieldNameString, TField>,
     indexes: mutable Vector<(IndexKeyKinds, TField)>,
@@ -498,7 +498,7 @@ base class TEnv{
     filter: ClassFieldValue ~> Bool,
   ): ?TFuns {
     (!this, cls) = this.processClassSetup(
-      tcenvb,
+      subst,
       visitedClasses,
       isStatic is None(),
       className,
@@ -508,7 +508,7 @@ base class TEnv{
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
         _ = this.addFields(
-          tcenvb,
+          subst,
           acc,
           symbolFields,
           indexes,
@@ -516,15 +516,15 @@ base class TEnv{
           isStatic,
           parentName,
           if (isStatic is Some _) Array[] else {
-            paramTArgs.map(targ -> this.normalize(tcenvb, targ))
+            paramTArgs.map(targ -> this.normalize(subst, targ))
           },
           filter,
         )
-      | _ -> tcenvb.error(Array[(extend.pos, "Unexpected extend")])
+      | _ -> subst.error(Array[(extend.pos, "Unexpected extend")])
       }
     };
     constructor: ?TFuns = None();
-    fields = this.getClassFields(tcenvb.context, cls);
+    fields = this.getClassFields(subst.context, cls);
     for (fieldType in fields) {
       fieldType match {
       | field @ ClassFieldValue _ ->
@@ -540,7 +540,7 @@ base class TEnv{
           | ModPrivate _ -> !fieldAccess = FAPrivate(cls.name)
           | ModProtected _ -> void /* protected is silently treated as public */
           | mod ->
-            tcenvb.error(
+            subst.error(
               Array[
                 (
                   modifier.pos,
@@ -553,10 +553,10 @@ base class TEnv{
         if (fieldIsStatic != isStatic.isSome()) continue;
         if (fieldIsStatic) {
           if (fieldIsReadonly is None()) {
-            tcenvb.error(Array[(field.pos, "Static fields must be readonly")])
+            subst.error(Array[(field.pos, "Static fields must be readonly")])
           };
           field.optional.each(pos ->
-            tcenvb.error(Array[(pos, "Static fields cannot be optional")])
+            subst.error(Array[(pos, "Static fields cannot be optional")])
           )
         };
         // Static readonly fields are the class-level analog of a top-level
@@ -573,7 +573,7 @@ base class TEnv{
           None()
         };
         type: TType = field.type match {
-        | Some(ty) -> this.normalize(tcenvb, ty, isTopLevelConst, displayName)
+        | Some(ty) -> this.normalize(subst, ty, isTopLevelConst, displayName)
         | None() ->
           // No annotation: synthesize a placeholder TInst whose name
           // isn't resolvable, so any later attempt to use the field's
@@ -610,8 +610,8 @@ base class TEnv{
 
           acc![f.name] = f
         | FNColon(indexName, indexType) ->
-          keyType = this.normalize(tcenvb, indexType);
-          keyKinds = this.resolveIndexKeyKinds(tcenvb, indexName.pos, keyType);
+          keyType = this.normalize(subst, indexType);
+          keyKinds = this.resolveIndexKeyKinds(subst, indexName.pos, keyType);
           indexes.push(
             (
               keyKinds,
@@ -625,13 +625,13 @@ base class TEnv{
               },
             ),
           )
-        | _ -> tcenvb.error(Array[(field.pos, "Unsupported field name")])
+        | _ -> subst.error(Array[(field.pos, "Unsupported field name")])
         }
       | fd @ ClassFieldMethod{name => FNNormal(Name(fdPos, "constructor"))} ->
         if (isStatic is None()) continue;
         constructor match {
         | Some(constructorTy) ->
-          tcenvb.error(
+          subst.error(
             Array[
               (fdPos, "Unexpected multiple constructors"),
               (constructorTy.pos, "Previous constructor was here"),
@@ -640,13 +640,13 @@ base class TEnv{
         | None() -> void
         };
         !constructor = Some(
-          this.makeConstructor(tcenvb, className, isStatic.fromSome(), fd),
+          this.makeConstructor(subst, className, isStatic.fromSome(), fd),
         )
       | fd @ ClassFieldMethod _ ->
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(Method(fd.name, className, metIsStatic));
-        metTFuns = this.funDecl(tcenvb, !metIsStatic, fd, cgNode);
+        metTFuns = this.funDecl(subst, !metIsStatic, fd, cgNode);
         metType = TType::single(TObject::createCall(metTFuns));
         metAccess: FieldAccess = FAPublic();
         for (modifier in fd.modifiers.modifiers) {
@@ -657,8 +657,7 @@ base class TEnv{
         };
         fd.name match {
         | FNNormal(name) -> FKName(name, TString())
-        | FNComputed(keyExpr) ->
-          this.resolveComputedKeyFieldKey(tcenvb, keyExpr)
+        | FNComputed(keyExpr) -> this.resolveComputedKeyFieldKey(subst, keyExpr)
         } match {
         | FKSymbol(exprPos, uniqueId) ->
           field = TField::create{
