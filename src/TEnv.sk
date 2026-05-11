@@ -200,7 +200,7 @@ base class TEnv{
     | ta @ TypeDef _ ->
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
-    | Class _ -> this.new(tcenvb, name, targs.targs)
+    | Class _ -> this.new(subst, name, targs.targs)
     | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
     }
   }
@@ -267,12 +267,12 @@ base class TEnv{
   }
 
   fun new(
-    tcenvb: mutable TCEnvBase,
+    subst: mutable Subst,
     className: Name,
     targs: Array<TType>,
     filter: ClassFieldValue ~> Bool = _ ~> true,
   ): TType {
-    obj = this.newObject(tcenvb, className, targs, filter);
+    obj = this.newObject(subst, className, targs, filter);
     TType::single(obj)
   }
 
