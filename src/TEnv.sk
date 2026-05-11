@@ -127,39 +127,59 @@ base class TEnv{
     tcenvb: mutable TCEnvBase = subst;
 
     tdef = this.defMap.getType(tcenvb, name);
-    clauses = tdef match {
+    tParams = tdef match {
     | TypeDef{tdefParams} -> tdefParams
     | Class{tparams} -> tparams
     | Enum _ -> Array[]
     };
-    if (targs.targs.size() > clauses.size()) {
+
+    !this = this.instantiateTParams(subst, name.pos, targs.targs, tParams);
+
+    tdef match {
+    | ta @ TypeDef _ ->
+      !this.instantiateAt = Some(name.pos);
+      this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
+    | Class _ -> this.new(subst, name, targs.targs)
+    | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
+    }
+  }
+
+  private fun instantiateTParams(
+    subst: mutable Subst,
+    pos: PosRange,
+    tArgs: Array<TType>,
+    tParams: Array<TypeParam>,
+  ): this {
+    tcenvb: mutable TCEnvBase = subst;
+
+    if (tArgs.size() > tParams.size()) {
       tcenvb.error(
         Array[
           (
-            name.pos,
-            `Too many type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
+            pos,
+            `Too many type parameters: given ${tArgs.size()}, expected ${tParams.size()}`,
           ),
         ],
       )
     };
 
-    for (i => tparam in clauses) {
-      targ = if (i < targs.targs.size()) targs.targs[i] else {
-        tparam.default match {
+    for (i => tParam in tParams) {
+      tArg = if (i < tArgs.size()) tArgs[i] else {
+        tParam.default match {
         | Some(default) -> this.normalize(tcenvb, default)
         | None() ->
           tcenvb.error(
             Array[
               (
-                name.pos,
-                `Not enough type parameters: given ${targs.targs.size()}, expected ${clauses.size()}`,
+                pos,
+                `Not enough type parameters: given ${tArgs.size()}, expected ${tParams.size()}`,
               ),
             ],
           );
           break void
         }
       };
-      tparam.constraint match {
+      tParam.constraint match {
       | None() -> void
       | Some(cstr) ->
         cstrTy = this.normalize(tcenvb, cstr);
@@ -167,17 +187,17 @@ base class TEnv{
         // but NOT permanently grow type variables. Growing here would close the
         // variable to its constraint, preventing later unification with more
         // specific types (e.g., TVar<:Json should remain open to unify with string).
-        TType::isSub(subst.clone(), this, targ, cstrTy) match {
+        TType::isSub(subst.clone(), this, tArg, cstrTy) match {
         | STOk() -> void
         | err @ STErrorOnTType _ ->
           tcenvb.subtypingError(
             subst,
             this,
             Array[
-              (name.pos, "Constraint not satisfied"),
+              (pos, "Constraint not satisfied"),
               (
-                targ.pos,
-                `This is of type: ${prettyPrintType(false, targ, subst, this)}`,
+                tArg.pos,
+                `This is of type: ${prettyPrintType(false, tArg, subst, this)}`,
               ),
               (
                 cstr.pos,
@@ -193,16 +213,9 @@ base class TEnv{
           )
         }
       };
-      !this.bindings[tparam.name.value] = targ;
+      !this.bindings[tParam.name.value] = tArg;
     };
-
-    tdef match {
-    | ta @ TypeDef _ ->
-      !this.instantiateAt = Some(name.pos);
-      this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
-    | Class _ -> this.new(subst, name, targs.targs)
-    | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
-    }
+    this
   }
 
   fun getClass(tcenvb: mutable TCEnvBase, className: Name): Class {
