@@ -712,20 +712,20 @@ base class TEnv{
   }
 
   private fun findConstructorMethod(
-    tcenvb: mutable TCEnvBase,
+    subst: mutable Subst,
     visitedClasses: SortedSet<String>,
     className: Name,
     tparams: Array<TypeParam>,
     targs: Array<TType>,
   ): ?(this, ClassFieldMethod) {
     (!this, cls) = this.processClassSetup(
-      tcenvb,
+      subst,
       visitedClasses,
       true,
       className,
       targs,
     );
-    clsFields = this.getClassFields(tcenvb.context, cls);
+    clsFields = this.getClassFields(subst.context, cls);
     for (fieldType in clsFields) {
       fieldType match {
       | fd @ ClassFieldMethod _ if (
@@ -739,13 +739,13 @@ base class TEnv{
       extend.value match {
       | TAInst(parentName, paramTArgs) ->
         return this.findConstructorMethod(
-          tcenvb,
+          subst,
           visitedClasses,
           parentName,
           tparams,
-          paramTArgs.map(targ -> this.normalize(tcenvb, targ)),
+          paramTArgs.map(targ -> this.normalize(subst, targ)),
         )
-      | _ -> tcenvb.error(Array[(extend.pos, "Unexpected extend")])
+      | _ -> subst.error(Array[(extend.pos, "Unexpected extend")])
       }
     };
     None()
