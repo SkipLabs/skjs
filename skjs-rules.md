@@ -249,11 +249,6 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Workaround**: When you need to iterate a record-like object, first expose a string index signature (e.g., type `{ [key: string]: number }`) or convert the value to an array via `Object.keys` / `Object.values`.
 - **Verified by**: `examples/src/for_in_for_of_tests.ts` (arrays, tuples, strings, index signatures) and `tests/expect-error/for-of-object.ts` (plain objects rejected).
 
-### 21. `in` Operator
-- **Rule**: The left-hand side must have a literal string/number type (literal or union of literals), or a symbol type (including unique symbols like `Symbol.iterator`). The right-hand side must resolve to an object type; tuples, promises, functions, and primitives trigger "Invalid in" / "TODO: in" diagnostics (`tests/expect-error/in.ts`).
-- **Refinement scope**: Control-flow refinements occur when the RHS is a local variable without index signatures and the LHS is a single literal (string or symbol). The checker adds/removes the specific field or symbol field; it does not reason about dynamic keys or nested objects.
-- **Workaround**: To narrow on a field's presence, ensure the RHS object is held in a local variable and the LHS key is a literal type. For dynamic keys (e.g., string variables or values produced by expressions), prefer an explicit index signature or guarded property access (`const value = obj[key]; if (value !== undefined) { ... }`).
-
 ### 28. Index Signatures
 - **Rule**: Index signatures `[key: T]: V` accept key types `string`, `number`, `symbol`, or unions of these. Other key types (boolean, object, never, literal types, generics) are rejected.
 - **Key kind coverage**: A `string` index covers number keys (since JS coerces numbers to strings). A `number` index only covers number keys. Multi-kind key types like `string | number` are split into separate per-kind entries; when multiple indexes map to the same kind, their value types are merged (getter: intersection, setter: union).

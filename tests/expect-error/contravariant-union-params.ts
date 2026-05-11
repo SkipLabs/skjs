@@ -38,6 +38,7 @@ function testArgs(): void {
 function testObjectUnion(): void {
   const wide = (x: { a: string } | { b: number }): void => {
     if ("a" in x) {
+      // @skjs-expect-error Property 'a' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
       console.log(x.a);
     } else {
       console.log(x.b);
