@@ -1420,7 +1420,7 @@ extension class TypeChecker {
         if (targsAst.size() == 0) {
           !tArgs = this.makeTArgs(tcenv, className)
         };
-        cstr = this.newConstructor(tcenv, className, tArgs);
+        cstr = this.newConstructor(tcenv.subst, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
         this.new(tcenv, className, tArgs)
       | _ ->

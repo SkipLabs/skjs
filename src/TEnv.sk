@@ -277,19 +277,19 @@ base class TEnv{
   }
 
   fun newConstructor(
-    tcenvb: mutable TCEnvBase,
+    subst: mutable Subst,
     className: Name,
     targs: Array<TType>,
   ): CstrType {
-    c = this.getClass(tcenvb, className);
+    c = this.getClass(subst, className);
     if (c.tparams.size() != targs.size()) {
-      tcenvb.error(
+      subst.error(
         Array[(className.pos, `Expected ${c.tparams.size()} parameters`)],
       )
     };
     visitedClasses = SortedSet[];
     CstrType(
-      this.findConstructor(tcenvb, visitedClasses, className, c.tparams, targs),
+      this.findConstructor(subst, visitedClasses, className, c.tparams, targs),
       targs,
     )
   }
