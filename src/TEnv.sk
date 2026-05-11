@@ -349,18 +349,15 @@ base class TEnv{
     TType::single(obj)
   }
 
-  private fun newStaticObject(
-    tcenvb: mutable TCEnvBase,
-    className: Name,
-  ): TObject {
-    c = this.getClass(tcenvb, className);
+  private fun newStaticObject(subst: mutable Subst, className: Name): TObject {
+    c = this.getClass(subst, className);
     targs = Array[];
     visitedClasses = SortedSet[];
     fields = mutable Map[];
     symbolFields = mutable Map[];
     indexes = mutable Vector[];
     constructor = this.addFields(
-      tcenvb,
+      subst,
       fields,
       symbolFields,
       indexes,
@@ -373,9 +370,9 @@ base class TEnv{
     pos = className.pos;
     new = constructor match {
     | Some(tfuns) -> tfuns
-    | None() -> this.makeEmptyConstructor(tcenvb, pos, className, c)
+    | None() -> this.makeEmptyConstructor(subst, pos, className, c)
     };
-    tIndexes = TIndexes::create(tcenvb, this, indexes);
+    tIndexes = TIndexes::create(subst, this, indexes);
     TObject::createSingleBranch(
       TFields::create{
         fields,
