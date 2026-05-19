@@ -416,6 +416,8 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   );
   errorDetailConfig = ErrorDetailConfig(errorDetailSpecs);
 
+  verbose = args.getBool("verbose", Some(false));
+
   errorFormat = ErrorFormat::ofString(args.getString("error-format")) match {
   | Success(ef) -> ef
   | Failure(fmt) ->
@@ -452,6 +454,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
             errorHandling,
             errorDetailConfig,
             compilerOptions,
+            verbose,
           } match {
           | Failure(errs) ->
             _ = applyOrReuseMap(
@@ -589,6 +592,7 @@ class Checker private {
     errorHandling: ErrorHandling,
     errorDetailConfig: ErrorDetailConfig,
     compilerOptions: TsCompilerOptions = TsCompilerOptions{},
+    verbose: Bool = false,
   }: Result<this, Array<ErrorMessage>> {
     newLinesMap = NewLinesMap::create(context, files);
     (
@@ -623,6 +627,7 @@ class Checker private {
       classFieldMap,
       typeDefBodyMap,
       methodBodyMap,
+      verbose,
     };
     Success(
       static{

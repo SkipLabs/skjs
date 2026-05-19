@@ -91,6 +91,11 @@ base class TEnv{
   // FNIn uses this so that errors in stub-defined mapped types (like Record)
   // surface at the user's call site rather than in the stub.
   instantiateAt: ?PosRange = None(),
+
+  // Mirrors the `--verbose` CLI flag. Read by the pretty-printer to opt out
+  // of hiding internal-only details (currently the synthetic index name on
+  // object literals; see kSyntheticIndexName and TypePp::fields).
+  verbose: Bool = false,
 } {
   // Short-hand for prettyPrintType(false, ty, tcenv.subst, this) used in error messages
   fun ppType(tcenv: mutable TCEnv, ty: TType): String {

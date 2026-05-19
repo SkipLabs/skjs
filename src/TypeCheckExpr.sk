@@ -811,6 +811,7 @@ extension class TypeChecker {
           false,
           pp -> pp.type(0, Margin{max_depth}, exprTy),
           subst.values,
+          this.verbose,
         )
       };
       print_error(actual);

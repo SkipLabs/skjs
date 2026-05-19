@@ -42,6 +42,10 @@ mutable class SavedTypePp private {} extends TypePpState {
 
 mutable class TypePp{
   compact: Bool,
+  // Mirrors --verbose: when true, internal-only details (synthetic index
+  // name; see kSyntheticIndexName) are kept in the printed output for
+  // debugging instead of being filtered out.
+  verbose: Bool = false,
   substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
   applyType: (TType -> TType) = x -> x,
 } extends TypePpState {
@@ -331,10 +335,18 @@ mutable class TypePp{
   ): void {
     fieldArray = fields.fields;
     symbolFieldArray = fields.symbolFields;
-    hasIndexes =
-      fields.stringIndex.isSome() ||
-      fields.numberIndex.isSome() ||
-      fields.symbolIndex.isSome();
+    // Hide synthetic indexes (kSyntheticIndexName): they exist to make
+    // object literals satisfy indexed-type constraints during subtyping
+    // and must not appear in user-visible printed types. Kept under
+    // --verbose for debugging.
+    hideSynthetic: ((?TField) -> ?TField) = idx ->
+      if (this.verbose) idx else {
+        idx.flatMap(f -> if (f.isSynthetic()) None() else Some(f))
+      };
+    stringIdx = hideSynthetic(fields.stringIndex);
+    numberIdx = hideSynthetic(fields.numberIndex);
+    symbolIdx = hideSynthetic(fields.symbolIndex);
+    hasIndexes = stringIdx.isSome() || numberIdx.isSome() || symbolIdx.isSome();
     for (i => field in fieldArray) {
       fieldName = field.name.value;
       escapedName = TypePp::escapeName(fieldName);
@@ -397,29 +409,25 @@ mutable class TypePp{
       }
     };
     hasMore = fields.call.isSome() || fields.new.isSome();
-    fields.stringIndex.each(index -> {
+    stringIdx.each(index -> {
       this.indexField(level, margin, "string", index);
-      if (
-        fields.numberIndex.isSome() ||
-        fields.symbolIndex.isSome() ||
-        hasMore
-      ) {
+      if (numberIdx.isSome() || symbolIdx.isSome() || hasMore) {
         this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         }
       }
     });
-    fields.numberIndex.each(index -> {
+    numberIdx.each(index -> {
       this.indexField(level, margin, "number", index);
-      if (fields.symbolIndex.isSome() || hasMore) {
+      if (symbolIdx.isSome() || hasMore) {
         this.out(level, margin, ",");
         if (multiLine) this.newLine() else {
           this.out(level, margin, " ")
         }
       }
     });
-    fields.symbolIndex.each(index -> {
+    symbolIdx.each(index -> {
       this.indexField(level, margin, "symbol", index);
       if (hasMore) {
         this.out(level, margin, ",");
@@ -691,9 +699,10 @@ fun rawPrettyPrint(
   compact: Bool,
   f: mutable TypePp -> void,
   substValues: SortedMap<TVarID, SubstValue> = SortedMap[],
+  verbose: Bool = false,
   applyType: TType -> TType = x ~> x,
 ): String {
-  pp = mutable TypePp{compact, substValues, applyType};
+  pp = mutable TypePp{compact, verbose, substValues, applyType};
   pp.render(f)
 }
 
@@ -705,6 +714,7 @@ fun prettyPrint(
 ): String {
   pp = mutable TypePp{
     compact,
+    verbose => tenv.verbose,
     applyType => ty -> ty.expandTVarsForPp(subst, tenv),
   };
   pp.render(f)
