@@ -651,7 +651,7 @@ extension class TypeChecker {
           }
         }
       | prim @ TPrimValue _ ->
-        obj = this.newObject(tcenv, prim.asClassName(), Array[]);
+        obj = this.newObject(tcenv.subst, prim.asClassName(), Array[]);
         stypes.push(obj)
 
       | TPrimUnit(TUndefined(), undefPos)
@@ -910,7 +910,7 @@ extension class TypeChecker {
             tFuns = this.funDecl(tcenv, false, fd, fd.cgNode.fromSome());
             break TType::single(TObject::createCall(tFuns))
           | c @ Class _ ->
-            staticClass = this.newStatic(tcenv, c.name);
+            staticClass = this.newStatic(tcenv.subst, c.name);
             break staticClass
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
@@ -1420,9 +1420,9 @@ extension class TypeChecker {
         if (targsAst.size() == 0) {
           !tArgs = this.makeTArgs(tcenv, className)
         };
-        cstr = this.newConstructor(tcenv, className, tArgs);
+        cstr = this.newConstructor(tcenv.subst, className, tArgs);
         this.callConstructor(tcenv, pos, cstr, args);
-        this.new(tcenv, className, tArgs)
+        this.new(tcenv.subst, className, tArgs)
       | _ ->
         subExprTy = this.expr(tcenv, subExpr, mostPrecise);
         subExprTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ->
