@@ -62,6 +62,10 @@ declare interface SKJS_ArrayAndTupleBase<T> extends ReadonlyArray<T> {
   flatMap<U>(mapper: (item: T) => Array<U>): Array<U>;
 }
 
+/* `SKJS_Tuple<U>` and `SKJS_ReadonlyTuple<U>` are the bases that the
+ * synthesized `SKJS_TupleN<...>` / `SKJS_ReadonlyTupleN<...>` classes
+ * (built in FileDefs#getAll) extend to pick up the array methods,
+ * indexes, and the `__SKJS_isArray` brand. */
 declare interface SKJS_ReadonlyTuple<U> extends ReadonlyArray<U> {}
 declare interface SKJS_Tuple<U> extends SKJS_ArrayAndTupleBase<U> {}
 

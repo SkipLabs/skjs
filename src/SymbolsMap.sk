@@ -131,14 +131,21 @@ class ClassBodyMap{
     }
   }
 
+  // Materialize a class's fields. A synthetic-tuple bodyRef (see
+  // `ClassBodyRef::syntheticTuple`) is expanded in-process; every other
+  // class is resolved through the SKStore-backed body and field maps.
   fun getFields(
     context: mutable SKStore.Context,
     classFieldMap: ClassFieldMap,
-    classBodyRef: ClassBodyRef,
+    c: Class,
   ): Array<ClassField> {
-    this.dir.get(context, ClassBodyMapKey(classBodyRef)).value.fieldRefs.map(
-      fieldRef -> classFieldMap.get(context, fieldRef).field,
-    )
+    c.bodyRef.asSyntheticTuple() match {
+    | Some(kind) -> synthesizeTupleClassFields(c.name, kind)
+    | None() ->
+      this.dir.get(context, ClassBodyMapKey(c.bodyRef)).value.fieldRefs.map(
+        fieldRef -> classFieldMap.get(context, fieldRef).field,
+      )
+    }
   }
 }
 

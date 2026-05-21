@@ -226,7 +226,7 @@ base class TEnv{
     context: mutable SKStore.Context,
     c: Class,
   ): Array<ClassField> {
-    this.classBodyMap.getFields(context, this.classFieldMap, c.bodyRef)
+    this.classBodyMap.getFields(context, this.classFieldMap, c)
   }
 
   fun getTypeDefBody(context: mutable SKStore.Context, td: TypeDef): Type {

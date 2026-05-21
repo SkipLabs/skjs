@@ -2014,6 +2014,10 @@ value class Id private (id: String) uses XXHashable, Orderable, Show {
     Id("this")
   }
 
+  static fun createSynthetic(id: String): Id {
+    Id(`synthetic:${id}`)
+  }
+
   fun toString(): String {
     this.id
   }
