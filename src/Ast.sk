@@ -740,42 +740,45 @@ base class BOStrictComparison() extends BinaryOperator {
 /* Body references and body data for incremental checking. */
 /***************************************************************************/
 
-class FunDefRef(
+value class FunDefRef(
   fileName: FPath,
   defName: String,
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable
 
-class ClassBodyRef(
+value class ClassBodyRef(
   fileName: FPath,
   defName: String,
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable
 
-class TypeDefBodyRef(
+value class TypeDefBodyRef(
   fileName: FPath,
   defName: String,
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable
 
-class FunDefSigData(
+value class FunDefSigData(
   tparams: Array<TypeParam>,
   params: Array<Param>,
   retType: (PosRange, ?(Type)),
 ) uses XXHashable
-class FunDefBodyData(body: FunDefBody) uses XXHashable
-class ClassBodyData(fieldRefs: Array<ClassFieldRef>) uses XXHashable
-class TypeDefBodyData(tdefParams: Array<TypeParam>, body: Type) uses XXHashable
+value class FunDefBodyData(body: FunDefBody) uses XXHashable
+value class ClassBodyData(fieldRefs: Array<ClassFieldRef>) uses XXHashable
+value class TypeDefBodyData(
+  tdefParams: Array<TypeParam>,
+  body: Type,
+) uses XXHashable
 
-class ClassFieldRef(
+value class ClassFieldRef(
   fileName: FPath,
   className: String,
   index: Int,
 ) uses XXHashable, Hashable, Orderable
 
-class ClassFieldData(field: ClassField) uses XXHashable
+value class ClassFieldData(field: ClassField) uses XXHashable
 
-class MethodBodyRef(
+value class MethodBodyRef(
   fileName: FPath,
   className: String,
   classOccurrence: Int,
@@ -783,7 +786,7 @@ class MethodBodyRef(
   occurrence: Int,
 ) uses XXHashable, Hashable, Orderable
 
-class MethodBodyData(body: FunDefBody) uses XXHashable
+value class MethodBodyData(body: FunDefBody) uses XXHashable
 
 base class BodyRef uses XXHashable {
   children =
