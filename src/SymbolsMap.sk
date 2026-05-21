@@ -29,7 +29,7 @@ fun makeSymbolsDir(
 /* Symbols map (associates Symbols to a filename) */
 /***************************************************************************/
 
-class SymbolsMap{dir: SKStore.EHandle<FPath, SymbolsFile>} {
+class SymbolsMap{private dir: SKStore.EHandle<FPath, SymbolsFile>} {
   static fun create(
     context: mutable SKStore.Context,
     parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
@@ -51,7 +51,9 @@ class SymbolsMap{dir: SKStore.EHandle<FPath, SymbolsFile>} {
 class FunDefSigMapKey(value: FunDefRef) extends SKStore.Key
 class FunDefSigMapFile(value: FunDefSigData) extends SKStore.File
 
-class FunDefSigMap{dir: SKStore.EHandle<FunDefSigMapKey, FunDefSigMapFile>} {
+class FunDefSigMap{
+  private dir: SKStore.EHandle<FunDefSigMapKey, FunDefSigMapFile>,
+} {
   static fun create(
     context: mutable SKStore.Context,
     parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
@@ -78,7 +80,9 @@ class FunDefSigMap{dir: SKStore.EHandle<FunDefSigMapKey, FunDefSigMapFile>} {
 class FunDefBodyMapKey(value: FunDefRef) extends SKStore.Key
 class FunDefBodyMapFile(value: FunDefBodyData) extends SKStore.File
 
-class FunDefBodyMap{dir: SKStore.EHandle<FunDefBodyMapKey, FunDefBodyMapFile>} {
+class FunDefBodyMap{
+  private dir: SKStore.EHandle<FunDefBodyMapKey, FunDefBodyMapFile>,
+} {
   static fun create(
     context: mutable SKStore.Context,
     parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
@@ -105,7 +109,9 @@ class FunDefBodyMap{dir: SKStore.EHandle<FunDefBodyMapKey, FunDefBodyMapFile>} {
 class ClassBodyMapKey(value: ClassBodyRef) extends SKStore.Key
 class ClassBodyMapFile(value: ClassBodyData) extends SKStore.File
 
-class ClassBodyMap{dir: SKStore.EHandle<ClassBodyMapKey, ClassBodyMapFile>} {
+class ClassBodyMap{
+  private dir: SKStore.EHandle<ClassBodyMapKey, ClassBodyMapFile>,
+} {
   static fun create(
     context: mutable SKStore.Context,
     parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
@@ -132,7 +138,9 @@ class ClassBodyMap{dir: SKStore.EHandle<ClassBodyMapKey, ClassBodyMapFile>} {
 class ClassFieldMapKey(value: ClassFieldRef) extends SKStore.Key
 class ClassFieldMapFile(value: ClassFieldData) extends SKStore.File
 
-class ClassFieldMap{dir: SKStore.EHandle<ClassFieldMapKey, ClassFieldMapFile>} {
+class ClassFieldMap{
+  private dir: SKStore.EHandle<ClassFieldMapKey, ClassFieldMapFile>,
+} {
   static fun create(
     context: mutable SKStore.Context,
     parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
@@ -163,7 +171,7 @@ class TypeDefBodyMapKey(value: TypeDefBodyRef) extends SKStore.Key
 class TypeDefBodyMapFile(value: TypeDefBodyData) extends SKStore.File
 
 class TypeDefBodyMap{
-  dir: SKStore.EHandle<TypeDefBodyMapKey, TypeDefBodyMapFile>,
+  private dir: SKStore.EHandle<TypeDefBodyMapKey, TypeDefBodyMapFile>,
 } {
   static fun create(
     context: mutable SKStore.Context,
@@ -194,7 +202,9 @@ class TypeDefBodyMap{
 class MethodBodyMapKey(value: MethodBodyRef) extends SKStore.Key
 class MethodBodyMapFile(value: MethodBodyData) extends SKStore.File
 
-class MethodBodyMap{dir: SKStore.EHandle<MethodBodyMapKey, MethodBodyMapFile>} {
+class MethodBodyMap{
+  private dir: SKStore.EHandle<MethodBodyMapKey, MethodBodyMapFile>,
+} {
   static fun create(
     context: mutable SKStore.Context,
     parsedFiles: SKStore.EHandle<FPath, ParsedResultAndSymbolsFile>,
