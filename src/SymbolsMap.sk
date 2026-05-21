@@ -130,8 +130,15 @@ class ClassBodyMap{
       ),
     }
   }
-  fun get(context: mutable SKStore.Context, key: ClassBodyRef): ClassBodyData {
-    this.dir.get(context, ClassBodyMapKey(key)).value
+
+  fun getFields(
+    context: mutable SKStore.Context,
+    classFieldMap: ClassFieldMap,
+    classBodyRef: ClassBodyRef,
+  ): Array<ClassField> {
+    this.dir.get(context, ClassBodyMapKey(classBodyRef)).value.fieldRefs.map(
+      fieldRef -> classFieldMap.get(context, fieldRef).field,
+    )
   }
 }
 
