@@ -536,6 +536,22 @@ extension class TypeChecker {
         addResultCase(tyAtN)
 
       | obj @ TObject(_, _, objectPos) ->
+        // Tuple-shaped TObjects inherit a read-only number-index signature
+        // from ReadonlyArray, so `tup[5]` on a 3-tuple silently returns the
+        // element union via that signature. Catch literal out-of-bound
+        // indices here, before field lookup, with the same precise message
+        // the TTuple arm emits.
+        obj.asTuple().each(tyArr -> {
+          idxSType match {
+          | TPrimValue(TNum(), Some(numbers), _) ->
+            numbers.singleElt().flatMap(lit -> lit.val.toIntOption()) match {
+            | Some(n) if (n < 0 || n >= tyArr.size()) ->
+              tcenv.error(Array[(pos, "Out of bound index")])
+            | _ -> void
+            }
+          | _ -> void
+          }
+        });
         if (idxSType is TPrimValue(TSymbol(), _, _)) {
           uniqueId = idxSType match {
           | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
