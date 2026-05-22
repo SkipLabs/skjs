@@ -541,11 +541,11 @@ extension class TypeChecker {
         // element union via that signature. Catch literal out-of-bound
         // indices here, before field lookup, with the same precise message
         // the TTuple arm emits.
-        obj.asTuple().each(tyArr -> {
+        obj.isTuple().each(arity -> {
           idxSType match {
           | TPrimValue(TNum(), Some(numbers), _) ->
             numbers.singleElt().flatMap(lit -> lit.val.toIntOption()) match {
-            | Some(n) if (n < 0 || n >= tyArr.size()) ->
+            | Some(n) if (n < 0 || n >= arity) ->
               tcenv.error(Array[(pos, "Out of bound index")])
             | _ -> void
             }

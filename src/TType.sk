@@ -643,6 +643,13 @@ class TObject private (
     this.branches.toArray()
   }
 
+  // Returns Some(length) when this TObject is a single-branch tuple-shaped
+  // object (via TFields::isTuple). Multi-branch unions of tuples currently
+  // return None() — the caller sees the raw TObject.
+  fun isTuple(): ?Int {
+    this.branches.getUnique().flatMap(branch -> branch.isTuple())
+  }
+
   // Returns Some(elts) when this TObject is a single-branch tuple-shaped
   // object (via TFields::asTuple). Multi-branch unions of tuples currently
   // return None() — the caller sees the raw TObject.
@@ -995,10 +1002,10 @@ base class SType private (
     }
   }
 
-  fun isTuple(): Bool {
+  overridable fun isTuple(): ?Int {
     this match {
-    | TTuple _ -> true
-    | _ -> false
+    | TTuple(elts, _) -> Some(elts.size())
+    | _ -> None()
     }
   }
 
@@ -1560,11 +1567,10 @@ class TFields protected {
     this.fields.maybeGet(FieldNameString(fieldName))
   }
 
-  // Returns Some(elts) when this TFields is an array-branded object whose
-  // length field has a non-negative literal-number type N and whose first N
-  // positional fields are present. Returns None() otherwise, including for
-  // plain arrays whose length is a general `number` (not a literal).
-  fun asTuple(): ?Array<TType> {
+  // Returns Some(length) when this TFields is an array-branded object whose
+  // `length` field has a non-negative literal-number type N AND every
+  // positional field `0..N-1` is present.
+  fun isTuple(): ?Int {
     if (this.isArray != Some(true)) return None();
     lengthField = this.maybeGet("length") match {
     | Some(f) -> f
@@ -1581,14 +1587,19 @@ class TFields protected {
     | Some(n) if (n >= 0) -> n
     | _ -> return None()
     };
-    elts = mutable Vector[];
     for (i in Range(0, length)) {
-      this.maybeGet(i.toString()) match {
-      | Some(f) -> elts.push(f.get)
-      | None() -> return None()
-      }
+      if (this.maybeGet(i.toString()) is None _) return None();
     };
-    Some(elts.toArray())
+    Some(length)
+  }
+
+  // Returns Some(elts) when this TFields is tuple-shaped per `isTuple`,
+  // i.e. an array-branded object with a non-negative literal length and
+  // every positional field present.
+  fun asTuple(): ?Array<TType> {
+    this.isTuple().map(length ->
+      Array::fillBy(length, i -> this.maybeGet(i.toString()).fromSome().get)
+    )
   }
 
   fun maybeGetSymbol(uniqueId: String): ?TField {
