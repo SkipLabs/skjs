@@ -226,7 +226,7 @@ base class TEnv{
     context: mutable SKStore.Context,
     c: Class,
   ): Array<ClassField> {
-    this.classBodyMap.getFields(context, this.classFieldMap, c.bodyRef)
+    this.classBodyMap.getFields(context, this.classFieldMap, c)
   }
 
   fun getTypeDefBody(context: mutable SKStore.Context, td: TypeDef): Type {
@@ -1046,9 +1046,6 @@ base class TEnv{
     taTuple: TATuple,
     isReadonly: Bool,
   ): TType {
-    if (isReadonly) {
-      tcenvb.error(Array[(pos, "TODO readonly")])
-    };
     tupleElts = taTuple match {
     | TATuple(elts) -> elts
     };
@@ -1691,7 +1688,6 @@ base class TEnv{
     allStrings = false;
     allNumbers = false;
     allSymbols = false;
-    maxRange = -1;
     strings = SortedSet[];
     symbols = SortedSet[];
     for (clause in clauses) {
@@ -1700,7 +1696,6 @@ base class TEnv{
       while (!stypes.isEmpty()) {
         stype = stypes.pop();
         stype match {
-        | TTuple(tyArr, _) -> !maxRange = max(maxRange, tyArr.size())
         | obj @ TObject(_, _, _) ->
           for (fields in obj.getAllFields()) {
             if (!allStrings || !allNumbers) {
@@ -1739,11 +1734,7 @@ base class TEnv{
       }
     };
     resultTys = mutable Vector[];
-    numbers = if (!allStrings || !allNumbers) {
-      SortedSet::createFromItems(Range(0, maxRange).map(i -> i.toString()))
-    } else {
-      SortedSet[]
-    };
+    numbers = SortedSet[];
     if (allStrings) {
       resultTys.push(TType::single(TPrimValue::string(pos)))
     } else {

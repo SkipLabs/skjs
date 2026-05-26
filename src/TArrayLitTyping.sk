@@ -90,9 +90,10 @@ class ArrayLitTyping() {
     }
   }
 
-  // Converts ArrayLit<α, elts> to readonly Tuple[elts...].
+  // Converts ArrayLit<α, elts> to Tuple[elts...] (mutable, matching TS:
+  // `[1, 2]` is a mutable tuple unless `as const` is used).
   static private fun arrayLitToTupleType(arrLit: TArrayLit): TType {
-    TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, true)
+    TType::tuple(arrLit.tvar.pos, arrLit.tupleElts, false)
   }
 
   // Computes the element type for an array literal by unioning all elements.
@@ -154,7 +155,7 @@ class ArrayLitTyping() {
   ): Bool {
     constraints.any(cstr ->
       cstr.getSTypes(subst, tenv, Covariant()) match {
-      | Some(stypes) -> stypes.any(stype -> stype.isTuple())
+      | Some(stypes) -> stypes.any(stype -> stype.isTuple().isSome())
       | _ -> false
       }
     )
@@ -273,15 +274,31 @@ class ArrayLitTyping() {
       };
       // Case 2c: ArrayLit<α, elts> <: Tuple[U1, ...]
       u2.getSTypes(subst, tenv, Covariant()).flatMap(sTypes ->
-        sTypes.getSingleTuple()
+        sTypes.getSingleTuple(subst, tenv)
       ) match {
-      | Some(tuple2) ->
-        // Commit to tuple, then check subtyping.
-        literalTupleTy = ArrayLitTyping::arrayLitToTupleType(arrLit);
-        ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, literalTupleTy);
-        return Some(
-          TType::isSub(subst, tenv, literalTupleTy, TType::single(tuple2)),
-        )
+      | Some(targetElts) if (targetElts.size() == arrLit.tupleElts.size()) ->
+        // Commit to the target tuple's element types (contextual widening).
+        // TS widens `[1, "x"]` to `[number, string]` when the target is a
+        // mutable tuple; we do the same by committing to the target elements
+        // and then verifying each literal element subtypes its target.
+        savedSubst = subst.save();
+        committedTy = TType::tuple(arrLit.tvar.pos, targetElts, false);
+        ArrayLitTyping::arrayLitCommitType(subst, tenv, arrLit, committedTy);
+        for (i in Range(0, targetElts.size())) {
+          TType::isSub(subst, tenv, arrLit.tupleElts[i], targetElts[i]) match {
+          | STOk() -> void
+          | err @ STError _ ->
+            subst.restore(savedSubst);
+            return Some(err)
+          }
+        };
+        return Some(STOk())
+      | Some(_) ->
+        // Arity mismatch: don't commit — let subsequent use sites commit
+        // against their own targets. Fall through so the caller sees this
+        // as an ArrayLit subtyping failure without locking the literal
+        // into a mismatched tuple shape.
+        void
       | None() -> void
       }
     | None() -> void

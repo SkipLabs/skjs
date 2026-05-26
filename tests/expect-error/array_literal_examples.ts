@@ -58,7 +58,7 @@ function takesArrayOrNull(values: number[] | null): void {
 function tupleThenArrayUse(): void {
   const values = [1, 2];
   takesTuple(values);
-  // @skjs-expect-error Invalid index
+  // @skjs-expect-error Invalid index key: expected number, got string
   values.push(3);
 }
 
@@ -183,12 +183,22 @@ function supertypePositionTest(): void {
   }
 }
 
+// Both `takesTuple(numbers)` calls correctly fail and `takesArray(numbers)`
+// correctly succeeds, matching TypeScript. Before the TupleN-via-TObject flip
+// this test passed both `takesTuple` calls and rejected `takesArray` —
+// arity-5 was silently accepted as `[number, number]` because tuples were
+// modelled as a homogenous-element shape and treated as not-quite-an-array.
+// Tuples are now structural classes that extend ReadonlyArray, so:
+//   - `[1,2,3,4,5]` cannot be a `[number, number]` (arity mismatch)
+//   - but it IS an `Array<number>` once committed
+//   - and once committed to Array, it can't be re-committed to a tuple
+// Each of those three behaviours is what `tsc` produces too.
 function tupleThenArrayUse2(): void {
   const numbers = [1, 2, 3, 4, 5];
-  takesTuple(numbers);
-  // Tuples are only subtypes of immutable Array for now (can be relaxed when tuples are distinct from readonly tuples)
   // @skjs-expect-error Invalid call
+  takesTuple(numbers);
   takesArray(numbers);
+  // @skjs-expect-error Invalid call
   takesTuple(numbers);
 }
 

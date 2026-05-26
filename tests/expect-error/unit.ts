@@ -74,7 +74,10 @@ function check3(t1: [number, boolean]): boolean {
   return t1[1];
 }
 
+// Mutable tuples are invariant in their element types, so a union of
+// distinct element types does not subtype a pointwise-unioned tuple.
 function check4(t1: [number] | [boolean]): [number | boolean] {
+  // @skjs-expect-error Invalid return type
   return t1;
 }
 
@@ -96,6 +99,7 @@ function checkTuple(tuple: [number, string]): [number, string] {
 function checkTuple2(
   tuple: [number, string] | [string, number],
 ): [number | string, number | string] {
+  // @skjs-expect-error Invalid return type
   return tuple;
 }
 

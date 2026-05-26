@@ -47,10 +47,9 @@ extension class TypeChecker {
       };
       tcenv.scope.bind(tcenv, local, type, isInitialized)
     | PArray(arrPat, rest) ->
-      type.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-        stypes.singleElt()
-      ) match {
-      | Some(TTuple(tyl, _)) ->
+      stypes = type.getSTypes(tcenv.subst, this, Covariant());
+      stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
+      | Some(tyl) ->
         for (i in Range(0, min(arrPat.size(), tyl.size()))) {
           arrPat[i] match {
           | None() -> /* skipped element */ void
@@ -120,65 +119,10 @@ extension class TypeChecker {
         };
         rest match {
         | Some(restName) ->
-          restType = TType::tuple(restName.pos, tyl.slice(arrPat.size()), true);
-          this.bind(
-            tcenv,
-            kind,
-            Pattern(restName.pos, PVar(restName)),
-            restType,
-            isInitialized,
+          restType = TType::tuple(
+            restName.pos,
+            tyl.slice(arrPat.size()),
             false,
-          )
-        | None() -> void
-        }
-      | Some(obj @ TObject _) ->
-        eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
-        | Some(t) -> t
-        | None() ->
-          error(
-            Array[
-              (pos, "Invalid tuple pattern"),
-              (
-                type.pos,
-                `This is not iterable, it is ${this.ppType(tcenv, type)}`,
-              ),
-            ],
-          )
-        };
-        for (i in Range(0, arrPat.size())) {
-          arrPat[i] match {
-          | None() -> void
-          | Some((eltPat, Some(defaultExpr))) ->
-            defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
-            boundType = TType::union(
-              tcenv.subst,
-              this,
-              TType::removeUndefined(tcenv.subst, this, eltType),
-              defaultType,
-            );
-            this.bind(tcenv, kind, eltPat, boundType, isInitialized, false)
-          | Some((eltPat, None())) ->
-            optionalEltType = TType::unionUndefined(
-              tcenv.subst,
-              this,
-              eltType,
-              eltPat.pos,
-            );
-            this.bind(
-              tcenv,
-              kind,
-              eltPat,
-              optionalEltType,
-              isInitialized,
-              false,
-            )
-          }
-        };
-        rest match {
-        | Some(restName) ->
-          restType = TType::inst(
-            Name(restName.pos, "Array"),
-            TArgs(Array[eltType]),
           );
           this.bind(
             tcenv,
@@ -190,16 +134,78 @@ extension class TypeChecker {
           )
         | None() -> void
         }
-      | _ ->
-        error(
-          Array[
-            (pos, "Invalid tuple pattern"),
-            (
-              type.pos,
-              `This is not a tuple, it is ${this.ppType(tcenv, type)}`,
-            ),
-          ],
-        )
+      | None() ->
+        stypes.flatMap(s ~> s.singleElt()) match {
+        | Some(obj @ TObject _) ->
+          eltType = this.getIteratorElementType(tcenv.subst, obj, pos) match {
+          | Some(t) -> t
+          | None() ->
+            error(
+              Array[
+                (pos, "Invalid tuple pattern"),
+                (
+                  type.pos,
+                  `This is not iterable, it is ${this.ppType(tcenv, type)}`,
+                ),
+              ],
+            )
+          };
+          for (i in Range(0, arrPat.size())) {
+            arrPat[i] match {
+            | None() -> void
+            | Some((eltPat, Some(defaultExpr))) ->
+              defaultType = this.expr(tcenv, defaultExpr, kind is BKConst());
+              boundType = TType::union(
+                tcenv.subst,
+                this,
+                TType::removeUndefined(tcenv.subst, this, eltType),
+                defaultType,
+              );
+              this.bind(tcenv, kind, eltPat, boundType, isInitialized, false)
+            | Some((eltPat, None())) ->
+              optionalEltType = TType::unionUndefined(
+                tcenv.subst,
+                this,
+                eltType,
+                eltPat.pos,
+              );
+              this.bind(
+                tcenv,
+                kind,
+                eltPat,
+                optionalEltType,
+                isInitialized,
+                false,
+              )
+            }
+          };
+          rest match {
+          | Some(restName) ->
+            restType = TType::inst(
+              Name(restName.pos, "Array"),
+              TArgs(Array[eltType]),
+            );
+            this.bind(
+              tcenv,
+              kind,
+              Pattern(restName.pos, PVar(restName)),
+              restType,
+              isInitialized,
+              false,
+            )
+          | None() -> void
+          }
+        | _ ->
+          error(
+            Array[
+              (pos, "Invalid tuple pattern"),
+              (
+                type.pos,
+                `This is not a tuple, it is ${this.ppType(tcenv, type)}`,
+              ),
+            ],
+          )
+        }
       }
 
     | PObject{fields => objectFields, rest} ->
@@ -512,28 +518,23 @@ extension class TypeChecker {
 
       optionalChainingIsAlwaysUndefinedForThisSType = false;
       stype match {
-      | TTuple(tyArr, tuplePos) ->
-        n = idxSType match {
-        | TPrimValue(TNum(), Some(numbers), _) ->
-          numbers.singleElt().flatMap(lit -> lit.val.toIntOption())
-        | _ -> None()
-        } match {
-        | None() ->
-          error(
-            Array[
-              (idx.pos, "Invalid index"),
-              (tuplePos, "A tuple expects a static index"),
-            ],
-          )
-        | Some(x) -> x
-        };
-        tyAtN = tyArr.maybeGet(n) match {
-        | Some(tyAtN) -> tyAtN
-        | None() -> error(Array[(pos, "Out of bound index")])
-        };
-        addResultCase(tyAtN)
-
       | obj @ TObject(_, _, objectPos) ->
+        // Tuple-shaped TObjects inherit a read-only number-index signature
+        // from ReadonlyArray, so `tup[5]` on a 3-tuple silently returns the
+        // element union via that signature. Catch literal out-of-bound
+        // indices here, before field lookup, with the same precise message
+        // the TTuple arm emits.
+        obj.isTuple().each(arity -> {
+          idxSType match {
+          | TPrimValue(TNum(), Some(numbers), _) ->
+            numbers.singleElt().flatMap(lit -> lit.val.toIntOption()) match {
+            | Some(n) if (n < 0 || n >= arity) ->
+              tcenv.error(Array[(pos, "Out of bound index")])
+            | _ -> void
+            }
+          | _ -> void
+          }
+        });
         if (idxSType is TPrimValue(TSymbol(), _, _)) {
           uniqueId = idxSType match {
           | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
@@ -1796,7 +1797,6 @@ extension class TypeChecker {
                   }
                 )
               }
-          | TTuple _
           | TPromise _ ->
             tcenv.error(
               Array[
@@ -2548,9 +2548,16 @@ extension class TypeChecker {
       argExpr.value match {
       | Spread(spreadExpr) ->
         spreadTy = this.expr(tcenv, spreadExpr, mostPrecise);
-        spreadTy.getSTypes(tcenv.subst, this, Covariant()).flatMap(stypes ~>
-          stypes.singleElt()
-        ) match {
+        stypes = spreadTy.getSTypes(tcenv.subst, this, Covariant());
+        if (moreArgs is None()) {
+          stypes.flatMap(s -> s.getSingleTuple(tcenv.subst, this)) match {
+          | Some(tupElts) ->
+            args.extend(tupElts);
+            continue
+          | None() -> void
+          }
+        };
+        stypes.flatMap(s ~> s.singleElt()) match {
         | Some(obj @ TObject _) ->
           this.getIteratorElementType(tcenv.subst, obj, argExpr.pos) match {
           | None() ->
@@ -2567,15 +2574,6 @@ extension class TypeChecker {
               | Some(ma) -> TType::union(tcenv.subst, this, ma, eltType)
               },
             )
-          }
-        | Some(TTuple(tupElts, _)) ->
-          moreArgs match {
-          | None() -> args.extend(tupElts)
-          | Some(ma) ->
-            for (tupElt in tupElts) {
-              !ma = TType::union(tcenv.subst, this, ma, tupElt)
-            };
-            !moreArgs = Some(ma)
           }
         | _ ->
           tcenv.error(

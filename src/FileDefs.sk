@@ -104,6 +104,10 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
     path: Name,
     typeOnly: Bool = false,
   ): Array<FileDefElt> {
+    tupleKind(path.value) match {
+    | Some(kind) -> return Array[synthesizeTupleClass(path, kind)]
+    | None() -> void
+    };
     fileName = path.pos.fileName;
     tmp = this.getPath(tcenvb, fileName, path.value, typeOnly);
     result = mutable Vector[];

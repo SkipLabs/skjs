@@ -95,7 +95,7 @@ function testOptionalBeforeTupleRest(): void {
 function testEmptyRestInference(): void {
   const empty0 = emptyInfer();
   // No empty tuple type syntax, so we use expanded show to assert tuple shape.
-  __SKJS_show_expanded(empty0, "[]");
+  __SKJS_show_expanded(empty0, "readonly []");
   const empty0_as_ro_unknown_array: readonly unknown[] = empty0;
 }
 
@@ -116,12 +116,11 @@ function testTupleRestExactArity(): void {
 // 3) Generic tuple-rest inference from fixed args
 function testGenericTupleRestInference(): void {
   const t1 = inferTuple("a", 1);
-  // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
-  const t1_as_tuple: [string, number] = t1;
+  const t1_as_tuple: readonly [string, number] = t1;
 
   // Constraint enforcement (DepSafe)
   // @skjs-expect-error This expression was expected to be of type void or ignorable
-  // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
+  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   inferTuple(true);
 }
 
@@ -129,15 +128,12 @@ function testGenericTupleRestInference(): void {
 function testTupleSpreadInference(): void {
   const tup: [string, number] = ["x", 42];
   const t2 = inferTuple(...tup);
-  // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
-  const t2_as_tuple: [string, number] = t2;
+  const t2_as_tuple: readonly [string, number] = t2;
 
   // Also works with readonly tuple
-  // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
-  const rtup: [string, number] = ["y", 99];
+  const rtup: readonly [string, number] = ["y", 99];
   const t3 = inferTuple(...rtup);
-  // TODO(variadic,readonly-tuples): add readonly back once readonly tuples are supported.
-  const t3_as_tuple: [string, number] = t3;
+  const t3_as_tuple: readonly [string, number] = t3;
 }
 
 // 5) Inference from array spread: degrades to array type, not tuple
@@ -171,7 +167,7 @@ function testMotivatingAPI(): void {
   variadicColl.map(Two, "hello", 42);
   // @skjs-expect-error Invalid call
   variadicColl.map(Two, "hello");
-  // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
+  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   variadicColl.map(One, true);
 
   // Tuple spread into the rest args should preserve shape
@@ -187,7 +183,7 @@ function testMotivatingAPI(): void {
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello", 42);
   // @skjs-expect-error Invalid call
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello");
-  // @ts-expect-error Invalid call. Inferred rest arguments [boolean] do not satisfy the constraint
+  // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   prefixedColl.mapWithPrefix("tag", PrefixOne, true);
 }
 

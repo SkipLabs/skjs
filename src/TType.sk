@@ -165,9 +165,10 @@ class TType private {
   static fun tuple(
     pos: PosRange,
     tArgs: Array<TType>,
-    _isReadonly: Bool,
+    isReadonly: Bool,
   ): TType {
-    TType::single(TTuple(tArgs, pos))
+    base = if (isReadonly) readonlyTupleName else tupleName;
+    TType::inst(Name(pos, `${base}${tArgs.size()}`), TArgs(tArgs))
   }
 
   static fun fromTParamWithConstraint(
@@ -392,8 +393,7 @@ class TType private {
         | TPrimValue _ ->
           continue
         | TObject _
-        | TPromise _
-        | TTuple _ ->
+        | TPromise _ ->
           return false
         }
       };
@@ -643,6 +643,57 @@ class TObject private (
     this.branches.toArray()
   }
 
+  // Returns Some(arity) when every branch of this TObject is a tuple of the
+  // same arity (via TFields::isTuple). Avoids the Subst that `asTuple` needs
+  // for element unioning — useful for callers that only care about length
+  // (e.g. out-of-bound index checks).
+  fun isTuple(): ?Int {
+    this.branches.values().next().flatMap(first -> first.isTuple()) match {
+    | res @ Some(arity) if (
+      this.branches.all(fields ->
+        fields.isTuple() match {
+        | Some(otherArity) -> otherArity == arity
+        | None() -> false
+        }
+      )
+    ) ->
+      res
+    | _ -> None()
+    }
+  }
+
+  // Returns Some(elts) when every branch of this TObject is a tuple of the
+  // same arity (via TFields::asTuple). Elements of branches are unioned
+  // positionally. Returns None() if any branch is not a tuple or arities
+  // differ (the caller sees the raw TObject in that case).
+  fun asTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
+    branches = this.branches.toArray();
+    if (branches.isEmpty()) return None();
+    first = branches[0].asTuple() match {
+    | Some(elts) -> elts
+    | None() -> return None()
+    };
+    if (branches.size() == 1) return Some(first);
+    arity = first.size();
+    branchesElts = mutable Vector[first];
+    for (i in Range(1, branches.size())) {
+      branches[i].asTuple() match {
+      | Some(elts) if (elts.size() == arity) -> branchesElts.push(elts)
+      | _ -> return None()
+      }
+    };
+    Some(
+      Array::fillBy(arity, i ->
+        TType::unionN_it(
+          subst,
+          tenv,
+          this.pos,
+          branchesElts.values().map(be -> be[i]),
+        )
+      ),
+    )
+  }
+
   fun maybeGetType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -833,12 +884,6 @@ fun getRestElementType(
 }
 
 /***************************************************************************/
-/* Tuples */
-/***************************************************************************/
-
-class TTuple(tuple: Array<TType>) extends SType
-
-/***************************************************************************/
 /* Single types */
 /***************************************************************************/
 
@@ -961,7 +1006,6 @@ base class STypeTag final () uses Orderable {
   | TagString
   | TagBigInt
   | TagSymbol
-  | TagTuple
   | TagPromise
   | TagObject
 }
@@ -982,17 +1026,13 @@ base class SType private (
     | TPrimValue(TString(), _, _) -> TagString()
     | TPrimValue(TBigInt(), _, _) -> TagBigInt()
     | TPrimValue(TSymbol(), _, _) -> TagSymbol()
-    | TTuple _ -> TagTuple()
     | TPromise _ -> TagPromise()
     | TObject _ -> TagObject()
     }
   }
 
-  fun isTuple(): Bool {
-    this match {
-    | TTuple _ -> true
-    | _ -> false
-    }
+  overridable fun isTuple(): ?Int {
+    None()
   }
 
   fun project(): STypeTag {
@@ -1553,6 +1593,41 @@ class TFields protected {
     this.fields.maybeGet(FieldNameString(fieldName))
   }
 
+  // Returns Some(length) when this TFields is an array-branded object whose
+  // `length` field has a non-negative literal-number type N AND every
+  // positional field `0..N-1` is present.
+  fun isTuple(): ?Int {
+    if (this.isArray != Some(true)) return None();
+    lengthField = this.maybeGet("length") match {
+    | Some(f) -> f
+    | None() -> return None()
+    };
+    length = lengthField.get.getSingleConstant() match {
+    | Some(TPrimValue(TNum(), Some(lits), _)) ->
+      lits.singleElt() match {
+      | Some(PrimLiteral(_, v)) -> v.toIntOption()
+      | None() -> None()
+      }
+    | _ -> None()
+    } match {
+    | Some(n) if (n >= 0) -> n
+    | _ -> return None()
+    };
+    for (i in Range(0, length)) {
+      if (this.maybeGet(i.toString()) is None _) return None();
+    };
+    Some(length)
+  }
+
+  // Returns Some(elts) when this TFields is tuple-shaped per `isTuple`,
+  // i.e. an array-branded object with a non-negative literal length and
+  // every positional field present.
+  fun asTuple(): ?Array<TType> {
+    this.isTuple().map(length ->
+      Array::fillBy(length, i -> this.maybeGet(i.toString()).fromSome().get)
+    )
+  }
+
   fun maybeGetSymbol(uniqueId: String): ?TField {
     this.symbolFields.maybeGet(FieldNameString(uniqueId))
   }
@@ -1743,9 +1818,9 @@ class STypes private (
     )
   }
 
-  fun getSingleTuple(): ?TTuple {
+  fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
     this.singleElt() match {
-    | Some(tuple @ TTuple _) -> Some(tuple)
+    | Some(obj @ TObject _) -> obj.asTuple(subst, tenv)
     | _ -> None()
     }
   }
@@ -1964,6 +2039,10 @@ value class Id private (id: String) uses XXHashable, Orderable, Show {
     Id("this")
   }
 
+  static fun createSynthetic(id: String): Id {
+    Id(`synthetic:${id}`)
+  }
+
   fun toString(): String {
     this.id
   }
@@ -2144,9 +2223,9 @@ class Clauses private (
   }
 
   // Returns the tuple if clauses is a single clause whose only stype is a Tuple.
-  fun getSingleTuple(): ?TTuple {
+  fun getSingleTuple(subst: mutable Subst, tenv: TEnv): ?Array<TType> {
     this.clauses.singleElt().flatMap(clause ->
-      clause.stypes.flatMap(sTypes -> sTypes.getSingleTuple())
+      clause.stypes.flatMap(sTypes -> sTypes.getSingleTuple(subst, tenv))
     )
   }
 

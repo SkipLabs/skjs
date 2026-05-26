@@ -158,8 +158,6 @@ mutable class TypePp{
       this.out(level, margin, rendered)
     | TPrimValue(_, Some(arr), _) ->
       this.out(level, margin, arr.toStringList(true))
-
-    | TTuple(arr, _) -> this.tuple(level, margin, arr)
     }
   }
 
@@ -637,6 +635,13 @@ mutable class TypePp{
   }
 
   mutable fun inst(level: Int, margin: Margin, inst: TSInst): void {
+    tupleKind(inst.name.value) match {
+    | Some(kind) ->
+      if (kind.isReadonly) this.out(level, margin, "readonly ");
+      this.tuple(level, margin, inst.targs.targs);
+      return void
+    | None() -> void
+    };
     this.out(level, margin, inst.name.value);
     targs = inst.targs;
     if (targs.targs.size() != 0) {

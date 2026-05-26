@@ -153,58 +153,6 @@ base class STErrorOnTPrimValue(
     ].concat(STError::readonlyHint(suggestReadonly))
 }
 
-base class STErrorOnTTuple(
-  tup1: TTuple,
-  tup2: TTuple,
-  suggestReadonly: ?PosRange = None(),
-) extends STErrorOnSTypeBase<TTuple> {
-  children =
-  | STTooManyTTuple()
-  | STRecTuple(STErrorOnTType, Int)
-
-  fun toError(
-    subst: mutable Subst,
-    tenv: TEnv,
-    _pos1: PosRange,
-    _pos2: PosRange,
-    detail: STErrorDetail,
-  ): List<(PosRange, String)>
-  | STTooManyTTuple(tup1, tup2, suggestReadonly) ->
-    List[
-      (
-        tup1.pos,
-        `Tuple type of size ${tup1.tuple.size()} ${tup1.toString(subst, tenv)}`,
-      ),
-      (
-        tup2.pos,
-        `is not compatible with tuple type of size ${tup2.tuple.size()} ${tup2.toString(
-          subst,
-          tenv,
-        )}`,
-      ),
-    ].concat(STError::readonlyHint(suggestReadonly))
-  | STRecTuple(err, i, tup1, tup2, _) ->
-    pos1 = tup1.tuple[i].pos;
-    msgs = err.toError(subst, tenv, detail.decreaseIntermediate());
-    if (detail.maxIntermediateDepth > 0) {
-      if (tup1.tuple.size() > 1 && detail.showIntermediateMessages) {
-        !msgs = List.Cons((pos1, `They differ in element ${i}`), msgs)
-      };
-      List.Cons(
-        (tup1.pos, `Tuple type ${tup1.toString(subst, tenv)}`),
-        List.Cons(
-          (
-            tup2.pos,
-            `is not compatible with tuple type ${tup2.toString(subst, tenv)}`,
-          ),
-          msgs,
-        ),
-      )
-    } else {
-      msgs
-    }
-}
-
 base class STErrorOnTPromise(
   p1: TPromise,
   p2: TPromise,
@@ -1095,9 +1043,6 @@ extension class STypes {
         | (prim1 @ TPrimValue _, prim2 @ TPrimValue _) ->
           TPrimValue::isSub(prim1, prim2)
 
-        | (tuple1 @ TTuple _, tuple2 @ TTuple _) ->
-          TTuple::isSub(subst, tenv, tuple1, tuple2)
-
         | (p1 @ TPromise _, p2 @ TPromise _) ->
           TPromise::isSub(subst, tenv, p1, p2)
 
@@ -1409,10 +1354,10 @@ extension class TType {
     //    left to handle the TVars without pre-seeding. Precise per-branch
     //    pairing would require matching clauses across the two sides.
     //  - Only object fields and call/new return types are descended into.
-    //  - Tuple element types (TTuple) and promise payloads (TPromise) are
-    //    not descended, so TVars hidden inside `[A, B]` or `Promise<A>`
-    //    behind an alias are not pre-seeded and are left to the top-level
-    //    isSub call.
+    //  - Promise payloads (TPromise) are not descended, so TVars hidden
+    //    inside `Promise<A>` behind an alias are not pre-seeded and are
+    //    left to the top-level isSub call. (Tuples now expand through the
+    //    object path via TupleN/ReadonlyTupleN's positional fields.)
     (expandedOpen.clauses.getObject(), boundTy.clauses.getObject()) match {
     | (Some(openObj), Some(boundObj)) ->
       openFields = openObj.getFields(subst, tenv);
@@ -1506,16 +1451,6 @@ extension class TType {
     clauses1 = u1.expandToClauses(subst, tenv, Covariant());
     clauses2 = u2.expandToClauses(subst, tenv, Contravariant());
 
-    // Special case: tuple-like lhs against array-like rhs.
-    // We accept only when ReadonlyArray<U(tuple elems)> <: rhs.
-    substCopy = subst.save();
-    VariadicTyping::tupleToArraySubtyping(subst, tenv, clauses1, u2) match {
-    | Some(res) ->
-      if (!(res is STOk())) subst.restore(substCopy);
-      return res
-    | None() -> subst.restore(substCopy)
-    };
-
     Clauses::isSub(subst, tenv, clauses1, clauses2) match {
     | STOk() -> STOk()
     | err @ STErrorOnClauses _ ->
@@ -1523,29 +1458,6 @@ extension class TType {
       subst.restore(savedSubst);
       STRecTypeWithHint(err, hints, u1, u2)
     }
-  }
-}
-
-extension class TTuple {
-  static fun isSub(
-    subst: mutable Subst,
-    tenv: TEnv,
-    tuple1: TTuple,
-    tuple2: TTuple,
-  ): STResult<TTuple> {
-    if (tuple1.tuple.size() < tuple2.tuple.size()) {
-      return STTooManyTTuple(tuple1, tuple2)
-    };
-    savedSubst = subst.save();
-    for (i in Range(0, tuple2.tuple.size())) {
-      TType::isSub(subst, tenv, tuple1.tuple[i], tuple2.tuple[i]) match {
-      | STOk() -> void
-      | err @ STErrorOnTType _ ->
-        subst.restore(savedSubst);
-        return STRecTuple(err, i, tuple1, tuple2)
-      }
-    };
-    STOk()
   }
 }
 

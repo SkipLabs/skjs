@@ -51,8 +51,8 @@ class VariadicTyping() {
     saved = subst.save();
     // Expand (resolves type aliases, applies tvar bindings + constraints)
     clauses = fullType.expandToClauses(subst, tenv, Contravariant());
-    clauses.getSingleTuple() match {
-    | Some(TTuple(tupleElts, _)) -> return Some(tupleElts)
+    clauses.getSingleTuple(subst, tenv) match {
+    | Some(tupleElts) -> return Some(tupleElts)
     | None() -> void
     };
     // Fallback: for a bound tvar, expandToClauses intersects the binding
@@ -72,8 +72,8 @@ class VariadicTyping() {
     };
     boundType
       .expandToClauses(subst, tenv, Contravariant())
-      .getSingleTuple() match {
-    | Some(TTuple(tupleElts, _)) -> Some(tupleElts)
+      .getSingleTuple(subst, tenv) match {
+    | Some(tupleElts) -> Some(tupleElts)
     | None() ->
       subst.restore(saved);
       None()
@@ -270,51 +270,6 @@ class VariadicTyping() {
         }
       }
     }
-  }
-
-  // Handles tuple-to-array subtyping: [T1, T2] <: ReadonlyArray<U>.
-  //
-  // For `[string, number] <: readonly DepSafe[]`:
-  //   - Checks rhs is array-like (has a "length" field)
-  //   - Builds U = string | number
-  //   - Checks ReadonlyArray<string | number> <: readonly DepSafe[] (succeeds)
-  //
-  // ReadonlyArray is covariant, so this correctly allows:
-  //   [Dog, Dog] <: readonly Animal[]  (covariant element type)
-  // And correctly rejects:
-  //   [Dog, Dog] <: Animal[]  (ReadonlyArray is not a subtype of mutable Array)
-  //
-  // Returns Some(result) if this is a tuple-to-array case, None() otherwise.
-  static fun tupleToArraySubtyping(
-    subst: mutable Subst,
-    tenv: TEnv,
-    clauses1: Clauses,
-    rhs: TType,
-  ): ?STResult<TType> {
-    // Check if lhs is a single tuple
-    tuple = clauses1.getSingleTuple() match {
-    | None() -> return None()
-    | Some(tuple) -> tuple
-    };
-    // Cheap array-like trigger: check if rhs has a "length" field.
-    // This is just a gate — correctness comes from ReadonlyArray<U> <: rhs below.
-    rhsClauses = rhs.expandToClauses(subst, tenv, Contravariant());
-    hasLength = rhsClauses.getSTypes(subst, tenv) match {
-    | Some(stypes) ->
-      stypes.singleElt() match {
-      | Some(obj @ TObject(_, _, _)) ->
-        obj.getAllFields().any(fields -> fields.maybeGet("length") is Some _)
-      | _ -> false
-      }
-    | _ -> false
-    };
-    if (!hasLength) return None();
-
-    // Build U = union of tuple element types, then check ReadonlyArray<U> <: rhs.
-    pos = tuple.pos;
-    u = TType::unionN(subst, tenv, pos, tuple.tuple);
-    readonlyArray = TType::inst(Name(pos, "ReadonlyArray"), TArgs(Array[u]));
-    Some(TType::isSub(subst, tenv, readonlyArray, rhs))
   }
 
   // Checks that a rest parameter's type variable constraint uses ReadonlyArray.

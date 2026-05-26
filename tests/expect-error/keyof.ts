@@ -31,7 +31,8 @@ const koKind: keyof { kind: "a" } = "kind";
 const invalidObjKey: ObjKeys = "z";
 
 const koTup0: keyof [number] = 0;
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// Tuples (via the TupleN stubs) inherit `[n: number]: T` from ReadonlyArray,
+// so `keyof` includes all numeric keys, not only positional literals.
 const koTup1: keyof [number] = 1;
 const koTup0s: keyof [number] = "0";
 // @ts-expect-error Invalid definition: value type is not compatible with type annotation

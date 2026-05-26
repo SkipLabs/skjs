@@ -1,0 +1,135 @@
+/***************************************************************************/
+// Synthetic tuple classes.
+//
+// SKJS represents a tuple `[T0, ..., Tn-1]` (and its readonly variant) as
+// an instance of a synthetic class `SKJS_TupleN<T0, ..., Tn-1>` (resp.
+// `SKJS_ReadonlyTupleN`). The class itself is materialized lazily from
+// the name on each `DefMap::getAll` lookup, and its fields are
+// materialized lazily from the bodyRef on each `ClassBodyMap::getFields`
+// lookup. Beyond those two entry points the rest of the type-checker
+// treats these classes like any other.
+/***************************************************************************/
+
+module SKJS;
+
+const tupleName: String = "SKJS_Tuple";
+const readonlyTupleName: String = "SKJS_ReadonlyTuple";
+
+value class TupleKind{isReadonly: Bool, arity: Int}
+
+// Returns Some(kind) when `name` matches `SKJS_Tuple<N>` or
+// `SKJS_ReadonlyTuple<N>`; None otherwise.
+fun tupleKind(name: String): ?TupleKind {
+  if (name.startsWith(readonlyTupleName)) {
+    name
+      .substring(name.getIter().forward(readonlyTupleName.length()))
+      .toIntOption()
+      .map(n -> TupleKind{isReadonly => true, arity => n})
+  } else if (name.startsWith(tupleName)) {
+    name
+      .substring(name.getIter().forward(tupleName.length()))
+      .toIntOption()
+      .map(n -> TupleKind{isReadonly => false, arity => n})
+  } else {
+    None()
+  }
+}
+
+// A `ClassBodyRef` with `fileName == FPath::nil` marks a class node
+// synthesized in-process (no corresponding entry in classBodyMap). The
+// `defName` selects the variant (`tupleName` vs `readonlyTupleName`) and
+// `occurrence` carries the arity; together they fully describe the
+// synthesis parameters consumed by `ClassBodyMap::getFields`.
+extension class ClassBodyRef {
+  static fun syntheticTuple(kind: TupleKind): ClassBodyRef {
+    ClassBodyRef(
+      FPath::nil,
+      if (kind.isReadonly) readonlyTupleName else tupleName,
+      kind.arity,
+    )
+  }
+
+  fun asSyntheticTuple(): ?TupleKind {
+    if (this.fileName != FPath::nil) {
+      None()
+    } else if (this.defName == readonlyTupleName) {
+      Some(TupleKind{isReadonly => true, arity => this.occurrence})
+    } else if (this.defName == tupleName) {
+      Some(TupleKind{isReadonly => false, arity => this.occurrence})
+    } else {
+      None()
+    }
+  }
+}
+
+// Build a synthetic Class node representing `SKJS_TupleN<T0..Tn-1>` or
+// `SKJS_ReadonlyTupleN<T0..Tn-1>`. The class extends the corresponding
+// `SKJS_Tuple<T0|...|Tn-1>` (or readonly variant) so it inherits the array
+// methods and brand fields; positional `0..n-1` fields and the literal
+// `length: N` field are produced on demand by TEnv::getClassFields.
+fun synthesizeTupleClass(name: Name, kind: TupleKind): Class {
+  pos = name.pos;
+  arity = kind.arity;
+  tparamNames = Array::fillBy(arity, i -> Name(pos, `T${i}`));
+  tparams = tparamNames.mapWithIndex((i, tn) ->
+    TypeParam(Id::createSynthetic(`${name.value}.T${i}`), tn, None(), None())
+  );
+  unionType: Type = if (arity == 0) {
+    Type(pos, TAInst(Name(pos, "never"), Array[]))
+  } else {
+    foldedFrom = Type(pos, TAInst(tparamNames[arity - 1], Array[]));
+    for (i in Range(0, arity - 1).reversed()) {
+      !foldedFrom = Type(
+        pos,
+        TAUnion(Type(pos, TAInst(tparamNames[i], Array[])), foldedFrom),
+      )
+    };
+    foldedFrom
+  };
+  baseName = if (kind.isReadonly) readonlyTupleName else tupleName;
+  extendsInst = Type(pos, TAInst(Name(pos, baseName), Array[unionType]));
+  Class{
+    kind => CKInterface(),
+    name,
+    extends_ => Array[extendsInst],
+    implements => Array[],
+    tparams,
+    bodyRef => ClassBodyRef::syntheticTuple(kind),
+  }
+}
+
+// Synthesized `ClassField`s for the tuple class produced by
+// `synthesizeTupleClass`. Position `i` is `i: Ti` (mutable for `SKJS_Tuple`,
+// `readonly` for `SKJS_ReadonlyTuple`); the trailing field is
+// `readonly length: arity`.
+fun synthesizeTupleClassFields(
+  className: Name,
+  kind: TupleKind,
+): Array<ClassField> {
+  pos = className.pos;
+  readonlyMod = Array[ModReadonly(pos)];
+  fieldModifiers = Modifiers(if (kind.isReadonly) readonlyMod else Array[]);
+  Array::fillBy(kind.arity + 1, i ->
+    if (i < kind.arity) {
+      ClassFieldValue{
+        pos,
+        name => FNNormal(Name(pos, i.toString())),
+        optional => None(),
+        type => Some(Type(pos, TAInst(Name(pos, `T${i}`), Array[]))),
+        value => None(),
+        modifiers => fieldModifiers,
+      }
+    } else {
+      ClassFieldValue{
+        pos,
+        name => FNNormal(Name(pos, "length")),
+        optional => None(),
+        type => Some(Type(pos, TANumLiteral(kind.arity.toString()))),
+        value => None(),
+        modifiers => Modifiers(readonlyMod),
+      }
+    }
+  )
+}
+
+module end;

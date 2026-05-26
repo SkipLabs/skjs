@@ -88,7 +88,6 @@ mutable base class ApplyType(
       x
     | TPromise(ty, pos) -> TPromise(this.type(env, ty), pos)
     | obj @ TObject _ -> this.object(env, obj)
-    | tuples @ TTuple _ -> this.tuple(env, tuples)
     }
   }
 
@@ -127,13 +126,6 @@ mutable base class ApplyType(
     field: TField,
   ): TField {
     field.mapType(ty -> this.type(env, ty))
-  }
-
-  overridable deferred mutable fun tuple(
-    env: this::Env,
-    tuple: TTuple,
-  ): TTuple {
-    TTuple(tuple.tuple.map(x -> this.type(env, x)), tuple.pos)
   }
 
   overridable deferred mutable fun insts(

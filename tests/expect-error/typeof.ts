@@ -972,15 +972,12 @@ function testTupleDestructuring(x: [number, string] | number): string {
 }
 
 // Multiple tuple types in union
-// FIXME: SKJS infers [false] as a 2-element tuple instead of 1-element tuple
 function testMultipleTuples(
   x: [number, string] | [boolean] | number,
 ): [number, string] | [boolean] {
   if (typeof x === "number") {
-    // @skjs-expect-error Invalid return type
     return [false];
   } else {
-    // TODO: This error won't be reported due to earlier error
     return x;
   }
 }
@@ -1011,11 +1008,8 @@ function testLabeledTuple(
 }
 
 // Readonly tuple
-// FIXME: SKJS doesn't support readonly tuples yet
 function testReadonlyTuple(
-  // @skjs-expect-error TODO readonly
   x: readonly [number, string] | number,
-  // @skjs-expect-error TODO readonly
 ): readonly [number, string] {
   if (typeof x === "object") {
     return x;
@@ -1052,7 +1046,6 @@ function testTupleIntersection(
   if (typeof x === "number") {
     return x;
   } else {
-    // @skjs-expect-error Invalid access for type never
     return x[0];
   }
 }
@@ -1098,7 +1091,9 @@ function testTupleSpread(
 // Wrong index access
 function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
-    // Accessing out of bounds
+    // `x[2]` has type `number | string` via the inherited number index, not
+    // `boolean` — so the return type fails as well.
+    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Out of bound index
     return x[2];
   } else {
@@ -1117,13 +1112,10 @@ function testTupleWrongDestructure(x: [number, string] | number): boolean {
   }
 }
 
-// Treating tuple as array with methods
-// FIXME: map method for tuples
+// Tuples inherit ReadonlyArray methods (map, filter, ...) via their stubs.
 function testTupleArrayMethod(x: [number, string] | number): number {
   if (typeof x === "object") {
-    // Tuples don't have array methods in SKJS
-    // @skjs-expect-error Invalid index
-    return x.map((v) => v).length;
+    return x.map((v: number | string) => v).length;
   } else {
     return x;
   }
