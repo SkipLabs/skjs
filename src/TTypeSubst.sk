@@ -35,6 +35,16 @@ mutable base class SubstState private {
 }
 
 mutable class SavedSubst private {} extends SubstState {
+  const empty: SavedSubst = SavedSubst{
+    seenSub => SortedSet[],
+    seenInter => SortedMap[],
+    seenUnion => SortedMap[],
+    seenExpansion => SortedMap[],
+    version => 0,
+    values => SortedMap[],
+    origins => SortedMap[],
+  };
+
   /* Forces frozen SavedSubst */
   static fun create(state: readonly SubstState): SavedSubst {
     SavedSubst{
@@ -53,17 +63,20 @@ mutable class Subst private {} extends TCEnvBase, SubstState {
   /* To ensure consistency in type variable identifiers, use mcreate only
      in functions that take no argument containing type variables and whose
      return value does not contain type variables. */
-  static fun mcreate(tcenvb: mutable TCEnvBase): mutable Subst {
+  static fun mcreate(
+    tcenvb: mutable TCEnvBase,
+    state: readonly SubstState = SavedSubst::empty,
+  ): mutable Subst {
     mutable Subst{
       context => tcenvb.context,
       results => tcenvb.results,
-      seenSub => SortedSet[],
-      seenInter => SortedMap[],
-      seenUnion => SortedMap[],
-      seenExpansion => SortedMap[],
-      version => 0,
-      values => SortedMap[],
-      origins => SortedMap[],
+      seenSub => state.seenSub,
+      seenInter => state.seenInter,
+      seenUnion => state.seenUnion,
+      seenExpansion => state.seenExpansion,
+      version => state.version,
+      values => state.values,
+      origins => state.origins,
     }
   }
 

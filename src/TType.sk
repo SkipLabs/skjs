@@ -426,7 +426,7 @@ class TType private {
       | tsinst @ TSInst(name, targs) ->
         subst.seenExpansion.maybeGet(tsinst) match {
         | None() ->
-          expandedType = tenv.instantiate(subst, name, targs);
+          expandedType = tenv.instantiate(subst, subst, name, targs);
           subst.!seenExpansion[tsinst] = expandedType;
           expandedType
         | Some(expandedType) -> expandedType
