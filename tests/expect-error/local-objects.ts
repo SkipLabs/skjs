@@ -47,11 +47,20 @@ function testWithIndexSignature(): void {
   obj.x = 5; // OK: "x" is a subtype of string, so use index signature
 }
 
-// Test 5b: Index signature with numeric key (field name doesn't match)
+// Test 5b: Index signature with numeric key (field name doesn't match).
+// String-keyed access on a number-only index is rejected.
 function testWithNumericIndexSignature(): void {
   let obj: { [key: number]: string } = {};
   // @skjs-expect-error Invalid index key: expected number, got string
-  obj.x = "hello"; // OK: "x" is NOT a subtype of number, so add as field
+  obj.x = "hello";
+}
+
+// Test 5b': A numeric-keyed index isn't assignable to a fixed-field
+// object shape — the index says "any number key maps to string" but
+// doesn't promise field `x` exists. In its own function so the
+// "one error per def" rule doesn't hide it behind testWithNumericIndexSignature.
+function testNumericIndexNotAssignableToNamedField(): void {
+  let obj: { [key: number]: string } = {};
   // @skjs-expect-error Invalid annotation
   const result: { x: string } = obj;
 }

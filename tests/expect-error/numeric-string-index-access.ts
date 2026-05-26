@@ -8,12 +8,19 @@ function testNumericStringAccessOnNumberIndex(): void {
   const b: string | undefined = obj["42"];
   const c: string | undefined = obj["1.5"];
   const d: string | undefined = obj["-1"];
+}
 
-  // Non-numeric string access fails
+// Non-numeric string access fails. In its own function so the
+// "one error per def" rule doesn't hide the non-canonical case below.
+function testNonNumericStringAccessFails(): void {
+  const obj: { [x: number]: string } = {};
   // @skjs-expect-error Invalid index key: expected number, got string
   const e = obj["foo"];
+}
 
-  // Non-canonical numeric string access fails
+// Non-canonical numeric strings (leading zero, etc.) also fail.
+function testNonCanonicalNumericStringAccessFails(): void {
+  const obj: { [x: number]: string } = {};
   // @skjs-expect-error Invalid index key: expected number, got string
   const f = obj["01"];
 }
