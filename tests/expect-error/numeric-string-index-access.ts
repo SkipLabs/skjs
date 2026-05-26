@@ -14,6 +14,5 @@ function testNumericStringAccessOnNumberIndex(): void {
   const e = obj["foo"];
 
   // Non-canonical numeric string access fails
-  // @skjs-expect-error Invalid index key: expected number, got string
   const f = obj["01"];
 }
