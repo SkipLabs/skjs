@@ -1,10 +1,6 @@
 version: 2.1
 
 executors:
-  skip-executor:
-    docker:
-      - image: skiplabs/skip:latest
-    resource_class: medium
   skip-executor-large:
     docker:
       - image: skiplabs/skip:latest
