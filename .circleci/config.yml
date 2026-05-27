@@ -4,6 +4,8 @@ executors:
   skip-executor:
     docker:
       - image: skiplabs/skip:latest
+    # Measured RAM peak ~3.7 GB of 4 GB available. If this job OOMs,
+    # bump to medium+.gen2 (3 CPU / 6 GB).
     resource_class: medium.gen2
 
 jobs:
