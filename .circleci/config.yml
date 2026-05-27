@@ -1,14 +1,14 @@
 version: 2.1
 
 executors:
-  skip-executor-large:
+  skip-executor:
     docker:
       - image: skiplabs/skip:latest
-    resource_class: xlarge
+    resource_class: medium.gen2
 
 jobs:
   build_and_test:
-    executor: skip-executor-large
+    executor: skip-executor
     steps:
       - checkout
       - run:
