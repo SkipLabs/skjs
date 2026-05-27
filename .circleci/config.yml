@@ -4,15 +4,13 @@ executors:
   skip-executor:
     docker:
       - image: skiplabs/skip:latest
-    resource_class: medium
-  skip-executor-large:
-    docker:
-      - image: skiplabs/skip:latest
-    resource_class: xlarge
+    # Tried medium.gen2 first; OOMed (measured RAM peak ~3.7 GB of 4 GB
+    # was too tight). medium+.gen2 gives 6 GB headroom.
+    resource_class: medium+.gen2
 
 jobs:
   build_and_test:
-    executor: skip-executor-large
+    executor: skip-executor
     steps:
       - checkout
       - run:
