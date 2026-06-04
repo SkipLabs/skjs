@@ -22,7 +22,7 @@ function returningVoid6(): void {
 }
 
 function returningVoid7(): void {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @ts-expect-error Type of returned value is not assignable to the function's return type
   return null;
 }
 
@@ -31,11 +31,11 @@ const x: void = returningVoid();
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x2: void = undefined;
 
-// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
+// @ts-expect-error Type of initializer is not assignable to the declared type annotation
 const x3: void = {};
 
-// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 // @skjs-expect-error The type of a top-level constant must be a primitive type, not an object
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x4: () => void = () => null;
 
 // @skjs-expect-error Property access is not allowed on this type
@@ -58,10 +58,10 @@ function returningVoidOrNumber(): void | number {}
 // @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function returningVoidOrUndefined(): void | undefined {}
 
-// @skjs-expect-error Property access is not allowed on this type
+// @ts-expect-error Property access is not allowed on this type
 const x8: string | undefined = returningVoid()?.toString();
 
-// @skjs-expect-error Property access is not allowed on this type
+// @ts-expect-error Property access is not allowed on this type
 const x9: string | undefined = returningVoidOrNumber()?.toString();
 
 // @skjs-expect-error An expression of type 'void' cannot be used here
@@ -76,19 +76,19 @@ const x12: number | void = returningVoidOrUndefined() ?? 0;
 // @skjs-expect-error An expression of type 'void' cannot be used here
 const x13: number | void | null = returningVoidOrNull() ?? 0;
 
-// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 // @skjs-expect-error Operand of '||' must be of type 'boolean'
+// @ts-expect-error Type of initializer is not assignable to the declared type annotation
 const x14: number | undefined = returningVoid() || 0;
 
-// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 // @skjs-expect-error Operand of '||' must be of type 'boolean'
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x15: number | undefined = returningVoidOrNumber() || 0;
 
-// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 // @skjs-expect-error Operand of '||' must be of type 'boolean'
+// @ts-expect-error Type of initializer is not assignable to the declared type annotation
 const x16: number | undefined = returningVoidOrUndefined() || 0;
 
-// @skjs-expect-error Operand of '||' must be of type 'boolean'
+// @ts-expect-error Operand of '||' must be of type 'boolean'
 const x17: number | void | null = returningVoidOrNull() || 0;
 
 function unsafeInTypescript(
@@ -115,7 +115,7 @@ function returningVoidParam<T extends void>(param: T): void {
 
 function takesVoidGeneric<T extends void>(param: T): void {}
 
-// @skjs-expect-error Argument is not assignable to the parameter's type
+// @ts-expect-error Argument is not assignable to the parameter's type
 takesVoidGeneric<number>(5);
 
 takesVoidGeneric<void>(returningVoid());
@@ -135,18 +135,18 @@ function invalidNullishCoalescing<T>(value: void | T): void | T | null {
 }
 
 function invalidLogicalOr<T>(value: void | T): T {
-  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   // @skjs-expect-error Operand of '||' must be of type 'boolean'
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return value || null;
 }
 
 function invalidPropertyAccess<T>(value: void | T): string {
-  // @skjs-expect-error Cannot access a property on type void | T:10:828896147511048019
+  // @ts-expect-error Cannot access a property on type void | T:10:828896147511048019
   return value.toString();
 }
 
 function invalidOptionalChaining<T>(value: void | T): string {
-  // @skjs-expect-error Cannot access a property on type void | T:11:828896147511048019
+  // @ts-expect-error Cannot access a property on type void | T:11:828896147511048019
   return value?.toString();
 }
 
@@ -156,12 +156,12 @@ function invalidComparison<T>(value1: void | T, value2: void | T): boolean {
 }
 
 function invalidArrayAccess<T>(value: void | T): T {
-  // @skjs-expect-error Cannot access a property on type void | T:13:828896147511048019
+  // @ts-expect-error Cannot access a property on type void | T:13:828896147511048019
   return value[0];
 }
 
 function invalidFunctionCall<T>(value: void | T): T {
-  // @skjs-expect-error This expression is not callable
+  // @ts-expect-error This expression is not callable
   return value();
 }
 
@@ -199,30 +199,30 @@ const x20: boolean = returningVoid() === undefined;
 // @skjs-expect-error An expression of type 'void' cannot be used here
 const x21: boolean = returningVoidOrNull() === null;
 
-// @skjs-expect-error Operator '+' cannot be applied to these types
+// @ts-expect-error Operator '+' cannot be applied to these types
 const x22: number = returningVoid() + 5;
 
-// @skjs-expect-error This operator requires a numeric operand
+// @ts-expect-error This operator requires a numeric operand
 const x23: number = returningVoid() - 5;
 
-// @skjs-expect-error This operator requires a numeric operand
+// @ts-expect-error This operator requires a numeric operand
 const x24: number = returningVoid() * 5;
 
-// @skjs-expect-error This operator requires a numeric operand
+// @ts-expect-error This operator requires a numeric operand
 const x25: number = returningVoid() / 5;
 
-// @skjs-expect-error This operator requires a numeric operand
+// @ts-expect-error This operator requires a numeric operand
 const x26: number = returningVoid() % 5;
 
 // Additional operations that should be disallowed on void
 
 function testConditionalWithVoid(): number {
-  // @skjs-expect-error A ternary condition must be of type 'boolean'
+  // @ts-expect-error A ternary condition must be of type 'boolean'
   return returningVoid() ? 1 : 0;
 }
 
 function testArithmeticAssignment(): void {
   let x: number = 5;
-  // @skjs-expect-error Right operand of '+' is not assignable to the left operand's type
+  // @ts-expect-error Right operand of '+' is not assignable to the left operand's type
   x += returningVoid();
 }
