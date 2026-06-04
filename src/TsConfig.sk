@@ -231,13 +231,14 @@ base class Truthiness uses Equality {
     modes.map(m -> m.toString()).join(", ")
   }
 
-  // Parse a truthiness mode string (case-insensitive). None() for unknown values.
+  // Parse a truthiness mode string (case-insensitive), accepting common
+  // aliases. None() for unknown values.
   static fun fromString(s: String): ?Truthiness {
     s.lowercase() match {
-    | "boolean" -> Some(TBoolean())
+    | "boolean" | "bool" -> Some(TBoolean())
     | "safe" -> Some(TSafe())
-    | "typescript" -> Some(TTypeScript())
-    | "javascript" -> Some(TJavaScript())
+    | "typescript" | "ts" -> Some(TTypeScript())
+    | "javascript" | "ecmascript" | "js" | "es" -> Some(TJavaScript())
     | _ -> None()
     }
   }
