@@ -482,36 +482,72 @@ extension class TypeChecker {
     | Var(
       local @ Name(_, n),
     ) if (n != "true" && n != "false" && n != "null" && n != "undefined") ->
-      this.evalTruthiness(tcenv, local, e.pos, target)
+      this.evalTruthiness(tcenv, local, target)
 
     | Dot(NormalDot(), Expr(_, Var(local)), Name(_, fieldName)) ->
-      trueType = TType::single(TPrimValue::single(TBool(), "true", e.pos));
-      this.evalFieldEqualityType(tcenv, local, fieldName, trueType, target)
+      this.evalFieldTruthiness(tcenv, local, fieldName, e.pos, target)
 
     | _ -> void
     }
   }
 
-  // Narrows `local` based on truthiness (`if (local)` === `if (local === true)`).
-  // Since checkBool enforces boolean conditions, narrows boolean to true/false.
-  // No-op if `local` is not in the local scope (e.g. module-level const).
-  fun evalTruthiness(
+  // Narrows `local` based on its truthiness (`if (local)`). Each member is kept
+  // as its truthy part (then-branch) or falsy part (else-branch): `boolean`
+  // narrows to true/false, `T | undefined` to `T` / `undefined`, etc. Type
+  // semantics are always JavaScript here regardless of the truthiness mode
+  // (issue #654). No-op if `local` is not in the local scope (e.g. a const).
+  fun evalTruthiness(tcenv: mutable TCEnv, local: Name, target: Bool): void {
+    filterMap = stype -> stype.truthinessResidue(target);
+    this.setLocalFilterMap(tcenv, local, None(), filterMap)
+  }
+
+  // Narrows `local.fieldName` based on its truthiness (`if (local.field)`), the
+  // field analogue of evalTruthiness. The then-branch keeps the field's truthy
+  // part (clearing optionality, since the field is then definitely present and
+  // non-falsy); the else-branch keeps its falsy part. A branch whose narrowed
+  // field is bottom is eliminated.
+  fun evalFieldTruthiness(
     tcenv: mutable TCEnv,
     local: Name,
-    pos: PosRange,
+    fieldName: String,
+    fieldPos: PosRange,
     target: Bool,
   ): void {
-    val = if (target) "true" else "false";
-    filterMap = stype ->
+    this.setLocalFilterMap(tcenv, local, None(), stype ->
       stype match {
-      | TPrimValue(TBool(), None(), pos2) ->
-        Some(TPrimValue::single(TBool(), val, pos2))
-      | TPrimValue(TBool(), Some(lits), _) ->
-        if (lits.contains(val)) Some(stype) else None()
-      | _ -> Some(stype)
-      };
-    default = Some(STypes::single(TPrimValue::single(TBool(), val, pos)));
-    this.setLocalFilterMap(tcenv, local, default, filterMap)
+      | tObj @ TObject _ ->
+        tObj.mapOpt(tFields ->
+          tFields.maybeGetType(
+            tcenv.subst,
+            this,
+            fieldName,
+            fieldPos,
+            false,
+          ) match {
+          | None() -> Some(tFields)
+          | Some(branchFieldType) ->
+            narrowed = branchFieldType.truthinessPart(
+              tcenv.subst.clone(),
+              this,
+              target,
+            );
+            if (narrowed.isBottom()) {
+              None()
+            } else {
+              // The then-branch removes undefined, so the field is no longer
+              // optional; the else-branch keeps it.
+              keepOpt = !target;
+              Some(
+                tFields.updateField(fieldName, fd ->
+                  fd.withGet(narrowed, keepOpt && fd.isOptional)
+                ),
+              )
+            }
+          }
+        )
+      | x -> Some(x)
+      }
+    )
   }
 
   // Narrows a local variable's type by applying `filterMap` to each SType branch.

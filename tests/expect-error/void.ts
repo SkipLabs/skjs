@@ -88,7 +88,6 @@ const x15: number | undefined = returningVoidOrNumber() || 0;
 // @skjs-expect-error Operand of '||' must be of type 'boolean'
 const x16: number | undefined = returningVoidOrUndefined() || 0;
 
-// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 // @skjs-expect-error Operand of '||' must be of type 'boolean'
 const x17: number | void | null = returningVoidOrNull() || 0;
 

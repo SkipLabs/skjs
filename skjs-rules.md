@@ -311,6 +311,17 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Workaround**: Move fields after the spread, or restructure the object literal so that fields you need in the result type appear after the last spread
 - **Verified by**: `tests/expect-error/objects.ts`
 
+### 29. Truthiness Tests and the `truthiness` Option
+- **Rule**: A value used in a boolean-test position — `if`/`while`/`for` conditions, the ternary `?` condition, unary `!`, and the operands of `&&`/`||` — is checked according to the SKJS-specific `truthiness` mode. The mode only decides which diagnostics are emitted; type-checking always continues with **JavaScript value semantics**, so a rejected condition is still narrowed (its truthy part in the then-branch, falsy part in the else-branch) — errors are recoverable.
+- **Modes** (`boolean ⊂ safe ⊂ typescript ⊂ javascript`):
+  - **`boolean`** (default): the condition must be a subtype of `boolean`.
+  - **`safe`**: also accepts a type with **exactly one falsy value and at least one truthy value** (e.g. `T | undefined`/`T | null` with `T` always truthy, bare `string` (only `""`), bare `bigint` (only `0n`), literal unions like `0 | 1`). Rejects `number` (0/-0/NaN — a common footgun), unions with two or more falsy values (e.g. `string | undefined`), unconstrained generics, always-truthy or always-falsy constant conditions, and `void`.
+  - **`typescript`**: matches `tsc` — accepts everything except `void` (TS1345) and always-truthy function/method references (TS2774). Accepts `number`, always-truthy plain objects, `string | undefined`, `unknown`/generics, class references, etc.
+  - **`javascript`**: accepts any type with no truthiness diagnostics.
+- **Setting it**: `"truthiness": "boolean" | "safe" | "typescript" | "javascript"` in tsconfig `compilerOptions`, or `--truthiness <mode>` on the command line (the flag overrides the tsconfig value). Default is `boolean`. Note: `truthiness` is SKJS-specific, so running `tsc` on the same tsconfig reports `TS5023: Unknown compiler option`.
+- **Relationship to TypeScript**: TypeScript accepts every truthiness test except void and always-truthy function refs, so no mode is ever more permissive than `tsc` here.
+- **Verified by**: `tests/projects/truthiness-{safe,typescript,javascript}/`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes

@@ -109,14 +109,103 @@ extension class TypeChecker {
   }
 
   fun checkBool(tcenv: mutable TCEnv, e: Expr): void {
-    this.checkSubType(
+    this.checkCondition(
       tcenv,
       e.pos,
-      "A condition must be of type 'boolean'",
       this.expr(tcenv, e, true),
-      TType::single(TPrimValue::boolean(e.pos)),
-      ESLintCode("@typescript-eslint/strict-boolean-expressions"),
-    );
+      "A condition must be of type 'boolean'",
+    )
+  }
+
+  // Emits the truthiness diagnostic (if any) for `ty` used in a boolean-test
+  // position (if/while/for, ternary `?`, unary `!`, left operand of `&&`/`||`).
+  // The `truthiness` mode only decides which types are flagged; type-checking
+  // always continues afterwards with JavaScript value semantics, so the error
+  // is recoverable (issue #654). `siteMsg` is the per-site wording used in
+  // `boolean` mode, preserving today's diagnostics exactly.
+  fun checkCondition(
+    tcenv: mutable TCEnv,
+    pos: PosRange,
+    ty: TType,
+    siteMsg: String,
+  ): void {
+    this.truthiness match {
+    | TJavaScript() -> void
+    // `boolean` mode is a pure type-conformance check: the condition must be
+    // assignable to `boolean`. This is deliberately a different mechanism from
+    // the relaxed modes below, which judge the *shape* of truthiness from
+    // structural facts (`conditionVerdict`) rather than a subtype query —
+    // keeping boolean mode's exact diagnostic and avoiding a subtype check on
+    // the relaxed (default) hot path.
+    | TBoolean() ->
+      this.checkSubType(
+        tcenv,
+        pos,
+        siteMsg,
+        ty,
+        TType::single(TPrimValue::boolean(pos)),
+        ESLintCode("@typescript-eslint/strict-boolean-expressions"),
+      )
+    // `safe` and `typescript` share the always-truthy-function-ref check
+    // (TS2774) but differ on void: `safe` rejects any void member, while
+    // `typescript` matches tsc and rejects only a purely-`void` condition (a
+    // `void | T` union is testable). The verdict supplies neutral facts; the
+    // policy decisions live here.
+    | relaxed @ TRelaxed() ->
+      verdict = ty.conditionVerdict(tcenv.subst, this);
+      voidIsError = relaxed match {
+      | TSafe() -> verdict.containsVoid
+      | TTypeScript() -> verdict.containsVoid && !verdict.hasObservable
+      };
+      if (voidIsError) {
+        tcenv.error(
+          Array[
+            (pos, "An expression of type void cannot be tested for truthiness"),
+          ],
+          TSCode(1345),
+        )
+      } else if (
+        // TS2774: every member is a callable object — a function or method
+        // reference used directly as a condition, which is always truthy and
+        // almost always a mistake. A callable object has no falsy values and is
+        // never void, so `allCallable` already implies `falsyCount == FZero()`
+        // and excludes any void member; `hasTruthy` is just the non-empty guard
+        // (a callable object is truthy, the empty `never` type is not).
+        verdict.allCallable &&
+        verdict.hasTruthy
+      ) {
+        tcenv.error(
+          Array[
+            (
+              pos,
+              "This condition will always be true since this value is always defined",
+            ),
+          ],
+          TSCode(2774),
+        )
+      } else if (
+        // `safe` additionally requires a single falsy value, unless the type is
+        // already structurally boolean (`allBoolean`) — testing a boolean is the
+        // canonical safe truthiness test, and bool literals like `true` /
+        // `false` don't fit the single-falsy rule. (`typescript` adds no check
+        // beyond the void and TS2774 cases above.)
+        relaxed is TSafe() &&
+        !verdict.allBoolean &&
+        (verdict.incomplete ||
+          verdict.falsyCount != FOne() ||
+          !verdict.hasTruthy)
+      ) {
+        tcenv.error(
+          Array[
+            (
+              pos,
+              "A condition is expected to be of type boolean or a type with a single falsy value",
+            ),
+          ],
+          ESLintCode("@typescript-eslint/strict-boolean-expressions"),
+        )
+      }
+    }
   }
 
   fun checkStringifiable(tcenv: mutable TCEnv, pos: PosRange, ty: TType): void {
