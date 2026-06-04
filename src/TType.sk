@@ -249,6 +249,83 @@ class TType private {
     )
   }
 
+  // Aggregate truthiness facts for a condition type (issue #654). Folds each
+  // union member's `falsiness()` into counts/flags, and records whether every
+  // member is a callable object (`allCallable`) or a bool type (`allBoolean`),
+  // whether any member is void (`containsVoid`), and whether any member is
+  // non-void/observable (`hasObservable`). The facts are policy-free;
+  // `checkCondition` interprets them per mode (e.g. a whole-`void` condition is
+  // `containsVoid && !hasObservable`). A member that expands to Top (an
+  // unconstrained type variable / unknown) is recorded as `incomplete` and does
+  // not erase the concrete members' facts: e.g. `void | T` still reports
+  // `containsVoid` (so `safe` flags the void) while `incomplete` keeps it from
+  // being read as a whole-`void` or single-falsy condition.
+  fun conditionVerdict(subst: mutable Subst, tenv: TEnv): TruthinessVerdict {
+    // Fold the expanded clauses rather than the flattened `getSTypes`, which
+    // collapses to None (discarding every concrete member, e.g. a `void` in
+    // `void | T`) as soon as one clause is an unanalyzable remainder. We instead
+    // gather the concrete members and flag that remainder as `incomplete`
+    // (issue #657).
+    clauses = this.expandToClauses(subst, tenv, Covariant());
+    concrete = STypes::empty();
+    incomplete = clauses.isTop();
+    for (clause in clauses) {
+      clause.stypes match {
+      | None() -> !incomplete = true
+      | Some(stypes) -> !concrete = STypes::union(subst, tenv, concrete, stypes)
+      }
+    };
+    falsyCount: FalsyCount = FZero();
+    hasTruthy = false;
+    containsVoid = false;
+    hasObservable = false; // any non-void (observable) member
+    allCallable = true;
+    allBoolean = true; // vacuously true for empty (never); cleared by any non-boolean member
+    for (stype in concrete) {
+      stype.falsiness() match {
+      | SFVoid() -> !containsVoid = true
+      | SFValues(f, t) ->
+        !hasObservable = true;
+        !falsyCount = falsyCount.plus(f);
+        if (t) !hasTruthy = true
+      };
+      callable = stype match {
+      | tObj @ TObject _ -> tObj.hasCallSignature()
+      | _ -> false
+      };
+      if (!callable) !allCallable = false;
+      if (!(stype is TPrimValue(TBool(), _, _))) !allBoolean = false
+    };
+    if (incomplete) {
+      // An unanalyzable remainder could be any value: it is observable and may
+      // be truthy, is neither all-callable nor all-boolean, and bars claiming a
+      // single falsy value (see the `safe` policy in checkCondition).
+      !hasObservable = true;
+      !allCallable = false;
+      !allBoolean = false
+    };
+    TruthinessVerdict{
+      falsyCount,
+      hasTruthy,
+      containsVoid,
+      hasObservable,
+      allCallable,
+      allBoolean,
+      incomplete,
+    }
+  }
+
+  // The sub-type whose values are truthy (`target == true`) or falsy
+  // (`target == false`). Used to narrow conditions and to compute the
+  // value-returning result of `&&`/`||` (#654).
+  fun truthinessPart(subst: mutable Subst, tenv: TEnv, target: Bool): TType {
+    this.mapSTypes(subst, tenv, Some(Covariant()), stypesOpt ->
+      stypesOpt.map(stypes ->
+        stypes.filterMap(stype -> stype.truthinessResidue(target))
+      )
+    )
+  }
+
   // TRANSFORMERS
 
   fun withPos(pos: PosRange): TType {
@@ -643,6 +720,13 @@ class TObject private (
     this.branches.toArray()
   }
 
+  // True when every branch carries a (non-constructor) call signature, i.e.
+  // this object type is callable as a function. Cheaper than getFields, which
+  // unions all branches; used for the always-truthy-function check (TS2774).
+  fun hasCallSignature(): Bool {
+    this.branches.all(fields -> fields.call.isSome())
+  }
+
   // Returns Some(arity) when every branch of this TObject is a tuple of the
   // same arity (via TFields::isTuple). Avoids the Subst that `asTuple` needs
   // for element unioning — useful for callers that only care about length
@@ -932,6 +1016,36 @@ base class TPrimValueKind uses XXHashable, Orderable {
     | TSymbol() -> "symbol"
     }
   }
+
+  // Whether `literal` (a value as stored in PrimLiterals for this kind) is one
+  // of JavaScript's falsy values: `false`, `0`/`-0`/`NaN`, `0n`, `""`. Symbols
+  // are always truthy.
+  fun isFalsy(literal: String): Bool {
+    this match {
+    | TBool() -> literal == "false"
+    | TString() -> literal == ""
+    | TNum() -> literal == "NaN" || TPrimValueKind::isZeroSpelling(literal)
+    // bigint literals carry a trailing `n` (e.g. `0n`, `-0x0n`).
+    | TBigInt() -> TPrimValueKind::isZeroSpelling(literal.stripSuffix("n"))
+    | TSymbol() -> false
+    }
+  }
+
+  // Whether `literal` is a recognized spelling of numeric zero, with an optional
+  // sign: decimal `0` and the hex/binary/octal single zeros `0x0`/`0b0`/`0o0`
+  // (either case). Matched against the raw lexeme, so it allocates nothing. This
+  // is a stopgap — numeric/bigint literal types store the raw source lexeme, so
+  // zero has unbounded spellings we do not catch here (`0.0`, `0e0`, `0_0`,
+  // `0x00`, ...). The proper fix is to normalize numeric literals when literal
+  // types are built; see https://github.com/SkipLabs/skjs/issues/655 .
+  static fun isZeroSpelling(literal: String): Bool {
+    literal match {
+    | "0" | "-0" | "0x0" | "0X0" | "-0x0" | "-0X0" | "0b0" | "0B0" | "-0b0"
+    | "-0B0" | "0o0" | "0O0" | "-0o0" | "-0O0" ->
+      true
+    | _ -> false
+    }
+  }
 }
 
 // Restricted key kind for FKName: only string or number
@@ -996,6 +1110,66 @@ base class FieldKey {
   }
 }
 
+// Truthiness classification of a single type, used by the `truthiness` modes
+// (issue #654). JS falsy values are `false`, `0`, `-0`, `NaN`, `0n`, `""`,
+// `null`, `undefined`. void is kept separate because tsc rejects it in a
+// truthiness position even though its value (undefined) is falsy.
+// How many distinct falsy values a type can take, saturated at "many": `none`,
+// `one`, or `many` (two or more). Only this three-way distinction is ever
+// needed — the TS2774 rule asks "no falsy value?" and the `safe` rule asks
+// "exactly one falsy value?" — so we avoid an exact `Int` count, which would
+// otherwise need a sentinel for `number` and could double-count across union
+// members (e.g. `0 | number` summing to 3).
+base class FalsyCount uses Equality {
+  children =
+  | FZero()
+  | FOne()
+  | FMany()
+
+  // Union of two members' falsy values, saturating at `FMany`.
+  fun plus(other: FalsyCount): FalsyCount {
+    this match {
+    | FZero() -> other
+    | FOne() ->
+      other match {
+      | FZero() -> FOne()
+      | FOne()
+      | FMany() ->
+        FMany()
+      }
+    | FMany() -> FMany()
+    }
+  }
+}
+
+base class SFalsiness {
+  children =
+  // The falsy-value count of the type (none/one/many), plus whether it can also
+  // be truthy. e.g. object/symbol -> (FZero, true); undefined/null -> (FOne,
+  // false); full boolean/string/bigint -> (FOne, true); full number -> (FMany,
+  // true); a literal union folds its falsy members. Keeping `{...} | undefined`
+  // (FOne) distinct from a type with several falsy values is what lets the
+  // `safe` mode accept the former and reject the latter.
+  | SFValues(falsyCount: FalsyCount, hasTruthy: Bool)
+  // void: runtime-falsy, but rejected as a condition by tsc.
+  | SFVoid()
+}
+
+// Aggregated truthiness facts about a whole condition type, consumed by the
+// per-mode acceptance rules in checkCondition. A type that expands to Top
+// (unconstrained type variable / unknown) yields the default verdict.
+// A neutral bag of structural truthiness facts about a condition type; the
+// per-mode policy in `checkCondition` decides which facts are errors.
+class TruthinessVerdict{
+  falsyCount: FalsyCount = FZero(), // falsy values across members, saturated at FMany; excludes void
+  hasTruthy: Bool = false, // at least one member can be truthy
+  containsVoid: Bool = false, // some member is void
+  hasObservable: Bool = false, // some member is non-void (so `containsVoid && !hasObservable` means the whole type is void)
+  allCallable: Bool = false, // every member is a callable object (a function/method reference); vacuously true for never
+  allBoolean: Bool = false, // every member is a bool/bool-literal type: a cheap structural sufficient condition for `<: boolean` (vacuously true for never), distinct from boolean mode's full subtype check
+  incomplete: Bool = false, // some member is an unanalyzable remainder (unconstrained type variable / Top): observable, of indeterminate truthiness, not all-callable/all-boolean
+}
+
 base class STypeTag final () uses Orderable {
   children =
   | TagUndefined
@@ -1041,6 +1215,82 @@ base class SType private (
 
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     prettyPrintSType(subst, tenv, this, false)
+  }
+
+  // Truthiness classification of this single type (issue #654).
+  fun falsiness(): SFalsiness {
+    this match {
+    | TPrimUnit(TVoid(), _) -> SFVoid()
+    | TPrimUnit(TUndefined(), _)
+    | TPrimUnit(TNull(), _) ->
+      SFValues(FOne(), false)
+    | TObject _
+    | TPromise _
+    | TPrimValue(TSymbol(), _, _) ->
+      SFValues(FZero(), true)
+    | TPrimValue(TBool(), None(), _)
+    | TPrimValue(TString(), None(), _)
+    | TPrimValue(TBigInt(), None(), _) ->
+      // boolean has only `false`, string only `""`, bigint only `0n`.
+      SFValues(FOne(), true)
+    | TPrimValue(TNum(), None(), _) ->
+      // number ranges over the falsy values 0, -0 and NaN (i.e. more than one).
+      SFValues(FMany(), true)
+    | TPrimValue(kind, Some(lits), _) ->
+      falsyCount: FalsyCount = FZero();
+      hasTruthy = false;
+      for (lit in lits) {
+        if (kind.isFalsy(lit.val)) {
+          !falsyCount = falsyCount.plus(FOne())
+        } else {
+          !hasTruthy = true
+        }
+      };
+      SFValues(falsyCount, hasTruthy)
+    }
+  }
+
+  // The part of this single type whose values are truthy (`target == true`) or
+  // falsy (`target == false`); None if there is no such part. Notable cases:
+  //   - void is non-observable, so it is never narrowed: it passes through
+  //     unchanged for either target rather than being treated as falsy.
+  //   - full string/number/bigint over-approximate to themselves on BOTH sides:
+  //     the truthy side cannot represent "non-empty"/"non-zero", and the falsy
+  //     side keeps the whole type rather than narrowing to `""`/`0`/`0n`. This
+  //     one residue is shared by control-flow narrowing and the value of
+  //     `&&`/`||`, which TypeScript treats differently:
+  //       * narrowing — `if (s: string) {} else { s }` keeps `s: string` in
+  //         tsc, so over-approximating MATCHES tsc here (narrowing the falsy
+  //         side to `""` would be *more* precise than tsc; we deliberately
+  //         don't, to track tsc's narrowing).
+  //       * `&&`/`||` value — tsc narrows the falsy operand, so `s && b` is
+  //         `"" | typeof b` in tsc but `string | typeof b` here. Ours is wider,
+  //         hence sound, but rejects some assignments tsc accepts. This known
+  //         divergence is documented by the `truthiness-typescript` and-or test.
+  //   - full boolean narrows to the matching `true`/`false` literal.
+  //   - a literal union keeps the literals on the requested side.
+  fun truthinessResidue(target: Bool): ?SType {
+    this match {
+    | TPrimUnit(TVoid(), _) -> Some(this)
+    | TPrimUnit(TUndefined(), _)
+    | TPrimUnit(TNull(), _) ->
+      if (target) None() else Some(this)
+    | TObject _
+    | TPromise _
+    | TPrimValue(TSymbol(), _, _) ->
+      if (target) Some(this) else None()
+    | TPrimValue(TString(), None(), _)
+    | TPrimValue(TNum(), None(), _)
+    | TPrimValue(TBigInt(), None(), _) ->
+      Some(this)
+    | TPrimValue(TBool(), None(), pos) ->
+      Some(TPrimValue::single(TBool(), if (target) "true" else "false", pos))
+    | TPrimValue(kind, Some(lits), pos) ->
+      // truthy side keeps non-falsy literals, falsy side keeps falsy ones.
+      lits
+        .filterLiterals(lit -> kind.isFalsy(lit.val) != target)
+        .map(l -> TPrimValue(kind, Some(l), pos))
+    }
   }
 }
 
