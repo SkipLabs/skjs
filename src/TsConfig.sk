@@ -213,10 +213,10 @@ base class ModuleResolution uses Equality {
 // JavaScript value semantics, so errors are recoverable (issue #654).
 base class Truthiness uses Equality {
   children =
-  | TBoolean() // strict: the condition must be `boolean` (default)
+  | TBoolean() // strict: the condition must be `boolean`
   | TJavaScript() // accept any type
 
-  const default: Truthiness = TBoolean();
+  const default: Truthiness = TSafe();
 
   // The mode names for help/error text, derived from `toString` over every mode
   // so it cannot drift from the modes themselves (adding a child forces a new
@@ -258,7 +258,7 @@ base class Truthiness uses Equality {
 // grouped under a common base that checkCondition matches once.
 base class TRelaxed() extends Truthiness {
   children =
-  | TSafe() // boolean, or exactly one falsy value with at least one truthy value
+  | TSafe() // boolean, or exactly one falsy value with at least one truthy value (default)
   | TTypeScript() // like tsc: reject only void and always-truthy function refs
 }
 

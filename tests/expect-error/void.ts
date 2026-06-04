@@ -76,19 +76,19 @@ const x12: number | void = returningVoidOrUndefined() ?? 0;
 // @skjs-expect-error An expression of type 'void' cannot be used here
 const x13: number | void | null = returningVoidOrNull() ?? 0;
 
-// @skjs-expect-error Operand of '||' must be of type 'boolean'
-// @ts-expect-error Type of initializer is not assignable to the declared type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
+// @ts-expect-error An expression of type void cannot be tested for truthiness
 const x14: number | undefined = returningVoid() || 0;
 
-// @skjs-expect-error Operand of '||' must be of type 'boolean'
+// @skjs-expect-error An expression of type void cannot be tested for truthiness
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x15: number | undefined = returningVoidOrNumber() || 0;
 
-// @skjs-expect-error Operand of '||' must be of type 'boolean'
-// @ts-expect-error Type of initializer is not assignable to the declared type annotation
+// @skjs-expect-error An expression of type void cannot be tested for truthiness
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x16: number | undefined = returningVoidOrUndefined() || 0;
 
-// @ts-expect-error Operand of '||' must be of type 'boolean'
+// @skjs-expect-error An expression of type void cannot be tested for truthiness
 const x17: number | void | null = returningVoidOrNull() || 0;
 
 function unsafeInTypescript(
@@ -135,7 +135,7 @@ function invalidNullishCoalescing<T>(value: void | T): void | T | null {
 }
 
 function invalidLogicalOr<T>(value: void | T): T {
-  // @skjs-expect-error Operand of '||' must be of type 'boolean'
+  // @skjs-expect-error An expression of type void cannot be tested for truthiness
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return value || null;
 }
@@ -217,7 +217,7 @@ const x26: number = returningVoid() % 5;
 // Additional operations that should be disallowed on void
 
 function testConditionalWithVoid(): number {
-  // @ts-expect-error A ternary condition must be of type 'boolean'
+  // @ts-expect-error An expression of type void cannot be tested for truthiness
   return returningVoid() ? 1 : 0;
 }
 
