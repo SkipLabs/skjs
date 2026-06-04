@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "strict": true,
+    "target": "ES2020",
+    // @skjs-expect-error Unknown 'truthiness' value 'bogus'. Expected one of: boolean, safe, typescript, javascript.
+    "truthiness": "bogus"
+  },
+  "include": ["src/**/*"]
+}

@@ -19,6 +19,12 @@ class TypeChecker{
   // method bodies and constructors. Used at field-access sites to enforce
   // private visibility. None() outside of any class body.
   enclosingClass: ?Name = None(),
+  // The truthiness mode (CLI `--truthiness` / tsconfig `truthiness`). Decides
+  // which condition diagnostics are emitted; checking always continues with
+  // JavaScript value semantics. Read in checkCondition (TypeCheckUtils.sk),
+  // the `&&`/`||`/`!`/ternary sites (TypeCheckExpr.sk), and narrowing
+  // (TypeCheckRefine.sk). See issue #654.
+  truthiness: Truthiness = Truthiness::default,
 } extends TEnv {}
 
 /***************************************************************************/

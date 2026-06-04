@@ -207,6 +207,60 @@ base class ModuleResolution uses Equality {
   }
 }
 
+// SKJS-specific: how strict truthiness tests are (conditions in if/while/for,
+// the ternary `?`, unary `!`, and the left operand of `&&`/`||`). The mode only
+// decides which diagnostics are emitted; type-checking always continues with
+// JavaScript value semantics, so errors are recoverable (issue #654).
+base class Truthiness uses Equality {
+  children =
+  | TBoolean() // strict: the condition must be `boolean` (default)
+  | TJavaScript() // accept any type
+
+  const default: Truthiness = TBoolean();
+
+  // The mode names for help/error text, derived from `toString` over every mode
+  // so it cannot drift from the modes themselves (adding a child forces a new
+  // exhaustive `toString` arm to compile).
+  static fun all(): String {
+    modes: Array<Truthiness> = Array[
+      TBoolean(),
+      TSafe(),
+      TTypeScript(),
+      TJavaScript(),
+    ];
+    modes.map(m -> m.toString()).join(", ")
+  }
+
+  // Parse a truthiness mode string (case-insensitive). None() for unknown values.
+  static fun fromString(s: String): ?Truthiness {
+    s.lowercase() match {
+    | "boolean" -> Some(TBoolean())
+    | "safe" -> Some(TSafe())
+    | "typescript" -> Some(TTypeScript())
+    | "javascript" -> Some(TJavaScript())
+    | _ -> None()
+    }
+  }
+
+  fun toString(): String {
+    this match {
+    | TBoolean() -> "boolean"
+    | TSafe() -> "safe"
+    | TTypeScript() -> "typescript"
+    | TJavaScript() -> "javascript"
+    }
+  }
+}
+
+// `safe` and `typescript` both relax beyond `boolean` and share the same void
+// (TS1345) and always-truthy-function-ref (TS2774) diagnostics, so they are
+// grouped under a common base that checkCondition matches once.
+base class TRelaxed() extends Truthiness {
+  children =
+  | TSafe() // boolean, or exactly one falsy value with at least one truthy value
+  | TTypeScript() // like tsc: reject only void and always-truthy function refs
+}
+
 class TsCompilerOptions{
   rootDir: ?String = None(),
   baseUrl: ?String = None(),
@@ -216,6 +270,7 @@ class TsCompilerOptions{
   moduleResolution: ModuleResolution = ModuleResolution::default,
   allowImportingTsExtensions: Bool = false,
   lib: Array<String> = Array[],
+  truthiness: Truthiness = Truthiness::default,
 }
 
 class TsConfigDiag{line: Int, message: String, isWarning: Bool}
@@ -628,6 +683,23 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       .maybeGetBool("allowImportingTsExtensions")
       .default(false);
 
+    truthiness = co.maybeGetString("truthiness") match {
+    | None() -> Truthiness::default
+    | Some(v) ->
+      Truthiness::fromString(v) match {
+      | Some(t) -> t
+      | None() ->
+        diags.push(
+          TsConfigDiag{
+            line => findKeyLine(rawContents, "truthiness"),
+            message => `Unknown 'truthiness' value '${v}'. Expected one of: ${Truthiness::all()}.`,
+            isWarning => false,
+          },
+        );
+        Truthiness::default
+      }
+    };
+
     // Extract lib (default from target when not specified, matching tsc)
     lib = co.maybeGetArray("lib") match {
     | Some(arr) ->
@@ -666,6 +738,7 @@ fun loadTsConfig(fs: Fs, path: String): (TsConfig, Array<TsConfigDiag>) {
       moduleResolution,
       allowImportingTsExtensions,
       lib,
+      truthiness,
     }
   | None() ->
     diags.push(
