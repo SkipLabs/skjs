@@ -13,15 +13,10 @@ const positiveNum: 42 = 42;
 const positiveBig: 100n = 100n;
 
 // Valid: octal number literal
-// @skjs-expect-error Unbound name
 const octalNum = 0o17;
 
 // Valid: octal number literal type matching itself
-// @skjs-expect-error Missing definition
-// @skjs-expect-error Unbound name
-// @skjs-expect-error Unbound name: o17
 const octalType: 0o17 = 0o17;
 
 // Valid: octal bigint literal
-// @skjs-expect-error Unbound name
 const octalBig = 0o17n;

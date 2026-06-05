@@ -393,6 +393,8 @@ mutable class Lexer private {
           l == 'X' ||
           l == 'b' ||
           l == 'B' ||
+          l == 'o' ||
+          l == 'O' ||
           l == '_' ||
           l >= 'a' && l <= 'f' ||
           l >= 'A' && l <= 'F'
