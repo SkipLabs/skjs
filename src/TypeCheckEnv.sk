@@ -208,14 +208,11 @@ class TCResults private {
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>>,
   subtypingEdges: SortedSet<(CGNode, CGNode)>,
 } {
-  static fun ofAccs(
-    accs: readonly Vector<readonly TCResultsAcc>,
-    extraErrors: readonly Vector<Error>,
-  ): TCResults {
+  static fun ofAccs(accs: readonly Vector<readonly TCResultsAcc>): TCResults {
     callgraph = mutable Map[];
     classHierarchy = SortedMap<CHNode, SortedSet<CHNode>>[];
     subtypingEdges = SortedSet[];
-    errors = Vector::mcreateFromItems(extraErrors);
+    errors = mutable Vector<Error>[];
     for (acc in accs) {
       errors.extend(acc.errors);
       for (kv in acc.callgraph) {
