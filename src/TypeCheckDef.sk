@@ -201,7 +201,7 @@ extension class TypeChecker {
       | PVar(name) -> Some(name.value)
       | PArray _
       | PObject _ ->
-        error(
+        fatalError(
           Array[
             (
               varDef.pat.pos,

@@ -138,7 +138,7 @@ base class TEnv{
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(subst, name, targs.targs)
-    | Enum _ -> error(Array[(name.pos, "TODO: instantiate Enum")])
+    | Enum _ -> fatalError(Array[(name.pos, "TODO: instantiate Enum")])
     }
   }
 
@@ -222,7 +222,7 @@ base class TEnv{
     | ca @ Class _ -> ca
     | TypeDef _
     | Enum _ ->
-      error(Array[(className.pos, "Expected a class name")])
+      fatalError(Array[(className.pos, "Expected a class name")])
     };
   }
 
@@ -444,7 +444,7 @@ base class TEnv{
     targs: Array<TType>,
   ): (this, Class) {
     if (visitedClasses.contains(className.value)) {
-      error(Array[(className.pos, "Cyclic class definition")]);
+      fatalError(Array[(className.pos, "Cyclic class definition")]);
     };
     !visitedClasses = visitedClasses.set(className.value);
     defs = this.defMap.getAll(subst, className);
@@ -455,7 +455,7 @@ base class TEnv{
       }
     );
     defsCls.size() match {
-    | 0 -> error(Array[(className.pos, "Unbound class")])
+    | 0 -> fatalError(Array[(className.pos, "Unbound class")])
     | 1 -> void
     | _ ->
       subst.error(
@@ -785,7 +785,7 @@ base class TEnv{
 
   private fun convertParam(param: Param): TAFunParam {
     ty = param.type match {
-    | None() -> error(Array[(param.pos, "Missing type annotation")])
+    | None() -> fatalError(Array[(param.pos, "Missing type annotation")])
     | Some(ty) -> ty
     };
     optional = param.default match {
@@ -805,7 +805,7 @@ base class TEnv{
     retType = sig.retType match {
     | (pos, None()) ->
       // constructors must use makeConstructor
-      error(
+      fatalError(
         Array[
           (pos, `Missing return type annotation for '${fd.name.getName()}'`),
         ],
@@ -839,8 +839,8 @@ base class TEnv{
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
-    | TAAssertIs _ -> error(Array[(pos, "TODO assertIs")])
-    | TAAbstract _ -> error(Array[(pos, "TODO abstract")])
+    | TAAssertIs _ -> fatalError(Array[(pos, "TODO assertIs")])
+    | TAAbstract _ -> fatalError(Array[(pos, "TODO abstract")])
     | TAUniqueSymbol() ->
       if (isTopLevelConst) {
         // Each unique symbol gets a distinct type based on its position.
@@ -857,10 +857,10 @@ base class TEnv{
         }:${displayName.default("")}`;
         TType::single(TPrimValue::single(TSymbol(), uniqueId, pos))
       } else {
-        error(Array[(pos, "unique symbol type cannot be used here")])
+        fatalError(Array[(pos, "unique symbol type cannot be used here")])
       }
-    | TAAsserts _ -> error(Array[(pos, "TODO asserts")])
-    | TAIs _ -> error(Array[(pos, "TODO is ")])
+    | TAAsserts _ -> fatalError(Array[(pos, "TODO asserts")])
+    | TAIs _ -> fatalError(Array[(pos, "TODO is ")])
     | TAKeyOf(ty) ->
       subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
@@ -872,11 +872,11 @@ base class TEnv{
       tafun = TAFun(false, clauses, params, retType, cgNode);
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
       TType::single(TObject::createNew(tfuns, pos))
-    | TANew _ -> error(Array[(pos, "Invalid new")])
-    | TAEmptyArray _ -> error(Array[(pos, "TODO emptyArray")])
-    | TAInfer _ -> error(Array[(pos, "TODO infer")])
-    | TATemplate _ -> error(Array[(pos, "TODO template")])
-    | TAImport _ -> error(Array[(pos, "TODO import")])
+    | TANew _ -> fatalError(Array[(pos, "Invalid new")])
+    | TAEmptyArray _ -> fatalError(Array[(pos, "TODO emptyArray")])
+    | TAInfer _ -> fatalError(Array[(pos, "TODO infer")])
+    | TATemplate _ -> fatalError(Array[(pos, "TODO template")])
+    | TAImport _ -> fatalError(Array[(pos, "TODO import")])
     | TAReadonly(ro) ->
       ro.value match {
       | TAArray(ty) ->
@@ -911,8 +911,8 @@ base class TEnv{
         ); // TS1354
         this.normalize(tcenvb, ro)
       }
-    | TAExtends _ -> error(Array[(pos, "TODO extends")])
-    | TAExtendsQuestion _ -> error(Array[(pos, "TODO extendsQuestion")])
+    | TAExtends _ -> fatalError(Array[(pos, "TODO extends")])
+    | TAExtendsQuestion _ -> fatalError(Array[(pos, "TODO extendsQuestion")])
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
@@ -994,7 +994,7 @@ base class TEnv{
         boundTy.withPos(pos)
 
       | None() if (this.forbiddenInsts.contains(n.value)) ->
-        error(Array[(n.pos, "Cyclic definition")])
+        fatalError(Array[(n.pos, "Cyclic definition")])
       | None() ->
         // No bound-name match: treat n as a named type definition.
         tdef = this.defMap.getType(tcenvb, n);
@@ -1090,7 +1090,7 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
-    | TAGet _ -> error(Array[(pos, "TODO TAGet")])
+    | TAGet _ -> fatalError(Array[(pos, "TODO TAGet")])
     }
   }
 
@@ -1111,7 +1111,7 @@ base class TEnv{
           tcenvb.error(Array[(pos, "TODO optional element tuple")])
         };
         this.normalize(tcenvb, x)
-      | TESpread _ -> error(Array[(pos, "TODO tuple spread")])
+      | TESpread _ -> fatalError(Array[(pos, "TODO tuple spread")])
       }
     );
     TType::tuple(pos, types, isReadonly)
@@ -1166,7 +1166,7 @@ base class TEnv{
         | _ -> void
         }
       };
-      error(Array[(varName.pos, `Variable ${varName} not found`)])
+      fatalError(Array[(varName.pos, `Variable ${varName} not found`)])
     | Dot(_, baseExpr, propertyName) ->
       if (propertyName.value == "prototype") {
         notSupported(propertyName.pos, "prototype access")
@@ -1179,7 +1179,7 @@ base class TEnv{
       | Some(obj @ TObject _) ->
         obj.getType(subst, this, propertyName.value, expr.pos)
       | _ ->
-        error(
+        fatalError(
           Array[
             (
               propertyName.pos,
@@ -1194,7 +1194,7 @@ base class TEnv{
         )
       }
     | _ ->
-      error(
+      fatalError(
         Array[
           (expr.pos, "typeof operand must be an identifier or property access"),
         ],
@@ -1252,7 +1252,7 @@ base class TEnv{
       | None() -> void
       }
     };
-    error(
+    fatalError(
       Array[
         (
           pos,
@@ -1454,7 +1454,7 @@ base class TEnv{
       .flatMap(stype -> FieldKey::ofSType(keyExpr.pos, stype)) match {
     | Some(res) -> res
     | None() ->
-      error(
+      fatalError(
         Array[
           (
             keyExpr.pos,
@@ -1490,7 +1490,7 @@ base class TEnv{
         );
         fieldTy = fd.type match {
         | None() ->
-          error(
+          fatalError(
             Array[
               (fd.pos, `Type annotation expected for '${fd.name.getName()}'`),
             ],
@@ -1771,7 +1771,7 @@ base class TEnv{
           stypes.push(obj)
         | TPrimUnit _ -> void /* bottom */
         | TPromise _ ->
-          error(
+          fatalError(
             Array[
               (
                 pos,
@@ -1829,7 +1829,7 @@ fun checkPatternDoesNotContainThis(pat: Pattern): void {
     rest
   } match {
   | Some(Name(thisPos, "this")) ->
-    error(Array[(thisPos, "this forbidden here")])
+    fatalError(Array[(thisPos, "this forbidden here")])
   | _ -> void
   }
 }

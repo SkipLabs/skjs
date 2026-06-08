@@ -265,7 +265,7 @@ class NamingError(messages: Array<(PosRange, String)>) extends TypingError {
   }
 }
 
-fun error<T>(messages: Array<(PosRange, String)>): T {
+fun fatalError<T>(messages: Array<(PosRange, String)>): T {
   throw ErrorExn(NamingError(messages))
 }
 
@@ -279,7 +279,7 @@ fun subtypingError<T>(
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {
-  error(Array[(pos, `Construction not supported: ${what}`)])
+  fatalError(Array[(pos, `Construction not supported: ${what}`)])
 }
 
 module end;

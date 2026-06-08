@@ -278,7 +278,7 @@ mutable class TCResultsAcc private {
     | EHKeepGoing() -> this.errors.push(NamingError(messages))
     | EHBacktrace()
     | EHDefault() ->
-      error(messages)
+      fatalError(messages)
     }
   }
 
