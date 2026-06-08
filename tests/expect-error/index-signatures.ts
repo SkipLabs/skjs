@@ -575,3 +575,71 @@ function namedFieldTypeToStringIndex(x: { a: number }): {
   // @skjs-expect-error Invalid return type
   return x;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 26: Non-literal-key WRITES check the declared field setters too
+//
+// `x[k] = v` with a non-literal key must be valid for whichever field `k` could
+// name at runtime, so the assigned value is checked against the intersection of
+// the index setter and every reachable declared-field setter — the write
+// counterpart of the Test 24 read union.
+///////////////////////////////////////////////////////////////////////////////
+
+// `k` could be "a" (a number field), so a boolean is not a valid write even
+// though it satisfies the boolean index: number & boolean is never.
+function writeNonConformingFieldRejected(
+  x: { a: number; [k: string]: boolean },
+  k: string,
+): void {
+  // @skjs-expect-error Invalid assignment
+  x[k] = true;
+}
+
+// Conforming object: the write must still satisfy the field type.
+function writeConformingWrongType(
+  x: { a: number; [k: string]: number },
+  k: string,
+): void {
+  // @skjs-expect-error Invalid assignment
+  x[k] = "no";
+}
+
+function writeConformingOk(
+  x: { a: number; [k: string]: number },
+  k: string,
+): void {
+  x[k] = 5;
+}
+
+// Number key reaches the numeric-named field `0` (number & boolean = never)...
+function writeNumberKeyReachesNumericField(
+  x: { 0: number; [k: number]: boolean },
+  n: number,
+): void {
+  // @skjs-expect-error Invalid assignment
+  x[n] = true;
+}
+
+// ...but a non-numeric field is unreachable by a number key, so the write only
+// has to satisfy the index.
+function writeNumberKeyIgnoresNonNumericField(
+  x: { a: string; [k: number]: boolean },
+  n: number,
+): void {
+  x[n] = true;
+}
+
+// A readonly field the key could name makes the write unsatisfiable (it might
+// write through the readonly field). TypeScript accepts this (unsound).
+function writeBlockedByReadonlyField(
+  x: { readonly version: string; [k: string]: string },
+  k: string,
+): void {
+  // @skjs-expect-error Invalid assignment
+  x[k] = "v";
+}
+
+// Plain index with no conflicting declared field: the write is unaffected.
+function writePlainIndexOk(x: { [k: string]: number }, k: string): void {
+  x[k] = 5;
+}
