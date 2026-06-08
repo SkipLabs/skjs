@@ -1323,6 +1323,15 @@ base class TIndexesBase protected {
   // Find the matching index for a named field:
   // numeric string names try numberIndex first, then stringIndex;
   // all other names use stringIndex.
+  //
+  // NOTE: this uses the finite isJSNumericString, not isJSNumberKeyName, so the
+  // non-finite numeric property names "Infinity"/"-Infinity"/"NaN" are matched
+  // against the string index here, whereas TypeScript classifies them as
+  // numeric. The choice is unobservable: a named-field object type is never
+  // assignable to an index signature it does not declare (that would be unsound
+  // under width subtyping — see tests/expect-error/index-signatures.ts
+  // "Test 25"), so this field-vs-index match is rejected before the
+  // numeric/non-finite distinction could change an outcome.
   fun indexForFieldName(name: String): ?TField {
     if (isJSNumericString(name) && this.numberIndex.isSome()) {
       this.numberIndex
@@ -1587,6 +1596,28 @@ class TFields protected {
     | _ -> None()
     };
     TFields::nonSynthetic(idx)
+  }
+
+  // Named fields that a general (non-literal) key of `kind` could resolve to
+  // at runtime. Used by element access (`x[k]`) to keep the result sound when
+  // the key isn't a known literal: such a key may land on a declared field
+  // rather than the index signature, so the field types must be unioned in.
+  //   - A general string key may hit ANY field name (including numeric ones).
+  //   - A general number key only hits field names of the form `String(n)`.
+  //   - A symbol key never hits a string-named field.
+  // TypeScript forbids declared fields whose type isn't assignable to the
+  // index type (TS2411), so for valid programs these fields are subsumed by
+  // the index value type and unioning them is a no-op; SKJS does not enforce
+  // TS2411, so the union is what makes the read sound.
+  fun namedFieldsForKeyKind(kind: TPrimValueKind): Array<TField> {
+    kind match {
+    | TString() -> this.fields.toArray()
+    | TNum() ->
+      // A number key reaches the field named `String(n)` — every name a number
+      // key can produce, including the non-finite "Infinity"/"-Infinity"/"NaN".
+      this.fields.toArray().filter(fd -> isJSNumberKeyName(fd.name.value))
+    | _ -> Array[]
+    }
   }
 
   fun maybeGet(fieldName: String): ?TField {

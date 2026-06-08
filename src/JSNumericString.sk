@@ -59,6 +59,19 @@ fun isJSNumericString(s: String): Bool {
   }
 }
 
+// A property name a `number`-typed key can produce at runtime, i.e. some
+// `String(n)`. This is TypeScript's notion of a numeric property name
+// (`(+name).toString() === name`): the finite canonical numeric strings
+// (isJSNumericString) plus the three non-finite results of
+// `Number.prototype.toString` — "Infinity", "-Infinity", and "NaN".
+//
+// Distinct from isJSNumericString, which is finite-only (numbers reachable as
+// numeric *literals*). Use this one for number-key reachability and number-index
+// governance; use isJSNumericString for number-literal construction (e.g. keyof).
+fun isJSNumberKeyName(s: String): Bool {
+  isJSNumericString(s) || s == "Infinity" || s == "-Infinity" || s == "NaN"
+}
+
 fun isDigitChar(c: ?Char): Bool {
   c match {
   | Some(ch) -> ch >= '0' && ch <= '9'

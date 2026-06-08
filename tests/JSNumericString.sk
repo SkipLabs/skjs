@@ -121,4 +121,30 @@ fun testJSNumericStringRejectsNonNumeric(): void {
   SKTest.expectFalse(SKJS.isJSNumericString("+1"));
 }
 
+// isJSNumberKeyName = isJSNumericString plus the non-finite names a number key
+// can produce (String(Infinity) === "Infinity", etc.).
+@test
+fun testJSNumberKeyNameAcceptsNonFinite(): void {
+  SKTest.expectTrue(SKJS.isJSNumberKeyName("Infinity"));
+  SKTest.expectTrue(SKJS.isJSNumberKeyName("-Infinity"));
+  SKTest.expectTrue(SKJS.isJSNumberKeyName("NaN"));
+}
+
+@test
+fun testJSNumberKeyNameAcceptsFiniteNumericStrings(): void {
+  SKTest.expectTrue(SKJS.isJSNumberKeyName("0"));
+  SKTest.expectTrue(SKJS.isJSNumberKeyName("-42"));
+  SKTest.expectTrue(SKJS.isJSNumberKeyName("1.5"));
+  SKTest.expectTrue(SKJS.isJSNumberKeyName("1e+21"));
+}
+
+@test
+fun testJSNumberKeyNameRejectsNonNumeric(): void {
+  SKTest.expectFalse(SKJS.isJSNumberKeyName("abc"));
+  SKTest.expectFalse(SKJS.isJSNumberKeyName("Infinity ")); // not canonical
+  SKTest.expectFalse(SKJS.isJSNumberKeyName("infinity")); // wrong case
+  SKTest.expectFalse(SKJS.isJSNumberKeyName("-0")); // String(-0) === "0"
+  SKTest.expectFalse(SKJS.isJSNumberKeyName("01"));
+}
+
 module end;

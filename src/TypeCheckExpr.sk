@@ -590,15 +590,15 @@ extension class TypeChecker {
               remainingIdxSType.kind,
             );
             // If string literal access fails on a number index, retry as
-            // number for canonical numeric strings (e.g. obj["0"]
-            // on { [x: number]: T }).
+            // number for keys a number could produce (e.g. obj["0"] or
+            // obj["Infinity"] on { [x: number]: T }).
             if (matchedIndex.isNone()) {
               !matchedIndex = remainingIdxSType match {
               | TPrimValue(
                 TString(),
                 Some(lits),
                 _,
-              ) if (lits.values().all(lit -> isJSNumericString(lit.val))) ->
+              ) if (lits.values().all(lit -> isJSNumberKeyName(lit.val))) ->
                 // TODO: when both indexes exist, we should split the remainingIdxSType into the numeric and non-numeric parts
                 fields.nonSyntheticIndexForKeyKind(TNum())
               | _ -> None()
@@ -642,7 +642,33 @@ extension class TypeChecker {
               ty = if (isLValue) index.set else {
                 TType::unionUndefined(tcenv.subst, this, index.get, pos)
               };
-              addResultCase(ty)
+              addResultCase(ty);
+              // A general (non-literal) key may resolve to a declared field at
+              // runtime, not just the index signature, so the read must also
+              // include the declared field types (e.g. reading
+              // `{ a: number; [k: string]: boolean }` with a string key yields
+              // `boolean | number`, not just `boolean`). For valid TypeScript
+              // these fields are subsumed by the index type (TS2411) so this
+              // changes nothing. This applies only when the key is non-literal:
+              // specific literals that reach here were already checked against
+              // the declared fields and found absent, so they only hit the
+              // index. Only for reads: a write target's type is the index
+              // setter, handled above.
+              if (!isLValue && remainingIdxSType.literals.isNone()) {
+                for (namedFd in fields.namedFieldsForKeyKind(
+                  remainingIdxSType.kind,
+                )) {
+                  addResultCase(
+                    TFields::resolveFieldType(
+                      tcenv.subst,
+                      this,
+                      namedFd,
+                      idx.pos,
+                      isLValue,
+                    ),
+                  )
+                }
+              }
             }
           }
         }
