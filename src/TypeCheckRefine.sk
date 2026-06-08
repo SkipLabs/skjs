@@ -121,6 +121,40 @@ extension class TypeChecker {
     this.evalFieldEqualityType(tcenv, local, fieldName, otherType, target)
   }
 
+  // Narrows `local.fieldName` within each `TObject` branch of `local`'s type:
+  // for a branch that has the field, `narrow(branchFields, fieldType)` returns
+  // the updated branch fields, or None to drop the branch entirely. Branches
+  // that lack the field, and non-object members, are left unchanged. Shared by
+  // evalFieldEqualityType and evalFieldTruthiness.
+  private fun narrowField(
+    tcenv: mutable TCEnv,
+    local: Name,
+    fieldName: String,
+    // Position to attribute field-resolution errors to (the field access for
+    // truthiness narrowing, the variable for equality narrowing).
+    errorPos: PosRange,
+    narrow: (TFields, TType) -> ?TFields,
+  ): void {
+    this.setLocalFilterMap(tcenv, local, None(), stype ->
+      stype match {
+      | tObj @ TObject _ ->
+        tObj.mapOpt(tFields ->
+          tFields.maybeGetType(
+            tcenv.subst,
+            this,
+            fieldName,
+            errorPos,
+            false,
+          ) match {
+          | None() -> Some(tFields)
+          | Some(branchFieldType) -> narrow(tFields, branchFieldType)
+          }
+        )
+      | x -> Some(x)
+      }
+    )
+  }
+
   // Narrows `local` based on `(local.fieldName === <type>) === target`.
   // Two strategies depending on whether the RHS is a single constant:
   //  - Non-constant RHS: narrow field via inter for ===, keep for !==.
@@ -133,68 +167,56 @@ extension class TypeChecker {
     target: Bool,
   ): void {
     constant = otherType.getSingleConstant();
-    this.setLocalFilterMap(tcenv, local, None(), stype ->
-      stype match {
-      | tObj @ TObject _ ->
-        tObj.mapOpt(tFields -> {
-          tFields.maybeGetType(
-            tcenv.subst,
-            this,
-            fieldName,
-            local.pos,
-            false,
-          ) match {
-          | None() -> Some(tFields)
-          | Some(branchFieldType) ->
-            overlap = TType::inter(
+    this.narrowField(
+      tcenv,
+      local,
+      fieldName,
+      local.pos,
+      (tFields, branchFieldType) -> {
+        overlap = TType::inter(
+          tcenv.subst.clone(),
+          this,
+          branchFieldType,
+          otherType,
+        );
+        if (overlap.isBottom()) {
+          // No overlap: === eliminates the branch, !== keeps it
+          if (target) None() else Some(tFields)
+        } else if (target) {
+          // ===: narrow field to intersection with RHS
+          Some(
+            tFields.updateField(fieldName, fd ->
+              fd.withGet(overlap, fd.isOptional)
+            ),
+          )
+        } else {
+          constant match {
+          | Some(c) ->
+            // !==: subtract the constant from the field type
+            narrowed = TType::removeConstant(
               tcenv.subst.clone(),
               this,
               branchFieldType,
-              otherType,
+              c,
             );
-            if (overlap.isBottom()) {
-              // No overlap: === eliminates the branch, !== keeps it
-              if (target) None() else Some(tFields)
+            if (narrowed.isBottom()) {
+              None()
             } else {
-              if (target) {
-                // ===: narrow field to intersection with RHS
-                Some(
-                  tFields.updateField(fieldName, fd ->
-                    fd.withGet(overlap, fd.isOptional)
-                  ),
-                )
-              } else {
-                constant match {
-                | Some(c) ->
-                  // !==: subtract the constant from the field type
-                  narrowed = TType::removeConstant(
-                    tcenv.subst.clone(),
-                    this,
-                    branchFieldType,
-                    c,
-                  );
-                  if (narrowed.isBottom()) {
-                    None()
-                  } else {
-                    // Clear isOptional when narrowing out undefined so
-                    // that resolveFieldType doesn't re-add | undefined.
-                    keepOpt = !(c is TPrimUnit(TUndefined(), _));
-                    Some(
-                      tFields.updateField(fieldName, fd ->
-                        fd.withGet(narrowed, keepOpt && fd.isOptional)
-                      ),
-                    )
-                  }
-                | None() ->
-                  // !==, non-constant RHS: can't narrow, keep branch
-                  Some(tFields)
-                }
-              }
+              // Clear isOptional when narrowing out undefined so that
+              // resolveFieldType doesn't re-add | undefined.
+              keepOpt = !(c is TPrimUnit(TUndefined(), _));
+              Some(
+                tFields.updateField(fieldName, fd ->
+                  fd.withGet(narrowed, keepOpt && fd.isOptional)
+                ),
+              )
             }
+          | None() ->
+            // !==, non-constant RHS: can't narrow, keep branch
+            Some(tFields)
           }
-        })
-      | x -> Some(x)
-      }
+        }
+      },
     )
   }
 
@@ -513,40 +535,30 @@ extension class TypeChecker {
     fieldPos: PosRange,
     target: Bool,
   ): void {
-    this.setLocalFilterMap(tcenv, local, None(), stype ->
-      stype match {
-      | tObj @ TObject _ ->
-        tObj.mapOpt(tFields ->
-          tFields.maybeGetType(
-            tcenv.subst,
-            this,
-            fieldName,
-            fieldPos,
-            false,
-          ) match {
-          | None() -> Some(tFields)
-          | Some(branchFieldType) ->
-            narrowed = branchFieldType.truthinessPart(
-              tcenv.subst.clone(),
-              this,
-              target,
-            );
-            if (narrowed.isBottom()) {
-              None()
-            } else {
-              // The then-branch removes undefined, so the field is no longer
-              // optional; the else-branch keeps it.
-              keepOpt = !target;
-              Some(
-                tFields.updateField(fieldName, fd ->
-                  fd.withGet(narrowed, keepOpt && fd.isOptional)
-                ),
-              )
-            }
-          }
-        )
-      | x -> Some(x)
-      }
+    this.narrowField(
+      tcenv,
+      local,
+      fieldName,
+      fieldPos,
+      (tFields, branchFieldType) -> {
+        narrowed = branchFieldType.truthinessPart(
+          tcenv.subst.clone(),
+          this,
+          target,
+        );
+        if (narrowed.isBottom()) {
+          None()
+        } else {
+          // The then-branch removes undefined, so the field is no longer
+          // optional; the else-branch keeps it.
+          keepOpt = !target;
+          Some(
+            tFields.updateField(fieldName, fd ->
+              fd.withGet(narrowed, keepOpt && fd.isOptional)
+            ),
+          )
+        }
+      },
     )
   }
 
