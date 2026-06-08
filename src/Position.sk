@@ -219,22 +219,33 @@ fun formatErrorMessage(
   }
 }
 
-fun errorMessageToJson(msg: ErrorMessage): JSON.Value {
+// One diagnostic as a JSON array of (position, message) parts: the primary
+// message followed by any related-location notes. Only the primary (first)
+// part additionally carries the `severity` field.
+fun diagnosticToJson(msg: ErrorMessage, severity: Severity): JSON.Value {
   JSON.Array(
     msg
-      .values()
-      .map(errMsg ->
-        JSON.Object[
+      .mapWithIndex((i, errMsg) -> {
+        obj = JSON.Object[
           "pos" => errMsg.i0.toJsonObject(),
           "message" => JSON.String(errMsg.i1),
-        ]
-      )
+        ];
+        if (i == 0) obj.set("severity", JSON.String(severity.word())) else obj
+      })
       .collect(Vector),
   )
 }
 
-fun errorMessagesToJson(msgs: Array<ErrorMessage>): JSON.Value {
-  JSON.Array(msgs.values().map(errorMessageToJson).collect(Vector))
+fun diagnosticsToJson(
+  errors: Array<ErrorMessage>,
+  warnings: Array<ErrorMessage>,
+): JSON.Value {
+  JSON.Array(
+    errors
+      .map(msg -> diagnosticToJson(msg, SeverityError()))
+      .concat(warnings.map(msg -> diagnosticToJson(msg, SeverityWarning())))
+      .collect(Vector),
+  )
 }
 
 module end;

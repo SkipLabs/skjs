@@ -588,10 +588,7 @@ fun printErrors(
     .filter(msg -> !msg.isEmpty());
   errorFormat match {
   | EFJson() ->
-    errorMessagesToJson(errMsgs.concat(warnMsgs)).writeToStream(
-      print_error_raw,
-      2,
-    )
+    diagnosticsToJson(errMsgs, warnMsgs).writeToStream(print_error_raw, 2)
   | textErrorFormat @ TextErrorFormat _ ->
     for (errMsg in errMsgs) {
       print_error(formatErrorMessage(errMsg, SeverityError(), textErrorFormat));
