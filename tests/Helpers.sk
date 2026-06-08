@@ -461,10 +461,13 @@ fun emitLineNAnnotations(
   }
 }
 
-/* Rewrites a file's expect-error annotations to match actual errors.
+/* Rewrites a file's expect-error/expect-warning annotations to match actual
+ * diagnostics.
  * - Updates messages for existing annotations (preserving @ts vs @skjs prefix)
- * - Removes annotations where errors no longer occur
- * - Adds @skjs-expect-error annotations for new errors
+ * - Removes annotations where the diagnostic no longer occurs
+ * - Adds @skjs-expect-error / @skjs-expect-warning annotations for new ones
+ * - Per line, errors come first (with @ts-expect-error last and -lineN
+ *   continuations), then warnings
  * - At most one @ts-expect-error per group, always last */
 fun updateFileAnnotations(
   contents: String,
@@ -472,6 +475,7 @@ fun updateFileAnnotations(
   fullMessages: Map<String, String>,
   update: UMDoUpdate = UMUpdate(),
   actualLineNAnnotationsByLine: Map<Int, Map<Int, String>> = Map[],
+  actualWarningsByLine: Map<Int, SortedSet<String>> = Map[],
 ): ?String {
   groups = findAnnotationLines(contents);
   lines = contents.split("\n");
@@ -506,8 +510,9 @@ fun updateFileAnnotations(
       continue
     };
     // Insert updated annotations before this code line
-    actualErrorsByLine.maybeGet(lineNum) match {
-    | Some(errors) ->
+    errors = actualErrorsByLine.maybeGet(lineNum).default(SortedSet[]);
+    warnings = actualWarningsByLine.maybeGet(lineNum).default(SortedSet[]);
+    if (errors.size() != 0 || warnings.size() != 0) {
       actualLineNAnnotationsOpt = actualLineNAnnotationsByLine.maybeGet(
         lineNum,
       );
@@ -522,17 +527,23 @@ fun updateFileAnnotations(
       existingMatch = if (update is UMUpdate()) {
         existingGroups.maybeGet(lineNum) match {
         | Some(g) ->
-          line1Msgs = SortedSet[];
+          existingErrMsgs = SortedSet[];
+          existingWarnMsgs = SortedSet[];
           lineNAnnotations = mutable Map[];
           for (a in g.annotations) {
             if (a.lineN == 1) {
-              !line1Msgs = line1Msgs.set(a.message)
+              if (a.annot::str == SKJS_EXPECT_WARNING::str) {
+                !existingWarnMsgs = existingWarnMsgs.set(a.message)
+              } else {
+                !existingErrMsgs = existingErrMsgs.set(a.message)
+              }
             } else {
               lineNAnnotations.set(a.lineN, a.message)
             }
           };
           if (
-            line1Msgs == errors &&
+            existingErrMsgs == errors &&
+            existingWarnMsgs == warnings &&
             (!existingHasLineN ||
               lineNAnnotations.chill() == actualLineNAnnotations)
           ) {
@@ -572,6 +583,7 @@ fun updateFileAnnotations(
           | Some(g) ->
             for (a in g.annotations) {
               if (a.lineN != 1) continue;
+              if (a.annot::str == SKJS_EXPECT_WARNING::str) continue;
               isTsMsg = tsMsg match {
               | Some(msg) if (msg == a.message) -> true
               | _ -> false
@@ -606,12 +618,43 @@ fun updateFileAnnotations(
           result.push(`${groupIndent}// @${TS_EXPECT_ERROR::str} ${msgText}`)
         | _ -> void
         };
-        // Emit lineN annotations after all line-1 annotations
+        // Emit error -lineN continuations after all line-1 error annotations
         if (shouldEmitLineN) {
           emitLineNAnnotations(result, groupIndent, actualLineNAnnotations)
+        };
+        // --- Warning annotations (emitted after errors) ---
+        // Phase W1: existing @skjs-expect-warning still in warnings
+        emittedW = SortedSet[];
+        if (!(update is UMFullRewrite())) {
+          existingGroups.maybeGet(lineNum) match {
+          | Some(g) ->
+            for (a in g.annotations) {
+              if (a.lineN != 1) continue;
+              if (a.annot::str != SKJS_EXPECT_WARNING::str) continue;
+              if (warnings.contains(a.message)) {
+                msgText = if (update is UMUpdate()) {
+                  a.originalMessage
+                } else {
+                  fullMessages.maybeGet(a.message).default(a.message)
+                };
+                result.push(
+                  `${groupIndent}// @${SKJS_EXPECT_WARNING::str} ${msgText}`,
+                );
+                !emittedW = emittedW.set(a.message)
+              }
+            }
+          | None() -> void
+          }
+        };
+        // Phase W2: new @skjs-expect-warning annotations
+        for (trimmedMsg in warnings) {
+          if (emittedW.contains(trimmedMsg)) continue;
+          msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
+          result.push(
+            `${groupIndent}// @${SKJS_EXPECT_WARNING::str} ${msgText}`,
+          )
         }
       }
-    | None() -> void
     };
     result.push(lineContents)
   };

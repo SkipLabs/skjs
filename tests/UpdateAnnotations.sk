@@ -605,6 +605,124 @@ fun testUpdateFileAnnotations(): void {
     ),
     "Multiple errors without lineN data",
   );
+
+  // Warning: new warning appears (no existing annotation)
+  SKTest.expectEq(
+    updateFileAnnotations(
+      "const x: number = 42;",
+      noErrors,
+      Map["Useless thing" => "Useless thing full"],
+      UMUpdate(),
+      Map[],
+      Map[1 => SortedSet["Useless thing"]],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-warning Useless thing full",
+          "const x: number = 42;",
+        ],
+      ),
+    ),
+    "New warning appears",
+  );
+
+  // Warning: unchanged warning needs no update
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array["// @skjs-expect-warning Useless thing", "const x: number = 42;"],
+      ),
+      noErrors,
+      noFull,
+      UMUpdate(),
+      Map[],
+      Map[2 => SortedSet["Useless thing"]],
+    ),
+    None(),
+    "Warning unchanged",
+  );
+
+  // Warning: stale warning removed
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array["// @skjs-expect-warning Useless thing", "const x: number = 42;"],
+      ),
+      noErrors,
+      noFull,
+      UMUpdate(),
+      Map[],
+      Map[],
+    ),
+    Some("const x: number = 42;"),
+    "Stale warning removed",
+  );
+
+  // Warning: error and warning on the same line — errors first, then warnings
+  SKTest.expectEq(
+    updateFileAnnotations(
+      "const x: number = \"hello\";",
+      Map[1 => SortedSet["Type mismatch"]],
+      Map[
+        "Type mismatch" => "Type mismatch",
+        "Useless thing" => "Useless thing",
+      ],
+      UMUpdate(),
+      Map[],
+      Map[1 => SortedSet["Useless thing"]],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch",
+          "// @skjs-expect-warning Useless thing",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Error and warning on the same line",
+  );
+
+  // Warning: a diagnostic that became a warning is re-tagged
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array["// @skjs-expect-error Useless thing", "const x: number = 42;"],
+      ),
+      noErrors,
+      Map["Useless thing" => "Useless thing"],
+      UMUpdate(),
+      Map[],
+      Map[2 => SortedSet["Useless thing"]],
+    ),
+    Some(
+      lines(
+        Array["// @skjs-expect-warning Useless thing", "const x: number = 42;"],
+      ),
+    ),
+    "Error re-tagged as warning",
+  );
+
+  // Warning: an unchanged mixed error+warning line round-trips to no-op
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-error Type mismatch",
+          "// @skjs-expect-warning Useless thing",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["Type mismatch"]],
+      noFull,
+      UMUpdate(),
+      Map[],
+      Map[3 => SortedSet["Useless thing"]],
+    ),
+    None(),
+    "Mixed error+warning unchanged",
+  );
 }
 
 @test

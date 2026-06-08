@@ -134,14 +134,17 @@ fun doUpdateExpectErrorComments(
   fileName: SKJS.FPath,
   fileContents: String,
   actualErrors: Array<SKJS.Error>,
+  actualWarnings: Array<SKJS.Error>,
   update: UMDoUpdate,
 ): void {
   linedErrors = getLinedErrors(context, checker, fileName, actualErrors);
+  linedWarnings = getLinedErrors(context, checker, fileName, actualWarnings);
   tenv = checker.checker;
   results = SKJS.TCResultsAcc::mcreate{errorHandling => SKJS.EHDefault()};
   tcenvb = mutable SKJS.TCEnvLight{context, results};
   subst = SKJS.Subst::mcreate(tcenvb);
   errorsByLine = mutable Map[];
+  warningsByLine = mutable Map[];
   fullMessages = mutable Map[];
   actualLineNAnnotationsByLine = mutable Map[];
   for (lineErrs in linedErrors) {
@@ -161,12 +164,24 @@ fun doUpdateExpectErrorComments(
     };
     errorsByLine.set(lineErrs.i0, trimmedMsgs)
   };
+  // Warnings have no -lineN continuations; just collect their messages by line.
+  for (lineWarns in linedWarnings) {
+    trimmedMsgs = SortedSet[];
+    for (warn in lineWarns.i1) {
+      full = errorToFullMessage(warn);
+      trimmed = full.trimMessage(true);
+      fullMessages.set(trimmed, full.trimMessage());
+      !trimmedMsgs = trimmedMsgs.set(trimmed)
+    };
+    warningsByLine.set(lineWarns.i0, trimmedMsgs)
+  };
   updateFileAnnotations(
     fileContents,
     errorsByLine.chill(),
     fullMessages.chill(),
     update,
     actualLineNAnnotationsByLine.chill(),
+    warningsByLine.chill(),
   ).each(updatedContents -> {
     absFileName = fileName.toAbsolute(checker.files.rootMap);
     FileSystem.writeTextFile(absFileName.toString(), updatedContents);
@@ -215,14 +230,13 @@ fun validateExpectErrorComments(
       ),
     )
   | doUpdate @ UMDoUpdate _ ->
-    // NOTE: --update only rewrites error annotations; it does not yet
-    // regenerate @skjs-expect-warning (follow-up). Warnings are validated.
     doUpdateExpectErrorComments(
       context,
       checker,
       fileName,
       fileContents.value,
       actualErrors,
+      typeWarnings,
       doUpdate,
     );
     Array[]
