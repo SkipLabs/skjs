@@ -1604,17 +1604,9 @@ class TFields protected {
     kind match {
     | TString() -> this.fields.toArray()
     | TNum() ->
-      // A number key `n` reaches the field named `String(n)`. Beyond the finite
-      // canonical numeric strings (isJSNumericString is `isFinite`-only by
-      // contract), that includes the three non-finite results of
-      // `Number.prototype.toString`: "Infinity", "-Infinity", and "NaN".
-      this.fields.toArray().filter(fd -> {
-        name = fd.name.value;
-        isJSNumericString(name) ||
-          name == "Infinity" ||
-          name == "-Infinity" ||
-          name == "NaN"
-      })
+      // A number key reaches the field named `String(n)` — every name a number
+      // key can produce, including the non-finite "Infinity"/"-Infinity"/"NaN".
+      this.fields.toArray().filter(fd -> isJSNumberKeyName(fd.name.value))
     | _ -> Array[]
     }
   }
