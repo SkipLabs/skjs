@@ -428,6 +428,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   };
 
   errorsDirName = SKStore.DirName::create("/check/errors/");
+  warningsDirName = SKStore.DirName::create("/check/warnings/");
 
   context = SKStore.runWithGcReturnContext(
     SKStore.Context::create{},
@@ -478,14 +479,10 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
               context,
               errorsDirName,
               (context, writer, _key, valueIter) ~> {
-                (
-                  parseErrorOpt,
-                  typeErrors,
-                  typeWarnings,
-                ) = valueIter.getUnique() match {
+                (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
                 | None() ->
                   internal_error("Unexpected missing value in print-errors")
-                | Some(CheckResult(_, x, y, w, _, _, _)) -> (x, y, w)
+                | Some(cr) -> (cr.parseError, cr.errors)
                 };
                 errors = mutable Vector[];
                 parseErrorOpt match {
@@ -501,15 +498,30 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                     ErrorMessageFile(checker.errorToMessage(context, error)),
                   );
                 };
-                // Commit 1: warnings live in a separate field but are still
-                // merged into the rendered errors dir so output and exit code
-                // stay identical (split happens in the exit-code commit).
+                writer.setArray(SKStore.UnitID::singleton, errors.toArray());
+              },
+            );
+            // Warnings are rendered into a separate dir so the exit code (and
+            // the affected-files gate) can count only errors. They are still
+            // printed, alongside the errors, by the output stage below.
+            _ = checked.map(
+              SKStore.UnitID::keyType,
+              ErrorMessageFile::type,
+              context,
+              warningsDirName,
+              (context, writer, _key, valueIter) ~> {
+                typeWarnings = valueIter.getUnique() match {
+                | None() ->
+                  internal_error("Unexpected missing value in print-errors")
+                | Some(cr) -> cr.warnings
+                };
+                warnings = mutable Vector[];
                 for (warning in typeWarnings) {
-                  errors.push(
+                  warnings.push(
                     ErrorMessageFile(checker.errorToMessage(context, warning)),
                   );
                 };
-                writer.setArray(SKStore.UnitID::singleton, errors.toArray());
+                writer.setArray(SKStore.UnitID::singleton, warnings.toArray());
               },
             );
             _ = CallGraph::build(context, checked)
@@ -553,7 +565,12 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
   | None() -> 2
   | Some(dir) ->
     errors = dir.getArrayRaw(SKStore.UnitID::singleton);
-    printErrors(errors, errorFormat);
+    warnings = context
+      .maybeGetEagerDir(warningsDirName)
+      .map(wdir -> wdir.getArrayRaw(SKStore.UnitID::singleton))
+      .default(Array[]);
+    // Print errors and warnings; only errors determine the exit status.
+    printErrors(errors.concat(warnings), errorFormat);
     if (errors.size() != 0) 2 else 0
   }
 }
