@@ -570,21 +570,38 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       .map(wdir -> wdir.getArrayRaw(SKStore.UnitID::singleton))
       .default(Array[]);
     // Print errors and warnings; only errors determine the exit status.
-    printErrors(errors.concat(warnings), errorFormat);
+    printErrors(errors, warnings, errorFormat);
     if (errors.size() != 0) 2 else 0
   }
 }
 
-fun printErrors(errors: Array<SKStore.File>, errorFormat: ErrorFormat): void {
-  msgs = errors
+fun printErrors(
+  errors: Array<SKStore.File>,
+  warnings: Array<SKStore.File>,
+  errorFormat: ErrorFormat,
+): void {
+  errMsgs = errors
+    .map(e -> ErrorMessageFile::type(e).value)
+    .filter(msg -> !msg.isEmpty());
+  warnMsgs = warnings
     .map(e -> ErrorMessageFile::type(e).value)
     .filter(msg -> !msg.isEmpty());
   errorFormat match {
-  | EFJson() -> errorMessagesToJson(msgs).writeToStream(print_error_raw, 2)
+  | EFJson() ->
+    errorMessagesToJson(errMsgs.concat(warnMsgs)).writeToStream(
+      print_error_raw,
+      2,
+    )
   | textErrorFormat @ TextErrorFormat _ ->
-    for (errMsg in msgs) {
-      print_error(formatErrorMessage(errMsg, textErrorFormat));
-      // Blank line separator between errors
+    for (errMsg in errMsgs) {
+      print_error(formatErrorMessage(errMsg, SeverityError(), textErrorFormat));
+      // Blank line separator between diagnostics
+      print_error("")
+    };
+    for (warnMsg in warnMsgs) {
+      print_error(
+        formatErrorMessage(warnMsg, SeverityWarning(), textErrorFormat),
+      );
       print_error("")
     }
   }

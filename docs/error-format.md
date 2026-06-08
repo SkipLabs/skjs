@@ -8,26 +8,26 @@ The default human-readable format.
 
 ```text
 File "path/to/file.ts", line 2, character 10-11:
-Invalid return type
+error: Invalid return type
 File "path/to/file.ts", line 1, character 16-22:
 Type number
 File "path/to/file.ts", line 1, character 25-31:
 is not compatible with type string
 ```
 
-Each error is a sequence of `<position>\n<message>` pairs. Errors are separated by a blank line.
+Each diagnostic is a sequence of `<position>\n<message>` pairs; the primary (first) message is prefixed with its severity, `error:` or `warning:`. Diagnostics are separated by a blank line, with all errors printed before any warnings.
 
 ## `indent`
 
-Compact format with `file:line:col` positions. The first message of each error starts at the left margin; subsequent context messages are indented by 2 spaces.
+Compact format with `file:line:col` positions. The first message of each diagnostic starts at the left margin, prefixed with its severity (`error:` / `warning:`); subsequent context messages are indented by 2 spaces.
 
 ```text
-path/to/file.ts:2:10: Invalid return type
+path/to/file.ts:2:10: error: Invalid return type
   path/to/file.ts:1:16: Type number
   path/to/file.ts:1:25: is not compatible with type string
 ```
 
-Errors are separated by a blank line.
+Diagnostics are separated by a blank line.
 
 ## `json`
 

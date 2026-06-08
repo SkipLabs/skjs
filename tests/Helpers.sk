@@ -896,6 +896,7 @@ extension class Checker {
         this.symbolsMap,
         this.errorDetailConfig,
       ),
+      SKJS.SeverityError(),
       EFDefault(),
     )
   }

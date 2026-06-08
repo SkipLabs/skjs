@@ -176,24 +176,44 @@ type ErrorMessage = Array<(ErrorMessagePos, String)>;
 
 class ErrorMessageFile(value: ErrorMessage) extends SKStore.File
 
+// The severity of a diagnostic. Errors fail the build; warnings do not.
+base class Severity uses Equality {
+  children =
+  | SeverityError()
+  | SeverityWarning()
+
+  fun word(): String
+  | SeverityError() -> "error"
+  | SeverityWarning() -> "warning"
+}
+
+// Format a diagnostic for text output. The severity (`error:` / `warning:`)
+// labels the primary message; secondary messages (related locations) are left
+// unlabeled.
 fun formatErrorMessage(
   msg: ErrorMessage,
+  severity: Severity,
   errorFormat: TextErrorFormat,
 ): String {
+  label = severity.word();
   errorFormat match {
   | EFDefault() ->
-    result = mutable Vector[];
-    for ((pos, text) in msg) {
-      result.push(pos.toString());
-      result.push(text);
-    };
-    result.join("\n")
+    msg
+      .mapWithIndex((i, entry) -> {
+        (pos, text) = entry;
+        labeled = if (i == 0) `${label}: ${text}` else text;
+        `${pos}\n${labeled}`
+      })
+      .join("\n")
   | EFIndent() ->
     msg
       .mapWithIndex((i, entry) -> {
         (pos, text) = entry;
-        prefix = if (i == 0) "" else "  ";
-        `${prefix}${pos.toCompactString()} ${text}`
+        if (i == 0) {
+          `${pos.toCompactString()} ${label}: ${text}`
+        } else {
+          `  ${pos.toCompactString()} ${text}`
+        }
       })
       .join("\n")
   }
