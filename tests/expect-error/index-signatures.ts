@@ -256,6 +256,17 @@ function stringKeyOnNumberIndex(x: NumberIndex): void {
   const v = x["name"];
 }
 
+// "Infinity" / "-Infinity" / "NaN" are numeric property names a number key can
+// produce (e.g. String(Infinity) === "Infinity"), so a string-literal access
+// with one of them resolves through the number index, like in TypeScript.
+function nonFiniteStringLiteralOnNumberIndex(
+  x: NumberIndex,
+): string | undefined {
+  const a = x["Infinity"];
+  const b = x["-Infinity"];
+  return x["NaN"];
+}
+
 ///////////////////////////////////////////////////////////////////////////////
 // Test 18: Valid union key types
 ///////////////////////////////////////////////////////////////////////////////
