@@ -1602,9 +1602,9 @@ class TFields protected {
   // at runtime. Used by element access (`x[k]`) to keep the result sound when
   // the key isn't a known literal: such a key may land on a declared field
   // rather than the index signature, so the field types must be unioned in.
-  //   - A general string key may hit ANY field name (including numeric ones).
+  //   - A general string key may hit ANY string-named field (incl. numeric).
   //   - A general number key only hits field names of the form `String(n)`.
-  //   - A symbol key never hits a string-named field.
+  //   - A general symbol key may hit ANY symbol-named (unique-symbol) field.
   // TypeScript forbids declared fields whose type isn't assignable to the
   // index type (TS2411), so for valid programs these fields are subsumed by
   // the index value type and unioning them is a no-op; SKJS does not enforce
@@ -1616,6 +1616,7 @@ class TFields protected {
       // A number key reaches the field named `String(n)` — every name a number
       // key can produce, including the non-finite "Infinity"/"-Infinity"/"NaN".
       this.fields.toArray().filter(fd -> isJSNumberKeyName(fd.name.value))
+    | TSymbol() -> this.symbolFields.toArray()
     | _ -> Array[]
     }
   }

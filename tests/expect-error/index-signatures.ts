@@ -43,9 +43,10 @@ function numberIndexBracketMissUndefined(x: NumberIndex): string {
 
 type SymbolIndex = { [k: symbol]: boolean };
 
+// A general `symbol` key resolves through the symbol index, like a non-literal
+// string/number key through its own index (see Test 27 for the field union).
 function symbolIndexBracketAccess(x: SymbolIndex): boolean | undefined {
   const s: symbol = Symbol("key");
-  // @skjs-expect-error Expected a unique symbol
   return x[s];
 }
 
@@ -642,4 +643,66 @@ function writeBlockedByReadonlyField(
 // Plain index with no conflicting declared field: the write is unaffected.
 function writePlainIndexOk(x: { [k: string]: number }, k: string): void {
   x[k] = 5;
+}
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 27: Symbol index + named symbol fields — read union / write intersect
+//
+// A general `symbol` key is the symbol counterpart of a non-literal string or
+// number key (Tests 24/26): it could name any declared symbol field OR the
+// symbol index, so reads union the field getters with the index getter and
+// writes intersect the setters. A specific unique symbol is a literal key: it
+// names exactly that field, or falls back to the symbol index.
+///////////////////////////////////////////////////////////////////////////////
+
+const symA: unique symbol = Symbol("a");
+const symB: unique symbol = Symbol("b");
+
+// Read via a general symbol unions the named field type with the index type.
+function symGeneralReadUnionsField(
+  x: { [symA]: number; [k: symbol]: boolean },
+  s: symbol,
+): number | boolean | undefined {
+  return x[s];
+}
+
+// `boolean | undefined` alone is too narrow: it drops `number` from `symA`.
+function symGeneralReadTooNarrow(
+  x: { [symA]: number; [k: symbol]: boolean },
+  s: symbol,
+): boolean | undefined {
+  // @skjs-expect-error Invalid return type
+  return x[s];
+}
+
+// A unique symbol that names no declared field falls back to the symbol index.
+function symUniqueNotFieldUsesIndex(x: {
+  [symA]: number;
+  [k: symbol]: boolean;
+}): boolean | undefined {
+  return x[symB];
+}
+
+// A unique symbol that IS a declared field reads exactly that field's type.
+function symUniqueFieldExact(x: {
+  [symA]: number;
+  [k: symbol]: boolean;
+}): number {
+  return x[symA];
+}
+
+// Write via a general symbol must satisfy the index AND every reachable field
+// setter: number & boolean = never, so the write is rejected.
+function symGeneralWriteRejected(
+  x: { [symA]: number; [k: symbol]: boolean },
+  s: symbol,
+): void {
+  // @skjs-expect-error Invalid assignment
+  x[s] = true;
+}
+
+// A general symbol with no symbol index cannot be resolved (matches TS7053).
+function symGeneralNoIndex(x: { [symA]: number }, s: symbol): void {
+  // @skjs-expect-error Invalid access
+  const v = x[s];
 }
