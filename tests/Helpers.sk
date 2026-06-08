@@ -25,6 +25,11 @@ class SKJS_EXPECT_ERROR extends AnnotationKind {
   const chars: Vector<Char> = SKJS_EXPECT_ERROR::str.chars();
 }
 
+class SKJS_EXPECT_WARNING extends AnnotationKind {
+  const str: String = "skjs-expect-warning";
+  const chars: Vector<Char> = SKJS_EXPECT_WARNING::str.chars();
+}
+
 base class UpdateMode {
   children =
   | UMValidateOnly()
@@ -80,6 +85,7 @@ extension class .String {
 }
 
 class ExpectError{
+  isWarning: Bool,
   expectedErrors: SortedSet<String>,
   expectedLineNAnnotations: Map<Int, String>,
 } extends ReferenceError {
@@ -140,6 +146,23 @@ class ExpectError{
   }
 }
 
+// Match a single candidate kind at `pos`, returning (kind, isFullMatch, newPos).
+fun matchAnnotationCandidate(
+  allChars: Array<Char>,
+  pos: Int,
+  candidate: Concrete<AnnotationKind>,
+): (Concrete<AnnotationKind>, Bool, Int) {
+  posInAnnot = 0;
+  while (
+    pos + posInAnnot < allChars.size() &&
+    posInAnnot < candidate::chars.size() &&
+    allChars[pos + posInAnnot] == candidate::chars[posInAnnot]
+  ) {
+    !posInAnnot = posInAnnot + 1;
+  };
+  (candidate, posInAnnot >= candidate::chars.size(), pos + posInAnnot)
+}
+
 /* Try to match an annotation kind at the given position in the char array.
  * Returns (str, isFullMatch, newPos) or None if the first char doesn't
  * match any annotation kind. */
@@ -148,21 +171,21 @@ fun tryMatchAnnotation(
   pos: Int,
 ): ?(Concrete<AnnotationKind>, Bool, Int) {
   if (pos >= allChars.size()) return None();
-  possibleAnnot = if (allChars[pos] == TS_EXPECT_ERROR::chars[0]) {
-    TS_EXPECT_ERROR
+  if (allChars[pos] == TS_EXPECT_ERROR::chars[0]) {
+    Some(matchAnnotationCandidate(allChars, pos, TS_EXPECT_ERROR))
   } else if (allChars[pos] == SKJS_EXPECT_ERROR::chars[0]) {
-    SKJS_EXPECT_ERROR
+    // skjs-expect-error and skjs-expect-warning share their first char and the
+    // "skjs-expect-" prefix; try both and prefer a full match.
+    errMatch = matchAnnotationCandidate(allChars, pos, SKJS_EXPECT_ERROR);
+    if (errMatch.i1) {
+      Some(errMatch)
+    } else {
+      warnMatch = matchAnnotationCandidate(allChars, pos, SKJS_EXPECT_WARNING);
+      if (warnMatch.i1) Some(warnMatch) else Some(errMatch)
+    }
   } else {
-    return None()
-  };
-  posInAnnot = 0;
-  do {
-    !pos = pos + 1;
-    !posInAnnot = posInAnnot + 1;
-  } while (pos < allChars.size() &&
-    posInAnnot < possibleAnnot::chars.size() &&
-    allChars[pos] == possibleAnnot::chars[posInAnnot]);
-  Some((possibleAnnot, posInAnnot >= possibleAnnot::chars.size(), pos))
+    None()
+  }
 }
 
 class AnnotationLine{
@@ -237,9 +260,10 @@ fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
     - ' ', '\t'
     - '/'
     - '@'
-    - characters in TS_EXPECT_ERROR::chars union SKJS_EXPECT_ERROR::chars
-    and on the fact that the first characters of TS_EXPECT_ERROR::chars and
-    SKJS_EXPECT_ERROR::chars differ.
+    - characters in the annotation kinds' chars
+    and on the fact that TS_EXPECT_ERROR starts with a different char than the
+    skjs kinds. skjs-expect-error and skjs-expect-warning share a prefix and are
+    disambiguated by tryMatchAnnotation (which prefers a full match).
    */
   groups = mutable Vector[];
   currentGroup = mutable Vector[];
@@ -353,21 +377,37 @@ fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
   groups
 }
 
+// Build the expected diagnostics for each annotation group, split by severity:
+// @skjs-expect-warning lines produce a warning `ExpectError`, while
+// @skjs-expect-error / @ts-expect-error (and the error-only -lineN
+// continuations) produce an error one. Both share the group's error line.
 fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
-  findAnnotationLines(contents).map(group -> {
+  result = mutable Vector[];
+  // Add a line-1 message to its severity set, rejecting duplicates.
+  addUnique = (set: SortedSet<String>, a: AnnotationLine) -> {
+    if (set.contains(a.message)) {
+      invariant_violation(
+        `Line ${a.commentLineNumber}: duplicate annotation: ${
+          a.originalMessage
+        }`,
+      )
+    };
+    set.set(a.message)
+  };
+  for (group in findAnnotationLines(contents)) {
     expectedErrors = SortedSet[];
+    expectedWarnings = SortedSet[];
     expectedLineNAnnotations = mutable Map[];
     for (a in group.annotations) {
+      isWarning = a.annot::str == SKJS_EXPECT_WARNING::str;
       if (a.lineN == 1) {
-        if (expectedErrors.contains(a.message)) {
-          invariant_violation(
-            `Line ${a.commentLineNumber}: duplicate annotation: ${
-              a.originalMessage
-            }`,
-          )
-        };
-        !expectedErrors = expectedErrors.set(a.message)
+        if (isWarning) {
+          !expectedWarnings = addUnique(expectedWarnings, a)
+        } else {
+          !expectedErrors = addUnique(expectedErrors, a)
+        }
       } else {
+        // -lineN continuations only exist for @skjs-expect-error (error kind).
         if (expectedLineNAnnotations.containsKey(a.lineN)) {
           invariant_violation(
             `Line ${a.commentLineNumber}: duplicate annotation: ${
@@ -378,12 +418,28 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
         expectedLineNAnnotations.set(a.lineN, a.message)
       }
     };
-    ExpectError{
-      line => group.errorLine,
-      expectedErrors,
-      expectedLineNAnnotations => expectedLineNAnnotations.chill(),
+    if (!expectedErrors.isEmpty() || !expectedLineNAnnotations.isEmpty()) {
+      result.push(
+        ExpectError{
+          line => group.errorLine,
+          isWarning => false,
+          expectedErrors,
+          expectedLineNAnnotations => expectedLineNAnnotations.chill(),
+        },
+      )
+    };
+    if (!expectedWarnings.isEmpty()) {
+      result.push(
+        ExpectError{
+          line => group.errorLine,
+          isWarning => true,
+          expectedErrors => expectedWarnings,
+          expectedLineNAnnotations => Map[],
+        },
+      )
     }
-  })
+  };
+  result.chill()
 }
 
 fun getIndent(line: String): String {

@@ -13,16 +13,16 @@ function maybeObj2(): { f?: number } | null {
   return {};
 }
 
-// @skjs-expect-error Useless '?.'. Use '.' instead
+// @skjs-expect-warning Useless '?.'. Use '.' instead
 const x1: number = obj?.f;
 
-// @skjs-expect-error Useless '?.'. Use '.' instead
+// @skjs-expect-warning Useless '?.'. Use '.' instead
 const x2: number | undefined = obj2?.f;
 
-// @ts-expect-error Result of optional chaining is always undefined
+// @skjs-expect-warning Result of optional chaining is always undefined
 const x3: undefined = undefined?.f;
 
-// @ts-expect-error Result of optional chaining is always undefined
+// @skjs-expect-warning Result of optional chaining is always undefined
 const x4: undefined = null?.f;
 
 // @ts-expect-error Invalid definition: value type is not compatible with type annotation

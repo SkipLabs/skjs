@@ -189,25 +189,34 @@ fun validateExpectErrorComments(
 
   fileContents = checker.files.filesContent.get(context, fileName);
 
-  // Commit 1: warnings are a separate field but, until @skjs-expect-warning
-  // exists, the harness still matches them as ordinary expected diagnostics.
   actualErrors = parseErrorOpt match {
-  | None() -> typeErrors.concat(typeWarnings)
-  | Some(parseError) ->
-    typeErrors.concat(typeWarnings).concat(Array[parseError])
+  | None() -> typeErrors
+  | Some(parseError) -> typeErrors.concat(Array[parseError])
   };
 
   update match {
   | UMValidateOnly() ->
-    tsExpectErrors = findExpectErrors(fileContents.value).iterator();
+    refs = findExpectErrors(fileContents.value);
+    // Errors (incl. @ts-expect-error and parse errors) match the error field;
+    // @skjs-expect-warning match the separate warnings field.
     validateReferenceErrors(
       context,
       checker,
       fileName,
       actualErrors,
-      tsExpectErrors,
+      refs.iterator().filter(r -> !r.isWarning),
+    ).concat(
+      validateReferenceErrors(
+        context,
+        checker,
+        fileName,
+        typeWarnings,
+        refs.iterator().filter(r -> r.isWarning),
+      ),
     )
   | doUpdate @ UMDoUpdate _ ->
+    // NOTE: --update only rewrites error annotations; it does not yet
+    // regenerate @skjs-expect-warning (follow-up). Warnings are validated.
     doUpdateExpectErrorComments(
       context,
       checker,

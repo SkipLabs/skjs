@@ -549,7 +549,7 @@ function testPromiseThen(x: Promise<number> | null): Promise<string> {
 // Using ! on a value that is never null/undefined
 function testNonNullableValue(): number {
   let x: number = 42;
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   return x!;
 }
 
@@ -563,7 +563,7 @@ function testWrongTypeAfterNonNull(x: string | null): number {
 // Using ! on already non-nullable type in wrong context
 function testNonNullOnNonNullable(): string {
   let x: number = 42;
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   // @ts-expect-error Invalid return type
   return x!;
 }
@@ -571,7 +571,7 @@ function testNonNullOnNonNullable(): string {
 // Multiple ! doesn't change the type
 function testMultipleExclamations(x: number | null): string {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-warning This operator is useless
   // @ts-expect-error Invalid return type
   return x!!;
 }

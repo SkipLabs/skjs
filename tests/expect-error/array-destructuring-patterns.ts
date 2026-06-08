@@ -43,13 +43,13 @@ function testTupleDefaultDifferentType(): void {
 
 function testTupleDefaultUseless(): void {
   const arr: [number, string] = [1, "hello"];
-  // @skjs-expect-error Default is useless because element cannot be undefined
+  // @skjs-expect-warning Default is useless because element cannot be undefined
   const [a = 0, b = "default"] = arr;
 }
 
 function testTupleDefaultAlwaysUndefined(): void {
   const arr: [undefined] = [undefined];
-  // @skjs-expect-error Element is always undefined
+  // @skjs-expect-warning Element is always undefined
   const [a = 42] = arr;
 }
 
@@ -76,6 +76,6 @@ function testSkippedWithDefaults(): void {
 
 function testSkippedWithDefaultsUseless(): void {
   const arr: [number, string | undefined, boolean] = [1, "hello", true];
-  // @skjs-expect-error Default is useless because element cannot be undefined
+  // @skjs-expect-warning Default is useless because element cannot be undefined
   const [first = 0, , third] = arr;
 }
