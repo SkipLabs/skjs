@@ -478,10 +478,14 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
               context,
               errorsDirName,
               (context, writer, _key, valueIter) ~> {
-                (parseErrorOpt, typeErrors) = valueIter.getUnique() match {
+                (
+                  parseErrorOpt,
+                  typeErrors,
+                  typeWarnings,
+                ) = valueIter.getUnique() match {
                 | None() ->
                   internal_error("Unexpected missing value in print-errors")
-                | Some(CheckResult(_, x, y, _, _, _)) -> (x, y)
+                | Some(CheckResult(_, x, y, w, _, _, _)) -> (x, y, w)
                 };
                 errors = mutable Vector[];
                 parseErrorOpt match {
@@ -495,6 +499,14 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
                 for (error in typeErrors) {
                   errors.push(
                     ErrorMessageFile(checker.errorToMessage(context, error)),
+                  );
+                };
+                // Commit 1: warnings live in a separate field but are still
+                // merged into the rendered errors dir so output and exit code
+                // stay identical (split happens in the exit-code commit).
+                for (warning in typeWarnings) {
+                  errors.push(
+                    ErrorMessageFile(checker.errorToMessage(context, warning)),
                   );
                 };
                 writer.setArray(SKStore.UnitID::singleton, errors.toArray());
@@ -565,6 +577,7 @@ class CheckResult(
   fileName: FPath,
   parseError: ?LexingOrParsingError,
   errors: Array<Error>,
+  warnings: Array<Error> = Array[],
   callgraph: SortedMap<CGNode, Array<CGNode>> = SortedMap[],
   classHierarchy: SortedMap<CHNode, SortedSet<CHNode>> = SortedMap[],
   subtypingEdges: SortedSet<(CGNode, CGNode)> = SortedSet[],
@@ -685,13 +698,17 @@ class Checker private {
               fileName,
               None(),
               errors,
+              results.warnings,
               results.callgraph,
               results.classHierarchy,
               results.subtypingEdges,
             ),
           )
         | PRError(err) ->
-          writer.set(fileName, CheckResult(fileName, Some(err), Array[]))
+          writer.set(
+            fileName,
+            CheckResult(fileName, Some(err), Array[], Array[]),
+          )
         }
       },
     );

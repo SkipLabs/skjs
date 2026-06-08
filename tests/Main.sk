@@ -182,15 +182,19 @@ fun validateExpectErrorComments(
   checkResult: SKJS.CheckResult,
   update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
-  (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _, _, _) -> (x, y, z)
-  };
+  fileName = checkResult.fileName;
+  parseErrorOpt = checkResult.parseError;
+  typeErrors = checkResult.errors;
+  typeWarnings = checkResult.warnings;
 
   fileContents = checker.files.filesContent.get(context, fileName);
 
+  // Commit 1: warnings are a separate field but, until @skjs-expect-warning
+  // exists, the harness still matches them as ordinary expected diagnostics.
   actualErrors = parseErrorOpt match {
-  | None() -> typeErrors
-  | Some(parseError) -> typeErrors.concat(Array[parseError])
+  | None() -> typeErrors.concat(typeWarnings)
+  | Some(parseError) ->
+    typeErrors.concat(typeWarnings).concat(Array[parseError])
   };
 
   update match {
@@ -223,9 +227,9 @@ fun validateTSConformance(
   checkResult: SKJS.CheckResult,
   _update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
-  (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _, _, _) -> (x, y, z)
-  };
+  fileName = checkResult.fileName;
+  parseErrorOpt = checkResult.parseError;
+  typeErrors = checkResult.errors;
 
   SKTest.expectEq(parseErrorOpt is None(), true, "Expected no parse errors");
 
@@ -275,9 +279,9 @@ fun validateNotSupported(
   checkResult: SKJS.CheckResult,
   _update: UpdateMode,
 ): Array<SKTest.ExpectationError> {
-  (fileName, parseErrorOpt, typeErrors) = checkResult match {
-  | SKJS.CheckResult(x, y, z, _, _, _) -> (x, y, z)
-  };
+  fileName = checkResult.fileName;
+  parseErrorOpt = checkResult.parseError;
+  typeErrors = checkResult.errors;
 
   if (parseErrorOpt is None() && typeErrors.isEmpty()) {
     return Array[
