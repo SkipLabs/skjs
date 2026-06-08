@@ -536,26 +536,76 @@ extension class TypeChecker {
           }
         });
         if (idxSType is TPrimValue(TSymbol(), _, _)) {
-          uniqueId = idxSType match {
-          | TPrimValue(_, Some(lits), _) -> lits.singleElt().map(lit -> lit.val)
-          | _ -> None()
+          // Symbols mirror the string/number path below: a specific unique
+          // symbol is a literal key (it names exactly one declared symbol
+          // field, else falls back to the symbol index), while a general
+          // `symbol` is a non-literal key that could name ANY symbol-keyed
+          // property — so it resolves through the symbol index AND unions/
+          // intersects every declared symbol field (read: union getters;
+          // write: intersect setters).
+          fields = obj.getFields(tcenv.subst, this);
+          idxSType.literals match {
+          | None() -> Some(idxSType)
+          | Some(lits) ->
+            lits
+              .filterLiterals(symLit ->
+                obj.maybeGetSymbol(tcenv.subst, this, symLit.val) match {
+                | Some(fd) ->
+                  this.checkFieldAccess(tcenv, fd, symLit.pos);
+                  addResultCase(
+                    TFields::resolveFieldType(
+                      tcenv.subst,
+                      this,
+                      fd,
+                      symLit.pos,
+                      isLValue,
+                    ),
+                  );
+                  false
+                | None() -> true
+                }
+              )
+              .map(remainingLits ->
+                idxSType with {literals => Some(remainingLits)}
+              )
           } match {
-          | Some(id) -> id
-          | None() -> error(Array[(idx.pos, "Expected a unique symbol")])
-          };
-          obj.maybeGetSymbol(tcenv.subst, this, uniqueId) match {
-          | Some(fd) ->
-            this.checkFieldAccess(tcenv, fd, idx.pos);
-            addResultCase(
-              TFields::resolveFieldType(
-                tcenv.subst,
-                this,
-                fd,
-                idx.pos,
-                isLValue,
-              ),
-            )
-          | None() -> error(Array[(pos, "Symbol property not found on object")])
+          | None() -> void
+          | Some(remainingIdxSType) ->
+            fields.nonSyntheticIndexForKeyKind(TSymbol()) match {
+            | None() ->
+              // Unique symbols naming no declared field, or a general symbol,
+              // with no symbol index to resolve through.
+              if (remainingIdxSType.literals.isNone()) {
+                error(
+                  Array[
+                    (pos, "Invalid access"),
+                    (idx.pos, "Index has non-literal type symbol"),
+                    (objectPos, "But object has no index field"),
+                  ],
+                )
+              } else {
+                error(Array[(pos, "Symbol property not found on object")])
+              }
+            | Some(index) ->
+              ty = if (isLValue) index.set else {
+                TType::unionUndefined(tcenv.subst, this, index.get, pos)
+              };
+              addResultCase(ty);
+              // A general symbol may also name any declared symbol field.
+              if (remainingIdxSType.literals.isNone()) {
+                for (symFd in fields.namedFieldsForKeyKind(TSymbol())) {
+                  addResultCase(
+                    TFields::resolveFieldType(
+                      tcenv.subst,
+                      this,
+                      symFd,
+                      idx.pos,
+                      isLValue,
+                    ),
+                  )
+                }
+              }
+            }
           }
         } else {
           fields = obj.getFields(tcenv.subst, this);
@@ -644,17 +694,23 @@ extension class TypeChecker {
               };
               addResultCase(ty);
               // A general (non-literal) key may resolve to a declared field at
-              // runtime, not just the index signature, so the read must also
-              // include the declared field types (e.g. reading
-              // `{ a: number; [k: string]: boolean }` with a string key yields
-              // `boolean | number`, not just `boolean`). For valid TypeScript
-              // these fields are subsumed by the index type (TS2411) so this
-              // changes nothing. This applies only when the key is non-literal:
-              // specific literals that reach here were already checked against
-              // the declared fields and found absent, so they only hit the
-              // index. Only for reads: a write target's type is the index
-              // setter, handled above.
-              if (!isLValue && remainingIdxSType.literals.isNone()) {
+              // runtime, not just the index signature, so both directions must
+              // account for the declared fields it could hit:
+              //   - read: union their getter types, since the result could be
+              //     any of them (e.g. reading `{ a: number; [k: string]:
+              //     boolean }` with a string key yields `boolean | number`, not
+              //     just `boolean`).
+              //   - write: intersect their setter types (addResultCase combines
+              //     with `inter` for lvalues), since the assigned value must be
+              //     valid for whichever field the key turns out to name (writing
+              //     to that same object requires `number & boolean`, i.e. the
+              //     write is rejected — `k` could be "a").
+              // For valid TypeScript these fields are subsumed by the index
+              // value type (TS2411), so this changes nothing. It applies only to
+              // non-literal keys: specific literals that reach here were already
+              // checked against the declared fields and found absent, so they
+              // only hit the index.
+              if (remainingIdxSType.literals.isNone()) {
                 for (namedFd in fields.namedFieldsForKeyKind(
                   remainingIdxSType.kind,
                 )) {

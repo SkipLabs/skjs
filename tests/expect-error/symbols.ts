@@ -399,3 +399,28 @@ function testAnonUniqueSymbol(s: symbol): void {
   // @skjs-expect-error-line3 is not compatible with specific type unique symbol defined in tests/expect-error/symbols.ts at constant(anonObj)
   const c: typeof anonObj.prop = s;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 30: Symbol-keyed field access is type-checked in both directions
+//
+// A *specific* unique symbol is a literal key: it names exactly that declared
+// field, so both the read (getter) and the write (setter) are checked against
+// the declared field type. (A *general* `symbol` key is non-literal and instead
+// unions/intersects every symbol field with the symbol index — see
+// index-signatures.ts Test 27.)
+///////////////////////////////////////////////////////////////////////////////
+
+declare const symField: unique symbol;
+
+function symFieldRead(x: { [symField]: number }): number {
+  return x[symField];
+}
+
+function symFieldWriteOk(x: { [symField]: number }): void {
+  x[symField] = 5;
+}
+
+function symFieldWriteChecksSetter(x: { [symField]: number }): void {
+  // @skjs-expect-error Invalid assignment
+  x[symField] = "no";
+}
