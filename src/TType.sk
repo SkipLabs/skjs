@@ -1589,6 +1589,36 @@ class TFields protected {
     TFields::nonSynthetic(idx)
   }
 
+  // Named fields that a general (non-literal) key of `kind` could resolve to
+  // at runtime. Used by element access (`x[k]`) to keep the result sound when
+  // the key isn't a known literal: such a key may land on a declared field
+  // rather than the index signature, so the field types must be unioned in.
+  //   - A general string key may hit ANY field name (including numeric ones).
+  //   - A general number key only hits field names of the form `String(n)`.
+  //   - A symbol key never hits a string-named field.
+  // TypeScript forbids declared fields whose type isn't assignable to the
+  // index type (TS2411), so for valid programs these fields are subsumed by
+  // the index value type and unioning them is a no-op; SKJS does not enforce
+  // TS2411, so the union is what makes the read sound.
+  fun namedFieldsForKeyKind(kind: TPrimValueKind): Array<TField> {
+    kind match {
+    | TString() -> this.fields.toArray()
+    | TNum() ->
+      // A number key `n` reaches the field named `String(n)`. Beyond the finite
+      // canonical numeric strings (isJSNumericString is `isFinite`-only by
+      // contract), that includes the three non-finite results of
+      // `Number.prototype.toString`: "Infinity", "-Infinity", and "NaN".
+      this.fields.toArray().filter(fd -> {
+        name = fd.name.value;
+        isJSNumericString(name) ||
+          name == "Infinity" ||
+          name == "-Infinity" ||
+          name == "NaN"
+      })
+    | _ -> Array[]
+    }
+  }
+
   fun maybeGet(fieldName: String): ?TField {
     this.fields.maybeGet(FieldNameString(fieldName))
   }

@@ -403,3 +403,107 @@ interface BadNumField {
   [key: number]: number;
   "0": string;
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 24: Non-literal key reads union in the declared field types
+//
+// SKJS does not reject objects whose declared fields are incompatible with the
+// index value type (TypeScript's TS2411 — see BadFieldIndex above). A
+// non-literal key may resolve to such a field at runtime, so the read result
+// must include the declared field types, not just the index value type. For
+// objects that DO satisfy TS2411 the field types are subsumed by the index
+// value type, so this is a no-op there.
+///////////////////////////////////////////////////////////////////////////////
+
+interface NonConformingStrIndex {
+  [key: string]: boolean;
+  a: number;
+}
+
+// A dynamic string key may hit `a`, so the read is `boolean | number`, not just
+// `boolean` (plus `undefined` because the key might be absent).
+function nonConformingDynamicStringKey(
+  x: NonConformingStrIndex,
+  k: string,
+): boolean | number | undefined {
+  return x[k];
+}
+
+// `boolean | undefined` alone is too narrow: it drops `number` from `a`.
+function nonConformingDynamicStringKeyTooNarrow(
+  x: NonConformingStrIndex,
+  k: string,
+): boolean | undefined {
+  // @skjs-expect-error Invalid return type
+  return x[k];
+}
+
+// A specific literal that names no declared field can only hit the index, so
+// the declared field type must NOT leak in.
+function nonConformingLiteralMissOnlyIndex(
+  x: NonConformingStrIndex,
+): boolean | undefined {
+  return x["zzz"];
+}
+
+// A literal that names the declared field reads exactly that field's type.
+function nonConformingLiteralHitsNamedField(x: NonConformingStrIndex): number {
+  return x["a"];
+}
+
+interface NonConformingNumIndex {
+  [key: number]: boolean;
+  0: string;
+  a: number;
+}
+
+// A dynamic number key reaches the numeric-named field `0` (`string`) but never
+// the non-numeric field `a` — so the read is `boolean | string`, not
+// `boolean | number | string`. (Returning the exact type pins the exclusion of
+// `a`: were `number` included, this would be too narrow and error.)
+function nonConformingDynamicNumberKey(
+  x: NonConformingNumIndex,
+  k: number,
+): boolean | string | undefined {
+  return x[k];
+}
+
+// A conforming object (satisfies TS2411): the field type is subsumed by the
+// index value type, so unioning it in is a no-op — the read stays `number`.
+interface ConformingStrIndex {
+  [key: string]: number;
+  a: 1;
+}
+
+function conformingDynamicStringKey(
+  x: ConformingStrIndex,
+  k: string,
+): number | undefined {
+  return x[k];
+}
+
+// A dynamic number key can be Infinity / -Infinity / NaN at runtime (e.g.
+// String(Infinity) === "Infinity"), so a field with one of those names is
+// reachable by a number key and its type must be unioned in (here `bigint`),
+// even though such names are not finite numeric strings.
+interface NonFiniteNumKeyField {
+  [key: string]: boolean;
+  Infinity: bigint;
+  "-Infinity": bigint;
+  NaN: bigint;
+}
+
+function nonFiniteNumberKeyReachesField(
+  x: NonFiniteNumKeyField,
+  k: number,
+): boolean | bigint | undefined {
+  return x[k];
+}
+
+function nonFiniteNumberKeyTooNarrow(
+  x: NonFiniteNumKeyField,
+  k: number,
+): boolean | undefined {
+  // @skjs-expect-error Invalid return type
+  return x[k];
+}
