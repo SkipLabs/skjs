@@ -76,7 +76,16 @@ extension class TypeChecker {
   ): readonly TCResultsAcc {
     results = TCResultsAcc::mcreate{errorHandling => this.errorHandling};
     tcenvl = mutable TCEnvLight{context, results};
-    results.collectErrors(() -> this.checkDef_(tcenvl, def));
+    // Catch a fatal abort at the definition boundary so warnings (and any
+    // earlier errors) collected before it survive instead of being discarded
+    // with the unwound stack. The definition still stops at the first fatal
+    // (one error per definition); backtrace mode propagates for a native trace.
+    this.errorHandling match {
+    | EHBacktrace() -> this.checkDef_(tcenvl, def)
+    | EHKeepGoing()
+    | EHDefault() ->
+      catchError(() -> this.checkDef_(tcenvl, def)).each(results.errors.push)
+    };
     results
   }
 
