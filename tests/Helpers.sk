@@ -898,6 +898,7 @@ extension class Checker {
       ),
       SKJS.SeverityError(),
       EFDefault(),
+      false,
     )
   }
 

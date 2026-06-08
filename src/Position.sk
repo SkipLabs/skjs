@@ -185,17 +185,27 @@ base class Severity uses Equality {
   fun word(): String
   | SeverityError() -> "error"
   | SeverityWarning() -> "warning"
+
+  // Color for the severity word: red for errors, yellow for warnings.
+  fun color(): TermColor.Color
+  | SeverityError() -> TermColor.Red()
+  | SeverityWarning() -> TermColor.Yellow()
 }
 
 // Format a diagnostic for text output. The severity (`error:` / `warning:`)
 // labels the primary message; secondary messages (related locations) are left
-// unlabeled.
+// unlabeled. When `useColor` is set, the severity word is colored.
 fun formatErrorMessage(
   msg: ErrorMessage,
   severity: Severity,
   errorFormat: TextErrorFormat,
+  useColor: Bool,
 ): String {
-  label = severity.word();
+  label = if (useColor) {
+    TermColor.colored(severity.word(), severity.color())
+  } else {
+    severity.word()
+  };
   errorFormat match {
   | EFDefault() ->
     msg

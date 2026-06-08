@@ -237,6 +237,13 @@ const checkArgs: Array<Cli.Arg> = Array[
     .about(
       "Read additional source files from stdin as a `//// <path>` marker stream, overlaid on the disk filesystem.",
     ),
+  Cli.Arg::string("color")
+    .long("color")
+    .value_name("WHEN")
+    .about(
+      "Colorize diagnostics: auto (default; colored on a terminal, honoring NO_COLOR/FORCE_COLOR), always, never",
+    )
+    .default("auto"),
 ];
 
 fun check(): (Cli.Command, Cli.ParseResults ~> void) {
@@ -427,6 +434,21 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     throw Exit(2)
   };
 
+  // Resolve color: --color=always/never force it; auto (the default) colors
+  // only when stderr is a terminal, with NO_COLOR/FORCE_COLOR taking priority.
+  useColor = args.getString("color") match {
+  | "always" -> true
+  | "never" -> false
+  | _ ->
+    if (Environ.varOpt("NO_COLOR").isSome()) {
+      false
+    } else if (Environ.varOpt("FORCE_COLOR").isSome()) {
+      true
+    } else {
+      IO.stderr().isatty()
+    }
+  };
+
   errorsDirName = SKStore.DirName::create("/check/errors/");
   warningsDirName = SKStore.DirName::create("/check/warnings/");
 
@@ -570,7 +592,7 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
       .map(wdir -> wdir.getArrayRaw(SKStore.UnitID::singleton))
       .default(Array[]);
     // Print errors and warnings; only errors determine the exit status.
-    printErrors(errors, warnings, errorFormat);
+    printErrors(errors, warnings, errorFormat, useColor);
     if (errors.size() != 0) 2 else 0
   }
 }
@@ -579,6 +601,7 @@ fun printErrors(
   errors: Array<SKStore.File>,
   warnings: Array<SKStore.File>,
   errorFormat: ErrorFormat,
+  useColor: Bool,
 ): void {
   errMsgs = errors
     .map(e -> ErrorMessageFile::type(e).value)
@@ -590,16 +613,17 @@ fun printErrors(
   | EFJson() ->
     diagnosticsToJson(errMsgs, warnMsgs).writeToStream(print_error_raw, 2)
   | textErrorFormat @ TextErrorFormat _ ->
-    for (errMsg in errMsgs) {
-      print_error(formatErrorMessage(errMsg, SeverityError(), textErrorFormat));
-      // Blank line separator between diagnostics
-      print_error("")
-    };
-    for (warnMsg in warnMsgs) {
-      print_error(
-        formatErrorMessage(warnMsg, SeverityWarning(), textErrorFormat),
-      );
-      print_error("")
+    for ((msgs, severity) in Array[
+      (errMsgs, SeverityError()),
+      (warnMsgs, SeverityWarning()),
+    ]) {
+      for (msg in msgs) {
+        print_error(
+          formatErrorMessage(msg, severity, textErrorFormat, useColor),
+        );
+        // Blank line separator between diagnostics
+        print_error("")
+      }
     }
   }
 }
