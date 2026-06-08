@@ -70,7 +70,7 @@ extension class TypeChecker {
               undefined,
             ) is STOk();
             if (!canBeUndefined) {
-              tcenv.error(
+              tcenv.warning(
                 Array[
                   (
                     defaultExpr.pos,
@@ -80,7 +80,7 @@ extension class TypeChecker {
               )
             };
             if (isAlwaysUndefined) {
-              tcenv.error(
+              tcenv.warning(
                 Array[(defaultExpr.pos, "Element is always undefined")],
               )
             };
@@ -290,7 +290,7 @@ extension class TypeChecker {
             defaultIsUseless match {
             | None() -> void
             | Some(defaultPos) ->
-              tcenv.error(
+              tcenv.warning(
                 Array[
                   (
                     defaultPos,
@@ -758,7 +758,7 @@ extension class TypeChecker {
         optionalChainingIsAlwaysUndefinedForThisSType;
     };
     if (optionalChainingIsUseless) {
-      tcenv.error(
+      tcenv.warning(
         Array[
           (pos, "Useless '?.'. Use '.' instead"),
           (
@@ -769,7 +769,7 @@ extension class TypeChecker {
       )
     };
     if (optionalChainingIsAlwaysUndefined) {
-      tcenv.error(
+      tcenv.warning(
         Array[
           (pos, "Result of optional chaining is always undefined"),
           (
@@ -830,7 +830,7 @@ extension class TypeChecker {
       )
     } else if (!hasTop && !hasNullOrUndefined) {
       !isValid = false;
-      tcenv.error(
+      tcenv.warning(
         Array[
           (pos, "This operator is useless"),
           (e.pos, "This expression is never null or undefined"),
@@ -838,7 +838,7 @@ extension class TypeChecker {
       );
     } else if (!hasTop && !hasOthers) {
       !isValid = false;
-      tcenv.error(
+      tcenv.warning(
         Array[
           (pos, "This operator is useless"),
           (e.pos, "This expression is always null or undefined"),
@@ -1687,7 +1687,7 @@ extension class TypeChecker {
               | BOStrictEquality() -> "false"
               | BOStrictInequality() -> "true"
               };
-              tcenv.error(
+              tcenv.warning(
                 Array[(pos, `This equality is always ${alwaysResult}`)],
               )
             }

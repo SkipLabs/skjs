@@ -16,6 +16,11 @@ mutable base class TCEnvBase private {
     this.results.error(messages)
   }
 
+  // A non-fatal diagnostic: always recorded, never aborts (regardless of mode).
+  mutable fun warning(messages: Array<(PosRange, String)>): void {
+    this.results.warning(messages)
+  }
+
   mutable fun subtypingError(
     subst: readonly Subst,
     tenv: TEnv,
@@ -280,6 +285,14 @@ mutable class TCResultsAcc private {
     | EHDefault() ->
       fatalError(messages)
     }
+  }
+
+  // A non-fatal diagnostic. Unlike `error`, this does not branch on the
+  // error-handling mode and never throws: warnings are always collected and
+  // never abort the current definition. Stored in the same `errors` list (no
+  // severity distinction yet).
+  mutable fun warning(messages: Array<(PosRange, String)>): void {
+    this.errors.push(NamingError(messages))
   }
 
   mutable fun subtypingError(
