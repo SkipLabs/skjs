@@ -2,6 +2,17 @@
 
 This document describes the rules and restrictions of the SKJS type checker, which implements a sound subset of TypeScript.
 
+## Diagnostics: errors vs warnings
+
+SKJS emits diagnostics at two severities:
+
+- **Errors** are soundness-critical (type mismatches, unsupported constructs, unbound names, …). A file with any error fails the build (exit code `2`).
+- **Warnings** are non-fatal, lint-style diagnostics that are not soundness-critical. They are reported but do **not** fail the build — a file whose only diagnostics are warnings exits `0`. They also never abort checking of a definition, so they don't hide later errors.
+
+Diagnostics currently reported as warnings: redundant optional chaining (`Useless '?.'`) and non-null assertions (`This operator is useless`), redundant destructuring defaults (`Default is useless …` / `Element is always undefined`), useless/unused `switch` constructs (`Useless switch` / `Unused branch`), and non-overlapping strict comparisons (`This equality is always true/false`). Parser-level lint rules (e.g. `==`/`!=`, empty `if`) are still reported as errors.
+
+In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testing.md](docs/testing.md).
+
 ## Key Restrictions Discovered
 
 ### 1. No Toplevel `let` Declarations
