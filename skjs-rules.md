@@ -300,6 +300,42 @@ let tags = ['urgent' as const, 'priority' as const];
 - **Workaround**: Move fields after the spread, or restructure the object literal so that fields you need in the result type appear after the last spread
 - **Verified by**: `tests/expect-error/objects.ts`
 
+### 29. The `this` Parameter ✅ (partial)
+- **Rule**: An explicit `this: T` first parameter is accepted on function and
+  method signatures. Inside the body `this` has type `T`, overriding the
+  enclosing class's implicit `this`. `this` must be the first parameter and
+  cannot be a rest, optional, or default-valued parameter.
+- **Implicit class `this`**: Methods of a _standalone_ class (one with a body
+  that does not `extends` another class) implicitly carry the class instance as
+  their `this`. Calling such a method with the wrong receiver is rejected — in
+  particular a detached call loses the receiver:
+  ```typescript
+  class Counter {
+    n: number = 0;
+    inc(): void { this.n = this.n + 1; }
+  }
+  function run(c: Counter): void {
+    c.inc();              // OK
+    const g = c.inc;
+    g();                  // Error: 'this' context (void) is not assignable
+  }
+  ```
+- **Call-site check**: For `e1.m(...)` (or `e1[k](...)`) the receiver `e1` is
+  checked against the method's declared `this`; a free call uses `this: void`,
+  matching TypeScript's treatment of detached methods.
+- **Subtyping**: In function-type subtyping the `this` parameter is
+  contravariant; a signature with no declared `this` is treated as
+  `this: unknown` (compatible with any receiver).
+- **Not yet supported**:
+  - Implicit `this` is attached only to methods of standalone classes. Methods
+    declared on _extending_ classes and _body-less_ methods (interfaces,
+    ambient declarations, and generic container library types such as
+    `ReadonlyArray<T>`) carry no implicit `this`, so their receiver/detached
+    checks are skipped.
+  - `.bind` / `.call` / `.apply` receiver rebinding and `OmitThisParameter`.
+  - Primitive wrapper methods (e.g. `(42).toString()`) do not declare a `this`.
+- **Verified by**: `tests/expect-error/this-parameter*.ts`
+
 ## Coding Guidelines for SKJS
 
 1. **Avoid toplevel variables**: Define everything inside functions or classes
