@@ -1,10 +1,10 @@
 // Document target behavior for .bind / .call / .apply on functions that
 // declare a `this` parameter.
 //
-// Today SKJS does not ship `.bind`, `.call`, `.apply` signatures on function
-// values (the fields report "Unbound field"), and declarations with a this
-// parameter report "TODO: support this parameter". This file encodes the
-// intended behavior; annotations will be filled in when support lands.
+// Declarations with a `this` parameter now type-check, but SKJS does not yet
+// ship `.bind`, `.call`, `.apply` signatures on function values (the fields
+// report "Unbound field"). This file encodes the intended receiver-rebinding
+// behavior; annotations will be filled in when support lands.
 
 class Ctx {
   value: number = 1;
