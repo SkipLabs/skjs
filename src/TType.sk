@@ -1323,6 +1323,15 @@ base class TIndexesBase protected {
   // Find the matching index for a named field:
   // numeric string names try numberIndex first, then stringIndex;
   // all other names use stringIndex.
+  //
+  // NOTE: this uses the finite isJSNumericString, not isJSNumberKeyName, so the
+  // non-finite numeric property names "Infinity"/"-Infinity"/"NaN" are matched
+  // against the string index here, whereas TypeScript classifies them as
+  // numeric. The choice is unobservable: a named-field object type is never
+  // assignable to an index signature it does not declare (that would be unsound
+  // under width subtyping — see tests/expect-error/index-signatures.ts
+  // "Test 25"), so this field-vs-index match is rejected before the
+  // numeric/non-finite distinction could change an outcome.
   fun indexForFieldName(name: String): ?TField {
     if (isJSNumericString(name) && this.numberIndex.isSome()) {
       this.numberIndex

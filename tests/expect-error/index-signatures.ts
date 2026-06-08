@@ -518,3 +518,60 @@ function nonFiniteNumberKeyTooNarrow(
   // @skjs-expect-error Invalid return type
   return x[k];
 }
+
+///////////////////////////////////////////////////////////////////////////////
+// Test 25: A named-field object TYPE is not assignable to an index signature it
+// does not declare — SOUND, and deliberately stricter than TypeScript (which is
+// unsound here).
+//
+// Object types are open under width subtyping: a value typed `{ 0: number }`
+// may at runtime carry extra numeric-keyed properties of unrelated types (it
+// could be a `{ 0: number; 5: string }`). Treating it as `{ [k: number]:
+// number }` would then let `x[5]` be read as a `number` while holding a string.
+// TypeScript permits this assignment and is unsound as a result; SKJS rejects
+// it. The same applies to string indexes (`{ a: number }` is not assignable to
+// `{ [k: string]: number }`). Object-literal *values* are still accepted,
+// because SKJS checks every concrete field of a literal against the index value
+// type (synthetic index, TType.sk). To use a named type as an indexed type, add
+// an explicit index signature so all keys become a checked constraint.
+//
+// The rejection is uniform across finite-numeric, non-finite-numeric, and
+// non-numeric field names — which is also why the `indexForFieldName`
+// non-finite-name detail (TType.sk) is unobservable: every case below is
+// rejected before it could matter.
+///////////////////////////////////////////////////////////////////////////////
+
+// Finite-numeric field, type compatible with the index value type — still
+// rejected, because the source type may carry other numeric-keyed properties.
+function numericFieldTypeToNumberIndex(x: { 0: number }): {
+  [k: number]: number;
+} {
+  // @skjs-expect-error Invalid return type
+  return x;
+}
+
+// Non-finite numeric property name ("Infinity"): same soundness rejection.
+function nonFiniteFieldTypeToNumberIndex(x: { Infinity: number }): {
+  [k: number]: number;
+} {
+  // @skjs-expect-error Invalid return type
+  return x;
+}
+
+// Non-numeric field: rejected too — the source may still carry numeric-keyed
+// properties of unrelated types that the number index would mistype.
+function nonNumericFieldTypeToNumberIndex(x: { abc: string }): {
+  [k: number]: number;
+} {
+  // @skjs-expect-error Invalid return type
+  return x;
+}
+
+// String index, compatible field type: rejected for the same width-subtyping
+// reason (the value may carry extra string-keyed properties of other types).
+function namedFieldTypeToStringIndex(x: { a: number }): {
+  [k: string]: number;
+} {
+  // @skjs-expect-error Invalid return type
+  return x;
+}
