@@ -434,19 +434,31 @@ fun execCheckWithStatus(args: Cli.ParseResults): Int {
     throw Exit(2)
   };
 
+  // True if env var `name` is set to anything other than `off` (its "disabled"
+  // value): NO_COLOR is honored when present and non-empty (per no-color.org);
+  // FORCE_COLOR is honored unless it is "0" (per the common chalk convention).
+  envEnabled = (name, off) ->
+    Environ.varOpt(name) match {
+    | Some(v) -> v != off
+    | None() -> false
+    };
   // Resolve color: --color=always/never force it; auto (the default) colors
-  // only when stderr is a terminal, with NO_COLOR/FORCE_COLOR taking priority.
+  // only when stderr is a terminal, with NO_COLOR then FORCE_COLOR taking
+  // priority over TTY detection.
   useColor = args.getString("color") match {
   | "always" -> true
   | "never" -> false
-  | _ ->
-    if (Environ.varOpt("NO_COLOR").isSome()) {
+  | "auto" ->
+    if (envEnabled("NO_COLOR", "")) {
       false
-    } else if (Environ.varOpt("FORCE_COLOR").isSome()) {
+    } else if (envEnabled("FORCE_COLOR", "0")) {
       true
     } else {
       IO.stderr().isatty()
     }
+  | other ->
+    print_error(`Unknown --color value: ${other}. Use auto, always, or never.`);
+    throw Exit(2)
   };
 
   errorsDirName = SKStore.DirName::create("/check/errors/");
