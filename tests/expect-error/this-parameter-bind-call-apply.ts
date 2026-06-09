@@ -81,3 +81,11 @@ function implicitRebindOk(o: Impl): void {
   const bound: (a: number) => number = o.mm.bind(undefined);
   let _b: number = bound(1);
 }
+
+// .apply's argument array is omittable when the function takes no parameters.
+function noArgs(this: Ctx): number {
+  return 0;
+}
+function applyZeroArgOk(): number {
+  return noArgs.apply(ctx);
+}
