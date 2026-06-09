@@ -110,7 +110,7 @@ function testTooManyArguments(): void {
 function testSpreadNonArray(): void {
   const notArray: number = 42;
   // @skjs-expect-error Too few arguments for this call
-  // @ts-expect-error Invalid spread argument
+  // @skjs-expect-error A spread argument must be of an array or iterable type
   takesThreeNumbers(...notArray);
 }
 
@@ -118,7 +118,7 @@ function testSpreadNonArray(): void {
 function testSpreadObject(): void {
   const obj: { a: number; b: number; c: number } = { a: 1, b: 2, c: 3 };
   // @skjs-expect-error Too few arguments for this call
-  // @ts-expect-error Invalid spread argument
+  // @skjs-expect-error A spread argument must be of an array or iterable type
   takesThreeNumbers(...obj);
 }
 
