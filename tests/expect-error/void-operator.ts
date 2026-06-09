@@ -57,9 +57,9 @@ function testPrecedence(): number {
 }
 
 // Error: void result is undefined, not assignable to number
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const c: number = void 0;
 
 // Error: void result is undefined, not assignable to string
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const d: string = void "hello";

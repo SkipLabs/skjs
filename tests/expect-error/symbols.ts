@@ -99,8 +99,8 @@ function localUniqueSymbol(): void {
 // FIXME (maybe): unique symbol is allowed here for declared const
 // unique symbol in object property types is allowed for top-level const,
 // but Symbol() returns symbol, not a specific unique symbol
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 // @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const objWithUniqueSymbol: { prop: unique symbol } = { prop: Symbol() };
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -113,7 +113,7 @@ const uniqueB: unique symbol = Symbol("b");
 
 // unique symbol A is not assignable to unique symbol B
 function testDistinctTypes(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 Type typeof uniqueB
   // @skjs-expect-error-line3 is not assignable to type typeof uniqueA
   // @skjs-expect-error-line4 Value typeof uniqueB is missing
@@ -135,7 +135,7 @@ function testCovariance(us: unique symbol): symbol {
 
 // symbol is not assignable to unique symbol
 function testContravariance(s: symbol): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 Full type symbol
   // @skjs-expect-error-line3 is not assignable to specific type typeof uniqueA
   const us: typeof uniqueA = s; // symbol → unique symbol should fail
@@ -362,7 +362,7 @@ function testDestructureArray(): void {
   const [a, b] = arr;
   // Elements from iterable destructuring are T | undefined
   const nOk: number | undefined = a;
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const nBad: number = a;
 }
 
@@ -381,7 +381,7 @@ function testSpreadInArrayLiteral(): void {
 
 // symbol is not assignable to a class static unique symbol
 function testClassSymContravariance(s: symbol): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 Full type symbol
   // @skjs-expect-error-line3 is not assignable to specific type typeof MyClass.classSym
   const c: typeof MyClass.classSym = s;
@@ -394,7 +394,7 @@ function testClassSymContravariance(s: symbol): void {
 declare const anonObj: { readonly prop: unique symbol };
 
 function testAnonUniqueSymbol(s: symbol): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   // @skjs-expect-error-line2 Full type symbol
   // @skjs-expect-error-line3 is not assignable to specific type unique symbol defined in tests/expect-error/symbols.ts at constant(anonObj)
   const c: typeof anonObj.prop = s;
@@ -421,6 +421,6 @@ function symFieldWriteOk(x: { [symField]: number }): void {
 }
 
 function symFieldWriteChecksSetter(x: { [symField]: number }): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x[symField] = "no";
 }

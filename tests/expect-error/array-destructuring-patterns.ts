@@ -22,7 +22,7 @@ function testSkippedElementsTypeError(): void {
   const arr: [number, string, boolean] = [1, "hello", true];
 
   const [first, , third] = arr;
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: string = first;
 }
 

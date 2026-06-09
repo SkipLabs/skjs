@@ -374,7 +374,7 @@ function testIncorrectRefinement(x: number | string): number {
     return x;
   } else {
     // This correctly errors - x is string here, not number
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
 }
@@ -392,7 +392,7 @@ function testFunctionAsObject(x: (() => void) | string): () => void {
 function testIncorrectNullHandling(x: { a: number } | null): { a: number } {
   if (typeof x === "object") {
     // x could be null here, so this should error
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return { a: 0 };
@@ -402,7 +402,7 @@ function testIncorrectNullHandling(x: { a: number } | null): { a: number } {
 function testIncorrectFunctionRefinement(x: (() => number) | string): string {
   if (typeof x === "function") {
     // This should error - x is function here, not string
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return x;
@@ -445,7 +445,7 @@ function testCallNonFunction(x: number | (() => void)): void {
 // Wrong assumption about typeof undefined vs null
 function testNullVsUndefined(x: null | undefined): null {
   if (typeof x === "undefined") {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return x;
@@ -457,7 +457,7 @@ function testMultipleChecksWrong(
   x: number | string | boolean,
 ): string | boolean {
   if (typeof x === "number") {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return x;
@@ -472,7 +472,7 @@ function testMissingCase(x: number | string | undefined): number {
     return 0;
   }
   // Missing undefined case
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -663,7 +663,7 @@ function testBecomesNever(x: number): string {
     // This branch is never taken since x is number
     return x;
   } else {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   }
 }
@@ -898,7 +898,7 @@ function testTupleOptional(
   if (typeof x === "object") {
     return x;
   } else {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return [0];
   }
 }
@@ -1077,7 +1077,7 @@ function testTupleSpread(
 ): [number, string, boolean] {
   if (typeof x === "object") {
     // TODO be more precise with tuples
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return [...x, false];
   } else {
     return [x, "", false];
@@ -1093,8 +1093,8 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
     // `x[2]` has type `number | string` via the inherited number index, not
     // `boolean` — so the return type fails as well.
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Out of bound index
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x[2];
   } else {
     return false;
@@ -1126,7 +1126,7 @@ function testWrongTupleElementType(
   x: [number, string] | string,
 ): [string, string] {
   if (typeof x === "object") {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return [x, x];

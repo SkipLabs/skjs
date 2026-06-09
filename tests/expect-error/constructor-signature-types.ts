@@ -47,7 +47,7 @@ function testConstructorSignatureTypes(): void {
 }
 
 function testConstructorSignatureErrors(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const badParams: new (num: number) => C = C;
 }
 

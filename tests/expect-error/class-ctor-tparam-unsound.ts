@@ -8,7 +8,7 @@ class Holder<T> {
 // When T is "hello", holder.value has type "hello" and is not assignable to number.
 function getNumber(): number {
   const holder = new Holder("hello");
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return holder.value;
 }
 

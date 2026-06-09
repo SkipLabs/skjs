@@ -18,7 +18,7 @@ function fixE_sequentialConstraint<T>(x: T): List<T> {
   result = { head: x, tail: null };
   result = { head: x, tail: result };
   result = { head: x, tail: result };
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return result;
 }
 
@@ -58,7 +58,7 @@ function fixB_sequentialGrow<T>(x: T): List<T> {
   let result: List<T> = null;
   result = { head: x, tail: null };
   result = { head: x, tail: result };
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return result;
 }
 

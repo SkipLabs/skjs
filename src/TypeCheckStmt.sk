@@ -26,7 +26,14 @@ extension class TypeChecker {
       } else {
         etype
       };
-      this.checkSubType(tcenv, epos, "Invalid return type", rtype, retType)
+      this.checkSubType(
+        tcenv,
+        epos,
+        "Type of returned value is not assignable to the function's return type",
+        rtype,
+        retType,
+        TSCode(2322),
+      )
 
     | Bind(bkind, bindings) ->
       if (bkind is BKVar()) {

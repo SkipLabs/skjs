@@ -7,7 +7,7 @@ function testObjLiteralToIndexed(): void {
 function testDualIndexedAssignment(): void {
   const a = {};
   const b: { [k: string]: number } = a;
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const c: { [k: string]: boolean } = a;
 }
 
@@ -27,6 +27,6 @@ function testMissingFieldAccess(): void {
 
 // Test: object literal with mixed types not assignable to single-type index
 function testMixedTypesIndex(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a: { [k: string]: number } = { x: 1, y: "hello" };
 }

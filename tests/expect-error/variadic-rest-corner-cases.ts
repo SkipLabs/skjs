@@ -142,7 +142,7 @@ function testArraySpreadInference(): void {
   const a1 = inferTuple(...arrS);
   // Both fail: resolving the type variable intersects the binding with the constraint,
   // producing element type string & VariadicDepSafe instead of simplifying to string.
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const a1_as_tuple: [string, string] = a1;
   const a1_as_array: readonly string[] = a1;
 }

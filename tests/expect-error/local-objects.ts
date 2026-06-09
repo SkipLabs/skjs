@@ -12,7 +12,7 @@ function testBasicGrowth(): void {
 
 // Test 2: Annotated empty object errors at bindType
 function testAnnotatedEmpty(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   let obj: { x: number } = {};
 }
 
@@ -61,19 +61,19 @@ function testWithNumericIndexSignature(): void {
 // "one error per def" rule doesn't hide it behind testWithNumericIndexSignature.
 function testNumericIndexNotAssignableToNamedField(): void {
   let obj: { [key: number]: string } = {};
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const result: { x: string } = obj;
 }
 
 // Test 6: With constructor signature
 function testWithConstructor(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   let obj: WithNew = {};
 }
 
 // Test 7: With call signature
 function testWithCallSignature(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   let obj: WithCall = {};
 }
 
@@ -123,7 +123,7 @@ function testComputedKeyBroadNoIndex(): void {
 function testComputedKeyBroadWrongType(): void {
   let obj: { [key: string]: number } = {};
   let key: string = "x";
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   obj[key] = "hello";
 }
 

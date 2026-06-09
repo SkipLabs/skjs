@@ -1,5 +1,5 @@
 export function array<T>(...elts: T[]): Array<T> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return elts;
 }
 

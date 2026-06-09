@@ -2,7 +2,7 @@ function destructAlgebraic(
   x: { kind: "num"; f: number } | { kind: "str"; f: string },
 ): number {
   const { f } = x;
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return f;
 }
 

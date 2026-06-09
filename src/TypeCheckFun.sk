@@ -142,9 +142,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           defaultExpr.pos,
-          "Default value doesn't have the expected type",
+          "Type of default value is not assignable to the parameter's type",
           this.expr(tcenv, defaultExpr, true),
           paramType,
+          TSCode(2322),
         );
         tcenv.!scope = savedScope
       };

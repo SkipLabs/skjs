@@ -77,7 +77,7 @@ function testStringIndexOnUnion(x: Array<number> | Obj): string | undefined {
 function testLValueIndexOnTupleUnion(
   x: [number, number] | { [k: number]: string },
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x[0] = 42;
 }
 
@@ -86,7 +86,7 @@ function testLValueMultiLiteralKey(
   obj: { a: number; b: string },
   key: "a" | "b",
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   obj[key] = 42;
 }
 
@@ -140,7 +140,7 @@ function testIntersectionObjects(
 ): Obj & Obj2 {
   // This tests that intersection of (Array<number> | Obj) & (Array<string> | Obj2)
   // should give us (never | {name: string, value: number, id: number})
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return z;
 }
 
@@ -170,7 +170,7 @@ function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
 // Spreading array from union
 function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
   // @skjs-expect-error Invalid iterable type for spread
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return [...x];
 }
 
@@ -214,13 +214,13 @@ function testObjectSubtypeOfUnion(obj: Obj): Array<number> | Obj {
 
 // Union should not be subtype of just Array
 function testUnionNotSubtypeOfArray(x: Array<number> | Obj): Array<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
 // Union should not be subtype of just Object
 function testUnionNotSubtypeOfObject(x: Array<number> | Obj): Obj {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 

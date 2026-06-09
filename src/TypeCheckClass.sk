@@ -192,9 +192,10 @@ extension class TypeChecker {
             this.checkSubType(
               tcenv,
               e.pos,
-              "Invalid assignment",
+              "Type of field initializer is not assignable to the field's declared type",
               this.expr(tcenv, e, true),
               type,
+              TSCode(2322),
             )
           }
         }
@@ -312,9 +313,10 @@ extension class TypeChecker {
       this.checkSubType(
         tcenv,
         fdPos,
-        "Invalid initialization",
+        "Constructor does not initialize all fields to their declared types",
         objType,
         fullType,
+        TSCode(2322),
       )
     };
   }

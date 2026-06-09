@@ -40,7 +40,7 @@ function readonlyArrayIsCovariant(dogs: readonly Dog[]): readonly Animal[] {
 function readonlyArrayIsNotContravariant(
   animals: readonly Animal[],
 ): readonly Dog[] {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return animals;
 }
 
@@ -51,7 +51,7 @@ function arrayIsSubtypeOfReadonlyArray(dogs: Dog[]): readonly Dog[] {
 
 // readonly T[] is not a subtype of Array<T>
 function readonlyArrayIsNotSubtypeOfArray(dogs: readonly Dog[]): Dog[] {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return dogs;
 }
 

@@ -12,6 +12,6 @@ class MyClass {
 }
 function test(): void {
   const obj = new MyClass();
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   obj.value = 10;
 }

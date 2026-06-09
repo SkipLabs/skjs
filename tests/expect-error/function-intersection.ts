@@ -106,13 +106,13 @@ function testSubtypeIntersection(): void {
 
 // Test 3: Intersection with different incompatible return types should be empty
 function testDifferentReturnTypes(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: DifferentReturnTypesInter = returnString;
 }
 
 // Test 4: Intersection with different parameter types should be empty
 function testDifferentParamTypes(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: DifferentParamTypesInter = returnString;
 }
 
@@ -125,7 +125,7 @@ function testDifferentParamCounts(): void {
 
 // Test 6: Can assign function with more params to intersection
 function testMoreParamsToIntersection(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: DifferentParamCountsInter = twoParamsStrings;
 }
 
@@ -133,7 +133,7 @@ function testMoreParamsToIntersection(): void {
 
 // Test 7: Intersection with optional parameters
 function testOptionalParamIntersection(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter1: OptionalParamInter = withOptional;
 }
 
@@ -146,7 +146,7 @@ function testNoOptionalToIntersection(): void {
 
 // Test 9: Intersection with rest parameters
 function testRestParamIntersection(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter1: RestParamInter = withRest;
 }
 
@@ -159,7 +159,7 @@ function testNoRestToIntersection(): void {
 
 // Test 11: Parameter contravariance - intersection takes less specific param (Animal)
 function testParamContravarianceIntersection(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: ParamContravarianceInter = acceptDog;
 }
 
@@ -175,7 +175,7 @@ function testReturnCovarianceIntersection(): void {
 
 // Test 14: Cannot assign less specific return type to intersection
 function testCannotAssignLessSpecificReturn(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: ReturnCovarianceInter = returnAnimalType;
 }
 
@@ -183,7 +183,7 @@ function testCannotAssignLessSpecificReturn(): void {
 
 // Test 15: Triple intersection with incompatible return types
 function testTripleIntersection(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: TripleInter = returnString;
 }
 
@@ -200,13 +200,13 @@ function testIntersectionInObject(): void {
 
 // Test 17: Intersection with void return
 function testIntersectionWithVoid(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: IntersectionWithVoid = returnsVoid;
 }
 
 // Test 18: Intersection with void should be empty
 function testIntersectionWithVoidEmpty(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: IntersectionWithVoid = returnString;
 }
 
@@ -214,14 +214,14 @@ function testIntersectionWithVoidEmpty(): void {
 
 // Test 19: Intersection of incompatible return types is never
 function testCannotExtractBranch(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: InterF1F2 = returnString;
   const f1: F1 = inter;
 }
 
 // Test 20: Intersection with never is never - can't assign to never
 function testIntersectionWithNever(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: IntersectionWithNever = returnString;
 }
 
@@ -235,7 +235,7 @@ function testIntersectionDifferentArities1(): void {
 }
 
 function testIntersectionDifferentArities2(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: IntersectionDifferentArities = returnString;
 }
 
@@ -247,7 +247,7 @@ function wrongFn1(_x: string): string {
 }
 
 function testIncompatibleParamTypes(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: IntersectionIncompatible1 = wrongFn1;
 }
 
@@ -257,7 +257,7 @@ function wrongReturn(_x: number): number {
 }
 
 function testIncompatibleReturnTypes(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: IntersectionIncompatible2 = wrongReturn;
 }
 
@@ -267,13 +267,13 @@ function wrongParam(_x: Animal): string {
 }
 
 function testIncompatibleDogCat(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: IntersectionIncompatible3 = wrongParam;
 }
 
 // Test 25: Union of intersections
 function testUnionOfIntersections(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const union: UnionOfInters = returnString;
 }
 
@@ -281,7 +281,7 @@ function testUnionOfIntersections(): void {
 function f1Nested(_fn: Inner1): void {}
 
 function testNestedIntersection(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: NestedInter = f1Nested;
 }
 
@@ -301,7 +301,7 @@ function wrongFn2(_x: Dog): Animal {
 }
 
 function testWrongVarianceInIntersection(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inter: WrongVarianceInter = wrongFn2;
 }
 

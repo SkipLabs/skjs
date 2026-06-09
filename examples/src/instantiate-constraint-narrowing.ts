@@ -57,7 +57,7 @@ export function instantiateNestedGenericShouldNotClose(): string {
   // which instantiates the constrained alias with an inference type variable.
   // @skjs-expect-error Invalid call
   const r = idBox(b);
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return r.v;
 }
 

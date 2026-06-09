@@ -77,7 +77,7 @@ function check3(t1: [number, boolean]): boolean {
 // Mutable tuples are invariant in their element types, so a union of
 // distinct element types does not subtype a pointwise-unioned tuple.
 function check4(t1: [number] | [boolean]): [number | boolean] {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return t1;
 }
 
@@ -99,7 +99,7 @@ function checkTuple(tuple: [number, string]): [number, string] {
 function checkTuple2(
   tuple: [number, string] | [string, number],
 ): [number | string, number | string] {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return tuple;
 }
 
@@ -223,14 +223,14 @@ function checkNestedTypeIntersection(obj: NestedType1 & NestedType2): {
   a: { b: { c: number; d: string } };
 } {
   // Would be correct if the objects were readonly
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return obj;
 }
 
 function checkNestedType2(obj: NestedType1 | NestedType2): {
   a: { b: { c?: number; d?: string } };
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return obj;
 }
 

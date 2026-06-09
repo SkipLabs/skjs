@@ -13,12 +13,12 @@ function stringIndexDotAccess(x: StringIndex): number | undefined {
 }
 
 function stringIndexBracketMissUndefined(x: StringIndex): number {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x["a"];
 }
 
 function stringIndexDotMissUndefined(x: StringIndex): number {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x.a;
 }
 
@@ -33,7 +33,7 @@ function numberIndexBracketAccess(x: NumberIndex): string | undefined {
 }
 
 function numberIndexBracketMissUndefined(x: NumberIndex): string {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x[0];
 }
 
@@ -103,7 +103,7 @@ function mixedNumberIndexAccess(x: MixedNumberIndex): boolean | undefined {
 }
 
 function mixedNumberIndexMissUndefined(x: MixedNumberIndex): boolean {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x[0];
 }
 
@@ -116,7 +116,7 @@ function assignObjectToStringIndex(): void {
 }
 
 function assignBadObjectToStringIndex(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const x: StringIndex = { a: 1, b: "oops" };
 }
 
@@ -340,7 +340,7 @@ interface NumberIdxNum {
 
 // TS: number-indexed NOT assignable to string-indexed (missing string index)
 function numIdxToStrIdx(n: NumberIdxNum): StringIdxNum {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return n;
 }
 
@@ -360,13 +360,13 @@ interface StringIdxWide {
 // Narrow value type assignable to wide value type
 function narrowToWide(s: StringIdxNum): StringIdxWide {
   // FIXME: TS accepts this (number is subtype of number | string)
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return s;
 }
 
 // Wide value type NOT assignable to narrow value type
 function wideToNarrow(w: StringIdxWide): StringIdxNum {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return w;
 }
 
@@ -446,7 +446,7 @@ function nonConformingDynamicStringKeyTooNarrow(
   x: NonConformingStrIndex,
   k: string,
 ): boolean | undefined {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x[k];
 }
 
@@ -516,7 +516,7 @@ function nonFiniteNumberKeyTooNarrow(
   x: NonFiniteNumKeyField,
   k: number,
 ): boolean | undefined {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x[k];
 }
 
@@ -547,7 +547,7 @@ function nonFiniteNumberKeyTooNarrow(
 function numericFieldTypeToNumberIndex(x: { 0: number }): {
   [k: number]: number;
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -555,7 +555,7 @@ function numericFieldTypeToNumberIndex(x: { 0: number }): {
 function nonFiniteFieldTypeToNumberIndex(x: { Infinity: number }): {
   [k: number]: number;
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -564,7 +564,7 @@ function nonFiniteFieldTypeToNumberIndex(x: { Infinity: number }): {
 function nonNumericFieldTypeToNumberIndex(x: { abc: string }): {
   [k: number]: number;
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -573,7 +573,7 @@ function nonNumericFieldTypeToNumberIndex(x: { abc: string }): {
 function namedFieldTypeToStringIndex(x: { a: number }): {
   [k: string]: number;
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
@@ -592,7 +592,7 @@ function writeNonConformingFieldRejected(
   x: { a: number; [k: string]: boolean },
   k: string,
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x[k] = true;
 }
 
@@ -601,7 +601,7 @@ function writeConformingWrongType(
   x: { a: number; [k: string]: number },
   k: string,
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x[k] = "no";
 }
 
@@ -617,7 +617,7 @@ function writeNumberKeyReachesNumericField(
   x: { 0: number; [k: number]: boolean },
   n: number,
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x[n] = true;
 }
 
@@ -636,7 +636,7 @@ function writeBlockedByReadonlyField(
   x: { readonly version: string; [k: string]: string },
   k: string,
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x[k] = "v";
 }
 
@@ -671,7 +671,7 @@ function symGeneralReadTooNarrow(
   x: { [symA]: number; [k: symbol]: boolean },
   s: symbol,
 ): boolean | undefined {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x[s];
 }
 
@@ -697,7 +697,7 @@ function symGeneralWriteRejected(
   x: { [symA]: number; [k: symbol]: boolean },
   s: symbol,
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x[s] = true;
 }
 

@@ -9,7 +9,7 @@ function testAssign(): void {
   const ok: (x: string) => void = wide;
   ok("hello");
 
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const bad: (x: string | number) => void = narrow;
   bad(1);
 }
@@ -51,7 +51,7 @@ function testObjectUnion(): void {
   const ok: (x: { a: string }) => void = wide;
   ok({ a: "ok" });
 
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const bad: (x: { a: string } | { b: number }) => void = narrow;
   bad({ b: 1 });
 }

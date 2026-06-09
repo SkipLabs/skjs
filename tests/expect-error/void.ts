@@ -13,7 +13,7 @@ function returningVoid4(): void {
 }
 
 function returningVoid5(): void {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return undefined;
 }
 
@@ -22,20 +22,20 @@ function returningVoid6(): void {
 }
 
 function returningVoid7(): void {
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return null;
 }
 
 const x: void = returningVoid();
 
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x2: void = undefined;
 
-// @ts-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x3: void = {};
 
 // @skjs-expect-error Invalid type for constant, only primitive types (not objects) are allowed
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x4: () => void = () => null;
 
 // @skjs-expect-error Type cannot be accessed
@@ -76,19 +76,19 @@ const x12: number | void = returningVoidOrUndefined() ?? 0;
 // @skjs-expect-error Invalid operation on type void
 const x13: number | void | null = returningVoidOrNull() ?? 0;
 
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 // @ts-expect-error Invalid ||
 const x14: number | undefined = returningVoid() || 0;
 
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
 // @skjs-expect-error Invalid ||
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x15: number | undefined = returningVoidOrNumber() || 0;
 
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 // @ts-expect-error Invalid ||
 const x16: number | undefined = returningVoidOrUndefined() || 0;
 
-// @skjs-expect-error Invalid definition: value type is not compatible with type annotation
+// @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 // @ts-expect-error Invalid ||
 const x17: number | void | null = returningVoidOrNull() || 0;
 
@@ -136,8 +136,8 @@ function invalidNullishCoalescing<T>(value: void | T): void | T | null {
 }
 
 function invalidLogicalOr<T>(value: void | T): T {
-  // @skjs-expect-error Invalid return type
   // @skjs-expect-error Invalid ||
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return value || null;
 }
 

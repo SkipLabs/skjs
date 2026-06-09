@@ -11,7 +11,7 @@ function invalidReturnInFinally(): number {
   try {
     return 1;
   } finally {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return "invalid";
   }
 }

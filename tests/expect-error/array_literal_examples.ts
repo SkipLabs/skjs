@@ -66,7 +66,7 @@ function tupleThenArrayUse(): void {
 function arrayThenTupleUse(): void {
   const values = [1, 2];
   takesArray(values);
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const tuple: [number, number] = values;
 }
 
@@ -107,7 +107,7 @@ function indexRefinesArray(): void {
   if (v < 0) {
     return;
   }
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const tuple: [number, number] = values;
 }
 
@@ -122,7 +122,7 @@ function methodRefinesArray(): void {
   if (first < 0) {
     return;
   }
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const tuple: [number, number] = values;
 }
 
