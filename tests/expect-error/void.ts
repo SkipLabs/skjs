@@ -77,19 +77,19 @@ const x12: number | void = returningVoidOrUndefined() ?? 0;
 const x13: number | void | null = returningVoidOrNull() ?? 0;
 
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
-// @ts-expect-error Invalid ||
+// @skjs-expect-error Operand of '||' must be of type 'boolean'
 const x14: number | undefined = returningVoid() || 0;
 
-// @skjs-expect-error Invalid ||
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
+// @skjs-expect-error Operand of '||' must be of type 'boolean'
 const x15: number | undefined = returningVoidOrNumber() || 0;
 
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
-// @ts-expect-error Invalid ||
+// @skjs-expect-error Operand of '||' must be of type 'boolean'
 const x16: number | undefined = returningVoidOrUndefined() || 0;
 
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
-// @ts-expect-error Invalid ||
+// @skjs-expect-error Operand of '||' must be of type 'boolean'
 const x17: number | void | null = returningVoidOrNull() || 0;
 
 function unsafeInTypescript(
@@ -136,8 +136,8 @@ function invalidNullishCoalescing<T>(value: void | T): void | T | null {
 }
 
 function invalidLogicalOr<T>(value: void | T): T {
-  // @skjs-expect-error Invalid ||
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error Operand of '||' must be of type 'boolean'
   return value || null;
 }
 
@@ -218,7 +218,7 @@ const x26: number = returningVoid() % 5;
 // Additional operations that should be disallowed on void
 
 function testConditionalWithVoid(): number {
-  // @ts-expect-error Invalid ? condition
+  // @skjs-expect-error A ternary condition must be of type 'boolean'
   return returningVoid() ? 1 : 0;
 }
 
