@@ -568,7 +568,7 @@ fun validateTsConfigDiags(
         actuals = lineDiags
           .map(d -> d.message.trimMessage(true))
           .collect(SortedSet);
-        if (actuals != ref.expectedErrors) {
+        if (actuals != ref.expectedMessages) {
           errors.push(
             SKTest.ExpectationError(
               `${configPath}:${actualLine} Wrong tsconfig diagnostic`,

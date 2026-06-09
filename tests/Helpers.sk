@@ -86,7 +86,7 @@ extension class .String {
 
 class ExpectError{
   severity: SKJS.Severity,
-  expectedErrors: SortedSet<String>,
+  expectedMessages: SortedSet<String>,
   expectedLineNAnnotations: Map<Int, String>,
 } extends ReferenceError {
   fun validate(
@@ -95,9 +95,9 @@ class ExpectError{
     fileName: SKJS.FPath,
     errors: Sequence<SKJS.Error>,
   ): ?SKTest.ExpectationError {
-    if (this.expectedErrors.size() > 0) {
+    if (this.expectedMessages.size() > 0) {
       actuals = errors.map(errorToExpectMessage).collect(SortedSet);
-      if (actuals != this.expectedErrors) {
+      if (actuals != this.expectedMessages) {
         // The same validate() runs for both severities (it is called once per
         // severity with the matching diagnostics), so label which one this is.
         return Some(
@@ -113,14 +113,14 @@ class ExpectError{
     // is present. Continuation lines are checked against the first reported error
     // on that source line.
     if (!this.expectedLineNAnnotations.isEmpty()) {
-      if (this.expectedErrors.size() != 1) {
+      if (this.expectedMessages.size() != 1) {
         return Some(
           SKTest.ExpectationError(
             `${fileName}:${
               this.line
             } @skjs-expect-error-lineN requires exactly one @skjs-expect-error`,
             "(1 @skjs-expect-error annotation)",
-            `(${this.expectedErrors.size()} @skjs-expect-error annotations)`,
+            `(${this.expectedMessages.size()} @skjs-expect-error annotations)`,
           ),
         )
       };
@@ -144,7 +144,7 @@ class ExpectError{
   }
 
   fun getMessage(): String {
-    `${this.expectedErrors.toArray().join(" / ")}`
+    `${this.expectedMessages.toArray().join(" / ")}`
   }
 }
 
@@ -433,7 +433,7 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
         ExpectError{
           line => group.errorLine,
           severity => SKJS.SeverityError(),
-          expectedErrors,
+          expectedMessages => expectedErrors,
           expectedLineNAnnotations => expectedLineNAnnotations.chill(),
         },
       )
@@ -443,7 +443,7 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
         ExpectError{
           line => group.errorLine,
           severity => SKJS.SeverityWarning(),
-          expectedErrors => expectedWarnings,
+          expectedMessages => expectedWarnings,
           expectedLineNAnnotations => Map[],
         },
       )
