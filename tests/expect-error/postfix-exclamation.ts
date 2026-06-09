@@ -331,19 +331,19 @@ function testMethodCallOnOptionalProperty(x: { s?: string }): boolean {
 
 function testArrayMapNonNull(x: number[] | null): number[] {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error Missing type annotation
+  // @skjs-expect-error A parameter must have an explicit type annotation
   return x!.map((n) => n * 2);
 }
 
 function testArrayFilterNonNull(x: number[] | null): number[] {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error Missing type annotation
+  // @skjs-expect-error A parameter must have an explicit type annotation
   return x!.filter((n) => n > 0);
 }
 
 function testArrayReduceNonNull(x: number[] | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error Missing type annotation
+  // @skjs-expect-error A parameter must have an explicit type annotation
   return x!.reduce((acc, n) => acc + n, 0);
 }
 
@@ -718,8 +718,8 @@ function testCallingNonFunction(x: number | null): number {
 // Using ! on array with wrong method
 function testWrongArrayMethod(x: number[] | null): string {
   // TODO: Invalid return type
-  // @skjs-expect-error Missing type annotation
   // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error A parameter must have an explicit type annotation
   return x!.map((n) => n * 2);
 }
 

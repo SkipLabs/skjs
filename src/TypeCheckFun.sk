@@ -63,6 +63,7 @@ extension class TypeChecker {
         | Some(optionalPos) ->
           tcenv.error(
             Array[(optionalPos, "A rest parameter cannot be optional")],
+            TSCode(1047),
           )
         };
         param.default match {
@@ -72,6 +73,7 @@ extension class TypeChecker {
             Array[
               (defaultExpr.pos, "A rest parameter cannot have an initializer"),
             ],
+            TSCode(1048),
           )
         };
         if (i != params.size() - 1) {
@@ -79,6 +81,7 @@ extension class TypeChecker {
             Array[
               (restPos, "A rest parameter must be last in a parameter list"),
             ],
+            TSCode(1014),
           )
         };
         param.type.each(paramType ->
@@ -93,7 +96,13 @@ extension class TypeChecker {
       | None() -> void
       };
       paramType = param.type match {
-      | None() -> fatalError(Array[(param.pos, "Missing type annotation")])
+      | None() ->
+        fatalError(
+          Array[
+            (param.pos, "A parameter must have an explicit type annotation"),
+          ],
+          TSCode(7006),
+        )
       | Some(ty) -> this.normalize(tcenv.subst, ty)
       };
       param.isRest.each(_ ->
@@ -106,12 +115,16 @@ extension class TypeChecker {
       ) {
         tcenv.error(
           Array[
-            (param.pos, "This parameter is not optional"),
+            (
+              param.pos,
+              "A required parameter cannot follow an optional parameter",
+            ),
             (
               params[i - 1].pos,
               "It appears after this parameter that is optional",
             ),
           ],
+          TSCode(1016),
         )
       };
       param.optional match {
@@ -231,11 +244,17 @@ extension class TypeChecker {
     this.getFunBody(subst.context, fd) match {
     | FDBNone() ->
       if (thisTypeOpt is Some((CKClass(), _))) {
-        subst.error(Array[(fdPos, "Missing definition")])
+        subst.error(
+          Array[(fdPos, "Method implementation is missing")],
+          TSCode(2391),
+        )
       }
     | FDBSome(body) ->
       if (thisTypeOpt is Some((CKInterface(), _))) {
-        subst.error(Array[(fdPos, "An interface cannot implement a method")])
+        subst.error(
+          Array[(fdPos, "An interface method cannot have an implementation")],
+          TSCode(1183),
+        )
       };
       this.retType match {
       | None() -> void
@@ -244,7 +263,13 @@ extension class TypeChecker {
         term = StmtTermination::block(tcenv, body);
         if (term.mayFallthrough && !this.isVoid(tcenv, this.isAsync, retType)) {
           subst.error(
-            Array[(fdPos, "This function may not always return a value")],
+            Array[
+              (
+                fdPos,
+                "Not all code paths return a value, and the return type does not include 'undefined'",
+              ),
+            ],
+            TSCode(2366),
           )
         }
       }
