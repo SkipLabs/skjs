@@ -219,14 +219,14 @@ fun validateExpectErrorComments(
       checker,
       fileName,
       actualErrors,
-      refs.iterator().filter(r -> !r.isWarning),
+      refs.iterator().filter(r -> r.severity is SKJS.SeverityError()),
     ).concat(
       validateReferenceErrors(
         context,
         checker,
         fileName,
         typeWarnings,
-        refs.iterator().filter(r -> r.isWarning),
+        refs.iterator().filter(r -> r.severity is SKJS.SeverityWarning()),
       ),
     )
   | doUpdate @ UMDoUpdate _ ->

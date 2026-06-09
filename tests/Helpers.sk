@@ -85,7 +85,7 @@ extension class .String {
 }
 
 class ExpectError{
-  isWarning: Bool,
+  severity: SKJS.Severity,
   expectedErrors: SortedSet<String>,
   expectedLineNAnnotations: Map<Int, String>,
 } extends ReferenceError {
@@ -100,10 +100,9 @@ class ExpectError{
       if (actuals != this.expectedErrors) {
         // The same validate() runs for both severities (it is called once per
         // severity with the matching diagnostics), so label which one this is.
-        kind = if (this.isWarning) "warning" else "error";
         return Some(
           SKTest.ExpectationError(
-            `${fileName}:${this.line} Wrong ${kind} message(s)`,
+            `${fileName}:${this.line} Wrong ${this.severity.word()} message(s)`,
             this.getMessage(),
             actuals.toArray().join(" / "),
           ),
@@ -433,7 +432,7 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
       result.push(
         ExpectError{
           line => group.errorLine,
-          isWarning => false,
+          severity => SKJS.SeverityError(),
           expectedErrors,
           expectedLineNAnnotations => expectedLineNAnnotations.chill(),
         },
@@ -443,7 +442,7 @@ fun findExpectErrors(contents: String): readonly Vector<ExpectError> {
       result.push(
         ExpectError{
           line => group.errorLine,
-          isWarning => true,
+          severity => SKJS.SeverityWarning(),
           expectedErrors => expectedWarnings,
           expectedLineNAnnotations => Map[],
         },
