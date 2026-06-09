@@ -470,6 +470,78 @@ extension class TypeChecker {
 
      Try to keep in synch with TEnv#keyOfType
   */
+  // Synthesize the type of `.call` / `.apply` / `.bind` accessed on a function
+  // value, deriving it from the underlying call signature `f`:
+  //   f.call(thisArg, ...params) => R
+  //   f.apply(thisArg, [params]) => R
+  //   f.bind(thisArg)            => (the function with its `this` removed)
+  // `.bind`'s result is `OmitThisParameter<f>` — just `f` with `thisParam`
+  // cleared. Scoped to a single non-generic call signature with only required
+  // positional parameters; returns None (so the access falls through to
+  // "Unbound field") for generic or optional/rest-param functions, which would
+  // need the full variadic CallableFunction signatures TS uses. Partial-
+  // application `.bind(thisArg, ...args)` is not modeled yet.
+  fun maybeFunctionMethod(
+    tcenv: mutable TCEnv,
+    obj: TObject,
+    fieldName: String,
+    pos: PosRange,
+  ): ?TType {
+    if (fieldName != "call" && fieldName != "apply" && fieldName != "bind") {
+      return None()
+    };
+    tfuns = obj.maybeGetCall(tcenv.subst, this) match {
+    | Some((_, tf)) -> tf
+    | None() -> return None()
+    };
+    f = tfuns.fun_;
+    if (
+      !f.tparams.isEmpty() ||
+      !f.optionalParams.isEmpty() ||
+      f.spreadParam.isSome()
+    ) {
+      return None()
+    };
+    thisType = f.thisParam.default(TType::top(pos));
+    synth = if (fieldName == "call") {
+      TFun(
+        Array[],
+        None(),
+        Array[thisType].concat(f.params),
+        Array[],
+        None(),
+        f.retType,
+        f.cgNodes,
+      )
+    } else if (fieldName == "apply") {
+      argsTuple = TType::tuple(pos, f.params, true);
+      TFun(
+        Array[],
+        None(),
+        Array[thisType, argsTuple],
+        Array[],
+        None(),
+        f.retType,
+        f.cgNodes,
+      )
+    } else {
+      bound = f with {thisParam => None(), thisParamImplicit => false};
+      boundTy = TType::single(
+        TObject::createCall(TFuns::singleFun(bound, pos)),
+      );
+      TFun(
+        Array[],
+        None(),
+        Array[thisType],
+        Array[],
+        None(),
+        boundTy,
+        f.cgNodes,
+      )
+    };
+    Some(TType::single(TObject::createCall(TFuns::singleFun(synth, pos))))
+  }
+
   fun get(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -627,6 +699,18 @@ extension class TypeChecker {
                     ),
                   );
                   false
+                | None() if (!isLValue) ->
+                  this.maybeFunctionMethod(
+                    tcenv,
+                    obj,
+                    fieldLit.val,
+                    fieldLit.pos,
+                  ) match {
+                  | Some(methodTy) ->
+                    addResultCase(methodTy);
+                    false
+                  | None() -> true
+                  }
                 | None() -> true
                 }
               )
