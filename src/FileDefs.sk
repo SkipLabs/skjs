@@ -156,13 +156,27 @@ class DefMap(fileDefsDir: S.LHandle<FPath, FileDefs>) extends IDefMap {
       d match {
       | TopLevelFunDef{name => fdName} ->
         tcenvb.error(
-          Array[(fdName.getPos(), `TODO: DefMap#dot while getting ${name}`)],
+          Array[
+            (
+              fdName.getPos(),
+              `Qualified name access ('${name}') is not yet supported by SKJS`,
+            ),
+          ],
+          SKJSCode(9003),
         )
       | TypeDef{name => Name(pos, _)}
       | Class{name => Name(pos, _)}
       | Enum(_isConst, Name(pos, _), _fields)
       | FDVar(_kind, Name(pos, _), _type, _value) ->
-        tcenvb.error(Array[(pos, `TODO: DefMap#dot while getting ${name}`)])
+        tcenvb.error(
+          Array[
+            (
+              pos,
+              `Qualified name access ('${name}') is not yet supported by SKJS`,
+            ),
+          ],
+          SKJSCode(9003),
+        )
       | FDNamespace(nsTypeOnly, _posOpt, nsDefs) ->
         getTypeOnly = typeOnly || nsTypeOnly;
         this.getInDefs(tcenvb, nsDefs, name, getTypeOnly, result)
@@ -533,7 +547,10 @@ mutable class FileDefsState private {
       | ImportExpr _
       | ExportImport _ ->
         this.fileErrors.push(
-          NamingError(Array[(def.pos, "TODO: unsupported export")]),
+          NamingError(
+            Array[(def.pos, "This export form is not yet supported by SKJS")],
+            SKJSCode(9004),
+          ),
         )
       }
     };
@@ -610,20 +627,44 @@ mutable class FileDefsState private {
           this.fileErrors.push(
             NamingError(
               Array[
-                (varDef.pat.pos, "TODO: cannot have exports based on names"),
+                (
+                  varDef.pat.pos,
+                  "Exporting a destructuring binding is not yet supported by SKJS",
+                ),
               ],
+              SKJSCode(9005),
             ),
           )
         }
       }
     | Global(defs) ->
       if (defs.size() > 0) {
-        this.fileErrors.push(NamingError(Array[(defs[0].pos, "TODO: global")]))
+        this.fileErrors.push(
+          NamingError(
+            Array[
+              (
+                defs[0].pos,
+                "'declare global' blocks are not yet supported by SKJS",
+              ),
+            ],
+            SKJSCode(9006),
+          ),
+        )
       } else {
         internal_error("TODO: global")
       }
     | Module(Name(pos, _), _defsOpt) ->
-      this.fileErrors.push(NamingError(Array[(pos, "TODO: module")]))
+      this.fileErrors.push(
+        NamingError(
+          Array[
+            (
+              pos,
+              "Namespace ('module') declarations are not yet supported by SKJS",
+            ),
+          ],
+          SKJSCode(9007),
+        ),
+      )
     }
   }
 

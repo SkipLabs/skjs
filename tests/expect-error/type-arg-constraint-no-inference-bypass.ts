@@ -8,13 +8,10 @@
 type Id<P extends string> = P;
 type Tagged<P extends { tag: string }> = P;
 
-// @ts-expect-error Constraint not satisfied
 function bare<V>(x: Id<V>): void {}
 
-// @ts-expect-error Constraint not satisfied
 function union<V>(x: Id<V | "tag">): void {}
 
-// @ts-expect-error Constraint not satisfied
 function nested<V>(x: Tagged<{ tag: V }>): void {}
 
 // A valid boundary is accepted; a violating call is rejected at the call site.

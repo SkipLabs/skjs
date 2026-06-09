@@ -41,7 +41,7 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
 
 #### 4b. Abstract Classes Not Supported
 - **Rule**: Abstract classes and abstract method modifiers are not implemented
-- **Error**: "TODO: support for method modifiers (encountered abstract)"
+- **Error**: "Method modifier 'abstract' is not yet supported by SKJS"
 - **Workaround**: Use regular classes with interfaces, or avoid abstract patterns
 
 #### 4c. Static Fields Must Be Readonly

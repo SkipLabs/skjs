@@ -50,7 +50,10 @@ extension class TypeChecker {
     params.mapWithIndex((i, param) -> {
       param.name.value match {
       | PVar(n) if (allowThis && i == 0 && n.value == "this") ->
-        fatalError(Array[(n.pos, "TODO: support this parameter")])
+        fatalError(
+          Array[(n.pos, "'this' parameters are not yet supported by SKJS")],
+          SKJSCode(9001),
+        )
       | _ -> checkPatternDoesNotContainThis(param.name)
       };
       param.isRest match {
@@ -183,9 +186,10 @@ extension class TypeChecker {
           Array[
             (
               modifier.pos,
-              `TODO: support for method modifiers (encountered ${modifier})`,
+              `Method modifier '${modifier}' is not yet supported by SKJS`,
             ),
           ],
+          SKJSCode(9002),
         )
       }
     };

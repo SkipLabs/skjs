@@ -138,7 +138,11 @@ base class TEnv{
       !this.instantiateAt = Some(name.pos);
       this.normalize(tcenvb, this.getTypeDefBody(tcenvb.context, ta))
     | Class _ -> this.new(subst, name, targs.targs)
-    | Enum _ -> fatalError(Array[(name.pos, "TODO: instantiate Enum")])
+    | Enum _ ->
+      fatalError(
+        Array[(name.pos, "Enum instantiation is not yet supported by SKJS")],
+        SKJSCode(9012),
+      )
     }
   }
 
@@ -541,9 +545,10 @@ base class TEnv{
               Array[
                 (
                   modifier.pos,
-                  `TODO: field modifier '${mod}' (TEnv#addFields)`,
+                  `Field modifier '${mod}' is not yet supported by SKJS`,
                 ),
               ],
+              SKJSCode(9008),
             )
           }
         };
@@ -839,8 +844,18 @@ base class TEnv{
     pos = typeAst.pos;
     typeAst.value match {
     | TABigIntLiteral(x) -> TType::single(TPrimValue::single(TBigInt(), x, pos))
-    | TAAssertIs _ -> fatalError(Array[(pos, "TODO assertIs")])
-    | TAAbstract _ -> fatalError(Array[(pos, "TODO abstract")])
+    | TAAssertIs _ ->
+      fatalError(
+        Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
+        SKJSCode(9013),
+      )
+    | TAAbstract _ ->
+      fatalError(
+        Array[
+          (pos, "The 'abstract' type modifier is not yet supported by SKJS"),
+        ],
+        SKJSCode(9014),
+      )
     | TAUniqueSymbol() ->
       if (isTopLevelConst) {
         // Each unique symbol gets a distinct type based on its position.
@@ -859,8 +874,18 @@ base class TEnv{
       } else {
         fatalError(Array[(pos, "unique symbol type cannot be used here")])
       }
-    | TAAsserts _ -> fatalError(Array[(pos, "TODO asserts")])
-    | TAIs _ -> fatalError(Array[(pos, "TODO is ")])
+    | TAAsserts _ ->
+      fatalError(
+        Array[(pos, "'asserts' type predicates are not yet supported by SKJS")],
+        SKJSCode(9013),
+      )
+    | TAIs _ ->
+      fatalError(
+        Array[
+          (pos, "Type predicates ('x is T') are not yet supported by SKJS"),
+        ],
+        SKJSCode(9015),
+      )
     | TAKeyOf(ty) ->
       subst = Subst::mcreate(tcenvb);
       targetType = this.normalize(tcenvb, ty);
@@ -873,10 +898,31 @@ base class TEnv{
       tfuns = this.normalizeFun(tcenvb, tyPos, tafun);
       TType::single(TObject::createNew(tfuns, pos))
     | TANew _ -> fatalError(Array[(pos, "Invalid new")])
-    | TAEmptyArray _ -> fatalError(Array[(pos, "TODO emptyArray")])
-    | TAInfer _ -> fatalError(Array[(pos, "TODO infer")])
-    | TATemplate _ -> fatalError(Array[(pos, "TODO template")])
-    | TAImport _ -> fatalError(Array[(pos, "TODO import")])
+    | TAEmptyArray _ ->
+      fatalError(
+        Array[
+          (
+            pos,
+            "Empty array/tuple type literals are not yet supported by SKJS",
+          ),
+        ],
+        SKJSCode(9016),
+      )
+    | TAInfer _ ->
+      fatalError(
+        Array[(pos, "The 'infer' keyword is not yet supported by SKJS")],
+        SKJSCode(9017),
+      )
+    | TATemplate _ ->
+      fatalError(
+        Array[(pos, "Template literal types are not yet supported by SKJS")],
+        SKJSCode(9018),
+      )
+    | TAImport _ ->
+      fatalError(
+        Array[(pos, "'import(...)' type syntax is not yet supported by SKJS")],
+        SKJSCode(9019),
+      )
     | TAReadonly(ro) ->
       ro.value match {
       | TAArray(ty) ->
@@ -911,8 +957,26 @@ base class TEnv{
         ); // TS1354
         this.normalize(tcenvb, ro)
       }
-    | TAExtends _ -> fatalError(Array[(pos, "TODO extends")])
-    | TAExtendsQuestion _ -> fatalError(Array[(pos, "TODO extendsQuestion")])
+    | TAExtends _ ->
+      fatalError(
+        Array[
+          (
+            pos,
+            "Conditional types ('T extends U ? X : Y') are not yet supported by SKJS",
+          ),
+        ],
+        SKJSCode(9020),
+      )
+    | TAExtendsQuestion _ ->
+      fatalError(
+        Array[
+          (
+            pos,
+            "Conditional types ('T extends U ? X : Y') are not yet supported by SKJS",
+          ),
+        ],
+        SKJSCode(9020),
+      )
     | TAStringLiteral(x) -> TType::single(TPrimValue::single(TString(), x, pos))
     | TANumLiteral(x) -> TType::single(TPrimValue::single(TNum(), x, pos))
     | TATypeOf(expr) -> this.typeOfExpr(tcenvb, expr)
@@ -1021,57 +1085,7 @@ base class TEnv{
         if (this.seenInstantiate.contains(n.value)) {
           !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
         };
-        normalizedTArgs = targs.map(x -> this.normalize(tcenvb, x));
-        // Validate each type argument against its parameter's constraint here,
-        // at the reference site, so constraints are enforced wherever a generic
-        // type appears (annotations, ambient declarations, interface/alias
-        // bodies, ...), not only when the type is later expanded during a
-        // subtyping comparison. A parameter's constraint may reference earlier
-        // parameters, so bind them on a scratch env as we go.
-        scratchEnv = this;
-        cstrSubst = Subst::mcreate(tcenvb);
-        for (i => tParam in tparams) {
-          if (i < normalizedTArgs.size()) {
-            tArg = normalizedTArgs[i];
-            tParam.constraint match {
-            | None() -> void
-            | Some(cstr) ->
-              cstrTy = scratchEnv.normalize(cstrSubst, cstr);
-              TType::isSub(cstrSubst.clone(), scratchEnv, tArg, cstrTy) match {
-              | STOk() -> void
-              | err @ STErrorOnTType _ ->
-                tcenvb.subtypingError(
-                  cstrSubst,
-                  scratchEnv,
-                  Array[
-                    (n.pos, "Constraint not satisfied"),
-                    (
-                      tArg.pos,
-                      `This is of type: ${prettyPrintType(
-                        false,
-                        tArg,
-                        cstrSubst,
-                        scratchEnv,
-                      )}`,
-                    ),
-                    (
-                      cstr.pos,
-                      `It does not implement: ${prettyPrintType(
-                        false,
-                        cstrTy,
-                        cstrSubst,
-                        scratchEnv,
-                      )}`,
-                    ),
-                  ],
-                  err,
-                )
-              }
-            };
-            !scratchEnv.bindings[tParam.name.value] = tArg
-          }
-        };
-        TType::inst(n, TArgs(normalizedTArgs))
+        TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
       }
     | TAUnion(ty1, ty2) ->
       subst = Subst::mcreate(tcenvb);
@@ -1090,7 +1104,13 @@ base class TEnv{
         this.normalize(tcenvb, ty2),
       ).withPos(pos)
     | taTuple @ TATuple _ -> this.normalizeTuple(tcenvb, pos, taTuple, false)
-    | TAGet _ -> fatalError(Array[(pos, "TODO TAGet")])
+    | TAGet _ ->
+      fatalError(
+        Array[
+          (pos, "Indexed access types ('T[K]') are not yet supported by SKJS"),
+        ],
+        SKJSCode(9021),
+      )
     }
   }
 
@@ -1106,12 +1126,28 @@ base class TEnv{
     types = tupleElts.map(ty ->
       ty match {
       | TEType(n, optional, x) ->
-        if (n is Some _) tcenvb.error(Array[(pos, "TODO named tuple")]);
+        if (n is Some _) {
+          tcenvb.error(
+            Array[(pos, "Named tuple elements are not yet supported by SKJS")],
+            SKJSCode(9022),
+          )
+        };
         if (optional is Some _) {
-          tcenvb.error(Array[(pos, "TODO optional element tuple")])
+          tcenvb.error(
+            Array[
+              (pos, "Optional tuple elements are not yet supported by SKJS"),
+            ],
+            SKJSCode(9023),
+          )
         };
         this.normalize(tcenvb, x)
-      | TESpread _ -> fatalError(Array[(pos, "TODO tuple spread")])
+      | TESpread _ ->
+        fatalError(
+          Array[
+            (pos, "Tuple rest/spread elements are not yet supported by SKJS"),
+          ],
+          SKJSCode(9024),
+        )
       }
     );
     TType::tuple(pos, types, isReadonly)
@@ -1775,7 +1811,7 @@ base class TEnv{
             Array[
               (
                 pos,
-                `TODO: keyof ${prettyPrintType(
+                `'keyof' is not yet supported by SKJS for type ${prettyPrintType(
                   false,
                   TType::single(stype),
                   subst,
@@ -1783,6 +1819,7 @@ base class TEnv{
                 )}`,
               ),
             ],
+            SKJSCode(9025),
           )
         }
       }

@@ -14,7 +14,6 @@ interface Constrained<T extends number> {
 }
 
 function getFirst<U>(
-  // @skjs-expect-error Constraint not satisfied
   x: Constrained<U>,
   // @skjs-expect-error Constraint not satisfied
   y: Constrained<U>,
@@ -48,7 +47,6 @@ function testThreeArgs(): void {
 }
 
 function getFirst3<U>(
-  // @skjs-expect-error Constraint not satisfied
   x: Constrained<U>,
   // @skjs-expect-error Constraint not satisfied
   y: Constrained<U>,

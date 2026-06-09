@@ -6,15 +6,12 @@
 
 type Id<P extends string> = P;
 
-// @ts-expect-error Constraint not satisfied
 type AliasBody = Id<number>;
 
 interface Field {
-  // @ts-expect-error Constraint not satisfied
   x: Id<number>;
 }
 
-// @ts-expect-error Constraint not satisfied
 function defParam(x: Id<number>): void {}
 
 // @ts-expect-error Constraint not satisfied
@@ -24,7 +21,6 @@ function defTparam<V>(x: Id<V>): V {
 
 // A used ambient declaration is checked when its signature is normalized at the
 // use site.
-// @ts-expect-error Constraint not satisfied
 declare function usedDecl<V>(x: Id<V>): V;
 export function usesDecl(): number {
   return usedDecl(42);

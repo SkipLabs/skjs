@@ -133,9 +133,10 @@ extension class TypeChecker {
               Array[
                 (
                   modifier.pos,
-                  `TODO: field modifier '${mod}' (TypeChecker#class_)`,
+                  `Field modifier '${mod}' is not yet supported by SKJS`,
                 ),
               ],
+              SKJSCode(9008),
             )
           }
         };
