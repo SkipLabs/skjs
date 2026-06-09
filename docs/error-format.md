@@ -12,7 +12,7 @@ Invalid return type
 File "path/to/file.ts", line 1, character 16-22:
 Type number
 File "path/to/file.ts", line 1, character 25-31:
-is not compatible with type string
+is not assignable to type string
 ```
 
 Each error is a sequence of `<position>\n<message>` pairs. Errors are separated by a blank line.
@@ -24,7 +24,7 @@ Compact format with `file:line:col` positions. The first message of each error s
 ```text
 path/to/file.ts:2:10: Invalid return type
   path/to/file.ts:1:16: Type number
-  path/to/file.ts:1:25: is not compatible with type string
+  path/to/file.ts:1:25: is not assignable to type string
 ```
 
 Errors are separated by a blank line.
@@ -92,7 +92,7 @@ Position = {
         "col": 25,
         "endCol": 31
       },
-      "message": "is not compatible with type string"
+      "message": "is not assignable to type string"
     }
   ]
 ]

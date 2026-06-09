@@ -71,7 +71,7 @@ function fromNullLiteralLocal(): void {
   c.push(n);
   // @skjs-expect-error Invalid call
   // @skjs-expect-error-line2 Type number
-  // @skjs-expect-error-line3 is not compatible with type null
+  // @skjs-expect-error-line3 is not assignable to type null
   // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <null | number>
   c.push(1);
 }
@@ -92,7 +92,7 @@ function fromUndefinedLiteralLocal(): void {
   c.push(u);
   // @skjs-expect-error Invalid call
   // @skjs-expect-error-line2 Type string
-  // @skjs-expect-error-line3 is not compatible with type undefined
+  // @skjs-expect-error-line3 is not assignable to type undefined
   // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <string | undefined>
   c.push("hello");
 }
@@ -134,9 +134,9 @@ function fromObjectField(): void {
   takeContainerObj(c);
   // @skjs-expect-error Invalid call
   // @skjs-expect-error-line2 Type 'hello'
-  // @skjs-expect-error-line3 is not compatible with type number
+  // @skjs-expect-error-line3 is not assignable to type number
   // @skjs-expect-error-line4 Type 'hello'
-  // @skjs-expect-error-line5 is not compatible with type number
+  // @skjs-expect-error-line5 is not assignable to type number
   // @skjs-expect-error-line6 Consider adding a type annotation, e.g., number | 'hello'
   // @skjs-expect-error-line7 Consider adding explicit type arguments, e.g., <{ x: number } | { x: 'hello' } | { x: number }>
   c.push({ x: "hello" });
