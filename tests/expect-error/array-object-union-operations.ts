@@ -169,8 +169,8 @@ function testMultipleObjectsGetLabel(x: Array<number> | Obj | Obj3): string {
 
 // Spreading array from union
 function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
-  // @skjs-expect-error Invalid iterable type for spread
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error Type is not iterable in a 'spread'
   return [...x];
 }
 
@@ -180,7 +180,7 @@ function testSpreadArrayFromUnion(x: Array<number> | Obj): Array<number> {
 
 // Iterating over union
 function testForOfOnUnion(x: Array<number> | Obj): void {
-  // @skjs-expect-error Invalid iterable type for for-of loop
+  // @skjs-expect-error Type is not iterable in a 'for-of loop'
   for (const item of x) {
     console.log(item);
   }
