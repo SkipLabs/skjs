@@ -108,7 +108,7 @@ function testArrowExprBody(): void {
 // Arrow without type annotation
 function testArrowNoAnnotation(): void {
   const arr: [number, string][] = [];
-  // @skjs-expect-error Missing type annotation
+  // @skjs-expect-error A parameter must have an explicit type annotation
   arr.map(([a, b]) => a);
 }
 
@@ -149,7 +149,7 @@ function testArrowOptionalAndDefault(): void {
 }
 
 // Required parameter cannot follow optional
-// @skjs-expect-error This parameter is not optional
+// @skjs-expect-error A required parameter cannot follow an optional parameter
 function requiredAfterOptional(x?: number, y: string): void {
   void x;
   void y;
@@ -157,7 +157,7 @@ function requiredAfterOptional(x?: number, y: string): void {
 
 // Required parameter cannot follow optional (in arrow)
 function testArrowRequiredAfterOptional(): void {
-  // @skjs-expect-error This parameter is not optional
+  // @skjs-expect-error A required parameter cannot follow an optional parameter
   const f = (x?: number, y: string): void => {
     void x;
     void y;

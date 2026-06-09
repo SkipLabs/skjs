@@ -33,7 +33,7 @@ declare function box1Helper(): Box<string>;
 
 // Non-ambient class still requires annotations on public fields.
 class RegularPublicNoType {
-  // @skjs-expect-error Type annotation expected for 'x'
-  // @skjs-expect-error Uninitialized field 'x'
+  // @skjs-expect-error Field 'x' has no initializer and is not assigned in the constructor
+  // @skjs-expect-error Member 'x' must have an explicit type annotation
   x;
 }

@@ -10,7 +10,7 @@ function testSimpleEmpty(x: number): void {
   }
 }
 
-// @skjs-expect-error This function may not always return a value
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function testEmptyCases(x: number): string {
   switch (x) {
     // @skjs-expect-error Fallthrough case in switch; add a 'break'
@@ -38,7 +38,7 @@ function testAllEmptyCases(x: number): void {
   }
 }
 
-// @skjs-expect-error This function may not always return a value
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function testMixedCases(x: string): number {
   switch (x) {
     case "a":

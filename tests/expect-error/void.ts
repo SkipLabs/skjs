@@ -49,13 +49,13 @@ const x7: boolean = returningVoid() === returningVoid();
 
 type t = void | undefined; // We may want an error here (see #76)
 
-// @skjs-expect-error This function may not always return a value
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function returningVoidOrNull(): void | null {}
 
-// @skjs-expect-error This function may not always return a value
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function returningVoidOrNumber(): void | number {}
 
-// @skjs-expect-error This function may not always return a value
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function returningVoidOrUndefined(): void | undefined {}
 
 // @ts-expect-error Type cannot be accessed
@@ -105,7 +105,7 @@ unsafeInTypescript(false, returningVoidOrNumber);
 
 /* With type parameters */
 
-// @skjs-expect-error This function may not always return a value
+// @skjs-expect-error Not all code paths return a value, and the return type does not include 'undefined'
 function returningGenericVoid<T>(): T | void {}
 
 function returningConstrainedVoid<T extends void>(): T {}

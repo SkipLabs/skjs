@@ -15,6 +15,7 @@ extension class TypeChecker {
               (fdPos, "Multiple constructor implementations are not allowed."),
               (existingConstructor.name.getPos(), "Previous implementation"),
             ],
+            TSCode(2392),
           )
         | None() -> !constructor = Some(fd)
         }
@@ -57,7 +58,10 @@ extension class TypeChecker {
     if (c.extends_.size() != 0) {
       isInterface = c.kind is CKInterface();
       if (c.extends_.size() > 1 && !isInterface) {
-        tcenvl.error(Array[(c.name.pos, "Cannot extend more than one class")])
+        tcenvl.error(
+          Array[(c.name.pos, "A class can only extend a single class")],
+          TSCode(1174),
+        )
       };
       for (ext in c.extends_) {
         ext.value match {
@@ -169,10 +173,16 @@ extension class TypeChecker {
             )
           };
           if (!isReadonly) {
-            tcenvl.error(Array[(field.pos, "Static fields must be readonly")])
+            tcenvl.error(
+              Array[(field.pos, "A static field must be marked 'readonly'")],
+              SKJSCode(2019),
+            )
           };
           field.optional.each(pos ->
-            tcenvl.error(Array[(pos, "Static fields cannot be optional")])
+            tcenvl.error(
+              Array[(pos, "A static field cannot be optional")],
+              SKJSCode(2020),
+            )
           );
           bindingName = field.name match {
           | FNNormal(n) -> Some(`${c.name.value}.${n.value}`)
@@ -192,9 +202,10 @@ extension class TypeChecker {
               Array[
                 (
                   field.pos,
-                  `Type annotation expected for '${field.name.getName()}'`,
+                  `Member '${field.name.getName()}' must have an explicit type annotation`,
                 ),
               ],
+              TSCode(7008),
             );
             None()
           | Some(ty) -> Some(this.normalize(subst, ty))
@@ -229,7 +240,15 @@ extension class TypeChecker {
                 name match {
                 | FNNormal(Name(_, methodName)) -> Some(methodName)
                 | _ ->
-                  tcenvl.error(Array[(name.getPos(), "Invalid method name")]);
+                  tcenvl.error(
+                    Array[
+                      (
+                        name.getPos(),
+                        "A method name must be a plain identifier",
+                      ),
+                    ],
+                    SKJSCode(1009),
+                  );
                   None()
                 }
               | ClassFieldValue _ -> None()
@@ -265,9 +284,10 @@ extension class TypeChecker {
                   Array[
                     (
                       field.pos,
-                      `Uninitialized field '${field.name.getName()}'`,
+                      `Field '${field.name.getName()}' has no initializer and is not assigned in the constructor`,
                     ),
                   ],
+                  TSCode(2564),
                 )
               }
             | Some(_) -> void
@@ -290,14 +310,24 @@ extension class TypeChecker {
     cstrSig = this.getFunSig(subst.context, fd);
     if (cstrSig.retType.i1 is Some _) {
       subst.error(
-        Array[(cstrSig.retType.i0, "Constructors don't have return types")],
+        Array[
+          (
+            cstrSig.retType.i0,
+            "A constructor cannot have a return type annotation",
+          ),
+        ],
+        TSCode(1093),
       );
     };
     for (modifier in fd.modifiers.modifiers) {
       subst.error(
         Array[
-          (modifier.pos, `Constructors cannot have modifier '${modifier}'`),
+          (
+            modifier.pos,
+            `'${modifier}' modifier cannot appear on a constructor`,
+          ),
         ],
+        TSCode(1089),
       );
     };
     fdPos = fd.name.getPos();
@@ -312,10 +342,17 @@ extension class TypeChecker {
     fd.isAsync match {
     | None() -> void
     | Some(asyncPos) ->
-      subst.error(Array[(asyncPos, "Constructors cannot be async")])
+      subst.error(
+        Array[(asyncPos, "'async' modifier cannot appear on a constructor")],
+        TSCode(1089),
+      )
     };
     this.getFunBody(subst.context, fd) match {
-    | FDBNone() -> subst.error(Array[(fdPos, "Missing definition")])
+    | FDBNone() ->
+      subst.error(
+        Array[(fdPos, "Constructor implementation is missing")],
+        TSCode(2391),
+      )
     | FDBSome(body) ->
       blockScope = this.block(tcenv, body);
       blockThisType = blockScope.get(Name(fdPos, "this"));
