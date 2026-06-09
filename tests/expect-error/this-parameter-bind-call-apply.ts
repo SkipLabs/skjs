@@ -49,3 +49,20 @@ function noThisCallWrong(): void {
   // @skjs-expect-error Invalid call
   noThis.call(ctx, 1);
 }
+
+// .call / .bind carry the function's optional and rest parameters.
+function optional(this: Ctx, a: number, b?: string): void {}
+function variadic(this: Ctx, a: number, ...rest: boolean[]): void {}
+
+function optionalRestOk(): void {
+  optional.call(ctx, 1);
+  optional.call(ctx, 1, "x");
+  variadic.call(ctx, 1, true, false);
+  const bound: (a: number, b?: string) => void = optional.bind(ctx);
+  bound(1);
+}
+
+function optionalCallWrongArg(): void {
+  // @skjs-expect-error Invalid call
+  optional.call(ctx, 1, 2);
+}

@@ -337,11 +337,11 @@ let tags = ['urgent' as const, 'priority' as const];
 - **`.call` / `.apply` / `.bind`**: A function value's `.call(thisArg, ...args)`
   and `.apply(thisArg, args)` check `thisArg` against the function's `this`;
   `.bind(thisArg)` returns the function with its `this` removed
-  (`OmitThisParameter`). These are synthesized from the call signature for
-  non-generic functions with required positional parameters; generic or
-  optional/rest-parameter functions still report "Unbound field" (the full
-  variadic `CallableFunction` signatures are not modeled). Partial-application
-  `.bind(thisArg, ...args)` is not modeled.
+  (`OmitThisParameter`). Synthesized from the call signature: `.call` and
+  `.bind` carry the function's optional and rest parameters; `.apply` models
+  only required positional params (its argument tuple is exact). Generic call
+  signatures report "Unbound field" (TS resolves them to `unknown` through
+  these methods), as does partial-application `.bind(thisArg, ...args)`.
 - **Verified by**: `tests/expect-error/this-parameter*.ts`
 
 ## Coding Guidelines for SKJS
