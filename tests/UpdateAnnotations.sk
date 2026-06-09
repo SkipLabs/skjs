@@ -765,6 +765,21 @@ fun testLineNValidation(): void {
     invariant_violation("Expected lineN without primary annotation to fail")
   };
 
+  // ExpectError.validate runs once per severity, so a mismatched warning
+  // expectation must be labelled "Wrong warning message(s)", not "error".
+  warnRef = findExpectErrors(
+    lines(Array["// @skjs-expect-warning Useless thing", "testFoo();"]),
+  )[0];
+  warnRef.validate(subst, tenv, fileName, emptyErrors) match {
+  | Some(err) ->
+    SKTest.expectTrue(
+      err.getMessage().contains("Wrong warning message(s)"),
+      `a warning mismatch should be labelled as a warning, got: ${err.getMessage()}`,
+    )
+  | None() ->
+    invariant_violation("Expected a mismatched warning expectation to fail")
+  };
+
   // A -lineN suffix is only supported on @skjs-expect-error. On any other kind
   // it must be rejected with a clear error rather than silently swallowed into
   // the diagnostic message (see findAnnotationLines). Assert on the guard's

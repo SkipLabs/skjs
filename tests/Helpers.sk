@@ -98,9 +98,12 @@ class ExpectError{
     if (this.expectedErrors.size() > 0) {
       actuals = errors.map(errorToExpectMessage).collect(SortedSet);
       if (actuals != this.expectedErrors) {
+        // The same validate() runs for both severities (it is called once per
+        // severity with the matching diagnostics), so label which one this is.
+        kind = if (this.isWarning) "warning" else "error";
         return Some(
           SKTest.ExpectationError(
-            `${fileName}:${this.line} Wrong error message(s)`,
+            `${fileName}:${this.line} Wrong ${kind} message(s)`,
             this.getMessage(),
             actuals.toArray().join(" / "),
           ),
