@@ -83,11 +83,16 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             parentName.pos,
-            "Invalid extension",
+            "This class incorrectly extends its base class",
             thisType,
             super,
+            TSCode(2415),
           )
-        | _ -> tcenvl.error(Array[(c.name.pos, "Invalid extension")])
+        | _ ->
+          tcenvl.error(
+            Array[(c.name.pos, "An 'extends' clause must reference a class")],
+            TSCode(2507),
+          )
         }
       }
     };
@@ -107,11 +112,21 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           parentName.pos,
-          `Invalid implements: ${parentName}`,
+          `This class incorrectly implements '${parentName}'`,
           thisType,
           super,
+          TSCode(2420),
         )
-      | _ -> tcenvl.error(Array[(c.name.pos, "Invalid implements")])
+      | _ ->
+        tcenvl.error(
+          Array[
+            (
+              c.name.pos,
+              "An 'implements' clause must reference an interface or class",
+            ),
+          ],
+          TSCode(2422),
+        )
       }
     };
     hasConstructor = false;

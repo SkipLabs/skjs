@@ -629,8 +629,8 @@ function testChainedNonNullWrongType(
 // Using ! in wrong arithmetic context
 function testNonNullInWrongArithmetic(x: string | null, y: number): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error Invalid + operand
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error Right operand of '+' is not assignable to the left operand's type
   return x! + y;
 }
 
@@ -711,7 +711,7 @@ function testWrongNestedPath(x: { a: { b: number } } | null): string {
 // Using ! doesn't allow calling non-function
 function testCallingNonFunction(x: number | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error This expression is not callable
   return x!();
 }
 

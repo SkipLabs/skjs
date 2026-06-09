@@ -19,7 +19,7 @@ function fromGenericInst(): void {
   const c = new Container();
   c.push(1);
   takeContainer(c);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   c.push("hello");
 }
 
@@ -30,7 +30,7 @@ declare function makeContainer<T>(x: T): Container<T>;
 function fromGenericCall(): void {
   const c = makeContainer(1);
   takeContainer(c);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   c.push("hello");
 }
 
@@ -42,7 +42,7 @@ function fromEmptyArray(): void {
   const arr: number[] = [];
   arr.push(1);
   takeNumberArray(arr);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   arr.push("hello");
 }
 
@@ -51,7 +51,7 @@ function fromEmptyArray(): void {
 function fromArrayLiteral(): void {
   const arr = [1, 2, 3];
   takeNumberArray(arr);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   arr.push("hello");
 }
 
@@ -69,7 +69,7 @@ function fromNullLiteralLocal(): void {
   const c = new Container();
   let n = null;
   c.push(n);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type number
   // @skjs-expect-error-line3 is not assignable to type null
   // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <null | number>
@@ -90,7 +90,7 @@ function fromUndefinedLiteralLocal(): void {
   const c = new Container();
   let u = undefined;
   c.push(u);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type string
   // @skjs-expect-error-line3 is not assignable to type undefined
   // @skjs-expect-error-line4 Consider adding explicit type arguments, e.g., <string | undefined>
@@ -107,7 +107,7 @@ function fromLambdaReturn(): void {
     return 42;
   };
   takeFnReturningNumber(f);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takeFnReturningString(f);
 }
 
@@ -120,7 +120,7 @@ function fromAsyncReturn(): void {
     return 42;
   };
   const p = f();
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takePromiseString(p);
 }
 
@@ -132,7 +132,7 @@ function fromObjectField(): void {
   const c = new Container();
   c.push({ x: 1 });
   takeContainerObj(c);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 Type 'hello'
   // @skjs-expect-error-line3 is not assignable to type number
   // @skjs-expect-error-line4 Type 'hello'
@@ -149,7 +149,7 @@ declare function takeObjArray(arr: Array<{ x: number }>): void;
 function fromArrayElement(): void {
   const arr = [{ x: 1 }, { x: 2 }];
   takeObjArray(arr);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   arr.push({ x: "hello" });
 }
 

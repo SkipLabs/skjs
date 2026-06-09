@@ -375,7 +375,7 @@ function testNestedUnion(): void {
 function testUnionPreservesVariance(): void {
   const dog: Dog = { name: "Fido", breed: "Lab" };
   const f: PreservesVarianceUnion = acceptDog;
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   const result: string = f(dog);
 }
 

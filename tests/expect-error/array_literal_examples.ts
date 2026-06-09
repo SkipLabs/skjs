@@ -195,10 +195,10 @@ function supertypePositionTest(): void {
 // Each of those three behaviours is what `tsc` produces too.
 function tupleThenArrayUse2(): void {
   const numbers = [1, 2, 3, 4, 5];
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesTuple(numbers);
   takesArray(numbers);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesTuple(numbers);
 }
 

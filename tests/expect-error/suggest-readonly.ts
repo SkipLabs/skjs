@@ -13,7 +13,7 @@ function testReturn(x: { x: number }): { x: number | string } {
 // Parameter position
 function testParam(x: { x: number | string }): void {}
 function testParamCall(x: { x: number }): void {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   testParam(x);
 }
 

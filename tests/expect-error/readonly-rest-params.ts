@@ -122,7 +122,7 @@ function passThroughToSink<T>(
   sink: (items: Array<T>) => void,
   ...items: T[]
 ): void {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   sink(items);
 }
 

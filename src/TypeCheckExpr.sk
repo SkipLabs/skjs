@@ -1448,7 +1448,14 @@ extension class TypeChecker {
           super,
         );
         tcenv.scope.set(thisName, thisType, (x, y) -> {
-          this.checkSubType(tcenv, pos, "Invalid super call", x, y)
+          this.checkSubType(
+            tcenv,
+            pos,
+            "Arguments are not assignable to the base constructor's parameters",
+            x,
+            y,
+            TSCode(2345),
+          )
         })
       };
       TType::single(TPrimUnit(TVoid(), pos))
@@ -1470,21 +1477,23 @@ extension class TypeChecker {
         if (optional) {
           tcenv.error(
             Array[
-              (pos, "Invalid call"),
+              (pos, "This expression is not callable"),
               (
                 fty.pos,
                 `Type ${this.ppType(tcenv, fty)} may not be a function`,
               ),
             ],
+            TSCode(2349),
           )
         };
         tfuns
       | None() ->
         fatalError(
           Array[
-            (pos, "Invalid call"),
+            (pos, "This expression is not callable"),
             (fty.pos, `Type ${this.ppType(tcenv, fty)} is not a function`),
           ],
+          TSCode(2349),
         )
       };
       rty = this.call(
@@ -1679,7 +1688,14 @@ extension class TypeChecker {
         | Some(TPrimValue(k @ TBigInt(), _, primPos)) ->
           ty2 = this.expr(tcenv, e2, true);
           res = TType::single(TPrimValue::full(k, primPos));
-          this.checkSubType(tcenv, e2.pos, "Invalid + operand", ty2, res);
+          this.checkSubType(
+            tcenv,
+            e2.pos,
+            "Right operand of '+' is not assignable to the left operand's type",
+            ty2,
+            res,
+            TSCode(2365),
+          );
           res
         | _ ->
           fatalError(
@@ -1947,7 +1963,14 @@ extension class TypeChecker {
       | POIncr() ->
         num = TType::single(TPrimValue::number(pos));
         ty = this.expr(tcenv, subExpr, true);
-        this.checkSubType(tcenv, pos, "Expected integer", ty, num);
+        this.checkSubType(
+          tcenv,
+          pos,
+          "The operand of an increment or decrement operator must be of type 'number'",
+          ty,
+          num,
+          TSCode(2356),
+        );
         num
       | POExcl() ->
         (isValid, tyWithoutNullish) = this.exprWithoutNullish(
@@ -2033,13 +2056,27 @@ extension class TypeChecker {
     | As(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
       inferredTy = this.expr(tcenv, subExpr, true);
-      this.checkSubType(tcenv, pos, "Unsound 'as' cast", inferredTy, annot);
+      this.checkSubType(
+        tcenv,
+        pos,
+        "This 'as' cast is unsound: the source type is not assignable to the target type",
+        inferredTy,
+        annot,
+        SKJSCode(2003),
+      );
       annot
     | Satisfies(subExpr, tyAst) ->
       annot = this.normalize(tcenv, tyAst);
       inferredTy = this.expr(tcenv, subExpr, true);
       savedSubst = tcenv.subst.save();
-      this.checkSubType(tcenv, pos, "Invalid 'satisfies'", inferredTy, annot);
+      this.checkSubType(
+        tcenv,
+        pos,
+        "Type does not satisfy the expected type",
+        inferredTy,
+        annot,
+        TSCode(1360),
+      );
       tcenv.subst.restore(savedSubst);
       inferredTy
     | Async _ -> fatalError(Array[(pos, "Invalid async")])
@@ -2806,18 +2843,20 @@ extension class TypeChecker {
           if (i >= args.size()) {
             tcenv.error(
               Array[
-                (pos, "Invalid call"),
+                (pos, "Too few arguments for this call"),
                 (fPos, `This function has ${tfun.params.size()} parameters`),
               ],
+              TSCode(2554),
             );
             break void
           } else {
             this.checkSubType(
               tcenv,
               pos,
-              "Invalid call",
+              "Argument is not assignable to the parameter's type",
               args[i],
               tfun.params[i],
+              TSCode(2345),
             )
           }
         };
@@ -2834,9 +2873,10 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             pos,
-            "Invalid call",
+            "Argument is not assignable to the parameter's type",
             arg,
             tfun.optionalParams[j],
+            TSCode(2345),
           )
         };
         if (tcenv.subst.version == version) break void;

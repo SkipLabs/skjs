@@ -363,7 +363,7 @@ function takesXY(_: { x: number; y: number }): void {}
 
 function phantomDoesNotSatisfyRealField(obj: { x: number }): void {
   if ("y" in obj) {
-    // @skjs-expect-error Invalid call
+    // @skjs-expect-error Argument is not assignable to the parameter's type
     takesXY(obj);
   }
 }

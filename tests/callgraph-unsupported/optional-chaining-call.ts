@@ -5,6 +5,6 @@ interface Obj {
   method(): number;
 }
 function test(o: Obj | undefined): number | undefined {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error This expression is not callable
   return o?.method();
 }

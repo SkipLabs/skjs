@@ -40,7 +40,7 @@ function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
 }
 
 function paramTypeOptionalCanBeUndefined2(p?: number): number {
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return paramTypeOptionalCanBeUndefinedWitness(p);
 }
 

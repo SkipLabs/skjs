@@ -31,7 +31,7 @@ function testArgs(): void {
   };
 
   takesString(wide);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesStringOrNumber(narrow);
 }
 

@@ -20,7 +20,7 @@ function compare<T>(a: T, b: T): number {
   }
 
   if (typeof a === "object" && typeof b === "object") {
-    // @skjs-expect-error Invalid call
+    // @skjs-expect-error Argument is not assignable to the parameter's type
     return compareObjects(a, b);
   }
 
