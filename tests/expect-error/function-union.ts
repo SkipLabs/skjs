@@ -142,7 +142,7 @@ function testUnionReturnType(): void {
 // Test 5: Return type must be union or compatible (negative test)
 function testReturnTypeMustBeUnion(): void {
   const f: StringOrNumberReturnUnion = returnString;
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const result: string = f(42);
 }
 
@@ -199,7 +199,7 @@ type ObjWithUnion = {
 };
 
 function testUnionInObject(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const obj: ObjWithUnion = {
     fn: returnString,
   };
@@ -221,7 +221,7 @@ function testOverlappingParamTypes(): void {
 // Test 15: Assigning union to one branch fails (negative test)
 function testAssignUnionToBranch(): void {
   const union: UnionF1F2 = returnString;
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const f1: F1 = union;
 }
 
@@ -278,7 +278,7 @@ function wrongFn1(_x: string): string {
 
 function testIncompatibleAssignment(): void {
   // wrongFn1 takes string but union requires number & boolean
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const union: IncompatibleUnion1 = wrongFn1;
 }
 
@@ -288,7 +288,7 @@ function wrongReturn(_x: number): number {
 }
 
 function testWrongReturnType(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const union: IncompatibleUnion2 = wrongReturn;
 }
 
@@ -343,7 +343,7 @@ function wrongFn2(_x: string): number {
 }
 
 function testIncompatibleWithAllBranches(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const union: IncompatibleAllBranches = wrongFn2;
 }
 
@@ -385,6 +385,6 @@ function wrongFn3(_x: Dog): Animal {
 }
 
 function testWrongVarianceInUnion(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const union: WrongVarianceUnion = wrongFn3;
 }

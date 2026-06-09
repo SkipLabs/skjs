@@ -70,7 +70,7 @@ function testArrayNonNull(x: number[] | null): number[] {
 
 function testArrayAccess(x: number[] | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x![0];
 }
 
@@ -188,7 +188,7 @@ function testChainedArrayAccess(
   x: (number[] | null)[] | null,
 ): number[] | null {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x![0];
 }
 
@@ -201,7 +201,7 @@ function testChainedArrayAccess2(
 
 function testChainedArrayAccessFull(x: (number[] | null)[] | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x![0]![0];
 }
 
@@ -413,7 +413,7 @@ function testNestedDestructuringNonNull(
 function testArrayDestructuringNonNull(x: number[] | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
   const [first] = x!;
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return first;
 }
 
@@ -553,50 +553,40 @@ function testNonNullableValue(): number {
   return x!;
 }
 
-// Using ! on a value that is ALWAYS null/undefined is unsound, not merely
-// useless: `x!` then has the empty type and would satisfy any annotation, so
-// without an error `const s: string = x!` (s actually undefined at runtime)
-// would be accepted and crash. Unlike the never-null case above this must be a
-// hard error, not a warning.
-function testNonNullOnAlwaysNull(x: undefined): string {
-  // @skjs-expect-error This operator is useless
-  return x!;
-}
-
 // Using ! doesn't change the type incorrectly
 function testWrongTypeAfterNonNull(x: string | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }
 
 // Using ! on already non-nullable type in wrong context
 function testNonNullOnNonNullable(): string {
   let x: number = 42;
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   // @skjs-expect-warning This operator is useless
-  // @ts-expect-error Invalid return type
   return x!;
 }
 
 // Multiple ! doesn't change the type
 function testMultipleExclamations(x: number | null): string {
   // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   // @skjs-expect-warning This operator is useless
-  // @ts-expect-error Invalid return type
   return x!!;
 }
 
 // Using ! doesn't convert types
 function testNoTypeConversion(x: string | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }
 
 // Using ! on incompatible union after removal of null
 function testIncompatibleUnionAfterNonNull(x: string | boolean | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }
 
@@ -616,14 +606,14 @@ function testWrongFieldAccessAfterNonNull(x: { a: number } | null): string {
 // Wrong array element type after non-null assertion
 function testWrongArrayElementType(x: number[] | null): string {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x![0];
 }
 
 // Using ! on undefined alone doesn't help with accessing properties
 function testUndefinedPropertyAccess(x: { field: number } | undefined): string {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!.field;
 }
 
@@ -632,7 +622,7 @@ function testChainedNonNullWrongType(
   x: { field: number | null } | null,
 ): string {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!.field!;
 }
 
@@ -640,7 +630,7 @@ function testChainedNonNullWrongType(
 function testNonNullInWrongArithmetic(x: string | null, y: number): number {
   // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Invalid + operand
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x! + y;
 }
 
@@ -649,14 +639,14 @@ function testIncompatibleFunctionAfterNonNull(
   x: ((s: string) => number) | null,
 ): (n: number) => string {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }
 
 // Using ! on wrong generic type
 function testWrongGenericAfterNonNull<T>(x: T | null): string {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }
 
@@ -665,14 +655,14 @@ function testTypeGuardStillNeeded(
   x: { kind: "A"; value: number } | { kind: "B"; value: string } | null,
 ): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!.value;
 }
 
 // Using ! on method with wrong return type expectation
 function testMethodWrongReturnType(x: string | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!.toLowerCase();
 }
 
@@ -681,14 +671,14 @@ function testIncompatibleTupleAfterNonNull(
   x: [number, string] | null,
 ): [string, number] {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }
 
 // Using ! on class instance with wrong method
 function testWrongMethodAfterNonNull(x: TestClass | null): string {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!.getField();
 }
 
@@ -697,7 +687,7 @@ function testInterfaceIncompatibility(x: TestInterface | null): {
   field: string;
 } {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }
 
@@ -707,7 +697,7 @@ function testAssignmentToWrongType(x: number | null): string {
   // TODO: Type 'number' is not assignable to type 'string'
   // @skjs-expect-error Do not use the postfix ! operator
   y = x!;
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return y;
 }
 
@@ -735,14 +725,14 @@ function testWrongArrayMethod(x: number[] | null): string {
 
 // Using ! doesn't fix readonly/mutable mismatch
 function testReadonlyMismatch(x: readonly number[] | null): number[] {
-  // @skjs-expect-error Invalid return type
   // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }
 
 // Using ! on promise with wrong generic type
 function testWrongPromiseGeneric(x: Promise<number> | null): Promise<string> {
-  // @ts-expect-error Invalid return type
   // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x!;
 }

@@ -164,9 +164,10 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             pos,
-            "Invalid definition: value type is not compatible with type annotation",
+            "Type of initializer is not assignable to the declared type annotation",
             valueType,
             type,
+            TSCode(2322),
           )
         }
       }

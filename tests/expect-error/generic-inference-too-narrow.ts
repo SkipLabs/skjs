@@ -159,7 +159,7 @@ interface StringMap {
 }
 
 function fromSyntheticIndex(): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const obj: StringMap = { a: 1 };
 }
 

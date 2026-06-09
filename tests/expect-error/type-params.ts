@@ -25,7 +25,7 @@ function applyTDefaultUsePreviousParamError<X, Y>(
   f: TDefaultUsePreviousParam<X>,
   x: X,
 ): Y {
-  // @ts-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return f(x);
 }
 

@@ -11,7 +11,7 @@ class WithReadonlyOutsideConstructor {
     this.x = 1;
   }
   mutate(): void {
-    // @skjs-expect-error Invalid assignment
+    // @skjs-expect-error Type is not assignable to the assignment target's type
     this.x = 2;
   }
 }

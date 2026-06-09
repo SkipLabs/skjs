@@ -14,7 +14,7 @@ function stringMapAccept(): StringMap<number> {
 }
 
 function stringMapReject(): StringMap<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { x: "no" };
 }
 
@@ -38,12 +38,12 @@ function litABAccept(): LitAB<number> {
 }
 
 function litABMissingB(): LitAB<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1 };
 }
 
 function litABWrongV(): LitAB<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1, b: "no" };
 }
 
@@ -84,7 +84,7 @@ function litOptAcceptAll(): LitOpt<number> {
 }
 
 function litOptRejectWrongV(): LitOpt<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: "no" };
 }
 
@@ -99,7 +99,7 @@ function litPlusOptAccept(): LitPlusOpt<number> {
 type LitMinusOpt<V> = { [P in "a" | "b"]-?: V };
 
 function litMinusOptMissing(): LitMinusOpt<number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1 };
 }
 
@@ -112,7 +112,7 @@ function recordStringAccept(): Record<string, number> {
 }
 
 function recordStringWrongV(): Record<string, number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { x: "no" };
 }
 
@@ -121,12 +121,12 @@ function recordLiteralUnion(): Record<"a" | "b", number> {
 }
 
 function recordLiteralUnionMissing(): Record<"a" | "b", number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 1 };
 }
 
 function recordSingleLitMissing(): Record<"a", number> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return {};
 }
 

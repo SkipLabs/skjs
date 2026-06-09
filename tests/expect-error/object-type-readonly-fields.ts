@@ -4,7 +4,7 @@ type ObjectWithReadonlyField = {
 };
 
 function writesOnReadonlyAndMutableFields(x: ObjectWithReadonlyField): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.ro = 1;
   x.mut = 2;
 }
@@ -16,7 +16,7 @@ type ObjectWithReadonlyOptionalField = {
 function writesOnReadonlyOptionalField(
   x: ObjectWithReadonlyOptionalField,
 ): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.opt = 3;
 }
 
@@ -25,16 +25,16 @@ type ObjectWithReadonlyIndex = {
 };
 
 function writesOnReadonlyIndex(x: ObjectWithReadonlyIndex): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x["a"] = 1;
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.b = 2;
 }
 
 type UnionReadonlyAndMutable = { readonly a: number } | { a: number };
 
 function writeOnUnionReadonlyAndMutable(x: UnionReadonlyAndMutable): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.a = 1;
 }
 
@@ -47,7 +47,7 @@ function assignNumberToOptional(x: ObjectWithOptionalField): void {
 }
 
 function assignUndefinedToOptional(x: ObjectWithOptionalField): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.opt = undefined;
 }
 
@@ -58,9 +58,9 @@ type NestedReadonlyObject = {
 };
 
 function nestedReadonlyObjectWritesAreRejected(x: NestedReadonlyObject): void {
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.cfg = { port: 2 };
-  // @skjs-expect-error Invalid assignment
+  // @skjs-expect-error Type is not assignable to the assignment target's type
   x.cfg.port = 3;
 }
 

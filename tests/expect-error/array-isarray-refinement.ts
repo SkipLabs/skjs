@@ -77,7 +77,7 @@ function testMultipleUnionElseBranch(
   x: Array<number> | Foo | string,
 ): Foo | string {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     // x is refined to Foo | string (no array)
@@ -109,7 +109,7 @@ type Bar = {
 
 function testComplexUnion(x: Array<string> | Foo | Bar): Array<string> {
   if (Array.isArray(x)) {
-    // @skjs-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     return [];
@@ -133,7 +133,7 @@ function testArrayMethodOnNonArray(x: Array<number> | Foo): unknown {
 // Wrong type in array branch
 function testWrongTypeInArrayBranch(x: Array<number> | Foo): Foo {
   if (Array.isArray(x)) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x;
   } else {
     // x is refined to Foo

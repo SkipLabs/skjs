@@ -30,7 +30,7 @@ function getFirst<U>(
 function testUnsound(): void {
   // @skjs-expect-error Invalid call
   const box = getFirst({ value: "hello" }, { value: 42 });
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: number = box.value;
 }
 
@@ -43,7 +43,7 @@ function testReversedOrder(): void {
 function testThreeArgs(): void {
   // @skjs-expect-error Invalid call
   const box = getFirst3({ value: true }, { value: 42 }, { value: 100 });
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: number = box.value;
 }
 

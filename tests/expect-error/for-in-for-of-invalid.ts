@@ -18,7 +18,7 @@ function testForInWrongVariableType(): void {
   const obj = { a: 1, b: 2 };
   let n: number;
   for (const key in obj) {
-    // @ts-expect-error Invalid assignment
+    // @skjs-expect-error Type is not assignable to the variable's type
     n = key; // string not assignable to number
   }
 }
@@ -27,7 +27,7 @@ function testForOfWrongVariableType(): void {
   const arr = [1, 2, 3];
   let s: string;
   for (const value of arr) {
-    // @ts-expect-error Invalid assignment
+    // @skjs-expect-error Type is not assignable to the variable's type
     s = value; // number not assignable to string
   }
 }

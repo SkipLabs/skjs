@@ -10,7 +10,7 @@ function acceptsRO(...nums: number[]): ReadonlyArray<number> {
 }
 
 function rejectsArray(...nums: number[]): void {
-  // @ts-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const arr: Array<number> = nums;
 }
 
@@ -67,7 +67,7 @@ function tupleMutation(...args: [string, number]): void {
 
 // Tuple rest is already not assignable to mutable Array
 function tupleToArray(...args: [string, number]): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const arr: Array<string | number> = args;
 }
 
@@ -78,7 +78,7 @@ function tupleToArray(...args: [string, number]): void {
 function genericRestMutation<T extends ReadonlyArray<number>>(
   ...args: T
 ): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const arr: Array<number> = args;
 }
 
@@ -109,7 +109,7 @@ function aliasRestRejectsArray(...nums: Numbers): void {
 
 // Non-alias version correctly rejects the same assignment.
 function nonAliasRestRejectsArray(...nums: number[]): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const arr: Array<number> = nums;
 }
 
@@ -134,7 +134,7 @@ function passThroughToSinkRO<T>(
 }
 
 function assignRestToMutable<T>(target: Array<T>, ...source: T[]): void {
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const copy: Array<T> = source;
 }
 

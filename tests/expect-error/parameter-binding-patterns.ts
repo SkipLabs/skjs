@@ -134,7 +134,7 @@ function testArrowRest(): void {
 
 // Arrow with default value, wrong type
 function testArrowDefaultWrongType(): void {
-  // @skjs-expect-error Default value doesn't have the expected type
+  // @skjs-expect-error Type of default value is not assignable to the parameter's type
   const f = (x: number = "hello"): number => x;
   void f;
 }

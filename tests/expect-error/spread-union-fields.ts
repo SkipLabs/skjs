@@ -6,13 +6,13 @@
 type AB = { a: number } | { b: string };
 
 function spreadUnion(x: AB): AB {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { ...x };
 }
 
 // Weaker target — even allowing a and b to be optional fails, confirming
 // the fields are dropped entirely rather than merely losing required-ness.
 function spreadIntoPartial(x: AB): { a?: number; b?: string } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { ...x };
 }

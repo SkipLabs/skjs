@@ -9,7 +9,7 @@
 
 // Generic spread where all args go through spread
 function collectAll<T>(...items: T[]): Array<T> {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return items;
 }
 

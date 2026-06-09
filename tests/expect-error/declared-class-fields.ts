@@ -26,7 +26,7 @@ declare class Box<T> {
 
 function box1(): Box<number> {
   let bs: Box<string> = box1Helper();
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return bs;
 }
 declare function box1Helper(): Box<string>;

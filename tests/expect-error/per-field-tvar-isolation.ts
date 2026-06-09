@@ -14,7 +14,7 @@ function testFieldAWidening(): void {
   const obj = { a: { x: 1 }, b: { y: "hello" } };
   fixA(obj.a);
   fixB(obj.b);
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const t1: { a: { x: number } } = obj;
 }
 
@@ -22,7 +22,7 @@ function testFieldBWidening(): void {
   const obj = { a: { x: 1 }, b: { y: "hello" } };
   fixA(obj.a);
   fixB(obj.b);
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const t2: { b: { y: string } } = obj;
 }
 
@@ -44,7 +44,7 @@ function testConstrainedFieldRejectsWidening(): void {
   const obj = { first: { name: "Rex" }, second: { value: 42 } };
   fixName(obj.first);
   // `first` is now locked to literal type — widening rejected
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const t1: { first: { name: string } } = obj;
 }
 

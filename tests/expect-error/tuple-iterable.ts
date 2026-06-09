@@ -19,7 +19,7 @@ function heterogeneousTupleAsIterable(): void {
 // Wrong element type: `[number, number]` is NOT `Iterable<string>`.
 function wrongElementType(): void {
   const t: [number, number] = [1, 2];
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const it: Iterable<string> = t;
   void it;
 }

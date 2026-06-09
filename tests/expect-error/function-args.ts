@@ -47,7 +47,7 @@ function paramTypeOptionalCanBeUndefined2(p?: number): number {
 // @ts-expect-error A parameter cannot both be optional and have a default value
 function paramTypeDefaultOptional(_p?: number = 3): void {}
 
-// @ts-expect-error Default value doesn't have the expected type
+// @skjs-expect-error Type of default value is not assignable to the parameter's type
 function paramDefaultWrongType(_p: number = "3"): void {}
 
 // @skjs-expect-error Missing type annotation

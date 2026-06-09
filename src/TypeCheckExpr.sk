@@ -351,7 +351,14 @@ extension class TypeChecker {
       | None() -> (ty, true)
       | Some(annotAst) ->
         annot = this.normalize(tcenv, annotAst);
-        this.checkSubType(tcenv, annotAst.pos, "Invalid annotation", ty, annot);
+        this.checkSubType(
+          tcenv,
+          annotAst.pos,
+          "Type of value is not assignable to the variable's type annotation",
+          ty,
+          annot,
+          TSCode(2322),
+        );
         (annot, true)
       }
     }
@@ -2224,12 +2231,13 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             e.pos,
-            "Invalid callback return",
+            "Type of the callback's returned value is not assignable to the expected return type",
             isAsync match {
             | None() -> inferredType
             | Some(asyncPos) -> TType::single(TPromise(inferredType, asyncPos))
             },
             annotatedType,
+            TSCode(2322),
           )
         | CBBlock(bl) ->
           if (isAsync is Some _) !this.isAsync = true;
@@ -2302,7 +2310,14 @@ extension class TypeChecker {
     | Var(n) ->
       ty2 = this.expr(tcenv, e2, mostPrecise);
       tcenv.scope.set(n, ty2, (x, y) ->
-        this.checkSubType(tcenv, pos, "Invalid assignment", x, y)
+        this.checkSubType(
+          tcenv,
+          pos,
+          "Type is not assignable to the variable's type",
+          x,
+          y,
+          TSCode(2322),
+        )
       );
       ty2
     | Dot(
@@ -2336,7 +2351,14 @@ extension class TypeChecker {
     | _ ->
       ty1 = this.expr(tcenv, e1, false, true);
       ty2 = this.expr(tcenv, e2, mostPrecise);
-      this.checkSubType(tcenv, e2.pos, "Invalid assignment", ty2, ty1);
+      this.checkSubType(
+        tcenv,
+        e2.pos,
+        "Type is not assignable to the assignment target's type",
+        ty2,
+        ty1,
+        TSCode(2322),
+      );
       ty1
     }
   }
@@ -2430,9 +2452,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           fieldType.pos,
-          "Invalid assignment",
+          "Type is not assignable to the field's type",
           fieldType,
           this.get(tcenv, e1Pos, objectType, keyExpr, AKNormal()),
+          TSCode(2322),
         )
       };
       None()
@@ -2455,9 +2478,10 @@ extension class TypeChecker {
           this.checkSubType(
             tcenv,
             fieldType.pos,
-            "Invalid assignment",
+            "Type is not assignable to the field's type",
             fieldType,
             fd.set,
+            TSCode(2322),
           )
         | None() ->
           // Always grow: don't check index signatures on local objects.
@@ -2518,7 +2542,14 @@ extension class TypeChecker {
         | Some(mergedObj) -> TType::single(mergedObj)
         };
         tcenv.scope.set(local, newTy, (x, y) -> {
-          this.checkSubType(tcenv, fieldType.pos, "Invalid assignment", x, y)
+          this.checkSubType(
+            tcenv,
+            fieldType.pos,
+            "Type is not assignable to the property's type",
+            x,
+            y,
+            TSCode(2322),
+          )
         })
       }
     | _ ->
@@ -2557,9 +2588,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           fieldType.pos,
-          "Invalid assignment",
+          "Type is not assignable to the index signature's value type",
           fieldType,
           indexField.set,
+          TSCode(2322),
         )
       | None() ->
         tcenv.error(

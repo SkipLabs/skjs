@@ -38,8 +38,8 @@ function literalInRecordNotAlwaysFalse(x: { f: number }): boolean {
 
 function refineLiteralInRecordNotAlwaysFalse(x: { f: number }): number {
   if ("g" in x) {
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Property 'g' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.g;
   } else {
     return 0;
@@ -74,8 +74,8 @@ function literalInRecordUnion(x: { f: number } | { g: number }): boolean {
 function refineLiteralInRecordUnion(x: { f: number } | { g: number }): number {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.f;
   } else {
     return 0;
@@ -103,8 +103,8 @@ function refineLiteralInRecordOptUnion(
 ): number {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.f;
   } else {
     return 0;
@@ -116,8 +116,8 @@ function refineLiteralInRecordOptUnion2(
 ): number | undefined {
   if ("f" in x) {
     // FIXME: TS narrows the union; SKJS can't soundly filter under structural typing
-    // @skjs-expect-error Invalid return type
     // @skjs-expect-error Property 'f' was confirmed present by `in` but its declaration is unknown — accessing it is unsafe (it could be private)
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x.f;
   } else {
     return 0;
@@ -217,7 +217,7 @@ function refineUnionInRecordOpt2_1(
   x: { f?: number; g: number },
 ): number {
   if (s in x) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x[s];
   } else {
     return 0;
@@ -246,7 +246,7 @@ function refineUnionInRecordOpt3_1(
   x: { f?: number; g?: number },
 ): number {
   if (s in x) {
-    // @ts-expect-error Invalid return type
+    // @skjs-expect-error Type of returned value is not assignable to the function's return type
     return x[s];
   } else {
     return 0;

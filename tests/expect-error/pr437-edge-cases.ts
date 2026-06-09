@@ -69,9 +69,9 @@ function fixRex(arg: { name: "Rex"; breed: "Lab" }): void {}
 function testMutableFieldCovariance(): void {
   const obj = { pet: { name: "Rex", breed: "Lab" } };
   fixRex(obj.pet);
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const dogBox: { pet: Dog } = obj;
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const animalBox: { pet: Animal } = dogBox;
 }
 
@@ -79,10 +79,10 @@ function testMutableFieldCovariance(): void {
 function testNestedMutableCovariance(): void {
   const obj = { value: { name: "Rex", breed: "Lab" } };
   fixRex(obj.value);
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const inner: { value: Dog } = obj;
   const outer: { box: { value: Dog } } = { box: inner };
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const widened: { box: { value: Animal } } = outer;
 }
 
@@ -148,10 +148,10 @@ function fixHello(arg: { v: "hello" }): void {}
 function testNestedConstraintIntersection437(): void {
   const obj = { inner: { v: "hello" } };
   fixHello(obj.inner);
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const w: Wrapper437<string> = obj;
   // @skjs-expect-error Invalid call
   const r = idWrapped437(w);
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const s: string = r.inner.v;
 }

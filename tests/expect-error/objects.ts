@@ -11,12 +11,12 @@ function correctIndexReturnTypeDot(x: tIndex): number | undefined {
 }
 
 function incorrectIndexReturnTypeGet(x: tIndex): number {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x["a"];
 }
 
 function incorrectIndexReturnTypeDot(x: tIndex): number {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x.a;
 }
 
@@ -44,7 +44,7 @@ function testMixedObjectNormalFieldCorrectIndexing(
 }
 
 function testMixedObjectNormalFieldIncorrectIndexing(obj: tIndex2): boolean {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return obj[0];
 }
 
@@ -104,7 +104,7 @@ function extendWithSpread(x: { f1: number; f2: string }): {
   f2: number;
   f3: string;
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { f0: true, ...x, f2: 0, f3: "a" };
 }
 
@@ -123,7 +123,7 @@ function spreadNoFieldsBefore(): { a: number; b: string } {
 // Spread soundness: fields before spread are forgotten
 function spreadFieldsBeforeSpread(): { a: string } {
   const obj: {} = { a: 1 };
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: "", ...obj };
 }
 
@@ -136,7 +136,7 @@ function spreadMultipleSpreads(): {
 } {
   const obj1: { b: number } = { b: 1 };
   const obj2: { c: number } = { c: 2 };
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: 0, ...obj1, ...obj2, d: 0 };
 }
 
@@ -147,7 +147,7 @@ function spreadFieldsBeforeTypedSpread(x: { f1: number; f2: string }): {
   f2: number;
   f3: string;
 } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { f0: true, ...x, f2: 0, f3: "a" };
 }
 
@@ -160,7 +160,7 @@ function spreadOptionalOverlap(): { a: string | number } {
 // Spread with optional field, assigned to narrow type → error
 function spreadOptionalOverlapNarrow(): { a: string } {
   const obj: { a?: number } = {};
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: "", ...obj };
 }
 
@@ -173,7 +173,7 @@ function spreadIndexOverlap(): { a: string | number } {
 // Spread with index signature, assigned to narrow type → error
 function spreadIndexOverlapNarrow(): { a: string } {
   const obj: { [k: string]: number } = {};
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return { a: "", ...obj };
 }
 
@@ -206,7 +206,7 @@ function spreadIndexThenOptional(): { a?: string | number } {
 // Spread with no matching field or index → union with Top (structural subtyping)
 function spreadUnrelatedFieldUnionTop(): void {
   const obj: { b: number } = { b: 1 };
-  // @skjs-expect-error Invalid annotation
+  // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const result: { a: string } = { a: "hello", ...obj };
 }
 
@@ -223,7 +223,7 @@ function spreadReadonlyBecomesMutable(): void {
 //   const obj2 = missingOptional(obj); // obj2: { x: number, a?: string }
 //   obj2.a  // typed string | undefined, actually number — unsound
 function missingOptional(x: { x: number }): { x: number; a?: string } {
-  // @skjs-expect-error Invalid return type
+  // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return x;
 }
 
