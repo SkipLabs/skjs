@@ -278,6 +278,11 @@ extension class TFun {
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
 
+    // `this` is contravariant, so the union of two function types intersects
+    // their this types. A signature with no declared `this` is `this: unknown`
+    // (the identity for intersection), so it keeps the other side rather than
+    // widening the result back to unknown — matching TS, which requires the
+    // receiver to satisfy every branch's `this`.
     thisParam = (f1.thisParam, f2.thisParam) match {
     // Attach-only wins: if either branch is a shape method, the union can only
     // be called attached (using it any other way could reach the shape-method
@@ -285,9 +290,11 @@ extension class TFun {
     | (ImplicitShape(), _)
     | (_, ImplicitShape()) ->
       ImplicitShape()
-    | (NoThis(), _)
-    | (_, NoThis()) ->
-      NoThis()
+    | (NoThis(), other)
+    | (other, NoThis()) ->
+      other
+    | (ImplicitClass(t1), ImplicitClass(t2)) ->
+      ImplicitClass(TType::inter(subst, tenv, t1, t2))
     | (tp1, tp2) ->
       Explicit(
         TType::inter(

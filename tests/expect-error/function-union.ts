@@ -326,10 +326,12 @@ function testUnionWithThisParam(): void {
   const union2: UnionWithThisParam = f2;
 }
 
-// For now the union of a this-declaring branch with a no-this branch drops the
-// thisParam entirely, so a free call is accepted; the next commit intersects
-// the branch `this` types instead, rejecting this call.
+// `this` is contravariant, so a union of function types intersects the branch
+// `this` types. A branch with no `this` is `this: unknown`, which intersects
+// away — so the union still requires a receiver satisfying the declared branch.
+// A free call has receiver `void`, so it is rejected (matching TS).
 function testUnionMixedThisParam(g: UnionMixedThisParam): string {
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   return g(1);
 }
 
