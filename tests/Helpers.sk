@@ -477,8 +477,9 @@ fun emitLineNAnnotations(
  * - Updates messages for existing annotations (preserving @ts vs @skjs prefix)
  * - Removes annotations where the diagnostic no longer occurs
  * - Adds @skjs-expect-error / @skjs-expect-warning annotations for new ones
- * - Per line, errors come first (with @ts-expect-error last and -lineN
- *   continuations), then warnings
+ * - Per line, errors and warnings are emitted as blocks; the canonical order
+ *   is errors-first (with @ts-expect-error last and -lineN continuations), but
+ *   a group whose warnings preceded its errors keeps that original block order
  * - At most one @ts-expect-error per group, always last */
 fun updateFileAnnotations(
   contents: String,
@@ -585,6 +586,21 @@ fun updateFileAnnotations(
         | Some(msg) if (errors.contains(msg)) -> Some(msg)
         | _ -> None()
         };
+        // Errors and warnings are emitted as two blocks. The canonical order is
+        // errors-first, but if the group's warnings originally preceded its
+        // errors we preserve that order, so changing one diagnostic's message
+        // does not silently reorder unrelated annotations. Build each block
+        // separately, then append them in the group's original order.
+        warningsFirst = existingGroups.maybeGet(lineNum) match {
+        | Some(g) ->
+          g.annotations
+            .find(a -> a.lineN == 1)
+            .map(a -> a.annot::str == SKJS_EXPECT_WARNING::str)
+            .default(false)
+        | None() -> false
+        };
+        errorLines: mutable Vector<String> = mutable Vector[];
+        warningLines: mutable Vector<String> = mutable Vector[];
         // Phase 1: Emit existing annotations still in errors, preserving order
         // (skip last @ts-expect-error — Phase 3 emits it; skip entirely when reordering)
         // (skip lineN annotations — they are re-emitted after all line-1 annotations)
@@ -605,7 +621,7 @@ fun updateFileAnnotations(
                 } else {
                   fullMessages.maybeGet(a.message).default(a.message)
                 };
-                result.push(`${groupIndent}// @${a.annot::str} ${msgText}`);
+                errorLines.push(`${groupIndent}// @${a.annot::str} ${msgText}`);
                 !emitted = emitted.set(a.message)
               }
             }
@@ -620,20 +636,23 @@ fun updateFileAnnotations(
           | _ -> void
           };
           msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
-          result.push(`${groupIndent}// @${SKJS_EXPECT_ERROR::str} ${msgText}`)
+          errorLines.push(
+            `${groupIndent}// @${SKJS_EXPECT_ERROR::str} ${msgText}`,
+          )
         };
         // Phase 3: Emit @ts-expect-error last (only if new, not already emitted)
         tsMsg match {
         | Some(trimmedMsg) if (!emitted.contains(trimmedMsg)) ->
           msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
-          result.push(`${groupIndent}// @${TS_EXPECT_ERROR::str} ${msgText}`)
+          errorLines.push(
+            `${groupIndent}// @${TS_EXPECT_ERROR::str} ${msgText}`,
+          )
         | _ -> void
         };
         // Emit error -lineN continuations after all line-1 error annotations
         if (shouldEmitLineN) {
-          emitLineNAnnotations(result, groupIndent, actualLineNAnnotations)
+          emitLineNAnnotations(errorLines, groupIndent, actualLineNAnnotations)
         };
-        // --- Warning annotations (emitted after errors) ---
         // Phase W1: existing @skjs-expect-warning still in warnings
         emittedW = SortedSet[];
         if (!(update is UMFullRewrite())) {
@@ -648,7 +667,7 @@ fun updateFileAnnotations(
                 } else {
                   fullMessages.maybeGet(a.message).default(a.message)
                 };
-                result.push(
+                warningLines.push(
                   `${groupIndent}// @${SKJS_EXPECT_WARNING::str} ${msgText}`,
                 );
                 !emittedW = emittedW.set(a.message)
@@ -661,9 +680,17 @@ fun updateFileAnnotations(
         for (trimmedMsg in warnings) {
           if (emittedW.contains(trimmedMsg)) continue;
           msgText = fullMessages.maybeGet(trimmedMsg).default(trimmedMsg);
-          result.push(
+          warningLines.push(
             `${groupIndent}// @${SKJS_EXPECT_WARNING::str} ${msgText}`,
           )
+        };
+        // Append the two blocks in the group's original order.
+        if (warningsFirst) {
+          result.extend(warningLines);
+          result.extend(errorLines)
+        } else {
+          result.extend(errorLines);
+          result.extend(warningLines)
         }
       }
     };

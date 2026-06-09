@@ -723,6 +723,35 @@ fun testUpdateFileAnnotations(): void {
     None(),
     "Mixed error+warning unchanged",
   );
+
+  // Warning: a warning-before-error group whose error message changed keeps its
+  // original block order (warnings first) instead of being silently reordered.
+  SKTest.expectEq(
+    updateFileAnnotations(
+      lines(
+        Array[
+          "// @skjs-expect-warning Useless thing",
+          "// @skjs-expect-error Old error",
+          "const x: number = \"hello\";",
+        ],
+      ),
+      Map[3 => SortedSet["New error"]],
+      Map["New error" => "New error"],
+      UMUpdate(),
+      Map[],
+      Map[3 => SortedSet["Useless thing"]],
+    ),
+    Some(
+      lines(
+        Array[
+          "// @skjs-expect-warning Useless thing",
+          "// @skjs-expect-error New error",
+          "const x: number = \"hello\";",
+        ],
+      ),
+    ),
+    "Warning-before-error order preserved when error message changes",
+  );
 }
 
 @test
