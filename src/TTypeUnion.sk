@@ -407,10 +407,16 @@ extension class TFun {
     };
     !f2 = (mutable RenameClauses()).fun_(tsubst, f2);
 
+    // `this` is contravariant, so the union of two function types intersects
+    // their this types. A signature with no declared `this` is `this: unknown`
+    // (the identity for intersection), so it keeps the other side rather than
+    // widening the result back to unknown — matching TS, which requires the
+    // receiver to satisfy every branch's `this`.
     thisParam = (f1.thisParam, f2.thisParam) match {
-    | (None(), _)
-    | (_, None()) ->
-      None()
+    | (None(), None()) -> None()
+    | (None(), some)
+    | (some, None()) ->
+      some
     | (Some(this1), Some(this2)) ->
       Some(TType::inter(subst, tenv, this1, this2))
     };
