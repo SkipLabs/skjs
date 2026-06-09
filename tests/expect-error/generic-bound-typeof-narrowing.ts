@@ -3,7 +3,7 @@
 // of the same type T. So y - x is rejected because y remains of type T.
 function adHocEq<T extends number | string>(x: T, y: T): boolean {
   if (typeof x === "number") {
-    // @ts-expect-error Invalid operation
+    // @skjs-expect-error This operator requires a numeric operand
     return y - x === 0;
   } else {
     return x === y;

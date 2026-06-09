@@ -703,6 +703,6 @@ function symGeneralWriteRejected(
 
 // A general symbol with no symbol index cannot be resolved (matches TS7053).
 function symGeneralNoIndex(x: { [symA]: number }, s: symbol): void {
-  // @skjs-expect-error Invalid access
+  // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
   const v = x[s];
 }

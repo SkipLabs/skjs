@@ -35,7 +35,7 @@ function paramTypeOptionalCanBeUndefined(p?: number): number {
 }
 
 function paramTypeOptionalCanBeUndefinedWitness(p: number): number {
-  // @skjs-expect-error This operator is useless
+  // @skjs-expect-error This operator has no effect; the operand is never null or undefined
   return p ?? 1;
 }
 

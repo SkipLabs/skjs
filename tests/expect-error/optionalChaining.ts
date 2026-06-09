@@ -13,22 +13,22 @@ function maybeObj2(): { f?: number } | null {
   return {};
 }
 
-// @skjs-expect-error Useless '?.'. Use '.' instead
+// @skjs-expect-error This '?.' is unnecessary; the value is never nullish, so use '.' instead
 const x1: number = obj?.f;
 
-// @skjs-expect-error Useless '?.'. Use '.' instead
+// @skjs-expect-error This '?.' is unnecessary; the value is never nullish, so use '.' instead
 const x2: number | undefined = obj2?.f;
 
-// @ts-expect-error Result of optional chaining is always undefined
+// @skjs-expect-error The result of this optional chain is always 'undefined'
 const x3: undefined = undefined?.f;
 
-// @ts-expect-error Result of optional chaining is always undefined
+// @skjs-expect-error The result of this optional chain is always 'undefined'
 const x4: undefined = null?.f;
 
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation
 const x5: null = maybeObj()?.f;
 
-// @ts-expect-error Type cannot be accessed
+// @skjs-expect-error Property access is not allowed on this type
 const x6: undefined = returningVoid()?.f;
 
 // @skjs-expect-error Type of initializer is not assignable to the declared type annotation

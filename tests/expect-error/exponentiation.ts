@@ -12,5 +12,5 @@ function testExponentiationAssignment(): void {
 // @ts-expect-error Arithmetic operations require both operands to be the same numeric type
 const testExponentiationTypeMismatch: bigint = 2 ** 3n;
 
-// @ts-expect-error Invalid operation
+// @skjs-expect-error This operator requires a numeric operand
 const testExponentiationInvalidTypes: number = 2 ** "3";

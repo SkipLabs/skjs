@@ -41,6 +41,6 @@ function restFromArray(): void {
 
 function restTooManyBeforeRest(): void {
   const tuple: [number] = [1];
-  // @skjs-expect-error Invalid tuple pattern size, it is of size 2
+  // @skjs-expect-error This destructuring pattern has 2 elements, which does not match the tuple's length
   const [a, b, ...rest] = tuple;
 }

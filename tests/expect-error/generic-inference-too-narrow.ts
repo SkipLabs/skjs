@@ -165,7 +165,7 @@ function fromSyntheticIndex(): void {
 
 // --- FromUntypedVar: untyped variable declaration (parse error in SKJS) ---
 function fromUntypedVar(): void {
-  // @skjs-expect-error Was expecting a type or a value
+  // @skjs-expect-error A binding must have either a type annotation or an initializer
   let x;
   x = 42;
 }

@@ -59,16 +59,16 @@ const testBitwise: number = acceptsNumber(~10);
 
 // Invalid uses - these should fail type checking
 
-// @ts-expect-error Invalid unary operation -
+// @skjs-expect-error Unary operator '-' cannot be applied to this type
 const negString: number = -"hello";
 
-// @ts-expect-error Invalid unary operation -
+// @skjs-expect-error Unary operator '-' cannot be applied to this type
 const negBool: number = -true;
 
-// @ts-expect-error Invalid unary operation ~
+// @skjs-expect-error Unary operator '~' cannot be applied to this type
 const bitwiseString: number = ~"test";
 
-// @ts-expect-error Invalid unary operation ~
+// @skjs-expect-error Unary operator '~' cannot be applied to this type
 const bitwiseBool: number = ~false;
 
 // @ts-expect-error Invalid unary !
@@ -77,8 +77,8 @@ const notNumber: boolean = !42;
 // @ts-expect-error Invalid unary !
 const notString: boolean = !"hello";
 
-// @ts-expect-error Invalid unary operation +
+// @skjs-expect-error Unary operator '+' cannot be applied to this type
 const plusString: number = +"world";
 
-// @ts-expect-error Invalid unary operation +
+// @skjs-expect-error Unary operator '+' cannot be applied to this type
 const plusBool: number = +false;

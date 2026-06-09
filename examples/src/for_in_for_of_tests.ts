@@ -104,7 +104,7 @@ function testNestedForLoops(): void {
   for (const sectionName in data) {
     // @skjs-expect-error Type of value is not assignable to the variable's type annotation
     const name: "section1" | "section2" = sectionName;
-    // @ts-expect-error Invalid access
+    // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
     for (const value of data[sectionName]) {
       const num: number = value;
     }
