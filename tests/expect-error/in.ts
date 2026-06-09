@@ -331,12 +331,12 @@ function literalInTupleUnion(x: [number] | [number, number]): boolean {
 }
 
 function literalInNonObject(x: number): boolean {
-  // @ts-expect-error Invalid in
+  // @skjs-expect-error The right-hand side of an 'in' expression must be an object
   return 0 in x;
 }
 
 function refineInMandatoryField(x: { f: string } | string): string {
-  // @ts-expect-error Invalid in
+  // @skjs-expect-error The right-hand side of an 'in' expression must be an object
   if ("f" in x) {
     return x.f;
   } else {

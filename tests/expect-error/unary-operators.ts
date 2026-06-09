@@ -71,10 +71,10 @@ const bitwiseString: number = ~"test";
 // @skjs-expect-error Unary operator '~' cannot be applied to this type
 const bitwiseBool: number = ~false;
 
-// @ts-expect-error Invalid unary !
+// @skjs-expect-error Operator '!' cannot be applied to this type
 const notNumber: boolean = !42;
 
-// @ts-expect-error Invalid unary !
+// @skjs-expect-error Operator '!' cannot be applied to this type
 const notString: boolean = !"hello";
 
 // @skjs-expect-error Unary operator '+' cannot be applied to this type

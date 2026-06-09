@@ -1961,7 +1961,14 @@ extension class TypeChecker {
       t2.getSTypes(tcenv.subst, this, Covariant()) match {
       | None() ->
         tcenv.error(
-          Array[(pos, "Invalid in"), (e2.pos, "This has type unknown")],
+          Array[
+            (
+              pos,
+              "The right-hand side of an 'in' expression must be an object",
+            ),
+            (e2.pos, "This has type unknown"),
+          ],
+          TSCode(2361),
         )
       | Some(stypes2) ->
         canBeTrue = false;
@@ -1972,9 +1979,13 @@ extension class TypeChecker {
           | TPrimValue _ ->
             tcenv.error(
               Array[
-                (pos, "Invalid in"),
+                (
+                  pos,
+                  "The right-hand side of an 'in' expression must be an object",
+                ),
                 (e2.pos, `This has type ${this.ppType(tcenv, t2)}`),
               ],
+              TSCode(2361),
             );
             !canBeTrue = true;
             !canBeFalse = true
@@ -2033,10 +2044,14 @@ extension class TypeChecker {
         | (false, false) ->
           tcenv.error(
             Array[
-              (pos, "Unexpected in"),
+              (
+                pos,
+                "This 'in' check can never succeed for these operand types",
+              ),
               (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
               (e2.pos, `This has type ${this.ppType(tcenv, t2)}`),
             ],
+            SKJSCode(2049),
           )
         | _ ->
           tcenv.error(
@@ -2188,7 +2203,11 @@ extension class TypeChecker {
       | Some(TPromise(ty, _)) -> ty
       | _ ->
         fatalError(
-          Array[(pos, "Invalid await"), (aeType.pos, "This is not a promise")],
+          Array[
+            (pos, "'await' can only be applied to a Promise"),
+            (aeType.pos, "This is not a promise"),
+          ],
+          SKJSCode(2050),
         )
       }
     | EIf(e1, e2, e3) ->
@@ -2301,12 +2320,13 @@ extension class TypeChecker {
         | _ ->
           fatalError(
             Array[
-              (pos, "Invalid unary !"),
+              (pos, "Operator '!' cannot be applied to this type"),
               (
                 subE.pos,
                 `This has type ${this.ppType(tcenv, TType::single(stype))}`,
               ),
             ],
+            SKJSCode(2001),
           )
         }
       )
@@ -2812,9 +2832,13 @@ extension class TypeChecker {
         | _ ->
           fatalError(
             Array[
-              (pos, "Invalid in"),
+              (
+                pos,
+                "The left-hand side of an 'in' expression must be of type 'string', 'number', or 'symbol'",
+              ),
               (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
             ],
+            TSCode(2360),
           )
         }
       };
@@ -2822,9 +2846,13 @@ extension class TypeChecker {
     | _ ->
       fatalError(
         Array[
-          (pos, "Invalid in"),
+          (
+            pos,
+            "The left-hand side of an 'in' expression must be of type 'string', 'number', or 'symbol'",
+          ),
           (e1.pos, `This has type ${this.ppType(tcenv, t1)}`),
         ],
+        TSCode(2360),
       )
     }
   }
@@ -2859,9 +2887,13 @@ extension class TypeChecker {
           | None() ->
             tcenv.error(
               Array[
-                (argExpr.pos, "Invalid spread argument"),
+                (
+                  argExpr.pos,
+                  "A spread argument must be of an array or iterable type",
+                ),
                 (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
               ],
+              SKJSCode(2045),
             )
           | Some(eltType) ->
             !moreArgs = Some(
@@ -2874,9 +2906,13 @@ extension class TypeChecker {
         | _ ->
           tcenv.error(
             Array[
-              (argExpr.pos, "Invalid spread argument"),
+              (
+                argExpr.pos,
+                "A spread argument must be of an array or iterable type",
+              ),
               (spreadTy.pos, `It has type ${this.ppType(tcenv, spreadTy)}`),
             ],
+            SKJSCode(2045),
           )
         }
       | _ ->
