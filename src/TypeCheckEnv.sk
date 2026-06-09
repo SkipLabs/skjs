@@ -12,8 +12,11 @@ mutable base class TCEnvBase private {
     this.results.recordClassHierarchy{child, parent}
   }
 
-  mutable fun error(messages: Array<(PosRange, String)>): void {
-    this.results.error(messages)
+  mutable fun error(
+    messages: Array<(PosRange, String)>,
+    code: ErrorCode = Unclassified(),
+  ): void {
+    this.results.error(messages, code)
   }
 
   mutable fun subtypingError(
@@ -21,8 +24,9 @@ mutable base class TCEnvBase private {
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
+    code: ErrorCode = Unclassified(),
   ): void {
-    this.results.subtypingError(subst, tenv, messages, stErr)
+    this.results.subtypingError(subst, tenv, messages, stErr, code)
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
@@ -273,12 +277,15 @@ mutable class TCResultsAcc private {
     }
   }
 
-  mutable fun error(messages: Array<(PosRange, String)>): void {
+  mutable fun error(
+    messages: Array<(PosRange, String)>,
+    code: ErrorCode = Unclassified(),
+  ): void {
     this.errorHandling match {
-    | EHKeepGoing() -> this.errors.push(NamingError(messages))
+    | EHKeepGoing() -> this.errors.push(NamingError(messages, code))
     | EHBacktrace()
     | EHDefault() ->
-      error(messages)
+      error(messages, code)
     }
   }
 
@@ -287,13 +294,16 @@ mutable class TCResultsAcc private {
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
+    code: ErrorCode = Unclassified(),
   ): void {
     this.errorHandling match {
     | EHKeepGoing() ->
-      this.errors.push(SubtypingError(subst.saveAll(), tenv, messages, stErr))
+      this.errors.push(
+        SubtypingError(subst.saveAll(), tenv, messages, stErr, code),
+      )
     | EHBacktrace()
     | EHDefault() ->
-      subtypingError(subst, tenv, messages, stErr)
+      subtypingError(subst, tenv, messages, stErr, code)
     }
   }
 
