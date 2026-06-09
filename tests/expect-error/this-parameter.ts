@@ -11,7 +11,7 @@ class TestFirstParameter {
 
 // this parameter as first parameter
 class TestThisFirst {
-  // @skjs-expect-error TODO: support this parameter
+  // @skjs-expect-error 'this' parameters are not yet supported by SKJS
   method(this: MyContext, x: number): void {}
 }
 
@@ -30,5 +30,5 @@ type FuncWithThis = (this: MyContext, x: number) => number;
 function takesCallback(f: (this: MyContext, x: number) => number): void {}
 
 // this parameter in regular function definition (not supported yet)
-// @skjs-expect-error TODO: support this parameter
+// @skjs-expect-error 'this' parameters are not yet supported by SKJS
 function withThisParam(this: MyContext, x: number): void {}

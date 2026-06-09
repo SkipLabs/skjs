@@ -878,7 +878,7 @@ function testTupleWithPrimitives(
 
 // Empty tuple vs non-empty tuple
 // FIXME: SKJS doesn't support empty tuple syntax yet
-// @skjs-expect-error TODO emptyArray
+// @skjs-expect-error Empty array/tuple type literals are not yet supported by SKJS
 function testEmptyTuple(x: [] | [number]): [] | [number] {
   if (typeof x === "object") {
     return x;
@@ -891,9 +891,9 @@ function testEmptyTuple(x: [] | [number]): [] | [number] {
 // Tuple with optional elements
 // FIXME: SKJS doesn't support optional tuple elements yet
 function testTupleOptional(
-  // @skjs-expect-error TODO optional element tuple
+  // @skjs-expect-error Optional tuple elements are not yet supported by SKJS
   x: [number, string?] | number,
-  // @skjs-expect-error TODO optional element tuple
+  // @skjs-expect-error Optional tuple elements are not yet supported by SKJS
 ): [number, string?] {
   if (typeof x === "object") {
     return x;
@@ -941,7 +941,7 @@ function testTupleWithUnion(
 // Rest elements in tuple
 // FIXME: SKJS doesn't support tuple rest elements yet
 function testTupleWithRest(
-  // @skjs-expect-error TODO tuple spread
+  // @skjs-expect-error Tuple rest/spread elements are not yet supported by SKJS
   x: [number, ...string[]] | number,
   arr: string[],
 ): [number, ...string[]] {
@@ -996,9 +996,9 @@ function testTupleVsFunction(
 // Labeled tuple elements
 // FIXME: SKJS doesn't support labeled tuple elements yet
 function testLabeledTuple(
-  // @skjs-expect-error TODO named tuple
+  // @skjs-expect-error Named tuple elements are not yet supported by SKJS
   x: [first: number, second: string] | number,
-  // @skjs-expect-error TODO named tuple
+  // @skjs-expect-error Named tuple elements are not yet supported by SKJS
 ): [first: number, second: string] {
   if (typeof x === "object") {
     return x;

@@ -30,7 +30,7 @@ This document describes the rules and restrictions of the SKJS type checker, whi
 
 #### 4b. Abstract Classes Not Supported
 - **Rule**: Abstract classes and abstract method modifiers are not implemented
-- **Error**: "TODO: support for method modifiers (encountered abstract)"
+- **Error**: "Method modifier 'abstract' is not yet supported by SKJS"
 - **Workaround**: Use regular classes with interfaces, or avoid abstract patterns
 
 #### 4c. Static Fields Must Be Readonly

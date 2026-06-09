@@ -1898,9 +1898,13 @@ extension class TypeChecker {
           | TPromise _ ->
             tcenv.error(
               Array[
-                (pos, "TODO: in"),
+                (
+                  pos,
+                  "The 'in' operator is not yet supported by SKJS for this type",
+                ),
                 (e2.pos, `For type ${this.ppType(tcenv, t2)}`),
               ],
+              SKJSCode(9009),
             );
             !canBeTrue = true;
             !canBeFalse = true
@@ -2079,8 +2083,23 @@ extension class TypeChecker {
         this.expr(tcenv, subExpr, true)
       }
     | Params _ -> paramsError(pos)
-    | Regexp _ -> error(Array[(pos, "TODO: regexp")])
-    | Spread _ -> error(Array[(pos, "TODO: ...")])
+    | Regexp _ ->
+      error(
+        Array[
+          (pos, "Regular expression literals are not yet supported by SKJS"),
+        ],
+        SKJSCode(9010),
+      )
+    | Spread _ ->
+      error(
+        Array[
+          (
+            pos,
+            "Spread elements are not yet supported by SKJS in this position",
+          ),
+        ],
+        SKJSCode(9011),
+      )
     }
   }
 

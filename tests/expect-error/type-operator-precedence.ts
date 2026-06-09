@@ -155,7 +155,7 @@ function testArrayUnion(): void {
 ///////////////////////////////////////////////////////////////////////////////
 
 // SKJS doesn't fully support indexed access types yet
-// @skjs-expect-error TODO TAGet
+// @skjs-expect-error Indexed access types ('T[K]') are not yet supported by SKJS
 type IndexedUnion = { a: number }["a"] | string;
 
 function testIndexedUnion(): void {
