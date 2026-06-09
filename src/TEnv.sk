@@ -1021,7 +1021,57 @@ base class TEnv{
         if (this.seenInstantiate.contains(n.value)) {
           !this.forbiddenInsts = this.forbiddenInsts.set(n.value)
         };
-        TType::inst(n, TArgs(targs.map(x -> this.normalize(tcenvb, x))))
+        normalizedTArgs = targs.map(x -> this.normalize(tcenvb, x));
+        // Validate each type argument against its parameter's constraint here,
+        // at the reference site, so constraints are enforced wherever a generic
+        // type appears (annotations, ambient declarations, interface/alias
+        // bodies, ...), not only when the type is later expanded during a
+        // subtyping comparison. A parameter's constraint may reference earlier
+        // parameters, so bind them on a scratch env as we go.
+        scratchEnv = this;
+        cstrSubst = Subst::mcreate(tcenvb);
+        for (i => tParam in tparams) {
+          if (i < normalizedTArgs.size()) {
+            tArg = normalizedTArgs[i];
+            tParam.constraint match {
+            | None() -> void
+            | Some(cstr) ->
+              cstrTy = scratchEnv.normalize(cstrSubst, cstr);
+              TType::isSub(cstrSubst.clone(), scratchEnv, tArg, cstrTy) match {
+              | STOk() -> void
+              | err @ STErrorOnTType _ ->
+                tcenvb.subtypingError(
+                  cstrSubst,
+                  scratchEnv,
+                  Array[
+                    (n.pos, "Constraint not satisfied"),
+                    (
+                      tArg.pos,
+                      `This is of type: ${prettyPrintType(
+                        false,
+                        tArg,
+                        cstrSubst,
+                        scratchEnv,
+                      )}`,
+                    ),
+                    (
+                      cstr.pos,
+                      `It does not implement: ${prettyPrintType(
+                        false,
+                        cstrTy,
+                        cstrSubst,
+                        scratchEnv,
+                      )}`,
+                    ),
+                  ],
+                  err,
+                )
+              }
+            };
+            !scratchEnv.bindings[tParam.name.value] = tArg
+          }
+        };
+        TType::inst(n, TArgs(normalizedTArgs))
       }
     | TAUnion(ty1, ty2) ->
       subst = Subst::mcreate(tcenvb);
