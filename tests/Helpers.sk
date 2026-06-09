@@ -321,15 +321,23 @@ fun findAnnotationLines(contents: String): readonly Vector<AnnotationGroup> {
       if (!isFullMatch) continue;
       annot
     };
-    // Try to match -lineN suffix for @skjs-expect-error-lineN annotations
+    // Try to match a -lineN suffix. Only @skjs-expect-error supports it (to
+    // assert a message on a continuation line of a multi-line error);
+    // @skjs-expect-warning and @ts-expect-error do not. Match the suffix for
+    // every kind so that a -lineN on an unsupported kind is rejected with a
+    // clear error instead of being silently swallowed into the message.
     lineN = 1;
-    if (annot::str == SKJS_EXPECT_ERROR::str) {
-      tryMatchLineN(chars, pos) match {
-      | Some((n, newPos)) ->
-        !lineN = n;
-        !pos = newPos
-      | None() -> void
-      }
+    tryMatchLineN(chars, pos) match {
+    | Some((n, newPos)) ->
+      if (annot::str != SKJS_EXPECT_ERROR::str) {
+        invariant_violation(
+          `Line ${lineNumber}: @${annot::str}-line${n} is not supported; ` +
+            `only @${SKJS_EXPECT_ERROR::str} supports a -lineN suffix`,
+        )
+      };
+      !lineN = n;
+      !pos = newPos
+    | None() -> void
     };
     while (pos < chars.size() && (chars[pos] == ' ' || chars[pos] == '\t')) {
       !pos = pos + 1

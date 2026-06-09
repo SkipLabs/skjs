@@ -763,7 +763,38 @@ fun testLineNValidation(): void {
     )
   | None() ->
     invariant_violation("Expected lineN without primary annotation to fail")
-  }
+  };
+
+  // A -lineN suffix is only supported on @skjs-expect-error. On any other kind
+  // it must be rejected with a clear error rather than silently swallowed into
+  // the diagnostic message (see findAnnotationLines). Assert on the guard's
+  // distinctive "is not supported" wording so the test cannot pass on some
+  // unrelated throw (e.g. the "misplaced" or "duplicate annotation" guards).
+  expectRejectedLineN = (contents: String, kind: String) -> {
+    caught = try {
+      _ = findExpectErrors(contents);
+      None()
+    } catch {
+    | e -> Some(e.getMessage())
+    };
+    caught match {
+    | Some(msg) ->
+      SKTest.expectTrue(
+        msg.contains("is not supported"),
+        `${kind}-lineN should be rejected by the -lineN guard, got: ${msg}`,
+      )
+    | None() ->
+      SKTest.fail(`${kind}-lineN should be rejected, but nothing was raised`)
+    }
+  };
+  expectRejectedLineN(
+    lines(Array["// @skjs-expect-warning-line2 Hint", "testFoo();"]),
+    "@skjs-expect-warning",
+  );
+  expectRejectedLineN(
+    lines(Array["// @ts-expect-error-line2 Hint", "testFoo();"]),
+    "@ts-expect-error",
+  )
 }
 
 module end;
