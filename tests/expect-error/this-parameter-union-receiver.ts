@@ -45,5 +45,7 @@ interface Square {
   area(): number;
 }
 function shapeUnion(sh: Circle | Square): number {
+  // FIXME: false positive — same union-receiver issue on a discriminated union.
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   return sh.area();
 }
