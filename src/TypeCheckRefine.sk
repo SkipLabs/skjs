@@ -279,7 +279,13 @@ extension class TypeChecker {
       this.setLocalFilterMap(tcenv, local, None(), filterMap)
     | _ ->
       tcenv.error(
-        Array[(typePos, `Unexpected typeof check against "${typeStr}"`)],
+        Array[
+          (
+            typePos,
+            `'${typeStr}' is not a valid operand for a 'typeof' comparison`,
+          ),
+        ],
+        TSCode(2367),
       )
     }
   }

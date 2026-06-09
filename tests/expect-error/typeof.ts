@@ -674,7 +674,7 @@ function testBecomesNever(x: number): string {
 
 // Using typeof with wrong value
 function testWrongTypeofValue(x: number | string): number {
-  // @ts-expect-error Unexpected typeof check against "array"
+  // @skjs-expect-error 'array' is not a valid operand for a 'typeof' comparison
   if (typeof x === "array") {
     return 0;
   } else {

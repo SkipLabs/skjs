@@ -151,7 +151,7 @@ function assignRestToReadonly<T>(
 // constraints are unsound for rest parameters.
 ///////////////////////////////////////////////////////////////////////////////
 
-// @skjs-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+// @skjs-expect-error A rest parameter's constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
 function fullMutableConstraint<T extends string[]>(...args: T): void {
   // If this were allowed, T = string[] means args is mutable,
   // and a mutator could .push() on the rest array.
@@ -160,14 +160,14 @@ function fullMutableConstraint<T extends string[]>(...args: T): void {
 
 function fullMutableWithSink<T extends string[]>(
   mutator: (arr: T) => void,
-  // @skjs-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+  // @skjs-expect-error A rest parameter's constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
   ...args: T
 ): void {
   // If this were allowed, mutator could mutate the rest array.
   mutator(args);
 }
 
-// @skjs-expect-error Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
+// @skjs-expect-error A rest parameter's constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly
 function fullMutableReturn<T extends number[]>(...args: T): T {
   // If this were allowed, caller gets a mutable handle to the rest array.
   return args;

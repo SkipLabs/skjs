@@ -456,6 +456,7 @@ mutable class FileDefsState private {
                   `An import path can only end with a '${suffix}' extension when 'allowImportingTsExtensions' is enabled.`,
                 ),
               ],
+              TSCode(5097),
             ),
           )
         }
@@ -472,6 +473,7 @@ mutable class FileDefsState private {
                   "Use 'moduleResolution: \"bundler\"' for extensionless imports.",
               ),
             ],
+            SKJSCode(1011),
           ),
         )
       };
@@ -492,7 +494,15 @@ mutable class FileDefsState private {
     | Some(fileName) -> Some(ModuleName{name, fileName})
     | None() ->
       this.fileErrors.push(
-        NamingError(Array[(mname.pos, `Could not find module '${mname}'`)]),
+        NamingError(
+          Array[
+            (
+              mname.pos,
+              `Cannot find module '${mname}' or its corresponding type declarations`,
+            ),
+          ],
+          TSCode(2307),
+        ),
       );
       None()
     }
@@ -591,13 +601,13 @@ mutable class FileDefsState private {
           DeclSpaces::ofFileDef(existingDef).overlaps(dSpaces)
         )
         .each(existingDef -> {
-          msg1 = (name.pos, `${name} is already defined`);
+          msg1 = (name.pos, `Duplicate identifier '${name}'`);
           msgs = existingDef.getPos() match {
           | None() -> Array[msg1]
           | Some(existingPos) ->
             Array[msg1, (existingPos, "Previous definition was here")]
           };
-          this.fileErrors.push(NamingError(msgs))
+          this.fileErrors.push(NamingError(msgs, TSCode(2300)))
         });
       existingDefs.push(d)
     }
