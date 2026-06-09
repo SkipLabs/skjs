@@ -49,7 +49,7 @@ function testBoolLiteralLocal(): void {
 }
 
 // null literal (parsed as Var("null") so lookup fails)
-// @skjs-expect-error Variable null not found
+// @skjs-expect-error Cannot find name 'null'
 type NullLiteralType = typeof null;
 
 ///////////////////////////////////////////////////////////////////////////////
@@ -149,7 +149,7 @@ function testTernaryParam(x: typeof (true ? "a" : "b")): string {
 ///////////////////////////////////////////////////////////////////////////////
 
 // this in type alias - rejected (parsed as Var("this"), no this binding)
-// @skjs-expect-error Variable this not found
+// @skjs-expect-error Cannot find name 'this'
 type ThisType = typeof this;
 
 ///////////////////////////////////////////////////////////////////////////////

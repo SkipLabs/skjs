@@ -8,22 +8,22 @@ type T = number;
 // @skjs-expect-error T is already defined
 type T = string;
 
-// @skjs-expect-error Found multiple definitions for class A
+// @skjs-expect-error Duplicate class declaration 'A'
 class A {}
-// @skjs-expect-error Found multiple definitions for class A
 // @skjs-expect-error A is already defined
+// @skjs-expect-error Duplicate class declaration 'A'
 class A {}
 
 function f(): void {}
 // @skjs-expect-error f is already defined
 function f(): void {}
 
-// @skjs-expect-error Found multiple definitions for class I
+// @skjs-expect-error Duplicate class declaration 'I'
 interface I {
   a: number;
 }
-// @skjs-expect-error Found multiple definitions for class I
 // @skjs-expect-error I is already defined
+// @skjs-expect-error Duplicate class declaration 'I'
 interface I {
   b: string;
 }
