@@ -265,6 +265,16 @@ extension class TypeChecker {
         Array[(cstrSig.retType.i0, "Constructors don't have return types")],
       );
     };
+    // A constructor cannot declare an explicit `this` parameter (TS2681).
+    if (cstrSig.params.size() > 0) {
+      cstrSig.params[0].name.value match {
+      | PVar(Name(thisPos, "this")) ->
+        subst.error(
+          Array[(thisPos, "A constructor cannot have a this parameter")],
+        )
+      | _ -> void
+      }
+    };
     for (modifier in fd.modifiers.modifiers) {
       subst.error(
         Array[
