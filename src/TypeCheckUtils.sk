@@ -57,11 +57,12 @@ extension class TypeChecker {
     msg: String,
     ty1: TType,
     ty2: TType,
+    code: ErrorCode = Unclassified(),
   ): void {
     TType::isSub(tcenv.subst, this, ty1, ty2) match {
     | STOk() -> void
     | err @ STErrorOnTType _ ->
-      tcenv.subtypingError(tcenv.subst, this, Array[(pos, msg)], err)
+      tcenv.subtypingError(tcenv.subst, this, Array[(pos, msg)], err, code)
     }
   }
 

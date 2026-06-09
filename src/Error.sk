@@ -141,11 +141,40 @@ base class ErrorPos uses Equality {
 }
 
 /***************************************************************************/
+/* Error codes.
+ *
+ * Every diagnostic carries a code. `TSCode` reuses the matching TypeScript
+ * compiler code; `SKJSCode` is an SKJS-specific code following TypeScript's
+ * numbering convention (1xxx syntax, 2xxx semantic/type, 5xxx options; the
+ * 9xxx band is reserved for "not yet supported"). `Unclassified` is the
+ * placeholder for messages that have not been assigned a code yet.
+ *
+ * How the code is surfaced in error output is decided separately; for now it
+ * is stored on the error and not rendered.
+ */
+/***************************************************************************/
+
+base class ErrorCode uses Equality {
+  children =
+  | TSCode(Int)
+  | SKJSCode(Int)
+  | Unclassified()
+
+  fun toString(): String
+  | TSCode(n) -> `TS${n}`
+  | SKJSCode(n) -> `SKJS${n}`
+  | Unclassified() -> ""
+}
+
+/***************************************************************************/
 /* Error kinds (description of the error) */
 /***************************************************************************/
 
 base class ErrorKind uses Equality {
   fun toString(): String;
+  fun code(): ErrorCode {
+    Unclassified()
+  }
 }
 base class ParsingKind extends ErrorKind
 base class LexingKind extends ErrorKind
