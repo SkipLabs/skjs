@@ -220,9 +220,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           asyncPos,
-          "Async functions must return an object of type Promise<_>",
+          "The return type of an async function must be the global Promise<T> type",
           retType,
           TType::single(TPromise(type, asyncPos)),
+          TSCode(1064),
         )
       }
     };

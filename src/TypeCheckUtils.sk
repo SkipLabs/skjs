@@ -70,9 +70,10 @@ extension class TypeChecker {
     this.checkSubType(
       tcenv,
       pos,
-      "This expression was expected to be of type void",
+      "This expression was expected to be of type 'void'",
       ty,
       TType::single(TPrimUnit(TVoid(), ty.pos)),
+      SKJSCode(2002),
     );
   }
 
@@ -87,9 +88,10 @@ extension class TypeChecker {
     this.checkSubType(
       tcenv,
       pos,
-      "This expression was expected to be of type void or ignorable",
+      "This expression was expected to be of type 'void' or ignorable",
       ty,
       tyVoid,
+      SKJSCode(2002),
     )
   }
 

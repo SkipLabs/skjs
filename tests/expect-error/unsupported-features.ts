@@ -19,6 +19,6 @@ class TestUnsupportedFeatures {
 // Test as operator: only sound upcasts are accepted; downcasts error
 function testAsOperator(): void {
   const x: unknown = 5;
-  // @skjs-expect-error Unsound 'as' cast
+  // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
   const y: number = x as number;
 }

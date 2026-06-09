@@ -27,20 +27,20 @@ function getFirst<U>(
 // ============================================================
 
 function testUnsound(): void {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   const box = getFirst({ value: "hello" }, { value: 42 });
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: number = box.value;
 }
 
 function testReversedOrder(): void {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   const box = getFirst({ value: 42 }, { value: "hello" });
   const n: number = box.value;
 }
 
 function testThreeArgs(): void {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   const box = getFirst3({ value: true }, { value: 42 }, { value: 100 });
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const n: number = box.value;
@@ -62,7 +62,7 @@ function getFirst3<U>(
 // ============================================================
 
 function testBothValidWithoutAnnot(): void {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   const box = getFirst({ value: 42 }, { value: 100 });
   const n: number = box.value;
 }

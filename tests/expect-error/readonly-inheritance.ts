@@ -11,7 +11,7 @@ class BaseClass {
 }
 
 // SKJS rejects: readonly field not compatible with mutable parent
-// @skjs-expect-error Invalid extension
+// @skjs-expect-error This class incorrectly extends its base class
 class DerivedReadonly extends BaseClass {
   readonly value: number = 2;
 }
@@ -25,7 +25,7 @@ interface MutableIface {
 }
 
 // SKJS rejects: readonly field not compatible with mutable parent
-// @skjs-expect-error Invalid extension
+// @skjs-expect-error This class incorrectly extends its base class
 interface ReadonlyIface extends MutableIface {
   readonly name: string;
 }

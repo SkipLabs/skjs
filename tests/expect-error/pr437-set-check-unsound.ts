@@ -24,7 +24,7 @@ function mutatePet(p: MutablePet): void {
 function testReadonlyToMutable(): void {
   const r: ReadonlyPet = { name: "original" };
   // Correctly rejected — readonly field passed where mutable field expected
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   mutatePet(r);
 }
 
@@ -48,7 +48,7 @@ function testReadonlyBoxToMutableBox(): void {
   const rb: ReadonlyBox<string> = { value: "immutable" };
   // Correctly rejected — readonly value passed where mutable value expected
   // (error includes: "This would not be an error if this field were readonly")
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   // @skjs-expect-error-line2 This would not be an error if this field were readonly
   setBoxValue(rb, "mutated");
 }
@@ -74,7 +74,7 @@ function changeTag(obj: WideObj): void {
 function testNarrowToWide(): void {
   const narrow: NarrowObj = { tag: "a", data: "hello" };
   // Correctly rejected — readonly "a" tag passed where mutable string expected
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   changeTag(narrow);
 }
 
@@ -97,7 +97,7 @@ function breakDiscriminant(s: MutableType): void {
 function testBrokenDiscriminant(s: Shape): void {
   // Correctly rejected — readonly discriminant passed where mutable field expected
   // Prevents corrupting the discriminant used for union narrowing
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   breakDiscriminant(s);
 }
 
@@ -134,6 +134,6 @@ function replaceHandler(obj: MutableCallback): void {
 function testReadonlyCallbackToMutable(): void {
   const rc: ReadonlyCallback = { handler: (x: string) => console.log(x) };
   // Correctly rejected — readonly handler passed where mutable handler expected
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   replaceHandler(rc);
 }

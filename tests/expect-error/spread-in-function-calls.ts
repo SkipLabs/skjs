@@ -33,7 +33,7 @@ function testSpreadArray(): void {
   args.push(1);
   args.push(2);
   args.push(3);
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   takesThreeNumbers(...args);
 }
 
@@ -87,14 +87,14 @@ function testSpreadSingleElement(): void {
 // Test 11: Wrong argument types in spread
 function testWrongTypes(): void {
   const wrongArgs: [string, string, string] = ["a", "b", "c"];
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesThreeNumbers(...wrongArgs);
 }
 
 // Test 12: Too few arguments via spread
 function testTooFewArguments(): void {
   const tooFew: [number, number] = [1, 2];
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   takesThreeNumbers(...tooFew);
 }
 
@@ -109,7 +109,7 @@ function testTooManyArguments(): void {
 // Test 14: Spread non-array type
 function testSpreadNonArray(): void {
   const notArray: number = 42;
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   // @ts-expect-error Invalid spread argument
   takesThreeNumbers(...notArray);
 }
@@ -117,7 +117,7 @@ function testSpreadNonArray(): void {
 // Test 15: Spread object (not array)
 function testSpreadObject(): void {
   const obj: { a: number; b: number; c: number } = { a: 1, b: 2, c: 3 };
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   // @ts-expect-error Invalid spread argument
   takesThreeNumbers(...obj);
 }
@@ -175,6 +175,6 @@ function testSpreadWithArrayMethods(): void {
   arr.push(1);
   arr.push(2);
   arr.push(3);
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   takesThreeNumbers(...arr);
 }

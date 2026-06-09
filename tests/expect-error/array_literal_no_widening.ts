@@ -32,7 +32,7 @@ function literalSubtypeOfLiteralUnionArray(): void {
 function committedAsStringArrayNotLiteralArray(): void {
   const values = ["toto", "titi"];
   takesStringArray(values);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesLiteralUnionArray(values);
 }
 
@@ -40,6 +40,6 @@ function committedAsStringArrayNotLiteralArray(): void {
 function committedAsLiteralArrayNotStringArray(): void {
   const values = ["toto", "titi"];
   takesLiteralUnionArray(values);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesStringArray(values);
 }

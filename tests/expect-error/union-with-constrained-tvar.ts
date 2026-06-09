@@ -22,10 +22,10 @@ function test(): void {
   // Box<"foo"> satisfies T extends Box<string> ("foo" extends string),
   // so this matches the T branch of the union.
   const badBox: Box<"foo"> = new Box("foo");
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takeBoxOrNumber(badBox);
 
   // Name-sensitive behavior probe: this variant can differ from the T-binder one.
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takeBoxOrNumberS(badBox);
 }

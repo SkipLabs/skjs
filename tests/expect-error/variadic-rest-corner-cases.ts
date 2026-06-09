@@ -87,7 +87,7 @@ declare function takesOptTupleRest(cb: OptTupleRestExpected): void;
 declare const optTupleRestCandidate: OptTupleRestCandidate;
 
 function testOptionalBeforeTupleRest(): void {
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesOptTupleRest(optTupleRestCandidate);
 }
 
@@ -119,8 +119,8 @@ function testGenericTupleRestInference(): void {
   const t1_as_tuple: readonly [string, number] = t1;
 
   // Constraint enforcement (DepSafe)
-  // @skjs-expect-error This expression was expected to be of type void or ignorable
   // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
+  // @skjs-expect-error This expression was expected to be of type 'void' or ignorable
   inferTuple(true);
 }
 
@@ -150,7 +150,7 @@ function testArraySpreadInference(): void {
 // 6) Spread array followed by positional arg: loses precision on string vs numner
 function testSpreadArrayFollowedByPositional(): void {
   const depArr: VariadicDepSafe[] = ["a", 1];
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   twoArgs(...depArr, 2);
 }
 
@@ -165,7 +165,7 @@ function testMotivatingAPI(): void {
   variadicColl.map(Zero);
   variadicColl.map(One, "hello");
   variadicColl.map(Two, "hello", 42);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Two, "hello");
   // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   variadicColl.map(One, true);
@@ -175,13 +175,13 @@ function testMotivatingAPI(): void {
   variadicColl.map(Two, ...args2);
 
   const argsArr: VariadicDepSafe[] = ["z", 7];
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   variadicColl.map(Two, ...argsArr);
 
   // Mixed fixed + tuple-rest constructor pattern
   prefixedColl.mapWithPrefix("tag", PrefixOne, "hello");
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello", 42);
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   prefixedColl.mapWithPrefix("tag", PrefixTwo, "hello");
   // @skjs-expect-error Invalid call. Inferred rest arguments readonly [boolean] do not satisfy the constraint
   prefixedColl.mapWithPrefix("tag", PrefixOne, true);

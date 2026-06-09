@@ -126,13 +126,13 @@ function accessStaticThroughTypeof(Ctor: WithStaticConstructor): number {
 
 // Wrong argument count
 function wrongArgCount(Ctor: typeof Point): Point {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Too few arguments for this call
   return new Ctor(1);
 }
 
 // Wrong argument type
 function wrongArgType(Ctor: typeof Point): Point {
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return new Ctor("a", "b");
 }
 

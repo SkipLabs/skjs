@@ -18,6 +18,6 @@ function takeBox<T extends Box<string>>(b: T): void {}
 
 function test(): void {
   const box: Box<"foo"> = new Box("foo");
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takeBox(box);
 }

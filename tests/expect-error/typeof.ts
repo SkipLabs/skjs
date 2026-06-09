@@ -437,7 +437,7 @@ function testWrongProperty(x: { a: number } | { b: string }): number {
 // Trying to call non-function
 function testCallNonFunction(x: number | (() => void)): void {
   if (typeof x === "number") {
-    // @ts-expect-error Invalid call
+    // @skjs-expect-error This expression is not callable
     x();
   }
 }
@@ -815,7 +815,7 @@ function testArrayIsArray(
   if (typeof x === "object") {
     // Both are objects, typeof can't distinguish
     // Would need Array.isArray for real discrimination
-    // @skjs-expect-error Unsound 'as' cast
+    // @skjs-expect-error This 'as' cast is unsound: the source type is not assignable to the target type
     return x as number[];
   } else {
     return arr;

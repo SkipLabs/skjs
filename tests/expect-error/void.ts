@@ -99,8 +99,8 @@ function unsafeInTypescript(
   // @skjs-expect-error Invalid operation on type void
   return (b ? null : returningVoid()) ?? "a";
 }
-// @skjs-expect-error Invalid call
-// @skjs-expect-error This expression was expected to be of type void
+// @skjs-expect-error Argument is not assignable to the parameter's type
+// @skjs-expect-error This expression was expected to be of type 'void'
 unsafeInTypescript(false, returningVoidOrNumber);
 
 /* With type parameters */
@@ -116,7 +116,7 @@ function returningVoidParam<T extends void>(param: T): void {
 
 function takesVoidGeneric<T extends void>(param: T): void {}
 
-// @ts-expect-error Invalid call
+// @skjs-expect-error Argument is not assignable to the parameter's type
 takesVoidGeneric<number>(5);
 
 takesVoidGeneric<void>(returningVoid());
@@ -162,7 +162,7 @@ function invalidArrayAccess<T>(value: void | T): T {
 }
 
 function invalidFunctionCall<T>(value: void | T): T {
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error This expression is not callable
   return value();
 }
 
@@ -224,6 +224,6 @@ function testConditionalWithVoid(): number {
 
 function testArithmeticAssignment(): void {
   let x: number = 5;
-  // @ts-expect-error Invalid + operand
+  // @skjs-expect-error Right operand of '+' is not assignable to the left operand's type
   x += returningVoid();
 }

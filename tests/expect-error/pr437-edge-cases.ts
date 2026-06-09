@@ -150,7 +150,7 @@ function testNestedConstraintIntersection437(): void {
   fixHello(obj.inner);
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const w: Wrapper437<string> = obj;
-  // @skjs-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   const r = idWrapped437(w);
   // @skjs-expect-error Type of value is not assignable to the variable's type annotation
   const s: string = r.inner.v;

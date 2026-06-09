@@ -5,8 +5,8 @@ function testUnaryVsFunctionCall(): boolean {
 
 function testUnaryVsFunctionCallError(): void {
   let foo = (): boolean => true;
-  // @skjs-expect-error Invalid call
   // @skjs-expect-error Operand of '!' must be of type 'boolean'
+  // @skjs-expect-error This expression is not callable
   let result = (!foo)();
 }
 
@@ -47,7 +47,7 @@ function testArithmeticVsComparison(): boolean {
 }
 
 function testArithmeticVsComparisonError(): void {
-  // @ts-expect-error Invalid + operand
+  // @skjs-expect-error Right operand of '+' is not assignable to the left operand's type
   let result = 1 + (2 < 3) + 4;
 }
 

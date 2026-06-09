@@ -90,8 +90,8 @@ function testUnaryCallPositive(): boolean {
 
 function testUnaryCallNegative(): void {
   const f = (): boolean => true;
-  // @skjs-expect-error Invalid call
   // @skjs-expect-error Operand of '!' must be of type 'boolean'
+  // @skjs-expect-error This expression is not callable
   const result: boolean = (!f)(); // Forcing wrong precedence: boolean is not callable
 }
 
