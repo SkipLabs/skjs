@@ -184,17 +184,9 @@ class TType private {
     }
   }
 
-  // True if this type contains the polymorphic-`this` tparam marker
-  // (produced by `classThisType`). Used by the subtyping engine to treat
-  // such thisParams as mutually compatible across signatures.
-  fun isClassThisType(): Bool {
-    this.clauses.any(c -> c.vars.values().any(tp -> tp.id == Id::createThis()))
-  }
-
   // Build the polymorphic `this` type for a class: a tparam named "this"
   // with `Id::createThis()` constrained to the class instantiation. This
-  // is the F-bounded marker used to type `this` inside method bodies and
-  // (prospectively) as the implicit `thisParam` on method signatures.
+  // is the F-bounded marker used to type `this` inside method bodies.
   static fun classThisType(
     subst: mutable Subst,
     tenv: TEnv,
@@ -868,6 +860,15 @@ class TFun(
   spreadParam: ?TType, /* A function can always accept more ignored parameters, so None() is like Some(Array<Top>) */
   retType: TType,
   cgNodes: CGNodes,
+  // True when `thisParam` is the implicit enclosing-class instance (a method's
+  // receiver is the object itself) rather than an explicitly-declared `this: T`.
+  // Function-type subtyping skips the contravariant this-check when BOTH sides
+  // are implicit: the receiver is always the object, so two implicit thisParams
+  // are mutually compatible (this is TS's bivariant treatment of method `this`).
+  // This lets every instance method carry a thisParam without breaking generic
+  // container variance (ReadonlyArray<Dog> vs ReadonlyArray<Animal>) or subclass
+  // override compatibility. Explicit `this: T` keeps full contravariance.
+  thisParamImplicit: Bool = false,
 ) uses XXHashable, Orderable {
   fun toString(subst: mutable Subst, tenv: TEnv): String {
     prettyPrintTFun(subst, tenv, this)
