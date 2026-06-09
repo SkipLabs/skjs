@@ -1,4 +1,4 @@
 // Test that function types require parameter names
 
-// @ts-expect-error Expected token :
+// @skjs-expect-error ':' expected
 type F1 = (number) => void;

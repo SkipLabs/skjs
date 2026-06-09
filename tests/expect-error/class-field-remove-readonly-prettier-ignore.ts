@@ -1,5 +1,5 @@
 // prettier-ignore
 // Regression test: Class fields cannot have -readonly modifier
 class Foo {
-  // @ts-expect-error Expected token a number
+  // @skjs-expect-error 'a number' expected
   -readonly bar: string = "world"; }

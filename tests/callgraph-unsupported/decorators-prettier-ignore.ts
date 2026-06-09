@@ -5,5 +5,5 @@ function myDecorator(target: any): any {
   return target;
 }
 class Foo {}
-// @skjs-expect-error Unknown character: @ (64)
+// @skjs-expect-error Invalid character '@' (char code 64)
 @myDecorator

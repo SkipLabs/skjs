@@ -1,5 +1,5 @@
 // prettier-ignore
 // Regression test: Getters must be function definitions, not normal fields with type annotations
 class Foo {
-  // @ts-expect-error Expected accessor definition
+  // @skjs-expect-error Expected a getter or setter definition
   get foo: string; }
