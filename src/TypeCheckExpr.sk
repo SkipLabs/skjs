@@ -501,6 +501,8 @@ extension class TypeChecker {
     // those as "Unbound field" — a sound under-approximation.
     if (!f.tparams.isEmpty()) return None();
     thisType = f.thisParam.default(TType::top(pos));
+    funType = (tfun: TFun) ->
+      TType::single(TObject::createCall(TFuns::singleFun(tfun, pos)));
     synthOpt: ?TFun = if (fieldName == "call") {
       // (thisArg, ...params) => R — mirrors the function's optional/rest params.
       Some(
@@ -537,9 +539,7 @@ extension class TypeChecker {
       // bind(thisArg) => the function with its `this` removed, preserving the
       // remaining (incl. optional/rest) parameters.
       bound = f with {thisParam => None(), thisParamImplicit => false};
-      boundTy = TType::single(
-        TObject::createCall(TFuns::singleFun(bound, pos)),
-      );
+      boundTy = funType(bound);
       Some(
         TFun(
           Array[],
@@ -552,9 +552,7 @@ extension class TypeChecker {
         ),
       )
     };
-    synthOpt.map(synth ->
-      TType::single(TObject::createCall(TFuns::singleFun(synth, pos)))
-    )
+    synthOpt.map(funType)
   }
 
   fun get(
