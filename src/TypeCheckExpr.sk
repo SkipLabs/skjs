@@ -967,11 +967,12 @@ extension class TypeChecker {
   //   f.apply(thisArg, [params]) => R
   //   f.bind(thisArg)            => (the function with its `this` removed)
   // `.bind`'s result is `OmitThisParameter<f>` — just `f` with `thisParam`
-  // cleared. Scoped to a single non-generic call signature with only required
-  // positional parameters; returns None (so the access falls through to
-  // "Unbound field") for generic or optional/rest-param functions, which would
-  // need the full variadic CallableFunction signatures TS uses. Partial-
-  // application `.bind(thisArg, ...args)` is not modeled yet.
+  // cleared. `.call`/`.bind` carry the function's optional and rest parameters;
+  // `.apply` models only required positional params (its argument tuple is
+  // exact). Returns None (so the access falls through to "Unbound field") for
+  // generic call signatures — which TS resolves to `unknown` through these
+  // methods — rather than diverge. Partial-application `.bind(thisArg, ...args)`
+  // is not modeled yet.
   fun maybeFunctionMethod(
     tcenv: mutable TCEnv,
     obj: TObject,
@@ -986,13 +987,10 @@ extension class TypeChecker {
     | None() -> return None()
     };
     f = tfuns.fun_;
-    if (
-      !f.tparams.isEmpty() ||
-      !f.optionalParams.isEmpty() ||
-      f.spreadParam.isSome()
-    ) {
-      return None()
-    };
+    // A generic call signature loses its type parameters through .call/.apply/
+    // .bind in TS (they resolve to `unknown`), so rather than diverge we leave
+    // those as "Unbound field" — a sound under-approximation.
+    if (!f.tparams.isEmpty()) return None();
     // A shape method's carrier type is erased, so no sound thisArg check is
     // possible for a rebind — do not synthesize .call/.apply/.bind on it
     // (a sound under-approximation: the fields stay unbound).
@@ -1004,41 +1002,56 @@ extension class TypeChecker {
     thisType = f.thisParam.tyOpt().default(TType::top(pos));
     funType = (tfun: TFun) ->
       TType::single(TObject::createCall(TFuns::singleFun(tfun, pos)));
-    synth = if (fieldName == "call") {
-      TFun(
-        Array[],
-        NoThis(),
-        Array[thisType].concat(f.params),
-        Array[],
-        None(),
-        f.retType,
-        f.cgNodes,
+    synthOpt: ?TFun = if (fieldName == "call") {
+      // (thisArg, ...params) => R — mirrors the function's optional/rest params.
+      Some(
+        TFun(
+          Array[],
+          NoThis(),
+          Array[thisType].concat(f.params),
+          f.optionalParams,
+          f.spreadParam,
+          f.retType,
+          f.cgNodes,
+        ),
       )
     } else if (fieldName == "apply") {
-      argsTuple = TType::tuple(pos, f.params, true);
-      TFun(
-        Array[],
-        NoThis(),
-        Array[thisType, argsTuple],
-        Array[],
-        None(),
-        f.retType,
-        f.cgNodes,
-      )
+      // (thisArg, [params]) => R. The argument tuple is exact, so only required
+      // positional parameters are modeled; fall back otherwise.
+      if (!f.optionalParams.isEmpty() || f.spreadParam.isSome()) {
+        None()
+      } else {
+        argsTuple = TType::tuple(pos, f.params, true);
+        Some(
+          TFun(
+            Array[],
+            NoThis(),
+            Array[thisType, argsTuple],
+            Array[],
+            None(),
+            f.retType,
+            f.cgNodes,
+          ),
+        )
+      }
     } else {
+      // bind(thisArg) => the function with its `this` removed, preserving the
+      // remaining (incl. optional/rest) parameters.
       bound = f with {thisParam => NoThis()};
       boundTy = funType(bound);
-      TFun(
-        Array[],
-        NoThis(),
-        Array[thisType],
-        Array[],
-        None(),
-        boundTy,
-        f.cgNodes,
+      Some(
+        TFun(
+          Array[],
+          NoThis(),
+          Array[thisType],
+          Array[],
+          None(),
+          boundTy,
+          f.cgNodes,
+        ),
       )
     };
-    Some(funType(synth))
+    synthOpt.map(synth -> funType(synth))
   }
 
   fun get(
