@@ -115,7 +115,7 @@ const uniqueB: unique symbol = Symbol("b");
 function testDistinctTypes(): void {
   // @skjs-expect-error Invalid annotation
   // @skjs-expect-error-line2 Type typeof uniqueB
-  // @skjs-expect-error-line3 is not compatible with type typeof uniqueA
+  // @skjs-expect-error-line3 is not assignable to type typeof uniqueA
   // @skjs-expect-error-line4 Value typeof uniqueB is missing
   const b: typeof uniqueA = uniqueB; // Different unique symbols are incompatible
 }
@@ -137,7 +137,7 @@ function testCovariance(us: unique symbol): symbol {
 function testContravariance(s: symbol): void {
   // @skjs-expect-error Invalid annotation
   // @skjs-expect-error-line2 Full type symbol
-  // @skjs-expect-error-line3 is not compatible with specific type typeof uniqueA
+  // @skjs-expect-error-line3 is not assignable to specific type typeof uniqueA
   const us: typeof uniqueA = s; // symbol → unique symbol should fail
 }
 
@@ -383,7 +383,7 @@ function testSpreadInArrayLiteral(): void {
 function testClassSymContravariance(s: symbol): void {
   // @skjs-expect-error Invalid annotation
   // @skjs-expect-error-line2 Full type symbol
-  // @skjs-expect-error-line3 is not compatible with specific type typeof MyClass.classSym
+  // @skjs-expect-error-line3 is not assignable to specific type typeof MyClass.classSym
   const c: typeof MyClass.classSym = s;
 }
 
@@ -396,7 +396,7 @@ declare const anonObj: { readonly prop: unique symbol };
 function testAnonUniqueSymbol(s: symbol): void {
   // @skjs-expect-error Invalid annotation
   // @skjs-expect-error-line2 Full type symbol
-  // @skjs-expect-error-line3 is not compatible with specific type unique symbol defined in tests/expect-error/symbols.ts at constant(anonObj)
+  // @skjs-expect-error-line3 is not assignable to specific type unique symbol defined in tests/expect-error/symbols.ts at constant(anonObj)
   const c: typeof anonObj.prop = s;
 }
 

@@ -113,7 +113,7 @@ base class STErrorOnSType(
     };
     List[
       (sType1.pos, `Type ${sType1.toString(subst, tenv)}`),
-      (pos2, `is not compatible with type ${sTypes2.toString(subst, tenv)}`),
+      (pos2, `is not assignable to type ${sTypes2.toString(subst, tenv)}`),
     ].concat(STError::readonlyHint(suggestReadonly))
 }
 
@@ -138,7 +138,7 @@ base class STErrorOnTPrimValue(
       (prim1.pos, `Full type ${prim1.toString(subst, tenv)}`),
       (
         prim2.pos,
-        `is not compatible with specific type ${prim2.toString(subst, tenv)}`,
+        `is not assignable to specific type ${prim2.toString(subst, tenv)}`,
       ),
     ].concat(STError::readonlyHint(suggestReadonly))
   | STPrimMissingValue(elt, prim1, prim2, suggestReadonly) ->
@@ -148,7 +148,7 @@ base class STErrorOnTPrimValue(
     };
     List[
       (prim1.pos, `Type ${prim1.toString(subst, tenv)}`),
-      (prim2.pos, `is not compatible with type ${prim2.toString(subst, tenv)}`),
+      (prim2.pos, `is not assignable to type ${prim2.toString(subst, tenv)}`),
       (elt.pos, `Value ${displayVal} is missing`),
     ].concat(STError::readonlyHint(suggestReadonly))
 }
@@ -175,7 +175,7 @@ base class STErrorOnTPromise(
         List.Cons(
           (
             p2.pos,
-            `is not compatible with promise type ${p2.toString(subst, tenv)}`,
+            `is not assignable to promise type ${p2.toString(subst, tenv)}`,
           ),
           msgs,
         ),
@@ -217,10 +217,7 @@ base class STErrorOnObject(
               List.Cons(
                 (
                   o2.pos,
-                  `is not compatible with type ${fields2.toString(
-                    subst,
-                    tenv,
-                  )}`,
+                  `is not assignable to type ${fields2.toString(subst, tenv)}`,
                 ),
                 msgs,
               ),
@@ -237,14 +234,14 @@ base class STErrorOnObject(
       if (msgs.isEmpty()) {
         !msgs = List[
           (o1.pos, `Type ${fields1.toString(subst, tenv)}`),
-          (o2.pos, `is not compatible with ${o2.toString(subst, tenv)}`),
+          (o2.pos, `is not assignable to ${o2.toString(subst, tenv)}`),
         ];
       };
       if (o1.getBranches().size() > 1 != o2.getBranches().size() > 1) {
         !msgs = List.Cons(
           (o1.pos, `Type ${o1.toString(subst, tenv)}`),
           List.Cons(
-            (o2.pos, `is not compatible with ${o2.toString(subst, tenv)}`),
+            (o2.pos, `is not assignable to ${o2.toString(subst, tenv)}`),
             msgs,
           ),
         )
@@ -284,7 +281,7 @@ base class STErrorOnSTypes(
           List.Cons(
             (
               pos2,
-              `is not compatible with type ${sTypes2.toString(subst, tenv)}`,
+              `is not assignable to type ${sTypes2.toString(subst, tenv)}`,
             ),
             msgs,
           ),
@@ -329,10 +326,7 @@ base class STErrorOnClauses(
               List.Cons(
                 (
                   pos2,
-                  `is not compatible with type ${clause2.toString(
-                    subst,
-                    tenv,
-                  )}`,
+                  `is not assignable to type ${clause2.toString(subst, tenv)}`,
                 ),
                 msgs,
               ),
@@ -352,7 +346,7 @@ base class STErrorOnClauses(
           List.Cons(
             (
               pos2,
-              `is not compatible with type ${clauses2.toString(subst, tenv)}`,
+              `is not assignable to type ${clauses2.toString(subst, tenv)}`,
             ),
             msgs,
           ),
@@ -364,7 +358,7 @@ base class STErrorOnClauses(
           List.Cons(
             (
               pos2,
-              `is not compatible with type ${clauses2.toString(subst, tenv)}`,
+              `is not assignable to type ${clauses2.toString(subst, tenv)}`,
             ),
             msgs,
           ),
@@ -398,7 +392,7 @@ base class STErrorOnTType(ty1: TType, ty2: TType) extends STError<TType> {
         ty2Str = prettyPrintType(false, ty2, subst, tenv);
         List.Cons(
           (ty1.pos, `Type ${ty1Str}`),
-          List.Cons((ty2.pos, `is not compatible with type ${ty2Str}`), msgs),
+          List.Cons((ty2.pos, `is not assignable to type ${ty2Str}`), msgs),
         )
       } else {
         msgs
@@ -488,7 +482,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
         Some(
           (
             pos1,
-            `The parameter ${i + 1} is not compatible with the rest parameter`,
+            `The parameter ${i + 1} is not assignable to the rest parameter`,
           ),
         ),
         err.toError(subst, tenv, detail.decreaseIntermediate()),
@@ -518,10 +512,7 @@ base class STErrorOnTFun(f1: TFun, f2: TFun) extends STError<TFun> {
       List.Cons(
         (
           pos2,
-          `is not compatible with function type ${this.f2.toString(
-            subst,
-            tenv,
-          )}`,
+          `is not assignable to function type ${this.f2.toString(subst, tenv)}`,
         ),
         msgs,
       ),
@@ -610,7 +601,7 @@ base class STErrorOnTFields(
           (index1.pos, `Value type of index field '${index1.name.value}'`),
           (
             index2.pos,
-            `is not compatible with value type of index field '${
+            `is not assignable to value type of index field '${
               index2.name.value
             }'`,
           ),
@@ -635,7 +626,7 @@ base class STErrorOnTFields(
           (field1.pos, `Field '${field1.name.value}'`),
           (
             index2.pos,
-            `is not compatible with index field '${index2.name.value}'`,
+            `is not assignable to index field '${index2.name.value}'`,
           ),
         ],
         err.toError(subst, tenv, detailForRec),
@@ -645,7 +636,7 @@ base class STErrorOnTFields(
       (
         List[
           (index1.pos, `Index field '${index1.name.value}'`),
-          (field2.pos, `is not compatible with field '${field2.name.value}'`),
+          (field2.pos, `is not assignable to field '${field2.name.value}'`),
         ],
         err.toError(subst, tenv, detailForRec),
         kind.readonlyHintPos(field2.pos),
@@ -693,7 +684,7 @@ base class STErrorOnTFields(
         List.Cons(
           (
             pos2,
-            `is not compatible with type ${this.fields2.toString(subst, tenv)}`,
+            `is not assignable to type ${this.fields2.toString(subst, tenv)}`,
           ),
           msgs,
         ),
