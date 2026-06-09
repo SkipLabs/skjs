@@ -3,9 +3,6 @@
 // methods with no body (interfaces / ambient declarations). Detaching such a
 // method and calling it without a receiver is rejected — SKJS is sound here
 // where TS is not (tsc --strict accepts these).
-//
-// Staged: until the implicit `this` narrowing is lifted to extending/body-less
-// methods, the detached-call rejections are documented with // TODO: markers.
 
 // --- Method declared directly on an extending class ---
 class Base {
@@ -25,7 +22,7 @@ function ownCallOk(): void {
 
 function ownDetached(): void {
   const g = d.own;
-  // TODO: reject — detached method on an extending class uses this: void.
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   g();
 }
 
@@ -42,7 +39,7 @@ function ifaceCallOk(): void {
 
 function ifaceDetached(): void {
   const g = h.handle;
-  // TODO: reject — detached body-less interface method uses this: void.
+  // @skjs-expect-error The 'this' context is not assignable to method's 'this' type
   g(1);
 }
 

@@ -1182,16 +1182,16 @@ base class TEnv{
         metIsStatic = fd.isStatic();
         if (metIsStatic != isStatic.isSome()) continue;
         cgNode = CGNode::create(Method(fd.name, className, metIsStatic));
-        // Populate the implicit `this` type for methods that have a body
-        // defined in a standalone (non-extending) class. This closes the
-        // "detached method call" soundness gap for ordinary data classes
-        // without breaking contravariant override compatibility in
-        // inheritance hierarchies (which would require polymorphic `this`)
-        // or variance of generic container types (whose methods are
-        // body-less stubs and thus already excluded here).
-        hasBody = this.getFunBody(subst.context, fd) is FDBSome _;
-        hasExtends = cls.extends_.size() > 0;
-        implicitThisOpt = if (metIsStatic || !hasBody || hasExtends) {
+        // Populate the implicit `this` type (the enclosing class instance) for
+        // every non-static method. This closes the "detached method call"
+        // soundness gap (`const g = obj.m; g()`) uniformly — including methods
+        // declared on extending classes and body-less stub methods (interfaces,
+        // ambient declarations, generic containers). normalizeFun records it
+        // as ThisParam::ImplicitClass, which function-type subtyping treats as
+        // mutually compatible between two implicit thises (see TTypeSubtyping),
+        // preserving generic-container variance and subclass override
+        // compatibility.
+        implicitThisOpt = if (metIsStatic) {
           None()
         } else {
           Some(TType::inst(className, TArgs(targs)))
