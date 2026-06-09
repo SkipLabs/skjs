@@ -2,5 +2,5 @@
 
 function test(): void {
   const obj = { foo: 1 };
-  // @ts-expect-error Expected token a variable name
+  // @skjs-expect-error 'a variable name' expected
   const a = obj.("foo");

@@ -150,7 +150,7 @@ let tags = ['urgent' as const, 'priority' as const];
 
 ### 12. Nested Function Declarations Not Supported
 - **Rule**: Cannot declare functions inside other functions
-- **Error**: "Function inside expressions are not supported, use closures instead"
+- **Error**: "Function expressions are not supported; use an arrow function (closure) instead"
 - **Workaround**: Declare all functions at module level
 
 ### 13. Algebraic Data Types with 'kind' Field ✅

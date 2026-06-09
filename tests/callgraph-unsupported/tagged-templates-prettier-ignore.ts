@@ -4,5 +4,5 @@
 function tag(strings: TemplateStringsArray): string {
   return strings[0];
 }
-// @skjs-expect-error Expected token a variable name
+// @skjs-expect-error 'a variable name' expected
 const x: string = tag`hello`;
