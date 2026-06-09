@@ -102,14 +102,14 @@ function testEmptyRestInference(): void {
 // 2) Tuple-rest exact arity
 function testTupleRestExactArity(): void {
   tupleRestExact("a", 1);
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Too many arguments for this call
   tupleRestExact("a");
   // Extra args allowed (consistent with no-rest functions)
   tupleRestExact("a", 1, 2);
 
   // Unknown-length array spread into concrete tuple rest
   const arr: (string | number)[] = ["a", 1];
-  // @ts-expect-error Invalid call. Tuple rest parameters require exact arguments
+  // @skjs-expect-error A tuple rest parameter requires an exact number of arguments
   tupleRestExact(...arr);
 }
 
@@ -196,7 +196,7 @@ declare function takePair(...args: MyPair): void;
 function testTypeAliasTupleSpread(): void {
   takePair("hello", 42);
 
-  // @ts-expect-error Invalid argument
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takePair(42, "hello");
 }
 

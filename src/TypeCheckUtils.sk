@@ -143,9 +143,10 @@ extension class TypeChecker {
         Array[
           (
             pos,
-            "Template literal expressions must be string, number, bigint, boolean, null, or undefined",
+            "Template literal expressions must be of type string, number, bigint, boolean, null, or undefined",
           ),
         ],
+        SKJSCode(2046),
       );
     }
   }
@@ -160,7 +161,11 @@ extension class TypeChecker {
       stypes.singleElt()
     ) match {
     | Some(TPrimValue(TNum(), _, _)) -> void
-    | _ -> tcenv.error(Array[(pos, msg), (ty.pos, "This is not a number")])
+    | _ ->
+      tcenv.error(
+        Array[(pos, msg), (ty.pos, "This is not of type 'number'")],
+        SKJSCode(2041),
+      )
     };
   }
 
@@ -180,8 +185,9 @@ extension class TypeChecker {
       fatalError(
         Array[
           (pos, msg),
-          (ty.pos, "This is not a numeric type (number or bigint)"),
+          (ty.pos, "This is not a numeric type ('number' or 'bigint')"),
         ],
+        SKJSCode(2041),
       )
     };
   }
@@ -216,12 +222,30 @@ extension class TypeChecker {
 
   fun checkLValue(tcenvb: mutable TCEnvBase, e: Expr): void {
     e.value match {
-    | Var(Name(_, "super")) -> tcenvb.error(Array[(e.pos, "Invalid lvalue")])
+    | Var(Name(_, "super")) ->
+      tcenvb.error(
+        Array[
+          (
+            e.pos,
+            "The left-hand side of an assignment must be a variable or a property access",
+          ),
+        ],
+        TSCode(2364),
+      )
     | Var _ -> void
     | Get _ -> void
     | EArray _ -> void
     | Dot(NormalDot(), e1, _) -> this.checkLValue(tcenvb, e1)
-    | _ -> tcenvb.error(Array[(e.pos, "Invalid lvalue")])
+    | _ ->
+      tcenvb.error(
+        Array[
+          (
+            e.pos,
+            "The left-hand side of an assignment must be a variable or a property access",
+          ),
+        ],
+        TSCode(2364),
+      )
     }
   }
 }

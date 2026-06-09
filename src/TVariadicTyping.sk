@@ -191,23 +191,25 @@ class VariadicTyping() {
             Array[
               (
                 pos,
-                "Invalid call. Tuple rest parameters require exact arguments",
+                "A tuple rest parameter requires an exact number of arguments",
               ),
               (
                 spreadType.pos,
                 "This call includes an unknown-length spread argument",
               ),
             ],
+            SKJSCode(2047),
           )
         } else if (knownRest.size() < tupleElts.size()) {
           tcenv.error(
             Array[
-              (pos, "Invalid call"),
+              (pos, "Too many arguments for this call"),
               (
                 spreadType.pos,
                 `This function has ${totalSize + tupleElts.size()} parameters`,
               ),
             ],
+            TSCode(2554),
           )
         } else {
           for (i in Range(0, tupleElts.size())) {
@@ -217,8 +219,11 @@ class VariadicTyping() {
               tcenv.subtypingError(
                 tcenv.subst,
                 tenv,
-                Array[(pos, "Invalid argument")],
+                Array[
+                  (pos, "Argument is not assignable to the parameter's type"),
+                ],
                 err,
+                TSCode(2345),
               )
             }
           }
@@ -240,8 +245,11 @@ class VariadicTyping() {
               tcenv.subtypingError(
                 tcenv.subst,
                 tenv,
-                Array[(pos, "Invalid argument")],
+                Array[
+                  (pos, "Argument is not assignable to the parameter's type"),
+                ],
                 err,
+                TSCode(2345),
               )
             }
           };
@@ -252,20 +260,24 @@ class VariadicTyping() {
               tcenv.subtypingError(
                 tcenv.subst,
                 tenv,
-                Array[(pos, "Invalid argument")],
+                Array[
+                  (pos, "Argument is not assignable to the parameter's type"),
+                ],
                 err,
+                TSCode(2345),
               )
             }
           })
         | None() ->
           tcenv.error(
             Array[
-              (pos, "Invalid call. Unexpected type for ..."),
+              (pos, "A spread argument ('...') must be of an array type"),
               (
                 spreadType.pos,
                 `${tenv.ppType(tcenv, spreadType)} is not an array`,
               ),
             ],
+            SKJSCode(2045),
           )
         }
       }
@@ -310,10 +322,11 @@ class VariadicTyping() {
                 Array[
                   (
                     restPos,
-                    "Rest parameter constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly",
+                    "A rest parameter's constraint must use ReadonlyArray (or 'readonly T[]'), since rest parameters are readonly",
                   ),
                   (cstr.pos, "This constraint uses a mutable Array type"),
                 ],
+                SKJSCode(2048),
               )
             }
           })

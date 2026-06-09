@@ -125,14 +125,14 @@ function testSpreadObject(): void {
 // Test 16: Mixed types with wrong spread type
 function testMixedWrongTypes(): void {
   const wrongRest: [number, number] = [1, 2];
-  // @ts-expect-error Invalid argument
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesOneAndRest(1, ...wrongRest);
 }
 
 // Test 17: Spread with type mismatch in rest
 function testRestTypeMismatch(): void {
   const wrongTypes: [number, string, number] = [1, "x", 2];
-  // @ts-expect-error Invalid argument
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   takesTwoAndRest(...wrongTypes);
 }
 
