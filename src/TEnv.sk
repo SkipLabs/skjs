@@ -1388,10 +1388,11 @@ base class TEnv{
           )
         }
       };
-      thisParamImplicit = false;
-      if (thisParam is None()) {
+      thisParamImplicit = if (thisParam is None()) {
         !thisParam = implicitThisOpt;
-        !thisParamImplicit = implicitThisOpt.isSome()
+        implicitThisOpt.isSome()
+      } else {
+        false
       };
       tfun = TFun(
         funTParams,
