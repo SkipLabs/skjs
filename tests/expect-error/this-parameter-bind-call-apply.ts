@@ -66,3 +66,18 @@ function optionalCallWrongArg(): void {
   // @skjs-expect-error Invalid call
   optional.call(ctx, 1, 2);
 }
+
+// An implicit class `this` is `unknown` to .call/.apply/.bind, so any receiver
+// is accepted (TS's ThisParameterType of an implicit-this method is `unknown`).
+class Impl {
+  v: number = 1;
+  mm(a: number): number {
+    return a;
+  }
+}
+function implicitRebindOk(o: Impl): void {
+  let _c: number = o.mm.call("anything", 1);
+  let _a: number = o.mm.apply(42, [1]);
+  const bound: (a: number) => number = o.mm.bind(undefined);
+  let _b: number = bound(1);
+}
