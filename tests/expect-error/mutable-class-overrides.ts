@@ -12,8 +12,7 @@ class Clicks extends Base<MouseEvent> {
   handle(e: MouseEvent): void {}
 }
 
-// @skjs-expect-error Invalid number of type arguments
-// @skjs-expect-error Expected 1 parameters
+// @skjs-expect-error Expected 1 type arguments, but got 0
 class SafeClicks extends Base {
   handle(e: Event): void {
     if (e instanceof MouseEvent) {

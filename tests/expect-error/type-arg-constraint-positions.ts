@@ -14,7 +14,7 @@ interface Field {
 
 function defParam(x: Id<number>): void {}
 
-// @ts-expect-error Constraint not satisfied
+// @skjs-expect-error Type argument does not satisfy the constraint
 function defTparam<V>(x: Id<V>): V {
   return x;
 }

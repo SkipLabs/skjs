@@ -21,7 +21,7 @@ class FieldsWithAnnotations {
 
 // Object type field without annotation
 type ObjectWithoutAnnotations = {
-  // @skjs-expect-error Type annotation expected for 'field'
+  // @skjs-expect-error Member 'field' must have an explicit type annotation
   field;
 };
 

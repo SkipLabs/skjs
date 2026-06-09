@@ -1,9 +1,9 @@
 type TGen<X> = X;
 
-// @ts-expect-error Invalid number of type arguments: given 0, expected 1
+// @skjs-expect-error Expected 1 type arguments, but got 0
 function notEnoughTypeParameters(x: TGen): void {}
 
-// @ts-expect-error Invalid number of type arguments: given 2, expected 1
+// @skjs-expect-error Expected 1 type arguments, but got 2
 function tooManyTypeParameters(x: TGen<boolean, number>): void {}
 
 type TDefault<X = boolean> = X;

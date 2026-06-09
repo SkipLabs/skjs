@@ -78,13 +78,13 @@ const uniqueSym2: unique symbol = Symbol("unique");
 ///////////////////////////////////////////////////////////////////////////////
 
 // unique symbol cannot be used in function parameters
-// @skjs-expect-error unique symbol type cannot be used here
+// @skjs-expect-error A 'unique symbol' type is only allowed in a top-level 'const' declaration, a 'static readonly' member, or an imported 'const' binding
 function takesUniqueSymbol(s: unique symbol): void {
   console.log(s);
 }
 
 // unique symbol cannot be used in function return types
-// @skjs-expect-error unique symbol type cannot be used here
+// @skjs-expect-error A 'unique symbol' type is only allowed in a top-level 'const' declaration, a 'static readonly' member, or an imported 'const' binding
 function returnsUniqueSymbol(): unique symbol {
   return Symbol();
 }
@@ -92,7 +92,7 @@ function returnsUniqueSymbol(): unique symbol {
 // unique symbol cannot be used in local const declarations
 // Rationale: the unique identifier we use is based on the position
 function localUniqueSymbol(): void {
-  // @skjs-expect-error unique symbol type cannot be used here
+  // @skjs-expect-error A 'unique symbol' type is only allowed in a top-level 'const' declaration, a 'static readonly' member, or an imported 'const' binding
   const localSym: unique symbol = Symbol();
 }
 
@@ -123,12 +123,12 @@ function testDistinctTypes(): void {
 // Local const cannot use unique symbol (only top-level const allowed)
 // Rationale: the unique identifier we use is based on the position
 function testLocalUniqueSymbol(): void {
-  // @skjs-expect-error unique symbol type cannot be used here
+  // @skjs-expect-error A 'unique symbol' type is only allowed in a top-level 'const' declaration, a 'static readonly' member, or an imported 'const' binding
   const a: unique symbol = Symbol("a");
 }
 
 // unique symbol cannot be used in function parameters
-// @skjs-expect-error unique symbol type cannot be used here
+// @skjs-expect-error A 'unique symbol' type is only allowed in a top-level 'const' declaration, a 'static readonly' member, or an imported 'const' binding
 function testCovariance(us: unique symbol): symbol {
   return us;
 }

@@ -68,7 +68,7 @@ function canUseConstructorAsFieldName(): object {
 }
 
 function canUseConstructorAsMethodName(): object {
-  // @skjs-expect-error Missing return type annotation for 'constructor'
+  // @skjs-expect-error Function 'constructor' must have an explicit return type annotation
   return { constructor() {} };
 }
 
@@ -80,7 +80,7 @@ function canHaveConstructorField(x: { constructor: string }): void {}
 
 function canHaveConstructorMethod(x: { constructor(): void }): void {}
 
-// @skjs-expect-error Missing return type annotation for 'constructor'
+// @skjs-expect-error Function 'constructor' must have an explicit return type annotation
 function canHaveConstructorMethod2(x: { constructor() }): void {}
 
 function constructor(): void {}
