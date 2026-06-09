@@ -253,5 +253,5 @@ class Config {
   host: string = "localhost";
 }
 
-// @skjs-expect-error Construction not supported: prototype access
+// @skjs-expect-error prototype access is not supported by SKJS
 type PortType = typeof Config.prototype.port;

@@ -31,7 +31,7 @@ class StaticWithoutReadonly {
 
 // Test static readonly without initialization (should error: missing definition)
 class StaticReadonlyNoInit {
-  // @skjs-expect-error Missing definition
+  // @skjs-expect-error This declaration must have an initializer
   static readonly num: number;
 }
 

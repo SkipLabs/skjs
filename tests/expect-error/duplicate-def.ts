@@ -28,12 +28,12 @@ interface I {
   b: string;
 }
 
-// @skjs-expect-error Construction not supported: enum (ignored)
+// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum E {
   X,
 }
-// @skjs-expect-error Construction not supported: enum (ignored)
 // @skjs-expect-error E is already defined
+// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum E {
   Y,
 }
@@ -78,22 +78,22 @@ function Cf(): void {}
 class Cf {}
 
 type Et = number;
-// @skjs-expect-error Construction not supported: enum (ignored)
 // @skjs-expect-error Et is already defined
+// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Et {
   X,
 }
 
 function Ef(): void {}
-// @skjs-expect-error Construction not supported: enum (ignored)
 // @skjs-expect-error Ef is already defined
+// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Ef {
   X,
 }
 
 const Ec: number = 1;
-// @skjs-expect-error Construction not supported: enum (ignored)
 // @skjs-expect-error Ec is already defined
+// @skjs-expect-error enum is not supported by SKJS (ignored)
 enum Ec {
   X,
 }
