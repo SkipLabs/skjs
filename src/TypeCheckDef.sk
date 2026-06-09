@@ -140,7 +140,11 @@ extension class TypeChecker {
     );
 
     value match {
-    | None() -> tcenvl.error(Array[(pos, "Missing definition")])
+    | None() ->
+      tcenvl.error(
+        Array[(pos, "This declaration must have an initializer")],
+        TSCode(1155),
+      )
     | Some(e) ->
       tcenv = TCEnv::mcreate(subst, CGNode::toplevel(pos.fileName));
       valueType = this.expr(tcenv, e, true);
@@ -210,10 +214,11 @@ extension class TypeChecker {
           Array[
             (
               varDef.pat.pos,
-              "Construction not supported: top-level const declarations cannot destructure\n" +
+              "Top-level const declarations cannot use destructuring in SKJS\n" +
                 "Declare a simple const (e.g. `const tmp = ...`) and perform the destructuring inside a block/function.",
             ),
           ],
+          SKJSCode(1010),
         )
       };
       // Validate the const declaration
@@ -260,6 +265,7 @@ extension class TypeChecker {
                 "Optional type parameters are not supported for classes and functions",
               ),
             ],
+            SKJSCode(2021),
           )
         | OptionalTypeParamsAllowed() -> void
         };
@@ -273,6 +279,7 @@ extension class TypeChecker {
             ),
             (firstDefaultPos, "First optional type parameter was here"),
           ],
+          TSCode(2706),
         )
       | (None(), None())
       | (Some _, Some _) ->
@@ -299,6 +306,7 @@ fun checkUniqueSymbolReadonly(tcenvl: mutable TCEnvLight, t: Type): void {
                 "A property whose type is 'unique symbol' must be 'readonly'",
               ),
             ],
+            TSCode(1331),
           )
         | _ -> void
         }

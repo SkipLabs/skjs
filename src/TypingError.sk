@@ -287,7 +287,7 @@ fun subtypingError<T>(
 }
 
 fun notSupported<T>(pos: PosRange, what: String): T {
-  fatalError(Array[(pos, `Construction not supported: ${what}`)])
+  fatalError(Array[(pos, `${what} is not supported by SKJS`)], SKJSCode(9050))
 }
 
 module end;

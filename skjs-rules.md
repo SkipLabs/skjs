@@ -17,12 +17,12 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
 
 ### 1. No Toplevel `let` Declarations
 - **Rule**: Cannot use `let` at the top level of files
-- **Error**: "Construction not supported: toplevel let"
+- **Error**: "toplevel let is not supported by SKJS"
 - **Workaround**: Use function declarations or class methods instead
 
 ### 1b. No Destructuring in **Top-Level** `const` Declarations
 - **Rule**: Destructuring patterns are rejected when the `const` appears at module scope.
-- **Error**: "Construction not supported: top-level const declarations cannot destructure"
+- **Error**: "Top-level const declarations cannot use destructuring in SKJS"
 - **Reason**: SKJS loads top-level constants as literal scalars for predictable initialization; pattern binding would require tracking object/tuple shapes in the loader.
 - **Workaround**: Bind the value to a simple `const tmp = ...` at the top level, then destructure inside a function or block (where regular `const` destructuring remains supported).
 
@@ -53,9 +53,9 @@ In tests, warnings are asserted with `// @skjs-expect-warning`; see [docs/testin
   - Only primitive types allowed (number, string, boolean, bigint, symbol - no objects)
   - Type annotation can be inferred from literal values
 - **Errors**:
-  - `static field: number = 42` → "static fields must be readonly"
-  - `static readonly field?: number = 42` → "static fields cannot be optional"
-  - `static readonly field: number;` → "Missing definition"
+  - `static field: number = 42` → "A static field must be marked 'readonly'"
+  - `static readonly field?: number = 42` → "A static field cannot be optional"
+  - `static readonly field: number;` → "This declaration must have an initializer"
   - `static readonly obj: MyClass = new MyClass();` → "Invalid type for constant, only primitive types (not objects) are allowed"
 - **Supported**:
   ```typescript
@@ -199,7 +199,7 @@ let tags = ['urgent' as const, 'priority' as const];
 
 ### 16. Function Signatures Must Be Fully Annotated
 - **Rule**: Every function parameter requires an explicit type annotation. Named function declarations must also supply an explicit return type; arrow callbacks currently infer their return type but still need annotated parameters.
-- **Error**: `TypeCheckFun.sk` emits "Missing type annotation" for parameters without types and "Missing return type" if a named function omits its return type.
+- **Error**: `TypeCheckFun.sk` emits "A parameter must have an explicit type annotation" for parameters without types and a "must have an explicit return type annotation" error if a named function omits its return type.
 - **Workaround**: Declare signatures like `function handler(value: string | number): Result { ... }` and annotate callback parameters, adding `: T` return annotations where needed for clarity.
 - **Verified by**: `tests/expect-error/function-args.ts`, `tests/expect-error/anonymous-function-annotations.ts`, and `tests/expect-error/missing-return-type.ts`.
 

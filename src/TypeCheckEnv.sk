@@ -331,7 +331,10 @@ mutable class TCResultsAcc private {
   }
 
   mutable fun notSupported(pos: PosRange, what: String): void {
-    this.error(Array[(pos, `Construction not supported: ${what} (ignored)`)])
+    this.error(
+      Array[(pos, `${what} is not supported by SKJS (ignored)`)],
+      SKJSCode(9050),
+    )
   }
 
   mutable fun collectErrors(f: () -> void): void {
