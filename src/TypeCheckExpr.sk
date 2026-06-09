@@ -787,6 +787,7 @@ extension class TypeChecker {
     tcenv: mutable TCEnv,
     e: Expr,
     mostPrecise: Bool,
+    nonNullAssertion: Bool,
   ): (Bool, TType) {
     ty = this.expr(tcenv, e, mostPrecise);
     hasTop = false;
@@ -838,12 +839,19 @@ extension class TypeChecker {
       );
     } else if (!hasTop && !hasOthers) {
       !isValid = false;
-      tcenv.warning(
-        Array[
-          (pos, "This operator is useless"),
-          (e.pos, "This expression is always null or undefined"),
-        ],
-      )
+      // For `??` this is a harmless dead operator (the result is the right
+      // operand), so it stays a warning. For a non-null assertion it is
+      // unsound — `x!` would have the empty type and so satisfy any annotation
+      // — so it must be a hard error.
+      messages = Array[
+        (pos, "This operator is useless"),
+        (e.pos, "This expression is always null or undefined"),
+      ];
+      if (nonNullAssertion) {
+        tcenv.error(messages)
+      } else {
+        tcenv.warning(messages)
+      }
     };
     (isValid, tyWithoutNullish)
   }
@@ -1807,6 +1815,7 @@ extension class TypeChecker {
           tcenv,
           e1,
           mostPrecise,
+          false,
         );
         ty2 = this.expr(tcenv, e2, mostPrecise);
         TType::union(tcenv.subst, this, ty1WithoutNullish, ty2)
@@ -1926,6 +1935,7 @@ extension class TypeChecker {
           tcenv,
           subExpr,
           mostPrecise,
+          true,
         );
         if (isValid) {
           // Check if this is a for-in v[k]! pattern

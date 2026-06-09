@@ -553,6 +553,16 @@ function testNonNullableValue(): number {
   return x!;
 }
 
+// Using ! on a value that is ALWAYS null/undefined is unsound, not merely
+// useless: `x!` then has the empty type and would satisfy any annotation, so
+// without an error `const s: string = x!` (s actually undefined at runtime)
+// would be accepted and crash. Unlike the never-null case above this must be a
+// hard error, not a warning.
+function testNonNullOnAlwaysNull(x: undefined): string {
+  // @skjs-expect-error This operator is useless
+  return x!;
+}
+
 // Using ! doesn't change the type incorrectly
 function testWrongTypeAfterNonNull(x: string | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
