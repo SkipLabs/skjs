@@ -1,6 +1,6 @@
 // @skjs-expect-error This function may not always return a value
 function doesNotAlwaysReturnAValue(b: boolean): boolean {
-  // @skjs-expect-warning Useless switch
+  // @skjs-expect-warning This switch has a single branch; use an 'if' statement instead
   switch (b) {
     case true:
       return true;
@@ -9,7 +9,7 @@ function doesNotAlwaysReturnAValue(b: boolean): boolean {
 
 // @skjs-expect-error This function may not always return a value
 function doesNotAlwaysReturnAValue2(i: 1 | 2 | 3): boolean {
-  // @skjs-expect-error Missing branches
+  // @skjs-expect-error Switch is not exhaustive; the following cases are unhandled
   switch (i) {
     case 1:
       return true;

@@ -37,7 +37,10 @@ extension class TypeChecker {
 
     | Bind(bkind, bindings) ->
       if (bkind is BKVar()) {
-        tcenv.error(Array[(st.pos, "Don't use var, use let or const instead")])
+        tcenv.error(
+          Array[(st.pos, "Unexpected 'var'; use 'let' or 'const' instead")],
+          SKJSCode(1008),
+        )
       };
 
       for (binding in bindings) {
@@ -166,9 +169,10 @@ extension class TypeChecker {
               Array[
                 (
                   t.pos,
-                  "Do not specify a type annotation for caught exceptions as it cannot be trusted",
+                  "A 'catch' clause variable may not have a type annotation",
                 ),
               ],
+              SKJSCode(2018),
             );
             this.normalize(tcenv, t)
           | None() -> TType::top(pat.pos)
@@ -204,11 +208,22 @@ extension class TypeChecker {
     branches: Array<SwitchBranch>,
   ): void {
     if (branches.size() == 0) {
-      tcenv.error(Array[(e.pos, "Missing branch")]);
+      tcenv.error(
+        Array[(e.pos, "A switch statement must have at least one case")],
+        SKJSCode(2010),
+      );
       return void
     };
     if (branches.size() == 1) {
-      tcenv.warning(Array[(e.pos, "Useless switch")])
+      tcenv.warning(
+        Array[
+          (
+            e.pos,
+            "This switch has a single branch; use an 'if' statement instead",
+          ),
+        ],
+        SKJSCode(2011),
+      )
     };
     _exhaustive = this.switchCheckExhaustiveness(tcenv, e, branches);
     checkBreak = (pos, block) -> {
@@ -217,7 +232,10 @@ extension class TypeChecker {
         if (block.size() != 0) {
           !pos = block[block.size() - 1].pos;
         };
-        tcenv.error(Array[(pos, "Missing break")])
+        tcenv.error(
+          Array[(pos, "Fallthrough case in switch; add a 'break'")],
+          TSCode(7029),
+        )
       }
     };
     scope = branches[0] match {
@@ -226,7 +244,12 @@ extension class TypeChecker {
       cond = Expr(e.pos, (Binop(BOStrictEquality(), e, v)));
       this.block(tcenv, block, Some((cond, true)))
     | SwitchBranch(Default(), block, _) ->
-      tcenv.error(Array[(e.pos, "Missing branch")]);
+      tcenv.error(
+        Array[
+          (e.pos, "The 'default' clause must be the last branch of a switch"),
+        ],
+        SKJSCode(2013),
+      );
       this.block(tcenv, block, None())
     };
     for (i in Range(1, branches.size())) {
@@ -258,7 +281,15 @@ extension class TypeChecker {
     };
     for (branch in branches) {
       if (cases.isEmpty()) {
-        tcenv.warning(Array[(branch.pos, "Unused branch")]);
+        tcenv.warning(
+          Array[
+            (
+              branch.pos,
+              "This case is unreachable: its value is not in the switched type",
+            ),
+          ],
+          SKJSCode(2014),
+        );
         break void
       };
       branch match {
@@ -268,7 +299,15 @@ extension class TypeChecker {
           .flatMap(stypes ~> stypes.staticValue()) match {
         | Some(staticValue) ->
           if (!cases.containsKey(staticValue)) {
-            tcenv.warning(Array[(pos, "Unused branch")])
+            tcenv.warning(
+              Array[
+                (
+                  pos,
+                  "This case is unreachable: its value is not in the switched type",
+                ),
+              ],
+              SKJSCode(2014),
+            )
           } else {
             cases.remove(staticValue)
           }
@@ -283,7 +322,13 @@ extension class TypeChecker {
       );
       missingCases.sortBy(x ~> x.i1);
       tcenv.error(
-        Array[(e.pos, "Missing branches")].concat(missingCases.toArray()),
+        Array[
+          (
+            e.pos,
+            "Switch is not exhaustive; the following cases are unhandled",
+          ),
+        ].concat(missingCases.toArray()),
+        SKJSCode(2015),
       );
     };
     true
@@ -297,16 +342,25 @@ extension class TypeChecker {
           Array[
             (
               initStmt.pos,
-              "Loop variable declaration must have exactly one binding",
+              "A loop variable declaration must declare exactly one binding",
             ),
           ],
+          SKJSCode(2016),
         )
       };
       for (binding in bindings) {
         this.bind(tcenv, kind, binding.pat, varType, true, false)
       }
     | _ ->
-      tcenv.error(Array[(initStmt.pos, "Invalid loop variable declaration")])
+      tcenv.error(
+        Array[
+          (
+            initStmt.pos,
+            "A loop variable must be a simple 'let' or 'const' binding",
+          ),
+        ],
+        SKJSCode(2017),
+      )
     }
   }
 
@@ -331,12 +385,16 @@ extension class TypeChecker {
     };
     tcenv.error(
       Array[
-        (pos, "for-in loop requires an object or array type"),
+        (
+          pos,
+          "The right-hand side of a 'for...in' statement must be an object or array type",
+        ),
         (
           iterableType.pos,
           `Here it has type ${this.ppType(tcenv, iterableType)}`,
         ),
       ],
+      TSCode(2407),
     )
   }
 
@@ -351,7 +409,10 @@ extension class TypeChecker {
     stypes = iterableType.getSTypes(tcenv.subst, this, Covariant()) match {
     | Some(stypes) if (!stypes.isEmpty()) -> stypes
     | _ ->
-      tcenv.error(Array[(pos, `Invalid iterable type for ${iterationKind}`)]);
+      tcenv.error(
+        Array[(pos, `Type is not iterable in a '${iterationKind}'`)],
+        TSCode(2488),
+      );
       return result
     };
 
@@ -363,7 +424,8 @@ extension class TypeChecker {
           !result = TType::union(tcenv.subst, this, result, elementType)
         | None() ->
           tcenv.error(
-            Array[(pos, `Invalid iterable type for ${iterationKind}`)],
+            Array[(pos, `Type is not iterable in a '${iterationKind}'`)],
+            TSCode(2488),
           )
         }
       | TPrimValue(TString(), _, _) ->

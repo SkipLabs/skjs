@@ -2,7 +2,7 @@
 
 function testForInWithPrimitive(): void {
   const num = 42;
-  // @ts-expect-error for-in loop requires an object or array type
+  // @skjs-expect-error The right-hand side of a 'for...in' statement must be an object or array type
   for (const _key in num) {
   }
 }
@@ -34,7 +34,7 @@ function testForOfWrongVariableType(): void {
 
 function testForInWithNull(): void {
   const nullObj = null;
-  // @skjs-expect-error for-in loop requires an object or array type
+  // @skjs-expect-error The right-hand side of a 'for...in' statement must be an object or array type
   for (const _key in nullObj) {
   }
 }

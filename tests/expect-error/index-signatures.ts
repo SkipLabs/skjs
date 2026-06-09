@@ -155,7 +155,7 @@ function forInStringIndex(x: StringIndex): void {
 ///////////////////////////////////////////////////////////////////////////////
 
 function forOfStringIndex(x: StringIndex): void {
-  // @skjs-expect-error Invalid iterable type for for-of loop
+  // @skjs-expect-error Type is not iterable in a 'for-of loop'
   for (const v of x) {
     console.log(v);
   }

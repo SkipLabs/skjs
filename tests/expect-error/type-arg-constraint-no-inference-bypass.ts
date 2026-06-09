@@ -19,7 +19,7 @@ function constrained<V extends string>(x: Id<V>): V {
   return x;
 }
 export function violatingCall(): string {
-  // @ts-expect-error Invalid call
+  // @skjs-expect-error Argument is not assignable to the parameter's type
   return constrained(42);
 }
 
