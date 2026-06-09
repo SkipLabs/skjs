@@ -10,7 +10,7 @@ type N = { a: number };
 function testOrTrueNoRefinement(x: N | null): void {
   if (x === null || true) {
     // x is still N | null
-    // @skjs-expect-error Type cannot be accessed
+    // @skjs-expect-error Property access is not allowed on this type
     const a: number = x.a;
   }
 }
@@ -33,7 +33,7 @@ function testAndChainRefines(x: N | null): void {
 // (if e1 was true), so no narrowing to N should apply.
 function testOrLeftEqNullNoPosRefinement(x: N | null, other: boolean): void {
   if (x === null || other) {
-    // @skjs-expect-error Type cannot be accessed
+    // @skjs-expect-error Property access is not allowed on this type
     const a: number = x.a;
   }
 }

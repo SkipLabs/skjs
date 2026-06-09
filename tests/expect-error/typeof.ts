@@ -480,7 +480,7 @@ function testMissingCase(x: number | string | undefined): number {
 function testObjectWithNullWrong(x: { a: number } | null | string): number {
   if (typeof x === "object") {
     // x could be { a: number } or null
-    // @ts-expect-error Type cannot be accessed
+    // @skjs-expect-error Property access is not allowed on this type
     return x.a;
   } else {
     return 0;
@@ -1093,8 +1093,8 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
   if (typeof x === "object") {
     // `x[2]` has type `number | string` via the inherited number index, not
     // `boolean` — so the return type fails as well.
-    // @skjs-expect-error Out of bound index
     // @skjs-expect-error Type of returned value is not assignable to the function's return type
+    // @skjs-expect-error Tuple index is out of bounds
     return x[2];
   } else {
     return false;
@@ -1104,7 +1104,7 @@ function testTupleWrongIndex(x: [number, string] | number): boolean {
 // Wrong destructuring count
 function testTupleWrongDestructure(x: [number, string] | number): boolean {
   if (typeof x === "object") {
-    // @ts-expect-error Invalid tuple pattern size, it is of size 3
+    // @skjs-expect-error This destructuring pattern has 3 elements, which does not match the tuple's length
     const [_a, _b, c] = x;
     return c;
   } else {

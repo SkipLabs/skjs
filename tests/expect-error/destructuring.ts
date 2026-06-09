@@ -58,6 +58,6 @@ function optionalMeansUndefined(x: { f?: number }): number {
 
 function optionalMeansUndefinedWitness(x: { f: number }): number {
   const { f } = x;
-  // @skjs-expect-warning This operator is useless
+  // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
   return f ?? 0;
 }

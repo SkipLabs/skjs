@@ -52,7 +52,7 @@ function fireAndForget(): void {
 
 // Precedence: void 0 + 1 parses as (void 0) + 1
 function testPrecedence(): number {
-  // @skjs-expect-error Invalid + operation
+  // @skjs-expect-error Operator '+' cannot be applied to these types
   return void 0 + 1;
 }
 

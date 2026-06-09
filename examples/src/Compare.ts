@@ -55,7 +55,7 @@ function compareObjects(a: object, b: object): number {
     if (keyA > keyB) {
       return 1;
     }
-    // @skjs-expect-error Invalid access
+    // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
     const valueA = a[keyA];
     const valueB = b[keyB];
     if (valueA === undefined && valueB === undefined) {

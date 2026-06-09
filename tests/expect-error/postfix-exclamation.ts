@@ -83,7 +83,7 @@ function testArrayOfObjectsNonNull(
 
 function testArrayOfObjectsAccess(x: { field: number }[] | null): number {
   // @skjs-expect-error Do not use the postfix ! operator
-  // @skjs-expect-error Type cannot be accessed
+  // @skjs-expect-error Property access is not allowed on this type
   return x![0].field;
 }
 
@@ -498,7 +498,7 @@ function testADTWithTypeGuard(x: ADT | null): number | string {
   // @skjs-expect-error Do not use the postfix ! operator
   if (x!.kind === "A") {
     // FIXME if we're in this branch, then x! succeeded
-    // @skjs-expect-error Type cannot be accessed
+    // @skjs-expect-error Property access is not allowed on this type
     return x.value;
   } else {
     return x.value;
@@ -536,8 +536,8 @@ function testPromiseNonNull(x: Promise<number> | null): Promise<number> {
 
 function testPromiseThen(x: Promise<number> | null): Promise<string> {
   // FIXME
-  // @skjs-expect-error Type cannot be accessed
   // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error Property access is not allowed on this type
   return x!.then((n) => n.toString());
 }
 
@@ -549,7 +549,7 @@ function testPromiseThen(x: Promise<number> | null): Promise<string> {
 // Using ! on a value that is never null/undefined
 function testNonNullableValue(): number {
   let x: number = 42;
-  // @skjs-expect-warning This operator is useless
+  // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
   return x!;
 }
 
@@ -564,7 +564,7 @@ function testWrongTypeAfterNonNull(x: string | null): number {
 function testNonNullOnNonNullable(): string {
   let x: number = 42;
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
-  // @skjs-expect-warning This operator is useless
+  // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
   return x!;
 }
 
@@ -572,7 +572,7 @@ function testNonNullOnNonNullable(): string {
 function testMultipleExclamations(x: number | null): string {
   // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
-  // @skjs-expect-warning This operator is useless
+  // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
   return x!!;
 }
 

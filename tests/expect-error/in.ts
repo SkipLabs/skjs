@@ -1,10 +1,10 @@
 function literalInRecordAlwaysTrue(x: { f: number }): boolean {
-  // @skjs-expect-error This expression is always true
+  // @skjs-expect-error This condition is always true
   return "f" in x;
 }
 
 function refineLiteralInRecordAlwaysTrue(x: { f: number }): number {
-  // @skjs-expect-error This expression is always true
+  // @skjs-expect-error This condition is always true
   if ("f" in x) {
     return x.f;
   } else {
@@ -189,7 +189,7 @@ function unionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): boolean {
-  // @skjs-expect-error This expression is always true
+  // @skjs-expect-error This condition is always true
   return s in x;
 }
 
@@ -197,7 +197,7 @@ function refineUnionInRecordAlwaysTrue(
   s: "f" | "g",
   x: { f: number; g: number },
 ): number {
-  // @skjs-expect-error This expression is always true
+  // @skjs-expect-error This condition is always true
   if (s in x) {
     return x[s];
   } else {
@@ -301,7 +301,7 @@ function stringInRecord(s: string, x: { f: number }): boolean {
 function refineStringInRecord(s: string, x: { f: number }): number {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Invalid access
+    // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
     return x[s];
   } else {
     return 0;
@@ -311,7 +311,7 @@ function refineStringInRecord(s: string, x: { f: number }): number {
 function refineStringInRecord2(s: string, x: { f: number }): unknown {
   if (s in x) {
     // FIXME
-    // @skjs-expect-error Invalid access
+    // @skjs-expect-error Cannot index this type with a non-literal key: it has no index signature
     return x[s];
   } else {
     return 0;

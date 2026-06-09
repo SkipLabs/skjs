@@ -192,7 +192,7 @@ function testForOfOnUnion(x: Array<number> | Obj): void {
 
 // Destructuring union
 function testDestructuringUnion(x: Array<number> | Obj): void {
-  // @skjs-expect-error Invalid tuple pattern
+  // @skjs-expect-error Cannot use array-destructuring on a non-iterable type
   const [first, second] = x;
 }
 

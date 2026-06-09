@@ -49,7 +49,7 @@ function testTupleDefaultUseless(): void {
 
 function testTupleDefaultAlwaysUndefined(): void {
   const arr: [undefined] = [undefined];
-  // @skjs-expect-warning Element is always undefined
+  // @skjs-expect-warning This default is unreachable: the element is always 'undefined'
   const [a = 42] = arr;
 }
 
