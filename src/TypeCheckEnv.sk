@@ -14,7 +14,7 @@ mutable base class TCEnvBase private {
 
   mutable fun error(
     messages: Array<(PosRange, String)>,
-    code: ErrorCode = Unclassified(),
+    code: ErrorCode,
   ): void {
     this.results.error(messages, code)
   }
@@ -24,7 +24,7 @@ mutable base class TCEnvBase private {
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
-    code: ErrorCode = Unclassified(),
+    code: ErrorCode,
   ): void {
     this.results.subtypingError(subst, tenv, messages, stErr, code)
   }
@@ -279,7 +279,7 @@ mutable class TCResultsAcc private {
 
   mutable fun error(
     messages: Array<(PosRange, String)>,
-    code: ErrorCode = Unclassified(),
+    code: ErrorCode,
   ): void {
     this.errorHandling match {
     | EHKeepGoing() -> this.errors.push(NamingError(messages, code))
@@ -294,7 +294,7 @@ mutable class TCResultsAcc private {
     tenv: TEnv,
     messages: Array<(PosRange, String)>,
     stErr: STErrorOnTType,
-    code: ErrorCode = Unclassified(),
+    code: ErrorCode,
   ): void {
     this.errorHandling match {
     | EHKeepGoing() ->

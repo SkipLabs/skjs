@@ -172,9 +172,7 @@ base class ErrorCode uses Equality {
 
 base class ErrorKind uses Equality {
   fun toString(): String;
-  overridable fun code(): ErrorCode {
-    Unclassified()
-  }
+  fun code(): ErrorCode;
 }
 base class ParsingKind extends ErrorKind
 base class LexingKind extends ErrorKind
