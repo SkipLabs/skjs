@@ -58,7 +58,7 @@ extension class TypeChecker {
     msg: String,
     ty1: TType,
     ty2: TType,
-    code: ErrorCode = Unclassified(),
+    code: ErrorCode,
   ): void {
     TType::isSub(tcenv.subst, this, ty1, ty2) match {
     | STOk() -> void
