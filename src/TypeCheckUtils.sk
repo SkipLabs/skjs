@@ -109,9 +109,10 @@ extension class TypeChecker {
     this.checkSubType(
       tcenv,
       e.pos,
-      "A condition is expected to be of type boolean, not: ",
+      "A condition must be of type 'boolean'",
       this.expr(tcenv, e, true),
       TType::single(TPrimValue::boolean(e.pos)),
+      SKJSCode(2001),
     );
   }
 

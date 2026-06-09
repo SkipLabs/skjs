@@ -1608,7 +1608,14 @@ extension class TypeChecker {
       uop match {
       | UOExclamationMark() ->
         bool = TType::single(TPrimValue::boolean(pos));
-        this.checkSubType(tcenv, pos, "Invalid !", ty, bool);
+        this.checkSubType(
+          tcenv,
+          pos,
+          "Operand of '!' must be of type 'boolean'",
+          ty,
+          bool,
+          SKJSCode(2001),
+        );
         bool
       | nuop @ NumericUnaryOperator() ->
         invalid = false;
@@ -1719,9 +1726,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           pos,
-          `Invalid ${opStr}`,
+          `Operand of '${opStr}' must be of type 'boolean'`,
           ty1,
           TType::single(TPrimValue::boolean(e1.pos)),
+          SKJSCode(2001),
         );
         savedScope = tcenv.scope;
         branch2 = tcenv.mcreateSubScope{isLoop => false};
@@ -1731,9 +1739,10 @@ extension class TypeChecker {
         this.checkSubType(
           tcenv,
           pos,
-          `Invalid ${opStr}`,
+          `Operand of '${opStr}' must be of type 'boolean'`,
           ty2,
           TType::single(TPrimValue::boolean(e2.pos)),
+          SKJSCode(2001),
         );
         tcenv.!scope = savedScope;
         tcenv.popScope(this, branch2);
@@ -2046,9 +2055,10 @@ extension class TypeChecker {
       this.checkSubType(
         tcenv,
         e1.pos,
-        "Invalid ? condition",
+        "A ternary condition must be of type 'boolean'",
         cond,
         TType::single(TPrimValue::boolean(e1.pos)),
+        SKJSCode(2001),
       );
 
       // Create scopes for the true and false branches with type refinements

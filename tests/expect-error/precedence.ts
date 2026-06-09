@@ -6,7 +6,7 @@ function testUnaryVsFunctionCall(): boolean {
 function testUnaryVsFunctionCallError(): void {
   let foo = (): boolean => true;
   // @skjs-expect-error Invalid call
-  // @ts-expect-error Invalid !
+  // @skjs-expect-error Operand of '!' must be of type 'boolean'
   let result = (!foo)();
 }
 
@@ -18,7 +18,7 @@ function testUnaryVsMemberAccess(): boolean {
 function testUnaryVsMemberAccessError(): void {
   let obj = { prop: true };
   // @skjs-expect-error Unbound field: prop
-  // @ts-expect-error Invalid !
+  // @skjs-expect-error Operand of '!' must be of type 'boolean'
   let result = (!obj).prop;
 }
 
@@ -38,7 +38,7 @@ function testUnaryVsMethodCallError(): boolean {
     },
   };
   // @skjs-expect-error Unbound field: met
-  // @ts-expect-error Invalid !
+  // @skjs-expect-error Operand of '!' must be of type 'boolean'
   return (!obj).met();
 }
 
@@ -65,7 +65,7 @@ function testLogicalVsComparisonError(): void {
     c = 3,
     d = 4;
   // @skjs-expect-error Invalid comparison. Both operands must have the same type.
-  // @ts-expect-error Invalid &&
+  // @skjs-expect-error Operand of '&&' must be of type 'boolean'
   let result = a < (b && c) < d;
 }
 
