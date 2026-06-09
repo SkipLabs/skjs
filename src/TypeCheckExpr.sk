@@ -961,6 +961,86 @@ extension class TypeChecker {
 
      Try to keep in synch with TEnv#keyOfType
   */
+  // Synthesize the type of `.call` / `.apply` / `.bind` accessed on a function
+  // value, deriving it from the underlying call signature `f`:
+  //   f.call(thisArg, ...params) => R
+  //   f.apply(thisArg, [params]) => R
+  //   f.bind(thisArg)            => (the function with its `this` removed)
+  // `.bind`'s result is `OmitThisParameter<f>` — just `f` with `thisParam`
+  // cleared. Scoped to a single non-generic call signature with only required
+  // positional parameters; returns None (so the access falls through to
+  // "Unbound field") for generic or optional/rest-param functions, which would
+  // need the full variadic CallableFunction signatures TS uses. Partial-
+  // application `.bind(thisArg, ...args)` is not modeled yet.
+  fun maybeFunctionMethod(
+    tcenv: mutable TCEnv,
+    obj: TObject,
+    fieldName: String,
+    pos: PosRange,
+  ): ?TType {
+    if (fieldName != "call" && fieldName != "apply" && fieldName != "bind") {
+      return None()
+    };
+    tfuns = obj.maybeGetCall(tcenv.subst, this) match {
+    | Some(tf) -> tf
+    | None() -> return None()
+    };
+    f = tfuns.fun_;
+    if (
+      !f.tparams.isEmpty() ||
+      !f.optionalParams.isEmpty() ||
+      f.spreadParam.isSome()
+    ) {
+      return None()
+    };
+    // A shape method's carrier type is erased, so no sound thisArg check is
+    // possible for a rebind — do not synthesize .call/.apply/.bind on it
+    // (a sound under-approximation: the fields stay unbound).
+    if (f.thisParam is ImplicitShape _) return None();
+    // The thisArg of `.call`/`.apply`/`.bind` is checked against the function's
+    // `this`: an implicit class `this` requires the receiver to be the class
+    // instance (sound; TS resolves it to `unknown`), an explicit `this: T`
+    // constrains to T, and no declared `this` accepts anything.
+    thisType = f.thisParam.tyOpt().default(TType::top(pos));
+    funType = (tfun: TFun) ->
+      TType::single(TObject::createCall(TFuns::singleFun(tfun, pos)));
+    synth = if (fieldName == "call") {
+      TFun(
+        Array[],
+        NoThis(),
+        Array[thisType].concat(f.params),
+        Array[],
+        None(),
+        f.retType,
+        f.cgNodes,
+      )
+    } else if (fieldName == "apply") {
+      argsTuple = TType::tuple(pos, f.params, true);
+      TFun(
+        Array[],
+        NoThis(),
+        Array[thisType, argsTuple],
+        Array[],
+        None(),
+        f.retType,
+        f.cgNodes,
+      )
+    } else {
+      bound = f with {thisParam => NoThis()};
+      boundTy = funType(bound);
+      TFun(
+        Array[],
+        NoThis(),
+        Array[thisType],
+        Array[],
+        None(),
+        boundTy,
+        f.cgNodes,
+      )
+    };
+    Some(funType(synth))
+  }
+
   fun get(
     tcenv: mutable TCEnv,
     pos: PosRange,
@@ -1168,6 +1248,20 @@ extension class TypeChecker {
                   ),
                 );
                 false
+              // Not a declared field: synthesize .call/.apply/.bind on a
+              // function-typed receiver (read-only access).
+              | None() if (!isLValue) ->
+                this.maybeFunctionMethod(
+                  tcenv,
+                  obj,
+                  fieldLit.val,
+                  fieldLit.pos,
+                ) match {
+                | Some(methodTy) ->
+                  addResultCase(methodTy);
+                  false
+                | None() -> true
+                }
               // Present in no branch: keep it for the not-found path below
               // (its index was already consulted per branch above).
               | None() -> true
