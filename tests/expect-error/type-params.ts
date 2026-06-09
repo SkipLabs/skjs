@@ -33,15 +33,15 @@ function applyTDefaultUsePreviousParamError<X, Y>(
 type TNonLastDefault<X = boolean, Y> = X | Y;
 
 // @ts-expect-error Optional type parameters are not supported for classes and functions
-// @ts-expect-error Required type parameters may not follow optional type parameters
+// @ts-expect-error Required type parameters may not follow optional type parameters.
 function fNonLastDefault1<X = boolean, Y>(x: X | Y): void {}
 
 // @ts-expect-error Optional type parameters are not supported for classes and functions
-// @ts-expect-error Required type parameters may not follow optional type parameters
+// @ts-expect-error Required type parameters may not follow optional type parameters.
 function fNonLastDefault2(f: <X = boolean, Y>(x: X | Y) => void): void {}
 
 // @ts-expect-error Optional type parameters are not supported for classes and functions
-// @ts-expect-error Required type parameters may not follow optional type parameters
+// @ts-expect-error Required type parameters may not follow optional type parameters.
 class cNonLastDefault<X = boolean, Y> {}
 
 /*

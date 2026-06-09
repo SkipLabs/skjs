@@ -64,7 +64,7 @@ function testLogicalVsComparisonError(): void {
     b = 2,
     c = 3,
     d = 4;
-  // @skjs-expect-error Invalid comparison. Both operands must have the same type
+  // @skjs-expect-error Invalid comparison. Both operands must have the same type.
   // @ts-expect-error Invalid &&
   let result = a < (b && c) < d;
 }
