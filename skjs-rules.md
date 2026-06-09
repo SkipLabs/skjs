@@ -305,9 +305,11 @@ let tags = ['urgent' as const, 'priority' as const];
   method signatures. Inside the body `this` has type `T`, overriding the
   enclosing class's implicit `this`. `this` must be the first parameter and
   cannot be a rest, optional, or default-valued parameter.
-- **Implicit class `this`**: Methods of a _standalone_ class (one with a body
-  that does not `extends` another class) implicitly carry the class instance as
-  their `this`. Calling such a method with the wrong receiver is rejected — in
+- **Implicit class `this`**: Every non-static method implicitly carries the
+  enclosing class instance as its `this` — including methods inherited from or
+  declared on a class that `extends` a parent, and body-less methods (interfaces,
+  ambient declarations, generic container library types such as
+  `ReadonlyArray<T>`). Calling a method with the wrong receiver is rejected — in
   particular a detached call loses the receiver:
   ```typescript
   class Counter {
@@ -320,20 +322,20 @@ let tags = ['urgent' as const, 'priority' as const];
     g();                  // Error: 'this' context (void) is not assignable
   }
   ```
+  SKJS is sound here where TS is not: `tsc --strict` accepts these detached
+  calls. Primitive receivers are auto-boxed to their wrapper instance, so
+  `(42).toString()` checks against `Number`'s implicit `this`.
 - **Call-site check**: For `e1.m(...)` (or `e1[k](...)`) the receiver `e1` is
-  checked against the method's declared `this`; a free call uses `this: void`,
-  matching TypeScript's treatment of detached methods.
-- **Subtyping**: In function-type subtyping the `this` parameter is
-  contravariant; a signature with no declared `this` is treated as
-  `this: unknown` (compatible with any receiver).
-- **Not yet supported**:
-  - Implicit `this` is attached only to methods of standalone classes. Methods
-    declared on _extending_ classes and _body-less_ methods (interfaces,
-    ambient declarations, and generic container library types such as
-    `ReadonlyArray<T>`) carry no implicit `this`, so their receiver/detached
-    checks are skipped.
-  - `.bind` / `.call` / `.apply` receiver rebinding and `OmitThisParameter`.
-  - Primitive wrapper methods (e.g. `(42).toString()`) do not declare a `this`.
+  checked against the method's `this`; a free call uses `this: void`.
+- **Subtyping**: In function-type subtyping an explicit `this: T` is
+  contravariant, and a signature with no declared `this` is treated as
+  `this: unknown` (compatible with any receiver). Two _implicit_ class
+  thisParams are treated as mutually compatible (bivariant, like TS methods),
+  so adding an implicit `this` to every method preserves generic-container
+  variance (`ReadonlyArray<Dog>` vs `ReadonlyArray<Animal>`) and subclass
+  override compatibility.
+- **Not yet supported**: `.bind` / `.call` / `.apply` receiver rebinding and
+  `OmitThisParameter`.
 - **Verified by**: `tests/expect-error/this-parameter*.ts`
 
 ## Coding Guidelines for SKJS
