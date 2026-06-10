@@ -104,7 +104,10 @@ mutable class Scope{
   readonly fun get(name: Name): TType {
     this.maybeGet(name) match {
     | None() ->
-      fatalError(Array[(name.pos, `Cannot find name '${name.value}'`)], TSCode(2304))
+      fatalError(
+        Array[(name.pos, `Cannot find name '${name.value}'`)],
+        TSCode(2304),
+      )
     | Some(x) -> x
     }
   }
@@ -116,7 +119,10 @@ mutable class Scope{
   ): void {
     (throughLoop, upRef) = this.maybeGetRef(name.value) match {
     | None() ->
-      fatalError(Array[(name.pos, `Cannot find name '${name.value}'`)], TSCode(2304))
+      fatalError(
+        Array[(name.pos, `Cannot find name '${name.value}'`)],
+        TSCode(2304),
+      )
     | Some(x) -> x
     };
     if (throughLoop) {
