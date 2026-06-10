@@ -74,9 +74,10 @@ extension class TypeChecker {
                 Array[
                   (
                     defaultExpr.pos,
-                    "Default is useless because element cannot be undefined",
+                    "This default is unreachable because the element cannot be 'undefined'",
                   ),
                 ],
+                SKJSCode(2063),
               )
             };
             if (isAlwaysUndefined) {
@@ -264,6 +265,7 @@ extension class TypeChecker {
                     ),
                     (type.pos, `Out of ${this.ppType(tcenv, type)}`),
                   ],
+                  TSCode(2339),
                 )
               | Some(tfield) ->
                 this.checkFieldAccess(tcenv, tfield, fieldName.pos);
@@ -308,9 +310,10 @@ extension class TypeChecker {
                 Array[
                   (
                     defaultPos,
-                    "Default is useless because field cannot be undefined",
+                    "This default is unreachable because the field cannot be 'undefined'",
                   ),
                 ],
+                SKJSCode(2063),
               )
             };
             this.bind(tcenv, kind, fieldPat, typeForField, isInitialized, false)
@@ -467,6 +470,7 @@ extension class TypeChecker {
             ),
             (field.pos, "Declared here"),
           ],
+          TSCode(2341),
         )
       }
     | FANever() ->
@@ -480,6 +484,7 @@ extension class TypeChecker {
           ),
           (field.pos, "Declared here"),
         ],
+        TSCode(2341),
       )
     | FAPhantom(inPos) ->
       tcenv.error(
@@ -492,6 +497,7 @@ extension class TypeChecker {
           ),
           (inPos, "Presence checked here"),
         ],
+        SKJSCode(2058),
       )
     }
   }
@@ -534,7 +540,13 @@ extension class TypeChecker {
     | Some(stypes) if (!stypes.isEmpty()) -> Vector::mcreateFromItems(stypes)
     | _ ->
       fatalError(
-        Array[(pos, `Invalid access for type ${this.ppType(tcenv, objType2)}`)],
+        Array[
+          (
+            pos,
+            `Cannot access a property on type ${this.ppType(tcenv, objType2)}`,
+          ),
+        ],
+        TSCode(2339),
       )
     };
     isOptionalChaining = accessKind is AKOptionalChain _;
@@ -713,11 +725,12 @@ extension class TypeChecker {
                 Array[
                   (
                     pos,
-                    `Invalid index key: expected ${fields.nonSyntheticIndexKeyKindsString()}, got ${
+                    `This index key is not assignable to the index signature: expected ${fields.nonSyntheticIndexKeyKindsString()}, got ${
                       remainingIdxSType.kind
                     }`,
                   ),
                 ],
+                TSCode(2345),
               )
             };
             matchedIndex match {
@@ -981,6 +994,7 @@ extension class TypeChecker {
                   `__SKJS_show: expected ${expected.val}, got ${actual}`,
                 ),
               ],
+              SKJSCode(2059),
             )
           }
         | None() ->
@@ -991,12 +1005,14 @@ extension class TypeChecker {
                 "__SKJS_show: second argument must be a string literal",
               ),
             ],
+            SKJSCode(2059),
           )
         }
       };
       if (args.size() > 2) {
         tcenv.error(
           Array[(args[2].pos, "__SKJS_show: expected at most 2 arguments")],
+          SKJSCode(2059),
         )
       }
     };
@@ -1020,6 +1036,7 @@ extension class TypeChecker {
               "Internal error: expr call with both mostPrecise and isLValue",
             ),
           ],
+          SKJSCode(9999),
         )
       };
       this.asConstExpr(tcenv, e) match {
@@ -1069,7 +1086,13 @@ extension class TypeChecker {
           | FDVar(kind, name, type, value) ->
             if (!(kind is VDKConst _)) {
               tcenv.error(
-                Array[(name.pos, "Non-const members are not supported")],
+                Array[
+                  (
+                    name.pos,
+                    "Only 'const' members are supported in this position by SKJS",
+                  ),
+                ],
+                SKJSCode(2073),
               );
             };
             break type match {
@@ -1144,6 +1167,7 @@ extension class TypeChecker {
                   ),
                   (spreadField.pos, "Declared here"),
                 ],
+                SKJSCode(2072),
               )
             }
           };
@@ -1159,6 +1183,7 @@ extension class TypeChecker {
                   ),
                   (spreadField.pos, "Declared here"),
                 ],
+                SKJSCode(2072),
               )
             }
           };
@@ -1437,9 +1462,10 @@ extension class TypeChecker {
               Array[
                 (
                   keyExpr.pos,
-                  "Computed property key must be a literal or unique symbol",
+                  "A computed property key must be a literal or a 'unique symbol'",
                 ),
               ],
+              TSCode(1170),
             );
             continue
           }
@@ -1504,7 +1530,8 @@ extension class TypeChecker {
       | Some((superCstr, super)) ->
         if (targs.size() != 0) {
           tcenv.error(
-            Array[(pos, "super cannot be called with type arguments")],
+            Array[(pos, "'super' cannot be called with type arguments")],
+            SKJSCode(2071),
           );
         };
         this.callConstructor(tcenv, pos, superCstr, args);
@@ -1858,10 +1885,11 @@ extension class TypeChecker {
               Array[
                 (
                   pos,
-                  "Invalid comparison. You can only compare strings, numbers, bigints, and booleans.",
+                  "A comparison operand must be a string, number, bigint, or boolean",
                 ),
                 (e1.pos, `This is a ${this.ppType(tcenv, ty)}`),
               ],
+              SKJSCode(2070),
             );
             None()
           }
@@ -1872,13 +1900,11 @@ extension class TypeChecker {
         | (Some(k1), Some(k2)) if (k1 != k2) ->
           tcenv.error(
             Array[
-              (
-                pos,
-                "Invalid comparison. Both operands must have the same type.",
-              ),
+              (pos, "Both operands of a comparison must have the same type"),
               (e1.pos, `This is a ${k1}`),
               (e2.pos, `This is a ${k2}`),
             ],
+            SKJSCode(2070),
           )
         | _ -> void
         };
@@ -1926,6 +1952,7 @@ extension class TypeChecker {
               (e1.pos, `Left operand is ${kind1}`),
               (e2.pos, `Right operand is ${kind2}`),
             ],
+            TSCode(2365),
           )
         };
         TType::single(TPrimValue::full(kind1, pos))
@@ -2114,7 +2141,10 @@ extension class TypeChecker {
             // Unsafe: v[k]! after side effects in for-in loop
             tcenv.error(
               Array[
-                (pos, "Do not use the postfix ! operator"),
+                (
+                  pos,
+                  "The non-null assertion operator '!' is not allowed here",
+                ),
                 (callPos, "This call could have modified the collection"),
                 (
                   subExpr.pos,
@@ -2123,17 +2153,19 @@ extension class TypeChecker {
                     .join(".")}[${ctx.keyVar}]!`,
                 ),
               ],
+              SKJSCode(2068),
             )
           | None() ->
             // Not a for-in pattern — original error
             tcenv.error(
               Array[
-                (pos, "Do not use the postfix ! operator"),
+                (pos, "The non-null assertion operator '!' is not allowed"),
                 (
                   subExpr.pos,
                   "This assertion is unsound and may cause runtime errors",
                 ),
               ],
+              SKJSCode(2068),
             )
           }
         };
@@ -2244,7 +2276,13 @@ extension class TypeChecker {
       | Some(ty) -> TType::single(ty)
       | None() ->
         tcenv.error(
-          Array[(pos, "'as const' can only be used with literal expressions")],
+          Array[
+            (
+              pos,
+              "A 'const' assertion can only be applied to a string, number, boolean, array, or object literal",
+            ),
+          ],
+          TSCode(1355),
         );
         this.expr(tcenv, subExpr, true)
       }
@@ -2294,9 +2332,10 @@ extension class TypeChecker {
           | Some(lit) ->
             tcenv.error(
               Array[
-                (pos, "Constant expression could have been simplified"),
+                (pos, "This constant expression could have been simplified"),
                 (subE.pos, `This has type ${lit.val}`),
               ],
+              SKJSCode(2060),
             );
             res = lit.val match {
             | "true" -> "false"
@@ -2709,17 +2748,19 @@ extension class TypeChecker {
         | Some(usedPos) ->
           tcenv.error(
             Array[
-              (pos, "You are trying to add a field to this object"),
+              (pos, "Cannot add a field to this object after it has been used"),
               (
                 usedPos,
                 "But this object has already been used for something else",
               ),
             ],
+            SKJSCode(2065),
           )
         };
         if (tcenv.scope.isThroughLoop(local)) {
           tcenv.error(
-            Array[(local.pos, "You cannot add a field to an object in a loop")],
+            Array[(local.pos, "Cannot add a field to an object inside a loop")],
+            SKJSCode(2069),
           )
         };
         allNewFields = TFields::create{
@@ -2745,7 +2786,10 @@ extension class TypeChecker {
         })
       }
     | _ ->
-      tcenv.error(Array[(pos, "Internal error: local object is not an object")])
+      tcenv.error(
+        Array[(pos, "Internal error: local object is not an object")],
+        SKJSCode(9999),
+      )
     };
     fieldType
   }
@@ -2790,13 +2834,17 @@ extension class TypeChecker {
           Array[
             (
               keyExpr.pos,
-              "Computed property key must match an index signature on this object",
+              "This computed property key must match an index signature on the object",
             ),
           ],
+          SKJSCode(2066),
         )
       }
     | _ ->
-      tcenv.error(Array[(pos, "Internal error: local object is not an object")])
+      tcenv.error(
+        Array[(pos, "Internal error: local object is not an object")],
+        SKJSCode(9999),
+      )
     };
     fieldType
   }
@@ -2933,10 +2981,11 @@ extension class TypeChecker {
           Array[
             (
               pos,
-              `Incompatible number of type arguments: ${targs.size()} passed`,
+              `Expected ${tfun.tparams.size()} type arguments, but got ${targs.size()}`,
             ),
             (fPos, `Expected: ${tfun.tparams.size()}`),
           ],
+          TSCode(2558),
         )
       };
       map = SortedMap[];

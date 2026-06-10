@@ -9,27 +9,27 @@
 ///////////////////////////////////////////////////////////////////////////////
 
 function testBasicNonNull(x: number | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testBasicNonUndefined(x: number | undefined): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testBasicNonNullOrUndefined(x: number | null | undefined): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testStringNonNull(x: string | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testBooleanNonNull(x: boolean | null): boolean {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
@@ -38,24 +38,24 @@ function testBooleanNonNull(x: boolean | null): boolean {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testObjectNonNull(x: { field: number } | null): { field: number } {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testObjectFieldAccess(x: { field: number } | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.field;
 }
 
 function testNestedObjectNonNull(x: { a: { b: number } } | null): {
   a: { b: number };
 } {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testNestedObjectFieldAccess(x: { a: { b: number } } | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.a.b;
 }
 
@@ -64,31 +64,31 @@ function testNestedObjectFieldAccess(x: { a: { b: number } } | null): number {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testArrayNonNull(x: number[] | null): number[] {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testArrayAccess(x: number[] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0];
 }
 
 function testArrayOfObjectsNonNull(
   x: { field: number }[] | null,
 ): { field: number }[] {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testArrayOfObjectsAccess(x: { field: number }[] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Property access is not allowed on this type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0].field;
 }
 
 function testArrayOfObjectsAccess2(x: { field: number }[] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0]!.field;
 }
 
@@ -97,17 +97,17 @@ function testArrayOfObjectsAccess2(x: { field: number }[] | null): number {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testTupleNonNull(x: [number, string] | null): [number, string] {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testTupleAccess(x: [number, string] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0];
 }
 
 function testTupleDestructuring(x: [number, string] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   const [n, _s] = x!;
   return n;
 }
@@ -117,24 +117,24 @@ function testTupleDestructuring(x: [number, string] | null): number {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testFunctionNonNull(x: (() => number) | null): () => number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testFunctionCall(x: (() => number) | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!();
 }
 
 function testFunctionWithParamsNonNull(
   x: ((n: number) => string) | null,
 ): (n: number) => string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testFunctionWithParamsCall(x: ((n: number) => string) | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!(42);
 }
 
@@ -143,28 +143,28 @@ function testFunctionWithParamsCall(x: ((n: number) => string) | null): string {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testUnionNonNull(x: number | string | null): number | string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testComplexUnionNonNull(
   x: { a: number } | { b: string } | null,
 ): { a: number } | { b: string } {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testUnionWithUndefined(
   x: number | string | undefined,
 ): number | string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testUnionWithBothNullAndUndefined(
   x: number | string | null | undefined,
 ): number | string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
@@ -173,40 +173,40 @@ function testUnionWithBothNullAndUndefined(
 ///////////////////////////////////////////////////////////////////////////////
 
 function testChainedNonNull(x: { field: number | null } | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.field!;
 }
 
 function testDeeplyChainedNonNull(
   x: { a: { b: { c: number | null } | null } | null } | null,
 ): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.a!.b!.c!;
 }
 
 function testChainedArrayAccess(
   x: (number[] | null)[] | null,
 ): number[] | null {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0];
 }
 
 function testChainedArrayAccess2(
   x: (number[] | null)[] | null,
 ): number[] | null {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0]!;
 }
 
 function testChainedArrayAccessFull(x: (number[] | null)[] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0]![0];
 }
 
 function testChainedArrayAccessFull2(x: (number[] | null)[] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0]![0]!;
 }
 
@@ -221,12 +221,12 @@ function testOptionalPropertyNonNull(x: { field?: number }): {
 }
 
 function testOptionalPropertyAccess(x: { field?: number }): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x.field!;
 }
 
 function testNestedOptionalPropertyAccess(x: { a?: { b?: number } }): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x.a!.b!;
 }
 
@@ -238,14 +238,14 @@ type NullableNumber = number | null;
 type NullableString = string | null;
 
 function testTypeAliasNonNull(x: NullableNumber): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testNestedTypeAliasNonNull(
   x: { field: NullableString } | null,
 ): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.field!;
 }
 
@@ -254,7 +254,7 @@ function testNestedTypeAliasNonNull(
 ///////////////////////////////////////////////////////////////////////////////
 
 function testGenericNonNull<T>(x: T | null): T {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
@@ -267,12 +267,12 @@ function testGenericNonNullString(x: string | null): string {
 }
 
 function testGenericNonNullWithUndefined<T>(x: T | undefined): T {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testGenericNonNullWithBoth<T>(x: T | null | undefined): T {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
@@ -281,12 +281,12 @@ function testGenericNonNullWithBoth<T>(x: T | null | undefined): T {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testNonNullInBinaryExpression(x: number | null, y: number): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x! + y;
 }
 
 function testNonNullInComparison(x: number | null, y: number): boolean {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x! > y;
 }
 
@@ -294,7 +294,7 @@ function testNonNullInLogicalExpression(
   x: boolean | null,
   y: boolean,
 ): boolean {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x! && y;
 }
 
@@ -302,7 +302,7 @@ function testNonNullInTernary(
   x: number | null,
   condition: boolean,
 ): number | string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return condition ? x! : "default";
 }
 
@@ -311,17 +311,17 @@ function testNonNullInTernary(
 ///////////////////////////////////////////////////////////////////////////////
 
 function testMethodCallNonNull(x: string | null): boolean {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.startsWith("foo");
 }
 
 function testChainedMethodCalls(x: string | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.toLowerCase().toUpperCase();
 }
 
 function testMethodCallOnOptionalProperty(x: { s?: string }): boolean {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x.s!.startsWith("foo");
 }
 
@@ -330,20 +330,20 @@ function testMethodCallOnOptionalProperty(x: { s?: string }): boolean {
 ///////////////////////////////////////////////////////////////////////////////
 
 function testArrayMapNonNull(x: number[] | null): number[] {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error A parameter must have an explicit type annotation
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.map((n) => n * 2);
 }
 
 function testArrayFilterNonNull(x: number[] | null): number[] {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error A parameter must have an explicit type annotation
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.filter((n) => n > 0);
 }
 
 function testArrayReduceNonNull(x: number[] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error A parameter must have an explicit type annotation
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.reduce((acc, n) => acc + n, 0);
 }
 
@@ -353,14 +353,14 @@ function testArrayReduceNonNull(x: number[] | null): number {
 
 function testAssignmentNonNull(x: number | null): number {
   let y: number;
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   y = x!;
   return y;
 }
 
 function testPropertyAssignmentNonNull(x: number | null): { field: number } {
   let obj = { field: 0 };
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   obj.field = x!;
   return obj;
 }
@@ -371,7 +371,7 @@ function testPropertyAssignmentNonNull(x: number | null): { field: number } {
 
 function testReturnNonNull(x: number | null): number {
   if (true) {
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
     return x!;
   }
   return 0;
@@ -382,10 +382,10 @@ function testMultipleReturnsNonNull(
   condition: boolean,
 ): number {
   if (condition) {
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
     return x!;
   } else {
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
     return x!;
   }
 }
@@ -395,7 +395,7 @@ function testMultipleReturnsNonNull(
 ///////////////////////////////////////////////////////////////////////////////
 
 function testDestructuringNonNull(x: { a: number; b: string } | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   const { a } = x!;
   return a;
 }
@@ -405,13 +405,13 @@ function testNestedDestructuringNonNull(
 ): number {
   const {
     a: { b },
-    // @skjs-expect-error Do not use the postfix ! operator
+    // @skjs-expect-error The non-null assertion operator '!' is not allowed
   } = x!;
   return b;
 }
 
 function testArrayDestructuringNonNull(x: number[] | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   const [first] = x!;
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return first;
@@ -420,7 +420,7 @@ function testArrayDestructuringNonNull(x: number[] | null): number {
 function testArrayDestructuringNonNullButUndefined(
   x: number[] | null,
 ): number | undefined {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   const [first] = x!;
   return first;
 }
@@ -440,17 +440,17 @@ class TestClass {
 }
 
 function testClassInstanceNonNull(x: TestClass | null): TestClass {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testClassInstanceFieldAccess(x: TestClass | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.field;
 }
 
 function testClassInstanceMethodCall(x: TestClass | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.getField();
 }
 
@@ -464,17 +464,17 @@ interface TestInterface {
 }
 
 function testInterfaceNonNull(x: TestInterface | null): TestInterface {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testInterfaceFieldAccess(x: TestInterface | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.field;
 }
 
 function testInterfaceMethodCall(x: TestInterface | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.method();
 }
 
@@ -485,17 +485,17 @@ function testInterfaceMethodCall(x: TestInterface | null): string {
 type ADT = { kind: "A"; value: number } | { kind: "B"; value: string };
 
 function testADTNonNull(x: ADT | null): ADT {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testADTFieldAccess(x: ADT | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.kind;
 }
 
 function testADTWithTypeGuard(x: ADT | null): number | string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   if (x!.kind === "A") {
     // FIXME if we're in this branch, then x! succeeded
     // @skjs-expect-error Property access is not allowed on this type
@@ -513,7 +513,7 @@ function testMultipleNonNullsInExpression(
   x: number | null,
   y: number | null,
 ): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x! + y!;
 }
 
@@ -521,7 +521,7 @@ function testMultipleNonNullsWithObjects(
   x: { a: number } | null,
   y: { b: string } | null,
 ): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.a.toString() + y!.b;
 }
 
@@ -530,14 +530,14 @@ function testMultipleNonNullsWithObjects(
 ///////////////////////////////////////////////////////////////////////////////
 
 function testPromiseNonNull(x: Promise<number> | null): Promise<number> {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 function testPromiseThen(x: Promise<number> | null): Promise<string> {
   // FIXME
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Property access is not allowed on this type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.then((n) => n.toString());
 }
 
@@ -555,8 +555,8 @@ function testNonNullableValue(): number {
 
 // Using ! doesn't change the type incorrectly
 function testWrongTypeAfterNonNull(x: string | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
@@ -570,50 +570,50 @@ function testNonNullOnNonNullable(): string {
 
 // Multiple ! doesn't change the type
 function testMultipleExclamations(x: number | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   // @skjs-expect-warning This operator has no effect; the operand is never null or undefined
   return x!!;
 }
 
 // Using ! doesn't convert types
 function testNoTypeConversion(x: string | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 // Using ! on incompatible union after removal of null
 function testIncompatibleUnionAfterNonNull(x: string | boolean | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 // Using ! doesn't make optional property required
 function testOptionalPropertyStillOptional(x: { field?: number }): number {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x.field!;
 }
 
 // Wrong field access after non-null assertion
 function testWrongFieldAccessAfterNonNull(x: { a: number } | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   // @ts-expect-error Unbound field: b
   return x!.b;
 }
 
 // Wrong array element type after non-null assertion
 function testWrongArrayElementType(x: number[] | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x![0];
 }
 
 // Using ! on undefined alone doesn't help with accessing properties
 function testUndefinedPropertyAccess(x: { field: number } | undefined): string {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.field;
 }
 
@@ -621,16 +621,16 @@ function testUndefinedPropertyAccess(x: { field: number } | undefined): string {
 function testChainedNonNullWrongType(
   x: { field: number | null } | null,
 ): string {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.field!;
 }
 
 // Using ! in wrong arithmetic context
 function testNonNullInWrongArithmetic(x: string | null, y: number): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   // @skjs-expect-error Right operand of '+' is not assignable to the left operand's type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x! + y;
 }
 
@@ -638,15 +638,15 @@ function testNonNullInWrongArithmetic(x: string | null, y: number): number {
 function testIncompatibleFunctionAfterNonNull(
   x: ((s: string) => number) | null,
 ): (n: number) => string {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 // Using ! on wrong generic type
 function testWrongGenericAfterNonNull<T>(x: T | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
@@ -654,15 +654,15 @@ function testWrongGenericAfterNonNull<T>(x: T | null): string {
 function testTypeGuardStillNeeded(
   x: { kind: "A"; value: number } | { kind: "B"; value: string } | null,
 ): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.value;
 }
 
 // Using ! on method with wrong return type expectation
 function testMethodWrongReturnType(x: string | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.toLowerCase();
 }
 
@@ -670,15 +670,15 @@ function testMethodWrongReturnType(x: string | null): number {
 function testIncompatibleTupleAfterNonNull(
   x: [number, string] | null,
 ): [string, number] {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 // Using ! on class instance with wrong method
 function testWrongMethodAfterNonNull(x: TestClass | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.getField();
 }
 
@@ -686,8 +686,8 @@ function testWrongMethodAfterNonNull(x: TestClass | null): string {
 function testInterfaceIncompatibility(x: TestInterface | null): {
   field: string;
 } {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
@@ -695,7 +695,7 @@ function testInterfaceIncompatibility(x: TestInterface | null): {
 function testAssignmentToWrongType(x: number | null): string {
   let y: string;
   // TODO: Type 'number' is not assignable to type 'string'
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   y = x!;
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
   return y;
@@ -703,36 +703,36 @@ function testAssignmentToWrongType(x: number | null): string {
 
 // Using ! on nested object with wrong path
 function testWrongNestedPath(x: { a: { b: number } } | null): string {
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   // @ts-expect-error Unbound field: c
   return x!.a.c;
 }
 
 // Using ! doesn't allow calling non-function
 function testCallingNonFunction(x: number | null): number {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error This expression is not callable
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!();
 }
 
 // Using ! on array with wrong method
 function testWrongArrayMethod(x: number[] | null): string {
   // TODO: Invalid return type
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error A parameter must have an explicit type annotation
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!.map((n) => n * 2);
 }
 
 // Using ! doesn't fix readonly/mutable mismatch
 function testReadonlyMismatch(x: readonly number[] | null): number[] {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }
 
 // Using ! on promise with wrong generic type
 function testWrongPromiseGeneric(x: Promise<number> | null): Promise<string> {
-  // @skjs-expect-error Do not use the postfix ! operator
   // @skjs-expect-error Type of returned value is not assignable to the function's return type
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return x!;
 }

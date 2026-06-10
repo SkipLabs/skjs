@@ -64,8 +64,8 @@ function testLogicalVsComparisonError(): void {
     b = 2,
     c = 3,
     d = 4;
-  // @skjs-expect-error Invalid comparison. Both operands must have the same type.
   // @skjs-expect-error Operand of '&&' must be of type 'boolean'
+  // @skjs-expect-error Both operands of a comparison must have the same type
   let result = a < (b && c) < d;
 }
 
@@ -81,7 +81,7 @@ function testAssignmentVsLogical(): boolean {
 
 function testPostfixVsMemberAccess(): string {
   let obj: { prop: string } | null = { prop: "hello" };
-  // @skjs-expect-error Do not use the postfix ! operator
+  // @skjs-expect-error The non-null assertion operator '!' is not allowed
   return obj!.prop;
 }
 

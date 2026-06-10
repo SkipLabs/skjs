@@ -58,7 +58,7 @@ function takesArrayOrNull(values: number[] | null): void {
 function tupleThenArrayUse(): void {
   const values = [1, 2];
   takesTuple(values);
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   values.push(3);
 }
 

@@ -20,7 +20,7 @@ function testAnnotatedEmpty(): void {
 function testUsedBeforeGrowth(): void {
   let obj = {};
   const ref = obj; // obj becomes LOUsed
-  // @skjs-expect-error You are trying to add a field to this object
+  // @skjs-expect-error Cannot add a field to this object after it has been used
   obj.x = 5;
 }
 
@@ -36,7 +36,7 @@ function testGrowthInsideLoop(): void {
 function testGrowthBeforeLoop(): void {
   let obj = {};
   for (let i = 0; i < 10; i++) {
-    // @skjs-expect-error You cannot add a field to an object in a loop
+    // @skjs-expect-error Cannot add a field to an object inside a loop
     obj.x = i;
   }
 }
@@ -51,7 +51,7 @@ function testWithIndexSignature(): void {
 // String-keyed access on a number-only index is rejected.
 function testWithNumericIndexSignature(): void {
   let obj: { [key: number]: string } = {};
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   obj.x = "hello";
 }
 
@@ -115,7 +115,7 @@ function testComputedKeyBroadNoIndex(): void {
   let obj = {};
   obj.x = 1;
   let key: string = "y";
-  // @skjs-expect-error Computed property key must match an index signature on this object
+  // @skjs-expect-error This computed property key must match an index signature on the object
   obj[key] = 2;
 }
 

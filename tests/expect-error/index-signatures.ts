@@ -253,7 +253,7 @@ function numberKeyOnStringIndex(x: StringIndex): number | undefined {
 }
 
 function stringKeyOnNumberIndex(x: NumberIndex): void {
-  // @skjs-expect-error Invalid index key: expected number, got string
+  // @skjs-expect-error This index key is not assignable to the index signature: expected number, got string
   const v = x["name"];
 }
 

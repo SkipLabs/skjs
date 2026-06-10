@@ -22,7 +22,7 @@ const bitwiseNotVar: number = ~positiveNum;
 const trueVal: boolean = true;
 const falseVal: boolean = !trueVal;
 const doubleNot: boolean = !!trueVal;
-// @skjs-expect-error Constant expression could have been simplified
+// @skjs-expect-error This constant expression could have been simplified
 const notLiteral: boolean = !false;
 const notFalseVal: boolean = !falseVal;
 
@@ -52,7 +52,7 @@ function acceptsBoolean(x: boolean): boolean {
 
 const testNum: number = acceptsNumber(-42);
 const testBig: bigint = acceptsBigInt(-42n);
-// @skjs-expect-error Constant expression could have been simplified
+// @skjs-expect-error This constant expression could have been simplified
 const testBool: boolean = acceptsBoolean(!true);
 const testBool2: boolean = acceptsBoolean(!trueVal);
 const testBitwise: number = acceptsNumber(~10);

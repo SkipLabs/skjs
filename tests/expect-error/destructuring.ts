@@ -1,16 +1,16 @@
 function uselessDefault(x: { f: number }): number {
-  // @skjs-expect-warning Default is useless because field cannot be undefined
+  // @skjs-expect-warning This default is unreachable because the field cannot be 'undefined'
   const { f = 1 } = x;
   return f;
 }
 
 function uselessDefaultNull(x: { f: null }): void {
-  // @skjs-expect-warning Default is useless because field cannot be undefined
+  // @skjs-expect-warning This default is unreachable because the field cannot be 'undefined'
   const { f = 1 } = x;
 }
 
 function uselessDefaultUnion(x: { f: number } | { f: string }): void {
-  // @skjs-expect-warning Default is useless because field cannot be undefined
+  // @skjs-expect-warning This default is unreachable because the field cannot be 'undefined'
   const { f = true } = x;
 }
 

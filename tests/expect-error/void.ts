@@ -41,7 +41,7 @@ const x4: () => void = () => null;
 // @skjs-expect-error Property access is not allowed on this type
 const x5: undefined = returningVoid()["bla"];
 
-// @skjs-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
+// @skjs-expect-error A comparison operand must be a string, number, bigint, or boolean
 const x6: boolean = returningVoid() < returningVoid();
 
 // @skjs-expect-error An expression of type 'void' cannot be used here
@@ -142,22 +142,22 @@ function invalidLogicalOr<T>(value: void | T): T {
 }
 
 function invalidPropertyAccess<T>(value: void | T): string {
-  // @ts-expect-error Invalid access for type void | T:10:828896147511048019
+  // @skjs-expect-error Cannot access a property on type void | T:10:828896147511048019
   return value.toString();
 }
 
 function invalidOptionalChaining<T>(value: void | T): string {
-  // @ts-expect-error Invalid access for type void | T:11:828896147511048019
+  // @skjs-expect-error Cannot access a property on type void | T:11:828896147511048019
   return value?.toString();
 }
 
 function invalidComparison<T>(value1: void | T, value2: void | T): boolean {
-  // @skjs-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
+  // @skjs-expect-error A comparison operand must be a string, number, bigint, or boolean
   return value1 < value2;
 }
 
 function invalidArrayAccess<T>(value: void | T): T {
-  // @ts-expect-error Invalid access for type void | T:13:828896147511048019
+  // @skjs-expect-error Cannot access a property on type void | T:13:828896147511048019
   return value[0];
 }
 

@@ -1,14 +1,14 @@
 function singleTypeLhs(x: number | string): boolean {
-  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
+  // @skjs-expect-error A comparison operand must be a string, number, bigint, or boolean
   return x < 0;
 }
 
 function singleTypeRhs(x: number | string): boolean {
-  // @ts-expect-error Invalid comparison. You can only compare strings, numbers, bigints, and booleans.
+  // @skjs-expect-error A comparison operand must be a string, number, bigint, or boolean
   return 0 < x;
 }
 
 function sameType(x: number, y: string): boolean {
-  // @ts-expect-error Invalid comparison. Both operands must have the same type.
+  // @skjs-expect-error Both operands of a comparison must have the same type
   return x < y;
 }
