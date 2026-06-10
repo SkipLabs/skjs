@@ -32,3 +32,12 @@ function takesCallback(f: (this: MyContext, x: number) => number): void {}
 // this parameter in regular function definition (not supported yet)
 // @skjs-expect-error 'this' parameters are not yet supported by SKJS
 function withThisParam(this: MyContext, x: number): void {}
+
+// a constructor cannot declare an explicit this parameter (TS2681)
+class TestConstructorThis {
+  x: number = 0;
+  // @skjs-expect-error 'this' parameters are not yet supported by SKJS
+  constructor(this: TestConstructorThis, n: number) {
+    this.x = n;
+  }
+}
